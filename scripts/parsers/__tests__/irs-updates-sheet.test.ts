@@ -68,7 +68,10 @@ describe("parseIrsUpdatesSheet", () => {
 
   it("correctly parses 2026 QBI thresholds and phase-in ranges", () => {
     const y = years.find((y) => y.year === 2026)!;
-    expect(y.qbi.thresholdMfj).toBe(405000);
+    // 403550, not the 405000 this previously asserted. Deliberate correction, not a
+    // regression: IRC 199A(e)(2)(B) fixes the MFJ threshold at 200% of the single
+    // threshold, and 2 x 201775 = 403550. The workbook's old 405000 was a stray value.
+    expect(y.qbi.thresholdMfj).toBe(403550);
     expect(y.qbi.thresholdSingleHohMfs).toBe(201775);
     expect(y.qbi.phaseInRangeMfj).toBe(150000);
     expect(y.qbi.phaseInRangeOther).toBe(75000);
@@ -88,5 +91,74 @@ describe("parseIrsUpdatesSheet", () => {
   it("returns null for super catch-up in pre-2025 years", () => {
     const y2022 = years.find((y) => y.year === 2022)!;
     expect(y2022.contribLimits.ira401kCatchup6063).toBeNull();
+  });
+});
+
+describe("parseIrsUpdatesSheet — threshold sections", () => {
+  let years: TaxYearParameters[];
+  beforeAll(async () => {
+    years = await parseIrsUpdatesSheet(FIXTURE);
+  });
+
+  it("parses 2026 Roth and IRA-deductibility ranges", () => {
+    const y = years.find((y) => y.year === 2026)!;
+    expect(y.rothPhaseout.startMfj).toBe(242000);
+    expect(y.rothPhaseout.endMfj).toBe(252000);
+    expect(y.iraDeduct.coveredStartMfj).toBe(129000);
+    expect(y.iraDeduct.spousalEndMfj).toBe(252000);
+  });
+
+  it("parses the 2026 student-loan cap and range", () => {
+    const y = years.find((y) => y.year === 2026)!;
+    expect(y.studentLoan.maxDeduction).toBe(2500);
+    expect(y.studentLoan.startMfj).toBe(175000);
+    expect(y.studentLoan.endMfj).toBe(205000);
+  });
+
+  it("parses 2026 CTC amounts and Saver's tiers", () => {
+    const y = years.find((y) => y.year === 2026)!;
+    expect(y.ctc.perChild).toBe(2200);
+    expect(y.saversCredit.mfj).toHaveLength(3);
+    expect(y.saversCredit.mfj[2].agiCeiling).toBe(80500);
+  });
+
+  it("corrects the QBI 2026 MFJ threshold to exactly 2x the single threshold", () => {
+    const y = years.find((y) => y.year === 2026)!;
+    // IRC 199A(e)(2): the MFJ threshold IS twice the single threshold.
+    expect(y.qbi.thresholdMfj).toBe(y.qbi.thresholdSingleHohMfs * 2);
+    expect(y.qbi.thresholdMfj).toBe(403550);
+  });
+
+  // parseSection matches section headers by String.includes, so a new section title
+  // that is a substring of an existing one would silently read the wrong rows.
+  // "Traditional IRA Deduction Phase-out" vs the pre-existing "Traditional & Roth IRA
+  // Contribution Limits" is the near-miss. Assert both resolve to their own rows.
+  it("does not collide the IRA deduction section with the IRA contribution section", () => {
+    const y = years.find((y) => y.year === 2026)!;
+    // Phase-out MAGI floor, not a contribution limit.
+    expect(y.iraDeduct.coveredStartMfj).toBe(129000);
+    // The contribution section still parses independently and is unchanged.
+    expect(y.contribLimits.iraTradLimit).toBe(7500);
+    expect(y.contribLimits.iraCatchup50).toBe(1000);
+  });
+
+  it("derives Saver's Credit single and HoH ceilings from the MFJ figures", () => {
+    const y = years.find((y) => y.year === 2026)!;
+    // IRC 25B(b)(2): HoH ceilings are 75% of joint, all other filers 50%. These
+    // exact figures appear in IRS Notice 2025-67, so this is a real cross-check
+    // against published values, not a restatement of the formula.
+    expect(y.saversCredit.single.map((t) => t.agiCeiling)).toEqual([24250, 26250, 40250]);
+    expect(y.saversCredit.hoh.map((t) => t.agiCeiling)).toEqual([36375, 39375, 60375]);
+    expect(y.saversCredit.mfj.map((t) => t.rate)).toEqual([0.5, 0.2, 0.1]);
+  });
+
+  it("populates the new blocks for every year, not just 2026", () => {
+    for (const y of years) {
+      expect(y.rothPhaseout.startMfj).toBeGreaterThan(0);
+      expect(y.iraDeduct.coveredStartMfj).toBeGreaterThan(0);
+      expect(y.studentLoan.maxDeduction).toBe(2500);
+      expect(y.ctc.perChild).toBeGreaterThan(0);
+      expect(y.saversCredit.mfj).toHaveLength(3);
+    }
   });
 });

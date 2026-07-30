@@ -274,6 +274,8 @@ export default async function AssumptionsStep({ clientId, firmId }: AssumptionsS
         medicarePremiumInflationRate:
           settings.medicarePremiumInflationRate != null ? String(settings.medicarePremiumInflationRate) : "0.03",
         medicarePremiumInflationEnabled: settings.medicarePremiumInflationEnabled,
+        coveredByWorkplacePlan: clientRow.coveredByWorkplacePlan,
+        spouseCoveredByWorkplacePlan: clientRow.spouseCoveredByWorkplacePlan,
       }}
       resolvedInflationRate={resolvedInflationRate}
       hasInflationAssetClass={firmInflationAc != null}

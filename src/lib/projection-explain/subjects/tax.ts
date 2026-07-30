@@ -41,14 +41,37 @@ export const taxAdapter: SubjectAdapter = {
  *    agree and the sum invariant holds. Nonzero-only; the dropped fields are 0,
  *    so filtering them never moves the sum.
  *
- *    RESIDUAL guard: SECA self-employment tax is a NINTH additive term the engine
- *    folds straight into `flow.totalTax`/`totalFederalTax` (year-tax.ts) with NO
- *    dedicated flow line field — so for self-employed clients the eight fields
- *    sum to `totalTax − seTax`. To keep the binding sum invariant honest for
- *    EVERY client we emit a residual line for whatever `round(totalTax)` the eight
- *    rounded lines don't account for, when that gap is material (≥ LINE_FLOOR).
- *    It is computed from the engine's own `totalTax` — never recomputed — and its
- *    label stays truthful if a further unlined term is ever added.
+ *    RESIDUAL guard: the eight fields are not the whole bill. Two unlined terms
+ *    move `flow.totalTax` in OPPOSITE directions:
+ *      + SECA self-employment tax, a NINTH additive term the engine folds straight
+ *        into `flow.totalTax`/`totalFederalTax` (src/engine/year-tax.ts:233-236)
+ *        with no flow line field — `TaxResult["flow"]` has no `seTax` at all — so
+ *        for self-employed clients the eight fields sum to `totalTax − seTax` and
+ *        the gap is POSITIVE.
+ *      − Federal credits. `flow.taxCredits` + `flow.refundableCredits` are netted
+ *        out inside `totalFederalTax` (calculate.ts) while `regularFederalIncomeTax`
+ *        stays PRE-credit by design, so for a household with credits the eight
+ *        fields OVERSHOOT and the gap is NEGATIVE. Refundable credits are
+ *        subtracted outside the zero floor, so `totalTax` itself can be negative.
+ *    The guard is therefore on |gap|, not on gap: a one-sided `gap >= LINE_FLOOR`
+ *    silently discards every credit-driven residual and breaks the sum invariant
+ *    for exactly the households the credit layer was built for. The residual is
+ *    computed from the engine's own `totalTax` — never recomputed.
+ *    Sub-floor gaps (|gap| < LINE_FLOOR) are still dropped as noise.
+ *
+ *    ⚠️ WHY THIS SURFACE RECONCILES AND THE ITEMIZING TABLES DO NOT. The residual
+ *    is a SUBTRACTION from the engine's own total, so it absorbs any unlined term
+ *    automatically — including `seTax`, without ever naming it. The Other-Taxes
+ *    tables (lib/tax/other-tax.ts and its two consumers) instead ENUMERATE flow
+ *    fields, so they can only show what has a field: they carry the credits
+ *    component but structurally cannot carry SECA. The two documents are not in
+ *    conflict — this one holds unconditionally, that one holds for households
+ *    without self-employment income. Don't "reconcile" them by weakening this.
+ *
+ *    The residual's label leads with the GENERIC term for that reason — see
+ *    RESIDUAL_TAX_LINE_LABEL in ../types.ts, which is named for the set, not for
+ *    SECA: the first household to see this line is typically a credit-claiming
+ *    one with zero SE income.
  *  - `income_source` parts — the recognized income DRIVING the tax, source-keyed
  *    and labeled via `resolveSourceLabel`, largest-|amount| first, capped at
  *    SOURCE_CAP. Kept as a distinct type so a consumer never sums them into the
@@ -77,11 +100,12 @@ function taxComponents(y: ProjectionYear, ctx: DrillContext): Component[] {
     .map(([label, amount]) => ({ label, amount: Math.round(amount), type: "tax_line" }))
     .filter((p) => p.amount !== 0);
 
-  // Residual: capture any additive term folded into totalTax without a line field
-  // (today: SECA self-employment tax) so the eight lines + residual reconcile to
-  // the reported figure. Straight from flow.totalTax — no recompute.
+  // Residual: capture any unlined term folded into totalTax — SECA (positive) or
+  // netted federal credits (negative) — so the eight lines + residual reconcile to
+  // the reported figure. Straight from flow.totalTax — no recompute. |gap|, not
+  // gap: a one-sided guard drops the credit direction. See the header comment.
   const residual = Math.round(f.totalTax) - taxLineParts.reduce((s, p) => s + p.amount, 0);
-  if (residual >= LINE_FLOOR) {
+  if (Math.abs(residual) >= LINE_FLOOR) {
     taxLineParts.push({
       label: RESIDUAL_TAX_LINE_LABEL,
       amount: residual,

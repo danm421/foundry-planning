@@ -31,8 +31,19 @@ import type { LiAssumptions } from "@/lib/life-insurance/schema";
  *     drill-down row reports the post-§121/§165(c) taxable gain rather than
  *     the raw gain — so a §121-excluded residence sale no longer shows an
  *     itemized gain under a $0 total. (2026-07-28)
+ * 11: federal credit layer (CTC/ACTC, ODC, AOTC, Saver's) wired into the
+ *    federal roll-up in calculate.ts (2026-07-28)
+ *
+ *    ⚠️ Why this branch skipped 10: it originally took 10, but so did
+ *    capital-loss-support, which merged to main first. Both sides bumping 9->10
+ *    is a change git merges CLEANLY AND SILENTLY (identical text on both sides),
+ *    which would have collapsed two distinct cache-invalidation intents into one
+ *    bump — every MC/LI cache row written under capital-loss's 10 would have been
+ *    treated as valid for the credit layer too, serving stale projections with no
+ *    error. Nothing in the toolchain flags this; it has to be checked by hand
+ *    against main before every merge.
  */
-export const ENGINE_VERSION = 10;
+export const ENGINE_VERSION = 11;
 
 /** Round to 6 decimals so float representation noise can't cause spurious misses. */
 function round(n: number): number {

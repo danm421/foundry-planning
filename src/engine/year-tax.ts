@@ -4,7 +4,7 @@ import type {
   PlanSettings,
   ProjectionYear,
 } from "./types";
-import type { TaxResult, TaxYearParameters } from "../lib/tax/types";
+import type { TaxHouseholdInput, TaxResult, TaxYearParameters } from "../lib/tax/types";
 import type { CharityBucket } from "./charitable-deduction";
 import { calculateTaxYearBracket, calculateTaxYearFlat, makeEmptyTaxParams } from "./tax";
 import { computeCharitableDeductionForYear, computeCharitableNoItemize } from "./charitable-deduction";
@@ -82,6 +82,11 @@ export interface YearTaxInput {
   /** Tax-free retirement draw slices (Roth IRA, 401k/403b Roth, HSA) —
    *  display-only, rolls into nonTaxableIncome/grossTotalIncome. */
   taxFreeRetirementIncome?: number;
+  /** Household composition for the federal credit layer (CTC/ACTC, ODC, AOTC,
+   *  Saver's). Assembled once per year in projection.ts and forwarded verbatim.
+   *  Bracket mode only — flat mode models no credits, so the flat branch below
+   *  ignores it. Absent ⇒ no credits, i.e. the pre-credit roll-up. */
+  household?: TaxHouseholdInput;
 }
 
 export interface YearTaxOutput {
@@ -229,6 +234,7 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
         // (IRC §56(b)(1)(A)(ii)) → added back to AMTI for itemizers. The breakdown's
         // taxesPaid is already the capped total (Math.min(rawSalt, saltCap)).
         saltDeducted: deductionBreakdownOut?.belowLine.taxesPaid ?? 0,
+        household: input.household,
         capitalLossCarryforwardIn,
       })
     : calculateTaxYearFlat({

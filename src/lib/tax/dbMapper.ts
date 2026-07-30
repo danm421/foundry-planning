@@ -3,6 +3,8 @@ import type { TaxYearParameters } from "./types";
 
 type Row = typeof taxYearParameters.$inferSelect;
 
+const num = (v: string | null): number | null => (v != null ? parseFloat(v) : null);
+
 export function dbRowToTaxYearParameters(row: Row): TaxYearParameters {
   return {
     year: row.year,
@@ -55,6 +57,37 @@ export function dbRowToTaxYearParameters(row: Row): TaxYearParameters {
       thresholdSingleHohMfs: parseFloat(row.qbiThresholdSingleHohMfs),
       phaseInRangeMfj: parseFloat(row.qbiPhaseInRangeMfj),
       phaseInRangeOther: parseFloat(row.qbiPhaseInRangeOther),
+    },
+    rothPhaseout: {
+      startMfj: num(row.rothPhaseoutStartMfj),
+      endMfj: num(row.rothPhaseoutEndMfj),
+      startSingle: num(row.rothPhaseoutStartSingle),
+      endSingle: num(row.rothPhaseoutEndSingle),
+    },
+    iraDeduct: {
+      coveredStartMfj: num(row.iraDeductCoveredStartMfj),
+      coveredEndMfj: num(row.iraDeductCoveredEndMfj),
+      coveredStartSingle: num(row.iraDeductCoveredStartSingle),
+      coveredEndSingle: num(row.iraDeductCoveredEndSingle),
+      spousalStartMfj: num(row.iraDeductSpousalStartMfj),
+      spousalEndMfj: num(row.iraDeductSpousalEndMfj),
+    },
+    studentLoan: {
+      maxDeduction: num(row.studentLoanMaxDeduction),
+      startMfj: num(row.studentLoanPhaseoutStartMfj),
+      endMfj: num(row.studentLoanPhaseoutEndMfj),
+      startSingle: num(row.studentLoanPhaseoutStartSingle),
+      endSingle: num(row.studentLoanPhaseoutEndSingle),
+    },
+    ctc: {
+      perChild: num(row.ctcPerChild),
+      refundableMax: num(row.ctcRefundableMax),
+      odcPerDependent: num(row.odcPerDependent),
+    },
+    saversCredit: {
+      mfj: row.saversCreditTiersMfj ?? [],
+      single: row.saversCreditTiersSingle ?? [],
+      hoh: row.saversCreditTiersHoh ?? [],
     },
     contribLimits: {
       ira401kElective: parseFloat(row.ira401kElective),

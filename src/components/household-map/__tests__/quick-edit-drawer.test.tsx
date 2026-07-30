@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import QuickEditDrawer from "../quick-edit-drawer";
 import type { ClientMilestones } from "@/lib/milestones";
 import type { ExpenseView, IncomeView } from "@/lib/scenario/view-adapters";
@@ -18,6 +19,23 @@ vi.mock("next/navigation", () => ({
   }),
   usePathname: () => "/clients/client-1/details/map",
 }));
+
+// Real uuids: `forFamilyMemberId` is validated as one on the write path, so a
+// "fm-kelly" placeholder would let a test pass a body the API would 400.
+const FM_KELLY = "11111111-1111-4111-8111-111111111111";
+const FM_SAM = "22222222-2222-4222-8222-222222222222";
+const FM_PAT = "33333333-3333-4333-8333-333333333333";
+
+// The beneficiary list every render helper below passes. Three shapes on
+// purpose — they are the three branches of `handleForChange`: a child whose
+// college years are still ahead (Kelly, 2030-2033), one with no usable DOB at
+// all (Sam — the dates must not move), and one already past 18 (Pat, whose
+// start floors at the plan's first year rather than landing in 2008).
+const FAMILY_MEMBERS = [
+  { id: FM_KELLY, firstName: "Kelly", birthYear: 2012 },
+  { id: FM_SAM, firstName: "Sam", birthYear: null },
+  { id: FM_PAT, firstName: "Pat", birthYear: 1990 },
+];
 
 const milestones: ClientMilestones = {
   planStart: 2026,
@@ -70,18 +88,26 @@ function incomeRow(overrides: Partial<IncomeView> = {}): IncomeView {
   };
 }
 
-function renderExpense(row: ExpenseView) {
+/** Every case renders the drawer into the same household — only `target`
+ *  differs, and `target` is the thing under test. Keeping the surrounding props
+ *  in one place means each case reads as the target it opens on. */
+function renderDrawer(target: ComponentProps<typeof QuickEditDrawer>["target"]) {
   return render(
     <QuickEditDrawer
       clientId="client-1"
-      target={{ kind: "expense", id: row.id, row, presetColumn: "joint" }}
+      target={target}
       clientFirstName="Alex"
       spouseFirstName="Jordan"
       milestones={milestones}
       resolvedInflationRate={0.03}
+      familyMembers={FAMILY_MEMBERS}
       onClose={() => {}}
     />,
   );
+}
+
+function renderExpense(row: ExpenseView) {
+  return renderDrawer({ kind: "expense", id: row.id, row, presetColumn: "joint" });
 }
 
 /** Captures every `fetch` call so a test can pick the write it cares about by
@@ -140,17 +166,7 @@ describe("QuickEditDrawer — goal checkbox (Task 11 brief, Step 2)", () => {
 
   it("renders an Owner select (Client/Spouse/Joint) for an income and no goal checkbox", () => {
     const row = incomeRow({ owner: "spouse" });
-    render(
-      <QuickEditDrawer
-        clientId="client-1"
-        target={{ kind: "income", id: row.id, row, presetColumn: "joint" }}
-        clientFirstName="Alex"
-        spouseFirstName="Jordan"
-        milestones={milestones}
-        resolvedInflationRate={0.03}
-        onClose={() => {}}
-      />,
-    );
+    renderDrawer({ kind: "income", id: row.id, row, presetColumn: "joint" });
 
     const ownerSelect = screen.getByLabelText("Owner");
     expect((ownerSelect as HTMLSelectElement).value).toBe("spouse");
@@ -246,23 +262,13 @@ describe("QuickEditDrawer — delete confirmation", () => {
 
 describe("QuickEditDrawer — create mode seeded as a goal", () => {
   function renderNewGoal(presetIsGoal: boolean) {
-    return render(
-      <QuickEditDrawer
-        clientId="client-1"
-        target={{
-          kind: "expense",
-          id: null,
-          row: null,
-          presetColumn: "joint",
-          presetIsGoal,
-        }}
-        clientFirstName="Alex"
-        spouseFirstName="Jordan"
-        milestones={milestones}
-        resolvedInflationRate={0.03}
-        onClose={() => {}}
-      />,
-    );
+    return renderDrawer({
+      kind: "expense",
+      id: null,
+      row: null,
+      presetColumn: "joint",
+      presetIsGoal,
+    });
   }
 
   it("pre-ticks 'Show as a goal'", () => {
@@ -299,6 +305,242 @@ describe("QuickEditDrawer — create mode seeded as a goal", () => {
       const post = calls.find((c) => c.url.endsWith("/expenses") && c.init?.method === "POST");
       expect(post).toBeDefined();
       expect(JSON.parse(String(post!.init!.body)).isGoal).toBe(true);
+    });
+  });
+});
+
+// An education goal was unreachable from the Map before this: "Add goal" could
+// only ever create a `type: "other"` expense, so the one goal shape the Goals
+// board renders specially — "for Kelly", "College · State U" — had to be built
+// on /details/income-expenses and could not be added where it is displayed.
+//
+// The type picker is CREATE-mode only, deliberately. An existing education row
+// also carries `institutionState`, `payShortfallOutOfPocket` and a
+// `dedicatedAccountIds` join this drawer does not render, so retyping one here
+// would strand all three pointing at a type the row no longer is. Creating has
+// nothing to strand.
+describe("QuickEditDrawer — education goals", () => {
+  function renderNewExpense() {
+    // No `presetIsGoal` — so "Show as a goal" opens UNTICKED, and the
+    // force-tick assertions below cannot be passing on the Goals board's
+    // preset instead of on the education type.
+    return renderDrawer({ kind: "expense", id: null, row: null, presetColumn: "joint" });
+  }
+
+  /** Save is gated on a non-empty name (`disabled={saving || !name.trim()}`).
+   *  Picking a beneficiary auto-titles the goal and satisfies that on its own;
+   *  a case that saves WITHOUT one has to type a name first, or it is asserting
+   *  against a button that never fired. */
+  function nameIt(value: string) {
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value } });
+  }
+
+  /** Save, then return the parsed create POST body. */
+  async function saveAndReadBody(calls: ReturnType<typeof captureFetch>) {
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(calls.some((c) => c.init?.method === "POST")).toBe(true);
+    });
+    const post = calls.find((c) => c.init?.method === "POST")!;
+    expect(post.url).toBe("/api/clients/client-1/expenses");
+    return JSON.parse(String(post.init!.body)) as Record<string, unknown>;
+  }
+
+  describe("the type picker", () => {
+    it("renders in create mode, defaulting to Other", () => {
+      renderNewExpense();
+
+      const select = screen.getByLabelText("Type") as HTMLSelectElement;
+      expect(select.value).toBe("other");
+      expect([...select.options].map((o) => o.value)).toEqual([
+        "living",
+        "insurance",
+        "education",
+        "other",
+      ]);
+    });
+
+    it("is ABSENT in edit mode — retyping an existing row belongs to the full editor", () => {
+      renderExpense(expenseRow({ id: "exp-1", type: "education", name: "College" }));
+
+      expect(screen.queryByLabelText("Type")).not.toBeInTheDocument();
+    });
+
+    it("does not offer a type on an income (the picker is expenses-only)", () => {
+      const row = incomeRow();
+      renderDrawer({ kind: "income", id: null, row: null, presetColumn: "client" });
+      expect(row.type).toBe("salary"); // fixture sanity — the income shape exists
+      expect(screen.queryByLabelText("Type")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("choosing Education", () => {
+    it("reveals the beneficiary and institution fields, which are hidden for every other type", () => {
+      renderNewExpense();
+
+      expect(screen.queryByLabelText("For")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Institution")).not.toBeInTheDocument();
+
+      fireEvent.change(screen.getByLabelText("Type"), { target: { value: "education" } });
+
+      expect(screen.getByLabelText("For")).toBeInTheDocument();
+      expect(screen.getByLabelText("Institution")).toBeInTheDocument();
+    });
+
+    it("force-ticks 'Show as a goal'", () => {
+      renderNewExpense();
+      expect(screen.getByRole("checkbox", { name: /Show as a goal/ })).not.toBeChecked();
+
+      fireEvent.change(screen.getByLabelText("Type"), { target: { value: "education" } });
+
+      expect(screen.getByRole("checkbox", { name: /Show as a goal/ })).toBeChecked();
+    });
+
+    // Separate case from the tick: a checkbox that is checked but still
+    // clickable can be un-ticked one click later, and the row would then be an
+    // education expense the Goals board never draws.
+    it("disables 'Show as a goal' and says why", () => {
+      renderNewExpense();
+      fireEvent.change(screen.getByLabelText("Type"), { target: { value: "education" } });
+
+      expect(screen.getByRole("checkbox", { name: /Show as a goal/ })).toBeDisabled();
+      expect(screen.getByText(/Education expenses are always goals/)).toBeInTheDocument();
+    });
+
+    // The lock follows the CURRENT type, not a one-way latch: switching back has
+    // to hand the checkbox and the two fields back.
+    it("releases the lock and hides the fields when the type is switched back", () => {
+      renderNewExpense();
+      fireEvent.change(screen.getByLabelText("Type"), { target: { value: "education" } });
+      fireEvent.change(screen.getByLabelText("Type"), { target: { value: "other" } });
+
+      const checkbox = screen.getByRole("checkbox", { name: /Show as a goal/ });
+      expect(checkbox).not.toBeDisabled();
+      expect(checkbox).not.toBeChecked();
+      expect(screen.queryByLabelText("For")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("picking a beneficiary", () => {
+    function pickEducationFor(fmId: string) {
+      renderNewExpense();
+      fireEvent.change(screen.getByLabelText("Type"), { target: { value: "education" } });
+      fireEvent.change(screen.getByLabelText("For"), { target: { value: fmId } });
+    }
+
+    it("titles the goal after them", () => {
+      pickEducationFor(FM_KELLY);
+      expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Kelly - Education");
+    });
+
+    // Kelly turns 18 in 2030, so the goal is 2030-2033. Asserted on the SAVE
+    // payload rather than on the year pickers because the payload is what
+    // reaches the DB — and because `startYearRef`/`endYearRef` have no rendered
+    // form of their own.
+    it("time-boxes it to a four-year program starting the year they turn 18", async () => {
+      const calls = captureFetch();
+      pickEducationFor(FM_KELLY);
+
+      const body = await saveAndReadBody(calls);
+      expect(body.startYear).toBe("2030");
+      expect(body.endYear).toBe("2033");
+    });
+
+    // THE ONE THAT MATTERS. Both refs seed to plan_start/plan_end, and on every
+    // future load a ref OUTRANKS the stored year (`resolvedStart`/`resolvedEnd`).
+    // A surviving ref would quietly stretch a four-year college goal back across
+    // the whole projection the next time the page loaded — and the years above
+    // would still have been written correctly, so nothing else would show it.
+    it("clears BOTH milestone refs alongside the years", async () => {
+      const calls = captureFetch();
+      pickEducationFor(FM_KELLY);
+
+      const body = await saveAndReadBody(calls);
+      expect(body.startYearRef).toBeNull();
+      expect(body.endYearRef).toBeNull();
+    });
+
+    // The control for both of the above: without a beneficiary the same create
+    // keeps the seeded plan_start/plan_end refs, so "the refs are null" cannot
+    // be passing on a drawer that never sends refs at all.
+    it("leaves the seeded refs in place when no beneficiary is picked", async () => {
+      const calls = captureFetch();
+      renderNewExpense();
+      fireEvent.change(screen.getByLabelText("Type"), { target: { value: "education" } });
+      nameIt("College fund");
+
+      const body = await saveAndReadBody(calls);
+      expect(body.startYearRef).toBe("plan_start");
+      expect(body.endYearRef).toBe("plan_end");
+    });
+
+    // A beneficiary with no usable DOB still titles the goal — but must not
+    // guess a year. `handleForChange` returns before touching the dates.
+    it("names the goal but does not move the dates for a member with no birth year", async () => {
+      const calls = captureFetch();
+      pickEducationFor(FM_SAM);
+
+      expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Sam - Education");
+      const body = await saveAndReadBody(calls);
+      expect(body.startYear).toBe("2026");
+      expect(body.startYearRef).toBe("plan_start");
+    });
+
+    // Pat turned 18 in 2008. The start floors at the plan's first year rather
+    // than opening a goal that began eighteen years before the projection does.
+    it("floors the start at the plan's first year for a beneficiary already past 18", async () => {
+      const calls = captureFetch();
+      pickEducationFor(FM_PAT);
+
+      const body = await saveAndReadBody(calls);
+      expect(body.startYear).toBe("2026");
+      expect(body.endYear).toBe("2029");
+    });
+  });
+
+  describe("the create payload", () => {
+    it("carries the type, the beneficiary, the institution and isGoal", async () => {
+      const calls = captureFetch();
+      renderNewExpense();
+      fireEvent.change(screen.getByLabelText("Type"), { target: { value: "education" } });
+      fireEvent.change(screen.getByLabelText("For"), { target: { value: FM_KELLY } });
+      fireEvent.change(screen.getByLabelText("Institution"), { target: { value: "State U" } });
+
+      const body = await saveAndReadBody(calls);
+      expect(body.type).toBe("education");
+      expect(body.forFamilyMemberId).toBe(FM_KELLY);
+      expect(body.institutionName).toBe("State U");
+      // Forced, not toggled — the checkbox was never clicked and the drawer
+      // opened without `presetIsGoal`.
+      expect(body.isGoal).toBe(true);
+    });
+
+    // `forFamilyMemberId` is uuid-validated on the write path: "" is a 400, not
+    // "no beneficiary". Same for a whitespace-only institution.
+    it("sends null — never the empty string — for an unpicked beneficiary and a blank institution", async () => {
+      const calls = captureFetch();
+      renderNewExpense();
+      fireEvent.change(screen.getByLabelText("Type"), { target: { value: "education" } });
+      fireEvent.change(screen.getByLabelText("Institution"), { target: { value: "   " } });
+      nameIt("College fund");
+
+      const body = await saveAndReadBody(calls);
+      expect(body.forFamilyMemberId).toBeNull();
+      expect(body.institutionName).toBeNull();
+    });
+
+    // The education keys are education-only. A "living" expense carrying a
+    // `forFamilyMemberId: null` would be a field the row has no business having.
+    it("omits the education keys entirely for a non-education create", async () => {
+      const calls = captureFetch();
+      renderNewExpense();
+      fireEvent.change(screen.getByLabelText("Type"), { target: { value: "living" } });
+      nameIt("Groceries");
+
+      const body = await saveAndReadBody(calls);
+      expect(body.type).toBe("living");
+      expect(body).not.toHaveProperty("forFamilyMemberId");
+      expect(body).not.toHaveProperty("institutionName");
     });
   });
 });

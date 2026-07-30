@@ -65,6 +65,12 @@ function params2026(): TaxYearParameters {
     niitRate: 0.038,
     niitThreshold: { mfj: 250000, single: 200000, mfs: 125000 },
     qbi: { thresholdMfj: 405000, thresholdSingleHohMfs: 201775, phaseInRangeMfj: 150000, phaseInRangeOther: 75000 },
+    rothPhaseout: { startMfj: null, endMfj: null, startSingle: null, endSingle: null },
+    iraDeduct: { coveredStartMfj: null, coveredEndMfj: null, coveredStartSingle: null,
+                 coveredEndSingle: null, spousalStartMfj: null, spousalEndMfj: null },
+    studentLoan: { maxDeduction: null, startMfj: null, endMfj: null, startSingle: null, endSingle: null },
+    ctc: { perChild: null, refundableMax: null, odcPerDependent: null },
+    saversCredit: { mfj: [], single: [], hoh: [] },
     contribLimits: {
       ira401kElective: 24500, ira401kCatchup50: 8000, ira401kCatchup6063: 11250,
       iraTradLimit: 7500, iraCatchup50: 1100,
@@ -629,5 +635,562 @@ describe("calculateTaxYear — ISO spread as an AMT preference item", () => {
 
     // ISO spread is NOT regular taxable income — regular tax is unchanged.
     expect(withIso.flow.regularTaxCalc).toBeCloseTo(withoutIso.flow.regularTaxCalc, 2);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Federal credit layer wired into the roll-up (Task 9).
+//
+// `params2026()` deliberately leaves every credit column NULL — that is the live
+// DB state today. `params2026WithCredits()` is the seeded counterpart; the
+// unseeded path gets its own test below.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function params2026WithCredits(): TaxYearParameters {
+  return {
+    ...params2026(),
+    ctc: { perChild: 2000, refundableMax: 1700, odcPerDependent: 500 },
+    saversCredit: {
+      mfj: [
+        { rate: 0.5, agiCeiling: 48000 },
+        { rate: 0.2, agiCeiling: 52000 },
+        { rate: 0.1, agiCeiling: 80000 },
+      ],
+      single: [
+        { rate: 0.5, agiCeiling: 24000 },
+        { rate: 0.2, agiCeiling: 26000 },
+        { rate: 0.1, agiCeiling: 40000 },
+      ],
+      hoh: [
+        { rate: 0.5, agiCeiling: 36000 },
+        { rate: 0.2, agiCeiling: 39000 },
+        { rate: 0.1, agiCeiling: 60000 },
+      ],
+    },
+  };
+}
+
+describe("calculateTaxYear — credits: absent household is behaviour-preserving", () => {
+  // Regression guard for every existing caller: `household` is optional and
+  // nothing supplies it yet, so the credit-aware roll-up must reduce EXACTLY to
+  // the old five-term sum. Income is picked so all five terms land on exact
+  // dollars (at $300k of wages the 0.9% surtax is 449.99999999999994, which
+  // would force a toBeCloseTo).
+  //   AGI 380000; std 32200 → taxableIncome 347800; incomeTaxBase 277800
+  //   regularFederalIncomeTax 51857 (= 2480 + 9120 + 24453 + 65850×0.24=15804)
+  //   capitalGainsTax         10500 (= 70000 × 0.15, stacked 277800→347800)
+  //   amtAdditional               0 (TMT 44148 + 10500 = 54648 < 51857 + 10500)
+  //   niit                     2660 (= min(70000, 380000-250000) × 0.038)
+  //   additionalMedicare        540 (= (310000-250000) × 0.009)
+  //   total                   65557
+  const result = calculateTaxYear(makeInput({
+    earnedIncome: 310_000,
+    qualifiedDividends: 50_000,
+    longTermCapitalGains: 20_000,
+    flatStateRate: 0,
+  }));
+
+  it("reports zero nonrefundable and zero refundable credits", () => {
+    expect(result.flow.taxCredits).toBe(0);
+    expect(result.flow.refundableCredits).toBe(0);
+  });
+
+  it("totalFederalTax is exactly the sum of the five component terms", () => {
+    expect(result.flow.totalFederalTax).toBe(
+      result.flow.regularFederalIncomeTax +
+      result.flow.capitalGainsTax +
+      result.flow.amtAdditional +
+      result.flow.niit +
+      result.flow.additionalMedicare,
+    );
+    expect(result.flow.regularFederalIncomeTax).toBe(51_857);
+    expect(result.flow.capitalGainsTax).toBe(10_500);
+    expect(result.flow.amtAdditional).toBe(0);
+    expect(result.flow.niit).toBe(2_660);
+    expect(result.flow.additionalMedicare).toBe(540);
+    expect(result.flow.totalFederalTax).toBe(65_557);
+  });
+});
+
+describe("calculateTaxYear — credits: nonrefundable clamped at tax, refundable goes past zero", () => {
+  // MFJ, $60,000 wages, 3 qualifying children, credit columns seeded.
+  //   AGI 60000; std 32200 → taxableIncome = incomeTaxBase = 27800
+  //   regularTaxCalc = 24800×0.10 + (27800-24800)×0.12 = 2480 + 360 = 2840
+  //   capitalGainsTax 0; AMTI = 27800 + 32200 = 60000 < 140200 exemption → amtAdditional 0
+  //   niit 0; additionalMedicare 0  → taxBeforeCredits = 2840
+  //   CTC gross = 3 × 2000 = 6000; MAGI 60000 < 400000 → no phase-down
+  //   nonrefundable used = min(6000, 2840) = 2840   (the R5 clamp binds)
+  //   ACTC = min(6000-2840 = 3160, 3 × 1700 = 5100, 0.15 × (60000-2500) = 8625) = 3160
+  //   totalFederalTax = max(0, 2840 - 2840) + 0 + 0 - 3160 = -3160
+  const result = calculateTaxYear(makeInput({
+    earnedIncome: 60_000,
+    taxParams: params2026WithCredits(),
+    flatStateRate: 0,
+    household: {
+      qualifyingChildren: 3,
+      otherDependents: 0,
+      aotcStudents: [],
+      retirementContributions: { client: 0, spouse: 0 },
+      selfEmploymentEarnings: 0,
+    },
+  }));
+
+  // Split from one three-assertion `it` (Task 14b review round 2). Stacked
+  // assertions are not independently covered — the first to throw hides the rest.
+  const taxBeforeCredits =
+    result.flow.regularFederalIncomeTax + result.flow.capitalGainsTax + result.flow.amtAdditional;
+
+  it("caps the nonrefundable total at regular + cap-gains + AMT-additional", () => {
+    expect(result.flow.taxCredits).toBeLessThanOrEqual(taxBeforeCredits);
+  });
+
+  it("consumes that base exactly — the clamp binds at 2,840", () => {
+    // One assertion, both exact facts: the base is 2,840 AND credits consume it.
+    expect({ taxBeforeCredits, taxCredits: result.flow.taxCredits })
+      .toEqual({ taxBeforeCredits: 2_840, taxCredits: 2_840 });
+  });
+
+  it("keeps refundable dollars out of taxCredits", () => {
+    expect(result.flow.refundableCredits).toBe(3_160);
+  });
+
+  it("leaves regularFederalIncomeTax as the PRE-credit bracket tax", () => {
+    expect(result.flow.regularTaxCalc).toBe(2_840);
+    expect(result.flow.regularFederalIncomeTax).toBe(2_840);
+  });
+
+  it("lets totalFederalTax go negative — a refund, not a floored zero", () => {
+    expect(result.flow.totalFederalTax).toBe(-3_160);
+  });
+});
+
+describe("calculateTaxYear — credits: Saver's sunset keys off the REQUESTED year", () => {
+  // `taxParams.year` stays 2026 in both calls (the resolver stamps the SOURCE
+  // year on inflated out-year params). Only `input.year` moves. SECURE 2.0 §103
+  // retires the credit after 2026, so 2027 must yield nothing.
+  //   AGI 50000; std 32200 → taxableIncome 17800 → regularTaxCalc = 17800 × 0.10 = 1780
+  //   AMTI = 17800 + 32200 = 50000 < 140200 → amtAdditional 0; no NIIT, no addl Medicare
+  //   Saver's: AGI 50000 clears the 48000 ceiling and lands in the SECOND tier
+  //            (ceiling 52000, rate 0.2) — deliberately not the top tier, so a
+  //            mutant handing `credits.ts` a wrong `agi` picks a different RATE
+  //            rather than coincidentally re-landing on 0.5.
+  //            min(2000, 2000) + min(0, 2000) = 2000 → credit = 0.2 × 2000 = 400
+  //   2026: totalFederalTax = max(0, 1780 - 400) = 1380
+  //   2027: totalFederalTax = max(0, 1780 - 0)   = 1780
+  const household = {
+    qualifyingChildren: 0,
+    otherDependents: 0,
+    aotcStudents: [],
+    retirementContributions: { client: 2000, spouse: 0 },
+    selfEmploymentEarnings: 0,
+  };
+  const in2026 = calculateTaxYear(makeInput({
+    year: 2026, earnedIncome: 50_000, taxParams: params2026WithCredits(),
+    flatStateRate: 0, household,
+  }));
+  const in2027 = calculateTaxYear(makeInput({
+    year: 2027, earnedIncome: 50_000, taxParams: params2026WithCredits(),
+    flatStateRate: 0, household,
+  }));
+
+  it("allows the Saver's Credit in 2026, at the AGI tier's own rate", () => {
+    expect(in2026.flow.adjustedGrossIncome).toBe(50_000);
+    expect(in2026.flow.regularTaxCalc).toBe(1_780);
+    expect(in2026.flow.taxCredits).toBe(400);
+    expect(in2026.flow.totalFederalTax).toBe(1_380);
+  });
+
+  it("denies it in 2027 even though taxParams.year is still 2026", () => {
+    // Non-vacuous: the params row really is still stamped 2026.
+    expect(in2027.diag.bracketsUsed.year).toBe(2026);
+    expect(in2027.flow.regularTaxCalc).toBe(1_780);
+    expect(in2027.flow.taxCredits).toBe(0);
+    expect(in2027.flow.totalFederalTax).toBe(1_780);
+  });
+});
+
+describe("calculateTaxYear — credits: ACTC earned-income floor uses earned income, not AGI", () => {
+  // MFJ, wages 12500, above-line deductions 2500 → AGI 10000. The two figures are
+  // deliberately different so a mutant that hands `credits.ts` AGI is observable.
+  //   taxableIncome = max(0, 10000 - 32200) = 0 → regularTaxCalc 0, no AMT/NIIT/Medicare
+  //   taxBeforeCredits = 0 → nothing nonrefundable can be used
+  //   CTC gross = 2 × 2000 = 4000 → unused 4000
+  //   ACTC = min(4000, 2 × 1700 = 3400, 0.15 × (12500 - 2500) = 1500) = 1500
+  //          (with AGI substituted: 0.15 × (10000 - 2500) = 1125 — a different number)
+  const result = calculateTaxYear(makeInput({
+    earnedIncome: 12_500,
+    aboveLineDeductions: 2_500,
+    taxParams: params2026WithCredits(),
+    flatStateRate: 0,
+    household: {
+      qualifyingChildren: 2,
+      otherDependents: 0,
+      aotcStudents: [],
+      retirementContributions: { client: 0, spouse: 0 },
+      selfEmploymentEarnings: 0,
+    },
+  }));
+
+  it("has AGI genuinely below earned income (non-vacuous)", () => {
+    expect(result.flow.adjustedGrossIncome).toBe(10_000);
+    expect(result.income.earnedIncome).toBe(12_500);
+  });
+
+  it("computes the 15% floor off earned income", () => {
+    expect(result.flow.taxCredits).toBe(0);
+    expect(result.flow.refundableCredits).toBe(1_500);
+    expect(result.flow.totalFederalTax).toBe(-1_500);
+  });
+});
+
+describe("calculateTaxYear — credits: AOTC splits across the nonrefundable/refundable line", () => {
+  // MFJ, wages 170000 — the midpoint of the unindexed 160000-180000 AOTC range,
+  // so the surviving fraction is exactly 0.5 (no float residue).
+  //   AGI 170000; std 32200 → taxableIncome = incomeTaxBase = 137800
+  //   regularTaxCalc = 2480 + 9120 + (137800-100800)×0.22 = 2480 + 9120 + 8140 = 19740
+  //   AMTI = 137800 + 32200 = 170000 → taxable AMTI 29800 → TMT 7748 < 19740 → 0
+  //   AOTC raw = min(2000, 4000) + 0.25 × min(2000, 2000) = 2000 + 500 = 2500
+  //        phased = 2500 × 0.5 = 1250; refundable = min(0.4 × 1250, 1000) = 500
+  //        nonrefundable = 1250 - 500 = 750
+  //   totalFederalTax = max(0, 19740 - 750) + 0 + 0 - 500 = 18990 - 500 = 18490
+  const result = calculateTaxYear(makeInput({
+    earnedIncome: 170_000,
+    taxParams: params2026WithCredits(),
+    flatStateRate: 0,
+    household: {
+      qualifyingChildren: 0,
+      otherDependents: 0,
+      aotcStudents: [{ qualifiedExpenses: 4_000 }],
+      retirementContributions: { client: 0, spouse: 0 },
+      selfEmploymentEarnings: 0,
+    },
+  }));
+
+  it("applies the 60% nonrefundable slice against tax", () => {
+    expect(result.flow.regularFederalIncomeTax).toBe(19_740);
+    expect(result.flow.taxCredits).toBe(750);
+  });
+
+  it("reports the 40% refundable slice separately", () => {
+    expect(result.flow.refundableCredits).toBe(500);
+    expect(result.flow.totalFederalTax).toBe(18_490);
+  });
+});
+
+describe("calculateTaxYear — credits: unseeded credit columns mean ZERO, never NaN", () => {
+  // `params2026()` has ctc.{perChild,refundableMax,odcPerDependent} all null and
+  // empty Saver's tables — today's live DB state. A household with 3 children
+  // must therefore get nothing, and the roll-up must stay a real number.
+  const result = calculateTaxYear(makeInput({
+    earnedIncome: 60_000,
+    flatStateRate: 0,
+    household: {
+      qualifyingChildren: 3,
+      otherDependents: 2,
+      aotcStudents: [],
+      retirementContributions: { client: 2_000, spouse: 2_000 },
+      selfEmploymentEarnings: 0,
+    },
+  }));
+
+  it("yields zero credits and the undisturbed 2840 of bracket tax", () => {
+    expect(result.flow.taxCredits).toBe(0);
+    expect(result.flow.refundableCredits).toBe(0);
+    expect(result.flow.totalFederalTax).toBe(2_840);
+  });
+});
+
+describe("calculateTaxYear — credits: NIIT is outside the credit-offsettable base", () => {
+  // The scenario that makes R5/R7 load-bearing: a household with REAL NIIT but
+  // ZERO chapter-1 subpart A tax for credits to bite into. If `taxBeforeCredits`
+  // were built from the grand total (regular + capGains + AMT + NIIT + Medicare)
+  // instead of the first three terms, the CTC would eat the NIIT and the ACTC
+  // leftover would shrink to match.
+  //
+  // MFJ: wages 20000, LTCG 240000, itemized 170000 (so the gain lands in the 0%
+  // band and nothing ordinary survives), 1 qualifying child.
+  //   AGI 260000; itemized 170000 > std 32200 → taxableIncome 90000
+  //   incomeTaxBase = max(0, 90000 - 240000) = 0            → regularTaxCalc 0
+  //   preferential base = min(240000, 90000) = 90000, stacked 0→90000 < 99200
+  //                                                          → capitalGainsTax 0
+  //   AMTI = 90000 + 0 (itemizer, no SALT) < 140200 exemption → amtAdditional 0
+  //   NIIT = min(240000, 260000-250000) × 0.038 = 10000 × 0.038 = 380
+  //   additionalMedicare = 0 (wages 20000 < 250000)
+  //   taxBeforeCredits = 0 + 0 + 0 = 0  →  NOTHING nonrefundable can be used
+  //   ACTC = min(2000 unused, 1 × 1700, 0.15 × (20000-2500) = 2625) = 1700
+  //   totalFederalTax = max(0, 0 - 0) + 380 + 0 - 1700 = -1320
+  //
+  // With NIIT folded into taxBeforeCredits: 380 of CTC would be "used"
+  // (taxCredits 380), the ACTC leftover would drop to 1620, and the total would
+  // read -1240 instead of -1320.
+  const result = calculateTaxYear(makeInput({
+    earnedIncome: 20_000,
+    longTermCapitalGains: 240_000,
+    itemizedDeductions: 170_000,
+    taxParams: params2026WithCredits(),
+    flatStateRate: 0,
+    household: {
+      qualifyingChildren: 1,
+      otherDependents: 0,
+      aotcStudents: [],
+      retirementContributions: { client: 0, spouse: 0 },
+      selfEmploymentEarnings: 0,
+    },
+  }));
+
+  it("has real NIIT and no subpart-A tax (non-vacuous)", () => {
+    expect(result.flow.niit).toBe(380);
+    expect(result.flow.regularFederalIncomeTax).toBe(0);
+    expect(result.flow.capitalGainsTax).toBe(0);
+    expect(result.flow.amtAdditional).toBe(0);
+  });
+
+  it("does not let nonrefundable credits touch the NIIT", () => {
+    expect(result.flow.taxCredits).toBe(0);
+    expect(result.flow.refundableCredits).toBe(1_700);
+    expect(result.flow.totalFederalTax).toBe(-1_320);
+  });
+});
+
+describe("calculateTaxYear — credits: absent-household identity with ALL FIVE terms nonzero", () => {
+  // Review round 2, Important 1. The other absent-household fixture has
+  // amtAdditional === 0, so dropping `+ amtAdditional` from the roll-up's base
+  // survives it. Here every one of the five terms is nonzero, so the identity
+  // actually constrains all five.
+  //
+  // MFJ: wages 310000 + qual div 50000 + LTCG 20000, itemized 80000 of which
+  // 40000 is SALT, ISO spread 250000 (the file's F7 shape, plus investment
+  // income so NIIT and the 0.9% surtax also fire).
+  //   AGI 380000; itemized 80000 > std 32200 → taxableIncome 300000
+  //   incomeTaxBase = 300000 - 20000 - 50000 = 230000
+  //   regularTaxCalc = 2480 + 9120 + 24453 + (230000-211950)×.24 = 4332 → 40385
+  //   capGains: preferential 70000 stacked 230000→300000, all 15% → 10500
+  //   AMTI = 300000 + 40000 SALT add-back + 250000 ISO = 590000
+  //     taxable AMTI = 590000 - 140200 = 449800; LTCG slice 70000
+  //     ordinary 379800 → 244500×.26 = 63570 + 135300×.28 = 37884 → 101454
+  //     cap-gains portion 10500 → TMT 111954
+  //     amtAdditional = 111954 - (40385 + 10500 = 50885) = 61069
+  //   niit = min(70000, 380000-250000) × .038 = 70000×.038 = 2660
+  //   additionalMedicare = (310000-250000) × .009 = 540
+  //   total = 40385 + 10500 + 61069 + 2660 + 540 = 115154
+  const result = calculateTaxYear(makeInput({
+    earnedIncome: 310_000,
+    qualifiedDividends: 50_000,
+    longTermCapitalGains: 20_000,
+    itemizedDeductions: 80_000,
+    saltDeducted: 40_000,
+    isoSpread: 250_000,
+    flatStateRate: 0,
+  }));
+
+  it("has every component term nonzero (non-vacuous)", () => {
+    expect(result.flow.regularFederalIncomeTax).toBe(40_385);
+    expect(result.flow.capitalGainsTax).toBe(10_500);
+    expect(result.flow.amtAdditional).toBe(61_069);
+    expect(result.flow.niit).toBe(2_660);
+    expect(result.flow.additionalMedicare).toBe(540);
+  });
+
+  it("totalFederalTax is exactly the sum of all five, with no credits", () => {
+    expect(result.flow.taxCredits).toBe(0);
+    expect(result.flow.refundableCredits).toBe(0);
+    expect(result.flow.totalFederalTax).toBe(
+      result.flow.regularFederalIncomeTax +
+      result.flow.capitalGainsTax +
+      result.flow.amtAdditional +
+      result.flow.niit +
+      result.flow.additionalMedicare,
+    );
+    expect(result.flow.totalFederalTax).toBe(115_154);
+  });
+});
+
+describe("calculateTaxYear — credits: the credit base is all THREE subpart-A terms", () => {
+  // Review round 2, Important 2. In every other credit-bearing fixture
+  // capitalGainsTax and amtAdditional are both 0, so R5's "same three terms"
+  // is only ever exercised on regularTaxCalc — narrowing the argument at the
+  // computeCredits call to `regularTaxCalc` alone survives them all.
+  //
+  // Here bracket tax is small but cap-gains tax and AMT are large, so a
+  // narrowed base changes how much CTC is absorbed as nonrefundable versus
+  // spilling into refundable ACTC.
+  //
+  // MFJ: wages 60000 + LTCG 300000, ISO spread 400000, 3 qualifying children.
+  //   AGI 360000; std 32200 → taxableIncome 327800
+  //   incomeTaxBase = 327800 - 300000 = 27800
+  //   regularTaxCalc = 24800×.10 + 3000×.12 = 2480 + 360 = 2840
+  //   capGains: preferential 300000 stacked 27800→327800
+  //             (327800-99200) × .15 = 228600×.15 = 34290
+  //   AMTI = 327800 + 32200 std add-back + 400000 ISO = 760000
+  //     taxable AMTI = 619800; LTCG slice 300000 → ordinary 319800
+  //     244500×.26 = 63570 + 75300×.28 = 21084 → 84654
+  //     cap-gains portion = calcCapGainsTax(300000, base 27800) = 34290
+  //     TMT = 118944 → amtAdditional = 118944 - (2840 + 34290 = 37130) = 81814
+  //   niit = min(300000, 360000-250000) × .038 = 110000×.038 = 4180
+  //   subpartA base = 2840 + 34290 + 81814 = 118944  (NOT 2840, and NOT 37130)
+  //   CTC 3 × 2000 = 6000, MAGI 360000 < 400000 → no phase-down.
+  //     118944 of tax easily absorbs all 6000 → nonrefundable 6000, ACTC 0
+  //   total = max(0, 118944 - 6000) + 4180 = 112944 + 4180 = 117124
+  //
+  // Narrowed to regularTaxCalc alone (2840): only 2840 of CTC is absorbed and
+  // 3160 spills to ACTC → taxCredits 2840, refundableCredits 3160. The TOTAL is
+  // unchanged at 117124 — the outer Math.max absorbs it silently, exactly as R5
+  // warns — so the split, not the total, is what pins this.
+  const result = calculateTaxYear(makeInput({
+    earnedIncome: 60_000,
+    longTermCapitalGains: 300_000,
+    isoSpread: 400_000,
+    taxParams: params2026WithCredits(),
+    flatStateRate: 0,
+    household: {
+      qualifyingChildren: 3,
+      otherDependents: 0,
+      aotcStudents: [],
+      retirementContributions: { client: 0, spouse: 0 },
+      selfEmploymentEarnings: 0,
+    },
+  }));
+
+  it("has nonzero cap-gains tax AND nonzero AMT alongside the bracket tax", () => {
+    expect(result.flow.regularFederalIncomeTax).toBe(2_840);
+    expect(result.flow.capitalGainsTax).toBe(34_290);
+    expect(result.flow.amtAdditional).toBe(81_814);
+    expect(result.flow.niit).toBe(4_180);
+  });
+
+  it("absorbs the full CTC against all three terms, leaving nothing refundable", () => {
+    expect(result.flow.taxCredits).toBe(6_000);
+    expect(result.flow.refundableCredits).toBe(0);
+  });
+
+  it("rolls up to the credit-reduced total", () => {
+    expect(result.flow.totalFederalTax).toBe(117_124);
+  });
+});
+
+describe("calculateTaxYear — credits: earned income for the ACTC is wages PLUS net SE earnings", () => {
+  // IRC 24(d)(1)(B)(i) -> 32(c)(2)(A): "earned income" for the refundable CTC is
+  // wages PLUS net earnings from self-employment. `CalcInput.earnedIncome` is
+  // W-2 wages ONLY — it feeds calcFica and calcAdditionalMedicare, and widening
+  // it would double-charge FICA against income that `year-tax.ts` already taxes
+  // through SECA. So the SE figure rides on `household.selfEmploymentEarnings`
+  // and is added at the credits call site only.
+  //
+  // MFJ, $0 wages, $40,000 of net Schedule C, 2 qualifying children, itemizing
+  // $40,000 so there is NO tax liability for the CTC to offset:
+  //   AGI 40,000; itemized 40,000 > std 32,200 -> taxableIncome 0
+  //   regularTaxCalc 0, capGains 0, AMT 0 -> taxBeforeCredits 0
+  //   CTC gross = 2 x 2,000 = 4,000; MAGI 40,000 < 400,000 -> no phase-down
+  //   nonrefundable used = min(4,000, 0) = 0
+  //   ACTC = min(4,000 - 0, 2 x 1,700 = 3,400, 0.15 x (40,000 - 2,500) = 5,625)
+  //        = 3,400
+  const householdBase = {
+    qualifyingChildren: 2,
+    otherDependents: 0,
+    aotcStudents: [],
+    retirementContributions: { client: 0, spouse: 0 },
+  };
+  const inputBase = {
+    earnedIncome: 0,
+    ordinaryIncome: 40_000,   // Schedule C net, which IS in AGI
+    itemizedDeductions: 40_000,
+    taxParams: params2026WithCredits(),
+    flatStateRate: 0,
+  };
+
+  const withSe = calculateTaxYear(makeInput({
+    ...inputBase,
+    household: { ...householdBase, selfEmploymentEarnings: 40_000 },
+  }));
+  const withoutSe = calculateTaxYear(makeInput({
+    ...inputBase,
+    household: { ...householdBase, selfEmploymentEarnings: 0 },
+  }));
+
+  it("has no liability for the nonrefundable part to offset", () => {
+    expect(withSe.flow.taxableIncome).toBe(0);
+    expect(withSe.flow.regularFederalIncomeTax).toBe(0);
+    expect(withSe.flow.capitalGainsTax).toBe(0);
+    expect(withSe.flow.amtAdditional).toBe(0);
+    expect(withSe.flow.taxCredits).toBe(0);
+  });
+
+  it("pays the ACTC out of the SE earnings", () => {
+    expect(withSe.flow.refundableCredits).toBe(3_400);
+  });
+
+  it("pays NOTHING when the SE earnings are missing — the pre-R10 behaviour", () => {
+    // 0.15 x max(0, 0 - 2,500) = 0, so the whole ACTC is choked off. This is the
+    // assertion that fails if the credits call site stops adding SE earnings.
+    expect(withoutSe.flow.refundableCredits).toBe(0);
+  });
+
+  it("leaves FICA and the Additional Medicare surtax on WAGES only", () => {
+    // Both read `earnedIncome`, which stays $0. Widening that field instead
+    // would have charged 15.3% here on income SECA already taxes.
+    expect(withSe.flow.fica).toBe(0);
+    expect(withSe.flow.additionalMedicare).toBe(0);
+    expect(withSe.flow.fica).toBe(withoutSe.flow.fica);
+  });
+
+  it("lets the refund drive totalFederalTax negative", () => {
+    expect(withSe.flow.totalFederalTax).toBe(-3_400);
+  });
+
+  it("ignores a negative SE figure rather than reducing wage earned income", () => {
+    // A Schedule C LOSS does not reduce 32(c)(2) earned income below wages —
+    // `Math.max(0, ...)` at the call site. Mirrors tax-analysis/adapter.ts:66.
+    const withLoss = calculateTaxYear(makeInput({
+      ...inputBase,
+      earnedIncome: 40_000,
+      ordinaryIncome: 0,
+      household: { ...householdBase, selfEmploymentEarnings: -25_000 },
+    }));
+    expect(withLoss.flow.refundableCredits).toBe(3_400);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task 14b review round 2, Minor 4. `creditsInOtherFromFlow` (lib/tax/other-tax.ts)
+// subtracts `taxCredits + refundableCredits` from the Other bucket WITHOUT
+// re-clamping, and both itemizing surfaces depend on that being safe. Its
+// justification is that `computeCredits` is handed `subpartATaxBeforeCredits` as
+// its clamp base, so `flow.taxCredits` can never exceed subpart A.
+//
+// Every other D2/C3 fixture is a hand-authored `flow` literal — none of them
+// execute this path. If a future change gave `computeCredits` a different clamp
+// base (say the grand total including NIIT), the helper would over-subtract on
+// BOTH surfaces with zero red anywhere. This runs the REAL calculation and pins
+// the coupling at its source.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("calculateTaxYear — the clamp base creditsInOtherFromFlow relies on", () => {
+  // MFJ, 3 children, $40k wages, seeded CTC. AGI 40,000 − std 32,200 = 7,800
+  // taxable, all in the 10% bracket → subpartA = 780 with capGains/AMT at 0.
+  // Gross CTC is 3 × 2,000 = 6,000, far above 780, so the clamp BINDS: the
+  // applied nonrefundable total is pinned to subpart A exactly.
+  const result = calculateTaxYear(makeInput({
+    earnedIncome: 40_000,
+    flatStateRate: 0,
+    taxParams: params2026WithCredits(),
+    household: {
+      qualifyingChildren: 3,
+      otherDependents: 0,
+      aotcStudents: [],
+      retirementContributions: { client: 0, spouse: 0 },
+      selfEmploymentEarnings: 0,
+    },
+  }));
+  const subpartA = result.flow.regularFederalIncomeTax
+    + result.flow.capitalGainsTax
+    + result.flow.amtAdditional;
+
+  it("never applies more nonrefundable credit than subpart A tax", () => {
+    expect(result.flow.taxCredits).toBeLessThanOrEqual(subpartA);
+  });
+
+  it("and the clamp BINDS here at a nonzero figure, so the check above is not vacuous", () => {
+    // One assertion, two facts: the applied total equals subpart A (clamp bit)
+    // and that shared value is > 0 (the fixture actually exercises credits).
+    expect({ taxCredits: result.flow.taxCredits, subpartA }).toEqual({ taxCredits: 780, subpartA: 780 });
   });
 });

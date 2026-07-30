@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { ProjectionYear } from "@/engine";
-import { otherTaxFromFlow } from "@/lib/tax/other-tax";
+import { otherTaxFromFlow, creditsInOtherFromFlow } from "@/lib/tax/other-tax";
 import { TaxDetailTooltip } from "./tax-detail-tooltip";
 import {
   detectRegimeTransitions,
@@ -131,7 +131,7 @@ export const FLOW_COLUMNS: Column[] = [
     key: "otherTaxes",
     label: "Other",
     tooltip:
-      "Cap Gains, AMT, NIIT, Addl Medicare, FICA, State, and Early-Withdrawal Penalty — everything in Total Tax beyond Regular Federal. Click to drill down. (Trust & beneficiary tax are shown separately and are NOT in Total Tax.)",
+      "Cap Gains, AMT, NIIT, Addl Medicare, FICA, State, and Early-Withdrawal Penalty, LESS federal tax credits — everything in Total Tax beyond Regular Federal (which stays pre-credit). Click to drill down. (Trust & beneficiary tax are shown separately and are NOT in Total Tax.)",
     value: (y) => computeOtherTaxes(y),
   },
   {
@@ -150,7 +150,10 @@ export const FLOW_COLUMNS: Column[] = [
   },
 ];
 
-function aboveLineColumns(years: ProjectionYear[]): Column[] {
+/** Exported for the same reason `otherColumns` is: the zero-suppression filter
+ *  below decides which columns an advisor sees, and it is not reachable through
+ *  the rendered component without a full ProjectionYear fixture. */
+export function aboveLineColumns(years: ProjectionYear[]): Column[] {
   const cols: Column[] = [
     {
       key: "al_retirement",
@@ -169,6 +172,12 @@ function aboveLineColumns(years: ProjectionYear[]): Column[] {
       label: "Manual Entries",
       tooltip: "Manual above-line deduction entries from the Deductions page.",
       value: (y) => y.deductionBreakdown?.aboveLine.manualEntries ?? 0,
+    },
+    {
+      key: "al_student_loan",
+      label: "Student Loan Interest",
+      tooltip: "Interest on student liabilities, after the annual cap and the MAGI phase-out.",
+      value: (y) => y.deductionBreakdown?.aboveLine.studentLoanInterest ?? 0,
     },
     {
       key: "al_total",
@@ -233,11 +242,22 @@ export function otherColumns(years: ProjectionYear[]): Column[] {
         "10% penalty on pre-59½ withdrawals used to fund a cash-flow shortfall. Included in Total Tax.",
       value: (y) => y.taxResult?.flow.earlyWithdrawalPenalty ?? 0,
     },
+    // Negative component. Credits are netted inside Total Tax while Regular Fed
+    // stays pre-credit, so they land entirely in this bucket; without this column
+    // the components to the left of Other Total overshoot it by the credit
+    // dollars. Zero-suppressed by the filter below, like every other component.
+    {
+      key: "credits",
+      label: "Federal Credits",
+      tooltip:
+        "Nonrefundable + refundable federal tax credits (CTC/ACTC, Saver's, AOTC, ODC). Shown negative because they REDUCE tax: they are netted inside Total Tax while Regular Fed stays pre-credit.",
+      value: (y) => creditsInOtherFromFlow(y.taxResult?.flow),
+    },
     {
       key: "other_total",
       label: "Other Total",
       tooltip:
-        "Sum of the federal tax components (= Total Tax − Regular Federal). Excludes trust & beneficiary tax.",
+        "Total Tax − Regular Federal. The components to the left sum to it (credits included as a negative), except for self-employed households: SECA self-employment tax is inside this total but has no column of its own. Excludes trust & beneficiary tax.",
       value: (y) => computeOtherTaxes(y),
     },
     // Informational columns — NOT part of the household Total Tax. Placed after

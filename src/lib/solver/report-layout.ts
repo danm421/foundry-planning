@@ -19,7 +19,11 @@ export type ReportKey =
   | "balanceSheet"
   | "summaries";
 
-/** Canonical report order. `REPORT_TABS` in solver-chart-panel.tsx must match. */
+/** Canonical report order. `REPORT_TABS` in solver-chart-panel.tsx must match.
+ *  Note there is no `thresholds` key: the Thresholds report is a scope INSIDE
+ *  the Taxes report (see tax-bracket-tab.tsx), not a tab of its own. Advisors
+ *  who stored a layout while it briefly was one are handled by rule 4 below,
+ *  which drops non-canonical stored ids. */
 export const REPORT_KEYS: readonly ReportKey[] = [
   "portfolio",
   "cashflow",

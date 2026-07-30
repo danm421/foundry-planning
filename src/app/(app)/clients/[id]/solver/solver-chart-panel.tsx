@@ -38,6 +38,7 @@ import { SolverSummaryPanel } from "./solver-summary-panel";
 import { SolverMonteCarloPanel } from "./solver-monte-carlo-panel";
 import { EducationReportPanel } from "@/components/solver/education/education-report-panel";
 import { SolverBalanceSheetPanel } from "./solver-balance-sheet-panel";
+import { SolverThresholdsPanel } from "./solver-thresholds-panel";
 
 // `label` is the full name (accessible name + hover title); `short` is what
 // renders beneath the icon — mirrors the left-pane LEFT_TABS so both tab strips
@@ -561,7 +562,20 @@ export function SolverChartPanel({
 
       {tab === "taxBracket" ? (
         <div className="mt-3">
-          <TaxBracketTab years={currentProjection} />
+          {/* Thresholds is a scope of the Taxes report, not a report of its
+              own — it rides the same Federal/State group the bracket tables
+              use. Only the solver has the base projection and working tree it
+              needs, so it's passed down as a ready-made node. */}
+          <TaxBracketTab
+            years={currentProjection}
+            thresholds={
+              <SolverThresholdsPanel
+                years={currentProjection}
+                baseProjection={baseProjection}
+                workingTree={workingTree}
+              />
+            }
+          />
         </div>
       ) : showTable ? (
         <SolverYearTablePanel

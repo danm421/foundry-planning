@@ -83,6 +83,8 @@ export interface AssumptionsSettings {
   capitalLossCarryforwardLtSourceYear: number | null;
   surplusSpendPct: string;
   surplusSaveAccountId: string | null;
+  coveredByWorkplacePlan: "auto" | "yes" | "no";
+  spouseCoveredByWorkplacePlan: "auto" | "yes" | "no";
 }
 
 interface ModelPortfolioOption {
@@ -166,6 +168,8 @@ export default function AssumptionsClient({
             outOfHouseholdDniRate={settings.outOfHouseholdDniRate}
             priorTaxableGiftsClient={settings.priorTaxableGiftsClient}
             priorTaxableGiftsSpouse={settings.priorTaxableGiftsSpouse}
+            coveredByWorkplacePlan={settings.coveredByWorkplacePlan}
+            spouseCoveredByWorkplacePlan={settings.spouseCoveredByWorkplacePlan}
             capitalLossCarryforwardSt={settings.capitalLossCarryforwardSt}
             capitalLossCarryforwardLt={settings.capitalLossCarryforwardLt}
             capitalLossCarryforwardLtSourceYear={settings.capitalLossCarryforwardLtSourceYear}

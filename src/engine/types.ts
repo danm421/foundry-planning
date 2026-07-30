@@ -1,4 +1,6 @@
 import type { TaxResult, TaxYearParameters, IrmaaTier as TaxIrmaaTier } from "../lib/tax/types";
+import type { ThresholdFacts } from "../lib/tax/thresholds";
+import type { CapAdjustment } from "./contribution-limits";
 import type { ClientDeductionRow } from "../lib/tax/derive-deductions";
 import type { TrustSubType as LibTrustSubType } from "@/lib/entities/trust";
 import type { TrustTaxBreakdown, TrustWarning } from "./trust-tax/types";
@@ -363,6 +365,16 @@ export interface FamilyMember {
    *  left optional so older test fixtures continue to typecheck. Defaults to
    *  `{}` semantically. */
   inheritanceClassOverride?: Partial<Record<"PA" | "NJ" | "KY" | "NE" | "MD", "A" | "B" | "C" | "D">>;
+  /**
+   * Advisor override for "is this person claimed as a dependent on the
+   * household's return". `"auto"` (the default, and what an absent value means)
+   * infers it: a child/stepchild under 17 in the tax year is a qualifying child
+   * for IRC 24. `"no"` excludes the person outright. `"yes"` is what makes a
+   * NON-qualifying-child (an adult child, a parent, an over-17 student) count
+   * for the IRC 24(h)(4) $500 Other Dependent Credit. Optional so existing
+   * fixtures keep compiling — read with `?? "auto"`.
+   */
+  claimedAsDependent?: "auto" | "yes" | "no";
 }
 
 export type GiftEventKind = "outright" | "clt_remainder_interest";
@@ -667,6 +679,19 @@ export interface ClientInfo {
   spouseRetirementMonth?: number;
   spouseLifeExpectancy?: number | null;
   filingStatus: "single" | "married_joint" | "married_separate" | "head_of_household";
+  /**
+   * Advisor override for IRC 219(g)(5) "active participant" status — whether
+   * the client is covered by a workplace retirement plan, which is what
+   * triggers the traditional-IRA deduction phase-out. `"auto"` (the default,
+   * and what an absent value means) infers coverage from the year's savings
+   * rules; `"yes"`/`"no"` force it. Optional so the several hundred existing
+   * fixture construction sites keep compiling — read with `?? "auto"`.
+   */
+  coveredByWorkplacePlan?: "auto" | "yes" | "no";
+  /** Spouse equivalent of `coveredByWorkplacePlan`. Ignored — forced to
+   *  "not covered" — on any filing status that is neither married-joint nor
+   *  married-separate; see the `coveredSpouse` derivation in projection.ts. */
+  spouseCoveredByWorkplacePlan?: "auto" | "yes" | "no";
 }
 
 export interface BeneficiaryRef {
@@ -1436,6 +1461,39 @@ export interface ProjectionYear {
 
   deductionBreakdown?: DeductionBreakdown;
 
+  /**
+   * The year's resolved threshold/phase-out inputs — household composition plus
+   * each of the four MAGIs, which are NOT interchangeable (IRC 219(g)(3)(A) vs
+   * 221(b)(2)(C)). Populated in bracket mode only; flat mode computes none of
+   * these figures.
+   *
+   * `params` is excluded because the Thresholds report already receives the
+   * resolved `TaxYearParameters` separately and the object is large. `year` IS
+   * kept: it is the REQUESTED year, never `params.year` (which the resolver
+   * stamps with the SOURCE year when inflating an out-year forward), and
+   * keeping it makes that auditable downstream.
+   */
+  thresholdFacts?: Omit<ThresholdFacts, "params">;
+
+  /**
+   * What the two contribution-limit passes did to this year's savings rules:
+   * IRS annual-limit reductions (`reason: "age_limit"`) and IRC 408A(c)(3)
+   * Roth-MAGI re-tags (`reason: "roth_magi_backdoor"`, whose per-rule dollars
+   * are also in `backdoorByRuleId`). Bracket mode only, and present only in
+   * years where something was actually capped or re-tagged.
+   *
+   * `backdoorByRuleId` is a SLICE of the contribution, never an addition to it:
+   * account balances are identical either way, only the tax treatment of the
+   * portion that must arrive as a conversion differs. It rides on the
+   * projection year because it is resolved against the year's real Roth MAGI,
+   * which is only known after the deduction assembly — without it the Roth gate
+   * would compute a result no consumer could observe.
+   */
+  contributionAdjustments?: {
+    adjustments: CapAdjustment[];
+    backdoorByRuleId: Record<string, number>;
+  };
+
   withdrawals: {
     byAccount: Record<string, number>;
     total: number;
@@ -1789,6 +1847,8 @@ export interface DeductionBreakdown {
     retirementContributions: number;
     taggedExpenses: number;
     manualEntries: number;
+    /** IRC 221 student-loan interest, post-cap and post-MAGI-phase-out. */
+    studentLoanInterest: number;
     total: number;
     bySource: Record<string, { label: string; amount: number }>;
   };

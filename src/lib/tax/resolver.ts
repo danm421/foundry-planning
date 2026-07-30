@@ -62,6 +62,12 @@ function inflateParams(base: TaxYearParameters, generalFactor: number, ssFactor:
     if (!step) return val; // not indexed — return as-is
     return floorToStep(val * generalFactor, step);
   };
+  // Null-safe wrapper: the 21 new threshold/credit columns are `number | null`
+  // (unseeded until the workbook is loaded). An unguarded floorToStep(null * f,
+  // step) yields NaN, so every one of those fields must go through this rather
+  // than `inf` directly.
+  const infN = (val: number | null, key: string): number | null =>
+    val == null ? null : inf(val, key);
 
   return {
     year: base.year, // logical "source year" for the params; resolver tracks the requested year separately
@@ -162,5 +168,44 @@ function inflateParams(base: TaxYearParameters, generalFactor: number, ssFactor:
     partDNationalBase: base.partDNationalBase ?? null,
     irmaaBracketsMfj: base.irmaaBracketsMfj ?? null,
     irmaaBracketsSingle: base.irmaaBracketsSingle ?? null,
+    // IRC 408A(c)(3) Roth MAGI phase-out. All four fields index with inflation.
+    rothPhaseout: {
+      startMfj: infN(base.rothPhaseout.startMfj, "rothPhaseout.startMfj"),
+      endMfj: infN(base.rothPhaseout.endMfj, "rothPhaseout.endMfj"),
+      startSingle: infN(base.rothPhaseout.startSingle, "rothPhaseout.startSingle"),
+      endSingle: infN(base.rothPhaseout.endSingle, "rothPhaseout.endSingle"),
+    },
+    // IRC 219(g) traditional-IRA deduction phase-outs. All six fields index.
+    iraDeduct: {
+      coveredStartMfj: infN(base.iraDeduct.coveredStartMfj, "iraDeduct.coveredStartMfj"),
+      coveredEndMfj: infN(base.iraDeduct.coveredEndMfj, "iraDeduct.coveredEndMfj"),
+      coveredStartSingle: infN(base.iraDeduct.coveredStartSingle, "iraDeduct.coveredStartSingle"),
+      coveredEndSingle: infN(base.iraDeduct.coveredEndSingle, "iraDeduct.coveredEndSingle"),
+      spousalStartMfj: infN(base.iraDeduct.spousalStartMfj, "iraDeduct.spousalStartMfj"),
+      spousalEndMfj: infN(base.iraDeduct.spousalEndMfj, "iraDeduct.spousalEndMfj"),
+    },
+    // IRC 221 student-loan interest deduction. The four range bounds index;
+    // maxDeduction does NOT — IRC 221(b)(1) fixes the cap at $2,500 and it
+    // has never been indexed.
+    studentLoan: {
+      maxDeduction: base.studentLoan.maxDeduction,
+      startMfj: infN(base.studentLoan.startMfj, "studentLoan.startMfj"),
+      endMfj: infN(base.studentLoan.endMfj, "studentLoan.endMfj"),
+      startSingle: infN(base.studentLoan.startSingle, "studentLoan.startSingle"),
+      endSingle: infN(base.studentLoan.endSingle, "studentLoan.endSingle"),
+    },
+    // IRC 24 child tax credit. perChild/refundableMax index; odcPerDependent
+    // does NOT — IRC 24(h)(4) fixes the other-dependent credit at $500.
+    ctc: {
+      perChild: infN(base.ctc.perChild, "ctc.perChild"),
+      refundableMax: infN(base.ctc.refundableMax, "ctc.refundableMax"),
+      odcPerDependent: base.ctc.odcPerDependent,
+    },
+    // IRC 25B Saver's Credit tiers pass through UNCHANGED, deliberately — no
+    // ROUNDING_STEPS entry exists for this field. SECURE 2.0 §103 replaces the
+    // Saver's Credit with the Saver's Match after 2026, so statusFor() returns
+    // "na" for any year past STATUTORY_FIXED.saversCreditLastYear. Inflating
+    // tiers that can never be read for an out-of-table year would be noise.
+    saversCredit: base.saversCredit,
   };
 }

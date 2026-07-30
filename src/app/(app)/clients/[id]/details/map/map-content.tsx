@@ -44,6 +44,7 @@ import {
   savingsToMapItem,
   toMapItem,
 } from "@/lib/household-map/map-items";
+import { isSocialSecurityIncome, ssStartNote } from "@/lib/household-map/social-security";
 import { buildFlowScenarioFields } from "@/lib/household-map/flow-write";
 import { pruneScenarioFields } from "@/lib/household-map/scenario-fields";
 import type { ColumnContext, MapItem, MapPerson } from "@/lib/household-map/types";
@@ -195,7 +196,13 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
     ...effectiveTree.liabilities.map((l: Liability) =>
       toMapItem(l, "liability", "debt", -l.balance, ctx),
     ),
-    ...effectiveTree.incomes.map((i: Income) => incomeToMapItem(i, accountById, ctx)),
+    // The 4th argument is Social Security's timing label. Every other income
+    // gets null and keeps its year range; an SS row's persisted years are inert,
+    // so an unclaimed benefit's card names the CLAIM AGE instead — see
+    // `ssStartNote`. Keyed off `planStartYear`, never the wall clock.
+    ...effectiveTree.incomes.map((i: Income) =>
+      incomeToMapItem(i, accountById, ctx, ssStartNote(i, effectiveClient, planStartYear)),
+    ),
     ...effectiveTree.savingsRules.map((s: SavingsRule) => savingsToMapItem(s, accountById, ctx)),
     ...effectiveTree.expenses.map((e: Expense) => expenseToMapItem(e, accountById, ctx)),
   ];
@@ -222,14 +229,26 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
   //
   // Both keep their cards on purpose: a premium is a real outflow and an SS
   // benefit is real income, so dropping either would understate a band
-  // subtotal. Missing the hydration entry is what makes those cards render
-  // non-interactive (see `isItemEditable` in household-map-view.tsx). A visibly
-  // non-editable card beats a silently missing one — or a silently destructive
-  // one.
+  // subtotal.
+  //
+  // The two exclusions no longer mean the same thing for the CARD, though.
+  // Policy rows stay inert — no DB row exists, so no write path can accept them.
+  // Social security is excluded from THIS map only to keep it away from the
+  // quick-edit drawer; `ssIncomeRows` below routes it to `SocialSecurityDialog`
+  // instead, which submits every SS field and so cannot produce the empty diff.
   const incomeRows: Record<string, IncomeView> = Object.fromEntries(
     effectiveTree.incomes
       .filter(isHydratableIncome)
       .map((i: Income) => [i.id, incomeEngineToView(i)] as const),
+  );
+  // The FULL engine rows, not `IncomeView`s: the view type carries none of
+  // `claimingAge`, `claimingAgeMonths`, `claimingAgeMode`, `piaMonthly` or
+  // `ssBenefitMode`, so a view-hydrated dialog would open every scenario at
+  // "claim at FRA" and save that back over the scenario's real choice.
+  const ssIncomeRows: Record<string, Income> = Object.fromEntries(
+    effectiveTree.incomes
+      .filter(isSocialSecurityIncome)
+      .map((i: Income) => [i.id, i] as const),
   );
   const expenseRows: Record<string, ExpenseView> = Object.fromEntries(
     effectiveTree.expenses
@@ -448,12 +467,19 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
       goals={goals}
       canEdit={permission === "edit"}
       incomeRows={incomeRows}
+      ssIncomeRows={ssIncomeRows}
       expenseRows={expenseRows}
       savingsRuleRows={savingsRuleRows}
       savingsSchedules={savingsSchedules}
       flowScenarioFields={flowScenarioFields}
       clientScenarioFields={clientScenarioFields}
       planSettingsScenarioFields={planSettingsScenarioFields}
+      // The typed READ models for `SocialSecurityDialog`, distinct from the two
+      // pruned WRITE payloads above. Scenario-effective, so a solver "retire at
+      // 62" scenario resolves an `at_retirement` claim age to 62 in the dialog
+      // exactly as `ssStartNote` did on the card that opened it.
+      clientInfo={effectiveClient}
+      planSettings={effectiveTree.planSettings}
       accountOptions={accountOptions}
       accountRows={accountRows}
       growthContext={growthContext}
@@ -464,10 +490,15 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
       businessOptions={businessOptions}
       rothIraAccountOptions={rothIraAccountOptions}
       resolvedInflationRate={effectiveTree.planSettings.inflationRate}
-      familyMemberOptions={familyMemberRows.map(({ id: fmId, role, firstName }) => ({
+      // `birthYear` is for the quick-edit drawer's education goal, which
+      // time-boxes the goal to the beneficiary's college years. Null when the
+      // DOB is absent or unparseable — the drawer then simply skips the
+      // auto-fill rather than inventing a start year.
+      familyMemberOptions={familyMemberRows.map(({ id: fmId, role, firstName, dateOfBirth }) => ({
         id: fmId,
         role,
         firstName,
+        birthYear: birthYearFromDob(dateOfBirth),
       }))}
       entityOptions={entityRows.map((e) => ({ id: e.id, name: e.name }))}
     />

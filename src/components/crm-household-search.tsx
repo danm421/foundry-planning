@@ -29,6 +29,8 @@ export function CrmHouseholdSearch() {
       const params = new URLSearchParams(searchParams);
       if (value.trim()) params.set(key, value);
       else params.delete(key);
+      // Changing the result set invalidates how far the user had paged.
+      params.delete("take");
       const qs = params.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     };

@@ -46,6 +46,9 @@ export function BookSwitcher() {
     const params = new URLSearchParams(searchParams);
     if (next === "all") params.delete("advisor");
     else params.set("advisor", next);
+    // Switching books changes the result set; how far the user had paged is
+    // meaningless against it.
+    params.delete("take");
     const qs = params.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }

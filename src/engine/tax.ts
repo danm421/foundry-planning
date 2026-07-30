@@ -123,6 +123,10 @@ export function calculateTaxYearFlat(input: FlatCalcInput): TaxResult {
       regularTaxCalc: federal,
       amtCredit: 0,
       taxCredits: 0,
+      refundableCredits: 0,
+      // Flat mode runs no credit layer at all, so no year is ever an IRC
+      // 25A(b)(2)(C) election and the four-year allowance is never spent.
+      aotcAllowed: 0,
       regularFederalIncomeTax: federal,
       capitalGainsTax: 0,
       amtAdditional: 0,
@@ -197,6 +201,12 @@ export function makeEmptyTaxParams(year: number): TaxYearParameters {
     addlMedicareThreshold: { mfj: 0, single: 0, mfs: 0 },
     niitRate: 0, niitThreshold: { mfj: 0, single: 0, mfs: 0 },
     qbi: { thresholdMfj: 0, thresholdSingleHohMfs: 0, phaseInRangeMfj: 0, phaseInRangeOther: 0 },
+    rothPhaseout: { startMfj: null, endMfj: null, startSingle: null, endSingle: null },
+    iraDeduct: { coveredStartMfj: null, coveredEndMfj: null, coveredStartSingle: null,
+                 coveredEndSingle: null, spousalStartMfj: null, spousalEndMfj: null },
+    studentLoan: { maxDeduction: null, startMfj: null, endMfj: null, startSingle: null, endSingle: null },
+    ctc: { perChild: null, refundableMax: null, odcPerDependent: null },
+    saversCredit: { mfj: [], single: [], hoh: [] },
     contribLimits: {
       ira401kElective: 0, ira401kCatchup50: 0, ira401kCatchup6063: null,
       iraTradLimit: 0, iraCatchup50: 0,

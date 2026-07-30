@@ -5,7 +5,9 @@ import { ToastProvider } from "../toast";
 import { UnifiedClientsTable, type UnifiedClientRow } from "../unified-clients-table";
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: vi.fn() }),
+  useRouter: () => ({ refresh: vi.fn(), replace: vi.fn(), push: vi.fn() }),
+  usePathname: () => "/clients",
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 const ROWS: UnifiedClientRow[] = [

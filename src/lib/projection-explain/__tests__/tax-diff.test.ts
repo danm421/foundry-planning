@@ -223,7 +223,7 @@ describe("diffTaxYears", () => {
       taxResult: makeTaxResult({ flow: { ...lines, totalFederalTax: 59_360, totalTax: 65_360 } }), // +18,360 SECA
     });
     const d = diffTaxYears(prev, next, DRILL_CTX);
-    const residual = d.taxLineDeltas.find((l) => l.label === "Self-employment tax and other federal adjustments");
+    const residual = d.taxLineDeltas.find((l) => l.label === "Other federal adjustments (incl. self-employment tax)");
     expect(residual).toBeDefined();
     expect(residual!.delta).toBe(13_360);
     // Eight lines identical ⇒ only the residual survives the LINE_FLOOR filter, so

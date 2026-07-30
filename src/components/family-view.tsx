@@ -39,6 +39,11 @@ type Relationship =
   | "other";
 export type EntityType = "trust" | "llc" | "s_corp" | "c_corp" | "partnership" | "foundation" | "other";
 
+// Advisor override for dependent-claim status. "auto" defers to Task 11's
+// inference (relationship child/stepchild + age under 17 in the tax year);
+// "yes"/"no" force the value regardless of what the projection would infer.
+export type DependentOverride = "auto" | "yes" | "no";
+
 export interface FamilyMember {
   id: string;
   firstName: string;
@@ -50,6 +55,12 @@ export interface FamilyMember {
   notes: string | null;
   domesticPartner?: boolean;
   inheritanceClassOverride?: Partial<Record<"PA" | "NJ" | "KY" | "NE" | "MD", "A" | "B" | "C" | "D">>;
+  // Optional so the many unrelated consumers of this type (beneficiary,
+  // insurance, gift, and wills dialogs) that reuse `FamilyMember` purely for
+  // name/relationship display don't have to carry a field they never touch.
+  // Real reads always populate it (NOT NULL, default "auto") — callers that
+  // care fall back to "auto" explicitly.
+  claimedAsDependent?: DependentOverride;
 }
 
 export interface NamePctRow {
@@ -252,6 +263,10 @@ const RELATIONSHIP_LABELS: Record<Relationship, string> = {
   other: "Other",
 };
 
+// Task 11's dependent-eligible relationship set — the row select only makes
+// sense for members who could ever be claimed as a dependent.
+const DEPENDENT_ELIGIBLE_RELATIONSHIPS = new Set<Relationship>(["child", "stepchild"]);
+
 export const ENTITY_LABELS: Record<EntityType, string> = {
   trust: "Trust",
   llc: "LLC",
@@ -342,6 +357,7 @@ export default function FamilyView({
   const [editingMember, setEditingMember] = useState<FamilyMember | undefined>();
   const [deletingMember, setDeletingMember] = useState<FamilyMember | null>(null);
   const [membersEdit, setMembersEdit] = useState(false);
+  const [claimedAsDependentError, setClaimedAsDependentError] = useState<string | null>(null);
 
   const [entityDialogOpen, setEntityDialogOpen] = useState(false);
   const [editingEntity, setEditingEntity] = useState<Entity | undefined>();
@@ -379,7 +395,6 @@ export default function FamilyView({
   }, [clientId]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot mount fetch; setRevocableTrusts only runs after the awaited fetch resolves (no synchronous cascade). Re-fetched explicitly via the dialog's onSaved.
     void fetchRevocableTrusts();
   }, [fetchRevocableTrusts]);
 
@@ -446,6 +461,41 @@ export default function FamilyView({
     other: [],
   };
   for (const m of members) byRel[m.relationship].push(m);
+
+  // Row-select handler for the dependent-claim override. Optimistic with
+  // rollback — mirrors the local-state pattern the dialog's onSaved already
+  // uses elsewhere in this file rather than relying solely on router.refresh().
+  // try/catch + single rollback path mirrors this file's own convention for a
+  // fetch-then-persist handler (see the external-beneficiary row's submit()).
+  async function handleClaimedAsDependentChange(member: FamilyMember, value: DependentOverride) {
+    const previous = member.claimedAsDependent;
+    setMembers((prev) => prev.map((x) => (x.id === member.id ? { ...x, claimedAsDependent: value } : x)));
+    setClaimedAsDependentError(null);
+    try {
+      const res = await writer.submit(
+        {
+          op: "edit",
+          targetKind: "family_member",
+          targetId: member.id,
+          desiredFields: { claimedAsDependent: value },
+        },
+        {
+          url: `/api/clients/${clientId}/family-members/${member.id}`,
+          method: "PUT",
+          body: { claimedAsDependent: value },
+        },
+      );
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error ?? `Failed to save (HTTP ${res.status})`);
+      }
+    } catch (e) {
+      setMembers((prev) => prev.map((x) => (x.id === member.id ? { ...x, claimedAsDependent: previous } : x)));
+      setClaimedAsDependentError(
+        e instanceof Error ? e.message : "Failed to save dependent-claim status",
+      );
+    }
+  }
 
   return (
     <div className="space-y-8">
@@ -537,6 +587,12 @@ export default function FamilyView({
           </div>
         </header>
 
+        {claimedAsDependentError && (
+          <p className="mb-3 rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">
+            {claimedAsDependentError}
+          </p>
+        )}
+
         {members.length === 0 ? (
           <EmptyState label="No family members added yet." />
         ) : (
@@ -548,11 +604,12 @@ export default function FamilyView({
                   <th className="px-4 py-2">Relationship</th>
                   <th className="px-4 py-2">Age</th>
                   <th className="px-4 py-2">Notes</th>
+                  <th className="px-4 py-2">Dependent</th>
                   <th className="px-4 py-2" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
-                {(["child", "grandchild", "parent", "sibling", "other"] as Relationship[]).flatMap((rel) =>
+                {(["child", "stepchild", "grandchild", "parent", "sibling", "other"] as Relationship[]).flatMap((rel) =>
                   byRel[rel].map((m) => (
                     <tr
                       key={m.id}
@@ -569,6 +626,27 @@ export default function FamilyView({
                       <td className="px-4 py-2 text-sm text-gray-300">{RELATIONSHIP_LABELS[m.relationship]}</td>
                       <td className="px-4 py-2 text-sm text-gray-300">{computeAge(m.dateOfBirth)}</td>
                       <td className="px-4 py-2 text-sm text-gray-400 truncate max-w-[260px]">{m.notes ?? ""}</td>
+                      <td className="px-4 py-2 text-sm">
+                        {DEPENDENT_ELIGIBLE_RELATIONSHIPS.has(m.relationship) ? (
+                          <select
+                            aria-label={`Claimed as dependent — ${m.firstName}`}
+                            value={m.claimedAsDependent ?? "auto"}
+                            disabled={!canEdit}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              handleClaimedAsDependentChange(m, e.target.value as DependentOverride);
+                            }}
+                            className="rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <option value="auto">Auto</option>
+                            <option value="yes">Yes</option>
+                            <option value="no">No</option>
+                          </select>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-2 text-right">
                         {membersEdit && (
                           <button

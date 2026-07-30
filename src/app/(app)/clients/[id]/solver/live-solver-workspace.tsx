@@ -41,6 +41,7 @@ import { SolverRowSavingsContributions } from "./solver-row-savings-contribution
 import { SolverRowIncomes } from "./solver-row-incomes";
 import { SolverRowLivingExpenseScale } from "./solver-row-living-expense-scale";
 import { SolverActionBar } from "./solver-action-bar";
+import { ClientHeaderActions } from "@/components/client-header-actions";
 import { lifetimeTaxes, portfolioAtYear } from "@/lib/solver/solver-summary-metrics";
 import { useSolverNetToHeirs } from "./use-solver-net-to-heirs";
 import { SaveAsScenarioDialog } from "./save-as-scenario-dialog";
@@ -1537,20 +1538,25 @@ export function LiveSolverWorkspace({
         />
       </div>
 
-      <SolverActionBar
-        hasMutations={mutations.length > 0}
-        canSaveToBase={mutations.some(isBaseSavableMutation)}
-        canUpdateScenario={isScenarioSource}
-        scenarioName={scenarioName}
-        solveActive={activeSolve !== null}
-        savingToBase={savingToBase}
-        updating={updatingScenario}
-        canEdit={canEdit}
-        onReset={handleReset}
-        onSave={() => setSaveOpen(true)}
-        onSaveToBase={handleSaveToBase}
-        onUpdateScenario={handleUpdateScenario}
-      />
+      {/* Portaled into the client header row next to the scenario chip. It
+          costs the workspace no height, which is what lets both panes run all
+          the way down to the footer. */}
+      <ClientHeaderActions>
+        <SolverActionBar
+          hasMutations={mutations.length > 0}
+          canSaveToBase={mutations.some(isBaseSavableMutation)}
+          canUpdateScenario={isScenarioSource}
+          scenarioName={scenarioName}
+          solveActive={activeSolve !== null}
+          savingToBase={savingToBase}
+          updating={updatingScenario}
+          canEdit={canEdit}
+          onReset={handleReset}
+          onSave={() => setSaveOpen(true)}
+          onSaveToBase={handleSaveToBase}
+          onUpdateScenario={handleUpdateScenario}
+        />
+      </ClientHeaderActions>
 
       <SaveAsScenarioDialog
         open={saveOpen}

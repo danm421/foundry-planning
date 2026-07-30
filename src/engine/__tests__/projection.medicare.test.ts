@@ -83,6 +83,12 @@ function makeTaxYearRow(year: number): TaxYearParameters {
       thresholdMfj: 0, thresholdSingleHohMfs: 0,
       phaseInRangeMfj: 0, phaseInRangeOther: 0,
     },
+    rothPhaseout: { startMfj: null, endMfj: null, startSingle: null, endSingle: null },
+    iraDeduct: { coveredStartMfj: null, coveredEndMfj: null, coveredStartSingle: null,
+                 coveredEndSingle: null, spousalStartMfj: null, spousalEndMfj: null },
+    studentLoan: { maxDeduction: null, startMfj: null, endMfj: null, startSingle: null, endSingle: null },
+    ctc: { perChild: null, refundableMax: null, odcPerDependent: null },
+    saversCredit: { mfj: [], single: [], hoh: [] },
     contribLimits: {
       ira401kElective: 0, ira401kCatchup50: 0, ira401kCatchup6063: null,
       iraTradLimit: 0, iraCatchup50: 0,

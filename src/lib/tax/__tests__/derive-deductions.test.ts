@@ -5,17 +5,22 @@ import {
   deriveAboveLineFromExpenses,
   deriveItemizedFromExpenses,
   deriveMortgageInterestFromLiabilities,
+  deriveStudentLoanInterest,
   derivePropertyTaxFromAccounts,
   aggregateDeductions,
   saltCap,
   type SavingsRuleForDeduction,
   type AccountForDeduction,
+  type IraOwnerKey,
   type ClientDeductionRow,
   type DeductionContribution,
   type ExpenseForDeduction,
   type LiabilityForDeduction,
   type AccountForPropertyTax,
 } from "../derive-deductions";
+import type { FilingStatus, TaxYearParameters } from "../types";
+import { traditionalIraDeductibleAmount } from "../thresholds";
+import type { LiabilityType } from "@/engine/liability-kind";
 
 const isGrantorAlways = () => true;
 const isGrantorNever = () => false;
@@ -512,5 +517,425 @@ describe("deriveAboveLineFromSavings — HSA", () => {
       r1: 4400,
     });
     expect(res.aboveLine).toBe(4400);
+  });
+});
+
+// ── Traditional-IRA MAGI gate ───────────────────────────────────────────────
+
+describe("deriveAboveLineFromSavings — traditional IRA MAGI gate", () => {
+  // MFJ covered 129,000-149,000 (width 20,000); single covered 81,000-91,000
+  // (width 10,000); MFJ spousal 242,000-252,000.
+  const gateParams = {
+    iraDeduct: {
+      coveredStartMfj: 129000, coveredEndMfj: 149000,
+      coveredStartSingle: 81000, coveredEndSingle: 91000,
+      spousalStartMfj: 242000, spousalEndMfj: 252000,
+    },
+  } as unknown as TaxYearParameters;
+
+  /** The §219(b) annual IRA limit basis these fixtures phase out — one
+   *  contributor at the 2026 statutory $7,000. Real callers build this from
+   *  the contributing owners (see `traditionalIraAnnualLimitBasis`); here it
+   *  is a literal so the phase-out arithmetic stays readable. */
+  const GATE_ANNUAL_LIMIT = 7000;
+
+  /** Default: MFJ, self covered, MAGI above the top of the covered range.
+   *
+   *  The spouse's basis is 0 because no fixture in this describe sets
+   *  `iraOwner` — every account defaults to the client, so a non-zero spouse
+   *  basis would be a ceiling for a bucket that never receives a
+   *  contribution. The per-owner split itself is exercised below. */
+  const gate = (
+    over: Partial<{
+      magi: number; coveredSelf: boolean; coveredSpouse: boolean;
+      filingStatus: FilingStatus; annualLimitByOwner: Record<IraOwnerKey, number>;
+    }> = {}
+  ) => ({
+    magi: 200000,
+    coveredSelf: true,
+    coveredSpouse: false,
+    params: gateParams,
+    filingStatus: "married_joint" as FilingStatus,
+    annualLimitByOwner: { client: GATE_ANNUAL_LIMIT, spouse: 0 },
+    ...over,
+  });
+
+  const ACCT_HSA: AccountForDeduction = {
+    id: "acct-hsa", subType: "hsa", category: "retirement", ownerEntityId: null,
+  };
+
+  it("zeroes the deduction for a covered contributor above the range", () => {
+    const rules = [makeRule("acct-ira", 7500)];
+    const res = deriveAboveLineFromSavings(
+      2026, rules, [ACCT_TRADITIONAL_IRA], isGrantorAlways, undefined, undefined, gate(),
+    );
+    // MAGI 200,000 >= 149,000 -> fully phased out.
+    expect(res.aboveLine).toBe(0);
+  });
+
+  it("leaves a 401(k) rule untouched at the same MAGI", () => {
+    const rules = [makeRule("acct-401k", 24500), makeRule("acct-ira", 7500)];
+    const res = deriveAboveLineFromSavings(
+      2026, rules, [ACCT_401K, ACCT_TRADITIONAL_IRA], isGrantorAlways, undefined, undefined, gate(),
+    );
+    // The IRA's 7,500 is gated away; the 401(k) deferral is never MAGI-limited.
+    expect(res.aboveLine).toBe(24500);
+  });
+
+  it("leaves 403(b), HSA and 'other' retirement rules untouched at the same MAGI", () => {
+    const rules = [
+      makeRule("acct-403b", 22500),
+      makeRule("acct-hsa", 4000),
+      makeRule("acct-other-ret", 10000),
+    ];
+    const res = deriveAboveLineFromSavings(
+      2026, rules, [ACCT_403B, ACCT_HSA, ACCT_OTHER_RETIREMENT], isGrantorAlways,
+      undefined, undefined, gate(),
+    );
+    expect(res.aboveLine).toBe(36500);
+  });
+
+  it("does not gate at all when iraGate is omitted", () => {
+    const rules = [makeRule("acct-ira", 7500)];
+    const res = deriveAboveLineFromSavings(2026, rules, [ACCT_TRADITIONAL_IRA], isGrantorAlways);
+    expect(res.aboveLine).toBe(7500);
+  });
+
+  it("aggregates traditional IRA rules so Pub 590-A rounding applies once", () => {
+    // MAGI 148,900 -> fraction 19,900/20,000 = 0.995, so 0.5% of the $7,000
+    // limit survives: 35 -> rounded up to 40 -> raised to the $200 floor.
+    // Deduction = min(6,000 contributed, 200) = 200, ONE floor application.
+    // Per-rule the same $200 floor would apply to each of the three rules
+    // (min(2,000, 200) each) = 600 — triple the statutory allowance.
+    //
+    // The MAGI sits deep in the range on purpose: the floor is what this test
+    // is about, and it only binds once the reduced limit falls under $200.
+    const rules = [
+      makeRule("acct-ira", 2000),
+      makeRule("acct-ira", 2000),
+      makeRule("acct-ira", 2000),
+    ];
+    const res = deriveAboveLineFromSavings(
+      2026, rules, [ACCT_TRADITIONAL_IRA], isGrantorAlways,
+      undefined, undefined, gate({ magi: 148900 }),
+    );
+    expect(res.aboveLine).toBe(200);
+  });
+
+  it("gates the pre-tax portion of a split rule, not the gross contribution", () => {
+    // 10,000 with rothPercent 0.4 -> 6,000 pre-tax.
+    // MAGI 130,000 -> fraction 1,000/20,000 = 0.05, so 95% of the $7,000 limit
+    // survives: reduced limit 6,650. The deduction is min(contribution, 6,650),
+    // and WHICH contribution decides the answer: the 6,000 pre-tax portion
+    // gives 6,000, the gross 10,000 would give 6,650.
+    //
+    // ⚠️ The MAGI must sit where the CONTRIBUTION binds (contribution < reduced
+    // limit). Deeper in the range the reduced limit binds instead and both the
+    // gross and the pre-tax figure clamp to the same number — the assertion
+    // would still pass while testing nothing.
+    const rules = [makeRule("acct-ira", 10000, 2026, 2076, { rothPercent: 0.4 })];
+    const res = deriveAboveLineFromSavings(
+      2026, rules, [ACCT_TRADITIONAL_IRA], isGrantorAlways,
+      undefined, undefined, gate({ magi: 130000 }),
+    );
+    expect(res.aboveLine).toBe(6000);
+  });
+
+  it("never deducts more than the pre-tax portion below the range", () => {
+    const rules = [makeRule("acct-ira", 10000, 2026, 2076, { rothPercent: 0.4 })];
+    const res = deriveAboveLineFromSavings(
+      2026, rules, [ACCT_TRADITIONAL_IRA], isGrantorAlways,
+      undefined, undefined, gate({ magi: 100000 }),
+    );
+    // Below 129,000 the full contribution is deductible — but "full" is the
+    // 6,000 pre-tax portion, never the 10,000 gross.
+    expect(res.aboveLine).toBe(6000);
+  });
+
+  // ⚠️ The two "no phase-out applies" cases below contribute 6,000, BELOW the
+  // 7,000 limit, on purpose. They used to contribute 7,500 and assert 7,500,
+  // which stopped being the right answer once §219(b)(1)(A) started capping
+  // every path: 7,500 would now come back as 7,000, which is also what a
+  // wrongly-applied cap produces, so re-baselining the number to 7,000 would
+  // have made "the full contribution survives" indistinguishable from "the
+  // contribution was clamped to the limit". A contribution below the limit
+  // keeps the two apart.
+  it("does not gate when neither spouse is a covered participant", () => {
+    const rules = [makeRule("acct-ira", 6000)];
+    const res = deriveAboveLineFromSavings(
+      2026, rules, [ACCT_TRADITIONAL_IRA], isGrantorAlways, undefined, undefined,
+      gate({ magi: 5000000, coveredSelf: false, coveredSpouse: false }),
+    );
+    // IRC 219(g)(1) never triggers, so even a 5,000,000 MAGI deducts in full.
+    expect(res.aboveLine).toBe(6000);
+  });
+
+  it("applies the spousal range when only the spouse is covered", () => {
+    const rules = [makeRule("acct-ira", 6000)];
+    const res = deriveAboveLineFromSavings(
+      2026, rules, [ACCT_TRADITIONAL_IRA], isGrantorAlways, undefined, undefined,
+      gate({ magi: 200000, coveredSelf: false, coveredSpouse: true }),
+    );
+    // 200,000 is below the spousal range's 242,000 start — full deduction.
+    // Reading the flags in the wrong order would apply the covered range and
+    // zero this out.
+    expect(res.aboveLine).toBe(6000);
+  });
+
+  const ACCT_IRA_SPOUSE: AccountForDeduction = {
+    id: "acct-ira-spouse", subType: "traditional_ira", category: "retirement",
+    ownerEntityId: null, iraOwner: "spouse",
+  };
+
+  it("measures each owner's contribution against their OWN limit, not a pooled one", () => {
+    // Client contributes 6,000, spouse 1, both with their own 7,000 limit, at
+    // a MAGI 80% through the covered range so 20% of each limit survives:
+    //   client  min(6,000, 1,400) = 1,400
+    //   spouse  min(    1, 1,400) =     1
+    // Pooling both sides — 6,001 against a 14,000 basis — yields 2,800, so a
+    // $1 spouse contribution would buy a full extra $7,000 of ceiling.
+    const rules = [makeRule("acct-ira", 6000), makeRule("acct-ira-spouse", 1)];
+    const res = deriveAboveLineFromSavings(
+      2026, rules, [ACCT_TRADITIONAL_IRA, ACCT_IRA_SPOUSE], isGrantorAlways, undefined, undefined,
+      gate({
+        magi: 145000, coveredSelf: true, coveredSpouse: true,
+        annualLimitByOwner: { client: 7000, spouse: 7000 },
+      }),
+    );
+    expect(res.aboveLine).toBe(1401);
+  });
+
+  it("reads coverage from the perspective of the owner being priced, not always the client", () => {
+    // ⚠️ The flag SWAP, which no both-spouses-covered fixture can discriminate.
+    // The ONLY contributor is the spouse, and the spouse is the one covered by
+    // a workplace plan — so their own bucket must take the COVERED range
+    // (129,000-149,000), which 200,000 is above: fully phased out.
+    //
+    // Passing the household's (coveredSelf, coveredSpouse) through unswapped
+    // would price the spouse as the NON-covered party with a covered partner,
+    // i.e. the SPOUSAL range (242,000-252,000), which 200,000 is below —
+    // deducting the whole 6,000 instead of nothing.
+    const rules = [makeRule("acct-ira-spouse", 6000)];
+    const res = deriveAboveLineFromSavings(
+      2026, rules, [ACCT_IRA_SPOUSE], isGrantorAlways, undefined, undefined,
+      gate({
+        magi: 200000, coveredSelf: false, coveredSpouse: true,
+        annualLimitByOwner: { client: 0, spouse: 7000 },
+      }),
+    );
+    expect(res.aboveLine).toBe(0);
+  });
+
+  it("uses the caller's filing status for the range", () => {
+    const rules = [makeRule("acct-ira", 7500)];
+    const res = deriveAboveLineFromSavings(
+      2026, rules, [ACCT_TRADITIONAL_IRA], isGrantorAlways, undefined, undefined,
+      gate({ magi: 86000, filingStatus: "single" }),
+    );
+    // Single range 81,000-91,000: halfway through -> half the $7,000 limit
+    // survives = 3,500, and min(7,500 contributed, 3,500) = 3,500.
+    // Under the MFJ range (129,000-149,000) this MAGI is below the start, so a
+    // transposed ternary would deduct the full 7,500.
+    expect(res.aboveLine).toBe(3500);
+  });
+
+  it("never reaches the gate for a rule the existing guards already skip", () => {
+    // isDeductible=false at a MAGI the gate would otherwise pass through in
+    // full — the rule must not reach the traditional-IRA accumulator.
+    const rules = [makeRule("acct-ira", 7500, 2026, 2076, { isDeductible: false })];
+    const res = deriveAboveLineFromSavings(
+      2026, rules, [ACCT_TRADITIONAL_IRA], isGrantorAlways, undefined, undefined,
+      gate({ magi: 100000 }),
+    );
+    expect(res.aboveLine).toBe(0);
+  });
+
+  // ── The exposed traditional-IRA split (Task 11 R3/R4) ────────────────────
+  // `projection.ts` needs the traditional-IRA subtotal to build `magiBase`
+  // (total income minus every above-line deduction EXCEPT the IRA and the
+  // student-loan one). Re-deriving it there would mean copying six inclusion
+  // guards; exposing it here keeps one source of truth.
+
+  it("exposes the pre-tax traditional-IRA subtotal alongside the merged aboveLine", () => {
+    // Three distinct non-zero addends so no term can go vacuous: a 401(k)
+    // deferral (never IRA), a split IRA rule (Roth slice excluded), and a
+    // whole-pre-tax IRA rule.
+    const rules = [
+      makeRule("acct-401k", 24500),
+      makeRule("acct-ira", 10000, 2026, 2076, { rothPercent: 0.4 }), // 6,000 pre-tax
+      makeRule("acct-ira", 1500),
+    ];
+    const accounts = [ACCT_401K, ACCT_TRADITIONAL_IRA];
+    const res = deriveAboveLineFromSavings(2026, rules, accounts, isGrantorAlways);
+    expect(res.traditionalIraPreTax).toBe(7500); // 6,000 + 1,500
+    expect(res.aboveLine).toBe(32000);           // 24,500 + 7,500, ungated
+    // The non-IRA remainder is what `magiBase` adds back.
+    expect(res.aboveLine - res.traditionalIraPreTax).toBe(24500);
+  });
+
+  it("reports the SAME traditional-IRA subtotal gated and ungated, and gates only that component", () => {
+    // R4's required invariant: the non-IRA component is byte-identical across
+    // the ungated call (which grounds magiBase) and the gated call (which
+    // feeds aggregateDeductions). Only the IRA slice may move.
+    const rules = [
+      makeRule("acct-401k", 24500),
+      makeRule("acct-ira", 6000),
+    ];
+    const accounts = [ACCT_401K, ACCT_TRADITIONAL_IRA];
+    // MAGI 147,750 -> 18,750/20,000 = 93.75% through the range, so 6.25% of the
+    // §219(b) LIMIT survives: 7,000 x 0.0625 = 437.50, rounded up to 440
+    // (Pub 590-A). The deduction is min(contribution 6,000, 440) = 440.
+    // Note the limit, not the contribution, is what the fraction scales —
+    // IRC 219(g)(2)(A). Scaling the 6,000 contribution instead would give 380.
+    const ungated = deriveAboveLineFromSavings(2026, rules, accounts, isGrantorAlways);
+    const gated = deriveAboveLineFromSavings(
+      2026, rules, accounts, isGrantorAlways, undefined, undefined, gate({ magi: 147750 }),
+    );
+
+    const expectedGatedIra = traditionalIraDeductibleAmount(
+      147750, ungated.traditionalIraPreTax, GATE_ANNUAL_LIMIT,
+      true, false, 2026, gateParams, "married_joint",
+    );
+    expect(expectedGatedIra).toBe(440);
+    // Non-vacuous on both sides: the gate genuinely bit, and there IS a
+    // non-IRA component that must survive it untouched.
+    expect(expectedGatedIra).toBeLessThan(ungated.traditionalIraPreTax);
+    expect(ungated.aboveLine - ungated.traditionalIraPreTax).toBe(24500);
+
+    expect(gated.aboveLine - expectedGatedIra).toBe(ungated.aboveLine - ungated.traditionalIraPreTax);
+    expect(gated.traditionalIraPreTax).toBe(ungated.traditionalIraPreTax);
+    expect(gated.aboveLine).toBe(24940); // 24,500 + 440
+  });
+
+  it("reports a zero subtotal when the household contributes to no traditional IRA", () => {
+    const res = deriveAboveLineFromSavings(
+      2026, [makeRule("acct-401k", 24500)], [ACCT_401K], isGrantorAlways,
+    );
+    expect(res.traditionalIraPreTax).toBe(0);
+    expect(res.aboveLine).toBe(24500);
+  });
+});
+
+// ── Student-loan interest (above-line) ──────────────────────────────────────
+
+describe("deriveStudentLoanInterest", () => {
+  // MFJ 170,000-200,000 (width 30,000); single 85,000-100,000 (width 15,000).
+  // Every MAGI below is picked so (magi - start) / (end - start) lands on an
+  // exactly-representable binary64 fraction, making the expected dollar
+  // figures exact rather than nearly-exact.
+  const slParams = {
+    studentLoan: {
+      maxDeduction: 2500,
+      startMfj: 170000, endMfj: 200000,
+      startSingle: 85000, endSingle: 100000,
+    },
+  } as unknown as TaxYearParameters;
+
+  const noCapParams = {
+    studentLoan: {
+      maxDeduction: null,
+      startMfj: 170000, endMfj: 200000,
+      startSingle: 85000, endSingle: 100000,
+    },
+  } as unknown as TaxYearParameters;
+
+  const loan = (id: string, liabilityType: LiabilityType | null) => ({ id, liabilityType });
+
+  it("counts interest from student liabilities only", () => {
+    const res = deriveStudentLoanInterest(
+      2026,
+      [loan("mtg", "mortgage"), loan("sl", "student")],
+      { mtg: 9000, sl: 1200 },
+      100000, slParams, "married_joint",
+    );
+    // The 9,000 of mortgage interest belongs to the itemized path — it must not
+    // leak into the above-line figure, nor must any of this land in itemized.
+    expect(res).toEqual({ aboveLine: 1200, itemized: 0, saltPool: 0 });
+  });
+
+  it("ignores a legacy liability carrying no type", () => {
+    const res = deriveStudentLoanInterest(
+      2026, [loan("legacy", null)], { legacy: 2000 }, 100000, slParams, "married_joint",
+    );
+    expect(res.aboveLine).toBe(0);
+  });
+
+  it("treats a student loan missing from the interest map as zero interest", () => {
+    const res = deriveStudentLoanInterest(
+      2026, [loan("sl", "student")], {}, 100000, slParams, "married_joint",
+    );
+    // Not NaN: a liability with no accrual entry contributes nothing.
+    expect(res.aboveLine).toBe(0);
+  });
+
+  it("denies the deduction to a married-filing-separately filer", () => {
+    const res = deriveStudentLoanInterest(
+      2026, [loan("sl", "student")], { sl: 2000 }, 50000, slParams, "married_separate",
+    );
+    // IRC 221(e)(2): disallowed outright, even at a MAGI far below the range.
+    expect(res.aboveLine).toBe(0);
+  });
+
+  it("deducts the full interest below the phase-out range", () => {
+    const res = deriveStudentLoanInterest(
+      2026, [loan("sl", "student")], { sl: 1800 }, 100000, slParams, "married_joint",
+    );
+    expect(res.aboveLine).toBe(1800);
+  });
+
+  it("reduces the deduction linearly inside the phase-out range", () => {
+    // MAGI 185,000 -> 15,000/30,000 = 0.5 exactly, so half survives.
+    const res = deriveStudentLoanInterest(
+      2026, [loan("sl", "student")], { sl: 2000 }, 185000, slParams, "married_joint",
+    );
+    expect(res.aboveLine).toBe(1000);
+  });
+
+  it("zeroes the deduction at the top of the range", () => {
+    const res = deriveStudentLoanInterest(
+      2026, [loan("sl", "student")], { sl: 2000 }, 200000, slParams, "married_joint",
+    );
+    expect(res.aboveLine).toBe(0);
+  });
+
+  it("uses the caller's filing status to pick the range", () => {
+    // Single 85,000-100,000: MAGI 92,500 -> 7,500/15,000 = 0.5 exactly.
+    // Under the MFJ range the same MAGI would be fully deductible.
+    const res = deriveStudentLoanInterest(
+      2026, [loan("sl", "student")], { sl: 2000 }, 92500, slParams, "single",
+    );
+    expect(res.aboveLine).toBe(1000);
+  });
+
+  it("applies the maxDeduction cap BEFORE the phase-out", () => {
+    // 4,000 paid -> capped to 2,500 -> x 0.5 = 1,250. Capping after the
+    // phase-out instead would yield min(4,000 x 0.5, 2,500) = 2,000.
+    const res = deriveStudentLoanInterest(
+      2026, [loan("sl", "student")], { sl: 4000 }, 185000, slParams, "married_joint",
+    );
+    expect(res.aboveLine).toBe(1250);
+  });
+
+  // PREMISE CHANGED. This test previously read "treats a null maxDeduction as no
+  // cap, not as zero" and expected the full 3,000. A null cap now resolves to
+  // IRC 221(b)(1)'s statutory $2,500 inside `studentLoanInterestDeduction`.
+  // The "not as zero" half of the original premise still holds.
+  it("falls back to the statutory $2,500 cap when maxDeduction is unseeded", () => {
+    const res = deriveStudentLoanInterest(
+      2026, [loan("sl", "student")], { sl: 3000 }, 100000, noCapParams, "married_joint",
+    );
+    expect(res.aboveLine).toBe(2500);
+  });
+
+  it("caps the household's student loans once, not once per loan", () => {
+    // 3 x 1,200 = 3,600 of interest against ONE $2,500 per-return cap.
+    // Calling the helper per liability would cap each at 2,500 and return 3,600.
+    const res = deriveStudentLoanInterest(
+      2026,
+      [loan("sl-1", "student"), loan("sl-2", "student"), loan("sl-3", "student")],
+      { "sl-1": 1200, "sl-2": 1200, "sl-3": 1200 },
+      100000, slParams, "married_joint",
+    );
+    expect(res.aboveLine).toBe(2500);
   });
 });

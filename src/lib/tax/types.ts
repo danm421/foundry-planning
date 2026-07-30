@@ -27,6 +27,12 @@ export interface CapGainsTier {
 
 export type CapGainsBracketsByStatus = Record<FilingStatus, CapGainsTier>;
 
+/** One Saver's Credit rate tier: `rate` applies while AGI <= `agiCeiling`. */
+export interface SaversCreditTier {
+  rate: number;
+  agiCeiling: number;
+}
+
 // Mirrors the DB row shape but with parsed numbers (DB returns decimal as string).
 export interface TaxYearParameters {
   year: number;
@@ -62,6 +68,44 @@ export interface TaxYearParameters {
     phaseInRangeOther: number;
   };
 
+  /** IRC 408A(c)(3) Roth contribution MAGI phase-out. MFS is statutorily
+   *  $0-$10,000 and never indexed — see STATUTORY_FIXED.mfsPhaseoutRange. */
+  rothPhaseout: {
+    startMfj: number | null; endMfj: number | null;
+    startSingle: number | null; endSingle: number | null;
+  };
+
+  /** IRC 219(g) traditional-IRA deduction phase-outs.
+   *  `covered*` = the contributor is an active workplace-plan participant.
+   *  `spousal*` = the contributor is NOT covered but their spouse is. */
+  iraDeduct: {
+    coveredStartMfj: number | null; coveredEndMfj: number | null;
+    coveredStartSingle: number | null; coveredEndSingle: number | null;
+    spousalStartMfj: number | null; spousalEndMfj: number | null;
+  };
+
+  /** IRC 221 student-loan interest deduction. Disallowed entirely for MFS. */
+  studentLoan: {
+    maxDeduction: number | null;
+    startMfj: number | null; endMfj: number | null;
+    startSingle: number | null; endSingle: number | null;
+  };
+
+  /** IRC 24 child tax credit amounts. Phase-out THRESHOLDS are unindexed and
+   *  live in STATUTORY_FIXED; only the dollar amounts index. */
+  ctc: {
+    perChild: number | null;
+    refundableMax: number | null;
+    odcPerDependent: number | null;
+  };
+
+  /** IRC 25B Saver's Credit tiers, highest rate first. Empty = not seeded. */
+  saversCredit: {
+    mfj: SaversCreditTier[];
+    single: SaversCreditTier[];
+    hoh: SaversCreditTier[];
+  };
+
   contribLimits: {
     ira401kElective: number;
     ira401kCatchup50: number;
@@ -92,6 +136,48 @@ export interface TaxYearParameters {
   irmaaBracketsMfj?: IrmaaTier[] | null;
   /** IRMAA bracket tiers for all other filers (statutorily "single" tier). Null = not seeded. */
   irmaaBracketsSingle?: IrmaaTier[] | null;
+}
+
+/**
+ * Household composition driving the federal credit layer (`credits.ts`).
+ *
+ * Carries ONLY what `calculateTaxYear` cannot derive for itself. `year`,
+ * `filingStatus`, `params`, `magi`/`agi`, `earnedIncome` and `taxBeforeCredits`
+ * are all already locals inside `calculateTaxYear` and are deliberately NOT
+ * restated here — a second source of truth for them would be a defect, not a
+ * convenience. Field names and types mirror `CreditsInput` verbatim so the call
+ * site is a copy, not a translation layer — with ONE deliberate exception,
+ * `selfEmploymentEarnings`, which `CreditsInput` does not carry because the
+ * credit layer wants it already folded into `earnedIncome`. `calculate.ts` does
+ * that fold, at the credits call and nowhere else.
+ */
+export interface TaxHouseholdInput {
+  qualifyingChildren: number;
+  otherDependents: number;
+  /** One entry per student eligible THIS year. The IRC 25A(b)(2)(C) four-year
+   *  per-student cap is the CALLER's job: neither `credits.ts` nor
+   *  `calculateTaxYear` tracks how many years a student has already claimed. */
+  aotcStudents: { qualifiedExpenses: number }[];
+  /** IRC 25B elective-deferral / IRA contributions, per person. `credits.ts`
+   *  sums both entries with no filing-status filter, so whether a spouse figure
+   *  belongs on a non-MFJ return is decided HERE, by whoever builds this. */
+  retirementContributions: { client: number; spouse: number };
+  /**
+   * Net earnings from self-employment for the year (Schedule C / SE net, a
+   * LOSS being negative). Carried separately from `CalcInput.earnedIncome`
+   * because the two feed different statutes:
+   *
+   *  - `CalcInput.earnedIncome` is W-2 WAGES ONLY. It drives `calcFica` and
+   *    `calcAdditionalMedicare`, and SE income is already taxed through SECA in
+   *    `year-tax.ts` — widening that field would double-charge both.
+   *  - IRC 24(d)(1)(B)(i) -> 32(c)(2)(A) "earned income" for the refundable CTC
+   *    IS wages plus net SE earnings, so the credit layer adds this in (floored
+   *    at 0: a Schedule C loss never reduces earned income below wages).
+   *
+   * Required, not optional: a silently-omitted 0 here zeroes the ACTC for every
+   * self-employed household, which is exactly the defect this field fixes.
+   */
+  selfEmploymentEarnings: number;
 }
 
 // Already-resolved engine input for one projection year.
@@ -160,6 +246,10 @@ export interface CalcInput {
    *  Itemizing callers MUST supply this — when omitted it defaults to 0, understating AMTI
    *  (the SALT add-back is silently skipped). */
   saltDeducted?: number;
+  /** Household composition for the federal credit layer. Optional because dozens
+   *  of existing callers predate it — when absent no credits are computed and
+   *  the federal roll-up is identical to the pre-credit behaviour. */
+  household?: TaxHouseholdInput;
   /** Prior-year capital-loss carryforward (§1212(b)), by character. Optional
    *  for back-compat — omitting it nets with no carryover. */
   capitalLossCarryforwardIn?: import("./capital-loss").CapitalLossCarryforward;
@@ -187,7 +277,29 @@ export interface TaxResult {
     incomeTaxBase: number;
     regularTaxCalc: number;
     amtCredit: number;
+    /** NONREFUNDABLE federal credits actually applied against tax — Saver's,
+     *  the AOTC's 60% part, ODC and CTC. Never exceeds
+     *  `regularFederalIncomeTax + capitalGainsTax + amtAdditional`, and never
+     *  offsets NIIT or Additional Medicare (both sit outside chapter 1
+     *  subpart A). 0 whenever `CalcInput.household` was absent. */
     taxCredits: number;
+    /** REFUNDABLE federal credits — ACTC plus the AOTC's 40% part. Reported
+     *  separately from `taxCredits` because it is subtracted OUTSIDE the
+     *  zero floor: a household whose refundable credits exceed its liability
+     *  legitimately ends with a NEGATIVE `totalFederalTax` (i.e. a refund),
+     *  and folding these dollars into `taxCredits` would floor them away. */
+    refundableCredits: number;
+    /** The AOTC actually allowed this year — nonrefundable part (after the
+     *  subpart A limitation) plus the refundable 40%. Already counted inside
+     *  `taxCredits` and `refundableCredits`; reported separately ONLY so the
+     *  projection's IRC 25A(b)(2)(C) four-year counter can ask "did the
+     *  taxpayer elect the credit?" against the figure the credit engine
+     *  actually produced. Do NOT re-derive that answer from a MAGI computed
+     *  outside `calculate.ts` — the report's `magiForCredits` omits taxable
+     *  Social Security and the §164(f) half of SE tax, so the two can and do
+     *  land on opposite sides of the phase-out ceiling. 0 when no household
+     *  was supplied, and 0 in every year the phase-out zeroed the credit. */
+    aotcAllowed: number;
     regularFederalIncomeTax: number;
     capitalGainsTax: number;
     amtAdditional: number;
@@ -217,6 +329,20 @@ export interface TaxResult {
     effectiveFederalRate: number;
     bracketsUsed: TaxYearParameters;
     inflationFactor: number;
+    /** Taxable income BEFORE the §199A deduction — the figure IRC 199A(e)(2)
+     *  tests against the QBI threshold, and not recoverable from `flow`
+     *  (`flow.taxableIncome` is post-QBI and floored at 0). Bracket mode only;
+     *  the flat path computes no QBI. */
+    taxableIncomeBeforeQbi?: number;
+    /** Alternative minimum taxable income (Form 6251 line 4) — what the AMT
+     *  exemption phase-out tests. Exposed rather than reconstructed by callers:
+     *  the add-back depends on which below-line deduction was actually taken.
+     *  Bracket mode only. */
+    amti?: number;
+    /** Net investment income for IRC §1411 — qualified dividends + LTCG + STCG
+     *  + taxable interest, the same figure `calcNiit` is handed. Bracket mode
+     *  only. */
+    netInvestmentIncome?: number;
   };
   /** State income-tax detail (bracket-mode engine). Always populated;
    *  when residenceState is null, contains the fallback flat-rate result. */

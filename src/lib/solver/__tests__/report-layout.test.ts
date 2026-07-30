@@ -63,6 +63,40 @@ describe("resolveReportLayout", () => {
     expect(out[0].visible).toBe(true);
   });
 
+  it("drops thresholds from a layout stored while it was briefly its own report", () => {
+    // "thresholds" shipped as a tenth report tab and was then folded into the
+    // Taxes report as a scope. Advisors who opened the solver in that window
+    // have it sitting in their stored jsonb layout — spelled out literally
+    // here (NOT derived from REPORT_KEYS) so this pins the actual shape of
+    // those rows rather than following any future canonical change.
+    const storedIds = [
+      "portfolio", "cashflow", "taxBracket", "lifeInsurance", "estate",
+      "monteCarlo", "education", "balanceSheet", "summaries", "thresholds",
+    ];
+    const stored = storedIds.map((id) => ({ id, visible: true }));
+    const out = resolveReportLayout(stored);
+    expect(out.map((e) => e.id)).toEqual(storedIds.slice(0, -1));
+    // `String(...)` because "thresholds" is no longer a ReportKey — comparing
+    // it against `e.id` directly is a type error, not just a false assertion.
+    expect(out.map((e) => String(e.id))).not.toContain("thresholds");
+  });
+
+  it("[F2] a fresh advisor's canonical order matches an existing advisor's reconciled order", () => {
+    // The literal `toEqual(storedIds.slice(0, -1))` above states rule 4 but
+    // not the invariant that matters to an advisor: the strip they see after
+    // reconciliation is the SAME strip a brand-new advisor sees. Assert that
+    // directly, from a stored layout carrying the retired id, so it reddens
+    // if reconciliation ever reorders rather than merely filters.
+    const storedIds = [
+      "portfolio", "cashflow", "taxBracket", "lifeInsurance", "estate",
+      "monteCarlo", "education", "balanceSheet", "summaries", "thresholds",
+    ];
+    const stored = storedIds.map((id) => ({ id, visible: true }));
+    const freshAdvisorOrder = resolveReportLayout(null).map((e) => e.id);
+    const existingAdvisorOrder = resolveReportLayout(stored).map((e) => e.id);
+    expect(existingAdvisorOrder).toEqual(freshAdvisorOrder);
+  });
+
   it("treats a corrupted non-array stored value as empty → canonical defaults", () => {
     // A jsonb row that somehow isn't an array must not throw the for…of.
     const out = resolveReportLayout({ nope: true } as never);

@@ -180,6 +180,8 @@ const TAX_RATES_BASE_PROPS = {
   outOfHouseholdDniRate: "0.37",
   priorTaxableGiftsClient: "0",
   priorTaxableGiftsSpouse: "0",
+  coveredByWorkplacePlan: "auto" as const,
+  spouseCoveredByWorkplacePlan: "auto" as const,
   capitalLossCarryforwardSt: "0",
   capitalLossCarryforwardLt: "0",
   hasSpouse: false,
