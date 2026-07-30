@@ -7,10 +7,12 @@ import { getOrComputeCapacity, type CapacityResult } from "@/lib/risk/capacity";
 import { getRiskProfileDetail } from "@/lib/risk/queries";
 import { band, type BindingConstraint } from "@/lib/risk/scoring";
 import { resolveScenarioId } from "@/lib/compute-cache/resolve-scenario-id";
-import { resolveRiskPortfolioId } from "@/lib/cma/resolve-risk-portfolio";
+import { resolveRiskPortfolioId, getPortfolioNames } from "@/lib/cma/resolve-risk-portfolio";
 import {
+  describeBucketSource,
   describeMismatch,
   effectiveScenarioPortfolioId,
+  type BucketReadout,
   type MismatchState,
 } from "@/lib/risk/portfolio-mismatch";
 import { RiskLevelBadge } from "@/components/risk/risk-level-badge";
@@ -86,21 +88,63 @@ export async function RiskDetailContent({
   let mismatch: MismatchState = { kind: "no_profile" };
   if (row.compositeLevel) {
     try {
-      const baseScenarioId = await resolveScenarioId(clientId, "base");
-      const [settings] = await db
-        .select({
-          growthSourceTaxable: planSettings.growthSourceTaxable,
-          growthSourceRetirement: planSettings.growthSourceRetirement,
-          modelPortfolioIdTaxable: planSettings.modelPortfolioIdTaxable,
-          modelPortfolioIdRetirement: planSettings.modelPortfolioIdRetirement,
-        })
-        .from(planSettings)
-        .where(eq(planSettings.scenarioId, baseScenarioId));
-      const profilePortfolioId = await resolveRiskPortfolioId(firmId, row.compositeLevel);
+      // resolveRiskPortfolioId needs only firmId + compositeLevel, both known
+      // before this block, so it rides alongside the scenario lookup instead of
+      // queueing behind it. getPortfolioNames genuinely must stay last -- it
+      // needs ids from both.
+      const [settingsRows, profilePortfolioId] = await Promise.all([
+        resolveScenarioId(clientId, "base").then((baseScenarioId) =>
+          db
+            .select({
+              growthSourceTaxable: planSettings.growthSourceTaxable,
+              growthSourceRetirement: planSettings.growthSourceRetirement,
+              modelPortfolioIdTaxable: planSettings.modelPortfolioIdTaxable,
+              modelPortfolioIdRetirement: planSettings.modelPortfolioIdRetirement,
+              defaultGrowthTaxable: planSettings.defaultGrowthTaxable,
+              defaultGrowthRetirement: planSettings.defaultGrowthRetirement,
+            })
+            .from(planSettings)
+            .where(eq(planSettings.scenarioId, baseScenarioId)),
+        ),
+        resolveRiskPortfolioId(firmId, row.compositeLevel),
+      ]);
+      const [settings] = settingsRows;
+      const names = await getPortfolioNames(firmId, [
+        settings?.modelPortfolioIdTaxable,
+        settings?.modelPortfolioIdRetirement,
+        profilePortfolioId,
+      ]);
+      // No plan settings row -> no buckets to describe. The card still renders
+      // its headline; describeMismatch treats a null scenario portfolio as a
+      // mismatch, which is the intended reading.
+      const buckets: BucketReadout[] = settings
+        ? [
+            {
+              label: "Taxable",
+              value: describeBucketSource({
+                source: settings.growthSourceTaxable,
+                portfolioId: settings.modelPortfolioIdTaxable,
+                customRate: settings.defaultGrowthTaxable,
+                portfolioNames: names,
+              }),
+            },
+            {
+              label: "Retirement",
+              value: describeBucketSource({
+                source: settings.growthSourceRetirement,
+                portfolioId: settings.modelPortfolioIdRetirement,
+                customRate: settings.defaultGrowthRetirement,
+                portfolioNames: names,
+              }),
+            },
+          ]
+        : [];
       mismatch = describeMismatch({
         compositeLevel: row.compositeLevel,
         profilePortfolioId,
+        profilePortfolioName: profilePortfolioId ? (names.get(profilePortfolioId) ?? null) : null,
         scenarioPortfolioId: effectiveScenarioPortfolioId(settings ?? null),
+        buckets,
       });
     } catch {
       mismatch = { kind: "no_profile" };
