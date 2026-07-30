@@ -3,6 +3,7 @@ import {
   validateBeneficiarySplit,
   type DesignationInput,
 } from "@/lib/beneficiaries/validate-split";
+import { strictPartial } from "@/lib/schemas/strict-partial";
 
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -17,8 +18,14 @@ export const externalBeneficiaryCreateSchema = z.object({
   notes: z.string().trim().nullish(),
 });
 
-export const externalBeneficiaryUpdateSchema =
-  externalBeneficiaryCreateSchema.partial();
+// `strictPartial`, not `.partial()` — Zod 4 keeps a `.default()` alive under
+// `.optional()`. Both defaulted fields describe what the beneficiary IS, and
+// the PATCH route spreads `parsed.data` into `.set()` unguarded, so `.partial()`
+// would rewrite an individual beneficiary as a public charity on any patch that
+// omitted `kind`.
+export const externalBeneficiaryUpdateSchema = strictPartial(
+  externalBeneficiaryCreateSchema,
+);
 
 export const beneficiaryDesignationSchema = z
   .object({

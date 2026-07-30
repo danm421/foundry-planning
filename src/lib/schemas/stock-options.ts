@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { uuidSchema, isoDate } from "./common";
+import { strictPartial } from "./strict-partial";
 
 /**
  * Stock-option accounts — the top-level equity account that holds grants,
@@ -41,7 +42,13 @@ const base = {
 
 export const stockOptionAccountCreateSchema = z.object(base);
 
-export const stockOptionAccountUpdateSchema = z.object(base).partial();
+// `strictPartial`, not `.partial()` — Zod 4 keeps a `.default()` alive under
+// `.optional()`. Every strategy field here is `.optional().default(...)`, so
+// `.partial()` injected SEVEN keys, all of which the PATCH route writes through
+// `input.X !== undefined` guards that an injected key always passes: a rename
+// alone would zero the share price, reset withholding to 22%, and revert the
+// account's exercise/sell strategy to at-vest/hold.
+export const stockOptionAccountUpdateSchema = strictPartial(z.object(base));
 
 export type StockOptionAccountCreateInput = z.infer<typeof stockOptionAccountCreateSchema>;
 export type StockOptionAccountUpdateInput = z.infer<typeof stockOptionAccountUpdateSchema>;

@@ -348,10 +348,10 @@ export default function InsurancePanel(props: InsurancePanelProps) {
                           // 200, so sending `value` here saves nothing and still
                           // reports success. That no-op holds only because
                           // `insurancePolicyUpdateSchema` also stops injecting
-                          // defaults for keys we didn't send (see `stripDefault`
-                          // there) — the route writes every field it finds
-                          // defined, so a schema that fills in the blanks turns
-                          // any one-key PATCH into a full-row overwrite. The
+                          // defaults for keys we didn't send (it is built with
+                          // `strictPartial`) — the route writes every field it
+                          // finds defined, so a schema that fills in the blanks
+                          // turns any one-key PATCH into a full-row overwrite. The
                           // optimistic patch must be the server's
                           // decimal-as-STRING or reconciliation never fires and
                           // the cell stays pinned forever.

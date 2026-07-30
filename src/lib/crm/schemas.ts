@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isUSPSStateCode } from "@/lib/usps-states";
+import { strictPartial } from "@/lib/schemas/strict-partial";
 import { CRM_HOUSEHOLD_RELATIONSHIP_TYPES } from "./relationship-labels";
 
 export const crmHouseholdStatusSchema = z.enum(["prospect", "active", "inactive", "archived"]);
@@ -47,7 +48,15 @@ export const createCrmHouseholdInteractiveSchema = createCrmHouseholdSchema.exte
 // `contacts` is a create-only concern (inline contacts on first creation).
 // Exclude it from the update schema so the PATCH surface can never carry an
 // inline-contacts array into the household .set() (which would be an invalid column).
-export const updateCrmHouseholdSchema = createCrmHouseholdSchema.omit({ contacts: true }).partial();
+//
+// `strictPartial`, not `.partial()` — Zod 4 keeps a `.default()` alive under
+// `.optional()`, so `.partial()` would inject `status: "prospect"` on every
+// patch that omits it. The route applies `parsed.data` UNGUARDED
+// (`updateCrmHousehold` does `.set({ ...resolved })`), so that injection would
+// demote a live client household and log a phantom `status_change` activity.
+export const updateCrmHouseholdSchema = strictPartial(
+  createCrmHouseholdSchema.omit({ contacts: true }),
+);
 
 export const createCrmContactSchema = z.object({
   role: crmContactRoleSchema,
