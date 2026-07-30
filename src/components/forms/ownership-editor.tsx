@@ -44,13 +44,13 @@ export interface OwnershipEditorProps {
   childNoun?: string;
 }
 
-type OwnershipMode = "client" | "spouse" | "joint" | "community_property" | "custom";
+export type OwnershipMode = "client" | "spouse" | "joint" | "community_property" | "custom";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const EPSILON = 0.0001;
 
-function deriveMode(
+export function deriveMode(
   value: AccountOwner[],
   clientId: string | undefined,
   spouseId: string | undefined,

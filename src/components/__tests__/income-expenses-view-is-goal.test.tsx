@@ -54,6 +54,9 @@ const BASE_PROPS = {
   incomeSchedules: {},
   expenseSchedules: {},
   savingsSchedules: {},
+  // No inline scenario writes exercised here; the view refuses a write for a
+  // row with no entry, which is the safe default for a fixture.
+  flowScenarioFields: {},
   resolvedInflationRate: 0.024,
 };
 
@@ -88,7 +91,9 @@ describe("ExpenseDialog isGoal checkbox", () => {
       </ClientAccessProvider>,
     );
 
-    fireEvent.click(screen.getByText("Vacation Fund"));
+    // The pencil, not the row: rows carrying inline cells give up their own
+    // click handler, since it would swallow clicks meant for those cells.
+    fireEvent.click(screen.getByRole("button", { name: "Edit Vacation Fund" }));
 
     expect(screen.getByLabelText(/show as a goal/i)).toBeChecked();
   });
@@ -114,7 +119,7 @@ describe("ExpenseDialog isGoal checkbox", () => {
       </ClientAccessProvider>,
     );
 
-    fireEvent.click(screen.getByText("College Fund"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit College Fund" }));
 
     const checkbox = screen.getByLabelText(/show as a goal/i);
     expect(checkbox).toBeChecked();

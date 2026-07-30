@@ -9,7 +9,7 @@ import type {
 } from "@/lib/scenario/view-adapters";
 import type { AccountRow } from "@/components/balance-sheet-view";
 import type { GrowthContext } from "@/lib/investments/growth-context";
-import type { AccountPatch } from "./account-write";
+import type { AccountPatch } from "@/lib/inline-edit/account-write";
 import type { CategoryDefaultRateMap } from "@/lib/investments/category-default-rates";
 
 /** Which column of a Household Map board an item belongs in. `tray` is the
@@ -188,7 +188,7 @@ export interface HouseholdMapProps {
   savingsSchedules: Record<string, { year: number; amount: number }[]>;
   /**
    * flow id → the field set a SCENARIO edit of that flow must send, already
-   * pruned by `buildFlowScenarioFields` (`lib/household-map/flow-write.ts`).
+   * pruned by `buildFlowScenarioFields` (`lib/inline-edit/flow-write.ts`).
    * Present for exactly the ids that have a hydration entry above — the
    * income/expense/savings rows the Map is allowed to write.
    *
@@ -261,7 +261,7 @@ export interface HouseholdMapProps {
    * reading or writing growth must use THIS map, not that array.
    *
    * Load-bearing for three things: the rate shown on each card, the full field
-   * set a scenario write must carry (see `lib/household-map/account-write.ts`),
+   * set a scenario write must carry (see `lib/inline-edit/account-write.ts`),
    * and hydrating the real account dialog via `accountToInitial`.
    *
    * Liabilities are absent by construction. Life-insurance rows are present but
@@ -395,7 +395,7 @@ export interface BoardCallbacks {
   onAddGoal?: () => void;
   /** Persist a narrow change to one account. The board reports WHAT changed;
    *  `household-map-view` decides how it is written (base vs scenario payload —
-   *  see `lib/household-map/account-write.ts`). Resolves false on failure so the
+   *  see `lib/inline-edit/account-write.ts`). Resolves false on failure so the
    *  editor can revert. */
   onSaveAccountField?: (accountId: string, patch: AccountPatch) => Promise<boolean>;
   /** The card's pencil was clicked — open the full account editor. */

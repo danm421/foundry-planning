@@ -19,6 +19,7 @@ import IncomeExpensesView from "@/components/income-expenses-view";
 import { buildClientMilestones } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { buildFlowScenarioFields } from "@/lib/inline-edit/flow-write";
 import { controllingEntity } from "@/engine/ownership";
 import {
   expenseEngineToView,
@@ -78,10 +79,24 @@ export async function IncomeExpensesContent({ clientId: id, scenarioParam }: Inc
   // Synthesized life-insurance premiums (source: "policy") are derived from
   // life-insurance accounts at load time; they aren't real expense rows and
   // shouldn't appear in the manual income-expenses editor.
-  const expenses = effectiveTree.expenses
-    .filter((e) => e.source !== "policy")
-    .map(expenseEngineToView);
+  const effectiveExpenses = effectiveTree.expenses.filter((e) => e.source !== "policy");
+  const expenses = effectiveExpenses.map(expenseEngineToView);
   const savingsRulesView = effectiveTree.savingsRules.map(savingsRuleEngineToView);
+
+  // Scenario-edit field sets for the inline flow cells — the EFFECTIVE ENGINE
+  // ROWS, pruned, not the view rows above. A scenario edit's payload is stored
+  // as a wholesale replace, so it must carry every field this scenario already
+  // overrides; the view types are strict subsets of the engine types and the
+  // fields they drop (`isSelfEmployment`, `endsAtMedicareEligibilityOwner`) are
+  // ones real producers override. `lib/inline-edit/flow-write.ts` owns the rule.
+  //
+  // Unlike the Household Map there are no hydratability predicates to apply —
+  // this page renders every income, and every expense the view itself keeps, so
+  // the two sets are built from the same arrays.
+  const flowScenarioFields: Record<string, Record<string, unknown>> = Object.fromEntries([
+    ...effectiveTree.incomes.map((i) => [i.id, buildFlowScenarioFields(i)] as const),
+    ...effectiveExpenses.map((e) => [e.id, buildFlowScenarioFields(e)] as const),
+  ]);
 
   const incomeIds = incomes.map((i) => i.id);
   const expenseIds = expenses.map((e) => e.id);
@@ -215,6 +230,7 @@ export async function IncomeExpensesContent({ clientId: id, scenarioParam }: Inc
       incomeSchedules={incomeScheduleMap}
       expenseSchedules={expenseScheduleMap}
       savingsSchedules={savingsScheduleMap}
+      flowScenarioFields={flowScenarioFields}
       resolvedInflationRate={resolvedInflationRate}
       ssClientInfo={{
         firstName: client.firstName,

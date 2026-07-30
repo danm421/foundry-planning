@@ -261,6 +261,83 @@ describe("buildScenarioDesiredFields", () => {
   });
 });
 
+describe("owner writes", () => {
+  const owners = [
+    { kind: "family_member" as const, familyMemberId: "fm-c", percent: 0.5 },
+    { kind: "family_member" as const, familyMemberId: "fm-s", percent: 0.5 },
+  ];
+
+  it("carries owners and titlingType together in the base payload", () => {
+    expect(buildBasePayload({ owners, titlingType: "community_property" })).toEqual({
+      owners,
+      titlingType: "community_property",
+    });
+  });
+
+  it("keeps owners in the scenario payload — it is NOT a derived key", () => {
+    // `owner` (singular, a derived display label) is stripped; `owners`
+    // (plural, the persisted relation) must pass through. Conflating the two
+    // either drops a real split or writes a label back as data.
+    const out = buildScenarioDesiredFields(row({ owners }), { value: "500000" });
+    expect(out.owners).toEqual(owners);
+    expect(out).not.toHaveProperty("owner");
+  });
+
+  it("overrides the row's owners with the patch's", () => {
+    const next = [{ kind: "entity" as const, entityId: "e1", percent: 1 }];
+    const out = buildScenarioDesiredFields(row({ owners, titlingType: "community_property" }), {
+      owners: next,
+      titlingType: "jtwros",
+    });
+    expect(out.owners).toEqual(next);
+    expect(out.titlingType).toBe("jtwros");
+  });
+});
+
+describe("the null rule — growthRate is the documented exception", () => {
+  it("strips a null growthRate from the scenario payload", () => {
+    // null here means ABSENCE (the rate is derived). Emitting it makes the
+    // diff `growthRate: {from: n, to: null}`, applyEdit writes null onto the
+    // resolved engine account, and projection.ts computes
+    // `currentBalance * null === 0` — the account's growth is zero for the
+    // ENTIRE projection, silently, with nothing to repair it.
+    const out = buildScenarioDesiredFields(row({ growthRate: null }), { value: "1" });
+    expect(out).not.toHaveProperty("growthRate");
+  });
+
+  it("strips a null growthRate even when the patch is the thing supplying it", () => {
+    const out = buildScenarioDesiredFields(row(), {
+      growthSource: "model_portfolio",
+      modelPortfolioId: "mp-2",
+      growthRate: null,
+    });
+    expect(out).not.toHaveProperty("growthRate");
+    expect(out.modelPortfolioId).toBe("mp-2");
+  });
+
+  it("keeps a real numeric growthRate", () => {
+    const out = buildScenarioDesiredFields(row(), { growthRate: "0.071" });
+    expect(out.growthRate).toBe("0.071");
+  });
+});
+
+describe("scenario payload retains unrelated overrides", () => {
+  it("a narrow owner edit does not drop the row's growth fields", () => {
+    // THE regression test for the wholesale-replace trap. applyEntityEdit
+    // upserts with `set: { payload: diff }`, so anything absent from this
+    // payload is DELETED from the scenario. Written to go red against a naive
+    // `{ ...patch }` implementation.
+    const out = buildScenarioDesiredFields(
+      row({ growthSource: "model_portfolio", modelPortfolioId: "mp-7", growthRate: "0.062" }),
+      { owners: [{ kind: "entity", entityId: "e1", percent: 1 }], titlingType: "jtwros" },
+    );
+    expect(out.growthSource).toBe("model_portfolio");
+    expect(out.modelPortfolioId).toBe("mp-7");
+    expect(out.growthRate).toBe("0.062");
+    expect(out.value).toBe("400000");
+  });
+});
+
 describe("patchFromGrowthSelection", () => {
   it("maps a model-portfolio pick to source + id, clearing the ticker id", () => {
     expect(patchFromGrowthSelection("mp:mp-9")).toEqual({

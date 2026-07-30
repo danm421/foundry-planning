@@ -232,10 +232,11 @@ describe("BalanceSheetView read-only gating", () => {
     // "Liabilities" appears in KPI strip and panel heading — both should be present
     expect(screen.getAllByText("Liabilities").length).toBeGreaterThan(0);
 
-    // Account row "Brokerage Account" must NOT be cursor-pointer (not clickable) under view.
-    // The Row component (balance-sheet-view.tsx ~1391) adds cursor-pointer only when onClick
-    // is defined, which is canEdit-gated. The accounts are in a collapsed CategoryGroup by
-    // default — expand "Taxable" first, then check.
+    // Account row "Brokerage Account" must NOT be cursor-pointer (not clickable) under view,
+    // and must offer no pencil into the full editor either. Asset rows now carry inline cells,
+    // so the row itself is never clickable — the pencil is the only way in, and it is
+    // canEdit-gated. The accounts are in a collapsed CategoryGroup by default — expand
+    // "Taxable" first, then check.
     const taxableToggles = screen.queryAllByRole("button", { name: /taxable/i });
     expect(taxableToggles.length).toBeGreaterThan(0);
     fireEvent.click(taxableToggles[0]);
@@ -243,6 +244,7 @@ describe("BalanceSheetView read-only gating", () => {
     expect(brokerageSpans.length).toBeGreaterThan(0);
     const brokerageRowContainer = brokerageSpans[0].closest("div.flex.items-center.justify-between");
     expect(brokerageRowContainer?.className).not.toContain("cursor-pointer");
+    expect(screen.queryByRole("button", { name: "Edit Brokerage Account" })).toBeNull();
   });
 
   it("shows Edit toggle, Add Asset, and Refresh prices under permission='edit'", () => {
@@ -267,7 +269,11 @@ describe("BalanceSheetView read-only gating", () => {
     // KPI values should still be visible
     expect(screen.getByText("Assets (in estate)")).toBeTruthy();
 
-    // Account row "Brokerage Account" must be cursor-pointer (clickable) under edit.
+    // The asset row's way into the full editor under edit is the PENCIL, not the row body.
+    // The row carries inline owner/value cells now, and a row-level click handler swallows
+    // every one of them — so the row deliberately gives up its own click and is no longer
+    // cursor-pointer. This assertion pair is what keeps the read-only gate honest: `view`
+    // gets neither affordance, `edit` gets the pencil.
     // Expand the "Taxable" category group first (collapsed by default).
     const taxableToggles = screen.queryAllByRole("button", { name: /taxable/i });
     expect(taxableToggles.length).toBeGreaterThan(0);
@@ -275,7 +281,8 @@ describe("BalanceSheetView read-only gating", () => {
     const brokerageSpans = screen.queryAllByText("Brokerage Account");
     expect(brokerageSpans.length).toBeGreaterThan(0);
     const brokerageRowContainer = brokerageSpans[0].closest("div.flex.items-center.justify-between");
-    expect(brokerageRowContainer?.className).toContain("cursor-pointer");
+    expect(brokerageRowContainer?.className).not.toContain("cursor-pointer");
+    expect(screen.queryByRole("button", { name: "Edit Brokerage Account" })).not.toBeNull();
   });
 });
 

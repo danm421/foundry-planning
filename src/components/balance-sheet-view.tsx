@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect, type ReactNode } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
@@ -27,6 +27,26 @@ import {
 import { useToast } from "@/components/toast";
 import { refreshClientHoldingPrices } from "@/lib/investments/holdings-client";
 import { useClientAccess } from "./client-access-provider";
+import Row from "@/components/balance-sheet/row";
+import CategoryGroup from "@/components/balance-sheet/category-group";
+import BusinessRowGroup from "@/components/balance-sheet/business-row-group";
+import { ChevronDown, ChevronRight, LinkedSourceBadge } from "@/components/balance-sheet/icons";
+import InlineOwnerCell from "@/components/forms/inline-owner-cell";
+import GrowthRateCell from "@/components/forms/growth-rate-cell";
+import { InlineAmount } from "@/components/forms/inline-amount";
+import { usePendingEdits } from "@/hooks/use-pending-edits";
+import {
+  buildBasePayload,
+  buildScenarioDesiredFields,
+  type AccountPatch,
+} from "@/lib/inline-edit/account-write";
+import {
+  buildLiabilityBasePayload,
+  buildLiabilityScenarioDesiredFields,
+  type LiabilityPatch,
+} from "@/lib/inline-edit/liability-write";
+import type { GrowthContext } from "@/lib/investments/growth-context";
+import type { CategoryDefaultRateMap } from "@/lib/investments/category-default-rates";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable" | "stock_options" | "education_savings";
 
@@ -35,11 +55,6 @@ type AccountCategory = "taxable" | "cash" | "retirement" | "annuity" | "real_est
  *  indicator next to the name. Extend this union (and LINKED_SOURCE_LABEL) as
  *  integrations are added — addepar, black_diamond, … */
 export type LinkedSource = "plaid" | "orion";
-
-const LINKED_SOURCE_LABEL: Record<LinkedSource, string> = {
-  plaid: "Linked via Plaid",
-  orion: "Synced from Orion",
-};
 
 export interface AccountRow {
   id: string;
@@ -172,6 +187,22 @@ interface BalanceSheetViewProps {
   categoryDefaultSources?: Record<string, { source: string; portfolioId?: string; portfolioName?: string; blendedReturn?: number }>;
   milestones?: ClientMilestones;
   resolvedInflationRate?: number;
+  /**
+   * Growth-rate dropdown context for the inline rate cell on asset rows.
+   * Server-built (`net-worth-content.tsx`) and OPTIONAL: the onboarding wizard's
+   * accounts/liabilities steps mount this view without it and simply get no
+   * rate cell. Deliberately not derived from `modelPortfolios`/`categoryDefaults`
+   * — those props carry a narrower shape (no `riskLevel`) and a different unit
+   * (flat decimal strings vs `blendedReturnPct`).
+   */
+  growthContext?: GrowthContext;
+  /**
+   * Per-category default RATES as decimal strings, all ten categories.
+   * NAMING TRAP: this is NOT `growthContext.categoryDefaults`, which is a
+   * `{portfolioName, blendedReturnPct}` label map for three categories. The
+   * rate cell needs this one. Travels with `growthContext`.
+   */
+  categoryDefaultRates?: CategoryDefaultRateMap;
   /** "wizard" hides the KPI strip + Out-of-Estate panel and renders only the
    * column indicated by `section`. Default "page" preserves the existing
    * tabbed-view behavior verbatim. */
@@ -235,73 +266,6 @@ const fmt = (value: string | number) =>
     currency: "USD",
     maximumFractionDigits: 0,
   }).format(Number(value));
-
-function TrashIcon() {
-  return (
-    <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-      <path
-        fillRule="evenodd"
-        d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
-        clipRule="evenodd"
-      />
-    </svg>
-  );
-}
-
-function ChevronDown() {
-  return (
-    <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-      <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-    </svg>
-  );
-}
-
-function ChevronRight() {
-  return (
-    <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-      <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-    </svg>
-  );
-}
-
-function LinkIcon() {
-  return (
-    <svg
-      className="h-3.5 w-3.5"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M9 12h6" />
-      <path d="M10.5 8.5H8a3.5 3.5 0 1 0 0 7h2.5" />
-      <path d="M13.5 8.5H16a3.5 3.5 0 1 1 0 7h-2.5" />
-    </svg>
-  );
-}
-
-/** Small indicator shown next to an account/liability name when its balance is
- *  fed by an external integration (Plaid today; Orion/Addepar/Black Diamond
- *  later). Hover or focus reveals which one via the native tooltip; a bare row
- *  (no badge) reads as a manual entry. Kept neutral — the accent stays reserved
- *  for actions, and a native `title` avoids clipping inside the list's
- *  overflow-hidden containers. */
-function LinkedSourceBadge({ source }: { source: LinkedSource }) {
-  const label = LINKED_SOURCE_LABEL[source];
-  return (
-    <span
-      role="img"
-      aria-label={label}
-      title={label}
-      className="inline-flex shrink-0 cursor-help items-center text-gray-500"
-    >
-      <LinkIcon />
-    </span>
-  );
-}
 
 /** Exported for the Household Map's edit pencil, which opens this same dialog
  *  from `accountRows` (`lib/accounts/load-account-rows.ts` builds the identical
@@ -510,6 +474,8 @@ export default function BalanceSheetView({
   categoryDefaultSources,
   milestones,
   resolvedInflationRate,
+  growthContext,
+  categoryDefaultRates,
   embed = "page",
   section,
   planStartYear,
@@ -551,6 +517,70 @@ export default function BalanceSheetView({
 
   const writer = useScenarioWriter(clientId);
   const withScenario = useScenarioPreservingHref();
+
+  // This view holds no row state — it renders props and re-renders via
+  // `router.refresh()`. Without an optimistic overlay every inline edit would
+  // sit unchanged until the round-trip lands, which reads as a dead control.
+  const pendingAccounts = usePendingEdits(accounts);
+
+  /** Persist one inline asset-row field. The two payloads are deliberately
+   *  asymmetric — see `lib/inline-edit/account-write.ts`, which owns both. */
+  async function saveAccountField(id: string, patch: AccountPatch): Promise<boolean> {
+    // The MERGED row, not the raw `accounts` prop. `buildScenarioDesiredFields`
+    // sends the WHOLE row plus the patch, so a second edit landing before the
+    // first round-trip completes would carry the STALE field and silently
+    // revert it.
+    const row = pendingAccounts.rows.find((a) => a.id === id);
+    if (!row) return false;
+    return pendingAccounts.apply(id, patch, async () => {
+      const res = await writer.submit(
+        {
+          op: "edit",
+          targetKind: "account",
+          targetId: id,
+          desiredFields: buildScenarioDesiredFields(row, patch),
+        },
+        {
+          url: `/api/clients/${clientId}/accounts/${id}`,
+          method: "PUT",
+          body: buildBasePayload(patch),
+        },
+      );
+      if (!res.ok) showToast({ message: `Couldn't save ${row.name}.` });
+      return res.ok;
+    });
+  }
+
+  const pendingLiabilities = usePendingEdits(liabilities);
+
+  /** Persist one inline liability-row field. Same deliberate base/scenario
+   *  asymmetry as the account writer — `lib/inline-edit/liability-write.ts`
+   *  owns both payloads. */
+  async function saveLiabilityField(id: string, patch: LiabilityPatch): Promise<boolean> {
+    // The MERGED row, for the same reason `saveAccountField` reads one:
+    // `buildLiabilityScenarioDesiredFields` sends the WHOLE row plus the
+    // patch, so a second edit landing before the first round-trip completes
+    // would carry the STALE field and silently revert it.
+    const row = pendingLiabilities.rows.find((l) => l.id === id);
+    if (!row) return false;
+    return pendingLiabilities.apply(id, patch, async () => {
+      const res = await writer.submit(
+        {
+          op: "edit",
+          targetKind: "liability",
+          targetId: id,
+          desiredFields: buildLiabilityScenarioDesiredFields(row, patch),
+        },
+        {
+          url: `/api/clients/${clientId}/liabilities/${id}`,
+          method: "PUT",
+          body: buildLiabilityBasePayload(patch),
+        },
+      );
+      if (!res.ok) showToast({ message: `Couldn't save ${row.name}.` });
+      return res.ok;
+    });
+  }
 
   const [assetsEdit, setAssetsEdit] = useState(false);
   const [liabilitiesEdit, setLiabilitiesEdit] = useState(false);
@@ -652,7 +682,9 @@ export default function BalanceSheetView({
   };
 
   // Legacy notes_receivable accounts are sourced from `notesReceivable` now.
-  const nonNoteAccounts = accounts.filter((a) => a.category !== "notes_receivable");
+  // Reads the MERGED rows so an in-flight inline edit shows immediately — and
+  // so the KPI totals derived from these lists move with it.
+  const nonNoteAccounts = pendingAccounts.rows.filter((a) => a.category !== "notes_receivable");
 
   const inEstate = nonNoteAccounts.filter((a) => accountInEstate(a) && isVisibleInNetWorth(a));
   // 529s render as their own category group in the Assets card — that's where
@@ -717,7 +749,9 @@ export default function BalanceSheetView({
     inEstateByCategory[a.category].push(a);
   }
   // Top-level liabilities only — children render under their parent business.
-  const topLevelLiabilities = liabilities.filter((l) => !l.parentAccountId);
+  // Filters the MERGED rows, not the raw prop: overlaying after the filter
+  // would drop every optimistic value on the way to the rows that render.
+  const topLevelLiabilities = pendingLiabilities.rows.filter((l) => !l.parentAccountId);
 
   // Notes receivable: project balance to prior-year-end (≈ current balance),
   // matching how liability balances are displayed.
@@ -766,7 +800,9 @@ export default function BalanceSheetView({
   const totalOutOfEstate =
     outOfEstate.reduce((s, a) => s + Number(a.value), 0) + outOfEstateBusinessEntityTotal;
   const totalAssets = totalInEstate + totalOutOfEstate;
-  const totalLiabilities = liabilities.reduce((s, l) => s + currentYearBalance(l), 0);
+  // Merged rows, so the panel total and the net-worth KPI move with an inline
+  // balance edit instead of lagging a round-trip behind the row above them.
+  const totalLiabilities = pendingLiabilities.rows.reduce((s, l) => s + currentYearBalance(l), 0);
   const netWorth = totalInEstate - totalLiabilities;
   // Liquid (taxable/cash/retirement) in-estate holdings — the engine's
   // "portfolio assets" bucket.
@@ -852,10 +888,18 @@ export default function BalanceSheetView({
     setEditingNote(n);
   }
 
-  function noteOwnerDisplay(n: NoteReceivable): string {
-    const owners = n.owners ?? [];
-    if (owners.length === 0) return "—";
-    const first = owners[0];
+  /**
+   * Owner label straight off the ownership relation.
+   *
+   * Distinct from `ownerDisplay(a: AccountRow)` above, which reads the account
+   * row's DERIVED `owner` string. Notes receivable and liabilities carry no
+   * such string, so both read the relation instead — hence one helper rather
+   * than two near-identical ones.
+   */
+  function ownerLabelFromOwners(owners: AccountOwner[] | undefined): string {
+    const list = owners ?? [];
+    if (list.length === 0) return "—";
+    const first = list[0];
     if (first.kind === "entity") {
       return entityMap[first.entityId]?.name ?? "Entity";
     }
@@ -868,6 +912,10 @@ export default function BalanceSheetView({
       return fm.firstName;
     }
     return "External";
+  }
+
+  function noteOwnerDisplay(n: NoteReceivable): string {
+    return ownerLabelFromOwners(n.owners);
   }
 
   function growthDisplay(a: AccountRow) {
@@ -994,18 +1042,72 @@ export default function BalanceSheetView({
                     ) : (
                       <Row
                         key={a.id}
-                        onClick={canEdit ? () => handleAccountClick(a) : undefined}
                         editMode={canEdit && assetsEdit}
                         onDelete={canEdit ? () => setDeletingAccount(a) : undefined}
+                        onEdit={canEdit ? () => handleAccountClick(a) : undefined}
                         deletable={!a.isDefaultChecking}
                         label={a.name}
                         labelBadge={
                           a.linkedSource ? <LinkedSourceBadge source={a.linkedSource} /> : undefined
                         }
+                        // Owner and growth moved into their own cells; the
+                        // beneficiary has no cell, so 529 rows keep a subLabel
+                        // reduced to just that name.
                         subLabel={
                           cat === "education_savings"
-                            ? `${a.beneficiaryDisplayName ?? "Unnamed beneficiary"} (beneficiary) · ${growthDisplay(a)}`
-                            : `${ownerDisplay(a)} · ${growthDisplay(a)}`
+                            ? `${a.beneficiaryDisplayName ?? "Unnamed beneficiary"} (beneficiary)`
+                            : undefined
+                        }
+                        ownerSlot={
+                          <InlineOwnerCell
+                            owners={a.owners}
+                            titlingType={a.titlingType ?? "jtwros"}
+                            parentAccountId={a.parentAccountId}
+                            familyMembers={familyMembers ?? []}
+                            entities={entities}
+                            retirementMode={a.category === "retirement"}
+                            display={ownerDisplay(a)}
+                            label={`owner for ${a.name}`}
+                            canEdit={canEdit}
+                            onSave={({ owners, titlingType }) =>
+                              saveAccountField(a.id, { owners, titlingType })
+                            }
+                          />
+                        }
+                        // Always rendered when the context is there, including
+                        // life insurance: `growthEditModeFor` already answers
+                        // "none" for it and the cell falls back to a read-only
+                        // span. Returning null instead would drop the
+                        // fixed-width cell and shift the value column out of
+                        // alignment with every sibling row.
+                        rateSlot={
+                          growthContext && categoryDefaultRates ? (
+                            <GrowthRateCell
+                              row={a}
+                              growthContext={growthContext}
+                              categoryDefaultRates={categoryDefaultRates}
+                              // Falls back to the context's own rate only to
+                              // satisfy the optional prop — on the Net Worth
+                              // page both are built from the same resolve.
+                              resolvedInflationRate={
+                                resolvedInflationRate ?? growthContext.resolvedInflationRate
+                              }
+                              canEdit={canEdit}
+                              onSave={(patch) => saveAccountField(a.id, patch)}
+                            />
+                          ) : undefined
+                        }
+                        valueSlot={
+                          // A linked account's value is owned by the integration
+                          // — editing it here would be overwritten on the next
+                          // sync without warning.
+                          canEdit && a.linkedSource == null ? (
+                            <InlineAmount
+                              amount={Number(a.value)}
+                              label={a.name}
+                              onSave={(next) => saveAccountField(a.id, { value: String(next) })}
+                            />
+                          ) : undefined
                         }
                         value={fmt(a.value)}
                       />
@@ -1084,14 +1186,89 @@ export default function BalanceSheetView({
                 {topLevelLiabilities.map((l) => (
                   <Row
                     key={l.id}
-                    onClick={canEdit ? () => !liabilitiesEdit && setEditingLiability(l) : undefined}
                     editMode={canEdit && liabilitiesEdit}
                     onDelete={canEdit ? () => setDeletingLiability(l) : undefined}
+                    onEdit={canEdit ? () => setEditingLiability(l) : undefined}
                     label={l.name}
                     labelBadge={
                       l.linkedSource ? <LinkedSourceBadge source={l.linkedSource} /> : undefined
                     }
-                    subLabel={Number(l.interestRate) > 0 ? `${(Number(l.interestRate) * 100).toFixed(2)}% interest` : undefined}
+                    // The interest rate moved into its own cell; the old
+                    // "4.00% interest" subLabel would just repeat it.
+                    ownerSlot={
+                      // TITLING EXCEPTION. `InlineOwnerCell` requires a
+                      // `titlingType`, but `LiabilityRow` has no such column
+                      // and `LiabilityPatch` cannot express one — so the
+                      // constant below is inert and the returned titlingType
+                      // is deliberately DISCARDED. This is the one exception
+                      // to "titlingType always travels with owners": that rule
+                      // exists because joint vs community property flips an
+                      // ASSET's basis treatment (§1014(b)(6) full step-up vs
+                      // §2040(b) 50/50). A liability has no basis and no
+                      // step-up, so there is nothing to flip; writing the key
+                      // would invent a column.
+                      <InlineOwnerCell
+                        owners={l.owners}
+                        titlingType="jtwros"
+                        parentAccountId={l.parentAccountId}
+                        familyMembers={familyMembers ?? []}
+                        entities={entities}
+                        display={ownerLabelFromOwners(l.owners)}
+                        label={`owner for ${l.name}`}
+                        canEdit={canEdit}
+                        onSave={({ owners }) => saveLiabilityField(l.id, { owners })}
+                      />
+                    }
+                    rateSlot={
+                      canEdit ? (
+                        <InlineAmount
+                          mode="percent"
+                          noun="interest rate"
+                          amount={Number(l.interestRate) * 100}
+                          label={l.name}
+                          onSave={(pct) =>
+                            saveLiabilityField(l.id, { interestRate: String(pct / 100) })
+                          }
+                          className="min-w-[56px] rounded-sm px-1 py-0.5 text-right tabular text-[11px] text-ink-3 hover:bg-card-hover hover:text-ink-2"
+                        />
+                      ) : (
+                        // A read-only span, NOT undefined. `Row` renders the
+                        // fixed-width rate cell only when the slot is truthy,
+                        // so dropping it would hide the rate from view-only
+                        // users AND shift the value column out of alignment
+                        // with every sibling row. (Asset rows avoid this
+                        // because `GrowthRateCell` handles read-only itself.)
+                        <span className="tabular text-[11px] text-ink-3">
+                          {(Number(l.interestRate) * 100).toFixed(2)}%
+                        </span>
+                      )
+                    }
+                    valueSlot={
+                      // A linked liability's balance is owned by the
+                      // integration — editing it here would be overwritten on
+                      // the next sync without warning.
+                      canEdit && l.linkedSource == null ? (
+                        // `amount` and `format` deliberately show DIFFERENT
+                        // numbers. `amount` is the stored as-of principal —
+                        // the column the write lands in. `format` reproduces
+                        // what this row has always displayed: the projected
+                        // current-year balance, which `currentYearBalance`
+                        // back-solves and amortizes to LAST year's ending
+                        // balance. Editing the amortized figure would write it
+                        // straight back over the principal and corrupt it.
+                        // The red comes through `className` because `Row`
+                        // applies `valueClassName` only to the fallback span.
+                        <InlineAmount
+                          amount={Number(l.balance)}
+                          label={l.name}
+                          format={() => `(${fmt(currentYearBalance(l))})`}
+                          onSave={(next) =>
+                            saveLiabilityField(l.id, { balance: String(Math.abs(next)) })
+                          }
+                          className="min-w-[88px] rounded-sm px-1.5 py-0.5 text-right text-sm font-medium text-red-400 hover:bg-card-hover hover:ring-1 hover:ring-inset hover:ring-hair-2"
+                        />
+                      ) : undefined
+                    }
                     value={`(${fmt(currentYearBalance(l))})`}
                     valueClassName="text-red-400"
                   />
@@ -1472,307 +1649,6 @@ function EditToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   );
 }
 
-function CategoryGroup({
-  label,
-  tag,
-  total,
-  expanded,
-  onToggle,
-  children,
-}: {
-  label: string;
-  /** Optional amber annotation next to the label (e.g. "Out of estate" on
-   *  the 529 group — listed here for visibility but not in the card total). */
-  tag?: string;
-  total: string;
-  expanded: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="overflow-hidden rounded-md border border-gray-700 bg-gray-900/60">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        className={`flex w-full items-center justify-between bg-gray-800/60 px-3 py-2 text-left hover:bg-gray-800 ${expanded ? "border-b border-gray-700" : ""}`}
-      >
-        <span className="flex items-center gap-2">
-          <span className="flex h-4 w-4 shrink-0 items-center justify-center text-gray-400">
-            {expanded ? <ChevronDown /> : <ChevronRight />}
-          </span>
-          <span className="text-xs font-semibold uppercase tracking-wider text-gray-200">{label}</span>
-          {tag && (
-            <span className="rounded border border-amber-900/40 bg-amber-900/20 px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-amber-300">
-              {tag}
-            </span>
-          )}
-        </span>
-        <span className="text-xs font-medium text-gray-300">{total}</span>
-      </button>
-      {expanded && <div className="divide-y divide-gray-800">{children}</div>}
-    </div>
-  );
-}
-
-function Row({
-  onClick,
-  editMode,
-  onDelete,
-  deletable = true,
-  label,
-  labelBadge,
-  subLabel,
-  value,
-  valueClassName,
-}: {
-  onClick?: () => void;
-  editMode: boolean;
-  onDelete?: () => void;
-  deletable?: boolean;
-  label: string;
-  labelBadge?: ReactNode;
-  subLabel?: string;
-  value: string;
-  valueClassName?: string;
-}) {
-  return (
-    <div
-      onClick={onClick}
-      className={`flex items-center justify-between px-4 py-2 ${onClick ? "cursor-pointer hover:bg-gray-800/60" : ""}`}
-    >
-      <div className="min-w-0">
-        <div className="flex min-w-0 items-center gap-1.5 text-sm font-medium text-gray-100">
-          <span className="truncate">{label}</span>
-          {labelBadge}
-        </div>
-        {subLabel && <div className="truncate text-xs text-gray-400">{subLabel}</div>}
-      </div>
-      <div className="flex shrink-0 items-center gap-3">
-        <span className={`text-sm font-medium ${valueClassName ?? "text-gray-100"}`}>{value}</span>
-        {editMode && deletable && onDelete && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            className="text-white hover:text-white"
-            aria-label={`Delete ${label}`}
-          >
-            <TrashIcon />
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function EmptyRow({ message }: { message: string }) {
   return <div className="px-4 py-8 text-center text-sm text-gray-400">{message}</div>;
-}
-
-interface BusinessRowGroupProps {
-  biz: AccountRow;
-  children_: AccountRow[];
-  childLiabilities: LiabilityRow[];
-  ownedIncomes: { id: string; name: string }[];
-  expanded: boolean;
-  onToggle: () => void;
-  incomesPopoverOpen: boolean;
-  onToggleIncomesPopover: () => void;
-  consolidatedValue: number;
-  onClickRow?: () => void;
-  onDeleteRow?: () => void;
-  onClickChild?: (child: AccountRow) => void;
-  onDeleteChild?: (child: AccountRow) => void;
-  onClickChildLiability?: (l: LiabilityRow) => void;
-  editMode: boolean;
-  ownerDisplay: (a: AccountRow) => string;
-  growthDisplay: (a: AccountRow) => string;
-  currentYearBalance: (l: LiabilityRow) => number;
-}
-
-function BusinessRowGroup({
-  biz,
-  children_,
-  childLiabilities,
-  ownedIncomes,
-  expanded,
-  onToggle,
-  incomesPopoverOpen,
-  onToggleIncomesPopover,
-  consolidatedValue,
-  onClickRow,
-  onDeleteRow,
-  onClickChild,
-  onDeleteChild,
-  onClickChildLiability,
-  editMode,
-  ownerDisplay,
-  growthDisplay,
-  currentYearBalance,
-}: BusinessRowGroupProps) {
-  const hasChildren = children_.length > 0 || childLiabilities.length > 0 || ownedIncomes.length > 0;
-  return (
-    <>
-      <div className="flex items-center justify-between px-4 py-2 hover:bg-gray-800/60">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggle();
-          }}
-          className="mr-2 flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 hover:text-gray-100 disabled:opacity-40"
-          aria-label={expanded ? "Collapse" : "Expand"}
-          aria-expanded={expanded}
-          disabled={!hasChildren}
-        >
-          {expanded ? <ChevronDown /> : <ChevronRight />}
-        </button>
-        <div
-          onClick={onClickRow}
-          className={`flex flex-1 items-center justify-between ${onClickRow ? "cursor-pointer" : ""}`}
-        >
-          <div className="min-w-0">
-            <div className="flex min-w-0 items-center gap-1.5">
-              <span className="truncate text-sm font-medium text-gray-100">{biz.name}</span>
-              {biz.linkedSource && <LinkedSourceBadge source={biz.linkedSource} />}
-            </div>
-            <div className="truncate text-xs text-gray-400">
-              {ownerDisplay(biz)} · {growthDisplay(biz)}
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-gray-100">
-              {new Intl.NumberFormat("en-US", {
-                style: "currency",
-                currency: "USD",
-                maximumFractionDigits: 0,
-              }).format(consolidatedValue)}
-            </span>
-            {editMode && onDeleteRow && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDeleteRow();
-                }}
-                className="text-white hover:text-white"
-                aria-label={`Delete ${biz.name}`}
-              >
-                <TrashIcon />
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-      {expanded && hasChildren && (
-        <div className="bg-gray-950/40 px-4 py-2 pl-12">
-          {children_.length > 0 && (
-            <div className="mb-2">
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-                Owned accounts
-              </div>
-              <div className="divide-y divide-gray-800/60 overflow-hidden rounded-md border border-gray-800/80">
-                {children_.map((c) => (
-                  <div
-                    key={c.id}
-                    onClick={onClickChild ? () => onClickChild(c) : undefined}
-                    className={`flex items-center justify-between px-3 py-1.5 ${onClickChild ? "cursor-pointer hover:bg-gray-800/60" : ""}`}
-                  >
-                    <div className="min-w-0">
-                      <div className="flex min-w-0 items-center gap-1.5">
-                        <span className="truncate text-[13px] text-gray-100">{c.name}</span>
-                        {c.linkedSource && <LinkedSourceBadge source={c.linkedSource} />}
-                      </div>
-                      <div className="truncate text-[11px] text-gray-500">{c.category}</div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-[13px] text-gray-100">
-                        {new Intl.NumberFormat("en-US", {
-                          style: "currency",
-                          currency: "USD",
-                          maximumFractionDigits: 0,
-                        }).format(Number(c.value))}
-                      </span>
-                      {editMode && onDeleteChild && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onDeleteChild(c);
-                          }}
-                          className="text-white hover:text-white"
-                          aria-label={`Delete ${c.name}`}
-                        >
-                          <TrashIcon />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {childLiabilities.length > 0 && (
-            <div className="mb-2">
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-                Owed liabilities
-              </div>
-              <div className="divide-y divide-gray-800/60 overflow-hidden rounded-md border border-gray-800/80">
-                {childLiabilities.map((l) => (
-                  <div
-                    key={l.id}
-                    onClick={onClickChildLiability ? () => onClickChildLiability(l) : undefined}
-                    className={`flex items-center justify-between px-3 py-1.5 ${onClickChildLiability ? "cursor-pointer hover:bg-gray-800/60" : ""}`}
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate text-[13px] text-gray-100">{l.name}</div>
-                    </div>
-                    <span className="text-[13px] text-red-400">
-                      (
-                      {new Intl.NumberFormat("en-US", {
-                        style: "currency",
-                        currency: "USD",
-                        maximumFractionDigits: 0,
-                      }).format(currentYearBalance(l))}
-                      )
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {ownedIncomes.length > 0 && (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={onToggleIncomesPopover}
-                className="inline-flex items-center gap-1 rounded-full border border-emerald-700/50 bg-emerald-900/30 px-2.5 py-0.5 text-[11px] font-medium text-emerald-300 hover:bg-emerald-900/50"
-                aria-expanded={incomesPopoverOpen}
-                aria-haspopup="dialog"
-              >
-                Incomes · {ownedIncomes.length}
-              </button>
-              {incomesPopoverOpen && (
-                <div
-                  role="dialog"
-                  className="absolute left-0 z-20 mt-1 w-56 overflow-hidden rounded-md border border-gray-700 bg-gray-900 shadow-lg"
-                >
-                  <ul className="max-h-56 overflow-y-auto py-1">
-                    {ownedIncomes.map((i) => (
-                      <li
-                        key={i.id}
-                        className="px-3 py-1.5 text-[12px] text-gray-200"
-                      >
-                        {i.name}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </>
-  );
 }

@@ -16,6 +16,7 @@ import IncomeExpensesView from "@/components/income-expenses-view";
 import { buildClientMilestones } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { buildFlowScenarioFields } from "@/lib/inline-edit/flow-write";
 import { controllingEntity } from "@/engine/ownership";
 import {
   expenseEngineToView,
@@ -65,10 +66,19 @@ export default async function CashFlowStep({ clientId, firmId }: CashFlowStepPro
   if (!scenario) return <NotFound />;
 
   const incomes = effectiveTree.incomes.map(incomeEngineToView);
-  const expenses = effectiveTree.expenses
-    .filter((e) => e.source !== "policy")
-    .map(expenseEngineToView);
+  const effectiveExpenses = effectiveTree.expenses.filter((e) => e.source !== "policy");
+  const expenses = effectiveExpenses.map(expenseEngineToView);
   const savingsRulesView = effectiveTree.savingsRules.map(savingsRuleEngineToView);
+
+  // Built the same way as the details page's — see the long comment there. The
+  // wizard always loads BASE, so these field sets are never diffed against a
+  // scenario in practice; passing an EMPTY map instead would be wrong, because
+  // the view refuses an inline write with no entry in ANY mode, which would
+  // silently kill the wizard's existing inline expense-amount editing.
+  const flowScenarioFields: Record<string, Record<string, unknown>> = Object.fromEntries([
+    ...effectiveTree.incomes.map((i) => [i.id, buildFlowScenarioFields(i)] as const),
+    ...effectiveExpenses.map((e) => [e.id, buildFlowScenarioFields(e)] as const),
+  ]);
 
   const incomeIds = incomes.map((i) => i.id);
   const expenseIds = expenses.map((e) => e.id);
@@ -187,6 +197,7 @@ export default async function CashFlowStep({ clientId, firmId }: CashFlowStepPro
       incomeSchedules={incomeScheduleMap}
       expenseSchedules={expenseScheduleMap}
       savingsSchedules={savingsScheduleMap}
+      flowScenarioFields={flowScenarioFields}
       resolvedInflationRate={resolvedInflationRate}
       ssClientInfo={{
         firstName: client.firstName,

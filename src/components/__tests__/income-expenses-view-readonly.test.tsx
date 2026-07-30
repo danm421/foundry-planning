@@ -134,6 +134,9 @@ const BASE_PROPS = {
   incomeSchedules: {},
   expenseSchedules: {},
   savingsSchedules: {},
+  // No inline scenario writes exercised here; the view refuses a write for a
+  // row with no entry, which is the safe default for a fixture.
+  flowScenarioFields: {},
   resolvedInflationRate: 0.03,
   ssClientInfo: SS_CLIENT_INFO,
   ssPlanSettings: SS_PLAN_SETTINGS,

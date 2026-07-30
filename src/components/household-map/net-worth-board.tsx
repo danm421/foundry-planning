@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import MapCard from "./map-card";
-import GrowthRateCell from "./growth-rate-cell";
+import GrowthRateCell from "@/components/forms/growth-rate-cell";
 // The app has no lucide dependency — icons are hand-rolled SVGs in
 // `components/icons.tsx`, which is where the rest of this board's glyphs come
 // from. The plan called for lucide's Pencil; this is the same glyph.

@@ -1,4 +1,4 @@
-// src/lib/household-map/scenario-fields.ts
+// src/lib/inline-edit/scenario-fields.ts
 //
 // The one rule every Household Map scenario payload obeys: prune an EFFECTIVE
 // row or singleton down to the field set a `scenario_changes` edit may send.
