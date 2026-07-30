@@ -13,10 +13,13 @@ import {
   ArrowRightIcon,
   AlertCircleIcon,
   CheckCircleIcon,
-  FlowIcon,
-  ClipboardCheckIcon,
-  SparkleIcon,
 } from "@/components/icons";
+import {
+  START_PATHS,
+  PathCard,
+  isStartPath,
+  type StartPath,
+} from "@/components/planning-start-paths";
 import { CrmHouseholdPicker } from "@/components/crm-household-picker";
 import { StateSelect } from "@/components/state-select";
 import { AgeYearField } from "@/components/forms/age-year-field";
@@ -83,46 +86,6 @@ interface PreviewHousehold {
   contacts: PreviewContact[];
 }
 
-type StartPath = "quick" | "detailed" | "import" | "empty";
-
-function PathCard({
-  icon,
-  title,
-  subtitle,
-  selected,
-  onSelect,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  subtitle: string;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-pressed={selected}
-      className={`flex items-start gap-3 rounded-[var(--radius-sm)] border px-3.5 py-3 text-left transition-colors ${
-        selected
-          ? "border-accent bg-accent/10"
-          : "border-hair bg-card-2 hover:border-ink-4"
-      }`}
-    >
-      <span
-        className={`mt-0.5 shrink-0 ${selected ? "text-accent-ink" : "text-ink-3"}`}
-        aria-hidden="true"
-      >
-        {icon}
-      </span>
-      <span className="min-w-0">
-        <span className="block text-[13px] font-semibold text-ink">{title}</span>
-        <span className="block text-[12px] text-ink-3">{subtitle}</span>
-      </span>
-    </button>
-  );
-}
-
 export default function QuickCreateForm() {
   const router = useRouter();
   const { user } = useUser();
@@ -132,10 +95,17 @@ export default function QuickCreateForm() {
   const [preview, setPreview] = useState<PreviewHousehold | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [showSpouse, setShowSpouse] = useState(false);
+  const [filingStatus, setFilingStatus] = useState<FilingStatus>("single");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [path, setPath] = useState<StartPath | null>(null);
+  // `?path=` lets a caller (the post-create prompt on /crm/new) pre-select a
+  // card. Advisory only — it never skips the confirm button, and anything
+  // unrecognized falls back to today's "nothing selected".
+  const queryPath = searchParams.get("path");
+  const [path, setPath] = useState<StartPath | null>(
+    isStartPath(queryPath) ? queryPath : null,
+  );
   const [residenceState, setResidenceState] = useState<string>("");
   const [children, setChildren] = useState<{ firstName: string; dob: string }[]>([]);
 
@@ -180,6 +150,10 @@ export default function QuickCreateForm() {
         setPreview(json.household);
         const hasSpouse = json.household.contacts.some((c) => c.role === "spouse");
         setShowSpouse(hasSpouse);
+        // Match what the zero-field Import/Empty paths already derive, so an
+        // advisor who just entered a spouse doesn't land on "Single".
+        // Overridable, and re-derived if they switch households.
+        setFilingStatus(hasSpouse ? "married_joint" : "single");
       } catch (err) {
         if (cancelled) return;
         setPreviewError(err instanceof Error ? err.message : "Load failed");
@@ -598,34 +572,16 @@ export default function QuickCreateForm() {
       <div className="border-t border-hair pt-4">
         <span className={fieldLabelClassName}>How do you want to start?</span>
         <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <PathCard
-            icon={<FlowIcon width={18} height={18} />}
-            title="Quick Start"
-            subtitle="Fast retirement intake"
-            selected={path === "quick"}
-            onSelect={() => setPath("quick")}
-          />
-          <PathCard
-            icon={<ClipboardCheckIcon width={18} height={18} />}
-            title="Detailed setup"
-            subtitle="Full guided wizard"
-            selected={path === "detailed"}
-            onSelect={() => setPath("detailed")}
-          />
-          <PathCard
-            icon={<SparkleIcon width={18} height={18} />}
-            title="AI import"
-            subtitle="Extract from documents"
-            selected={path === "import"}
-            onSelect={() => setPath("import")}
-          />
-          <PathCard
-            icon={<ArrowRightIcon width={18} height={18} />}
-            title="Empty client"
-            subtitle="Skip the wizard, start blank"
-            selected={path === "empty"}
-            onSelect={() => setPath("empty")}
-          />
+          {START_PATHS.map((p) => (
+            <PathCard
+              key={p.id}
+              icon={p.icon}
+              title={p.title}
+              subtitle={p.subtitle}
+              selected={path === p.id}
+              onSelect={() => setPath(p.id)}
+            />
+          ))}
         </div>
       </div>
 
@@ -679,7 +635,8 @@ export default function QuickCreateForm() {
                   <select
                     id="filingStatus"
                     name="filingStatus"
-                    defaultValue="single"
+                    value={filingStatus}
+                    onChange={(e) => setFilingStatus(e.target.value as FilingStatus)}
                     required
                     className={selectClassName}
                   >

@@ -41,7 +41,7 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
       "From the Clients list, click New household (top-right).",
       "Enter the household name and the residence state.",
       "Add the primary contact's first and last name.",
-      "Click Save. The household opens — from there you can set up the financial plan.",
+      'Click "Create household". A prompt offers four ways to start their financial plan — or choose "Not now" to open the household record.',
     ],
     href: "/crm/new",
     walkthroughId: "add-household",
@@ -218,11 +218,16 @@ export const WALKTHROUGHS: readonly Walkthrough[] = [
         advanceOn: "input",
       },
       {
+        // Ends the tour on the click itself. /crm/new no longer routes away on
+        // save — it opens the start-planning prompt in place — so a "navigate"
+        // gate here would never be satisfied AND would leave the overlay's
+        // z-[80] scrim painted over the prompt (DialogShell is z-50, unportaled),
+        // making the planning cards unclickable. See
+        // components/forge/__tests__/walkthrough-save-step.test.tsx.
         anchorId: "crm-household-save-button",
         page: "/crm/new",
         callout: 'Click "Create household" to finish.',
-        advanceOn: "navigate",
-        nextPage: "/crm/households/:id",
+        advanceOn: "click",
       },
     ],
   },
