@@ -103,10 +103,32 @@ export const insurancePolicyCreateSchema = z.object(base).superRefine((d, ctx) =
   validateFreeFormSchedule(d, ctx);
 });
 
+/**
+ * Peel every `ZodDefault` wrapper off a field before the update variant makes it
+ * optional. In Zod 4, `.optional()` WRAPS a `ZodDefault` instead of removing it,
+ * so the default still fires on an absent key: `{ faceValue: n }` parsed to that
+ * key plus eleven defaulted ones. The PATCH route
+ * (`/api/clients/[id]/insurance-policies/[policyId]`) guards every write with
+ * `input.X !== undefined`, so those injected keys were all WRITTEN — cash value,
+ * cost basis and premium zeroed, growth/schedule modes reset, and
+ * `cashValueSchedule: []` sent the route down its full-replacement branch, which
+ * DELETEs every row of a free-form policy's schedule. The Insurance panel's
+ * inline cells send exactly these one-key bodies.
+ *
+ * A `while` loop, not one unwrap: several base fields are `.optional().default(0)`.
+ * `insurancePolicyCreateSchema` deliberately keeps its defaults — a create body
+ * is complete, and the route's insert path relies on them.
+ */
+function stripDefault(s: z.ZodTypeAny): z.ZodTypeAny {
+  let cur = s;
+  while (cur instanceof z.ZodDefault) cur = (cur as z.ZodDefault<z.ZodTypeAny>).def.innerType;
+  return cur;
+}
+
 export const insurancePolicyUpdateSchema = z
   .object(
     Object.fromEntries(
-      Object.entries(base).map(([k, v]) => [k, (v as z.ZodTypeAny).optional()]),
+      Object.entries(base).map(([k, v]) => [k, stripDefault(v as z.ZodTypeAny).optional()]),
     ) as Record<string, z.ZodTypeAny>,
   )
   .superRefine((d, ctx) => {

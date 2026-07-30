@@ -8,6 +8,13 @@
  * rather than rejecting them — so `{ value: n }` parses to `{}`, updates
  * nothing, and still answers `{ ok: true }`. A wrong key there is a silent
  * no-op reported as a success.
+ *
+ * That "no-op" reading depends on the update schema staying genuinely partial.
+ * These cells send ONE-KEY bodies and the route writes every field it finds
+ * defined, so if the schema ever defaults the absent keys back in (Zod 4's
+ * `.optional()` wraps a `ZodDefault` rather than removing it — the bug
+ * `stripDefault` in `src/lib/schemas/insurance-policies.ts` fixes), a wrong key
+ * stops being harmless and a right one overwrites the rest of the policy.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";

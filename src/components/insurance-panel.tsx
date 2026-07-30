@@ -345,10 +345,16 @@ export default function InsurancePanel(props: InsurancePanelProps) {
                           label={`${row.name} cash value`}
                           // `cashValue` on the wire, `value` on the row. The
                           // update schema STRIPS unknown keys and still answers
-                          // 200, so sending `value` here would be a silent no-op
-                          // reported as a success; and the optimistic patch must
-                          // be the server's decimal-as-STRING or reconciliation
-                          // never fires and the cell stays pinned forever.
+                          // 200, so sending `value` here saves nothing and still
+                          // reports success. That no-op holds only because
+                          // `insurancePolicyUpdateSchema` also stops injecting
+                          // defaults for keys we didn't send (see `stripDefault`
+                          // there) — the route writes every field it finds
+                          // defined, so a schema that fills in the blanks turns
+                          // any one-key PATCH into a full-row overwrite. The
+                          // optimistic patch must be the server's
+                          // decimal-as-STRING or reconciliation never fires and
+                          // the cell stays pinned forever.
                           onSave={(next) =>
                             savePolicyField(
                               row.id,
