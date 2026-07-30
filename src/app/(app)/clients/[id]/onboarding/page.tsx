@@ -5,7 +5,7 @@ import { clients } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { deriveStepStatuses } from "@/lib/onboarding/step-status";
-import type { OnboardingState } from "@/lib/onboarding/types";
+import { isStepSlug, type OnboardingState } from "@/lib/onboarding/types";
 import { STEPS } from "@/lib/onboarding/steps";
 
 interface PageProps {
@@ -24,7 +24,10 @@ export default async function OnboardingResumePage({ params }: PageProps) {
 
   const state = (row.state as OnboardingState | null) ?? {};
 
-  if (state.lastStepVisited) {
+  // Clients onboarded before a step was retired can still carry that slug in
+  // `lastStepVisited` — resuming into it would 404, so fall through to the
+  // first-incomplete lookup instead.
+  if (state.lastStepVisited && isStepSlug(state.lastStepVisited)) {
     redirect(`/clients/${id}/onboarding/${state.lastStepVisited}`);
   }
 

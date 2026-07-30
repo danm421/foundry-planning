@@ -8,9 +8,9 @@ import {
 } from "../import-sections";
 
 describe("import-sections", () => {
-  it("marks the 7 data-entry steps eligible, others not", () => {
+  it("marks the 5 data-entry steps eligible, others not", () => {
     expect([...IMPORT_ELIGIBLE_STEPS].sort()).toEqual(
-      ["accounts", "cash-flow", "entities", "estate", "family", "insurance", "liabilities"].sort(),
+      ["accounts", "cash-flow", "family", "insurance", "liabilities"].sort(),
     );
     expect(isImportEligibleStep("accounts")).toBe(true);
     expect(isImportEligibleStep("household")).toBe(false);

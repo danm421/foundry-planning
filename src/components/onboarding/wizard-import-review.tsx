@@ -4,30 +4,20 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   ExtractedAccount,
   ExtractedDependent,
-  ExtractedEntity,
   ExtractedExpense,
   ExtractedIncome,
   ExtractedLiability,
   ExtractedLifePolicy,
   ExtractedPrimaryFamilyMember,
   ExtractedSpouseFamilyMember,
-  ExtractedWill,
 } from "@/lib/extraction/types";
 import type { Annotated, ImportPayload, MatchAnnotation } from "@/lib/imports/types";
-import type { AssetOption, RecipientOption } from "@/components/import/will-bequest-mapper";
-import { seedWizardBequest } from "@/components/import/will-bequest-mapper";
 import ReviewStepAccounts from "@/components/import/review-step-accounts";
 import ReviewStepIncomes from "@/components/import/review-step-incomes";
 import ReviewStepExpenses from "@/components/import/review-step-expenses";
 import ReviewStepLiabilities from "@/components/import/review-step-liabilities";
-import ReviewStepEntities from "@/components/import/review-step-entities";
 import ReviewStepFamily from "@/components/import/review-step-family";
 import ReviewStepInsurance from "@/components/import/review-step-insurance";
-import ReviewStepWills, {
-  areAllBequestsResolved,
-  wizardWillsToCommitShape,
-  type WizardWill,
-} from "@/components/import/review-step-wills";
 import type { MatchCandidate } from "@/components/import/match-link-picker";
 import { SourceFilesContext } from "@/components/import/source-badge";
 import {
@@ -37,7 +27,6 @@ import {
 
 interface CanonicalRows {
   accounts: { id: string; name: string }[];
-  liabilities: { id: string; name: string }[];
   familyMembers: {
     id: string;
     firstName: string;
@@ -49,7 +38,6 @@ interface CanonicalRows {
 
 const EMPTY_CANONICAL: CanonicalRows = {
   accounts: [],
-  liabilities: [],
   familyMembers: [],
   entities: [],
 };
@@ -96,22 +84,6 @@ export default function WizardImportReview({
   const [lifePolicies, setLifePolicies] = useState<Annotated<ExtractedLifePolicy>[]>(
     payload.lifePolicies,
   );
-  const [entities, setEntities] = useState<Annotated<ExtractedEntity>[]>(payload.entities);
-
-  // Wills get their own wizard-internal shape. Matches live in a parallel
-  // array since WizardWill drops the Annotated wrapper.
-  const [wills, setWills] = useState<WizardWill[]>(() =>
-    payload.wills.map((w) => ({
-      grantor: w.grantor,
-      executor: w.executor,
-      executionDate: w.executionDate,
-      bequests: w.bequests.map(seedWizardBequest),
-      __provenance: w.__provenance,
-    })),
-  );
-  const [willMatches, setWillMatches] = useState<Array<MatchAnnotation | undefined>>(
-    () => payload.wills.map((w) => w.match),
-  );
 
   const [canonical, setCanonical] = useState<CanonicalRows>(EMPTY_CANONICAL);
   const [committing, setCommitting] = useState(false);
@@ -126,14 +98,12 @@ export default function WizardImportReview({
       return Array.isArray(body) ? body : [];
     };
     try {
-      const [aRes, lRes, fRes, eRes] = await Promise.all([
+      const [aRes, fRes, eRes] = await Promise.all([
         fetch(`/api/clients/${clientId}/accounts`).catch(() => null),
-        fetch(`/api/clients/${clientId}/liabilities`).catch(() => null),
         fetch(`/api/clients/${clientId}/family-members`).catch(() => null),
         fetch(`/api/clients/${clientId}/entities`).catch(() => null),
       ]);
       const accountsRaw = await safeJson<{ id: string; name: string }>(aRes);
-      const liabilitiesRaw = await safeJson<{ id: string; name: string }>(lRes);
       const familyRaw = await safeJson<{
         id: string;
         firstName: string;
@@ -143,7 +113,6 @@ export default function WizardImportReview({
       const entitiesRaw = await safeJson<{ id: string; name: string }>(eRes);
       setCanonical({
         accounts: accountsRaw.map((a) => ({ id: a.id, name: a.name })),
-        liabilities: liabilitiesRaw.map((l) => ({ id: l.id, name: l.name })),
         familyMembers: familyRaw.map((f) => ({
           id: f.id,
           firstName: f.firstName,
@@ -157,27 +126,11 @@ export default function WizardImportReview({
     }
   }, [clientId]);
 
-  // Canonical rows only feed the accounts match-picker and the wills
-  // recipient/asset dropdowns — the other steps never read them.
+  // Canonical rows only feed the accounts match-picker — the other steps
+  // never read them.
   useEffect(() => {
-    if (step === "accounts" || step === "estate") fetchCanonical();
+    if (step === "accounts") fetchCanonical();
   }, [step, fetchCanonical]);
-
-  const recipientOptions: RecipientOption[] = useMemo(() => {
-    const opts: RecipientOption[] = [{ kind: "spouse", id: null, label: "Spouse" }];
-    for (const fm of canonical.familyMembers) {
-      const last = fm.lastName ? ` ${fm.lastName}` : "";
-      opts.push({
-        kind: "family_member",
-        id: fm.id,
-        label: `${fm.firstName}${last} (${fm.role})`,
-      });
-    }
-    for (const e of canonical.entities) {
-      opts.push({ kind: "entity", id: e.id, label: e.name });
-    }
-    return opts;
-  }, [canonical]);
 
   // Stable reference so the accounts step's owner-seeding effect (keyed on this
   // array) only re-runs when the roster actually changes, not on every render.
@@ -191,19 +144,6 @@ export default function WizardImportReview({
       })),
     [canonical.familyMembers],
   );
-
-  const assetOptions: AssetOption[] = useMemo(() => {
-    const opts: AssetOption[] = [
-      { kind: "asset", id: null, assetMode: "all_assets", label: "All assets (residue)" },
-    ];
-    for (const a of canonical.accounts) {
-      opts.push({ kind: "asset", id: a.id, assetMode: "specific", label: a.name });
-    }
-    for (const l of canonical.liabilities) {
-      opts.push({ kind: "liability", id: l.id, label: `Liability: ${l.name}` });
-    }
-    return opts;
-  }, [canonical]);
 
   const accountCandidates: MatchCandidate[] = useMemo(
     () => canonical.accounts.map((a) => ({ id: a.id, name: a.name })),
@@ -226,6 +166,9 @@ export default function WizardImportReview({
     setExpenses(expenses.map((e, idx) => (idx === i ? { ...e, match: m } : e)));
   };
 
+  // The wizard PATCHes the whole payload before committing its own tabs, so
+  // sections no step edits (wills, entities, savings…) have to round-trip
+  // untouched — dropping them here would erase them from the shared draft.
   const buildLatestPayload = useCallback((): ImportPayload => {
     return {
       primary,
@@ -236,12 +179,8 @@ export default function WizardImportReview({
       expenses,
       liabilities,
       lifePolicies,
-      wills: wizardWillsToCommitShape(wills).map((w, i) => ({
-        ...(w as unknown as ExtractedWill),
-        __provenance: wills[i]?.__provenance,
-        match: willMatches[i],
-      })) as ImportPayload["wills"],
-      entities,
+      wills: payload.wills,
+      entities: payload.entities,
       savings: payload.savings,
       warnings: payload.warnings,
       expenseSlots: payload.expenseSlots,
@@ -256,9 +195,8 @@ export default function WizardImportReview({
     expenses,
     liabilities,
     lifePolicies,
-    wills,
-    willMatches,
-    entities,
+    payload.wills,
+    payload.entities,
     payload.savings,
     payload.warnings,
     payload.expenseSlots,
@@ -270,12 +208,6 @@ export default function WizardImportReview({
   );
 
   const handleCommit = useCallback(async () => {
-    if (step === "estate" && !areAllBequestsResolved(wills)) {
-      setCommitError(
-        "Resolve every bequest's asset + recipient (or discard) before applying.",
-      );
-      return;
-    }
     setCommitting(true);
     setCommitError(null);
     try {
@@ -307,7 +239,7 @@ export default function WizardImportReview({
     } finally {
       setCommitting(false);
     }
-  }, [step, wills, buildLatestPayload, clientId, importId, onCommitted]);
+  }, [step, buildLatestPayload, clientId, importId, onCommitted]);
 
   return (
     <SourceFilesContext.Provider value={fileNames}>
@@ -377,24 +309,6 @@ export default function WizardImportReview({
           <ReviewStepInsurance
             policies={lifePolicies}
             onChange={(p) => setLifePolicies(p as Annotated<ExtractedLifePolicy>[])}
-          />
-        )}
-        {step === "estate" && (
-          <ReviewStepWills
-            wills={wills}
-            onChange={setWills}
-            recipientOptions={recipientOptions}
-            assetOptions={assetOptions}
-            matches={willMatches}
-            onMatchChange={(i, m) =>
-              setWillMatches(willMatches.map((x, idx) => (idx === i ? m : x)))
-            }
-          />
-        )}
-        {step === "entities" && (
-          <ReviewStepEntities
-            entities={entities}
-            onChange={(e) => setEntities(e as Annotated<ExtractedEntity>[])}
           />
         )}
       </div>

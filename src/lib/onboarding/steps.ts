@@ -6,12 +6,10 @@ import type { StepSlug } from "./types";
 export type StepIconKey =
   | "household"
   | "family"
-  | "entities"
   | "accounts"
   | "liabilities"
   | "cash-flow"
   | "insurance"
-  | "estate"
   | "assumptions"
   | "review";
 
@@ -42,15 +40,8 @@ export const STEPS: readonly StepDef[] = [
     skippable: true,
   },
   {
-    slug: "entities",
-    label: "Trusts",
-    description: "Trusts tied to the household.",
-    icon: "entities",
-    skippable: true,
-  },
-  {
     slug: "accounts",
-    label: "Accounts",
+    label: "Assets",
     description: "Investment, retirement, and bank accounts on the balance sheet.",
     icon: "accounts",
     skippable: false,
@@ -74,13 +65,6 @@ export const STEPS: readonly StepDef[] = [
     label: "Insurance",
     description: "Life, disability, and long-term-care coverage.",
     icon: "insurance",
-    skippable: true,
-  },
-  {
-    slug: "estate",
-    label: "Estate",
-    description: "Ownership, beneficiaries, and where assets flow at each death.",
-    icon: "estate",
     skippable: true,
   },
   {
