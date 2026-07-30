@@ -84,19 +84,20 @@ function discover(): Array<{ file: string; name: string }> {
 const DISCOVERED = discover();
 
 /**
- * A schema resurrects an absent key if any wrapper in its chain is a
- * `ZodDefault`. `stripDefault` peels `ZodDefault`/`ZodOptional` down to the
- * inner type; if peeling changed anything, a default (or an optional wrapping
- * one) was present. Compare against a peel that stops at `ZodOptional` so a
- * plain `.optional()` — which is fine — does not register.
+ * Does an ABSENT key produce a value? That is the bug, stated directly.
+ *
+ * Asked behaviourally rather than by walking `ZodDefault`/`ZodOptional` class
+ * identities and `.def.innerType`, so it stays correct for any wrapper Zod adds
+ * later (`.catch()`, prefault, …) and doesn't depend on library internals.
+ *
+ * Correct for each case that matters: a required field rejects `undefined`
+ * (false); a plain `.optional()` succeeds with `undefined` (false — that is
+ * fine); anything with a live default succeeds with a defined value (true),
+ * whichever order the wrappers were applied in.
  */
 function injectsDefault(field: z.ZodTypeAny): boolean {
-  let current: z.ZodTypeAny = field;
-  while (current instanceof z.ZodDefault || current instanceof z.ZodOptional) {
-    if (current instanceof z.ZodDefault) return true;
-    current = (current as z.ZodOptional<z.ZodTypeAny>).def.innerType;
-  }
-  return false;
+  const result = field.safeParse(undefined);
+  return result.success && result.data !== undefined;
 }
 
 /**
