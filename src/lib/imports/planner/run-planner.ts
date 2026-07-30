@@ -85,9 +85,27 @@ async function loop(args: RunPlannerArgs): Promise<PlanningDecisions | null> {
 
     for (const call of calls) {
       const tool = byName.get(call.name);
-      const output = tool
-        ? await tool.invoke(call.args as never)
-        : `Unknown tool "${call.name}".`;
+      // One malformed tool-call argument used to abort the WHOLE run: LangChain
+      // throws on a schema violation, that propagated to `runPlanner`'s outer
+      // catch, and every prior iteration's work was discarded for a null. Feed
+      // the error back as this call's ToolMessage instead, so the model sees its
+      // own mistake and can correct on the next iteration — exactly how
+      // `propose_decisions` already handles its own validation failure.
+      let output: unknown;
+      if (!tool) {
+        output = `Unknown tool "${call.name}".`;
+      } else {
+        try {
+          output = await tool.invoke(call.args as never);
+        } catch (err) {
+          const detail = err instanceof Error ? err.message.slice(0, 500) : "unknown error";
+          output = `Tool "${call.name}" failed and produced no result: ${detail}. Fix the arguments and call it again.`;
+        }
+      }
+      // The ToolMessage is pushed on EVERY path, including the failure one: an
+      // AIMessage carrying tool_calls with no matching ToolMessage is itself a
+      // provider error, so skipping it would break the transcript instead of
+      // the run.
       messages.push(new ToolMessage({ content: String(output), tool_call_id: call.id ?? call.name }));
     }
 

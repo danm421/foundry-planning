@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import UploadZone from "@/components/import/upload-zone";
-import type { ImportPayload, ImportPayloadJson } from "@/lib/imports/types";
+import {
+  normalizeImportPayload,
+  type ImportPayload,
+  type ImportPayloadJson,
+} from "@/lib/imports/types";
 import {
   STEP_IMPORT_LABEL,
   stepHasImportData,
@@ -83,7 +87,12 @@ export default function WizardImportDrawer({
       }
       return {
         importId,
-        payload: body.import.payloadJson?.payload ?? null,
+        // The GET returns the payload as it sits on disk — a row persisted
+        // before a section existed has no key for it, and `stepHasImportData`
+        // reads `payload.savings.length` unguarded.
+        payload: body.import.payloadJson?.payload
+          ? normalizeImportPayload(body.import.payloadJson.payload)
+          : null,
         perTabCommittedAt: body.import.perTabCommittedAt,
         fileCount: body.files.length,
         fileNames: Object.fromEntries(

@@ -321,3 +321,81 @@ describe("applyDecisions", () => {
     expect(spouseEntries).toEqual([spouseEntry]);
   });
 });
+
+// R2 half 1 (whole-branch review, C2). `ExtractedSavings.destinationAccountName`
+// is declared REQUIRED, but a savings row reaches this fold straight from raw
+// LLM extraction, cast through `extraction-schema.ts`'s `z.looseObject({})`,
+// which validates no field at all. Rule 2's filter called
+// `accountKey(row.destinationAccountName)` bare, so a row with no destination
+// threw `undefined.toLowerCase()` out of a "pure fold" and took the whole
+// assemble down. The `as never` casts below are the point: they stand in for
+// the unvalidated boundary the type system cannot see across.
+describe("applyDecisions — Rule 2 against unvalidated extracted savings", () => {
+  /** A raw extracted savings row with NO `destinationAccountName`. */
+  const NO_DESTINATION = {
+    name: "Employer contribution",
+    annualPercent: 0.04,
+    match: { kind: "new" as const },
+  };
+
+  it("does not throw on a savings row with no destinationAccountName, even with zero decisions", () => {
+    // Zero savings decisions: the filter still runs over every row, which is
+    // why an empty `decisions.savings` was no protection.
+    const base = { ...emptyImportPayload(), savings: [NO_DESTINATION as never] };
+    expect(() =>
+      applyDecisions({ payload: base, known: KNOWN, decisions: EMPTY }),
+    ).not.toThrow();
+  });
+
+  it("keeps the destination-less row — it matches no decision, so nothing replaces it", () => {
+    const base = { ...emptyImportPayload(), savings: [NO_DESTINATION as never] };
+    const { payload } = applyDecisions({
+      payload: base,
+      known: KNOWN,
+      decisions: {
+        ...EMPTY,
+        savings: [{
+          accountName: "Zach 401(k)", owner: "client",
+          annualPercent: { value: 0.1, provenance: "document", reason: "Contributing 10%." },
+          dedicatedAccountNames: [],
+        } as never],
+      },
+    });
+    // The unnamed row survives alongside the decision's new row: `""` must not
+    // collide with a real account key.
+    expect(payload.savings).toHaveLength(2);
+    expect(payload.savings.map((r) => r.destinationAccountName)).toEqual([
+      undefined,
+      "Zach 401(k)",
+    ]);
+  });
+
+  it("still replaces a NAMED extracted row while a destination-less sibling is present", () => {
+    // Pins that the `?? ""` guard did not defang Rule 2's actual job.
+    const base = {
+      ...emptyImportPayload(),
+      savings: [
+        NO_DESTINATION as never,
+        { name: "extracted", destinationAccountName: "Zach 401(k)", annualPercent: 0.03, match: { kind: "new" as const } },
+      ],
+    };
+    const { payload } = applyDecisions({
+      payload: base,
+      known: KNOWN,
+      decisions: {
+        ...EMPTY,
+        savings: [{
+          accountName: "zach 401k", owner: "client",
+          annualPercent: { value: 0.1, provenance: "document", reason: "Contributing 10%." },
+          dedicatedAccountNames: [],
+        } as never],
+      },
+    });
+    expect(payload.savings).toHaveLength(2);
+    expect(payload.savings[0].destinationAccountName).toBeUndefined();
+    expect(payload.savings[1]).toMatchObject({
+      destinationAccountName: "zach 401k",
+      annualPercent: 0.1,
+    });
+  });
+});

@@ -12,7 +12,7 @@ import {
 } from "@/lib/imports/authz";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
-import type { ImportPayloadJson } from "@/lib/imports/types";
+import { normalizeImportPayload, type ImportPayloadJson } from "@/lib/imports/types";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +63,14 @@ export async function POST(request: NextRequest, { params }: Params) {
             );
         }
 
-        const payload = payloadJson.payload;
+        // Normalized on the way through: this handler REWRITES the payload it
+        // read, so it is the cheapest place to heal a pre-branch shape. Guarded
+        // rather than unconditional — an import with no payload must stay that
+        // way, or `POST /commit`'s "no annotated payload" 400 becomes a commit
+        // of an empty payload.
+        const payload = payloadJson.payload
+            ? normalizeImportPayload(payloadJson.payload)
+            : undefined;
 
         for (const q of assemble.questions) {
             if (typeof answers[q.id] === "string") {

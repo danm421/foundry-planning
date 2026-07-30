@@ -275,7 +275,13 @@ export function mergeAcrossFiles(
     for (const row of result.extracted.entities) {
       entityRows.push({ content: row, provenance: provenanceFor("entities") });
     }
-    for (const row of result.extracted.savings) {
+    // `?? []` for the same reason as `merge.ts`'s savings loop — see the long
+    // comment there. `result` is a PERSISTED `payloadJson.fileResults` entry
+    // (assemble/route.ts reads the column and hands it straight in), and
+    // `extracted.savings` only exists on this branch (`0038b216f`), so a
+    // pre-branch fileResults row has no key for it. This loop is older than
+    // `merge.ts`'s, so this path was already crashing on those imports.
+    for (const row of result.extracted.savings ?? []) {
       savingsRows.push({ content: row, provenance: provenanceFor("savings") });
     }
     for (const row of result.extracted.lifePolicies) {

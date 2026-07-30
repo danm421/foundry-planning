@@ -38,6 +38,29 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   );
 }
 
+/**
+ * Drop `payloadJson.fileResults` from a GET response.
+ *
+ * `fileResults` is where the raw per-file extraction lives, and each
+ * `ExtractionResult` now carries `text`/`pages` capped at 100,000 chars PER
+ * FILE. `extraction-progress.tsx` polls this endpoint every 1500ms and reads
+ * only `status` and `files`, so that bulk was being shipped ~40 times a minute
+ * for nothing.
+ *
+ * Only `fileResults` goes. `payload` STAYS: `wizard-import-drawer.tsx`'s
+ * `loadImport` reads `body.import.payloadJson?.payload` to hydrate the
+ * onboarding drawer, so dropping the whole column would break that flow
+ * outright. Those two are the only consumers of this GET (the other hits on
+ * this URL — `review-wizard.tsx` and `wizard-import-review.tsx` — are PATCHes,
+ * not reads), and neither reads `fileResults`.
+ */
+function withoutFileResults(payloadJson: unknown): unknown {
+  if (!isPlainObject(payloadJson)) return payloadJson;
+  const rest = { ...payloadJson };
+  delete rest.fileResults;
+  return rest;
+}
+
 // State-machine guard for PATCH. Terminal states ("committed",
 // "discarded") and the initial "draft" state are not reachable via
 // PATCH — clients must use the dedicated endpoints. The transitions
@@ -140,7 +163,10 @@ export async function GET(_request: NextRequest, { params }: Params) {
       latestExtraction: latestByFile.get(f.id) ?? null,
     }));
 
-    return NextResponse.json({ import: imp, files: filesWithExtraction });
+    return NextResponse.json({
+      import: { ...imp, payloadJson: withoutFileResults(imp.payloadJson) },
+      files: filesWithExtraction,
+    });
   } catch (err) {
     if (err instanceof UnauthorizedError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -143,9 +143,18 @@ export function applyDecisions(input: ApplyDecisionsInput): ApplyDecisionsResult
   // `AssembleGoals.riskTolerance` - and is wired in the Rule 4 block below.
 
   // ── Rule 2: savings decisions replace matching extracted rows by name ──
+  //
+  // `d.accountName` needs no guard: `planningDecisionsSchema` types it
+  // `z.string().min(1)` (planner/types.ts), so it is validated before it gets
+  // here. `row.destinationAccountName` DOES: `ExtractedSavings` declares it
+  // required, but the row came out of raw LLM extraction cast through
+  // `extraction-schema.ts`'s `z.looseObject({})`, which validates no field. A
+  // model that emitted a savings row with no destination made this filter
+  // throw `undefined.toLowerCase()` and took the whole assemble down — and it
+  // ran over every savings row even when `decisions.savings` was empty.
   const decidedAccountKeys = new Set(decisions.savings.map((d) => accountKey(d.accountName)));
   const savings: Annotated<ExtractedSavings>[] = [
-    ...payload.savings.filter((row) => !decidedAccountKeys.has(accountKey(row.destinationAccountName))),
+    ...payload.savings.filter((row) => !decidedAccountKeys.has(accountKey(row.destinationAccountName ?? ""))),
     ...decisions.savings.map(buildSavingsRow),
   ];
 

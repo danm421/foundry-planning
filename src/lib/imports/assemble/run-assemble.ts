@@ -104,7 +104,14 @@ function deriveDocumentTextFromFileResults(
   return { documentText: sections.join("\n\n"), pages };
 }
 
-function countRows(payload: ImportPayload): number {
+/**
+ * Exported for the persisted-payload compat test: it is one of the readers
+ * that dereferences `payload.savings.length` bare, so it has to be provable
+ * against a pre-branch payload without standing up the whole `runAssemble`
+ * (which always builds its payload from `mergeAcrossFiles`, and so can never
+ * reach this function with an on-disk shape).
+ */
+export function countRows(payload: ImportPayload): number {
   return (
     payload.accounts.length +
     payload.incomes.length +
@@ -224,18 +231,41 @@ export async function runAssemble(args: RunAssembleArgs): Promise<RunAssembleRes
     }).catch(() => null);
 
     if (decisions) {
-      const applied = applyDecisions({
-        payload: plannerPayload,
-        decisions,
-        known: {
-          primaryDob: known?.primaryDob,
-          spouseDob: known?.spouseDob,
-          hasSpouse,
-        },
-      });
-      plannerPayload = applied.payload;
-      plannerQuestions = applied.questions;
-      plannerNotes = applied.notes;
+      // `runPlanner` documents itself as NEVER THROWS, but that guarantee is
+      // worth nothing if the fold consuming its output can throw: the
+      // `.catch(() => null)` above closes on the `plan()` call only, so an
+      // `applyDecisions` throw propagated straight out of `runAssemble` and
+      // took plan-building down. Degrade to the deterministic payload instead
+      // — `plannerPayload` is left exactly as the deterministic steps built
+      // it, and the advisor gets a warning rather than a failed assemble.
+      try {
+        const applied = applyDecisions({
+          payload: plannerPayload,
+          decisions,
+          known: {
+            primaryDob: known?.primaryDob,
+            spouseDob: known?.spouseDob,
+            hasSpouse,
+          },
+        });
+        plannerPayload = applied.payload;
+        plannerQuestions = applied.questions;
+        plannerNotes = applied.notes;
+      } catch (err) {
+        const detail = err instanceof Error ? err.message.slice(0, 200) : "unknown error";
+        console.warn(`[assemble] applyDecisions failed, keeping deterministic payload: ${detail}`);
+        // A new array, not a push: `plannerPayload.warnings` is still the same
+        // array object `annotated.warnings` points at (the spread at :218 is
+        // shallow), and mutating it in place would edit the deterministic
+        // payload the caller may still be holding.
+        plannerPayload = {
+          ...plannerPayload,
+          warnings: [
+            ...plannerPayload.warnings,
+            "The planning reasoner's proposal could not be applied; the plan was assembled from the document as extracted.",
+          ],
+        };
+      }
     }
   }
 

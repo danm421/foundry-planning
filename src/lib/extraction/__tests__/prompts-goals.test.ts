@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { RISK_LEVELS } from "@/lib/risk-levels";
 import { GOALS_PROMPT, GOALS_VERSION } from "../prompts/goals";
 import { ASSUMPTIONS_PROMPT, ASSUMPTIONS_VERSION } from "../prompts/assumptions";
 
@@ -36,5 +37,19 @@ describe("goal + assumption prompts", () => {
     expect(ASSUMPTIONS_PROMPT).toMatch(
       /target.*(?:not|do not).*achieved|TARGET.*not.*(?:achieved|projected)|achieved.*not.*target/i
     );
+  });
+
+  // R5 (whole-branch review, I3 adjacent). The prompt used to enumerate
+  // `moderate_conservative` and `moderate_aggressive`, neither of which is a
+  // real `RiskLevel` — it taught the model two tokens nothing can consume.
+  it("assumptions prompt names exactly the real RiskLevel values", () => {
+    for (const level of RISK_LEVELS) {
+      expect(ASSUMPTIONS_PROMPT).toContain(level);
+    }
+  });
+
+  it("assumptions prompt names neither of the two invalid risk tokens", () => {
+    expect(ASSUMPTIONS_PROMPT).not.toMatch(/\bmoderate_conservative\b/);
+    expect(ASSUMPTIONS_PROMPT).not.toMatch(/\bmoderate_aggressive\b/);
   });
 });

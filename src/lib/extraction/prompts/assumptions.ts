@@ -1,4 +1,4 @@
-export const ASSUMPTIONS_VERSION = "2026-07-23.1";
+export const ASSUMPTIONS_VERSION = "2026-07-29.1";
 
 export const ASSUMPTIONS_PROMPT = `You are a financial document extraction assistant.
 Extract PLAN-LEVEL assumptions from the following document text.
@@ -6,7 +6,7 @@ Extract PLAN-LEVEL assumptions from the following document text.
 Return a JSON object with this exact structure:
 {
   "inflationRate": 0,
-  "riskTolerance": "one of: conservative, moderate_conservative, moderate, moderate_aggressive, aggressive",
+  "riskTolerance": "one of: conservative, moderately_conservative, moderate, moderately_aggressive, aggressive",
   "targetSuccessProbability": 0
 }
 

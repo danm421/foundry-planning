@@ -12,10 +12,11 @@ import { z } from "zod";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { scenarios, clientImports } from "@/db/schema";
-import type {
-  ImportPayload,
-  ImportPayloadJson,
-  MatchAnnotation,
+import {
+  normalizeImportPayload,
+  type ImportPayload,
+  type ImportPayloadJson,
+  type MatchAnnotation,
 } from "@/lib/imports/types";
 import { runImportExtraction } from "@/lib/imports/run-extraction";
 import { runImportMatching } from "@/lib/imports/run-matching";
@@ -322,7 +323,8 @@ export function buildReadTools(
         return JSON.stringify({ found: false, note: `import ${importId} not found in scope` });
       }
 
-      const payload = (row.payloadJson as ImportPayloadJson | null)?.payload ?? null;
+      const persisted = (row.payloadJson as ImportPayloadJson | null)?.payload;
+      const payload = persisted ? normalizeImportPayload(persisted) : null;
       return JSON.stringify(summarizeImport(row.id, row.status, payload));
     },
     {
@@ -371,7 +373,8 @@ export function buildReadTools(
         .where(and(eq(clientImports.id, importId), eq(clientImports.clientId, ctx.clientId), eq(clientImports.orgId, firmId), isNull(clientImports.discardedAt)))
         .limit(1);
       if (!final) return JSON.stringify({ found: false, importId, note: "import disappeared after extraction" });
-      const payload = (final.payloadJson as ImportPayloadJson | null)?.payload ?? null;
+      const persistedFinal = (final.payloadJson as ImportPayloadJson | null)?.payload;
+      const payload = persistedFinal ? normalizeImportPayload(persistedFinal) : null;
       return JSON.stringify(summarizeImport(final.id, final.status, payload));
     },
     {

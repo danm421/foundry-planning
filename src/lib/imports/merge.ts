@@ -76,6 +76,34 @@ export function mergeExtractionResults(
     for (const row of result.extracted.wills) {
       payload.wills.push(annotateRow(row, "wills"));
     }
+    // Savings rides the same copy-and-annotate path as its siblings. Without
+    // this loop the section was inert on THREE of the four import paths —
+    // `mergeExtractionResults` backs `run-matching.ts` and so the `/match`
+    // route, which is Details→Import→Extract, the onboarding drawer, and Forge
+    // mode "updating". Only Forge mode "new" (`mergeAcrossFiles`) copied them.
+    // The extraction pass already runs and already returns
+    // `extracted.savings`, so the rows were being thrown away after the Azure
+    // call was paid for.
+    //
+    // `match: { kind: "new" }` from `annotateRow` is correct here: a savings
+    // row resolves to an ACCOUNT by name at commit time, it is not matched
+    // against an existing `savings_rules` row. `annotatePayload`
+    // (match.ts) opens with `...payload` and never names savings, so these
+    // rows survive `runMatchingPass` untouched.
+    //
+    // `?? []` — and NOT because "defensive is nice". This is R1's hazard one
+    // layer up: `result` here is a PERSISTED `payloadJson.fileResults` entry
+    // (match/route.ts reads the column and hands it straight in), and
+    // `extracted.savings` was added to `ExtractionResult` by this branch alone
+    // (`0038b216f`, not on main). So every fileResults row written before this
+    // branch has no `savings` key, and the seven sibling loops above are safe
+    // only because their sections predate any persisted row. Bare iteration
+    // here would crash `/match` on exactly the pre-branch imports R1 exists to
+    // protect. The type says `ExtractedSavings[]`, which is why nothing but a
+    // runtime guard catches it.
+    for (const row of result.extracted.savings ?? []) {
+      payload.savings.push(annotateRow(row, "savings"));
+    }
 
     const family = result.extracted.family;
     if (family) {

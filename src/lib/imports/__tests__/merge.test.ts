@@ -188,4 +188,86 @@ describe("mergeExtractionResults", () => {
     expect(out.accounts[1].name).toBe("Fidelity");
     expect(out.accounts[1].__provenance?.sourceFileId).toBe("f2");
   });
+
+  // R3 (whole-branch review, I1). `mergeExtractionResults` copied seven
+  // sections and skipped savings entirely, so savings rows were inert on THREE
+  // of the four import paths: this function backs `run-matching.ts` and so the
+  // `/match` route, which is Details→Import→Extract, the onboarding drawer,
+  // and Forge mode "updating". Only Forge mode "new" (`mergeAcrossFiles`)
+  // copied them — while the savings extraction pass ran, and was billed, on
+  // every path.
+  describe("savings", () => {
+    const employee = {
+      name: "401(k) deferral",
+      destinationAccountName: "Zach 401(k)",
+      owner: "client" as const,
+      annualPercent: 0.1,
+      contributionRole: "employee" as const,
+    };
+    const employer = {
+      name: "401(k) match",
+      destinationAccountName: "Zach 401(k)",
+      owner: "client" as const,
+      employerMatchPct: 1,
+      employerMatchCap: 0.04,
+      contributionRole: "employer" as const,
+    };
+    const spouseIra = {
+      name: "Roth IRA",
+      destinationAccountName: "Ashley Roth IRA",
+      owner: "spouse" as const,
+      annualAmount: 7000,
+    };
+
+    it("copies savings rows from every file, in file order", () => {
+      const out = mergeExtractionResults([
+        { fileId: "f1", result: makeResult({ savings: [employee, employer] }) },
+        { fileId: "f2", result: makeResult({ savings: [spouseIra] }) },
+      ]);
+      expect(out.savings).toHaveLength(3);
+      expect(out.savings.map((r) => r.name)).toEqual([
+        "401(k) deferral",
+        "401(k) match",
+        "Roth IRA",
+      ]);
+    });
+
+    it("stamps each savings row with its own file's sourceFileId", () => {
+      const out = mergeExtractionResults([
+        { fileId: "f1", result: makeResult({ savings: [employee, employer] }) },
+        { fileId: "f2", result: makeResult({ savings: [spouseIra] }) },
+      ]);
+      expect(out.savings.map((r) => r.__provenance?.sourceFileId)).toEqual([
+        "f1",
+        "f1",
+        "f2",
+      ]);
+    });
+
+    it("stamps section 'savings' and match kind 'new' on each row", () => {
+      const out = mergeExtractionResults([
+        { fileId: "f1", result: makeResult({ savings: [employee] }) },
+      ]);
+      expect(out.savings[0].__provenance?.section).toBe("savings");
+      // Correct kind: a savings row resolves to an ACCOUNT by name at commit,
+      // it is never matched against an existing savings_rules row.
+      expect(out.savings[0].match).toEqual({ kind: "new" });
+    });
+
+    it("preserves the engine fields the commit step reads", () => {
+      const out = mergeExtractionResults([
+        { fileId: "f1", result: makeResult({ savings: [employee, employer] }) },
+      ]);
+      expect(out.savings[0]).toMatchObject({
+        destinationAccountName: "Zach 401(k)",
+        annualPercent: 0.1,
+        contributionRole: "employee",
+      });
+      expect(out.savings[1]).toMatchObject({
+        employerMatchPct: 1,
+        employerMatchCap: 0.04,
+        contributionRole: "employer",
+      });
+    });
+  });
 });
