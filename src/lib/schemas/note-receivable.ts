@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { uuidSchema } from "./common";
+import { strictPartial } from "./strict-partial";
 import { YEAR_REFS } from "@/lib/milestones";
 
 /**
@@ -63,7 +64,11 @@ const base = {
 
 export const noteReceivableCreateSchema = z.object(base);
 
-export const noteReceivableUpdateSchema = z.object(base).partial();
+// `strictPartial`, not `.partial()` — Zod 4 keeps a `.default()` alive under
+// `.optional()`, so `.partial()` injected `startMonth: 1` (written by the
+// route's `!== undefined` guard, which an injected key always passes) and
+// `extraPayments: []` on every patch that omitted them.
+export const noteReceivableUpdateSchema = strictPartial(z.object(base));
 
 export const noteReceivableExtraPaymentsReplaceSchema = z.array(extraPaymentSchema);
 

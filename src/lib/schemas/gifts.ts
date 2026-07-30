@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { uuidSchema } from "./common";
+import { strictPartial } from "./strict-partial";
 import { YEAR_REFS } from "@/lib/milestones";
 
 const yearRefSchema = z
@@ -88,25 +89,18 @@ export const giftCreateSchema = z.object(baseFields).superRefine((d, ctx) => {
 // Identity fields set at creation time. Re-parenting or swapping the underlying
 // account/liability would break the bundling contract (parent + child rows
 // pointing at related FK targets), so the update schema refuses these.
-const IMMUTABLE_AFTER_CREATE = [
-  "parentGiftId",
-  "accountId",
-  "liabilityId",
-] as const;
-
-export const giftUpdateSchema = z
-  .object(
-    Object.fromEntries(
-      Object.entries(baseFields)
-        .filter(
-          ([k]) =>
-            !(
-              IMMUTABLE_AFTER_CREATE as readonly string[]
-            ).includes(k),
-        )
-        .map(([k, v]) => [k, (v as z.ZodTypeAny).optional()]),
-    ) as Record<string, z.ZodTypeAny>,
-  )
+//
+// `strictPartial`, not a plain `.optional()` map — Zod 4 keeps a `.default()`
+// alive under `.optional()`, so this shape injected `useCrummeyPowers: false`
+// (which the route writes through an `!== undefined` guard, clearing the
+// Crummey election on an ILIT funding gift) and `eventKind: "outright"`.
+export const giftUpdateSchema = strictPartial(
+  z.object(baseFields).omit({
+    parentGiftId: true,
+    accountId: true,
+    liabilityId: true,
+  }),
+)
   .superRefine((d, ctx) => {
     const patch = d as {
       recipientEntityId?: string | null;
