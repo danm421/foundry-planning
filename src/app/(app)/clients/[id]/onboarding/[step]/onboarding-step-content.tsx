@@ -10,12 +10,10 @@ import OnboardingShell from "../onboarding-shell";
 import WizardImportLauncher from "@/components/onboarding/wizard-import-launcher";
 import HouseholdStep from "../steps/household-step";
 import FamilyStep from "../steps/family-step";
-import EntitiesStep from "../steps/entities-step";
 import AccountsStep from "../steps/accounts-step";
 import LiabilitiesStep from "../steps/liabilities-step";
 import CashFlowStep from "../steps/cash-flow-step";
 import InsuranceStep from "../steps/insurance-step";
-import EstateStep from "../steps/estate-step";
 import AssumptionsStep from "../steps/assumptions-step";
 import ReviewStep from "../steps/review-step";
 
@@ -51,8 +49,6 @@ export async function OnboardingStepContent({ clientId, firmId, step, completedA
     body = <HouseholdStep clientId={clientId} tree={effectiveTree} contacts={contacts} />;
   } else if (step === "family") {
     body = <FamilyStep clientId={clientId} tree={effectiveTree} />;
-  } else if (step === "entities") {
-    body = <EntitiesStep clientId={clientId} tree={effectiveTree} />;
   } else if (step === "accounts") {
     body = <AccountsStep clientId={clientId} firmId={firmId} />;
   } else if (step === "liabilities") {
@@ -61,8 +57,6 @@ export async function OnboardingStepContent({ clientId, firmId, step, completedA
     body = <CashFlowStep clientId={clientId} firmId={firmId} />;
   } else if (step === "insurance") {
     body = <InsuranceStep clientId={clientId} firmId={firmId} />;
-  } else if (step === "estate") {
-    body = <EstateStep clientId={clientId} firmId={firmId} />;
   } else if (step === "assumptions") {
     body = <AssumptionsStep clientId={clientId} firmId={firmId} />;
   } else if (step === "review") {

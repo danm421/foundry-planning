@@ -51,8 +51,6 @@ function computeStatus(slug: StepSlug, tree: ClientData): StepStatus {
       return householdStatus(tree);
     case "family":
       return familyStatus(tree);
-    case "entities":
-      return entitiesStatus(tree);
     case "accounts":
       return accountsStatus(tree);
     case "liabilities":
@@ -61,8 +59,6 @@ function computeStatus(slug: StepSlug, tree: ClientData): StepStatus {
       return cashFlowStatus(tree);
     case "insurance":
       return insuranceStatus(tree);
-    case "estate":
-      return estateStatus(tree);
     case "assumptions":
       return assumptionsStatus(tree);
     case "review":
@@ -106,15 +102,6 @@ function familyStatus(tree: ClientData): StepStatus {
   };
 }
 
-function entitiesStatus(tree: ClientData): StepStatus {
-  const ents = tree.entities ?? [];
-  return {
-    slug: "entities",
-    kind: ents.length > 0 ? "complete" : "untouched",
-    gaps: ents.length > 0 ? [] : ["No entities added"],
-  };
-}
-
 function accountsStatus(tree: ClientData): StepStatus {
   return {
     slug: "accounts",
@@ -147,15 +134,6 @@ function insuranceStatus(tree: ClientData): StepStatus {
     slug: "insurance",
     kind: lifePolicies.length > 0 ? "complete" : "untouched",
     gaps: lifePolicies.length > 0 ? [] : ["No life insurance policies added"],
-  };
-}
-
-function estateStatus(tree: ClientData): StepStatus {
-  const willCount = (tree as unknown as { wills?: unknown[] }).wills?.length ?? 0;
-  return {
-    slug: "estate",
-    kind: willCount > 0 ? "complete" : "untouched",
-    gaps: willCount > 0 ? [] : ["No will on file"],
   };
 }
 

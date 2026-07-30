@@ -318,15 +318,6 @@ export function UsersIcon(props: IconProps) {
   );
 }
 
-export function BuildingIcon(props: IconProps) {
-  return (
-    <svg {...baseSvgProps} {...props}>
-      <rect x="4" y="3" width="16" height="18" rx="1" />
-      <path d="M9 8h.01M15 8h.01M9 12h.01M15 12h.01M9 16h6" />
-    </svg>
-  );
-}
-
 export function WalletIcon(props: IconProps) {
   return (
     <svg {...baseSvgProps} {...props}>
@@ -359,15 +350,6 @@ export function ShieldIcon(props: IconProps) {
     <svg {...baseSvgProps} {...props}>
       <path d="M12 2 4 5v7c0 5 3.5 8.5 8 10 4.5-1.5 8-5 8-10V5z" />
       <path d="m9 12 2 2 4-4" />
-    </svg>
-  );
-}
-
-export function ScrollIcon(props: IconProps) {
-  return (
-    <svg {...baseSvgProps} {...props}>
-      <path d="M8 21h12a2 2 0 0 0 2-2v-2H10v2a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v3h4" />
-      <path d="M19 17V5a2 2 0 0 0-2-2H4" />
     </svg>
   );
 }

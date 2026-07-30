@@ -1,12 +1,10 @@
 export const STEP_SLUGS = [
   "household",
   "family",
-  "entities",
   "accounts",
   "liabilities",
   "cash-flow",
   "insurance",
-  "estate",
   "assumptions",
   "review",
 ] as const;

@@ -170,8 +170,8 @@ describe("R1 — the three readers survive a normalized pre-branch payload", () 
     expect(stepHasImportData(normalized, "accounts")).toBe(true);
     expect(stepHasImportData(normalized, "cash-flow")).toBe(true);
     expect(stepHasImportData(normalized, "family")).toBe(true);
-    expect(stepHasImportData(normalized, "estate")).toBe(false);
-    expect(stepHasImportData(normalized, "entities")).toBe(false);
+    expect(stepHasImportData(normalized, "liabilities")).toBe(false);
+    expect(stepHasImportData(normalized, "insurance")).toBe(false);
   });
 
   it("countRows counts the rows that are there", () => {

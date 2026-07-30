@@ -132,22 +132,6 @@ describe("deriveStepStatuses", () => {
     expect(statuses.find((s) => s.slug === "liabilities")!.kind).toBe("skipped");
   });
 
-  // ── Entities ─────────────────────────────────────────────────────────────
-  it("marks Entities untouched on an empty tree", () => {
-    expect(deriveStepStatuses(emptyTree(), {}).find((s) => s.slug === "entities")!.kind).toBe("untouched");
-  });
-
-  it("marks Entities complete when at least one entity exists", () => {
-    const tree = emptyTree();
-    (tree as unknown as { entities: unknown[] }).entities = [{ id: "ent1" }];
-    expect(deriveStepStatuses(tree, {}).find((s) => s.slug === "entities")!.kind).toBe("complete");
-  });
-
-  it("marks Entities skipped when state includes the slug", () => {
-    const statuses = deriveStepStatuses(emptyTree(), { skippedSteps: ["entities"] });
-    expect(statuses.find((s) => s.slug === "entities")!.kind).toBe("skipped");
-  });
-
   // ── Insurance ────────────────────────────────────────────────────────────
   it("marks Insurance untouched on an empty tree", () => {
     expect(deriveStepStatuses(emptyTree(), {}).find((s) => s.slug === "insurance")!.kind).toBe("untouched");
@@ -172,22 +156,6 @@ describe("deriveStepStatuses", () => {
   it("marks Insurance skipped when state includes the slug", () => {
     const statuses = deriveStepStatuses(emptyTree(), { skippedSteps: ["insurance"] });
     expect(statuses.find((s) => s.slug === "insurance")!.kind).toBe("skipped");
-  });
-
-  // ── Estate ───────────────────────────────────────────────────────────────
-  it("marks Estate untouched on an empty tree", () => {
-    expect(deriveStepStatuses(emptyTree(), {}).find((s) => s.slug === "estate")!.kind).toBe("untouched");
-  });
-
-  it("marks Estate complete when at least one will exists", () => {
-    const tree = emptyTree();
-    (tree as unknown as { wills: unknown[] }).wills = [{ id: "w1" }];
-    expect(deriveStepStatuses(tree, {}).find((s) => s.slug === "estate")!.kind).toBe("complete");
-  });
-
-  it("marks Estate skipped when state includes the slug", () => {
-    const statuses = deriveStepStatuses(emptyTree(), { skippedSteps: ["estate"] });
-    expect(statuses.find((s) => s.slug === "estate")!.kind).toBe("skipped");
   });
 
   // ── Assumptions ──────────────────────────────────────────────────────────
@@ -232,7 +200,7 @@ describe("deriveStepStatuses", () => {
     tree.expenses = [{ id: "e1" } as ClientData["expenses"][number]];
 
     const state: import("@/lib/onboarding/types").OnboardingState = {
-      skippedSteps: ["family", "entities", "liabilities", "insurance", "estate", "assumptions"],
+      skippedSteps: ["family", "liabilities", "insurance", "assumptions"],
     };
     const statuses = deriveStepStatuses(tree, state);
     expect(statuses.find((s) => s.slug === "review")!.kind).toBe("complete");

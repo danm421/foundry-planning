@@ -10,7 +10,6 @@ import type { StepStatus } from "@/lib/onboarding/types";
 import {
   AlertCircleIcon,
   ArrowRightIcon,
-  BuildingIcon,
   CheckCircleIcon,
   CheckIcon,
   CircleIcon,
@@ -18,7 +17,6 @@ import {
   FlowIcon,
   HomeIcon,
   MinusIcon,
-  ScrollIcon,
   ShieldIcon,
   SlidersIcon,
   UsersIcon,
@@ -36,12 +34,10 @@ type IconComponent = (props: { width?: number; height?: number; className?: stri
 const STEP_ICONS: Record<StepIconKey, IconComponent> = {
   household: HomeIcon,
   family: UsersIcon,
-  entities: BuildingIcon,
   accounts: WalletIcon,
   liabilities: CreditCardIcon,
   "cash-flow": FlowIcon,
   insurance: ShieldIcon,
-  estate: ScrollIcon,
   assumptions: SlidersIcon,
   review: CheckCircleIcon,
 };

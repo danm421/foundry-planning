@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useCallback, useRef, useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
@@ -413,44 +414,98 @@ function currentYearBalance(l: LiabilityRow): number {
 
 // ── Dropdown for "Add Asset" category picker ──────────────────────────────────
 
+const ADD_ASSET_MENU_W = 192;
+
+/** Category picker portaled to <body> and fixed-positioned off the trigger's
+ *  rect. Rendering it in-flow let any ancestor with `overflow-hidden` clip the
+ *  list — the onboarding wizard's step card did exactly that, hiding every
+ *  category below "Retirement". Flips above the trigger when the viewport is
+ *  short. Closes on outside click, Escape, scroll, or resize. */
 function AddAssetMenu({ onPick }: { onPick: (cat: AccountCategory) => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  // `pos` doubles as the open flag — non-null means open, so there is no second
+  // piece of state to keep in sync with it.
+  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
+
+  const close = useCallback(() => setPos(null), []);
+
+  const openMenu = useCallback(() => {
+    const r = triggerRef.current?.getBoundingClientRect();
+    if (!r) return;
+    // Right-align to the trigger, clamped into the viewport.
+    const left = Math.min(
+      Math.max(8, r.right - ADD_ASSET_MENU_W),
+      window.innerWidth - ADD_ASSET_MENU_W - 8,
+    );
+    // ~36px per row plus padding — enough headroom to decide which way to open.
+    const menuH = ADDABLE_CATEGORIES.length * 36 + 8;
+    const spaceBelow = window.innerHeight - r.bottom;
+    const openUp = spaceBelow < menuH && r.top > spaceBelow;
+    setPos(openUp ? { left, bottom: window.innerHeight - r.top + 4 } : { left, top: r.bottom + 4 });
+  }, []);
 
   useEffect(() => {
-    if (!open) return;
-    function onDocClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [open]);
+    if (!pos) return;
+    const onMove = () => close();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("scroll", onMove, true);
+      window.removeEventListener("resize", onMove);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [pos, close]);
 
   return (
-    <div className="relative" ref={ref}>
+    <>
       <button
-        onClick={() => setOpen((v) => !v)}
+        ref={triggerRef}
+        type="button"
+        onClick={() => (pos ? close() : openMenu())}
+        aria-haspopup="menu"
+        aria-expanded={pos !== null}
         className="inline-flex items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-ink"
       >
         + Add Asset <ChevronDown />
       </button>
-      {open && (
-        <div className="absolute right-0 z-20 mt-1 w-48 overflow-hidden rounded-md border border-ink-3 bg-gray-900 shadow-lg">
-          {ADDABLE_CATEGORIES.map((cat) => (
+      {pos &&
+        createPortal(
+          <>
             <button
-              key={cat}
-              onClick={() => {
-                setOpen(false);
-                onPick(cat);
-              }}
-              className="block w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-gray-800"
+              type="button"
+              aria-label="Close menu"
+              onClick={close}
+              className="fixed inset-0 z-50 cursor-default"
+            />
+            <div
+              role="menu"
+              aria-label="Add asset"
+              className="fixed z-50 max-h-[min(70vh,520px)] overflow-y-auto rounded-md border border-hair bg-card py-1 shadow-lg"
+              style={{ left: pos.left, top: pos.top, bottom: pos.bottom, width: ADD_ASSET_MENU_W }}
             >
-              {CATEGORY_LABELS[cat]}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+              {ADDABLE_CATEGORIES.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    close();
+                    onPick(cat);
+                  }}
+                  className="block w-full px-3 py-2 text-left text-sm text-ink-2 hover:bg-card-hover hover:text-ink"
+                >
+                  {CATEGORY_LABELS[cat]}
+                </button>
+              ))}
+            </div>
+          </>,
+          document.body,
+        )}
+    </>
   );
 }
 

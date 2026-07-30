@@ -10,15 +10,18 @@ import type { StepSlug } from "./types";
  * import into, and no advisor-assumptions onboarding step for Assumptions to
  * import into — not because either lacks an extraction schema (Assumptions
  * has one: `ExtractedAssumptions`). Review is a summary step.
+ *
+ * Entities and wills have extraction schemas too, but the wizard no longer
+ * has a Trusts or an Estate step to import them into — they are edited from
+ * the client's Family/Entities and Estate Flow pages instead. The full
+ * ReviewWizard import flow still commits both.
  */
 export const IMPORT_ELIGIBLE_STEPS = [
   "family",
-  "entities",
   "accounts",
   "liabilities",
   "cash-flow",
   "insurance",
-  "estate",
 ] as const;
 
 export type ImportEligibleStep = (typeof IMPORT_ELIGIBLE_STEPS)[number];
@@ -36,22 +39,18 @@ export function isImportEligibleStep(slug: StepSlug): slug is ImportEligibleStep
  */
 export const STEP_COMMIT_TABS: Record<ImportEligibleStep, CommitTab[]> = {
   family: ["clients-identity", "family-members"],
-  entities: ["entities"],
   accounts: ["accounts", "savings"],
   liabilities: ["liabilities"],
   "cash-flow": ["incomes", "expenses"],
   insurance: ["life-insurance"],
-  estate: ["wills"],
 };
 
 export const STEP_IMPORT_LABEL: Record<ImportEligibleStep, string> = {
   family: "Family",
-  entities: "Trusts",
-  accounts: "Accounts",
+  accounts: "Assets",
   liabilities: "Liabilities",
   "cash-flow": "Income & Expenses",
   insurance: "Insurance",
-  estate: "Estate",
 };
 
 /**
@@ -70,8 +69,6 @@ export function stepHasImportData(
         Boolean(payload.spouse) ||
         payload.dependents.length > 0
       );
-    case "entities":
-      return payload.entities.length > 0;
     case "accounts":
       return payload.accounts.length > 0 || payload.savings.length > 0;
     case "liabilities":
@@ -80,7 +77,5 @@ export function stepHasImportData(
       return payload.incomes.length > 0 || payload.expenses.length > 0;
     case "insurance":
       return payload.lifePolicies.length > 0;
-    case "estate":
-      return payload.wills.length > 0;
   }
 }

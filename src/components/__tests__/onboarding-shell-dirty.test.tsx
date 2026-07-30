@@ -13,7 +13,7 @@ const { push } = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push, refresh: vi.fn(), replace: vi.fn() }),
   useSearchParams: () => ({ get: vi.fn(() => null), toString: () => "" }),
-  usePathname: () => "/clients/client-1/onboarding/estate",
+  usePathname: () => "/clients/client-1/onboarding/insurance",
 }));
 
 vi.mock("next/link", () => ({
@@ -35,7 +35,7 @@ function renderShell() {
   const statuses = STEPS.map((s) => ({ slug: s.slug, kind: "untouched" as const, gaps: [] }));
   return render(
     <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
-      <OnboardingShell clientId="client-1" activeStep="estate" statuses={statuses}>
+      <OnboardingShell clientId="client-1" activeStep="insurance" statuses={statuses}>
         <DirtyReporter />
       </OnboardingShell>
     </ClientAccessProvider>,
