@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
+import { ForbiddenError } from "@/lib/authz";
+import { UnauthorizedError } from "@/lib/db-helpers";
 
 // Mock the section components so their own DB queries don't run during
 // the catch-all dispatch test. Each renders a marker div that captures
@@ -136,10 +138,35 @@ describe("PortalPreview catch-all", () => {
     expect(notFound).toHaveBeenCalled();
   });
 
+  // Previously asserted with a bare `new Error("denied")`, which passed only
+  // because the page swallowed *every* rejection. Now that non-authz faults
+  // propagate, the denial case has to raise the error the gate actually throws.
   it("calls notFound() when client access is denied", async () => {
-    vi.mocked(requireClientAccess).mockRejectedValueOnce(new Error("denied"));
+    vi.mocked(requireClientAccess).mockRejectedValueOnce(
+      new ForbiddenError("Client not found or access denied"),
+    );
     await expect(renderPreview(["profile"])).rejects.toThrow("NEXT_NOT_FOUND");
     expect(notFound).toHaveBeenCalled();
+  });
+
+  it("calls notFound() when there is no session", async () => {
+    vi.mocked(requireClientAccess).mockRejectedValueOnce(new UnauthorizedError());
+    await expect(renderPreview(["profile"])).rejects.toThrow("NEXT_NOT_FOUND");
+    expect(notFound).toHaveBeenCalled();
+  });
+
+  it("propagates a DB fault instead of rendering not-found", async () => {
+    vi.mocked(notFound).mockClear();
+    const dbFault = Object.assign(
+      new Error("column clients.covered_by_workplace_plan does not exist"),
+      { code: "42703" },
+    );
+    vi.mocked(requireClientAccess).mockRejectedValueOnce(dbFault);
+
+    // `rejects.toBe` pins the identity of the thrown value — the page can only
+    // fail this exact way by rethrowing what the gate raised.
+    await expect(renderPreview(["profile"])).rejects.toBe(dbFault);
+    expect(notFound).not.toHaveBeenCalled();
   });
 
   it("passes correct basePath to PortalNav and a preview banner reflecting the edit toggle", async () => {

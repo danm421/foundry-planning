@@ -175,6 +175,33 @@ export async function requireClientPortalAccess(): Promise<{
 }
 
 /**
+ * True only for the two errors the access gates raise as a *decision*: no
+ * session (`UnauthorizedError`) and not-found-or-denied (`ForbiddenError` —
+ * deliberately merged so client existence never leaks across firms).
+ *
+ * Anything else a gate can throw is a fault: a dropped connection, a column
+ * the deployed schema lacks, a driver error.
+ */
+export function isAccessDenial(err: unknown): boolean {
+  return err instanceof UnauthorizedError || err instanceof ForbiddenError;
+}
+
+/**
+ * `.catch()` handler for callers that degrade an access denial into
+ * "not found" — `requireClientAccess(id).catch(nullOnAccessDenial)`.
+ *
+ * Use this instead of a bare `.catch(() => null)`, which also swallows every
+ * DB fault and reports an outage as "this client doesn't exist". That is
+ * exactly what made the 2026-07-30 prod incident (migrations 0227/0228 merged
+ * but never applied, so `select *` on `clients` threw 42703) present as a
+ * routing bug for as long as it did.
+ */
+export function nullOnAccessDenial(err: unknown): null {
+  if (isAccessDenial(err)) return null;
+  throw err;
+}
+
+/**
  * Turn an auth-related thrown error into an HTTP response tuple that
  * route handlers can short-circuit with. Returns null when the error
  * isn't one of ours.

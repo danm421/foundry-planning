@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { crmHouseholdContacts } from "@/db/schema";
 import { requireClientAccess } from "@/lib/clients/authz";
+import { nullOnAccessDenial } from "@/lib/authz";
 import HouseholdSection from "@/components/portal/household-section";
 import FamilySection from "@/components/portal/family-section";
 import TrustsSection from "@/components/portal/trusts-section";
@@ -44,7 +45,9 @@ export default async function PortalPreviewPage({
 
   // No parent layout asserts firm-ownership here (unlike routes under
   // (app)/clients/[id]) — this page must do it itself before any by-id reads.
-  const access = await requireClientAccess(id).catch(() => null);
+  // Only an access *denial* degrades to null → notFound(); a DB fault
+  // propagates and renders a 500 rather than a misleading "no such client".
+  const access = await requireClientAccess(id).catch(nullOnAccessDenial);
   if (!access) notFound();
 
   // The client's advisor-sharing switches gate the budgeting sections below.
