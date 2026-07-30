@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { crmHouseholds, crmHouseholdContacts, scenarios as scenariosTable, accounts } from "@/db/schema";
 import { eq, desc, asc, and, isNotNull } from "drizzle-orm";
 import { requireClientAccess } from "@/lib/clients/authz";
+import { nullOnAccessDenial } from "@/lib/authz";
 import ClientHeader from "@/components/client-header";
 import HeaderSubtabs from "@/components/header-subtabs";
 import type { PersonInfo } from "@/components/client-identity-menu";
@@ -28,8 +29,10 @@ interface Props {
 
 export default async function ClientLayout({ children, params }: Props): Promise<ReactElement> {
   const { id } = await params;
+  // Only an access *denial* degrades to null → notFound(); a DB fault
+  // propagates and renders a 500 rather than a misleading "no such client".
   const [access, { orgRole }] = await Promise.all([
-    requireClientAccess(id).catch(() => null),
+    requireClientAccess(id).catch(nullOnAccessDenial),
     auth(),
   ]);
   if (!access) notFound();

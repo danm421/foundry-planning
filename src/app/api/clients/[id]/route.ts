@@ -20,7 +20,7 @@ import { toClientSnapshot, CLIENT_FIELD_LABELS } from "@/lib/audit/snapshots/cli
 import { mirrorContactToCrm } from "@/lib/clients/mirror-contact-to-crm";
 import { syncHouseholdNameFromContacts } from "@/lib/crm/sync-household-name";
 import { requireClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
-import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse, nullOnAccessDenial } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { revokePlaidTokens } from "@/lib/plaid/revoke";
@@ -35,7 +35,9 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const access = await requireClientAccess(id).catch(() => null);
+    // Only an access *denial* degrades to null → 404; a DB fault propagates to
+    // the catch below and answers 500 rather than a misleading "Not found".
+    const access = await requireClientAccess(id).catch(nullOnAccessDenial);
     if (!access) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
