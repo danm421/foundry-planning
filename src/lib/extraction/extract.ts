@@ -46,6 +46,25 @@ const PROMPTS: Record<DocumentType, string> = {
     fact_finder: ACCOUNT_STATEMENT_PROMPT,
 };
 
+/**
+ * Keyed by `DocumentType` because the stamp it feeds is PER FILE — one
+ * `client_import_extractions` row, one `prompt_version`.
+ *
+ * WHY EIGHT PROMPT VERSIONS ARE MISSING FROM THIS MAP. Every file in
+ * `prompts/` declares a `*_VERSION` on line 1, but only the single-pass
+ * prompts are reachable from here. The multi-pass fact-finder path
+ * (`multi-pass.ts`) runs ASSUMPTIONS, GOALS, FAMILY, SAVINGS, ENTITIES,
+ * WILL, LIFE_INSURANCE and INCOME_SUMMARY as sub-passes of ONE file, and the
+ * per-file row it produces is stamped once, at :470, as
+ * `multi-pass:${FACT_FINDER_CLASSIFIER_VERSION}`. There is no per-sub-pass
+ * stamp slot to add them to.
+ *
+ * So those eight constants having no reader is the ARCHITECTURE, not rot —
+ * deleting them as orphans would break a convention the other eight follow,
+ * and adding them here would key them by a `DocumentType` they don't have.
+ * Giving the multi-pass row a per-sub-pass stamp means changing the format of
+ * an already-persisted audit value and is deliberately not done here.
+ */
 const PROMPT_VERSIONS: Record<DocumentType, string> = {
     account_statement: ACCOUNT_STATEMENT_VERSION,
     pay_stub: PAY_STUB_VERSION,

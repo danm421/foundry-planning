@@ -3,6 +3,13 @@
 // The system prompt for the bounded planning-reasoner loop (Task 13). Bump
 // `PLANNER_VERSION` whenever this prompt changes meaningfully so downstream
 // telemetry/debugging can tell which prompt produced a given proposal.
+//
+// Two consumers, both in `runAssemble`, and both written ONLY when a proposal
+// was actually applied: `payloadJson.assemble.plannerVersion` (which prompt
+// shaped the payload you are looking at now — overwritten on re-assemble) and
+// the `import.assemble.run` audit metadata (append-only, so every run's prompt
+// version survives). Neither is worth anything if the bump is skipped: an
+// unbumped prompt makes two different prompts indistinguishable in both places.
 export const PLANNER_VERSION = "2026-07-29.2";
 
 export const PLANNER_SYSTEM_PROMPT = `You are a financial-planning analyst. Your job is to turn an uploaded

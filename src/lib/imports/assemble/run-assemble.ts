@@ -6,6 +6,7 @@ import type { ExtractionResult } from "@/lib/extraction/types";
 import { runMatchingPass } from "@/lib/imports/match";
 import { applyDecisions } from "@/lib/imports/planner/apply-decisions";
 import { makePiaEstimator } from "@/lib/imports/planner/pia-estimator";
+import { PLANNER_VERSION } from "@/lib/imports/planner/prompt";
 import { runPlanner } from "@/lib/imports/planner/run-planner";
 import type { ImportPayload } from "@/lib/imports/types";
 import { fillAssumptions } from "./gap-fill";
@@ -216,6 +217,10 @@ export async function runAssemble(args: RunAssembleArgs): Promise<RunAssembleRes
   let plannerQuestions: AssembleQuestion[] = [];
   let plannerNotes: string[] = [];
   let plannerPayload: ImportPayload = { ...annotated, ...(planBasics ? { planBasics } : {}), goals };
+  // Set ONLY on the success path of the fold below, so it means "a proposal
+  // from this prompt is in the payload" rather than "the planner was attempted".
+  // Every other outcome — skipped, timed out, degraded — leaves it false.
+  let plannerApplied = false;
 
   const derived = args.documentText ? null : deriveDocumentTextFromFileResults(fileResults);
   const documentText = args.documentText ?? derived?.documentText;
@@ -251,6 +256,7 @@ export async function runAssemble(args: RunAssembleArgs): Promise<RunAssembleRes
         plannerPayload = applied.payload;
         plannerQuestions = applied.questions;
         plannerNotes = applied.notes;
+        plannerApplied = true;
       } catch (err) {
         const detail = err instanceof Error ? err.message.slice(0, 200) : "unknown error";
         console.warn(`[assemble] applyDecisions failed, keeping deterministic payload: ${detail}`);
@@ -285,6 +291,12 @@ export async function runAssemble(args: RunAssembleArgs): Promise<RunAssembleRes
     assumptions,
     questions: allQuestions,
     notes: plannerNotes,
+    // Spread, not `plannerVersion: plannerApplied ? X : undefined` — this
+    // object is JSON-serialised into `payloadJson`, where an explicit
+    // `undefined` and an absent key are indistinguishable on the way out but
+    // NOT on the way in (`"plannerVersion": null` is what some writers leave).
+    // Omitting the key entirely keeps absence unambiguous.
+    ...(plannerApplied ? { plannerVersion: PLANNER_VERSION } : {}),
   };
 
   // planBasics is seeded onto the payload only, not onto `assemble` — the
@@ -310,7 +322,17 @@ export async function runAssemble(args: RunAssembleArgs): Promise<RunAssembleRes
     resourceId: importId,
     clientId,
     firmId,
-    metadata: { mode, questionCount: allQuestions.length },
+    // `plannerVersion` rides here as well as on the payload because the two
+    // answer different questions. The payload stamp is overwritten every time
+    // assemble re-runs, so it only ever describes the CURRENT draft; the audit
+    // row is append-only, so it keeps the prompt version of every run that ever
+    // touched this import. Debugging "the proposal was wrong three runs ago"
+    // needs the second. Rides in the existing jsonb metadata — no schema change.
+    metadata: {
+      mode,
+      questionCount: allQuestions.length,
+      ...(plannerApplied ? { plannerVersion: PLANNER_VERSION } : {}),
+    },
   });
 
   // R4: count rows on `assembledPayload` (== `plannerPayload`), not
