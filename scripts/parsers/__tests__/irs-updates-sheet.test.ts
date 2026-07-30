@@ -41,8 +41,30 @@ describe("parseIrsUpdatesSheet", () => {
 
   it("correctly parses 2026 cap gains brackets MFJ", () => {
     const y = years.find((y) => y.year === 2026)!;
-    expect(y.capGainsBrackets.married_joint.zeroPctTop).toBe(99200);
-    expect(y.capGainsBrackets.married_joint.fifteenPctTop).toBe(615900);
+    // 98900/613700, not the 99200/615900 this previously asserted. The WORKBOOK won,
+    // not the test: Rev. Proc. 2025-32 sec. 4.03 "Maximum Capital Gains Rate
+    // (IRC 1(h), 1(j)(5))" publishes the 2026 maximum-zero-rate and maximum-15%-rate
+    // amounts for joint returns as exactly $98,900 and $613,700. Unlike the QBI case
+    // below, the sheet was right and this test was the stale party — it was written
+    // (88bb1cb1c) against the pre-correction workbook and was orphaned by c493eecdd,
+    // which fixed the sheet but left the expectation behind.
+    expect(y.capGainsBrackets.married_joint.zeroPctTop).toBe(98900);
+    expect(y.capGainsBrackets.married_joint.fifteenPctTop).toBe(613700);
+  });
+
+  // The MFJ row above is not a lucky single match: every filing status in the same
+  // Rev. Proc. 2025-32 sec. 4.03 table agrees with the workbook, which is what rules
+  // out a transcription slip in the one row the engine happens to lean on hardest.
+  // This is a cross-check against published figures, not a restatement of the parser.
+  it("matches the published 2026 cap gains table for every filing status", () => {
+    const cg = years.find((y) => y.year === 2026)!.capGainsBrackets;
+    expect(cg.single).toEqual({ zeroPctTop: 49450, fifteenPctTop: 545500 });
+    expect(cg.head_of_household).toEqual({ zeroPctTop: 66200, fifteenPctTop: 579600 });
+    expect(cg.married_separate).toEqual({ zeroPctTop: 49450, fifteenPctTop: 306850 });
+    // IRC 1(j)(5)(B)(i) sets the joint maximum-zero-rate amount at 2x the single
+    // amount, and 2 x 49450 = 98900. The old 99200 would have required single =
+    // 49600, contradicting the single figure in the very same published table.
+    expect(cg.married_joint.zeroPctTop).toBe(cg.single.zeroPctTop * 2);
   });
 
   it("correctly parses 2026 AMT exemption", () => {
