@@ -34,6 +34,27 @@ describe("KpiRow", () => {
     expect(screen.getByText("across 1 account")).toBeInTheDocument();
   });
 
+  it("subtitles planning clients with the household base it is drawn from", () => {
+    // The Households tile leads with `active` only, so a planning-client count
+    // that spans active + prospects reads as impossible next to it (13 clients,
+    // "5 households"). The sub names the real denominator.
+    render(<KpiRow kpis={{ ...KPIS, activeHouseholds: 5, prospectHouseholds: 9, planningClients: 13 }} />);
+    // Assert PLACEMENT, not just presence — a sub on the wrong tile still
+    // satisfies getByText, and position has no naturally-failing value.
+    const tile = screen.getByText("Planning clients").closest("section");
+    expect(tile).toHaveTextContent("13");
+    expect(tile).toHaveTextContent("of 14 households");
+    // ...and the Households tile keeps its own, different sub.
+    expect(screen.getByText("Households").closest("section")).toHaveTextContent(
+      "+9 prospects",
+    );
+  });
+
+  it("singularises a one-household planning-client subtitle", () => {
+    render(<KpiRow kpis={{ ...KPIS, activeHouseholds: 1, prospectHouseholds: 0, planningClients: 1 }} />);
+    expect(screen.getByText("of 1 household")).toBeInTheDocument();
+  });
+
   it("renders five tiles", () => {
     const { container } = render(<KpiRow kpis={KPIS} />);
     expect(container.querySelectorAll("section")).toHaveLength(5);
