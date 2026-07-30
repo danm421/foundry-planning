@@ -35,13 +35,13 @@ function BucketRows({ buckets }: { buckets: BucketReadout[] }) {
   );
 }
 
+/** Placement is the caller's business -- the mismatch arm sits it in a flex row
+ *  beside the Apply button, the other two arms stack it under the buckets. */
 function EditLink({ href }: { href: string }) {
   return (
-    <div className="mt-3">
-      <a href={href} className={LINK_CLS}>
-        Edit in Assumptions
-      </a>
-    </div>
+    <a href={href} className={LINK_CLS}>
+      Edit in Assumptions
+    </a>
   );
 }
 
@@ -83,7 +83,9 @@ export function PortfolioMismatch({ clientId, state }: PortfolioMismatchProps) {
       <Card>
         <p className="text-sm text-ink-3">Portfolio matches this profile.</p>
         <BucketRows buckets={state.buckets} />
-        <EditLink href={editHref} />
+        <div className="mt-3">
+          <EditLink href={editHref} />
+        </div>
       </Card>
     );
   }
@@ -98,7 +100,9 @@ export function PortfolioMismatch({ clientId, state }: PortfolioMismatchProps) {
           </a>
         </p>
         <BucketRows buckets={state.buckets} />
-        <EditLink href={editHref} />
+        <div className="mt-3">
+          <EditLink href={editHref} />
+        </div>
       </Card>
     );
   }
@@ -118,9 +122,7 @@ export function PortfolioMismatch({ clientId, state }: PortfolioMismatchProps) {
         >
           {applying ? "Applying…" : `Apply ${state.targetName} portfolio`}
         </button>
-        <a href={editHref} className={LINK_CLS}>
-          Edit in Assumptions
-        </a>
+        <EditLink href={editHref} />
         {error && (
           <p role="alert" className="text-xs text-crit">
             {error}

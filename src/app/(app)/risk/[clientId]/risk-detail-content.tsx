@@ -88,19 +88,27 @@ export async function RiskDetailContent({
   let mismatch: MismatchState = { kind: "no_profile" };
   if (row.compositeLevel) {
     try {
-      const baseScenarioId = await resolveScenarioId(clientId, "base");
-      const [settings] = await db
-        .select({
-          growthSourceTaxable: planSettings.growthSourceTaxable,
-          growthSourceRetirement: planSettings.growthSourceRetirement,
-          modelPortfolioIdTaxable: planSettings.modelPortfolioIdTaxable,
-          modelPortfolioIdRetirement: planSettings.modelPortfolioIdRetirement,
-          defaultGrowthTaxable: planSettings.defaultGrowthTaxable,
-          defaultGrowthRetirement: planSettings.defaultGrowthRetirement,
-        })
-        .from(planSettings)
-        .where(eq(planSettings.scenarioId, baseScenarioId));
-      const profilePortfolioId = await resolveRiskPortfolioId(firmId, row.compositeLevel);
+      // resolveRiskPortfolioId needs only firmId + compositeLevel, both known
+      // before this block, so it rides alongside the scenario lookup instead of
+      // queueing behind it. getPortfolioNames genuinely must stay last -- it
+      // needs ids from both.
+      const [settingsRows, profilePortfolioId] = await Promise.all([
+        resolveScenarioId(clientId, "base").then((baseScenarioId) =>
+          db
+            .select({
+              growthSourceTaxable: planSettings.growthSourceTaxable,
+              growthSourceRetirement: planSettings.growthSourceRetirement,
+              modelPortfolioIdTaxable: planSettings.modelPortfolioIdTaxable,
+              modelPortfolioIdRetirement: planSettings.modelPortfolioIdRetirement,
+              defaultGrowthTaxable: planSettings.defaultGrowthTaxable,
+              defaultGrowthRetirement: planSettings.defaultGrowthRetirement,
+            })
+            .from(planSettings)
+            .where(eq(planSettings.scenarioId, baseScenarioId)),
+        ),
+        resolveRiskPortfolioId(firmId, row.compositeLevel),
+      ]);
+      const [settings] = settingsRows;
       const names = await getPortfolioNames(firmId, [
         settings?.modelPortfolioIdTaxable,
         settings?.modelPortfolioIdRetirement,
