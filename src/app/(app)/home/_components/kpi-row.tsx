@@ -46,7 +46,20 @@ const COUNT_TILES: {
     value: (k) => k.activeHouseholds,
     sub: (k) => `+${k.prospectHouseholds} prospects`,
   },
-  { label: "Planning clients", value: (k) => k.planningClients, sub: null },
+  {
+    // Households leads with `active` alone, but planning clients are counted
+    // across the whole in-scope book (active + prospect — the KPI scope rule).
+    // Without naming that base the two tiles read as a contradiction: "13
+    // planning clients" sitting beside "5 households". Both counts are right;
+    // only the denominator was invisible. active + prospect IS the full base —
+    // the shared household conditions admit no other status.
+    label: "Planning clients",
+    value: (k) => k.planningClients,
+    sub: (k) => {
+      const inScope = k.activeHouseholds + k.prospectHouseholds;
+      return inScope === 1 ? "of 1 household" : `of ${inScope} households`;
+    },
+  },
   {
     label: "Tasks due this week",
     value: (k) => k.tasksDueThisWeek,

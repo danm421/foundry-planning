@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { ASSUMPTIONS_TABS, assumptionsTabQuery, resolveAssumptionsTab } from "./tabs";
 import AssumptionsSubtabs from "@/components/assumptions-subtabs";
 import TaxRatesForm from "@/components/forms/tax-rates-form";
 import GrowthInflationForm from "@/components/forms/growth-inflation-form";
@@ -121,14 +122,6 @@ interface AssumptionsClientProps {
   embed?: "page" | "wizard";
 }
 
-const TABS = [
-  { id: "tax-rates", label: "Tax Rates" },
-  { id: "growth-inflation", label: "Growth & Inflation" },
-  { id: "withdrawal", label: "Savings & Withdrawals" },
-  { id: "deductions", label: "Deductions" },
-  { id: "account-groups", label: "Account Groups" },
-];
-
 export default function AssumptionsClient({
   clientId,
   riskLevel,
@@ -146,11 +139,20 @@ export default function AssumptionsClient({
   liquidAccounts,
   allAccounts,
 }: AssumptionsClientProps) {
-  const [activeTab, setActiveTab] = useState("tax-rates");
+  // Tab lives in the URL so the risk detail card can deep-link to
+  // ?tab=growth-inflation, and so the back button steps through tabs.
+  const searchParams = useSearchParams();
+  const activeTab = resolveAssumptionsTab(searchParams.get("tab"));
+
+  function handleTabChange(id: string) {
+    // pushState (not router.push) -- syncs useSearchParams without re-running
+    // the server tree, which on this page is an expensive DB read.
+    window.history.pushState(null, "", assumptionsTabQuery(searchParams, id));
+  }
 
   return (
     <div className="space-y-6">
-      <AssumptionsSubtabs tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
+      <AssumptionsSubtabs tabs={ASSUMPTIONS_TABS} activeTab={activeTab} onTabChange={handleTabChange} />
 
       <div className="rounded-lg border border-hair bg-card p-6">
         {activeTab === "tax-rates" && (
