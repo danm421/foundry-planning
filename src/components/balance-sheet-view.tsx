@@ -40,6 +40,11 @@ import {
   buildScenarioDesiredFields,
   type AccountPatch,
 } from "@/lib/inline-edit/account-write";
+import {
+  buildLiabilityBasePayload,
+  buildLiabilityScenarioDesiredFields,
+  type LiabilityPatch,
+} from "@/lib/inline-edit/liability-write";
 import type { GrowthContext } from "@/lib/investments/growth-context";
 import type { CategoryDefaultRateMap } from "@/lib/investments/category-default-rates";
 
@@ -546,6 +551,37 @@ export default function BalanceSheetView({
     });
   }
 
+  const pendingLiabilities = usePendingEdits(liabilities);
+
+  /** Persist one inline liability-row field. Same deliberate base/scenario
+   *  asymmetry as the account writer — `lib/inline-edit/liability-write.ts`
+   *  owns both payloads. */
+  async function saveLiabilityField(id: string, patch: LiabilityPatch): Promise<boolean> {
+    // The MERGED row, for the same reason `saveAccountField` reads one:
+    // `buildLiabilityScenarioDesiredFields` sends the WHOLE row plus the
+    // patch, so a second edit landing before the first round-trip completes
+    // would carry the STALE field and silently revert it.
+    const row = pendingLiabilities.rows.find((l) => l.id === id);
+    if (!row) return false;
+    return pendingLiabilities.apply(id, patch, async () => {
+      const res = await writer.submit(
+        {
+          op: "edit",
+          targetKind: "liability",
+          targetId: id,
+          desiredFields: buildLiabilityScenarioDesiredFields(row, patch),
+        },
+        {
+          url: `/api/clients/${clientId}/liabilities/${id}`,
+          method: "PUT",
+          body: buildLiabilityBasePayload(patch),
+        },
+      );
+      if (!res.ok) showToast({ message: `Couldn't save ${row.name}.` });
+      return res.ok;
+    });
+  }
+
   const [assetsEdit, setAssetsEdit] = useState(false);
   const [liabilitiesEdit, setLiabilitiesEdit] = useState(false);
 
@@ -713,7 +749,9 @@ export default function BalanceSheetView({
     inEstateByCategory[a.category].push(a);
   }
   // Top-level liabilities only — children render under their parent business.
-  const topLevelLiabilities = liabilities.filter((l) => !l.parentAccountId);
+  // Filters the MERGED rows, not the raw prop: overlaying after the filter
+  // would drop every optimistic value on the way to the rows that render.
+  const topLevelLiabilities = pendingLiabilities.rows.filter((l) => !l.parentAccountId);
 
   // Notes receivable: project balance to prior-year-end (≈ current balance),
   // matching how liability balances are displayed.
@@ -762,7 +800,9 @@ export default function BalanceSheetView({
   const totalOutOfEstate =
     outOfEstate.reduce((s, a) => s + Number(a.value), 0) + outOfEstateBusinessEntityTotal;
   const totalAssets = totalInEstate + totalOutOfEstate;
-  const totalLiabilities = liabilities.reduce((s, l) => s + currentYearBalance(l), 0);
+  // Merged rows, so the panel total and the net-worth KPI move with an inline
+  // balance edit instead of lagging a round-trip behind the row above them.
+  const totalLiabilities = pendingLiabilities.rows.reduce((s, l) => s + currentYearBalance(l), 0);
   const netWorth = totalInEstate - totalLiabilities;
   // Liquid (taxable/cash/retirement) in-estate holdings — the engine's
   // "portfolio assets" bucket.
@@ -848,10 +888,18 @@ export default function BalanceSheetView({
     setEditingNote(n);
   }
 
-  function noteOwnerDisplay(n: NoteReceivable): string {
-    const owners = n.owners ?? [];
-    if (owners.length === 0) return "—";
-    const first = owners[0];
+  /**
+   * Owner label straight off the ownership relation.
+   *
+   * Distinct from `ownerDisplay(a: AccountRow)` above, which reads the account
+   * row's DERIVED `owner` string. Notes receivable and liabilities carry no
+   * such string, so both read the relation instead — hence one helper rather
+   * than two near-identical ones.
+   */
+  function ownerLabelFromOwners(owners: AccountOwner[] | undefined): string {
+    const list = owners ?? [];
+    if (list.length === 0) return "—";
+    const first = list[0];
     if (first.kind === "entity") {
       return entityMap[first.entityId]?.name ?? "Entity";
     }
@@ -864,6 +912,10 @@ export default function BalanceSheetView({
       return fm.firstName;
     }
     return "External";
+  }
+
+  function noteOwnerDisplay(n: NoteReceivable): string {
+    return ownerLabelFromOwners(n.owners);
   }
 
   function growthDisplay(a: AccountRow) {
@@ -1134,14 +1186,89 @@ export default function BalanceSheetView({
                 {topLevelLiabilities.map((l) => (
                   <Row
                     key={l.id}
-                    onClick={canEdit ? () => !liabilitiesEdit && setEditingLiability(l) : undefined}
                     editMode={canEdit && liabilitiesEdit}
                     onDelete={canEdit ? () => setDeletingLiability(l) : undefined}
+                    onEdit={canEdit ? () => setEditingLiability(l) : undefined}
                     label={l.name}
                     labelBadge={
                       l.linkedSource ? <LinkedSourceBadge source={l.linkedSource} /> : undefined
                     }
-                    subLabel={Number(l.interestRate) > 0 ? `${(Number(l.interestRate) * 100).toFixed(2)}% interest` : undefined}
+                    // The interest rate moved into its own cell; the old
+                    // "4.00% interest" subLabel would just repeat it.
+                    ownerSlot={
+                      // TITLING EXCEPTION. `InlineOwnerCell` requires a
+                      // `titlingType`, but `LiabilityRow` has no such column
+                      // and `LiabilityPatch` cannot express one — so the
+                      // constant below is inert and the returned titlingType
+                      // is deliberately DISCARDED. This is the one exception
+                      // to "titlingType always travels with owners": that rule
+                      // exists because joint vs community property flips an
+                      // ASSET's basis treatment (§1014(b)(6) full step-up vs
+                      // §2040(b) 50/50). A liability has no basis and no
+                      // step-up, so there is nothing to flip; writing the key
+                      // would invent a column.
+                      <InlineOwnerCell
+                        owners={l.owners}
+                        titlingType="jtwros"
+                        parentAccountId={l.parentAccountId}
+                        familyMembers={familyMembers ?? []}
+                        entities={entities}
+                        display={ownerLabelFromOwners(l.owners)}
+                        label={`owner for ${l.name}`}
+                        canEdit={canEdit}
+                        onSave={({ owners }) => saveLiabilityField(l.id, { owners })}
+                      />
+                    }
+                    rateSlot={
+                      canEdit ? (
+                        <InlineAmount
+                          mode="percent"
+                          noun="interest rate"
+                          amount={Number(l.interestRate) * 100}
+                          label={l.name}
+                          onSave={(pct) =>
+                            saveLiabilityField(l.id, { interestRate: String(pct / 100) })
+                          }
+                          className="min-w-[56px] rounded-sm px-1 py-0.5 text-right tabular text-[11px] text-ink-3 hover:bg-card-hover hover:text-ink-2"
+                        />
+                      ) : (
+                        // A read-only span, NOT undefined. `Row` renders the
+                        // fixed-width rate cell only when the slot is truthy,
+                        // so dropping it would hide the rate from view-only
+                        // users AND shift the value column out of alignment
+                        // with every sibling row. (Asset rows avoid this
+                        // because `GrowthRateCell` handles read-only itself.)
+                        <span className="tabular text-[11px] text-ink-3">
+                          {(Number(l.interestRate) * 100).toFixed(2)}%
+                        </span>
+                      )
+                    }
+                    valueSlot={
+                      // A linked liability's balance is owned by the
+                      // integration — editing it here would be overwritten on
+                      // the next sync without warning.
+                      canEdit && l.linkedSource == null ? (
+                        // `amount` and `format` deliberately show DIFFERENT
+                        // numbers. `amount` is the stored as-of principal —
+                        // the column the write lands in. `format` reproduces
+                        // what this row has always displayed: the projected
+                        // current-year balance, which `currentYearBalance`
+                        // back-solves and amortizes to LAST year's ending
+                        // balance. Editing the amortized figure would write it
+                        // straight back over the principal and corrupt it.
+                        // The red comes through `className` because `Row`
+                        // applies `valueClassName` only to the fallback span.
+                        <InlineAmount
+                          amount={Number(l.balance)}
+                          label={l.name}
+                          format={() => `(${fmt(currentYearBalance(l))})`}
+                          onSave={(next) =>
+                            saveLiabilityField(l.id, { balance: String(Math.abs(next)) })
+                          }
+                          className="min-w-[88px] rounded-sm px-1.5 py-0.5 text-right text-sm font-medium text-red-400 hover:bg-card-hover hover:ring-1 hover:ring-inset hover:ring-hair-2"
+                        />
+                      ) : undefined
+                    }
                     value={`(${fmt(currentYearBalance(l))})`}
                     valueClassName="text-red-400"
                   />
