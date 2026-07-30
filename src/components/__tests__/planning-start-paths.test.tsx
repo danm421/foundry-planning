@@ -11,6 +11,14 @@ it("exposes the four start paths in picker order", () => {
     "AI import",
     "Empty client",
   ]);
+  // Card copy is fixed for this picker — pin the subtitles too, or the list can
+  // drift while the PathCard test (which supplies its own props) stays green.
+  expect(START_PATHS.map((p) => p.subtitle)).toEqual([
+    "Fast retirement intake",
+    "Full guided wizard",
+    "Extract from documents",
+    "Skip the wizard, start blank",
+  ]);
 });
 
 it("narrows only the four known ids", () => {
