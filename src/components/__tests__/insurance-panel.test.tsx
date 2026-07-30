@@ -13,7 +13,7 @@
  * These cells send ONE-KEY bodies and the route writes every field it finds
  * defined, so if the schema ever defaults the absent keys back in (Zod 4's
  * `.optional()` wraps a `ZodDefault` rather than removing it — the bug
- * `stripDefault` in `src/lib/schemas/insurance-policies.ts` fixes), a wrong key
+ * `strictPartial` in `src/lib/schemas/strict-partial.ts` fixes), a wrong key
  * stops being harmless and a right one overwrites the rest of the policy.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
