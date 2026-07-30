@@ -56,7 +56,6 @@ export function StartPlanningPrompt({
             icon={p.icon}
             title={p.title}
             subtitle={p.subtitle}
-            selected={false}
             onSelect={() => choose(p.id)}
           />
         ))}

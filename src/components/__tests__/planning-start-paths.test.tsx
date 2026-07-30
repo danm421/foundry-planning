@@ -63,3 +63,19 @@ it("renders a card, reports its pressed state, and reports selection", () => {
     "true",
   );
 });
+
+it("omits aria-pressed entirely when selected is not passed (navigate-only callers)", () => {
+  render(
+    <PathCard
+      icon={null}
+      title="Quick Start"
+      subtitle="Fast retirement intake"
+      onSelect={vi.fn()}
+    />,
+  );
+
+  const card = screen.getByRole("button", { name: /quick start/i });
+  // aria-pressed="false" is a PRESENT attribute and would pass a naive
+  // truthiness check — assert absence specifically, not falsiness.
+  expect(card).not.toHaveAttribute("aria-pressed");
+});

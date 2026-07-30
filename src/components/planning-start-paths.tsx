@@ -63,7 +63,10 @@ export function PathCard({
   icon: React.ReactNode;
   title: string;
   subtitle: string;
-  selected: boolean;
+  /** Omit for cards that navigate rather than toggle (e.g. the post-create
+   * prompt) — undefined drops `aria-pressed` so they don't announce as toggle
+   * buttons. */
+  selected?: boolean;
   onSelect: () => void;
 }) {
   return (
