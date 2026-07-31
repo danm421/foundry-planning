@@ -8,6 +8,7 @@ import type { FieldMap } from "@/lib/imports/merge-strategies";
 import { candidatesForRow } from "@/lib/imports/candidates-for-row";
 import { CurrencyInput } from "@/components/currency-input";
 import { GrowthRateField, parseGrowthSourceSelection } from "@/components/forms/growth-rate-field";
+import { inputClassName, selectClassName, fieldLabelClassName } from "@/components/forms/input-styles";
 import { OwnershipEditor } from "@/components/forms/ownership-editor";
 import { matchOwnersFromHint } from "@/lib/imports/owner-match";
 import type { GrowthSource } from "@/lib/investments/allocation";
@@ -117,12 +118,18 @@ interface ReviewStepAccountsProps {
   entities?: { id: string; name: string }[];
 }
 
-const INPUT_CLASS =
-  "w-full rounded border border-gray-600 bg-gray-800 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-const EMPTY_CLASS =
-  "w-full rounded border border-amber-600/50 bg-amber-900/20 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-const SELECT_CLASS =
-  "w-full rounded border border-gray-600 bg-gray-800 px-2 py-1.5 text-sm text-gray-300 focus:border-accent focus:outline-none";
+// Reuse the shared dialog-form styling instead of local gray-* classes. This
+// card renders CurrencyInput, GrowthRateField and OwnershipEditor as children,
+// and all three already style themselves from input-styles.ts — the old local
+// constants gave the card's own fields a different height (py-1.5 vs h-9),
+// radius, font size and label colour than the children sitting beside them.
+const INPUT_CLASS = inputClassName;
+const SELECT_CLASS = selectClassName;
+const EMPTY_CLASS = `${inputClassName} ${TINT_EMPTY}`;
+
+// Money and IDs render in the brand's tabular mono (B612 Mono) — per the design
+// system every dollar amount and account identifier is mono, not Inter.
+const TABULAR = "tabular";
 
 export default function ReviewStepAccounts({
   accounts,
@@ -205,12 +212,12 @@ export default function ReviewStepAccounts({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-medium text-gray-100">
+        <h3 className="text-[17px] font-semibold text-ink">
           Accounts ({accounts.length} found)
         </h3>
         <button
           onClick={addRow}
-          className="rounded-md bg-gray-800 px-3 py-1.5 text-sm text-accent hover:bg-gray-700"
+          className="rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-1.5 text-sm text-accent transition-colors hover:border-hair-2"
         >
           + Add Row
         </button>
@@ -230,66 +237,90 @@ export default function ReviewStepAccounts({
           return (
             <div
               key={i}
+              // `paper`, not `card`: the drawer itself is `bg-card`, so a card-
+              // surfaced row would vanish into it. Recessing to the page canvas
+              // keeps the original gray-900 intent — the row reads as a well,
+              // and its `card-2` inputs sit visibly raised inside it.
               className={`rounded-lg border p-3 ${
                 isExcluded
-                  ? "border-gray-700 bg-gray-900/30 opacity-50"
-                  : "border-gray-700 bg-gray-900"
+                  ? "border-hair bg-paper/50 opacity-50"
+                  : "border-hair bg-paper"
               }`}
             >
-              {(matchingEnabled || duplicate || isExcluded) && (
-                <div className="mb-2 flex items-center gap-2">
-                  {matchingEnabled && (
-                    <MatchColumn
-                      match={match}
-                      existingName={existingRow?.name}
-                      candidates={candidatesForRow(i, matches ?? [], candidates)}
-                      entityKind="account"
-                      onChange={(next) => onMatchChange?.(i, next)}
-                    />
-                  )}
-                  {existingRow && (
+              {/* Header renders unconditionally so the row actions (source badge +
+                  delete) have a fixed home. They used to live in a grid cell next
+                  to the RMD checkbox, which put a destructive control in an
+                  arbitrary spot and left a ragged gap when the row had no match. */}
+              <div className="mb-3 flex items-center gap-2">
+                {matchingEnabled && (
+                  <MatchColumn
+                    match={match}
+                    existingName={existingRow?.name}
+                    candidates={candidatesForRow(i, matches ?? [], candidates)}
+                    entityKind="account"
+                    onChange={(next) => onMatchChange?.(i, next)}
+                  />
+                )}
+                {existingRow && (
+                  <button
+                    onClick={() => toggleExpanded(i)}
+                    className="text-xs text-accent underline hover:text-accent-ink"
+                    aria-expanded={isExpanded}
+                  >
+                    {isExpanded ? "Hide diff" : "Show diff"}
+                  </button>
+                )}
+                {duplicate && !isExcluded && (
+                  <div className="flex items-center gap-2 rounded bg-amber-900/30 px-2 py-1 text-xs text-amber-400">
+                    <span>Possible duplicate of &quot;{duplicate}&quot;</span>
                     <button
-                      onClick={() => toggleExpanded(i)}
-                      className="text-xs text-accent underline hover:text-accent-ink"
-                      aria-expanded={isExpanded}
+                      onClick={() => toggleExclude(i)}
+                      className="text-amber-400 underline hover:text-amber-300"
                     >
-                      {isExpanded ? "Hide diff" : "Show diff"}
+                      Skip
                     </button>
-                  )}
-                  {duplicate && !isExcluded && (
-                    <div className="ml-auto flex items-center gap-2 rounded bg-amber-900/30 px-2 py-1 text-xs text-amber-400">
-                      <span>Possible duplicate of &quot;{duplicate}&quot;</span>
-                      <button
-                        onClick={() => toggleExclude(i)}
-                        className="text-amber-400 underline hover:text-amber-300"
-                      >
-                        Skip
-                      </button>
-                    </div>
-                  )}
-                  {isExcluded && (
-                    <div className="ml-auto flex items-center gap-2 text-xs text-gray-400">
-                      <span>Skipped</span>
-                      <button
-                        onClick={() => toggleExclude(i)}
-                        className="text-accent underline hover:text-accent-ink"
-                      >
-                        Include
-                      </button>
-                    </div>
-                  )}
+                  </div>
+                )}
+                {isExcluded && (
+                  <div className="flex items-center gap-2 text-xs text-ink-3">
+                    <span>Skipped</span>
+                    <button
+                      onClick={() => toggleExclude(i)}
+                      className="text-accent underline hover:text-accent-ink"
+                    >
+                      Include
+                    </button>
+                  </div>
+                )}
+                <div className="ml-auto flex items-center gap-1">
+                  <SourceBadge row={account} />
+                  <button
+                    onClick={() => removeRow(i)}
+                    className="rounded p-1.5 text-ink-3 transition-colors hover:bg-card-2 hover:text-crit"
+                    aria-label={`Remove ${account.name || "account"}`}
+                    title="Remove account"
+                  >
+                    <TrashIcon />
+                  </button>
                 </div>
-              )}
+              </div>
 
-              <div className="grid grid-cols-6 gap-2">
-                <div className="col-span-2">
-                  <label className="mb-1 block text-xs text-gray-300">Name</label>
+              {/* 12 columns, not 6: at ~512px of drawer width a 6-col grid gives
+                  each field ~80px, which truncated every value and wrapped the
+                  "Growth Rate" label onto a second line — that wrap is what
+                  knocked the row out of alignment. 12 cols lets each field claim
+                  a width matched to its content, grouped identity → money →
+                  provenance so related fields read as a band. */}
+              <div className="grid grid-cols-12 gap-x-2 gap-y-3">
+                {/* ── Identity: what is this account? ── */}
+                <div className="col-span-6">
+                  <label className={fieldLabelClassName}>Name</label>
                   {existingRow?.name ? (
                     // Matched rows keep the existing account's name — commitAccounts
                     // maps `name` as keep-existing, so an editable input here would
                     // be a false affordance. Rename on the account page instead.
-                    <div className="px-2 py-1.5">
-                      <div className="text-sm text-gray-100">{existingRow.name}</div>
+                    <div className="px-1 py-1">
+                      <div className="text-[14px] text-ink">{existingRow.name}</div>
                       {/* NOT the document's own header text: extract.ts runs
                           every extracted account name through
                           condenseAccountName before the payload is persisted,
@@ -309,12 +340,15 @@ export default function ReviewStepAccounts({
                     />
                   )}
                 </div>
-                <div>
-                  <label className="mb-1 block text-xs text-gray-300">Category</label>
+                <div className="col-span-3">
+                  <label className={fieldLabelClassName}>Category</label>
                   <select
                     value={account.category ?? ""}
                     onChange={(e) => updateField(i, "category", e.target.value || undefined)}
-                    className={account.category ? SELECT_CLASS : `${SELECT_CLASS} border-amber-600/50 bg-amber-900/20`}
+                    className={account.category ? SELECT_CLASS : `${SELECT_CLASS} ${TINT_EMPTY}`}
+                    // Long labels ("529 / Education") still clip in 3 columns; the
+                    // tooltip is the documented fallback for a truncated control.
+                    title={CATEGORY_OPTIONS.find((o) => o.value === account.category)?.label}
                   >
                     <option value="">Select...</option>
                     {CATEGORY_OPTIONS.map((o) => (
@@ -322,12 +356,13 @@ export default function ReviewStepAccounts({
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="mb-1 block text-xs text-gray-300">Type</label>
+                <div className="col-span-3">
+                  <label className={fieldLabelClassName}>Type</label>
                   <select
                     value={account.subType ?? ""}
                     onChange={(e) => updateField(i, "subType", e.target.value || undefined)}
                     className={SELECT_CLASS}
+                    title={SUB_TYPE_OPTIONS.find((o) => o.value === account.subType)?.label}
                   >
                     <option value="">Select...</option>
                     {SUB_TYPE_OPTIONS.map((o) => (
@@ -335,35 +370,27 @@ export default function ReviewStepAccounts({
                     ))}
                   </select>
                 </div>
-                <div className="col-span-2">
-                  <OwnershipEditor
-                    familyMembers={familyMembers}
-                    entities={entities}
-                    value={(account.owners as AccountOwner[]) ?? []}
-                    onChange={(next) => updateField(i, "owners", next)}
-                    titlingType="jtwros"
-                    onTitlingTypeChange={() => {}}
-                    label="Owner(s)"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs text-gray-300">Value</label>
+
+                {/* ── Money: what is it worth, and how does it grow? ── */}
+                <div className="col-span-4">
+                  <label className={fieldLabelClassName}>Value</label>
                   <CurrencyInput
                     value={account.value != null ? String(account.value) : ""}
                     onChange={(raw) => updateField(i, "value", raw === "" ? undefined : Number(raw))}
-                    className={account.value != null ? "" : TINT_EMPTY}
+                    className={account.value != null ? TABULAR : `${TABULAR} ${TINT_EMPTY}`}
                     placeholder="0"
                   />
                 </div>
-                <div>
-                  <label className="mb-1 block text-xs text-gray-300">Cost Basis</label>
+                <div className="col-span-4">
+                  <label className={fieldLabelClassName}>Cost Basis</label>
                   <CurrencyInput
                     value={account.basis != null ? String(account.basis) : ""}
                     onChange={(raw) => updateField(i, "basis", raw === "" ? undefined : Number(raw))}
+                    className={TABULAR}
                     placeholder="Optional"
                   />
                 </div>
-                <div>
+                <div className="col-span-4">
                   <GrowthRateField
                     category={account.category ?? "taxable"}
                     growthSource={(account.growthSource as GrowthSource) ?? (account.growthRate != null ? "custom" : "default")}
@@ -398,18 +425,20 @@ export default function ReviewStepAccounts({
                     }
                   />
                 </div>
-                <div>
-                  <label className="mb-1 block text-xs text-gray-300">Acct ####</label>
+                {/* ── Provenance: where did it come from, how is it handled? ── */}
+                <div className="col-span-3">
+                  <label className={fieldLabelClassName}>Acct ####</label>
                   <input
                     value={account.accountNumberLast4 ?? ""}
                     onChange={(e) => updateField(i, "accountNumberLast4", e.target.value || undefined)}
-                    className={INPUT_CLASS}
+                    className={`${INPUT_CLASS} ${TABULAR}`}
                     placeholder="Last 4"
                     maxLength={4}
+                    inputMode="numeric"
                   />
                 </div>
-                <div>
-                  <label className="mb-1 block text-xs text-gray-300">Custodian</label>
+                <div className="col-span-5">
+                  <label className={fieldLabelClassName}>Custodian</label>
                   <input
                     value={account.custodian ?? ""}
                     onChange={(e) => updateField(i, "custodian", e.target.value || undefined)}
@@ -417,29 +446,40 @@ export default function ReviewStepAccounts({
                     placeholder="e.g. Fidelity"
                   />
                 </div>
-                <div className="col-span-2 flex items-end gap-2">
-                  <label className="flex items-center gap-1.5 pb-1.5 text-xs text-gray-300">
+                {/* h-9 on the inner label matches the sibling inputs' height so the
+                    checkbox sits on their centre line rather than floating. */}
+                <div className="col-span-4">
+                  <label className={fieldLabelClassName}>RMD</label>
+                  <label className="flex h-9 cursor-pointer items-center gap-2 text-[13px] text-ink-2">
                     <input
                       type="checkbox"
                       checked={account.rmdEnabled ?? false}
                       onChange={(e) => updateField(i, "rmdEnabled", e.target.checked)}
-                      className="h-3.5 w-3.5 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+                      className="h-4 w-4 rounded border-hair bg-card-2 text-accent focus:ring-2 focus:ring-accent/25"
                     />
-                    RMD
+                    Take RMDs
                   </label>
-                  <SourceBadge row={account} className="ml-auto pb-1" />
-                  <button
-                    onClick={() => removeRow(i)}
-                    className="pb-1 text-white hover:text-white"
-                    title="Remove"
-                  >
-                    <TrashIcon />
-                  </button>
                 </div>
               </div>
 
+              {/* Ownership gets its own full-width band rather than a grid cell:
+                  inside the 6-col grid it only had ~1/3 of the drawer, so the
+                  preset bar wrapped into a vertical stack and stretched the
+                  whole grid row. Full width lets the presets flow left-to-right. */}
+              <div className="mt-3 border-t border-hair pt-3">
+                <OwnershipEditor
+                  familyMembers={familyMembers}
+                  entities={entities}
+                  value={(account.owners as AccountOwner[]) ?? []}
+                  onChange={(next) => updateField(i, "owners", next)}
+                  titlingType="jtwros"
+                  onTitlingTypeChange={() => {}}
+                  label="Owner(s)"
+                />
+              </div>
+
               {isExpanded && existingRow && (
-                <div className="mt-3 rounded border border-hair bg-gray-950/40 p-3">
+                <div className="mt-3 rounded border border-hair bg-card-2/40 p-3">
                   <div className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-4">
                     Changes vs. existing
                     {existingRow.name ? <span className="ml-1 text-ink-3">— {existingRow.name}</span> : null}
@@ -469,7 +509,7 @@ export default function ReviewStepAccounts({
                       <span className="text-xs font-medium uppercase tracking-wide text-ink-4">
                         Holdings ({account.holdings.length})
                       </span>
-                      <span className={recon.flagged ? "text-xs text-bad" : "text-xs text-ink-4"}>
+                      <span className={recon.flagged ? "tabular text-xs text-bad" : "tabular text-xs text-ink-4"}>
                         Holdings ${Math.round(recon.sum).toLocaleString()} vs. stated ${Math.round(recon.total).toLocaleString()}
                         {recon.flagged ? " — review the gap" : ""}
                       </span>
@@ -491,10 +531,10 @@ export default function ReviewStepAccounts({
                           <tr key={hi}>
                             <td><input className="w-16 bg-transparent" value={h.ticker ?? ""} onChange={(e) => setField(hi, { ticker: e.target.value || undefined })} /></td>
                             <td><input className="w-40 bg-transparent" value={h.name ?? ""} onChange={(e) => setField(hi, { name: e.target.value || undefined })} /></td>
-                            <td><input className="w-20 bg-transparent text-right" value={h.shares ?? ""} onChange={(e) => setField(hi, { shares: num(e.target.value) })} /></td>
-                            <td><input className="w-20 bg-transparent text-right" value={h.price ?? ""} onChange={(e) => setField(hi, { price: num(e.target.value) })} /></td>
-                            <td className="text-right text-ink-3">${Math.round(holdingMarketValue(h)).toLocaleString()}</td>
-                            <td><input className="w-24 bg-transparent text-right" value={h.costBasis ?? ""} onChange={(e) => setField(hi, { costBasis: num(e.target.value) })} /></td>
+                            <td><input className="tabular w-20 bg-transparent text-right" value={h.shares ?? ""} onChange={(e) => setField(hi, { shares: num(e.target.value) })} /></td>
+                            <td><input className="tabular w-20 bg-transparent text-right" value={h.price ?? ""} onChange={(e) => setField(hi, { price: num(e.target.value) })} /></td>
+                            <td className="tabular text-right text-ink-3">${Math.round(holdingMarketValue(h)).toLocaleString()}</td>
+                            <td><input className="tabular w-24 bg-transparent text-right" value={h.costBasis ?? ""} onChange={(e) => setField(hi, { costBasis: num(e.target.value) })} /></td>
                             <td className="text-right">
                               <button type="button" className="text-ink-4 hover:text-bad" onClick={() => update(account.holdings!.filter((_, j) => j !== hi))}>×</button>
                             </td>
