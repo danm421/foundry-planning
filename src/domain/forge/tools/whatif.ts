@@ -154,7 +154,7 @@ export function buildWhatIfTools(toolCtx: ForgeToolContext): StructuredToolInter
         "Model one or more Roth conversions as a read-only what-if on a scenario. " +
         "Returns the per-year converted gross/taxable amounts the engine reports plus " +
         "the combined Base->Scenario lifetime tax and Medicare deltas. " +
-        "For 'optimize conversions to hit a probability-of-success target' use solve_goal instead.",
+        "For 'optimize conversions to hit a plan-confidence target' use solve_goal instead.",
       schema: z.object({
         clientId: z.string().describe("the client uuid (must match your scope)"),
         scenarioId: z
