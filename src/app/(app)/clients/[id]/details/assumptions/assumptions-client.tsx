@@ -116,10 +116,6 @@ interface AssumptionsClientProps {
   deductionsData: DeductionsTabData;
   liquidAccounts: LiquidAccount[];
   allAccounts: AssetAccount[];
-  /** Reserved seam for wizard-mode trimming. Today the wrapper in
-   *  assumptions/page.tsx supplies the page h2 + max-w-3xl; wizard mode
-   *  drops both via the step component rather than via this prop. */
-  embed?: "page" | "wizard";
 }
 
 export default function AssumptionsClient({
