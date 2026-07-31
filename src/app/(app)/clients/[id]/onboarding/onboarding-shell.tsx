@@ -88,28 +88,45 @@ export default function OnboardingShell({ clientId, activeStep, statuses, childr
     return ok;
   }
 
-  async function onSkip() {
-    if (!def.skippable) return;
-    if (!confirmLeave()) return;
-    setBusy(true);
-    try {
-      const existing = statuses.filter((s) => s.kind === "skipped").map((s) => s.slug);
-      const skipped = Array.from(new Set([...existing, activeStep]));
-      await fetch(`/api/clients/${clientId}/onboarding`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ skippedSteps: skipped }),
-      });
-      if (next) router.push(`/clients/${clientId}/onboarding/${next}`);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   function navTo(slug: StepSlug) {
     if (!confirmLeave()) return;
     patchLastVisited(slug);
     router.push(`/clients/${clientId}/onboarding/${slug}`);
+  }
+
+  /** Forward navigation. A step the advisor passed through without entering
+   *  anything is recorded as skipped, so Review can show what is thin and
+   *  Finish never blocks. `deriveStepStatuses` ignores the flag the moment the
+   *  step has data, so a stale one costs nothing. */
+  async function onNext() {
+    if (!next) return;
+    if (!confirmLeave()) return;
+
+    if (canEdit && activeStatus.kind === "untouched") {
+      setBusy(true);
+      const skipped = Array.from(
+        new Set([
+          ...statuses.filter((s) => s.kind === "skipped").map((s) => s.slug),
+          activeStep,
+        ]),
+      );
+      try {
+        // Awaited, not fire-and-forget: the next step's server render reads
+        // this state, and racing it shows a stale stepper.
+        await fetch(`/api/clients/${clientId}/onboarding`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ skippedSteps: skipped }),
+        });
+      } catch {
+        // Non-blocking — bookkeeping never traps the advisor on a step.
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    patchLastVisited(next);
+    router.push(`/clients/${clientId}/onboarding/${next}`);
   }
 
   return (
@@ -165,8 +182,8 @@ export default function OnboardingShell({ clientId, activeStep, statuses, childr
         )}
 
         {/* Step body — the provider lets the body flag unsaved edits so the
-            shell's soft navigations (Next/Back/Skip/stepper/exit) confirm
-            before discarding them. */}
+            shell's soft navigations (Next/Back/stepper/exit) confirm before
+            discarding them. */}
         <div className="px-6 py-6">
           <OnboardingDirtyContext.Provider value={setStepDirty}>
             {children}
@@ -198,21 +215,12 @@ export default function OnboardingShell({ clientId, activeStep, statuses, childr
               Back
             </button>
           )}
-          {canEdit && def.skippable && activeStatus.kind !== "complete" && activeStep !== "review" && (
-            <button
-              type="button"
-              onClick={onSkip}
-              disabled={busy}
-              className="h-9 rounded-[var(--radius-sm)] px-3 text-[13px] font-medium text-ink-3 transition-colors hover:bg-card-2 hover:text-ink-2 disabled:opacity-60"
-            >
-              Skip this step
-            </button>
-          )}
           {next && (
             <button
               type="button"
-              onClick={() => navTo(next)}
-              className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-ink"
+              onClick={onNext}
+              disabled={busy}
+              className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-ink disabled:opacity-60"
             >
               Next
               <ArrowRightIcon width={14} height={14} aria-hidden="true" />

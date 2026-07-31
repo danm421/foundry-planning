@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { PercentInput } from "@/components/percent-input";
 import { CurrencyInput } from "@/components/currency-input";
 import { HelpTip } from "@/components/help-tip";
-import { STATE_ESTATE_TAX, type Bracket } from "@/lib/tax/state-estate";
+import { STATE_ESTATE_TAX, INHERITANCE_TAX_STATES, type Bracket } from "@/lib/tax/state-estate";
 import {
   CAPITAL_LOSS_ORDINARY_LIMIT,
   CAPITAL_LOSS_ORDINARY_LIMIT_MFS,
@@ -59,8 +59,6 @@ const pctOrBlank = (v: string) => (v === "" ? "" : (Number(v) * 100).toFixed(2))
 function topRate(brackets: Bracket[]): number {
   return brackets.reduce((m, b) => Math.max(m, b.rate), 0);
 }
-
-const INHERITANCE_TAX_STATES = new Set(["PA", "NJ", "KY", "NE", "MD"]);
 
 const STATE_OPTIONS = USPS_STATE_CODES
   .map((code) => {

@@ -254,3 +254,8 @@ export const STATE_ESTATE_TAX: Record<StateCode, StateEstateTaxRule> = {
     citation: "RCW 83.100.040 as amended by ESB 6347 (signed 3/24/2026; top rate reverts 35%→20% for deaths on/after 7/1/2026; $3M exclusion frozen).",
   },
 };
+
+/** States levying an inheritance tax (paid by heirs) — distinct from the
+ *  estate tax in STATE_ESTATE_TAX (paid by the estate). A state can levy
+ *  both, one, or neither. */
+export const INHERITANCE_TAX_STATES = new Set<string>(["PA", "NJ", "KY", "NE", "MD"]);

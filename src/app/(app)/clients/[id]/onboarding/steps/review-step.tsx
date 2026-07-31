@@ -131,8 +131,9 @@ export default function ReviewStep({ clientId, statuses, alreadyFinished }: Revi
         <div className="flex items-start gap-2 rounded-[var(--radius-sm)] border border-warn/30 bg-warn/10 px-3 py-2.5 text-[13px] text-warn">
           <AlertCircleIcon width={16} height={16} className="mt-0.5 shrink-0" aria-hidden="true" />
           <span>
-            Resolve {blockers.length} remaining step{blockers.length === 1 ? "" : "s"} before finishing
-            — or mark them skipped if they don&apos;t apply.
+            <span className="tabular">{blockers.length}</span> step
+            {blockers.length === 1 ? " has" : "s have"} no data yet. You can finish now and fill
+            them in any time.
           </span>
         </div>
       )}
@@ -155,12 +156,7 @@ export default function ReviewStep({ clientId, statuses, alreadyFinished }: Revi
           <button
             type="button"
             onClick={onFinish}
-            disabled={submitting || blockers.length > 0}
-            title={
-              blockers.length > 0
-                ? `Resolve ${blockers.length} remaining step${blockers.length === 1 ? "" : "s"} first`
-                : undefined
-            }
+            disabled={submitting}
             className="inline-flex h-10 items-center gap-1.5 rounded-[var(--radius-sm)] bg-accent px-5 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-ink disabled:opacity-60"
           >
             {submitting ? "Finishing…" : alreadyFinished ? "Re-finish onboarding" : "Finish onboarding"}

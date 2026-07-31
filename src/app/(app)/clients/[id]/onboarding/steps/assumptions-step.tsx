@@ -4,29 +4,26 @@ import {
   clients,
   scenarios,
   planSettings,
-  withdrawalStrategies,
   modelPortfolios,
   modelPortfolioAllocations,
   assetClasses,
   clientCmaOverrides,
-  clientDeductions,
   crmHouseholdContacts,
 } from "@/db/schema";
-import AssumptionsClient from "../../details/assumptions/assumptions-client";
-import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
+import WizardAssumptionsForm from "./wizard-assumptions-form";
 import { resolveInflationRate } from "@/lib/inflation";
-import { amortizeLiability } from "@/engine/liabilities";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
-import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
+import { controllingEntity } from "@/engine/ownership";
 import { buildModelPortfolioOptions } from "@/lib/cma/model-portfolio-options";
+import type { USPSStateCode } from "@/lib/usps-states";
 
 interface AssumptionsStepProps {
   clientId: string;
   firmId: string;
 }
 
-/** Wizard step over AssumptionsClient. Mirrors the standard
- * `/clients/[id]/details/assumptions/page.tsx` loader. */
+/** Wizard step over the trimmed three-group assumptions form. The full
+ * five-tab surface stays on `/clients/[id]/details/assumptions`. */
 export default async function AssumptionsStep({ clientId, firmId }: AssumptionsStepProps) {
   const [clientRow] = await db
     .select()
@@ -34,19 +31,14 @@ export default async function AssumptionsStep({ clientId, firmId }: AssumptionsS
     .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
   if (!clientRow) return <NotFound />;
 
-  // CRM contacts — sole identity source for milestone math.
+  // CRM contacts — the primary's DOB gates the rest of the load, matching the
+  // details-page loader this mirrors.
   const contactRows = await db
     .select()
     .from(crmHouseholdContacts)
     .where(eq(crmHouseholdContacts.householdId, clientRow.crmHouseholdId));
   const primaryContact = contactRows.find((c) => c.role === "primary");
-  const spouseContact = contactRows.find((c) => c.role === "spouse");
   if (!primaryContact?.dateOfBirth) return <NotFound />;
-  const client = {
-    ...clientRow,
-    dateOfBirth: primaryContact.dateOfBirth,
-    spouseDob: spouseContact?.dateOfBirth ?? null,
-  };
 
   const [scenario] = await db
     .select()
@@ -56,43 +48,26 @@ export default async function AssumptionsStep({ clientId, firmId }: AssumptionsS
 
   const [
     settingsRows,
-    withdrawalRows,
     portfolioRows,
     allocationRows,
     assetClassRows,
-    deductionRows,
     { effectiveTree },
   ] = await Promise.all([
     db.select().from(planSettings).where(and(eq(planSettings.clientId, clientId), eq(planSettings.scenarioId, scenario.id))),
-    db.select().from(withdrawalStrategies).where(and(eq(withdrawalStrategies.clientId, clientId), eq(withdrawalStrategies.scenarioId, scenario.id))),
     db.select().from(modelPortfolios).where(eq(modelPortfolios.firmId, firmId)),
     db.select().from(modelPortfolioAllocations),
     db.select().from(assetClasses).where(eq(assetClasses.firmId, firmId)),
-    db.select().from(clientDeductions).where(and(eq(clientDeductions.clientId, clientId), eq(clientDeductions.scenarioId, scenario.id))),
     loadEffectiveTree(clientId, firmId, "base", {}),
   ]);
 
   const accountRows = effectiveTree.accounts;
-  const savingsRows = effectiveTree.savingsRules;
-  const expenseRows = effectiveTree.expenses;
-  const liabilityRows = effectiveTree.liabilities;
-
-  const clientFmId = (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "client")?.id ?? null;
-  const spouseFmId = (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "spouse")?.id ?? null;
-  function ownerKeyOf(acct: (typeof accountRows)[number]): "client" | "spouse" | "joint" {
-    const cfm = controllingFamilyMember(acct);
-    if (cfm === spouseFmId && spouseFmId != null) return "spouse";
-    if (cfm === clientFmId && clientFmId != null) return "client";
-    return "joint";
-  }
 
   const settings = settingsRows[0];
   if (!settings) return <NotFound message="No plan settings found." />;
 
-  const [firmInflationAc] = await db
-    .select({ id: assetClasses.id, geometricReturn: assetClasses.geometricReturn })
-    .from(assetClasses)
-    .where(and(eq(assetClasses.firmId, firmId), eq(assetClasses.slug, "inflation")));
+  // `assetClassRows` is already every asset class for the firm, so the
+  // inflation row is a find, not a second round trip.
+  const firmInflationAc = assetClassRows.find((ac) => ac.slug === "inflation");
 
   let clientInflationOverride: { geometricReturn: string } | null = null;
   if (settings.useCustomCma && firmInflationAc) {
@@ -113,197 +88,34 @@ export default async function AssumptionsStep({ clientId, firmId }: AssumptionsS
     portfolioRows,
     allocationRows,
     assetClassRows,
-  ).map((o) => ({
-    ...o,
-    riskLevel: portfolioRows.find((p) => p.id === o.id)?.riskLevel ?? null,
-  }));
+  );
 
-  const milestones = buildClientMilestones(client, settings.planStartYear, settings.planEndYear);
-
-  for (const row of withdrawalRows) {
-    if (row.startYearRef) {
-      const resolved = resolveMilestone(row.startYearRef as YearRef, milestones, "start");
-      if (resolved != null && resolved !== row.startYear) {
-        row.startYear = resolved;
-        db.update(withdrawalStrategies).set({ startYear: resolved }).where(eq(withdrawalStrategies.id, row.id));
-      }
-    }
-    if (row.endYearRef) {
-      const resolved = resolveMilestone(row.endYearRef as YearRef, milestones, "end");
-      if (resolved != null && resolved !== row.endYear) {
-        row.endYear = resolved;
-        db.update(withdrawalStrategies).set({ endYear: resolved }).where(eq(withdrawalStrategies.id, row.id));
-      }
-    }
-  }
-
-  const currentYear = new Date().getFullYear();
-  const saltCap = currentYear >= 2026 ? 40_000 : 10_000;
-
-  const derivedRows = savingsRows
-    .filter((r) => {
-      const acct = accountRows.find((a) => a.id === r.accountId);
-      if (!acct) return false;
-      if (acct.subType !== "traditional_ira" && acct.subType !== "401k") return false;
-      if (currentYear < r.startYear || currentYear > r.endYear) return false;
-      return true;
-    })
-    .map((r) => {
-      const acct = accountRows.find((a) => a.id === r.accountId)!;
-      return {
-        id: r.id,
-        accountName: acct.name,
-        subType: acct.subType ?? "",
-        annualAmount: r.annualAmount,
-        owner: ownerKeyOf(acct),
-        startYear: r.startYear,
-        endYear: r.endYear,
-      };
-    });
-
-  const expenseDeductionRows = expenseRows
-    .filter((e) => e.deductionType != null)
-    .map((e) => ({
-      id: e.id,
-      name: e.name,
-      deductionType: e.deductionType!,
-      annualAmount: e.annualAmount,
-    }));
-
-  const mortgageRows = liabilityRows
-    .filter((l) => l.isInterestDeductible)
-    .map((l) => {
-      const result = amortizeLiability(l, currentYear);
-      return {
-        id: l.id,
-        name: l.name,
-        estimatedInterest: result.interestPortion,
-      };
-    })
-    .filter((r) => r.estimatedInterest > 0);
-
-  const propertyTaxRows = accountRows
-    .filter((a) => (a.annualPropertyTax ?? 0) > 0)
-    .map((a) => {
-      const baseTax = a.annualPropertyTax ?? 0;
-      const growthRate = a.propertyTaxGrowthRate ?? 0;
-      const currentYearInflated = baseTax * Math.pow(1 + growthRate, 0);
-      return {
-        id: a.id,
-        name: a.name,
-        annualPropertyTax: baseTax,
-        currentYearInflated,
-      };
-    });
-
-  const itemizedRows = deductionRows.map((d) => ({
-    id: d.id,
-    type: d.type,
-    name: d.name,
-    owner: d.owner,
-    annualAmount: parseFloat(d.annualAmount),
-    growthRate: parseFloat(d.growthRate),
-    startYear: d.startYear,
-    endYear: d.endYear,
-    startYearRef: d.startYearRef,
-    endYearRef: d.endYearRef,
-  }));
-
-  const liquidAccounts = accountRows
-    .filter((a) => ["taxable", "cash", "retirement"].includes(a.category))
-    .map((a) => ({
-      id: a.id,
-      name: a.name,
-      category: a.category as "taxable" | "cash" | "retirement",
-      value: Number(a.value),
-    }));
-
-  const allAccounts = accountRows.map((a) => ({
-    id: a.id,
-    name: a.name,
-    category: a.category as import("@/components/account-groups/types").AssetCategory,
-    value: Number(a.value),
-  }));
+  // Household-owned accounts only — an entity-owned account isn't somewhere
+  // household surplus can land.
+  const householdAccounts = accountRows
+    .filter((a) => !controllingEntity(a))
+    .map((a) => ({ id: a.id, name: a.name }));
 
   return (
-    <AssumptionsClient
+    <WizardAssumptionsForm
       clientId={clientId}
-      filingStatus={clientRow.filingStatus}
       settings={{
-        flatFederalRate: String(settings.flatFederalRate),
-        flatStateRate: String(settings.flatStateRate),
-        estateAdminExpenses: String(settings.estateAdminExpenses),
-        flatStateEstateRate: String(settings.flatStateEstateRate),
-        residenceState: (settings.residenceState ?? null) as import("@/lib/usps-states").USPSStateCode | null,
-        irdTaxRate: String(settings.irdTaxRate),
-        probateCostRate: String(settings.probateCostRate),
-        pvDiscountRate: settings.pvDiscountRate != null ? String(settings.pvDiscountRate) : "",
-        inflationRate: String(settings.inflationRate),
-        inflationRateSource: settings.inflationRateSource,
-        planStartYear: settings.planStartYear,
-        planEndYear: settings.planEndYear,
+        residenceState: (settings.residenceState ?? null) as USPSStateCode | null,
         defaultGrowthTaxable: String(settings.defaultGrowthTaxable),
-        defaultGrowthCash: String(settings.defaultGrowthCash),
         defaultGrowthRetirement: String(settings.defaultGrowthRetirement),
-        defaultGrowthRealEstate: String(settings.defaultGrowthRealEstate),
-        defaultGrowthBusiness: String(settings.defaultGrowthBusiness),
-        defaultGrowthLifeInsurance: String(settings.defaultGrowthLifeInsurance),
+        defaultGrowthCash: String(settings.defaultGrowthCash),
         growthSourceTaxable: settings.growthSourceTaxable,
-        growthSourceCash: settings.growthSourceCash,
         growthSourceRetirement: settings.growthSourceRetirement,
-        growthSourceRealEstate: settings.growthSourceRealEstate,
-        growthSourceBusiness: settings.growthSourceBusiness,
-        growthSourceLifeInsurance: settings.growthSourceLifeInsurance,
+        growthSourceCash: settings.growthSourceCash,
         modelPortfolioIdTaxable: settings.modelPortfolioIdTaxable,
-        modelPortfolioIdCash: settings.modelPortfolioIdCash,
         modelPortfolioIdRetirement: settings.modelPortfolioIdRetirement,
-        taxEngineMode: settings.taxEngineMode,
-        taxInflationRate: settings.taxInflationRate != null ? String(settings.taxInflationRate) : "",
-        lifetimeExemptionCap: settings.lifetimeExemptionCap != null ? String(settings.lifetimeExemptionCap) : "",
-        ssWageGrowthRate: settings.ssWageGrowthRate != null ? String(settings.ssWageGrowthRate) : "",
-        outOfHouseholdDniRate: String(settings.outOfHouseholdDniRate),
-        priorTaxableGiftsClient: String(settings.priorTaxableGiftsClient),
-        priorTaxableGiftsSpouse: String(settings.priorTaxableGiftsSpouse),
-        capitalLossCarryforwardSt: settings.capitalLossCarryforwardSt ?? "",
-        capitalLossCarryforwardLt: settings.capitalLossCarryforwardLt ?? "",
-        // Onboarding runs before tax-return analysis is realistically in place;
-        // the tax-return autofill hint (assumptions-content.tsx) doesn't apply here.
-        capitalLossCarryforwardLtSourceYear: null,
+        modelPortfolioIdCash: settings.modelPortfolioIdCash,
         surplusSpendPct: String(settings.surplusSpendPct ?? "0"),
         surplusSaveAccountId: settings.surplusSaveAccountId,
-        medicarePremiumInflationRate:
-          settings.medicarePremiumInflationRate != null ? String(settings.medicarePremiumInflationRate) : "0.03",
-        medicarePremiumInflationEnabled: settings.medicarePremiumInflationEnabled,
-        coveredByWorkplacePlan: clientRow.coveredByWorkplacePlan,
-        spouseCoveredByWorkplacePlan: clientRow.spouseCoveredByWorkplacePlan,
       }}
-      resolvedInflationRate={resolvedInflationRate}
-      hasInflationAssetClass={firmInflationAc != null}
       modelPortfolios={modelPortfolioOptions}
-      accounts={accountRows.map((a) => ({
-        id: a.id,
-        name: a.name,
-        category: a.category,
-        subType: a.subType,
-        isDefaultChecking: a.isDefaultChecking,
-        ownerEntityId: controllingEntity(a) ?? null,
-      }))}
-      withdrawalStrategies={withdrawalRows}
-      milestones={milestones}
-      clientFirstName={effectiveTree.client.firstName}
-      spouseFirstName={effectiveTree.client.spouseName?.split(" ")[0]}
-      deductionsData={{
-        derivedRows,
-        expenseDeductionRows,
-        mortgageRows,
-        propertyTaxRows,
-        itemizedRows,
-        currentYear,
-        saltCap,
-      }}
-      liquidAccounts={liquidAccounts}
-      allAccounts={allAccounts}
-      embed="wizard"
+      householdAccounts={householdAccounts}
+      resolvedInflationRate={resolvedInflationRate}
     />
   );
 }
