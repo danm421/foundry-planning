@@ -55,4 +55,10 @@ describe("Monte Carlo report labels", () => {
     expect(screen.queryByText(/probability of failure/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/ran out of money/i)).not.toBeInTheDocument();
   });
+
+  it("gives the confidence gauge a visible caption and a matching aria-label", () => {
+    render(<KpiBand summary={summary} startAge={65} annualIncome={200_000} />);
+    expect(screen.getByText("Plan Confidence")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Plan confidence 84 percent" })).toBeInTheDocument();
+  });
 });

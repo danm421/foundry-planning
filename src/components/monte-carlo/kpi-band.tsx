@@ -24,10 +24,11 @@ export function KpiBand({ summary, startAge, annualIncome, includeFailureKpi = f
     >
       <div
         role="img"
-        aria-label={`Success probability ${Math.round(successPct * 100)} percent`}
-        className="rounded-lg bg-card ring-1 ring-hair p-4 flex items-center justify-center min-h-[96px] lg:col-span-2"
+        aria-label={`Plan confidence ${Math.round(successPct * 100)} percent`}
+        className="rounded-lg bg-card ring-1 ring-hair p-4 flex flex-col items-center justify-center gap-1 min-h-[96px] lg:col-span-2"
       >
         <SuccessGauge value={successPct} />
+        <div className="text-xs uppercase tracking-wider text-ink-2">Plan Confidence</div>
       </div>
       <KpiCard
         label="Median Portfolio Value"
