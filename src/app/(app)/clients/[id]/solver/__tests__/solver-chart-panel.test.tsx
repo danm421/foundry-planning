@@ -438,13 +438,18 @@ describe("SolverChartPanel", () => {
     ).toBeInTheDocument();
   });
 
-  // Pins the branch-order invariant: `projection ? chart : loading ? spinner
-  // : unavailable`. A re-fetch triggered by moving a lever (e.g. a life-
-  // expectancy slider) sets `loading: true` while the PREVIOUS projection is
-  // still around — the chart must stay on screen rather than blank to a
-  // spinner. Inverting the ternary to `loading ? spinner : projection ? chart
-  // : unavailable` would redden this (and only this) case: `loading` would
-  // win first and the chart/copy assertions below would flip.
+  // Pins the re-fetch invariant: a lever move (e.g. a life-expectancy slider)
+  // re-fires the debounced fetch — `loading: true` — while the PREVIOUS
+  // projection is still around; the chart must stay on screen rather than
+  // blank to a spinner. solver-chart-panel.tsx now guarantees this two ways:
+  // the ternary checks `fullProjection` first, AND `flowSpinner` itself
+  // already folds in `!fullProjection`, so a bare ternary-order inversion is
+  // a no-op against this stub (`flowSpinner` still evaluates false when
+  // `fullProjection` is truthy, regardless of which branch is checked first).
+  // What *does* redden this (and only this) case is undoing BOTH: weakening
+  // `flowSpinner` back to plain `flowLoading` AND checking it before
+  // `fullProjection` — i.e. reverting the whole invariant, not just its
+  // ternary order.
   it("keeps the flow chart on screen during a re-fetch instead of blanking to a spinner", async () => {
     fullProjectionStub.current = { projection: { years: [] }, loading: true };
     render(<ControlledPanel initialReport="estate" />);

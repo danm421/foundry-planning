@@ -518,9 +518,12 @@ export function SolverChartPanel({
           // forces three columns and they overlap rather than reflowing.
           // Rather than touch the shared component (also embedded, unmodified,
           // by the Estate Planning page), give it room to scroll horizontally
-          // here, scoped to this Solver embed only. `min-w` matches roughly
-          // what the grid's own column minimums (280px + 320px + 280px, plus
-          // gaps) need to stay legible.
+          // here, scoped to this Solver embed only. `min-w` is an empirical
+          // value (checked in-browser at a narrow pane) — the grid itself
+          // only enforces a true minimum on its centre column
+          // (`minmax(320px,420px)`); the two outer columns are
+          // `minmax(0,1fr)`, so they don't set a floor this could be derived
+          // from.
           <div className="overflow-x-auto">
             <div className="min-w-[900px]">
               <EstateFlowChartTab

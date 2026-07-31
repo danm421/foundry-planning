@@ -29,8 +29,11 @@ export function useSolverFullProjection({
   enabled,
 }: Args): { projection: ProjectionResult | undefined; loading: boolean } {
   const [projection, setProjection] = useState<ProjectionResult | undefined>(undefined);
-  // Initialised from `enabled` so a hook that's enabled on mount reports
-  // loading from the very first committed paint.
+  // Initialised from `enabled` for a hook that's enabled on mount — no
+  // current caller does this (`solver-chart-panel.tsx` inits `estateSubTab`
+  // to `"charts"`, `use-solver-summary-data.ts`'s caller inits
+  // `activeSummary` to `"retirement"`), but it's cheap correctness for a
+  // future one that does.
   const [loading, setLoading] = useState(enabled);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -46,10 +49,18 @@ export function useSolverFullProjection({
   // of "unavailable" before flipping to "loading". Setting state directly
   // during render (React's documented "adjust state when a prop changes"
   // pattern) makes React redo this render with the corrected value before
-  // anything commits — no visible frame is lost.
-  const prevEnabledRef = useRef(enabled);
-  if (enabled !== prevEnabledRef.current) {
-    prevEnabledRef.current = enabled;
+  // anything commits — no visible frame is lost. The previous value has to
+  // live in `useState`, not a `useRef`: the docs are explicit that writing
+  // `ref.current` during render is unsafe, because a ref mutation survives a
+  // render that gets thrown away and restarted (refs aren't part of the
+  // reconciler's undo bookkeeping the way state is) — the guard would then
+  // believe it already saw this `enabled` value and silently never fire
+  // again. No caller on this branch uses `startTransition` / `useTransition`
+  // / `useDeferredValue` today, so a discarded-render can't happen yet — but
+  // the fix should still match the pattern it claims to follow.
+  const [prevEnabled, setPrevEnabled] = useState(enabled);
+  if (enabled !== prevEnabled) {
+    setPrevEnabled(enabled);
     if (enabled) setLoading(true);
   }
 
