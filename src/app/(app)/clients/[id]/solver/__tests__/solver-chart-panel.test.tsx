@@ -437,4 +437,19 @@ describe("SolverChartPanel", () => {
       await screen.findByText(/estate flow is unavailable/i),
     ).toBeInTheDocument();
   });
+
+  // Pins the branch-order invariant: `projection ? chart : loading ? spinner
+  // : unavailable`. A re-fetch triggered by moving a lever (e.g. a life-
+  // expectancy slider) sets `loading: true` while the PREVIOUS projection is
+  // still around — the chart must stay on screen rather than blank to a
+  // spinner. Inverting the ternary to `loading ? spinner : projection ? chart
+  // : unavailable` would redden this (and only this) case: `loading` would
+  // win first and the chart/copy assertions below would flip.
+  it("keeps the flow chart on screen during a re-fetch instead of blanking to a spinner", async () => {
+    fullProjectionStub.current = { projection: { years: [] }, loading: true };
+    render(<ControlledPanel initialReport="estate" />);
+    await userEvent.click(screen.getByRole("button", { name: "Flow Chart" }));
+    expect(await screen.findByTestId("estate-flow-chart")).toBeInTheDocument();
+    expect(screen.queryByText(/loading estate flow/i)).not.toBeInTheDocument();
+  });
 });

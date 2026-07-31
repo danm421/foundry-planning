@@ -498,14 +498,27 @@ export function SolverChartPanel({
         <div className="mb-3">{reportTabs}</div>
         <div className="mb-3">{estateSubTabs}</div>
         {fullProjection ? (
-          <EstateFlowChartTab
-            working={workingTree}
-            engineData={workingTree}
-            projection={fullProjection}
-            workingGifts={workingGifts}
-            isMarried={isMarried}
-            ownerNames={ownerNames}
-          />
+          // estate-flow-summary.tsx's three-column grid switches on a `lg:`
+          // (viewport-width) breakpoint, not the Solver's own resizable pane
+          // width — so a narrow pane inside a wide browser window still
+          // forces three columns and they overlap rather than reflowing.
+          // Rather than touch the shared component (also embedded, unmodified,
+          // by the Estate Planning page), give it room to scroll horizontally
+          // here, scoped to this Solver embed only. `min-w` matches roughly
+          // what the grid's own column minimums (280px + 320px + 280px, plus
+          // gaps) need to stay legible.
+          <div className="overflow-x-auto">
+            <div className="min-w-[900px]">
+              <EstateFlowChartTab
+                working={workingTree}
+                engineData={workingTree}
+                projection={fullProjection}
+                workingGifts={workingGifts}
+                isMarried={isMarried}
+                ownerNames={ownerNames}
+              />
+            </div>
+          </div>
         ) : flowLoading ? (
           <div className="py-16 text-center text-sm text-ink-3">
             Loading estate flow…

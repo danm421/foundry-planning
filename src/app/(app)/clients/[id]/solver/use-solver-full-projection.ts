@@ -29,8 +29,29 @@ export function useSolverFullProjection({
   enabled,
 }: Args): { projection: ProjectionResult | undefined; loading: boolean } {
   const [projection, setProjection] = useState<ProjectionResult | undefined>(undefined);
-  const [loading, setLoading] = useState(false);
+  // Initialised from `enabled` so a hook that's enabled on mount reports
+  // loading from the very first committed paint.
+  const [loading, setLoading] = useState(enabled);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // This hook's callers (the Summaries deck, the Estate report's Flow Chart
+  // sub-tab) don't mount it fresh when they turn it on — it's a long-lived
+  // instance whose `enabled` flips true later, from a click. The `useState`
+  // initialiser above only fires at the ONE true mount, which is normally
+  // while `enabled` is still false (the default sub-tab is Charts). Without
+  // this block, the first render after `enabled` flips true still carries the
+  // stale `loading: false` from before — the effect below only corrects it
+  // AFTER that render commits (a real DOM paint, since a browser defers
+  // passive effects), so a caller like the Flow Chart branch paints one frame
+  // of "unavailable" before flipping to "loading". Setting state directly
+  // during render (React's documented "adjust state when a prop changes"
+  // pattern) makes React redo this render with the corrected value before
+  // anything commits — no visible frame is lost.
+  const prevEnabledRef = useRef(enabled);
+  if (enabled !== prevEnabledRef.current) {
+    prevEnabledRef.current = enabled;
+    if (enabled) setLoading(true);
+  }
 
   useEffect(() => {
     if (!enabled) return;
