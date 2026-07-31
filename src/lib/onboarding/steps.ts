@@ -20,8 +20,6 @@ export interface StepDef {
   description: string;
   /** Icon key — the shell maps this to an SVG component. */
   icon: StepIconKey;
-  /** Whether the advisor can mark this step Skipped and still Finish onboarding. */
-  skippable: boolean;
 }
 
 export const STEPS: readonly StepDef[] = [
@@ -30,56 +28,48 @@ export const STEPS: readonly StepDef[] = [
     label: "Household",
     description: "Names, dates of birth, retirement targets, and filing status.",
     icon: "household",
-    skippable: false,
   },
   {
     slug: "family",
     label: "Family",
     description: "Children, dependents, and any beneficiaries the plan should know about.",
     icon: "family",
-    skippable: true,
   },
   {
     slug: "accounts",
     label: "Assets",
     description: "Investment, retirement, and bank accounts on the balance sheet.",
     icon: "accounts",
-    skippable: false,
   },
   {
     slug: "liabilities",
     label: "Liabilities",
     description: "Mortgages, loans, and other debts.",
     icon: "liabilities",
-    skippable: true,
   },
   {
     slug: "cash-flow",
     label: "Cash Flow",
     description: "Recurring income and expense streams that drive the projection.",
     icon: "cash-flow",
-    skippable: false,
   },
   {
     slug: "insurance",
     label: "Insurance",
     description: "Life, disability, and long-term-care coverage.",
     icon: "insurance",
-    skippable: true,
   },
   {
     slug: "assumptions",
     label: "Assumptions",
     description: "Inflation, growth rates, and tax assumptions for this plan.",
     icon: "assumptions",
-    skippable: true,
   },
   {
     slug: "review",
     label: "Review",
     description: "Confirm the basics and finish onboarding.",
     icon: "review",
-    skippable: false,
   },
 ];
 

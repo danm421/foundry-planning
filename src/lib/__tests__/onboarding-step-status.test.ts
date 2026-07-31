@@ -95,10 +95,39 @@ describe("deriveStepStatuses", () => {
     expect(statuses.find((s) => s.slug === "insurance")!.kind).toBe("skipped");
   });
 
-  it("does not allow skipping a non-skippable step", () => {
-    const statuses = deriveStepStatuses(emptyTree(), { skippedSteps: ["accounts" as never] });
-    // Accounts is non-skippable — should remain untouched, ignoring the skip flag
-    expect(statuses.find((s) => s.slug === "accounts")!.kind).toBe("untouched");
+  it("honours a skip flag on every step, including the formerly non-skippable ones", () => {
+    const statuses = deriveStepStatuses(emptyTree(), {
+      skippedSteps: ["household", "accounts", "cash-flow"],
+    });
+    const byslug = Object.fromEntries(statuses.map((s) => [s.slug, s]));
+    expect(byslug.household.kind).toBe("skipped");
+    expect(byslug.accounts.kind).toBe("skipped");
+    expect(byslug["cash-flow"].kind).toBe("skipped");
+  });
+
+  it("ignores a stale skip flag once the step has data", () => {
+    const tree = emptyTree();
+    tree.accounts = [{ id: "a1" } as ClientData["accounts"][number]];
+    const statuses = deriveStepStatuses(tree, { skippedSteps: ["accounts"] });
+    expect(statuses.find((s) => s.slug === "accounts")!.kind).toBe("complete");
+  });
+
+  // Liabilities is the discriminating fixture for the un-skip rule: it was
+  // already skippable, so the old skip-first ordering returned "skipped" here
+  // even with a liability on the tree. Accounts/cash-flow can't show this —
+  // they were non-skippable, so their flag was ignored either way.
+  it("ignores a stale skip flag on a step that was always skippable", () => {
+    const tree = emptyTree();
+    tree.liabilities = [{ id: "l1" } as ClientData["liabilities"][number]];
+    const statuses = deriveStepStatuses(tree, { skippedSteps: ["liabilities"] });
+    expect(statuses.find((s) => s.slug === "liabilities")!.kind).toBe("complete");
+  });
+
+  it("ignores a stale skip flag on a partially-filled step", () => {
+    const tree = emptyTree();
+    tree.incomes = [{ id: "i1" } as ClientData["incomes"][number]];
+    const statuses = deriveStepStatuses(tree, { skippedSteps: ["cash-flow"] });
+    expect(statuses.find((s) => s.slug === "cash-flow")!.kind).toBe("in_progress");
   });
 
   it("marks Family complete when at least one non-household member exists", () => {

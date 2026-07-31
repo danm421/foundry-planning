@@ -88,24 +88,6 @@ export default function OnboardingShell({ clientId, activeStep, statuses, childr
     return ok;
   }
 
-  async function onSkip() {
-    if (!def.skippable) return;
-    if (!confirmLeave()) return;
-    setBusy(true);
-    try {
-      const existing = statuses.filter((s) => s.kind === "skipped").map((s) => s.slug);
-      const skipped = Array.from(new Set([...existing, activeStep]));
-      await fetch(`/api/clients/${clientId}/onboarding`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ skippedSteps: skipped }),
-      });
-      if (next) router.push(`/clients/${clientId}/onboarding/${next}`);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   function navTo(slug: StepSlug) {
     if (!confirmLeave()) return;
     patchLastVisited(slug);
@@ -196,16 +178,6 @@ export default function OnboardingShell({ clientId, activeStep, statuses, childr
             >
               <ArrowLeftIcon width={14} height={14} aria-hidden="true" />
               Back
-            </button>
-          )}
-          {canEdit && def.skippable && activeStatus.kind !== "complete" && activeStep !== "review" && (
-            <button
-              type="button"
-              onClick={onSkip}
-              disabled={busy}
-              className="h-9 rounded-[var(--radius-sm)] px-3 text-[13px] font-medium text-ink-3 transition-colors hover:bg-card-2 hover:text-ink-2 disabled:opacity-60"
-            >
-              Skip this step
             </button>
           )}
           {next && (

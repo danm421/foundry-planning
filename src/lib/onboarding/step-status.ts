@@ -2,10 +2,6 @@ import type { ClientData } from "@/engine/types";
 import type { OnboardingState, StepSlug, StepStatus } from "./types";
 import { STEPS } from "./steps";
 
-const SKIPPABLE: Record<StepSlug, boolean> = Object.fromEntries(
-  STEPS.map((s) => [s.slug, s.skippable]),
-) as Record<StepSlug, boolean>;
-
 export function deriveStepStatuses(
   tree: ClientData,
   state: OnboardingState,
@@ -20,12 +16,16 @@ export function deriveStepStatuses(
       continue;
     }
 
-    if (skipped.has(def.slug) && def.skippable) {
-      out.push({ slug: def.slug, kind: "skipped", gaps: [] });
-      continue;
-    }
-
-    out.push(computeStatus(def.slug, tree));
+    // Compute first, then fall back to the skip flag. A step the advisor
+    // passed through empty reads Skipped; the moment it has data the flag
+    // goes inert on its own, so going back and filling it in needs no
+    // cleanup write and works however the advisor navigated back.
+    const computed = computeStatus(def.slug, tree);
+    out.push(
+      computed.kind === "untouched" && skipped.has(def.slug)
+        ? { slug: def.slug, kind: "skipped", gaps: [] }
+        : computed,
+    );
   }
 
   // Review = derived from all preceding statuses.
@@ -37,10 +37,6 @@ export function deriveStepStatuses(
     ? (out.some((s) => s.slug !== "review" && s.kind === "complete") ? "complete" : "untouched")
     : blockers.some((b) => b.kind === "in_progress") ? "in_progress" : "untouched";
   review.gaps = blockers.map((b) => b.slug);
-
-  // Non-skippable steps ignore stale skip flags — re-derive them ignoring skip.
-  // (Already handled above via SKIPPABLE guard.)
-  void SKIPPABLE;
 
   return out;
 }

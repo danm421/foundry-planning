@@ -64,4 +64,9 @@ describe("OnboardingShell dirty-navigation guard", () => {
     await user.click(screen.getByRole("button", { name: /next/i }));
     expect(push).toHaveBeenCalledWith("/clients/client-1/onboarding/assumptions");
   });
+
+  it("offers no Skip control — Next is the only forward action", () => {
+    renderShell();
+    expect(screen.queryByRole("button", { name: /skip/i })).toBeNull();
+  });
 });
