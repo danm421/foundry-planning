@@ -5,6 +5,8 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ClientData, ProjectionYear } from "@/engine";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
+import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
+import type { SolverMutation } from "@/lib/solver/types";
 import type { ReportKey } from "../report-tab-link";
 import {
   resolveReportLayout,
@@ -102,6 +104,19 @@ const workingTree = {
 
 const liAssumptions = {} as LiAssumptions;
 
+// Mirrors the fixture builder in src/lib/solver/__tests__/working-gifts.test.ts.
+function cashGift(id: string, year: number, amount: number): EstateFlowGift {
+  return {
+    kind: "cash-once",
+    id,
+    year,
+    amount,
+    grantor: "client",
+    recipient: { kind: "family_member", id: "fm-1" },
+    crummey: false,
+  };
+}
+
 // Controlled host: the panel now reads its active tab from `activeReport` and
 // reports clicks via `onReportChange`. This wrapper holds that state locally so
 // the tests can drive the panel exactly as the workspace does.
@@ -110,11 +125,15 @@ function ControlledPanel({
   computeStatus = "fresh",
   layout,
   onLayoutChange,
+  baseGifts = [],
+  mutations = [],
 }: {
   initialReport?: ReportKey;
   computeStatus?: "fresh" | "stale" | "computing" | "error";
   layout?: ReportLayoutEntry[];
   onLayoutChange?: (next: ReportLayoutEntry[]) => void;
+  baseGifts?: EstateFlowGift[];
+  mutations?: SolverMutation[];
 }) {
   const [activeReport, setActiveReport] = useState<ReportKey>(initialReport);
   return (
@@ -133,7 +152,7 @@ function ControlledPanel({
       activeReport={activeReport}
       onReportChange={setActiveReport}
       source="base"
-      mutations={[]}
+      mutations={mutations}
       mcSuccessRate={null}
       extraAccountMixes={[]}
       mcNonce={0}
@@ -144,7 +163,7 @@ function ControlledPanel({
       onYearClick={() => undefined}
       layout={layout}
       onLayoutChange={onLayoutChange}
-      baseGifts={[]}
+      baseGifts={baseGifts}
     />
   );
 }
@@ -384,11 +403,17 @@ describe("SolverChartPanel", () => {
   });
 
   it("swaps the body and drops the Charts-only chrome on the Flow Chart sub-tab", async () => {
-    render(<ControlledPanel initialReport="estate" />);
+    const baseGifts = [cashGift("g1", 2026, 1000)];
+    render(<ControlledPanel initialReport="estate" baseGifts={baseGifts} />);
     await userEvent.click(screen.getByRole("button", { name: "Flow Chart" }));
 
     // next/dynamic resolves asynchronously — find, don't get.
-    expect(await screen.findByTestId("estate-flow-chart")).toBeInTheDocument();
+    const chart = await screen.findByTestId("estate-flow-chart");
+    expect(chart).toBeInTheDocument();
+    // The mock renders `gifts:{workingGifts.length}` — this proves the panel
+    // actually derives workingGifts from baseGifts (deriveWorkingGifts),
+    // rather than the memo silently collapsing to [].
+    expect(chart).toHaveTextContent("gifts:1");
     expect(screen.queryByTestId("chart-estate")).not.toBeInTheDocument();
     expect(screen.queryByTestId("chart-liquidity")).not.toBeInTheDocument();
 
@@ -402,6 +427,26 @@ describe("SolverChartPanel", () => {
     expect(
       screen.queryByRole("separator", { name: /resize chart height/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("folds a gift-upsert mutation into the Flow Chart's workingGifts", async () => {
+    const baseGifts = [cashGift("g1", 2026, 1000)];
+    const mutations: SolverMutation[] = [
+      { kind: "gift-upsert", id: "g2", value: cashGift("g2", 2027, 2000) },
+    ];
+    render(
+      <ControlledPanel
+        initialReport="estate"
+        baseGifts={baseGifts}
+        mutations={mutations}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Flow Chart" }));
+    // g2 isn't in baseGifts, so the fold appends it — exercising
+    // deriveWorkingGifts itself, not just the pass-through of baseGifts.
+    expect(await screen.findByTestId("estate-flow-chart")).toHaveTextContent(
+      "gifts:2",
+    );
   });
 
   it("returns to the charts when Charts is re-selected", async () => {

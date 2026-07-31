@@ -24,7 +24,13 @@ const upsert = (id: string, value: EstateFlowGift | null): SolverMutation => ({
 describe("deriveWorkingGifts", () => {
   it("returns the base gifts unchanged when there are no mutations", () => {
     const base = [cashGift("g1", 2026, 1000), cashGift("g2", 2027, 2000)];
-    expect(deriveWorkingGifts(base, [])).toEqual(base);
+    // Compared against freshly-built expected gifts, not `base` itself —
+    // asserting against the same array whose elements were just passed in
+    // would still pass if the implementation mutated those elements in place.
+    expect(deriveWorkingGifts(base, [])).toEqual([
+      cashGift("g1", 2026, 1000),
+      cashGift("g2", 2027, 2000),
+    ]);
   });
 
   it("appends a gift whose id is not in the base list", () => {
@@ -94,6 +100,9 @@ describe("deriveWorkingGifts", () => {
     const base = [cashGift("g1", 2026, 1000)];
     const frozen = Object.freeze([...base]) as EstateFlowGift[];
     deriveWorkingGifts(frozen, [upsert("g2", cashGift("g2", 2027, 2000))]);
-    expect(frozen).toHaveLength(1);
+    // Deep-equal, not just length — a mutation that overwrites a field on the
+    // frozen element in place (rather than resizing the array) would still
+    // pass a length-only assertion.
+    expect(frozen).toEqual([cashGift("g1", 2026, 1000)]);
   });
 });

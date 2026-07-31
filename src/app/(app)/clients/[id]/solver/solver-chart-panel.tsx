@@ -525,7 +525,7 @@ export function SolverChartPanel({
           // `minmax(0,1fr)`, so they don't set a floor this could be derived
           // from.
           <div className="overflow-x-auto">
-            <div className="min-w-[900px]">
+            <div className="lg:min-w-[900px]">
               <EstateFlowChartTab
                 working={workingTree}
                 engineData={workingTree}
