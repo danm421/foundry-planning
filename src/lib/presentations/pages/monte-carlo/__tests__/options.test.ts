@@ -23,7 +23,7 @@ describe("monte carlo options", () => {
       "Highlight: Ending distribution",
     );
     expect(summarizeMonteCarloOptions({ highlight: "longevity" })).toBe(
-      "Highlight: Success over time",
+      "Highlight: Confidence over time",
     );
   });
 });

@@ -864,7 +864,7 @@ export const estateSummaryPage: PresentationPage<EstateSummaryPageData, EstateSu
 export const monteCarloPage: PresentationPage<MonteCarloPageData, MonteCarloPageOptions> = {
   id: "monteCarlo",
   title: "Monte Carlo",
-  description: "Probability of success, portfolio fan, ending distribution, and longevity.",
+  description: "Plan confidence, portfolio fan, ending distribution, and longevity.",
   category: "Monte Carlo",
   defaultOptions: MONTE_CARLO_OPTIONS_DEFAULT,
   optionsSchema: monteCarloOptionsSchema,

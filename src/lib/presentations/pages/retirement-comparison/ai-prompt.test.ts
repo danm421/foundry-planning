@@ -9,7 +9,7 @@ describe("buildRetirementComparisonAiPrompt", () => {
     firstNames: "John and Jane",
     scenarioLabel: "Roth + Delay RE",
     kpis: [
-      { label: "Probability of Success", base: "72%", scenario: "91%", deltaLabel: "+19 pts", direction: 1 as const },
+      { label: "Plan Confidence", base: "72%", scenario: "91%", deltaLabel: "+19 pts", direction: 1 as const },
       { label: "Ending Portfolio Assets", base: "$4.1M", scenario: "$5.3M", deltaLabel: "+$1.2M", direction: 1 as const },
     ],
     matrix: {
@@ -41,7 +41,7 @@ describe("buildRetirementComparisonAiPrompt", () => {
 });
 
 const kpis: ComparisonKpi[] = [
-  { label: "Probability of Success", base: "73%", scenario: "91%", deltaLabel: "+18 pts", direction: 1 },
+  { label: "Plan Confidence", base: "73%", scenario: "91%", deltaLabel: "+18 pts", direction: 1 },
 ];
 const matrix: PortfolioMatrix = {
   retirementYear: 2040, endOfLifeYear: 2070,

@@ -13,7 +13,7 @@ const DATA: RetirementComparisonPageData = {
   isEmpty: false,
   verdict: { headline: "91% chance your plan fully funds your life — up from 73%." },
   kpis: [
-    { label: "Probability of success", base: "73%", scenario: "91%", delta: "+18 pts", show: true },
+    { label: "Plan confidence", base: "73%", scenario: "91%", delta: "+18 pts", show: true },
     { label: "Legacy to heirs", base: "$2.0M", scenario: "$2.4M", delta: "+$400K", show: true },
   ],
   overlay: [{ year: 2025, floor: 100, scenarioAhead: 20, baseAhead: 0 }],
@@ -30,7 +30,7 @@ describe("<RetirementComparisonView />", () => {
   it("renders the verdict headline and comparison KPIs; never an AI section", () => {
     render(<RetirementComparisonView data={DATA} />);
     expect(screen.getByText(/91% chance your plan fully funds your life/)).toBeInTheDocument();
-    expect(screen.getByText("Probability of success")).toBeInTheDocument();
+    expect(screen.getByText("Plan confidence")).toBeInTheDocument();
     expect(screen.getByText("91%")).toBeInTheDocument();
     expect(screen.getByText("+18 pts")).toBeInTheDocument();
     expect(screen.queryByText(/AI/i)).not.toBeInTheDocument();

@@ -88,7 +88,7 @@ export function buildMonteCarloData(
   });
 
   const kpis = [
-    { label: "Probability of success", value: pct(summary.successRate) },
+    { label: "Plan confidence", value: pct(summary.successRate) },
     { label: "Median ending value", value: compactCurrency(summary.ending.p50) },
     { label: "P5–P95 range", value: `${compactCurrency(summary.ending.p5)} – ${compactCurrency(summary.ending.p95)}` },
     { label: "Trials", value: String(summary.trialsRun) },

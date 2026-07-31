@@ -14,7 +14,7 @@ interface Props {
 const CHOICES: Array<{ key: MonteCarloPageOptions["highlight"]; label: string }> = [
   { key: "fan", label: "Fan chart (portfolio over time)" },
   { key: "histogram", label: "Ending distribution" },
-  { key: "longevity", label: "Success over time" },
+  { key: "longevity", label: "Confidence over time" },
 ];
 
 export function MonteCarloOptionsControl({ value, onChange }: Props) {

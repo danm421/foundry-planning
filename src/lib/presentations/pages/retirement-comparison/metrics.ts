@@ -83,7 +83,7 @@ export function buildRetirementComparisonMetrics(
 
   const kpis: ComparisonKpi[] = [
     {
-      label: "Probability of Success",
+      label: "Plan Confidence",
       base: fmtPct(baseSuccess),
       scenario: fmtPct(scenarioSuccess),
       deltaLabel:
