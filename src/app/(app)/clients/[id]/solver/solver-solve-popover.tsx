@@ -104,8 +104,8 @@ export function SolverSolvePopover({
     >
       <div className="text-[12px] font-medium text-ink">{title}</div>
       <div className="mt-2 flex items-center gap-1 text-[11px] text-ink-3">
-        Target PoS
-        <FieldTooltip text="Probability of Success — the share of simulated scenarios in which the plan doesn't run out of money. The solver searches for the value that reaches this target." />
+        Target confidence
+        <FieldTooltip text="Plan Confidence — the share of simulated scenarios in which the plan stays funded. The solver searches for the value that reaches this target." />
       </div>
       <div className="mt-0.5 flex items-center gap-1">
         <input
@@ -119,7 +119,7 @@ export function SolverSolvePopover({
             setValue(Math.min(MAX_TARGET_PCT, Math.max(MIN_TARGET_PCT, n)));
           }}
           className="h-8 w-20 rounded-md border border-hair-2 bg-card-2 px-2 text-[14px] text-ink tabular focus:outline-none focus:border-accent"
-          aria-label="Target Probability of Success percent"
+          aria-label="Target Plan Confidence percent"
         />
         <span className="text-[12px] text-ink-3">%</span>
       </div>

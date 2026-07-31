@@ -25,7 +25,7 @@ type ActiveSolve = {
 };
 
 const LIVING_EXPENSE_SOLVE_DESCRIPTION =
-  "Scales retirement living expenses up or down to find the spending level that reaches your target probability of success.";
+  "Scales retirement living expenses up or down to find the spending level that reaches your target plan confidence.";
 
 interface Props {
   baseExpenses: ClientData["expenses"];

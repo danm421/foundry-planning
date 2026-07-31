@@ -49,13 +49,13 @@ export function SolverPosGauge({ state, successPct, onRegenerate, solveActive, b
     <div className="relative">
       <div className={contentDim}>
         <div className="whitespace-nowrap text-[9px] font-medium uppercase tracking-[0.08em] text-ink-3">
-          Probability of Success
+          Plan Confidence
         </div>
         <div
           className={`mt-0.5 flex h-5 items-center text-[20px] font-semibold leading-none tabular tracking-tight ${valueTone}`}
         >
           {state === "computing" ? (
-            <span role="status" aria-label="Calculating probability of success">
+            <span role="status" aria-label="Calculating plan confidence">
               {/* Bare mark — no room for MarkLoader's halo at 20px — so the
                   strokes carry the motion themselves; a run can last a minute. */}
               <FanMark className="h-5 w-7 text-accent" strokeWidth={3} loop />
@@ -76,7 +76,7 @@ export function SolverPosGauge({ state, successPct, onRegenerate, solveActive, b
             type="button"
             onClick={onRegenerate}
             disabled={solveActive}
-            aria-label="Recalculate probability of success"
+            aria-label="Recalculate plan confidence"
             className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-ink-2 hover:text-ink disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
           >
             <span aria-hidden="true" className="text-[12px] leading-none">

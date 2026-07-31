@@ -358,7 +358,7 @@ function RangeCard({
           muted={!mc}
           hint={{
             ariaLabel: "What is the Monte Carlo solve?",
-            text: "Coverage that hits your target probability of success across many randomized market trials. Volatility-aware — the upper bound of the range.",
+            text: "Coverage that hits your target plan confidence across many randomized market trials. Volatility-aware — the upper bound of the range.",
           }}
         />
       </div>

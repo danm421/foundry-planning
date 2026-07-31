@@ -26,7 +26,7 @@ type ActiveSolve = {
 };
 
 const RETIREMENT_AGE_SOLVE_DESCRIPTION =
-  "Finds the retirement age that reaches your target probability of success, holding spending and savings fixed.";
+  "Finds the retirement age that reaches your target plan confidence, holding spending and savings fixed.";
 
 interface Props {
   baseClient: ClientData["client"];
