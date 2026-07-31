@@ -5,6 +5,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 
 import type { TaskListRow } from "@/lib/crm-tasks/queries";
 import type { FirmMember } from "@/lib/crm-tasks/members";
+import { TASK_SCOPE_PARAMS } from "@/lib/crm-tasks/filters";
 
 import { CrmTaskFilters } from "@/components/crm-task-filters";
 import { CrmTaskTable } from "@/components/crm-task-table";
@@ -82,6 +83,9 @@ export function TasksPage({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const activeTaskId = searchParams.get("task") ?? null;
+  // Stable string identity for the memo below — the `searchParams` object
+  // itself is a fresh instance on every render.
+  const searchParamsKey = searchParams.toString();
 
   const [newTaskOpen, setNewTaskOpen] = useState(initialNewTaskOpen ?? false);
   const [detail, setDetail] = useState<TaskDetailBundle | null>(
@@ -91,15 +95,25 @@ export function TasksPage({
   );
   const [detailError, setDetailError] = useState<string | null>(null);
 
-  // Build the per-row deep-link prefix. Preserves the `tab=tasks` anchor
-  // when this page is mounted inside the household-detail Tasks tab so
-  // the back button lands the user back in the same tab.
+  // Build the per-row deep-link prefix. Carries every list-scoping param
+  // (quick filter, tag, priority, assignee, plus the `tab=tasks` anchor
+  // when mounted inside the household-detail Tasks tab) so opening a task
+  // — and later closing the panel — lands the user back on the list they
+  // were actually looking at instead of the default "Open" preset.
   const hrefBase = useMemo(() => {
-    if (scopeHouseholdId) {
-      return `/crm/households/${scopeHouseholdId}?tab=tasks`;
+    const path = scopeHouseholdId
+      ? `/crm/households/${scopeHouseholdId}`
+      : pathname || "/tasks";
+    const current = new URLSearchParams(searchParamsKey);
+    const next = new URLSearchParams();
+    for (const k of TASK_SCOPE_PARAMS) {
+      const v = current.get(k);
+      if (v) next.set(k, v);
     }
-    return pathname || "/tasks";
-  }, [pathname, scopeHouseholdId]);
+    if (scopeHouseholdId) next.set("tab", "tasks");
+    const qs = next.toString();
+    return qs ? `${path}?${qs}` : path;
+  }, [pathname, scopeHouseholdId, searchParamsKey]);
 
   // When `?task=` changes, fetch the detail bundle. Bails out fast when
   // the active task already matches loaded detail (e.g. on first render

@@ -2,7 +2,11 @@
 
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 
-import { coerceQuickFilter, type TaskQuickFilter } from "@/lib/crm-tasks/filters";
+import {
+  coerceQuickFilter,
+  TASK_SCOPE_PARAMS,
+  type TaskQuickFilter,
+} from "@/lib/crm-tasks/filters";
 
 interface ChipDef {
   value: TaskQuickFilter;
@@ -21,9 +25,10 @@ const CHIPS: ChipDef[] = [
  * Scope-anchor params that must survive a chip click so nested views
  * (a specific household's tasks tab, a tag-scoped list, an explicit
  * assignee filter) don't lose their scope when the user toggles a quick
- * filter.
+ * filter. `task` keeps an open side panel open across a chip click; the
+ * copied `quick` is immediately overwritten with the clicked chip.
  */
-const PRESERVED_PARAMS = ["householdId", "tagId", "priority", "task", "tab", "assignee"] as const;
+const PRESERVED_PARAMS = [...TASK_SCOPE_PARAMS, "task"] as const;
 
 /**
  * Renders the quick-filter chips above the task table. Client component —

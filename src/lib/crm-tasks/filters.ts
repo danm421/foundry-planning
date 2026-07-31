@@ -1,5 +1,20 @@
 export type TaskQuickFilter = "all" | "mine" | "open" | "overdue" | "done";
 
+/**
+ * URL params that scope the task list. Every navigation inside the tasks
+ * surface — quick-filter chip, row deep-link into the side panel, panel
+ * close — must carry these forward, or the list silently snaps back to the
+ * default "Open" preset. `tab` is the household-detail tab anchor.
+ */
+export const TASK_SCOPE_PARAMS = [
+  "quick",
+  "householdId",
+  "tagId",
+  "priority",
+  "assignee",
+  "tab",
+] as const;
+
 const QUICK_FILTER_VALUES: ReadonlyArray<TaskQuickFilter> = [
   "all",
   "mine",
