@@ -564,7 +564,7 @@ function TargetScoreInput({
       onChange={handleChange}
       disabled={disabled}
       className="h-9 w-24 rounded-md border border-hair-2 bg-card-2 pl-2.5 pr-6 text-[14px] text-ink tabular border-l-2 border-l-accent/70 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30 disabled:cursor-not-allowed disabled:opacity-50"
-      aria-label="Target success score"
+      aria-label="Target Plan Confidence"
     />
   );
 }

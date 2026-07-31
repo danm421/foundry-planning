@@ -137,7 +137,7 @@ export function SolverMinSavingsPanel({
           ))}
         </select>
         <label className="mt-2 block text-[11px] text-ink-3" htmlFor="ms-target">
-          Target success
+          Target Plan Confidence
         </label>
         <div className="mt-1 flex items-center gap-1">
           <input
@@ -146,7 +146,7 @@ export function SolverMinSavingsPanel({
             min={1}
             max={99}
             value={targetPct}
-            aria-label="Target success"
+            aria-label="Target Plan Confidence"
             onChange={(e) => {
               const n = parseInt(e.target.value, 10);
               if (Number.isNaN(n)) return;

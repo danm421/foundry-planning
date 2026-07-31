@@ -41,7 +41,7 @@ export function LifeInsuranceSummaryOptionsControl({
             value={String(value.mcTargetScore)}
             onChange={(e) => onChange({ ...value, mcTargetScore: parseFloat(e.target.value) })}
             className="h-8 rounded-md border border-hair bg-card px-2 text-ink"
-            aria-label="Monte Carlo target success"
+            aria-label="Monte Carlo target Plan Confidence"
           >
             {[0.75, 0.8, 0.85, 0.9, 0.95].map((v) => (
               <option key={v} value={String(v)}>{Math.round(v * 100)}%</option>
