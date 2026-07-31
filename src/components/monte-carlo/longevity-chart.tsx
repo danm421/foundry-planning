@@ -74,7 +74,7 @@ export function LongevityChart({
     labels: data.map((d) => (d.age != null ? d.age.toString() : d.year.toString())),
     datasets: [
       {
-        label: "Probability of Success",
+        label: "Plan Confidence",
         data: data.map((d) => d.successRate * 100),
         backgroundColor: data.map((d) => {
           if (d.successRate >= 0.9) return "rgba(52, 211, 153, 0.8)";

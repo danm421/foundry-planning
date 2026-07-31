@@ -245,7 +245,7 @@ export function FanChart({
               : "text-base font-semibold text-ink"
           }
         >
-          Retirement Success Probability
+          Portfolio Projection Range
         </h2>
         {!isCompact && (
           <div className="flex items-center gap-3 text-xs text-ink-2">

@@ -22,7 +22,7 @@ describe("SolverMinSavingsPanel", () => {
     render(<SolverMinSavingsPanel {...idle} onSolve={onSolve} />);
     fireEvent.click(screen.getByRole("button", { name: /Solve minimum additional savings/i }));
     fireEvent.change(screen.getByLabelText(/Invest savings in/i), { target: { value: "p1" } });
-    fireEvent.change(screen.getByLabelText(/Target success/i), { target: { value: "90" } });
+    fireEvent.change(screen.getByLabelText(/Target Plan Confidence/i), { target: { value: "90" } });
     fireEvent.click(screen.getByRole("button", { name: /^Solve$/i }));
     expect(onSolve).toHaveBeenCalledWith("p1", 0.9);
   });

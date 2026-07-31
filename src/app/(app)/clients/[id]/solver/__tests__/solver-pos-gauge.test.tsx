@@ -67,7 +67,7 @@ describe("SolverPosGauge — computing state", () => {
       <SolverPosGauge state="computing" successPct={null} onRegenerate={vi.fn()} />,
     );
     expect(
-      screen.getByRole("status", { name: /calculating probability of success/i }),
+      screen.getByRole("status", { name: /calculating plan confidence/i }),
     ).toBeTruthy();
   });
 });

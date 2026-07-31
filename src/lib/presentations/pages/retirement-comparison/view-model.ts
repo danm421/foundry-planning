@@ -152,7 +152,7 @@ export function buildRetirementComparisonData(
 
   const kpis: KpiCard[] = [
     {
-      label: "Probability of success",
+      label: "Plan confidence",
       base: baseSuccess == null ? "—" : `${Math.round(baseSuccess * 100)}%`,
       scenario: scnSuccess == null ? "—" : `${Math.round(scnSuccess * 100)}%`,
       delta: successPts == null ? "" : `${successPts >= 0 ? "+" : "−"}${Math.abs(successPts)} pts`,

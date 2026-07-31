@@ -27,7 +27,7 @@ type ActiveSolve = {
 };
 
 const SAVINGS_CONTRIBUTION_SOLVE_DESCRIPTION =
-  "Finds the annual contribution to this account that reaches your target probability of success.";
+  "Finds the annual contribution to this account that reaches your target plan confidence.";
 
 interface Props {
   baseClientData: ClientData;

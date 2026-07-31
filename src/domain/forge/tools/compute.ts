@@ -284,10 +284,10 @@ export function buildComputeTools(
       name: "run_monte_carlo",
       description:
         "Run the canonical 1000-trial Monte Carlo simulation for the ACTIVE scenario and " +
-        "return the probability of success (successRate), failure rate, and the terminal " +
+        "return the plan confidence (successRate), shortfall risk, and the terminal " +
         "(ending) wealth distribution percentiles. Uses the persisted per-scenario seed for " +
         "reproducibility. If available is false the sim could not run — say so, do not state a " +
-        "probability. Report successRate as the official PoS; never recompute it.",
+        "confidence level. Report successRate as the official plan confidence; never recompute it.",
       schema: z.object({
         clientId: z.string().describe("the active client uuid"),
       }),

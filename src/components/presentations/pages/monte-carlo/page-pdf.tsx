@@ -25,7 +25,7 @@ const styles = StyleSheet.create({
 const CHART_LABEL: Record<MonteCarloChartKind, string> = {
   fan: "Portfolio over time",
   histogram: "Ending distribution",
-  longevity: "Success over time",
+  longevity: "Confidence over time",
 };
 
 function Chart({ kind, data, scale }: { kind: MonteCarloChartKind; data: MonteCarloPageData; scale: number }) {

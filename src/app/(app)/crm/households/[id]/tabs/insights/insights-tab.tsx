@@ -102,7 +102,7 @@ export function InsightsTab({ clientId }: { clientId: string }) {
         </Card>
         <Card>
           <CardBody className="flex flex-col gap-1">
-            <span className="text-[11px] text-ink-3">MC success</span>
+            <span className="text-[11px] text-ink-3">Plan confidence</span>
             <MoneyText value={view.kpis.mcSuccessRate} format="pct" size="kpi" />
           </CardBody>
         </Card>

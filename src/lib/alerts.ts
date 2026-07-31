@@ -30,7 +30,7 @@ export function computeAlerts(client: ClientLike, projection: ProjectionLike): A
     out.push({
       id: "mc-below-threshold",
       severity: mc < MC_CRIT_THRESHOLD ? "critical" : "warning",
-      title: `Monte Carlo success ${Math.round(mc * 100)}%`,
+      title: `Plan confidence ${Math.round(mc * 100)}%`,
       detail: `Below ${Math.round(MC_WARN_THRESHOLD * 100)}% confidence threshold.`,
       href: `/clients/${client.id}/cashflow/monte-carlo`,
     });

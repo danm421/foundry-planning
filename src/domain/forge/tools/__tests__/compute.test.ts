@@ -36,7 +36,7 @@ vi.mock("@/components/presentations/registry", () => {
   const monteCarloPage = {
     id: "monteCarlo",
     title: "Monte Carlo",
-    description: "Probability of success, portfolio fan, ending distribution, and longevity.",
+    description: "Plan confidence, portfolio fan, ending distribution, and longevity.",
     category: "Monte Carlo",
     supportsScenarioOverride: true,
     defaultOptions: {},

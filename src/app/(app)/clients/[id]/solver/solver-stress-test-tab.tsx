@@ -49,7 +49,7 @@ export function SolverStressTestTab({
     <SolverSection
       title="Stress Test"
       action={
-        <FieldTooltip text="Toggle adverse assumptions to test plan resilience. Watch the Cash Flow chart and the Monte Carlo probability-of-success react on the right. Stressors stack — turn on several at once to model a compound bad case." />
+        <FieldTooltip text="Toggle adverse assumptions to test plan resilience. Watch the Cash Flow chart and Plan Confidence react on the right. Stressors stack — turn on several at once to model a compound bad case." />
       }
     >
       {/* Inflation */}

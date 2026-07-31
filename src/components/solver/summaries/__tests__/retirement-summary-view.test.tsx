@@ -135,7 +135,7 @@ const POPULATED: RetirementSummaryPageData = {
     { year: 2032, name: "Vacation property", kind: "sale", amount: 450_000 },
   ],
   narrative: [
-    "Monte Carlo success rate of 92% gives this plan a strong probability of funding retirement through age 90.",
+    "92% plan confidence gives this plan a strong likelihood of funding retirement through age 90.",
     "Social Security claiming at 67 generates $2,000/mo — delaying to 70 would add 24% more per month.",
   ],
   cashFlowChartSpec: CHART_SPEC,

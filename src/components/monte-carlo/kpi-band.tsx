@@ -2,12 +2,14 @@ import type { MonteCarloSummary } from "@/engine";
 import { KpiCard } from "./kpi-card";
 import { SuccessGauge } from "./success-gauge";
 import { formatShortCurrency, formatPercent } from "./lib/format";
+import { FieldTooltip } from "@/components/forms/field-tooltip";
+import { SHORTFALL_RISK_LABEL, SHORTFALL_RISK_TOOLTIP, shortfallFootnote } from "./lib/copy";
 
 interface KpiBandProps {
   summary: MonteCarloSummary;
   startAge: number;
   annualIncome: number;
-  /** Fold the "Probability of Failure" key finding into the band as a sixth tile. */
+  /** Fold the "Shortfall Risk" key finding into the band as a sixth tile. */
   includeFailureKpi?: boolean;
 }
 
@@ -22,10 +24,11 @@ export function KpiBand({ summary, startAge, annualIncome, includeFailureKpi = f
     >
       <div
         role="img"
-        aria-label={`Success probability ${Math.round(successPct * 100)} percent`}
-        className="rounded-lg bg-card ring-1 ring-hair p-4 flex items-center justify-center min-h-[96px] lg:col-span-2"
+        aria-label={`Plan confidence ${Math.round(successPct * 100)} percent`}
+        className="rounded-lg bg-card ring-1 ring-hair p-4 flex flex-col items-center justify-center gap-1 min-h-[96px] lg:col-span-2"
       >
         <SuccessGauge value={successPct} />
+        <div className="text-xs uppercase tracking-wider text-ink-2">Plan Confidence</div>
       </div>
       <KpiCard
         label="Median Portfolio Value"
@@ -41,9 +44,14 @@ export function KpiBand({ summary, startAge, annualIncome, includeFailureKpi = f
       />
       {includeFailureKpi && (
         <KpiCard
-          label="Probability of Failure"
+          label={
+            <span className="inline-flex items-center gap-1">
+              {SHORTFALL_RISK_LABEL}
+              <FieldTooltip text={SHORTFALL_RISK_TOOLTIP} />
+            </span>
+          }
           value={<span className="text-crit">{formatPercent(failureRate)}</span>}
-          footnote={`${failCount.toLocaleString()} of ${summary.trialsRun.toLocaleString()} trials ran out of money`}
+          footnote={shortfallFootnote(failCount, summary.trialsRun)}
         />
       )}
     </div>

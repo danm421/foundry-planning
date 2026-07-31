@@ -52,8 +52,8 @@ describe("buildMonteCarloData", () => {
     const data = buildMonteCarloData(ctx({}), { highlight: "histogram" });
     expect(data.available).toBe(true);
     expect(data.heroKind).toBe("histogram");
-    expect(data.kpis.map((k) => k.label)).toContain("Probability of success");
-    expect(data.kpis.find((k) => k.label === "Probability of success")?.value).toBe("84%");
+    expect(data.kpis.map((k) => k.label)).toContain("Plan confidence");
+    expect(data.kpis.find((k) => k.label === "Plan confidence")?.value).toBe("84%");
     expect(data.table.rows).toHaveLength(1);
     expect(data.table.rows[0].cells.p50).toBe(560);
     expect(data.fan.median).toEqual([560]);

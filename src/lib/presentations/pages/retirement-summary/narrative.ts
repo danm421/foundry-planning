@@ -15,7 +15,7 @@ const MAX_LINES = 4;
 export function buildRetirementNarrative(input: RetirementNarrativeInput): string[] {
   const opener =
     input.monteCarloSuccess != null
-      ? `The plan has a ${fmtPct(input.monteCarloSuccess)} Monte Carlo success rate, ending with about ${fmtUsd(input.liquidEndOfLife)} in liquid assets.`
+      ? `The plan has ${fmtPct(input.monteCarloSuccess)} plan confidence, ending with about ${fmtUsd(input.liquidEndOfLife)} in liquid assets.`
       : `The plan ends with about ${fmtUsd(input.liquidEndOfLife)} in liquid assets at end of life.`;
   const lines: string[] = [opener];
   const signals: string[] = [];

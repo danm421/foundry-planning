@@ -159,7 +159,7 @@ export const PLAN_TOKENS: PlanToken[] = [
   },
   {
     id: "mc_success",
-    label: "Monte Carlo success rate",
+    label: "Plan confidence",
     category: "Analysis",
     resolve: safe(({ monteCarlo }) =>
       monteCarlo ? pct(monteCarlo.successRate) : null,

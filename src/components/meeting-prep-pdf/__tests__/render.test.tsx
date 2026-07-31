@@ -40,7 +40,7 @@ describe("meeting-prep PDF documents", () => {
   it("view model flags overdue tasks and formats currency", () => {
     expect(model.outstandingTasks[0].overdue).toBe(true);
     expect(model.portfolio.totalDisplay).toBe("$500,000");
-    expect(model.vitals.find((v) => v.label === "Monte Carlo success")?.value).toBe("82%");
+    expect(model.vitals.find((v) => v.label === "Plan confidence")?.value).toBe("82%");
   });
 
   it("renders the Prep Brief to a non-empty PDF buffer", async () => {

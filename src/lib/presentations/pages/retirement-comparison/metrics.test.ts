@@ -52,7 +52,7 @@ describe("buildRetirementComparisonMetrics", () => {
       baseSuccess: 0.72, scenarioSuccess: 0.91,
       retirementYear: 2026,
     });
-    const pos = m.kpis.find((k) => k.label === "Probability of Success")!;
+    const pos = m.kpis.find((k) => k.label === "Plan Confidence")!;
     expect(pos.base).toBe("72%");
     expect(pos.scenario).toBe("91%");
     expect(pos.deltaLabel).toBe("+19 pts");

@@ -100,7 +100,7 @@ describe("buildRetirementComparisonData", () => {
     const d = buildRetirementComparisonData(ctx, opts);
     const labels = d.kpis.map((k) => k.label);
     expect(labels).toEqual([
-      "Probability of success",
+      "Plan confidence",
       "Legacy to heirs",
       "Max sustainable spend",
       "Downside ending balance",
