@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { ProjectionYear, ProjectionResult, ClientData } from "@/engine";
+import { useEffect, useMemo, useState } from "react";
+import type { ProjectionYear, ClientData } from "@/engine";
 import type { SolverMutation, SolverSource } from "@/lib/solver/types";
 import type { LifeInsuranceInventory } from "@/lib/insurance-policies/load-li-inventory";
 import { buildSolverSummaryContext } from "@/lib/solver/summary-context";
-import { parseProjectionResponse } from "@/lib/solver/projection-wire";
 import type { SummaryKey } from "@/components/solver/summaries/types";
+import { useSolverFullProjection } from "./use-solver-full-projection";
 
 interface Args {
   clientId: string;
@@ -24,39 +24,18 @@ interface Args {
 export function useSolverSummaryData(args: Args) {
   const { clientId, source, mutations, years, workingTree, clientName, spouseName, mcSuccessRate, baseClientData, baseProjection, activeSummary, enabled } = args;
 
-  const [fullProjection, setFullProjection] = useState<ProjectionResult | undefined>(undefined);
-  const [estateLoading, setEstateLoading] = useState(false);
   const [lifeInsurance, setLifeInsurance] = useState<LifeInsuranceInventory | undefined>(undefined);
   const [liLoading, setLiLoading] = useState(false);
-  const estateDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Estate: debounced full-projection fetch while estate summary is active.
-  useEffect(() => {
-    if (!enabled || activeSummary !== "estate") return;
-    if (estateDebounce.current) clearTimeout(estateDebounce.current);
-    setEstateLoading(true);
-    estateDebounce.current = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/clients/${clientId}/solver/project`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ source, mutations, includeEvents: true }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        // parseProjectionResponse (not res.json()) revives the projection's Map
-        // fields, which JSON drops. See projection-wire.ts.
-        const data = parseProjectionResponse<{ projectionResult?: ProjectionResult }>(
-          await res.text(),
-        );
-        setFullProjection(data.projectionResult);
-      } catch {
-        setFullProjection(undefined);
-      } finally {
-        setEstateLoading(false);
-      }
-    }, 600);
-    return () => { if (estateDebounce.current) clearTimeout(estateDebounce.current); setEstateLoading(false); };
-  }, [enabled, activeSummary, clientId, source, mutations]);
+  // Estate: debounced full-projection fetch while the estate summary is active.
+  // Shared with the Estate report's Flow Chart sub-tab — see
+  // use-solver-full-projection.ts.
+  const { projection: fullProjection, loading: estateLoading } = useSolverFullProjection({
+    clientId,
+    source,
+    mutations,
+    enabled: enabled && activeSummary === "estate",
+  });
 
   // Life insurance: fetch the inventory once on first activation.
   useEffect(() => {
