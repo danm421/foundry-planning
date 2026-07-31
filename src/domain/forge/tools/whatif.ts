@@ -527,17 +527,17 @@ export function buildWhatIfTools(toolCtx: ForgeToolContext): StructuredToolInter
         seed: result.seed,
         endingPortfolio,
         disclaimer:
-          "reportedPoS is the 250-trial probability of success at the solved lever value. " +
+          "reportedPoS is the 250-trial plan confidence at the solved lever value. " +
           "Observations only, not advice.",
       });
     },
     {
       name: "solve_goal",
       description:
-        "Goal-seek a single lever to hit a Monte-Carlo probability-of-success target. Levers: " +
+        "Goal-seek a single lever to hit a Monte-Carlo plan-confidence target. Levers: " +
         "retirement-age, living-expense-scale, savings-contribution, ss-claim-age, " +
-        "roth-conversion-amount. Returns the solved lever value and the 250-trial PoS " +
-        "(reportedPoS). Reuses the scenario's persisted seed so the result is reproducible.",
+        "roth-conversion-amount. Returns the solved lever value and the 250-trial plan " +
+        "confidence (reportedPoS). Reuses the scenario's persisted seed so the result is reproducible.",
       schema: z.object({
         clientId: z.string().describe("the client uuid (must match your scope)"),
         scenarioId: z.string().describe("scenario uuid, or 'base'"),
@@ -546,7 +546,7 @@ export function buildWhatIfTools(toolCtx: ForgeToolContext): StructuredToolInter
           .number()
           .min(0.01)
           .max(0.99)
-          .describe("target probability of success, e.g. 0.85"),
+          .describe("target plan confidence, e.g. 0.85"),
       }),
     },
   );
@@ -575,15 +575,15 @@ export function buildWhatIfTools(toolCtx: ForgeToolContext): StructuredToolInter
         achievedPoS: result.achievedPoS, // 250-trial PoS at the solved spend
         disclaimer:
           "realAnnualSpend is the maximum sustainable retirement spend (today's dollars, rounded " +
-          "to $5k) whose probability of success lands closest to the target. Observations only, not advice.",
+          "to $5k) whose plan confidence lands closest to the target. Observations only, not advice.",
       });
     },
     {
       name: "solve_max_spending",
       description:
         "Find the maximum sustainable annual retirement spending (today's dollars, rounded to $5k) " +
-        "whose Monte-Carlo probability of success lands closest to a target. Reuses the scenario's " +
-        "persisted seed and reports the 250-trial achieved PoS.",
+        "whose Monte-Carlo plan confidence lands closest to a target. Reuses the scenario's " +
+        "persisted seed and reports the 250-trial achieved plan confidence.",
       schema: z.object({
         clientId: z.string().describe("the client uuid (must match your scope)"),
         scenarioId: z.string().describe("scenario uuid, or 'base'"),
@@ -591,7 +591,7 @@ export function buildWhatIfTools(toolCtx: ForgeToolContext): StructuredToolInter
           .number()
           .min(0.01)
           .max(0.99)
-          .describe("target probability of success, e.g. 0.85"),
+          .describe("target plan confidence, e.g. 0.85"),
       }),
     },
   );
