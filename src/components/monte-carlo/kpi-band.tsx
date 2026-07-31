@@ -2,12 +2,14 @@ import type { MonteCarloSummary } from "@/engine";
 import { KpiCard } from "./kpi-card";
 import { SuccessGauge } from "./success-gauge";
 import { formatShortCurrency, formatPercent } from "./lib/format";
+import { FieldTooltip } from "@/components/forms/field-tooltip";
+import { SHORTFALL_RISK_TOOLTIP, shortfallFootnote } from "./lib/copy";
 
 interface KpiBandProps {
   summary: MonteCarloSummary;
   startAge: number;
   annualIncome: number;
-  /** Fold the "Probability of Failure" key finding into the band as a sixth tile. */
+  /** Fold the "Shortfall Risk" key finding into the band as a sixth tile. */
   includeFailureKpi?: boolean;
 }
 
@@ -41,9 +43,14 @@ export function KpiBand({ summary, startAge, annualIncome, includeFailureKpi = f
       />
       {includeFailureKpi && (
         <KpiCard
-          label="Probability of Failure"
+          label={
+            <span className="inline-flex items-center gap-1">
+              Shortfall Risk
+              <FieldTooltip text={SHORTFALL_RISK_TOOLTIP} />
+            </span>
+          }
           value={<span className="text-crit">{formatPercent(failureRate)}</span>}
-          footnote={`${failCount.toLocaleString()} of ${summary.trialsRun.toLocaleString()} trials ran out of money`}
+          footnote={shortfallFootnote(failCount, summary.trialsRun)}
         />
       )}
     </div>

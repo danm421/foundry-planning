@@ -24,7 +24,7 @@ interface MonteCarloReportViewProps {
   /**
    * "sidebar" (default): two-column with the compact charts + Key Findings in a
    * right rail. "stacked": single column — sub-charts sit below the main chart
-   * and the failure finding folds into the KPI band (used by the solver tab).
+   * and the shortfall finding folds into the KPI band (used by the solver tab).
    */
   layout?: "sidebar" | "stacked";
 }

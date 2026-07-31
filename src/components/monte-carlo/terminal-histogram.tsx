@@ -183,7 +183,7 @@ export function TerminalHistogram({
   const chrome = chartChrome(theme);
   const series = useMemo(() => buildHistogramSeries(endingValues), [endingValues]);
 
-  const failedCount = useMemo(
+  const belowMinCount = useMemo(
     () => endingValues.reduce((n, v) => (v <= requiredMinimumAssetLevel ? n + 1 : n), 0),
     [endingValues, requiredMinimumAssetLevel],
   );
@@ -197,7 +197,9 @@ export function TerminalHistogram({
     );
   }
 
-  const failureRate = trialsRun > 0 ? failedCount / trialsRun : 0;
+  // Ending-value check ONLY — deliberately not summary.failureRate, which also
+  // counts trials that went negative mid-plan. Different number, different label.
+  const belowMinRate = trialsRun > 0 ? belowMinCount / trialsRun : 0;
   const sd = series.sd;
 
   const data = {
@@ -326,10 +328,10 @@ export function TerminalHistogram({
               tone="emerald"
             />
             <Stat
-              label="Ran out of money"
-              value={formatPercent(failureRate)}
-              sub={`${formatInteger(failedCount)} of ${formatInteger(trialsRun)}`}
-              tone={failureRate > 0.1 ? "rose" : failureRate > 0.05 ? "amber" : "emerald"}
+              label="Ended below minimum"
+              value={formatPercent(belowMinRate)}
+              sub={`${formatInteger(belowMinCount)} of ${formatInteger(trialsRun)}`}
+              tone={belowMinRate > 0.1 ? "rose" : belowMinRate > 0.05 ? "amber" : "emerald"}
             />
           </div>
           <div className="text-[11px] text-ink-3 mb-1 tabular-nums">
