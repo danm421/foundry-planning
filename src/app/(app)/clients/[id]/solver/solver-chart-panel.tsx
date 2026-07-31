@@ -315,10 +315,16 @@ export function SolverChartPanel({
   });
 
   // buildEstateFlowSummary wants the EstateFlowGift draft shape; workingTree
-  // carries only the materialised engine gifts. See working-gifts.ts.
+  // carries only the materialised engine gifts. See working-gifts.ts. Gated
+  // to its one consumer (the flow branch below) for the same reason as
+  // `liquidityRows` above — no need to re-fold the gift list on every
+  // mutation while a different tab is active.
   const workingGifts = useMemo(
-    () => deriveWorkingGifts(baseGifts, mutations),
-    [baseGifts, mutations],
+    () =>
+      tab === "estate" && estateSubTab === "flow"
+        ? deriveWorkingGifts(baseGifts, mutations)
+        : [],
+    [tab, estateSubTab, baseGifts, mutations],
   );
 
   const reportTabs = (
@@ -493,6 +499,14 @@ export function SolverChartPanel({
   // the resize handle and the two Charts-only footer controls simply don't
   // render alongside it.
   if (tab === "estate" && estateSubTab === "flow") {
+    // A lever move re-fires the debounced fetch (`flowLoading` goes true)
+    // while `fullProjection` still holds the PREVIOUS result — folding "and we
+    // don't already have something to show" into the boolean itself, rather
+    // than relying on the ternary below to check `fullProjection` first, means
+    // a future reordering of that ternary can't silently blank the chart to a
+    // spinner mid-refetch (see solver-summary-panel.tsx's `loading` for the
+    // same idiom on this hook's sibling caller).
+    const flowSpinner = flowLoading && !fullProjection;
     return (
       <div className="rounded-lg border border-hair bg-card px-4 pt-2.5 pb-2">
         <div className="mb-3">{reportTabs}</div>
@@ -519,7 +533,7 @@ export function SolverChartPanel({
               />
             </div>
           </div>
-        ) : flowLoading ? (
+        ) : flowSpinner ? (
           <div className="py-16 text-center text-sm text-ink-3">
             Loading estate flow…
           </div>
