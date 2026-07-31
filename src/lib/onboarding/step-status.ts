@@ -20,7 +20,7 @@ export function deriveStepStatuses(
     // passed through empty reads Skipped; the moment it has data the flag
     // goes inert on its own, so going back and filling it in needs no
     // cleanup write and works however the advisor navigated back.
-    const computed = computeStatus(def.slug, tree);
+    const computed = computeStatus(def.slug, tree, state);
     out.push(
       computed.kind === "untouched" && skipped.has(def.slug)
         ? { slug: def.slug, kind: "skipped", gaps: [] }
@@ -41,7 +41,11 @@ export function deriveStepStatuses(
   return out;
 }
 
-function computeStatus(slug: StepSlug, tree: ClientData): StepStatus {
+function computeStatus(
+  slug: StepSlug,
+  tree: ClientData,
+  state: OnboardingState,
+): StepStatus {
   switch (slug) {
     case "household":
       return householdStatus(tree);
@@ -56,7 +60,7 @@ function computeStatus(slug: StepSlug, tree: ClientData): StepStatus {
     case "insurance":
       return insuranceStatus(tree);
     case "assumptions":
-      return assumptionsStatus(tree);
+      return assumptionsStatus(state);
     case "review":
       return { slug, kind: "untouched", gaps: [] };
   }
@@ -133,17 +137,14 @@ function insuranceStatus(tree: ClientData): StepStatus {
   };
 }
 
-function assumptionsStatus(tree: ClientData): StepStatus {
-  // Plan settings rows always exist at client creation, so there's no cheap
-  // "default vs override" signal for the rate/threshold fields without
-  // plumbing firm defaults into this module. The strongest cheap signal that
-  // the advisor has touched Assumptions is a custom withdrawal strategy —
-  // `withdrawalStrategy` is empty for new clients and populated when the
-  // advisor configures one. The fallback completion path remains skipping
-  // the step.
-  const ws = tree.withdrawalStrategy ?? [];
-  if (ws.length > 0) {
-    return { slug: "assumptions", kind: "complete", gaps: [] };
-  }
-  return { slug: "assumptions", kind: "untouched", gaps: ["Using firm defaults"] };
+function assumptionsStatus(state: OnboardingState): StepStatus {
+  // Every field on this step is defaults-backed: `residenceState` is seeded
+  // from the household's state at client creation, and the growth + surplus
+  // fields carry DB defaults where 0 is a legitimate chosen value. There is
+  // no way to tell "untouched" from "deliberately left at the default"
+  // without plumbing firm defaults in here — so the wizard form records the
+  // review explicitly instead.
+  return state.assumptionsReviewed
+    ? { slug: "assumptions", kind: "complete", gaps: [] }
+    : { slug: "assumptions", kind: "untouched", gaps: ["Not reviewed yet"] };
 }

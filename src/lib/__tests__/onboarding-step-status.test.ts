@@ -188,18 +188,35 @@ describe("deriveStepStatuses", () => {
   });
 
   // ── Assumptions ──────────────────────────────────────────────────────────
-  it("marks Assumptions untouched on an empty tree (no withdrawal strategy)", () => {
+  it("marks Assumptions untouched until the advisor reviews it", () => {
     const status = deriveStepStatuses(emptyTree(), {}).find((s) => s.slug === "assumptions")!;
     expect(status.kind).toBe("untouched");
-    expect(status.gaps).toEqual(["Using firm defaults"]);
+    expect(status.gaps).toEqual(["Not reviewed yet"]);
   });
 
-  it("marks Assumptions complete when at least one withdrawal strategy row exists", () => {
+  it("marks Assumptions complete once assumptionsReviewed is set", () => {
+    const status = deriveStepStatuses(emptyTree(), { assumptionsReviewed: true })
+      .find((s) => s.slug === "assumptions")!;
+    expect(status.kind).toBe("complete");
+    expect(status.gaps).toEqual([]);
+  });
+
+  it("does not treat a seeded residenceState as a reviewed step", () => {
+    // create-client.ts seeds residenceState from the household's state, so it
+    // is already set before the advisor ever opens the step.
+    const tree = emptyTree();
+    tree.planSettings = { residenceState: "NY" } as ClientData["planSettings"];
+    const status = deriveStepStatuses(tree, {}).find((s) => s.slug === "assumptions")!;
+    expect(status.kind).toBe("untouched");
+  });
+
+  it("does not treat a withdrawal strategy as a reviewed step", () => {
+    // The withdrawal editor left the wizard; rows can exist from the details
+    // page without the advisor having reviewed the wizard's Assumptions step.
     const tree = emptyTree();
     tree.withdrawalStrategy = [{ id: "ws1" } as unknown as ClientData["withdrawalStrategy"][number]];
     const status = deriveStepStatuses(tree, {}).find((s) => s.slug === "assumptions")!;
-    expect(status.kind).toBe("complete");
-    expect(status.gaps).toEqual([]);
+    expect(status.kind).toBe("untouched");
   });
 
   it("marks Assumptions skipped when state includes the slug", () => {

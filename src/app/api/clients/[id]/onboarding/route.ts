@@ -15,6 +15,7 @@ const patchSchema = z
     skippedSteps: z.array(z.string()).optional(),
     lastStepVisited: z.string().optional(),
     activeImportId: z.string().uuid().nullable().optional(),
+    assumptionsReviewed: z.boolean().optional(),
   })
   .strict();
 
@@ -61,6 +62,9 @@ export async function PATCH(
         next.activeImportId = parsed.data.activeImportId;
       }
     }
+    if (parsed.data.assumptionsReviewed !== undefined) {
+      next.assumptionsReviewed = parsed.data.assumptionsReviewed;
+    }
 
     await db
       .update(clients)
@@ -76,6 +80,7 @@ export async function PATCH(
         skippedSteps: next.skippedSteps ?? [],
         lastStepVisited: next.lastStepVisited ?? null,
         activeImportId: next.activeImportId ?? null,
+        assumptionsReviewed: next.assumptionsReviewed ?? false,
       }),
     });
 
