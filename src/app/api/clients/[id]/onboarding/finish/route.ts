@@ -5,9 +5,6 @@ import { clients } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
-import { loadEffectiveTree } from "@/lib/scenario/loader";
-import { deriveStepStatuses } from "@/lib/onboarding/step-status";
-import type { OnboardingState } from "@/lib/onboarding/types";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
@@ -24,25 +21,14 @@ export async function POST(
     await requireActiveSubscriptionForFirm(firmId);
 
     const [row] = await db
-      .select({ id: clients.id, state: clients.onboardingState })
+      .select({ id: clients.id })
       .from(clients)
       .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
     if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    const { effectiveTree } = await loadEffectiveTree(id, firmId, "base", {});
-    const statuses = deriveStepStatuses(
-      effectiveTree,
-      (row.state as OnboardingState | null) ?? {},
-    );
-
-    const blockers = statuses
-      .filter((s) => s.slug !== "review" && s.kind !== "complete" && s.kind !== "skipped")
-      .map((s) => s.slug);
-
-    if (blockers.length > 0) {
-      return NextResponse.json({ error: "Onboarding incomplete", blockers }, { status: 409 });
-    }
-
+    // No completeness gate: a step the advisor passed through empty is
+    // recorded as skipped, and Review shows what is thin. Finishing with
+    // gaps is the advisor's call, not something to block on the server.
     const now = new Date();
     await db
       .update(clients)
