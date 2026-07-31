@@ -1445,6 +1445,7 @@ export function LiveSolverWorkspace({
               layout={reportLayout}
               onLayoutChange={handleLayoutChange}
               baseTree={baseClientData}
+              baseGifts={baseGifts}
               source={initialSource}
               mutations={mutations}
               mcSuccessRate={mcWorkingSuccess}

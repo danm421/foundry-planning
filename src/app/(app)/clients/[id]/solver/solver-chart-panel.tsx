@@ -1,8 +1,13 @@
 "use client";
 
 import { useMemo, useState, useSyncExternalStore } from "react";
+import dynamic from "next/dynamic";
 import type { ClientData, ProjectionYear } from "@/engine";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
+import DialogTabs from "@/components/dialog-tabs";
+import { deriveWorkingGifts } from "@/lib/solver/working-gifts";
+import { useSolverFullProjection } from "./use-solver-full-projection";
+import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { buildYearlyLiquidityReport } from "@/lib/estate/yearly-liquidity-report";
 import { PortfolioBarsChart } from "@/components/charts/portfolio-bars-chart";
 import { SolverCashFlowChart } from "@/components/charts/solver-cash-flow-chart";
@@ -65,6 +70,13 @@ export const REPORT_TABS: {
 const REPORT_TAB_META: Record<ReportKey, ReportMeta> = Object.fromEntries(
   REPORT_TABS.map((t) => [t.id, { label: t.label, short: t.short, icon: t.icon }]),
 ) as Record<ReportKey, ReportMeta>;
+
+// The flow chart pulls heavy presentation subtrees, and advisors who never
+// open this sub-tab shouldn't pay for them (this mirrors how
+// `estate-flow-view.tsx` loads the same component).
+const EstateFlowChartTab = dynamic(() =>
+  import("@/components/estate-flow-chart-tab").then((m) => m.EstateFlowChartTab),
+);
 
 // Resizable chart area. Default sits below the old fixed 300/360px so more of
 // the data-entry grid shows on first paint; the advisor can drag it taller and
@@ -153,6 +165,10 @@ interface Props {
   onLayoutChange?: (next: ReportLayoutEntry[]) => void;
   /** Base-case effective tree, for the Base series of the estate chart. */
   baseTree: ClientData;
+  /** Base-plan gift drafts, loaded in `solver-content.tsx` via `loadGiftDrafts`.
+   *  Folded with the scenario's `gift-upsert` mutations to feed the Estate
+   *  report's Flow Chart sub-tab. */
+  baseGifts: EstateFlowGift[];
   source: SolverSource;
   mutations: SolverMutation[];
   mcSuccessRate: number | null;
@@ -189,6 +205,7 @@ export function SolverChartPanel({
   layout,
   onLayoutChange,
   baseTree,
+  baseGifts,
   source,
   mutations,
   mcSuccessRate,
@@ -206,6 +223,7 @@ export function SolverChartPanel({
   const [showPortfolioAssets, setShowPortfolioAssets] = useState(false);
   const [showTable, setShowTable] = useState(false);
   const [showCustomize, setShowCustomize] = useState(false);
+  const [estateSubTab, setEstateSubTab] = useState<"charts" | "flow">("charts");
   const chartHeight = useSyncExternalStore(
     subscribeChartHeight,
     getChartHeightSnapshot,
@@ -258,6 +276,18 @@ export function SolverChartPanel({
   // a series the engine returned as null, nor hides one it computed.
   const isMarried = hasSpouse(workingTree);
 
+  // One owner-name derivation shared by the liquidity report and the flow
+  // chart. `clientName`/`spouseName` also arrive as props, but those are the
+  // Solver's display strings — the estate reports key off the tree's own
+  // client record.
+  const ownerNames = useMemo(() => {
+    const c = workingTree.client;
+    return {
+      clientName: `${c.firstName} ${c.lastName}`.trim(),
+      spouseName: c.spouseName ?? null,
+    };
+  }, [workingTree]);
+
   // Built only when the Estate tab is active — the liquidity chart now lives
   // alongside the estate comparison there. Gating avoids running the estate
   // report on every recompute (and against fixtures that lack estate data).
@@ -267,16 +297,29 @@ export function SolverChartPanel({
     return buildYearlyLiquidityReport({
       projection: { years: currentProjection },
       clientData: workingTree,
-      ownerNames: {
-        clientName: `${c.firstName} ${c.lastName}`.trim(),
-        spouseName: c.spouseName ?? null,
-      },
+      ownerNames,
       ownerDobs: {
         clientDob: c.dateOfBirth,
         spouseDob: c.spouseDob ?? null,
       },
     }).rows;
-  }, [tab, currentProjection, workingTree]);
+  }, [tab, currentProjection, workingTree, ownerNames]);
+
+  // The flow chart needs the FULL projection (death events + ledgers), not the
+  // ProjectionYear[] this panel holds. Fetched only while the sub-tab is open.
+  const { projection: fullProjection, loading: flowLoading } = useSolverFullProjection({
+    clientId,
+    source,
+    mutations,
+    enabled: tab === "estate" && estateSubTab === "flow",
+  });
+
+  // buildEstateFlowSummary wants the EstateFlowGift draft shape; workingTree
+  // carries only the materialised engine gifts. See working-gifts.ts.
+  const workingGifts = useMemo(
+    () => deriveWorkingGifts(baseGifts, mutations),
+    [baseGifts, mutations],
+  );
 
   const reportTabs = (
     <div className="relative">
@@ -341,6 +384,17 @@ export function SolverChartPanel({
         />
       ) : null}
     </div>
+  );
+
+  const estateSubTabs = (
+    <DialogTabs
+      tabs={[
+        { id: "charts", label: "Charts" },
+        { id: "flow", label: "Flow Chart" },
+      ]}
+      activeTab={estateSubTab}
+      onTabChange={(id) => setEstateSubTab(id === "flow" ? "flow" : "charts")}
+    />
   );
 
   const recalculating =
@@ -434,9 +488,42 @@ export function SolverChartPanel({
     );
   }
 
+  // The flow chart is tall, variable-height content — it gets its own branch so
+  // it never lands inside the fixed-height `overflow-hidden` box below, and so
+  // the resize handle and the two Charts-only footer controls simply don't
+  // render alongside it.
+  if (tab === "estate" && estateSubTab === "flow") {
+    return (
+      <div className="rounded-lg border border-hair bg-card px-4 pt-2.5 pb-2">
+        <div className="mb-3">{reportTabs}</div>
+        <div className="mb-3">{estateSubTabs}</div>
+        {fullProjection ? (
+          <EstateFlowChartTab
+            working={workingTree}
+            engineData={workingTree}
+            projection={fullProjection}
+            workingGifts={workingGifts}
+            isMarried={isMarried}
+            ownerNames={ownerNames}
+          />
+        ) : flowLoading ? (
+          <div className="py-16 text-center text-sm text-ink-3">
+            Loading estate flow…
+          </div>
+        ) : (
+          <div className="py-16 text-center text-sm text-ink-3">
+            Estate flow is unavailable for this scenario.
+          </div>
+        )}
+        {recalculating}
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-lg border border-hair bg-card px-4 pt-2.5 pb-2">
       <div className="mb-3">{reportTabs}</div>
+      {tab === "estate" ? <div className="mb-3">{estateSubTabs}</div> : null}
       {/* One shared, resizable height for every chart tab — so the drag handle
           below always applies and no tab's content can overflow onto the page.
           The Estate tab stacks two charts, so it gets twice the height (plus the

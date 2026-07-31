@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useState } from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -67,6 +67,28 @@ vi.mock("../solver-balance-sheet-panel", () => ({
 vi.mock("../solver-thresholds-panel", () => ({
   SolverThresholdsPanel: () => <div data-testid="solver-thresholds-panel" />,
 }));
+vi.mock("@/components/estate-flow-chart-tab", () => ({
+  EstateFlowChartTab: ({
+    isMarried,
+    workingGifts,
+  }: {
+    isMarried: boolean;
+    workingGifts: { id: string }[];
+  }) => (
+    <div data-testid="estate-flow-chart">
+      married:{String(isMarried)} gifts:{workingGifts.length}
+    </div>
+  ),
+}));
+
+// Controllable stub for the projection fetch, so the flow branch renders
+// network-free and each state (loaded / loading / failed) is reachable.
+const fullProjectionStub = {
+  current: { projection: { years: [] } as unknown, loading: false },
+};
+vi.mock("../use-solver-full-projection", () => ({
+  useSolverFullProjection: () => fullProjectionStub.current,
+}));
 
 import { SolverChartPanel, REPORT_TABS } from "../solver-chart-panel";
 
@@ -122,11 +144,16 @@ function ControlledPanel({
       onYearClick={() => undefined}
       layout={layout}
       onLayoutChange={onLayoutChange}
+      baseGifts={[]}
     />
   );
 }
 
 describe("SolverChartPanel", () => {
+  beforeEach(() => {
+    fullProjectionStub.current = { projection: { years: [] }, loading: false };
+  });
+
   it("shows the Portfolio chart by default", () => {
     render(<ControlledPanel />);
     expect(screen.getByTestId("chart-portfolio")).toBeInTheDocument();
@@ -254,6 +281,7 @@ describe("SolverChartPanel", () => {
         onSummaryChange={() => undefined}
         selectedYear={null}
         onYearClick={() => undefined}
+        baseGifts={[]}
       />,
     );
     await userEvent.click(screen.getByRole("tab", { name: "Estate" }));
@@ -338,5 +366,75 @@ describe("SolverChartPanel", () => {
     expect(
       screen.queryByRole("dialog", { name: /customize reports/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows Charts and Flow Chart sub-tabs on Estate, defaulting to Charts", () => {
+    render(<ControlledPanel initialReport="estate" />);
+    expect(screen.getByRole("button", { name: "Charts" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Flow Chart" })).toBeInTheDocument();
+    // Default sub-tab is Charts — both existing charts still render.
+    expect(screen.getByTestId("chart-estate")).toBeInTheDocument();
+    expect(screen.getByTestId("chart-liquidity")).toBeInTheDocument();
+    expect(screen.queryByTestId("estate-flow-chart")).not.toBeInTheDocument();
+  });
+
+  it("shows no estate sub-tabs on other reports", () => {
+    render(<ControlledPanel initialReport="portfolio" />);
+    expect(screen.queryByRole("button", { name: "Flow Chart" })).not.toBeInTheDocument();
+  });
+
+  it("swaps the body and drops the Charts-only chrome on the Flow Chart sub-tab", async () => {
+    render(<ControlledPanel initialReport="estate" />);
+    await userEvent.click(screen.getByRole("button", { name: "Flow Chart" }));
+
+    // next/dynamic resolves asynchronously — find, don't get.
+    expect(await screen.findByTestId("estate-flow-chart")).toBeInTheDocument();
+    expect(screen.queryByTestId("chart-estate")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("chart-liquidity")).not.toBeInTheDocument();
+
+    // The three Charts-only controls are gone with the fixed-height box.
+    expect(
+      screen.queryByRole("checkbox", { name: /show portfolio assets/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /expand table/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("separator", { name: /resize chart height/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("returns to the charts when Charts is re-selected", async () => {
+    render(<ControlledPanel initialReport="estate" />);
+    await userEvent.click(screen.getByRole("button", { name: "Flow Chart" }));
+    expect(await screen.findByTestId("estate-flow-chart")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Charts" }));
+    expect(screen.getByTestId("chart-estate")).toBeInTheDocument();
+    expect(screen.queryByTestId("estate-flow-chart")).not.toBeInTheDocument();
+  });
+
+  it("keeps the report tab strip usable from the Flow Chart sub-tab", async () => {
+    render(<ControlledPanel initialReport="estate" />);
+    await userEvent.click(screen.getByRole("button", { name: "Flow Chart" }));
+    expect(await screen.findByTestId("estate-flow-chart")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "Portfolio" }));
+    expect(screen.getByTestId("chart-portfolio")).toBeInTheDocument();
+  });
+
+  it("shows a loading state while the full projection is in flight", async () => {
+    fullProjectionStub.current = { projection: undefined, loading: true };
+    render(<ControlledPanel initialReport="estate" />);
+    await userEvent.click(screen.getByRole("button", { name: "Flow Chart" }));
+    expect(await screen.findByText(/loading estate flow/i)).toBeInTheDocument();
+    expect(screen.queryByTestId("estate-flow-chart")).not.toBeInTheDocument();
+  });
+
+  it("shows an unavailable message when the projection could not be built", async () => {
+    fullProjectionStub.current = { projection: undefined, loading: false };
+    render(<ControlledPanel initialReport="estate" />);
+    await userEvent.click(screen.getByRole("button", { name: "Flow Chart" }));
+    expect(
+      await screen.findByText(/estate flow is unavailable/i),
+    ).toBeInTheDocument();
   });
 });
