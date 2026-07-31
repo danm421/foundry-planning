@@ -484,7 +484,7 @@ export function SolverTechniquesTab({
         <SolverSection
           title="Surplus Cash Flow"
           action={
-            <FieldTooltip text="Splits each year's leftover cash flow: the spent share leaves the household as discretionary spending; the rest is saved to the chosen account (or household checking). Raising the spend % lowers Monte Carlo success, Net to Heirs, and ending net worth, and grows the Cash Flow chart's discretionary band." />
+            <FieldTooltip text="Splits each year's leftover cash flow: the spent share leaves the household as discretionary spending; the rest is saved to the chosen account (or household checking). Raising the spend % lowers Plan Confidence, Net to Heirs, and ending net worth, and grows the Cash Flow chart's discretionary band." />
           }
         >
           <SolverSurplusAllocation

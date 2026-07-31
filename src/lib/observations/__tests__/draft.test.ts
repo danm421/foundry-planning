@@ -142,7 +142,7 @@ describe("buildObservationsFacts", () => {
     const facts = buildObservationsFacts(CTX);
     expect(facts).toContain("{{net_worth}} — Net worth (today)");
     expect(facts).toContain("{{annual_income}} — Annual income (today)");
-    expect(facts).toContain("{{mc_success}} — Monte Carlo success rate");
+    expect(facts).toContain("{{mc_success}} — Plan confidence");
   });
 
   it("includes household names, ages, retirement ages, filing status and state", () => {
@@ -174,8 +174,8 @@ describe("buildObservationsFacts", () => {
 
   it("reads a missing Monte Carlo figure as 'not computed', never a fabricated number", () => {
     const facts = buildObservationsFacts({ ...CTX, monteCarlo: null });
-    expect(facts).toMatch(/Monte Carlo[^\n]*not computed/i);
-    expect(facts).not.toMatch(/Monte Carlo success rate:\s*\d/i);
+    expect(facts).toMatch(/Plan confidence[^\n]*not computed/i);
+    expect(facts).not.toMatch(/Plan confidence:\s*\d/i);
   });
 
   it("reads a missing estate-tax figure as 'not computed', never a fabricated number", () => {

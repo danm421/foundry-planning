@@ -59,7 +59,7 @@ export function buildMeetingPrepPdfModel(args: {
     }
     if (battery.vitals.mcSuccessRate != null) {
       vitals.push({
-        label: "Monte Carlo success",
+        label: "Plan confidence",
         value: `${Math.round(battery.vitals.mcSuccessRate * 100)}%`,
       });
     }

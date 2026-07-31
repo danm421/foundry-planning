@@ -71,10 +71,10 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
   {
     id: "run-monte-carlo",
     title: "Run a Monte Carlo simulation",
-    keywords: ["monte carlo", "simulation", "probability", "success", "risk"],
+    keywords: ["monte carlo", "simulation", "probability", "success", "risk", "confidence"],
     steps: [
       "Open the client and go to Cash Flow > Monte Carlo.",
-      "The simulation runs against the active scenario and reports the success probability.",
+      "The simulation runs against the active scenario and reports the plan confidence.",
     ],
     href: "/clients",
   },

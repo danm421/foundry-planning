@@ -48,7 +48,7 @@ export function buildInsightsPrompt(b: InsightsBattery): { system: string; user:
     `- Net worth: ${usd(b.kpis.netWorth)}`,
     `- Liquid portfolio: ${usd(b.kpis.liquidPortfolio)}`,
     `- Years until the first retirement: ${b.kpis.yearsToRetirement ?? "n/a"}`,
-    `- Monte Carlo success: ${pct(b.kpis.mcSuccessRate)}`,
+    `- Plan confidence: ${pct(b.kpis.mcSuccessRate)}`,
     `- Funding score: ${b.kpis.fundingScore.toFixed(2)} (1.0 = fully funded)`,
     ``,
     `PLAN retirement timing (authoritative — use these ages and years exactly):`,

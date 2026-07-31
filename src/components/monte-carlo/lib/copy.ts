@@ -1,3 +1,5 @@
+import { formatInteger } from "./format";
+
 /**
  * Precise definition of `MonteCarloSummary.failureRate`, which counts BOTH of
  * the engine's checks (see classifyTrial in src/engine/monteCarlo/trial.ts):
@@ -7,8 +9,6 @@
  * TerminalHistogram's own below-minimum count is a DIFFERENT, ending-only
  * number with an inclusive boundary. Never label the two the same.
  */
-import { formatInteger } from "./format";
-
 export const SHORTFALL_RISK_LABEL = "Shortfall Risk";
 
 export const SHORTFALL_RISK_TOOLTIP =

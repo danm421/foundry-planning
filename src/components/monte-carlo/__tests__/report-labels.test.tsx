@@ -18,6 +18,7 @@ vi.mock("react-chartjs-2", () => ({
 
 import { KpiBand } from "../kpi-band";
 import { TerminalHistogram } from "../terminal-histogram";
+import { FindingsCard } from "../findings-card";
 
 const summary = {
   successRate: 0.84,
@@ -60,5 +61,11 @@ describe("Monte Carlo report labels", () => {
     render(<KpiBand summary={summary} startAge={65} annualIncome={200_000} />);
     expect(screen.getByText("Plan Confidence")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Plan confidence 84 percent" })).toBeInTheDocument();
+  });
+
+  it("labels the sidebar FindingsCard Shortfall Risk with a fell-short footnote", () => {
+    render(<FindingsCard summary={summary} />);
+    expect(screen.getByText("Shortfall Risk")).toBeInTheDocument();
+    expect(screen.getByText("160 of 1,000 trials fell short")).toBeInTheDocument();
   });
 });

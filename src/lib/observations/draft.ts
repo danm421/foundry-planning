@@ -84,7 +84,7 @@ export function buildObservationsFacts(ctx: TokenContext): string {
   lines.push(`Total liabilities (today): ${fig(values.total_liabilities)} (token {{total_liabilities}})`);
 
   lines.push(
-    `Monte Carlo success rate: ${monteCarlo ? fig(values.mc_success) : "not computed"} (token {{mc_success}})`,
+    `Plan confidence: ${monteCarlo ? fig(values.mc_success) : "not computed"} (token {{mc_success}})`,
   );
 
   const horizonYear = lastYear ? String(lastYear.year) : "not computed";
