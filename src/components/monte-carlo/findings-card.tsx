@@ -1,7 +1,7 @@
 import type { MonteCarloSummary } from "@/engine";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { formatPercent } from "./lib/format";
-import { SHORTFALL_RISK_TOOLTIP, shortfallFootnote } from "./lib/copy";
+import { SHORTFALL_RISK_LABEL, SHORTFALL_RISK_TOOLTIP, shortfallFootnote } from "./lib/copy";
 
 interface FindingsCardProps {
   summary: MonteCarloSummary;
@@ -16,7 +16,7 @@ export function FindingsCard({ summary }: FindingsCardProps) {
       <h3 className="text-sm font-semibold text-ink mb-3">Key Findings &amp; Insights</h3>
       <div>
         <div className="flex items-center gap-1 text-xs uppercase tracking-wider text-ink-2">
-          Shortfall Risk
+          {SHORTFALL_RISK_LABEL}
           <FieldTooltip text={SHORTFALL_RISK_TOOLTIP} />
         </div>
         <div className="text-2xl font-semibold text-crit tabular-nums">{formatPercent(failureRate)}</div>

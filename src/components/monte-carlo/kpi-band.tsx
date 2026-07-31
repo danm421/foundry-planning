@@ -3,7 +3,7 @@ import { KpiCard } from "./kpi-card";
 import { SuccessGauge } from "./success-gauge";
 import { formatShortCurrency, formatPercent } from "./lib/format";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
-import { SHORTFALL_RISK_TOOLTIP, shortfallFootnote } from "./lib/copy";
+import { SHORTFALL_RISK_LABEL, SHORTFALL_RISK_TOOLTIP, shortfallFootnote } from "./lib/copy";
 
 interface KpiBandProps {
   summary: MonteCarloSummary;
@@ -46,7 +46,7 @@ export function KpiBand({ summary, startAge, annualIncome, includeFailureKpi = f
         <KpiCard
           label={
             <span className="inline-flex items-center gap-1">
-              Shortfall Risk
+              {SHORTFALL_RISK_LABEL}
               <FieldTooltip text={SHORTFALL_RISK_TOOLTIP} />
             </span>
           }

@@ -7,9 +7,13 @@
  * TerminalHistogram's own below-minimum count is a DIFFERENT, ending-only
  * number with an inclusive boundary. Never label the two the same.
  */
+import { formatInteger } from "./format";
+
+export const SHORTFALL_RISK_LABEL = "Shortfall Risk";
+
 export const SHORTFALL_RISK_TOOLTIP =
   "The share of simulated trials where the portfolio went negative in any year, or ended below the plan's minimum asset level.";
 
 export function shortfallFootnote(failCount: number, trialsRun: number): string {
-  return `${failCount.toLocaleString()} of ${trialsRun.toLocaleString()} trials fell short`;
+  return `${formatInteger(failCount)} of ${formatInteger(trialsRun)} trials fell short`;
 }
