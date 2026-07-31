@@ -291,6 +291,9 @@ export default function WizardAssumptionsForm({
                 const s = sources[row.category];
                 const selectVal =
                   s.source === "model_portfolio" ? `mp:${s.portfolioId}` : s.source;
+                const storedRate = pct(
+                  (settings as unknown as Record<string, string>)[row.rateKey],
+                );
                 return (
                   <div
                     key={row.category}
@@ -329,9 +332,7 @@ export default function WizardAssumptionsForm({
                         <PercentInput
                           name={row.rateKey}
                           aria-label={`${row.label} growth rate`}
-                          defaultValue={pct(
-                            (settings as unknown as Record<string, string>)[row.rateKey],
-                          )}
+                          defaultValue={storedRate}
                           className={rateCls}
                         />
                       ) : (
@@ -342,9 +343,7 @@ export default function WizardAssumptionsForm({
                           <input
                             type="hidden"
                             name={row.rateKey}
-                            value={pct(
-                              (settings as unknown as Record<string, string>)[row.rateKey],
-                            )}
+                            value={storedRate}
                           />
                         </>
                       )}

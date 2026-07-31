@@ -65,10 +65,9 @@ export default async function AssumptionsStep({ clientId, firmId }: AssumptionsS
   const settings = settingsRows[0];
   if (!settings) return <NotFound message="No plan settings found." />;
 
-  const [firmInflationAc] = await db
-    .select({ id: assetClasses.id, geometricReturn: assetClasses.geometricReturn })
-    .from(assetClasses)
-    .where(and(eq(assetClasses.firmId, firmId), eq(assetClasses.slug, "inflation")));
+  // `assetClassRows` is already every asset class for the firm, so the
+  // inflation row is a find, not a second round trip.
+  const firmInflationAc = assetClassRows.find((ac) => ac.slug === "inflation");
 
   let clientInflationOverride: { geometricReturn: string } | null = null;
   if (settings.useCustomCma && firmInflationAc) {
