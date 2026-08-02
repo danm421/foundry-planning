@@ -179,9 +179,12 @@ describe("POST /api/clients/[id]/expenses — ownerAccountId", () => {
   });
 
   it("inserts both ownerAccountId and ownerEntityId as null when neither is supplied", async () => {
+    // type: "other", not "living" — the living-expense closed set (see
+    // expenses-writes.ts) now rejects creating type: "living" outright, so
+    // this owner-null fixture can no longer use it.
     const res = await POST(
       buildReq({
-        type: "living",
+        type: "other",
         name: "Groceries",
         annualAmount: "12000",
         startYear: "2026",

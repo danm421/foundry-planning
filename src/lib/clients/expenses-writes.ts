@@ -24,6 +24,7 @@ import { recordAudit } from "@/lib/audit";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { formatZodIssues } from "@/lib/schemas/common";
 import { expenseCreateSchema, expenseUpdateSchema } from "@/lib/schemas/expenses";
+import { LIVING_EDITABLE_FIELDS } from "@/lib/living-expenses";
 import { baseCaseScenarioId } from "./base-case";
 import { replaceDedicatedAccounts } from "./dedicated-accounts";
 import { writeError, type EntityWriteResult } from "./entity-write-result";
@@ -60,6 +61,16 @@ export async function createExpenseForClient(args: {
     return writeError(400, formatZodIssues(parsed.error).map((i) => i.message).join("; "));
   }
   const p = parsed.data;
+
+  // THE CLOSED SET. `type: "living"` is exactly the two seeded rows (Current +
+  // Retirement) that create-client.ts writes and the 0229 migration backfills.
+  // Living spending is edited on those rows, never added as new ones.
+  if (p.type === "living") {
+    return writeError(
+      400,
+      "Living expenses are fixed to the Current and Retirement rows and cannot be created.",
+    );
+  }
 
   const entCheck = await assertEntitiesInClient(clientId, [p.ownerEntityId]);
   if (!entCheck.ok) return writeError(400, entCheck.reason);
@@ -147,16 +158,33 @@ export async function updateExpenseForClient(args: {
   }
   const p = parsed.data;
 
-  // Protect the seeded current/retirement living-expense rows — their type is
-  // fixed at "living" so the plan always carries pre- and post-retirement
-  // spending. Other field edits (amount, growth, years) stay allowed.
-  if (p.type !== undefined) {
-    const [target] = await db
-      .select({ isDefault: expenses.isDefault, type: expenses.type })
-      .from(expenses)
-      .where(and(eq(expenses.id, expenseId), eq(expenses.clientId, clientId)));
-    if (target?.isDefault && p.type !== target.type) {
-      return writeError(400, "Default living-expense rows cannot change type.");
+  // Protect the seeded current/retirement living rows. Their type is fixed so
+  // the plan always carries pre- and post-retirement spending, and only amount
+  // and timing are editable — see lib/living-expenses.ts.
+  const [target] = await db
+    .select({ isDefault: expenses.isDefault, type: expenses.type })
+    .from(expenses)
+    .where(and(eq(expenses.id, expenseId), eq(expenses.clientId, clientId)));
+
+  if (target?.isDefault && p.type !== undefined && p.type !== target.type) {
+    return writeError(400, "Default living-expense rows cannot change type.");
+  }
+
+  if (target?.isDefault && target.type === "living") {
+    // Test the PARSED payload, and only keys the caller actually supplied — an
+    // omitted field parses to `undefined` and must not trip the guard. `type`
+    // is excluded here because a real type CHANGE is already rejected above;
+    // an unchanged resend (e.g. re-sending `type: "living"` alongside an
+    // amount edit) must stay a no-op, not a lock violation.
+    const locked = Object.entries(p)
+      .filter(([k, v]) => k !== "type" && v !== undefined && !LIVING_EDITABLE_FIELDS.has(k))
+      .map(([k]) => k);
+    if (locked.length > 0) {
+      return writeError(
+        400,
+        `Default living-expense rows only accept amount and timing changes. ` +
+          `Rejected: ${locked.sort().join(", ")}.`,
+      );
     }
   }
 

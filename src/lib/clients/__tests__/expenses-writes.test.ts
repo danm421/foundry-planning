@@ -188,7 +188,12 @@ d("expenses-writes core", () => {
     }
   });
 
-  it("creating a living expense drops any deductionType", async () => {
+  // Retargeted for the living-expense closed set (Task 2 of the two-bucket
+  // plan): creating a living expense is now rejected outright, regardless of
+  // what else is on the payload — the deductionType-dropping behaviour this
+  // test used to exercise on create is no longer reachable, since create never
+  // gets far enough to apply it.
+  it("rejects creating a living expense even when a deductionType is supplied", async () => {
     const res = await createExpenseForClient({
       clientId: COOPER_CLIENT_ID,
       firmId: COOPER_FIRM_ID,
@@ -202,10 +207,9 @@ d("expenses-writes core", () => {
         deductionType: "charitable",
       },
     });
-    expect(res.ok).toBe(true);
-    if (!res.ok) return;
-    createdIds.push(res.data.id);
-    expect(res.data.deductionType).toBeNull();
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.status).toBe(400);
   });
 
   it("retyping an expense to living clears its deductionType", async () => {
@@ -270,5 +274,140 @@ d("expenses-writes core", () => {
     expect(res.data.annualAmount).toBe("999.00");
     // Untouched field preserved.
     expect(res.data.name).toBe("Update target");
+  });
+
+  describe("living-expense closed set", () => {
+    it("rejects creating a living expense", async () => {
+      const res = await createExpenseForClient({
+        clientId: COOPER_CLIENT_ID,
+        firmId: COOPER_FIRM_ID,
+        actorId: ACTOR_ID,
+        input: {
+          type: "living",
+          name: "Groceries",
+          annualAmount: 12000,
+          startYear: 2026,
+          endYear: 2056,
+        },
+      });
+      expect(res.ok).toBe(false);
+      if (!res.ok) {
+        expect(res.status).toBe(400);
+        expect(res.error).toMatch(/fixed to the Current and Retirement rows/i);
+      }
+    });
+
+    it("still allows creating a non-living expense", async () => {
+      const res = await createExpenseForClient({
+        clientId: COOPER_CLIENT_ID,
+        firmId: COOPER_FIRM_ID,
+        actorId: ACTOR_ID,
+        input: {
+          type: "other",
+          name: "Boat",
+          annualAmount: 5000,
+          startYear: 2026,
+          endYear: 2030,
+        },
+      });
+      expect(res.ok).toBe(true);
+      if (res.ok) createdIds.push(res.data.id);
+    });
+
+    it("allows amount and timing edits on a default living row", async () => {
+      // Cooper's seeded default row lives on the shared dev branch — capture
+      // and restore it so this test leaves no residue.
+      const [before] = await db
+        .select({
+          annualAmount: expenses.annualAmount,
+          startYear: expenses.startYear,
+          startYearRef: expenses.startYearRef,
+        })
+        .from(expenses)
+        .where(eq(expenses.id, COOPER_DEFAULT_EXPENSE_ID));
+      try {
+        const res = await updateExpenseForClient({
+          clientId: COOPER_CLIENT_ID,
+          firmId: COOPER_FIRM_ID,
+          actorId: ACTOR_ID,
+          expenseId: COOPER_DEFAULT_EXPENSE_ID,
+          input: { annualAmount: 90000, startYear: 2027, startYearRef: "plan_start" },
+        });
+        expect(res.ok).toBe(true);
+      } finally {
+        await db
+          .update(expenses)
+          .set({
+            annualAmount: before?.annualAmount ?? "0",
+            startYear: before?.startYear,
+            startYearRef: before?.startYearRef ?? null,
+          })
+          .where(eq(expenses.id, COOPER_DEFAULT_EXPENSE_ID));
+      }
+    });
+
+    it("rejects renaming a default living row", async () => {
+      const res = await updateExpenseForClient({
+        clientId: COOPER_CLIENT_ID,
+        firmId: COOPER_FIRM_ID,
+        actorId: ACTOR_ID,
+        expenseId: COOPER_DEFAULT_EXPENSE_ID,
+        input: { name: "My Spending" },
+      });
+      expect(res.ok).toBe(false);
+      if (!res.ok) {
+        expect(res.status).toBe(400);
+        expect(res.error).toMatch(/name/);
+      }
+    });
+
+    it("rejects growth-rate and cash-account edits on a default living row", async () => {
+      for (const input of [{ growthRate: 0.05 }, { growthSource: "custom" }, { cashAccountId: null }]) {
+        const res = await updateExpenseForClient({
+          clientId: COOPER_CLIENT_ID,
+          firmId: COOPER_FIRM_ID,
+          actorId: ACTOR_ID,
+          expenseId: COOPER_DEFAULT_EXPENSE_ID,
+          input,
+        });
+        expect(res.ok).toBe(false);
+        if (!res.ok) expect(res.status).toBe(400);
+      }
+    });
+
+    it("leaves a NON-default living row fully editable", async () => {
+      // Pre-migration rows and any row the 0229 script could not classify are
+      // not isDefault. The write core itself can no longer create type:
+      // "living" rows (see above), so insert one directly to stand in for
+      // legacy data.
+      const [{ scenarioId }] = await db
+        .select({ scenarioId: expenses.scenarioId })
+        .from(expenses)
+        .where(eq(expenses.id, COOPER_DEFAULT_EXPENSE_ID));
+      const [row] = await db
+        .insert(expenses)
+        .values({
+          clientId: COOPER_CLIENT_ID,
+          scenarioId,
+          type: "living",
+          isDefault: false,
+          name: "Legacy Living Expense",
+          annualAmount: "1000.00",
+          startYear: 2026,
+          endYear: 2030,
+        })
+        .returning();
+      createdIds.push(row.id);
+
+      const res = await updateExpenseForClient({
+        clientId: COOPER_CLIENT_ID,
+        firmId: COOPER_FIRM_ID,
+        actorId: ACTOR_ID,
+        expenseId: row.id,
+        input: { name: "Renamed" },
+      });
+      expect(res.ok).toBe(true);
+      if (res.ok) expect(res.data.name).toBe("Renamed");
+    });
   });
 });
