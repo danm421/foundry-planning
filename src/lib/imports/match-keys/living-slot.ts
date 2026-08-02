@@ -1,5 +1,4 @@
 import type { ExtractedExpense } from "@/lib/extraction/types";
-import type { YearRef } from "@/lib/milestones";
 import type { MatchAnnotation } from "../types";
 
 export interface LivingSlot {
@@ -8,16 +7,12 @@ export interface LivingSlot {
   role: "current" | "retirement";
 }
 
-/** Classify a seeded living-expense slot by its start milestone. */
-export function livingSlotRole(
-  startYearRef: YearRef | null,
-): "current" | "retirement" | null {
-  if (startYearRef === "plan_start") return "current";
-  if (startYearRef === "client_retirement" || startYearRef === "spouse_retirement") {
-    return "retirement";
-  }
-  return null;
-}
+// `livingSlotRole` now lives in lib/living-expenses.ts — the UI, the write core
+// and the 0229 migration all need it, so it is no longer an import concern.
+// Re-exported here so this module's existing callers (match.ts,
+// commit/expenses.ts, commit/plan-basics.ts) keep their import path.
+export { livingSlotRole } from "@/lib/living-expenses";
+export type { LivingRole } from "@/lib/living-expenses";
 
 const RETIREMENT_RE = /retirement/i;
 /**
