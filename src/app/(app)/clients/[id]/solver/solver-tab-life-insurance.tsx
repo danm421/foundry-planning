@@ -20,6 +20,7 @@ import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import type { SolverMutation, SolverSource } from "@/lib/solver/types";
 import { LiAssumptionsPanel } from "./li-assumptions-panel";
 import { LiNeedRange } from "./li-need-range";
+import { SolverViewReportButton } from "./solver-view-report-button";
 import { useClientAccess } from "@/components/client-access-provider";
 
 /** One decedent's solved need + the survivor's projection. */
@@ -191,6 +192,7 @@ export function SolverLifeInsuranceInputs({
   liabilities,
   estateAdminExpenses,
   modelPortfolios,
+  onOpenReport,
 }: {
   /** Current LI assumptions — owned by LiveSolverWorkspace. */
   assumptions: LiAssumptions;
@@ -202,10 +204,18 @@ export function SolverLifeInsuranceInputs({
   estateAdminExpenses: number;
   /** Firm model portfolios for the LI-proceeds growth picker. */
   modelPortfolios: { id: string; name: string }[];
+  /** Switch the right pane to the Life Insurance Need report. Omitted when that
+   *  report is hidden in the advisor's layout — the button is then not shown. */
+  onOpenReport?: () => void;
 }) {
   return (
     <div className="mx-auto max-w-5xl space-y-4 px-5 py-5">
-      <h2 className="text-[15px] font-medium text-ink">Life Insurance Need</h2>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-[15px] font-medium text-ink">Life Insurance Need</h2>
+        {onOpenReport ? (
+          <SolverViewReportButton reportLabel="Life Insurance Need" onClick={onOpenReport} />
+        ) : null}
+      </div>
       <LiAssumptionsPanel
         assumptions={assumptions}
         onChange={onAssumptionsChange}

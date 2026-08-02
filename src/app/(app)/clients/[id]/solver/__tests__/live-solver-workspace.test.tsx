@@ -1,8 +1,12 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
 import { LiveSolverWorkspace } from "../live-solver-workspace";
 import { resolveReportLayout } from "@/lib/solver/report-layout";
+
+// jsdom implements no scrollIntoView — the "View report" buttons scroll the
+// report pane into view (which matters on the sub-lg stacked layout).
+Element.prototype.scrollIntoView = vi.fn();
 
 const routerPush = vi.fn();
 const routerRefresh = vi.fn();
@@ -181,6 +185,22 @@ const baseProps = {
   initialReportLayout: resolveReportLayout(null),
 };
 
+/** Canned POST .../life-insurance/solve response — shared by every test that
+ *  activates an LI surface. */
+const liResult = {
+  isMarried: false,
+  client: {
+    status: "solved",
+    faceValue: 500_000,
+    achievedEndingPortfolio: 0,
+    projection: [],
+    existingPolicies: [],
+    existingCoverageTotal: 0,
+    estateTaxAddend: 0,
+  },
+  spouse: null,
+};
+
 function makeSseStream(events: Array<{ event: string; data: unknown }>): Response {
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
@@ -253,20 +273,6 @@ describe("LiveSolverWorkspace — Life Insurance solve gating", () => {
         typeof c[0] === "string" &&
         (c[0] as string).endsWith("/life-insurance/solve"),
     ).length;
-
-  const liResult = {
-    isMarried: false,
-    client: {
-      status: "solved",
-      faceValue: 500_000,
-      achievedEndingPortfolio: 0,
-      projection: [],
-      existingPolicies: [],
-      existingCoverageTotal: 0,
-      estateTaxAddend: 0,
-    },
-    spouse: null,
-  };
 
   it("stays silent while LI is inactive, solves once on enable, and debounces an edit", async () => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => liResult });
@@ -780,5 +786,73 @@ describe("LiveSolverWorkspace — report layout customization", () => {
     }>;
     expect(lastArg.find((e) => e.id === "estate")!.visible).toBe(false);
     expect(lastArg.find((e) => e.id === "education")!.visible).toBe(false);
+  });
+});
+
+describe("LiveSolverWorkspace — left-pane View report buttons", () => {
+  // "Education" names BOTH a left input tab and a right report tab, so every
+  // query here is scoped to one tablist by its aria-label.
+  const inputTab = (name: string) =>
+    within(screen.getByRole("tablist", { name: "Solver editing surface" })).getByRole(
+      "tab",
+      { name },
+    );
+  const reportTabs = () =>
+    within(screen.getByRole("tablist", { name: "Chart view" }));
+
+  // The LI input tab's mount solve fetches, and activating the LI REPORT also
+  // starts the need-over-time SSE run. Stub both shapes: a plain JSON solve, and
+  // an empty event stream the over-time reader can drain without erroring.
+  const stubLiSolve = () =>
+    fetchMock.mockImplementation((url: string) =>
+      String(url).includes("/life-insurance/over-time")
+        ? Promise.resolve(makeSseStream([]))
+        : Promise.resolve({ ok: true, json: async () => liResult }),
+    );
+
+  it("jumps the right pane to the Education report", () => {
+    render(<LiveSolverWorkspace {...baseProps} />);
+    expect(reportTabs().getByRole("tab", { name: "Portfolio" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    fireEvent.click(inputTab("Education"));
+    fireEvent.click(screen.getByRole("button", { name: /view the education report/i }));
+
+    expect(reportTabs().getByRole("tab", { name: "Education" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+
+  it("jumps the right pane to the Life Insurance Need report", async () => {
+    stubLiSolve();
+    render(<LiveSolverWorkspace {...baseProps} />);
+
+    fireEvent.click(inputTab("Life Insurance"));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /view the life insurance need report/i }),
+    );
+
+    expect(
+      reportTabs().getByRole("tab", { name: "Life Insurance Need" }),
+    ).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("hides the button when that report is hidden in the advisor's layout", async () => {
+    // Hiding a report removes its tab, so a jump button pointing at it could
+    // only select a report the strip isn't showing — the button goes too.
+    render(<LiveSolverWorkspace {...baseProps} />);
+    fireEvent.click(screen.getByRole("button", { name: /customize reports/i }));
+    fireEvent.click(screen.getByRole("switch", { name: "Education" }));
+
+    fireEvent.click(inputTab("Education"));
+    await waitFor(() =>
+      expect(reportTabs().queryByRole("tab", { name: "Education" })).toBeNull(),
+    );
+    expect(
+      screen.queryByRole("button", { name: /view the education report/i }),
+    ).toBeNull();
   });
 });

@@ -6,6 +6,7 @@ import type { SolverMutation, SolverMutationKey } from "@/lib/solver/types";
 import { withAdditionalContribution } from "@/lib/solver/solve-education-dedicated-savings";
 import { SolverSection } from "./solver-section";
 import { SolverFieldSlider } from "./solver-field-slider";
+import { SolverViewReportButton } from "./solver-view-report-button";
 import { SolverEducationGoalForm, type EducationGoalFormAccount } from "./solver-education-goal-form";
 import { useEducationSolve, type EducationSolveOutput } from "./use-education-solve";
 
@@ -22,6 +23,9 @@ interface Props {
   onResetField?: (keys: SolverMutationKey[]) => void;
   /** CMA-resolved growth for a new 529 (retirement-category default). */
   growth529?: number;
+  /** Switch the right pane to the Education report. Omitted when that report is
+   *  hidden in the advisor's layout — the button is then not shown. */
+  onOpenReport?: () => void;
 }
 
 function ownerFamilyMemberIds(acct: {
@@ -50,6 +54,7 @@ export function SolverEducationSection({
   mutations,
   onChange,
   growth529 = 0.05,
+  onOpenReport,
 }: Props) {
   const goals = workingTree.expenses.filter((e) => e.type === "education");
   const accountsById = useMemo(
@@ -145,7 +150,14 @@ export function SolverEducationSection({
   }
 
   return (
-    <SolverSection title="Education">
+    <SolverSection
+      title="Education"
+      action={
+        onOpenReport ? (
+          <SolverViewReportButton reportLabel="Education" onClick={onOpenReport} />
+        ) : undefined
+      }
+    >
       {goals.length === 0 ? (
         <div className="text-[12px] text-ink-3">No education goals yet.</div>
       ) : (

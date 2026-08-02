@@ -230,6 +230,25 @@ export function LiveSolverWorkspace({
   );
   const [activeSummary, setActiveSummary] = useState<SummaryKey>("retirement");
 
+  // "View report" buttons in the left pane jump the right pane to their own
+  // report. Below `lg` the two panes stack, so the report sits off-screen below
+  // the inputs — scroll it into view there. On desktop the workspace fills the
+  // viewport and nothing above it scrolls, so this is a no-op.
+  const reportPaneRef = useRef<HTMLDivElement | null>(null);
+  const jumpToReport = useCallback((key: ReportKey) => {
+    setActiveReport(key);
+    reportPaneRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  // The click handler for a left-pane "View report" button, or undefined when
+  // the advisor has hidden that report — the strip wouldn't show its tab, so the
+  // affordance is withheld rather than selecting a report that isn't there.
+  const reportOpener = useCallback(
+    (key: ReportKey) =>
+      isReportVisible(key, reportLayout) ? () => jumpToReport(key) : undefined,
+    [reportLayout, jumpToReport],
+  );
+
   // Coalescing single-flight persistence of the report layout. `savedLayoutRef`
   // holds the last layout the server confirmed — the rollback target on a
   // persistent failure. `pendingLayoutRef` holds the newest layout still to be
@@ -1367,6 +1386,7 @@ export function LiveSolverWorkspace({
             }))}
             estateAdminExpenses={baseClientData.planSettings.estateAdminExpenses ?? 0}
             modelPortfolios={modelPortfolios}
+            onOpenReport={reportOpener("lifeInsurance")}
           />
         )}
 
@@ -1381,13 +1401,14 @@ export function LiveSolverWorkspace({
             onChange={pushMutation}
             onResetField={clearMutations}
             growth529={categoryGrowthDefaults.retirement}
+            onOpenReport={reportOpener("education")}
           />
         )}
           </div>
         </div>
 
         {/* RIGHT — reports, scroll as one document */}
-        <div className="min-h-0 overflow-y-auto">
+        <div ref={reportPaneRef} className="min-h-0 overflow-y-auto">
           <div className="space-y-4 p-4">
             {restoredBanner ? (
               <div
