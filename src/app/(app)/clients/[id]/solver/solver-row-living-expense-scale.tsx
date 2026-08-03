@@ -9,8 +9,10 @@ import {
 } from "@/lib/solver/types";
 import type { SolveLeverKey } from "@/lib/solver/solve-types";
 import { isRetirementLivingExpense } from "@/lib/solver/living-expense";
+import { livingSlotRank } from "@/lib/living-slot-order";
 import { FieldHintPopover, type HintRow } from "@/components/forms/field-hint-popover";
 import { SolverBaseHint } from "./solver-base-hint";
+import { SolverFieldActions } from "./solver-field-actions";
 import { SolverFieldStepper } from "./solver-field-stepper";
 import { SolverSolveIcon } from "./solver-solve-icon";
 import { SolverSolvePopover } from "./solver-solve-popover";
@@ -52,7 +54,14 @@ export function SolverRowLivingExpenseScale({
   onSolveStart,
   onSolveCancel,
 }: Props) {
-  const baseLiving = baseExpenses.filter((e) => e.type === "living");
+  // The two seeded slots are the plan's spine — every other living row is
+  // detail hung off them — so they lead the levers in plan order: Current, then
+  // Retirement. Same rank the Details cash-flow table sorts by, so an advisor
+  // moving between the two surfaces reads the rows in one order. Safe in place:
+  // `filter` already returned a fresh array.
+  const baseLiving = baseExpenses
+    .filter((e) => e.type === "living")
+    .sort((a, b) => livingSlotRank(a) - livingSlotRank(b));
   const hasLivingRows = baseLiving.length > 0;
 
   const isSolvingHere = activeSolve?.target.kind === "living-expense-scale";
@@ -162,9 +171,9 @@ type LivingExpenseSolve = {
   onSolveStart: (target: SolveLeverKey, targetPoS: number) => void;
 };
 
-/** Solve icon + popover for the "Maximum Retirement Spend" lever, rendered
- *  inline next to the retirement living-expense value (matching how the
- *  Retirement Ages row hangs its Solve button off the field value). */
+/** Solve icon + popover for the "Maximum Retirement Spend" lever, rendered on
+ *  the action line under the retirement living-expense value (matching how the
+ *  Retirement Ages row places its Solve button). */
 function LivingExpenseSolveButton({ target, disabled, onSolveStart }: LivingExpenseSolve) {
   const [popoverOpen, setPopoverOpen] = useState(false);
   const anchorRef = useRef<HTMLDivElement>(null);
@@ -228,25 +237,27 @@ function Editable({
         step={5_000}
         prefix="$"
         onCommit={onCommit}
-        trailing={solve ? <LivingExpenseSolveButton {...solve} /> : undefined}
       />
-      <SolverBaseHint
-        base={baseExpense.annualAmount}
-        working={expense.annualAmount}
-        format={(n) => `${formatCurrency(n)}/yr`}
-        onReset={
-          onResetField
-            ? () =>
-                onResetField([
-                  mutationKey({
-                    kind: "expense-annual-amount",
-                    expenseId: baseExpense.id,
-                    annualAmount: 0,
-                  }),
-                ])
-            : undefined
-        }
-      />
+      <SolverFieldActions>
+        {solve ? <LivingExpenseSolveButton {...solve} /> : null}
+        <SolverBaseHint
+          base={baseExpense.annualAmount}
+          working={expense.annualAmount}
+          format={(n) => `${formatCurrency(n)}/yr`}
+          onReset={
+            onResetField
+              ? () =>
+                  onResetField([
+                    mutationKey({
+                      kind: "expense-annual-amount",
+                      expenseId: baseExpense.id,
+                      annualAmount: 0,
+                    }),
+                  ])
+              : undefined
+          }
+        />
+      </SolverFieldActions>
     </div>
   );
 }

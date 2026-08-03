@@ -21,7 +21,7 @@ import {
   flowYearPatch,
   type FlowPatch,
 } from "@/lib/inline-edit/flow-write";
-import { livingSlotRole } from "@/lib/imports/match-keys/living-slot";
+import { livingSlotRank } from "@/lib/living-slot-order";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
 import { isGoalExpense, educationGoalYears } from "@/lib/goals";
 import { isTodaysDollars } from "@/lib/todays-dollars";
@@ -264,29 +264,6 @@ const EXPENSE_GROUPS: { label: string; types: ExpenseType[] }[] = [
   { label: "Education", types: ["education"] },
   { label: "Other Expenses", types: ["other"] },
 ];
-
-/**
- * Sort rank that pins the two SEEDED living-expense slots to the top of the
- * Living Expenses group — Current first, Retirement second — whatever order the
- * server returned them in.
- *
- * The role comes from `livingSlotRole` (the row's START MILESTONE), not its
- * name. The seeds are renameable, and a household whose "Current Living
- * Expenses" had been renamed "My Spending" is exactly the case that sorted the
- * current slot BELOW its own retirement row. `livingSlotRole` is the same
- * classifier the importer matches slots with — a second, name-based copy here
- * would drift from it.
- *
- * Everything else shares rank 2, so `sort`'s stability leaves the rest of the
- * group in the order it arrived.
- */
-function livingSlotRank(e: Expense): 0 | 1 | 2 {
-  if (!e.isDefault) return 2;
-  const role = livingSlotRole(coerceYearRef(e.startYearRef) ?? null);
-  if (role === "current") return 0;
-  if (role === "retirement") return 1;
-  return 2;
-}
 
 const INCOME_TYPE_LABELS: Partial<Record<IncomeType, string>> = {
   salary: "Salary",

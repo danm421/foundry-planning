@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface SolverFieldStepperProps {
   id: string;
@@ -16,8 +16,6 @@ interface SolverFieldStepperProps {
   /** Symbol shown before the value (e.g. "$"). */
   prefix?: string;
   onCommit: (n: number) => void;
-  /** Inline control rendered to the right of the stepper (e.g. a Solve button). */
-  trailing?: ReactNode;
 }
 
 const localeInt = (n: number) => Math.round(n).toLocaleString();
@@ -58,7 +56,6 @@ export function SolverFieldStepper({
   format = localeInt,
   prefix,
   onCommit,
-  trailing,
 }: SolverFieldStepperProps) {
   // `null` means "not editing"; a string is the live draft. One piece of state
   // rather than two, so there is no way to leave a stale draft behind.
@@ -109,7 +106,7 @@ export function SolverFieldStepper({
   }
 
   return (
-    <div className="flex min-h-[2.75rem] items-center gap-2">
+    <div className="flex min-h-[2.75rem] items-center">
       <div className="inline-flex shrink-0 items-stretch overflow-hidden rounded-[10px] border border-hair bg-card-2">
         <StepButton
           direction={-1}
@@ -172,7 +169,6 @@ export function SolverFieldStepper({
           onStep={() => stepBy(step)}
         />
       </div>
-      {trailing}
     </div>
   );
 }

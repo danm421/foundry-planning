@@ -10,6 +10,7 @@ import {
 } from "@/lib/solver/types";
 import type { SolveLeverKey } from "@/lib/solver/solve-types";
 import { SolverBaseHint } from "./solver-base-hint";
+import { SolverFieldActions } from "./solver-field-actions";
 import { SolverFieldStepper } from "./solver-field-stepper";
 import { SolverSolveIcon } from "./solver-solve-icon";
 import { SolverSolvePopover } from "./solver-solve-popover";
@@ -172,43 +173,43 @@ function EditableWithSolve({
         min={min}
         max={max}
         onCommit={onCommit}
-        trailing={
-          <div ref={anchorRef} className="relative">
-            <SolverSolveIcon
-              label={`Solve ${label}`}
-              tooltip={RETIREMENT_AGE_SOLVE_DESCRIPTION}
-              disabled={otherSolveActive}
-              onClick={() => setPopoverOpen(true)}
+      />
+      <SolverFieldActions>
+        <div ref={anchorRef} className="relative">
+          <SolverSolveIcon
+            label={`Solve ${label}`}
+            tooltip={RETIREMENT_AGE_SOLVE_DESCRIPTION}
+            disabled={otherSolveActive}
+            onClick={() => setPopoverOpen(true)}
+          />
+          {popoverOpen ? (
+            <SolverSolvePopover
+              title={`Solve ${label}`}
+              rangeLabel="50–80"
+              defaultTargetPct={85}
+              open={popoverOpen}
+              anchorRef={anchorRef}
+              onClose={() => setPopoverOpen(false)}
+              onSubmit={(targetPoS) => {
+                setPopoverOpen(false);
+                onSolveStart(target, targetPoS);
+              }}
             />
-            {popoverOpen ? (
-              <SolverSolvePopover
-                title={`Solve ${label}`}
-                rangeLabel="50–80"
-                defaultTargetPct={85}
-                open={popoverOpen}
-                anchorRef={anchorRef}
-                onClose={() => setPopoverOpen(false)}
-                onSubmit={(targetPoS) => {
-                  setPopoverOpen(false);
-                  onSolveStart(target, targetPoS);
-                }}
-              />
-            ) : null}
-          </div>
-        }
-      />
-      <SolverBaseHint
-        base={base}
-        working={value}
-        onReset={
-          onResetField
-            ? () =>
-                onResetField([
-                  mutationKey({ kind: "retirement-age", person, age: 0 }),
-                ])
-            : undefined
-        }
-      />
+          ) : null}
+        </div>
+        <SolverBaseHint
+          base={base}
+          working={value}
+          onReset={
+            onResetField
+              ? () =>
+                  onResetField([
+                    mutationKey({ kind: "retirement-age", person, age: 0 }),
+                  ])
+              : undefined
+          }
+        />
+      </SolverFieldActions>
     </div>
   );
 }
