@@ -1604,6 +1604,13 @@
       "when": 1785257924225,
       "tag": "0228_supreme_serpent_society",
       "breakpoints": true
+    },
+    {
+      "idx": 229,
+      "version": "7",
+      "when": 1785786332987,
+      "tag": "0229_natural_lyja",
+      "breakpoints": true
     }
   ]
 }
