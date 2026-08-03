@@ -59,7 +59,9 @@ describe("deriveInsightInputs", () => {
       cashReturn: 0.02,
       equityReturn: 0.07,
     });
-    expect(capacity.horizonYears).toBe(30); // 90 - 60
+    // Capacity's two clocks are measured from retirement, not from plan end.
+    expect(capacity.yearsToRetirement).toBe(5); // 65 - 60
+    expect(capacity.retirementYears).toBe(25); // 90 - 65
     expect(capacity.fundingScore).toBe(1.2);
     // guaranteed income coverage at first retirement year = (30k+10k)/90k
     expect(capacity.guaranteedIncomeCoverage).toBeCloseTo(40_000 / 90_000, 3);

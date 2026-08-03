@@ -120,8 +120,14 @@ export function hashLifeInsuranceInputs(input: {
  *     actually flows, instead of at the first retirement year only.
  * 3 — factor weights raised to sum to 1.2 against a 100 cap, so strength in one
  *     factor can offset weakness in another.
+ * 4 — horizon made the dominant factor (0.35 -> 0.75 of a 1.25 pool) and its
+ *     curve stretched from 30 to 45 years, so decades of runway separate a
+ *     young household from one at retirement's door.
+ * 5 — single lifetime horizon split into two clocks (years to retirement,
+ *     length of retirement) and the guaranteed-income floor raised to near
+ *     parity with the first. Five factors now, not four.
  */
-const CAPACITY_FORMULA_VERSION = 3;
+const CAPACITY_FORMULA_VERSION = 5;
 
 /**
  * Cache key for a household's risk capacity. Folds in the CMA return bounds

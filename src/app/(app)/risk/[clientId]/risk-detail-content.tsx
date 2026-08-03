@@ -227,7 +227,7 @@ export async function RiskDetailContent({
             <>
               <span className="flex items-center gap-1.5">
                 <span className="tabular text-2xl font-semibold text-ink">{row.capacityScore}</span>
-                <FieldTooltip text="The four factors below add up to 120 at most, and the total is capped at 100. That headroom lets real strength in one area cover a gap in another — a large portfolio with decades of horizon can reach 100 with no Social Security at all." />
+                <FieldTooltip text="The five factors below add up to 143 at most, and the total is capped at 100. That headroom lets real strength in one area cover a gap in another. There are two routes to high capacity and either one is enough on its own: decades before the portfolio is touched, or guaranteed income that already covers the spending. The other three factors support those two rather than substituting for them." />
               </span>
               <CapacityBreakdown factors={capacity.factors} />
             </>

@@ -67,7 +67,11 @@ export function deriveInsightInputs(args: DeriveArgs): {
   const guaranteedIncomeCoverage =
     floorExpenses > 0 ? floorIncome / floorExpenses : 0;
 
-  const horizonYears = Math.max(planEndAge - currentAge, 0);
+  // Capacity's two clocks. Kept separate on purpose -- see CapacityInputs.
+  // An already-retired household floors at 0 on the first and is carried by
+  // the second, which is why the second exists.
+  const yearsToRetirement = Math.max(retirementAge - currentAge, 0);
+  const retirementYears = Math.max(planEndAge - retirementAge, 0);
   const withdrawalRate =
     startingLiquidAssets > 0
       ? avgAnnualRealNetWithdrawal / startingLiquidAssets
@@ -75,7 +79,8 @@ export function deriveInsightInputs(args: DeriveArgs): {
 
   return {
     capacity: {
-      horizonYears,
+      yearsToRetirement,
+      retirementYears,
       fundingScore: args.fundingScore,
       withdrawalRate,
       guaranteedIncomeCoverage,
@@ -83,7 +88,7 @@ export function deriveInsightInputs(args: DeriveArgs): {
     required: {
       startingLiquidAssets,
       avgAnnualRealNetWithdrawal,
-      horizonYears: Math.max(planEndAge - retirementAge, 0),
+      horizonYears: retirementYears,
       cashReturn: args.cashReturn,
       equityReturn: args.equityReturn,
     },

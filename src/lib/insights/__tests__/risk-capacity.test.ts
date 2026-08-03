@@ -9,10 +9,18 @@ import {
   assembleRiskAlignment,
 } from "../risk-capacity";
 
+/** An unremarkable plan: on the funded boundary, ordinary draw, partial SS. */
+const ORDINARY = {
+  fundingScore: 1.0,
+  withdrawalRate: 0.04,
+  guaranteedIncomeCoverage: 0.35,
+};
+
 describe("computeCapacityScore", () => {
-  it("returns ~100 for a long horizon, big surplus, no withdrawals, fully floored", () => {
+  it("returns ~100 for both clocks long, big surplus, no withdrawals, fully floored", () => {
     const s = computeCapacityScore({
-      horizonYears: 40,
+      yearsToRetirement: 25,
+      retirementYears: 30,
       fundingScore: 1.6,
       withdrawalRate: 0,
       guaranteedIncomeCoverage: 1.2,
@@ -20,9 +28,10 @@ describe("computeCapacityScore", () => {
     expect(s).toBeGreaterThan(95);
   });
 
-  it("returns ~0 for short horizon, underfunded, heavy withdrawals, no floor", () => {
+  it("returns ~0 with no runway, no retirement left, underfunded, no floor", () => {
     const s = computeCapacityScore({
-      horizonYears: 0,
+      yearsToRetirement: 0,
+      retirementYears: 0,
       fundingScore: 0.8,
       withdrawalRate: 0.06,
       guaranteedIncomeCoverage: 0,
@@ -30,18 +39,28 @@ describe("computeCapacityScore", () => {
     expect(s).toBeLessThan(5);
   });
 
-  it("weights sum to 1.2 — deliberate headroom over the 100 cap", () => {
-    const total =
-      CAPACITY_WEIGHTS.horizon +
-      CAPACITY_WEIGHTS.buffer +
-      CAPACITY_WEIGHTS.withdrawal +
-      CAPACITY_WEIGHTS.incomeFloor;
-    expect(total).toBeCloseTo(1.2, 10);
+  it("weights sum to 1.43 — deliberate headroom over the 100 cap", () => {
+    const total = Object.values(CAPACITY_WEIGHTS).reduce((s, w) => s + w, 0);
+    expect(total).toBeCloseTo(1.43, 10);
   });
 
-  it("caps at 100 rather than paying out the full 120", () => {
+  it("makes runway and the income floor the two heavyweights", () => {
+    // Near-parity is the design: they are substitutes, not a ranking.
+    const supporting =
+      CAPACITY_WEIGHTS.retirementHorizon +
+      CAPACITY_WEIGHTS.withdrawal +
+      CAPACITY_WEIGHTS.buffer;
+    expect(CAPACITY_WEIGHTS.runway).toBeGreaterThan(supporting);
+    expect(CAPACITY_WEIGHTS.incomeFloor).toBeGreaterThan(supporting);
+    expect(
+      Math.abs(CAPACITY_WEIGHTS.runway - CAPACITY_WEIGHTS.incomeFloor),
+    ).toBeLessThanOrEqual(0.1);
+  });
+
+  it("caps at 100 rather than paying out the full 143", () => {
     const s = computeCapacityScore({
-      horizonYears: 40,
+      yearsToRetirement: 25,
+      retirementYears: 30,
       fundingScore: 1.6,
       withdrawalRate: 0,
       guaranteedIncomeCoverage: 1.2,
@@ -49,44 +68,124 @@ describe("computeCapacityScore", () => {
     expect(s).toBe(100);
   });
 
-  it("lets strength in three factors offset a missing income floor", () => {
-    // The household this headroom exists for: very large portfolio, decades of
-    // horizon, spending a rounding error against assets, and no Social Security
-    // or pension worth counting. A zero income floor should not hold them at 80.
+  it("route 1: 20+ years to retirement carries an ordinary plan to ~90", () => {
     const s = computeCapacityScore({
-      horizonYears: 40,
+      yearsToRetirement: 25,
+      retirementYears: 30,
+      ...ORDINARY,
+    });
+    expect(s).toBeGreaterThanOrEqual(88);
+  });
+
+  it("route 2: a full income floor carries a RETIRED household to ~90", () => {
+    // No runway at all. Spending is entirely covered by Social Security and a
+    // pension, so the portfolio is discretionary and never has to be sold into
+    // a drawdown. Age must not be able to veto that.
+    const s = computeCapacityScore({
+      yearsToRetirement: 0,
+      retirementYears: 25,
+      fundingScore: 1.5,
+      withdrawalRate: 0,
+      guaranteedIncomeCoverage: 1.0,
+    });
+    expect(s).toBeGreaterThanOrEqual(88);
+  });
+
+  it("keeps route 2 high even on an unremarkable funding buffer", () => {
+    // Same fully-floored retiree, but only a middling buffer -- the floor has
+    // to carry them on its own, which is the whole claim.
+    const s = computeCapacityScore({
+      yearsToRetirement: 0,
+      retirementYears: 25,
+      fundingScore: 1.0,
+      withdrawalRate: 0,
+      guaranteedIncomeCoverage: 1.0,
+    });
+    expect(s).toBeGreaterThanOrEqual(80);
+  });
+
+  it("scores 20 years to retirement far above 7, holding the plan constant", () => {
+    // The headline defect in the old single-horizon model: both of these
+    // households had ~35 years to plan end, so both scored identically on
+    // time. They are not in the same situation.
+    const far = computeCapacityScore({
+      yearsToRetirement: 20,
+      retirementYears: 30,
+      ...ORDINARY,
+    });
+    const near = computeCapacityScore({
+      yearsToRetirement: 7,
+      retirementYears: 30,
+      ...ORDINARY,
+    });
+    expect(far - near).toBeGreaterThan(25);
+  });
+
+  it("does not let the three supporting factors manufacture capacity", () => {
+    // Maxed retirement horizon, zero withdrawals, huge surplus -- but the
+    // money is needed now and nothing is guaranteed. That is not capacity.
+    const s = computeCapacityScore({
+      yearsToRetirement: 0,
+      retirementYears: 30,
+      fundingScore: 1.6,
+      withdrawalRate: 0,
+      guaranteedIncomeCoverage: 0,
+    });
+    expect(s).toBeLessThanOrEqual(45);
+  });
+
+  it("keeps a retired household off the floor purely on years remaining", () => {
+    // The second clock's job: a 66-year-old and an 88-year-old differ, even
+    // with the first clock spent and the same plan behind them.
+    const early = computeCapacityScore({
+      yearsToRetirement: 0,
+      retirementYears: 30,
+      ...ORDINARY,
+    });
+    const late = computeCapacityScore({
+      yearsToRetirement: 0,
+      retirementYears: 5,
+      ...ORDINARY,
+    });
+    expect(early).toBeGreaterThan(late);
+  });
+
+  it("lets a maxed runway offset a missing income floor entirely", () => {
+    // The household this headroom exists for: very large portfolio, decades
+    // before it is touched, spending a rounding error against assets, and no
+    // Social Security or pension worth counting. A zero income floor -- the
+    // other route -- should not hold them down.
+    const s = computeCapacityScore({
+      yearsToRetirement: 25,
+      retirementYears: 30,
       fundingScore: 1.6,
       withdrawalRate: 0,
       guaranteedIncomeCoverage: 0,
     });
     expect(s).toBe(95);
-    // Under the old sum-to-1 weights this same household scored 80.
+    // Under the original sum-to-1 weights this same household scored 80.
     expect(s).toBeGreaterThan(80);
   });
 
-  it("still needs a fourth factor to actually reach 100", () => {
-    // Three maxed factors reach 95, so the cap is not degenerate -- no single
-    // factor is fully decorative.
-    const threeMaxed = computeCapacityScore({
-      horizonYears: 40,
-      fundingScore: 1.6,
-      withdrawalRate: 0,
-      guaranteedIncomeCoverage: 0,
+  it("needs more than the two heavyweights alone to reach 100", () => {
+    // The cap is not degenerate: runway + income floor maxed with all three
+    // supporting factors at rock bottom stops short, so nothing is decorative.
+    const bothRoutes = computeCapacityScore({
+      yearsToRetirement: 20,
+      retirementYears: 0,
+      fundingScore: 0.8,
+      withdrawalRate: 0.06,
+      guaranteedIncomeCoverage: 1.0,
     });
-    const withFloor = computeCapacityScore({
-      horizonYears: 40,
-      fundingScore: 1.6,
-      withdrawalRate: 0,
-      guaranteedIncomeCoverage: 0.2,
-    });
-    expect(threeMaxed).toBeLessThan(100);
-    expect(withFloor).toBe(100);
+    expect(bothRoutes).toBeLessThan(100);
+    expect(bothRoutes).toBe(98);
   });
 
   it("is monotonic across the cap, never decreasing as an input improves", () => {
     const at = (coverage: number) =>
       computeCapacityScore({
-        horizonYears: 40,
+        yearsToRetirement: 20,
+        retirementYears: 25,
         fundingScore: 1.6,
         withdrawalRate: 0,
         guaranteedIncomeCoverage: coverage,
@@ -98,10 +197,25 @@ describe("computeCapacityScore", () => {
   });
 
   it("is monotonic in funding buffer", () => {
-    const base = { horizonYears: 20, withdrawalRate: 0.03, guaranteedIncomeCoverage: 0.5 };
+    const base = {
+      yearsToRetirement: 10,
+      retirementYears: 25,
+      withdrawalRate: 0.03,
+      guaranteedIncomeCoverage: 0.5,
+    };
     const lo = computeCapacityScore({ ...base, fundingScore: 1.0 });
     const hi = computeCapacityScore({ ...base, fundingScore: 1.5 });
     expect(hi).toBeGreaterThan(lo);
+  });
+
+  it("is monotonic in each clock independently", () => {
+    const base = { ...ORDINARY, yearsToRetirement: 8, retirementYears: 12 };
+    expect(
+      computeCapacityScore({ ...base, yearsToRetirement: 15 }),
+    ).toBeGreaterThan(computeCapacityScore(base));
+    expect(
+      computeCapacityScore({ ...base, retirementYears: 22 }),
+    ).toBeGreaterThan(computeCapacityScore(base));
   });
 });
 
@@ -180,7 +294,13 @@ describe("assembleRiskAlignment", () => {
   it("produces all markers and a verdict", () => {
     const a = assembleRiskAlignment({
       currentPct: 78,
-      capacity: { horizonYears: 20, fundingScore: 1.3, withdrawalRate: 0.03, guaranteedIncomeCoverage: 0.6 },
+      capacity: {
+        yearsToRetirement: 10,
+        retirementYears: 20,
+        fundingScore: 1.3,
+        withdrawalRate: 0.03,
+        guaranteedIncomeCoverage: 0.6,
+      },
       required: {
         startingLiquidAssets: 800_000,
         avgAnnualRealNetWithdrawal: 30_000,
