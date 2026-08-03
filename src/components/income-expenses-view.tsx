@@ -22,7 +22,7 @@ import {
   type FlowPatch,
 } from "@/lib/inline-edit/flow-write";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
-import { isGoalExpense } from "@/lib/goals";
+import { isGoalExpense, educationGoalYears } from "@/lib/goals";
 import { isTodaysDollars } from "@/lib/todays-dollars";
 import type { ClientInfo as EngineClientInfo, PlanSettings, Income as EngineIncome } from "@/engine/types";
 import { SocialSecurityCard } from "./social-security-card";
@@ -1167,9 +1167,8 @@ function ExpenseDialog({
     .map((fm) => fm.id);
   const allowedFundingOwnerIds = [...householdMemberIds, ...(forFamilyMemberId ? [forFamilyMemberId] : [])];
 
-  // Picking the beneficiary auto-titles the goal and time-boxes it: a 4-year
-  // program starting the year they turn 18 (or the current year, whichever is
-  // later). Both stay editable afterward.
+  // Picking the beneficiary auto-titles the goal and time-boxes it — see
+  // `educationGoalYears`. Both stay editable afterward.
   function handleForChange(fmId: string) {
     setForFamilyMemberId(fmId);
     const fm = (familyMembers ?? []).find((f) => f.id === fmId);
@@ -1179,10 +1178,10 @@ function ExpenseDialog({
       // Parse the year off the ISO string to dodge the Jan-1 DOB timezone
       // off-by-one that `new Date(...).getFullYear()` produces.
       const birthYear = Number(fm.dateOfBirth.slice(0, 4));
-      const start = Math.max(currentYear, birthYear + 18);
-      setStartYear(start);
+      const span = educationGoalYears(birthYear, currentYear);
+      setStartYear(span.startYear);
       setStartYearRef(null);
-      setEndYear(start + 3);
+      setEndYear(span.endYear);
       setEndYearRef(null);
     }
   }

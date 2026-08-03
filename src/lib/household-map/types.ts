@@ -325,7 +325,8 @@ export interface HouseholdMapProps {
    */
   // `birthYear` rides along for the quick-edit drawer's education goal, which
   // time-boxes the goal to the beneficiary's college years (start = the year
-  // they turn 18) the way `income-expenses-view.tsx`'s expense dialog does.
+  // they turn 16, per `educationGoalYears`) the way `income-expenses-view.tsx`'s
+  // expense dialog does.
   // Nullable: an unparseable/absent DOB just means no auto-fill, never a guessed
   // year. `AddAccountDialog` reads the other three fields and ignores this one.
   familyMemberOptions: {

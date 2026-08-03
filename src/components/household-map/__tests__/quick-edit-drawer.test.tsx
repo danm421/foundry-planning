@@ -28,9 +28,9 @@ const FM_PAT = "33333333-3333-4333-8333-333333333333";
 
 // The beneficiary list every render helper below passes. Three shapes on
 // purpose — they are the three branches of `handleForChange`: a child whose
-// college years are still ahead (Kelly, 2030-2033), one with no usable DOB at
+// college years are still ahead (Kelly, 2028-2031), one with no usable DOB at
 // all (Sam — the dates must not move), and one already past 18 (Pat, whose
-// start floors at the plan's first year rather than landing in 2008).
+// start floors at the plan's first year rather than landing in 2006).
 const FAMILY_MEMBERS = [
   { id: FM_KELLY, firstName: "Kelly", birthYear: 2012 },
   { id: FM_SAM, firstName: "Sam", birthYear: null },
@@ -433,17 +433,17 @@ describe("QuickEditDrawer — education goals", () => {
       expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Kelly - Education");
     });
 
-    // Kelly turns 18 in 2030, so the goal is 2030-2033. Asserted on the SAVE
+    // Kelly turns 16 in 2028, so the goal is 2028-2031. Asserted on the SAVE
     // payload rather than on the year pickers because the payload is what
     // reaches the DB — and because `startYearRef`/`endYearRef` have no rendered
     // form of their own.
-    it("time-boxes it to a four-year program starting the year they turn 18", async () => {
+    it("time-boxes it to a four-year program starting the year they turn 16", async () => {
       const calls = captureFetch();
       pickEducationFor(FM_KELLY);
 
       const body = await saveAndReadBody(calls);
-      expect(body.startYear).toBe("2030");
-      expect(body.endYear).toBe("2033");
+      expect(body.startYear).toBe("2028");
+      expect(body.endYear).toBe("2031");
     });
 
     // THE ONE THAT MATTERS. Both refs seed to plan_start/plan_end, and on every
@@ -486,8 +486,8 @@ describe("QuickEditDrawer — education goals", () => {
       expect(body.startYearRef).toBe("plan_start");
     });
 
-    // Pat turned 18 in 2008. The start floors at the plan's first year rather
-    // than opening a goal that began eighteen years before the projection does.
+    // Pat turned 16 in 2006. The start floors at the plan's first year rather
+    // than opening a goal that began twenty years before the projection does.
     it("floors the start at the plan's first year for a beneficiary already past 18", async () => {
       const calls = captureFetch();
       pickEducationFor(FM_PAT);

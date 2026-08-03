@@ -20,6 +20,7 @@ import Link from "next/link";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
+import { educationGoalYears } from "@/lib/goals";
 import { CurrencyInput } from "@/components/currency-input";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import GrowthSourceRadio from "@/components/forms/growth-source-radio";
@@ -182,8 +183,9 @@ interface QuickEditDrawerProps {
    * just the children: a grandchild's 529 is an `other`-role member, and the
    * full editor offers the same unfiltered list.
    *
-   * `birthYear` drives the auto-fill (start = the year they turn 18) and is
-   * nullable, so a member with no DOB just doesn't move the dates.
+   * `birthYear` drives the auto-fill (start = the year they turn 16, per
+   * `educationGoalYears`) and is nullable, so a member with no DOB just doesn't
+   * move the dates.
    */
   familyMembers: { id: string; firstName: string; birthYear: number | null }[];
   onClose: () => void;
@@ -249,11 +251,10 @@ export default function QuickEditDrawer({
   const isEducation = target.kind === "expense" && type === "education";
 
   /**
-   * Picking the beneficiary titles and time-boxes the goal: a 4-year program
-   * starting the year they turn 18, or the plan's first year if that has already
-   * passed. Both stay editable afterwards. Mirrors `handleForChange` in
+   * Picking the beneficiary titles and time-boxes the goal — see
+   * `educationGoalYears`, shared with `handleForChange` in
    * `income-expenses-view.tsx` so a goal added here and one added there land on
-   * the same dates.
+   * the same dates. Both stay editable afterwards.
    *
    * The refs are CLEARED alongside the years. They seed to plan_start/plan_end,
    * and a ref outranks the stored year on every future load
@@ -266,10 +267,10 @@ export default function QuickEditDrawer({
     if (!fm) return;
     setName(`${fm.firstName} - Education`);
     if (fm.birthYear == null) return;
-    const start = Math.max(milestones.planStart, fm.birthYear + 18);
-    setStartYear(start);
+    const span = educationGoalYears(fm.birthYear, milestones.planStart);
+    setStartYear(span.startYear);
     setStartYearRef(null);
-    setEndYear(start + 3);
+    setEndYear(span.endYear);
     setEndYearRef(null);
   }
 
