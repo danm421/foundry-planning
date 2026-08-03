@@ -8,192 +8,41 @@ Next.js 16 with React 19 and the App Router. APIs, conventions, and file structu
 
 Foundry Planning — cash-flow-based financial planning for advisors. Solo-dev app.
 
-**Stack:** Next.js 16 (App Router) · React 19 · TypeScript · Neon Postgres + Drizzle ORM · Clerk auth · Upstash Redis (rate limiting) · Azure OpenAI (document extraction) · Vitest · Vercel · Tailwind v4 · Chart.js · TanStack Table · @react-pdf/renderer
-
-## Commands
+**Stack:** Next.js 16 (App Router) · React 19 · TypeScript · Neon Postgres + Drizzle · Clerk · Upstash Redis · Azure OpenAI (document extraction) · Vitest · Vercel · Tailwind v4 · Chart.js · TanStack Table · @react-pdf/renderer
 
 ```bash
-npm run dev          # dev server on :3000
-npm run build        # production build
-npm test             # vitest run (CI mode)
-npm run test:watch   # vitest watch
-npm run lint         # eslint
-npm run seed:tax-data
-npx drizzle-kit generate   # create migration from schema.ts
-npx drizzle-kit migrate    # apply migrations
+npm run dev | build | test | lint     # test = vitest run (CI mode)
+npx drizzle-kit generate | migrate    # src/db/schema.ts is the source of truth
 ```
-
-### Database tooling
-
-Direct DB access via the Neon MCP (`mcp__Neon__*`, remote server at `https://mcp.neon.tech/mcp`) — prefer it over ad-hoc psql scripts:
-
-- `run_sql` / `run_sql_transaction` — query against current branch
-- `prepare_database_migration` → `complete_database_migration` — staged migration with preview (complements `drizzle-kit`, doesn't replace it)
-- `compare_database_schema` — diff schemas between Neon branches
-- `create_branch` / `reset_from_parent` — spin up throwaway branches for destructive migration tests
-- `explain_sql_statement` / `list_slow_queries` — query perf debugging
-- `describe_table_schema` / `get_database_tables` — introspection
-
-Drizzle remains the source of truth for schema (`src/db/schema.ts`) — use MCP to *inspect* and *test*, not to author migrations.
-
-## Model routing
-
-Opus is ~5x the cost of Sonnet per token (and ~15x Haiku). Past weekly audit showed Opus = 97.7% of spend, much of it on work that doesn't need it. Default to Opus only when the task genuinely needs it; route routine work to Sonnet.
-
-**Use Sonnet (suggest `/model sonnet` at the start of the session if the work fits these):**
-- DB inspection via Neon MCP — `run_sql`, `describe_table_schema`, `list_slow_queries`, schema diffs
-- Running tests, lint, typecheck, build — and reporting the result
-- Lookups: "where is X defined", "what calls Y", finding a symbol or file
-- Mechanical edits — renames, import fixes, moving a function, deleting dead code I just orphaned
-- Reading specs/handoffs/docs and summarizing
-- Git inspection — status, log, diff, blame
-- Verifying a change works locally (manual browser/dev-server check + reporting)
-
-**Stay on Opus:**
-- Anything inside `src/engine/` — tax, monte-carlo, social-security, withdrawal logic
-- Designing new features or writing specs/plans (the brainstorming/planning skills)
-- Debugging where the cause isn't yet known
-- Cross-cutting refactors that span engine + lib + UI
-- Estate flow, balance sheet, life-insurance solver logic — domain-heavy reasoning
-
-**Subagent dispatches MUST set the model explicitly.** The `Agent` tool accepts a `model` parameter — pass it. Subagents that don't override default to Opus, which is why subagent fanout was 28% of weekly cost.
-
-- `Explore` for finding a file/symbol → `model: "haiku"`
-- DB-inspection subagent, test-runner subagent, status-checker subagent → `model: "sonnet"`
-- `Plan` / design subagents, `general-purpose` for tricky multi-step research → `model: "opus"` (or omit)
-
-When unsure, prefer Sonnet and escalate to Opus only if Sonnet stalls.
-
-## Folder map
-
-```
-src/
-  app/
-    (app)/     authenticated routes (clients, cma)
-    (auth)/    sign-in / sign-up
-    api/       route handlers (clients, cma, csp-report)
-  components/  React UI — flat structure, one concern per file
-  engine/      pure projection engine (tax, income, expenses, savings,
-               liabilities, monteCarlo, socialSecurity, withdrawal).
-               Must stay framework-free — no Next/DB imports.
-  lib/         shared non-engine helpers (authz, audit, rate-limit,
-               db-scoping, schemas, extraction, investments, tax/, timeline/)
-  db/          Drizzle schema + migrations
-  middleware.ts
-data/          reference data (monte-carlo, tax seed workbook)
-docs/          SECURITY_AUDIT.md, SECURITY_HARDENING_LOG.md, SECURITY_RUNBOOK.md,
-               design_handoff_estate_planning/  (HTML mockups for estate report)
-scripts/       one-off TS scripts run via tsx. `*.local.ts` is gitignored
-               (convention for scripts that touch a live DB — mirrors .env.local)
-.worktrees/    gitignored — feature branches live here (see workflow)
-```
-
-**Planning docs live in the Obsidian vault, not the repo.** Specs, plans,
-future-work, and session handoffs all live at `~/Documents/brain/20-projects/foundry-planning/`.
-Vault-wide conventions (frontmatter, ingest/query/lint operations, folder layout) are in `~/Documents/brain/AGENTS.md`. See [§Planning vault](#planning-vault) below for the Foundry-specific layout + CLI recipes.
-
-## Workflow
-
-**New feature = new worktree.** Don't build features directly on `main`.
-
-All specs, plans, future-work, and handoffs go to the Obsidian vault at
-`~/Documents/brain/20-projects/foundry-planning/` — not the repo. `Now.md` is brain-wide and lives at `~/Documents/brain/Now.md`. See [§Planning vault](#planning-vault).
-
-1. **Resume context.** Read `~/Documents/brain/Now.md` for what's in flight + next up (brain-wide; Foundry section). When resuming after `/clear`, read the newest file in `~/Documents/brain/20-projects/foundry-planning/handoffs/`.
-2. **Brainstorm** (`superpowers:brainstorming`) to align on scope before any code.
-3. **Write the spec** (emitted by brainstorming) → `~/Documents/brain/20-projects/foundry-planning/specs/YYYY-MM-DD-<slug>-design.md`. Add frontmatter: `type: spec`, `status: proposed`, `date`, topic tag.
-4. **Write the plan** (`superpowers:writing-plans`) → `~/Documents/brain/20-projects/foundry-planning/plans/YYYY-MM-DD-<slug>.md`. Frontmatter: `type: plan`, `status: proposed`, `spec: "[[<spec>]]"`, topic tag.
-5. **Create a worktree** (`superpowers:using-git-worktrees`) under `.worktrees/<slug>/`. Flip the plan's `status` to `in-progress` and update `Now.md`.
-6. **Execute** via `superpowers:executing-plans` or `superpowers:subagent-driven-development`. TDD (`superpowers:test-driven-development`) for engine/lib work; frontend-design skills for UI.
-7. **Verify** with `superpowers:verification-before-completion` and `vercel:verification` for end-to-end flows. `npm test` + `npm run lint` + manual browser check.
-8. **Finish** via `superpowers:finishing-a-development-branch`. Only merge to `main` when the feature is fully done. Flip plan `status: shipped`, move to `~/Documents/brain/20-projects/foundry-planning/plans/archive/`, update `Now.md` and the relevant `future-work/*.md`.
-9. When something gets scoped out, log it in the right `~/Documents/brain/20-projects/foundry-planning/future-work/*.md` file with a one-line "why deferred" note. Delete the entry when it ships.
-
-### Session hygiene
-
-- Use `splitting-sessions` when the topic shifts, after a rebase/merge/deploy mid-feature, or when resuming after a long gap. Cheaper than dragging context forward.
-- For design questions, UI refactors, new pages, or "this doesn't look professional" work, use `ui-ux-pro-max` (primary) and `frontend-design:frontend-design` (secondary). React best-practices pass: `vercel:react-best-practices` after multi-TSX edits.
-- After any non-trivial change, run `simplify` before claiming completion.
-
-## Coding posture
-
-- **Orphans only.** Remove imports/vars/functions *your* changes made unused. Leave pre-existing dead code alone — mention it instead of deleting.
-- **Senior-engineer test.** Before claiming done, ask: "Would a senior engineer say this is overcomplicated?" If yes, simplify first.
-- **Forge tool policy.** Every NEW Forge tool ships, in the SAME PR, with at least
-  one trajectory eval case in `src/domain/forge/evals/promptfoo.yaml` (a `vars`
-  block with `expectTool: "<tool_name>"` + the `usedExpectedTool` assertion) AND
-  an updated `tools-index.test.ts` count/breakdown. Run `npm run eval:forge`
-  (non-blocking lane) before merge. NOTE: the eval runs the real graph against a
-  fake eval-scope client (`provider.ts` `EVAL_AUTH`), so tool *execution* errors
-  until a seeded eval client exists — the assertions still exercise tool
-  *selection* + the HITL invariant. Assertion logic is unit-tested in
-  `evals/__tests__/assertions.test.ts`.
 
 ## Gotchas
 
-- **Engine purity.** `src/engine/` is framework-free. No Next/DB imports there — all IO happens in `lib/` or route handlers. Breaking this makes the engine untestable in plain vitest.
-- **CSP is currently report-only** (`Content-Security-Policy-Report-Only` in `next.config.ts`). Violations flow to `/api/csp-report`. Flip to enforcing only after the report endpoint shows no real violations.
-- **Rate limiting fails closed** — extract endpoint requires Upstash env vars; don't try to run it without them.
-- **Live-DB scripts must be `*.local.ts`** — the `.local` suffix is gitignored (see `scripts/*.local.ts` in `.gitignore`). Committed scripts next to them omit the suffix.
-- **Organization scoping.** All mutations go through `authz.ts` / `db-scoping.ts`; audit everything via `audit.ts`. Don't write ad-hoc queries that bypass org scoping.
-- **Drizzle migrations** live in `src/db/migrations/`. Numbered sequentially — the `run-migration-0020.ts` pattern is for one-offs that can't be expressed in drizzle-kit output.
-- **Dates are absolute.** Today's date comes from the session context; when you write it into plans/future-work, use `YYYY-MM-DD`, not "Tuesday" or "tomorrow".
-- **Prefer Neon MCP over psql scripts** for one-off DB inspection. `mcp__Neon__run_sql` against the current branch is safer and leaves a clean tool-call trail.
+- **Engine purity.** `src/engine/` is framework-free — no Next/DB imports. All IO happens in `lib/` or route handlers. Breaking this makes the engine untestable in plain vitest.
+- **Org scoping.** Every mutation goes through `authz.ts` / `db-scoping.ts` and is audited via `audit.ts`. Never write ad-hoc queries that bypass scoping.
+- **Live-DB scripts must be `*.local.ts`** — that suffix is gitignored. Committed scripts next to them omit it.
+- **Rate limiting fails closed** — the extract endpoint needs Upstash env vars; don't try to run it without them.
+- **CSP is report-only** (`next.config.ts`); violations flow to `/api/csp-report`. Don't flip to enforcing until that endpoint is quiet.
+- **DB inspection → Neon MCP** (`mcp__Neon__run_sql`), not ad-hoc psql. Use MCP to *inspect and test*; author migrations with drizzle-kit.
+- `src/components/` is flat — one concern per file.
 
-## Tracking deferred work
+## Coding posture
 
-Future-work lives in the Obsidian vault at `~/Documents/brain/20-projects/foundry-planning/future-work/*.md` split by category (`engine.md`, `ui.md`, `reports.md`, `analytics.md`, `client-data.md`, `integrations.md`, `monte-carlo-v2.md`, `reports.md`, `schema.md`, `security-hardening.md`, `timeline-report.md`, `tooling.md`). Cross-cutting index: `~/Documents/brain/20-projects/foundry-planning/future-work/_Future Work Index.md`.
+- **Orphans only.** Remove imports/vars/functions *your* change made unused. Leave pre-existing dead code alone — mention it instead of deleting.
+- **Senior-engineer test.** Before claiming done, ask: "would a senior engineer call this overcomplicated?" If yes, simplify first. Run `simplify` after any non-trivial change.
+- **Subagent dispatches must pass `model`** — they default to Opus otherwise. Lookups/`Explore` → `haiku`; DB inspection, test runs, status checks → `sonnet`; design, unknown-cause debugging, and anything in `src/engine/` → `opus`.
 
-Items are P/E/L-scored (Priority 1-10, Ease 1-10, Leverage 1-10). When something is scoped out of a current task, add a bullet to the right category file with a one-line "Why deferred" note. When you ship something listed, delete the entry and add a link in the file's `## Related specs & references` section to the spec that shipped it.
+## Workflow
 
-## Planning vault
+**Default: just do the task.** Read, edit, test, report. Bug fixes, copy and style tweaks, single-component changes, adding a test, refactors inside a file or two, dependency bumps, DB inspection — none of these need ceremony. **This explicitly overrides the default-to-invoke posture in `using-superpowers`.** When it's genuinely ambiguous, ask rather than assuming the heavy path.
 
-The Foundry project's vault folder is at `~/Documents/brain/20-projects/foundry-planning/` — source of truth for everything non-code related to Foundry planning. The brain root (`~/Documents/brain/`) holds vault-wide artifacts: `AGENTS.md` (schema), `Home.md` / `Now.md` (brain-wide dashboards), `index.md` (wiki entity catalog), `log.md` (chronological record), plus brain-wide directories `00-inbox/`, `10-daily/`, `40-resources/` (e.g. `eMoney-docs/`), `50-wiki/` (synthesized entity pages), and `90-archive/`. See `~/Documents/brain/AGENTS.md` for the full brain layout and conventions.
+**Full pipeline only for substantial new features** — work spanning 3+ areas (engine + lib + UI), needing a schema migration, or reshaping a user-facing flow end to end. Also whenever I ask for a spec or plan by name:
 
-```
-~/Documents/brain/20-projects/foundry-planning/
-├── _Specs Index.md                  topic-grouped index of all specs
-├── _Plans Index.md                  active + archived plans
-├── specs/                           35+ specs (YYYY-MM-DD-<slug>-design.md)
-├── plans/                           active plans (YYYY-MM-DD-<slug>.md)
-│   └── archive/                     shipped plans
-├── handoffs/                        session handoffs (YAML, from splitting-sessions)
-│   └── _Handoffs Index.md
-├── future-work/                     deferred items by category
-│   └── _Future Work Index.md
-├── design_handoff_estate_planning/  HTML mockups for estate report
-├── design_handoff_client_dashboard/ HTML mockups for client dashboard
-├── Foundry Planning Fixes.md        advisor-reported bug list
-├── Monte Carlo Code Review — foundry-planning vs eMoney Spec.md
-└── agents-md-handoff-prompt.md      re-runnable prompt for keeping this AGENTS.md in sync
-```
+Brainstorm → spec → plan → worktree under `.worktrees/<slug>/` → execute (TDD for engine/lib) → verify (`npm test`, `npm run lint`, browser check) → `superpowers:finishing-a-development-branch`. Features get their own worktree, never `main`; merge only when fully done.
 
-eMoney reference material lives at `~/Documents/brain/40-resources/eMoney-docs/` (moved from the project root during the brain migration).
+Individual skills still apply on their own merits at any size — `systematic-debugging` when a cause is unknown, `simplify` after non-trivial edits. It's the multi-step spec/plan pipeline that's opt-in, not every skill.
 
-**Frontmatter convention (already applied everywhere):**
+Planning docs live in the Obsidian vault, never in the repo: `~/Documents/brain/20-projects/foundry-planning/` (`specs/`, `plans/`, `handoffs/`, `future-work/`). **Read `~/Documents/brain/AGENTS.md` before writing a spec, plan, or future-work entry** — it holds the frontmatter schema, status values, topic tags, and Obsidian CLI recipes. Resume context from `~/Documents/brain/Now.md` plus the newest `handoffs/`.
 
-| Type | Required fields |
-|---|---|
-| spec | `title`, `date`, `status`, `type: spec`, `tags: [spec, <topic>]` |
-| plan | `title`, `date`, `status`, `type: plan`, `spec: "[[<spec>]]"`, `tags: [plan, <topic>]` |
-| future-work | `title`, `status: tracker`, `type: future-work`, `tags: [future-work, <topic>]` |
+Scoped-out work gets a bullet in the matching `future-work/*.md` with a one-line "why deferred" and a P/E/L score (Priority / Ease / Leverage, 1-10 each). Delete the entry when it ships.
 
-**Status values:** `proposed` · `in-progress` · `spec-complete` · `shipped` · `shipped-phase-1` · `superseded` · `paused` · `deferred` · `abandoned`
-
-**Topic tags:** `tax`, `social-security`, `cma-investments`, `monte-carlo`, `engine`, `reports`, `ui`, `admin`, `estate`, `extraction`, `fixes`, `client-data`, `integrations`, `security`, `tooling`, `analytics`, `schema`.
-
-**Obsidian CLI recipes** (Obsidian must be running):
-
-| Task | Command |
-|---|---|
-| Where did we leave off? | `obsidian search:context query="status: in-progress" path="plans/"` |
-| Find a topic across specs+plans | `obsidian search:context query="<term>"` |
-| Which specs cite this one? | `obsidian backlinks file="<spec-name>"` |
-| All tax-related files | `obsidian tag name=tax verbose` |
-| Flip plan status | `obsidian property:set name="status" value="shipped" file="<plan>"` |
-| Append a deferred item | `obsidian append file="future-work/<cat>" content="- New item..."` |
-| Check broken wikilinks | `obsidian unresolved counts` |
-
-**Resuming after `/clear`:** first message reads `Now.md` and the newest `handoffs/*.yaml`. Those two files plus the in-progress plan's frontmatter should fully re-orient the session.
-
-**Bug-list gotcha:** bare `#14` / `#23-24` in prose gets parsed by Obsidian as tags. Backtick them: `` `#14` ``.
+For UI work, use `ui-ux-pro-max` alongside the `Foundry-design-system` skill.
