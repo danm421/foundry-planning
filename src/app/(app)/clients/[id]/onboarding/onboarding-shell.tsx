@@ -136,7 +136,7 @@ export default function OnboardingShell({ clientId, activeStep, statuses, childr
       {/* Top bar — eyebrow + progress */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2 text-[12px] uppercase tracking-[0.12em] text-ink-3">
-          <span className="text-accent-ink">Guided setup</span>
+          <span className="text-accent-ink">Guided Walkthrough</span>
           <span className="text-ink-4">·</span>
           <span className="tabular">Step {activeIdx + 1} of {STEPS.length}</span>
         </div>

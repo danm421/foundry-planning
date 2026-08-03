@@ -150,7 +150,7 @@ function GuidedSetupLink({
         <path d="M4 5h16M4 12h16M4 19h10" />
         <circle cx="20" cy="19" r="2" />
       </svg>
-      <span className="flex-1 text-left">Guided</span>
+      <span className="flex-1 text-left">Guided Walkthrough</span>
     </Link>
   );
 }

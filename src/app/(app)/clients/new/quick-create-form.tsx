@@ -33,7 +33,7 @@ import { birthYearFromDob } from "@/lib/age-year";
  *      dual-mode Add Client modal so advisors get the same selector either way.
  *   2. Choose one of three start paths from the picker, which reveals only
  *      that path's fields:
- *        - Guided: planning fields, then the guided onboarding wizard.
+ *        - Guided Walkthrough: planning fields, then the onboarding wizard.
  *        - AI import / Empty client: no fields — the client is created with
  *          sensible defaults (filing status follows whether the household has a
  *          spouse) and the user lands on document import or the overview.
@@ -492,7 +492,7 @@ export default function QuickCreateForm() {
   const submitLabel = submitting
     ? "Creating…"
     : path === "guided"
-      ? "Start guided setup"
+      ? "Start guided walkthrough"
       : path === "import"
         ? "Continue to import"
         : "Create client";

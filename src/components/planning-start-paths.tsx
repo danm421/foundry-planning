@@ -26,7 +26,7 @@ export interface StartPathDef {
 export const START_PATHS: StartPathDef[] = [
   {
     id: "guided",
-    title: "Guided",
+    title: "Guided Walkthrough",
     subtitle: "Full step-by-step wizard",
     icon: <ClipboardCheckIcon width={18} height={18} />,
   },

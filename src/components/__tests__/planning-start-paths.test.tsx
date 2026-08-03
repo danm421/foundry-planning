@@ -5,7 +5,11 @@ import { START_PATHS, PathCard, isStartPath } from "../planning-start-paths";
 
 it("exposes the three start paths in picker order", () => {
   expect(START_PATHS.map((p) => p.id)).toEqual(["guided", "import", "empty"]);
-  expect(START_PATHS.map((p) => p.title)).toEqual(["Guided", "AI import", "Empty client"]);
+  expect(START_PATHS.map((p) => p.title)).toEqual([
+    "Guided Walkthrough",
+    "AI import",
+    "Empty client",
+  ]);
   // Card copy is fixed for this picker — pin the subtitles too, or the list can
   // drift while the PathCard test (which supplies its own props) stays green.
   expect(START_PATHS.map((p) => p.subtitle)).toEqual([
