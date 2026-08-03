@@ -192,3 +192,35 @@ describe("PUT /api/clients/[id]/plan-settings — capital loss carryforward", ()
     expect(updateCalls[0].capitalLossCarryforwardLt).toBeNull();
   });
 });
+
+describe("PUT /api/clients/[id]/plan-settings — surplusSpendAllUntilRetirement", () => {
+  it("persists true", async () => {
+    const res = await PUT(makeRequest({ surplusSpendAllUntilRetirement: true }), ctx);
+
+    expect(res.status).toBe(200);
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0].surplusSpendAllUntilRetirement).toBe(true);
+  });
+
+  // The setting must be turnable back OFF. `false` is not "absent".
+  it("persists an explicit false", async () => {
+    const res = await PUT(makeRequest({ surplusSpendAllUntilRetirement: false }), ctx);
+
+    expect(res.status).toBe(200);
+    expect(updateCalls[0].surplusSpendAllUntilRetirement).toBe(false);
+  });
+
+  it("leaves it untouched when the key is absent", async () => {
+    const res = await PUT(makeRequest({ surplusSpendPct: 0.4 }), ctx);
+
+    expect(res.status).toBe(200);
+    expect(updateCalls[0].surplusSpendAllUntilRetirement).toBeUndefined();
+  });
+
+  it("ignores a non-boolean rather than coercing it", async () => {
+    const res = await PUT(makeRequest({ surplusSpendAllUntilRetirement: "yes" }), ctx);
+
+    expect(res.status).toBe(200);
+    expect(updateCalls[0].surplusSpendAllUntilRetirement).toBeUndefined();
+  });
+});

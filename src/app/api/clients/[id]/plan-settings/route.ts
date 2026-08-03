@@ -115,6 +115,7 @@ export async function PUT(
       inflationRateSource,
       surplusSpendPct,
       surplusSaveAccountId,
+      surplusSpendAllUntilRetirement,
       coveredByWorkplacePlan,
       spouseCoveredByWorkplacePlan,
     } = body;
@@ -337,6 +338,12 @@ export async function PUT(
           surplusSaveAccountId: "surplusSaveAccountId" in body
             ? (surplusSaveAccountId === null ? null : surplusSaveAccountId)
             : undefined,
+          // Explicit false must persist (the setting has to be turnable off);
+          // an absent key stays undefined = "don't touch".
+          surplusSpendAllUntilRetirement:
+            typeof surplusSpendAllUntilRetirement === "boolean"
+              ? surplusSpendAllUntilRetirement
+              : undefined,
           inflationRateSource: inflationRateSource === "custom" || inflationRateSource === "asset_class"
             ? inflationRateSource
             : undefined,
