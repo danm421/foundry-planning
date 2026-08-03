@@ -21,6 +21,11 @@ import {
   flowYearPatch,
   type FlowPatch,
 } from "@/lib/inline-edit/flow-write";
+import {
+  isCurrentLivingHidden,
+  livingSlotRole,
+  LIVING_EDITABLE_FIELDS,
+} from "@/lib/living-expenses";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
 import { isTodaysDollars } from "@/lib/todays-dollars";
 import type { ClientInfo as EngineClientInfo, PlanSettings, Income as EngineIncome } from "@/engine/types";
@@ -1082,7 +1087,9 @@ interface ExpenseDialogProps {
 
 function ExpenseDialog({
   clientId,
-  defaultType = "living",
+  // NOT "living": that type is a closed two-row set nothing may add to, so it
+  // can never be the fallback for a fresh row.
+  defaultType = "other",
   accounts,
   familyMembers,
   clientInfo,
@@ -1133,6 +1140,10 @@ function ExpenseDialog({
   );
   const currentYear = new Date().getFullYear();
   const isEdit = Boolean(editing);
+  // A default living row exposes ONLY amount + timing. Every other field is
+  // rejected by the write core (`lib/clients/expenses-writes.ts`), so rendering
+  // its control would just produce 400s.
+  const isDefaultLiving = Boolean(editing?.isDefault) && editing?.type === "living";
 
   const expDefaultRefs = !isEdit ? defaultExpenseRefs(editing?.type ?? defaultType) : null;
   const [startYearRef, setStartYearRef] = useState<YearRef | null>(
@@ -1211,6 +1222,23 @@ function ExpenseDialog({
       isGoal: type === "education" ? true : isGoal,
     };
 
+    // BASE mode only. The write core accepts exactly `LIVING_EDITABLE_FIELDS`
+    // on a default living row and 400s on anything else — and it tests for
+    // `!== undefined`, so `cashAccountId: null` is as fatal as a real value.
+    // Imported, never retyped: a second copy of the rule is what let the
+    // original double-count drift in.
+    //
+    // The SCENARIO payload deliberately stays whole. `lib/inline-edit/
+    // flow-write.ts` owns that asymmetry: a scenario change is stored as a
+    // wholesale replace, so a narrow `desiredFields` silently DELETES whatever
+    // else that scenario had overridden on the row. Sending the full state is
+    // a no-op for unchanged fields, which diff out against the base tree.
+    const baseBody = isDefaultLiving
+      ? Object.fromEntries(
+          Object.entries(body).filter(([key]) => LIVING_EDITABLE_FIELDS.has(key)),
+        )
+      : body;
+
     try {
       const url = isEdit
         ? `/api/clients/${clientId}/expenses/${editing!.id}`
@@ -1233,7 +1261,7 @@ function ExpenseDialog({
               targetKind: "expense",
               entity: { id: newId, ...body },
             },
-        { url, method: isEdit ? "PUT" : "POST", body },
+        { url, method: isEdit ? "PUT" : "POST", body: baseBody },
       );
 
       if (!res.ok) {
@@ -1286,6 +1314,18 @@ function ExpenseDialog({
           <form id="expense-form-fields" onSubmit={handleSubmit} className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
           {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
 
+          {isDefaultLiving && (
+            <div className="rounded-md border border-gray-700 bg-gray-900/40 px-3 py-2.5">
+              <p className="text-sm font-medium text-gray-100">{editing?.name}</p>
+              <p className="mt-1 text-xs text-gray-400">
+                Living expenses are fixed to two rows — current and retirement. You can change
+                the amount and the years; the name, type and growth rate are set by the plan
+                and grow with inflation.
+              </p>
+            </div>
+          )}
+
+          {!isDefaultLiving && (<>
           <div>
             <label className="block text-sm font-medium text-gray-300" htmlFor="exp-type">Type</label>
             <select
@@ -1297,7 +1337,11 @@ function ExpenseDialog({
               disabled={Boolean(editing?.isDefault)}
               className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <option value="living">Living Expense</option>
+              {/* No "living" option: the two living rows are seeded and closed,
+                  so the type is never a choice. Kept renderable for a row that
+                  ALREADY is living but isn't flagged default (pre-backfill
+                  data) — without it that select would show a stale label. */}
+              {type === "living" && <option value="living">Living Expense</option>}
               <option value="insurance">Insurance</option>
               <option value="education">Education</option>
               <option value="other">Other</option>
@@ -1395,6 +1439,7 @@ function ExpenseDialog({
               className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             />
           </div>
+          </>)}
 
           <div className="grid grid-cols-2 gap-4">
             {hasSchedule ? (
@@ -1416,7 +1461,9 @@ function ExpenseDialog({
               </>
             ) : (
               <>
-                <div>
+                {/* Full width when the growth block below is hidden, so the
+                    amount doesn't sit in a half-empty row. */}
+                <div className={isDefaultLiving ? "col-span-2" : undefined}>
                   <label className="block text-sm font-medium text-gray-300" htmlFor="exp-amount">
                     Annual Amount ($) <span className="text-red-500">*</span>
                   </label>
@@ -1428,6 +1475,7 @@ function ExpenseDialog({
                     className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
                   />
                 </div>
+                {!isDefaultLiving && (
                 <div className={type === "education" ? undefined : "col-span-2"}>
                   <label className="block text-sm font-medium text-gray-300">Growth Rate</label>
                   <div className="mt-1">
@@ -1448,6 +1496,7 @@ function ExpenseDialog({
                     Amount in today&apos;s dollars (inflate from {planStartYear})
                   </label>
                 </div>
+                )}
               </>
             )}
 
@@ -1535,6 +1584,10 @@ function ExpenseDialog({
             </div>
           )}
 
+          {/* Medicare auto-end and the business owner both write fields the
+              write core locks on a default living row, so they go with the
+              rest of the non-editable controls. */}
+          {!isDefaultLiving && (<>
           <div className="flex flex-col gap-2 border-t border-gray-700 pt-3">
             <label className="flex items-center gap-2 text-sm text-gray-200">
               <input
@@ -1566,6 +1619,7 @@ function ExpenseDialog({
             value={ownerAccountId}
             onChange={setOwnerAccountId}
           />
+          </>)}
 
           </form>
           <div className="flex shrink-0 items-center justify-between border-t border-gray-800 bg-gray-900 px-6 py-4">
@@ -1785,6 +1839,13 @@ export default function IncomeExpensesView({
   }
 
   const milestones = clientInfo?.milestones;
+
+  // Whether the Current living row still has a window to contribute over. The
+  // rule lives in lib/living-expenses.ts; computed once here rather than
+  // per-row inside the group filter.
+  const hideCurrentLiving = clientInfo?.milestones
+    ? isCurrentLivingHidden(clientInfo.milestones, clientInfo.planStartYear)
+    : false;
 
   // Exclude SS rows from the visible income list (SS is shown in its own card)
   const nonSsIncomeList = incomeList.filter((i) => i.type !== "social_security");
@@ -2135,7 +2196,7 @@ export default function IncomeExpensesView({
                 <>
                   {expenseList.length > 0 && <EditToggle on={expenseEdit} onToggle={() => setExpenseEdit((v) => !v)} />}
                   <button
-                    onClick={() => setExpenseDialog({ open: true, defaultType: "living" })}
+                    onClick={() => setExpenseDialog({ open: true, defaultType: "other" })}
                     className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-ink"
                   >
                     + Add
@@ -2149,26 +2210,45 @@ export default function IncomeExpensesView({
             <EmptyRow message="No expense entries yet." />
           ) : (
             EXPENSE_GROUPS.map((group) => {
-              // Exclude entity- and business-account-owned rows; they render
-              // in their own rollups ("Linked Entities" / "Linked to
-              // Businesses") below and would otherwise duplicate here and
-              // double-count the per-group subtotal.
-              const items = expenseList.filter(
-                (e) =>
-                  group.types.includes(e.type) && !e.ownerEntityId && !e.ownerAccountId,
-              );
-              if (items.length === 0) return null;
-              const subtotal = items.reduce((s, e) => s + Number(e.annualAmount), 0);
               // Living-expense rows edit their amount inline. The row-level
               // click-to-open is gone for EVERY group now — the inline year and
               // rate cells make it unusable — so every group gets the pencil.
               const isLiving = group.types.includes("living");
+              // Exclude entity- and business-account-owned rows; they render
+              // in their own rollups ("Linked Entities" / "Linked to
+              // Businesses") below and would otherwise duplicate here and
+              // double-count the per-group subtotal.
+              const items = expenseList.filter((e) => {
+                if (!group.types.includes(e.type)) return false;
+                if (e.ownerEntityId || e.ownerAccountId) return false;
+                // The Current row's window ends at client retirement. Once that
+                // is past it contributes $0 to every projection, so hide it
+                // rather than show a dead row. Role comes from the row's own
+                // anchor — never from its name, which an advisor can rename.
+                if (
+                  isLiving &&
+                  hideCurrentLiving &&
+                  livingSlotRole(coerceYearRef(e.startYearRef) ?? null) === "current"
+                ) {
+                  return false;
+                }
+                return true;
+              });
+              if (items.length === 0) return null;
+              // Sums the VISIBLE rows, so the group header agrees with what is
+              // on screen once the Current row drops out.
+              const subtotal = items.reduce((s, e) => s + Number(e.annualAmount), 0);
               return (
                 <Group
                   key={group.label}
                   label={group.label}
                   total={fmt(subtotal)}
-                  onAdd={canEdit ? () => setExpenseDialog({ open: true, defaultType: group.types[0] }) : undefined}
+                  // Living expenses are a closed two-row set — no add affordance.
+                  onAdd={
+                    canEdit && !isLiving
+                      ? () => setExpenseDialog({ open: true, defaultType: group.types[0] })
+                      : undefined
+                  }
                 >
                   {items.map((expense) => {
                     const entityName = expense.ownerEntityId ? entityMap[expense.ownerEntityId]?.name : undefined;
@@ -2224,12 +2304,19 @@ export default function IncomeExpensesView({
                           )
                         }
                         rateSlot={
-                          <FlowGrowthCell
-                            row={expense}
-                            resolvedInflationRate={resolvedInflationRate}
-                            canEdit={canEdit}
-                            onSave={(patch) => saveExpenseField(expense, patch)}
-                          />
+                          // Living rows always grow with inflation and the
+                          // write core rejects a rate change on them, so the
+                          // cell states the rule instead of offering an editor.
+                          isLiving ? (
+                            <span className="text-xs text-ink-4">Inflation</span>
+                          ) : (
+                            <FlowGrowthCell
+                              row={expense}
+                              resolvedInflationRate={resolvedInflationRate}
+                              canEdit={canEdit}
+                              onSave={(patch) => saveExpenseField(expense, patch)}
+                            />
+                          )
                         }
                         editMode={canEdit && expenseEdit}
                         onDelete={canEdit && !expense.isDefault ? () => setDeletingExpense(expense) : undefined}
