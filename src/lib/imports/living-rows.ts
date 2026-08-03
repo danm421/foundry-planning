@@ -1,6 +1,7 @@
 import type { ExtractedExpense } from "@/lib/extraction/types";
 
-import type { Annotated, ImportPayload } from "./types";
+import { matchLivingSlot } from "./match-keys/living-slot";
+import { getExistingId, type Annotated, type ImportPayload } from "./types";
 
 /**
  * Normalize an extracted amount that is typed `number` but is not
@@ -28,23 +29,42 @@ export function numericAmount(raw: unknown): number | null {
  * empty set — the pre-F3 behaviour, which under-classifies rather than
  * misclassifies.
  */
-export function retirementSlotIdsFromPayload(payload: ImportPayload): ReadonlySet<string> {
+export function retirementSlotIdsFromPayload(
+  payload: Pick<ImportPayload, "expenseSlots">,
+): ReadonlySet<string> {
   return new Set(
     (payload.expenseSlots ?? []).filter((s) => s.role === "retirement").map((s) => s.id),
   );
 }
 
 /**
+ * The advisor linked this row to a seeded RETIREMENT living slot — the
+ * strongest statement there is about which phase the row describes.
+ *
+ * One copy, read by both the current-side predicate below and the two-bucket
+ * split further down. A second copy that drifts is precisely what
+ * double-counted living spending the first time.
+ */
+function isLinkedToRetirementSlot(
+  row: Annotated<ExtractedExpense>,
+  retirementSlotIds: ReadonlySet<string>,
+): boolean {
+  const existingId = getExistingId(row);
+  return existingId != null && retirementSlotIds.has(existingId);
+}
+
+/**
  * THE rule for "this extracted expense row feeds the reviewed current-living-
  * spending total on the Plan basics step".
  *
- * It is defined exactly once, here, and used from BOTH sides of the fold:
- *   - `sumExtractedLiving` (assemble) adds these rows up into the figure the
- *     advisor reviews, and
- *   - `commitExpenses` suppresses these rows when that figure is committed.
- * A second, drifting copy of this predicate is precisely what double-counted
- * living spending: the seeded slot carried the sum AND every itemized row was
- * inserted alongside it.
+ * It is defined exactly once, here, and read by `commitExpenses`, which
+ * suppresses exactly these rows when the reviewed figure is committed. The
+ * assemble side's `sumExtractedLivingByRole` no longer routes through this
+ * predicate — it needs three answers (current / retirement / neither) where
+ * this one gives two — but both go through `isLinkedToRetirementSlot` above so
+ * the retirement rule itself stays single-sourced. A second, drifting copy of
+ * that rule is precisely what double-counted living spending: the seeded slot
+ * carried the sum AND every itemized row was inserted alongside it.
  *
  * Known, deliberate edge: `commitExpenses` inserts a row with NO `type` as
  * `"living"` (`row.type ?? "living"`), but such a row is not summed here and
@@ -67,30 +87,69 @@ export function isSummedLivingRow(
   // A row the advisor linked to the retirement slot is retirement-phase
   // spending. Summing it into the current figure inflates what the advisor
   // reviews AND suppresses the row — wrong twice.
-  const existingId = row.match?.kind === "exact" ? row.match.existingId : null;
-  if (existingId != null && retirementSlotIds.has(existingId)) return false;
-  return true;
+  return !isLinkedToRetirementSlot(row, retirementSlotIds);
+}
+
+/** One bucket's reviewed figure. `count` lets the caller disclose a combination. */
+export interface LivingBucket {
+  total: number;
+  count: number;
 }
 
 /**
- * Sum every extracted living-expense row. The extraction prompt tags housing,
- * groceries, utilities, transportation, dining, etc. as separate
- * `"living"`-typed rows (see `expense-worksheet.ts`) — taking only the first
- * one silently discards the rest. `count` lets the caller disclose when more
- * than one row was combined.
+ * Split every extracted living-expense row into the two buckets the plan
+ * actually has. The extraction prompt tags housing, groceries, utilities,
+ * transportation, dining, etc. as separate `"living"` rows (see
+ * `expense-worksheet.ts`), and there is nowhere for them to land individually
+ * any more — `type: "living"` is a closed two-row set (a Current row and a
+ * Retirement row), so every extracted row has to join one total or the other.
+ *
+ * A row is RETIREMENT-side when the advisor linked it to the retirement slot
+ * (checked first — an explicit link always wins) or when `matchLivingSlot`
+ * reads its name as retirement. Everything else is CURRENT-side.
+ *
+ * A bucket with no contributing rows is `null`, not a zero: "nothing was
+ * extracted" has to stay distinguishable from "$0 was extracted" so the caller
+ * can fall through its cascade instead of publishing a fabricated zero.
  */
-export function sumExtractedLiving(
-  payload: ImportPayload,
-): { total: number; count: number } | null {
+export function sumExtractedLivingByRole(
+  payload: Pick<ImportPayload, "expenses" | "expenseSlots">,
+): { current: LivingBucket | null; retirement: LivingBucket | null } {
   const retirementSlotIds = retirementSlotIdsFromPayload(payload);
-  let total = 0;
-  let count = 0;
+  // `matchLivingSlot` needs a resolved role per slot. A payload persisted
+  // before slots carried one degrades to "current", so no slot answers a
+  // retirement lookup and every row lands in the current bucket — the same
+  // under-classify-don't-misclassify stance as `retirementSlotIdsFromPayload`.
+  const slots = (payload.expenseSlots ?? []).map((s) => ({
+    id: s.id,
+    name: s.name,
+    role: s.role ?? ("current" as const),
+  }));
+  const acc = {
+    current: { total: 0, count: 0 },
+    retirement: { total: 0, count: 0 },
+  };
+
   for (const row of payload.expenses) {
-    if (!isSummedLivingRow(row, retirementSlotIds)) continue;
-    total += numericAmount(row.annualAmount)!;
-    count += 1;
+    if (row.type !== "living") continue;
+    const amount = numericAmount(row.annualAmount);
+    if (amount == null) continue;
+
+    const slotMatch = matchLivingSlot(row, slots);
+    const namedRetirement =
+      slotMatch?.kind === "exact" && retirementSlotIds.has(slotMatch.existingId);
+
+    const isRetirement =
+      isLinkedToRetirementSlot(row, retirementSlotIds) || namedRetirement;
+    const bucket = isRetirement ? acc.retirement : acc.current;
+    bucket.total += amount;
+    bucket.count += 1;
   }
-  return count > 0 ? { total, count } : null;
+
+  return {
+    current: acc.current.count > 0 ? acc.current : null,
+    retirement: acc.retirement.count > 0 ? acc.retirement : null,
+  };
 }
 
 /**
@@ -108,6 +167,11 @@ export function sumExtractedLiving(
  * Blank stays blank: no `planBasics` block, or a null/cleared value, means the
  * slot keeps its seeded $0 and the itemized rows MUST still be inserted —
  * losing the spending outright is worse than double counting it.
+ *
+ * DELETE WITH TASK 5. Its only caller is `commit/expenses.ts`, which Task 5
+ * rewrites to stop inserting living rows at all — at which point the fold, and
+ * this predicate, have nothing left to decide. Kept here only so this commit
+ * builds.
  */
 export function livingTotalSupersedesRows(payload: ImportPayload): boolean {
   return payload.planBasics?.currentLivingSpending.value != null;

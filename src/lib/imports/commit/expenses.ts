@@ -29,9 +29,10 @@ import { resolveImportTiming } from "./timing";
  * default to a `currentYear + 30` end year that runs straight through
  * retirement alongside the derived retirement figure on its own slot.
  *
- * Which rows fed the sum is decided by `isSummedLivingRow` — the SAME
- * predicate `sumExtractedLiving` uses to build the figure, imported rather
- * than restated, because a second copy that drifts recreates the bug.
+ * Which rows fed the sum is decided by `isSummedLivingRow`, imported rather
+ * than restated, because a second copy that drifts recreates the bug. It
+ * shares its retirement-link rule with the assemble side's
+ * `sumExtractedLivingByRole` (both call `isLinkedToRetirementSlot`).
  */
 export async function commitExpenses(
   tx: Tx,

@@ -167,6 +167,131 @@ describe("retirementLivingSpending", () => {
   });
 });
 
+/**
+ * `type: "living"` is a closed two-row set — one Current row and one
+ * Retirement row — so every extracted living row has to land in one of those
+ * two buckets. A row is retirement-side when the advisor linked it to the
+ * retirement slot, or when its name reads as retirement (`matchLivingSlot`).
+ */
+describe("two-bucket living totals", () => {
+  const slots: ImportPayload["expenseSlots"] = [
+    { id: "slot-current", name: "Living Expenses", role: "current" },
+    { id: "slot-retirement", name: "Retirement Living Expenses", role: "retirement" },
+  ];
+
+  it("sums current-side rows and derives retirement at 80% when nothing is retirement-side", () => {
+    const b = derivePlanBasics(input({
+      payload: payload({
+        expenseSlots: slots,
+        expenses: [
+          { name: "Housing", type: "living", annualAmount: 24000 },
+          { name: "Groceries", type: "living", annualAmount: 12000 },
+          { name: "Utilities", type: "living", annualAmount: 6000 },
+        ],
+      }),
+    }));
+    expect(b.currentLivingSpending.value).toBe(42000);
+    expect(b.currentLivingSpending.provenance).toBe("document");
+    expect(b.retirementLivingSpending.value).toBe(
+      Math.round(42000 * RETIREMENT_SPENDING_REPLACEMENT_RATIO),
+    );
+    expect(b.retirementLivingSpending.provenance).toBe("derived");
+  });
+
+  it("prefers an extracted retirement-side row over the 80% cascade", () => {
+    const b = derivePlanBasics(input({
+      payload: payload({
+        expenseSlots: slots,
+        expenses: [
+          { name: "Household Budget", type: "living", annualAmount: 100000 },
+          { name: "Retirement Living Expenses", type: "living", annualAmount: 62000 },
+        ],
+      }),
+    }));
+    expect(b.currentLivingSpending.value).toBe(100000);
+    expect(b.retirementLivingSpending.value).toBe(62000);
+    expect(b.retirementLivingSpending.provenance).toBe("document");
+    // One contributing row per bucket — nothing was combined, nothing to say.
+    expect(b.retirementLivingSpending.reason).toBeUndefined();
+  });
+
+  it("never counts a retirement-side row toward the current total", () => {
+    const b = derivePlanBasics(input({
+      payload: payload({
+        expenseSlots: slots,
+        expenses: [
+          { name: "Total Expenses", type: "living", annualAmount: 80000 },
+          { name: "Retirement Spending Need", type: "living", annualAmount: 60000 },
+        ],
+      }),
+    }));
+    expect(b.currentLivingSpending.value).toBe(80000);
+    expect(b.retirementLivingSpending.value).toBe(60000);
+  });
+
+  it("routes a row by the advisor's link when the name says nothing about retirement", () => {
+    const b = derivePlanBasics(input({
+      payload: payload({
+        expenseSlots: slots,
+        expenses: [
+          { name: "Living Expenses", type: "living", annualAmount: 100000 },
+          // `matchLivingSlot` reads nothing retirement-ish here — only the
+          // explicit link puts it in the retirement bucket.
+          { name: "Post-Career Budget", type: "living", annualAmount: 62000,
+            match: { kind: "exact", existingId: "slot-retirement" } },
+        ],
+      }),
+    }));
+    expect(b.currentLivingSpending.value).toBe(100000);
+    expect(b.retirementLivingSpending.value).toBe(62000);
+    expect(b.retirementLivingSpending.provenance).toBe("document");
+  });
+
+  it("sums multiple retirement-side rows and discloses the count", () => {
+    const b = derivePlanBasics(input({
+      payload: payload({
+        expenseSlots: slots,
+        expenses: [
+          { name: "Living Expenses", type: "living", annualAmount: 100000 },
+          { name: "Retirement Living Expenses", type: "living", annualAmount: 40000 },
+          { name: "Retirement Spending Need", type: "living", annualAmount: 20000 },
+        ],
+      }),
+    }));
+    expect(b.retirementLivingSpending.value).toBe(60000);
+    expect(b.retirementLivingSpending.reason).toBe(
+      "Summed from 2 extracted retirement-spending rows.",
+    );
+  });
+
+  /**
+   * Deliberate, not incidental: a payload with no slot roles (persisted before
+   * the field existed) has no retirement slot to match against, so every row
+   * lands in the current bucket. Under-classifying beats misclassifying —
+   * see `retirementSlotIdsFromPayload`.
+   */
+  it("treats every living row as current when the payload carries no slots", () => {
+    const b = derivePlanBasics(input({
+      payload: payload({
+        expenses: [
+          { name: "Living Expenses", type: "living", annualAmount: 80000 },
+          { name: "Retirement Living Expenses", type: "living", annualAmount: 60000 },
+        ],
+      }),
+    }));
+    expect(b.currentLivingSpending.value).toBe(140000);
+    expect(b.retirementLivingSpending.value).toBe(
+      Math.round(140000 * RETIREMENT_SPENDING_REPLACEMENT_RATIO),
+    );
+  });
+
+  it("leaves both buckets blank when nothing was extracted and there is no tax return", () => {
+    const b = derivePlanBasics(input({ payload: payload({ expenseSlots: slots }) }));
+    expect(b.currentLivingSpending.value).toBeNull();
+    expect(b.retirementLivingSpending.value).toBeNull();
+  });
+});
+
 describe("social security", () => {
   it("emits one entry per person and blanks PIA with no evidence", () => {
     const b = derivePlanBasics(input({

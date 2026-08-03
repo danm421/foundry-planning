@@ -1,5 +1,5 @@
 import { fraForBirthDate } from "@/engine/socialSecurity/fra";
-import { numericAmount, sumExtractedLiving } from "../living-rows";
+import { numericAmount, sumExtractedLivingByRole, type LivingBucket } from "../living-rows";
 import type { ImportPayload } from "../types";
 import type { AssemblePlanBasics, PlanBasicsField } from "./types";
 import { blank } from "./field";
@@ -102,6 +102,22 @@ function claimingAgeField(dob: string | undefined): PlanBasicsField<number> {
 }
 
 /**
+ * A living bucket as the advisor sees it. `count` drives the disclosure: one
+ * contributing row is not a combination, so there is nothing to explain and no
+ * chip; two or more says how many rows were added together, because the figure
+ * on screen then matches no single line in the document.
+ */
+function livingBucketField(bucket: LivingBucket, rowNoun: string): PlanBasicsField<number> {
+  return bucket.count > 1
+    ? {
+        value: bucket.total,
+        provenance: "document",
+        reason: `Summed from ${bucket.count} extracted ${rowNoun}.`,
+      }
+    : { value: bucket.total, provenance: "document" };
+}
+
+/**
  * Derive the plan-level values from evidence. Pure and deterministic — no
  * Date.now, no Math.random, no IO. The tax-return read happens in the caller
  * and arrives as an argument, mirroring how fillAssumptions takes `known`.
@@ -113,18 +129,14 @@ export function derivePlanBasics(input: DerivePlanBasicsInput): AssemblePlanBasi
   const { payload, known, mode, taxReturn } = input;
   const ageProvenance = mode === "new" ? "build_request" : "client_record";
 
-  // ── Current living spending: extracted (summed) → AGI − totalTax → blank ──
+  // ── Living spending, two buckets. ──
+  //  current:    extracted (summed) → AGI − totalTax → blank
+  //  retirement: extracted (summed) → 80% of current → blank
+  const buckets = sumExtractedLivingByRole(payload);
+
   let currentLivingSpending: PlanBasicsField<number>;
-  const stated = sumExtractedLiving(payload);
-  if (stated != null) {
-    currentLivingSpending =
-      stated.count > 1
-        ? {
-            value: stated.total,
-            provenance: "document",
-            reason: `Summed from ${stated.count} extracted living-expense rows.`,
-          }
-        : { value: stated.total, provenance: "document" };
+  if (buckets.current != null) {
+    currentLivingSpending = livingBucketField(buckets.current, "living-expense rows");
   } else if (taxReturn && taxReturn.agi != null && taxReturn.totalTax != null) {
     currentLivingSpending = {
       value: taxReturn.agi - taxReturn.totalTax,
@@ -137,15 +149,21 @@ export function derivePlanBasics(input: DerivePlanBasicsInput): AssemblePlanBasi
     currentLivingSpending = blank<number>();
   }
 
-  // ── Retirement spending cascades off whatever current resolved to. ──
-  const retirementLivingSpending: PlanBasicsField<number> =
-    currentLivingSpending.value == null
-      ? blank<number>()
-      : {
-          value: Math.round(currentLivingSpending.value * RETIREMENT_SPENDING_REPLACEMENT_RATIO),
-          provenance: "derived",
-          reason: "Estimated at 80% of current living expenses.",
-        };
+  // An extracted retirement figure is a document FACT and outranks the
+  // replacement-ratio convention. The cascade off current stays as the
+  // fallback for the (common) document that states only today's spending.
+  let retirementLivingSpending: PlanBasicsField<number>;
+  if (buckets.retirement != null) {
+    retirementLivingSpending = livingBucketField(buckets.retirement, "retirement-spending rows");
+  } else if (currentLivingSpending.value != null) {
+    retirementLivingSpending = {
+      value: Math.round(currentLivingSpending.value * RETIREMENT_SPENDING_REPLACEMENT_RATIO),
+      provenance: "derived",
+      reason: "Estimated at 80% of current living expenses.",
+    };
+  } else {
+    retirementLivingSpending = blank<number>();
+  }
 
   const owners: Array<{ owner: "client" | "spouse"; dob?: string }> = [
     { owner: "client", dob: known.primaryDob },

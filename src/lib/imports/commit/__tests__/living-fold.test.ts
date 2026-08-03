@@ -15,7 +15,7 @@ import { commitPlanBasics } from "../plan-basics";
 import {
   isSummedLivingRow,
   retirementSlotIdsFromPayload,
-  sumExtractedLiving,
+  sumExtractedLivingByRole,
 } from "@/lib/imports/living-rows";
 
 /**
@@ -285,8 +285,12 @@ describe("F3 — phase-aware living-row predicate", () => {
     expect(isSummedLivingRow(payload.expenses[0], retirementIds)).toBe(true);
     expect(isSummedLivingRow(payload.expenses[1], retirementIds)).toBe(false);
 
-    // The figure the advisor reviews is 60000, not 108000.
-    expect(sumExtractedLiving(payload)).toEqual({ total: 60000, count: 1 });
+    // The figure the advisor reviews is 60000, not 108000 — and the retirement
+    // row is not merely excluded, it lands in the retirement bucket.
+    expect(sumExtractedLivingByRole(payload)).toEqual({
+      current: { total: 60000, count: 1 },
+      retirement: { total: 48000, count: 1 },
+    });
   });
 
   it("treats a payload with no slot roles as all-current (back-compat)", () => {
