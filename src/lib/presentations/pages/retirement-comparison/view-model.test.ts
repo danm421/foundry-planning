@@ -96,6 +96,29 @@ describe("buildRetirementComparisonData", () => {
     expect(d.maxSpend.series.length).toBeGreaterThan(0);
   });
 
+  it("hides the max-spend block and KPI when either side has no retirement living-expense row", () => {
+    // solveMaxSpending's "no-retirement-expense" status means realAnnualSpend
+    // is a stub 0, not a solved max spend — it must never render as one (the
+    // same silently-wrong-number class the guard on solveMaxSpending itself
+    // was added to prevent).
+    const baseWithoutLever = bundle(baseYears, 0.73, 0, [], 1_500_000) as unknown as Record<string, unknown>;
+    const noLeverBase = {
+      ...baseWithoutLever,
+      maxSpend: { realAnnualSpend: 0, scaleFactor: 0, achievedPoS: 0.99, status: "no-retirement-expense" },
+    };
+    const ctxNoLever = {
+      bundlesByRef: {
+        base: noLeverBase,
+        "scenario:s1": bundle(scnYears, 0.91, 110_000, scnAccounts, 13_900_000),
+      },
+    } as unknown as BuildDataContext;
+    const d = buildRetirementComparisonData(ctxNoLever, opts);
+    expect(d.maxSpend.show).toBe(false);
+    expect(d.maxSpend.series).toEqual([]);
+    const maxSpendKpi = d.kpis.find((k) => k.label === "Max sustainable spend")!;
+    expect(maxSpendKpi.show).toBe(false);
+  });
+
   it("builds the 4 headline KPIs that improve", () => {
     const d = buildRetirementComparisonData(ctx, opts);
     const labels = d.kpis.map((k) => k.label);

@@ -1,6 +1,7 @@
 import type { BuildDataContext } from "@/components/presentations/registry";
 import type { Account, ClientData, ProjectionYear } from "@/engine/types";
 import { resolveScenarioRef, keyForRef } from "@/lib/scenario/presentation-refs";
+import { isMaxSpendAvailable } from "@/lib/solver/solve-max-spending";
 import { buildRetirementComparisonMetrics } from "./metrics";
 import { buildTaxBuckets, type TaxBuckets } from "./tax-buckets";
 import { fmtUsdCompact } from "./format";
@@ -94,10 +95,15 @@ export function buildRetirementComparisonData(
   // ── Max sustainable spending: inflate the solved real (today's $) figure forward. ──
   const planStartYear = scnBundle.clientData.planSettings.planStartYear;
   const inflation = scnBundle.clientData.planSettings.inflationRate ?? 0;
+  // isMaxSpendAvailable excludes both a missing result AND the honest
+  // "no-retirement-expense" status — that status's realAnnualSpend is a stub
+  // 0, not a solved max spend, so it must never render as one.
   const baseToday = baseBundle.maxSpend?.realAnnualSpend ?? 0;
   const scnToday = scnBundle.maxSpend?.realAnnualSpend ?? 0;
   const maxSpendShow =
-    options.maxSpend.show && baseBundle.maxSpend != null && scnBundle.maxSpend != null;
+    options.maxSpend.show &&
+    isMaxSpendAvailable(baseBundle.maxSpend) &&
+    isMaxSpendAvailable(scnBundle.maxSpend);
   const series: MaxSpendPoint[] = [];
   if (maxSpendShow) {
     // Start at retirement, but never before the current year (already-retired
@@ -148,7 +154,8 @@ export function buildRetirementComparisonData(
   const scnLegacy = metrics.matrix.scenarioAtEnd.total;
   const baseDownside = endingP20(baseBundle.monteCarlo?.summary.byYear);
   const scnDownside = endingP20(scnBundle.monteCarlo?.summary.byYear);
-  const maxSpendAvailable = baseBundle.maxSpend != null && scnBundle.maxSpend != null;
+  const maxSpendAvailable =
+    isMaxSpendAvailable(baseBundle.maxSpend) && isMaxSpendAvailable(scnBundle.maxSpend);
 
   const kpis: KpiCard[] = [
     {

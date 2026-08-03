@@ -19,6 +19,7 @@ import { describeChangeUnit, type ChangeUnit } from "@/lib/scenario/scenario-cha
 import { buildRetirementComparisonMetrics } from "./metrics";
 import { buildRetirementComparisonAiPrompt } from "./ai-prompt";
 import { getOrComputeMaxSpending } from "@/lib/compute-cache/max-spending";
+import { isMaxSpendAvailable } from "@/lib/solver/solve-max-spending";
 import { hashAiRequest, getCachedAnalysis, setCachedAnalysis } from "@/lib/presentations/ai-cache";
 import { callAIExtraction } from "@/lib/extraction/azure-client";
 import type { ScenarioChange, ToggleGroup } from "@/engine/scenario/types";
@@ -167,7 +168,14 @@ export async function generateRetirementComparisonAi(
   const firstNames = spouseFirst ? `${firstName} and ${spouseFirst}` : firstName;
   const householdName = `the ${client.lastName ?? firstName} household`;
 
-  const maxSpend = baseMs && scnMs ? { base: baseMs.realAnnualSpend, scenario: scnMs.realAnnualSpend } : undefined;
+  // isMaxSpendAvailable excludes the honest "no-retirement-expense" status —
+  // its realAnnualSpend is a stub 0, not a solved max spend, and must never
+  // reach the AI narrative as if it were one (this reads baseMs/scnMs
+  // independently of the view-model, so it needs its own gate).
+  const maxSpend =
+    isMaxSpendAvailable(baseMs) && isMaxSpendAvailable(scnMs)
+      ? { base: baseMs.realAnnualSpend, scenario: scnMs.realAnnualSpend }
+      : undefined;
   const downside = base.summary && scn.summary
     ? { baseEndP20: base.summary.ending.p20, scnEndP20: scn.summary.ending.p20 }
     : undefined;

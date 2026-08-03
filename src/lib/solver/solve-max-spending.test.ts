@@ -100,6 +100,28 @@ describe("solveMaxSpending", () => {
     expect(calls).toBe(1);
   });
 
+  it("does NOT fire the no-lever guard when a retirement row exists at annualAmount: 0 — still runs the even-split search", async () => {
+    // The plan's own already-verified financial-correctness note: a retirement
+    // row present but summing to $0 must reach the even-split *update* branch,
+    // not be treated as "no lever to solve". The guard checks retirement-ROW
+    // EXISTENCE via isRetirementLivingExpense, not the row's dollar sum — a
+    // mutant that swapped it for `retirementLivingExpenseTotal(tree) === 0`
+    // would pass every other test in this file (none has a $0-sum row present)
+    // but would wrongly short-circuit this one.
+    const zeroAmountRow = {
+      planSettings: { planStartYear: 2026, inflationRate: 0.025 },
+      incomes: [],
+      accounts: [],
+      expenses: [
+        { id: "ret", type: "living", name: "Retirement Living", annualAmount: 0,
+          startYear: 2040, endYear: 2070, growthRate: 0.025 },
+      ],
+    } as unknown as ClientData;
+    const r = await solveMaxSpending(args({ tree: zeroAmountRow }));
+    expect(r.status).toBe("converged");
+    expect(r.realAnnualSpend).toBe(30_000); // same $30k crossing as linearPoS elsewhere
+  });
+
   it("re-selects at higher trials, correcting a pessimistic 250-trial prefix", async () => {
     // 500-trial PoS is the truth (0.85 at $30k); the 250-trial prefix reads 0.03 low,
     // so phase 1 alone would undershoot.

@@ -566,6 +566,19 @@ export function buildWhatIfTools(toolCtx: ForgeToolContext): StructuredToolInter
         targetPoS,
       });
 
+      // "no-retirement-expense" means the lever had nothing to solve against —
+      // realAnnualSpend/scaleFactor are stub 0s, NOT a solved max spend. Handing
+      // the model the normal disclaimer would assert "$0/yr is your max
+      // sustainable spend" as fact, so state the real situation instead.
+      const disclaimer =
+        result.status === "no-retirement-expense"
+          ? "This plan has no retirement living-expense row to solve against, so " +
+            "realAnnualSpend and scaleFactor are both 0 — this is NOT a solved max " +
+            "spend, just an unavailable-lever marker. achievedPoS is instead the " +
+            "plan's actual current plan confidence, unchanged. Observations only, not advice."
+          : "realAnnualSpend is the maximum sustainable retirement spend (today's dollars, rounded " +
+            "to $5k) whose plan confidence lands closest to the target. Observations only, not advice.";
+
       return JSON.stringify({
         scenarioId,
         targetPoS,
@@ -573,9 +586,7 @@ export function buildWhatIfTools(toolCtx: ForgeToolContext): StructuredToolInter
         realAnnualSpend: result.realAnnualSpend, // today's dollars, rounded to $5k
         scaleFactor: result.scaleFactor,
         achievedPoS: result.achievedPoS, // 250-trial PoS at the solved spend
-        disclaimer:
-          "realAnnualSpend is the maximum sustainable retirement spend (today's dollars, rounded " +
-          "to $5k) whose plan confidence lands closest to the target. Observations only, not advice.",
+        disclaimer,
       });
     },
     {

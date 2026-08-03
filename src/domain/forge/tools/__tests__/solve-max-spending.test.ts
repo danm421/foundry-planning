@@ -81,6 +81,27 @@ describe("solve_max_spending", () => {
     expect(out.status).toBe("converged");
   });
 
+  it("does not assert $0/yr is a solved max spend under no-retirement-expense", async () => {
+    // The disclaimer must not claim realAnnualSpend is a real answer when the
+    // solver's guard reports the honest "no lever to solve" status — handing
+    // the model "$0 is your max sustainable spend" as fact would be the same
+    // silently-wrong-number class the guard itself exists to prevent.
+    solveMaxSpending.mockResolvedValue({
+      realAnnualSpend: 0,
+      scaleFactor: 0,
+      achievedPoS: 0.97,
+      status: "no-retirement-expense",
+    } satisfies MaxSpendResult);
+    const tool = toolByName("solve_max_spending");
+    const out = JSON.parse(
+      String(await tool.invoke({ clientId: "client-1", scenarioId: "base", targetPoS: 0.85 })),
+    );
+    expect(out.status).toBe("no-retirement-expense");
+    expect(out.realAnnualSpend).toBe(0);
+    expect(out.disclaimer).not.toMatch(/realAnnualSpend is the maximum sustainable/i);
+    expect(out.disclaimer).toMatch(/not.{0,20}solved|NOT a solved/i);
+  });
+
   it("blocks a cross-scope clientId", async () => {
     const tool = toolByName("solve_max_spending");
     const out = String(await tool.invoke({ clientId: "x", scenarioId: "base", targetPoS: 0.85 }));

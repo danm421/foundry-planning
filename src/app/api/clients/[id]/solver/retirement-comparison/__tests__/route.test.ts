@@ -41,7 +41,16 @@ vi.mock("@/lib/compute-cache/solver-mc", () => ({
 }));
 vi.mock("@/lib/compute-cache/max-spending", () => ({ getOrComputeMaxSpending: vi.fn(async () => ({ realAnnualSpend: 120000 })) }));
 vi.mock("@/lib/projection/load-monte-carlo-data", () => ({ loadMonteCarloData: vi.fn(async () => ({})) }));
-vi.mock("@/lib/solver/solve-max-spending", () => ({ solveMaxSpending: vi.fn(async () => ({ realAnnualSpend: 135000 })) }));
+vi.mock("@/lib/solver/solve-max-spending", () => ({
+  solveMaxSpending: vi.fn(async () => ({ realAnnualSpend: 135000 })),
+  // The real buildRetirementComparisonData (unmocked — this test proves
+  // integration) imports isMaxSpendAvailable from this same module, so a
+  // wholesale mock must provide it too. Mirror the real predicate rather than
+  // stubbing `true` unconditionally, so a real gating regression would still
+  // show up here.
+  isMaxSpendAvailable: (r: unknown) =>
+    r != null && (r as { status?: string }).status !== "no-retirement-expense",
+}));
 // The real builder runs against the assembled bundles — no mock, proves integration.
 
 import { POST } from "../route";

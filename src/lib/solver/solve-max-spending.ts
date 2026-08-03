@@ -65,6 +65,18 @@ export interface MaxSpendResult {
   status: "converged" | "unreachable" | "max-iterations" | "no-retirement-expense";
 }
 
+/** True when `result` is a real, renderable/narratable answer — i.e. its
+ *  `realAnnualSpend` reflects an actual solve. False for a missing result
+ *  (solve skipped/failed upstream) or the honest `"no-retirement-expense"`
+ *  case, whose `realAnnualSpend: 0` is a stub, not a solved $0/yr max spend.
+ *  Every consumer that renders or narrates a `MaxSpendResult` must gate on
+ *  this — defined once here so the check can't drift between call sites. */
+export function isMaxSpendAvailable(
+  result: MaxSpendResult | null | undefined,
+): result is MaxSpendResult {
+  return result != null && result.status !== "no-retirement-expense";
+}
+
 export interface SolveMaxSpendingArgs {
   tree: ClientData;
   mcPayload: MonteCarloPayload;
