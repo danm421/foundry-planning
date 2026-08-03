@@ -183,6 +183,16 @@ describe("living-expense fold: unconditional — there is no insert branch to fa
   const FOLDED_3 =
     "3 extracted living-expense rows were totalled into the Current and Retirement " +
     "living-expense rows on Plan basics and not written as separate expense rows.";
+  /**
+   * The second warning, and the reason there are two. "Totalled into the …
+   * rows on Plan basics" is only true of a figure the advisor left non-blank —
+   * `commitPlanBasics` skips a null one. Where it is blank the folded spending
+   * landed NOWHERE, and a lone "totalled into" would assert the opposite of
+   * what happened in exactly the case where money went missing.
+   */
+  const BOTH_BLANK =
+    "The Current and Retirement living-expense figures are blank on Plan basics, " +
+    "so that spending is NOT in the plan. Enter it there if it should count.";
 
   it("folds even when the payload carries no planBasics", async () => {
     const fake = makeFakeTx();
@@ -194,7 +204,10 @@ describe("living-expense fold: unconditional — there is no insert branch to fa
 
     expect(expensesResult.created).toBe(0);
     expect(expensesResult.skipped).toBe(3);
-    expect(expensesResult.warnings).toEqual([FOLDED_3]);
+    // No planBasics block at all, so neither figure was written: the commit
+    // result has to say the spending is not in the plan, not just that it was
+    // "totalled into" rows that nothing wrote.
+    expect(expensesResult.warnings).toEqual([FOLDED_3, BOTH_BLANK]);
     expect(expenseCalls(fake, "insert")).toHaveLength(0);
   });
 
@@ -213,12 +226,13 @@ describe("living-expense fold: unconditional — there is no insert branch to fa
     const expensesResult = await commitExpenses(fake.tx, reviewed, CTX);
 
     // A cleared figure commits as no-change, so the slot keeps its seeded $0
-    // and the itemized detail is not resurrected as rows. The advisor blanked
-    // the field on purpose; the warning tells them what that cost.
+    // and the itemized detail is not resurrected as rows. 42,000 of extracted
+    // spending is now in NEITHER place — so the second warning is the whole
+    // disclosure, and this is the case that proves it fires.
     expect(expenseCalls(fake, "update")).toHaveLength(0);
     expect(expensesResult.created).toBe(0);
-    expect(expensesResult.warnings).toEqual([FOLDED_3]);
     expect(currentPeriodLivingTotal(fake)).toBe(0);
+    expect(expensesResult.warnings).toEqual([FOLDED_3, BOTH_BLANK]);
   });
 
   it("folds even when there is no seeded slot at all", async () => {
@@ -235,6 +249,10 @@ describe("living-expense fold: unconditional — there is no insert branch to fa
     // fold, because inserting a living row is no longer legal.
     expect(expenseCalls(fake, "update")).toHaveLength(0);
     expect(expensesResult.created).toBe(0);
+    // ONE warning: both figures are non-blank, so the blank-figure disclosure
+    // stays silent. Money is still lost here (there is no slot to write it to),
+    // and that gap is the documented residual on the warning — 0229 closes it
+    // at the source rather than this module detecting it.
     expect(expensesResult.warnings).toEqual([FOLDED_3]);
   });
 
@@ -599,6 +617,12 @@ describe("the fold reaches the UPDATE branch too, not just the insert branch", (
     expect(result.skipped).toBe(1);
     expect(result.warnings.join(" ")).toContain(
       "totalled into the Current and Retirement living-expense rows",
+    );
+    // Only the CURRENT figure is set on this payload, so the disclosure names
+    // the retirement one alone — and in the singular.
+    expect(result.warnings).toContain(
+      "The Retirement living-expense figure is blank on Plan basics, so that " +
+        "spending is NOT in the plan. Enter it there if it should count.",
     );
   });
 });

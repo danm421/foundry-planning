@@ -70,10 +70,14 @@ function isLinkedToSlot(
  * other, which is how spending goes missing.
  *
  * The fold in `commitExpenses` is deliberately WIDER: it suppresses every
- * `type: "living"` row, including one this test rejects for a zero or absent
- * amount. That is safe in exactly one direction — a row this test rejects
- * carries no money to lose — and it is why the fold can key on the type alone
- * without importing this predicate.
+ * `type: "living"` row, including one this test rejects. That is why the fold
+ * can key on the type alone without importing this predicate — but the gap is
+ * not empty. A rejected row carries no PARSEABLE money, which is not the same
+ * as no money: `numericAmount` takes only finite values above zero, and the
+ * extraction schema lets a raw string through, so an amount like "24,000" is
+ * folded here and banked nowhere. Pre-existing (the fold and this test have
+ * always disagreed on that row) and unchanged by the closed set, but do not
+ * read this as "safe".
  *
  * Known, deliberate edge: a row with NO `type` is not counted here, and
  * `commitExpenses` writes it as a separate `"other"` expense row. That leaves

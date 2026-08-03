@@ -1336,7 +1336,7 @@ describe("commitExpenses", () => {
  * assemble↔commit seam these unit cases sit under.
  */
 describe("commitExpenses living closed set", () => {
-  const livingInserts = (calls: FakeTxCall[]) =>
+  const expenseInserts = (calls: FakeTxCall[]) =>
     callsForTable(calls, "expenses")
       .filter((c) => c.op === "insert")
       .map((c) => (c as { values: Record<string, unknown> }).values);
@@ -1355,10 +1355,15 @@ describe("commitExpenses living closed set", () => {
 
     const result = await commitExpenses(tx, payload, ctx);
 
-    expect(livingInserts(calls)).toHaveLength(0);
+    expect(expenseInserts(calls)).toHaveLength(0);
     expect(result.created).toBe(0);
     expect(result.skipped).toBe(2);
     expect(result.warnings.join(" ")).toMatch(/totalled into the Current and Retirement/i);
+    // …and, because there is no planBasics block to have written either figure,
+    // the honest half: that spending is not in the plan at all.
+    expect(result.warnings.join(" ")).toMatch(
+      /Current and Retirement living-expense figures are blank on Plan basics, so that spending is NOT in the plan/i,
+    );
   });
 
   it("types an extracted row with no type as other, not living", async () => {
@@ -1370,8 +1375,8 @@ describe("commitExpenses living closed set", () => {
 
     await commitExpenses(tx, payload, ctx);
 
-    expect(livingInserts(calls)).toHaveLength(1);
-    expect(livingInserts(calls)[0].type).toBe("other");
+    expect(expenseInserts(calls)).toHaveLength(1);
+    expect(expenseInserts(calls)[0].type).toBe("other");
   });
 
   it("still inserts non-living rows normally", async () => {
@@ -1386,7 +1391,7 @@ describe("commitExpenses living closed set", () => {
     const result = await commitExpenses(tx, payload, ctx);
 
     expect(result.created).toBe(1);
-    expect(livingInserts(calls)[0].type).toBe("insurance");
+    expect(expenseInserts(calls)[0].type).toBe("insurance");
   });
 });
 
