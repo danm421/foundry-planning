@@ -502,9 +502,12 @@ export default function ReviewWizard({
     return map;
   }, [canonical.accounts]);
 
-  // Match-column candidates for review-step-expenses (living-expense slot linking).
+  // Match-column candidates for review-step-expenses (living-expense slot
+  // linking). `role` rides along so the review step's bucket totals can
+  // classify a row by its link instead of re-deriving the role from the
+  // slot's name.
   const expenseCandidates: MatchCandidate[] = useMemo(
-    () => (payload.expenseSlots ?? []).map((s) => ({ id: s.id, name: s.name })),
+    () => (payload.expenseSlots ?? []).map((s) => ({ id: s.id, name: s.name, role: s.role })),
     [payload.expenseSlots],
   );
   const expenseMatches = expenses.map((e) => e.match);

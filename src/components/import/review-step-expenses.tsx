@@ -4,6 +4,8 @@ import type { ExtractedExpense, ExpenseType } from "@/lib/extraction/types";
 import type { ClientMilestones, YearRef } from "@/lib/milestones";
 import type { MatchAnnotation } from "@/lib/imports/types";
 import { candidatesForRow } from "@/lib/imports/candidates-for-row";
+import { sumExtractedLivingByRole } from "@/lib/imports/living-rows";
+import { RETIREMENT_SPENDING_REPLACEMENT_RATIO } from "@/lib/imports/assemble/plan-basics";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
@@ -15,8 +17,10 @@ import SourceBadge from "./source-badge";
 // to flag fields the AI didn't extract.
 const TINT_EMPTY = "bg-amber-900/20 border-amber-600/50";
 
+// No "Living" option: living expenses are a closed two-row set (Current +
+// Retirement) that this step totals into, never creates. See
+// lib/living-expenses.ts.
 const EXPENSE_TYPE_OPTIONS: { value: ExpenseType; label: string }[] = [
-  { value: "living", label: "Living" },
   { value: "other", label: "Other" },
   { value: "insurance", label: "Insurance" },
 ];
@@ -82,7 +86,7 @@ export default function ReviewStepExpenses({
   const addRow = () => {
     onChange([
       ...expenses,
-      { name: "", type: "living", startYear: defaultStartYear, endYear: defaultEndYear },
+      { name: "", type: "other", startYear: defaultStartYear, endYear: defaultEndYear },
     ]);
   };
 
@@ -103,6 +107,36 @@ export default function ReviewStepExpenses({
           + Add Row
         </button>
       </div>
+
+      {(() => {
+        // Mirror what the commit will actually do, so the advisor sees the two
+        // figures BEFORE committing rather than discovering them afterward.
+        const buckets = sumExtractedLivingByRole({
+          expenses: expenses.map((e, i) => ({ ...e, match: matches?.[i] })),
+          expenseSlots: candidates.map((c) => ({ id: c.id, name: c.name, role: c.role })),
+        });
+        if (!buckets.current && !buckets.retirement) return null;
+        const fmt = (n: number) => `$${n.toLocaleString()}`;
+        const derived = buckets.current && !buckets.retirement
+          ? Math.round(buckets.current.total * RETIREMENT_SPENDING_REPLACEMENT_RATIO)
+          : null;
+        return (
+          <div className="rounded border border-accent/40 bg-accent/10 px-3 py-2 text-sm text-gray-200">
+            <p className="font-medium text-accent">Living expenses are totalled into two rows</p>
+            <p className="mt-1 text-xs text-gray-300">
+              {buckets.current && (
+                <>Current {fmt(buckets.current.total)} from {buckets.current.count}{" "}
+                  {buckets.current.count === 1 ? "row" : "rows"}</>
+              )}
+              {buckets.retirement && (
+                <> · Retirement {fmt(buckets.retirement.total)} from {buckets.retirement.count}{" "}
+                  {buckets.retirement.count === 1 ? "row" : "rows"}</>
+              )}
+              {derived != null && <> · Retirement {fmt(derived)} (estimated at 80%)</>}
+            </p>
+          </div>
+        );
+      })()}
 
       <div className="space-y-3">
         {expenses.map((expense, i) => {

@@ -20,6 +20,13 @@ export interface MatchCandidate {
   subtitle?: string;
   /** Optional fuzzy match score (0-1); shown when present. */
   score?: number;
+  /**
+   * Set only for the two seeded living-expense slots (Current/Retirement).
+   * Sourced from `payload.expenseSlots[].role` (see `lib/imports/match.ts`)
+   * so the review step can classify a row by its link without re-deriving
+   * the role from the slot's name.
+   */
+  role?: "current" | "retirement";
 }
 
 interface MatchLinkPickerProps {
