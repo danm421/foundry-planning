@@ -31,11 +31,13 @@ export function SolverSurplusAllocation({
   const ps = workingTree.planSettings;
   const spendPct = ps.surplusSpendPct ?? 0; // decimal 0..1
   const saveAccountId = ps.surplusSaveAccountId ?? null;
+  const spendAll = ps.surplusSpendAllUntilRetirement ?? false;
 
   const base = baseClientData.planSettings;
   const changed =
     (base.surplusSpendPct ?? 0) !== spendPct ||
-    (base.surplusSaveAccountId ?? null) !== saveAccountId;
+    (base.surplusSaveAccountId ?? null) !== saveAccountId ||
+    (base.surplusSpendAllUntilRetirement ?? false) !== spendAll;
 
   // Household-owned accounts only (not controlled by a trust/LLC), sourced from
   // the working tree so an inline solver-draft account can be a destination.
@@ -43,8 +45,11 @@ export function SolverSurplusAllocation({
     .filter((a) => !controllingEntity(a))
     .map((a) => ({ id: a.id, name: a.name }));
 
-  const emit = (next: { spendPct: number; saveAccountId: string | null }) =>
-    onChange({ kind: "surplus-allocation", ...next });
+  const emit = (next: {
+    spendPct: number;
+    saveAccountId: string | null;
+    spendAllUntilRetirement: boolean;
+  }) => onChange({ kind: "surplus-allocation", ...next });
 
   return (
     <>
@@ -64,7 +69,7 @@ export function SolverSurplusAllocation({
           max={100}
           step={1}
           format={(n) => `${n}%`}
-          onCommit={(n) => emit({ spendPct: n / 100, saveAccountId })}
+          onCommit={(n) => emit({ spendPct: n / 100, saveAccountId, spendAllUntilRetirement: spendAll })}
         />
       </div>
 
@@ -73,7 +78,9 @@ export function SolverSurplusAllocation({
         <select
           aria-label="Save remainder to"
           value={saveAccountId ?? CHECKING}
-          onChange={(e) => emit({ spendPct, saveAccountId: e.target.value || null })}
+          onChange={(e) =>
+            emit({ spendPct, saveAccountId: e.target.value || null, spendAllUntilRetirement: spendAll })
+          }
           className="w-full rounded-md border border-hair-2 bg-card-2 px-2.5 py-1.5 text-[13px] text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40"
         >
           <option value={CHECKING}>Household checking (default)</option>
@@ -83,6 +90,19 @@ export function SolverSurplusAllocation({
             </option>
           ))}
         </select>
+      </label>
+
+      <label className="flex items-center gap-2 text-[12px] text-ink-2">
+        <input
+          type="checkbox"
+          checked={spendAll}
+          onChange={(e) =>
+            emit({ spendPct, saveAccountId, spendAllUntilRetirement: e.target.checked })
+          }
+          className="accent-accent"
+        />
+        Spend all surplus until retirement
+        <FieldTooltip text="Treats 100% of each year's surplus as spent through the year before the first person retires. From that retirement year onward, the percentage above applies." />
       </label>
 
       {changed ? (

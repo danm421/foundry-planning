@@ -37,6 +37,7 @@ describe("SolverSurplusAllocation", () => {
       kind: "surplus-allocation",
       spendPct: 0.3,
       saveAccountId: "acct-2",
+      spendAllUntilRetirement: false,
     });
   });
 
@@ -48,6 +49,7 @@ describe("SolverSurplusAllocation", () => {
       kind: "surplus-allocation",
       spendPct: 0.3,
       saveAccountId: null,
+      spendAllUntilRetirement: false,
     });
   });
 
@@ -62,6 +64,7 @@ describe("SolverSurplusAllocation", () => {
       kind: "surplus-allocation",
       spendPct: 0.4,
       saveAccountId: "acct-1",
+      spendAllUntilRetirement: false,
     });
   });
 
@@ -87,5 +90,37 @@ describe("SolverSurplusAllocation", () => {
     // "hide everything" bug could not satisfy this test.
     expect(screen.getByRole("option", { name: "Brokerage" })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "Trust Brokerage" })).toBeNull();
+  });
+
+  it("toggling the checkbox emits a combined mutation preserving the other fields", () => {
+    const t = tree({}, HOUSEHOLD);
+    const { onChange } = renderControl(t, t);
+    fireEvent.click(screen.getByLabelText(/spend all surplus until retirement/i));
+    expect(onChange).toHaveBeenCalledWith({
+      kind: "surplus-allocation",
+      spendPct: 0.3,
+      saveAccountId: "acct-1",
+      spendAllUntilRetirement: true,
+    });
+  });
+
+  it("emits false when unchecking", () => {
+    const t = tree({ surplusSpendAllUntilRetirement: true }, HOUSEHOLD);
+    const { onChange } = renderControl(t, t);
+    fireEvent.click(screen.getByLabelText(/spend all surplus until retirement/i));
+    expect(onChange).toHaveBeenCalledWith({
+      kind: "surplus-allocation",
+      spendPct: 0.3,
+      saveAccountId: "acct-1",
+      spendAllUntilRetirement: false,
+    });
+  });
+
+  it("shows Reset to base when only the checkbox differs from base", () => {
+    const working = tree({ surplusSpendAllUntilRetirement: true }, HOUSEHOLD);
+    const base = tree({ surplusSpendAllUntilRetirement: false }, HOUSEHOLD);
+    const { onResetField } = renderControl(working, base);
+    fireEvent.click(screen.getByText("Reset to base"));
+    expect(onResetField).toHaveBeenCalledWith(["surplus-allocation"]);
   });
 });
