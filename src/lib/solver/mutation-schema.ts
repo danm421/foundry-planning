@@ -129,8 +129,15 @@ const EXPENSE_VALUE = z
   .object({
     id: z.string().min(1),
     name: z.string().min(1),
-    // Must match Expense["type"] in src/engine/types.ts exactly.
-    type: z.enum(["living", "other", "insurance", "education"]),
+    // Deliberately narrower than Expense["type"] in src/engine/types.ts, which
+    // also allows "living". Living expenses are a closed set of exactly two
+    // seeded rows per (client, scenario) (see lib/living-expenses.ts +
+    // expenses-writes.ts's create guard) — `expense-upsert` is today's only
+    // education-goal channel and must not become a second way to mint one.
+    // save-to-base's mutationsToBaseUpdates pushes an upsert's value straight
+    // onto expenseInserts and the route inserts it directly, bypassing
+    // expenses-writes.ts entirely, so this schema is the only gate.
+    type: z.enum(["other", "insurance", "education"]),
     annualAmount: MONEY,
     startYear: YEAR,
     endYear: YEAR,

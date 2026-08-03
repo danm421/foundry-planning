@@ -67,24 +67,37 @@ describe("solveMaxSpending", () => {
     expect(Math.abs(r.realAnnualSpend - 500_000)).toBeLessThanOrEqual(10_000);
   });
 
-  it("synthesizes a spend when the plan states $0 retirement living expense", async () => {
-    // No retirement living-expense row at all (baseSpend === 0), but a $5M portfolio.
-    // The old scale-space solver returned $0 unconditionally; the dollar-space search
-    // finds the real sustainable spend.
+  it("reports an honest no-lever result instead of solving when there is no retirement living-expense row", async () => {
+    // No retirement living-expense row at all. Since Task 3 removed the
+    // solver's old "synthesize a retirement row" fallback, `living-expense-
+    // amount` is now a true no-op on a tree like this: every candidate dollar
+    // amount mutates to the SAME tree, so a real evaluator would return a
+    // CONSTANT PoS regardless of `dollars` (modeled here directly, rather than
+    // via a dollars-sensitive fake, to mirror that real no-op behavior).
+    // Bisecting over a constant function would otherwise silently report the
+    // search ceiling as "solved" (if PoS ≥ target everywhere) — a fabricated,
+    // confidently wrong dollar figure.
     const zeroBaseTree = {
       planSettings: { planStartYear: 2026, inflationRate: 0.025 },
       incomes: [],
       accounts: [{ id: "a", value: 5_000_000 }],
       expenses: [],
     } as unknown as ClientData;
-    // Linear PoS crossing 0.85 at exactly $100,000 (1 − 100k/666,666 = 0.85).
-    const evaluateSpend = async (dollars: number) =>
-      Math.max(0, Math.min(1, 1 - dollars / 666_666));
+    let calls = 0;
+    const evaluateSpend = async () => {
+      calls++;
+      return 0.95; // constant PoS — the real no-op evaluator's shape
+    };
     const r = await solveMaxSpending(args({ tree: zeroBaseTree, evaluateSpend }));
-    expect(r.status).toBe("converged");
-    expect(r.realAnnualSpend).toBeGreaterThan(0);
-    expect(Math.abs(r.realAnnualSpend - 100_000)).toBeLessThanOrEqual(10_000);
-    expect(r.scaleFactor).toBe(0); // no stated base to scale from
+    expect(r.status).toBe("no-retirement-expense");
+    expect(r.realAnnualSpend).toBe(0);
+    expect(r.scaleFactor).toBe(0);
+    expect(r.achievedPoS).toBe(0.95);
+    // Without the guard, bisect + refineOnGrid would call evaluateSpend
+    // 10+ times and return `realAnnualSpend` at the search ceiling with
+    // status "converged" — a fabricated answer. The guard must short-circuit
+    // before any of that runs.
+    expect(calls).toBe(1);
   });
 
   it("re-selects at higher trials, correcting a pessimistic 250-trial prefix", async () => {

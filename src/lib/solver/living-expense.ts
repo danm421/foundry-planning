@@ -15,8 +15,13 @@
 // `client_retirement` resolves to a PAST year, so the retirement row's startYear
 // lands <= plan start and the "begins after plan start" test misses it. We then
 // also accept a row anchored to client/spouse retirement that stays active into
-// the plan. Without this the solver can't see the real retirement row, scales a
-// synthesized duplicate instead, and the PoS solve reports "unreachable" at $0.
+// the plan. Without this the solver can't see the real retirement row: there is
+// no synthesize fallback to fall back on (removed — see planLivingExpenseAmount
+// below), so `living-expense-scale` silently leaves the row untouched and
+// `living-expense-amount` silently no-ops (solve-max-spending.ts's
+// no-retirement-row guard then reports the plan's actual PoS instead of a
+// fabricated "solved" spend). No error, just an inert lever — this exception
+// clause is what keeps that from happening for real already-retired clients.
 
 import type { ClientData, Expense } from "@/engine/types";
 
@@ -31,8 +36,9 @@ export function isRetirementLivingExpense(
   // Already-retired clients: retirement is in the PAST, so the retirement
   // living-expense row resolves to a startYear <= plan start and the test above
   // misses it. Recognize it by its retirement anchor as long as it stays active
-  // into the plan — otherwise the solver can't see the real row, synthesizes a
-  // duplicate on top of it, and the PoS solve returns "unreachable" at $0.
+  // into the plan — otherwise the solver can't see the real row and both living-
+  // expense levers silently do nothing to it (no synthesize fallback exists to
+  // paper over the miss; see the header comment above).
   const startsAtRetirement =
     e.startYearRef === "client_retirement" ||
     e.startYearRef === "spouse_retirement";

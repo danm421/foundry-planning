@@ -33,8 +33,9 @@ describe("isRetirementLivingExpense", () => {
 
   // Already-retired clients: client_retirement resolves to a past year, so the
   // retirement row's startYear is <= plan start. It must still be recognized via
-  // its retirement anchor (otherwise the PoS solve synthesizes a duplicate and
-  // returns "unreachable" at $0).
+  // its retirement anchor (otherwise the solver can't see the real row and the
+  // living-expense levers silently do nothing to it — there is no synthesize
+  // fallback to fall back on).
   it("recognizes a retirement-anchored row that began in the past", () => {
     expect(
       isRetirementLivingExpense(

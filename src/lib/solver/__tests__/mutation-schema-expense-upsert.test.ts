@@ -36,4 +36,18 @@ describe("SOLVER_MUTATION_SCHEMA — expense-upsert", () => {
     });
     expect(r.success).toBe(false);
   });
+
+  it("rejects type: 'living' — expense-upsert is not a channel for the closed living-expense set", () => {
+    // Living expenses are a closed two-row set (see expenses-writes.ts's
+    // create guard). mutationsToBaseUpdates pushes an expense-upsert's value
+    // straight onto expenseInserts and save-to-base persists it directly,
+    // bypassing expenses-writes.ts entirely — this schema is the only gate
+    // against a third living row arriving through this channel.
+    const r = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "expense-upsert",
+      id: "goal-1",
+      value: { ...validValue, type: "living" },
+    });
+    expect(r.success).toBe(false);
+  });
 });

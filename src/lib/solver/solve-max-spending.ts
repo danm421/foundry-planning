@@ -13,6 +13,15 @@
 // resource-aware (not a blind 3× the stated expense) and works even when the plan
 // states $0 retirement living spend, in which case planLivingExpenseAmount
 // even-splits the existing retirement row(s) rather than multiplying $0 forever.
+//
+// That even-split only applies when a retirement row EXISTS with a $0 sum. A
+// tree with NO retirement-anchored living row at all is a different, broken-
+// invariant case (living expenses are meant to be a closed two-row set): the
+// `living-expense-amount` mutation is then a true no-op regardless of dollars,
+// so bisecting over it would report a meaningless answer (the search ceiling,
+// or "unreachable" at $0) as if it were solved. solveMaxSpending detects that
+// state up front and returns an honest `"no-retirement-expense"` result
+// instead of running the search — see the guard at the top of the function.
 import {
   createReturnEngine,
   runMonteCarlo,
@@ -23,6 +32,7 @@ import type { MonteCarloPayload } from "@/lib/projection/load-monte-carlo-data";
 import { applyMutations } from "./apply-mutations";
 import type { BisectResult } from "./bisect";
 import { bisect, WIDE_LEVER_MAX_ITERATIONS } from "./bisect";
+import { isRetirementLivingExpense } from "./living-expense";
 import { livingExpenseSearchCeiling } from "./lever-search-config";
 import { roundToNearest5k, retirementLivingExpenseTotal } from "./max-spending-math";
 import { refineOnGrid } from "./refine-on-grid";
@@ -44,9 +54,15 @@ export interface MaxSpendResult {
   /** Solved spend as a multiple of the plan's stated retirement spend (0 when the
    *  plan states no retirement living expense). */
   scaleFactor: number;
-  /** Probability of success at the solved spend (refine-trial (500) PoS). */
+  /** Probability of success at the solved spend (refine-trial (500) PoS). Under
+   *  `"no-retirement-expense"` this is the UNMUTATED plan's PoS instead — there
+   *  is no solved spend to report one for. */
   achievedPoS: number;
-  status: "converged" | "unreachable" | "max-iterations";
+  /** `"no-retirement-expense"`: the tree has no retirement-anchored living row,
+   *  so the `living-expense-amount` lever is a no-op — no search was run;
+   *  `realAnnualSpend`/`scaleFactor` are both 0 and `achievedPoS` is the
+   *  plan's actual (unmutated) PoS. */
+  status: "converged" | "unreachable" | "max-iterations" | "no-retirement-expense";
 }
 
 export interface SolveMaxSpendingArgs {
@@ -116,6 +132,27 @@ export async function solveMaxSpending(args: SolveMaxSpendingArgs): Promise<MaxS
   const refineTrials = args.refineTrials ?? 500;
   const evaluateSpend =
     args.evaluateSpend ?? makeMcSpendEvaluator(args.tree, args.mcPayload, args.signal);
+
+  // Guard: the `living-expense-amount` lever only ever touches retirement-
+  // anchored living rows (isRetirementLivingExpense). With none on the tree it
+  // is a genuine no-op — every candidate dollar amount mutates to the same
+  // tree, so the constant PoS would make bisect either walk to the search
+  // ceiling (reporting it as "solved") or call the base plan "unreachable" at
+  // $0. Neither is a real answer, so report the plan's actual PoS honestly
+  // instead of running a search over a function with nothing to find.
+  const planStartYear = args.tree.planSettings.planStartYear;
+  const hasRetirementLivingRow = (args.tree.expenses ?? []).some((e) =>
+    isRetirementLivingExpense(e, planStartYear),
+  );
+  if (!hasRetirementLivingRow) {
+    const achievedPoS = await evaluateSpend(0, refineTrials);
+    return {
+      realAnnualSpend: 0,
+      scaleFactor: 0,
+      achievedPoS,
+      status: "no-retirement-expense",
+    };
+  }
 
   const baseSpend = retirementLivingExpenseTotal(args.tree);
   // Resource-aware ceiling: at least 3× the stated spend, but also the dollar-space
