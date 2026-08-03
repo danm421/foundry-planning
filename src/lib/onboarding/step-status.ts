@@ -1,4 +1,5 @@
 import type { ClientData } from "@/engine/types";
+import { isGoalExpense } from "@/lib/goals";
 import type { OnboardingState, StepSlug, StepStatus } from "./types";
 import { STEPS } from "./steps";
 
@@ -55,6 +56,8 @@ function computeStatus(
       return accountsStatus(tree);
     case "liabilities":
       return liabilitiesStatus(tree);
+    case "goals":
+      return goalsStatus(tree);
     case "cash-flow":
       return cashFlowStatus(tree);
     case "insurance":
@@ -115,6 +118,19 @@ function liabilitiesStatus(tree: ClientData): StepStatus {
     slug: "liabilities",
     kind: tree.liabilities.length > 0 ? "complete" : "untouched",
     gaps: tree.liabilities.length > 0 ? [] : ["No liabilities added"],
+  };
+}
+
+/** Goals are expenses, not their own table: education rows plus anything the
+ *  advisor flagged `isGoal` — the same set the Household Map's Goals board
+ *  draws. A household with none is untouched rather than in progress; there is
+ *  no partial state to be in. */
+function goalsStatus(tree: ClientData): StepStatus {
+  const goals = tree.expenses.filter(isGoalExpense);
+  return {
+    slug: "goals",
+    kind: goals.length > 0 ? "complete" : "untouched",
+    gaps: goals.length > 0 ? [] : ["No goals added"],
   };
 }
 

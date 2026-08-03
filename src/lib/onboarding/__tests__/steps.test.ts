@@ -3,12 +3,13 @@ import { STEPS, nextStep, prevStep, stepIndex } from "../steps";
 import { STEP_SLUGS, isStepSlug } from "../types";
 
 describe("onboarding step manifest", () => {
-  it("runs the eight guided-setup steps in order", () => {
+  it("runs the nine guided-setup steps in order", () => {
     expect(STEPS.map((s) => s.slug)).toEqual([
       "household",
       "family",
       "accounts",
       "liabilities",
+      "goals",
       "cash-flow",
       "insurance",
       "assumptions",
@@ -19,6 +20,14 @@ describe("onboarding step manifest", () => {
 
   it("labels the accounts step 'Assets'", () => {
     expect(STEPS.find((s) => s.slug === "accounts")!.label).toBe("Assets");
+  });
+
+  it("puts Goals immediately before Cash Flow", () => {
+    expect(stepIndex("goals")).toBe(stepIndex("cash-flow") - 1);
+    expect(nextStep("goals")).toBe("cash-flow");
+    expect(prevStep("goals")).toBe("liabilities");
+    expect(nextStep("liabilities")).toBe("goals");
+    expect(prevStep("cash-flow")).toBe("goals");
   });
 
   it("no longer offers Trusts or Estate steps", () => {

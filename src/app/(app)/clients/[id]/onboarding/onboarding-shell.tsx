@@ -19,6 +19,7 @@ import {
   MinusIcon,
   ShieldIcon,
   SlidersIcon,
+  TargetIcon,
   UsersIcon,
   WalletIcon,
 } from "@/components/icons";
@@ -37,6 +38,7 @@ const STEP_ICONS: Record<StepIconKey, IconComponent> = {
   family: UsersIcon,
   accounts: WalletIcon,
   liabilities: CreditCardIcon,
+  goals: TargetIcon,
   "cash-flow": FlowIcon,
   insurance: ShieldIcon,
   assumptions: SlidersIcon,

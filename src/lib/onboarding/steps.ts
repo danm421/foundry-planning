@@ -8,6 +8,7 @@ export type StepIconKey =
   | "family"
   | "accounts"
   | "liabilities"
+  | "goals"
   | "cash-flow"
   | "insurance"
   | "assumptions"
@@ -46,6 +47,12 @@ export const STEPS: readonly StepDef[] = [
     label: "Liabilities",
     description: "Mortgages, loans, and other debts.",
     icon: "liabilities",
+  },
+  {
+    slug: "goals",
+    label: "Goals",
+    description: "Education funding and other goals the plan should track on their own.",
+    icon: "goals",
   },
   {
     slug: "cash-flow",

@@ -1,4 +1,5 @@
 // src/lib/household-map/goals.ts
+import { isGoalExpense } from "@/lib/goals";
 import { coerceYearRef, resolveMilestone, type ClientMilestones } from "@/lib/milestones";
 import { ASSUMED_LIFE_EXPECTANCY } from "@/lib/plan-horizon";
 
@@ -103,11 +104,6 @@ const currency = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
-/** Education is always a goal; everything else opts in via the isGoal flag. */
-function isGoalRow(e: GoalExpense): boolean {
-  return e.type === "education" || e.isGoal === true;
-}
-
 function kindOf(e: GoalExpense): GoalKind {
   if (e.type === "education") return "education";
   if (e.type === "other") return "purchase";
@@ -152,7 +148,10 @@ export function buildMapGoals(input: BuildMapGoalsInput): MapGoal[] {
 
   // --- 1 & 2: expense-backed goals ---
   for (const e of input.expenses) {
-    if (!isGoalRow(e)) continue;
+    // Education is always a goal; everything else opts in via `isGoal`. The
+    // rule lives in `lib/goals.ts` — the wizard's Goals step asks the same
+    // question and the two sets must not drift.
+    if (!isGoalExpense(e)) continue;
 
     const startRef = coerceYearRef(e.startYearRef);
     const endRef = coerceYearRef(e.endYearRef);

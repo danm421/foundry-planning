@@ -224,6 +224,46 @@ describe("deriveStepStatuses", () => {
     expect(statuses.find((s) => s.slug === "assumptions")!.kind).toBe("skipped");
   });
 
+  // ── Goals ────────────────────────────────────────────────────────────────
+  it("marks Goals untouched on an empty tree", () => {
+    const status = deriveStepStatuses(emptyTree(), {}).find((s) => s.slug === "goals")!;
+    expect(status.kind).toBe("untouched");
+    expect(status.gaps).toEqual(["No goals added"]);
+  });
+
+  it("marks Goals complete for an education expense even without the isGoal flag", () => {
+    const tree = emptyTree();
+    tree.expenses = [
+      { id: "e1", type: "education" } as ClientData["expenses"][number],
+    ];
+    expect(deriveStepStatuses(tree, {}).find((s) => s.slug === "goals")!.kind).toBe("complete");
+  });
+
+  it("marks Goals complete for a non-education expense flagged isGoal", () => {
+    const tree = emptyTree();
+    tree.expenses = [
+      { id: "e1", type: "other", isGoal: true } as ClientData["expenses"][number],
+    ];
+    expect(deriveStepStatuses(tree, {}).find((s) => s.slug === "goals")!.kind).toBe("complete");
+  });
+
+  // The discriminating fixture: an ordinary expense makes Cash Flow — not
+  // Goals — non-empty. Without it, "any expense at all" would pass the two
+  // cases above just as well.
+  it("leaves Goals untouched when the only expenses are ordinary ones", () => {
+    const tree = emptyTree();
+    tree.expenses = [
+      { id: "e1", type: "living" } as ClientData["expenses"][number],
+      { id: "e2", type: "other", isGoal: false } as ClientData["expenses"][number],
+    ];
+    expect(deriveStepStatuses(tree, {}).find((s) => s.slug === "goals")!.kind).toBe("untouched");
+  });
+
+  it("marks Goals skipped when state includes the slug", () => {
+    const statuses = deriveStepStatuses(emptyTree(), { skippedSteps: ["goals"] });
+    expect(statuses.find((s) => s.slug === "goals")!.kind).toBe("skipped");
+  });
+
   it("marks Cash Flow complete only when at least one income AND one expense exist", () => {
     const tree = emptyTree();
     tree.incomes = [{ id: "i1" } as ClientData["incomes"][number]];
@@ -246,7 +286,7 @@ describe("deriveStepStatuses", () => {
     tree.expenses = [{ id: "e1" } as ClientData["expenses"][number]];
 
     const state: import("@/lib/onboarding/types").OnboardingState = {
-      skippedSteps: ["family", "liabilities", "insurance", "assumptions"],
+      skippedSteps: ["family", "liabilities", "goals", "insurance", "assumptions"],
     };
     const statuses = deriveStepStatuses(tree, state);
     expect(statuses.find((s) => s.slug === "review")!.kind).toBe("complete");

@@ -12,6 +12,7 @@ import HouseholdStep from "../steps/household-step";
 import FamilyStep from "../steps/family-step";
 import AccountsStep from "../steps/accounts-step";
 import LiabilitiesStep from "../steps/liabilities-step";
+import GoalsStep from "../steps/goals-step";
 import CashFlowStep from "../steps/cash-flow-step";
 import InsuranceStep from "../steps/insurance-step";
 import AssumptionsStep from "../steps/assumptions-step";
@@ -53,6 +54,8 @@ export async function OnboardingStepContent({ clientId, firmId, step, completedA
     body = <AccountsStep clientId={clientId} firmId={firmId} />;
   } else if (step === "liabilities") {
     body = <LiabilitiesStep clientId={clientId} firmId={firmId} />;
+  } else if (step === "goals") {
+    body = <GoalsStep clientId={clientId} firmId={firmId} />;
   } else if (step === "cash-flow") {
     body = <CashFlowStep clientId={clientId} firmId={firmId} />;
   } else if (step === "insurance") {

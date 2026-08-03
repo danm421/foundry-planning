@@ -1,14 +1,18 @@
 import IncomeExpensesView from "@/components/income-expenses-view";
 import { loadCashFlowStepData } from "./cash-flow-step-data";
 
-interface CashFlowStepProps {
+interface GoalsStepProps {
   clientId: string;
   firmId: string;
 }
 
-/** Wizard step over IncomeExpensesView — the full income / expense / savings
- * layout. The Goals step renders the same view's `goals` section. */
-export default async function CashFlowStep({ clientId, firmId }: CashFlowStepProps) {
+/**
+ * Wizard step over IncomeExpensesView's `goals` section — education funding
+ * and any other expense the advisor ticks "Show as a goal" on. Goals are
+ * expenses, so this shares the Cash Flow step's loader; only the section
+ * differs.
+ */
+export default async function GoalsStep({ clientId, firmId }: GoalsStepProps) {
   const data = await loadCashFlowStepData(clientId, firmId);
   if (!data) {
     return (
@@ -18,5 +22,5 @@ export default async function CashFlowStep({ clientId, firmId }: CashFlowStepPro
     );
   }
 
-  return <IncomeExpensesView {...data} embed="wizard" section="cash-flow" />;
+  return <IncomeExpensesView {...data} embed="wizard" section="goals" />;
 }

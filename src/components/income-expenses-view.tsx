@@ -22,6 +22,7 @@ import {
   type FlowPatch,
 } from "@/lib/inline-edit/flow-write";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
+import { isGoalExpense } from "@/lib/goals";
 import { isTodaysDollars } from "@/lib/todays-dollars";
 import type { ClientInfo as EngineClientInfo, PlanSettings, Income as EngineIncome } from "@/engine/types";
 import { SocialSecurityCard } from "./social-security-card";
@@ -169,7 +170,7 @@ interface ClientInfo {
 
 type ScheduleMap = Record<string, { year: number; amount: number }[]>;
 
-interface IncomeExpensesViewProps {
+export interface IncomeExpensesViewProps {
   clientId: string;
   initialIncomes: Income[];
   initialExpenses: Expense[];
@@ -208,6 +209,13 @@ interface IncomeExpensesViewProps {
   onOpenEntity?: (entityId: string, tab?: "details" | "flows" | "assets" | "transfers" | "notes") => void;
   /** "wizard" hides the page-level KPI strip; everything else renders as today. */
   embed?: "page" | "wizard";
+  /**
+   * Which slice of the flows this render owns. "cash-flow" (the default) is the
+   * full income / expense / savings layout; "goals" renders ONLY the goal
+   * expenses — education plus anything flagged `isGoal` — so the guided-setup
+   * wizard can give goals their own step. Mirrors BalanceSheetView's `section`.
+   */
+  section?: "cash-flow" | "goals";
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1066,6 +1074,9 @@ function IncomeDialog({
 interface ExpenseDialogProps {
   clientId: string;
   defaultType?: ExpenseType;
+  /** Pre-ticks "Show as a goal" on a NEW row — set when the add came from the
+   *  Goals step, where every row the advisor creates is a goal by intent. */
+  defaultIsGoal?: boolean;
   accounts: Account[];
   entities?: Entity[];
   familyMembers?: FamilyMember[];
@@ -1083,6 +1094,7 @@ interface ExpenseDialogProps {
 function ExpenseDialog({
   clientId,
   defaultType = "living",
+  defaultIsGoal = false,
   accounts,
   familyMembers,
   clientInfo,
@@ -1109,7 +1121,7 @@ function ExpenseDialog({
     editing?.endsAtMedicareEligibilityOwner ?? null
   );
   const [payOutOfPocket, setPayOutOfPocket] = useState<boolean>(editing?.payShortfallOutOfPocket ?? false);
-  const [isGoal, setIsGoal] = useState<boolean>(editing?.isGoal ?? false);
+  const [isGoal, setIsGoal] = useState<boolean>(editing?.isGoal ?? defaultIsGoal);
   const [institutionState, setInstitutionState] = useState<string>(editing?.institutionState ?? "");
   const [institutionName, setInstitutionName] = useState<string>(editing?.institutionName ?? "");
   const [forFamilyMemberId, setForFamilyMemberId] = useState<string>(editing?.forFamilyMemberId ?? "");
@@ -1646,8 +1658,10 @@ export default function IncomeExpensesView({
   ssPlanSettings,
   onOpenEntity,
   embed = "page",
+  section = "cash-flow",
 }: IncomeExpensesViewProps) {
   const isWizard = embed === "wizard";
+  const goalsOnly = section === "goals";
   const { permission } = useClientAccess();
   const canEdit = permission === "edit";
   const writer = useScenarioWriter(clientId);
@@ -1669,6 +1683,7 @@ export default function IncomeExpensesView({
     open: boolean;
     editing?: Expense;
     defaultType?: ExpenseType;
+    defaultIsGoal?: boolean;
   }>({ open: false });
   const [savingsDialog, setSavingsDialog] = useState<{ open: boolean; editing?: SavingsRule }>({ open: false });
 
@@ -1833,7 +1848,208 @@ export default function IncomeExpensesView({
     return true;
   }
 
+  /**
+   * One expense row, inline cells and all. Shared by the Expenses panel and the
+   * Goals panel so the two can never drift on which cells are editable or on
+   * how a row opens its full editor.
+   *
+   * `inlineAmount` — living-expense rows edit their amount in place. Every
+   * other group routes through the dialog, whose Schedule tab is the only place
+   * a year-by-year amount can be expressed.
+   */
+  function expenseRow(expense: Expense, { inlineAmount }: { inlineAmount: boolean }) {
+    const entityName = expense.ownerEntityId ? entityMap[expense.ownerEntityId]?.name : undefined;
+    const businessName = expense.ownerAccountId
+      ? businessAccountMap[expense.ownerAccountId]?.name
+      : undefined;
+    const startRef = coerceYearRef(expense.startYearRef) ?? null;
+    const endRef = coerceYearRef(expense.endYearRef) ?? null;
+    return (
+      <Row
+        key={expense.id}
+        onEdit={canEdit ? () => setExpenseDialog({ open: true, editing: expense }) : undefined}
+        amount={inlineAmount ? Number(expense.annualAmount) : undefined}
+        onSaveAmount={
+          canEdit && inlineAmount
+            ? (next) => saveExpenseField(expense, flowAmountPatch(next))
+            : undefined
+        }
+        startSlot={
+          milestones ? (
+            <InlineYearCell
+              year={expense.startYear}
+              yearRef={startRef}
+              milestones={milestones}
+              position="start"
+              showSSRefs={isSsRef(startRef)}
+              label={`start year for ${expense.name}`}
+              canEdit={canEdit}
+              onSave={(year, ref) => saveExpenseField(expense, flowYearPatch("start", year, ref))}
+            />
+          ) : (
+            <PlainYearCell year={expense.startYear} />
+          )
+        }
+        endSlot={
+          milestones ? (
+            <InlineYearCell
+              year={expense.endYear}
+              yearRef={endRef}
+              milestones={milestones}
+              position="end"
+              showSSRefs={isSsRef(endRef)}
+              label={`end year for ${expense.name}`}
+              canEdit={canEdit}
+              onSave={(year, ref) => saveExpenseField(expense, flowYearPatch("end", year, ref))}
+            />
+          ) : (
+            <PlainYearCell year={expense.endYear} />
+          )
+        }
+        rateSlot={
+          <FlowGrowthCell
+            row={expense}
+            resolvedInflationRate={resolvedInflationRate}
+            canEdit={canEdit}
+            onSave={(patch) => saveExpenseField(expense, patch)}
+          />
+        }
+        editMode={canEdit && expenseEdit}
+        onDelete={canEdit && !expense.isDefault ? () => setDeletingExpense(expense) : undefined}
+        label={expense.name}
+        meta={[entityName ?? businessName ?? null]}
+        value={fmt(expense.annualAmount)}
+        outOfEstate={Boolean(expense.ownerEntityId)}
+      />
+    );
+  }
+
+  // The expense editor and its delete confirm are rendered by BOTH layouts
+  // below, so they're built once here instead of duplicated per branch.
+  const expenseDialogNode = expenseDialog.open ? (
+    <ExpenseDialog
+      key={expenseDialog.editing?.id ?? "new"}
+      clientId={clientId}
+      accounts={accounts}
+      entities={entities}
+      familyMembers={familyMembers}
+      clientInfo={clientInfo}
+      ownerNames={ownerNames}
+      open={expenseDialog.open}
+      onOpenChange={(o) => setExpenseDialog((d) => ({ ...d, open: o, editing: o ? d.editing : undefined }))}
+      defaultType={expenseDialog.defaultType}
+      defaultIsGoal={expenseDialog.defaultIsGoal}
+      editing={expenseDialog.editing}
+      onSaved={(expense, mode) => {
+        if (mode === "create") setExpenseList((prev) => [...prev, expense]);
+        else setExpenseList((prev) => prev.map((e) => (e.id === expense.id ? expense : e)));
+      }}
+      onRequestDelete={
+        expenseDialog.editing && !expenseDialog.editing.isDefault
+          ? () => {
+              if (expenseDialog.editing) setDeletingExpense(expenseDialog.editing);
+            }
+          : undefined
+      }
+      schedule={expenseDialog.editing ? expenseSchedules[expenseDialog.editing.id] : undefined}
+      resolvedInflationRate={resolvedInflationRate}
+    />
+  ) : null;
+
+  const expenseDeleteConfirmNode = (
+    <ConfirmDeleteDialog
+      open={!!deletingExpense}
+      title="Delete Expense"
+      message={deletingExpense ? `Delete "${deletingExpense.name}"?` : ""}
+      onCancel={() => setDeletingExpense(null)}
+      onConfirm={async () => {
+        if (!deletingExpense) return;
+        const ok = await performScenarioDelete(
+          "expense",
+          deletingExpense.id,
+          `/api/clients/${clientId}/expenses/${deletingExpense.id}`,
+        );
+        if (ok) {
+          setExpenseList((prev) => prev.filter((e) => e.id !== deletingExpense.id));
+          setExpenseDialog({ open: false });
+          setDeletingExpense(null);
+        }
+      }}
+    />
+  );
+
   // ── Render ────────────────────────────────────────────────────────────────
+
+  if (goalsOnly) {
+    // Goals have no table of their own: they are expenses that either are
+    // education (always a goal) or carry the advisor's `isGoal` flag — the same
+    // set the Household Map's Goals board draws. The groups split by TYPE
+    // rather than by flag, so "Other Goals" catches a flagged living or
+    // insurance row too instead of silently dropping it.
+    const goalExpenses = expenseList.filter(isGoalExpense);
+    const goalGroups: { label: string; defaultType: ExpenseType; items: Expense[]; empty: string }[] = [
+      {
+        label: "Education",
+        defaultType: "education",
+        items: goalExpenses.filter((e) => e.type === "education"),
+        empty: "No education goals yet.",
+      },
+      {
+        label: "Other Goals",
+        defaultType: "other",
+        items: goalExpenses.filter((e) => e.type !== "education"),
+        empty: "No other goals yet — a home purchase, a wedding, a sabbatical.",
+      },
+    ];
+
+    return (
+      <div className="space-y-6">
+        <Panel>
+          <SectionHeader
+            title="Goals"
+            subtitle={`${goalExpenses.length} goal${goalExpenses.length === 1 ? "" : "s"}`}
+            actions={
+              canEdit ? (
+                <>
+                  {goalExpenses.length > 0 && (
+                    <EditToggle on={expenseEdit} onToggle={() => setExpenseEdit((v) => !v)} />
+                  )}
+                  <button
+                    onClick={() => setExpenseDialog({ open: true, defaultType: "education", defaultIsGoal: true })}
+                    className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-ink"
+                  >
+                    + Add
+                  </button>
+                </>
+              ) : undefined
+            }
+          />
+          {goalGroups.map((group) => (
+            <Group
+              key={group.label}
+              label={group.label}
+              total={fmt(group.items.reduce((s, e) => s + Number(e.annualAmount), 0))}
+              onAdd={
+                canEdit
+                  ? () =>
+                      setExpenseDialog({ open: true, defaultType: group.defaultType, defaultIsGoal: true })
+                  : undefined
+              }
+            >
+              {group.items.length === 0 ? (
+                <EmptyRow message={group.empty} />
+              ) : (
+                group.items.map((expense) => expenseRow(expense, { inlineAmount: false }))
+              )}
+            </Group>
+          ))}
+        </Panel>
+
+        {expenseDialogNode}
+        {expenseDeleteConfirmNode}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -2170,76 +2386,7 @@ export default function IncomeExpensesView({
                   total={fmt(subtotal)}
                   onAdd={canEdit ? () => setExpenseDialog({ open: true, defaultType: group.types[0] }) : undefined}
                 >
-                  {items.map((expense) => {
-                    const entityName = expense.ownerEntityId ? entityMap[expense.ownerEntityId]?.name : undefined;
-                    const businessName = expense.ownerAccountId
-                      ? businessAccountMap[expense.ownerAccountId]?.name
-                      : undefined;
-                    const startRef = coerceYearRef(expense.startYearRef) ?? null;
-                    const endRef = coerceYearRef(expense.endYearRef) ?? null;
-                    return (
-                      <Row
-                        key={expense.id}
-                        onEdit={canEdit ? () => setExpenseDialog({ open: true, editing: expense }) : undefined}
-                        amount={isLiving ? Number(expense.annualAmount) : undefined}
-                        onSaveAmount={
-                          canEdit && isLiving
-                            ? (next) => saveExpenseField(expense, flowAmountPatch(next))
-                            : undefined
-                        }
-                        startSlot={
-                          milestones ? (
-                            <InlineYearCell
-                              year={expense.startYear}
-                              yearRef={startRef}
-                              milestones={milestones}
-                              position="start"
-                              showSSRefs={isSsRef(startRef)}
-                              label={`start year for ${expense.name}`}
-                              canEdit={canEdit}
-                              onSave={(year, ref) =>
-                                saveExpenseField(expense, flowYearPatch("start", year, ref))
-                              }
-                            />
-                          ) : (
-                            <PlainYearCell year={expense.startYear} />
-                          )
-                        }
-                        endSlot={
-                          milestones ? (
-                            <InlineYearCell
-                              year={expense.endYear}
-                              yearRef={endRef}
-                              milestones={milestones}
-                              position="end"
-                              showSSRefs={isSsRef(endRef)}
-                              label={`end year for ${expense.name}`}
-                              canEdit={canEdit}
-                              onSave={(year, ref) =>
-                                saveExpenseField(expense, flowYearPatch("end", year, ref))
-                              }
-                            />
-                          ) : (
-                            <PlainYearCell year={expense.endYear} />
-                          )
-                        }
-                        rateSlot={
-                          <FlowGrowthCell
-                            row={expense}
-                            resolvedInflationRate={resolvedInflationRate}
-                            canEdit={canEdit}
-                            onSave={(patch) => saveExpenseField(expense, patch)}
-                          />
-                        }
-                        editMode={canEdit && expenseEdit}
-                        onDelete={canEdit && !expense.isDefault ? () => setDeletingExpense(expense) : undefined}
-                        label={expense.name}
-                        meta={[entityName ?? businessName ?? null]}
-                        value={fmt(expense.annualAmount)}
-                        outOfEstate={Boolean(expense.ownerEntityId)}
-                      />
-                    );
-                  })}
+                  {items.map((expense) => expenseRow(expense, { inlineAmount: isLiving }))}
                 </Group>
               );
             })
@@ -2291,34 +2438,7 @@ export default function IncomeExpensesView({
         />
       )}
 
-      {expenseDialog.open && (
-        <ExpenseDialog
-          key={expenseDialog.editing?.id ?? "new"}
-          clientId={clientId}
-          accounts={accounts}
-          entities={entities}
-          familyMembers={familyMembers}
-          clientInfo={clientInfo}
-          ownerNames={ownerNames}
-          open={expenseDialog.open}
-          onOpenChange={(o) => setExpenseDialog((d) => ({ ...d, open: o, editing: o ? d.editing : undefined }))}
-          defaultType={expenseDialog.defaultType}
-          editing={expenseDialog.editing}
-          onSaved={(expense, mode) => {
-            if (mode === "create") setExpenseList((prev) => [...prev, expense]);
-            else setExpenseList((prev) => prev.map((e) => (e.id === expense.id ? expense : e)));
-          }}
-          onRequestDelete={
-            expenseDialog.editing && !expenseDialog.editing.isDefault
-              ? () => {
-                  if (expenseDialog.editing) setDeletingExpense(expenseDialog.editing);
-                }
-              : undefined
-          }
-          schedule={expenseDialog.editing ? expenseSchedules[expenseDialog.editing.id] : undefined}
-          resolvedInflationRate={resolvedInflationRate}
-        />
-      )}
+      {expenseDialogNode}
 
       {savingsDialog.open && (
         <SavingsRuleDialog
@@ -2362,25 +2482,7 @@ export default function IncomeExpensesView({
         }}
       />
 
-      <ConfirmDeleteDialog
-        open={!!deletingExpense}
-        title="Delete Expense"
-        message={deletingExpense ? `Delete "${deletingExpense.name}"?` : ""}
-        onCancel={() => setDeletingExpense(null)}
-        onConfirm={async () => {
-          if (!deletingExpense) return;
-          const ok = await performScenarioDelete(
-            "expense",
-            deletingExpense.id,
-            `/api/clients/${clientId}/expenses/${deletingExpense.id}`,
-          );
-          if (ok) {
-            setExpenseList((prev) => prev.filter((e) => e.id !== deletingExpense.id));
-            setExpenseDialog({ open: false });
-            setDeletingExpense(null);
-          }
-        }}
-      />
+      {expenseDeleteConfirmNode}
 
       <ConfirmDeleteDialog
         open={!!deletingSavings}

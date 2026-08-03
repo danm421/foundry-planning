@@ -345,6 +345,16 @@ export function FlowIcon(props: IconProps) {
   );
 }
 
+export function TargetIcon(props: IconProps) {
+  return (
+    <svg {...baseSvgProps} {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="5" />
+      <circle cx="12" cy="12" r="1" />
+    </svg>
+  );
+}
+
 export function ShieldIcon(props: IconProps) {
   return (
     <svg {...baseSvgProps} {...props}>
