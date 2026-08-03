@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { CurrencyInput } from "@/components/currency-input";
 import { inputClassName } from "@/components/forms/input-styles";
-import { livingExpensePayload } from "@/lib/quick-start/derive";
 import { saveLiabilityRows, isEmptyLiability, type LiabilityRow } from "@/lib/quick-start/liability-save";
 import { saveOtherExpenseRows, isEmptyOtherExpense, type OtherExpenseRow } from "@/lib/quick-start/other-expense-save";
 import type { QsExpensesStepProps } from "./step-props";
@@ -48,19 +47,19 @@ export function ExpensesStep({
     const clientId = bootstrap.clientId;
     const { currentId, retirementId } = bootstrap.expenseStubs;
 
-    // Current living expenses
-    if (currentId) {
-      await sendJson(`/api/clients/${clientId}/expenses/${currentId}`, "PUT", { annualAmount: current });
-    } else {
-      await sendJson(`/api/clients/${clientId}/expenses`, "POST", livingExpensePayload("current", current, ctx));
+    // Both slots are seeded by create-client.ts and backfilled for existing
+    // clients by migration 0229, so a missing stub is a broken invariant, not a
+    // case to paper over. The old fallback POSTed a living row WITHOUT
+    // is_default — an orphan outside the closed two-row set.
+    if (!currentId || !retirementId) {
+      throw new Error(
+        "This household is missing its seeded living-expense rows. Reload the page; " +
+          "if it persists, the household needs repair before quick start can save.",
+      );
     }
 
-    // Retirement living expenses
-    if (retirementId) {
-      await sendJson(`/api/clients/${clientId}/expenses/${retirementId}`, "PUT", { annualAmount: retirement });
-    } else {
-      await sendJson(`/api/clients/${clientId}/expenses`, "POST", livingExpensePayload("retirement", retirement, ctx));
-    }
+    await sendJson(`/api/clients/${clientId}/expenses/${currentId}`, "PUT", { annualAmount: current });
+    await sendJson(`/api/clients/${clientId}/expenses/${retirementId}`, "PUT", { annualAmount: retirement });
 
     const liab = await saveLiabilityRows(liabilityList.rows, liabilityList.deletedServerIds, {
       ctx,
