@@ -85,7 +85,9 @@ export default function SidebarNav({
               {group.label}
             </div>
           )}
-          <ul className="flex flex-col">
+          {/* Collapsed: a gap between the compact hit targets so a near-miss
+              lands on nothing rather than on the neighbouring item. */}
+          <ul className={`flex flex-col${collapsed ? " gap-1" : ""}`}>
             {group.items.map((item) => {
               const active = !item.placeholder && item.href
                 ? isActivePath(pathname, item.href)

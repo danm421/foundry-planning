@@ -37,6 +37,32 @@ describe("SidebarNavItem", () => {
       expect(bar).not.toBeNull();
     });
 
+    it("shrinks the collapsed hit target to a square instead of the full row", () => {
+      const { container } = render(
+        <SidebarNavItem icon={<DummyIcon />} label="Risk" href="/risk" active={false} collapsed />
+      );
+      const link = container.querySelector("a");
+      expect(link?.className).toContain("h-8 w-8");
+      expect(link?.className).not.toContain("w-full");
+    });
+
+    it("keeps the expanded row full-width, since the label carries the target", () => {
+      const { container } = render(
+        <SidebarNavItem icon={<DummyIcon />} label="Risk" href="/risk" active={false} />
+      );
+      const link = container.querySelector("a");
+      expect(link?.className).not.toContain("h-8 w-8");
+    });
+
+    it("anchors the active bar outside the link so it stays at the rail edge", () => {
+      const { container } = render(
+        <SidebarNavItem icon={<DummyIcon />} label="Risk" href="/risk" active collapsed />
+      );
+      const bar = container.querySelector('[data-testid="active-bar"]');
+      expect(bar).not.toBeNull();
+      expect(bar?.closest("a")).toBeNull();
+    });
+
     it("does not render the active bar when inactive", () => {
       const { container } = render(
         <SidebarNavItem icon={<DummyIcon />} label="Clients" href="/clients" active={false} />
