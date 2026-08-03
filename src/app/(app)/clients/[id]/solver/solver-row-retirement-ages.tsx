@@ -12,6 +12,7 @@ import type { SolveLeverKey } from "@/lib/solver/solve-types";
 import { SolverBaseHint } from "./solver-base-hint";
 import { SolverFieldActions } from "./solver-field-actions";
 import { SolverFieldStepper } from "./solver-field-stepper";
+import { LABEL_ROW } from "./solver-lever-label-row";
 import { SolverSolveIcon } from "./solver-solve-icon";
 import { SolverSolvePopover } from "./solver-solve-popover";
 import { SolverSolveProgressStrip } from "./solver-solve-progress-strip";
@@ -57,6 +58,7 @@ export function SolverRowRetirementAges({
         <EditableWithSolve
           id="ra-client"
           label={`${workingClient.firstName}'s Retirement Age`}
+          displayLabel={workingClient.firstName}
           value={workingClient.retirementAge}
           base={baseClient.retirementAge}
           min={40}
@@ -75,6 +77,7 @@ export function SolverRowRetirementAges({
           <EditableWithSolve
             id="ra-spouse"
             label={`${workingClient.spouseName ?? "Spouse"}'s Retirement Age`}
+            displayLabel={workingClient.spouseName ?? "Spouse"}
             value={workingClient.spouseRetirementAge ?? 65}
             base={baseClient.spouseRetirementAge ?? 65}
             min={40}
@@ -98,6 +101,7 @@ export function SolverRowRetirementAges({
 function EditableWithSolve({
   id,
   label,
+  displayLabel,
   value,
   base,
   min,
@@ -111,7 +115,10 @@ function EditableWithSolve({
   onResetField,
 }: {
   id: string;
+  /** Accessible name — stays fully qualified ("Cooper's Retirement Age"). */
   label: string;
+  /** On-screen name. The section heading already says "Retirement Ages". */
+  displayLabel: string;
   value: number;
   base: number;
   min: number;
@@ -137,7 +144,7 @@ function EditableWithSolve({
   if (isSolvingHere) {
     return (
       <div>
-        <div className="text-[11px] text-ink-3 mb-1">{label}</div>
+        <div className="text-[11px] text-ink-3 mb-1">{displayLabel}</div>
         <SolverSolveProgressStrip
           title={`Solving ${label} for ${Math.round(activeSolve.targetPoS! * 100)}% PoS`}
           iteration={activeSolve.iteration}
@@ -153,29 +160,11 @@ function EditableWithSolve({
 
   return (
     <div>
-      <div className="mb-1.5 flex items-baseline justify-between gap-2">
-        <label className="text-[11px] text-ink-3" htmlFor={id}>
-          {label}
+      <div className={LABEL_ROW}>
+        <label className="min-w-0 truncate text-[11px] text-ink-3" htmlFor={id}>
+          {displayLabel}
         </label>
-        <SolverYearEdit
-          year={retirementYear}
-          birthYear={birthYear}
-          min={min}
-          max={max}
-          ariaLabel={`${label} calendar year`}
-          onCommitAge={onCommit}
-        />
-      </div>
-      <SolverFieldStepper
-        id={id}
-        label={label}
-        value={value}
-        min={min}
-        max={max}
-        onCommit={onCommit}
-      />
-      <SolverFieldActions>
-        <div ref={anchorRef} className="relative">
+        <div ref={anchorRef} className="relative shrink-0">
           <SolverSolveIcon
             label={`Solve ${label}`}
             tooltip={RETIREMENT_AGE_SOLVE_DESCRIPTION}
@@ -197,6 +186,24 @@ function EditableWithSolve({
             />
           ) : null}
         </div>
+      </div>
+      <SolverFieldStepper
+        id={id}
+        label={label}
+        value={value}
+        min={min}
+        max={max}
+        onCommit={onCommit}
+      />
+      <SolverFieldActions>
+        <SolverYearEdit
+          year={retirementYear}
+          birthYear={birthYear}
+          min={min}
+          max={max}
+          ariaLabel={`${label} calendar year`}
+          onCommitAge={onCommit}
+        />
         <SolverBaseHint
           base={base}
           working={value}

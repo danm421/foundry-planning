@@ -3,10 +3,10 @@
 import type { ReactNode } from "react";
 
 /**
- * The action line under a lever's value — its Solve control, then the
- * "Reset to <base>" hint.
+ * The line under a lever's value, carrying whatever annotates it: the calendar
+ * year it lands in, a Solve control, the "Reset to <base>" hint.
  *
- * Both used to ride INLINE beside the value. Goals and Social Security lay
+ * These used to ride INLINE beside the value. Goals and Social Security lay
  * their fields out in a hard half-width grid (Tailwind's `grid-cols-2` is
  * `repeat(2, minmax(0, 1fr))`, so a column never grows past half the pane)
  * while the value itself is `shrink-0`. The extra inline width therefore

@@ -8,7 +8,9 @@ import {
   type SolverPerson,
 } from "@/lib/solver/types";
 import { SolverBaseHint } from "./solver-base-hint";
+import { SolverFieldActions } from "./solver-field-actions";
 import { SolverFieldStepper } from "./solver-field-stepper";
+import { LABEL_ROW } from "./solver-lever-label-row";
 import { SolverYearEdit } from "./solver-year-edit";
 import { birthYearFromDob, yearForAge } from "@/lib/age-year";
 
@@ -45,6 +47,7 @@ export function SolverRowLifeExpectancy({
         <Editable
           id="le-client"
           label={`${workingClient.firstName}'s Life Expectancy`}
+          displayLabel={workingClient.firstName}
           value={workingClient.lifeExpectancy ?? 95}
           base={baseClient.lifeExpectancy ?? 95}
           min={clientMinLE}
@@ -60,6 +63,7 @@ export function SolverRowLifeExpectancy({
           <Editable
             id="le-spouse"
             label={`${workingClient.spouseName ?? "Spouse"}'s Life Expectancy`}
+            displayLabel={workingClient.spouseName ?? "Spouse"}
             value={workingClient.spouseLifeExpectancy ?? 93}
             base={baseClient.spouseLifeExpectancy ?? 93}
             min={spouseMinLE}
@@ -80,6 +84,7 @@ export function SolverRowLifeExpectancy({
 function Editable({
   id,
   label,
+  displayLabel,
   value,
   base,
   min,
@@ -90,7 +95,10 @@ function Editable({
   onResetField,
 }: {
   id: string;
+  /** Accessible name — stays fully qualified ("Cooper's Life Expectancy"). */
   label: string;
+  /** On-screen name. The section heading already says "Life Expectancy". */
+  displayLabel: string;
   value: number;
   base: number;
   min: number;
@@ -102,18 +110,10 @@ function Editable({
 }) {
   return (
     <div>
-      <div className="mb-1.5 flex items-baseline justify-between gap-2">
-        <label className="text-[11px] text-ink-3" htmlFor={id}>
-          {label}
+      <div className={LABEL_ROW}>
+        <label className="min-w-0 truncate text-[11px] text-ink-3" htmlFor={id}>
+          {displayLabel}
         </label>
-        <SolverYearEdit
-          year={yearForAge(birthYear, value)}
-          birthYear={birthYear}
-          min={min}
-          max={max}
-          ariaLabel={`${label} calendar year`}
-          onCommitAge={onCommit}
-        />
       </div>
       <SolverFieldStepper
         id={id}
@@ -123,18 +123,28 @@ function Editable({
         max={max}
         onCommit={onCommit}
       />
-      <SolverBaseHint
-        base={base}
-        working={value}
-        onReset={
-          onResetField
-            ? () =>
-                onResetField([
-                  mutationKey({ kind: "life-expectancy", person, age: 0 }),
-                ])
-            : undefined
-        }
-      />
+      <SolverFieldActions>
+        <SolverYearEdit
+          year={yearForAge(birthYear, value)}
+          birthYear={birthYear}
+          min={min}
+          max={max}
+          ariaLabel={`${label} calendar year`}
+          onCommitAge={onCommit}
+        />
+        <SolverBaseHint
+          base={base}
+          working={value}
+          onReset={
+            onResetField
+              ? () =>
+                  onResetField([
+                    mutationKey({ kind: "life-expectancy", person, age: 0 }),
+                  ])
+              : undefined
+          }
+        />
+      </SolverFieldActions>
     </div>
   );
 }
