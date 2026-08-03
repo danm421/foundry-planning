@@ -483,7 +483,7 @@ describe("SolverChartPanel", () => {
     ).toBeInTheDocument();
   });
 
-  // Pins the re-fetch invariant: a lever move (e.g. a life-expectancy slider)
+  // Pins the re-fetch invariant: a lever move (e.g. a life-expectancy stepper)
   // re-fires the debounced fetch — `loading: true` — while the PREVIOUS
   // projection is still around; the chart must stay on screen rather than
   // blank to a spinner. solver-chart-panel.tsx now guarantees this two ways:

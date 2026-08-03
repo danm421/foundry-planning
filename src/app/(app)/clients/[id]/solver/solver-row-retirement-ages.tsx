@@ -10,7 +10,7 @@ import {
 } from "@/lib/solver/types";
 import type { SolveLeverKey } from "@/lib/solver/solve-types";
 import { SolverBaseHint } from "./solver-base-hint";
-import { SolverFieldSlider } from "./solver-field-slider";
+import { SolverFieldStepper } from "./solver-field-stepper";
 import { SolverSolveIcon } from "./solver-solve-icon";
 import { SolverSolvePopover } from "./solver-solve-popover";
 import { SolverSolveProgressStrip } from "./solver-solve-progress-strip";
@@ -130,7 +130,7 @@ function EditableWithSolve({
     activeSolve?.target.kind === "retirement-age" &&
     (activeSolve.target as { kind: "retirement-age"; person: SolverPerson }).person === person;
   const otherSolveActive = activeSolve !== null && !isSolvingHere;
-  // The calendar year the person turns `value` — updates live as the slider moves.
+  // The calendar year the person turns `value` — updates live as the stepper moves.
   const retirementYear = yearForAge(birthYear, value);
 
   if (isSolvingHere) {
@@ -165,7 +165,7 @@ function EditableWithSolve({
           onCommitAge={onCommit}
         />
       </div>
-      <SolverFieldSlider
+      <SolverFieldStepper
         id={id}
         label={label}
         value={value}

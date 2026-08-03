@@ -4,7 +4,7 @@ import type { ClientData } from "@/engine/types";
 import type { SolverMutation, SolverMutationKey } from "@/lib/solver/types";
 import { controllingEntity } from "@/engine/ownership";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
-import { SolverFieldSlider } from "./solver-field-slider";
+import { SolverFieldStepper } from "./solver-field-stepper";
 
 interface Props {
   workingTree: ClientData;
@@ -56,7 +56,7 @@ export function SolverSurplusAllocation({
           Spend % of surplus
           <FieldTooltip text="Controls what happens to any positive net cash flow each year, after savings, gifts, and taxes are applied. By default, surplus accumulates in the household checking account." />
         </label>
-        <SolverFieldSlider
+        <SolverFieldStepper
           id="surplus-spend-pct"
           label="Spend % of surplus"
           value={Math.round(spendPct * 100)}

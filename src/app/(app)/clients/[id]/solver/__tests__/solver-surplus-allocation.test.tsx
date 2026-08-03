@@ -54,10 +54,7 @@ describe("SolverSurplusAllocation", () => {
   it("editing the spend % emits spendPct as a decimal", () => {
     const t = tree({}, HOUSEHOLD);
     const { onChange } = renderControl(t, t);
-    fireEvent.click(screen.getByLabelText("Edit Spend % of surplus"));
-    // SolverFieldSlider's Radix Slider.Thumb also carries aria-label={label}
-    // (always rendered, even while editing), so getByLabelText is ambiguous
-    // between the thumb (role="slider") and the edit input — scope by role.
+    fireEvent.click(screen.getByRole("spinbutton", { name: "Spend % of surplus" }));
     const input = screen.getByRole("textbox", { name: "Spend % of surplus" });
     fireEvent.change(input, { target: { value: "40" } });
     fireEvent.keyDown(input, { key: "Enter" });

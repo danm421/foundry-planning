@@ -8,7 +8,7 @@ import {
   type SolverPerson,
 } from "@/lib/solver/types";
 import { SolverBaseHint } from "./solver-base-hint";
-import { SolverFieldSlider } from "./solver-field-slider";
+import { SolverFieldStepper } from "./solver-field-stepper";
 import { SolverYearEdit } from "./solver-year-edit";
 import { birthYearFromDob, yearForAge } from "@/lib/age-year";
 
@@ -115,7 +115,7 @@ function Editable({
           onCommitAge={onCommit}
         />
       </div>
-      <SolverFieldSlider
+      <SolverFieldStepper
         id={id}
         label={label}
         value={value}

@@ -11,7 +11,7 @@ import type { SolveLeverKey } from "@/lib/solver/solve-types";
 import { isRetirementLivingExpense } from "@/lib/solver/living-expense";
 import { FieldHintPopover, type HintRow } from "@/components/forms/field-hint-popover";
 import { SolverBaseHint } from "./solver-base-hint";
-import { SolverFieldSlider } from "./solver-field-slider";
+import { SolverFieldStepper } from "./solver-field-stepper";
 import { SolverSolveIcon } from "./solver-solve-icon";
 import { SolverSolvePopover } from "./solver-solve-popover";
 import { SolverSolveProgressStrip } from "./solver-solve-progress-strip";
@@ -23,6 +23,10 @@ type ActiveSolve = {
   candidateValue: number | null;
   achievedPoS: number | null;
 };
+
+/** Safety rail on a typed spend, not an expected ceiling — the stepper's plus
+ *  button is never realistically going to reach it. */
+const SPEND_CLAMP = 10_000_000;
 
 const LIVING_EXPENSE_SOLVE_DESCRIPTION =
   "Scales retirement living expenses up or down to find the spending level that reaches your target plan confidence.";
@@ -86,7 +90,7 @@ export function SolverRowLivingExpenseScale({
           onCancel={onSolveCancel}
         />
       ) : (
-        <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+        <div className="space-y-4">
           {hasLivingRows ? (
             baseLiving.map((baseExpense) => {
               const label = labelFor(baseExpense, currentYear);
@@ -115,7 +119,7 @@ export function SolverRowLivingExpenseScale({
               );
             })
           ) : (
-            <div className="col-span-2 text-[12px] text-ink-3">
+            <div className="text-[12px] text-ink-3">
               No retirement expenses entered — solve to find the sustainable spend.
             </div>
           )}
@@ -134,27 +138,6 @@ function labelFor(expense: Expense, currentYear: number): string {
 
 function formatCurrency(n: number): string {
   return `$${Math.round(n).toLocaleString()}`;
-}
-
-/** Compact dollar label for slider end-caps, e.g. $0 · $50k · $1.5M. */
-function compactUsd(n: number): string {
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(n % 1_000_000 ? 1 : 0)}M`;
-  if (n >= 1_000) return `$${Math.round(n / 1_000)}k`;
-  return `$${n}`;
-}
-
-/** Rounds up to a tidy 1/2/2.5/5 ×10ⁿ value so slider scales read cleanly. */
-function niceCeil(n: number): number {
-  if (n <= 0) return 0;
-  const mag = Math.pow(10, Math.floor(Math.log10(n)));
-  const f = n / mag;
-  const nice = f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10;
-  return nice * mag;
-}
-
-/** Stable slider ceiling from the saved base, generous enough for what-ifs. */
-function spendSliderMax(base: number): number {
-  return niceCeil(Math.max(base * 2, 50_000));
 }
 
 function formatPct(decimal: number): string {
@@ -236,16 +219,14 @@ function Editable({
         </label>
         {rows.length ? <FieldHintPopover label={`${label} details`} rows={rows} /> : null}
       </div>
-      <SolverFieldSlider
+      <SolverFieldStepper
         id={inputId}
         label={label}
         value={expense.annualAmount}
         min={0}
-        max={spendSliderMax(baseExpense.annualAmount)}
+        max={SPEND_CLAMP}
         step={5_000}
         prefix="$"
-        formatBound={compactUsd}
-        valueMax={10_000_000}
         onCommit={onCommit}
         trailing={solve ? <LivingExpenseSolveButton {...solve} /> : undefined}
       />

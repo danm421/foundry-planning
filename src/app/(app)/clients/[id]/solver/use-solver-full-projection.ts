@@ -3,8 +3,8 @@ import type { ProjectionResult } from "@/engine";
 import type { SolverMutation, SolverSource } from "@/lib/solver/types";
 import { parseProjectionResponse } from "@/lib/solver/projection-wire";
 
-/** Debounce before hitting the projection route. Long enough that dragging a
- *  lever slider doesn't fire a request per frame. */
+/** Debounce before hitting the projection route. Long enough that holding a
+ *  lever's stepper doesn't fire a request per tick. */
 const DEBOUNCE_MS = 600;
 
 interface Args {

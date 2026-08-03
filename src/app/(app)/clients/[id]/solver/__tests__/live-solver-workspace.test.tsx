@@ -218,17 +218,17 @@ function makeSseStream(events: Array<{ event: string; data: unknown }>): Respons
 }
 
 /**
- * Cooper's Retirement Age is now a slider (Radix). Each arrow press commits one
- * step — mirroring the old per-keystroke input mutation. Default base is 65.
+ * Cooper's Retirement Age is a stepper. Each arrow press commits one step —
+ * mirroring the old per-keystroke input mutation. Default base is 65.
  */
 function setCooperRetirementAge(target: number, from = 65) {
-  const slider = screen.getByRole("slider", { name: /Cooper's Retirement Age/i });
-  slider.focus();
-  const key = target >= from ? "ArrowRight" : "ArrowLeft";
+  const stepper = screen.getByRole("spinbutton", { name: /Cooper's Retirement Age/i });
+  stepper.focus();
+  const key = target >= from ? "ArrowUp" : "ArrowDown";
   for (let i = 0; i < Math.abs(target - from); i++) {
-    fireEvent.keyDown(slider, { key });
+    fireEvent.keyDown(stepper, { key });
   }
-  return slider;
+  return stepper;
 }
 
 describe("<LiveSolverWorkspace />", () => {
@@ -245,7 +245,7 @@ describe("<LiveSolverWorkspace />", () => {
     });
     render(<LiveSolverWorkspace {...baseProps} />);
 
-    // Three slider steps (65→68) each commit a mutation; the debounce coalesces
+    // Three stepper presses (65→68) each commit a mutation; the debounce coalesces
     // them into a single POST carrying the final value.
     setCooperRetirementAge(68);
 
@@ -336,10 +336,10 @@ describe("LiveSolverWorkspace — solve lifecycle", () => {
     });
 
     // After the solve completes the retirement-age mutation (67) is applied to
-    // workingTree, which re-renders the (controlled) slider at 67 — exposed via
-    // the thumb's aria-valuenow.
-    const sliderAfter = screen.getByRole("slider", { name: /Cooper's Retirement Age/i });
-    expect(sliderAfter).toHaveAttribute("aria-valuenow", "67");
+    // workingTree, which re-renders the (controlled) stepper at 67 — exposed via
+    // the spinbutton's aria-valuenow.
+    const stepperAfter = screen.getByRole("spinbutton", { name: /Cooper's Retirement Age/i });
+    expect(stepperAfter).toHaveAttribute("aria-valuenow", "67");
   });
 });
 
@@ -598,18 +598,18 @@ describe("LiveSolverWorkspace — Monte Carlo auto-run", () => {
     fireEvent.click(solveIcon);
     const submit = await screen.findByRole("button", { name: /^Solve$/ });
     fireEvent.click(submit);
-    // The retirement-age row swaps its slider for a progress strip
+    // The retirement-age row swaps its stepper for a progress strip
     // (role="status") while the solve owns that lever — confirms the solve is
     // genuinely in flight rather than having errored out synchronously.
     await screen.findByRole("status");
 
     // Edit a DIFFERENT lever — Life Expectancy isn't disabled by a
     // retirement-age solve — so the gauge has a real reason to go "stale".
-    // (Cooper's Retirement Age itself is unusable here: mid-solve its slider
+    // (Cooper's Retirement Age itself is unusable here: mid-solve its stepper
     // is replaced by the progress strip above.)
-    const leSlider = screen.getByRole("slider", { name: /Cooper's Life Expectancy/i });
-    leSlider.focus();
-    fireEvent.keyDown(leSlider, { key: "ArrowRight" });
+    const leStepper = screen.getByRole("spinbutton", { name: /Cooper's Life Expectancy/i });
+    leStepper.focus();
+    fireEvent.keyDown(leStepper, { key: "ArrowUp" });
 
     const workingOnlyRan = () =>
       mcCalls.some((c) => c.enabled && c.includeBase === false);

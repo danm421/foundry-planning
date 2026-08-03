@@ -20,10 +20,10 @@ interface Props {
 const clamp = (n: number, lo: number, hi: number) => Math.min(Math.max(n, lo), hi);
 
 /**
- * The calendar year beside a solver age slider — a read-out you can also edit.
+ * The calendar year beside a solver age stepper — a read-out you can also edit.
  * Click "in 2045" to type a target year; it back-solves the age and commits it,
- * so the slider follows. Mirrors the click-to-edit affordance of the value in
- * `SolverFieldSlider`. Renders nothing when the birth year is unknown.
+ * so the stepper follows. Mirrors the click-to-edit affordance of the value in
+ * `SolverFieldStepper`. Renders nothing when the birth year is unknown.
  */
 export function SolverYearEdit({
   year,

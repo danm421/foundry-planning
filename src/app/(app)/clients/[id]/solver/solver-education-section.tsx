@@ -5,7 +5,7 @@ import type { ClientData, Expense, SavingsRule } from "@/engine/types";
 import type { SolverMutation, SolverMutationKey } from "@/lib/solver/types";
 import { withAdditionalContribution } from "@/lib/solver/solve-education-dedicated-savings";
 import { SolverSection } from "./solver-section";
-import { SolverFieldSlider } from "./solver-field-slider";
+import { SolverFieldStepper } from "./solver-field-stepper";
 import { SolverViewReportButton } from "./solver-view-report-button";
 import { SolverEducationGoalForm, type EducationGoalFormAccount } from "./solver-education-goal-form";
 import { useEducationSolve, type EducationSolveOutput } from "./use-education-solve";
@@ -189,7 +189,7 @@ export function SolverEducationSection({
                   </button>
                 </div>
 
-                <SolverFieldSlider
+                <SolverFieldStepper
                   id={`edu-cost-${goal.id}`}
                   label={`${goal.name} annual cost`}
                   value={goal.annualAmount}
@@ -224,7 +224,7 @@ export function SolverEducationSection({
                             {solving ? "Solving…" : "Solve"}
                           </button>
                         </div>
-                        <SolverFieldSlider
+                        <SolverFieldStepper
                           id={`edu-contrib-${key}`}
                           label={`${acct?.name ?? accountId} annual contribution`}
                           value={currentContribution(accountId)}
