@@ -187,6 +187,7 @@ export function mutationsToBaseUpdates(
       case "surplus-allocation": {
         planSettingsPatch.surplusSpendPct = dec(m.spendPct);      // decimal → DB string
         planSettingsPatch.surplusSaveAccountId = m.saveAccountId; // account id | null
+        planSettingsPatch.surplusSpendAllUntilRetirement = m.spendAllUntilRetirement; // boolean column
         break;
       }
 

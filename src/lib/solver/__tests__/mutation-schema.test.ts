@@ -130,11 +130,12 @@ const SAMPLES: SolverMutation[] = [
   { kind: "stress-ss-haircut", pct: 0.23, startYear: 2034 },
   { kind: "stress-disability", person: "client", startYear: 2030 },
   { kind: "stress-market-crash", year: 2030, drawdownPct: 0.3 },
-  { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: null },
+  { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: null, spendAllUntilRetirement: false },
   {
     kind: "surplus-allocation",
     spendPct: 0.3,
     saveAccountId: "00000000-0000-4000-8000-000000000009",
+    spendAllUntilRetirement: true,
   },
 ];
 
@@ -176,8 +177,22 @@ describe("SOLVER_MUTATION_SCHEMA", () => {
         kind: "surplus-allocation",
         spendPct: 1.4,
         saveAccountId: null,
+        spendAllUntilRetirement: false,
       }).success,
     ).toBe(false);
+  });
+
+  it("round-trips spendAllUntilRetirement through the schema (not silently stripped)", () => {
+    const result = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "surplus-allocation",
+      spendPct: 0.3,
+      saveAccountId: null,
+      spendAllUntilRetirement: true,
+    });
+    expect(result.success).toBe(true);
+    if (result.success && result.data.kind === "surplus-allocation") {
+      expect(result.data.spendAllUntilRetirement).toBe(true);
+    }
   });
 
   it("covers every SolverMutation kind present in the samples list", () => {

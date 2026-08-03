@@ -613,6 +613,14 @@ export function mutationsToScenarioChanges(
           source.planSettings.surplusSaveAccountId ?? null,
           m.saveAccountId,
         );
+        maybeDiff(
+          planSettingsDiff,
+          "surplusSpendAllUntilRetirement",
+          // Normalize: maybeDiff compares with ===, so an unset source field
+          // would otherwise diff against an explicit `false` on every save.
+          source.planSettings.surplusSpendAllUntilRetirement ?? false,
+          m.spendAllUntilRetirement,
+        );
         break;
       }
     }

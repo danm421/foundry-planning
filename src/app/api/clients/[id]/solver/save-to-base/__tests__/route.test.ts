@@ -313,7 +313,7 @@ describe("POST /api/clients/[id]/solver/save-to-base", () => {
         source: "base",
         mutations: [
           { kind: "account-upsert", id: "synthetic-new", value: ACCT },
-          { kind: "surplus-allocation", spendPct: 0.5, saveAccountId: "synthetic-new" },
+          { kind: "surplus-allocation", spendPct: 0.5, saveAccountId: "synthetic-new", spendAllUntilRetirement: false },
         ],
       }),
       ctx as never,
@@ -339,7 +339,7 @@ describe("POST /api/clients/[id]/solver/save-to-base", () => {
     const res = await POST(
       makeRequest({
         source: "base",
-        mutations: [{ kind: "surplus-allocation", spendPct: 0.5, saveAccountId: "acct-external" }],
+        mutations: [{ kind: "surplus-allocation", spendPct: 0.5, saveAccountId: "acct-external", spendAllUntilRetirement: false }],
       }),
       ctx as never,
     );

@@ -840,7 +840,7 @@ describe("applyMutations — surplus allocation", () => {
   it("surplus-allocation writes surplusSpendPct + surplusSaveAccountId", () => {
     const data = makeBase();
     const out = applyMutations(data, [
-      { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: "acct-brokerage" },
+      { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: "acct-brokerage", spendAllUntilRetirement: false },
     ]);
     expect(out.planSettings.surplusSpendPct).toBe(0.3);
     expect(out.planSettings.surplusSaveAccountId).toBe("acct-brokerage");
@@ -850,9 +850,23 @@ describe("applyMutations — surplus allocation", () => {
 
   it("preserves a null saveAccountId (household checking default)", () => {
     const out = applyMutations(makeBase(), [
-      { kind: "surplus-allocation", spendPct: 0.5, saveAccountId: null },
+      { kind: "surplus-allocation", spendPct: 0.5, saveAccountId: null, spendAllUntilRetirement: false },
     ]);
     expect(out.planSettings.surplusSpendPct).toBe(0.5);
     expect(out.planSettings.surplusSaveAccountId).toBeNull();
+  });
+
+  it("writes surplusSpendAllUntilRetirement into the working tree", () => {
+    const out = applyMutations(makeBase(), [
+      { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: null, spendAllUntilRetirement: true },
+    ]);
+    expect(out.planSettings.surplusSpendAllUntilRetirement).toBe(true);
+  });
+
+  it("writes false back through (turning the lever off)", () => {
+    const out = applyMutations(makeBase(), [
+      { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: null, spendAllUntilRetirement: false },
+    ]);
+    expect(out.planSettings.surplusSpendAllUntilRetirement).toBe(false);
   });
 });

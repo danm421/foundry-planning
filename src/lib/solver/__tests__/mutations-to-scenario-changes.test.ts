@@ -618,7 +618,7 @@ describe("mutationsToScenarioChanges — surplus allocation → plan_settings", 
       planSettings: { planStartYear: 2026, surplusSpendPct: 0, surplusSaveAccountId: null } as ClientData["planSettings"],
     };
     const drafts = mutationsToScenarioChanges(src, CLIENT_ID, [
-      { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: "acct-1" },
+      { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: "acct-1", spendAllUntilRetirement: false },
     ]);
     const ps = drafts.filter((d) => d.targetKind === "plan_settings");
     expect(ps).toHaveLength(1);
@@ -636,7 +636,7 @@ describe("mutationsToScenarioChanges — surplus allocation → plan_settings", 
     };
     const drafts = mutationsToScenarioChanges(src, CLIENT_ID, [
       { kind: "stress-inflation", rate: 0.05 },
-      { kind: "surplus-allocation", spendPct: 0.4, saveAccountId: null },
+      { kind: "surplus-allocation", spendPct: 0.4, saveAccountId: null, spendAllUntilRetirement: false },
     ]);
     expect(drafts.filter((d) => d.targetKind === "plan_settings")).toHaveLength(1);
   });
@@ -647,8 +647,23 @@ describe("mutationsToScenarioChanges — surplus allocation → plan_settings", 
       planSettings: { planStartYear: 2026, surplusSpendPct: 0.3, surplusSaveAccountId: "acct-1" } as ClientData["planSettings"],
     };
     const drafts = mutationsToScenarioChanges(src, CLIENT_ID, [
-      { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: "acct-1" },
+      { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: "acct-1", spendAllUntilRetirement: false },
     ]);
     expect(drafts.filter((d) => d.targetKind === "plan_settings")).toHaveLength(0);
+  });
+
+  it("emits a surplusSpendAllUntilRetirement diff when it flips on", () => {
+    const src = {
+      ...makeSource(),
+      planSettings: { planStartYear: 2026, surplusSpendPct: 0.3, surplusSaveAccountId: "acct-1" } as ClientData["planSettings"],
+    };
+    const drafts = mutationsToScenarioChanges(src, CLIENT_ID, [
+      { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: "acct-1", spendAllUntilRetirement: true },
+    ]);
+    const ps = drafts.filter((d) => d.targetKind === "plan_settings");
+    expect(ps).toHaveLength(1);
+    expect(ps[0].payload).toEqual({
+      surplusSpendAllUntilRetirement: { from: false, to: true },
+    });
   });
 });

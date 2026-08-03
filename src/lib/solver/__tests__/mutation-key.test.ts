@@ -42,7 +42,7 @@ describe("mutationKey — stress test", () => {
 describe("mutationKey — surplus allocation", () => {
   it("keys the surplus lever as a single global lever", () => {
     expect(
-      mutationKey({ kind: "surplus-allocation", spendPct: 0.3, saveAccountId: null }),
+      mutationKey({ kind: "surplus-allocation", spendPct: 0.3, saveAccountId: null, spendAllUntilRetirement: false }),
     ).toBe("surplus-allocation");
   });
 });

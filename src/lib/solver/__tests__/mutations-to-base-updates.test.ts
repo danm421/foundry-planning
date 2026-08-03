@@ -242,21 +242,23 @@ describe("living-expense-amount → base updates", () => {
 describe("mutationsToBaseUpdates — surplus allocation", () => {
   it("emits a planSettingsUpdate with a string-coerced pct and passthrough account", () => {
     const out = mutationsToBaseUpdates(richSource, [
-      { kind: "surplus-allocation", spendPct: 0.25, saveAccountId: "acct1" },
+      { kind: "surplus-allocation", spendPct: 0.25, saveAccountId: "acct1", spendAllUntilRetirement: false },
     ]);
     expect(out.planSettingsUpdate).toEqual({
       surplusSpendPct: "0.25",
       surplusSaveAccountId: "acct1",
+      surplusSpendAllUntilRetirement: false,
     });
   });
 
   it("preserves a null saveAccountId", () => {
     const out = mutationsToBaseUpdates(richSource, [
-      { kind: "surplus-allocation", spendPct: 0, saveAccountId: null },
+      { kind: "surplus-allocation", spendPct: 0, saveAccountId: null, spendAllUntilRetirement: false },
     ]);
     expect(out.planSettingsUpdate).toEqual({
       surplusSpendPct: "0",
       surplusSaveAccountId: null,
+      surplusSpendAllUntilRetirement: false,
     });
   });
 
@@ -266,13 +268,25 @@ describe("mutationsToBaseUpdates — surplus allocation", () => {
       { ...horizonSourceForMerge },
       [
         { kind: "life-expectancy", person: "client", age: 105 },
-        { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: "acct1" },
+        { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: "acct1", spendAllUntilRetirement: false },
       ],
     );
     expect(out.planSettingsUpdate).toEqual({
       planEndYear: 2070,
       surplusSpendPct: "0.3",
       surplusSaveAccountId: "acct1",
+      surplusSpendAllUntilRetirement: false,
+    });
+  });
+
+  it("patches surplusSpendAllUntilRetirement as a boolean, not a string", () => {
+    const out = mutationsToBaseUpdates(richSource, [
+      { kind: "surplus-allocation", spendPct: 0.25, saveAccountId: "acct1", spendAllUntilRetirement: true },
+    ]);
+    expect(out.planSettingsUpdate).toEqual({
+      surplusSpendPct: "0.25",
+      surplusSaveAccountId: "acct1",
+      surplusSpendAllUntilRetirement: true,
     });
   });
 });
@@ -285,7 +299,7 @@ describe("isBaseSavableMutation", () => {
 
   it("reports surplus-allocation as base-savable", () => {
     expect(
-      isBaseSavableMutation({ kind: "surplus-allocation", spendPct: 0.3, saveAccountId: null }),
+      isBaseSavableMutation({ kind: "surplus-allocation", spendPct: 0.3, saveAccountId: null, spendAllUntilRetirement: false }),
     ).toBe(true);
   });
 
@@ -356,7 +370,7 @@ describe("every base-savable mutation kind produces a write", () => {
     "savings-end-year": { kind: "savings-end-year", accountId: "acct1", year: 2050 },
     "account-upsert": { kind: "account-upsert", id: "new", value: ACCT },
     "savings-rule-upsert": { kind: "savings-rule-upsert", id: "r2", value: { ...RULE, id: "r2", accountId: "acct1" } },
-    "surplus-allocation": { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: "acct1" },
+    "surplus-allocation": { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: "acct1", spendAllUntilRetirement: false },
   };
 
   for (const [kind, m] of Object.entries(representatives)) {

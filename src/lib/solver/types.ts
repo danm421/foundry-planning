@@ -86,7 +86,13 @@ export type SolverMutation =
   | { kind: "stress-disability"; person: SolverPerson; startYear: number }
   | { kind: "stress-market-crash"; year: number; drawdownPct: number }
   | { kind: "stress-exemption-cap"; cap: number }
-  | { kind: "surplus-allocation"; spendPct: number; saveAccountId: string | null };
+  | {
+      kind: "surplus-allocation";
+      spendPct: number;
+      saveAccountId: string | null;
+      /** Force 100% spend for every year before the first retirement year. */
+      spendAllUntilRetirement: boolean;
+    };
 
 /** Stable key for "last write per lever wins" upsert semantics. */
 export type SolverMutationKey =

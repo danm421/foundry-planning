@@ -373,6 +373,7 @@ export function applyMutations(
           ...result.planSettings,
           surplusSpendPct: m.spendPct,          // engine reads a number 0–1
           surplusSaveAccountId: m.saveAccountId, // account id | null (null = checking)
+          surplusSpendAllUntilRetirement: m.spendAllUntilRetirement,
         };
         break;
       }
