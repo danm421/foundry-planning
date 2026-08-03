@@ -1,0 +1,145 @@
+/**
+ * Pure rail model for the portal Accounts page. Single source of truth for the
+ * category label/order maps that `profile-accounts-list.tsx` and
+ * `profile-debt-list.tsx` used to duplicate.
+ *
+ * No IO, no React — the rail is derived from an already-loaded DTO so it can be
+ * unit-tested in plain vitest.
+ */
+import type { PortalAccountRow, PortalDebtRow } from "@/lib/portal/contracts";
+
+export const CATEGORY_LABELS: Record<string, string> = {
+  cash: "Cash",
+  taxable: "Taxable",
+  retirement: "Retirement",
+  annuity: "Annuity",
+  real_estate: "Real estate",
+  business: "Business",
+  stock_options: "Stock options",
+  life_insurance: "Life insurance",
+  notes_receivable: "Notes receivable",
+};
+
+/**
+ * Full planning taxonomy, not the portal-visible subset. `isPortalVisibleAccount()`
+ * admits only cash/taxable/retirement/real_estate today, so the tail of this list is
+ * unreachable from this page — it stays complete so a future widening of
+ * PORTAL_VISIBLE_CATEGORIES needs no change here.
+ */
+export const CATEGORY_ORDER = [
+  "cash",
+  "taxable",
+  "retirement",
+  "annuity",
+  "real_estate",
+  "business",
+  "stock_options",
+  "life_insurance",
+  "notes_receivable",
+] as const;
+
+export const TYPE_LABEL: Record<string, string> = {
+  mortgage: "Mortgage",
+  heloc: "HELOC",
+  auto: "Auto loan",
+  student: "Student loan",
+  personal: "Personal loan",
+  credit_card: "Credit card",
+  other: "Loan",
+};
+
+export const TYPE_ORDER = [
+  "mortgage",
+  "heloc",
+  "auto",
+  "student",
+  "personal",
+  "credit_card",
+  "other",
+] as const;
+
+export type RailGroupKind = "asset" | "liability";
+
+export interface RailRow {
+  /** Stable selection key — "asset:cash", "liability:mortgage". */
+  key: string;
+  kind: RailGroupKind;
+  /** Raw account category, or liabilityType bucket. */
+  category: string;
+  label: string;
+  /** Always positive; the liability sign is a display concern. */
+  total: number;
+}
+
+export interface RailGroup {
+  total: number;
+  rows: RailRow[];
+}
+
+export interface AccountRail {
+  netWorth: number;
+  assets: RailGroup;
+  liabilities: RailGroup;
+}
+
+/** Known keys first in canonical order, then anything unrecognised, input-order. */
+function orderedKeys(present: string[], order: readonly string[]): string[] {
+  return [
+    ...order.filter((k) => present.includes(k)),
+    ...present.filter((k) => !order.includes(k)),
+  ];
+}
+
+function sumBy<T>(items: T[], keyOf: (t: T) => string, valueOf: (t: T) => number): Map<string, number> {
+  const totals = new Map<string, number>();
+  for (const item of items) {
+    const k = keyOf(item);
+    totals.set(k, (totals.get(k) ?? 0) + valueOf(item));
+  }
+  return totals;
+}
+
+export function buildAccountRail({
+  assets,
+  debts,
+}: {
+  assets: PortalAccountRow[];
+  debts: PortalDebtRow[];
+}): AccountRail {
+  const assetTotals = sumBy(assets, (a) => a.category, (a) => a.value);
+  // A liability with no type is a plain loan — same fallback profile-debt-list used.
+  const debtTotals = sumBy(debts, (d) => d.liabilityType ?? "other", (d) => d.balance);
+
+  const assetRows: RailRow[] = orderedKeys([...assetTotals.keys()], CATEGORY_ORDER).map((c) => ({
+    key: `asset:${c}`,
+    kind: "asset",
+    category: c,
+    label: CATEGORY_LABELS[c] ?? c,
+    total: assetTotals.get(c) ?? 0,
+  }));
+
+  const liabilityRows: RailRow[] = orderedKeys([...debtTotals.keys()], TYPE_ORDER).map((c) => ({
+    key: `liability:${c}`,
+    kind: "liability",
+    category: c,
+    label: TYPE_LABEL[c] ?? "Loan",
+    total: debtTotals.get(c) ?? 0,
+  }));
+
+  const assetsTotal = assetRows.reduce((s, r) => s + r.total, 0);
+  const liabilitiesTotal = liabilityRows.reduce((s, r) => s + r.total, 0);
+
+  return {
+    netWorth: assetsTotal - liabilitiesTotal,
+    assets: { total: assetsTotal, rows: assetRows },
+    liabilities: { total: liabilitiesTotal, rows: liabilityRows },
+  };
+}
+
+export function assetCardSubtitle(a: PortalAccountRow): string {
+  return `${CATEGORY_LABELS[a.category] ?? a.category} · ${a.subType.replace(/_/g, " ")}`;
+}
+
+export function debtCardSubtitle(d: PortalDebtRow): string {
+  return d.liabilityType ? TYPE_LABEL[d.liabilityType] ?? "Loan" : "Loan";
+}
