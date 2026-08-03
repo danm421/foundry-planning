@@ -10,11 +10,22 @@ export const TOTAL_KEY = "total";
 /** Either TOTAL_KEY or a RailRow.key ("asset:cash", "liability:mortgage"). */
 export type RailSelection = string;
 
+const ROW_LAYOUT =
+  "flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-[13px]";
+
 function rowCls(active: boolean): string {
   return [
-    "flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-[13px]",
+    ROW_LAYOUT,
     active ? "bg-card-2 text-ink" : "text-ink-2 hover:bg-card hover:text-ink",
   ].join(" ");
+}
+
+/**
+ * Hero-only styling: exactly one `bg-*` utility is ever present, so the
+ * selected/resting look never depends on Tailwind's utility-emission order.
+ */
+function heroCls(active: boolean): string {
+  return [ROW_LAYOUT, "border border-hair", active ? "bg-card-2" : "bg-card"].join(" ");
 }
 
 /** Liabilities read as a deduction: ($125,000). Assets read plain. */
@@ -74,7 +85,7 @@ export function AccountRailNav({
         type="button"
         onClick={() => onSelect(TOTAL_KEY)}
         aria-current={selected === TOTAL_KEY ? "true" : undefined}
-        className={`${rowCls(selected === TOTAL_KEY)} border border-hair bg-card`}
+        className={heroCls(selected === TOTAL_KEY)}
       >
         <span className="text-[13px] font-semibold text-ink">Total Net Worth</span>
         <span className="tabular shrink-0 text-[15px] font-semibold text-ink">

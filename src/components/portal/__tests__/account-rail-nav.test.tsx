@@ -54,6 +54,24 @@ describe("AccountRailNav", () => {
     expect(onSelect).toHaveBeenCalledWith(TOTAL_KEY);
   });
 
+  it("gives the hero exactly one background token, and a different one when selected vs. resting", () => {
+    const bgTokens = (el: HTMLElement) =>
+      el.className.split(/\s+/).filter((c) => c.startsWith("bg-"));
+
+    const selected = render(
+      <AccountRailNav rail={rail} selected={TOTAL_KEY} onSelect={vi.fn()} />,
+    );
+    const selectedHero = selected.getByRole("button", { name: /Total Net Worth/ });
+    expect(bgTokens(selectedHero)).toEqual(["bg-card-2"]);
+    selected.unmount();
+
+    const resting = render(
+      <AccountRailNav rail={rail} selected="asset:cash" onSelect={vi.fn()} />,
+    );
+    const restingHero = resting.getByRole("button", { name: /Total Net Worth/ });
+    expect(bgTokens(restingHero)).toEqual(["bg-card"]);
+  });
+
   it("omits a group entirely when it has no rows", () => {
     const assetsOnly = buildAccountRail({
       assets: [{ id: "1", name: "Checking", category: "cash", subType: "checking", last4: null, value: 10, isPlaidLinked: false }],
