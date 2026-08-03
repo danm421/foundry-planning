@@ -79,7 +79,7 @@ export function HouseholdStatusSelect({
       disabled={busy}
       onChange={(e) => void changeStatus(e.target.value)}
       aria-label={`Status for ${householdName}`}
-      className={`${selectBaseClassName} h-8 w-32 text-[13px] text-ink-2`}
+      className={`${selectBaseClassName} h-8 w-32 text-sm text-ink-2`}
     >
       {STATUS_OPTIONS.map((opt) => (
         <option key={opt.value} value={opt.value}>

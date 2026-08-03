@@ -9,7 +9,7 @@ interface ClientRowActionsProps {
 }
 
 const pill =
-  "inline-flex items-center rounded-md border border-transparent bg-card-2 px-2.5 py-1 text-[12px] font-medium text-ink-2 transition-colors hover:border-accent hover:text-accent";
+  "inline-flex items-center rounded-md border border-transparent bg-card-2 px-2.5 py-1 text-[13px] font-medium text-ink-2 transition-colors hover:border-accent hover:text-accent";
 
 /**
  * One-click navigation pills for a household row — bridges the two detail

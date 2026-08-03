@@ -139,7 +139,6 @@ export async function ClientsContent({
       status: h.status,
       primaryName: primary ? `${primary.firstName} ${primary.lastName}`.trim() : null,
       spouseName: spouse ? `${spouse.firstName} ${spouse.lastName}`.trim() : null,
-      hasPlanning: Boolean(h.planningClient),
       planningClientId: h.planningClient?.id ?? null,
       updatedAt: h.updatedAt.toISOString(),
       deletedAt: h.deletedAt ? h.deletedAt.toISOString() : null,

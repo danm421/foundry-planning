@@ -46,7 +46,7 @@ function PermissionChip({ permission }: { permission: "view" | "edit" }) {
 // Table header style (mirrors unified-clients-table.tsx)
 // ---------------------------------------------------------------------------
 
-const TH = "px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-ink-3";
+const TH = "px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-ink-3";
 
 // ---------------------------------------------------------------------------
 // SharedWithMeTable

@@ -13,7 +13,6 @@ export interface UnifiedClientRow {
   status: string;
   primaryName: string | null;
   spouseName: string | null;
-  hasPlanning: boolean;
   planningClientId: string | null;
   updatedAt: string;
   deletedAt: string | null;
@@ -31,6 +30,15 @@ interface UnifiedClientsTableProps {
 
 // Widened so a row's plain-string status can index it (unknowns fall back below).
 const STATUS_LABELS: Record<string, string> = HOUSEHOLD_STATUS_LABELS;
+
+/**
+ * Body-cell padding, declared once for the same reason `TH` is: the colgroup
+ * budgets each column's content width as `col width − TD padding`, so a cell
+ * that drifts to its own padding silently breaks that arithmetic.
+ */
+const TD = "px-4 py-3";
+/** `TD` plus the secondary-text treatment most data cells share. */
+const TD_TEXT = `${TD} text-sm text-ink-2`;
 
 function dash(value: string | null) {
   return value && value.trim() ? value : <span className="text-ink-3">—</span>;
@@ -50,8 +58,39 @@ export function UnifiedClientsTable({ rows, emptyMessage, canManage, sort }: Uni
   }
 
   return (
-    <div className="mt-4 overflow-hidden rounded-lg border border-hair bg-card shadow-sm">
-      <table className="min-w-full divide-y divide-hair">
+    <div className="mt-4 overflow-x-auto rounded-lg border border-hair bg-card shadow-sm">
+      {/*
+        `table-fixed` + this colgroup is what keeps the list on one screen: every
+        column is budgeted, so long values ellipsize instead of the whole table
+        growing past the viewport. The `min-w` floor keeps those budgets readable
+        on narrow windows — below it the CARD scrolls, rather than the page
+        bleeding off to the right.
+
+        The LAST column is the flexible one, and that is the whole layout. Give
+        the slack to Name instead and every data column drifts right with it,
+        stranding the quick-link pills a long way from the name they belong to.
+        Anchoring it here packs the data columns left at their natural widths and
+        pools the leftover space at the card's edge, behind the right-aligned
+        row menu.
+
+        Two widths are pinned to content that lives in OTHER files and cannot
+        ellipsize its way out of an overflow, so they carry deliberate slack —
+        measured in-browser, not eyeballed:
+          · quick links (208px) — `ClientRowActions`' widest state is the
+            "CRM" + "Start planning" pill pair.
+          · status (176px) — `HouseholdStatusSelect` is a fixed `w-32` (128px).
+        Widening that copy, that select, or the row font means re-measuring both.
+      */}
+      <table className="w-full min-w-[1112px] table-fixed divide-y divide-hair">
+        <colgroup>
+          <col className="w-[236px]" />
+          <col className="w-[216px]" />
+          <col className="w-[176px]" />
+          <col className="w-[148px]" />
+          <col className="w-[148px]" />
+          <col className="w-[136px]" />
+          <col />
+        </colgroup>
         <thead className="bg-card-2">
           <tr>
             <ClientsSortHeader
@@ -61,7 +100,11 @@ export function UnifiedClientsTable({ rows, emptyMessage, canManage, sort }: Uni
               activeKey={sort?.key ?? null}
               activeDir={sort?.dir ?? "asc"}
             />
-            <th className={TH}>
+            {/* `relative` matters: `sr-only` is position:absolute, and without a
+                positioned ancestor INSIDE the scrolling card it resolves against
+                a distant one — landing past the viewport and scrolling the whole
+                PAGE whenever the table is wider than the card. */}
+            <th className={`${TH} relative`}>
               <span className="sr-only">Quick links</span>
             </th>
             <ClientsSortHeader
@@ -73,7 +116,9 @@ export function UnifiedClientsTable({ rows, emptyMessage, canManage, sort }: Uni
             />
             <ClientsSortHeader
               sortKey="primary"
-              label="Primary contact"
+              // Shortened from "Primary contact" so the header fits its column
+              // without wrapping; `srLabel` keeps the full meaning for AT.
+              label="Primary"
               srLabel="Sort by primary contact first name"
               activeKey={sort?.key ?? null}
               activeDir={sort?.dir ?? "asc"}
@@ -85,7 +130,6 @@ export function UnifiedClientsTable({ rows, emptyMessage, canManage, sort }: Uni
               activeKey={sort?.key ?? null}
               activeDir={sort?.dir ?? "asc"}
             />
-            <th className={TH}>Planning</th>
             <ClientsSortHeader
               sortKey="updated"
               label="Updated"
@@ -93,28 +137,35 @@ export function UnifiedClientsTable({ rows, emptyMessage, canManage, sort }: Uni
               activeKey={sort?.key ?? null}
               activeDir={sort?.dir ?? "asc"}
             />
-            <th className={TH}><span className="sr-only">Actions</span></th>
+            {/* Always rendered: this is the flexible column that pools the
+                slack, so it must exist even when there is no row menu in it.
+                `relative` for the same reason as the quick-links header. */}
+            <th className={`${TH} relative`}>
+              <span className="sr-only">Actions</span>
+            </th>
           </tr>
         </thead>
         <tbody className="divide-y divide-hair">
           {rows.map((r) => {
             return (
               <tr key={r.householdId} className="hover:bg-card-2">
-                <td className="whitespace-nowrap px-6 py-4">
-                  <span className="font-medium text-ink">{r.name}</span>
+                <td className={TD}>
+                  <span className="block truncate text-sm font-medium text-ink" title={r.name}>
+                    {r.name}
+                  </span>
                   {r.deletedAt && (
-                    <span className="mt-0.5 block text-xs text-ink-3">
+                    <span className="mt-0.5 block truncate text-xs text-ink-3">
                       In Trash · purges in {daysUntilPurge(r.deletedAt)} days
                     </span>
                   )}
                 </td>
-                <td className="whitespace-nowrap px-6 py-4">
+                <td className={`${TD} whitespace-nowrap`}>
                   <ClientRowActions
                     householdId={r.householdId}
                     planningClientId={r.planningClientId}
                   />
                 </td>
-                <td className="whitespace-nowrap px-6 py-4 text-sm text-ink-2">
+                <td className={`${TD_TEXT} whitespace-nowrap`}>
                   {r.deletedAt ? (
                     STATUS_LABELS[r.status] ?? r.status
                   ) : (
@@ -128,29 +179,20 @@ export function UnifiedClientsTable({ rows, emptyMessage, canManage, sort }: Uni
                     />
                   )}
                 </td>
-                <td className="whitespace-nowrap px-6 py-4 text-sm text-ink-2">
+                <td className={`${TD_TEXT} truncate`}>
                   {dash(r.primaryName)}
                 </td>
-                <td className="whitespace-nowrap px-6 py-4 text-sm text-ink-2">
+                <td className={`${TD_TEXT} truncate`}>
                   {dash(r.spouseName)}
                 </td>
-                <td className="whitespace-nowrap px-6 py-4 text-sm">
-                  {r.hasPlanning ? (
-                    <span className="inline-flex items-center rounded-full bg-ok/15 px-2 py-0.5 text-[11px] font-medium text-ok">
-                      Planning
-                    </span>
-                  ) : (
-                    <span className="text-ink-3">—</span>
-                  )}
-                </td>
-                <td className="whitespace-nowrap px-6 py-4 text-sm text-ink-3">
+                <td className={`${TD} tabular whitespace-nowrap text-sm text-ink-3`}>
                   {new Date(r.updatedAt).toLocaleDateString("en-US", {
-                    year: "numeric",
                     month: "short",
                     day: "numeric",
+                    year: "numeric",
                   })}
                 </td>
-                <td className="whitespace-nowrap px-6 py-4 text-right">
+                <td className={`${TD} whitespace-nowrap text-right`}>
                   {canManage && (
                     <HouseholdTrashActions
                       householdId={r.householdId}

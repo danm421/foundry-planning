@@ -17,7 +17,6 @@ const ROWS: UnifiedClientRow[] = [
     status: "active",
     primaryName: "John Smith",
     spouseName: "Jane Smith",
-    hasPlanning: true,
     planningClientId: "C1",
     updatedAt: "2026-05-01T00:00:00.000Z",
     deletedAt: null,
@@ -28,7 +27,6 @@ const ROWS: UnifiedClientRow[] = [
     status: "prospect",
     primaryName: null,
     spouseName: null,
-    hasPlanning: false,
     planningClientId: null,
     updatedAt: "2026-05-02T00:00:00.000Z",
     deletedAt: null,
@@ -44,12 +42,15 @@ function renderTable(rows: UnifiedClientRow[]) {
 }
 
 describe("UnifiedClientsTable", () => {
-  it("renders a Planning status pill for households with a plan", () => {
+  it("conveys plan state once, through the quick link", () => {
     renderTable(ROWS);
     const planningRow = screen.getByText("Smith Household").closest("tr")!;
-    // The row also has a "Planning" quick-link <a>; the status pill is the <span>.
+    // The quick link is the ONLY "Planning" in the row — the duplicate status
+    // pill column it used to sit beside was removed to keep the table on one
+    // screen. A second match means that column crept back.
     const planningEls = within(planningRow).getAllByText("Planning");
-    expect(planningEls.some((el) => el.tagName === "SPAN")).toBe(true);
+    expect(planningEls).toHaveLength(1);
+    expect(planningEls[0].tagName).toBe("A");
   });
 
   it("shows an em dash for households with no plan and no primary contact", () => {

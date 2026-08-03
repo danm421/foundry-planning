@@ -9,7 +9,7 @@ import { DEFAULT_DIR, type ClientSortKey, type SortDir } from "@/lib/crm/sort";
  * ones in the SAME header row — two copies would let the row drift out of
  * alignment. Declared here rather than there to keep the import one-directional.
  */
-export const TH = "px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-ink-3";
+export const TH = "px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-ink-3";
 
 interface ClientsSortHeaderProps {
   sortKey: ClientSortKey;
