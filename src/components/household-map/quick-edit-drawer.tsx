@@ -23,6 +23,7 @@ import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { CurrencyInput } from "@/components/currency-input";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import GrowthSourceRadio from "@/components/forms/growth-source-radio";
+import { LIVING_EDITABLE_FIELDS } from "@/lib/living-expenses";
 import {
   coerceYearRef,
   defaultExpenseRefs,
@@ -71,10 +72,14 @@ function ownerFromColumn(column: MapColumn): "client" | "spouse" | "joint" {
   return column === "client" || column === "spouse" ? column : "joint";
 }
 
-/** The four `expenses.type` enum members, in the order the full editor
- *  (`income-expenses-view.tsx`) lists them. */
+/** The `expenses.type` enum members an advisor may CREATE, in the order the
+ *  full editor (`income-expenses-view.tsx`) lists them.
+ *
+ *  "living" is deliberately absent — it is a CLOSED SET of the two seeded rows
+ *  (Current + Retirement) per client, and `createExpenseForClient` rejects a
+ *  living create outright (`lib/clients/expenses-writes.ts`), so offering it
+ *  here bought nothing but a 400. See `lib/living-expenses.ts`. */
 const EXPENSE_TYPES = [
-  { value: "living", label: "Living expense" },
   { value: "insurance", label: "Insurance" },
   { value: "education", label: "Education" },
   { value: "other", label: "Other" },
@@ -237,6 +242,14 @@ export default function QuickEditDrawer({
   const [institutionName, setInstitutionName] = useState("");
 
   const isDefault = seed.isDefault;
+  /**
+   * A seeded living row accepts ONLY amount + timing; the write core 400s on
+   * any other key (`lib/clients/expenses-writes.ts`). Same rule, same reason
+   * and same treatment as the full editor's `isDefaultLiving` — the two
+   * surfaces have to agree, so both read `LIVING_EDITABLE_FIELDS` rather than
+   * either one restating the field list.
+   */
+  const isDefaultLiving = isDefault && type === "living";
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -299,6 +312,18 @@ export default function QuickEditDrawer({
     };
     if (!isEdit) body.type = type;
 
+    // BASE mode only, and for the identical reason the full editor narrows its
+    // own PUT: on a seeded living row every key outside `LIVING_EDITABLE_FIELDS`
+    // is a 400, and `name` / `growthRate` / `growthSource` / `isGoal` are all in
+    // this body. Derived from the canonical set, never a retyped copy.
+    //
+    // `desiredFields` stays whole on purpose — `lib/inline-edit/flow-write.ts`
+    // explains that a scenario change is a wholesale replace, so a narrowed
+    // payload silently deletes that scenario's other overrides on the row.
+    const baseBody = isDefaultLiving
+      ? Object.fromEntries(Object.entries(body).filter(([k]) => LIVING_EDITABLE_FIELDS.has(k)))
+      : body;
+
     const newId = isEdit
       ? target.id!
       : typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -313,7 +338,7 @@ export default function QuickEditDrawer({
         isEdit
           ? { op: "edit", targetKind: target.kind, targetId: target.id!, desiredFields: body }
           : { op: "add", targetKind: target.kind, entity: { id: newId, ...body } },
-        { url, method: isEdit ? "PUT" : "POST", body },
+        { url, method: isEdit ? "PUT" : "POST", body: baseBody },
       );
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
@@ -410,17 +435,32 @@ export default function QuickEditDrawer({
             </div>
           )}
 
-          <div>
-            <label className="block text-xs font-medium text-ink-2" htmlFor="qed-name">
-              Name
-            </label>
-            <input
-              id="qed-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-hair bg-card-2 px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
-            />
-          </div>
+          {/* A seeded living row's name is fixed, so it reads as a heading
+              rather than an input. Not merely cosmetic: `handleSave` drops
+              every locked key from the base payload, so an editable control
+              here would accept a change and then throw it away silently. */}
+          {isDefaultLiving ? (
+            <div className="rounded-md border border-hair bg-card-2 px-3 py-2.5">
+              <p className="text-sm font-medium text-ink">{name}</p>
+              <p className="mt-1 text-xs text-ink-3">
+                Living expenses are fixed to two rows — current and retirement. You can change
+                the amount and the years; the name, type and growth rate are set by the plan
+                and grow with inflation.
+              </p>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-medium text-ink-2" htmlFor="qed-name">
+                Name
+              </label>
+              <input
+                id="qed-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="mt-1 block w-full rounded-md border border-hair bg-card-2 px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+              />
+            </div>
+          )}
 
           {/* The two education fields the Goals board actually renders: the
               beneficiary becomes the card's "for Kelly" line and the institution
@@ -521,6 +561,7 @@ export default function QuickEditDrawer({
             />
           </div>
 
+          {!isDefaultLiving && (
           <div>
             <span className="block text-xs font-medium text-ink-2">Growth</span>
             <div className="mt-1">
@@ -540,8 +581,9 @@ export default function QuickEditDrawer({
               />
             </div>
           </div>
+          )}
 
-          {target.kind === "expense" && (
+          {target.kind === "expense" && !isDefaultLiving && (
             <label className="flex items-center gap-2 text-xs text-ink-2">
               <input
                 type="checkbox"

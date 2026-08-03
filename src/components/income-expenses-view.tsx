@@ -1195,11 +1195,15 @@ function ExpenseDialog({
 
     const data = new FormData(e.currentTarget);
     const body = {
-      // Read `type` from controlled state, not FormData: a locked (disabled)
-      // default-row select submits no value, and living expenses force the
-      // deduction off below regardless of any stale selection.
+      // Read `type` and `name` from controlled state, not FormData. Neither
+      // control is always rendered: a locked (disabled) default-row select
+      // submits no value, and the Name input is hidden entirely for a default
+      // living row — FormData would hand back `null` for the missing field and
+      // the scenario payload below would store a name of null against a
+      // NOT NULL column. Living expenses also force the deduction off below
+      // regardless of any stale selection.
       type,
-      name: data.get("name") as string,
+      name,
       annualAmount: data.get("annualAmount") as string,
       startYear: String(startYear),
       endYear: String(endYear),
@@ -2210,9 +2214,6 @@ export default function IncomeExpensesView({
             <EmptyRow message="No expense entries yet." />
           ) : (
             EXPENSE_GROUPS.map((group) => {
-              // Living-expense rows edit their amount inline. The row-level
-              // click-to-open is gone for EVERY group now — the inline year and
-              // rate cells make it unusable — so every group gets the pencil.
               const isLiving = group.types.includes("living");
               // Exclude entity- and business-account-owned rows; they render
               // in their own rollups ("Linked Entities" / "Linked to
@@ -2221,13 +2222,24 @@ export default function IncomeExpensesView({
               const items = expenseList.filter((e) => {
                 if (!group.types.includes(e.type)) return false;
                 if (e.ownerEntityId || e.ownerAccountId) return false;
-                // The Current row's window ends at client retirement. Once that
-                // is past it contributes $0 to every projection, so hide it
-                // rather than show a dead row. Role comes from the row's own
-                // anchor — never from its name, which an advisor can rename.
+                // The SEEDED Current row's window ends at client retirement.
+                // Once that is past it contributes $0 to every projection, so
+                // hide it rather than show a dead row. Role comes from the
+                // row's own anchor — never from its name, which an advisor can
+                // rename.
+                //
+                // `e.isDefault` is load-bearing, not belt-and-braces: only the
+                // seeded row is guaranteed to END at client_retirement.
+                // `defaultExpenseRefs` anchors every hand-added row
+                // plan_start → plan_end, and this panel offered "living" as a
+                // creatable type until this branch, so a legacy non-default
+                // living row anchored at plan_start may well run to plan end.
+                // Hiding that one would drop live spending off the panel while
+                // the engine keeps charging it every year.
                 if (
                   isLiving &&
                   hideCurrentLiving &&
+                  e.isDefault &&
                   livingSlotRole(coerceYearRef(e.startYearRef) ?? null) === "current"
                 ) {
                   return false;
@@ -2251,6 +2263,13 @@ export default function IncomeExpensesView({
                   }
                 >
                   {items.map((expense) => {
+                    // The closed-set treatment is per ROW, not per group: only a
+                    // SEEDED living row is locked to inflation and amount+timing.
+                    // A legacy non-default living row keeps its inline rate
+                    // editor, which is also what its dialog still offers
+                    // (`isDefaultLiving` is false there) and what Task 2's write
+                    // core still accepts — all three have to agree.
+                    const isClosedSetLiving = isLiving && Boolean(expense.isDefault);
                     const entityName = expense.ownerEntityId ? entityMap[expense.ownerEntityId]?.name : undefined;
                     const businessName = expense.ownerAccountId
                       ? businessAccountMap[expense.ownerAccountId]?.name
@@ -2260,6 +2279,13 @@ export default function IncomeExpensesView({
                     return (
                       <Row
                         key={expense.id}
+                        // Living-expense rows edit their amount inline. The
+                        // row-level click-to-open is gone for EVERY group now —
+                        // the inline year and rate cells make it unusable — so
+                        // every group gets the pencil instead. Keyed on the
+                        // GROUP, not `isClosedSetLiving`: an inline amount is an
+                        // affordance rather than a lock, and `{ annualAmount }`
+                        // is accepted on default and non-default rows alike.
                         onEdit={canEdit ? () => setExpenseDialog({ open: true, editing: expense }) : undefined}
                         amount={isLiving ? Number(expense.annualAmount) : undefined}
                         onSaveAmount={
@@ -2304,10 +2330,10 @@ export default function IncomeExpensesView({
                           )
                         }
                         rateSlot={
-                          // Living rows always grow with inflation and the
-                          // write core rejects a rate change on them, so the
+                          // Seeded living rows always grow with inflation and
+                          // the write core rejects a rate change on them, so the
                           // cell states the rule instead of offering an editor.
-                          isLiving ? (
+                          isClosedSetLiving ? (
                             <span className="text-xs text-ink-4">Inflation</span>
                           ) : (
                             <FlowGrowthCell

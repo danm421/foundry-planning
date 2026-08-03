@@ -4,6 +4,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import QuickEditDrawer from "../quick-edit-drawer";
 import type { ClientMilestones } from "@/lib/milestones";
+import { LIVING_EDITABLE_FIELDS } from "@/lib/living-expenses";
 import type { ExpenseView, IncomeView } from "@/lib/scenario/view-adapters";
 
 // `vi.hoisted` so the hoisted `vi.mock` factory can close over a value the
@@ -230,6 +231,116 @@ describe("QuickEditDrawer — save path", () => {
   });
 });
 
+/**
+ * `type: "living"` is a CLOSED SET of two seeded rows per client, editable in
+ * amount and timing only. This drawer is the second advisor-facing surface on
+ * that data (the first is `income-expenses-view.tsx`), and it writes to the same
+ * write core — so the same two rules bind here: no creating a living row, and no
+ * sending a locked field on a seeded one.
+ */
+describe("QuickEditDrawer — the living-expense closed set", () => {
+  /** A seeded living row, exactly as `create-client.ts` writes the Current slot. */
+  function livingRow(overrides: Partial<ExpenseView> = {}): ExpenseView {
+    return expenseRow({
+      id: "liv-1",
+      type: "living",
+      name: "Current Living Expenses",
+      annualAmount: "120000",
+      startYear: 2026,
+      endYear: 2045,
+      startYearRef: "plan_start",
+      endYearRef: "client_retirement",
+      growthRate: "0.03",
+      growthSource: "inflation",
+      isDefault: true,
+      ...overrides,
+    });
+  }
+
+  // THE live 400: every key in this body outside the editable set is rejected by
+  // `updateExpenseForClient`, and `name` / `growthRate` / `growthSource` /
+  // `isGoal` are all in it. Asserted as an exact key set, because a body that
+  // merely dropped `name` would still 400 on `growthRate`.
+  it("PUTs only the five editable keys for a seeded living row", async () => {
+    const calls = captureFetch();
+    renderExpense(livingRow());
+
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls.some((c) => c.url.includes("/expenses/liv-1"))).toBe(true));
+
+    const put = calls.find((c) => c.url.includes("/expenses/liv-1"))!;
+    const body = JSON.parse(String(put.init?.body)) as Record<string, unknown>;
+    expect(Object.keys(body).sort()).toEqual([...LIVING_EDITABLE_FIELDS].sort());
+  });
+
+  it("still PUTs the full body for a non-living row", async () => {
+    // Discriminates the narrowing from "the drawer got narrower".
+    const calls = captureFetch();
+    renderExpense(expenseRow({ id: "exp-1" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls.some((c) => c.url.includes("/expenses/exp-1"))).toBe(true));
+
+    const put = calls.find((c) => c.url.includes("/expenses/exp-1"))!;
+    const body = JSON.parse(String(put.init?.body)) as Record<string, unknown>;
+    expect(body).toMatchObject({ name: "Expense", growthRate: "0.03" });
+  });
+
+  // The scenario payload is a wholesale replace (`flow-write.ts`), so narrowing
+  // it too would delete that scenario's other overrides on the row.
+  it("does NOT narrow the scenario payload", async () => {
+    nav.scenario = "sc-1";
+    const calls = captureFetch();
+    renderExpense(livingRow());
+
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls.some((c) => c.url.includes("/changes"))).toBe(true));
+
+    const write = calls.find((c) => c.url.includes("/changes"))!;
+    const body = JSON.parse(String(write.init?.body)) as {
+      desiredFields: Record<string, unknown>;
+    };
+    expect(body.desiredFields.growthRate).toBe("0.03");
+    expect(body.desiredFields.name).toBe("Current Living Expenses");
+  });
+
+  it("shows the name as fixed text with an explanation, not an input", () => {
+    renderExpense(livingRow());
+
+    expect(screen.queryByLabelText("Name")).not.toBeInTheDocument();
+    expect(screen.getByText("Current Living Expenses")).toBeInTheDocument();
+    expect(screen.getByText(/fixed to two rows/i)).toBeInTheDocument();
+  });
+
+  // Without this the narrowing above would accept the advisor's edit and then
+  // throw it away with no feedback at all.
+  it("hides the controls whose fields the write core rejects", () => {
+    renderExpense(livingRow());
+
+    expect(screen.queryByText("Growth")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/show as a goal/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps the amount and both year pickers", () => {
+    renderExpense(livingRow());
+
+    expect(screen.getByLabelText("Annual amount")).toBeInTheDocument();
+    expect(screen.getByLabelText("Start")).toBeInTheDocument();
+    expect(screen.getByLabelText("End")).toBeInTheDocument();
+  });
+
+  // A legacy `is_default = false` living row is NOT in the closed set — the
+  // write core still accepts a full update on it, and Task 9's migration
+  // reclassifies it rather than locking it.
+  it("leaves a NON-DEFAULT living row fully editable", () => {
+    renderExpense(livingRow({ id: "liv-2", isDefault: false, name: "Legacy spending" }));
+
+    expect(screen.getByLabelText("Name")).toBeInTheDocument();
+    expect(screen.getByText("Growth")).toBeInTheDocument();
+    expect(screen.getByLabelText(/show as a goal/i)).toBeInTheDocument();
+  });
+});
+
 describe("QuickEditDrawer — delete confirmation", () => {
   it("requires a second, confirming click before deleting, and Cancel backs out", async () => {
     const calls = captureFetch();
@@ -352,8 +463,9 @@ describe("QuickEditDrawer — education goals", () => {
 
       const select = screen.getByLabelText("Type") as HTMLSelectElement;
       expect(select.value).toBe("other");
+      // No "living": it is a closed two-row set the write core refuses to
+      // create, so offering it here only ever produced a 400.
       expect([...select.options].map((o) => o.value)).toEqual([
-        "living",
         "insurance",
         "education",
         "other",
@@ -529,16 +641,16 @@ describe("QuickEditDrawer — education goals", () => {
       expect(body.institutionName).toBeNull();
     });
 
-    // The education keys are education-only. A "living" expense carrying a
+    // The education keys are education-only. An "insurance" expense carrying a
     // `forFamilyMemberId: null` would be a field the row has no business having.
     it("omits the education keys entirely for a non-education create", async () => {
       const calls = captureFetch();
       renderNewExpense();
-      fireEvent.change(screen.getByLabelText("Type"), { target: { value: "living" } });
-      nameIt("Groceries");
+      fireEvent.change(screen.getByLabelText("Type"), { target: { value: "insurance" } });
+      nameIt("Umbrella policy");
 
       const body = await saveAndReadBody(calls);
-      expect(body.type).toBe("living");
+      expect(body.type).toBe("insurance");
       expect(body).not.toHaveProperty("forFamilyMemberId");
       expect(body).not.toHaveProperty("institutionName");
     });

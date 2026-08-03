@@ -43,6 +43,10 @@ function baseBody(n: number): Record<string, unknown> {
   return stub.calls[n].base.body as Record<string, unknown>;
 }
 
+function desiredFields(n: number): Record<string, unknown> {
+  return stub.calls[n].edit.desiredFields as Record<string, unknown>;
+}
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }),
   useSearchParams: () => ({ get: vi.fn(() => null), toString: () => "" }),
@@ -109,6 +113,28 @@ const RETIREMENT_LIVING = {
   endYearRef: "plan_end",
   inflationStartYear: 2026,
   isDefault: true,
+};
+
+/**
+ * A LEGACY living row: `type: "living"` but `is_default = false`. This shape is
+ * real — the Expenses panel offered "living" in its Add picker until this
+ * branch, and `defaultExpenseRefs` anchors every hand-added row
+ * `plan_start → plan_end`. So it starts where the seeded Current row starts but
+ * runs to the END OF PLAN, and none of the closed-set treatment may touch it:
+ * not the hide, not the read-only rate cell, not the reduced dialog.
+ */
+const LEGACY_LIVING = {
+  id: "liv-legacy",
+  type: "living" as const,
+  name: "Legacy Household Spending",
+  annualAmount: "40000",
+  startYear: 2026,
+  endYear: 2066,
+  growthRate: "0.05",
+  growthSource: "custom",
+  startYearRef: "plan_start",
+  endYearRef: "plan_end",
+  isDefault: false,
 };
 
 const OTHER_EXPENSE = {
@@ -228,6 +254,30 @@ describe("default living row — submit body", () => {
       startYearRef: "plan_start",
       endYearRef: "client_retirement",
     });
+  });
+
+  // The base/scenario asymmetry is the one judgement call in this task, and it
+  // lives half in this file and half in a comment in `lib/inline-edit/
+  // flow-write.ts`. Without this test a "simplify" pass that narrowed
+  // `desiredFields` to match `baseBody` would go green on all the others — and
+  // it would silently DELETE every other override that scenario held on the row.
+  it("does NOT narrow the SCENARIO payload — it stays the whole row", async () => {
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: "Edit Current Living Expenses" }));
+    fireEvent.change(screen.getByLabelText(/annual amount/i), { target: { value: "130000" } });
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => expect(stub.calls).toHaveLength(1));
+
+    const outsideTheSet = Object.keys(desiredFields(0)).filter(
+      (k) => !LIVING_EDITABLE_FIELDS.has(k),
+    );
+    expect(outsideTheSet).toContain("growthRate");
+    // And the real name, never `null`. The Name INPUT is gone from the form for
+    // a default living row, so a body that read it from FormData would send
+    // null here — into `buildFieldDiff`, into a scenario change row, and on
+    // promotion into a NOT NULL column.
+    expect(desiredFields(0).name).toBe("Current Living Expenses");
   });
 
   it("keeps the INLINE amount edit inside the editable set too", async () => {
@@ -369,6 +419,34 @@ describe("living rows have a read-only rate cell", () => {
       screen.getByRole("button", { name: "Change growth rate for Vacation Fund" }),
     ).toBeInTheDocument();
   });
+
+  // Keyed on the ROW, not the group. A legacy living row can carry a real
+  // custom rate; labelling it "Inflation" would state a growth rate that isn't
+  // the row's, and taking its editor away would contradict both its own dialog
+  // (which still shows the Growth Rate control) and the write core (which still
+  // accepts the change).
+  it("leaves a NON-DEFAULT living row's rate editable and unlabelled", () => {
+    renderView({ initialExpenses: [CURRENT_LIVING, LEGACY_LIVING] });
+
+    expect(
+      screen.getByRole("button", { name: "Change growth rate for Legacy Household Spending" }),
+    ).toBeInTheDocument();
+    // Its real 5%, not the word "Inflation" — and only the seeded row says it.
+    expect(screen.getAllByText("Inflation")).toHaveLength(1);
+    expect(screen.getByText("5.00%")).toBeInTheDocument();
+  });
+
+  it("gives a NON-DEFAULT living row the full edit dialog", () => {
+    renderView({ initialExpenses: [CURRENT_LIVING, LEGACY_LIVING] });
+    fireEvent.click(screen.getByRole("button", { name: "Edit Legacy Household Spending" }));
+
+    const form = within(dialogForm());
+    expect(form.getByLabelText(/^name/i)).toBeInTheDocument();
+    expect(form.getByText("Growth Rate")).toBeInTheDocument();
+    // Its own type still has to be selectable in the picker, or the select
+    // would render showing a type the row is not.
+    expect(form.getByRole("option", { name: "Living Expense" })).toBeInTheDocument();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -415,6 +493,31 @@ describe("Current living row once retirement is at or before plan start", () => 
     });
 
     expect(screen.queryByText("Household Spending")).toBeNull();
+  });
+
+  // The hide is only safe for the SEEDED row, whose window ENDS at
+  // client_retirement. A hand-added living row is anchored plan_start →
+  // plan_end by `defaultExpenseRefs`, so it is still spending every year of the
+  // projection; hiding it would take live money off the panel and out of the
+  // subtotal while the engine keeps charging it.
+  it("keeps a NON-DEFAULT living row anchored at plan start", () => {
+    renderView({
+      clientInfo: RETIRED_CLIENT_INFO,
+      initialExpenses: [CURRENT_LIVING, LEGACY_LIVING, RETIREMENT_LIVING],
+    });
+
+    expect(screen.queryByText("Current Living Expenses")).toBeNull();
+    expect(screen.getByText("Legacy Household Spending")).toBeInTheDocument();
+  });
+
+  it("keeps it in the subtotal too", () => {
+    renderView({
+      clientInfo: RETIRED_CLIENT_INFO,
+      initialExpenses: [CURRENT_LIVING, LEGACY_LIVING, RETIREMENT_LIVING],
+    });
+
+    // $90,000 + $40,000 — the seeded Current row's $120,000 is the only one out.
+    expect(within(groupHeader("Living Expenses")).getByText("$130,000")).toBeInTheDocument();
   });
 
   it("keeps a row named like the Current slot but anchored at retirement", () => {
