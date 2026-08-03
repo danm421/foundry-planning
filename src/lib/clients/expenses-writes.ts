@@ -105,11 +105,9 @@ export async function createExpenseForClient(args: {
         inflationStartYear: p.inflationStartYear ?? null,
         startYearRef: (p.startYearRef ?? null) as ExpenseRow["startYearRef"],
         endYearRef: (p.endYearRef ?? null) as ExpenseRow["endYearRef"],
-        // Living expenses are never a deduction — drop any deductionType so the
-        // UI (which hides the field for living) and the write-core stay in sync.
-        deductionType: (p.type === "living"
-          ? null
-          : (p.deductionType ?? null)) as ExpenseRow["deductionType"],
+        // `p.type === "living"` is rejected above and never reaches this
+        // insert, so deductionType only ever needs the plain pass-through here.
+        deductionType: (p.deductionType ?? null) as ExpenseRow["deductionType"],
         endsAtMedicareEligibilityOwner: p.endsAtMedicareEligibilityOwner ?? null,
         payShortfallOutOfPocket: p.payShortfallOutOfPocket ?? false,
         institutionState: p.institutionState ?? null,
@@ -168,6 +166,19 @@ export async function updateExpenseForClient(args: {
 
   if (target?.isDefault && p.type !== undefined && p.type !== target.type) {
     return writeError(400, "Default living-expense rows cannot change type.");
+  }
+
+  // THE CLOSED SET, update side. Retyping any OTHER row to "living" would mint
+  // a third living row through the back door create already closes off — a
+  // create-then-retype (or an update-only Forge call) is exactly the bypass
+  // this blocks. A living→living resend (target already "living", e.g. from a
+  // default row's own edit) is unaffected: it falls through to the field lock
+  // below instead.
+  if (target && p.type === "living" && target.type !== "living") {
+    return writeError(
+      400,
+      "Living expenses are fixed to the Current and Retirement rows and cannot be created.",
+    );
   }
 
   if (target?.isDefault && target.type === "living") {

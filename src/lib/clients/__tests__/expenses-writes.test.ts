@@ -212,7 +212,11 @@ d("expenses-writes core", () => {
     expect(res.status).toBe(400);
   });
 
-  it("retyping an expense to living clears its deductionType", async () => {
+  // Retargeted (review fix 1): retyping ANY row to "living" via update is a
+  // closed-set bypass — create-then-retype would otherwise mint a third
+  // living row (non-default, so also fully editable). The write core must
+  // reject it exactly like a direct create of type "living".
+  it("rejects retyping a non-living expense to living (closed-set bypass)", async () => {
     const created = await createExpenseForClient({
       clientId: COOPER_CLIENT_ID,
       firmId: COOPER_FIRM_ID,
@@ -236,6 +240,52 @@ d("expenses-writes core", () => {
       firmId: COOPER_FIRM_ID,
       actorId: ACTOR_ID,
       expenseId: created.data.id,
+      input: { type: "living" },
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.status).toBe(400);
+
+    // The row must NOT have been retyped.
+    const [still] = await db
+      .select({ type: expenses.type })
+      .from(expenses)
+      .where(eq(expenses.id, created.data.id));
+    expect(still?.type).toBe("other");
+  });
+
+  // Coverage for the update transaction's deductionType null-out (still
+  // reachable for a living→living resend, e.g. a default row's own edit)
+  // that the retargeted test above no longer exercises. Inserts directly
+  // since the write core itself can no longer produce a living row with a
+  // stray deductionType — this stands in for legacy data.
+  it("a living→living resend still clears a stray deductionType", async () => {
+    const [{ scenarioId }] = await db
+      .select({ scenarioId: expenses.scenarioId })
+      .from(expenses)
+      .where(eq(expenses.id, COOPER_DEFAULT_EXPENSE_ID));
+    const [row] = await db
+      .insert(expenses)
+      .values({
+        clientId: COOPER_CLIENT_ID,
+        scenarioId,
+        type: "living",
+        isDefault: false,
+        name: "Legacy Living With Deduction",
+        annualAmount: "500.00",
+        startYear: 2026,
+        endYear: 2030,
+        deductionType: "charitable",
+      })
+      .returning();
+    createdIds.push(row.id);
+    expect(row.deductionType).toBe("charitable");
+
+    const res = await updateExpenseForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      expenseId: row.id,
       input: { type: "living" },
     });
     expect(res.ok).toBe(true);
