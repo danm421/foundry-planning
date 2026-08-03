@@ -487,7 +487,7 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     kind: z.literal("surplus-allocation"),
     spendPct: z.number().min(0).max(1),
     saveAccountId: z.string().min(1).nullable(),
-    spendAllUntilRetirement: z.boolean(),
+    spendAllUntilRetirement: z.boolean().default(false),
   }),
 ]);
 

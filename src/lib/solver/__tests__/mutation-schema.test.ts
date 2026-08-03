@@ -195,6 +195,23 @@ describe("SOLVER_MUTATION_SCHEMA", () => {
     }
   });
 
+  it("accepts a legacy surplus-allocation payload with no spendAllUntilRetirement key (pre-feature draft), defaulting to false", () => {
+    // Regression pin: a solver draft written to localStorage before this
+    // field existed (use-solver-draft.ts has no TTL and DRAFT_VERSION was not
+    // bumped for this change) must still validate — the field must be a bare
+    // `.default(false)`, not `.optional().default(false)` (Zod 4 traps the
+    // latter) and not a required boolean (which would 400 every stale draft).
+    const result = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "surplus-allocation",
+      spendPct: 0.5,
+      saveAccountId: null,
+    });
+    expect(result.success).toBe(true);
+    if (result.success && result.data.kind === "surplus-allocation") {
+      expect(result.data.spendAllUntilRetirement).toBe(false);
+    }
+  });
+
   it("covers every SolverMutation kind present in the samples list", () => {
     // Defensive: if SolverMutation gains a kind and a sample is forgotten,
     // mutationKey() will surface "never" on the new kind via the exhaustive
