@@ -222,7 +222,7 @@ describe("living-expense-amount → base updates", () => {
     expect(out.expenseInserts).toHaveLength(0);
   });
 
-  it("emits an expense insert when synthesizing (no retirement rows)", () => {
+  it("emits no expense insert or update when no retirement rows exist (no-op, no synthesize)", () => {
     const source = {
       planSettings: { planStartYear: 2026, planEndYear: 2070, inflationRate: 0.025 },
       client: { retirementAge: 65 },
@@ -231,11 +231,9 @@ describe("living-expense-amount → base updates", () => {
     const out = mutationsToBaseUpdates(source, [
       { kind: "living-expense-amount", amount: 70_000 },
     ]);
-    expect(out.expenseInserts).toHaveLength(1);
-    expect(out.expenseInserts[0].annualAmount).toBe(70_000);
-    // Year-refs anchor the inserted row to retirement on reload (resolveRefYears).
-    expect(out.expenseInserts[0].startYearRef).toBe("client_retirement");
-    expect(out.expenseInserts[0].endYearRef).toBe("plan_end");
+    // No third living row is minted outside expenses-writes.ts's Task 2 guard.
+    expect(out.expenseInserts).toHaveLength(0);
+    expect(out.expenseUpdates).toHaveLength(0);
   });
 });
 

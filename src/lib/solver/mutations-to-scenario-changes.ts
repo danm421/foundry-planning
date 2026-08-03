@@ -186,18 +186,8 @@ export function mutationsToScenarioChanges(
       }
       case "living-expense-amount": {
         const plan = planLivingExpenseAmount(source, m.amount);
-        if (plan.kind === "synthesize") {
-          pushTechniqueUpsert(
-            nonClientDrafts,
-            "expense",
-            undefined,
-            plan.expense.id,
-            plan.expense as unknown as Record<string, unknown>,
-          );
-        } else {
-          for (const row of plan.rows) {
-            accumulateExpense(row.id, "annualAmount", row.from, row.to);
-          }
+        for (const row of plan.rows) {
+          accumulateExpense(row.id, "annualAmount", row.from, row.to);
         }
         break;
       }

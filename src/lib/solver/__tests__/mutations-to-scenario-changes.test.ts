@@ -487,7 +487,7 @@ describe("living-expense-amount → scenario changes", () => {
     });
   });
 
-  it("emits an add draft when synthesizing a retirement row (no existing retirement expenses)", () => {
+  it("emits no draft when no retirement rows exist (no-op, no synthesize)", () => {
     const source = {
       ...makeSource(),
       planSettings: {
@@ -500,18 +500,9 @@ describe("living-expense-amount → scenario changes", () => {
     const drafts = mutationsToScenarioChanges(source, CLIENT_ID, [
       { kind: "living-expense-amount", amount: 70_000 },
     ]);
-    const add = drafts.find((d) => d.targetKind === "expense" && d.opType === "add");
-    expect(add).toBeTruthy();
-    const payload = add?.payload as {
-      annualAmount: number;
-      startYearRef: string;
-      endYearRef: string;
-    };
-    expect(payload.annualAmount).toBe(70_000);
-    // The year-refs anchor the synthesized row to retirement on reload — the
-    // load-bearing fields that resolveRefYears re-resolves. Guard them.
-    expect(payload.startYearRef).toBe("client_retirement");
-    expect(payload.endYearRef).toBe("plan_end");
+    // No third living row is minted outside expenses-writes.ts's Task 2 guard.
+    const expenseDraft = drafts.find((d) => d.targetKind === "expense");
+    expect(expenseDraft).toBeUndefined();
   });
 });
 

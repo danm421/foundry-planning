@@ -4,7 +4,7 @@ import {
   isRetirementLivingExpense,
   roundToNearest5k,
   retirementLivingExpenseTotal,
-  synthesizeRetirementLivingExpense,
+  planLivingExpenseAmount,
 } from "../living-expense";
 
 function expense(over: Partial<Expense>): Expense {
@@ -99,21 +99,58 @@ describe("retirementLivingExpenseTotal", () => {
   });
 });
 
-describe("synthesizeRetirementLivingExpense", () => {
-  it("builds a retirement-anchored living expense at the given amount", () => {
+describe("planLivingExpenseAmount with no retirement living row", () => {
+  it("returns an empty update plan rather than synthesizing a row", () => {
     const tree = {
-      planSettings: { planStartYear: 2026, planEndYear: 2070, inflationRate: 0.025 },
-      client: { retirementAge: 65 },
+      planSettings: { planStartYear: 2026 },
       expenses: [],
     } as unknown as ClientData;
 
-    const e = synthesizeRetirementLivingExpense(tree, 80_000);
-    expect(e.type).toBe("living");
-    expect(e.annualAmount).toBe(80_000);
-    expect(e.startYearRef).toBe("client_retirement");
-    expect(e.endYearRef).toBe("plan_end");
-    expect(e.growthRate).toBe(0.025);
-    expect(typeof e.id).toBe("string");
-    expect(e.id.length).toBeGreaterThan(0);
+    const plan = planLivingExpenseAmount(tree, 80_000);
+    expect(plan.kind).toBe("update");
+    expect(plan.rows).toEqual([]);
+  });
+
+  it("still scales the retirement row when one exists", () => {
+    const tree = {
+      planSettings: { planStartYear: 2026 },
+      expenses: [
+        expense({
+          id: "ret",
+          name: "Retirement Living Expenses",
+          annualAmount: 50_000,
+          startYear: 2040,
+          endYear: 2060,
+          growthRate: 0.03,
+          startYearRef: "client_retirement",
+          endYearRef: "plan_end",
+        }),
+      ],
+    } as unknown as ClientData;
+
+    const plan = planLivingExpenseAmount(tree, 80_000);
+    expect(plan.kind).toBe("update");
+    expect(plan.rows).toEqual([{ id: "ret", from: 50_000, to: 80_000 }]);
+  });
+
+  it("even-splits across retirement rows summing to $0", () => {
+    const tree = {
+      planSettings: { planStartYear: 2026 },
+      expenses: [
+        expense({
+          id: "ret",
+          name: "Retirement Living Expenses",
+          annualAmount: 0,
+          startYear: 2040,
+          endYear: 2060,
+          growthRate: 0.03,
+          startYearRef: "client_retirement",
+          endYearRef: "plan_end",
+        }),
+      ],
+    } as unknown as ClientData;
+
+    const plan = planLivingExpenseAmount(tree, 80_000);
+    expect(plan.rows).toEqual([{ id: "ret", from: 0, to: 80_000 }]);
   });
 });

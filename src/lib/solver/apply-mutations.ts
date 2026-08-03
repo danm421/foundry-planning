@@ -48,14 +48,10 @@ export function applyMutations(
       }
       case "living-expense-amount": {
         const plan = planLivingExpenseAmount(result, m.amount);
-        if (plan.kind === "synthesize") {
-          result.expenses = [...result.expenses, plan.expense];
-        } else {
-          const next = new Map(plan.rows.map((r) => [r.id, r.to]));
-          result.expenses = result.expenses.map((e) =>
-            next.has(e.id) ? { ...e, annualAmount: next.get(e.id)! } : e,
-          );
-        }
+        const next = new Map(plan.rows.map((r) => [r.id, r.to]));
+        result.expenses = result.expenses.map((e) =>
+          next.has(e.id) ? { ...e, annualAmount: next.get(e.id)! } : e,
+        );
         break;
       }
       case "expense-annual-amount": {

@@ -12,7 +12,7 @@
 // matching the goal-seek's `living-expense-scale` lever: this makes the ceiling
 // resource-aware (not a blind 3× the stated expense) and works even when the plan
 // states $0 retirement living spend, in which case planLivingExpenseAmount
-// synthesizes / even-splits a row rather than multiplying $0 forever.
+// even-splits the existing retirement row(s) rather than multiplying $0 forever.
 import {
   createReturnEngine,
   runMonteCarlo,

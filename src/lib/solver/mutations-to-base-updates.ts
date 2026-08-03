@@ -75,7 +75,7 @@ export interface BaseUpdates {
   planSettingsUpdate: ColumnPatch | null;
   incomeUpdates: { id: string; set: ColumnPatch }[];
   expenseUpdates: { id: string; set: ColumnPatch }[];
-  /** Full new expense rows (e.g. a synthesized retirement living expense). */
+  /** Full new expense rows (e.g. a new expense added via `expense-upsert`). */
   expenseInserts: Expense[];
   /** Full-row updates from an `expense-upsert` against an existing base expense. */
   expenseFullUpdates: Expense[];
@@ -209,13 +209,9 @@ export function mutationsToBaseUpdates(
       }
       case "living-expense-amount": {
         const plan = planLivingExpenseAmount(source, m.amount);
-        if (plan.kind === "synthesize") {
-          out.expenseInserts.push(plan.expense);
-        } else {
-          for (const row of plan.rows) {
-            if (row.to === row.from) continue;
-            expensePatch(row.id).annualAmount = dec(row.to);
-          }
+        for (const row of plan.rows) {
+          if (row.to === row.from) continue;
+          expensePatch(row.id).annualAmount = dec(row.to);
         }
         break;
       }

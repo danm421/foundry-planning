@@ -665,7 +665,7 @@ describe("living-expense-amount", () => {
     expect(out.expenses.find((e) => e.id === "r2")!.annualAmount).toBe(30_000);
   });
 
-  it("synthesizes a retirement row when none exists", () => {
+  it("is a no-op when no retirement row exists (no synthesize arm)", () => {
     const tree = {
       ...makeBase(),
       planSettings: {
@@ -682,10 +682,13 @@ describe("living-expense-amount", () => {
       ],
     } as unknown as ClientData;
     const out = applyMutations(tree, [{ kind: "living-expense-amount", amount: 70_000 }]);
+    // No third living row is minted — living expenses are a closed two-row set
+    // (Task 2's expenses-writes.ts guard) and this solver lever must not be a
+    // way around it. The existing current-phase row is untouched.
     const retirement = out.expenses.filter((e) => e.type === "living" && e.startYear > 2026);
-    expect(retirement).toHaveLength(1);
-    expect(retirement[0].annualAmount).toBe(70_000);
-    expect(retirement[0].name).toBe("Retirement Living Expenses");
+    expect(retirement).toHaveLength(0);
+    expect(out.expenses).toHaveLength(1);
+    expect(out.expenses[0]).toEqual(tree.expenses[0]);
   });
 });
 
