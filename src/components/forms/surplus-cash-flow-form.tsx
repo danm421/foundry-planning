@@ -10,6 +10,7 @@ interface SurplusCashFlowFormProps {
   clientId: string;
   surplusSpendPct: string;
   surplusSaveAccountId: string | null;
+  surplusSpendAllUntilRetirement: boolean;
   householdAccounts: Array<{ id: string; name: string }>;
 }
 
@@ -22,6 +23,7 @@ export default function SurplusCashFlowForm({
   clientId,
   surplusSpendPct,
   surplusSaveAccountId,
+  surplusSpendAllUntilRetirement,
   householdAccounts,
 }: SurplusCashFlowFormProps) {
   const { permission } = useClientAccess();
@@ -30,6 +32,9 @@ export default function SurplusCashFlowForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [spendAllUntilRetirement, setSpendAllUntilRetirement] = useState(
+    surplusSpendAllUntilRetirement,
+  );
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -41,6 +46,7 @@ export default function SurplusCashFlowForm({
     const body = {
       surplusSpendPct: String(Number(data.get("surplusSpendPct") as string) / 100),
       surplusSaveAccountId: (data.get("surplusSaveAccountId") as string) || null,
+      surplusSpendAllUntilRetirement: spendAllUntilRetirement,
     };
 
     try {
@@ -87,7 +93,9 @@ export default function SurplusCashFlowForm({
               className={`${INPUT_CLS} mt-1`}
             />
             <p className="mt-1 text-xs text-gray-500">
-              The spent portion appears as &quot;Surplus spent&quot; on the Cash Flow report.
+              {spendAllUntilRetirement
+                ? "Applies from the first retirement year onward."
+                : 'The spent portion appears as "Surplus spent" on the Cash Flow report.'}
             </p>
           </div>
           <div>
@@ -107,6 +115,17 @@ export default function SurplusCashFlowForm({
             </select>
           </div>
         </div>
+
+        <label className="flex items-center gap-2 text-sm text-gray-300">
+          <input
+            type="checkbox"
+            checked={spendAllUntilRetirement}
+            onChange={(e) => setSpendAllUntilRetirement(e.target.checked)}
+            className="accent-accent"
+          />
+          Spend all surplus until retirement
+          <HelpTip text="Treats 100% of each year's surplus as spent through the year before the first person retires. From that retirement year onward, the percentage above applies." />
+        </label>
 
         {canEdit && (
           <div className="flex justify-end pt-1">

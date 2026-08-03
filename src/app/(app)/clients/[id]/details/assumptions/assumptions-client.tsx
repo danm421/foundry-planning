@@ -84,6 +84,7 @@ export interface AssumptionsSettings {
   capitalLossCarryforwardLtSourceYear: number | null;
   surplusSpendPct: string;
   surplusSaveAccountId: string | null;
+  surplusSpendAllUntilRetirement: boolean;
   coveredByWorkplacePlan: "auto" | "yes" | "no";
   spouseCoveredByWorkplacePlan: "auto" | "yes" | "no";
 }
@@ -214,6 +215,7 @@ export default function AssumptionsClient({
               clientId={clientId}
               surplusSpendPct={settings.surplusSpendPct}
               surplusSaveAccountId={settings.surplusSaveAccountId}
+              surplusSpendAllUntilRetirement={settings.surplusSpendAllUntilRetirement}
               householdAccounts={accounts
                 .filter((a) => !a.ownerEntityId)
                 .map((a) => ({ id: a.id, name: a.name }))}
