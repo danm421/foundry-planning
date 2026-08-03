@@ -116,7 +116,7 @@ export default function ReviewStepExpenses({
           expenseSlots: candidates.map((c) => ({ id: c.id, name: c.name, role: c.role })),
         });
         if (!buckets.current && !buckets.retirement) return null;
-        const fmt = (n: number) => `$${n.toLocaleString()}`;
+        const fmt = (n: number) => `$${n.toLocaleString("en-US")}`;
         const derived = buckets.current && !buckets.retirement
           ? Math.round(buckets.current.total * RETIREMENT_SPENDING_REPLACEMENT_RATIO)
           : null;

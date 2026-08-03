@@ -88,6 +88,29 @@ describe("ReviewStepExpenses living-bucket totals", () => {
     expect(screen.getByText(/Retirement\s+\$8,000\s+from\s+1\s+row/)).toBeInTheDocument();
   });
 
+  it("estimates Retirement at 80% of Current when the document states only today's spending", () => {
+    // No row is linked or named as retirement — the most common real
+    // document, which states only current spending. The panel must fall
+    // back to the same 80%-replacement-ratio estimate `derivePlanBasics`
+    // uses, not silently omit the Retirement figure.
+    render(
+      <ReviewStepExpenses
+        expenses={[
+          { name: "Groceries", type: "living", annualAmount: 10000, startYear: 2026, endYear: 2060 },
+        ]}
+        onChange={() => {}}
+        defaultStartYear={2026}
+        defaultEndYear={2060}
+        matches={[{ kind: "exact", existingId: "slot-current" }]}
+        onMatchChange={() => {}}
+        candidates={LIVING_SLOTS}
+      />,
+    );
+
+    expect(screen.getByText(/Current\s+\$10,000\s+from\s+1\s+row/)).toBeInTheDocument();
+    expect(screen.getByText(/Retirement\s+\$8,000\s+\(estimated at 80%\)/)).toBeInTheDocument();
+  });
+
   it("renders nothing when no row is extracted as living spending", () => {
     render(
       <ReviewStepExpenses
