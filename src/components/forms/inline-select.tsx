@@ -34,6 +34,10 @@ export interface InlineSelectProps {
   /** Read-mode text. Not derived from `value` — the caller often has a richer
    *  label than the option list carries (e.g. "Retirement (2035)"). */
   display: string;
+  /** Hover text for read mode. For a cell whose `display` is deliberately
+   *  narrower than the value it stands for — a bare year standing in for
+   *  "Client Retirement" — this is where the full meaning lives. */
+  title?: string;
   /** Current `<select>` value. */
   value: string;
   options: InlineSelectItem[];
@@ -53,6 +57,7 @@ export interface InlineSelectProps {
 
 export function InlineSelect({
   display,
+  title,
   value,
   options,
   onSelect,
@@ -64,7 +69,11 @@ export function InlineSelect({
   const [picking, setPicking] = useState(false);
 
   if (!canEdit) {
-    return <span className={className ?? "tabular text-[11px] text-ink-3"}>{display}</span>;
+    return (
+      <span title={title} className={className ?? "tabular text-[11px] text-ink-3"}>
+        {display}
+      </span>
+    );
   }
 
   if (picking) {
@@ -115,6 +124,7 @@ export function InlineSelect({
     <button
       type="button"
       aria-label={`Change ${label}`}
+      title={title}
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();

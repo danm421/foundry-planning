@@ -286,9 +286,12 @@ describe("IncomeExpensesView inline writes", () => {
     await pickYearRef(user, "start year for Cooper Consulting", "client_retirement");
 
     // The save is still in flight; the row must already show the new anchor.
-    expect(
-      screen.getByRole("button", { name: "Change start year for Cooper Consulting" }),
-    ).toHaveTextContent("Client Retirement (2035)");
+    // The cell renders the year alone, so the RESOLVED year and the anchor it
+    // came from are checked separately — a patch that carried only one of the
+    // two would otherwise slip through.
+    const cell = screen.getByRole("button", { name: "Change start year for Cooper Consulting" });
+    expect(cell).toHaveTextContent("2035");
+    expect(cell).toHaveAttribute("title", "Client Retirement");
   });
 
   it("gives a read-only user no pencil and no editable cells", () => {
@@ -308,7 +311,7 @@ describe("IncomeExpensesView inline writes", () => {
   it("still shows the year and rate to a read-only user", () => {
     renderView({}, "view");
 
-    expect(screen.getByText("Plan Start (2026)")).toBeInTheDocument();
+    expect(screen.getByText("2026")).toHaveAttribute("title", "Plan Start");
     expect(screen.getByText("3.00%")).toBeInTheDocument();
   });
 });

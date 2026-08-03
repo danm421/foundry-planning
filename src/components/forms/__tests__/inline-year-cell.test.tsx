@@ -32,16 +32,27 @@ function setup(overrides: Partial<React.ComponentProps<typeof InlineYearCell>> =
 }
 
 describe("InlineYearCell", () => {
-  it("shows the anchor name beside the year when anchored", () => {
+  // The cell shows the year and only the year — the anchor name wrapped to
+  // three lines in a row cell and starved the flow's name column.
+  it("shows the bare year when anchored, not the anchor name", () => {
     setup();
-    expect(screen.getByRole("button", { name: "Change start year for Salary" }))
-      .toHaveTextContent("Client Retirement (2035)");
+    const cell = screen.getByRole("button", { name: "Change start year for Salary" });
+    expect(cell).toHaveTextContent("2035");
+    expect(cell).not.toHaveTextContent("Client Retirement");
   });
 
-  it("shows a bare year when not anchored", () => {
+  // Its own `it`: the assertion above passes on a cell that dropped the anchor
+  // entirely. Only the tooltip proves the anchor is still reported.
+  it("names the anchor in the tooltip when anchored", () => {
+    setup();
+    expect(screen.getByRole("button", { name: "Change start year for Salary" }))
+      .toHaveAttribute("title", "Client Retirement");
+  });
+
+  it("shows a bare year, with no anchor tooltip, when not anchored", () => {
     setup({ year: 2040, yearRef: null });
     expect(screen.getByRole("button")).toHaveTextContent("2040");
-    expect(screen.getByRole("button")).not.toHaveTextContent("(");
+    expect(screen.getByRole("button")).not.toHaveAttribute("title");
   });
 
   it("saves the resolved year and the ref when a milestone is picked", async () => {
@@ -100,6 +111,7 @@ describe("InlineYearCell", () => {
   it("renders plain text when canEdit is false", () => {
     setup({ canEdit: false });
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
-    expect(screen.getByText("Client Retirement (2035)")).toBeInTheDocument();
+    // Read-only loses the picker, not the anchor: same bare year, same tooltip.
+    expect(screen.getByText("2035")).toHaveAttribute("title", "Client Retirement");
   });
 });

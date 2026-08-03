@@ -53,29 +53,45 @@ function Row({
     <div
       onClick={hasInlineSlots ? undefined : onClick}
       data-row-clickable={rowClickable ? "true" : undefined}
-      className={`flex items-center justify-between gap-3 px-4 py-2 ${
+      className={`flex items-center justify-between gap-2 px-4 py-2 ${
         rowClickable ? "cursor-pointer hover:bg-gray-800/60" : ""
       } ${outOfEstate ? "bg-amber-950/10" : ""}`}
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium text-gray-100">{label}</span>
+          {/* `title` so a name that still doesn't fit at the narrowest pane
+              width is readable on hover rather than lost to the ellipsis. */}
+          <span title={label} className="truncate text-sm font-medium text-gray-100">
+            {label}
+          </span>
           {outOfEstate && (
             <span className="rounded-sm bg-amber-900/30 px-1.5 py-0.5 text-xs font-medium text-amber-300">
               OOE
             </span>
           )}
         </div>
-        {metaLine && <div className="truncate text-xs text-gray-400">{metaLine}</div>}
+        {metaLine && (
+          <div title={metaLine} className="truncate text-xs text-gray-400">
+            {metaLine}
+          </div>
+        )}
       </div>
-      <div data-testid="row-cells" className="flex items-center gap-3 flex-shrink-0">
+      {/* gap-2, not gap-3: five cells' worth of gutters is 20px of a card that
+          sits two-up on the details page, and the name column pays for all of
+          it. */}
+      <div data-testid="row-cells" className="flex items-center gap-2 flex-shrink-0">
         {startSlot ? (
-          <span className="w-[104px] text-right">{startSlot}</span>
+          <span className="w-[52px] text-right">{startSlot}</span>
         ) : starts ? (
           <span className="min-w-[72px] text-right text-xs text-gray-400">{starts}</span>
         ) : null}
-        {endSlot && <span className="w-[104px] text-right">{endSlot}</span>}
-        {rateSlot && <span className="w-[64px] text-right">{rateSlot}</span>}
+        {/* 52px holds a four-digit year plus the cell's hover padding, and
+            matches the width `InlineYearCell` arms its custom-year input at — so
+            committing a year doesn't shift the columns. It used to be 104px,
+            sized for "Client Retirement (2035)", which that cell no longer
+            renders; every pixel over the year's own width came out of the name. */}
+        {endSlot && <span className="w-[52px] text-right">{endSlot}</span>}
+        {rateSlot && <span className="w-[56px] text-right">{rateSlot}</span>}
         {inlineEditable ? (
           <InlineAmount amount={amount} onSave={onSaveAmount} label={label} />
         ) : (
