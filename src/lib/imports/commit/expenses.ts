@@ -29,10 +29,16 @@ import { resolveImportTiming } from "./timing";
  * default to a `currentYear + 30` end year that runs straight through
  * retirement alongside the derived retirement figure on its own slot.
  *
- * Which rows fed the sum is decided by `isSummedLivingRow`, imported rather
- * than restated, because a second copy that drifts recreates the bug. It
- * shares its retirement-link rule with the assemble side's
- * `sumExtractedLivingByRole` (both call `isLinkedToRetirementSlot`).
+ * Which rows are FOLDED is decided by `isSummedLivingRow`, imported rather than
+ * restated, because a second copy that drifts recreates the bug.
+ *
+ * THAT IS NOT THE SAME QUESTION AS "which rows fed the sum". The assemble side
+ * (`sumExtractedLivingByRole`) banks a row on the retirement side by link OR by
+ * name; `isSummedLivingRow` only knows about the link. So a retirement-NAMED
+ * row with no link is folded HERE while the advisor's RETIREMENT total is what
+ * actually carries it. The two agree on the pieces they share
+ * (`livingRowAmount`, `isLinkedToSlot`) and diverge on purpose beyond that —
+ * do not "unify" them without reading both.
  */
 export async function commitExpenses(
   tx: Tx,

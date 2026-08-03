@@ -247,6 +247,36 @@ describe("two-bucket living totals", () => {
     expect(b.retirementLivingSpending.provenance).toBe("document");
   });
 
+  /**
+   * The review wizard offers BOTH slots as link targets for every expense row
+   * (`review-wizard.tsx` builds `expenseCandidates` from all of
+   * `payload.expenseSlots`), so re-linking a retirement-sounding row to Current
+   * is a real thing an advisor does. An explicit link is the advisor's own
+   * statement about the row's phase and outranks any guess made from its name —
+   * otherwise that dropdown is a dead control.
+   */
+  it("lets an explicit link to the current slot beat a retirement-sounding name", () => {
+    const b = derivePlanBasics(input({
+      payload: payload({
+        expenseSlots: slots,
+        expenses: [
+          { name: "Groceries", type: "living", annualAmount: 30000 },
+          { name: "Retirement Living Expenses", type: "living", annualAmount: 70000,
+            match: { kind: "exact", existingId: "slot-current" } },
+        ],
+      }),
+    }));
+    expect(b.currentLivingSpending.value).toBe(100000);
+    expect(b.currentLivingSpending.reason).toBe(
+      "Summed from 2 extracted living-expense rows.",
+    );
+    // Nothing is retirement-side any more, so the 80% convention takes back over.
+    expect(b.retirementLivingSpending.value).toBe(
+      Math.round(100000 * RETIREMENT_SPENDING_REPLACEMENT_RATIO),
+    );
+    expect(b.retirementLivingSpending.provenance).toBe("derived");
+  });
+
   it("sums multiple retirement-side rows and discloses the count", () => {
     const b = derivePlanBasics(input({
       payload: payload({

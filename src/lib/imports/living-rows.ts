@@ -11,8 +11,9 @@ import { getExistingId, type Annotated, type ImportPayload } from "./types";
  * defends against the same thing with `Number(row.annualAmount)`.
  *
  * Lives here rather than in `assemble/plan-basics.ts` because the living-row
- * predicate below is its primary consumer and that predicate has to be
- * byte-identical on both sides of the fold (see `isSummedLivingRow`).
+ * rules below are its primary consumers, and they have to agree on which
+ * amounts count as spending at all — see `livingRowAmount`, which is the one
+ * place that decision is made.
  */
 export function numericAmount(raw: unknown): number | null {
   const n = typeof raw === "string" ? Number(raw) : raw;
@@ -32,48 +33,72 @@ export function numericAmount(raw: unknown): number | null {
 export function retirementSlotIdsFromPayload(
   payload: Pick<ImportPayload, "expenseSlots">,
 ): ReadonlySet<string> {
-  return new Set(
-    (payload.expenseSlots ?? []).filter((s) => s.role === "retirement").map((s) => s.id),
-  );
+  return slotIdsWithRole(payload, "retirement");
+}
+
+/** Ids of the seeded living slots carrying `role`. One filter, both roles. */
+function slotIdsWithRole(
+  payload: Pick<ImportPayload, "expenseSlots">,
+  role: "current" | "retirement",
+): ReadonlySet<string> {
+  return new Set((payload.expenseSlots ?? []).filter((s) => s.role === role).map((s) => s.id));
 }
 
 /**
- * The advisor linked this row to a seeded RETIREMENT living slot — the
- * strongest statement there is about which phase the row describes.
+ * The advisor linked this row to one of the given seeded living slots — the
+ * strongest statement there is about which phase the row describes, because it
+ * is the advisor's own, made in the review wizard.
  *
- * One copy, read by both the current-side predicate below and the two-bucket
- * split further down. A second copy that drifts is precisely what
+ * One copy, read for BOTH roles and from both the fold predicate below and the
+ * two-bucket split further down. A second copy that drifts is precisely what
  * double-counted living spending the first time.
  */
-function isLinkedToRetirementSlot(
+function isLinkedToSlot(
   row: Annotated<ExtractedExpense>,
-  retirementSlotIds: ReadonlySet<string>,
+  slotIds: ReadonlySet<string>,
 ): boolean {
   const existingId = getExistingId(row);
-  return existingId != null && retirementSlotIds.has(existingId);
+  return existingId != null && slotIds.has(existingId);
+}
+
+/**
+ * The amount this row contributes to a living total, or null when it does not
+ * contribute at all.
+ *
+ * THE single definition of "counts as living spending", shared by
+ * `isSummedLivingRow` (which decides what the fold suppresses) and
+ * `sumExtractedLivingByRole` (which decides what the advisor reviews). Two
+ * copies of this test would let a future widening apply to one side and not the
+ * other, which is how spending goes missing.
+ *
+ * Known, deliberate edge: `commitExpenses` inserts a row with NO `type` as
+ * `"living"` (`row.type ?? "living"`), but such a row is not counted here and
+ * so is not suppressed either. That leaves it as a real, separate expense row
+ * outside the reviewed totals — an under-report of the reviewed figure, never a
+ * double count. Widening this would silently change the figures the advisor
+ * reviews, which is a separate (already-accepted) decision.
+ */
+function livingRowAmount(row: Annotated<ExtractedExpense>): number | null {
+  if (row.type !== "living") return null;
+  return numericAmount(row.annualAmount);
 }
 
 /**
  * THE rule for "this extracted expense row feeds the reviewed current-living-
  * spending total on the Plan basics step".
  *
- * It is defined exactly once, here, and read by `commitExpenses`, which
- * suppresses exactly these rows when the reviewed figure is committed. The
- * assemble side's `sumExtractedLivingByRole` no longer routes through this
- * predicate — it needs three answers (current / retirement / neither) where
- * this one gives two — but both go through `isLinkedToRetirementSlot` above so
- * the retirement rule itself stays single-sourced. A second, drifting copy of
- * that rule is precisely what double-counted living spending: the seeded slot
- * carried the sum AND every itemized row was inserted alongside it.
+ * It is defined exactly once, here, and read by `commitExpenses` to decide
+ * which rows the fold suppresses.
  *
- * Known, deliberate edge: `commitExpenses` inserts a row with NO `type` as
- * `"living"` (`row.type ?? "living"`), but such a row is not summed here and
- * so is not suppressed either. That leaves it as a real, separate expense row
- * outside the reviewed total — an under-report of the reviewed figure, never a
- * double count. Widening this predicate would silently change the figure the
- * advisor reviews, which is a separate (already-accepted) decision.
+ * IT IS NARROWER THAN THE ASSEMBLE SIDE, deliberately, and the two must not be
+ * confused. `sumExtractedLivingByRole` banks a row on the retirement side by
+ * link OR by name; this predicate only knows about the link. So a
+ * retirement-NAMED row with no link is "summed" here (and folded) while the
+ * assemble side counts it toward the RETIREMENT total. They share
+ * `livingRowAmount` and `isLinkedToSlot` so the pieces they do have in common
+ * cannot drift, but the two answers are not the same answer.
  *
- * `retirementSlotIds` (F3) excludes a row matched to the retirement slot from
+ * `retirementSlotIds` (F3) excludes a row LINKED to the retirement slot from
  * the CURRENT sum — that row is retirement-phase spending, and summing it here
  * would both inflate the reviewed current figure AND suppress the row when the
  * fold commits, losing it entirely.
@@ -82,12 +107,11 @@ export function isSummedLivingRow(
   row: Annotated<ExtractedExpense>,
   retirementSlotIds: ReadonlySet<string>,
 ): boolean {
-  if (row.type !== "living") return false;
-  if (numericAmount(row.annualAmount) == null) return false;
+  if (livingRowAmount(row) == null) return false;
   // A row the advisor linked to the retirement slot is retirement-phase
   // spending. Summing it into the current figure inflates what the advisor
   // reviews AND suppresses the row — wrong twice.
-  return !isLinkedToRetirementSlot(row, retirementSlotIds);
+  return !isLinkedToSlot(row, retirementSlotIds);
 }
 
 /** One bucket's reviewed figure. `count` lets the caller disclose a combination. */
@@ -104,9 +128,14 @@ export interface LivingBucket {
  * any more — `type: "living"` is a closed two-row set (a Current row and a
  * Retirement row), so every extracted row has to join one total or the other.
  *
- * A row is RETIREMENT-side when the advisor linked it to the retirement slot
- * (checked first — an explicit link always wins) or when `matchLivingSlot`
- * reads its name as retirement. Everything else is CURRENT-side.
+ * AN EXPLICIT LINK WINS, IN BOTH DIRECTIONS. The review wizard offers both
+ * slots as link targets for every expense row, so the link is the advisor's own
+ * statement about the row's phase and it outranks any guess made from the name:
+ * linked to Retirement → retirement, linked to Current → current EVEN IF the
+ * name reads as retirement. Only an unlinked row is classified by name, via
+ * `matchLivingSlot`. Letting a retirement-sounding name override a link to
+ * Current would make that dropdown a dead control — the advisor moves the row
+ * and the money does not move with it.
  *
  * A bucket with no contributing rows is `null`, not a zero: "nothing was
  * extracted" has to stay distinguishable from "$0 was extracted" so the caller
@@ -116,6 +145,7 @@ export function sumExtractedLivingByRole(
   payload: Pick<ImportPayload, "expenses" | "expenseSlots">,
 ): { current: LivingBucket | null; retirement: LivingBucket | null } {
   const retirementSlotIds = retirementSlotIdsFromPayload(payload);
+  const currentSlotIds = slotIdsWithRole(payload, "current");
   // `matchLivingSlot` needs a resolved role per slot. A payload persisted
   // before slots carried one degrades to "current", so no slot answers a
   // retirement lookup and every row lands in the current bucket — the same
@@ -131,16 +161,19 @@ export function sumExtractedLivingByRole(
   };
 
   for (const row of payload.expenses) {
-    if (row.type !== "living") continue;
-    const amount = numericAmount(row.annualAmount);
+    const amount = livingRowAmount(row);
     if (amount == null) continue;
 
+    // `matchLivingSlot` reads the NAME only — it never looks at `row.match` —
+    // so the advisor's link has to be applied here, on top of it, in both
+    // directions.
     const slotMatch = matchLivingSlot(row, slots);
     const namedRetirement =
       slotMatch?.kind === "exact" && retirementSlotIds.has(slotMatch.existingId);
 
     const isRetirement =
-      isLinkedToRetirementSlot(row, retirementSlotIds) || namedRetirement;
+      isLinkedToSlot(row, retirementSlotIds) ||
+      (!isLinkedToSlot(row, currentSlotIds) && namedRetirement);
     const bucket = isRetirement ? acc.retirement : acc.current;
     bucket.total += amount;
     bucket.count += 1;
