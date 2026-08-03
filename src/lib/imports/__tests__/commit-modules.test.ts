@@ -1273,7 +1273,9 @@ describe("commitExpenses", () => {
         values: Record<string, unknown>;
       }
     ).values;
-    expect(v.type).toBe("living");
+    // An untyped extracted row is `other`, never `living` — living is a closed
+    // two-row set this module cannot add to.
+    expect(v.type).toBe("other");
     expect(v.annualAmount).toBe("50000");
   });
 
@@ -1323,6 +1325,68 @@ describe("commitExpenses", () => {
     };
     expect(upd.values.annualAmount).toBe("24000");
     expect(upd.values.startYear).toBe(2040);
+  });
+});
+
+/**
+ * `type: "living"` is a CLOSED SET of two seeded rows, so this module never
+ * writes one — not on insert, and not on update either. The rows the advisor
+ * reviewed are carried by `commitPlanBasics`, which writes the two bucket
+ * totals onto the two slots. See `commit/__tests__/living-fold.test.ts` for the
+ * assemble↔commit seam these unit cases sit under.
+ */
+describe("commitExpenses living closed set", () => {
+  const livingInserts = (calls: FakeTxCall[]) =>
+    callsForTable(calls, "expenses")
+      .filter((c) => c.op === "insert")
+      .map((c) => (c as { values: Record<string, unknown> }).values);
+
+  it("inserts ZERO living rows even with no planBasics figure", async () => {
+    const { tx, calls } = makeFakeTx();
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      expenses: [
+        { name: "Housing", type: "living", annualAmount: 24000, match: { kind: "new" } },
+        { name: "Groceries", type: "living", annualAmount: 12000, match: { kind: "new" } },
+      ],
+      // Deliberately no planBasics — the old conditional fold inserted both
+      // rows here, because it only fired when a reviewed total existed.
+    };
+
+    const result = await commitExpenses(tx, payload, ctx);
+
+    expect(livingInserts(calls)).toHaveLength(0);
+    expect(result.created).toBe(0);
+    expect(result.skipped).toBe(2);
+    expect(result.warnings.join(" ")).toMatch(/totalled into the Current and Retirement/i);
+  });
+
+  it("types an extracted row with no type as other, not living", async () => {
+    const { tx, calls } = makeFakeTx();
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      expenses: [{ name: "Club dues", annualAmount: 3000, match: { kind: "new" } }],
+    };
+
+    await commitExpenses(tx, payload, ctx);
+
+    expect(livingInserts(calls)).toHaveLength(1);
+    expect(livingInserts(calls)[0].type).toBe("other");
+  });
+
+  it("still inserts non-living rows normally", async () => {
+    const { tx, calls } = makeFakeTx();
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      expenses: [
+        { name: "Umbrella policy", type: "insurance", annualAmount: 800, match: { kind: "new" } },
+      ],
+    };
+
+    const result = await commitExpenses(tx, payload, ctx);
+
+    expect(result.created).toBe(1);
+    expect(livingInserts(calls)[0].type).toBe("insurance");
   });
 });
 

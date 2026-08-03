@@ -49,9 +49,8 @@ function slotIdsWithRole(
  * strongest statement there is about which phase the row describes, because it
  * is the advisor's own, made in the review wizard.
  *
- * One copy, read for BOTH roles and from both the fold predicate below and the
- * two-bucket split further down. A second copy that drifts is precisely what
- * double-counted living spending the first time.
+ * One copy, read for BOTH roles by the two-bucket split below. A second copy
+ * that drifts is precisely what double-counted living spending the first time.
  */
 function isLinkedToSlot(
   row: Annotated<ExtractedExpense>,
@@ -65,53 +64,26 @@ function isLinkedToSlot(
  * The amount this row contributes to a living total, or null when it does not
  * contribute at all.
  *
- * THE single definition of "counts as living spending", shared by
- * `isSummedLivingRow` (which decides what the fold suppresses) and
- * `sumExtractedLivingByRole` (which decides what the advisor reviews). Two
- * copies of this test would let a future widening apply to one side and not the
+ * THE single definition of "counts as living spending", read by
+ * `sumExtractedLivingByRole`, which decides what the advisor reviews. A second
+ * copy of this test would let a future widening apply to one side and not the
  * other, which is how spending goes missing.
  *
- * Known, deliberate edge: `commitExpenses` inserts a row with NO `type` as
- * `"living"` (`row.type ?? "living"`), but such a row is not counted here and
- * so is not suppressed either. That leaves it as a real, separate expense row
- * outside the reviewed totals — an under-report of the reviewed figure, never a
- * double count. Widening this would silently change the figures the advisor
- * reviews, which is a separate (already-accepted) decision.
+ * The fold in `commitExpenses` is deliberately WIDER: it suppresses every
+ * `type: "living"` row, including one this test rejects for a zero or absent
+ * amount. That is safe in exactly one direction — a row this test rejects
+ * carries no money to lose — and it is why the fold can key on the type alone
+ * without importing this predicate.
+ *
+ * Known, deliberate edge: a row with NO `type` is not counted here, and
+ * `commitExpenses` writes it as a separate `"other"` expense row. That leaves
+ * it outside the reviewed totals — an under-report of the reviewed figure,
+ * never a double count. Widening this would silently change the figures the
+ * advisor reviews, which is a separate (already-accepted) decision.
  */
 function livingRowAmount(row: Annotated<ExtractedExpense>): number | null {
   if (row.type !== "living") return null;
   return numericAmount(row.annualAmount);
-}
-
-/**
- * THE rule for "this extracted expense row feeds the reviewed current-living-
- * spending total on the Plan basics step".
- *
- * It is defined exactly once, here, and read by `commitExpenses` to decide
- * which rows the fold suppresses.
- *
- * IT IS NARROWER THAN THE ASSEMBLE SIDE, deliberately, and the two must not be
- * confused. `sumExtractedLivingByRole` banks a row on the retirement side by
- * link OR by name; this predicate only knows about the link. So a
- * retirement-NAMED row with no link is "summed" here (and folded) while the
- * assemble side counts it toward the RETIREMENT total. They share
- * `livingRowAmount` and `isLinkedToSlot` so the pieces they do have in common
- * cannot drift, but the two answers are not the same answer.
- *
- * `retirementSlotIds` (F3) excludes a row LINKED to the retirement slot from
- * the CURRENT sum — that row is retirement-phase spending, and summing it here
- * would both inflate the reviewed current figure AND suppress the row when the
- * fold commits, losing it entirely.
- */
-export function isSummedLivingRow(
-  row: Annotated<ExtractedExpense>,
-  retirementSlotIds: ReadonlySet<string>,
-): boolean {
-  if (livingRowAmount(row) == null) return false;
-  // A row the advisor linked to the retirement slot is retirement-phase
-  // spending. Summing it into the current figure inflates what the advisor
-  // reviews AND suppresses the row — wrong twice.
-  return !isLinkedToSlot(row, retirementSlotIds);
 }
 
 /** One bucket's reviewed figure. `count` lets the caller disclose a combination. */
@@ -183,29 +155,4 @@ export function sumExtractedLivingByRole(
     current: acc.current.count > 0 ? acc.current : null,
     retirement: acc.retirement.count > 0 ? acc.retirement : null,
   };
-}
-
-/**
- * True when the reviewed living-expense total supersedes the itemized detail
- * — i.e. `commitPlanBasics` will write a real number onto the seeded
- * Current Living Expenses slot, so `commitExpenses` must NOT also insert the
- * rows that fed it.
- *
- * This reads the PAYLOAD, not the set of tabs in the current commit request,
- * and that is deliberate: the review wizard commits one tab per click, so
- * `expenses` can be committed before OR after `plan-basics` (and in a separate
- * request entirely). The payload is the same on both, so the fold decision is
- * identical whichever order they run in.
- *
- * Blank stays blank: no `planBasics` block, or a null/cleared value, means the
- * slot keeps its seeded $0 and the itemized rows MUST still be inserted —
- * losing the spending outright is worse than double counting it.
- *
- * DELETE WITH TASK 5. Its only caller is `commit/expenses.ts`, which Task 5
- * rewrites to stop inserting living rows at all — at which point the fold, and
- * this predicate, have nothing left to decide. Kept here only so this commit
- * builds.
- */
-export function livingTotalSupersedesRows(payload: ImportPayload): boolean {
-  return payload.planBasics?.currentLivingSpending.value != null;
 }

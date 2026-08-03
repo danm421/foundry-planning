@@ -1,6 +1,6 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { randomBytes } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { db } from "@/db";
 import { clients, crmHouseholds, expenses } from "@/db/schema";
@@ -12,11 +12,7 @@ import { emptyImportPayload, type ImportPayload } from "../../types";
 import { callsForTable, makeFakeTx, type FakeTx, type FakeTxCall } from "../../__tests__/commit-test-helpers";
 import { commitExpenses } from "../expenses";
 import { commitPlanBasics } from "../plan-basics";
-import {
-  isSummedLivingRow,
-  retirementSlotIdsFromPayload,
-  sumExtractedLivingByRole,
-} from "@/lib/imports/living-rows";
+import { retirementSlotIdsFromPayload, sumExtractedLivingByRole } from "@/lib/imports/living-rows";
 
 /**
  * THE DOUBLE-COUNT REGRESSION.
@@ -112,8 +108,8 @@ describe("living-expense fold: the reviewed total supersedes the itemized rows",
     // Not an error — accounted for the way deliberately-unwritten fuzzy rows are.
     expect(expensesResult.skipped).toBe(3);
     expect(expensesResult.warnings).toEqual([
-      "3 extracted living-expense rows were folded into the reviewed living-expense " +
-        "total on Plan basics and not written as separate expense rows.",
+      "3 extracted living-expense rows were totalled into the Current and Retirement " +
+        "living-expense rows on Plan basics and not written as separate expense rows.",
     ]);
   });
 
@@ -172,8 +168,23 @@ describe("living-expense fold: the reviewed total supersedes the itemized rows",
   });
 });
 
-describe("living-expense fold: the guard — blank never loses the spending", () => {
-  it("still inserts every itemized row when the payload carries no planBasics", async () => {
+/**
+ * The fold used to be CONDITIONAL: it only fired when a reviewed figure existed
+ * AND a classifiable Current slot existed to receive it, because otherwise the
+ * itemized rows were the only record of the spending and had to be inserted.
+ *
+ * That guard is gone, and these cases pin why. `type: "living"` is now a closed
+ * two-row set, so there is no longer an "insert it instead" branch to fall back
+ * to — a third living row cannot exist. Each case below is one arm of the
+ * deleted condition, and every one of them now folds. The commit result says
+ * so, so nothing disappears silently.
+ */
+describe("living-expense fold: unconditional — there is no insert branch to fall back to", () => {
+  const FOLDED_3 =
+    "3 extracted living-expense rows were totalled into the Current and Retirement " +
+    "living-expense rows on Plan basics and not written as separate expense rows.";
+
+  it("folds even when the payload carries no planBasics", async () => {
     const fake = makeFakeTx();
     fake.setSelectResult("expenses", [CURRENT_SLOT]);
     const bare = payloadWith(); // planBasics absent
@@ -181,12 +192,13 @@ describe("living-expense fold: the guard — blank never loses the spending", ()
     await commitPlanBasics(fake.tx, bare, CTX);
     const expensesResult = await commitExpenses(fake.tx, bare, CTX);
 
-    expect(expensesResult.created).toBe(3);
-    expect(expensesResult.warnings).toEqual([]);
-    expect(currentPeriodLivingTotal(fake)).toBe(42000);
+    expect(expensesResult.created).toBe(0);
+    expect(expensesResult.skipped).toBe(3);
+    expect(expensesResult.warnings).toEqual([FOLDED_3]);
+    expect(expenseCalls(fake, "insert")).toHaveLength(0);
   });
 
-  it("still inserts every itemized row when the advisor cleared the figure", async () => {
+  it("folds even when the advisor cleared the figure", async () => {
     const basics = reviewedBasics(payloadWith());
     const cleared: AssemblePlanBasics = {
       ...basics,
@@ -200,14 +212,16 @@ describe("living-expense fold: the guard — blank never loses the spending", ()
     await commitPlanBasics(fake.tx, reviewed, CTX);
     const expensesResult = await commitExpenses(fake.tx, reviewed, CTX);
 
-    // Nothing was written to the slot, so the rows are the ONLY record of the
-    // spending — losing them would be worse than double counting them.
+    // A cleared figure commits as no-change, so the slot keeps its seeded $0
+    // and the itemized detail is not resurrected as rows. The advisor blanked
+    // the field on purpose; the warning tells them what that cost.
     expect(expenseCalls(fake, "update")).toHaveLength(0);
-    expect(expensesResult.created).toBe(3);
-    expect(currentPeriodLivingTotal(fake)).toBe(42000);
+    expect(expensesResult.created).toBe(0);
+    expect(expensesResult.warnings).toEqual([FOLDED_3]);
+    expect(currentPeriodLivingTotal(fake)).toBe(0);
   });
 
-  it("still inserts every itemized row when there is no seeded slot at all", async () => {
+  it("folds even when there is no seeded slot at all", async () => {
     const reviewed = payloadWith();
     const basics = reviewedBasics(reviewed);
     const fake = makeFakeTx();
@@ -216,29 +230,30 @@ describe("living-expense fold: the guard — blank never loses the spending", ()
     await commitPlanBasics(fake.tx, { ...reviewed, planBasics: basics }, CTX);
     const expensesResult = await commitExpenses(fake.tx, { ...reviewed, planBasics: basics }, CTX);
 
-    // The figure is non-null, so the fold WANTS to fire — but there is nowhere
-    // for commitPlanBasics to have written it. Folding here would erase the
-    // spending entirely, which is strictly worse than double-counting it.
+    // Migration 0229 (Task 9) adopts or seeds both slots for every scenario, so
+    // this state does not survive the branch — but even here the answer is
+    // fold, because inserting a living row is no longer legal.
     expect(expenseCalls(fake, "update")).toHaveLength(0);
-    expect(expensesResult.created).toBe(3);
-    expect(currentPeriodLivingTotal(fake)).toBe(42000);
+    expect(expensesResult.created).toBe(0);
+    expect(expensesResult.warnings).toEqual([FOLDED_3]);
   });
 
-  it("still inserts every itemized row when the slot predates the startYearRef backfill", async () => {
+  it("folds even when the slot predates the startYearRef backfill", async () => {
     const reviewed = payloadWith();
     const basics = reviewedBasics(reviewed);
     const fake = makeFakeTx();
     // Migration 0012 added start_year_ref with NO backfill, so a slot seeded
-    // before it classifies as neither current nor retirement — commitPlanBasics
-    // skips it rather than guessing, so the fold must stand down too.
+    // before it classifies as neither current nor retirement. commitPlanBasics
+    // still skips it rather than guessing — but the fold no longer follows that
+    // classifier, because it has no second option.
     fake.setSelectResult("expenses", [{ id: "slot-legacy", startYearRef: null }]);
 
     await commitPlanBasics(fake.tx, { ...reviewed, planBasics: basics }, CTX);
     const expensesResult = await commitExpenses(fake.tx, { ...reviewed, planBasics: basics }, CTX);
 
     expect(expenseCalls(fake, "update")).toHaveLength(0);
-    expect(expensesResult.created).toBe(3);
-    expect(currentPeriodLivingTotal(fake)).toBe(42000);
+    expect(expensesResult.created).toBe(0);
+    expect(expensesResult.warnings).toEqual([FOLDED_3]);
   });
 
   it("never suppresses a non-living row", async () => {
@@ -271,7 +286,7 @@ function payloadWithSlots(): ImportPayload {
   };
 }
 
-describe("F3 — phase-aware living-row predicate", () => {
+describe("F3 — phase-aware living-row split", () => {
   it("excludes a row matched to the retirement slot from the current-spending sum", () => {
     const payload = payloadWithSlots();
     payload.expenses = [
@@ -281,10 +296,7 @@ describe("F3 — phase-aware living-row predicate", () => {
         match: { kind: "exact", existingId: "slot-retirement" } },
     ];
 
-    const retirementIds = retirementSlotIdsFromPayload(payload);
-    expect(isSummedLivingRow(payload.expenses[0], retirementIds)).toBe(true);
-    expect(isSummedLivingRow(payload.expenses[1], retirementIds)).toBe(false);
-
+    expect(retirementSlotIdsFromPayload(payload)).toEqual(new Set(["slot-retirement"]));
     // The figure the advisor reviews is 60000, not 108000 — and the retirement
     // row is not merely excluded, it lands in the retirement bucket.
     expect(sumExtractedLivingByRole(payload)).toEqual({
@@ -298,25 +310,27 @@ describe("F3 — phase-aware living-row predicate", () => {
     payload.expenses = [
       { type: "living", name: "Housing", annualAmount: 24000, match: { kind: "new" } },
     ];
-    const retirementIds = retirementSlotIdsFromPayload(payload);
-    expect(retirementIds.size).toBe(0);
-    expect(isSummedLivingRow(payload.expenses[0], retirementIds)).toBe(true);
+    expect(retirementSlotIdsFromPayload(payload).size).toBe(0);
+    expect(sumExtractedLivingByRole(payload)).toEqual({
+      current: { total: 24000, count: 1 },
+      retirement: null,
+    });
   });
 });
 
 /**
- * F2 — DB-backed. Hits the dev Neon branch (run with `--testTimeout=30000`).
+ * DB-BACKED SECTION. Hits the dev Neon branch (run with `--testTimeout=30000`).
  *
- * The fake-tx harness above can't distinguish "folded" from "updated" for an
- * EXISTING non-slot row, because both paths end in a call recorded against
- * the same table. These tests seed a real client/scenario with a real
- * pre-existing living-expense row and assert against the row that actually
- * lands in the DB.
+ * The fake-tx harness above records only the VALUES of each write, not the row
+ * it targeted, so it cannot answer "what does this slot actually hold when both
+ * tabs have committed" or tell a fold apart from an update of an existing row.
+ * These tests seed a real client/scenario and assert on the rows that land in
+ * the DB.
  */
-const f2FirmIds: string[] = [];
+const seededFirmIds: string[] = [];
 
 afterAll(async () => {
-  for (const firmId of f2FirmIds) {
+  for (const firmId of seededFirmIds) {
     const rows = await db.select({ id: clients.id }).from(clients).where(eq(clients.firmId, firmId));
     for (const c of rows) {
       await db.delete(clients).where(eq(clients.id, c.id)); // cascades to expenses
@@ -328,17 +342,17 @@ afterAll(async () => {
 /**
  * Seeds a client + base-case scenario with:
  *   - a seeded `isDefault` Current Living Expenses slot (`startYearRef:
- *     "plan_start"`), so `commitExpenses`'s `hasCurrentSlot` check is
- *     satisfied and the fold is armed, and
- *   - a real, non-slot living-expense row ("Housing") at `annualAmount`,
+ *     "plan_start"`), and
+ *   - a LEGACY non-slot living-expense row ("Housing") at `annualAmount`,
  *     standing in for a row extraction matched exactly onto an existing DB
- *     row.
+ *     row. Migration 0229 (Task 9) reclassifies these, so this shape only
+ *     exists on scenarios the migration has not yet touched.
  */
 async function seedClientWithLivingRow(
   opts: { annualAmount: string },
 ): Promise<{ clientId: string; scenarioId: string; currentSlotId: string; existingRowId: string }> {
   const firmId = `test_firm_${randomBytes(4).toString("hex")}`;
-  f2FirmIds.push(firmId);
+  seededFirmIds.push(firmId);
   const { clientId, scenarioId } = await createTestClientWithScenario(firmId);
   const currentYear = new Date().getUTCFullYear();
 
@@ -376,12 +390,168 @@ async function seedClientWithLivingRow(
   return { clientId, scenarioId, currentSlotId: slot.id, existingRowId: row.id };
 }
 
-describe("F2 — the fold no longer swallows a row that matches an existing DB row", () => {
-  it("updates an existing matched living row instead of folding it", async () => {
-    // Arrange: a client whose scenario already has a non-slot living row at
-    // 30000, an import payload whose extracted row EXACTLY matches it at
-    // 36000, and a reviewed current-living-spending figure on planBasics (so
-    // the fold is armed).
+/**
+ * Seeds a client + base-case scenario carrying the full closed set: a Current
+ * slot anchored to `plan_start` and a Retirement slot anchored to
+ * `client_retirement`, both `isDefault` and both seeded at $0.
+ */
+async function seedClientWithBothSlots(): Promise<{
+  clientId: string;
+  scenarioId: string;
+  firmId: string;
+  currentSlotId: string;
+  retirementSlotId: string;
+}> {
+  const firmId = `test_firm_${randomBytes(4).toString("hex")}`;
+  seededFirmIds.push(firmId);
+  const { clientId, scenarioId } = await createTestClientWithScenario(firmId);
+  const currentYear = new Date().getUTCFullYear();
+
+  const [current] = await db
+    .insert(expenses)
+    .values({
+      clientId,
+      scenarioId,
+      type: "living",
+      name: "Current Living Expenses",
+      annualAmount: "0",
+      startYear: currentYear,
+      endYear: currentYear + 20,
+      startYearRef: "plan_start",
+      endYearRef: "client_retirement",
+      isDefault: true,
+      source: "manual",
+    })
+    .returning();
+
+  const [retirement] = await db
+    .insert(expenses)
+    .values({
+      clientId,
+      scenarioId,
+      type: "living",
+      name: "Retirement Living Expenses",
+      annualAmount: "0",
+      startYear: currentYear + 20,
+      endYear: currentYear + 40,
+      startYearRef: "client_retirement",
+      endYearRef: "plan_end",
+      isDefault: true,
+      source: "manual",
+    })
+    .returning();
+
+  return { clientId, scenarioId, firmId, currentSlotId: current.id, retirementSlotId: retirement.id };
+}
+
+/**
+ * THE THREE-ROW DOCUMENT, and the silent money-loss it used to cause.
+ *
+ * "Living Expenses" 100k + "Retirement Living Expenses" 40k + "Retirement
+ * Spending Need" 20k. `match.ts`'s `claimOnce` lets each seeded slot be claimed
+ * exactly ONCE, so row 2 takes the retirement slot (`kind: "exact"`) and row 3
+ * falls through the slot matcher to `{ kind: "new" }`.
+ *
+ * `sumExtractedLivingByRole` banks rows 2 AND 3 in the retirement bucket — row 2
+ * by link, row 3 by name — so the figure the advisor reviews is 60k, and
+ * `commitPlanBasics` writes 60k onto the retirement slot.
+ *
+ * Before the closed set, `commitExpenses` ALSO wrote row 2's own 40k onto that
+ * same slot: row 2 is retirement-LINKED, so the old fold predicate returned
+ * false for it and it fell through to the UPDATE branch. The wizard commits one
+ * tab per click IN EITHER ORDER, so with Plan basics committed first the slot
+ * ended at 40k and row 3's 20k was gone entirely — folded out of the insert
+ * path and summed into a total that got overwritten. Losing spending is the
+ * failure this codebase rates as worse than double-counting.
+ *
+ * The fix: `commitPlanBasics` is the SINGLE writer of both slot amounts.
+ */
+function threeRowDocument(currentSlotId: string, retirementSlotId: string): ImportPayload {
+  return {
+    ...emptyImportPayload(),
+    expenseSlots: [
+      { id: currentSlotId, name: "Current Living Expenses", role: "current" },
+      { id: retirementSlotId, name: "Retirement Living Expenses", role: "retirement" },
+    ],
+    expenses: [
+      {
+        type: "living",
+        name: "Living Expenses",
+        annualAmount: 100000,
+        match: { kind: "exact", existingId: currentSlotId },
+      },
+      {
+        type: "living",
+        name: "Retirement Living Expenses",
+        annualAmount: 40000,
+        match: { kind: "exact", existingId: retirementSlotId },
+      },
+      // The retirement slot is already claimed, so this one cannot link to it.
+      { type: "living", name: "Retirement Spending Need", annualAmount: 20000, match: { kind: "new" } },
+    ],
+  };
+}
+
+describe("the assemble↔commit seam: each living slot has exactly ONE writer", () => {
+  it("banks the unlinked third row in the retirement total the advisor reviews", () => {
+    const doc = threeRowDocument("slot-current", "slot-retirement");
+
+    expect(sumExtractedLivingByRole(doc)).toEqual({
+      current: { total: 100000, count: 1 },
+      retirement: { total: 60000, count: 2 }, // 40k by link + 20k by name
+    });
+    const basics = reviewedBasics(doc);
+    expect(basics.currentLivingSpending.value).toBe(100000);
+    expect(basics.retirementLivingSpending.value).toBe(60000);
+  });
+
+  it.each(["basics-first", "expenses-first"] as const)(
+    "leaves the retirement slot carrying the whole 60,000 — %s",
+    async (order) => {
+      const seeded = await seedClientWithBothSlots();
+      const doc = threeRowDocument(seeded.currentSlotId, seeded.retirementSlotId);
+      const reviewed: ImportPayload = { ...doc, planBasics: reviewedBasics(doc) };
+      const commitCtx = {
+        clientId: seeded.clientId,
+        scenarioId: seeded.scenarioId,
+        orgId: seeded.firmId,
+        userId: "user-1",
+      };
+
+      const expensesResult = await db.transaction(async (tx) => {
+        if (order === "basics-first") {
+          await commitPlanBasics(tx, reviewed, commitCtx);
+          return commitExpenses(tx, reviewed, commitCtx);
+        }
+        const res = await commitExpenses(tx, reviewed, commitCtx);
+        await commitPlanBasics(tx, reviewed, commitCtx);
+        return res;
+      });
+
+      const rows = await db
+        .select()
+        .from(expenses)
+        .where(and(eq(expenses.clientId, seeded.clientId), eq(expenses.type, "living")));
+      const byId = new Map(rows.map((r) => [r.id, Number(r.annualAmount)]));
+
+      // Still exactly two living rows: the closed set is not widened.
+      expect(rows).toHaveLength(2);
+      // 40k (linked row) + 20k (row the claimed slot pushed out) — intact, and
+      // written once, by commitPlanBasics.
+      expect(byId.get(seeded.retirementSlotId)).toBe(60000);
+      expect(byId.get(seeded.currentSlotId)).toBe(100000);
+      // commitExpenses wrote nothing at all: three living rows, all folded.
+      expect(expensesResult).toMatchObject({ created: 0, updated: 0, skipped: 3 });
+    },
+  );
+});
+
+describe("the fold reaches the UPDATE branch too, not just the insert branch", () => {
+  it("does not write an extracted living row onto an existing living row it matched", async () => {
+    // Arrange: a client whose scenario still has a LEGACY non-slot living row
+    // at 30000, and an import payload whose extracted row EXACTLY matches it at
+    // 36000. An exact match takes the UPDATE branch, so this is the case that
+    // proves the guard sits ABOVE both branches and not just above the insert.
     const { clientId, scenarioId, currentSlotId, existingRowId } =
       await seedClientWithLivingRow({ annualAmount: "30000" });
     const payload: ImportPayload = {
@@ -402,14 +572,16 @@ describe("F2 — the fold no longer swallows a row that matches an existing DB r
       commitExpenses(tx, payload, { clientId, scenarioId, orgId: "org-1", userId: "user-1" }),
     );
 
-    // The row is UPDATED, not folded away.
-    expect(result.updated).toBe(1);
-    expect(result.skipped).toBe(0);
+    // Folded, not updated. The row's 36000 is already inside the bucket total
+    // `commitPlanBasics` writes onto the slot, so writing it here as well would
+    // put the same money in the engine's living sum twice.
+    expect(result.updated).toBe(0);
+    expect(result.skipped).toBe(1);
     const [row] = await db.select().from(expenses).where(eq(expenses.id, existingRowId));
-    expect(Number(row.annualAmount)).toBe(36000);
+    expect(Number(row.annualAmount)).toBe(30000); // untouched
   });
 
-  it("still folds a brand-new row that fed the reviewed total", async () => {
+  it("folds a brand-new row that fed the reviewed total", async () => {
     const { clientId, scenarioId, currentSlotId } =
       await seedClientWithLivingRow({ annualAmount: "30000" });
     const payload: ImportPayload = {
@@ -425,6 +597,8 @@ describe("F2 — the fold no longer swallows a row that matches an existing DB r
 
     expect(result.created).toBe(0);
     expect(result.skipped).toBe(1);
-    expect(result.warnings.join(" ")).toContain("folded into the reviewed living-expense total");
+    expect(result.warnings.join(" ")).toContain(
+      "totalled into the Current and Retirement living-expense rows",
+    );
   });
 });

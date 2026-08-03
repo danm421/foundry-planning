@@ -1,10 +1,7 @@
 import { and, eq } from "drizzle-orm";
 
 import { expenses } from "@/db/schema";
-import type { YearRef } from "@/lib/milestones";
 
-import { isSummedLivingRow, livingTotalSupersedesRows } from "../living-rows";
-import { livingSlotRole } from "../match-keys/living-slot";
 import { getExistingId, type ImportPayload } from "../types";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
 import { resolveImportTiming } from "./timing";
@@ -14,31 +11,36 @@ import { resolveImportTiming } from "./timing";
  * update, annualAmount always replaces, year/growthRate fields use
  * replace-if-non-null. Schema requires startYear/endYear so we fall back
  * to a sensible default range (current year → +30) on insert when
- * extraction omitted them. Exception: a row linked to a seeded `isDefault`
- * living slot (Current/Retirement) fills amount/growthRate but keeps its
- * canonical year window — timing is never replaced for those rows.
+ * extraction omitted them. Exception: a NON-living row the advisor linked to a
+ * seeded `isDefault` living slot (Current/Retirement) fills amount/growthRate
+ * but keeps the slot's canonical year window — timing is never replaced there.
  *
- * THE LIVING-EXPENSE FOLD. When the advisor has a current-living-spending
- * figure on the Plan basics step, that reviewed total supersedes the itemized
- * detail: `commitPlanBasics` writes it onto the seeded Current Living
- * Expenses slot — the engine's canonical living-expense row — and every
- * extracted row that fed the sum is skipped here instead of being written
- * separately. Writing both is what double-counted spending (Housing 24k +
- * Groceries 12k + Utilities 6k landed as 42k on the slot AND 42k of new rows),
- * and it double-counted retirement spending too, because those inserted rows
- * default to a `currentYear + 30` end year that runs straight through
- * retirement alongside the derived retirement figure on its own slot.
+ * THE LIVING-EXPENSE FOLD IS UNCONDITIONAL. `type: "living"` is a CLOSED SET of
+ * exactly two rows per (client, scenario) — a Current row and a Retirement row,
+ * both seeded and `isDefault` (see `lib/living-expenses.ts`). So this module
+ * never writes a living row at all, in either direction:
  *
- * Which rows are FOLDED is decided by `isSummedLivingRow`, imported rather than
- * restated, because a second copy that drifts recreates the bug.
+ *   - it never INSERTS one, because a third living row cannot exist. Writing
+ *     the itemized detail alongside the reviewed total is what double-counted
+ *     spending in the first place (Housing 24k + Groceries 12k + Utilities 6k
+ *     landed as 42k on the slot AND 42k of new rows), and it double-counted
+ *     retirement spending too, because an inserted row's default
+ *     `currentYear + 30` end year runs straight through retirement.
  *
- * THAT IS NOT THE SAME QUESTION AS "which rows fed the sum". The assemble side
- * (`sumExtractedLivingByRole`) banks a row on the retirement side by link OR by
- * name; `isSummedLivingRow` only knows about the link. So a retirement-NAMED
- * row with no link is folded HERE while the advisor's RETIREMENT total is what
- * actually carries it. The two agree on the pieces they share
- * (`livingRowAmount`, `isLinkedToSlot`) and diverge on purpose beyond that —
- * do not "unify" them without reading both.
+ *   - it never UPDATES one either, because `commitPlanBasics` is the SINGLE
+ *     writer of the two slots' amounts. `sumExtractedLivingByRole` has already
+ *     banked every extracted living row into the Current or the Retirement
+ *     bucket, and `commitPlanBasics` writes those two bucket totals. A row that
+ *     also stamped its own amount onto a slot here would race that write — the
+ *     review wizard commits ONE TAB PER CLICK, IN EITHER ORDER — and the loser's
+ *     money would be silently gone. A three-row document ("Living Expenses"
+ *     100k, "Retirement Living Expenses" 40k, "Retirement Spending Need" 20k)
+ *     did exactly that: the retirement bucket totals 60k, but the linked 40k
+ *     row used to overwrite it, deleting the unlinked row's 20k outright.
+ *
+ * Folded rows are counted as `skipped`, the same channel the deliberately-
+ * not-written fuzzy rows use: this is a decision, not a failure, and the
+ * warning at the end of this function discloses it.
  */
 export async function commitExpenses(
   tx: Tx,
@@ -49,11 +51,11 @@ export async function commitExpenses(
   const now = new Date();
   const currentYear = now.getUTCFullYear();
 
-  // Seeded isDefault living slots (Current/Retirement). A row linked to one of
-  // these gets its amount filled but keeps its canonical current/retirement
-  // year window — never reshaped by extracted timing.
+  // Seeded isDefault living slots (Current/Retirement). A NON-living row the
+  // advisor linked to one of these gets its amount filled but keeps the slot's
+  // canonical year window — timing is never reshaped by extracted timing.
   const slotRows = await tx
-    .select({ id: expenses.id, startYearRef: expenses.startYearRef })
+    .select({ id: expenses.id })
     .from(expenses)
     .where(
       and(
@@ -65,30 +67,6 @@ export async function commitExpenses(
     );
   const slotIds = new Set(slotRows.map((r) => r.id));
 
-  // Fold only when the total has somewhere to land. `livingTotalSupersedesRows`
-  // states an INTENT to write; `commitPlanBasics` only actually writes a slot
-  // whose `startYearRef` classifies as "current", and skips any it cannot
-  // place. Without this check, a household with no isDefault living slot — or
-  // one whose slots predate migration 0012, which added `start_year_ref` with
-  // no backfill — folds every itemized row while nothing is written to a slot,
-  // and the spending disappears entirely. That is worse than double-counting,
-  // so the fold is bound to the same classifier that decides the write.
-  const hasCurrentSlot = slotRows.some(
-    (r) => livingSlotRole((r.startYearRef ?? null) as YearRef | null) === "current",
-  );
-
-  // Same classification the assemble side uses, derived here from the slot
-  // rows this module already queried. Both sides must agree on which rows fed
-  // the figure, or the fold suppresses rows that were never summed.
-  const retirementSlotIds: ReadonlySet<string> = new Set(
-    slotRows
-      .filter((r) => livingSlotRole((r.startYearRef ?? null) as YearRef | null) === "retirement")
-      .map((r) => r.id),
-  );
-
-  // Blank stays blank: with no planBasics block, or a null/cleared figure,
-  // nothing is written to the slot and the itemized rows must still land.
-  const foldLivingRows = livingTotalSupersedesRows(payload) && hasCurrentSlot;
   let folded = 0;
 
   for (const row of payload.expenses) {
@@ -99,23 +77,13 @@ export async function commitExpenses(
       continue;
     }
 
-    // Folded into the reviewed total. Counted as `skipped`, the same channel
-    // the deliberately-not-written fuzzy rows use — this is a decision, not a
-    // failure, and the warning below says so in the commit result.
-    //
-    // F2: fold ONLY rows that would otherwise be INSERTED, plus rows linked to
-    // a seeded living slot (where folding is the entire point). A row that
-    // exactly matches an existing NON-SLOT DB row must still be updated —
-    // skipping it leaves the stale DB value in the engine's living sum
-    // alongside the reviewed total on the slot, which is a double count with
-    // extra steps.
-    const foldExistingId = getExistingId(row);
-    const isSlotLinked = foldExistingId != null && slotIds.has(foldExistingId);
-    if (
-      foldLivingRows &&
-      isSummedLivingRow(row, retirementSlotIds) &&
-      (kind === "new" || isSlotLinked)
-    ) {
+    // THE CLOSED SET. A `type: "living"` row is either linked to one of the two
+    // seeded slots — in which case `commitPlanBasics` writes the reviewed
+    // bucket total onto it — or it is itemized detail that has been folded into
+    // that total by `sumExtractedLivingByRole`. Either way it is never written
+    // here, on EITHER branch below: not inserted as a third living row, and not
+    // updated onto a slot whose only writer is `commitPlanBasics`.
+    if (row.type === "living") {
       result.skipped += 1;
       folded += 1;
       continue;
@@ -126,7 +94,9 @@ export async function commitExpenses(
       await tx.insert(expenses).values({
         clientId: ctx.clientId,
         scenarioId: ctx.scenarioId,
-        type: row.type ?? "living",
+        // No extracted type means "some expense we can't classify" — that is
+        // `other`. It can no longer default to living: living is a closed set.
+        type: row.type ?? "other",
         name: row.name,
         annualAmount: row.annualAmount != null ? String(row.annualAmount) : "0",
         startYear: timing.start.year ?? currentYear,
@@ -177,8 +147,8 @@ export async function commitExpenses(
   if (folded > 0) {
     result.warnings.push(
       `${folded} extracted living-expense ${folded === 1 ? "row was" : "rows were"} ` +
-        `folded into the reviewed living-expense total on Plan basics and not written ` +
-        `as separate expense rows.`,
+        `totalled into the Current and Retirement living-expense rows on Plan basics ` +
+        `and not written as separate expense rows.`,
     );
   }
 
