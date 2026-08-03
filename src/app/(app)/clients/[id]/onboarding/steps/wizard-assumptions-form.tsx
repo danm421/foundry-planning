@@ -25,6 +25,7 @@ export interface WizardAssumptionsSettings {
   modelPortfolioIdCash: string | null;
   surplusSpendPct: string;
   surplusSaveAccountId: string | null;
+  surplusSpendAllUntilRetirement: boolean;
 }
 
 interface ModelPortfolioOption {
@@ -117,6 +118,10 @@ export default function WizardAssumptionsForm({
     settings.residenceState ?? "",
   );
 
+  const [spendAllUntilRetirement, setSpendAllUntilRetirement] = useState(
+    settings.surplusSpendAllUntilRetirement,
+  );
+
   const [sources, setSources] = useState<Record<string, { source: string; portfolioId: string }>>({
     taxable: {
       source: settings.growthSourceTaxable || "custom",
@@ -162,6 +167,7 @@ export default function WizardAssumptionsForm({
       residenceState: residence === "" ? null : residence,
       surplusSpendPct: toDec("surplusSpendPct"),
       surplusSaveAccountId: (data.get("surplusSaveAccountId") as string) || null,
+      surplusSpendAllUntilRetirement: spendAllUntilRetirement,
     };
     for (const row of GROWTH_ROWS) {
       const s = sources[row.category];
@@ -397,6 +403,16 @@ export default function WizardAssumptionsForm({
               </select>
             </div>
           </div>
+          <label className="mt-4 flex items-center gap-2 text-[13px] text-ink-2">
+            <input
+              type="checkbox"
+              checked={spendAllUntilRetirement}
+              onChange={(e) => setSpendAllUntilRetirement(e.target.checked)}
+              className="accent-accent"
+            />
+            Spend all surplus until retirement
+            <FieldTooltip text="Treats 100% of each year's surplus as spent through the year before the first person retires. From that retirement year onward, the percentage above applies." />
+          </label>
         </Section>
 
         {canEdit && (

@@ -112,6 +112,7 @@ export default async function AssumptionsStep({ clientId, firmId }: AssumptionsS
         modelPortfolioIdCash: settings.modelPortfolioIdCash,
         surplusSpendPct: String(settings.surplusSpendPct ?? "0"),
         surplusSaveAccountId: settings.surplusSaveAccountId,
+        surplusSpendAllUntilRetirement: settings.surplusSpendAllUntilRetirement ?? false,
       }}
       modelPortfolios={modelPortfolioOptions}
       householdAccounts={householdAccounts}

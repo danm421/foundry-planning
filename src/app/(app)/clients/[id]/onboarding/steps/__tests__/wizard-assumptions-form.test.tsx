@@ -22,6 +22,7 @@ const SETTINGS = {
   modelPortfolioIdCash: null,
   surplusSpendPct: "0",
   surplusSaveAccountId: null,
+  surplusSpendAllUntilRetirement: false,
 } as const;
 
 function renderForm(permission: "edit" | "view" = "edit") {
@@ -170,5 +171,30 @@ describe("WizardAssumptionsForm", () => {
   it("hides Save from a viewer", () => {
     renderForm("view");
     expect(screen.queryByRole("button", { name: /save/i })).toBeNull();
+  });
+
+  it("sends surplusSpendAllUntilRetirement true when checked", async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await user.click(screen.getByLabelText(/spend all surplus until retirement/i));
+    await user.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() =>
+      expect(bodiesFor("/api/clients/client-1/plan-settings")).toHaveLength(1),
+    );
+    expect(bodiesFor("/api/clients/client-1/plan-settings")[0].surplusSpendAllUntilRetirement)
+      .toBe(true);
+  });
+
+  it("sends an explicit false when left unchecked", async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await user.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() =>
+      expect(bodiesFor("/api/clients/client-1/plan-settings")).toHaveLength(1),
+    );
+    expect(bodiesFor("/api/clients/client-1/plan-settings")[0].surplusSpendAllUntilRetirement)
+      .toBe(false);
   });
 });
