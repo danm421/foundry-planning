@@ -21,6 +21,7 @@ import {
   flowYearPatch,
   type FlowPatch,
 } from "@/lib/inline-edit/flow-write";
+import { livingSlotRole } from "@/lib/imports/match-keys/living-slot";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
 import { isGoalExpense, educationGoalYears } from "@/lib/goals";
 import { isTodaysDollars } from "@/lib/todays-dollars";
@@ -263,6 +264,29 @@ const EXPENSE_GROUPS: { label: string; types: ExpenseType[] }[] = [
   { label: "Education", types: ["education"] },
   { label: "Other Expenses", types: ["other"] },
 ];
+
+/**
+ * Sort rank that pins the two SEEDED living-expense slots to the top of the
+ * Living Expenses group — Current first, Retirement second — whatever order the
+ * server returned them in.
+ *
+ * The role comes from `livingSlotRole` (the row's START MILESTONE), not its
+ * name. The seeds are renameable, and a household whose "Current Living
+ * Expenses" had been renamed "My Spending" is exactly the case that sorted the
+ * current slot BELOW its own retirement row. `livingSlotRole` is the same
+ * classifier the importer matches slots with — a second, name-based copy here
+ * would drift from it.
+ *
+ * Everything else shares rank 2, so `sort`'s stability leaves the rest of the
+ * group in the order it arrived.
+ */
+function livingSlotRank(e: Expense): 0 | 1 | 2 {
+  if (!e.isDefault) return 2;
+  const role = livingSlotRole(coerceYearRef(e.startYearRef) ?? null);
+  if (role === "current") return 0;
+  if (role === "retirement") return 1;
+  return 2;
+}
 
 const INCOME_TYPE_LABELS: Partial<Record<IncomeType, string>> = {
   salary: "Salary",
@@ -2373,11 +2397,16 @@ export default function IncomeExpensesView({
                   group.types.includes(e.type) && !e.ownerEntityId && !e.ownerAccountId,
               );
               if (items.length === 0) return null;
-              const subtotal = items.reduce((s, e) => s + Number(e.annualAmount), 0);
               // Living-expense rows edit their amount inline. The row-level
               // click-to-open is gone for EVERY group now — the inline year and
               // rate cells make it unusable — so every group gets the pencil.
               const isLiving = group.types.includes("living");
+              // The two seeded slots are the plan's spine — every other living
+              // row is detail hung off them — so they lead the group in plan
+              // order. Safe in place: `filter` above already returned a fresh
+              // array, so this never reorders `expenseList` itself.
+              if (isLiving) items.sort((a, b) => livingSlotRank(a) - livingSlotRank(b));
+              const subtotal = items.reduce((s, e) => s + Number(e.annualAmount), 0);
               return (
                 <Group
                   key={group.label}
