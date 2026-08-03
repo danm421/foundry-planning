@@ -6,6 +6,7 @@ import {
   itemProrationGate,
   startProrationFactor,
   endInclusionAndFactor,
+  firstRetirementYear,
 } from "../retirement-proration";
 import type { ClientInfo, Income, Expense, SavingsRule } from "../types";
 
@@ -265,5 +266,53 @@ describe("month value clamping", () => {
     const c: ClientInfo = { ...baseClient };
     delete (c as Partial<ClientInfo>).retirementMonth;
     expect(startProrationFactor("client_retirement", RETIREMENT_YEAR, c)).toBe(1);
+  });
+});
+
+describe("firstRetirementYear", () => {
+  // baseClient (top of this file): born 1970-01-01, retires at 65 → 2035.
+  it("returns the client's retirement year for a single filer", () => {
+    expect(firstRetirementYear(baseClient)).toBe(2035);
+  });
+
+  it("returns the spouse's year when the spouse retires first", () => {
+    const couple: ClientInfo = {
+      ...baseClient,
+      spouseDob: "1975-01-01",
+      spouseRetirementAge: 55, // → 2030, earlier than the client's 2035
+    };
+    expect(firstRetirementYear(couple)).toBe(2030);
+  });
+
+  it("returns the client's year when the client retires first", () => {
+    const couple: ClientInfo = {
+      ...baseClient,
+      spouseDob: "1975-01-01",
+      spouseRetirementAge: 70, // → 2045, later than the client's 2035
+    };
+    expect(firstRetirementYear(couple)).toBe(2035);
+  });
+
+  it("ignores a spouse with a DOB but no retirement age", () => {
+    const couple: ClientInfo = {
+      ...baseClient,
+      spouseDob: "1975-01-01",
+      spouseRetirementAge: undefined,
+    };
+    expect(firstRetirementYear(couple)).toBe(2035);
+  });
+
+  it("ignores a spouse with a retirement age but no DOB", () => {
+    const couple: ClientInfo = {
+      ...baseClient,
+      spouseDob: undefined,
+      spouseRetirementAge: 55,
+    };
+    expect(firstRetirementYear(couple)).toBe(2035);
+  });
+
+  it("returns null when neither person resolves", () => {
+    const noDob: ClientInfo = { ...baseClient, dateOfBirth: "" };
+    expect(firstRetirementYear(noDob)).toBeNull();
   });
 });

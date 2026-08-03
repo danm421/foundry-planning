@@ -54,6 +54,23 @@ function retirementMonthFor(ref: RetirementRef, client: ClientInfo): number {
 }
 
 /**
+ * Calendar year in which the FIRST person in the household retires.
+ *
+ * Used by the "spend all surplus until retirement" assumption, which treats
+ * every year strictly before this one as a working year. A person is skipped
+ * when their birth year or retirement age can't be resolved; returns null when
+ * neither person resolves, so callers can fall back rather than guess.
+ */
+export function firstRetirementYear(client: ClientInfo): number | null {
+  const years: number[] = [];
+  const own = retirementYearFor("client_retirement", client);
+  if (own != null) years.push(own);
+  const spouse = retirementYearFor("spouse_retirement", client);
+  if (spouse != null) years.push(spouse);
+  return years.length === 0 ? null : Math.min(...years);
+}
+
+/**
  * Proration multiplier for a "starts at retirement" item in the given year.
  *
  *   - If `ref` is not a retirement ref → 1 (no effect).
