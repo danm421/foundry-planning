@@ -7,8 +7,7 @@ import {
   listCrmHouseholds,
   listRecentlyOpenedHouseholds,
 } from "@/lib/crm/households";
-import { CrmHouseholdSearch } from "@/components/crm-household-search";
-import { BookSwitcher } from "@/components/book-switcher";
+import { ClientsFilterBar } from "@/components/clients-filter-bar";
 import { UnifiedClientsTable, type UnifiedClientRow } from "@/components/unified-clients-table";
 import { SharedWithMeTable } from "@/components/sharing/shared-with-me-table";
 import { resolveSharesForRecipient, type ShareDetail } from "@/lib/clients/shared-access";
@@ -87,35 +86,13 @@ export async function ClientsContent({
   // avoids a separate COUNT(*).
   const fetchLimit = take + 1;
 
-  const tab = "text-sm text-ink-3 hover:text-ink";
-  const tabActive = "text-sm font-medium text-ink";
-
   // ── "Shared with me" branch ────────────────────────────────────────────────
   if (sharedView) {
     const sharedRows = await resolveSharedView(userId);
     return (
-      <div className="p-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-ink">Clients</h1>
-        </div>
-        <div className="mt-2 flex gap-4">
-          <Link href="/clients" className={tab}>
-            Recently opened
-          </Link>
-          <Link href="/clients?view=all" className={tab}>
-            All
-          </Link>
-          <Link href="/clients?view=shared" className={tabActive}>
-            Shared with me
-          </Link>
-          {canManage && (
-            <Link href="/clients?view=deleted" className={tab}>
-              Trash
-            </Link>
-          )}
-        </div>
+      <ClientsShell canManage={canManage}>
         <SharedWithMeTable rows={sharedRows} />
-      </div>
+      </ClientsShell>
     );
   }
 
@@ -170,6 +147,38 @@ export async function ClientsContent({
   });
 
   return (
+    <ClientsShell canManage={canManage}>
+      <UnifiedClientsTable
+        rows={rows}
+        canManage={canManage}
+        sort={sort}
+        emptyMessage={
+          deletedView
+            ? "Trash is empty."
+            : recentView
+              ? "No recently opened clients yet. Open a client's CRM or Planning to see it here."
+              : undefined
+        }
+      />
+      {shouldShowLoadMore(hasMore, take) && <ClientsLoadMore take={take} />}
+    </ClientsShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Page chrome — heading, create actions, and the one filter bar. Shared by
+// every view so the header can't drift or shift as the user switches tabs;
+// the filter bar reads the active view straight from the URL.
+// ---------------------------------------------------------------------------
+
+function ClientsShell({
+  canManage,
+  children,
+}: {
+  canManage: boolean;
+  children: React.ReactNode;
+}) {
+  return (
     <div className="p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-ink">Clients</h1>
@@ -189,39 +198,8 @@ export async function ClientsContent({
           </Link>
         </div>
       </div>
-      <div className="mt-2 flex items-center justify-between">
-        <div className="flex gap-4">
-          <Link href="/clients" className={recentView ? tabActive : tab}>
-            Recently opened
-          </Link>
-          <Link href="/clients?view=all" className={!recentView && !deletedView ? tabActive : tab}>
-            All
-          </Link>
-          <Link href="/clients?view=shared" className={tab}>
-            Shared with me
-          </Link>
-          {canManage && (
-            <Link href="/clients?view=deleted" className={deletedView ? tabActive : tab}>
-              Trash
-            </Link>
-          )}
-        </div>
-        {canManage && <BookSwitcher />}
-      </div>
-      <CrmHouseholdSearch />
-      <UnifiedClientsTable
-        rows={rows}
-        canManage={canManage}
-        sort={sort}
-        emptyMessage={
-          deletedView
-            ? "Trash is empty."
-            : recentView
-              ? "No recently opened clients yet. Open a client's CRM or Planning to see it here."
-              : undefined
-        }
-      />
-      {shouldShowLoadMore(hasMore, take) && <ClientsLoadMore take={take} />}
+      <ClientsFilterBar canManage={canManage} />
+      {children}
     </div>
   );
 }

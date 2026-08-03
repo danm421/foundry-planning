@@ -8,15 +8,16 @@ type Advisor = { userId: string; displayName: string };
 
 /**
  * Admin-only "viewing as" dropdown for the clients list. Self-contained, like
- * the sibling `CrmHouseholdSearch` filters: reads the current `?advisor=`
+ * the sibling `ClientsFilterBar` filters: reads the current `?advisor=`
  * value straight from the URL and writes changes back via `router.replace`,
  * so ClientsContent (an async server component) never has to hold state or
  * pass an onChange closure across the server/client boundary. Selecting an
  * advisor re-runs the server-rendered list query with `?advisor=<userId>`;
  * selecting "All clients" removes the param entirely.
  *
- * Not rendered at all for non-admins — gated at the call site in
- * clients-content.tsx (`{canManage && <BookSwitcher />}`). The
+ * Not rendered at all for non-admins — gated at each call site
+ * (`{canManage && <BookSwitcher />}`), in clients-filter-bar.tsx and
+ * risk-content.tsx. The
  * `/api/advisors` fetch below is itself admin/owner-gated server-side
  * (403 for anyone else), so a non-200 response just yields an empty list.
  */
