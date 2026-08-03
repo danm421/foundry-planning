@@ -1295,6 +1295,12 @@ export const planSettings = pgTable("plan_settings", {
     () => accounts.id,
     { onDelete: "set null" },
   ),
+  // When true, every projection year strictly before the household's FIRST
+  // retirement year spends 100% of surplus, ignoring surplusSpendPct. From
+  // that retirement year onward surplusSpendPct applies as normal.
+  surplusSpendAllUntilRetirement: boolean("surplus_spend_all_until_retirement")
+    .notNull()
+    .default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [

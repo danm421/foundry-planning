@@ -1,0 +1,1 @@
+ALTER TABLE "plan_settings" ADD COLUMN "surplus_spend_all_until_retirement" boolean DEFAULT false NOT NULL;

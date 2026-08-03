@@ -1328,6 +1328,11 @@ export interface PlanSettings {
   /** Account that receives the saved (non-spent) portion of surplus each year.
    *  Null/undefined = leave it in household checking (today's behavior). */
   surplusSaveAccountId?: string | null;
+  /** When true, every projection year strictly BEFORE the household's first
+   *  retirement year spends 100% of surplus regardless of `surplusSpendPct`;
+   *  from that retirement year onward `surplusSpendPct` applies as normal.
+   *  Defaults to false = today's flat-percentage behavior. */
+  surplusSpendAllUntilRetirement?: boolean;
   /** Stress test: cut ALL Social Security benefits by `pct` (decimal) for every
    *  projection year ≥ `startYear`. Applied in computeIncome before taxation. */
   ssBenefitHaircut?: { pct: number; startYear: number };

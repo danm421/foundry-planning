@@ -999,6 +999,7 @@ export const loadClientDataWithContext = cache(
       },
       surplusSpendPct: settings.surplusSpendPct != null ? parseFloat(settings.surplusSpendPct) : 0,
       surplusSaveAccountId: settings.surplusSaveAccountId ?? null,
+      surplusSpendAllUntilRetirement: settings.surplusSpendAllUntilRetirement ?? false,
     };
 
     // ── Income-tier beneficiary designations grouped by entity ──────────────
