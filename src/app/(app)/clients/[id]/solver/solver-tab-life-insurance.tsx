@@ -10,17 +10,20 @@
 // never overwrites a newer result.
 //
 // `SolverLifeInsuranceInputs` (left) renders the assumptions panel that drives
-// the loop; `SolverLifeInsuranceResults` (right) renders the solved need range
+// the loop plus the Monte Carlo control that triggers the on-demand MC solve;
+// `SolverLifeInsuranceResults` (right) renders the solved need range
 // (straight-line lower bound → Monte Carlo upper bound). The workspace owns the
-// lifted `assumptions` state and calls `useLiNeedSolve` once so both halves read
-// the same result.
+// lifted `assumptions` state and calls `useLiNeedSolve` / `useLiMcSolve` once
+// each so both halves read the same results.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectionYear } from "@/engine/types";
 import type { LiAssumptions } from "@/lib/life-insurance/schema";
 import type { SolverMutation, SolverSource } from "@/lib/solver/types";
 import { LiAssumptionsPanel } from "./li-assumptions-panel";
+import { LiMcControl } from "./li-mc-control";
 import { LiNeedRange } from "./li-need-range";
 import { SolverViewReportButton } from "./solver-view-report-button";
+import type { LiMcSolve, McResultPayload } from "./use-li-mc-solve";
 import { useClientAccess } from "@/components/client-access-provider";
 
 /** One decedent's solved need + the survivor's projection. */
@@ -182,13 +185,17 @@ export function useLiNeedSolve(
 }
 
 /**
- * Left-pane LI inputs: the "Life Insurance Need" heading + the assumptions
- * panel. No solve loop, no MC control, no result cards — those live in the
- * right pane (see `SolverLifeInsuranceResults`).
+ * Left-pane LI inputs: the "Life Insurance Need" heading, the Monte Carlo
+ * control (target score + "Solve for score"), and the assumptions panel. No
+ * solve loop and no result cards — the solved need range lives in the right
+ * pane (see `SolverLifeInsuranceResults`).
  */
 export function SolverLifeInsuranceInputs({
   assumptions,
   onAssumptionsChange,
+  mc,
+  clientName,
+  spouseName,
   liabilities,
   estateAdminExpenses,
   modelPortfolios,
@@ -198,6 +205,12 @@ export function SolverLifeInsuranceInputs({
   assumptions: LiAssumptions;
   /** Update the lifted assumptions (drives the debounced solve + autosave). */
   onAssumptionsChange: (next: LiAssumptions) => void;
+  /** MC solve state + controls from `useLiMcSolve` (owned by the workspace). */
+  mc: LiMcSolve;
+  /** Display name for the client; falls back to "Client" upstream when unknown. */
+  clientName: string;
+  /** Display name for the spouse; falls back to "Spouse" upstream when unknown. */
+  spouseName: string;
   /** Household liabilities for the per-liability payoff picker. */
   liabilities: { id: string; name: string; balance: number }[];
   /** Estate settlement cost from Details > Assumptions (read-only display). */
@@ -216,6 +229,15 @@ export function SolverLifeInsuranceInputs({
           <SolverViewReportButton reportLabel="Life Insurance Need" onClick={onOpenReport} />
         ) : null}
       </div>
+      <LiMcControl
+        targetScore={assumptions.mcTargetScore}
+        onScoreChange={(s) =>
+          onAssumptionsChange({ ...assumptions, mcTargetScore: s })
+        }
+        mc={mc}
+        clientName={clientName}
+        spouseName={spouseName}
+      />
       <LiAssumptionsPanel
         assumptions={assumptions}
         onChange={onAssumptionsChange}
@@ -229,38 +251,30 @@ export function SolverLifeInsuranceInputs({
 
 /**
  * Right-pane LI results: the "Solving…" indicator, the straight-line error (if
- * any), and the need-range cards — which bundle the Monte Carlo control strip.
- * `solveResult` comes from `useLiNeedSolve` in the workspace.
+ * any), and the need-range cards. `solveResult` comes from `useLiNeedSolve` in
+ * the workspace; `mcResult` from `useLiMcSolve`, triggered from the left pane.
  */
 export function SolverLifeInsuranceResults({
-  clientId,
   assumptions,
   solveResult,
+  mcResult,
   isSolving,
   errorMessage,
   clientName,
   spouseName,
-  onScoreChange,
-  source,
-  mutations,
 }: {
-  clientId: string;
-  /** Full current assumptions — POSTed as the solve-mc body's `assumptions`. */
+  /** Full current assumptions — supplies the death year + estate-tax toggle. */
   assumptions: LiAssumptions;
   /** Straight-line solve from `useLiNeedSolve`; null until the first solve lands. */
   solveResult: LiSolveResult | null;
+  /** Monte Carlo solve from `useLiMcSolve`; null until the advisor runs it. */
+  mcResult: McResultPayload | null;
   isSolving: boolean;
   errorMessage: string | null;
   /** Display name for the client; falls back to "Client" upstream when unknown. */
   clientName: string;
   /** Display name for the spouse; falls back to "Spouse" upstream when unknown. */
   spouseName: string;
-  /** Lift the updated `mcTargetScore` (decimal 0–1) to the workspace. */
-  onScoreChange: (score: number) => void;
-  /** Live solver source + unsaved mutations, so the MC solve reflects the
-   *  edited plan (forwarded to LiNeedRange's solve-mc call). */
-  source: SolverSource;
-  mutations: SolverMutation[];
 }) {
   return (
     <div className="space-y-4">
@@ -276,14 +290,11 @@ export function SolverLifeInsuranceResults({
       {solveResult ? (
         <div className={isSolving ? "opacity-60 transition-opacity" : ""}>
           <LiNeedRange
-            clientId={clientId}
             solveResult={solveResult}
             assumptions={assumptions}
+            mcResult={mcResult}
             clientName={clientName}
             spouseName={spouseName}
-            onScoreChange={onScoreChange}
-            source={source}
-            mutations={mutations}
           />
         </div>
       ) : (

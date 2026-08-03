@@ -7,7 +7,8 @@
 // preserved untouched) to the parent via `onChange`. `mcTargetScore` is NOT
 // surfaced here — it belongs to the Monte Carlo block.
 //
-// Rendered as a compact card beneath the solved need range. Inputs fill their
+// Rendered as a compact card in the left input pane, beneath the Monte Carlo
+// control (`LiMcControl`) that shares those assumptions. Inputs fill their
 // grid column (`w-full`) so the panel reads as a tidy data-entry form rather
 // than tiny fields floating in dead space.
 import { useState } from "react";

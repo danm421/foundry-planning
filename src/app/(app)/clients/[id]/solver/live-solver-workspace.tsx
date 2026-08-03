@@ -52,6 +52,7 @@ import {
   SolverLifeInsuranceResults,
   useLiNeedSolve,
 } from "./solver-tab-life-insurance";
+import { useLiMcSolve } from "./use-li-mc-solve";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { SolverQuickAddAccount } from "./solver-quick-add-account";
 import { SolverEducationSection } from "./solver-education-section";
@@ -329,6 +330,11 @@ export function LiveSolverWorkspace({
     initialSource,
     mutations,
   );
+
+  // The Monte Carlo need solve is on-demand and lives here so the trigger can
+  // sit in the left input pane while its result renders in the right report
+  // pane — and so a run survives switching tabs or reports mid-solve.
+  const liMc = useLiMcSolve(clientId, liAssumptions, initialSource, mutations);
 
   // Display label for the LI-proceeds portfolio, resolved from the picker
   // selection (null → the "Plan default rate" option). Carried into the summary
@@ -1379,6 +1385,9 @@ export function LiveSolverWorkspace({
           <SolverLifeInsuranceInputs
             assumptions={liAssumptions}
             onAssumptionsChange={setLiAssumptions}
+            mc={liMc}
+            clientName={clientName}
+            spouseName={spouseName}
             liabilities={(baseClientData.liabilities ?? []).map((l) => ({
               id: l.id,
               name: l.name,
@@ -1482,18 +1491,13 @@ export function LiveSolverWorkspace({
             />
             {activeReport === "lifeInsurance" ? (
               <SolverLifeInsuranceResults
-                clientId={clientId}
                 assumptions={liAssumptions}
                 solveResult={liSolve.solveResult}
+                mcResult={liMc.result}
                 isSolving={liSolve.isSolving}
                 errorMessage={liSolve.errorMessage}
                 clientName={clientName}
                 spouseName={spouseName}
-                onScoreChange={(s) =>
-                  setLiAssumptions((a) => ({ ...a, mcTargetScore: s }))
-                }
-                source={initialSource}
-                mutations={mutations}
               />
             ) : null}
             {activeReport !== "summaries" && activeReport !== "monteCarlo" ? (
