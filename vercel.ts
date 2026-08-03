@@ -61,5 +61,9 @@ export const config: VercelConfig = {
       path: "/api/cron/refresh-risk-capacity",
       schedule: "0 6 * * *",
     },
+    {
+      path: "/api/cron/notification-scan",
+      schedule: "0 8 * * *",
+    },
   ],
 };
