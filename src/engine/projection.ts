@@ -67,6 +67,7 @@ import {
 } from "../lib/tax/derive-deductions";
 import { applySavingsRules, computeEmployerMatch, resolveContributionAmount } from "./savings";
 import { itemProrationGate } from "./retirement-proration";
+import { effectiveSurplusSpendPct } from "./surplus-spend";
 import {
   applyContributionLimits,
   computeIraLimit,
@@ -5496,7 +5497,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // "unreachable" however high the lever. Only spent-but-now-redirected cash
       // (and expense cuts below) genuinely raise the portfolio. Mirror phase 14's
       // clamp of surplusSpendPct (default 0 ⇒ fund entirely from expense cuts).
-      const selfFundingSpendPct = Math.min(1, Math.max(0, data.planSettings.surplusSpendPct ?? 0));
+      const selfFundingSpendPct = effectiveSurplusSpendPct(
+        data.planSettings,
+        data.client,
+        year,
+      );
       let surplusAvailable =
         Math.max(0, surplusBeforeSavings - savings.total) * selfFundingSpendPct;
       // Living expense pool still available to cut this year.
@@ -6991,8 +6996,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           - grantorTrustSurplusCorrection
       );
       if (surplusForSplit > 0) {
-        const rawPct = data.planSettings.surplusSpendPct ?? 0;
-        const spendPct = Math.min(1, Math.max(0, rawPct));
+        const spendPct = effectiveSurplusSpendPct(data.planSettings, data.client, year);
         const spendAmount = surplusForSplit * spendPct;
         const saveAmount = surplusForSplit - spendAmount;
 

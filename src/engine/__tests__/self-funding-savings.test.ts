@@ -32,6 +32,8 @@ function fixtureWithSelfFunding(
     // portfolio). Self-funding draws only from the spent share, since retained
     // surplus is already in the portfolio. Defaults to 1 (legacy: spend it all).
     surplusSpendPct?: number;
+    // Forces 100% spend before the first retirement year (2035 in this fixture).
+    surplusSpendAllUntilRetirement?: boolean;
   },
 ): ClientData {
   const living = opts.livingExpense ?? LIVING;
@@ -144,6 +146,7 @@ function fixtureWithSelfFunding(
       planStartYear: PLAN_START,
       planEndYear: PLAN_END,
       surplusSpendPct,
+      surplusSpendAllUntilRetirement: opts.surplusSpendAllUntilRetirement ?? false,
     },
     familyMembers: [
       {
@@ -226,6 +229,28 @@ describe("self-funding (fundFromExpenseReduction) savings", () => {
     const synthBalLater = years.at(-1)!.accountLedgers[SYNTH_ACCT]?.endingValue ?? 0;
     expect(synthBalAtRet).toBeGreaterThan(0); // accumulated during working years
     expect(synthBalLater).toBeGreaterThan(synthBalAtRet); // growth continues
+  });
+
+  it("spend-all-until-retirement makes the pre-retirement pool fund from cash flow, not expense cuts", () => {
+    // surplusSpendPct 0 → nothing is spendable → the waterfall can only cut
+    // living expenses. Turning the flag on makes the whole working-year surplus
+    // spendable, so the same contribution comes from cash flow instead.
+    const off = runProjection(
+      fixtureWithSelfFunding(20_000, { salary: 200_000, surplusSpendPct: 0 }),
+    )[0];
+    expect(off.hypotheticalSavings?.fromCashFlow).toBeCloseTo(0, 0);
+    expect(off.hypotheticalSavings?.fromExpenseReduction).toBeCloseTo(20_000, 0);
+
+    const on = runProjection(
+      fixtureWithSelfFunding(20_000, {
+        salary: 200_000,
+        surplusSpendPct: 0,
+        surplusSpendAllUntilRetirement: true,
+      }),
+    )[0];
+    // 2026 is a working year (first retirement year is 2035).
+    expect(on.hypotheticalSavings?.fromCashFlow).toBeCloseTo(20_000, 0);
+    expect(on.hypotheticalSavings?.fromExpenseReduction).toBeCloseTo(0, 0);
   });
 });
 
