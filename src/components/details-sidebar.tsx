@@ -2,15 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
-import { qsStepLabel } from "@/lib/quick-start/state";
-import type { QsStepSlug } from "@/lib/quick-start/steps";
 import { useClientAccess } from "./client-access-provider";
 
 interface DetailsSidebarProps {
   clientId: string;
-  quickStartResumeStep?: QsStepSlug | null;
   variant?: "full" | "rail";
 }
 
@@ -138,89 +134,29 @@ const TAX_ANALYSIS_TAB: SidebarTab = {
   icon: <TaxAnalysisIcon />,
 };
 
-function GuidedWalkthroughMenu({
+function GuidedSetupLink({
   clientId,
-  resumeStep,
   withScenario,
 }: {
   clientId: string;
-  resumeStep: QsStepSlug | null;
   withScenario: (href: string) => string;
 }) {
-  const [open, setOpen] = useState(false);
-  const wrapperRef = useRef<HTMLDivElement>(null);
-
-  // Close on outside-click and Escape — mirrors client-identity-menu.tsx.
-  useEffect(() => {
-    if (!open) return;
-    function onPointerDown(e: MouseEvent) {
-      if (!wrapperRef.current?.contains(e.target as Node)) setOpen(false);
-    }
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
-
-  const quickHref = `/clients/${clientId}/quick-start?step=${resumeStep ?? "income"}`;
-  const quickLabel = resumeStep
-    ? `Resume Quick Start · ${qsStepLabel(resumeStep)}`
-    : "Quick Start";
-
   return (
-    <div ref={wrapperRef} className="relative mt-3">
-      <button
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-3 rounded-md border border-dashed border-gray-700 px-3 py-2 text-sm font-medium text-gray-300 hover:bg-gray-800"
-      >
-        <svg className="h-[18px] w-[18px] flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M4 5h16M4 12h16M4 19h10" />
-          <circle cx="20" cy="19" r="2" />
-        </svg>
-        <span className="flex-1 text-left">Guided Walkthrough</span>
-        <span aria-hidden="true" className={`text-[10px] transition-transform ${open ? "rotate-180" : ""}`}>
-          ▾
-        </span>
-      </button>
-
-      {open && (
-        <div
-          role="menu"
-          className="absolute top-full left-0 z-40 mt-1.5 w-full rounded-xl border border-hair bg-paper p-1.5 shadow-lg"
-        >
-          <Link
-            role="menuitem"
-            href={quickHref}
-            onClick={() => setOpen(false)}
-            className="block rounded-md px-3 py-2 text-[13px] font-medium text-ink hover:bg-card-2"
-          >
-            {quickLabel}
-          </Link>
-          <Link
-            role="menuitem"
-            href={withScenario(`/clients/${clientId}/onboarding`)}
-            onClick={() => setOpen(false)}
-            className="block rounded-md px-3 py-2 text-[13px] font-medium text-ink hover:bg-card-2"
-          >
-            Detailed setup
-          </Link>
-        </div>
-      )}
-    </div>
+    <Link
+      href={withScenario(`/clients/${clientId}/onboarding`)}
+      className="mt-3 flex w-full items-center gap-3 rounded-md border border-dashed border-gray-700 px-3 py-2 text-sm font-medium text-gray-300 hover:bg-gray-800"
+    >
+      <svg className="h-[18px] w-[18px] flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 5h16M4 12h16M4 19h10" />
+        <circle cx="20" cy="19" r="2" />
+      </svg>
+      <span className="flex-1 text-left">Guided</span>
+    </Link>
   );
 }
 
 export default function DetailsSidebar({
   clientId,
-  quickStartResumeStep = null,
   variant = "full",
 }: DetailsSidebarProps) {
   const pathname = usePathname();
@@ -275,11 +211,7 @@ export default function DetailsSidebar({
         </div>
       )}
       {variant !== "rail" && (
-        <GuidedWalkthroughMenu
-          clientId={clientId}
-          resumeStep={quickStartResumeStep}
-          withScenario={withScenario}
-        />
+        <GuidedSetupLink clientId={clientId} withScenario={withScenario} />
       )}
     </nav>
   );

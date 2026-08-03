@@ -3,27 +3,25 @@ import { it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { START_PATHS, PathCard, isStartPath } from "../planning-start-paths";
 
-it("exposes the four start paths in picker order", () => {
-  expect(START_PATHS.map((p) => p.id)).toEqual(["quick", "detailed", "import", "empty"]);
-  expect(START_PATHS.map((p) => p.title)).toEqual([
-    "Quick Start",
-    "Detailed setup",
-    "AI import",
-    "Empty client",
-  ]);
+it("exposes the three start paths in picker order", () => {
+  expect(START_PATHS.map((p) => p.id)).toEqual(["guided", "import", "empty"]);
+  expect(START_PATHS.map((p) => p.title)).toEqual(["Guided", "AI import", "Empty client"]);
   // Card copy is fixed for this picker — pin the subtitles too, or the list can
   // drift while the PathCard test (which supplies its own props) stays green.
   expect(START_PATHS.map((p) => p.subtitle)).toEqual([
-    "Fast retirement intake",
-    "Full guided wizard",
+    "Full step-by-step wizard",
     "Extract from documents",
     "Skip the wizard, start blank",
   ]);
 });
 
-it("narrows only the four known ids", () => {
-  expect(isStartPath("quick")).toBe(true);
+it("narrows only the three known ids", () => {
+  expect(isStartPath("guided")).toBe(true);
   expect(isStartPath("empty")).toBe(true);
+  // The sunset Quick Start path and the pre-rename "detailed" id must not
+  // survive in stale `?path=` links.
+  expect(isStartPath("quick")).toBe(false);
+  expect(isStartPath("detailed")).toBe(false);
   expect(isStartPath("bogus")).toBe(false);
   expect(isStartPath("")).toBe(false);
   expect(isStartPath(null)).toBe(false);
@@ -35,16 +33,16 @@ it("renders a card, reports its pressed state, and reports selection", () => {
   const { rerender } = render(
     <PathCard
       icon={null}
-      title="Quick Start"
-      subtitle="Fast retirement intake"
+      title="Guided"
+      subtitle="Full step-by-step wizard"
       selected={false}
       onSelect={onSelect}
     />,
   );
 
-  const card = screen.getByRole("button", { name: /quick start/i });
+  const card = screen.getByRole("button", { name: /guided/i });
   expect(card).toHaveAttribute("aria-pressed", "false");
-  expect(screen.getByText("Fast retirement intake")).toBeInTheDocument();
+  expect(screen.getByText("Full step-by-step wizard")).toBeInTheDocument();
 
   fireEvent.click(card);
   expect(onSelect).toHaveBeenCalledTimes(1);
@@ -52,13 +50,13 @@ it("renders a card, reports its pressed state, and reports selection", () => {
   rerender(
     <PathCard
       icon={null}
-      title="Quick Start"
-      subtitle="Fast retirement intake"
+      title="Guided"
+      subtitle="Full step-by-step wizard"
       selected
       onSelect={onSelect}
     />,
   );
-  expect(screen.getByRole("button", { name: /quick start/i })).toHaveAttribute(
+  expect(screen.getByRole("button", { name: /guided/i })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
@@ -68,13 +66,13 @@ it("omits aria-pressed entirely when selected is not passed (navigate-only calle
   render(
     <PathCard
       icon={null}
-      title="Quick Start"
-      subtitle="Fast retirement intake"
+      title="Guided"
+      subtitle="Full step-by-step wizard"
       onSelect={vi.fn()}
     />,
   );
 
-  const card = screen.getByRole("button", { name: /quick start/i });
+  const card = screen.getByRole("button", { name: /guided/i });
   // aria-pressed="false" is a PRESENT attribute and would pass a naive
   // truthiness check — assert absence specifically, not falsiness.
   expect(card).not.toHaveAttribute("aria-pressed");

@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 
 interface WizardChromeProps {
   stepLabels: readonly string[];
+  /** Small uppercase label above the progress bar naming the flow. */
+  eyebrow: string;
   /** 0-based index of the active step. */
   current: number;
   title: string;
@@ -18,6 +20,7 @@ interface WizardChromeProps {
 
 export function WizardChrome({
   stepLabels,
+  eyebrow,
   current,
   title,
   children,
@@ -33,7 +36,7 @@ export function WizardChrome({
     <div className="mx-auto max-w-2xl px-4 py-8">
       <div className="mb-6">
         <div className="mb-2 flex items-center justify-between font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
-          <span>Quick Start</span>
+          <span>{eyebrow}</span>
           <span className="tabular">
             Step {current + 1} / {stepLabels.length} · {stepLabels[current]}
           </span>

@@ -84,7 +84,7 @@ it("offers the planning start paths instead of navigating when there is no retur
 
   const dialog = await screen.findByRole("dialog", { name: /household created/i });
   expect(dialog).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /quick start/i })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /guided/i })).toBeInTheDocument();
   // Stayed put: the advisor is still on /crm/new, under the prompt.
   expect(pushMock).not.toHaveBeenCalled();
   expect(replaceMock).not.toHaveBeenCalled();

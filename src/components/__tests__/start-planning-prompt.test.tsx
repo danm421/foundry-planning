@@ -17,12 +17,12 @@ beforeEach(() => {
   pushMock.mockReset();
 });
 
-it("names the household and offers all four start paths", () => {
+it("names the household and offers all three start paths", () => {
   render(<StartPlanningPrompt household={HOUSEHOLD} />);
 
   expect(screen.getByRole("dialog", { name: /household created/i })).toBeInTheDocument();
   expect(screen.getByText("Cooper & Susan Sample")).toBeInTheDocument();
-  for (const name of [/quick start/i, /detailed setup/i, /ai import/i, /empty client/i]) {
+  for (const name of [/guided/i, /ai import/i, /empty client/i]) {
     expect(screen.getByRole("button", { name })).toBeInTheDocument();
   }
 });
@@ -38,8 +38,7 @@ it("routes to /clients/new with the chosen path pre-selected", () => {
 
 it("carries the right path for each card", () => {
   const cases: [RegExp, string][] = [
-    [/quick start/i, "quick"],
-    [/detailed setup/i, "detailed"],
+    [/guided/i, "guided"],
     [/empty client/i, "empty"],
   ];
   for (const [name, path] of cases) {

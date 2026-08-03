@@ -124,6 +124,6 @@ describe("add-household tour: the save step vs. the start-planning prompt", () =
     );
     expect(scrimCount()).toBe(0);
     expect(calloutEl()).toBeNull();
-    expect(screen.getByRole("button", { name: /quick start/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /guided/i })).toBeInTheDocument();
   });
 });

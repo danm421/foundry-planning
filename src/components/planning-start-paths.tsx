@@ -3,16 +3,18 @@
 import {
   ArrowRightIcon,
   ClipboardCheckIcon,
-  FlowIcon,
   SparkleIcon,
 } from "@/components/icons";
 
 /**
- * The four ways an advisor can start a planning client. Shared by the
+ * The three ways an advisor can start a planning client. Shared by the
  * `/clients/new` step-2 picker and the post-create prompt on `/crm/new`, so
  * the two pickers can't drift apart.
+ *
+ * The old "Quick Start" path (the `/clients/[id]/quick-start` wizard) was
+ * sunset — Guided is the only wizard we offer now.
  */
-export type StartPath = "quick" | "detailed" | "import" | "empty";
+export type StartPath = "guided" | "import" | "empty";
 
 export interface StartPathDef {
   id: StartPath;
@@ -23,15 +25,9 @@ export interface StartPathDef {
 
 export const START_PATHS: StartPathDef[] = [
   {
-    id: "quick",
-    title: "Quick Start",
-    subtitle: "Fast retirement intake",
-    icon: <FlowIcon width={18} height={18} />,
-  },
-  {
-    id: "detailed",
-    title: "Detailed setup",
-    subtitle: "Full guided wizard",
+    id: "guided",
+    title: "Guided",
+    subtitle: "Full step-by-step wizard",
     icon: <ClipboardCheckIcon width={18} height={18} />,
   },
   {
@@ -48,7 +44,9 @@ export const START_PATHS: StartPathDef[] = [
   },
 ];
 
-/** Narrows an untrusted value (e.g. a `?path=` query param) to a StartPath. */
+/** Narrows an untrusted value (e.g. a `?path=` query param) to a StartPath.
+ * Stale links carrying the retired `quick` (or the pre-rename `detailed`)
+ * fall through to "nothing selected", which is the safe default here. */
 export function isStartPath(value: string | null | undefined): value is StartPath {
   return START_PATHS.some((p) => p.id === value);
 }

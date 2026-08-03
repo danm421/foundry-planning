@@ -25,18 +25,15 @@ import { StateSelect } from "@/components/state-select";
 import { AgeYearField } from "@/components/forms/age-year-field";
 import { buildHouseholdName } from "@/lib/crm/household-name";
 import { birthYearFromDob } from "@/lib/age-year";
-import { USPS_STATE_CODES, USPS_STATE_NAMES } from "@/lib/usps-states";
 
 /**
  * Two-step "Start planning" flow:
  *   1. Either pick an existing CRM household OR check "Create a new household"
  *      and fill in identity (name/DOB, optional spouse) inline. Mirrors the
  *      dual-mode Add Client modal so advisors get the same selector either way.
- *   2. Choose one of four start paths from a 2×2 picker, which reveals only
+ *   2. Choose one of three start paths from the picker, which reveals only
  *      that path's fields:
- *        - Quick Start: planning fields + residence state + children, then the
- *          quick-start wizard.
- *        - Detailed setup: planning fields, then the guided onboarding wizard.
+ *        - Guided: planning fields, then the guided onboarding wizard.
  *        - AI import / Empty client: no fields — the client is created with
  *          sensible defaults (filing status follows whether the household has a
  *          spouse) and the user lands on document import or the overview.
@@ -106,8 +103,6 @@ export default function QuickCreateForm() {
   const [path, setPath] = useState<StartPath | null>(
     isStartPath(queryPath) ? queryPath : null,
   );
-  const [residenceState, setResidenceState] = useState<string>("");
-  const [children, setChildren] = useState<{ firstName: string; dob: string }[]>([]);
 
   // Step 1 dual-mode: pick existing household, or create a new one inline.
   const [createNewHousehold, setCreateNewHousehold] = useState(false);
@@ -297,10 +292,6 @@ export default function QuickCreateForm() {
       }
       const created = await res.json();
 
-      if (path === "detailed") {
-        router.push(`/clients/${created.id}/onboarding/household`);
-        return;
-      }
       if (path === "import") {
         router.push(`/clients/${created.id}/details/import/new`);
         return;
@@ -309,33 +300,7 @@ export default function QuickCreateForm() {
         router.push(`/clients/${created.id}/details`);
         return;
       }
-      // Quick Start: best-effort residence + children writes, then enter the
-      // wizard. These are non-fatal — the wizard can still set them — so a
-      // failure here never strands the (already created) client on this form.
-      try {
-        if (residenceState) {
-          await fetch(`/api/clients/${created.id}/plan-settings`, {
-            method: "PUT",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ residenceState }),
-          });
-        }
-        for (const child of children) {
-          if (!child.firstName.trim()) continue;
-          await fetch(`/api/clients/${created.id}/family-members`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              firstName: child.firstName.trim(),
-              relationship: "child",
-              dateOfBirth: child.dob || null,
-            }),
-          });
-        }
-      } catch {
-        // Non-fatal — fall through to the wizard.
-      }
-      router.push(`/clients/${created.id}/quick-start?step=income`);
+      router.push(`/clients/${created.id}/onboarding/household`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Create failed");
       setSubmitting(false);
@@ -526,13 +491,11 @@ export default function QuickCreateForm() {
 
   const submitLabel = submitting
     ? "Creating…"
-    : path === "quick"
-      ? "Start Quick Start"
-      : path === "detailed"
-        ? "Start guided setup"
-        : path === "import"
-          ? "Continue to import"
-          : "Create client";
+    : path === "guided"
+      ? "Start guided setup"
+      : path === "import"
+        ? "Continue to import"
+        : "Create client";
 
   // Step 2: path picker + conditional planning fields.
   return (
@@ -587,7 +550,7 @@ export default function QuickCreateForm() {
 
       {path && (
         <form onSubmit={onSubmit} className="space-y-5 border-t border-hair pt-4">
-          {(path === "quick" || path === "detailed") && (
+          {path === "guided" && (
             <>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <AgeYearField
@@ -710,84 +673,6 @@ export default function QuickCreateForm() {
                 )}
               </div>
             </>
-          )}
-
-          {path === "quick" && (
-            <div className="space-y-4">
-              <div>
-                <label className={fieldLabelClassName} htmlFor="residenceState">
-                  State of residence
-                </label>
-                <select
-                  id="residenceState"
-                  value={residenceState}
-                  onChange={(e) => setResidenceState(e.target.value)}
-                  className={selectClassName}
-                >
-                  <option value="">Select a state…</option>
-                  {USPS_STATE_CODES.map((code) => (
-                    <option key={code} value={code}>
-                      {USPS_STATE_NAMES[code]}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className={fieldLabelClassName}>Children (optional)</span>
-                  <button
-                    type="button"
-                    onClick={() => setChildren((c) => [...c, { firstName: "", dob: "" }])}
-                    className="text-[12px] font-medium text-accent transition-colors hover:text-accent-deep"
-                  >
-                    + Add child
-                  </button>
-                </div>
-                {children.length > 0 && (
-                  <div className="mt-2 space-y-2">
-                    {children.map((child, i) => (
-                      <div
-                        key={i}
-                        className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-center"
-                      >
-                        <input
-                          type="text"
-                          aria-label={`Child ${i + 1} first name`}
-                          placeholder="First name"
-                          value={child.firstName}
-                          onChange={(e) =>
-                            setChildren((arr) =>
-                              arr.map((c, j) => (j === i ? { ...c, firstName: e.target.value } : c)),
-                            )
-                          }
-                          className={inputClassName}
-                        />
-                        <input
-                          type="date"
-                          aria-label={`Child ${i + 1} date of birth`}
-                          min="1910-01-01"
-                          value={child.dob}
-                          onChange={(e) =>
-                            setChildren((arr) =>
-                              arr.map((c, j) => (j === i ? { ...c, dob: e.target.value } : c)),
-                            )
-                          }
-                          className={inputClassName}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setChildren((arr) => arr.filter((_, j) => j !== i))}
-                          className="text-[12px] text-ink-3 transition-colors hover:text-crit"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
           )}
 
           {(path === "import" || path === "empty") && (

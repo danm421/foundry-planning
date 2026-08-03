@@ -67,7 +67,7 @@ it("pre-selects the card named by ?path=", async () => {
       "true",
     ),
   );
-  expect(screen.getByRole("button", { name: /quick start/i })).toHaveAttribute(
+  expect(screen.getByRole("button", { name: /guided/i })).toHaveAttribute(
     "aria-pressed",
     "false",
   );
@@ -79,7 +79,7 @@ it("selects nothing when ?path= is unrecognized", async () => {
   render(<QuickCreateForm />);
 
   await waitFor(() => expect(screen.getByRole("button", { name: /ai import/i })).toBeInTheDocument());
-  for (const name of [/quick start/i, /detailed setup/i, /ai import/i, /empty client/i]) {
+  for (const name of [/guided/i, /ai import/i, /empty client/i]) {
     expect(screen.getByRole("button", { name })).toHaveAttribute("aria-pressed", "false");
   }
 });
@@ -89,7 +89,7 @@ it("does not render the step-2 detail form for an unrecognized ?path=", async ()
   // detail form off (`{path && (<form>...`). A naive cast (`queryPath as
   // StartPath | null` with no validation) would instead leave `path` set to
   // the raw string "bogus" — truthy, so the form (and its "Create client"
-  // submit button, the default label for any non-quick/detailed/import path)
+  // submit button, the default label for any non-guided/import path)
   // would incorrectly render. This is the only assertion in this suite that
   // can tell `isStartPath` narrowing apart from an unvalidated cast.
   mockSearch = "crmHouseholdId=hh-1&path=bogus";
@@ -106,13 +106,13 @@ it("selects nothing when ?path= is absent", async () => {
   render(<QuickCreateForm />);
 
   await waitFor(() => expect(screen.getByRole("button", { name: /ai import/i })).toBeInTheDocument());
-  for (const name of [/quick start/i, /detailed setup/i, /ai import/i, /empty client/i]) {
+  for (const name of [/guided/i, /ai import/i, /empty client/i]) {
     expect(screen.getByRole("button", { name })).toHaveAttribute("aria-pressed", "false");
   }
 });
 
 it("defaults filing status to married_joint when the household has a spouse", async () => {
-  mockSearch = "crmHouseholdId=hh-1&path=detailed";
+  mockSearch = "crmHouseholdId=hh-1&path=guided";
   stubHousehold(["primary", "spouse"]);
   render(<QuickCreateForm />);
 
@@ -132,7 +132,7 @@ it("defaults filing status to single when the household has no spouse", async ()
   // assertion waits. Switching households first forces the value away from
   // "single", so re-deriving back down to "single" on the no-spouse switch
   // is only possible if the derivation genuinely ran.
-  mockSearch = "crmHouseholdId=hh-1&path=detailed";
+  mockSearch = "crmHouseholdId=hh-1&path=guided";
   stubHouseholds({ "hh-1": ["primary", "spouse"], "hh-2": ["primary"] });
   const { rerender } = render(<QuickCreateForm />);
 
@@ -142,7 +142,7 @@ it("defaults filing status to single when the household has no spouse", async ()
     ),
   );
 
-  mockSearch = "crmHouseholdId=hh-2&path=detailed";
+  mockSearch = "crmHouseholdId=hh-2&path=guided";
   rerender(<QuickCreateForm />);
 
   await waitFor(() =>
@@ -151,7 +151,7 @@ it("defaults filing status to single when the household has no spouse", async ()
 });
 
 it("keeps an advisor's manual filing-status override across an unrelated re-render", async () => {
-  mockSearch = "crmHouseholdId=hh-1&path=detailed";
+  mockSearch = "crmHouseholdId=hh-1&path=guided";
   stubHousehold(["primary", "spouse"]);
   render(<QuickCreateForm />);
 
@@ -188,7 +188,7 @@ it("keeps an advisor's manual filing-status override across an unrelated re-rend
 });
 
 it("re-derives filing status when the advisor switches to a different household", async () => {
-  mockSearch = "crmHouseholdId=hh-1&path=detailed";
+  mockSearch = "crmHouseholdId=hh-1&path=guided";
   stubHouseholds({ "hh-1": ["primary"], "hh-2": ["primary", "spouse"] });
   const { rerender } = render(<QuickCreateForm />);
 
@@ -196,7 +196,7 @@ it("re-derives filing status when the advisor switches to a different household"
     expect((screen.getByLabelText(/filing status/i) as HTMLSelectElement).value).toBe("single"),
   );
 
-  mockSearch = "crmHouseholdId=hh-2&path=detailed";
+  mockSearch = "crmHouseholdId=hh-2&path=guided";
   rerender(<QuickCreateForm />);
 
   await waitFor(() =>

@@ -139,6 +139,7 @@ export function QuickStartWizard({ bootstrap }: { bootstrap: QsBootstrap }) {
   return (
     <WizardChrome
       stepLabels={labels}
+      eyebrow="Quick Start"
       current={idxInAll}
       title={QS_STEPS[idxInAll].label}
       busy={busy}

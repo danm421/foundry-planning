@@ -184,6 +184,7 @@ export function IntakeWizard({
       )}
       <WizardChrome
         stepLabels={CHROME_STEP_LABELS}
+        eyebrow="Intake"
         current={chromeIndex}
         title={step.title}
         onBack={goBack}
