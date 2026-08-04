@@ -60,13 +60,17 @@ export function WalkthroughOverlay() {
 
   // Graceful degradation: anchor never appeared → text fallback, never a trap.
   if (status === "missing") {
+    // z-[86] on the wrapper, not just the card: the wrapper is `fixed` with a
+    // z-index, so it opens a stacking context and the card paints inside it.
+    // The card's own z-index can't compete with an elevated dialog (z-[85]) —
+    // this wrapper is the element that actually stacks against it.
     return createPortal(
-      <div className="fixed inset-0 z-[81] flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-[86] flex items-center justify-center p-4">
         <div className="absolute inset-0 bg-paper/70 backdrop-blur-sm" />
         <div
           role="dialog"
           aria-label="Guided walkthrough"
-          className="relative z-[81] w-full max-w-sm rounded-[var(--radius)] border border-hair bg-card p-4 text-ink shadow-lg"
+          className="relative z-[86] w-full max-w-sm rounded-[var(--radius)] border border-hair bg-card p-4 text-ink shadow-lg"
         >
           <p className="text-[13px] font-semibold">{active.title}</p>
           <p className="mt-1 text-[12px] text-ink-3">
@@ -117,7 +121,7 @@ export function WalkthroughOverlay() {
       <div
         role="dialog"
         aria-label="Guided walkthrough"
-        className="fixed z-[81] w-64 rounded-[var(--radius)] border border-hair bg-card p-3 text-ink shadow-lg"
+        className="fixed z-[86] w-64 rounded-[var(--radius)] border border-hair bg-card p-3 text-ink shadow-lg"
         style={calloutStyle}
       >
         <p className="text-[11px] font-medium uppercase tracking-wide text-ink-3">{counter}</p>

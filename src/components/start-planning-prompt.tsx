@@ -35,6 +35,7 @@ export function StartPlanningPrompt({
   return (
     <DialogShell
       open
+      elevated
       // Esc, the backdrop, and the header X come through here; the footer
       // button comes through secondaryAction. Both must dismiss the same way.
       onOpenChange={(next) => {
@@ -51,13 +52,17 @@ export function StartPlanningPrompt({
 
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {START_PATHS.map((p) => (
-          <PathCard
+          <div
             key={p.id}
-            icon={p.icon}
-            title={p.title}
-            subtitle={p.subtitle}
-            onSelect={() => choose(p.id)}
-          />
+            data-forge-anchor={p.id === "guided" ? "start-planning-guided-card" : undefined}
+          >
+            <PathCard
+              icon={p.icon}
+              title={p.title}
+              subtitle={p.subtitle}
+              onSelect={() => choose(p.id)}
+            />
+          </div>
         ))}
       </div>
 
