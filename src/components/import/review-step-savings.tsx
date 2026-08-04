@@ -2,6 +2,7 @@
 
 import type { Annotated } from "@/lib/imports/types";
 import type { ExtractedSavings } from "@/lib/extraction/types";
+import { resolveAccountName } from "@/lib/imports/account-name-match";
 import SourceBadge from "./source-badge";
 
 const OWNER_OPTIONS = [
@@ -12,6 +13,13 @@ const OWNER_OPTIONS = [
 
 export interface ReviewStepSavingsProps {
   rows: Annotated<ExtractedSavings>[];
+  /**
+   * Names a contribution can be attached to — the client's existing accounts
+   * plus the accounts this import will create. `commitSavings` resolves the
+   * destination BY NAME against accounts committed before it, so a name from
+   * either source is valid.
+   */
+  accountOptions: string[];
   onChange: (rows: Annotated<ExtractedSavings>[]) => void;
 }
 
@@ -21,9 +29,10 @@ const EMPTY_CLASS =
   "w-full rounded border border-amber-600/50 bg-amber-900/20 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 const SELECT_CLASS =
   "w-full rounded border border-gray-600 bg-gray-800 px-2 py-1.5 text-sm text-gray-300 focus:border-accent focus:outline-none";
-// Read-only cells (Destination, Amount) — neither is free-text editable here:
-// Destination resolves to an account by name at commit, and Amount is a
-// derived label (percent / flat / match), not a raw value to type over.
+// Amount stays read-only — it is a derived label (percent / flat / match), not
+// a raw value to type over. Destination IS editable (a picker): it resolves to
+// an account by name at commit, and a row whose name matches nothing is
+// silently skipped there, so the advisor needs a way to point it somewhere real.
 const DISPLAY_CLASS =
   "w-full truncate rounded border border-gray-700 bg-gray-800/50 px-2 py-1.5 text-sm text-gray-300";
 
@@ -38,10 +47,62 @@ export function formatSavingsAmount(row: ExtractedSavings): string {
   if (row.employerMatchPct != null && row.employerMatchCap != null) {
     return `Employer match (${(row.employerMatchPct * 100).toFixed(0)}% on ${(row.employerMatchCap * 100).toFixed(1)}% of salary)`;
   }
+  // Checked after the pct/cap formula because the engine prefers that formula
+  // when a document somehow supplied both; a pay stub only ever sets this one.
+  if (row.employerMatchAmount != null) {
+    return `Employer $${row.employerMatchAmount.toLocaleString("en-US")}/yr`;
+  }
   return "-";
 }
 
-export default function ReviewStepSavings({ rows, onChange }: ReviewStepSavingsProps) {
+/**
+ * Destination picker for one contribution row.
+ *
+ * Three cases, and the middle one is why this isn't a plain <select>:
+ *  - the value matches an option exactly — ordinary select behaviour;
+ *  - the value resolves only after normalization ("401k fidelity" →
+ *    "401(k) - Fidelity"), so it is a valid destination but matches no <option>
+ *    and would render as nothing selected. It gets its own option showing what
+ *    it will attach to.
+ *  - the value matches nothing — the usual pay-stub case, since the extractor
+ *    proposes "<Employer> 401(k)" and no such account exists yet. Commit skips
+ *    these, so the row is flagged amber and says so rather than looking fine.
+ */
+function DestinationCell({
+  value,
+  accountOptions,
+  onChange,
+}: {
+  value: string;
+  accountOptions: string[];
+  onChange: (next: string) => void;
+}) {
+  const resolved = resolveAccountName(value, accountOptions);
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={resolved ? SELECT_CLASS : EMPTY_CLASS}
+      title={value}
+    >
+      <option value="">— Select account —</option>
+      {value && resolved !== value ? (
+        <option value={value}>
+          {resolved ? `${value} → ${resolved}` : `${value} (no match — will be skipped)`}
+        </option>
+      ) : null}
+      {accountOptions.map((name) => (
+        <option key={name} value={name}>{name}</option>
+      ))}
+    </select>
+  );
+}
+
+export default function ReviewStepSavings({
+  rows,
+  accountOptions,
+  onChange,
+}: ReviewStepSavingsProps) {
   const updateField = (index: number, field: keyof ExtractedSavings, value: unknown) => {
     const updated = rows.map((r, i) => (i === index ? { ...r, [field]: value } : r));
     onChange(updated);
@@ -92,9 +153,11 @@ export default function ReviewStepSavings({ rows, onChange }: ReviewStepSavingsP
                 </div>
                 <div>
                   <label className="mb-1 block text-xs text-gray-300">Destination</label>
-                  <div className={DISPLAY_CLASS} title={row.destinationAccountName}>
-                    {row.destinationAccountName || "-"}
-                  </div>
+                  <DestinationCell
+                    value={row.destinationAccountName}
+                    accountOptions={accountOptions}
+                    onChange={(v) => updateField(i, "destinationAccountName", v)}
+                  />
                 </div>
                 <div>
                   <label className="mb-1 block text-xs text-gray-300">Owner</label>

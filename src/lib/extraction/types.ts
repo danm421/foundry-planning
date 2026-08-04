@@ -184,6 +184,13 @@ export interface ExtractedSavings {
   employerMatchPct?: number;
   /** Fraction of salary the match applies to, e.g. 0.04. */
   employerMatchCap?: number;
+  /**
+   * Flat annual employer dollars, the alternative to the pct/cap formula.
+   * Pay stubs state the dollars actually withheld and essentially never state
+   * the match formula, so this is the shape that path produces. The engine
+   * prefers this over employerMatchPct/Cap when both are present.
+   */
+  employerMatchAmount?: number;
   rothPercent?: number;
   growthRate?: number;
   startYear?: number;

@@ -192,6 +192,64 @@ describe("commitSavings", () => {
     expect(result.warnings).toHaveLength(0);
   });
 
+  // A pay stub states the employer dollars actually withheld, never the match
+  // formula, so that path produces employerMatchAmount instead of pct/cap.
+  it("writes a flat-dollar employer contribution", async () => {
+    const { tx, inserted } = fakeTx([{ id: "acct-1", name: "Acme Corp 401(k)" }]);
+    const result = await commitSavings(
+      tx,
+      payloadWith([
+        { name: "Employer Match", destinationAccountName: "Acme Corp 401(k)", owner: "client", employerMatchAmount: 4000, contributionRole: "employer", match: { kind: "new" } },
+      ]),
+      CTX,
+    );
+    expect(result.created).toBe(1);
+    expect(inserted[0]).toMatchObject({ employerMatchAmount: "4000" });
+  });
+
+  it("merges a pay stub's employee deferral and flat-dollar employer leg into one rule", async () => {
+    const { tx, inserted } = fakeTx([{ id: "acct-1", name: "Acme Corp 401(k)" }]);
+    const result = await commitSavings(
+      tx,
+      payloadWith([
+        { name: "401(k) Pre-Tax Deferral", destinationAccountName: "Acme Corp 401(k)", owner: "client", annualAmount: 9750, contributionRole: "employee", match: { kind: "new" } },
+        { name: "401(k) Employer Match", destinationAccountName: "Acme Corp 401(k)", owner: "client", employerMatchAmount: 4000, contributionRole: "employer", match: { kind: "new" } },
+      ]),
+      CTX,
+    );
+    expect(result.created).toBe(1);
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]).toMatchObject({
+      annualAmount: "9750",
+      employerMatchAmount: "4000",
+    });
+  });
+
+  it("leaves employerMatchAmount null when the document states a match formula instead", async () => {
+    const { tx, inserted } = fakeTx([{ id: "acct-1", name: "Zach 401(k)" }]);
+    await commitSavings(
+      tx,
+      payloadWith([
+        { name: "Employer", destinationAccountName: "Zach 401(k)", owner: "client", employerMatchPct: 0.5, employerMatchCap: 0.06, contributionRole: "employer", match: { kind: "new" } },
+      ]),
+      CTX,
+    );
+    expect(inserted[0].employerMatchAmount).toBeNull();
+  });
+
+  it("warns when two files disagree on the employer dollar amount", async () => {
+    const { tx } = fakeTx([{ id: "acct-1", name: "Acme Corp 401(k)" }]);
+    const result = await commitSavings(
+      tx,
+      payloadWith([
+        { name: "Employer (File A)", destinationAccountName: "Acme Corp 401(k)", owner: "client", employerMatchAmount: 4000, contributionRole: "employer", match: { kind: "new" } },
+        { name: "Employer (File B)", destinationAccountName: "Acme Corp 401(k)", owner: "client", employerMatchAmount: 5200, contributionRole: "employer", match: { kind: "new" } },
+      ]),
+      CTX,
+    );
+    expect(result.warnings.some((w) => w.includes("employerMatchAmount"))).toBe(true);
+  });
+
   it("writes a flat annual amount", async () => {
     const { tx, inserted } = fakeTx([{ id: "acct-3", name: "Taxable Investment 1" }]);
     await commitSavings(

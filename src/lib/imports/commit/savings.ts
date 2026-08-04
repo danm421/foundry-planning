@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 
 import { accounts, savingsRules } from "@/db/schema";
 import { defaultSavingsRuleRefs, resolveMilestone } from "@/lib/milestones";
+import { normalizeAccountName } from "../account-name-match";
 
 import type { ExtractedSavings } from "@/lib/extraction/types";
 
@@ -16,6 +17,8 @@ interface MergedRule {
   annualPercent?: number;
   employerMatchPct?: number;
   employerMatchCap?: number;
+  /** Flat annual employer dollars — the pay-stub shape. See ExtractedSavings. */
+  employerMatchAmount?: number;
   rothPercent?: number;
   growthRate?: number;
   /**
@@ -90,6 +93,7 @@ export async function commitSavings(
     keep("annualPercent", row.annualPercent);
     keep("employerMatchPct", row.employerMatchPct);
     keep("employerMatchCap", row.employerMatchCap);
+    keep("employerMatchAmount", row.employerMatchAmount);
     keep("rothPercent", row.rothPercent);
     keep("growthRate", row.growthRate);
     // A non-client owner on any leg wins: the employee leg carries the real owner.
@@ -103,14 +107,15 @@ export async function commitSavings(
     .from(accounts)
     .where(and(eq(accounts.clientId, ctx.clientId), eq(accounts.scenarioId, ctx.scenarioId)));
 
-  const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
   const byExact = new Map(existingAccounts.map((a) => [a.name, a.id]));
-  const byNormalized = new Map(existingAccounts.map((a) => [normalize(a.name), a.id]));
+  const byNormalized = new Map(
+    existingAccounts.map((a) => [normalizeAccountName(a.name), a.id]),
+  );
 
   for (const rule of merged.values()) {
     const accountId =
       byExact.get(rule.destinationAccountName) ??
-      byNormalized.get(normalize(rule.destinationAccountName));
+      byNormalized.get(normalizeAccountName(rule.destinationAccountName));
 
     if (!accountId) {
       result.skipped += 1;
@@ -135,6 +140,8 @@ export async function commitSavings(
       annualPercent: rule.annualPercent != null ? String(rule.annualPercent) : null,
       employerMatchPct: rule.employerMatchPct != null ? String(rule.employerMatchPct) : null,
       employerMatchCap: rule.employerMatchCap != null ? String(rule.employerMatchCap) : null,
+      employerMatchAmount:
+        rule.employerMatchAmount != null ? String(rule.employerMatchAmount) : null,
       rothPercent: rule.rothPercent != null ? String(rule.rothPercent) : null,
       growthRate: rule.growthRate != null ? String(rule.growthRate) : "0",
       growthSource: "custom" as const,

@@ -543,6 +543,22 @@ export default function ReviewWizard({
     return map;
   }, [canonical.accounts]);
 
+  /**
+   * Destinations the Savings step can attach a contribution to. `commitSavings`
+   * runs after `accounts` (see COMMIT_TABS) and resolves BY NAME against
+   * whatever accounts exist by then — so both the client's existing accounts
+   * and the ones this import is about to create are valid targets.
+   * Deduped by name; an imported row matched to an existing account contributes
+   * the same name twice.
+   */
+  const savingsAccountOptions = useMemo(() => {
+    const names = [
+      ...canonical.accounts.map((a) => a.name),
+      ...accounts.map((a) => a.name),
+    ].filter((n) => n.trim() !== "");
+    return [...new Set(names)].sort((a, b) => a.localeCompare(b));
+  }, [canonical.accounts, accounts]);
+
   // Match-column candidates for review-step-expenses (living-expense slot linking).
   const expenseCandidates: MatchCandidate[] = useMemo(
     () => (payload.expenseSlots ?? []).map((s) => ({ id: s.id, name: s.name })),
@@ -717,6 +733,7 @@ export default function ReviewWizard({
         {currentTab === "savings" && (
           <ReviewStepSavings
             rows={savings}
+            accountOptions={savingsAccountOptions}
             onChange={(s) => setSavings(s as Annotated<ExtractedSavings>[])}
           />
         )}
