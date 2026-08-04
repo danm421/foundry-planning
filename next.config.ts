@@ -3,9 +3,20 @@ import type { NextConfig } from "next";
 
 // Content-Security-Policy. Clerk, Neon, Azure OpenAI, and data: img URIs
 // (used by react-pdf chart snapshots) need explicit allowlisting.
-// Starting in report-only mode — flip the header name to
-// "Content-Security-Policy" once the CSP report endpoint shows no real
-// violations in production.
+//
+// STILL report-only, and not yet ready to flip. As of 2026-08-04 production
+// was emitting ~145 violations / 12h, every one of them against
+// clerk.foundryplanning.com — Clerk's production Frontend API, which is a
+// CNAME on our own domain and so matches neither *.clerk.accounts.dev nor
+// *.clerk.com. Enforcing before adding it would have blocked clerk.browser.js
+// and the session token/touch calls outright, i.e. broken sign-in for
+// everyone. That host is now allowlisted below.
+//
+// Before flipping the header name to "Content-Security-Policy", let this bake
+// and re-read /api/csp-report. The sample that produced the fix came from two
+// already-signed-in sessions on advisor pages, so it says nothing about the
+// sign-in, sign-up, MFA, or org-switching flows — exercise those and confirm
+// the endpoint is quiet across them first.
 const csp = [
   "default-src 'self'",
   // Next.js' React runtime still needs 'unsafe-inline' for style elements
@@ -13,13 +24,15 @@ const csp = [
   // browser.sentry-cdn.com: Session Replay is lazy-loaded from Sentry's CDN
   // post-init (see src/instrumentation-client.ts) to keep the recorder out of
   // the initial bundle.
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com https://cdn.plaid.com https://browser.sentry-cdn.com",
+  // clerk.foundryplanning.com: the production instance serves clerk-js and the
+  // @clerk/ui chunks from our custom Frontend API domain, not from clerk.com.
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://clerk.foundryplanning.com https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com https://cdn.plaid.com https://browser.sentry-cdn.com",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://img.clerk.com https://*.public.blob.vercel-storage.com",
   "font-src 'self' data:",
   // Sentry ingest domains are only needed as a fallback — browser ingestion
   // normally tunnels through /monitoring (see `tunnelRoute` below).
-  "connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://clerk-telemetry.com https://*.neon.tech https://*.openai.azure.com https://*.upstash.io https://*.sentry.io https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://*.plaid.com",
+  "connect-src 'self' https://clerk.foundryplanning.com https://*.clerk.accounts.dev https://*.clerk.com https://clerk-telemetry.com https://*.neon.tech https://*.openai.azure.com https://*.upstash.io https://*.sentry.io https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://*.plaid.com",
   "frame-src 'self' https://challenges.cloudflare.com https://*.plaid.com",
   "worker-src 'self' blob:",
   "frame-ancestors 'none'",
