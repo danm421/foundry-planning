@@ -76,6 +76,9 @@ function RecentTransactions({ accountId }: { accountId: string }): ReactElement 
 export function AccountDetailPanel({
   account,
   onClose,
+  onEdit,
+  onDelete,
+  busy = false,
 }: {
   account: {
     id: string;
@@ -88,6 +91,9 @@ export function AccountDetailPanel({
     ownerLabel: string;
   };
   onClose: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+  busy?: boolean;
 }): ReactElement {
   const basePath = usePortalBasePath();
   return (
@@ -116,6 +122,30 @@ export function AccountDetailPanel({
       >
         View in Transactions →
       </Link>
+      {(onEdit || onDelete) && (
+        <div className="flex items-center gap-2 border-t border-hair pt-3">
+          {onEdit && (
+            <button
+              type="button"
+              onClick={onEdit}
+              disabled={busy}
+              className="rounded-md border border-hair px-3 py-1.5 text-[13px] text-ink-2 hover:bg-card-2 disabled:opacity-50"
+            >
+              Edit
+            </button>
+          )}
+          {onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              disabled={busy}
+              className="rounded-md border border-hair px-3 py-1.5 text-[13px] text-ink-2 hover:bg-card-2 disabled:opacity-50"
+            >
+              Delete
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -123,6 +153,9 @@ export function AccountDetailPanel({
 export function DebtDetailPanel({
   debt,
   onClose,
+  onEdit,
+  onDelete,
+  busy = false,
 }: {
   debt: {
     id: string;
@@ -137,6 +170,9 @@ export function DebtDetailPanel({
     ownerLabel: string;
   };
   onClose: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+  busy?: boolean;
 }): ReactElement {
   return (
     <div className="space-y-4 rounded-xl border border-hair bg-card p-5">
@@ -170,6 +206,30 @@ export function DebtDetailPanel({
         )}
         {debt.isPlaidLinked && <Row label="Balance">Synced from your institution</Row>}
       </dl>
+      {(onEdit || onDelete) && (
+        <div className="flex items-center gap-2 border-t border-hair pt-3">
+          {onEdit && (
+            <button
+              type="button"
+              onClick={onEdit}
+              disabled={busy}
+              className="rounded-md border border-hair px-3 py-1.5 text-[13px] text-ink-2 hover:bg-card-2 disabled:opacity-50"
+            >
+              Edit
+            </button>
+          )}
+          {onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              disabled={busy}
+              className="rounded-md border border-hair px-3 py-1.5 text-[13px] text-ink-2 hover:bg-card-2 disabled:opacity-50"
+            >
+              Delete
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
