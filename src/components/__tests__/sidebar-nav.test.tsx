@@ -13,14 +13,14 @@ import SidebarNav from "../sidebar-nav";
 describe("SidebarNav", () => {
   it("renders the two group headers", () => {
     (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/clients");
-    const { container } = render(<SidebarNav clientsCount={0} />);
+    const { container } = render(<SidebarNav clientsCount={0} unreadCount={0} />);
     expect(container.textContent).toContain("WORKSPACE");
     expect(container.textContent).toContain("FIRM");
   });
 
   it("renders Home, Clients, CMA's, Tasks, Settings in order", () => {
     (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/clients");
-    const { container } = render(<SidebarNav clientsCount={0} />);
+    const { container } = render(<SidebarNav clientsCount={0} unreadCount={0} />);
     const text = container.textContent ?? "";
     const expectedLabels = [
       "Home",
@@ -39,7 +39,7 @@ describe("SidebarNav", () => {
 
   it("marks the Home item active when pathname is /home", () => {
     (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/home");
-    const { container } = render(<SidebarNav clientsCount={0} />);
+    const { container } = render(<SidebarNav clientsCount={0} unreadCount={0} />);
     const homeLink = Array.from(container.querySelectorAll("a")).find(
       (a) => a.textContent?.includes("Home")
     );
@@ -48,7 +48,7 @@ describe("SidebarNav", () => {
 
   it("does NOT mark Home active on /clients", () => {
     (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/clients");
-    const { container } = render(<SidebarNav clientsCount={0} />);
+    const { container } = render(<SidebarNav clientsCount={0} unreadCount={0} />);
     const homeLink = Array.from(container.querySelectorAll("a")).find(
       (a) => a.textContent?.includes("Home")
     );
@@ -57,13 +57,13 @@ describe("SidebarNav", () => {
 
   it("passes clientsCount to the Clients item", () => {
     (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/clients");
-    const { container } = render(<SidebarNav clientsCount={42} />);
+    const { container } = render(<SidebarNav clientsCount={42} unreadCount={0} />);
     expect(container.textContent).toContain("42");
   });
 
   it("marks the Clients item active when pathname is /clients", () => {
     (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/clients");
-    const { container } = render(<SidebarNav clientsCount={5} />);
+    const { container } = render(<SidebarNav clientsCount={5} unreadCount={0} />);
     const clientsLink = Array.from(container.querySelectorAll("a")).find(
       (a) => a.textContent?.includes("Clients")
     );
@@ -72,7 +72,7 @@ describe("SidebarNav", () => {
 
   it("marks the Clients item active when on a client sub-route", () => {
     (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/clients/abc-123/details");
-    const { container } = render(<SidebarNav clientsCount={5} />);
+    const { container } = render(<SidebarNav clientsCount={5} unreadCount={0} />);
     const clientsLink = Array.from(container.querySelectorAll("a")).find(
       (a) => a.textContent?.includes("Clients")
     );
@@ -81,7 +81,7 @@ describe("SidebarNav", () => {
 
   it("does NOT mark Clients active when on /cma", () => {
     (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/cma");
-    const { container } = render(<SidebarNav clientsCount={5} />);
+    const { container } = render(<SidebarNav clientsCount={5} unreadCount={0} />);
     const clientsLink = Array.from(container.querySelectorAll("a")).find(
       (a) => a.textContent?.includes("Clients") && !a.textContent?.includes("CMA")
     );
@@ -90,7 +90,7 @@ describe("SidebarNav", () => {
 
   it("does not render a CRM nav item", () => {
     (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/clients");
-    const { container } = render(<SidebarNav clientsCount={0} />);
+    const { container } = render(<SidebarNav clientsCount={0} unreadCount={0} />);
     expect(container.querySelector('a[href="/crm"]')).toBeNull();
     const labels = Array.from(container.querySelectorAll("a, button")).map(
       (el) => el.textContent?.trim(),

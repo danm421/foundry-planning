@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import { db } from "@/db";
-import { intakeForms, auditLog } from "@/db/schema";
+import {
+  intakeForms,
+  auditLog,
+  clients,
+  crmHouseholds,
+  crmHouseholdContacts,
+  notifications,
+} from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { newIntakeToken, defaultExpiry } from "@/lib/intake/tokens";
 import type { IntakePayload } from "@/lib/intake/schema";
@@ -67,10 +74,17 @@ const INCOMPLETE_PAYLOAD = {
   income: [],
 };
 
+const ADVISOR_ID = "advisor-token-submit-test";
+
 let draftToken: string;
 let submittedToken: string;
 let incompleteToken: string;
 let inactiveToken: string;
+// A blank-mode invite that DOES carry a client — the mainline "send a form to
+// an existing client" flow. This is the case that must notify the advisor.
+let clientBearingToken: string;
+let clientBearingId: string;
+let householdId: string;
 const createdIds: string[] = [];
 
 beforeAll(async () => {
@@ -78,6 +92,32 @@ beforeAll(async () => {
   submittedToken = newIntakeToken();
   incompleteToken = newIntakeToken();
   inactiveToken = newIntakeToken();
+  clientBearingToken = newIntakeToken();
+
+  const [hh] = await db
+    .insert(crmHouseholds)
+    .values({ firmId: FIRM, advisorId: ADVISOR_ID, name: `Household ${Math.random()}` })
+    .returning({ id: crmHouseholds.id });
+  householdId = hh.id;
+
+  await db.insert(crmHouseholdContacts).values({
+    householdId: hh.id,
+    role: "primary",
+    firstName: "Jane",
+    lastName: "Smith",
+  });
+
+  const [client] = await db
+    .insert(clients)
+    .values({
+      firmId: FIRM,
+      advisorId: ADVISOR_ID,
+      crmHouseholdId: hh.id,
+      retirementAge: 65,
+      planEndAge: 95,
+    })
+    .returning({ id: clients.id });
+  clientBearingId = client.id;
 
   const rows = await db
     .insert(intakeForms)
@@ -123,6 +163,20 @@ beforeAll(async () => {
         createdByUserId: "user-test",
         expiresAt: defaultExpiry(now),
       },
+      // Blank mode, but sent to an existing client — carries a clientId, so it
+      // has an owning advisor to notify.
+      {
+        firmId: FIRM,
+        mode: "blank",
+        status: "draft",
+        token: clientBearingToken,
+        clientId: clientBearingId,
+        recipientEmail: "client-bearing@example.com",
+        recipientName: "The Johnsons",
+        payload: COMPLETE_PAYLOAD,
+        createdByUserId: "user-test",
+        expiresAt: defaultExpiry(now),
+      },
     ])
     .returning({ id: intakeForms.id });
 
@@ -136,6 +190,12 @@ afterAll(async () => {
       .delete(auditLog)
       .where(and(eq(auditLog.firmId, FIRM), eq(auditLog.action, "intake.form.submitted")));
     await db.delete(intakeForms).where(eq(intakeForms.firmId, FIRM));
+    // Clients before households — crm_household_id is ON DELETE RESTRICT.
+    // Notification rows go with the client (client_id is ON DELETE CASCADE).
+    await db.delete(clients).where(eq(clients.firmId, FIRM));
+    if (householdId) {
+      await db.delete(crmHouseholds).where(eq(crmHouseholds.id, householdId));
+    }
   }
 }, 30000);
 
@@ -227,6 +287,63 @@ describe("POST /api/intake/[token]/submit", () => {
       params: Promise.resolve({ token: newIntakeToken() }),
     });
     expect(res.status).toBe(404);
+  }, 30000);
+
+  // The end-to-end proof for the emailed-link flow: this is the route the
+  // "send a form to a client from /data-collection" invite actually posts to,
+  // so a submission here must reach the owning advisor's inbox. Exercises the
+  // real chain — route → producer → enqueue → prefs merge → planner → insert.
+  it("200: a blank invite carrying a client notifies the owning advisor", async () => {
+    checkSubmitMock.mockResolvedValue({ allowed: true });
+    requireActiveSubscriptionForFirmMock.mockResolvedValue(undefined);
+
+    const res = await POST(makeReq(clientBearingToken), {
+      params: Promise.resolve({ token: clientBearingToken }),
+    });
+    expect(res.status).toBe(200);
+
+    const [form] = await db
+      .select({ id: intakeForms.id })
+      .from(intakeForms)
+      .where(eq(intakeForms.token, clientBearingToken));
+
+    // Scoped by the per-run client uuid, not the static firm/advisor ids, so an
+    // interrupted earlier run can't strand a row and make this count flaky.
+    const notifRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.clientId, clientBearingId));
+    expect(notifRows.length).toBe(1);
+    expect(notifRows[0]?.firmId).toBe(FIRM);
+    expect(notifRows[0]?.userId).toBe(ADVISOR_ID);
+    expect(notifRows[0]?.category).toBe("intake_submitted");
+    expect(notifRows[0]?.entityId).toBe(form?.id);
+    expect(notifRows[0]?.url).toBe(`/data-collection/${form?.id}`);
+    expect(notifRows[0]?.title).toContain("The Johnsons");
+    // The client submitted it, so no actor is excluded from delivery.
+    expect(notifRows[0]?.actorUserId).toBeNull();
+    expect(notifRows[0]?.inApp).toBe(true);
+  }, 30000);
+
+  // A true prospect has no client and therefore no owning advisor. Notably the
+  // invite EMAIL falls back to the sender in this case (see data-collection
+  // route), and the notification deliberately does not — a prospect submission
+  // must not manufacture a recipient.
+  it("a prospect invite with no client writes no notification", async () => {
+    // draftToken's form carries no clientId and was submitted by the first test.
+    const [form] = await db
+      .select({ id: intakeForms.id, clientId: intakeForms.clientId, status: intakeForms.status })
+      .from(intakeForms)
+      .where(eq(intakeForms.token, draftToken));
+    // Guard the premise: a non-null clientId here would make this vacuous.
+    expect(form?.clientId).toBeNull();
+    expect(form?.status).toBe("submitted");
+
+    const rows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.entityId, form!.id));
+    expect(rows.length).toBe(0);
   }, 30000);
 
   it("429: rate-limit exceeded returns Too Many Requests", async () => {

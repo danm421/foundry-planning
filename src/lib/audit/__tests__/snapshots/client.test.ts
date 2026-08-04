@@ -28,6 +28,7 @@ const row: typeof clients.$inferSelect = {
   crmHouseholdId: "00000000-0000-0000-0000-000000000000",
   clerkUserId: null,
   portalInvitedAt: null,
+  portalFirstLoginAt: null,
   portalEditEnabled: true,
 };
 

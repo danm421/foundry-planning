@@ -23,6 +23,7 @@ function makeForm(overrides: Partial<IntakeFormRow> = {}): IntakeFormRow {
     payload: {} as IntakeFormRow["payload"],
     createdByUserId: "user-1",
     sentAt: null,
+    openedAt: null,
     submittedAt: new Date("2026-06-20"),
     appliedAt: null,
     expiresAt: new Date("2026-12-31"),
