@@ -7,14 +7,19 @@ import {
 } from "@/components/balance-sheet-report/view-model";
 import { buildViewModelInputs } from "@/lib/balance-sheet/build-view-model-inputs";
 import { mergeSyntheticAccounts } from "@/lib/balance-sheet/merge-synthetic-accounts";
-import { LIQUID_CATEGORIES, type AccountCategory } from "@/lib/account-groups/liquid-filter";
+import { LIQUID_PORTFOLIO_BUCKET_SET } from "@/engine/portfolio-snapshot";
 
-/** Liquid portfolio = cash + taxable + retirement category totals. */
+// `assetCategories` is keyed by AssetCategoryKey, which is the engine's *bucket*
+// spelling (`lifeInsurance`, not `life_insurance`), so match on the bucket set.
+// `accessibleTrustAssets` has no category row here and simply never matches.
+
+/** Liquid portfolio = the engine's liquid buckets that have a category row:
+ *  cash + taxable + retirement + annuity + life insurance. */
 export function liquidPortfolioTotal(
   categories: { key: string; total: number }[],
 ): number {
   return categories
-    .filter((c) => LIQUID_CATEGORIES.has(c.key as AccountCategory))
+    .filter((c) => LIQUID_PORTFOLIO_BUCKET_SET.has(c.key))
     .reduce((sum, c) => sum + c.total, 0);
 }
 

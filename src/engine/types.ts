@@ -1548,6 +1548,10 @@ export interface ProjectionYear {
     taxable: Record<string, number>;
     cash: Record<string, number>;
     retirement: Record<string, number>;
+    /** Deferred/immediate annuity contract values. Investable like retirement,
+     *  so it belongs to liquidTotal — kept in its own bucket because the balance
+     *  sheet and the Portfolio Assets drill both show Annuity as its own line. */
+    annuity: Record<string, number>;
     realEstate: Record<string, number>;
     business: Record<string, number>;
     lifeInsurance: Record<string, number>;
@@ -1558,6 +1562,7 @@ export interface ProjectionYear {
     taxableTotal: number;
     cashTotal: number;
     retirementTotal: number;
+    annuityTotal: number;
     realEstateTotal: number;
     businessTotal: number;
     lifeInsuranceTotal: number;
@@ -1573,7 +1578,7 @@ export interface ProjectionYear {
     accessibleTrustAssetsTotal: number;
     total: number;
     /** Canonical "Portfolio Assets" reconciling total = liquid investable only:
-     *  taxable + cash + retirement + lifeInsurance + accessibleTrustAssets.
+     *  taxable + cash + retirement + annuity + lifeInsurance + accessibleTrustAssets.
      *  Excludes real estate, business, and locked (non-accessible) trust assets,
      *  which are net-worth not portfolio. Single source of truth for the chart,
      *  the summary cell, and the next-year beginning-of-year carry-forward (H1). */

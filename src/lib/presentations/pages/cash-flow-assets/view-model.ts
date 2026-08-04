@@ -28,6 +28,7 @@ export const STACK_COLORS = {
   cash:                 dataLight.grey,
   taxable:              dataLight.yellow,
   retirement:           dataLight.orange,
+  annuity:              dataLight.red,
   lifeInsurance:        dataLight.green,
   realEstate:           dataLight.teal,
   business:             dataLight.purple,
@@ -54,9 +55,14 @@ export function buildPortfolioAssetsDrillData(
     (y) => Math.abs(y.portfolioAssets.accessibleTrustAssetsTotal) >= 0.5,
   );
 
+  const hasAnyAnnuity = years.some(
+    (y) => Math.abs(y.portfolioAssets.annuityTotal) >= 0.5,
+  );
+
   // H1: canonical Total Portfolio = engine liquidTotal (taxable + cash +
-  // retirement + lifeInsurance + accessibleTrustAssets). The accessible-trust
-  // column therefore sits *among* the liquid buckets and feeds this subtotal.
+  // retirement + annuity + lifeInsurance + accessibleTrustAssets). The
+  // accessible-trust column therefore sits *among* the liquid buckets and feeds
+  // this subtotal.
   const liquidTotal = (y: ProjectionYear) => y.portfolioAssets.liquidTotal;
 
   // Informational grand total. trustsAndBusinessesTotal already mirrors any
@@ -74,6 +80,9 @@ export function buildPortfolioAssetsDrillData(
     { key: "taxable",       header: "Taxable",       width: 38 },
     { key: "cash",          header: "Cash",          width: 38 },
     { key: "retirement",    header: "Retirement",    width: 42 },
+    ...(hasAnyAnnuity
+      ? [{ key: "annuity", header: "Annuity", width: 38 } as DrillColumn]
+      : []),
     { key: "lifeInsurance", header: "Life\nInsurance", width: 42 },
     ...(hasAnyAccessible
       ? [{ key: "accessible", header: "Accessible\nTrusts", width: 48 } as DrillColumn]
@@ -95,6 +104,7 @@ export function buildPortfolioAssetsDrillData(
       realEstate:    py.portfolioAssets.realEstateTotal,
       grandTotal:    grandTotal(py),
     };
+    if (hasAnyAnnuity) cells.annuity = py.portfolioAssets.annuityTotal;
     if (hasAnyAccessible) cells.accessible = py.portfolioAssets.accessibleTrustAssetsTotal;
     return {
       year: py.year,
@@ -113,6 +123,7 @@ export function buildPortfolioAssetsDrillData(
     { key: "cash",                   label: "Cash",                   color: STACK_COLORS.cash,                  pick: (y) => y.portfolioAssets.cashTotal },
     { key: "taxable",                label: "Taxable",                color: STACK_COLORS.taxable,               pick: (y) => y.portfolioAssets.taxableTotal },
     { key: "retirement",             label: "Retirement",             color: STACK_COLORS.retirement,            pick: (y) => y.portfolioAssets.retirementTotal },
+    { key: "annuity",                label: "Annuity",                color: STACK_COLORS.annuity,               pick: (y) => y.portfolioAssets.annuityTotal },
     { key: "lifeInsurance",          label: "Life Insurance",         color: STACK_COLORS.lifeInsurance,         pick: (y) => y.portfolioAssets.lifeInsuranceTotal },
     { key: "realEstate",             label: "Real Estate",            color: STACK_COLORS.realEstate,            pick: (y) => y.portfolioAssets.realEstateTotal },
     { key: "business",               label: "Business",               color: STACK_COLORS.business,              pick: (y) => y.portfolioAssets.businessTotal },

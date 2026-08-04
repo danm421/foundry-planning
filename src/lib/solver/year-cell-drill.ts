@@ -277,17 +277,20 @@ function computeYearCellDrill(
 
     case "portfolioAssets": {
       const pa = year.portfolioAssets;
+      // `map`/`groupTotal` are optional: a projection payload serialized before
+      // a bucket existed still has to render rather than throw on
+      // Object.entries(undefined).
       const group = (
         label: string,
-        map: Record<string, number>,
-        groupTotal: number,
+        map: Record<string, number> | undefined,
+        groupTotal: number | undefined,
         key: string,
       ): CellDrillGroup => ({
         label,
         rows: balanced(
           key,
-          groupTotal,
-          Object.entries(map).map(([id, amount]) => ({
+          groupTotal ?? 0,
+          Object.entries(map ?? {}).map(([id, amount]) => ({
             id,
             label: m.accountNames[id] ?? id,
             amount,
@@ -298,6 +301,7 @@ function computeYearCellDrill(
         group("Taxable", pa.taxable, pa.taxableTotal, "pa-taxable"),
         group("Cash", pa.cash, pa.cashTotal, "pa-cash"),
         group("Retirement", pa.retirement, pa.retirementTotal, "pa-retirement"),
+        group("Annuity", pa.annuity, pa.annuityTotal, "pa-annuity"),
       ].filter((g) => g.rows.length > 0);
       const total = liquidPortfolioTotal(year);
       if (Math.abs(total) < EPSILON && groups.length === 0) return null;

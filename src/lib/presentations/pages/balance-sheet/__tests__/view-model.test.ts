@@ -5,16 +5,21 @@ import {
 } from "../view-model";
 
 describe("liquidPortfolioTotal", () => {
-  it("sums cash + taxable + retirement only", () => {
+  // Composition mirrors the engine's LIQUID_PORTFOLIO_BUCKETS: annuity and
+  // life-insurance cash value are investable and belong here; real estate,
+  // business and stock options are net worth, not portfolio.
+  it("sums cash + taxable + retirement + annuity + life insurance", () => {
     const categories = [
       { key: "cash", total: 100 },
       { key: "taxable", total: 200 },
       { key: "retirement", total: 300 },
+      { key: "annuity", total: 40 },
       { key: "realEstate", total: 1000 },
       { key: "business", total: 5000 },
+      { key: "stockOptions", total: 700 },
       { key: "lifeInsurance", total: 50 },
     ];
-    expect(liquidPortfolioTotal(categories)).toBe(600);
+    expect(liquidPortfolioTotal(categories)).toBe(690);
   });
 
   it("returns 0 when no liquid categories are present", () => {

@@ -22,21 +22,59 @@ export const LIQUID_PORTFOLIO_BUCKETS = [
   "taxable",
   "cash",
   "retirement",
+  "annuity",
   "lifeInsurance",
   "accessibleTrustAssets",
 ] as const;
 
 export type LiquidPortfolioBucket = (typeof LIQUID_PORTFOLIO_BUCKETS)[number];
 
-const categoryToKey: Record<string, "taxable" | "cash" | "retirement" | "realEstate" | "business" | "lifeInsurance" | "stockOptions"> = {
+/** Membership form of {@link LIQUID_PORTFOLIO_BUCKETS}, for callers holding a
+ *  bucket key as a plain string (view-models keyed in bucket space). */
+export const LIQUID_PORTFOLIO_BUCKET_SET: ReadonlySet<string> = new Set(
+  LIQUID_PORTFOLIO_BUCKETS,
+);
+
+export type PortfolioCategoryBucket =
+  | "taxable"
+  | "cash"
+  | "retirement"
+  | "annuity"
+  | "realEstate"
+  | "business"
+  | "lifeInsurance"
+  | "stockOptions";
+
+/**
+ * Account category → portfolio bucket. Exported because the post-withdrawal
+ * entity-share re-bucket pass in `projection.ts` needs the identical mapping;
+ * a second copy there is how `annuity` silently became `taxable` on split-owned
+ * accounts. Categories deliberately absent (`notes_receivable`,
+ * `education_savings`) are handled by the guard in `computePortfolioSnapshot`.
+ */
+export const PORTFOLIO_CATEGORY_TO_BUCKET: Record<string, PortfolioCategoryBucket> = {
   taxable: "taxable",
   cash: "cash",
   retirement: "retirement",
+  annuity: "annuity",
   real_estate: "realEstate",
   business: "business",
   life_insurance: "lifeInsurance",
   stock_options: "stockOptions",
 };
+
+/**
+ * The DB `account_category` values whose bucket rolls into `liquidTotal`. The
+ * UI's "Portfolio assets" readouts work in category space, not bucket space, so
+ * they derive their filter from here rather than keeping a hand-maintained list
+ * that drifts from the engine. (`accessibleTrustAssets` has no category — it is
+ * an ownership routing, applied on top of these.)
+ */
+export const LIQUID_PORTFOLIO_CATEGORIES: ReadonlySet<string> = new Set(
+  Object.entries(PORTFOLIO_CATEGORY_TO_BUCKET)
+    .filter(([, bucket]) => LIQUID_PORTFOLIO_BUCKET_SET.has(bucket))
+    .map(([category]) => category),
+);
 
 /**
  * Portfolio snapshot for one projection year. An account is included if it has
@@ -59,6 +97,7 @@ export function computePortfolioSnapshot(args: {
     taxable: {} as Record<string, number>,
     cash: {} as Record<string, number>,
     retirement: {} as Record<string, number>,
+    annuity: {} as Record<string, number>,
     realEstate: {} as Record<string, number>,
     business: {} as Record<string, number>,
     lifeInsurance: {} as Record<string, number>,
@@ -68,6 +107,7 @@ export function computePortfolioSnapshot(args: {
     taxableTotal: 0,
     cashTotal: 0,
     retirementTotal: 0,
+    annuityTotal: 0,
     realEstateTotal: 0,
     businessTotal: 0,
     lifeInsuranceTotal: 0,
@@ -111,7 +151,7 @@ export function computePortfolioSnapshot(args: {
       if (acct.category === "notes_receivable" || acct.category === "education_savings") continue;
       // Use an explicit null-guard so future unknown categories fail loud rather
       // than silently bucketing into taxable.
-      const key = categoryToKey[acct.category];
+      const key = PORTFOLIO_CATEGORY_TO_BUCKET[acct.category];
       if (!key) continue;
       portfolioAssets[key][acct.id] = inPortfolioVal;
       const totalKey = `${key}Total` as keyof typeof portfolioAssets;
@@ -150,6 +190,7 @@ export function computePortfolioSnapshot(args: {
     portfolioAssets.taxableTotal +
     portfolioAssets.cashTotal +
     portfolioAssets.retirementTotal +
+    portfolioAssets.annuityTotal +
     portfolioAssets.realEstateTotal +
     portfolioAssets.businessTotal +
     portfolioAssets.lifeInsuranceTotal +

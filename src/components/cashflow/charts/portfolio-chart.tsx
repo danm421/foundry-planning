@@ -27,7 +27,7 @@ const fmt = new Intl.NumberFormat("en-US", {
 
 /**
  * Reuse the same Series shape as StackedBarChart so the tests look familiar.
- * H1: stack only the five liquid investable buckets so the bar height ties to
+ * H1: stack only the six liquid investable buckets so the bar height ties to
  * portfolioAssets.liquidTotal — the canonical "Portfolio Assets" total shared by
  * the summary cell and next-year BoY. Real estate / business / locked trusts are
  * net-worth, not portfolio; they belong on a separate balance-sheet view
@@ -40,6 +40,7 @@ export function buildPortfolioDatasets(): StackedBarSeries[] {
     { label: "Cash",                    colorKey: "teal",   valueFor: (y) => y.portfolioAssets.cashTotal },
     { label: "Taxable",                 colorKey: "yellow", valueFor: (y) => y.portfolioAssets.taxableTotal },
     { label: "Retirement",              colorKey: "orange", valueFor: (y) => y.portfolioAssets.retirementTotal },
+    { label: "Annuity",                 colorKey: "purple", valueFor: (y) => y.portfolioAssets.annuityTotal },
     { label: "Life Insurance",          colorKey: "green",  valueFor: (y) => y.portfolioAssets.lifeInsuranceTotal },
     { label: "Accessible Trust Assets", colorKey: "grey",   valueFor: (y) => y.portfolioAssets.accessibleTrustAssetsTotal },
   ];

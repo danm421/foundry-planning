@@ -7,9 +7,9 @@ import {
 
 function pa(over: Partial<ProjectionYear["portfolioAssets"]>) {
   return {
-    taxable: {}, cash: {}, retirement: {}, realEstate: {}, business: {},
+    taxable: {}, cash: {}, retirement: {}, annuity: {}, realEstate: {}, business: {},
     lifeInsurance: {}, stockOptions: {}, trustsAndBusinesses: {}, accessibleTrustAssets: {},
-    taxableTotal: 0, cashTotal: 0, retirementTotal: 0, realEstateTotal: 0,
+    taxableTotal: 0, cashTotal: 0, retirementTotal: 0, annuityTotal: 0, realEstateTotal: 0,
     businessTotal: 0, lifeInsuranceTotal: 0, stockOptionsTotal: 0, trustsAndBusinessesTotal: 0,
     accessibleTrustAssetsTotal: 0, total: 0, liquidTotal: 0, ...over,
   };
