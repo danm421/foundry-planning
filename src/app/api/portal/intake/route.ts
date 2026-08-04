@@ -238,8 +238,13 @@ export async function POST(req: Request): Promise<Response> {
     // committed and outside any transaction (this handler opens none) — an
     // enqueue failure must never roll back a client's submission.
     // clientId/advisorId come from resolveAuth, so both are non-null here:
-    // loadActivePrefilledForm matches on `clientId`, and clients.advisor_id is
-    // NOT NULL. No prospect form (null client) can reach this handler.
+    // loadActivePrefilledForm matches on `clientId` (SQL `=` never matches
+    // NULL) and filters mode="prefilled", so the nullable-clientId guard its
+    // sibling site needs would be dead code here.
+    // This route only ever serves a signed-in portal client. Prospect and
+    // blank-mode submissions arrive on the emailed token link instead and are
+    // handled — and notified — by src/app/api/intake/[token]/submit/route.ts,
+    // which DOES need that guard because a blank invite can carry no client.
     await notifyIntakeSubmitted({
       firmId,
       advisorId,
