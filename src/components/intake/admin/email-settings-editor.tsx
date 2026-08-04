@@ -49,6 +49,29 @@ export default function EmailSettingsEditor({ initial, advisorName, advisorEmail
   const previewFrom = buildIntakeFromHeader(fromName || undefined, firmName || undefined);
   const previewSubject = resolveSubject(subject || undefined);
 
+  // buildIntakeEmailHtml returns a bare <div> fragment. Wrap it in a real
+  // document so the frame has a charset and no default body margin.
+  const previewDoc = useMemo(
+    () =>
+      `<!doctype html><html><head><meta charset="utf-8">` +
+      // `white`, not a brand token: this frame simulates an email client's
+      // canvas, which is white regardless of our theme.
+      `<style>html,body{margin:0;padding:12px;background:white}</style>` +
+      `</head><body>${previewHtml}</body></html>`,
+    [previewHtml],
+  );
+
+  // The frame has no intrinsic height, so grow it to its content. The template
+  // has no images or webfonts, so one measurement at load is final; srcDoc
+  // changes reload the frame and re-fire onLoad.
+  const [previewHeight, setPreviewHeight] = useState(360);
+  const previewFrameRef = useRef<HTMLIFrameElement>(null);
+  function measurePreview() {
+    const doc = previewFrameRef.current?.contentDocument;
+    const height = doc?.documentElement.scrollHeight ?? 0;
+    if (height > 0) setPreviewHeight(height);
+  }
+
   async function handleSave() {
     setError(null);
     setSaving(true);
@@ -120,14 +143,28 @@ export default function EmailSettingsEditor({ initial, advisorName, advisorEmail
           <div><span className="text-ink-4">From:</span> {previewFrom}</div>
           <div><span className="text-ink-4">Subject:</span> {previewSubject}</div>
         </div>
-        {/* The only HTML injected here is buildIntakeEmailHtml's own output:
-            every interpolated value (intro body, advisor name/email, firm,
-            client) goes through that module's `esc`, which escapes angle
-            brackets AND quotes so a value cannot break out of the attribute
-            contexts the template uses. No caller-supplied markup reaches this
-            string. */}
-        <div data-testid="email-preview" className="overflow-auto rounded-[var(--radius-sm)] bg-white p-3"
-          dangerouslySetInnerHTML={{ __html: previewHtml }} />
+        {/* Rendered in a sandboxed frame rather than via dangerouslySetInnerHTML.
+            The markup is still only buildIntakeEmailHtml's own output, and every
+            interpolated value goes through that module's `esc` — this is depth,
+            not a live fix.
+
+            `sandbox` without `allow-scripts` is what actually blocks execution:
+            a srcdoc frame INHERITS the parent CSP, and ours carries
+            'unsafe-inline', so CSP alone would not stop an injected <script>.
+            `allow-same-origin` is present only so the parent can read
+            contentDocument to size the frame — it does not re-enable scripts.
+            Never add `allow-scripts` alongside it: that pair lets the frame
+            remove its own sandbox. Emails do not run JS, so nothing needs it. */}
+        <iframe
+          ref={previewFrameRef}
+          data-testid="email-preview"
+          title="Intake email preview"
+          sandbox="allow-same-origin"
+          srcDoc={previewDoc}
+          onLoad={measurePreview}
+          style={{ height: previewHeight }}
+          className="w-full rounded-[var(--radius-sm)] border-0 bg-white"
+        />
       </div>
     </div>
   );
