@@ -13,8 +13,7 @@ import {
 import { ForbiddenError } from "@/lib/authz";
 import { UnauthorizedError } from "@/lib/db-helpers";
 import { requireClientAccess } from "@/lib/clients/authz";
-import { ageOnDate, birthYearFromDob, yearForAge } from "@/lib/age-year";
-import { buildClientMilestones } from "@/lib/milestones";
+import { birthYearFromDob } from "@/lib/age-year";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import {
   accountEngineToView,
@@ -33,22 +32,13 @@ import {
 import { loadOverlaidAccountMeta } from "@/lib/scenario/account-meta";
 import { loadImportGrowthContext } from "@/lib/investments/growth-context";
 import { categoryDefaultRates as buildCategoryDefaultRates } from "@/lib/investments/category-default-rates";
-import { buildMapGoals } from "@/lib/household-map/goals";
+import { buildMapBoards } from "@/lib/household-map/build-boards";
 import { moneyLabel } from "@/lib/household-map/format";
-import {
-  ACCOUNT_CATEGORY,
-  expenseToMapItem,
-  incomeToMapItem,
-  isHydratableExpense,
-  isHydratableIncome,
-  savingsToMapItem,
-  toMapItem,
-} from "@/lib/household-map/map-items";
-import { isSocialSecurityIncome, ssStartNote } from "@/lib/household-map/social-security";
+import { isHydratableExpense, isHydratableIncome } from "@/lib/household-map/map-items";
+import { isSocialSecurityIncome } from "@/lib/household-map/social-security";
 import { buildFlowScenarioFields } from "@/lib/inline-edit/flow-write";
 import { pruneScenarioFields } from "@/lib/inline-edit/scenario-fields";
-import type { ColumnContext, MapItem, MapPerson } from "@/lib/household-map/types";
-import type { Account, Expense, Income, Liability, SavingsRule } from "@/engine/types";
+import type { Expense, Income, SavingsRule } from "@/engine/types";
 import HouseholdMapView from "@/components/household-map/household-map-view";
 
 interface MapContentProps {
@@ -143,69 +133,27 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
       db.select().from(modelPortfolioAllocations),
     ]);
 
-  // Everything the boards, milestones and person nodes read comes from ONE
-  // provenance: the scenario-effective tree. Retirement age, plan-end age, life
-  // expectancy and both plan-horizon years are all scenario-overridable —
-  // `mutations-to-scenario-changes.ts` writes them as `targetKind: "client"` /
-  // `planSettings.*`, and `applyChanges.ts` applies both as singletons — so
-  // reading them off the raw client row (or off a planSettings query pinned to
-  // the BASE scenario id) made a solver "retire at 62" scenario render scenario
-  // numbers on the boards while the Goals board's "Alex retires" milestone and
-  // the PersonNode still showed the base year.
-  //
-  // `dateOfBirth` / `spouseDob` deliberately stay on their CRM-contact source
-  // (`client`, gated above): identity is not scenario-overridable.
-  //
-  // No `?? currentYear` fallback on the two horizon years any more: the old
-  // query could return zero rows, but `loadEffectiveTree` throws
-  // `ProjectionInputError` when a client has no plan_settings row, and both
-  // columns are NOT NULL. A fallback here would only mislead a reader into
-  // thinking they can be absent.
   const effectiveClient = effectiveTree.client;
-  const { planStartYear, planEndYear } = effectiveTree.planSettings;
-  const retirementAge = effectiveClient.retirementAge;
-  const planEndAge = effectiveClient.planEndAge;
-  const lifeExpectancy = effectiveClient.lifeExpectancy ?? client.lifeExpectancy;
-  const spouseRetirementAge = effectiveClient.spouseRetirementAge ?? null;
-  const spouseLifeExpectancy = effectiveClient.spouseLifeExpectancy ?? null;
 
-  const milestones = buildClientMilestones(
-    {
+  // Every board — cards, goals, net worth, person nodes — comes out of
+  // `buildMapBoards`, which the client portal's Organizer also calls, so a card
+  // cannot mean one thing on one surface and something else on the other. The
+  // provenance rule it enforces (everything scenario-overridable is read off the
+  // effective tree, never the raw client row) is documented there, with the code.
+  //
+  // `dateOfBirth` / `spouseDob` are passed separately, from their CRM-contact
+  // source (`client`, gated above): identity is not scenario-overridable.
+  const { people, items, goals, netWorth } = buildMapBoards({
+    effectiveTree,
+    identity: {
       dateOfBirth: client.dateOfBirth,
-      retirementAge,
-      planEndAge,
       spouseDob: client.spouseDob,
-      spouseRetirementAge,
+      lifeExpectancy: client.lifeExpectancy,
     },
-    planStartYear,
-    planEndYear,
-  );
-
-  const ctx: ColumnContext = {
-    roleByFamilyMemberId: new Map(familyMemberRows.map((f) => [f.id, f.role])),
-    nameByFamilyMemberId: new Map(familyMemberRows.map((f) => [f.id, f.firstName])),
-    nameByEntityId: new Map(entityRows.map((e) => [e.id, e.name])),
-  };
-
-  const accountById = new Map<string, Account>(effectiveTree.accounts.map((a) => [a.id, a]));
-
-  const items: MapItem[] = [
-    ...effectiveTree.accounts.map((a: Account) =>
-      toMapItem(a, "account", ACCOUNT_CATEGORY[a.category], a.value, ctx),
-    ),
-    ...effectiveTree.liabilities.map((l: Liability) =>
-      toMapItem(l, "liability", "debt", -l.balance, ctx),
-    ),
-    // The 4th argument is Social Security's timing label. Every other income
-    // gets null and keeps its year range; an SS row's persisted years are inert,
-    // so an unclaimed benefit's card names the CLAIM AGE instead — see
-    // `ssStartNote`. Keyed off `planStartYear`, never the wall clock.
-    ...effectiveTree.incomes.map((i: Income) =>
-      incomeToMapItem(i, accountById, ctx, ssStartNote(i, effectiveClient, planStartYear)),
-    ),
-    ...effectiveTree.savingsRules.map((s: SavingsRule) => savingsToMapItem(s, accountById, ctx)),
-    ...effectiveTree.expenses.map((e: Expense) => expenseToMapItem(e, accountById, ctx)),
-  ];
+    familyMemberRows,
+    entityRows,
+    today: new Date(),
+  });
 
   // Editor hydration rows — the SAME `effectiveTree` the cards above are built
   // from, run through the house view-adapters (`@/lib/scenario/view-adapters`,
@@ -374,39 +322,6 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
     .filter((a) => a.subType === "roth_ira")
     .map((a) => ({ id: a.id, name: a.name }));
 
-  // Birth years, from the CRM-contact DOBs gated at the top of this function.
-  // Declared here rather than beside `people` below because `buildMapGoals` needs
-  // them too: each life-expectancy milestone sits at `birthYear + lifeExpectancy`,
-  // the engine's own per-person death-year rule. Both consumers must read the
-  // same value — a card whose year disagreed with the person node's age is the
-  // bug this replaced.
-  const clientBirthYear = birthYearFromDob(client.dateOfBirth);
-  // Same CRM spouse-contact DOB (`client.spouseDob`) that feeds `age` below
-  // and gates `milestones.spouseEnd` — must not diverge (see the
-  // `spouseFirstName` note in `buildMapGoals` below).
-  const spouseBirthYear = birthYearFromDob(client.spouseDob);
-  const spouseFirstName = effectiveClient.spouseName ?? null;
-
-  const goals = buildMapGoals({
-    expenses: effectiveTree.expenses,
-    milestones,
-    client: {
-      firstName: effectiveClient.firstName,
-      retirementAge,
-      lifeExpectancy,
-      birthYear: clientBirthYear,
-      // `spouseName` is the spouse CRM contact's firstName — the same row whose
-      // dateOfBirth gates `milestones.spouseEnd` above. They cannot diverge, so
-      // the unguarded `${spouseFirstName}'s life expectancy` title in goals.ts
-      // stays safe. Do not source this name from anywhere else.
-      spouseFirstName,
-      spouseRetirementAge,
-      spouseLifeExpectancy,
-      spouseBirthYear,
-    },
-    familyMemberNamesById: ctx.nameByFamilyMemberId,
-  });
-
   // Scenario-edit field sets for the two singletons the Goals board's
   // life-expectancy editor writes. Same wholesale-replace rule as
   // `flowScenarioFields` above: a scenario edit's stored payload REPLACES the
@@ -417,46 +332,6 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
   // `lib/household-map/life-expectancy-write.ts`.
   const clientScenarioFields = pruneScenarioFields(effectiveClient);
   const planSettingsScenarioFields = pruneScenarioFields(effectiveTree.planSettings);
-
-  // Net worth = assets − debts, the same signs the item list carries.
-  const netWorth =
-    effectiveTree.accounts.reduce((sum, a) => sum + a.value, 0) -
-    effectiveTree.liabilities.reduce((sum, l) => sum + l.balance, 0);
-
-  const today = new Date();
-  const people = {
-    client: {
-      familyMemberId: familyMemberRows.find((f) => f.role === "client")?.id ?? null,
-      firstName: effectiveClient.firstName,
-      age: ageOnDate(client.dateOfBirth, today),
-      retirementYear: yearForAge(clientBirthYear, retirementAge),
-      birthYear: clientBirthYear,
-    } satisfies MapPerson,
-    spouse: spouseFirstName
-      ? ({
-          familyMemberId: familyMemberRows.find((f) => f.role === "spouse")?.id ?? null,
-          firstName: spouseFirstName,
-          age: ageOnDate(client.spouseDob, today),
-          retirementYear:
-            spouseRetirementAge == null
-              ? null
-              : yearForAge(spouseBirthYear, spouseRetirementAge),
-          birthYear: spouseBirthYear,
-        } satisfies MapPerson)
-      : null,
-    children: familyMemberRows
-      .filter((f) => f.role === "child")
-      .map((f) => {
-        const birthYear = birthYearFromDob(f.dateOfBirth);
-        return {
-          familyMemberId: f.id,
-          firstName: f.firstName,
-          age: ageOnDate(f.dateOfBirth, today),
-          retirementYear: null,
-          birthYear,
-        } satisfies MapPerson;
-      }),
-  };
 
   return (
     <HouseholdMapView
