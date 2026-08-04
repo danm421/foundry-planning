@@ -14,11 +14,32 @@ function relativeTime(d: Date, now: Date = new Date()): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-export default function InboxList({ rows }: { rows: InboxRow[] }): ReactElement {
+export default function InboxList({
+  rows,
+  // Whether a filter narrowed this list. Without it the empty state tells an
+  // advisor whose alerts are merely all read that they have none at all —
+  // required rather than defaulted so a new call site has to decide.
+  filtered,
+}: {
+  rows: InboxRow[];
+  filtered: boolean;
+}): ReactElement {
   if (rows.length === 0) {
     return (
       <div className="rounded-[var(--radius-sm)] border border-hair bg-card px-6 py-10 text-center text-[14px] text-ink-3">
-        Nothing here yet. Alerts about your book land in this list.
+        {filtered ? (
+          <>
+            Nothing matches this filter.{" "}
+            <Link
+              href="/alerts"
+              className="rounded-[var(--radius-sm)] font-medium text-accent transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              Show all alerts
+            </Link>
+          </>
+        ) : (
+          "Nothing here yet. Alerts about your book land in this list."
+        )}
       </div>
     );
   }

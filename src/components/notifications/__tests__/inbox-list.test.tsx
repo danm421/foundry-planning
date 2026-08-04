@@ -22,7 +22,7 @@ const row = (over: Partial<InboxRow> = {}): InboxRow => ({
 
 describe("InboxList", () => {
   it("links each row to its deep link", () => {
-    render(<InboxList rows={[row()]} />);
+    render(<InboxList rows={[row()]} filtered={false} />);
     expect(
       screen.getByRole("link", { name: /Johnsons submitted/i }),
     ).toHaveAttribute("href", "/data-collection/form-1");
@@ -35,6 +35,7 @@ describe("InboxList", () => {
           row({ id: "a", title: "Still unread", url: "/alerts/a" }),
           row({ id: "b", title: "Already read", url: "/alerts/b", readAt: new Date() }),
         ]}
+        filtered={false}
       />,
     );
     const unreadRow = screen.getByRole("link", { name: /Still unread/ });
@@ -54,12 +55,25 @@ describe("InboxList", () => {
   });
 
   it("renders an empty state rather than a bare blank panel", () => {
-    render(<InboxList rows={[]} />);
+    render(<InboxList rows={[]} filtered={false} />);
     expect(screen.getByText(/nothing here yet/i)).toBeInTheDocument();
   });
 
+  // An empty list under a filter is not an empty book. Telling an advisor whose
+  // alerts are merely all read that "nothing lands here yet" is a lie, so the
+  // filtered copy must replace it — not sit alongside it.
+  it("blames the filter, not the book, when a filter narrowed the list", () => {
+    render(<InboxList rows={[]} filtered />);
+    expect(screen.getByText(/nothing matches this filter/i)).toBeInTheDocument();
+    expect(screen.queryByText(/nothing here yet/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /show all alerts/i })).toHaveAttribute(
+      "href",
+      "/alerts",
+    );
+  });
+
   it("shows the body line when present", () => {
-    render(<InboxList rows={[row({ body: "3 documents attached" })]} />);
+    render(<InboxList rows={[row({ body: "3 documents attached" })]} filtered={false} />);
     expect(screen.getByText("3 documents attached")).toBeInTheDocument();
   });
 });

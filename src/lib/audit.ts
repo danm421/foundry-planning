@@ -412,7 +412,9 @@ export type AuditAction =
   | "risk_profile.environment_changed"
   | "risk_profile.rtq_completed"
   | "risk_profile.portfolio_applied"
-  | "risk_profile.rtq_sent";
+  | "risk_profile.rtq_sent"
+  // Notifications ("Alerts")
+  | "notification.preferences.update";
 
 type Args = {
   action: AuditAction;

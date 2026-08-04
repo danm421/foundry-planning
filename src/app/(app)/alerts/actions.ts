@@ -1,11 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { db } from "@/db";
+import { notificationPreferences } from "@/db/schema";
+import { recordAudit } from "@/lib/audit";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import {
   markNotificationRead,
   markAllNotificationsRead,
 } from "@/lib/notifications/queries";
+import { parseSettingsPayload } from "@/lib/notifications/settings-payload";
 
 // The sidebar's unread badge lives in `src/app/(app)/layout.tsx`, which the
 // router preserves across client-side navigation, so it only updates when that
@@ -30,5 +34,36 @@ export async function markReadAction(id: string): Promise<void> {
 export async function markAllReadAction(): Promise<void> {
   const { orgId, userId } = await requireOrgAndUser();
   await markAllNotificationsRead(orgId, userId);
+  revalidatePath("/alerts");
+}
+
+// One row per (firm, advisor), so the upsert targets the
+// `notification_preferences_firm_user_idx` unique index rather than the
+// primary key — an advisor in two Clerk orgs keeps a row per firm.
+export async function savePreferencesAction(form: FormData): Promise<void> {
+  const { orgId, userId } = await requireOrgAndUser();
+  const { channels, cadence } = parseSettingsPayload(form);
+
+  await db
+    .insert(notificationPreferences)
+    .values({
+      firmId: orgId,
+      userId,
+      channels,
+      dateDigestCadence: cadence,
+    })
+    .onConflictDoUpdate({
+      target: [notificationPreferences.firmId, notificationPreferences.userId],
+      set: { channels, dateDigestCadence: cadence, updatedAt: new Date() },
+    });
+
+  await recordAudit({
+    action: "notification.preferences.update",
+    resourceType: "notification_preferences",
+    resourceId: userId,
+    firmId: orgId,
+    metadata: { cadence },
+  });
+
   revalidatePath("/alerts");
 }
