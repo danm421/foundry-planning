@@ -16,6 +16,12 @@ interface Props {
   basePath?: string;
   /** Visibility classes from the layout (e.g. `"lg:hidden"`). */
   className?: string;
+  /**
+   * Keyed by nav-item `suffix`; `true` renders a small attention dot next to
+   * that item's label. Absent or `false` → no dot. Defaults to `{}` so
+   * standalone consumers and existing tests render unchanged.
+   */
+  alerts?: Record<string, boolean>;
 }
 
 /**
@@ -31,6 +37,7 @@ export default function PortalMobileNav({
   branding = null,
   basePath = "/portal",
   className = "",
+  alerts = {},
 }: Props): ReactElement {
   const pathname = usePathname();
   const activeRef = useRef<HTMLAnchorElement | null>(null);
@@ -83,7 +90,15 @@ export default function PortalMobileNav({
                   : "border-transparent text-ink-3 active:text-ink-2"
               }`}
             >
-              {item.label}
+              <span className="flex items-center gap-2">
+                {item.label}
+                {alerts[item.suffix] && (
+                  <span
+                    aria-label="Needs attention"
+                    className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-warn"
+                  />
+                )}
+              </span>
             </Link>
           );
         })}
