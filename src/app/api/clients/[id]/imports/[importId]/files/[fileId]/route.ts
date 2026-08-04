@@ -13,16 +13,10 @@ import {
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
+import { toSafeDisplayFilename } from "@/lib/files/safe-filename";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-// Backslash-escape `"` and `\` so a hostile original_filename can't break
-// out of the Content-Disposition quoted-string. Filenames are still
-// constrained server-side at upload time, but defense-in-depth is cheap.
-function escapeQuotes(s: string): string {
-  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-}
 
 type Params = { params: Promise<{ id: string; importId: string; fileId: string }> };
 
@@ -106,7 +100,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
       status: 200,
       headers: {
         "Content-Type": result.blob.contentType ?? "application/octet-stream",
-        "Content-Disposition": `attachment; filename="${escapeQuotes(row.originalFilename)}"`,
+        "Content-Disposition": `attachment; filename="${toSafeDisplayFilename(row.originalFilename)}"`,
         "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, no-store",
       },
