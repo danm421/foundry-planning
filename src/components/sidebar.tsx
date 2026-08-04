@@ -10,12 +10,14 @@ import ClientSearch from "./client-search";
 interface SidebarProps {
   firmName?: string;
   clientsCount: number;
+  unreadCount: number;
   isOpsAdmin: boolean;
 }
 
 export default function Sidebar({
   firmName,
   clientsCount,
+  unreadCount,
   isOpsAdmin,
 }: SidebarProps): ReactElement {
   const { collapsed } = useSidebar();
@@ -26,7 +28,7 @@ export default function Sidebar({
     >
       <BrandHeader firmName={firmName} />
       {collapsed ? null : <ClientSearch />}
-      <SidebarNav clientsCount={clientsCount} />
+      <SidebarNav clientsCount={clientsCount} unreadCount={unreadCount} />
       <div className="mt-auto border-t border-hair">
         <UserMenu isOpsAdmin={isOpsAdmin} />
       </div>

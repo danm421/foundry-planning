@@ -12,6 +12,7 @@ import { SubscriptionGuard } from "@/components/subscription-guard";
 import Topbar from "@/components/topbar";
 import { countCrmHouseholdsForFirm } from "@/lib/crm/households";
 import { getSubscriptionState } from "@/lib/billing/subscription-state";
+import { countUnreadNotifications } from "@/lib/notifications/queries";
 import { getOpsAdmin } from "@/lib/ops/ops-auth";
 import { GlobalForgeMount } from "@/components/forge/global-forge-mount";
 import { WalkthroughProvider } from "@/components/forge/walkthrough-provider";
@@ -22,7 +23,7 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }): Promise<ReactElement> {
-  const [{ orgId, sessionClaims, actor }, jar, state, opsAdmin] = await Promise.all([
+  const [{ orgId, userId, sessionClaims, actor }, jar, state, opsAdmin] = await Promise.all([
     auth(),
     cookies(),
     getSubscriptionState(),
@@ -31,6 +32,8 @@ export default async function AppLayout({
   const isOpsAdmin = opsAdmin !== null;
   const collapsed = jar.get("sidebar-collapsed")?.value !== "0";
   const clientsCount = orgId ? await countCrmHouseholdsForFirm(orgId) : 0;
+  const unreadCount =
+    orgId && userId ? await countUnreadNotifications(orgId, userId) : 0;
   const meta =
     (sessionClaims as { org_public_metadata?: { is_founder?: boolean } } | null)
       ?.org_public_metadata ?? {};
@@ -50,7 +53,7 @@ export default async function AppLayout({
       <SidebarProvider initialCollapsed={collapsed}>
         <AppShell>
           <SidebarFrame>
-            <Sidebar clientsCount={clientsCount} isOpsAdmin={isOpsAdmin} />
+            <Sidebar clientsCount={clientsCount} unreadCount={unreadCount} isOpsAdmin={isOpsAdmin} />
           </SidebarFrame>
           <BackNavProvider>
             {/* A route opts into an app-like, viewport-filling surface (the
