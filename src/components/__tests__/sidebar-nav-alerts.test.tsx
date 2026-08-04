@@ -23,7 +23,7 @@ describe("sidebar Alerts entry", () => {
 
   it("shows the unread count when there is one", () => {
     renderNav(7);
-    expect(screen.getByText("7")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /alerts/i })).toHaveTextContent("7");
   });
 
   // A "0" badge is visual noise that trains people to ignore the badge.

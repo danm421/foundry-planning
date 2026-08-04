@@ -31,9 +31,10 @@ export default async function AppLayout({
   ]);
   const isOpsAdmin = opsAdmin !== null;
   const collapsed = jar.get("sidebar-collapsed")?.value !== "0";
-  const clientsCount = orgId ? await countCrmHouseholdsForFirm(orgId) : 0;
-  const unreadCount =
-    orgId && userId ? await countUnreadNotifications(orgId, userId) : 0;
+  const [clientsCount, unreadCount] = await Promise.all([
+    orgId ? countCrmHouseholdsForFirm(orgId) : 0,
+    orgId && userId ? countUnreadNotifications(orgId, userId) : 0,
+  ]);
   const meta =
     (sessionClaims as { org_public_metadata?: { is_founder?: boolean } } | null)
       ?.org_public_metadata ?? {};
