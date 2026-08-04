@@ -1,6 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { advisorOnboarding, clients, crmHouseholds } from "@/db/schema";
+import { recordAudit } from "@/lib/audit";
 import { visibleHouseholdConditions } from "@/lib/home/scope";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { deriveStepStatuses } from "./step-status";
@@ -50,20 +51,48 @@ export function deriveFirstRunCard(input: FirstRunInput): FirstRunCard {
   };
 }
 
-/** Lazily creates the row on first sight. `onConflictDoNothing` makes this
- *  race-safe: two concurrent first renders cannot produce two rows, and the
- *  loser reads the winner's `eligible` rather than overwriting it. */
+/** Lazily creates the row on first sight, SELECT-first so every render after
+ *  the advisor's very first one is a single read with no write and no audit.
+ *  On a miss, `onConflictDoNothing` keeps two concurrent first renders
+ *  race-safe: only one INSERT can win the `(firmId, advisorUserId)` unique
+ *  index, and `.returning()` tells this call whether it was the winner —
+ *  the loser falls back to reading the winner's row (and its `eligible`)
+ *  rather than overwriting it. Only the winner audits the creation, so the
+ *  row is created — and audited — exactly once per advisor. */
 async function ensureRow(
   firmId: string,
   advisorUserId: string,
   eligible: boolean,
 ) {
-  await db
+  const existing = await db.query.advisorOnboarding.findFirst({
+    where: and(
+      eq(advisorOnboarding.firmId, firmId),
+      eq(advisorOnboarding.advisorUserId, advisorUserId),
+    ),
+  });
+  if (existing) return existing;
+
+  const [inserted] = await db
     .insert(advisorOnboarding)
     .values({ firmId, advisorUserId, eligible })
     .onConflictDoNothing({
       target: [advisorOnboarding.firmId, advisorOnboarding.advisorUserId],
+    })
+    .returning();
+
+  if (inserted) {
+    // recordAudit swallows its own failures (see src/lib/audit.ts), so a
+    // broken audit write can't blank this /home render.
+    await recordAudit({
+      action: "advisor_onboarding.create",
+      resourceType: "advisor_onboarding",
+      resourceId: advisorUserId,
+      firmId,
     });
+    return inserted;
+  }
+
+  // Lost the race — a concurrent render already won the insert.
   const row = await db.query.advisorOnboarding.findFirst({
     where: and(
       eq(advisorOnboarding.firmId, firmId),
@@ -132,6 +161,12 @@ export async function resolveFirstRunCard(
     totalSteps: STEPS.length,
   });
 }
+
+// Both blind UPDATEs below rely on the row already existing: the card can
+// only be on screen (and so only reachable for a start/dismiss action) after
+// `resolveFirstRunCard` → `ensureRow` has created it, so by the time either
+// function is callable the `(firmId, advisorUserId)` row is guaranteed to be
+// there. Calling either before that would silently affect 0 rows.
 
 export async function markFirstRunStarted(
   firmId: string,
