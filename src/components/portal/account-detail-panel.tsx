@@ -73,6 +73,47 @@ function RecentTransactions({ accountId }: { accountId: string }): ReactElement 
   );
 }
 
+/**
+ * Edit/Delete footer shared by both detail panels. Renders nothing when the
+ * caller supplies neither handler, so read-only portals and Plaid-linked rows
+ * don't get a bare bordered strip.
+ */
+function DetailActions({
+  onEdit,
+  onDelete,
+  busy,
+}: {
+  onEdit?: () => void;
+  onDelete?: () => void;
+  busy: boolean;
+}): ReactElement | null {
+  if (!onEdit && !onDelete) return null;
+  return (
+    <div className="flex items-center gap-2 border-t border-hair pt-3">
+      {onEdit && (
+        <button
+          type="button"
+          onClick={onEdit}
+          disabled={busy}
+          className="rounded-md border border-hair px-3 py-1.5 text-[13px] text-ink-2 hover:bg-card-2 disabled:opacity-50"
+        >
+          Edit
+        </button>
+      )}
+      {onDelete && (
+        <button
+          type="button"
+          onClick={onDelete}
+          disabled={busy}
+          className="rounded-md border border-hair px-3 py-1.5 text-[13px] text-ink-2 hover:bg-card-2 disabled:opacity-50"
+        >
+          Delete
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function AccountDetailPanel({
   account,
   onClose,
@@ -122,30 +163,7 @@ export function AccountDetailPanel({
       >
         View in Transactions →
       </Link>
-      {(onEdit || onDelete) && (
-        <div className="flex items-center gap-2 border-t border-hair pt-3">
-          {onEdit && (
-            <button
-              type="button"
-              onClick={onEdit}
-              disabled={busy}
-              className="rounded-md border border-hair px-3 py-1.5 text-[13px] text-ink-2 hover:bg-card-2 disabled:opacity-50"
-            >
-              Edit
-            </button>
-          )}
-          {onDelete && (
-            <button
-              type="button"
-              onClick={onDelete}
-              disabled={busy}
-              className="rounded-md border border-hair px-3 py-1.5 text-[13px] text-ink-2 hover:bg-card-2 disabled:opacity-50"
-            >
-              Delete
-            </button>
-          )}
-        </div>
-      )}
+      <DetailActions onEdit={onEdit} onDelete={onDelete} busy={busy} />
     </div>
   );
 }
@@ -206,30 +224,7 @@ export function DebtDetailPanel({
         )}
         {debt.isPlaidLinked && <Row label="Balance">Synced from your institution</Row>}
       </dl>
-      {(onEdit || onDelete) && (
-        <div className="flex items-center gap-2 border-t border-hair pt-3">
-          {onEdit && (
-            <button
-              type="button"
-              onClick={onEdit}
-              disabled={busy}
-              className="rounded-md border border-hair px-3 py-1.5 text-[13px] text-ink-2 hover:bg-card-2 disabled:opacity-50"
-            >
-              Edit
-            </button>
-          )}
-          {onDelete && (
-            <button
-              type="button"
-              onClick={onDelete}
-              disabled={busy}
-              className="rounded-md border border-hair px-3 py-1.5 text-[13px] text-ink-2 hover:bg-card-2 disabled:opacity-50"
-            >
-              Delete
-            </button>
-          )}
-        </div>
-      )}
+      <DetailActions onEdit={onEdit} onDelete={onDelete} busy={busy} />
     </div>
   );
 }

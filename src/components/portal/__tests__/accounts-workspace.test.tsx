@@ -215,8 +215,8 @@ describe("AccountsWorkspace", () => {
 
     // The PUT never resolves during this test — the window it protects must
     // stay observable so a second click can't double-submit.
-    let resolveSave!: (v: { ok: boolean; json: () => Promise<{}> }) => void;
-    const deferred = new Promise<{ ok: boolean; json: () => Promise<{}> }>((resolve) => {
+    let resolveSave!: (v: { ok: boolean; json: () => Promise<Record<string, unknown>> }) => void;
+    const deferred = new Promise<{ ok: boolean; json: () => Promise<Record<string, unknown>> }>((resolve) => {
       resolveSave = resolve;
     });
     portalFetch.mockImplementationOnce(() => deferred);
@@ -240,8 +240,8 @@ describe("AccountsWorkspace", () => {
     fireEvent.click(getByText("Joint Checking"));
 
     // The DELETE never resolves during this test — same reasoning as the save case.
-    let resolveDelete!: (v: { ok: boolean; json: () => Promise<{}> }) => void;
-    const deferred = new Promise<{ ok: boolean; json: () => Promise<{}> }>((resolve) => {
+    let resolveDelete!: (v: { ok: boolean; json: () => Promise<Record<string, unknown>> }) => void;
+    const deferred = new Promise<{ ok: boolean; json: () => Promise<Record<string, unknown>> }>((resolve) => {
       resolveDelete = resolve;
     });
     portalFetch.mockImplementationOnce(() => deferred);

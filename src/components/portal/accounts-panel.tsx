@@ -77,6 +77,14 @@ export function AccountsPanel({
     return <p className="text-[13px] text-ink-3">No accounts yet.</p>;
   }
 
+  // Both views draw the same cards from the same row; only the surrounding
+  // heading differs, so the row → cards and row → handler mappings live here.
+  const cardsForRow = (row: RailRow): AccountCardData[] =>
+    row.kind === "asset"
+      ? assets.filter((a) => a.category === row.category).map(assetCard)
+      : debts.filter((d) => (d.liabilityType ?? "other") === row.category).map(debtCard);
+  const openFor = (row: RailRow) => (row.kind === "asset" ? onOpenAccount : onOpenDebt);
+
   // Category view: one group's cards, no chart.
   if (selected !== TOTAL_KEY) {
     const row: RailRow | undefined =
@@ -84,17 +92,12 @@ export function AccountsPanel({
       rail.liabilities.rows.find((r) => r.key === selected);
     if (!row) return <p className="text-[13px] text-ink-3">Nothing in this category.</p>;
 
-    const cards =
-      row.kind === "asset"
-        ? assets.filter((a) => a.category === row.category).map(assetCard)
-        : debts.filter((d) => (d.liabilityType ?? "other") === row.category).map(debtCard);
-
     return (
       <section className="space-y-3">
         <h2 className="text-[15px] font-semibold text-ink">
           {row.label}: <span className="tabular">{fmtUsd(row.total)}</span>
         </h2>
-        <CardList cards={cards} onOpen={row.kind === "asset" ? onOpenAccount : onOpenDebt} />
+        <CardList cards={cardsForRow(row)} onOpen={openFor(row)} />
       </section>
     );
   }
@@ -103,21 +106,15 @@ export function AccountsPanel({
   return (
     <div className="space-y-6">
       {series.length >= 2 && <NetWorthTrendChart series={series} asOfDate={asOfDate} />}
-      {[...rail.assets.rows, ...rail.liabilities.rows].map((row) => {
-        const cards =
-          row.kind === "asset"
-            ? assets.filter((a) => a.category === row.category).map(assetCard)
-            : debts.filter((d) => (d.liabilityType ?? "other") === row.category).map(debtCard);
-        return (
-          <section key={row.key} className="space-y-2">
-            <h2 className="flex items-baseline justify-between border-b border-hair pb-1">
-              <span className="text-[13px] font-semibold text-ink">{row.label}</span>
-              <span className="tabular text-[12px] text-ink-3">{fmtUsd(row.total)}</span>
-            </h2>
-            <CardList cards={cards} onOpen={row.kind === "asset" ? onOpenAccount : onOpenDebt} />
-          </section>
-        );
-      })}
+      {[...rail.assets.rows, ...rail.liabilities.rows].map((row) => (
+        <section key={row.key} className="space-y-2">
+          <h2 className="flex items-baseline justify-between border-b border-hair pb-1">
+            <span className="text-[13px] font-semibold text-ink">{row.label}</span>
+            <span className="tabular text-[12px] text-ink-3">{fmtUsd(row.total)}</span>
+          </h2>
+          <CardList cards={cardsForRow(row)} onOpen={openFor(row)} />
+        </section>
+      ))}
     </div>
   );
 }

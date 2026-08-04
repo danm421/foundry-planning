@@ -210,44 +210,43 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
     }
   }
 
+  /**
+   * The drill-down body only. The caller supplies the shared `← Back` chrome, so
+   * a row that vanished under a concurrent refresh still leaves a way out
+   * instead of stranding the user in an empty pane.
+   */
   function drilled(): ReactElement | null {
     if (!drill) return null;
 
     if (drill.kind === "add-account" || drill.kind === "edit-account") {
       if (!accountForm) return null;
       return (
-        <div className="space-y-3">
-          <BackButton onBack={closeDrill} />
-          <AccountFormPanel
-            form={accountForm}
-            setForm={setAccountForm}
-            familyMembers={dto.familyMembers}
-            trustEntities={dto.trustEntities}
-            onCancel={closeDrill}
-            onSubmit={submitAccount}
-            disabled={inFlight}
-            plaidLocked={drill.kind === "edit-account" && (account(drill.id)?.isPlaidLinked ?? false)}
-          />
-        </div>
+        <AccountFormPanel
+          form={accountForm}
+          setForm={setAccountForm}
+          familyMembers={dto.familyMembers}
+          trustEntities={dto.trustEntities}
+          onCancel={closeDrill}
+          onSubmit={submitAccount}
+          disabled={inFlight}
+          plaidLocked={drill.kind === "edit-account" && (account(drill.id)?.isPlaidLinked ?? false)}
+        />
       );
     }
 
     if (drill.kind === "edit-debt") {
       if (!debtForm) return null;
       return (
-        <div className="space-y-3">
-          <BackButton onBack={closeDrill} />
-          <DebtFormPanel
-            form={debtForm}
-            setForm={setDebtForm}
-            familyMembers={dto.familyMembers}
-            trustEntities={dto.trustEntities}
-            onCancel={closeDrill}
-            onSubmit={submitDebt}
-            disabled={inFlight}
-            plaidLocked={debt(drill.id)?.isPlaidLinked ?? false}
-          />
-        </div>
+        <DebtFormPanel
+          form={debtForm}
+          setForm={setDebtForm}
+          familyMembers={dto.familyMembers}
+          trustEntities={dto.trustEntities}
+          onCancel={closeDrill}
+          onSubmit={submitDebt}
+          disabled={inFlight}
+          plaidLocked={debt(drill.id)?.isPlaidLinked ?? false}
+        />
       );
     }
 
@@ -255,61 +254,55 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
       const a = account(drill.id);
       if (!a) return null;
       return (
-        <div className="space-y-3">
-          <BackButton onBack={closeDrill} />
-          <AccountDetailPanel
-            account={{
-              id: a.id,
-              name: a.name,
-              value: a.value,
-              categoryLabel: CATEGORY_LABELS[a.category] ?? a.category,
-              subTypeLabel: a.subType.replace(/_/g, " "),
-              last4: a.last4,
-              isPlaid: a.isPlaidLinked,
-              ownerLabel: accountOwnerLabel(a.id),
-            }}
-            onClose={closeDrill}
-            busy={inFlight}
-            onEdit={dto.editEnabled ? () => openEditAccount(a.id) : undefined}
-            // Delete stays manual-only — unlink the institution first.
-            onDelete={
-              dto.editEnabled && !a.isPlaidLinked
-                ? () => remove("accounts", a.id, a.name)
-                : undefined
-            }
-          />
-        </div>
+        <AccountDetailPanel
+          account={{
+            id: a.id,
+            name: a.name,
+            value: a.value,
+            categoryLabel: CATEGORY_LABELS[a.category] ?? a.category,
+            subTypeLabel: a.subType.replace(/_/g, " "),
+            last4: a.last4,
+            isPlaid: a.isPlaidLinked,
+            ownerLabel: accountOwnerLabel(a.id),
+          }}
+          onClose={closeDrill}
+          busy={inFlight}
+          onEdit={dto.editEnabled ? () => openEditAccount(a.id) : undefined}
+          // Delete stays manual-only — unlink the institution first.
+          onDelete={
+            dto.editEnabled && !a.isPlaidLinked
+              ? () => remove("accounts", a.id, a.name)
+              : undefined
+          }
+        />
       );
     }
 
     const d = debt(drill.id);
     if (!d) return null;
     return (
-      <div className="space-y-3">
-        <BackButton onBack={closeDrill} />
-        <DebtDetailPanel
-          debt={{
-            id: d.id,
-            name: d.name,
-            balance: d.balance,
-            typeLabel: d.liabilityType ? TYPE_LABEL[d.liabilityType] ?? "Loan" : "Loan",
-            aprPercentage: d.aprPercentage,
-            statementBalance: d.statementBalance,
-            minimumPayment: d.minimumPayment,
-            nextPaymentDueDate: d.nextPaymentDueDate,
-            isPlaidLinked: d.isPlaidLinked,
-            ownerLabel: ownerLabel(d.ownerFmIds, d.ownerEntityIds),
-          }}
-          onClose={closeDrill}
-          busy={inFlight}
-          onEdit={dto.editEnabled ? () => openEditDebt(d.id) : undefined}
-          onDelete={
-            dto.editEnabled && !d.isPlaidLinked
-              ? () => remove("liabilities", d.id, d.name)
-              : undefined
-          }
-        />
-      </div>
+      <DebtDetailPanel
+        debt={{
+          id: d.id,
+          name: d.name,
+          balance: d.balance,
+          typeLabel: d.liabilityType ? TYPE_LABEL[d.liabilityType] ?? "Loan" : "Loan",
+          aprPercentage: d.aprPercentage,
+          statementBalance: d.statementBalance,
+          minimumPayment: d.minimumPayment,
+          nextPaymentDueDate: d.nextPaymentDueDate,
+          isPlaidLinked: d.isPlaidLinked,
+          ownerLabel: ownerLabel(d.ownerFmIds, d.ownerEntityIds),
+        }}
+        onClose={closeDrill}
+        busy={inFlight}
+        onEdit={dto.editEnabled ? () => openEditDebt(d.id) : undefined}
+        onDelete={
+          dto.editEnabled && !d.isPlaidLinked
+            ? () => remove("liabilities", d.id, d.name)
+            : undefined
+        }
+      />
     );
   }
 
@@ -347,7 +340,10 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
         />
         <div className="min-w-0">
           {drill ? (
-            drilled()
+            <div className="space-y-3">
+              <BackButton onBack={closeDrill} />
+              {drilled()}
+            </div>
           ) : (
             <AccountsPanel
               rail={rail}
