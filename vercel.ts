@@ -65,5 +65,9 @@ export const config: VercelConfig = {
       path: "/api/cron/notification-scan",
       schedule: "0 8 * * *",
     },
+    {
+      path: "/api/cron/notification-digest",
+      schedule: "0 9 * * *",
+    },
   ],
 };
