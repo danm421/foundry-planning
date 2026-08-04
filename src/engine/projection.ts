@@ -5495,8 +5495,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // hypothetical from it would merely relocate cash (checking → brokerage),
       // adding no new money — leaving PoS flat and the min-savings goal-seek
       // "unreachable" however high the lever. Only spent-but-now-redirected cash
-      // (and expense cuts below) genuinely raise the portfolio. Mirror phase 14's
-      // clamp of surplusSpendPct (default 0 ⇒ fund entirely from expense cuts).
+      // (and expense cuts below) genuinely raise the portfolio. Use the same
+      // per-year rate phase 14 uses: normally the stored surplusSpendPct (default
+      // 0 ⇒ fund entirely from expense cuts), but 100% in a pre-retirement year
+      // when surplusSpendAllUntilRetirement is on, which funds from cash flow
+      // instead. effectiveSurplusSpendPct owns the 0..1 clamp.
       const selfFundingSpendPct = effectiveSurplusSpendPct(
         data.planSettings,
         data.client,
