@@ -275,17 +275,27 @@ export const WALKTHROUGHS: readonly Walkthrough[] = [
         advanceOn: "manual",
       },
       {
+        // The stepper must come first of the two in-wizard steps. The wizard
+        // always lands on "household", which is NOT import-eligible, so the
+        // import launcher does not exist on arrival — spotlighting it here
+        // degrades to the anchor-missing fallback within useAnchorRect's 4s
+        // timeout, and that is terminal: the effect only re-resolves when the
+        // anchorId changes, so later navigating to an eligible step never
+        // recovers. The stepper is present on every wizard step.
+        anchorId: "onboarding-stepper",
+        page: "/clients/:id/onboarding/:step",
+        callout:
+          "Your progress saves as you go — leave any time and you'll pick up right here. Fill this step in and continue.",
+        // Gating on arrival at "family" (the first import-eligible step) is
+        // what makes the next step's anchor resolvable when it activates.
+        advanceOn: "navigate",
+        nextPage: "/clients/:id/onboarding/family",
+      },
+      {
         anchorId: "wizard-import-launcher",
         page: "/clients/:id/onboarding/:step",
         callout:
           "Have a statement or fact-finder? Drop it here and we'll fill this step in. Or just type it in below.",
-        advanceOn: "manual",
-      },
-      {
-        anchorId: "onboarding-stepper",
-        page: "/clients/:id/onboarding/:step",
-        callout:
-          "Your progress saves as you go. Leave any time — you'll pick up right here.",
         advanceOn: "manual",
       },
     ],
