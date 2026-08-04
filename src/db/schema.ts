@@ -4749,6 +4749,39 @@ export const advisorProfiles = pgTable(
 export type AdvisorProfileRow = InferSelectModel<typeof advisorProfiles>;
 export type NewAdvisorProfileRow = InferInsertModel<typeof advisorProfiles>;
 
+// First-run guided setup, one row per advisor. Stores ONLY the two facts that
+// cannot be derived: whether this advisor was ever eligible (decided once, on
+// their first /home render) and whether they opted out. Which client is
+// "theirs" and how far the wizard got are computed from `clients` on each
+// render — a stored copy would be a second source of truth that drifts.
+export const advisorOnboarding = pgTable(
+  "advisor_onboarding",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id").notNull(),
+    advisorUserId: text("advisor_user_id").notNull(),
+    // false → this advisor already had a book when first seen; never show.
+    eligible: boolean("eligible").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("advisor_onboarding_firm_advisor_uq").on(
+      t.firmId,
+      t.advisorUserId,
+    ),
+  ],
+);
+
+export type AdvisorOnboardingRow = InferSelectModel<typeof advisorOnboarding>;
+export type NewAdvisorOnboardingRow = InferInsertModel<typeof advisorOnboarding>;
+
 // One Stripe subscription per firm. UNIQUE filter ensures a firm can only
 // have one *live* sub at a time — canceled rows stay for history.
 // `current_period_*` mirrors Stripe so middleware can compute grace
