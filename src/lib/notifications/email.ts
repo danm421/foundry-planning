@@ -24,12 +24,23 @@ export async function sendDigestEmail(args: {
   }
   try {
     const resend = new Resend(apiKey);
-    await resend.emails.send({
+    // resend.emails.send() never throws for a rejected send — it resolves
+    // { data: null, error } for every non-2xx response (rate limit, invalid
+    // recipient, unverified domain, ...). The try/catch below is belt-and-
+    // braces for a genuinely thrown error; the `error` check is the real net.
+    const { error } = await resend.emails.send({
       from: FROM,
       to: args.to,
       subject: args.subject,
       html: args.html,
     });
+    if (error) {
+      console.error(
+        "[notification-digest] Resend rejected the send:",
+        error.message ?? error,
+      );
+      return { delivered: false };
+    }
     return { delivered: true };
   } catch (err) {
     console.error(

@@ -61,26 +61,42 @@ export async function GET(req: NextRequest): Promise<Response> {
     return NextResponse.json({ ok: true, usersEmailed: 0, rowsEmailed: 0, usersFailed: 0 });
   }
 
-  // There is no local users table — email and display name live in Clerk. One
-  // batched lookup, not one call per advisor.
+  // There is no local users table — email and display name live in Clerk.
+  // Batched lookups, not one call per advisor. Clerk caps the userId filter
+  // at 100 per call (UserApi.d.ts), so page rather than sending them all at
+  // once -- unpaged, a night with >100 distinct advisors 422s the whole run.
+  const CLERK_USER_ID_PAGE = 100;
   const userIds = Array.from(new Set(pending.map((r) => r.userId)));
   const cc = await clerkClient();
-  const { data: users } = await cc.users.getUserList({ userId: userIds, limit: userIds.length });
-  const identity = new Map(
-    users.map((u) => [
-      u.id,
-      {
+  const identity = new Map<string, { email: string; displayName: string | null }>();
+  for (let i = 0; i < userIds.length; i += CLERK_USER_ID_PAGE) {
+    const page = userIds.slice(i, i + CLERK_USER_ID_PAGE);
+    const { data: users } = await cc.users.getUserList({ userId: page, limit: page.length });
+    for (const u of users) {
+      identity.set(u.id, {
         email: u.primaryEmailAddress?.emailAddress ?? "",
         displayName: [u.firstName, u.lastName].filter(Boolean).join(" ") || null,
-      },
-    ]),
-  );
+      });
+    }
+  }
 
   const rows: PendingRow[] = pending.map((r) => ({
     ...r,
     email: identity.get(r.userId)?.email ?? "",
     displayName: identity.get(r.userId)?.displayName ?? null,
   }));
+
+  // No deliverable address — a deleted Clerk user, or one with no primary email.
+  // planDigestBatches drops these, so without this they stay emailPending forever
+  // and, being the oldest, consume the front of MAX_ROWS_PER_RUN on every later
+  // run. Clear the flag but leave emailedAt NULL. The in-app row is unaffected.
+  const undeliverableIds = rows.filter((r) => !r.email).map((r) => r.id);
+  if (undeliverableIds.length > 0) {
+    await db
+      .update(notifications)
+      .set({ emailPending: false })
+      .where(inArray(notifications.id, undeliverableIds));
+  }
 
   let usersEmailed = 0;
   let rowsEmailed = 0;
@@ -108,5 +124,11 @@ export async function GET(req: NextRequest): Promise<Response> {
     rowsEmailed += batch.allIds.length;
   }
 
-  return NextResponse.json({ ok: true, usersEmailed, rowsEmailed, usersFailed });
+  return NextResponse.json({
+    ok: true,
+    usersEmailed,
+    rowsEmailed,
+    usersFailed,
+    rowsUndeliverable: undeliverableIds.length,
+  });
 }
