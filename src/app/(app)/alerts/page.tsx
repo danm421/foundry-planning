@@ -14,6 +14,7 @@ import { mergePrefs } from "@/lib/notifications/prefs";
 import InboxList from "@/components/notifications/inbox-list";
 import FilterChips from "@/components/notifications/filter-chips";
 import SettingsForm from "@/components/notifications/settings-form";
+import EmailPrompt from "@/components/notifications/email-prompt";
 import { markAllReadAction } from "./actions";
 
 const TAB_BASE = "border-b-2 pb-2 text-[14px] transition-colors";
@@ -46,19 +47,20 @@ export default async function AlertsPage({
     : "all";
   const isSettings = params.tab === "settings";
 
-  // Each tab loads only what it renders — neither query runs for the other.
-  const [prefRow] = isSettings
-    ? await db
-        .select()
-        .from(notificationPreferences)
-        .where(
-          and(
-            eq(notificationPreferences.firmId, orgId),
-            eq(notificationPreferences.userId, userId),
-          ),
-        )
-        .limit(1)
-    : [];
+  // The preferences row feeds BOTH tabs — Settings reads the toggles, the inbox
+  // reads emailPromptDismissedAt — so it loads unconditionally. Do not restore a
+  // `tab === "settings"` guard here: that hides the first-visit prompt. The
+  // notification list is inbox-only and stays guarded; Settings never pays for it.
+  const [prefRow] = await db
+    .select()
+    .from(notificationPreferences)
+    .where(
+      and(
+        eq(notificationPreferences.firmId, orgId),
+        eq(notificationPreferences.userId, userId),
+      ),
+    )
+    .limit(1);
   const rows = isSettings ? [] : await listNotifications(orgId, userId, filter);
 
   return (
@@ -100,6 +102,8 @@ export default async function AlertsPage({
         />
       ) : (
         <>
+          {prefRow?.emailPromptDismissedAt ? null : <EmailPrompt />}
+
           <div className="mb-4 flex items-center justify-between gap-4">
             <FilterChips active={filter} />
             <form action={markAllReadAction}>

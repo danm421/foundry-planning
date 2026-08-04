@@ -67,3 +67,21 @@ export async function savePreferencesAction(form: FormData): Promise<void> {
 
   revalidatePath("/alerts");
 }
+
+// The first-visit prompt's "No thanks". Stamped rather than a boolean so the
+// row also records WHEN it was declined. Same upsert target as the save above:
+// an advisor who never opened Settings has no preferences row yet, so this has
+// to be able to create one. Not audited — declining a nudge is not a
+// permissions- or money-relevant change, and the prompt is shown once.
+export async function dismissEmailPromptAction(): Promise<void> {
+  const { orgId, userId } = await requireOrgAndUser();
+  const now = new Date();
+  await db
+    .insert(notificationPreferences)
+    .values({ firmId: orgId, userId, emailPromptDismissedAt: now })
+    .onConflictDoUpdate({
+      target: [notificationPreferences.firmId, notificationPreferences.userId],
+      set: { emailPromptDismissedAt: now, updatedAt: now },
+    });
+  revalidatePath("/alerts");
+}
