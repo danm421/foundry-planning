@@ -64,7 +64,7 @@ export default function RecurringsView({
   return (
     <div className="space-y-6 p-4">
       <header className="flex items-center justify-between">
-        <h1 className="text-[18px] font-semibold text-ink">Recurrings</h1>
+        <h1 className="text-[18px] font-semibold text-ink">Recurring</h1>
         {editEnabled && (
           <button
             type="button"

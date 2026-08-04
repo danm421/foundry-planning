@@ -4,7 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
 import { useEffect, useRef, type ReactElement } from "react";
-import { PORTAL_NAV_ITEMS } from "@/components/portal/portal-nav-items";
+import {
+  PORTAL_NAV_ITEMS,
+  isPortalNavItemActive,
+} from "@/components/portal/portal-nav-items";
 import PortalBrandingMark, {
   type PortalBranding,
 } from "@/components/portal/portal-branding-mark";
@@ -77,7 +80,7 @@ export default function PortalMobileNav({
       >
         {PORTAL_NAV_ITEMS.map((item) => {
           const href = `${basePath}${item.suffix}`;
-          const active = pathname === href;
+          const active = isPortalNavItemActive(pathname, href, item);
           return (
             <Link
               key={item.suffix}

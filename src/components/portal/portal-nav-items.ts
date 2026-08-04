@@ -16,6 +16,25 @@ export interface PortalNavItem {
   suffix: string;
   /** Section the item belongs to (drives the desktop subheader grouping). */
   group: PortalNavGroup;
+  /**
+   * Keep the item highlighted on its child routes too. Only for sections that
+   * own sub-tabs (Budget) — the profile items are siblings, so prefix matching
+   * there would light up Household on every /profile/* route.
+   */
+  matchNested?: boolean;
+}
+
+/**
+ * Active-state test shared by both navs so the desktop rail and the mobile tab
+ * strip can never disagree about which item is current.
+ */
+export function isPortalNavItemActive(
+  pathname: string,
+  href: string,
+  item: PortalNavItem,
+): boolean {
+  if (pathname === href) return true;
+  return item.matchNested === true && pathname.startsWith(`${href}/`);
 }
 
 export const PORTAL_NAV_ITEMS: readonly PortalNavItem[] = [
@@ -25,9 +44,9 @@ export const PORTAL_NAV_ITEMS: readonly PortalNavItem[] = [
   { label: "Trusts", suffix: "/profile/trusts", group: "profile" },
   { label: "Accounts", suffix: "/accounts", group: "money" },
   { label: "Investments", suffix: "/investments", group: "money" },
-  { label: "Transactions", suffix: "/transactions", group: "money" },
-  { label: "Budget", suffix: "/budget", group: "money" },
-  { label: "Recurrings", suffix: "/recurrings", group: "money" },
+  // Transactions and Recurring are tabs *inside* this section, not rail
+  // entries — see `BUDGET_TABS` in `budget-tabs.tsx`.
+  { label: "Budget", suffix: "/budget", group: "money", matchNested: true },
   { label: "Documents", suffix: "/documents", group: "money" },
   { label: "Settings", suffix: "/settings", group: "settings" },
 ] as const;

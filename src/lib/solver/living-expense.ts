@@ -19,6 +19,7 @@
 // synthesized duplicate instead, and the PoS solve reports "unreachable" at $0.
 
 import type { ClientData, Expense } from "@/engine/types";
+import type { SolverMutation } from "./types";
 
 export function isRetirementLivingExpense(
   e: Expense,
@@ -112,4 +113,39 @@ export function planLivingExpenseAmount(
     to: baseSum > 0 ? e.annualAmount * (amount / baseSum) : amount / retirement.length,
   }));
   return { kind: "update", rows };
+}
+
+/**
+ * The mutations that write a solved retirement-living total back into the
+ * workspace — one per affected row, never the aggregate `living-expense-amount`.
+ *
+ * `living-expense-amount` stays the SEARCH lever (the server bisects on it, and
+ * it is always appended last there, so it still wins over the baseline). It must
+ * not survive as a committed mutation, because it addresses the same rows as the
+ * stepper's `expense-annual-amount:<id>` under a DIFFERENT key: both would sit in
+ * the workspace's keyed map at once, and that map is applied in first-insertion
+ * order. A field edited before the solve therefore kept its earlier slot and the
+ * aggregate re-normalized it on every recompute — the stepper committed, the
+ * projection recomputed, and the number on screen never moved.
+ *
+ * Emitting per-row mutations gives each row exactly one writer, so ordering stops
+ * mattering: a later step overrides the solve, and a later solve overrides the
+ * step, in both directions.
+ */
+export function livingExpenseSolveMutations(
+  tree: ClientData,
+  amount: number,
+): SolverMutation[] {
+  const plan = planLivingExpenseAmount(tree, amount);
+  // No retirement row to address: mint the row here so its id is stable. Minting
+  // inside applyMutations would re-roll a fresh uuid on every recompute, leaving
+  // a row no later edit could ever target.
+  if (plan.kind === "synthesize") {
+    return [{ kind: "expense-upsert", id: plan.expense.id, value: plan.expense }];
+  }
+  return plan.rows.map((r) => ({
+    kind: "expense-annual-amount",
+    expenseId: r.id,
+    annualAmount: r.to,
+  }));
 }

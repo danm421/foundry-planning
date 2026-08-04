@@ -16,7 +16,7 @@ import {
   pruneIntakeBlankRows,
   type IntakePayload,
 } from "@/lib/intake/schema";
-import { requireActiveSubscriptionForFirm, ForbiddenError } from "@/lib/authz";
+import { requireActiveSubscriptionForFirmNoSession, ForbiddenError } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
 import { notifyIntakeSubmitted } from "@/lib/notifications/producers/intake";
 
@@ -109,8 +109,15 @@ export async function POST(
   // 6. Firm-active gate (checked AFTER merge so we don't block a mid-flow
   //    firm on a transient subscription lapse just because the payload arrived
   //    in two parts; the submission still belongs to the firm's account).
+  //
+  //    MUST be the NoSession variant. This route is public: the token is the
+  //    whole authority and `auth()` yields userId === null on every real
+  //    request, so the session-bound requireActiveSubscriptionForFirm throws
+  //    UnauthorizedError — which the catch below does not handle — and 500s
+  //    every genuine client submission. It shipped that way and did exactly
+  //    that; see the docblock on the helper.
   try {
-    await requireActiveSubscriptionForFirm(form.firmId);
+    await requireActiveSubscriptionForFirmNoSession(form.firmId);
   } catch (e) {
     if (e instanceof ForbiddenError) {
       return NextResponse.json({ error: "Subscription inactive." }, { status: 403 });

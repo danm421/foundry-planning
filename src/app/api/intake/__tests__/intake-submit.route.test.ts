@@ -36,10 +36,17 @@ const { ForbiddenError } = vi.hoisted(() => {
   return { ForbiddenError };
 });
 
+// Only the NoSession variant is stubbed, deliberately. This route is public, so
+// reaching for the session-bound `requireActiveSubscriptionForFirm` is the bug
+// that 500'd every real client submission; leaving it off the mock means that
+// mistake reintroduces itself as an immediate `undefined is not a function`
+// here rather than shipping green. This does NOT make the suite a gate on which
+// helper is used — the mock replaces the module wholesale, so the real gate
+// never runs. Verify that by POSTing the live endpoint with no session.
 const requireActiveSubscriptionForFirmMock = vi.fn();
 vi.mock("@/lib/authz", () => ({
   ForbiddenError,
-  requireActiveSubscriptionForFirm: (firmId: string) =>
+  requireActiveSubscriptionForFirmNoSession: (firmId: string) =>
     requireActiveSubscriptionForFirmMock(firmId),
 }));
 

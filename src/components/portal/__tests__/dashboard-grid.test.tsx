@@ -111,7 +111,7 @@ describe("DashboardGrid rail drill-downs", () => {
     render(<LayoutLike />);
     await user.click(screen.getByRole("button", { name: /Phone/ }));
     expect(within(rail()).getByText("Key metrics")).toBeInTheDocument();
-    expect(within(rail()).getByText(/Open in Recurrings/)).toBeInTheDocument();
+    expect(within(rail()).getByText(/Open in Recurring/)).toBeInTheDocument();
   });
 
   it("opens a read-only transaction panel from the to-review tile", async () => {
