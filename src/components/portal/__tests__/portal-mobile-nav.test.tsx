@@ -86,6 +86,15 @@ describe("PortalMobileNav", () => {
     expect(current[0]).toHaveAttribute("href", "/portal/organizer");
   });
 
+  it("does not mark a leaf destination current on a route nested under it", () => {
+    // Investments has no matchNested, so a deeper path under its suffix must
+    // NOT light it up — pins the false branch of isPortalNavItemActive's
+    // `item.matchNested === true && pathname.startsWith(...)` guard.
+    mockPathname = "/portal/investments/foo";
+    const { container } = render(<PortalMobileNav displayName="Jane" />);
+    expect(container.querySelectorAll('a[aria-current="page"]')).toHaveLength(0);
+  });
+
   it("falls back to a generic title when displayName is empty", () => {
     mockPathname = "/portal/profile";
     render(<PortalMobileNav displayName="" />);

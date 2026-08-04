@@ -86,6 +86,10 @@ describe("PortalNav basePath", () => {
   });
 
   it("renders exactly the six rail destinations", () => {
+    // Exactness here relies on this file's top-level UserButton mock
+    // (`() => null`) contributing zero anchors. If that mock ever renders a
+    // real UserButton (which can include an avatar/menu link), re-scope this
+    // query to the rail's own <nav> element instead of the whole container.
     const { container } = render(<PortalNav displayName="A" email="a@b.co" />);
     expect(
       Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href")),
