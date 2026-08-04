@@ -5,7 +5,10 @@ import {
   roundToNearest5k,
   retirementLivingExpenseTotal,
   synthesizeRetirementLivingExpense,
+  livingExpenseSolveMutations,
 } from "../living-expense";
+import { applyMutations } from "../apply-mutations";
+import { mutationKey, type SolverMutation, type SolverMutationKey } from "../types";
 
 function expense(over: Partial<Expense>): Expense {
   return {
@@ -115,5 +118,118 @@ describe("synthesizeRetirementLivingExpense", () => {
     expect(e.growthRate).toBe(0.025);
     expect(typeof e.id).toBe("string");
     expect(e.id.length).toBeGreaterThan(0);
+  });
+});
+
+/** A tree complete enough to round-trip through applyMutations. */
+function applyableTree(expenses: Expense[]): ClientData {
+  return {
+    planSettings: { planStartYear: 2026, planEndYear: 2070, inflationRate: 0.025 },
+    client: { retirementAge: 65 },
+    accounts: [],
+    incomes: [],
+    expenses,
+    liabilities: [],
+    savingsRules: [],
+    withdrawalStrategy: [],
+    giftEvents: [],
+  } as unknown as ClientData;
+}
+
+describe("livingExpenseSolveMutations", () => {
+  function treeWith(expenses: Expense[]): ClientData {
+    return applyableTree(expenses);
+  }
+
+  it("writes one per-row expense-annual-amount, proportionally split", () => {
+    const tree = treeWith([
+      expense({ id: "current", annualAmount: 80_000, startYear: 2026 }),
+      expense({ id: "ret1", annualAmount: 90_000, startYear: 2040 }),
+      expense({ id: "ret2", annualAmount: 10_000, startYear: 2045 }),
+    ]);
+    expect(livingExpenseSolveMutations(tree, 120_000)).toEqual([
+      { kind: "expense-annual-amount", expenseId: "ret1", annualAmount: 108_000 },
+      { kind: "expense-annual-amount", expenseId: "ret2", annualAmount: 12_000 },
+    ]);
+  });
+
+  it("upserts a stable-id row when the plan has no retirement living expense", () => {
+    const tree = treeWith([expense({ id: "current", annualAmount: 80_000, startYear: 2026 })]);
+    const [m] = livingExpenseSolveMutations(tree, 95_000);
+    expect(m.kind).toBe("expense-upsert");
+    // The id must be minted ONCE here, not re-rolled inside applyMutations on
+    // every recompute — otherwise the row can never be addressed by a later edit.
+    const applied = applyMutations(tree, [m]);
+    const again = applyMutations(tree, [m]);
+    expect(applied.expenses.at(-1)!.id).toBe(again.expenses.at(-1)!.id);
+    expect(applied.expenses.at(-1)!.annualAmount).toBe(95_000);
+  });
+});
+
+// The reported bug: after a Maximum Retirement Spend solve, the stepper's +/-
+// buttons committed but the number on screen never moved. `living-expense-amount`
+// and `expense-annual-amount:<id>` are different mutation keys, so both stayed
+// live in the workspace's Map; apply order follows FIRST insertion, so a field
+// edited before the solve kept its earlier slot and the solve's aggregate
+// re-normalized the row on top of every later step.
+describe("solve write-back leaves the stepper in control", () => {
+  const RETIREMENT_ROW = "ret";
+
+  function base(): ClientData {
+    return applyableTree([
+      expense({ id: "current", annualAmount: 120_000, startYear: 2026 }),
+      expense({ id: RETIREMENT_ROW, annualAmount: 80_000, startYear: 2040 }),
+    ]);
+  }
+
+  /** Mirrors live-solver-workspace: a keyed Map read out in insertion order. */
+  function workspace() {
+    const map = new Map<SolverMutationKey, SolverMutation>();
+    return {
+      push: (...ms: SolverMutation[]) => ms.forEach((m) => map.set(mutationKey(m), m)),
+      reading: () =>
+        applyMutations(base(), Array.from(map.values())).expenses.find(
+          (e) => e.id === RETIREMENT_ROW,
+        )!.annualAmount,
+    };
+  }
+
+  it("steps move the value when the field was edited BEFORE the solve", () => {
+    const ws = workspace();
+    // Advisor nudges the field first — this is what used to pin it.
+    ws.push({
+      kind: "expense-annual-amount",
+      expenseId: RETIREMENT_ROW,
+      annualAmount: 85_000,
+    });
+    // Then solves.
+    ws.push(...livingExpenseSolveMutations(base(), 95_000));
+    expect(ws.reading()).toBe(95_000);
+
+    // Now three +$5k steps must actually land.
+    const readings: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      ws.push({
+        kind: "expense-annual-amount",
+        expenseId: RETIREMENT_ROW,
+        annualAmount: ws.reading() + 5_000,
+      });
+      readings.push(ws.reading());
+    }
+    expect(readings).toEqual([100_000, 105_000, 110_000]);
+  });
+
+  it("a re-solve still overrides an intervening manual step", () => {
+    const ws = workspace();
+    ws.push(...livingExpenseSolveMutations(base(), 95_000));
+    ws.push({
+      kind: "expense-annual-amount",
+      expenseId: RETIREMENT_ROW,
+      annualAmount: 130_000,
+    });
+    expect(ws.reading()).toBe(130_000);
+    // Solving again must win over the manual edit, not lose to it.
+    ws.push(...livingExpenseSolveMutations(base(), 90_000));
+    expect(ws.reading()).toBe(90_000);
   });
 });

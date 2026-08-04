@@ -14,6 +14,7 @@ import { mutationKey, type SolverMutation, type SolverMutationKey } from "@/lib/
 import { isBaseSavableMutation } from "@/lib/solver/mutations-to-base-updates";
 import type { SolveLeverKey, SolveProgressEvent, SolveResultEvent } from "@/lib/solver/solve-types";
 import { buildLeverMutation } from "@/lib/solver/lever-search-config";
+import { livingExpenseSolveMutations } from "@/lib/solver/living-expense";
 import { useSolverSolve } from "./use-solver-solve";
 import { useSolverMc } from "./use-solver-mc";
 import { useSolverDraft, mutationMapFromDraft, type SolverDraft } from "./use-solver-draft";
@@ -478,19 +479,30 @@ export function LiveSolverWorkspace({
         ms != null &&
         prev.target.kind === "savings-contribution" &&
         prev.target.accountId === ms.accountId;
-      const mutation: SolverMutation = isMinSavings
-        ? {
-            kind: "savings-rule-upsert",
-            id: ms!.ruleId,
-            value: { ...ms!.rule, annualAmount: e.solvedValue },
-          }
-        : // Apply the solved value against the live working tree so lever
-          // mutations that depend on tree state (e.g. roth-conversion-amount,
-          // which needs the technique's other fields) resolve correctly.
-          buildLeverMutation(prev.target, e.solvedValue, workingTree);
+      const solvedMutations: SolverMutation[] = isMinSavings
+        ? [
+            {
+              kind: "savings-rule-upsert",
+              id: ms!.ruleId,
+              value: { ...ms!.rule, annualAmount: e.solvedValue },
+            },
+          ]
+        : prev.target.kind === "living-expense-scale"
+          ? // Fan the solved total out to one mutation per retirement living row
+            // rather than committing the aggregate `living-expense-amount`. The
+            // aggregate addresses the same rows as the stepper's
+            // `expense-annual-amount:<id>` but under a different key, so both
+            // would sit in this map at once — and it is applied in
+            // first-insertion order, which froze the stepper for any field
+            // edited before the solve. One writer per row, no ordering hazard.
+            livingExpenseSolveMutations(workingTree, e.solvedValue)
+          : // Apply the solved value against the live working tree so lever
+            // mutations that depend on tree state (e.g. roth-conversion-amount,
+            // which needs the technique's other fields) resolve correctly.
+            [buildLeverMutation(prev.target, e.solvedValue, workingTree)];
       setMutationMap((mm) => {
         const next = new Map(mm);
-        next.set(mutationKey(mutation), mutation);
+        for (const m of solvedMutations) next.set(mutationKey(m), m);
         return next;
       });
       if (isMinSavings && ms) {

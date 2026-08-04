@@ -71,7 +71,15 @@ export function mutationMapFromDraft(
   mutations: SolverMutation[],
 ): Map<SolverMutationKey, SolverMutation> {
   const map = new Map<SolverMutationKey, SolverMutation>();
-  for (const m of mutations) map.set(mutationKey(m), m);
+  for (const m of mutations) {
+    // `living-expense-amount` is a SEARCH lever only — the solve now writes its
+    // result as per-row `expense-annual-amount` mutations. Drafts saved before
+    // that change can still carry the aggregate, and because it addresses the
+    // same rows under a different key it would out-order the stepper and freeze
+    // the field again. Drop it: that lever reverts to base, the rest restores.
+    if (m.kind === "living-expense-amount") continue;
+    map.set(mutationKey(m), m);
+  }
   return map;
 }
 
