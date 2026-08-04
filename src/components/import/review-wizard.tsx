@@ -16,6 +16,11 @@ import type {
   ExtractedWill,
 } from "@/lib/extraction/types";
 import type { Annotated, ImportPayload, MatchAnnotation } from "@/lib/imports/types";
+import {
+  adoptMatches,
+  tabHasLinkedSection,
+  unlinkForCommitTabs,
+} from "@/lib/imports/commit-links";
 import type { AssembleAssumption, AssembleGoals, AssemblePlanBasics } from "@/lib/imports/assemble/types";
 import { emptyPlanBasics } from "@/lib/imports/assemble/plan-basics";
 import { emptyGoals } from "@/lib/imports/assemble/goals";
@@ -359,8 +364,39 @@ export default function ReviewWizard({
     };
   }, [primary, spouse, dependents, accounts, incomes, expenses, liabilities, lifePolicies, wills, willMatches, entities, savings, payload.warnings, payload.expenseSlots, planBasics, goals]);
 
+  /**
+   * Adopt the row → canonical-record links the commit just stamped server-side.
+   * See `lib/imports/commit-links` for why this is required rather than
+   * cosmetic: without it the next PATCH ships a link-less payload and the
+   * commit after that duplicates every row.
+   */
+  const adoptCommitLinks = useCallback((server: ImportPayload | undefined) => {
+    if (!server) return;
+    setDependents((p) => adoptMatches(p, server.dependents));
+    setAccounts((p) => adoptMatches(p, server.accounts));
+    setIncomes((p) => adoptMatches(p, server.incomes));
+    setExpenses((p) => adoptMatches(p, server.expenses));
+    setLiabilities((p) => adoptMatches(p, server.liabilities));
+    setLifePolicies((p) => adoptMatches(p, server.lifePolicies));
+    setEntities((p) => adoptMatches(p, server.entities));
+    setSavings((p) => adoptMatches(p, server.savings));
+    // Wills keep their match annotations in a parallel array, not on the row.
+    setWillMatches((p) =>
+      server.wills && server.wills.length === p.length
+        ? server.wills.map((w, i) => w.match ?? p[i])
+        : p,
+    );
+    if (server.goals) {
+      setGoals((p) => ({
+        ...p,
+        education: adoptMatches(p.education, server.goals?.education),
+        homePurchases: adoptMatches(p.homePurchases, server.goals?.homePurchases),
+      }));
+    }
+  }, []);
+
   const handleCommit = useCallback(
-    async (tab: WizardTabId) => {
+    async (tab: WizardTabId, opts?: { asNew?: boolean }) => {
       if (tab === "summary") return;
       if (tab === "wills" && !areAllBequestsResolved(wills)) {
         setCommitError("Resolve every bequest's asset + recipient (or discard) before committing.");
@@ -370,7 +406,11 @@ export default function ReviewWizard({
       setCommitError(null);
       setCommitWarnings([]);
       try {
-        const latest = buildLatestPayload();
+        const built = buildLatestPayload();
+        const commitTabs = TAB_TO_COMMIT[tab as Exclude<WizardTabId, "summary">];
+        // Applied to the payload rather than to React state: setState is async,
+        // so a state-based unlink would not be visible to this same commit.
+        const latest = opts?.asNew ? unlinkForCommitTabs(built, commitTabs) : built;
         const patchRes = await fetch(
           `/api/clients/${clientId}/imports/${importId}`,
           {
@@ -385,7 +425,6 @@ export default function ReviewWizard({
           const j = await patchRes.json().catch(() => ({}));
           throw new Error(j.error ?? `PATCH failed (${patchRes.status})`);
         }
-        const commitTabs = TAB_TO_COMMIT[tab as Exclude<WizardTabId, "summary">];
         const commitRes = await fetch(
           `/api/clients/${clientId}/imports/${importId}/commit`,
           {
@@ -400,10 +439,12 @@ export default function ReviewWizard({
         const commitBody = (await commitRes.json().catch(() => null)) as {
           error?: string;
           results?: Partial<Record<CommitTab, { warnings?: string[] }>>;
+          payload?: ImportPayload;
         } | null;
         if (!commitRes.ok) {
           throw new Error(commitBody?.error ?? `Commit failed (${commitRes.status})`);
         }
+        adoptCommitLinks(commitBody?.payload);
         // Read only the tabs THIS click committed. `results` is keyed by every
         // CommitTab, and the untouched ones carry an empty warnings array —
         // but a future shape change must not let another tab's warning leak in
@@ -419,7 +460,7 @@ export default function ReviewWizard({
         setCommittingTab(null);
       }
     },
-    [buildLatestPayload, clientId, importId, fetchCanonical, router, wills],
+    [adoptCommitLinks, buildLatestPayload, clientId, importId, fetchCanonical, router, wills],
   );
 
   const tabCommitted = useCallback(
@@ -714,17 +755,38 @@ export default function ReviewWizard({
                 ? `Committed ${formatTimestamp(currentTab, perTabCommittedAt)}`
                 : "Pending commit"}
             </div>
-            <button
-              onClick={() => handleCommit(currentTab)}
-              disabled={committingTab !== null || tabCommitted(currentTab) || goalsBlockedOnAccounts}
-              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
-            >
-              {committingTab === currentTab
-                ? "Committing…"
-                : tabCommitted(currentTab)
-                  ? "✓ Committed"
-                  : `Commit ${TAB_LABEL[currentTab]}`}
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Only offered once the tab has been committed: before that,
+                  every row is already "new" and the primary button does this. */}
+              {tabCommitted(currentTab) && tabHasLinkedSection(
+                TAB_TO_COMMIT[currentTab as Exclude<WizardTabId, "summary">],
+              ) && (
+                <button
+                  onClick={() => handleCommit(currentTab, { asNew: true })}
+                  disabled={committingTab !== null || goalsBlockedOnAccounts}
+                  title="Create a second set of records instead of updating the ones this import already created."
+                  className="rounded-md border border-hair px-3 py-2 text-sm font-medium text-ink-3 hover:bg-hair/40 disabled:opacity-50"
+                >
+                  Commit as new
+                </button>
+              )}
+              <button
+                onClick={() => handleCommit(currentTab)}
+                disabled={committingTab !== null || goalsBlockedOnAccounts}
+                title={
+                  tabCommitted(currentTab)
+                    ? "Update the records this import already created with your changes."
+                    : undefined
+                }
+                className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
+              >
+                {committingTab === currentTab
+                  ? "Committing…"
+                  : tabCommitted(currentTab)
+                    ? `Re-commit ${TAB_LABEL[currentTab]}`
+                    : `Commit ${TAB_LABEL[currentTab]}`}
+              </button>
+            </div>
           </div>
         </div>
       )}

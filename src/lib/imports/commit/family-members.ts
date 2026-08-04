@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 
 import { familyMembers } from "@/db/schema";
 
-import { getExistingId, type ImportPayload } from "../types";
+import { getExistingId, linkCreated, type ImportPayload } from "../types";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
 
 /**
@@ -67,10 +67,11 @@ export async function commitFamilyMembers(
     } as const;
 
     if (kind === "new") {
-      await tx.insert(familyMembers).values({
+      const [inserted] = await tx.insert(familyMembers).values({
         clientId: ctx.clientId,
         ...values,
-      });
+      }).returning({ id: familyMembers.id });
+      linkCreated(dep, inserted.id);
       result.created += 1;
     } else {
       // exact — update preserving notes (keep-existing) and skipping null-y fields

@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 
 import { accounts, liabilities, liabilityOwners } from "@/db/schema";
 
-import { getExistingId, type ImportPayload } from "../types";
+import { getExistingId, linkCreated, type ImportPayload } from "../types";
 import { loadFamilyRoleIds, type FamilyRoleIds } from "./family-resolver";
 import { matchMortgageToProperty, type PropertyRef } from "./mortgage-link";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
@@ -82,6 +82,7 @@ export async function commitLiabilities(
           percent: "1.0000",
         });
       }
+      linkCreated(row, inserted.id);
       result.created += 1;
       continue;
     }

@@ -202,6 +202,12 @@ export async function POST(request: NextRequest, { params }: Params) {
             ok: true,
             results,
             status: allTabsCommitted ? "committed" : "review",
+            // `commitTabs` stamped each created row's canonical id onto this
+            // payload and persisted it. The client holds its own copy in React
+            // state and PATCHes it wholesale before every commit, so it must
+            // adopt these links or the next PATCH would overwrite them with a
+            // link-less payload and the following commit would duplicate.
+            payload,
         });
     } catch (err) {
         if (err instanceof UnauthorizedError) {

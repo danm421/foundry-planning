@@ -9,7 +9,7 @@ import {
 
 import type { ExtractedLifePolicy, LifePolicyType } from "@/lib/extraction/types";
 
-import { getExistingId, type ImportPayload } from "../types";
+import { getExistingId, linkCreated, type ImportPayload } from "../types";
 import { loadFamilyRoleIds, type FamilyRoleIds } from "./family-resolver";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
 
@@ -100,6 +100,7 @@ export async function commitLifeInsurance(
         termLengthYears: row.termLengthYears ?? null,
       });
 
+      linkCreated(row, acct.id);
       result.created += 1;
       continue;
     }

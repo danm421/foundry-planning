@@ -1,3 +1,7 @@
+// Type-only, and deliberately so: `../types` imports AssembleGoals from this
+// file, so a value import here would close a runtime require cycle.
+import type { Annotated } from "../types";
+
 export type AssembleQuestionKind = "identity" | "assumption" | "conflict" | "missing";
 export interface AssembleQuestion {
   id: string;              // stable, deterministic (no Math.random) — e.g. `q:retirement_age`
@@ -146,8 +150,14 @@ export interface HomePurchaseGoal {
 }
 
 export interface AssembleGoals {
-  education: EducationGoal[];
-  homePurchases: HomePurchaseGoal[];
+  /**
+   * Annotated so a committed goal carries the same `match` link every other
+   * payload section uses. Without it goals would need a parallel
+   * "committedExpenseId" field and every consumer — commit, unlink, the
+   * wizard's link adoption — would grow a goals-shaped special case.
+   */
+  education: Annotated<EducationGoal>[];
+  homePurchases: Annotated<HomePurchaseGoal>[];
   /** Advisor-stated risk tolerance (a RiskLevel string) or null. Blank+derived
    *  from assemble; the Goals step captures it; commit writes clients.risk_tolerance
    *  and selects the firm's tagged portfolio. */

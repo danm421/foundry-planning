@@ -7,7 +7,7 @@ import type { AccountSubType } from "@/lib/extraction/types";
 import { isRiskLevel } from "@/lib/risk-levels";
 import { manualTolerancePatch } from "@/lib/risk/apply-rtq";
 import { recomputeProfileTx } from "@/lib/risk/profile";
-import type { ImportPayload } from "../types";
+import { getExistingId, linkCreated, type ImportPayload } from "../types";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
 
 /**
@@ -155,22 +155,47 @@ export async function commitGoals(
         ? (memberByFirstName.get(goal.forFamilyMemberName.value.trim().toLowerCase()) ?? null)
         : null;
 
-    const [row] = await tx
-      .insert(expenses)
-      .values({
-        clientId: ctx.clientId,
-        scenarioId: ctx.scenarioId,
-        type: "education",
-        name: goal.name.value ?? "Education Goal",
-        annualAmount: String(goal.annualAmount.value),
-        startYear,
-        endYear: startYear + Math.max(1, years) - 1,
-        growthRate: String(goal.growthRate.value ?? 0.05),
-        payShortfallOutOfPocket: goal.payShortfallOutOfPocket.value ?? false,
-        forFamilyMemberId,
-        source: "extracted",
-      })
-      .returning({ id: expenses.id });
+    const goalValues = {
+      type: "education" as const,
+      name: goal.name.value ?? "Education Goal",
+      annualAmount: String(goal.annualAmount.value),
+      startYear,
+      endYear: startYear + Math.max(1, years) - 1,
+      growthRate: String(goal.growthRate.value ?? 0.05),
+      payShortfallOutOfPocket: goal.payShortfallOutOfPocket.value ?? false,
+      forFamilyMemberId,
+    };
+
+    // Re-commit: update the expense this goal already created rather than
+    // adding a second one. `replaceDedicatedAccounts` below is already a
+    // replace, so the funding links converge either way.
+    let expenseId = getExistingId(goal);
+    if (expenseId) {
+      await tx
+        .update(expenses)
+        .set({ ...goalValues, updatedAt: new Date() })
+        .where(
+          and(
+            eq(expenses.id, expenseId),
+            eq(expenses.clientId, ctx.clientId),
+            eq(expenses.scenarioId, ctx.scenarioId),
+          ),
+        );
+      result.updated += 1;
+    } else {
+      const [inserted] = await tx
+        .insert(expenses)
+        .values({
+          clientId: ctx.clientId,
+          scenarioId: ctx.scenarioId,
+          ...goalValues,
+          source: "extracted",
+        })
+        .returning({ id: expenses.id });
+      expenseId = inserted.id;
+      linkCreated(goal, expenseId);
+      result.created += 1;
+    }
 
     // A name that failed to resolve is reported AFTER every name on this goal
     // has been tried, so the wording reflects whether the goal ended up with
@@ -187,7 +212,7 @@ export async function commitGoals(
     }
 
     if (resolvedAccountIds.length > 0) {
-      await replaceDedicatedAccounts(tx, row.id, resolvedAccountIds);
+      await replaceDedicatedAccounts(tx, expenseId, resolvedAccountIds);
 
       // Extraction captures no 529 beneficiary (ExtractedAccount has no such
       // field), so the account commits with a null beneficiary and is
@@ -216,7 +241,6 @@ export async function commitGoals(
         }
       }
     }
-    result.created += 1;
   }
 
   // ── Home-purchase goals ──
@@ -251,14 +275,12 @@ export async function commitGoals(
       );
     }
 
-    await tx.insert(assetTransactions).values({
-      clientId: ctx.clientId,
-      scenarioId: ctx.scenarioId,
+    const purchaseValues = {
       name: name || "Planned purchase",
-      type: "buy",
+      type: "buy" as const,
       year,
       assetName: goal.assetName.trim() || name,
-      assetCategory: "real_estate",
+      assetCategory: "real_estate" as const,
       // `HomePurchaseGoal.assetSubType` is bare `string` (form state, not a
       // provenance-wrapped field — see the type's doc comment), so this cast
       // is sound only because the wizard populates it exclusively from the
@@ -272,7 +294,33 @@ export async function commitGoals(
       mortgageAmount: goal.showMortgage ? num(goal.mortgageAmount) : null,
       mortgageRate: goal.showMortgage ? pct(goal.mortgageRate) : null,
       mortgageTermMonths: goal.showMortgage ? Number(goal.mortgageTermMonths) || null : null,
-    });
+    };
+
+    const purchaseId = getExistingId(goal);
+    if (purchaseId) {
+      await tx
+        .update(assetTransactions)
+        .set(purchaseValues)
+        .where(
+          and(
+            eq(assetTransactions.id, purchaseId),
+            eq(assetTransactions.clientId, ctx.clientId),
+            eq(assetTransactions.scenarioId, ctx.scenarioId),
+          ),
+        );
+      result.updated += 1;
+      continue;
+    }
+
+    const [insertedPurchase] = await tx
+      .insert(assetTransactions)
+      .values({
+        clientId: ctx.clientId,
+        scenarioId: ctx.scenarioId,
+        ...purchaseValues,
+      })
+      .returning({ id: assetTransactions.id });
+    linkCreated(goal, insertedPurchase.id);
     result.created += 1;
   }
 
