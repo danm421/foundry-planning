@@ -23,7 +23,7 @@ export default function WizardImportLauncher({
 
   return (
     <>
-      <div className="mb-4 flex justify-end">
+      <div data-forge-anchor="wizard-import-launcher" className="mb-4 flex justify-end">
         <button
           type="button"
           onClick={() => setOpen(true)}

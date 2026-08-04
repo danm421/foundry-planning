@@ -51,19 +51,27 @@ export function StartPlanningPrompt({
       </p>
 
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {START_PATHS.map((p) => (
-          <div
-            key={p.id}
-            data-forge-anchor={p.id === "guided" ? "start-planning-guided-card" : undefined}
-          >
+        {START_PATHS.map((p) => {
+          const card = (
             <PathCard
               icon={p.icon}
               title={p.title}
               subtitle={p.subtitle}
               onSelect={() => choose(p.id)}
             />
-          </div>
-        ))}
+          );
+          // The guided card is the first-run tour's target. Its anchor id is
+          // written as a literal attribute rather than interpolated from
+          // `p.id`, because the anchors contract test greps source text for
+          // `data-forge-anchor="<id>"` and cannot see a computed value.
+          return p.id === "guided" ? (
+            <div key={p.id} data-forge-anchor="start-planning-guided-card">
+              {card}
+            </div>
+          ) : (
+            <div key={p.id}>{card}</div>
+          );
+        })}
       </div>
 
       <p className="mt-4 text-[12px] text-ink-4">
