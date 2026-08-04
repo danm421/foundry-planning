@@ -131,8 +131,18 @@ export function composeAccountName(
   // trailing repeat — with any mask that fronts it, or "XXXX-1234" (which
   // condenseAccountName returns whole via its never-empty fallback) would leave
   // "XXXX" behind.
+  //
+  // The mask is one-or-more characters, not two-or-more: planning-software
+  // reports label accounts with a SINGLE "x" ("Inh. IRA x7254", "Taxable
+  // Account x0028"), a form `condenseAccountName` also leaves alone because its
+  // own mask rule needs three. Missing it printed the number twice —
+  // "Inh. IRA x7254 ••••7254".
+  //
+  // The digits must open at a separator, a mask, or the string start — hence
+  // the leading alternation rather than `\b`, which would also match INSIDE a
+  // longer run and rename "Portfolio 17254" to "Portfolio 1".
   const deduped = base
-    .replace(new RegExp(`[\\s\\-–—#]*(?:[x*.•]{2,}[\\s\\-–—#]*)?\\b${last4}\\b\\s*$`, "i"), "")
+    .replace(new RegExp(`(?:^|[\\s\\-–—#]+)(?:[x*.•]+[\\s\\-–—#]*)?${last4}\\b\\s*$`, "i"), "")
     .trim();
   const suffix = `${LAST4_MASK}${last4}`;
   if (!deduped) return suffix;

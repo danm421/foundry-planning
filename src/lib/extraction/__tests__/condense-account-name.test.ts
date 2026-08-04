@@ -92,6 +92,37 @@ describe("composeAccountName", () => {
     );
   });
 
+  // Planning-software reports (eMoney, Ethos Tools, Holdings Detail exports)
+  // label accounts with a SINGLE-character mask — "Inh. IRA x7254" — which
+  // condenseAccountName's 3+-character mask rule never strips.
+  it("does not print the digits twice behind a single-character mask", () => {
+    expect(composeAccountName("Inh. IRA x7254", null, "7254")).toBe(
+      "Inh. IRA ••••7254",
+    );
+    expect(composeAccountName("Taxable Account x0028", null, "0028")).toBe(
+      "Taxable Account ••••0028",
+    );
+    expect(composeAccountName("Brokerage #4772", null, "4772")).toBe(
+      "Brokerage ••••4772",
+    );
+    expect(composeAccountName("Joint Brokerage *8899", null, "8899")).toBe(
+      "Joint Brokerage ••••8899",
+    );
+  });
+
+  it("leaves digits that merely END with the last4 alone", () => {
+    // "17254" is not the account number — slicing its tail off would rename
+    // the account to something the document never said.
+    expect(composeAccountName("Portfolio 17254", null, "7254")).toBe(
+      "Portfolio 17254 ••••7254",
+    );
+  });
+
+  it("is idempotent for a single-character-masked name", () => {
+    const once = composeAccountName("Inh. IRA x7254", null, "7254");
+    expect(composeAccountName(once, null, "7254")).toBe(once);
+  });
+
   it("keeps meaningful short numbers that are not the last4", () => {
     expect(composeAccountName("Vanguard 529 Plan", "Vanguard", "8899")).toBe(
       "529 Plan ••••8899",

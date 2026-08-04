@@ -1,5 +1,5 @@
-export const ACCOUNT_STATEMENT_VERSION = "2026-08-04.1";
-export const ACCOUNT_STATEMENT_HOLDINGS_VERSION = "2026-06-12.2-holdings-continuation";
+export const ACCOUNT_STATEMENT_VERSION = "2026-08-04.2";
+export const ACCOUNT_STATEMENT_HOLDINGS_VERSION = "2026-08-04.1-grouped-holdings-report";
 
 const HOLDINGS_FIELD = `,
       "holdings": [
@@ -18,7 +18,12 @@ const HOLDINGS_RULES = `
   - If the position has a ticker/symbol: set "ticker", "shares", and "costBasis". Include "price" and/or "marketValue" if shown.
   - If the position has NO ticker (bonds, untickered funds): omit "ticker", put the description (for a bond INCLUDING its CUSIP) in "name", set "shares", "costBasis", and "price" if shown — and ALWAYS set "marketValue" to the position's market value (dollar total) exactly as shown on the statement. For a bond, "price" is quoted per $100 of par, so shares × price is NOT the market value — capture the statement's market-value column in "marketValue".
   - For cash / money-market sweep with no ticker: set "name" to "Cash", "price" to 1, and "shares" to the cash dollar amount.
-  - Only set the numeric fields you can read from the statement; omit any you can't — but a position's market value is shown on every statement, so always capture it for untickered positions.`;
+  - Only set the numeric fields you can read from the statement; omit any you can't — but a position's market value is shown on every statement, so always capture it for untickered positions.
+- GROUPED HOLDINGS REPORTS. A "Holdings Detail" / portfolio report lists every position in ONE table, grouped under account HEADER rows (e.g. "Inh. IRA x7254", "Taxable Account x0028") instead of giving each account its own section. On those:
+  - Every position belongs to the nearest account header ABOVE it. That header keeps applying when its table continues onto the next page WITHOUT repeating the header — do not re-attach a continued account's positions to a different account, and do not start a new account at a page break.
+  - Two accounts often share the same type name and differ only by account number (two rows both titled "Taxable Account"). Keep them as SEPARATE accounts whose "accountNumberLast4" differ — never merge two accounts just because their names match, and never move positions between them.
+  - The report ends with report-level summary rows ("Total Holdings", "Cash Balance", "Total Value"). Each of those summarizes the WHOLE portfolio: it is not a position and not an account — skip them. A cash / sweep line listed INSIDE one account's own position list is still that account's position; capture it as described above.
+  - When the report shows no total for an individual account, set that account's "value" to the sum of its own positions. Never put a portfolio-wide total on an individual account.`;
 
 export function buildAccountStatementPrompt(withHoldings: boolean): string {
   return `You are a financial document extraction assistant.

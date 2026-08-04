@@ -524,9 +524,15 @@ export async function extractDocument(
     // alone (file content sits inside <document></document> tags;
     // the system prompt is the only authoritative instruction
     // surface). Verified during the Phase 8 smoke checkpoint.
+    // Holdings ride on the account-statement prompt, so the question is simply
+    // "is that the prompt we're about to send?" — asking PROMPTS instead of
+    // listing document types keeps a newly-mapped type from silently losing its
+    // positions. It also covers `fact_finder`, which reaches this line only when
+    // multi-pass classification failed and fell back here; listing types by hand
+    // had omitted it, discarding every position on exactly the documents the
+    // advisor ticked the box for.
     const useHoldings =
-        extractHoldings &&
-        (documentType === "account_statement" || documentType === "excel_import");
+        extractHoldings && PROMPTS[documentType] === ACCOUNT_STATEMENT_PROMPT;
     const prompt = useHoldings
         ? buildAccountStatementPrompt(true)
         : PROMPTS[documentType];

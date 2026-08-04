@@ -345,7 +345,7 @@ export function buildReadTools(
       const firmId = await requireOrgId();
 
       const [row] = await db
-        .select({ id: clientImports.id, status: clientImports.status, mode: clientImports.mode, scenarioId: clientImports.scenarioId, extractHoldings: clientImports.extractHoldings })
+        .select({ id: clientImports.id, status: clientImports.status, mode: clientImports.mode, scenarioId: clientImports.scenarioId })
         .from(clientImports)
         .where(and(eq(clientImports.id, importId), eq(clientImports.clientId, ctx.clientId), eq(clientImports.orgId, firmId), isNull(clientImports.discardedAt)))
         .limit(1);
@@ -354,7 +354,12 @@ export function buildReadTools(
       const rl = await checkImportRateLimit(firmId, "extract");
       if (!rl.allowed) return JSON.stringify({ found: true, importId, note: "rate_limited", status: row.status });
 
-      await runImportExtraction({ importId, clientId: ctx.clientId, firmId, model: "mini", extractHoldings: row.extractHoldings === true, comprehensive: true });
+      // Holdings always on, matching the chat attach flow (`use-forge-import`
+      // posts extractHoldings: true). Keying off `client_imports.extract_holdings`
+      // meant this tool could never return a position: the column defaults to
+      // false and no Forge entry point writes it. This is the "get everything"
+      // pass by construction, and positions are part of everything.
+      await runImportExtraction({ importId, clientId: ctx.clientId, firmId, model: "mini", extractHoldings: true, comprehensive: true });
 
       // Re-read fileResults the extraction just wrote, then match.
       const [after] = await db

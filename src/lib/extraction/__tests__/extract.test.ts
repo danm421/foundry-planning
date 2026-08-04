@@ -187,6 +187,27 @@ describe("extractDocument", () => {
         );
     });
 
+    // A fact finder whose section classification fails falls back to the
+    // single-pass account-statement prompt. That fallback must still honour the
+    // advisor's "extract holdings" choice — otherwise a holdings-detail fact
+    // finder silently comes back with zero positions and no warning explaining
+    // why.
+    it("keeps holdings on when a fact_finder falls back to single-pass", async () => {
+        const { buildAccountStatementPrompt } = await import("../prompts/account-statement");
+        mockedCallAI
+            // classifier returns nothing usable → extractWithMultiPass yields null
+            .mockImplementationOnce(async () => "not json at all")
+            .mockImplementationOnce(async () => JSON.stringify({ accounts: [], liabilities: [] }));
+
+        await extractDocument(Buffer.from("x"), "ff.pdf", "fact_finder", "mini", undefined, true);
+
+        expect(mockedCallAI).toHaveBeenLastCalledWith(
+            buildAccountStatementPrompt(true),
+            expect.any(String),
+            "mini",
+        );
+    });
+
     it("routes a fact_finder .docx through multi-pass, not the single-pass fallback", async () => {
         // A Word fact-finder carries multiple sections (income, expenses,
         // accounts…). Before the fix it fell through to the account_statement

@@ -29,7 +29,7 @@ describe("ACCOUNT_STATEMENT_PROMPT", () => {
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("annuity");
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("lifePolicies");
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("cashValue");
-    expect(ACCOUNT_STATEMENT_VERSION).toBe("2026-08-04.1");
+    expect(ACCOUNT_STATEMENT_VERSION).toBe("2026-08-04.2");
   });
 
   it("instructs a short account-TYPE name with no custodian, not the registration header", () => {
@@ -85,6 +85,39 @@ describe("buildAccountStatementPrompt", () => {
 
   it("holdings version differs from the base version", () => {
     expect(ACCOUNT_STATEMENT_HOLDINGS_VERSION).not.toBe(ACCOUNT_STATEMENT_VERSION);
+  });
+
+  // A planning-software "Holdings Detail" report groups every position under an
+  // account HEADER row and runs the table across page breaks without repeating
+  // it — and can list two accounts whose type name is identical ("Taxable
+  // Account"), separable only by the last 4. Without these rules the model has
+  // no instruction telling it which account a position belongs to.
+  describe("grouped holdings-report rules", () => {
+    const p = buildAccountStatementPrompt(true);
+
+    it("binds a position to the account header above it", () => {
+      expect(p).toMatch(/nearest account header ABOVE it/i);
+    });
+
+    it("carries that header across an unrepeated page break", () => {
+      expect(p).toMatch(/continues onto the next page/i);
+      expect(p).toMatch(/do not start a new account at a page break/i);
+    });
+
+    it("keeps same-named accounts apart by their last 4", () => {
+      expect(p).toMatch(/"accountNumberLast4" differ/i);
+      expect(p).toMatch(/never merge/i);
+    });
+
+    it("excludes the report-level total and cash-balance footer rows", () => {
+      expect(p).toMatch(/Total Holdings/);
+      expect(p).toMatch(/not a position/i);
+    });
+
+    it("derives a missing account value from its own positions only", () => {
+      expect(p).toMatch(/sum of its own positions/i);
+      expect(p).toMatch(/portfolio-wide total/i);
+    });
   });
 });
 
