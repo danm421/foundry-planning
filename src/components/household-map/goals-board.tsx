@@ -4,7 +4,7 @@ import { InlineAmount } from "@/components/forms/inline-amount";
 import { PlusIcon } from "@/components/icons";
 import { ageForYear } from "@/lib/age-year";
 import type { GoalKind, MapGoal } from "@/lib/household-map/goals";
-import type { BoardCallbacks, HouseholdMapProps } from "@/lib/household-map/types";
+import type { BoardCallbacks, GoalsBoardProps } from "@/lib/household-map/types";
 
 /** Which side of the spine a card sits on. "left"/"right" mirror the accent
  *  border + text alignment; "joint" centres both. */
@@ -123,7 +123,7 @@ export default function GoalsBoard({
   onEditGoalExpense,
   onSaveLifeExpectancy,
   onAddGoal,
-}: HouseholdMapProps & BoardCallbacks) {
+}: GoalsBoardProps & BoardCallbacks) {
   /** Ages at a given year, derived from each person's `birthYear` — never
    *  from `new Date()` inside this component, which would drift a Jan-1 DOB
    *  by a year across timezones. */
