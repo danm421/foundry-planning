@@ -38,9 +38,14 @@ export async function PortalSettingsView({
         <PrivacyToggles initial={privacy} readOnly={readOnly} />
       </section>
 
-      <section className="rounded-xl border border-hair bg-card p-5">
+      <section
+        aria-labelledby="connections-title"
+        className="rounded-xl border border-hair bg-card p-5"
+      >
         <div className="mb-2 flex items-baseline justify-between gap-3">
-          <h2 className="text-[15px] font-semibold text-ink">Connections</h2>
+          <h2 id="connections-title" className="text-[15px] font-semibold text-ink">
+            Connections
+          </h2>
           {readOnly && (
             <span className="text-[12px] text-ink-3">Only the client can change these</span>
           )}

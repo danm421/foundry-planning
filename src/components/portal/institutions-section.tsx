@@ -34,48 +34,37 @@ export async function InstitutionsSection({
 
   if (items.length === 0) return null;
 
+  // Renders as a bare list: the only consumer is the Settings "Connections"
+  // card, which supplies the heading, the padding and the accessible name.
   return (
-    <section
-      aria-labelledby="institutions-title"
-      className="max-w-3xl space-y-5 p-5"
-    >
-      <header>
-        <h2
-          id="institutions-title"
-          className="text-[18px] font-semibold text-ink"
-        >
-          Linked Institutions
-        </h2>
-      </header>
-      <ul className="divide-y divide-hair rounded-lg border border-hair">
-        {items.map((it) => {
-          const revoked =
-            it.lastRefreshError != null && REVOKED_CODES.has(it.lastRefreshError);
-          const needsReauth =
-            !revoked &&
-            it.lastRefreshError != null &&
-            REAUTH_CODES.has(it.lastRefreshError);
-          return (
-            <InstitutionRow
-              key={it.id}
-              itemId={it.id}
-              institutionName={it.institutionName ?? "Unknown institution"}
-              statusLabel={
-                revoked
-                  ? "Access revoked"
-                  : needsReauth
-                    ? "Re-auth required"
-                    : formatRelative(it.lastRefreshedAt)
-              }
-              needsReauth={needsReauth}
-              revoked={revoked}
-              newAccountsAvailable={it.newAccountsAvailableAt != null}
-              editEnabled={editEnabled}
-              needsTransactionsConsent={it.transactionsCursor == null}
-            />
-          );
-        })}
-      </ul>
-    </section>
+    <ul className="divide-y divide-hair rounded-lg border border-hair">
+      {items.map((it) => {
+        const revoked =
+          it.lastRefreshError != null && REVOKED_CODES.has(it.lastRefreshError);
+        const needsReauth =
+          !revoked &&
+          it.lastRefreshError != null &&
+          REAUTH_CODES.has(it.lastRefreshError);
+        return (
+          <InstitutionRow
+            key={it.id}
+            itemId={it.id}
+            institutionName={it.institutionName ?? "Unknown institution"}
+            statusLabel={
+              revoked
+                ? "Access revoked"
+                : needsReauth
+                  ? "Re-auth required"
+                  : formatRelative(it.lastRefreshedAt)
+            }
+            needsReauth={needsReauth}
+            revoked={revoked}
+            newAccountsAvailable={it.newAccountsAvailableAt != null}
+            editEnabled={editEnabled}
+            needsTransactionsConsent={it.transactionsCursor == null}
+          />
+        );
+      })}
+    </ul>
   );
 }
