@@ -63,8 +63,12 @@ export default function InboxList({ rows }: { rows: InboxRow[] }): ReactElement 
             </span>
             {/* The label is relative to render time, so the server's HTML and
                 the hydrating client can straddle a minute boundary and disagree.
-                The drift is intentional and self-correcting; dateTime carries
-                the exact instant. */}
+                suppressHydrationWarning makes React skip the text comparison
+                entirely: it neither warns nor patches, so the SERVER's label
+                sticks until this subtree next renders. That is the intended
+                trade — a label at most one bucket stale beats a hydration error
+                on every boundary crossing. dateTime is derived from the fixed
+                Date, so it is identical on both sides regardless. */}
             <time
               dateTime={row.createdAt.toISOString()}
               suppressHydrationWarning

@@ -28,23 +28,29 @@ describe("InboxList", () => {
     ).toHaveAttribute("href", "/data-collection/form-1");
   });
 
-  it("marks unread rows visually", () => {
+  it("marks the unread row and gives each row its own deep link", () => {
     render(
       <InboxList
         rows={[
-          row({ id: "a", title: "Still unread" }),
-          row({ id: "b", title: "Already read", readAt: new Date() }),
+          row({ id: "a", title: "Still unread", url: "/alerts/a" }),
+          row({ id: "b", title: "Already read", url: "/alerts/b", readAt: new Date() }),
         ]}
       />,
     );
+    const unreadRow = screen.getByRole("link", { name: /Still unread/ });
+    const readRow = screen.getByRole("link", { name: /Already read/ });
+
     const dots = screen.getAllByTestId("unread-dot");
     expect(dots).toHaveLength(1);
     // The count alone does not discriminate: with one read and one unread row,
     // inverting the read/unread branch still renders exactly one dot. Bind the
     // dot to the row it belongs to so a swapped branch reddens.
-    expect(screen.getByRole("link", { name: /Still unread/ })).toContainElement(
-      dots[0],
-    );
+    expect(unreadRow).toContainElement(dots[0]);
+
+    // Both urls differ so an href hoisted out of the .map — every row pointing
+    // at rows[0] — reddens here. A single-row fixture cannot catch that.
+    expect(unreadRow).toHaveAttribute("href", "/alerts/a");
+    expect(readRow).toHaveAttribute("href", "/alerts/b");
   });
 
   it("renders an empty state rather than a bare blank panel", () => {

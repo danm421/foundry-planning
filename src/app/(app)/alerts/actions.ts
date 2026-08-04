@@ -7,25 +7,28 @@ import {
   markAllNotificationsRead,
 } from "@/lib/notifications/queries";
 
-// The sidebar's unread badge is rendered by `src/app/(app)/layout.tsx`, which
-// survives client-side navigation — so refreshing only the /alerts *page*
-// segment would leave a stale count sitting next to a list that just went
-// read. `type: "layout"` is the documented form that covers the layout
-// rendering this path plus the pages beneath it (see the revalidatePath API
-// reference in node_modules/next/dist/docs). Today the bare `revalidatePath("/alerts")`
-// would also work, but only by accident: Next 16.2.10 sets `pathWasRevalidated`
-// for *any* revalidate call (`// TODO: only revalidate if the path matches`)
-// and always renders the action's flight from the root (`// TODO: Currently the
-// server always renders from the root`). Both are marked TODO upstream; naming
-// the layout states the requirement so it survives them being resolved.
+// The sidebar's unread badge lives in `src/app/(app)/layout.tsx`, which the
+// router preserves across client-side navigation, so it only updates when that
+// layout re-renders. This call is what causes that: revalidating marks the
+// action as having revalidated, and the router refreshes once the action queue
+// drains — re-rendering the `(app)` layout along with the page. The badge
+// converges through that refresh, NOT through tag invalidation. Nothing on this
+// route is tag-cached today (both the page and the layout are fully dynamic).
+//
+// Pass the literal path with no `type`: that emits the `_N_T_/alerts` tag, which
+// is in this route's implicit tag set. A `"layout"` type would emit
+// `_N_T_/alerts/layout`, which matches nothing here — the route's layout tags
+// retain the `(app)` route group (`_N_T_/(app)/layout`). So if you later wrap
+// the badge's count in `use cache`, this call will NOT invalidate it on its own;
+// give that cache an explicit tag and revalidate it here too.
 export async function markReadAction(id: string): Promise<void> {
   const { orgId, userId } = await requireOrgAndUser();
   await markNotificationRead(orgId, userId, id);
-  revalidatePath("/alerts", "layout");
+  revalidatePath("/alerts");
 }
 
 export async function markAllReadAction(): Promise<void> {
   const { orgId, userId } = await requireOrgAndUser();
   await markAllNotificationsRead(orgId, userId);
-  revalidatePath("/alerts", "layout");
+  revalidatePath("/alerts");
 }
