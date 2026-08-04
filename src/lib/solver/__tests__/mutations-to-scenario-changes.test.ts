@@ -666,4 +666,31 @@ describe("mutationsToScenarioChanges — surplus allocation → plan_settings", 
       surplusSpendAllUntilRetirement: { from: false, to: true },
     });
   });
+
+  it("emits the diff when it flips OFF, and drops it when unchanged", () => {
+    // Base already has the lever on. Turning it off is a real edit the advisor
+    // must not lose; leaving it on is a no-op that must not create a change row.
+    const src = {
+      ...makeSource(),
+      planSettings: {
+        planStartYear: 2026,
+        surplusSpendPct: 0.3,
+        surplusSaveAccountId: "acct-1",
+        surplusSpendAllUntilRetirement: true,
+      } as ClientData["planSettings"],
+    };
+
+    const off = mutationsToScenarioChanges(src, CLIENT_ID, [
+      { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: "acct-1", spendAllUntilRetirement: false },
+    ]).filter((d) => d.targetKind === "plan_settings");
+    expect(off).toHaveLength(1);
+    expect(off[0].payload).toEqual({
+      surplusSpendAllUntilRetirement: { from: true, to: false },
+    });
+
+    const same = mutationsToScenarioChanges(src, CLIENT_ID, [
+      { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: "acct-1", spendAllUntilRetirement: true },
+    ]).filter((d) => d.targetKind === "plan_settings");
+    expect(same).toHaveLength(0);
+  });
 });
