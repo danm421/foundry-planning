@@ -1,8 +1,6 @@
-import type { ReactElement } from "react";
-import { requireClientPortalAccess } from "@/lib/authz";
-import { PortalAccountsScreen } from "@/components/portal/portal-accounts-screen";
+import { permanentRedirect } from "next/navigation";
 
-export default async function AccountsPage(): Promise<ReactElement> {
-  const { clientId } = await requireClientPortalAccess();
-  return <PortalAccountsScreen clientId={clientId} />;
+/** Accounts is now an Organizer tab. */
+export default async function AccountsPage(): Promise<never> {
+  permanentRedirect("/portal/organizer/accounts");
 }
