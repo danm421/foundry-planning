@@ -8,6 +8,7 @@ export type WalkthroughContextValue = {
   currentStep: WalkStep | null;
   start: (walkthroughId: string) => void;
   next: () => void;
+  back: () => void;
   exit: () => void;
 };
 

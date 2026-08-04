@@ -13,6 +13,7 @@ function renderWith(overrides: Partial<WalkthroughContextValue>) {
     currentStep: w.steps[0],
     start: vi.fn(),
     next: vi.fn(),
+    back: vi.fn(),
     exit: vi.fn(),
     ...overrides,
   };

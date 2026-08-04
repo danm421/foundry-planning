@@ -3,13 +3,15 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useWalkthrough } from "./walkthrough-context";
 import { useAnchorRect } from "./use-anchor-rect";
+import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 
 const PAD = 6; // px halo around the spotlighted element
 
 export function WalkthroughOverlay() {
-  const { active, stepIndex, currentStep, next, exit } = useWalkthrough();
+  const { active, stepIndex, currentStep, next, back, exit } = useWalkthrough();
   const { element, rect, status } = useAnchorRect(currentStep?.anchorId ?? null);
   const [canAdvance, setCanAdvance] = useState(false);
+  const prefersReducedMotion = usePrefersReducedMotion();
 
   // reset the input-gate whenever the step changes
   useEffect(() => {
@@ -19,8 +21,13 @@ export function WalkthroughOverlay() {
 
   // scroll the target into view when it resolves
   useEffect(() => {
-    if (status === "found" && element) element.scrollIntoView({ block: "center", behavior: "smooth" });
-  }, [status, element]);
+    if (status === "found" && element) {
+      element.scrollIntoView({
+        block: "center",
+        behavior: prefersReducedMotion ? "auto" : "smooth",
+      });
+    }
+  }, [status, element, prefersReducedMotion]);
 
   // click / input advancement listeners on the real element
   useEffect(() => {
@@ -120,6 +127,11 @@ export function WalkthroughOverlay() {
             Exit
           </button>
           <div className="flex gap-2">
+            {stepIndex > 0 && (
+              <button onClick={back} className="text-[12px] text-ink-3 hover:text-ink">
+                Back
+              </button>
+            )}
             {!advancesOnAction && (
               <button
                 onClick={next}
