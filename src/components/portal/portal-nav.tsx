@@ -6,13 +6,24 @@ import { UserButton } from "@clerk/nextjs";
 import type { ReactElement } from "react";
 import {
   PORTAL_NAV_ITEMS,
+  isPortalNavItemActive,
+  type PortalNavGroup,
   type PortalNavItem,
 } from "@/components/portal/portal-nav-items";
 
-const OVERVIEW_ITEMS = PORTAL_NAV_ITEMS.filter((i) => i.group === "overview");
-const PROFILE_ITEMS = PORTAL_NAV_ITEMS.filter((i) => i.group === "profile");
-const MONEY_ITEMS = PORTAL_NAV_ITEMS.filter((i) => i.group === "money");
-const SETTINGS_ITEMS = PORTAL_NAV_ITEMS.filter((i) => i.group === "settings");
+/** Rail order (key order); only Profile carries a visible subheader. */
+const GROUP_HEADINGS: Record<PortalNavGroup, string | null> = {
+  overview: null,
+  profile: "Profile",
+  money: null,
+  settings: null,
+};
+
+const GROUPS = (Object.keys(GROUP_HEADINGS) as PortalNavGroup[]).map((group) => ({
+  group,
+  heading: GROUP_HEADINGS[group],
+  items: PORTAL_NAV_ITEMS.filter((i) => i.group === group),
+}));
 
 interface Props {
   displayName: string;
@@ -68,68 +79,30 @@ export default function PortalNav({
         <div className="truncate text-[12px] text-ink-3">{email}</div>
       </header>
 
-      <div className="mb-3">
-        <ul className="space-y-0.5">
-          {OVERVIEW_ITEMS.map((item) => {
-            const href = `${basePath}${item.suffix}`;
-            return (
-              <li key={item.suffix || "dashboard"}>
-                <Link href={href} className={itemCls(pathname === href)}>
-                  {itemLabel(item)}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-
-      <div className="mb-3">
-        <div className="mb-1 text-[11px] uppercase tracking-wide text-ink-3">
-          Profile
+      {GROUPS.map(({ group, items, heading }) => (
+        <div key={group} className="mb-3">
+          {heading && (
+            <div className="mb-1 text-[11px] uppercase tracking-wide text-ink-3">
+              {heading}
+            </div>
+          )}
+          <ul className="space-y-0.5">
+            {items.map((item) => {
+              const href = `${basePath}${item.suffix}`;
+              return (
+                <li key={item.suffix || "dashboard"}>
+                  <Link
+                    href={href}
+                    className={itemCls(isPortalNavItemActive(pathname, href, item))}
+                  >
+                    {itemLabel(item)}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
         </div>
-        <ul className="space-y-0.5">
-          {PROFILE_ITEMS.map((item) => {
-            const href = `${basePath}${item.suffix}`;
-            return (
-              <li key={item.suffix}>
-                <Link href={href} className={itemCls(pathname === href)}>
-                  {itemLabel(item)}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-
-      <div className="mb-3">
-        <ul className="space-y-0.5">
-          {MONEY_ITEMS.map((item) => {
-            const href = `${basePath}${item.suffix}`;
-            return (
-              <li key={item.suffix}>
-                <Link href={href} className={itemCls(pathname === href)}>
-                  {itemLabel(item)}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-
-      <div className="mb-3">
-        <ul className="space-y-0.5">
-          {SETTINGS_ITEMS.map((item) => {
-            const href = `${basePath}${item.suffix}`;
-            return (
-              <li key={item.suffix}>
-                <Link href={href} className={itemCls(pathname === href)}>
-                  {itemLabel(item)}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
+      ))}
 
       <div className="mt-auto flex items-center gap-2 border-t border-hair pt-4">
         <UserButton />

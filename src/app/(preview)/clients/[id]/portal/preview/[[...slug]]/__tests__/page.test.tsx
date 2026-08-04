@@ -42,6 +42,26 @@ vi.mock("@/components/portal/portal-nav", () => ({
     <div data-testid="nav" data-basepath={basePath} />
   ),
 }));
+vi.mock("@/components/portal/budget-tabs", () => ({
+  default: ({ basePath }: { basePath?: string }) => (
+    <div data-testid="budget-tabs" data-basepath={basePath} />
+  ),
+}));
+vi.mock("@/components/portal/budget-section", () => ({
+  default: ({ clientId }: { clientId: string }) => (
+    <div data-testid="section-budget" data-client={clientId} />
+  ),
+}));
+vi.mock("@/components/portal/transactions-section", () => ({
+  default: ({ clientId }: { clientId: string }) => (
+    <div data-testid="section-transactions" data-client={clientId} />
+  ),
+}));
+vi.mock("@/components/portal/recurrings-section", () => ({
+  default: ({ clientId }: { clientId: string }) => (
+    <div data-testid="section-recurring" data-client={clientId} />
+  ),
+}));
 vi.mock("@/components/portal/portal-preview-banner", () => ({
   default: ({ clientId, editEnabled }: { clientId: string; editEnabled: boolean }) => (
     <div data-testid="banner" data-client={clientId} data-edit={String(editEnabled)} />
@@ -183,6 +203,29 @@ describe("PortalPreview catch-all", () => {
     const banner = container.querySelector("[data-testid='banner']");
     expect(banner?.getAttribute("data-client")).toBe("c1");
     expect(banner?.getAttribute("data-edit")).toBe("true");
+  });
+
+  // Budget owns three tabs now; the dispatcher has to route the nested slugs
+  // and hang the tab strip off every one of them (but no other section).
+  it.each([
+    [["budget"], "section-budget"],
+    [["budget", "transactions"], "section-transactions"],
+    [["budget", "recurring"], "section-recurring"],
+  ])("renders %j with the Budget tab strip", async (slug, testid) => {
+    const { container } = await renderPreview(slug as string[]);
+    expect(container.querySelector(`[data-testid='${testid}']`)).toBeTruthy();
+    const tabs = container.querySelector("[data-testid='budget-tabs']");
+    expect(tabs?.getAttribute("data-basepath")).toBe("/clients/c1/portal/preview");
+  });
+
+  it("does not render the Budget tab strip outside the section", async () => {
+    const { container } = await renderPreview(["accounts"]);
+    expect(container.querySelector("[data-testid='budget-tabs']")).toBeNull();
+  });
+
+  it("calls notFound() for the pre-move transactions and recurrings slugs", async () => {
+    await expect(renderPreview(["transactions"])).rejects.toThrow("NEXT_NOT_FOUND");
+    await expect(renderPreview(["recurrings"])).rejects.toThrow("NEXT_NOT_FOUND");
   });
 
   it("renders PortalAccountsScreen on slug=['accounts']", async () => {

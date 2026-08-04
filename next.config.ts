@@ -113,6 +113,28 @@ const nextConfig: NextConfig = {
         destination: "/clients/:id/estate-planning/gift-tax",
         permanent: true,
       },
+      // Transactions and Recurrings moved under the portal's Budget section.
+      // Clients have these bookmarked, so keep the old URLs resolving.
+      {
+        source: "/portal/transactions",
+        destination: "/portal/budget/transactions",
+        permanent: true,
+      },
+      {
+        source: "/portal/recurrings",
+        destination: "/portal/budget/recurring",
+        permanent: true,
+      },
+      {
+        source: "/clients/:id/portal/preview/transactions",
+        destination: "/clients/:id/portal/preview/budget/transactions",
+        permanent: true,
+      },
+      {
+        source: "/clients/:id/portal/preview/recurrings",
+        destination: "/clients/:id/portal/preview/budget/recurring",
+        permanent: true,
+      },
     ];
   },
 };

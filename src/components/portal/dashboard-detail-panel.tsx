@@ -164,7 +164,7 @@ function ReviewTransactionPanel({
           Mark as reviewed
         </button>
       )}
-      <FooterLink href={`${basePath}/transactions`} label="Open in Transactions" />
+      <FooterLink href={`${basePath}/budget/transactions`} label="Open in Transactions" />
     </div>
   );
 }
@@ -350,7 +350,7 @@ export function DashboardDetailPanel({
         ) : (
           <EmptyPanel onClose={onClose} />
         )}
-        <FooterLink href={`${basePath}/recurrings`} label="Open in Recurrings" />
+        <FooterLink href={`${basePath}/budget/recurring`} label="Open in Recurring" />
       </div>
     );
   }

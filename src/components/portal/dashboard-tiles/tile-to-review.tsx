@@ -25,7 +25,7 @@ export function TileToReview({
   onOpen: (id: string) => void;
 }): ReactElement {
   return (
-    <TileFrame title="Transactions to review" href="/transactions" linkLabel="View all">
+    <TileFrame title="Transactions to review" href="/budget/transactions" linkLabel="View all">
       {count === 0 ? (
         <p className="text-[13px] text-ink-3">You&apos;re all caught up.</p>
       ) : (

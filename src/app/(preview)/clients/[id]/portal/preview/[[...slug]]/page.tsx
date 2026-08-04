@@ -17,6 +17,7 @@ import { PortalInvestmentsScreen } from "@/components/portal/portal-investments-
 import { PortalDocumentsScreen } from "@/components/portal/portal-documents-screen";
 import PortalDashboard from "@/components/portal/portal-dashboard";
 import PortalNav from "@/components/portal/portal-nav";
+import BudgetTabs from "@/components/portal/budget-tabs";
 import PortalPreviewBanner from "@/components/portal/portal-preview-banner";
 import { PortalModeProvider } from "@/components/portal/portal-mode-context";
 import { NotSharedNotice } from "@/components/portal/not-shared-notice";
@@ -87,19 +88,19 @@ export default async function PortalPreviewPage({
     section = <TrustsSection clientId={id} />;
   } else if (path === "accounts") {
     section = <PortalAccountsScreen clientId={id} />;
-  } else if (path === "transactions") {
-    section = privacy.shareTransactions ? (
-      <TransactionsSection clientId={id} />
-    ) : (
-      <NotSharedNotice area="transactions" />
-    );
   } else if (path === "budget") {
     section = privacy.shareBudgets ? (
       <BudgetSection clientId={id} />
     ) : (
       <NotSharedNotice area="budgets" />
     );
-  } else if (path === "recurrings") {
+  } else if (path === "budget/transactions") {
+    section = privacy.shareTransactions ? (
+      <TransactionsSection clientId={id} />
+    ) : (
+      <NotSharedNotice area="transactions" />
+    );
+  } else if (path === "budget/recurring") {
     section = privacy.shareRecurrings ? (
       <RecurringsSection clientId={id} />
     ) : (
@@ -121,6 +122,8 @@ export default async function PortalPreviewPage({
   } else {
     notFound();
   }
+
+  const inBudget = path === "budget" || path.startsWith("budget/");
 
   const primary = contacts.find((c) => c.role === "primary") ?? contacts[0];
   const displayName = primary
@@ -154,6 +157,9 @@ export default async function PortalPreviewPage({
         />
         <main className="min-h-0 min-w-0 overflow-y-auto border-x border-hair">
           <PortalBrandingStrip branding={branding} />
+          {/* The Budget section's tab strip sits above the privacy gate, so an
+              advisor can still move between tabs when one area isn't shared. */}
+          {inBudget && <BudgetTabs basePath={basePath} />}
           <PortalModeProvider value={{ mode: "advisor", clientId: id }}>
             {section}
           </PortalModeProvider>
