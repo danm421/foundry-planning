@@ -64,7 +64,10 @@ export default async function PortalLayout({
   // on the other's result.
   const [branding, connectionAlert] = await Promise.all([
     row ? resolveIntakeBrandingForClient(row.firmId, row.advisorId) : Promise.resolve(null),
-    loadPortalConnectionAlert(clientId),
+    // The dot is a decoration. There is no error.tsx under (portal), so an
+    // unguarded rejection here would drop every portal page onto the root
+    // global-error screen because a nav badge failed to resolve.
+    loadPortalConnectionAlert(clientId).catch(() => false),
   ]);
   const navAlerts = { "/settings": connectionAlert };
 

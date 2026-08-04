@@ -69,7 +69,8 @@ export default async function PortalPreviewPage({
           .where(eq(crmHouseholdContacts.householdId, access.client.crmHouseholdId))
       : [],
     resolveIntakeBrandingForClient(access.firmId, access.client.advisorId),
-    loadPortalConnectionAlert(id),
+    // Decoration only — see the note in (portal)/portal/layout.tsx.
+    loadPortalConnectionAlert(id).catch(() => false),
   ]);
   const navAlerts = { "/settings": connectionAlert };
 
