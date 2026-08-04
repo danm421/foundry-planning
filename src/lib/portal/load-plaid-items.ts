@@ -28,3 +28,14 @@ export async function loadPlaidItems(clientId: string): Promise<PlaidItemDTO[]> 
     ...deriveItemStatus(r),
   }));
 }
+
+/**
+ * True when any of the client's linked institutions needs re-authentication or
+ * has had access revoked — the signal behind the Settings nav dot. Connections
+ * live on Settings now, so without this a stale balance is invisible from the
+ * page that displays it.
+ */
+export async function loadPortalConnectionAlert(clientId: string): Promise<boolean> {
+  const items = await loadPlaidItems(clientId);
+  return items.some((i) => i.needsReauth || i.revoked);
+}

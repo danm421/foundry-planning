@@ -57,6 +57,50 @@ describe("InstitutionRow", () => {
     expect(screen.queryByRole("button", { name: /manage/i })).not.toBeInTheDocument();
   });
 
+  it("editEnabled=false: the whole action cluster is absent", async () => {
+    const { InstitutionRow } = await import("../institution-row");
+    const on = render(<InstitutionRow {...baseProps} />);
+    // Control: with edit on, these queries do find the actions.
+    expect(screen.getByRole("button", { name: /refresh/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /manage/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /unlink/i })).toBeInTheDocument();
+    on.unmount();
+
+    render(<InstitutionRow {...baseProps} editEnabled={false} />);
+    // The institution is still listed — only the mutating actions are gone.
+    expect(screen.getByText("Tartan Bank")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /refresh/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /manage/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /unlink/i })).toBeNull();
+  });
+
+  it("editEnabled=false: no re-authenticate affordance for a row that needs one", async () => {
+    const { InstitutionRow } = await import("../institution-row");
+    // Control first: with edit on, the lazily-loaded re-auth button arrives.
+    // This also warms next/dynamic's module cache, so if the guard below let
+    // the button through it would render immediately rather than a tick later
+    // — which is what makes the negative assertion non-vacuous.
+    const on = render(
+      <InstitutionRow {...baseProps} needsReauth statusLabel="Re-auth required" />,
+    );
+    await waitFor(() =>
+      expect(screen.getByText(/re-authenticate/i)).toBeInTheDocument(),
+    );
+    on.unmount();
+
+    render(
+      <InstitutionRow
+        {...baseProps}
+        needsReauth
+        statusLabel="Re-auth required"
+        editEnabled={false}
+      />,
+    );
+    expect(screen.getByText("Re-auth required")).toBeInTheDocument();
+    expect(screen.queryByText(/re-authenticate/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /unlink/i })).toBeNull();
+  });
+
   it("newAccountsAvailable: shows prompt, Find more accounts, and dismiss", async () => {
     const { InstitutionRow } = await import("../institution-row");
     render(<InstitutionRow {...baseProps} newAccountsAvailable />);

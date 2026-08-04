@@ -63,4 +63,32 @@ describe("PortalNav basePath", () => {
       "/clients/abc/portal/preview",
     );
   });
+
+  it("renders an attention dot only on the alerted item", () => {
+    const { container } = render(
+      <PortalNav displayName="A" email="a@b.co" alerts={{ "/settings": true }} />,
+    );
+    const dots = container.querySelectorAll('[aria-label="Needs attention"]');
+    expect(dots).toHaveLength(1);
+    const settingsLink = container.querySelector('a[href="/portal/settings"]');
+    expect(
+      settingsLink?.querySelector('[aria-label="Needs attention"]'),
+    ).toBeTruthy();
+  });
+
+  it("renders no attention dot when alerts is omitted (default {})", () => {
+    const { container } = render(<PortalNav displayName="A" email="a@b.co" />);
+    expect(
+      container.querySelectorAll('[aria-label="Needs attention"]'),
+    ).toHaveLength(0);
+  });
+
+  it("renders no attention dot when the alert is explicitly false", () => {
+    const { container } = render(
+      <PortalNav displayName="A" email="a@b.co" alerts={{ "/settings": false }} />,
+    );
+    expect(
+      container.querySelectorAll('[aria-label="Needs attention"]'),
+    ).toHaveLength(0);
+  });
 });
