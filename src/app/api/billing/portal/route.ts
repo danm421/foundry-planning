@@ -9,16 +9,17 @@ import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
-// Returns the origin used solely as Stripe's `return_url` (the "return to merchant"
-// link inside Stripe's hosted portal) — not a server-controlled redirect, so a
-// caller-supplied Origin header cannot cause an open redirect.
-function originFor(req: Request): string {
-  const fromHeader = req.headers.get("origin");
-  if (fromHeader) return fromHeader;
+// Origin used solely as Stripe's `return_url` (the "return to merchant" link
+// inside Stripe's hosted portal). This never was a server-controlled redirect,
+// so reading the caller's Origin header could not have caused an open redirect
+// — but taking it from configuration instead means that argument doesn't have
+// to be re-derived on every read, and it matches the convention every other
+// redirect and mailer in the app already uses.
+function appOrigin(): string {
   return process.env.NEXT_PUBLIC_APP_URL ?? "https://app.foundryplanning.com";
 }
 
-export async function POST(req: Request): Promise<Response> {
+export async function POST(): Promise<Response> {
   try {
     await requireBillingContact();
   } catch (err) {
@@ -50,7 +51,7 @@ export async function POST(req: Request): Promise<Response> {
     const stripe = getStripe();
     const session = await stripe.billingPortal.sessions.create({
       customer,
-      return_url: `${originFor(req)}/settings/billing`,
+      return_url: `${appOrigin()}/settings/billing`,
     });
     await recordAudit({
       action: "billing.portal_opened",

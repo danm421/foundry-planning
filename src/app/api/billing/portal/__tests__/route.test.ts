@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("@/lib/billing/stripe-client", () => ({
   getStripe: vi.fn(),
@@ -36,18 +36,16 @@ function mockSubscriptionRows(rows: { stripeCustomerId: string }[]) {
   } as never);
 }
 
-function makeRequest(headers: Record<string, string> = {}) {
-  return new Request("https://app.foundryplanning.com/api/billing/portal", {
-    method: "POST",
-    headers: { origin: "https://app.foundryplanning.com", ...headers },
-  });
-}
-
 describe("POST /api/billing/portal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.foundryplanning.com");
     vi.mocked(requireBillingContact).mockResolvedValue(undefined);
     vi.mocked(auth).mockResolvedValue({ orgId: "org_abc" } as never);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it("creates a portal session and 303-redirects to its URL", async () => {
@@ -59,7 +57,7 @@ describe("POST /api/billing/portal", () => {
       billingPortal: { sessions: { create } },
     } as never);
 
-    const res = await POST(makeRequest());
+    const res = await POST();
 
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe(
@@ -78,7 +76,7 @@ describe("POST /api/billing/portal", () => {
       billingPortal: { sessions: { create } },
     } as never);
 
-    const res = await POST(makeRequest());
+    const res = await POST();
 
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "no_subscription" });
@@ -89,7 +87,7 @@ describe("POST /api/billing/portal", () => {
     vi.mocked(requireBillingContact).mockRejectedValue(
       new ForbiddenError("Organization owner role required"),
     );
-    const res = await POST(makeRequest());
+    const res = await POST();
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({
       error: "Organization owner role required",
@@ -98,41 +96,56 @@ describe("POST /api/billing/portal", () => {
 
   it("401s when there is no session", async () => {
     vi.mocked(requireBillingContact).mockRejectedValue(new UnauthorizedError());
-    const res = await POST(makeRequest());
+    const res = await POST();
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: "Unauthorized" });
   });
 
   it("400s with no_subscription when the org id is missing", async () => {
     vi.mocked(auth).mockResolvedValue({ orgId: null } as never);
-    const res = await POST(makeRequest());
+    const res = await POST();
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "no_subscription" });
   });
 
-  it("falls back to NEXT_PUBLIC_APP_URL for return_url when Origin is absent", async () => {
-    const prev = process.env.NEXT_PUBLIC_APP_URL;
-    process.env.NEXT_PUBLIC_APP_URL = "https://app.foundryplanning.com";
+  // The handler takes no Request at all, so the caller's Origin header cannot
+  // reach return_url by construction. These two cover the only inputs left.
+  it("builds return_url from NEXT_PUBLIC_APP_URL, not from the request", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://staging.foundryplanning.com");
     mockSubscriptionRows([{ stripeCustomerId: "cus_123" }]);
     const create = vi
       .fn()
-      .mockResolvedValue({ url: "https://billing.stripe.com/session/test_no_origin" });
+      .mockResolvedValue({ url: "https://billing.stripe.com/session/test_cfg" });
     vi.mocked(getStripe).mockReturnValue({
       billingPortal: { sessions: { create } },
     } as never);
 
-    const res = await POST(
-      new Request("https://app.foundryplanning.com/api/billing/portal", {
-        method: "POST",
-      }),
-    );
+    const res = await POST();
+
+    expect(res.status).toBe(303);
+    expect(create).toHaveBeenCalledWith({
+      customer: "cus_123",
+      return_url: "https://staging.foundryplanning.com/settings/billing",
+    });
+  });
+
+  it("falls back to the production host when NEXT_PUBLIC_APP_URL is unset", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", undefined);
+    mockSubscriptionRows([{ stripeCustomerId: "cus_123" }]);
+    const create = vi
+      .fn()
+      .mockResolvedValue({ url: "https://billing.stripe.com/session/test_default" });
+    vi.mocked(getStripe).mockReturnValue({
+      billingPortal: { sessions: { create } },
+    } as never);
+
+    const res = await POST();
 
     expect(res.status).toBe(303);
     expect(create).toHaveBeenCalledWith({
       customer: "cus_123",
       return_url: "https://app.foundryplanning.com/settings/billing",
     });
-    process.env.NEXT_PUBLIC_APP_URL = prev;
   });
 
   it("500s when Stripe throws creating the session", async () => {
@@ -143,7 +156,7 @@ describe("POST /api/billing/portal", () => {
       },
     } as never);
 
-    const res = await POST(makeRequest());
+    const res = await POST();
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: "portal_unavailable" });
   });
