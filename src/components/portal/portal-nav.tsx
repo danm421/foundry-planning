@@ -11,10 +11,10 @@ import {
   type PortalNavItem,
 } from "@/components/portal/portal-nav-items";
 
-/** Rail order (key order); only Profile carries a visible subheader. */
+/** Rail order (key order). No group carries a visible subheader now that
+ *  Organizer has absorbed the four Profile-and-Accounts destinations. */
 const GROUP_HEADINGS: Record<PortalNavGroup, string | null> = {
   overview: null,
-  profile: "Profile",
   money: null,
   settings: null,
 };
