@@ -18,7 +18,7 @@ import { LiabilityFormInitial } from "./forms/add-liability-form";
 import type { NoteReceivableFormInitial } from "./forms/add-note-receivable-form";
 import { computeAmortizationSchedule, calcOriginalBalance } from "@/lib/loan-math";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
-import { isLiquid } from "@/lib/account-groups/liquid-filter";
+import { LIQUID_PORTFOLIO_CATEGORIES } from "@/engine/portfolio-snapshot";
 import type { ClientMilestones } from "@/lib/milestones";
 import type { AccountOwner } from "@/engine/ownership";
 import {
@@ -859,9 +859,14 @@ export default function BalanceSheetView({
   // balance edit instead of lagging a round-trip behind the row above them.
   const totalLiabilities = pendingLiabilities.rows.reduce((s, l) => s + currentYearBalance(l), 0);
   const netWorth = totalInEstate - totalLiabilities;
-  // Liquid (taxable/cash/retirement) in-estate holdings — the engine's
-  // "portfolio assets" bucket.
-  const liquidAccounts = inEstate.filter((a) => isLiquid(a.category));
+  // In-estate holdings in the engine's liquid portfolio buckets. Derived from
+  // LIQUID_PORTFOLIO_CATEGORIES rather than `isLiquid` — that predicate answers
+  // "may this account join a savings/withdrawal group", a narrower question, and
+  // borrowing it here silently dropped annuities and life-insurance cash value
+  // from a KPI that carries the same name as the cash-flow report's column.
+  const liquidAccounts = inEstate.filter((a) =>
+    LIQUID_PORTFOLIO_CATEGORIES.has(a.category),
+  );
   const portfolioAssets = liquidAccounts.reduce((s, a) => s + Number(a.value), 0);
   const realEstateAccounts = accounts
     .filter((a) => a.category === "real_estate")

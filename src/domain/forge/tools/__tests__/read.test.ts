@@ -33,7 +33,13 @@ vi.mock("@/lib/clients/get-client-with-contacts", () => ({
 // db.select({...}).from(scenarios).where(eq(...)) → resolves the scenario roster.
 const dbWhere = vi.fn();
 vi.mock("@/db", () => {
-  const where = (...a: unknown[]) => dbWhere(...a);
+  // `.where(...)` is awaited directly by the roster queries and followed by
+  // `.limit(1)` by the import queries, so hand back a promise that also
+  // carries a `limit` passthrough.
+  const where = (...a: unknown[]) => {
+    const res = Promise.resolve(dbWhere(...a));
+    return Object.assign(res, { limit: () => res });
+  };
   const from = () => ({ where });
   const select = () => ({ from });
   return {
@@ -47,6 +53,16 @@ vi.mock("drizzle-orm", async (orig) => {
 });
 vi.mock("@/db/schema", () => ({
   scenarios: { id: "id", name: "name", isBaseCase: "isBaseCase", clientId: "clientId" },
+  clientImports: {
+    id: "id",
+    status: "status",
+    mode: "mode",
+    scenarioId: "scenarioId",
+    payloadJson: "payloadJson",
+    clientId: "clientId",
+    orgId: "orgId",
+    discardedAt: "discardedAt",
+  },
 }));
 
 const loadPanelData = vi.fn();
@@ -337,6 +353,32 @@ describe("summarizeImport — dependents count", () => {
     const depTotals = (out.matchTotals as { dependents?: unknown }).dependents;
     expect(depTotals).toBeDefined();
     expect(depTotals).toEqual(expect.objectContaining({ exact: expect.any(Number), fuzzy: expect.any(Number), new: expect.any(Number) }));
+  });
+});
+
+describe("read.ts — extract_import", () => {
+  // The advisor asking Forge to "pull the holdings out of this" is the ONLY
+  // signal that reaches this tool — `client_imports.extract_holdings` defaults
+  // to false and no Forge entry point ever writes it, so keying off the column
+  // meant a Forge re-extraction could never produce a single position.
+  it("always requests holdings, whatever the import row's flag says", async () => {
+    checkImportRateLimit.mockResolvedValue({ allowed: true });
+    runImportExtraction.mockResolvedValue(undefined);
+    dbWhere
+      // 1. the import row the tool re-reads before extracting
+      .mockResolvedValueOnce([
+        { id: "imp1", status: "review", mode: "updating", scenarioId: "scen-1" },
+      ])
+      // 2. fileResults re-read after extraction (empty → matching is skipped)
+      .mockResolvedValueOnce([{ payloadJson: { fileResults: {} }, status: "review" }])
+      // 3. the final row summarized back to the model
+      .mockResolvedValueOnce([{ id: "imp1", status: "review", payloadJson: null }]);
+
+    await tool("extract_import").invoke({ importId: "imp1" });
+
+    expect(runImportExtraction).toHaveBeenCalledWith(
+      expect.objectContaining({ extractHoldings: true, comprehensive: true }),
+    );
   });
 });
 

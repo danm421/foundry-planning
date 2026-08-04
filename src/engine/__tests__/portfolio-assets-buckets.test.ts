@@ -482,6 +482,66 @@ describe("portfolioAssets — mixed ownership preserves entity share through hou
   });
 });
 
+// ── Annuity ──────────────────────────────────────────────────────────────────
+// Bug: `annuity` was absent from the category→bucket map, so every annuity
+// account fell through the `if (!key) continue` guard and vanished from the
+// snapshot entirely — missing from liquidTotal, from .total, and from the
+// reconciliation weights that explain the Portfolio Assets row.
+
+describe("portfolioAssets buckets — annuity", () => {
+  const annuityAcct: Account = {
+    id: "ann-1",
+    name: "Deferred Annuity",
+    category: "annuity",
+    subType: "other",
+    titlingType: "jtwros",
+    value: 250_000,
+    basis: 150_000,
+    growthRate: 0,
+    rmdEnabled: false,
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+  };
+
+  it("a household-owned annuity lands in the annuity bucket", () => {
+    const [year0] = projectWith([annuityAcct]);
+    expect(year0.portfolioAssets.annuity["ann-1"]).toBe(250_000);
+    expect(year0.portfolioAssets.annuityTotal).toBe(250_000);
+  });
+
+  it("counts toward liquidTotal and .total", () => {
+    const [year0] = projectWith([annuityAcct]);
+    const pa = year0.portfolioAssets;
+    expect(pa.liquidTotal).toBe(250_000);
+    expect(pa.total).toBe(250_000);
+  });
+
+  it("routes a non-IIP accessible-trust-owned annuity to accessibleTrustAssets, not the annuity bucket", () => {
+    const [year0] = projectWith([
+      {
+        ...annuityAcct,
+        id: "ann-hems",
+        owners: [{ kind: "entity", entityId: ENT_NON_IIP_ACCESSIBLE, percent: 1 }],
+      },
+    ]);
+    expect(year0.portfolioAssets.annuityTotal).toBe(0);
+    expect(year0.portfolioAssets.accessibleTrustAssetsTotal).toBe(250_000);
+    expect(year0.portfolioAssets.liquidTotal).toBe(250_000);
+  });
+
+  it("a locked-trust-owned annuity stays out of liquidTotal", () => {
+    const [year0] = projectWith([
+      {
+        ...annuityAcct,
+        id: "ann-slat",
+        owners: [{ kind: "entity", entityId: ENT_NON_IIP_LOCKED, percent: 1 }],
+      },
+    ]);
+    expect(year0.portfolioAssets.annuityTotal).toBe(0);
+    expect(year0.portfolioAssets.trustsAndBusinessesTotal).toBe(250_000);
+    expect(year0.portfolioAssets.liquidTotal).toBe(0);
+  });
+});
+
 describe("portfolioAssets buckets — household-principal scoping", () => {
   const FM_CHILD = "fm-child-1";
   const childFamilyMember: FamilyMember = {

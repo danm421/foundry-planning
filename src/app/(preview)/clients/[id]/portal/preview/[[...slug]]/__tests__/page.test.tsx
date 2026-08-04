@@ -62,20 +62,27 @@ vi.mock("@/lib/clients/authz", () => ({
   ),
 }));
 
-// Single remaining db query: crmHouseholdContacts (raw await on the builder).
+// Generic db query double shared by crmHouseholdContacts (raw await on the
+// builder) and the page's loadPortalConnectionAlert call, which goes through
+// loadPlaidItems and chains an extra .orderBy() — the same stub row shape
+// serves both; it doesn't have fields deriveItemStatus recognizes, so the
+// connection alert always resolves to false here.
 function mkQuery(): unknown {
   const contactsRows = [
     { firstName: "Pat", lastName: "Client", email: "pat@example.com", role: "primary" },
   ];
-  return {
+  const query = {
     then: (resolve: (v: unknown) => unknown) => resolve(contactsRows),
+    orderBy: () => query,
   };
+  return query;
 }
 vi.mock("@/db", () => ({
   db: { select: () => ({ from: () => ({ where: () => mkQuery() }) }) },
 }));
 vi.mock("@/db/schema", () => ({
   crmHouseholdContacts: {},
+  plaidItems: {},
 }));
 vi.mock("@/lib/portal/privacy", () => ({
   loadPortalPrivacy: () =>

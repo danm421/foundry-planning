@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { condenseAccountName } from "../condense-account-name";
+import { composeAccountName, condenseAccountName } from "../condense-account-name";
 
 describe("condenseAccountName", () => {
   it("strips a masked account-number fragment", () => {
@@ -45,5 +45,114 @@ describe("condenseAccountName", () => {
 
   it("never returns empty for a name that is only an account number", () => {
     expect(condenseAccountName("XXXX-1234")).toBe("XXXX-1234");
+  });
+});
+
+describe("composeAccountName", () => {
+  it("drops a leading custodian the model added anyway", () => {
+    expect(composeAccountName("Fidelity Rollover IRA", "Fidelity")).toBe("Rollover IRA");
+    // Only a PART of the custodian appears in the name — still the custodian.
+    expect(composeAccountName("Schwab Joint Brokerage", "Charles Schwab")).toBe(
+      "Joint Brokerage",
+    );
+  });
+
+  it("drops a trailing custodian", () => {
+    expect(composeAccountName("Joint Brokerage - Schwab", "Charles Schwab")).toBe(
+      "Joint Brokerage",
+    );
+  });
+
+  it("keeps words the custodian does not contain", () => {
+    expect(composeAccountName("Bank Loan Reserve", "Chase")).toBe("Bank Loan Reserve");
+  });
+
+  it("keeps a custodian-only name rather than returning empty", () => {
+    expect(composeAccountName("Fidelity", "Fidelity")).toBe("Fidelity");
+  });
+
+  it("appends the masked last 4 when the document showed one", () => {
+    expect(composeAccountName("Fidelity Rollover IRA", "Fidelity", "1234")).toBe(
+      "Rollover IRA ••••1234",
+    );
+  });
+
+  it("does not double-mask an already-masked last4 field", () => {
+    expect(composeAccountName("Rollover IRA", null, "****1234")).toBe(
+      "Rollover IRA ••••1234",
+    );
+    expect(composeAccountName("Rollover IRA", null, "XXXX-1234")).toBe(
+      "Rollover IRA ••••1234",
+    );
+  });
+
+  it("does not print the digits twice when the name already ends in them", () => {
+    expect(composeAccountName("Rollover IRA 1234", null, "1234")).toBe(
+      "Rollover IRA ••••1234",
+    );
+  });
+
+  // Planning-software reports (eMoney, Ethos Tools, Holdings Detail exports)
+  // label accounts with a SINGLE-character mask — "Inh. IRA x7254" — which
+  // condenseAccountName's 3+-character mask rule never strips.
+  it("does not print the digits twice behind a single-character mask", () => {
+    expect(composeAccountName("Inh. IRA x7254", null, "7254")).toBe(
+      "Inh. IRA ••••7254",
+    );
+    expect(composeAccountName("Taxable Account x0028", null, "0028")).toBe(
+      "Taxable Account ••••0028",
+    );
+    expect(composeAccountName("Brokerage #4772", null, "4772")).toBe(
+      "Brokerage ••••4772",
+    );
+    expect(composeAccountName("Joint Brokerage *8899", null, "8899")).toBe(
+      "Joint Brokerage ••••8899",
+    );
+  });
+
+  it("leaves digits that merely END with the last4 alone", () => {
+    // "17254" is not the account number — slicing its tail off would rename
+    // the account to something the document never said.
+    expect(composeAccountName("Portfolio 17254", null, "7254")).toBe(
+      "Portfolio 17254 ••••7254",
+    );
+  });
+
+  it("is idempotent for a single-character-masked name", () => {
+    const once = composeAccountName("Inh. IRA x7254", null, "7254");
+    expect(composeAccountName(once, null, "7254")).toBe(once);
+  });
+
+  it("keeps meaningful short numbers that are not the last4", () => {
+    expect(composeAccountName("Vanguard 529 Plan", "Vanguard", "8899")).toBe(
+      "529 Plan ••••8899",
+    );
+  });
+
+  it("falls back to the mask alone when nothing else survives", () => {
+    expect(composeAccountName("XXXX-1234", null, "1234")).toBe("••••1234");
+  });
+
+  it("is a no-op beyond condensing when custodian and last4 are absent", () => {
+    expect(composeAccountName("Chase Checking 123456789")).toBe("Chase Checking");
+  });
+
+  it("caps the composed name, suffix included, at 60 characters", () => {
+    const long =
+      "John A Smith and Jane B Smith JTWROS Rollover Individual Retirement Arrangement";
+    const result = composeAccountName(long, null, "1234");
+    expect(result.length).toBeLessThanOrEqual(60);
+    expect(result.endsWith("••••1234")).toBe(true);
+  });
+
+  it("is idempotent", () => {
+    const once = composeAccountName("Fidelity Rollover IRA XXXX-1234", "Fidelity", "1234");
+    expect(once).toBe("Rollover IRA ••••1234");
+    expect(composeAccountName(once, "Fidelity", "1234")).toBe(once);
+  });
+
+  it("tolerates non-string custodian / last4 from the loose extraction schema", () => {
+    const bad = 1234 as unknown as string;
+    expect(composeAccountName("Rollover IRA", bad, bad)).toBe("Rollover IRA");
   });
 });

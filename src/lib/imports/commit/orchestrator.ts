@@ -204,6 +204,11 @@ export async function markTabsCommitted(
     .update(clientImports)
     .set({
       perTabCommittedAt: sql`COALESCE(${clientImports.perTabCommittedAt}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`,
+      // Persist the links the commit modules just stamped onto the payload
+      // (`linkCreated`), so a re-commit UPDATEs the records this import created
+      // instead of inserting duplicates. Merged at the top level rather than
+      // assigned, so sibling keys (`fileResults`, `assemble`) survive.
+      payloadJson: sql`COALESCE(${clientImports.payloadJson}, '{}'::jsonb) || ${JSON.stringify({ payload })}::jsonb`,
       updatedAt: now,
       ...(firstTimeAllCommitted
         ? { status: "committed" as const, committedAt: now }

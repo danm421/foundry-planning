@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 
 import { incomes } from "@/db/schema";
 
-import { getExistingId, type ImportPayload } from "../types";
+import { getExistingId, linkCreated, type ImportPayload } from "../types";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
 import { resolveImportTiming } from "./timing";
 
@@ -54,7 +54,7 @@ export async function commitIncomes(
 
     if (kind === "new") {
       const timing = resolveImportTiming(row, ctx.milestones);
-      await tx.insert(incomes).values({
+      const [inserted] = await tx.insert(incomes).values({
         clientId: ctx.clientId,
         scenarioId: ctx.scenarioId,
         type: row.type ?? "other",
@@ -67,7 +67,8 @@ export async function commitIncomes(
         growthRate: row.growthRate != null ? String(row.growthRate) : "0.03",
         owner: row.owner ?? "client",
         source: "extracted",
-      });
+      }).returning({ id: incomes.id });
+      linkCreated(row, inserted.id);
       result.created += 1;
       continue;
     }

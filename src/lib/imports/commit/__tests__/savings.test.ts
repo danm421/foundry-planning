@@ -18,13 +18,29 @@ const CTX: CommitContext = {
 /** Minimal tx double: records inserts, resolves account-name lookups. */
 function fakeTx(accounts: Array<{ id: string; name: string }>) {
   const inserted: Record<string, unknown>[] = [];
+  const updated: Record<string, unknown>[] = [];
+  let nextId = 0;
   const tx = {
-    insert: () => ({ values: async (v: Record<string, unknown>) => { inserted.push(v); } }),
+    // `.returning()` is required: commitSavings stamps the new rule's id back
+    // onto the payload rows so a re-commit updates it instead of duplicating.
+    insert: () => ({
+      values: (v: Record<string, unknown>) => {
+        inserted.push(v);
+        nextId += 1;
+        const rows = [{ id: `savings-rule-${nextId}` }];
+        return Object.assign(Promise.resolve(), { returning: async () => rows });
+      },
+    }),
+    update: () => ({
+      set: (v: Record<string, unknown>) => ({
+        where: async () => { updated.push(v); },
+      }),
+    }),
     select: () => ({
       from: () => ({ where: async () => accounts.map((a) => ({ id: a.id, name: a.name })) }),
     }),
   };
-  return { tx: tx as never, inserted };
+  return { tx: tx as never, inserted, updated };
 }
 
 function payloadWith(savings: ImportPayload["savings"]): ImportPayload {

@@ -5,6 +5,7 @@ import { type MouseEvent, type ReactElement, type ReactNode } from "react";
 import SidebarNavItem from "./sidebar-nav-item";
 import { useSidebar } from "./sidebar-provider";
 import {
+  BellIcon,
   ClientsIcon,
   DataCollectionIcon,
   FolderIcon,
@@ -31,6 +32,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "WORKSPACE",
     items: [
       { icon: <HomeIcon />, label: "Home", href: "/home" },
+      { icon: <BellIcon />, label: "Alerts", href: "/alerts" },
       { icon: <ClientsIcon />, label: "Clients", href: "/clients" },
       { icon: <RiskIcon />, label: "Risk", href: "/risk" },
       { icon: <FolderIcon />, label: "CMA's", href: "/cma" },
@@ -53,10 +55,12 @@ export function isActivePath(pathname: string, href: string): boolean {
 
 interface SidebarNavProps {
   clientsCount: number;
+  unreadCount: number;
 }
 
 export default function SidebarNav({
   clientsCount,
+  unreadCount,
 }: SidebarNavProps): ReactElement {
   const pathname = usePathname();
   const { collapsed, setCollapsed } = useSidebar();
@@ -100,7 +104,13 @@ export default function SidebarNav({
                     href={item.href}
                     placeholder={item.placeholder}
                     active={active}
-                    count={item.href === "/clients" ? clientsCount : undefined}
+                    count={
+                      item.href === "/clients"
+                        ? clientsCount
+                        : item.href === "/alerts" && unreadCount > 0
+                          ? unreadCount
+                          : undefined
+                    }
                     collapsed={collapsed}
                     onNavigate={handleNavigate}
                   />

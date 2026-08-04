@@ -29,7 +29,7 @@ import {
 import { TAX_RETURN_PROMPT, TAX_RETURN_VERSION } from "./prompts/tax-return";
 import { FACT_FINDER_CLASSIFIER_VERSION } from "./prompts/fact-finder-classifier";
 import { redactSsns } from "./redact-ssn";
-import { condenseAccountName } from "./condense-account-name";
+import { composeAccountName } from "./condense-account-name";
 import { completeExtractedAccounts } from "./holdings-completion";
 import { extractWithMultiPass, type MultiPassResult } from "./multi-pass";
 import { buildPageOutline } from "./page-outline";
@@ -228,20 +228,23 @@ function flattenMultiPass(
 }
 
 /**
- * Backstop for the account-statement prompt's short-name rule. Prompt
- * compliance is probabilistic, so every payload-assembly site runs this before
- * returning — that way the condensed name is what reaches the review wizard,
- * both merge paths, and the account-matching pass.
+ * Backstop for the account-statement prompt's naming rule — condense, drop the
+ * custodian, append the masked last 4. Prompt compliance is probabilistic, so
+ * every payload-assembly site runs this before returning — that way the composed
+ * name is what reaches the review wizard, both merge paths, and the
+ * account-matching pass.
  *
  * `extracted.accounts` is cast off a loose zod schema that does not check
  * per-field types, so a non-string `name` is reachable at runtime and is left
  * untouched rather than coerced.
  */
-function condenseAccountNames(
+function composeAccountNames(
     accounts: ExtractionResult["extracted"]["accounts"],
 ): ExtractionResult["extracted"]["accounts"] {
     return accounts.map((a) =>
-        typeof a.name === "string" ? { ...a, name: condenseAccountName(a.name) } : a,
+        typeof a.name === "string"
+            ? { ...a, name: composeAccountName(a.name, a.custodian, a.accountNumberLast4) }
+            : a,
     );
 }
 
@@ -454,7 +457,7 @@ export async function extractDocument(
         });
         if (multi) {
             const extracted = flattenMultiPass(multi);
-            extracted.accounts = condenseAccountNames(extracted.accounts);
+            extracted.accounts = composeAccountNames(extracted.accounts);
             warnings.push(...multi.warnings);
             // R5: this path returns before the single-pass truncation below
             // (step 5, `MAX_DOCUMENT_TEXT_CHARS`), so redactedPages is
@@ -521,9 +524,15 @@ export async function extractDocument(
     // alone (file content sits inside <document></document> tags;
     // the system prompt is the only authoritative instruction
     // surface). Verified during the Phase 8 smoke checkpoint.
+    // Holdings ride on the account-statement prompt, so the question is simply
+    // "is that the prompt we're about to send?" — asking PROMPTS instead of
+    // listing document types keeps a newly-mapped type from silently losing its
+    // positions. It also covers `fact_finder`, which reaches this line only when
+    // multi-pass classification failed and fell back here; listing types by hand
+    // had omitted it, discarding every position on exactly the documents the
+    // advisor ticked the box for.
     const useHoldings =
-        extractHoldings &&
-        (documentType === "account_statement" || documentType === "excel_import");
+        extractHoldings && PROMPTS[documentType] === ACCOUNT_STATEMENT_PROMPT;
     const prompt = useHoldings
         ? buildAccountStatementPrompt(true)
         : PROMPTS[documentType];
@@ -572,7 +581,7 @@ export async function extractDocument(
         assumptions: (safe.assumptions ?? undefined) as ExtractionResult["extracted"]["assumptions"],
     };
 
-    extracted.accounts = condenseAccountNames(extracted.accounts);
+    extracted.accounts = composeAccountNames(extracted.accounts);
 
     // Complete any holdings table the model truncated. Only fires per-account
     // when holdings materially undershoot the stated value (continuation passes).

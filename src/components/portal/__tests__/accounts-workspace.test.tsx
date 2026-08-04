@@ -1,0 +1,260 @@
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, fireEvent, within, act } from "@testing-library/react";
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+// Canvas is unavailable in jsdom.
+vi.mock("../networth-trend-chart", () => ({ NetWorthTrendChart: () => <div data-testid="trend" /> }));
+// Plaid Link pulls in a dynamic browser-only bundle.
+vi.mock("../plaid-link-button-dynamic", () => ({ PlaidLinkButton: () => <button type="button">Link Account</button> }));
+vi.mock("../plaid-consent-notice", () => ({ PlaidConsentNotice: () => null }));
+vi.mock("../plaid-account-picker", () => ({ PlaidAccountPicker: () => null }));
+
+const portalFetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }));
+vi.mock("../portal-mode-context", () => ({
+  usePortalFetch: () => portalFetch,
+  usePortalMode: () => ({ mode: "client", clientId: "c1" }),
+}));
+
+import { AccountsWorkspace } from "../accounts-workspace";
+import type { AccountsPageDTO } from "@/lib/portal/load-accounts-page";
+
+function dto(over: Partial<AccountsPageDTO> = {}): AccountsPageDTO {
+  return {
+    assets: [
+      { id: "a1", name: "Joint Checking", category: "cash", subType: "checking", last4: null, value: 10_000, isPlaidLinked: false },
+      { id: "a2", name: "Rollover IRA", category: "retirement", subType: "traditional_ira", last4: null, value: 965_186, isPlaidLinked: true },
+    ],
+    debts: [
+      { id: "l1", name: "Home Loan", balance: 125_000, rawBalance: 125_000, liabilityType: "mortgage", aprPercentage: null, statementBalance: null, minimumPayment: null, nextPaymentDueDate: null, isPlaidLinked: false, ownerFmIds: [], ownerEntityIds: [] },
+    ],
+    netWorth: { assets: 975_186, debt: 125_000, netWorth: 850_186 },
+    series: [],
+    asOfDate: "2026-08-03",
+    familyMembers: [{ id: "fm1", firstName: "Pat", lastName: "Client", role: "client" }],
+    trustEntities: [],
+    ownersByAccountId: { a1: [{ familyMemberId: "fm1", entityId: null, percent: "1" }] },
+    editEnabled: true,
+    ...over,
+  };
+}
+
+beforeEach(() => portalFetch.mockClear());
+
+/**
+ * A rail row, scoped to the nav. An account card's accessible name carries its
+ * subtitle ("Cash · checking"), so an unscoped `/Cash/` button query matches the
+ * card as well as the rail row.
+ */
+function railButton(name: RegExp): HTMLElement {
+  const nav = within(document.body).getByRole("navigation", { name: "Account categories" });
+  return within(nav).getByRole("button", { name });
+}
+
+/** The portalFetch call to `url`, so a write's method and body can be inspected. */
+function callTo(url: string): [string, RequestInit] {
+  const calls = portalFetch.mock.calls as unknown as [string, RequestInit][];
+  const call = calls.find((c) => c[0] === url);
+  if (!call) throw new Error(`no portalFetch call to ${url}`);
+  return call;
+}
+
+describe("AccountsWorkspace", () => {
+  it("defaults to Total Net Worth: every account renders", () => {
+    const { container } = render(<AccountsWorkspace dto={dto()} />);
+    expect(container.textContent).toContain("Joint Checking");
+    expect(container.textContent).toContain("Rollover IRA");
+    expect(container.textContent).toContain("Home Loan");
+  });
+
+  it("filters to one category when a rail row is selected", () => {
+    const { container } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(railButton(/Cash/));
+    expect(container.textContent).toContain("Joint Checking");
+    expect(container.textContent).not.toContain("Rollover IRA");
+    expect(container.textContent).not.toContain("Home Loan");
+  });
+
+  it("returns to the full list when Total Net Worth is reselected", () => {
+    const { container } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(railButton(/Cash/));
+    fireEvent.click(railButton(/Total Net Worth/));
+    expect(container.textContent).toContain("Rollover IRA");
+  });
+
+  it("drills into an account and back again", () => {
+    const { getByText, getByRole, container } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(getByText("Joint Checking"));
+    // Detail replaces the list — the sibling account is gone.
+    expect(container.textContent).not.toContain("Rollover IRA");
+    expect(container.textContent).toContain("Recent activity");
+    fireEvent.click(getByRole("button", { name: /Back/ }));
+    expect(container.textContent).toContain("Rollover IRA");
+  });
+
+  it("drilling from a category returns to that category, not the default", () => {
+    const { getByRole, getByText, container } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(railButton(/Cash/));
+    fireEvent.click(getByText("Joint Checking"));
+    fireEvent.click(getByRole("button", { name: /Back/ }));
+    expect(container.textContent).toContain("Joint Checking");
+    expect(container.textContent).not.toContain("Rollover IRA");
+  });
+
+  it("offers Delete on a manual account but not a Plaid-linked one", () => {
+    const { getByText, getByRole, queryByRole } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(getByText("Joint Checking"));
+    expect(getByRole("button", { name: "Delete" })).toBeTruthy();
+    fireEvent.click(getByRole("button", { name: /Back/ }));
+    fireEvent.click(getByText("Rollover IRA"));
+    expect(queryByRole("button", { name: "Delete" })).toBeNull();
+  });
+
+  it("hides every write affordance when editEnabled is false", () => {
+    const { queryByRole, getByText } = render(<AccountsWorkspace dto={dto({ editEnabled: false })} />);
+    expect(queryByRole("button", { name: "Add Account" })).toBeNull();
+    expect(queryByRole("button", { name: /Link Account/ })).toBeNull();
+    fireEvent.click(getByText("Joint Checking"));
+    expect(queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(queryByRole("button", { name: "Delete" })).toBeNull();
+  });
+
+  it("DELETEs through portalFetch after confirmation", () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { getByText, getByRole } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(getByText("Joint Checking"));
+    fireEvent.click(getByRole("button", { name: "Delete" }));
+    expect(portalFetch).toHaveBeenCalledWith("/api/portal/accounts/a1", { method: "DELETE" });
+  });
+
+  it("does not DELETE when the confirmation is dismissed", () => {
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    const { getByText, getByRole } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(getByText("Joint Checking"));
+    fireEvent.click(getByRole("button", { name: "Delete" }));
+    // The open detail panel fetches its own recent activity, so assert the
+    // absence of the DELETE rather than the absence of all portal traffic.
+    expect(portalFetch).not.toHaveBeenCalledWith("/api/portal/accounts/a1", { method: "DELETE" });
+  });
+
+  it("omits the Plaid-owned fields from a linked account's PUT body", async () => {
+    const { getByText, getByRole } = render(
+      <AccountsWorkspace
+        dto={dto({ ownersByAccountId: { a2: [{ familyMemberId: "fm1", entityId: null, percent: "1" }] } })}
+      />,
+    );
+    fireEvent.click(getByText("Rollover IRA"));
+    fireEvent.click(getByRole("button", { name: "Edit" }));
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Save" }));
+    });
+
+    const [, init] = callTo("/api/portal/accounts/a2");
+    expect(init.method).toBe("PUT");
+    const body = JSON.parse(String(init.body));
+    // Plaid owns these on a linked row — sending them earns a 400 from the PUT route.
+    expect(body).not.toHaveProperty("value");
+    expect(body).not.toHaveProperty("last4");
+    expect(body.name).toBe("Rollover IRA");
+    expect(body.category).toBe("retirement");
+    expect(body.owners).toEqual([{ kind: "family_member", familyMemberId: "fm1", percent: 1 }]);
+  });
+
+  it("PUTs a manual account in full and closes the panel on success", async () => {
+    const { getByText, getByRole, queryByRole, container } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(getByText("Joint Checking"));
+    fireEvent.click(getByRole("button", { name: "Edit" }));
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Save" }));
+    });
+
+    const [, init] = callTo("/api/portal/accounts/a1");
+    expect(init.method).toBe("PUT");
+    const body = JSON.parse(String(init.body));
+    // The strip is conditional: a manual row still sends what Plaid would own.
+    expect(body.value).toBe("10000");
+    expect(body.last4).toBeNull();
+    // Post-success continuation: the form closed back to the card list.
+    expect(queryByRole("button", { name: "Save" })).toBeNull();
+    expect(container.textContent).toContain("Rollover IRA");
+  });
+
+  it("omits the Plaid-owned balance from a linked debt's PUT body", async () => {
+    const base = dto();
+    const { getByText, getByRole } = render(
+      <AccountsWorkspace
+        dto={dto({ debts: [{ ...base.debts[0], isPlaidLinked: true, ownerFmIds: ["fm1"] }] })}
+      />,
+    );
+    fireEvent.click(getByText("Home Loan"));
+    fireEvent.click(getByRole("button", { name: "Edit" }));
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Save" }));
+    });
+
+    const [, init] = callTo("/api/portal/liabilities/l1");
+    expect(init.method).toBe("PUT");
+    const body = JSON.parse(String(init.body));
+    expect(body).not.toHaveProperty("balance");
+    expect(body.name).toBe("Home Loan");
+    expect(body.liabilityType).toBe("mortgage");
+    expect(body.owners).toEqual([{ kind: "family_member", familyMemberId: "fm1", percent: 1 }]);
+  });
+
+  it("shows the empty state with no accounts and no debts", () => {
+    const { container } = render(
+      <AccountsWorkspace dto={dto({ assets: [], debts: [], netWorth: { assets: 0, debt: 0, netWorth: 0 } })} />,
+    );
+    expect(container.textContent).toContain("No accounts yet");
+  });
+
+  it("disables Save, Cancel, and Add Account while an account save is in flight", async () => {
+    const { getByText, getByRole } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(getByText("Joint Checking"));
+    fireEvent.click(getByRole("button", { name: "Edit" }));
+
+    // The PUT never resolves during this test — the window it protects must
+    // stay observable so a second click can't double-submit.
+    let resolveSave!: (v: { ok: boolean; json: () => Promise<Record<string, unknown>> }) => void;
+    const deferred = new Promise<{ ok: boolean; json: () => Promise<Record<string, unknown>> }>((resolve) => {
+      resolveSave = resolve;
+    });
+    portalFetch.mockImplementationOnce(() => deferred);
+
+    fireEvent.click(getByRole("button", { name: "Save" }));
+
+    // Mid-flight: the PUT has fired but not resolved. Every mutating control
+    // reachable from this view must be locked.
+    expect(getByRole("button", { name: "Saving…" })).toBeDisabled();
+    expect(getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(getByRole("button", { name: "Add Account" })).toBeDisabled();
+
+    await act(async () => {
+      resolveSave({ ok: true, json: async () => ({}) });
+    });
+  });
+
+  it("disables Edit, Delete, and Add Account while an account delete is in flight", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { getByText, getByRole } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(getByText("Joint Checking"));
+
+    // The DELETE never resolves during this test — same reasoning as the save case.
+    let resolveDelete!: (v: { ok: boolean; json: () => Promise<Record<string, unknown>> }) => void;
+    const deferred = new Promise<{ ok: boolean; json: () => Promise<Record<string, unknown>> }>((resolve) => {
+      resolveDelete = resolve;
+    });
+    portalFetch.mockImplementationOnce(() => deferred);
+
+    fireEvent.click(getByRole("button", { name: "Delete" }));
+
+    // Mid-flight: the DELETE has fired but not resolved.
+    expect(getByRole("button", { name: "Edit" })).toBeDisabled();
+    expect(getByRole("button", { name: "Delete" })).toBeDisabled();
+    expect(getByRole("button", { name: "Add Account" })).toBeDisabled();
+
+    await act(async () => {
+      resolveDelete({ ok: true, json: async () => ({}) });
+    });
+  });
+});

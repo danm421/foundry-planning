@@ -114,7 +114,11 @@ import {
 import { calcSeca, calcSeAdditionalMedicare } from "../lib/tax/fica";
 import { resolveCashValueForYear } from "./life-insurance-schedule";
 import { computeTermEndYear } from "./life-insurance-expiry";
-import { computePortfolioSnapshot, LIQUID_PORTFOLIO_BUCKETS } from "./portfolio-snapshot";
+import {
+  computePortfolioSnapshot,
+  LIQUID_PORTFOLIO_BUCKETS,
+  PORTFOLIO_CATEGORY_TO_BUCKET,
+} from "./portfolio-snapshot";
 import { applyTrustAnnualPass, type NonGrantorTrustInput } from "./trust-tax/index";
 import {
   computeAnnualUnitrustPayment,
@@ -7807,17 +7811,6 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // that same accounting.
   const stableEntityById: Record<string, EntitySummary> = {};
   for (const e of data.entities ?? []) stableEntityById[e.id] = e;
-  const portfolioCategoryToKey: Record<
-    string,
-    "taxable" | "cash" | "retirement" | "realEstate" | "business" | "lifeInsurance"
-  > = {
-    taxable: "taxable",
-    cash: "cash",
-    retirement: "retirement",
-    real_estate: "realEstate",
-    business: "business",
-    life_insurance: "lifeInsurance",
-  };
   for (const year of years) {
     let mutated = false;
     for (const acct of data.accounts ?? []) {
@@ -7833,7 +7826,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const ledger = year.accountLedgers[acct.id];
       if (!ledger) continue;
       const entity = stableEntityById[entityOwner.entityId];
-      const primaryKey = portfolioCategoryToKey[acct.category] ?? "taxable";
+      const primaryKey = PORTFOLIO_CATEGORY_TO_BUCKET[acct.category] ?? "taxable";
 
       // Clear stale per-account entries so we can write the locked-share split fresh.
       delete year.portfolioAssets[primaryKey][acct.id];
@@ -7881,6 +7874,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       "taxable",
       "cash",
       "retirement",
+      "annuity",
       "realEstate",
       "business",
       "lifeInsurance",
@@ -7896,6 +7890,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       year.portfolioAssets.taxableTotal +
       year.portfolioAssets.cashTotal +
       year.portfolioAssets.retirementTotal +
+      year.portfolioAssets.annuityTotal +
       year.portfolioAssets.realEstateTotal +
       year.portfolioAssets.businessTotal +
       year.portfolioAssets.lifeInsuranceTotal +

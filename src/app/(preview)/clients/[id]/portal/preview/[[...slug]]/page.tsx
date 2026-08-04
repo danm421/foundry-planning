@@ -22,6 +22,7 @@ import { PortalModeProvider } from "@/components/portal/portal-mode-context";
 import { NotSharedNotice } from "@/components/portal/not-shared-notice";
 import { PortalSettingsView } from "@/components/portal/portal-settings-view";
 import { loadPortalPrivacy } from "@/lib/portal/privacy";
+import { loadPortalConnectionAlert } from "@/lib/portal/load-plaid-items";
 import { resolveIntakeBrandingForClient } from "@/lib/branding/resolve-for-client";
 import { PortalBrandingStrip } from "@/components/portal/portal-branding-mark";
 
@@ -54,7 +55,7 @@ export default async function PortalPreviewPage({
   // Gated sections render a NotSharedNotice INSTEAD of loading data — nothing
   // the client kept private may enter this page's payload. Both reads sit
   // behind the access gate above; they are independent of each other.
-  const [privacy, contacts, branding] = await Promise.all([
+  const [privacy, contacts, branding, connectionAlert] = await Promise.all([
     loadPortalPrivacy(id),
     access.client.crmHouseholdId
       ? db
@@ -68,7 +69,10 @@ export default async function PortalPreviewPage({
           .where(eq(crmHouseholdContacts.householdId, access.client.crmHouseholdId))
       : [],
     resolveIntakeBrandingForClient(access.firmId, access.client.advisorId),
+    // Decoration only — see the note in (portal)/portal/layout.tsx.
+    loadPortalConnectionAlert(id).catch(() => false),
   ]);
+  const navAlerts = { "/settings": connectionAlert };
 
   // Dispatch on slug. Empty / ["profile"] → Household.
   const path = (slug ?? []).join("/");
@@ -106,7 +110,14 @@ export default async function PortalPreviewPage({
   } else if (path === "documents") {
     section = <PortalDocumentsScreen editEnabled={access.client.portalEditEnabled} />;
   } else if (path === "settings") {
-    section = <PortalSettingsView privacy={privacy} readOnly />;
+    section = (
+      <PortalSettingsView
+        privacy={privacy}
+        clientId={id}
+        editEnabled={access.client.portalEditEnabled}
+        readOnly
+      />
+    );
   } else {
     notFound();
   }
@@ -139,6 +150,7 @@ export default async function PortalPreviewPage({
           email={primary?.email ?? ""}
           basePath={basePath}
           className="flex min-h-0 overflow-y-auto"
+          alerts={navAlerts}
         />
         <main className="min-h-0 min-w-0 overflow-y-auto border-x border-hair">
           <PortalBrandingStrip branding={branding} />

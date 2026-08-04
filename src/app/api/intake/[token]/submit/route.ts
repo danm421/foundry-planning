@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { db } from "@/db";
-import { intakeForms } from "@/db/schema";
+import { clients, intakeForms } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import {
   extractClientIp,
@@ -18,12 +18,14 @@ import {
 } from "@/lib/intake/schema";
 import { requireActiveSubscriptionForFirm, ForbiddenError } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
+import { notifyIntakeSubmitted } from "@/lib/notifications/producers/intake";
 
 export const dynamic = "force-dynamic";
 
 // POST /api/intake/[token]/submit — public (no auth), token-scoped.
 // Validates the complete draft payload and freezes the form to "submitted"
-// for advisor review. Never writes live plan data — only `applyIntake` does.
+// for advisor review, then notifies the owning advisor when the form carries a
+// client. Never writes live plan data — only `applyIntake` does.
 //
 // Race-free submit: an optional JSON body is accepted and merged into the
 // stored payload before strict validation. This eliminates the race where
@@ -156,6 +158,29 @@ export async function POST(
     resourceType: "intake_form",
     resourceId: form.id,
   });
+
+  // 10. Notify the owning advisor. Deliberately AFTER the freeze write above
+  //     has committed and outside any transaction (this handler opens none) —
+  //     an enqueue failure must never roll back a client's submission.
+  //     Unlike the portal route, clientId really is nullable here: a blank-mode
+  //     invite sent to a true prospect has no client yet, and with no client
+  //     there is no owning advisor to address, so no notification.
+  if (form.clientId) {
+    const [owner] = await db
+      .select({ advisorId: clients.advisorId })
+      .from(clients)
+      .where(eq(clients.id, form.clientId))
+      .limit(1);
+    if (owner?.advisorId) {
+      await notifyIntakeSubmitted({
+        firmId: form.firmId,
+        advisorId: owner.advisorId,
+        clientId: form.clientId,
+        formId: form.id,
+        recipientName: form.recipientName,
+      });
+    }
+  }
 
   return NextResponse.json({ ok: true });
 }

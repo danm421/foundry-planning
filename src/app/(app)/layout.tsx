@@ -12,6 +12,7 @@ import { SubscriptionGuard } from "@/components/subscription-guard";
 import Topbar from "@/components/topbar";
 import { countCrmHouseholdsForFirm } from "@/lib/crm/households";
 import { getSubscriptionState } from "@/lib/billing/subscription-state";
+import { countUnreadNotifications } from "@/lib/notifications/queries";
 import { getOpsAdmin } from "@/lib/ops/ops-auth";
 import { GlobalForgeMount } from "@/components/forge/global-forge-mount";
 import { WalkthroughProvider } from "@/components/forge/walkthrough-provider";
@@ -22,7 +23,7 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }): Promise<ReactElement> {
-  const [{ orgId, sessionClaims, actor }, jar, state, opsAdmin] = await Promise.all([
+  const [{ orgId, userId, sessionClaims, actor }, jar, state, opsAdmin] = await Promise.all([
     auth(),
     cookies(),
     getSubscriptionState(),
@@ -30,7 +31,21 @@ export default async function AppLayout({
   ]);
   const isOpsAdmin = opsAdmin !== null;
   const collapsed = jar.get("sidebar-collapsed")?.value !== "0";
-  const clientsCount = orgId ? await countCrmHouseholdsForFirm(orgId) : 0;
+  const [clientsCount, unreadCount] = await Promise.all([
+    orgId ? countCrmHouseholdsForFirm(orgId) : 0,
+    // Degrade to 0 rather than throw. A throw in THIS file is not caught by
+    // (app)/error.tsx — it escalates to global-error.tsx, so a failure here
+    // shows the error screen on every authenticated page, not just /alerts.
+    // The realistic trigger is code deployed ahead of its migration (which has
+    // happened twice in this repo): `notifications` would not exist yet and the
+    // whole product would be down for a decorative badge count.
+    orgId && userId
+      ? countUnreadNotifications(orgId, userId).catch((err: unknown) => {
+          console.error("[notifications] unread count failed:", err);
+          return 0;
+        })
+      : 0,
+  ]);
   const meta =
     (sessionClaims as { org_public_metadata?: { is_founder?: boolean } } | null)
       ?.org_public_metadata ?? {};
@@ -50,7 +65,7 @@ export default async function AppLayout({
       <SidebarProvider initialCollapsed={collapsed}>
         <AppShell>
           <SidebarFrame>
-            <Sidebar clientsCount={clientsCount} isOpsAdmin={isOpsAdmin} />
+            <Sidebar clientsCount={clientsCount} unreadCount={unreadCount} isOpsAdmin={isOpsAdmin} />
           </SidebarFrame>
           <BackNavProvider>
             {/* A route opts into an app-like, viewport-filling surface (the

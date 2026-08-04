@@ -1,25 +1,4 @@
-// @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
-
-// Mock the client list component so we can read what props the section
-// passed it without exercising its own logic.
-vi.mock("../profile-accounts-list", () => ({
-  default: ({ editEnabled, rows, familyMembers, trustEntities }: { editEnabled: boolean; rows: unknown[]; familyMembers: unknown[]; trustEntities: unknown[] }) => (
-    <div
-      data-testid="accounts-list"
-      data-edit={String(editEnabled)}
-      data-row-count={rows.length}
-      data-fm-count={familyMembers.length}
-      data-trust-count={trustEntities.length}
-    />
-  ),
-}));
-
-// Mock the chart component (client component; uses canvas which is unavailable in jsdom).
-vi.mock("../networth-trend-chart", () => ({
-  NetWorthTrendChart: () => null,
-}));
 
 // Each schema-import access returns a unique sentinel so we can branch in db mock.
 vi.mock("@/db/schema", () => ({
@@ -57,6 +36,7 @@ let mockLiabilities: {
 }[] = [];
 let mockLiabilityOwners: { liabilityId: string; familyMemberId: string | null; entityId: string | null; percent: string }[] = [];
 let mockPlaidTransactions: unknown[] = [];
+let mockNoScenario = false;
 
 vi.mock("@/db", () => ({
   db: {
@@ -67,7 +47,7 @@ vi.mock("@/db", () => ({
             return { limit: () => Promise.resolve([{ portalEditEnabled: true }]) };
           }
           if (tbl._name === "scenarios") {
-            return { limit: () => Promise.resolve([{ id: "scenario-base" }]) };
+            return { limit: () => Promise.resolve(mockNoScenario ? [] : [{ id: "scenario-base" }]) };
           }
           if (tbl._name === "accounts") {
             const rows = mockAccounts;
@@ -120,36 +100,47 @@ beforeEach(() => {
   mockLiabilities = [];
   mockLiabilityOwners = [];
   mockPlaidTransactions = [];
+  mockNoScenario = false;
 });
 
-import AccountsSection from "../accounts-section";
+import { loadAccountsPage } from "../load-accounts-page";
 
-describe("AccountsSection", () => {
-  it("editEnabled follows portalEditEnabled (toggle on → edit)", async () => {
-    const ui = await AccountsSection({ clientId: "c1" });
-    const { container } = render(ui);
-    const list = container.querySelector("[data-testid='accounts-list']")!;
-    expect(list.getAttribute("data-edit")).toBe("true");
-    expect(list.getAttribute("data-row-count")).toBe("2");
-    expect(list.getAttribute("data-fm-count")).toBe("1");
-    expect(list.getAttribute("data-trust-count")).toBe("1");
+describe("loadAccountsPage", () => {
+  it("passes through portalEditEnabled", async () => {
+    const dto = await loadAccountsPage("c1");
+    expect(dto.editEnabled).toBe(true);
   });
 
-  it("hides default-checking + advisor-only accounts and totals only visible assets", async () => {
-    const ui = await AccountsSection({ clientId: "c1" });
-    const { container } = render(ui);
-    const list = container.querySelector("[data-testid='accounts-list']")!;
+  it("hides default-checking and advisor-only accounts", async () => {
+    const dto = await loadAccountsPage("c1");
     // a1 (cash) + a2 (taxable) visible; a3 (isDefaultChecking) + a4 (notes_receivable) hidden.
-    expect(list.getAttribute("data-row-count")).toBe("2");
-    // PortalNetWorthHeader renders "Assets" (no debt in default fixture → netWorth = assets).
-    expect(container.textContent).toContain("Assets");
-    expect(container.textContent).toContain("$5,100");
+    expect(dto.assets.map((a) => a.id)).toEqual(["a1", "a2"]);
+    expect(dto.netWorth.assets).toBe(5100);
   });
 
-  it("renders the net-worth header and a debt row with APR metadata", async () => {
-    // Arrange: 1 visible cash account value 1000; 1 client-owned credit_card
-    // liability balance 250 with aprPercentage 19.99; family member role "client";
-    // no transactions.
+  it("normalises accounts to the PortalAccountRow shape", async () => {
+    const dto = await loadAccountsPage("c1");
+    expect(dto.assets[1]).toMatchObject({
+      id: "a2", name: "Brokerage", category: "taxable", subType: "brokerage",
+      last4: "1234", value: 5000, isPlaidLinked: false,
+    });
+  });
+
+  it("returns owners keyed by account id", async () => {
+    const dto = await loadAccountsPage("c1");
+    expect(dto.ownersByAccountId["a1"]).toEqual([
+      { familyMemberId: "fm1", entityId: null, percent: "1" },
+    ]);
+    expect(dto.ownersByAccountId["a2"]).toHaveLength(1);
+  });
+
+  it("returns family members and trust entities for the owner pickers", async () => {
+    const dto = await loadAccountsPage("c1");
+    expect(dto.familyMembers).toHaveLength(1);
+    expect(dto.trustEntities).toEqual([{ id: "ent1", name: "Pat Family Trust" }]);
+  });
+
+  it("nets debt out of net worth and carries debt metadata", async () => {
     mockAccounts = [
       { id: "b1", name: "Savings", category: "cash", subType: "checking", value: "1000.00", accountNumberLast4: null, plaidItemId: null, isDefaultChecking: false, parentAccountId: null },
     ];
@@ -167,10 +158,16 @@ describe("AccountsSection", () => {
       { liabilityId: "lib1", familyMemberId: "fm1", entityId: null, percent: "1" },
     ];
 
-    const ui = await AccountsSection({ clientId: "client-1" });
-    const { container } = render(ui);
-    expect(container.textContent).toContain("Net worth");
-    expect(container.textContent).toContain("$750");
-    expect(container.textContent).toMatch(/19\.99%/);
+    const dto = await loadAccountsPage("client-1");
+    expect(dto.netWorth).toEqual({ assets: 1000, debt: 250, netWorth: 750 });
+    expect(dto.debts[0]).toMatchObject({ id: "lib1", liabilityType: "credit_card", aprPercentage: 19.99 });
+  });
+
+  it("returns an empty DTO when the client has no base scenario", async () => {
+    mockNoScenario = true;
+    const dto = await loadAccountsPage("c1");
+    expect(dto.assets).toEqual([]);
+    expect(dto.debts).toEqual([]);
+    expect(dto.netWorth).toEqual({ assets: 0, debt: 0, netWorth: 0 });
   });
 });

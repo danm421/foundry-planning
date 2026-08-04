@@ -99,4 +99,25 @@ describe("PortalMobileNav", () => {
       screen.getByRole("img", { name: "Foundry Planning" }),
     ).toBeInTheDocument();
   });
+
+  it("renders an attention dot only on the alerted item", () => {
+    mockPathname = "/portal/accounts";
+    const { container } = render(
+      <PortalMobileNav displayName="Jane" alerts={{ "/settings": true }} />,
+    );
+    const dots = container.querySelectorAll('[aria-label="Needs attention"]');
+    expect(dots).toHaveLength(1);
+    const settingsLink = container.querySelector('a[href="/portal/settings"]');
+    expect(
+      settingsLink?.querySelector('[aria-label="Needs attention"]'),
+    ).toBeTruthy();
+  });
+
+  it("renders no attention dot when alerts is omitted (default {})", () => {
+    mockPathname = "/portal/accounts";
+    const { container } = render(<PortalMobileNav displayName="Jane" />);
+    expect(
+      container.querySelectorAll('[aria-label="Needs attention"]'),
+    ).toHaveLength(0);
+  });
 });

@@ -3,7 +3,9 @@ import { and, eq } from "drizzle-orm";
 import { accounts, savingsRules } from "@/db/schema";
 import { defaultSavingsRuleRefs, resolveMilestone } from "@/lib/milestones";
 
-import type { ImportPayload } from "../types";
+import type { ExtractedSavings } from "@/lib/extraction/types";
+
+import { getExistingId, linkCreated, type Annotated, type ImportPayload } from "../types";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
 
 /** One destination account's merged employee + employer legs. */
@@ -16,6 +18,12 @@ interface MergedRule {
   employerMatchCap?: number;
   rothPercent?: number;
   growthRate?: number;
+  /**
+   * Every payload row that folded into this rule. The fold is many-to-one, so
+   * the rule's canonical id is stamped onto ALL of them — a re-commit then
+   * updates that one rule instead of inserting a second copy.
+   */
+  rows: Annotated<ExtractedSavings>[];
 }
 
 /**
@@ -56,7 +64,9 @@ export async function commitSavings(
     const existing = merged.get(key) ?? {
       destinationAccountName: key,
       owner: row.owner ?? "client",
+      rows: [],
     };
+    existing.rows.push(row);
     // First non-null wins per field; the employer leg only carries match fields
     // and the employee leg only carries amount/percent, so they do not collide.
     // If two files describe the same destination with a DIFFERING non-null
@@ -120,22 +130,48 @@ export async function commitSavings(
         ? resolveMilestone(refs.endYearRef, ctx.milestones, "end")
         : null) ?? ctx.milestones?.planEnd ?? 0;
 
-    await tx.insert(savingsRules).values({
-      clientId: ctx.clientId,
-      scenarioId: ctx.scenarioId,
-      accountId,
+    const values = {
       annualAmount: rule.annualAmount != null ? String(rule.annualAmount) : "0",
       annualPercent: rule.annualPercent != null ? String(rule.annualPercent) : null,
       employerMatchPct: rule.employerMatchPct != null ? String(rule.employerMatchPct) : null,
       employerMatchCap: rule.employerMatchCap != null ? String(rule.employerMatchCap) : null,
       rothPercent: rule.rothPercent != null ? String(rule.rothPercent) : null,
       growthRate: rule.growthRate != null ? String(rule.growthRate) : "0",
-      growthSource: "custom",
+      growthSource: "custom" as const,
       startYear,
       endYear,
       startYearRef: refs.startYearRef,
       endYearRef: refs.endYearRef,
-    });
+    };
+
+    // A rule this import already created (any leg carries the link). Update it
+    // in place rather than inserting a second rule for the same destination.
+    const linkedId = rule.rows.map(getExistingId).find((id) => id != null) ?? null;
+    if (linkedId) {
+      await tx
+        .update(savingsRules)
+        .set(values)
+        .where(
+          and(
+            eq(savingsRules.id, linkedId),
+            eq(savingsRules.clientId, ctx.clientId),
+            eq(savingsRules.scenarioId, ctx.scenarioId),
+          ),
+        );
+      result.updated += 1;
+      continue;
+    }
+
+    const [inserted] = await tx
+      .insert(savingsRules)
+      .values({
+        clientId: ctx.clientId,
+        scenarioId: ctx.scenarioId,
+        accountId,
+        ...values,
+      })
+      .returning({ id: savingsRules.id });
+    for (const r of rule.rows) linkCreated(r, inserted.id);
     result.created += 1;
   }
 

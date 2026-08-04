@@ -70,9 +70,9 @@ export function makeYear(over: Partial<ProjectionYear> & { year: number }): Proj
     savings: { byAccount: {}, total: 0, employerTotal: 0 },
     totalIncome: 0, totalExpenses: 0, netCashFlow: 0,
     portfolioAssets: {
-      taxable: {}, cash: {}, retirement: {}, realEstate: {}, business: {},
+      taxable: {}, cash: {}, retirement: {}, annuity: {}, realEstate: {}, business: {},
       lifeInsurance: {}, stockOptions: {}, taxableTotal: 0, cashTotal: 0,
-      retirementTotal: 0, realEstateTotal: 0, businessTotal: 0,
+      retirementTotal: 0, annuityTotal: 0, realEstateTotal: 0, businessTotal: 0,
       lifeInsuranceTotal: 0, stockOptionsTotal: 0,
       trustsAndBusinesses: {}, trustsAndBusinessesTotal: 0,
       accessibleTrustAssets: {}, accessibleTrustAssetsTotal: 0,

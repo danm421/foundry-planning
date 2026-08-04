@@ -6,7 +6,7 @@ Next.js 16 with React 19 and the App Router. APIs, conventions, and file structu
 
 ## Project
 
-Foundry Planning — cash-flow-based financial planning for advisors. Solo-dev app.
+Foundry Planning — cash flow based financial planning for advisors. 
 
 **Stack:** Next.js 16 (App Router) · React 19 · TypeScript · Neon Postgres + Drizzle · Clerk · Upstash Redis · Azure OpenAI (document extraction) · Vitest · Vercel · Tailwind v4 · Chart.js · TanStack Table · @react-pdf/renderer
 
@@ -37,7 +37,7 @@ npx drizzle-kit generate | migrate    # src/db/schema.ts is the source of truth
 
 **Full pipeline only for substantial new features** — work spanning 3+ areas (engine + lib + UI), needing a schema migration, or reshaping a user-facing flow end to end. Also whenever I ask for a spec or plan by name:
 
-Brainstorm → spec → plan → worktree under `.worktrees/<slug>/` → execute (TDD for engine/lib) → verify (`npm test`, `npm run lint`, browser check) → `superpowers:finishing-a-development-branch`. Features get their own worktree, never `main`; merge only when fully done.
+Superpowers Brainstorm → spec → plan → worktree under `.worktrees/<slug>/` → execute (TDD for engine/lib) → verify (`npm test`, `npm run lint`, browser check) → `superpowers:finishing-a-development-branch`. Features get their own worktree, never `main`; merge only when fully done.
 
 Individual skills still apply on their own merits at any size — `systematic-debugging` when a cause is unknown, `simplify` after non-trivial edits. It's the multi-step spec/plan pipeline that's opt-in, not every skill.
 

@@ -9,7 +9,7 @@ import {
   validateOwnersTenant,
 } from "@/lib/ownership";
 
-import { getExistingId, type ImportPayload } from "../types";
+import { getExistingId, linkCreated, type ImportPayload } from "../types";
 import { loadFamilyRoleIds, type FamilyRoleIds } from "./family-resolver";
 import { writeAccountHoldings } from "./holdings";
 import { accountHoldingsGuardrail } from "./holdings-guardrail";
@@ -146,6 +146,7 @@ export async function commitAccounts(
           faceValue: "0",
         });
       }
+      linkCreated(row, inserted.id);
       result.created += 1;
       if (guard.note) result.warnings.push(`${row.name}: ${guard.note}`);
       continue;

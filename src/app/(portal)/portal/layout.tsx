@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { clients, crmHouseholdContacts } from "@/db/schema";
 import { requireClientPortalAccess } from "@/lib/authz";
 import { resolveIntakeBrandingForClient } from "@/lib/branding/resolve-for-client";
+import { loadPortalConnectionAlert } from "@/lib/portal/load-plaid-items";
 import PortalNav from "@/components/portal/portal-nav";
 import PortalMobileNav from "@/components/portal/portal-mobile-nav";
 import PortalReadOnlyBanner from "@/components/portal/portal-read-only-banner";
@@ -59,10 +60,16 @@ export default async function PortalLayout({
   // Letterhead for the portal chrome, keyed by the client's advisor — an
   // advisor with branding enabled overlays their own logo/name/favicon over
   // the firm's; null → Foundry lockup (same fallback semantics as the intake
-  // pages).
-  const branding = row
-    ? await resolveIntakeBrandingForClient(row.firmId, row.advisorId)
-    : null;
+  // pages). Runs alongside the connection-alert read below — neither depends
+  // on the other's result.
+  const [branding, connectionAlert] = await Promise.all([
+    row ? resolveIntakeBrandingForClient(row.firmId, row.advisorId) : Promise.resolve(null),
+    // The dot is a decoration. There is no error.tsx under (portal), so an
+    // unguarded rejection here would drop every portal page onto the root
+    // global-error screen because a nav badge failed to resolve.
+    loadPortalConnectionAlert(clientId).catch(() => false),
+  ]);
+  const navAlerts = { "/settings": connectionAlert };
 
   return (
     <div className="min-h-dvh bg-paper text-ink lg:grid lg:h-dvh lg:grid-cols-[240px_minmax(0,1fr)_auto] lg:overflow-hidden">
@@ -77,6 +84,7 @@ export default async function PortalLayout({
         displayName={displayName}
         email={email}
         className="hidden lg:flex lg:h-dvh lg:overflow-y-auto"
+        alerts={navAlerts}
       />
       <main className="min-w-0 lg:h-dvh lg:overflow-y-auto lg:border-x lg:border-hair">
         {/* Mobile-only swipeable top tab bar. */}
@@ -84,6 +92,7 @@ export default async function PortalLayout({
           displayName={displayName}
           branding={branding}
           className="lg:hidden"
+          alerts={navAlerts}
         />
         {/* Desktop-only firm letterhead pinned above the scrolling content. */}
         <PortalBrandingStrip branding={branding} className="hidden lg:flex" />

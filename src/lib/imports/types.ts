@@ -143,6 +143,22 @@ export function getExistingId<T>(row: Annotated<T>): string | null {
   return row.match?.kind === "exact" ? row.match.existingId : null;
 }
 
+/**
+ * Record the row → canonical-record link a commit just created, so a later
+ * re-commit UPDATEs that record instead of inserting a second copy.
+ *
+ * Mutates the payload row in place; `commitTabs` persists the whole mutated
+ * payload back to `client_imports.payloadJson` inside the same transaction, so
+ * the link is only durable if the commit itself commits.
+ *
+ * Without this the payload keeps saying `{ kind: "new" }` forever and every
+ * re-commit duplicates the row — which is exactly what the onboarding drawer's
+ * "Apply again" button used to do.
+ */
+export function linkCreated<T>(row: Annotated<T>, existingId: string): void {
+  row.match = { kind: "exact", existingId };
+}
+
 export function emptyImportPayload(): ImportPayload {
   return {
     dependents: [],

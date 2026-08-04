@@ -32,19 +32,21 @@ const usd = new Intl.NumberFormat("en-US", {
 });
 
 // Portfolio total = liquid investable buckets only (cash + taxable + retirement
-// + life insurance). Real estate, business, and entity/trust-owned shares live
-// on the balance sheet, not in Portfolio Assets.
+// + annuity + life insurance). Real estate, business, and entity/trust-owned
+// shares live on the balance sheet, not in Portfolio Assets.
 function portfolioTotalForYear(y: ProjectionYear): number {
   const pa = y.portfolioAssets as unknown as {
     taxableTotal?: number;
     cashTotal?: number;
     retirementTotal?: number;
+    annuityTotal?: number;
     lifeInsuranceTotal?: number;
   };
   return (
     (pa?.cashTotal ?? 0) +
     (pa?.taxableTotal ?? 0) +
     (pa?.retirementTotal ?? 0) +
+    (pa?.annuityTotal ?? 0) +
     (pa?.lifeInsuranceTotal ?? 0)
   );
 }

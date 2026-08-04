@@ -28,6 +28,10 @@ import type { IrmaaTier } from "@/engine/types";
 import type { TrustSubType } from "@/lib/entities/trust";
 import type { IntakePayload } from "@/lib/intake/schema";
 import type { ReportLayoutEntry } from "@/lib/solver/report-layout";
+import type {
+  NotificationCategory,
+  DateDigestCadence,
+} from "@/lib/notifications/catalog";
 
 const inet = customType<{ data: string; driverData: string }>({
   dataType() {
@@ -999,6 +1003,9 @@ export const clients = pgTable("clients", {
     .references(() => crmHouseholds.id, { onDelete: "restrict" }),
   clerkUserId: text("clerk_user_id").unique(),
   portalInvitedAt: timestamp("portal_invited_at"),
+  // First successful portal sign-in. `portal_invited_at` records the invite;
+  // activation was not recorded anywhere. Drives `portal_first_login`.
+  portalFirstLoginAt: timestamp("portal_first_login_at"),
   portalEditEnabled: boolean("portal_edit_enabled").notNull().default(true),
 }, (t) => [
   index("clients_firm_idx").on(t.firmId),
@@ -3820,6 +3827,111 @@ export const portalNotifications = pgTable(
   }),
 );
 
+// ── Advisor notifications ("Alerts" in the UI) ────────────────────────────────
+//
+// Named `notifications`, NOT `alerts`: src/lib/alerts.ts already means computed
+// plan-health warnings. Sits beside portal_notifications above — that one is
+// client-facing and delivered by Expo push; this one is advisor-facing and
+// delivered in-app plus a daily digest email.
+
+/**
+ * One row per event PER RECIPIENT. `title`/`body`/`url` are denormalized at
+ * write time so the inbox renders without a polymorphic join across eighteen
+ * source tables. Routing (`inApp`/`emailPending`) is decided once, at event
+ * time, from that recipient's preferences — changing a preference later does
+ * not retroactively rewrite existing rows.
+ */
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    // Clerk org id. Text with no FK, matching the crm_* convention, so insert
+    // order is never coupled to the firms row.
+    firmId: text("firm_id").notNull(),
+    // Clerk advisor id — the RECIPIENT, not the actor.
+    userId: text("user_id").notNull(),
+    // Closed vocabulary in @/lib/notifications/catalog.ts. Text, not a pg enum:
+    // an enum forces every future category through ALTER TYPE ... ADD VALUE,
+    // which drizzle-kit runs inside the single migration transaction and which
+    // throws PG 55P04 as soon as the new value is also used there.
+    category: text("category").$type<NotificationCategory>().notNull(),
+    // Null for system- or client-initiated events (a cron, a portal upload).
+    actorUserId: text("actor_user_id"),
+    // NULLABLE: the three data-plumbing categories are not client-scoped.
+    clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    body: text("body"),
+    url: text("url").notNull(),
+    entityType: text("entity_type"),
+    entityId: uuid("entity_id"),
+    // Idempotency key for scanner-produced and coalescing rows. See the partial
+    // unique index below.
+    dedupKey: text("dedup_key"),
+    inApp: boolean("in_app").notNull(),
+    emailPending: boolean("email_pending").notNull(),
+    emailedAt: timestamp("emailed_at", { withTimezone: true }),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("notifications_user_read_idx").on(t.userId, t.readAt),
+    index("notifications_user_created_idx").on(t.userId, t.createdAt.desc()),
+    // Partial: the digest sweep only ever reads pending rows, and this keeps
+    // the index from growing with the (much larger) already-emailed history.
+    index("notifications_email_pending_idx")
+      .on(t.createdAt)
+      .where(sql`${t.emailPending}`),
+    index("notifications_firm_idx").on(t.firmId),
+    // The idempotency guard. Every scanner insert is `on conflict do nothing`
+    // against a key like `birthday:<contactId>:2026-08-10`, which makes a double
+    // cron invocation, a manual re-run, and a retry-after-timeout all provably
+    // harmless — one column and one index instead of a claim table per scanner.
+    // Also coalesces chatty producers: `portal_edit:<clientId>:<date>` turns a
+    // client editing thirty fields into one row.
+    uniqueIndex("notifications_user_dedup_idx")
+      .on(t.userId, t.dedupKey)
+      .where(sql`${t.dedupKey} is not null`),
+  ],
+);
+
+export type NotificationRow = InferSelectModel<typeof notifications>;
+export type NewNotificationRow = InferInsertModel<typeof notifications>;
+
+/**
+ * One row per (firm, advisor). Keyed on both — matching intake_email_settings —
+ * because an advisor can belong to more than one Clerk org and should not carry
+ * one firm's preferences into another.
+ *
+ * `channels` is a PARTIAL map. An absent category inherits its shipped default,
+ * which is what lets a new category roll out to existing users without a
+ * backfill and without reading as "off".
+ */
+export const notificationPreferences = pgTable(
+  "notification_preferences",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id").notNull(),
+    userId: text("user_id").notNull(),
+    channels: jsonb("channels")
+      .$type<Partial<Record<NotificationCategory, { inApp: boolean; email: boolean }>>>()
+      .notNull()
+      .default({}),
+    // Governs the Dates group only (birthdays + milestone ages together).
+    dateDigestCadence: text("date_digest_cadence")
+      .$type<DateDigestCadence>()
+      .notNull()
+      .default("weekly"),
+    // Set when the advisor dismisses the one-time "email is off for everything"
+    // prompt. Nullable = never shown or never dismissed.
+    emailPromptDismissedAt: timestamp("email_prompt_dismissed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("notification_preferences_firm_user_idx").on(t.firmId, t.userId)],
+);
+
+export type NotificationPreferencesRow = InferSelectModel<typeof notificationPreferences>;
+
 export const accountOwnersRelations = relations(accountOwners, ({ one }) => ({
   account: one(accounts, {
     fields: [accountOwners.accountId],
@@ -5302,6 +5414,10 @@ export const intakeForms = pgTable("intake_forms", {
   payload: jsonb("payload").$type<IntakePayload>().notNull().default({} as unknown as IntakePayload),
   createdByUserId: text("created_by_user_id").notNull(),
   sentAt: timestamp("sent_at"),
+  // First time the recipient loaded the form by token. `sent_at` records that
+  // we mailed it; nothing recorded that they ever looked. Drives the
+  // `intake_opened` notification, and distinguishes "ignored" from "started".
+  openedAt: timestamp("opened_at"),
   submittedAt: timestamp("submitted_at"),
   appliedAt: timestamp("applied_at"),
   expiresAt: timestamp("expires_at").notNull(),

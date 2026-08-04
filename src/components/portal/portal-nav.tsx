@@ -4,7 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
 import type { ReactElement } from "react";
-import { PORTAL_NAV_ITEMS } from "@/components/portal/portal-nav-items";
+import {
+  PORTAL_NAV_ITEMS,
+  type PortalNavItem,
+} from "@/components/portal/portal-nav-items";
 
 const OVERVIEW_ITEMS = PORTAL_NAV_ITEMS.filter((i) => i.group === "overview");
 const PROFILE_ITEMS = PORTAL_NAV_ITEMS.filter((i) => i.group === "profile");
@@ -22,6 +25,12 @@ interface Props {
    * the base class list intentionally omits `flex` so that override wins.
    */
   className?: string;
+  /**
+   * Keyed by nav-item `suffix`; `true` renders a small attention dot next to
+   * that item's label. Absent or `false` → no dot. Defaults to `{}` so
+   * standalone consumers and existing tests render unchanged.
+   */
+  alerts?: Record<string, boolean>;
 }
 
 export default function PortalNav({
@@ -29,12 +38,26 @@ export default function PortalNav({
   email,
   basePath = "/portal",
   className = "flex",
+  alerts = {},
 }: Props): ReactElement {
   const pathname = usePathname();
   function itemCls(active: boolean): string {
     return active
       ? "block rounded-md bg-accent/20 px-3 py-1.5 text-[13px] font-medium text-accent"
       : "block rounded-md px-3 py-1.5 text-[13px] text-ink-2 hover:bg-card hover:text-ink";
+  }
+  function itemLabel(item: PortalNavItem): ReactElement {
+    return (
+      <span className="flex items-center gap-2">
+        {item.label}
+        {alerts[item.suffix] && (
+          <span
+            aria-label="Needs attention"
+            className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-warn"
+          />
+        )}
+      </span>
+    );
   }
   return (
     <nav
@@ -52,7 +75,7 @@ export default function PortalNav({
             return (
               <li key={item.suffix || "dashboard"}>
                 <Link href={href} className={itemCls(pathname === href)}>
-                  {item.label}
+                  {itemLabel(item)}
                 </Link>
               </li>
             );
@@ -70,7 +93,7 @@ export default function PortalNav({
             return (
               <li key={item.suffix}>
                 <Link href={href} className={itemCls(pathname === href)}>
-                  {item.label}
+                  {itemLabel(item)}
                 </Link>
               </li>
             );
@@ -85,7 +108,7 @@ export default function PortalNav({
             return (
               <li key={item.suffix}>
                 <Link href={href} className={itemCls(pathname === href)}>
-                  {item.label}
+                  {itemLabel(item)}
                 </Link>
               </li>
             );
@@ -100,7 +123,7 @@ export default function PortalNav({
             return (
               <li key={item.suffix}>
                 <Link href={href} className={itemCls(pathname === href)}>
-                  {item.label}
+                  {itemLabel(item)}
                 </Link>
               </li>
             );

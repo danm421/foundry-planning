@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import { db } from "@/db";
-import { intakeForms, auditLog, clients, crmHouseholds, crmHouseholdContacts } from "@/db/schema";
+import {
+  intakeForms,
+  auditLog,
+  clients,
+  crmHouseholds,
+  crmHouseholdContacts,
+  notifications,
+} from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { newIntakeToken, defaultExpiry } from "@/lib/intake/tokens";
 import type { IntakePayload } from "@/lib/intake/schema";
@@ -284,7 +291,11 @@ describe("POST /api/portal/intake (submit)", () => {
 
     // Row updated
     const [row] = await db
-      .select({ status: intakeForms.status, submittedAt: intakeForms.submittedAt })
+      .select({
+        id: intakeForms.id,
+        status: intakeForms.status,
+        submittedAt: intakeForms.submittedAt,
+      })
       .from(intakeForms)
       .where(eq(intakeForms.clientId, clientPost));
     expect(row?.status).toBe("submitted");
@@ -297,6 +308,29 @@ describe("POST /api/portal/intake (submit)", () => {
       .where(and(eq(auditLog.firmId, FIRM_ID), eq(auditLog.action, "intake.form.submitted")));
     expect(auditRows.length).toBeGreaterThan(0);
     expect(auditRows[0]?.actorKind).toBe("client");
+
+    // The end-to-end proof: the submit write reaches the owning advisor's
+    // inbox. Unlike the producer unit test (which mocks enqueueNotifications),
+    // this exercises the real chain — route → producer → enqueue → prefs merge
+    // → row planner → insert. Rows are cleaned up by the clients cascade in
+    // afterAll (notifications.client_id is ON DELETE CASCADE).
+    // Scoped by clientPost — a fresh uuid per run — so an interrupted earlier
+    // run can't leave a row that makes this count flaky. FIRM_ID/ADVISOR_ID are
+    // static across runs and would not be run-isolated.
+    const notifRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.clientId, clientPost));
+    expect(notifRows.length).toBe(1);
+    expect(notifRows[0]?.firmId).toBe(FIRM_ID);
+    expect(notifRows[0]?.userId).toBe(ADVISOR_ID);
+    expect(notifRows[0]?.category).toBe("intake_submitted");
+    expect(notifRows[0]?.entityId).toBe(row?.id);
+    expect(notifRows[0]?.url).toBe(`/data-collection/${row?.id}`);
+    // The client submitted it, so no actor is excluded from delivery.
+    expect(notifRows[0]?.actorUserId).toBeNull();
+    // Shipped default for this category: in-app on, email off.
+    expect(notifRows[0]?.inApp).toBe(true);
   }, 30000);
 
   it("409: resubmit after submit returns Conflict", async () => {

@@ -1608,8 +1608,15 @@
     {
       "idx": 229,
       "version": "7",
-      "when": 1785850397085,
-      "tag": "0229_striped_eternals",
+      "when": 1785786332987,
+      "tag": "0229_natural_lyja",
+      "breakpoints": true
+    },
+    {
+      "idx": 230,
+      "version": "7",
+      "when": 1785868666814,
+      "tag": "0230_brief_reavers",
       "breakpoints": true
     }
   ]

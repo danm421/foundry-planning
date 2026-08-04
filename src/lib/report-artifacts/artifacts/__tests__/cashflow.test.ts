@@ -59,9 +59,10 @@ function fixtureYear(overrides: Partial<ProjectionYear> = {}): ProjectionYear {
     totalExpenses: 134_000,
     netCashFlow: 66_000,
     portfolioAssets: {
-      taxable: { acct1: 500_000 }, cash: {}, retirement: {}, realEstate: {},
+      taxable: { acct1: 500_000 }, cash: {}, retirement: {}, annuity: {}, realEstate: {},
       business: {}, lifeInsurance: {},
       taxableTotal: 500_000, cashTotal: 0, retirementTotal: 0,
+      annuityTotal: 0,
       realEstateTotal: 0, businessTotal: 0, lifeInsuranceTotal: 0,
       trustsAndBusinesses: {}, trustsAndBusinessesTotal: 0,
       accessibleTrustAssets: {}, accessibleTrustAssetsTotal: 0,
@@ -200,8 +201,10 @@ describe("cashflowArtifact.fetchData (with mocked DB + projection)", () => {
       fixtureYear({
         portfolioAssets: {
           taxable: { acct1: 500_000 }, cash: {}, retirement: { acct2: 300_000 },
+          annuity: {},
           realEstate: { acct3: 800_000 }, business: {}, lifeInsurance: {}, stockOptions: {},
           taxableTotal: 500_000, cashTotal: 0, retirementTotal: 300_000,
+          annuityTotal: 0,
           realEstateTotal: 800_000, businessTotal: 0, lifeInsuranceTotal: 0, stockOptionsTotal: 0,
           trustsAndBusinesses: {}, trustsAndBusinessesTotal: 0,
           accessibleTrustAssets: {}, accessibleTrustAssetsTotal: 0,
@@ -217,8 +220,9 @@ describe("cashflowArtifact.fetchData (with mocked DB + projection)", () => {
     });
     const sec = data.sections.assets;
     expect(sec.headers.map((h) => h.id)).toEqual([
-      "year", "age", "taxable", "cash", "retirement", "realEstate", "business",
-      "lifeInsurance", "trustsAndBusinesses", "accessibleTrustAssets", "total",
+      "year", "age", "taxable", "cash", "retirement", "annuity", "realEstate",
+      "business", "lifeInsurance", "trustsAndBusinesses", "accessibleTrustAssets",
+      "total",
     ]);
     expect(sec.rows[0].cells.taxable).toBe(500_000);
     expect(sec.rows[0].cells.realEstate).toBe(800_000);

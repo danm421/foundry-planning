@@ -8,10 +8,12 @@ import type {
   ExtractedIncome,
   ExtractedLiability,
   ExtractedLifePolicy,
+  ExtractedSavings,
   ExtractedPrimaryFamilyMember,
   ExtractedSpouseFamilyMember,
 } from "@/lib/extraction/types";
 import type { Annotated, ImportPayload, MatchAnnotation } from "@/lib/imports/types";
+import { adoptMatches } from "@/lib/imports/commit-links";
 import ReviewStepAccounts from "@/components/import/review-step-accounts";
 import ReviewStepIncomes from "@/components/import/review-step-incomes";
 import ReviewStepExpenses from "@/components/import/review-step-expenses";
@@ -84,6 +86,12 @@ export default function WizardImportReview({
   const [lifePolicies, setLifePolicies] = useState<Annotated<ExtractedLifePolicy>[]>(
     payload.lifePolicies,
   );
+  // No step EDITS savings, but the Assets step commits it
+  // (`STEP_COMMIT_TABS.accounts` includes "savings"), so its rows must be held
+  // in state to carry the links a commit stamps on them. Left as the frozen
+  // mount prop, an "Apply again" would PATCH a link-less array back over the
+  // server's link and insert a duplicate savings rule.
+  const [savings, setSavings] = useState<Annotated<ExtractedSavings>[]>(payload.savings);
 
   const [canonical, setCanonical] = useState<CanonicalRows>(EMPTY_CANONICAL);
   const [committing, setCommitting] = useState(false);
@@ -181,7 +189,7 @@ export default function WizardImportReview({
       lifePolicies,
       wills: payload.wills,
       entities: payload.entities,
-      savings: payload.savings,
+      savings,
       warnings: payload.warnings,
       expenseSlots: payload.expenseSlots,
       planBasics: payload.planBasics,
@@ -197,7 +205,7 @@ export default function WizardImportReview({
     lifePolicies,
     payload.wills,
     payload.entities,
-    payload.savings,
+    savings,
     payload.warnings,
     payload.expenseSlots,
     payload.planBasics,
@@ -206,6 +214,27 @@ export default function WizardImportReview({
   const alreadyCommitted = STEP_COMMIT_TABS[step].every((ct) =>
     Boolean(perTabCommittedAt?.[ct]),
   );
+
+  /**
+   * Adopt the row → canonical-record links the commit just stamped server-side.
+   *
+   * This drawer's "Apply again" re-POSTs the same tabs, and each apply PATCHes
+   * the whole local payload first — which replaces `payloadJson.payload`
+   * wholesale. Without adopting the links here, a second apply would ship a
+   * link-less payload and INSERT a duplicate of every row the first apply
+   * created. Matched positionally: commit mutates the arrays in place and
+   * never reorders them; the length guard makes a mismatch a no-op.
+   */
+  const adoptCommitLinks = useCallback((server: ImportPayload | undefined) => {
+    if (!server) return;
+    setDependents((p) => adoptMatches(p, server.dependents));
+    setAccounts((p) => adoptMatches(p, server.accounts));
+    setIncomes((p) => adoptMatches(p, server.incomes));
+    setExpenses((p) => adoptMatches(p, server.expenses));
+    setLiabilities((p) => adoptMatches(p, server.liabilities));
+    setLifePolicies((p) => adoptMatches(p, server.lifePolicies));
+    setSavings((p) => adoptMatches(p, server.savings));
+  }, []);
 
   const handleCommit = useCallback(async () => {
     setCommitting(true);
@@ -229,17 +258,21 @@ export default function WizardImportReview({
           body: JSON.stringify({ tabs: STEP_COMMIT_TABS[step] }),
         },
       );
+      const commitBody = (await commitRes.json().catch(() => null)) as {
+        error?: string;
+        payload?: ImportPayload;
+      } | null;
       if (!commitRes.ok) {
-        const j = await commitRes.json().catch(() => ({}));
-        throw new Error((j as { error?: string }).error ?? `Apply failed (${commitRes.status})`);
+        throw new Error(commitBody?.error ?? `Apply failed (${commitRes.status})`);
       }
+      adoptCommitLinks(commitBody?.payload);
       onCommitted();
     } catch (err) {
       setCommitError((err as Error).message);
     } finally {
       setCommitting(false);
     }
-  }, [step, buildLatestPayload, clientId, importId, onCommitted]);
+  }, [step, adoptCommitLinks, buildLatestPayload, clientId, importId, onCommitted]);
 
   return (
     <SourceFilesContext.Provider value={fileNames}>

@@ -243,6 +243,7 @@ const DRILL_LABELS: Record<string, string> = {
   taxable: "Taxable",
   cash: "Cash",
   retirement: "Retirement",
+  annuity: "Annuity",
   realEstate: "Real Estate",
   business_assets: "Business",
   lifeInsurance: "Life Insurance",
@@ -280,6 +281,7 @@ const PORTFOLIO_SEGMENT_TO_CATEGORY: Record<string, string> = {
   taxable: "taxable",
   cash: "cash",
   retirement: "retirement",
+  annuity: "annuity",
   realEstate: "real_estate",
   business_assets: "business",
   lifeInsurance: "life_insurance",
@@ -860,6 +862,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     taxable: "taxable",
     cash: "cash",
     retirement: "retirement",
+    annuity: "annuity",
     realEstate: "real_estate",
     business: "business",
     lifeInsurance: "life_insurance",
@@ -1940,6 +1943,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         numCol("growth_taxable", () => <DrillBtn segment="taxable" label="Taxable" />, (r) => growthByCategorySegment(r, "taxable")),
         numCol("growth_cash", () => <DrillBtn segment="cash" label="Cash" />, (r) => growthByCategorySegment(r, "cash")),
         numCol("growth_retirement", () => <DrillBtn segment="retirement" label="Retirement" />, (r) => growthByCategorySegment(r, "retirement")),
+        numCol("growth_annuity", () => <DrillBtn segment="annuity" label="Annuity" />, (r) => growthByCategorySegment(r, "annuity")),
         numCol("growth_life_insurance", () => <DrillBtn segment="lifeInsurance" label="Life Insurance" />, (r) => growthByCategorySegment(r, "lifeInsurance")),
         // No drill button: accessibleTrustAssets is an ownership-routing bucket,
         // not an account category, so accountsByCategory has no entry for it.
@@ -2117,6 +2121,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         numCol("portfolio_taxable_total", () => <DrillBtn segment="taxable" label="Taxable" />, (r) => r.portfolioAssets.taxableTotal),
         numCol("portfolio_cash_total", () => <DrillBtn segment="cash" label="Cash" />, (r) => r.portfolioAssets.cashTotal),
         numCol("portfolio_retirement_total", () => <DrillBtn segment="retirement" label="Retirement" />, (r) => r.portfolioAssets.retirementTotal),
+        numCol("portfolio_annuity_total", () => <DrillBtn segment="annuity" label="Annuity" />, (r) => r.portfolioAssets.annuityTotal),
         numCol("portfolio_life_insurance_total", () => <DrillBtn segment="lifeInsurance" label="Life Insurance" />, (r) => r.portfolioAssets.lifeInsuranceTotal),
         ...(hasAnyAccessible
           ? [numCol("portfolio_accessible_trusts_total", () => <DrillBtn segment="accessible_trusts" label="Accessible Trust Assets" />, (r) => r.portfolioAssets.accessibleTrustAssetsTotal)]

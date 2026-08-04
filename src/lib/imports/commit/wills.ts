@@ -6,7 +6,7 @@ import {
   wills,
 } from "@/db/schema";
 
-import { getExistingId, type Annotated, type ImportPayload } from "../types";
+import { getExistingId, linkCreated, type Annotated, type ImportPayload } from "../types";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
 import {
   WillCommitValidationError,
@@ -79,6 +79,7 @@ export async function commitWills(
         })
         .returning({ id: wills.id });
       willId = inserted.id;
+      linkCreated(will, willId);
       result.created += 1;
     } else {
       const matchedId = getExistingId(will);

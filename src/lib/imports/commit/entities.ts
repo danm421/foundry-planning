@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 
 import { entities } from "@/db/schema";
 
-import { getExistingId, type ImportPayload } from "../types";
+import { getExistingId, linkCreated, type ImportPayload } from "../types";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
 
 /**
@@ -36,11 +36,12 @@ export async function commitEntities(
     }
 
     if (kind === "new") {
-      await tx.insert(entities).values({
+      const [inserted] = await tx.insert(entities).values({
         clientId: ctx.clientId,
         name: row.name,
         entityType: row.entityType ?? "trust",
-      });
+      }).returning({ id: entities.id });
+      linkCreated(row, inserted.id);
       result.created += 1;
       continue;
     }

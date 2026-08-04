@@ -5,7 +5,7 @@ import type { YearRef } from "@/lib/milestones";
 
 import { isSummedLivingRow, livingTotalSupersedesRows } from "../living-rows";
 import { livingSlotRole } from "../match-keys/living-slot";
-import { getExistingId, type ImportPayload } from "../types";
+import { getExistingId, linkCreated, type ImportPayload } from "../types";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
 import { resolveImportTiming } from "./timing";
 
@@ -116,7 +116,7 @@ export async function commitExpenses(
 
     if (kind === "new") {
       const timing = resolveImportTiming(row, ctx.milestones);
-      await tx.insert(expenses).values({
+      const [inserted] = await tx.insert(expenses).values({
         clientId: ctx.clientId,
         scenarioId: ctx.scenarioId,
         type: row.type ?? "living",
@@ -128,7 +128,8 @@ export async function commitExpenses(
         endYearRef: timing.end.ref ?? null,
         growthRate: row.growthRate != null ? String(row.growthRate) : "0.03",
         source: "extracted",
-      });
+      }).returning({ id: expenses.id });
+      linkCreated(row, inserted.id);
       result.created += 1;
       continue;
     }
