@@ -8,8 +8,8 @@ import { moneyLabel } from "@/lib/household-map/format";
 import { coerceYearRef, YEAR_REF_LABELS } from "@/lib/milestones";
 import type {
   BoardCallbacks,
+  CashFlowBoardProps,
   FlowTiming,
-  HouseholdMapProps,
   MapColumn,
   MapItem,
 } from "@/lib/household-map/types";
@@ -96,7 +96,7 @@ export default function CashFlowBoard({
   onAddFlow,
   onSaveFlowAmount,
   isItemEditable,
-}: HouseholdMapProps & BoardCallbacks) {
+}: CashFlowBoardProps & BoardCallbacks) {
   const hasSpouse = people.spouse !== null;
 
   /** Permission AND per-row writability. A row the caller can't write — a

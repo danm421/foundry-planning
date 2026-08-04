@@ -351,6 +351,32 @@ export interface HouseholdMapProps {
 }
 
 /**
+ * Exactly what `GoalsBoard` reads. Narrower than `HouseholdMapProps` on purpose:
+ * the client portal renders this board from a base-case tree and has no
+ * `AddAccountDialog` context, no growth context and no scenario field maps to
+ * supply. `HouseholdMapProps` satisfies this structurally, so the advisor Map's
+ * `<GoalsBoard {...props} />` spread keeps compiling unchanged.
+ */
+export interface GoalsBoardProps {
+  people: { client: MapPerson; spouse: MapPerson | null; children: MapPerson[] };
+  goals: MapGoal[];
+  canEdit: boolean;
+  /**
+   * Writability probe only — the board asks `g.expenseId in expenseRows` and
+   * reads no field off the value. Typed `unknown` rather than `ExpenseView` so a
+   * read-only consumer can pass `{}` without importing the scenario view types.
+   */
+  expenseRows: Record<string, unknown>;
+}
+
+/** Exactly what `CashFlowBoard` reads. Same rationale as `GoalsBoardProps`. */
+export interface CashFlowBoardProps {
+  people: { client: MapPerson; spouse: MapPerson | null; children: MapPerson[] };
+  items: MapItem[];
+  canEdit: boolean;
+}
+
+/**
  * Task 11 editing hooks. `HouseholdMapProps` is assembled server-side and
  * crosses the server→client boundary as plain data — functions cannot travel
  * that boundary, so these callbacks are a SEPARATE client-only type, created
