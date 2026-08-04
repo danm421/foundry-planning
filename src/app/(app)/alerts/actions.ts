@@ -62,7 +62,10 @@ export async function savePreferencesAction(form: FormData): Promise<void> {
     resourceType: "notification_preferences",
     resourceId: userId,
     firmId: orgId,
-    metadata: { cadence },
+    // `channels` too, not just the cadence: "when did this advisor turn email
+    // on for task_mentioned?" is the one question a preferences audit exists to
+    // answer, and the cadence alone cannot answer it.
+    metadata: { cadence, channels },
   });
 
   revalidatePath("/alerts");

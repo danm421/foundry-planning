@@ -53,8 +53,14 @@ export default function InboxList({
             // Read state changes on CLICK only. Auto-marking everything read on
             // page view would destroy the unread signal the sidebar badge
             // depends on — you would open the page once and lose the list.
+            // The `.catch` is load-bearing. An unhandled rejection from a
+            // deferred server action (an expired Clerk session, an org switch)
+            // is re-thrown by the router at the nearest error boundary, so
+            // without it a failed mark-read takes the WHOLE page to
+            // (app)/error.tsx. Swallowing it confines the failure to "the row
+            // stays unread", which the next page load corrects.
             onClick={() => {
-              if (!row.readAt) void markReadAction(row.id);
+              if (!row.readAt) void markReadAction(row.id).catch(() => {});
             }}
             className="flex items-start gap-3 px-5 py-4 transition-colors hover:bg-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
           >

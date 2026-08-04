@@ -87,7 +87,11 @@ describe("renderDigestEmail", () => {
     const [batch] = planDigestBatches(rows, 50);
     const { html } = renderDigestEmail(batch, origin);
     expect(html).toContain("13 more");
-    expect(html).toContain(`${origin}/alerts`);
+    // The attribute prefix AND the closing quote are what make this
+    // discriminating: the footer's `${origin}/alerts?tab=settings` renders
+    // unconditionally, so a bare `toContain(`${origin}/alerts`)` passes even
+    // when the truncation link is deleted entirely.
+    expect(html).toContain(`href="${origin}/alerts"`);
   });
 
   it("always links to preferences so every email is one click from off", () => {

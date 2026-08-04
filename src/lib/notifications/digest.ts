@@ -77,6 +77,7 @@ export function escapeHtml(s: string): string {
 
 // Inlined per element: Outlook drops most inherited styles, so anything that
 // does not carry its own font-size falls back to the client default.
+/* eslint-disable brand/no-raw-hex -- email HTML requires inline hex; email clients can't resolve CSS brand tokens (same rationale as src/lib/feedback/email.ts and src/lib/intake/email-template.ts) */
 const WRAP =
   "font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;color:#1a2233;";
 const H1 = "font-size:16px;font-weight:600;margin:0 0 4px;";
@@ -89,6 +90,7 @@ const LINK = "color:#1e3a5f;font-weight:600;text-decoration:none;";
 const MUTED = "color:#64748b;font-size:12px;";
 const FOOTER =
   "margin-top:28px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:12px;color:#64748b;";
+/* eslint-enable brand/no-raw-hex */
 
 function renderItem(row: PendingRow, origin: string): string {
   const href = row.url.startsWith("http") ? row.url : `${origin}${row.url}`;

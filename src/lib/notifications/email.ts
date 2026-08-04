@@ -19,6 +19,15 @@ export async function sendDigestEmail(args: {
   if (!apiKey) {
     if (process.env.NODE_ENV === "development") {
       console.log("[notification-digest] Resend not configured — skipping", args.to);
+    } else {
+      // NOT a silent skip outside development. This is an unattended cron: with
+      // the key missing every row stays emailPending forever, the backlog grows
+      // without bound, and the oldest rows consume the front of MAX_ROWS_PER_RUN
+      // on every later run. The only other signal is a counter in a JSON body
+      // nobody reads, so log loudly enough to show up in Vercel's error view.
+      console.error(
+        "[notification-digest] RESEND_API_KEY is not set — the digest cannot send",
+      );
     }
     return { delivered: false };
   }

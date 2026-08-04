@@ -33,7 +33,18 @@ export default async function AppLayout({
   const collapsed = jar.get("sidebar-collapsed")?.value !== "0";
   const [clientsCount, unreadCount] = await Promise.all([
     orgId ? countCrmHouseholdsForFirm(orgId) : 0,
-    orgId && userId ? countUnreadNotifications(orgId, userId) : 0,
+    // Degrade to 0 rather than throw. A throw in THIS file is not caught by
+    // (app)/error.tsx — it escalates to global-error.tsx, so a failure here
+    // shows the error screen on every authenticated page, not just /alerts.
+    // The realistic trigger is code deployed ahead of its migration (which has
+    // happened twice in this repo): `notifications` would not exist yet and the
+    // whole product would be down for a decorative badge count.
+    orgId && userId
+      ? countUnreadNotifications(orgId, userId).catch((err: unknown) => {
+          console.error("[notifications] unread count failed:", err);
+          return 0;
+        })
+      : 0,
   ]);
   const meta =
     (sessionClaims as { org_public_metadata?: { is_founder?: boolean } } | null)
