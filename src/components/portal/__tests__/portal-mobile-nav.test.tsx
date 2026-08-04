@@ -31,19 +31,18 @@ beforeAll(() => {
 });
 
 describe("PortalMobileNav", () => {
-  it("renders all nine portal destinations as links (default /portal basePath)", () => {
-    mockPathname = "/portal/accounts";
+  it("renders all six portal destinations as links (default /portal basePath)", () => {
+    mockPathname = "/portal/organizer";
     const { container } = render(<PortalMobileNav displayName="Jane Doe" />);
     const hrefs = Array.from(container.querySelectorAll("a")).map((a) =>
       a.getAttribute("href"),
     );
-    // Transactions and Recurring are tabs inside Budget, not rail destinations.
+    // Household, Family, Trusts and Accounts are tabs inside Organizer, and
+    // Transactions and Recurring are tabs inside Budget — none are rail
+    // destinations.
     expect(hrefs).toEqual([
       "/portal",
-      "/portal/profile",
-      "/portal/profile/family",
-      "/portal/profile/trusts",
-      "/portal/accounts",
+      "/portal/organizer",
       "/portal/investments",
       "/portal/budget",
       "/portal/documents",
@@ -52,7 +51,7 @@ describe("PortalMobileNav", () => {
   });
 
   it("prefixes links with a provided basePath (advisor preview)", () => {
-    mockPathname = "/clients/c1/portal/preview/accounts";
+    mockPathname = "/clients/c1/portal/preview/organizer";
     const { container } = render(
       <PortalMobileNav displayName="Jane" basePath="/clients/c1/portal/preview" />,
     );
@@ -60,7 +59,7 @@ describe("PortalMobileNav", () => {
       a.getAttribute("href"),
     );
     expect(hrefs).toContain("/clients/c1/portal/preview/budget");
-    expect(hrefs).toContain("/clients/c1/portal/preview/profile");
+    expect(hrefs).toContain("/clients/c1/portal/preview/organizer");
   });
 
   it("marks only the current route with aria-current=page", () => {
@@ -79,12 +78,12 @@ describe("PortalMobileNav", () => {
     expect(current[0]).toHaveAttribute("href", "/portal/budget");
   });
 
-  it("does not treat sibling profile routes as nested", () => {
-    mockPathname = "/portal/profile/family";
+  it("keeps Organizer current on its nested tab routes", () => {
+    mockPathname = "/portal/organizer/accounts";
     const { container } = render(<PortalMobileNav displayName="Jane" />);
     const current = container.querySelectorAll('a[aria-current="page"]');
     expect(current).toHaveLength(1);
-    expect(current[0]).toHaveAttribute("href", "/portal/profile/family");
+    expect(current[0]).toHaveAttribute("href", "/portal/organizer");
   });
 
   it("falls back to a generic title when displayName is empty", () => {

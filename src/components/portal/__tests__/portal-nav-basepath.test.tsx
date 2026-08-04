@@ -18,12 +18,7 @@ describe("PortalNav basePath", () => {
       a.getAttribute("href"),
     );
     expect(hrefs).toEqual(
-      expect.arrayContaining([
-        "/portal/profile",
-        "/portal/profile/family",
-        "/portal/profile/trusts",
-        "/portal/accounts",
-      ]),
+      expect.arrayContaining(["/portal/organizer", "/portal/investments"]),
     );
   });
 
@@ -40,10 +35,8 @@ describe("PortalNav basePath", () => {
     );
     expect(hrefs).toEqual(
       expect.arrayContaining([
-        "/clients/c1/portal/preview/profile",
-        "/clients/c1/portal/preview/profile/family",
-        "/clients/c1/portal/preview/profile/trusts",
-        "/clients/c1/portal/preview/accounts",
+        "/clients/c1/portal/preview/organizer",
+        "/clients/c1/portal/preview/investments",
       ]),
     );
   });
@@ -90,5 +83,24 @@ describe("PortalNav basePath", () => {
     expect(
       container.querySelectorAll('[aria-label="Needs attention"]'),
     ).toHaveLength(0);
+  });
+
+  it("renders exactly the six rail destinations", () => {
+    const { container } = render(<PortalNav displayName="A" email="a@b.co" />);
+    expect(
+      Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href")),
+    ).toEqual([
+      "/portal",
+      "/portal/organizer",
+      "/portal/investments",
+      "/portal/budget",
+      "/portal/documents",
+      "/portal/settings",
+    ]);
+  });
+
+  it("renders no group subheader now that Profile is gone", () => {
+    const { container } = render(<PortalNav displayName="A" email="a@b.co" />);
+    expect(container.textContent).not.toContain("Profile");
   });
 });
