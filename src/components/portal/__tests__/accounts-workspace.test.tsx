@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, fireEvent, within } from "@testing-library/react";
+import { render, fireEvent, within, act } from "@testing-library/react";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 // Canvas is unavailable in jsdom.
@@ -49,6 +49,14 @@ beforeEach(() => portalFetch.mockClear());
 function railButton(name: RegExp): HTMLElement {
   const nav = within(document.body).getByRole("navigation", { name: "Account categories" });
   return within(nav).getByRole("button", { name });
+}
+
+/** The portalFetch call to `url`, so a write's method and body can be inspected. */
+function callTo(url: string): [string, RequestInit] {
+  const calls = portalFetch.mock.calls as unknown as [string, RequestInit][];
+  const call = calls.find((c) => c[0] === url);
+  if (!call) throw new Error(`no portalFetch call to ${url}`);
+  return call;
 }
 
 describe("AccountsWorkspace", () => {
@@ -127,6 +135,70 @@ describe("AccountsWorkspace", () => {
     // The open detail panel fetches its own recent activity, so assert the
     // absence of the DELETE rather than the absence of all portal traffic.
     expect(portalFetch).not.toHaveBeenCalledWith("/api/portal/accounts/a1", { method: "DELETE" });
+  });
+
+  it("omits the Plaid-owned fields from a linked account's PUT body", async () => {
+    const { getByText, getByRole } = render(
+      <AccountsWorkspace
+        dto={dto({ ownersByAccountId: { a2: [{ familyMemberId: "fm1", entityId: null, percent: "1" }] } })}
+      />,
+    );
+    fireEvent.click(getByText("Rollover IRA"));
+    fireEvent.click(getByRole("button", { name: "Edit" }));
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Save" }));
+    });
+
+    const [, init] = callTo("/api/portal/accounts/a2");
+    expect(init.method).toBe("PUT");
+    const body = JSON.parse(String(init.body));
+    // Plaid owns these on a linked row — sending them earns a 400 from the PUT route.
+    expect(body).not.toHaveProperty("value");
+    expect(body).not.toHaveProperty("last4");
+    expect(body.name).toBe("Rollover IRA");
+    expect(body.category).toBe("retirement");
+    expect(body.owners).toEqual([{ kind: "family_member", familyMemberId: "fm1", percent: 1 }]);
+  });
+
+  it("PUTs a manual account in full and closes the panel on success", async () => {
+    const { getByText, getByRole, queryByRole, container } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(getByText("Joint Checking"));
+    fireEvent.click(getByRole("button", { name: "Edit" }));
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Save" }));
+    });
+
+    const [, init] = callTo("/api/portal/accounts/a1");
+    expect(init.method).toBe("PUT");
+    const body = JSON.parse(String(init.body));
+    // The strip is conditional: a manual row still sends what Plaid would own.
+    expect(body.value).toBe("10000");
+    expect(body.last4).toBeNull();
+    // Post-success continuation: the form closed back to the card list.
+    expect(queryByRole("button", { name: "Save" })).toBeNull();
+    expect(container.textContent).toContain("Rollover IRA");
+  });
+
+  it("omits the Plaid-owned balance from a linked debt's PUT body", async () => {
+    const base = dto();
+    const { getByText, getByRole } = render(
+      <AccountsWorkspace
+        dto={dto({ debts: [{ ...base.debts[0], isPlaidLinked: true, ownerFmIds: ["fm1"] }] })}
+      />,
+    );
+    fireEvent.click(getByText("Home Loan"));
+    fireEvent.click(getByRole("button", { name: "Edit" }));
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Save" }));
+    });
+
+    const [, init] = callTo("/api/portal/liabilities/l1");
+    expect(init.method).toBe("PUT");
+    const body = JSON.parse(String(init.body));
+    expect(body).not.toHaveProperty("balance");
+    expect(body.name).toBe("Home Loan");
+    expect(body.liabilityType).toBe("mortgage");
+    expect(body.owners).toEqual([{ kind: "family_member", familyMemberId: "fm1", percent: 1 }]);
   });
 
   it("shows the empty state with no accounts and no debts", () => {
