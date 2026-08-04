@@ -1,8 +1,9 @@
-import type { ReactElement } from "react";
-import { requireClientPortalAccess } from "@/lib/authz";
-import HouseholdSection from "@/components/portal/household-section";
+import { permanentRedirect } from "next/navigation";
 
-export default async function HouseholdPage(): Promise<ReactElement> {
-  const { clientId } = await requireClientPortalAccess();
-  return <HouseholdSection clientId={clientId} />;
+/**
+ * Household moved into Organizer. Kept as a 308 rather than deleted: welcome
+ * emails and advisor "go fill this in" nudges point at the old path.
+ */
+export default async function HouseholdPage(): Promise<never> {
+  permanentRedirect("/portal/organizer");
 }

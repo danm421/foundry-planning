@@ -1,8 +1,6 @@
-import type { ReactElement } from "react";
-import { requireClientPortalAccess } from "@/lib/authz";
-import FamilySection from "@/components/portal/family-section";
+import { permanentRedirect } from "next/navigation";
 
-export default async function FamilyPage(): Promise<ReactElement> {
-  const { clientId } = await requireClientPortalAccess();
-  return <FamilySection clientId={clientId} />;
+/** Family is now a section of Organizer → Household. */
+export default async function FamilyPage(): Promise<never> {
+  permanentRedirect("/portal/organizer#family");
 }

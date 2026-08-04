@@ -1,8 +1,6 @@
-import type { ReactElement } from "react";
-import { requireClientPortalAccess } from "@/lib/authz";
-import TrustsSection from "@/components/portal/trusts-section";
+import { permanentRedirect } from "next/navigation";
 
-export default async function TrustsPage(): Promise<ReactElement> {
-  const { clientId } = await requireClientPortalAccess();
-  return <TrustsSection clientId={clientId} />;
+/** Trusts is now a section of Organizer → Household. */
+export default async function TrustsPage(): Promise<never> {
+  permanentRedirect("/portal/organizer#trusts");
 }
