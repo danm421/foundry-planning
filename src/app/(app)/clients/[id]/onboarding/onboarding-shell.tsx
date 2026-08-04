@@ -246,7 +246,7 @@ interface StepperProps {
 
 function Stepper({ activeStep, statuses, onClick }: StepperProps) {
   return (
-    <nav aria-label="Onboarding steps" className="relative">
+    <nav aria-label="Onboarding steps" data-forge-anchor="onboarding-stepper" className="relative">
       <ol
         className="relative grid gap-x-1 gap-y-3"
         style={{ gridTemplateColumns: `repeat(${STEPS.length}, minmax(0, 1fr))` }}

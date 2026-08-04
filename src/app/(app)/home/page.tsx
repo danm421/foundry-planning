@@ -5,8 +5,10 @@ import { requireOrgAndUser } from "@/lib/db-helpers";
 import { listRecentlyOpenedHouseholds } from "@/lib/crm/households";
 import { getBookKpis } from "@/lib/home/kpis";
 import { getHomeFeed } from "@/lib/home/feed-sources";
+import { resolveFirstRunCard } from "@/lib/onboarding/advisor-first-run";
 import type { HomeFeed, RecentHousehold } from "@/lib/home/types";
 import { WelcomeBanner } from "./_components/welcome-banner";
+import { FirstRunCard } from "./_components/first-run-card";
 import { KpiRow } from "./_components/kpi-row";
 import { HomeFeedCard } from "./_components/home-feed";
 import { RecentHouseholds } from "./_components/recent-households";
@@ -28,9 +30,12 @@ export default async function HomePage(): Promise<ReactElement> {
   const feedPromise = getHomeFeed(orgId, userId, orgRole, today);
 
   // Section-level degradation: a failing helper blanks its section only.
-  const [kpis, recentRows] = await Promise.all([
+  const [kpis, recentRows, firstRun] = await Promise.all([
     getBookKpis(orgId, userId, orgRole, today).catch(() => null),
     listRecentlyOpenedHouseholds({ userId, limit: 8 }).catch(() => []),
+    resolveFirstRunCard(orgId, userId, orgRole).catch(
+      () => ({ kind: "hidden" }) as const,
+    ),
   ]);
 
   const recent: RecentHousehold[] = recentRows.map((h) => ({
@@ -44,7 +49,8 @@ export default async function HomePage(): Promise<ReactElement> {
   return (
     <div className="flex flex-col gap-4 p-[var(--pad-card)]">
       <WelcomeBanner firstName={user?.firstName ?? null} />
-      <KpiRow kpis={kpis} />
+      <FirstRunCard card={firstRun} />
+      {firstRun.kind !== "no_client" && <KpiRow kpis={kpis} />}
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <Suspense

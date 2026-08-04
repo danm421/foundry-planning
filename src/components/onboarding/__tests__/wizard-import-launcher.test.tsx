@@ -21,19 +21,25 @@ describe("WizardImportLauncher", () => {
     activeImportId: null,
   };
 
-  it("renders the trigger button and no drawer initially", () => {
+  it("presents upload and manual entry as peer options", () => {
     render(<WizardImportLauncher {...baseProps} />);
-    expect(
-      screen.getByRole("button", { name: /import from document/i }),
-    ).toBeInTheDocument();
-    expect(screen.queryByTestId("drawer")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /upload a statement/i })).toBeTruthy();
+    expect(screen.getByText(/or add them manually below/i)).toBeTruthy();
+  });
+
+  it("keeps the forge anchor for the first-run tour", () => {
+    const { container } = render(<WizardImportLauncher {...baseProps} />);
+    expect(container.querySelector('[data-forge-anchor="wizard-import-launcher"]')).toBeTruthy();
+  });
+
+  it("does not mount the drawer until the upload option is chosen", () => {
+    render(<WizardImportLauncher {...baseProps} />);
+    expect(screen.queryByTestId("drawer")).toBeNull();
   });
 
   it("opens the drawer on click and closes it via onClose", () => {
     render(<WizardImportLauncher {...baseProps} />);
-    fireEvent.click(
-      screen.getByRole("button", { name: /import from document/i }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /upload a statement/i }));
     expect(screen.getByTestId("drawer")).toBeInTheDocument();
     fireEvent.click(screen.getByText("close"));
     expect(screen.queryByTestId("drawer")).not.toBeInTheDocument();

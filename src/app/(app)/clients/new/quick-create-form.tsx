@@ -549,7 +549,11 @@ export default function QuickCreateForm() {
       </div>
 
       {path && (
-        <form onSubmit={onSubmit} className="space-y-5 border-t border-hair pt-4">
+        <form
+          onSubmit={onSubmit}
+          data-forge-anchor="clients-new-planning-fields"
+          className="space-y-5 border-t border-hair pt-4"
+        >
           {path === "guided" && (
             <>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

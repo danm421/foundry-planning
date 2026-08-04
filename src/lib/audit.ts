@@ -414,7 +414,12 @@ export type AuditAction =
   | "risk_profile.portfolio_applied"
   | "risk_profile.rtq_sent"
   // Notifications ("Alerts")
-  | "notification.preferences.update";
+  | "notification.preferences.update"
+  // Advisor first-run onboarding (Task 2: lazy row creation; Task 3 adds
+  // advisor_onboarding.start / advisor_onboarding.dismiss for the route)
+  | "advisor_onboarding.create"
+  | "advisor_onboarding.start"
+  | "advisor_onboarding.dismiss";
 
 type Args = {
   action: AuditAction;

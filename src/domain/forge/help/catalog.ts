@@ -231,6 +231,75 @@ export const WALKTHROUGHS: readonly Walkthrough[] = [
       },
     ],
   },
+  {
+    id: "first-run-setup",
+    title: "Set up your first plan",
+    steps: [
+      {
+        anchorId: "crm-new-household-button",
+        page: "/clients",
+        callout: 'Start with a household. Click "New household".',
+        advanceOn: "navigate",
+        nextPage: "/crm/new",
+      },
+      {
+        // Deliberately one step where add-household spends three. That tour
+        // answers a direct "how do I add a household" question; this one
+        // should not spend three coachmarks on one four-field form.
+        anchorId: "crm-primary-contact-fields",
+        page: "/crm/new",
+        callout:
+          "Add the primary contact and the household's state of residence.",
+        advanceOn: "manual",
+      },
+      {
+        anchorId: "crm-household-save-button",
+        page: "/crm/new",
+        callout: 'Click "Create household" to save them.',
+        advanceOn: "click",
+      },
+      {
+        // Requires DialogShell `elevated` — the prompt is a dialog, and an
+        // unelevated one renders under the z-[80] scrim.
+        anchorId: "start-planning-guided-card",
+        page: "/crm/new",
+        callout:
+          "Guided Walkthrough takes you through their finances step by step.",
+        advanceOn: "click",
+      },
+      {
+        anchorId: "clients-new-planning-fields",
+        page: "/clients/new",
+        callout:
+          "Retirement age and life expectancy start at 65 and 95 — adjust them if you know better, then continue.",
+        advanceOn: "manual",
+      },
+      {
+        // The stepper must come first of the two in-wizard steps. The wizard
+        // always lands on "household", which is NOT import-eligible, so the
+        // import launcher does not exist on arrival — spotlighting it here
+        // degrades to the anchor-missing fallback within useAnchorRect's 4s
+        // timeout, and that is terminal: the effect only re-resolves when the
+        // anchorId changes, so later navigating to an eligible step never
+        // recovers. The stepper is present on every wizard step.
+        anchorId: "onboarding-stepper",
+        page: "/clients/:id/onboarding/:step",
+        callout:
+          "Your progress saves as you go — leave any time and you'll pick up right here. Fill this step in and continue.",
+        // Gating on arrival at "family" (the first import-eligible step) is
+        // what makes the next step's anchor resolvable when it activates.
+        advanceOn: "navigate",
+        nextPage: "/clients/:id/onboarding/family",
+      },
+      {
+        anchorId: "wizard-import-launcher",
+        page: "/clients/:id/onboarding/:step",
+        callout:
+          "Have a statement or fact-finder? Drop it here and we'll fill this step in. Or just type it in below.",
+        advanceOn: "manual",
+      },
+    ],
+  },
 ];
 
 export function getWalkthrough(id: string): Walkthrough | undefined {

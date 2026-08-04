@@ -57,6 +57,12 @@ interface DialogShellProps {
    *  scroll. Unlike `contentFill` this keeps the current size, it just stops the
    *  box from shrinking. */
   fixedHeight?: boolean;
+  /** Raises the dialog above the walkthrough scrim (z-[80]) so a coachmark can
+   *  spotlight an element inside it. Opt-in: the default keeps every other
+   *  dialog on z-50 exactly as before. The spotlight "hole" does not apply
+   *  inside an elevated dialog — the whole surface floats undimmed and the
+   *  callout (z-[86]) points at the target. */
+  elevated?: boolean;
   primaryAction?: ActionConfig;
   secondaryAction?: ActionConfig;        // defaults to a Cancel button that closes the dialog
   destructiveAction?: ActionConfig;
@@ -82,6 +88,7 @@ export default function DialogShell({
   bodyTopFlush,
   contentFill,
   fixedHeight,
+  elevated,
   primaryAction,
   secondaryAction,
   destructiveAction,
@@ -149,7 +156,9 @@ export default function DialogShell({
   const showFooter = Boolean(primaryAction || secondaryAction || destructiveAction);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div
+      className={`fixed inset-0 ${elevated ? "z-[85]" : "z-50"} flex items-center justify-center p-4`}
+    >
       <div
         data-testid="dialog-overlay"
         className="absolute inset-0 bg-paper/70 backdrop-blur-sm"
