@@ -207,4 +207,54 @@ describe("AccountsWorkspace", () => {
     );
     expect(container.textContent).toContain("No accounts yet");
   });
+
+  it("disables Save, Cancel, and Add Account while an account save is in flight", async () => {
+    const { getByText, getByRole } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(getByText("Joint Checking"));
+    fireEvent.click(getByRole("button", { name: "Edit" }));
+
+    // The PUT never resolves during this test — the window it protects must
+    // stay observable so a second click can't double-submit.
+    let resolveSave!: (v: { ok: boolean; json: () => Promise<{}> }) => void;
+    const deferred = new Promise<{ ok: boolean; json: () => Promise<{}> }>((resolve) => {
+      resolveSave = resolve;
+    });
+    portalFetch.mockImplementationOnce(() => deferred);
+
+    fireEvent.click(getByRole("button", { name: "Save" }));
+
+    // Mid-flight: the PUT has fired but not resolved. Every mutating control
+    // reachable from this view must be locked.
+    expect(getByRole("button", { name: "Saving…" })).toBeDisabled();
+    expect(getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(getByRole("button", { name: "Add Account" })).toBeDisabled();
+
+    await act(async () => {
+      resolveSave({ ok: true, json: async () => ({}) });
+    });
+  });
+
+  it("disables Edit, Delete, and Add Account while an account delete is in flight", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { getByText, getByRole } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(getByText("Joint Checking"));
+
+    // The DELETE never resolves during this test — same reasoning as the save case.
+    let resolveDelete!: (v: { ok: boolean; json: () => Promise<{}> }) => void;
+    const deferred = new Promise<{ ok: boolean; json: () => Promise<{}> }>((resolve) => {
+      resolveDelete = resolve;
+    });
+    portalFetch.mockImplementationOnce(() => deferred);
+
+    fireEvent.click(getByRole("button", { name: "Delete" }));
+
+    // Mid-flight: the DELETE has fired but not resolved.
+    expect(getByRole("button", { name: "Edit" })).toBeDisabled();
+    expect(getByRole("button", { name: "Delete" })).toBeDisabled();
+    expect(getByRole("button", { name: "Add Account" })).toBeDisabled();
+
+    await act(async () => {
+      resolveDelete({ ok: true, json: async () => ({}) });
+    });
+  });
 });
