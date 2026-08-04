@@ -106,7 +106,14 @@ export default async function PortalPreviewPage({
   } else if (path === "documents") {
     section = <PortalDocumentsScreen editEnabled={access.client.portalEditEnabled} />;
   } else if (path === "settings") {
-    section = <PortalSettingsView privacy={privacy} readOnly />;
+    section = (
+      <PortalSettingsView
+        privacy={privacy}
+        clientId={id}
+        editEnabled={access.client.portalEditEnabled}
+        readOnly
+      />
+    );
   } else {
     notFound();
   }
