@@ -2,6 +2,7 @@ import { cache } from "react";
 import { clerkClient } from "@clerk/nextjs/server";
 import { getBranding } from "@/lib/branding/db";
 import { resolveAccentColor } from "@/components/pdf/theme";
+import { fetchPublicUrl } from "@/lib/net/public-fetch";
 
 const MAX_LOGO_BYTES = 1_000_000;
 
@@ -77,11 +78,19 @@ export async function resolveFirmName(
  * (`resolve-for-client.ts`) can inline an advisor's own logo through the
  * exact same size/MIME/error handling as the firm logo — no duplicated
  * inlining logic.
+ *
+ * `fetchPublicUrl`, not bare `fetch`: this is a server-side GET of a URL read
+ * out of a DB column, on every PDF export. Today that column is written only
+ * by our own Blob upload (see settings/branding/advisor-actions.ts) — but the
+ * dangerous operation should defend itself rather than trust every present and
+ * future writer, which is the same reasoning that guards the blob DELETE path.
+ * A blocked target fails soft into the no-logo fallback, like any other fetch
+ * failure here.
  */
 export async function loadLogo(url: string | null): Promise<string | null> {
   if (!url) return null;
   try {
-    const res = await fetch(url);
+    const res = await fetchPublicUrl(url);
     if (!res.ok) return null;
     const contentType = res.headers.get("content-type") ?? "";
     if (!/^image\/(png|jpeg)$/i.test(contentType)) {

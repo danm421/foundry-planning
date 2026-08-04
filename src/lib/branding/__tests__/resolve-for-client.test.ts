@@ -20,6 +20,14 @@ vi.mock("@clerk/nextjs/server", () => ({
     organizations: { getOrganization: mocks.getOrganization },
   })),
 }));
+// `loadLogo` fetches through `fetchPublicUrl`, which resolves the host and
+// refuses non-public addresses (see lib/net/public-fetch.ts). `cdn.example` is
+// not a real name, so without this the logo assertions would fail as "blocked"
+// rather than exercising the fall-through logic under test. Egress safety
+// itself is covered in lib/net/__tests__/public-fetch.test.ts.
+vi.mock("node:dns/promises", () => ({
+  lookup: vi.fn(async () => [{ address: "93.184.216.34", family: 4 }]),
+}));
 
 import {
   resolveBrandingForClient,

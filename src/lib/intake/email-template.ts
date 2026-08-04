@@ -7,9 +7,15 @@ import {
 
 const INTAKE_FROM_ADDRESS = "noreply@foundryplanning.com";
 
-function esc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
+// Quote escaping is load-bearing here, not tidiness: the signature below
+// interpolates into a double-quoted ATTRIBUTE (`href="mailto:${esc(...)}"`),
+// where an unescaped `"` closes the attribute and everything after it parses
+// as further attributes — i.e. an event handler. That matters twice over:
+// this same HTML is rendered through `dangerouslySetInnerHTML` in the
+// advisor-facing settings preview (components/intake/admin/
+// email-settings-editor.tsx), so the payload would execute in an advisor's
+// browser, not only in the recipient's mail client.
+import { escapeHtml as esc } from "@/lib/html-escape";
 
 /** Strip control chars (incl. CR/LF — header-injection guard) and collapse
  * whitespace. Returns undefined for empty/blank input so callers fall back. */

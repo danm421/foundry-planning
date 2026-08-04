@@ -41,9 +41,20 @@ export async function loadPortalHousehold(clientId: string): Promise<PortalHouse
     .limit(1);
   if (!client) return null;
 
+  // Projected, not `select()`. `toContact` already narrows to the DTO, but the
+  // portal is client-facing and `crm_household_contacts` carries advisor-only
+  // columns (ssnLast4, notes, employer, DOB). Selecting only what the DTO
+  // exposes means a future `...row` spread here has nothing sensitive to leak.
   const contacts = client.crmHouseholdId
     ? await db
-        .select()
+        .select({
+          id: crmHouseholdContacts.id,
+          role: crmHouseholdContacts.role,
+          firstName: crmHouseholdContacts.firstName,
+          lastName: crmHouseholdContacts.lastName,
+          email: crmHouseholdContacts.email,
+          phone: crmHouseholdContacts.phone,
+        })
         .from(crmHouseholdContacts)
         .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId))
     : [];

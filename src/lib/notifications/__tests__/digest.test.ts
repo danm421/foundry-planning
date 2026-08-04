@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { planDigestBatches, renderDigestEmail, escapeHtml } from "../digest";
+import { planDigestBatches, renderDigestEmail } from "../digest";
+import { escapeHtml } from "@/lib/html-escape";
 import type { PendingRow } from "../digest";
 
 const row = (over: Partial<PendingRow> = {}): PendingRow => ({

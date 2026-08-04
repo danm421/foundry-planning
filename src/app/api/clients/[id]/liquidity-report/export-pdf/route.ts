@@ -17,6 +17,7 @@ import type { DocumentProps } from "@react-pdf/renderer";
 import { YearlyLiquidityPdfDocument } from "@/components/yearly-liquidity-report-pdf/document";
 import { buildYearlyLiquidityReport } from "@/lib/estate/yearly-liquidity-report";
 import type { ClientData } from "@/engine/types";
+import { fetchProjectionData } from "@/lib/http/projection-data-fetch";
 import React from "react";
 
 export const dynamic = "force-dynamic";
@@ -67,17 +68,10 @@ export async function POST(
     const chartPng: string | null = isSafePngDataUri(body.chartPng) ? body.chartPng : null;
 
     const scenarioParam = url.searchParams.get("scenario");
-    const projectionUrl = scenarioParam
-      ? `${url.origin}/api/clients/${id}/projection-data?scenario=${encodeURIComponent(scenarioParam)}`
-      : `${url.origin}/api/clients/${id}/projection-data`;
-    const apiRes = await fetch(projectionUrl, {
-      headers: { cookie: request.headers.get("cookie") ?? "" },
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (!apiRes.ok) {
+    const apiData = await fetchProjectionData<ClientData>(request, id, scenarioParam);
+    if (apiData == null) {
       return NextResponse.json({ error: "Failed to load projection data" }, { status: 500 });
     }
-    const apiData = (await apiRes.json()) as ClientData;
     const projection = runProjectionWithEvents(apiData);
 
     const report = buildYearlyLiquidityReport({

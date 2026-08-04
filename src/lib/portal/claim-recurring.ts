@@ -1,13 +1,16 @@
 import { db } from "@/db";
 import { plaidTransactions } from "@/db/schema";
 import { and, desc, eq, gte, lte, ne, sql } from "drizzle-orm";
+import { containsPattern } from "@/lib/like-pattern";
 
 function matchSql(matchType: "exact" | "contains", pattern: string) {
   const p = pattern.trim();
   if (matchType === "exact") {
     return sql`(lower(${plaidTransactions.merchantName}) = lower(${p}) OR lower(${plaidTransactions.name}) = lower(${p}))`;
   }
-  const like = `%${p}%`;
+  // Escaped for the same reason as recategorize.ts — this predicate drives a
+  // bulk claim, so a bare `%` would sweep in every transaction.
+  const like = containsPattern(p);
   return sql`(${plaidTransactions.merchantName} ILIKE ${like} OR ${plaidTransactions.name} ILIKE ${like})`;
 }
 

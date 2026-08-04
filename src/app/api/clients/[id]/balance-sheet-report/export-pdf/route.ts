@@ -18,10 +18,11 @@ import type { DocumentProps } from "@react-pdf/renderer";
 import { BalanceSheetPdfDocument } from "@/components/balance-sheet-report-pdf/balance-sheet-pdf-document";
 import { buildViewModel } from "@/components/balance-sheet-report/view-model";
 import type { OwnershipView } from "@/components/balance-sheet-report/ownership-filter";
-import type { FamilyMember } from "@/engine/types";
+import type { ClientData, FamilyMember } from "@/engine/types";
 import type { AccountOwner, EntityOwner } from "@/engine/ownership";
 import React from "react";
 import { isSafePngDataUri } from "@/lib/report-artifacts/png-validation";
+import { fetchProjectionData } from "@/lib/http/projection-data-fetch";
 
 export const dynamic = "force-dynamic";
 // Defense-in-depth on top of the 25 s render-timeout race below: cap the
@@ -91,19 +92,10 @@ export async function POST(
 
     // Pull projection data the same way the page does by hitting the API.
     // Using an internal fetch avoids duplicating the projection-data query.
-    // 30s abort leaves headroom for the 25s render race below within the
-    // 60s maxDuration cap.
-    const projectionUrl = scenarioParam
-      ? `${url.origin}/api/clients/${id}/projection-data?scenario=${encodeURIComponent(scenarioParam)}`
-      : `${url.origin}/api/clients/${id}/projection-data`;
-    const apiRes = await fetch(projectionUrl, {
-      headers: { cookie: request.headers.get("cookie") ?? "" },
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (!apiRes.ok) {
+    const apiData = await fetchProjectionData<ClientData>(request, id, scenarioParam);
+    if (apiData == null) {
       return NextResponse.json({ error: "Failed to load projection data" }, { status: 500 });
     }
-    const apiData = await apiRes.json();
     const projectionYears = runProjection(apiData);
 
     // The projection-data API already emits entities with `value`, `owners`,

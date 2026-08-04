@@ -120,6 +120,12 @@ export default function EmailSettingsEditor({ initial, advisorName, advisorEmail
           <div><span className="text-ink-4">From:</span> {previewFrom}</div>
           <div><span className="text-ink-4">Subject:</span> {previewSubject}</div>
         </div>
+        {/* The only HTML injected here is buildIntakeEmailHtml's own output:
+            every interpolated value (intro body, advisor name/email, firm,
+            client) goes through that module's `esc`, which escapes angle
+            brackets AND quotes so a value cannot break out of the attribute
+            contexts the template uses. No caller-supplied markup reaches this
+            string. */}
         <div data-testid="email-preview" className="overflow-auto rounded-[var(--radius-sm)] bg-white p-3"
           dangerouslySetInnerHTML={{ __html: previewHtml }} />
       </div>

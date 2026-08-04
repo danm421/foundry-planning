@@ -1,5 +1,6 @@
 import { Resend } from "resend";
 import { recordAudit } from "@/lib/audit";
+import { escapeHtml as esc } from "@/lib/html-escape";
 import type { FeedbackSubmission } from "./schema";
 
 export interface FeedbackContext {
@@ -14,13 +15,6 @@ export interface FeedbackContext {
 export interface FeedbackAttachment {
   filename: string;
   content: Buffer;
-}
-
-function esc(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
 }
 
 function subjectFor(s: FeedbackSubmission): string {

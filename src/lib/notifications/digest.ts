@@ -7,6 +7,7 @@ import {
   DATE_CATEGORIES,
   type NotificationCategory,
 } from "./catalog";
+import { escapeHtml } from "@/lib/html-escape";
 
 export type PendingRow = {
   id: string;
@@ -66,14 +67,6 @@ export function planDigestBatches(
   return out;
 }
 
-/** `&` first, or the entities produced by the later replacements get re-escaped. */
-export function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
 
 // Inlined per element: Outlook drops most inherited styles, so anything that
 // does not carry its own font-size falls back to the client default.

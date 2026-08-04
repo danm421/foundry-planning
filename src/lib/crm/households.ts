@@ -9,6 +9,7 @@ import {
   scenarios,
 } from "@/db/schema";
 import { and, desc, eq, ilike, inArray, isNull, isNotNull, sql } from "drizzle-orm";
+import { containsPattern } from "@/lib/like-pattern";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireCrmHouseholdAccess } from "./authz";
 import { auth } from "@clerk/nextjs/server";
@@ -62,7 +63,7 @@ export async function listCrmHouseholds(opts?: {
   if (opts?.status) {
     conditions.push(eq(crmHouseholds.status, opts.status as CrmHouseholdStatus));
   }
-  if (opts?.search) conditions.push(ilike(crmHouseholds.name, `%${opts.search}%`));
+  if (opts?.search) conditions.push(ilike(crmHouseholds.name, containsPattern(opts.search)));
   const { userId, orgRole } = await auth();
   let visible = await resolveVisibleAdvisorIds(userId ?? "", orgRole, firmId);
   visible = applyBookSwitcher(visible, orgRole, opts?.viewAsAdvisorId);
@@ -130,7 +131,7 @@ export async function listRecentlyOpenedHouseholds(opts: {
     conditions.push(eq(crmHouseholds.status, opts.status as CrmHouseholdStatus));
   }
   if (opts.search) {
-    conditions.push(ilike(crmHouseholds.name, `%${opts.search}%`));
+    conditions.push(ilike(crmHouseholds.name, containsPattern(opts.search)));
   }
   const { userId: callerId, orgRole } = await auth();
   let visible = await resolveVisibleAdvisorIds(callerId ?? "", orgRole, firmId);

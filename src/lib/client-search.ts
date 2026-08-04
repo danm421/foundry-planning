@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { clients, crmHouseholdContacts } from "@/db/schema";
 import { and, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { advisorScopeCondition, resolveVisibleAdvisorIds } from "@/lib/visibility";
+import { containsPattern } from "@/lib/like-pattern";
 
 export interface ClientSearchResult {
   id: string;
@@ -18,7 +19,7 @@ export async function searchClients(
   const trimmed = query.trim().toLowerCase();
   if (trimmed.length === 0) return [];
 
-  const pattern = `%${trimmed}%`;
+  const pattern = containsPattern(trimmed);
 
   const visible = await resolveVisibleAdvisorIds(caller.userId, caller.orgRole, firmId);
   const scope = advisorScopeCondition(clients.advisorId, visible);

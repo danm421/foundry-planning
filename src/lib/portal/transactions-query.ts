@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { accounts, plaidTransactions, transactionCategories } from "@/db/schema";
 import { and, eq, gte, lte, or, ilike, desc, sql, isNull, isNotNull } from "drizzle-orm";
+import { containsPattern } from "@/lib/like-pattern";
 import type { PortalTransactionDTO } from "@/lib/portal/contracts";
 export type { PortalTransactionDTO };
 
@@ -28,7 +29,7 @@ export function buildTransactionConditions(clientId: string, f: TransactionFilte
   if (f.reviewed === false) conds.push(isNull(plaidTransactions.reviewedAt));
   else if (f.reviewed === true) conds.push(isNotNull(plaidTransactions.reviewedAt));
   if (f.q && f.q.trim()) {
-    const like = `%${f.q.trim()}%`;
+    const like = containsPattern(f.q.trim());
     conds.push(or(ilike(plaidTransactions.merchantName, like), ilike(plaidTransactions.name, like)));
   }
   return conds;

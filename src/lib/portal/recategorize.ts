@@ -1,13 +1,16 @@
 import { db } from "@/db";
 import { plaidTransactions } from "@/db/schema";
 import { and, eq, ne, sql } from "drizzle-orm";
+import { containsPattern } from "@/lib/like-pattern";
 
 function matchPredicate(matchType: "exact" | "contains", pattern: string) {
   const p = pattern.trim();
   if (matchType === "exact") {
     return sql`(lower(${plaidTransactions.merchantName}) = lower(${p}) OR lower(${plaidTransactions.name}) = lower(${p}))`;
   }
-  const like = `%${p}%`;
+  // Escaped: this predicate drives the bulk UPDATE below, so an unescaped `%`
+  // in a saved rule would re-categorize every transaction, not the merchant.
+  const like = containsPattern(p);
   return sql`(${plaidTransactions.merchantName} ILIKE ${like} OR ${plaidTransactions.name} ILIKE ${like})`;
 }
 

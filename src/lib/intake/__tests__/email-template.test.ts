@@ -107,4 +107,33 @@ describe("buildIntakeEmailHtml", () => {
     const html = buildIntakeEmailHtml({ ...base, introBody: "Line one.\nLine two." });
     expect(html).toContain("Line one.<br/>Line two.");
   });
+
+  // This HTML is rendered through dangerouslySetInnerHTML in the advisor-
+  // facing preview (components/intake/admin/email-settings-editor.tsx), so a
+  // value that escapes its attribute executes in an advisor's browser, not
+  // just in a mail client. Escaping `<`/`>` alone does not stop that — the
+  // signature interpolates into a double-quoted href.
+  it("escapes quotes so a value cannot break out of an attribute", () => {
+    const html = buildIntakeEmailHtml({
+      ...base,
+      advisorEmail: 'x@y.test" onmouseover="alert(1)',
+    });
+    expect(html).not.toContain('onmouseover="alert(1)"');
+    expect(html).toContain("&quot;");
+  });
+
+  it("escapes quotes in text-context values too", () => {
+    const html = buildIntakeEmailHtml({
+      ...base,
+      clientName: 'Sam "The Closer" Client',
+      introBody: "hi",
+    });
+    expect(html).toContain("Sam &quot;The Closer&quot; Client");
+  });
+
+  it("does not double-escape an ampersand", () => {
+    const html = buildIntakeEmailHtml({ ...base, firmName: "Ampersand & Co" });
+    expect(html).toContain("Ampersand &amp; Co");
+    expect(html).not.toContain("&amp;amp;");
+  });
 });
