@@ -14,17 +14,25 @@ import {
   type IntakePayload,
 } from "@/lib/intake/schema";
 import { recordAudit } from "@/lib/audit";
+import { notifyIntakeSubmitted } from "@/lib/notifications/producers/intake";
 
 export const dynamic = "force-dynamic";
 
 // ── Shared auth chain ─────────────────────────────────────────────────────────
 
-async function resolveAuth(): Promise<{ clientId: string; firmId: string }> {
+async function resolveAuth(): Promise<{
+  clientId: string;
+  firmId: string;
+  advisorId: string;
+}> {
   const { clientId } = await requireClientPortalAccess();
   await requirePortalActiveSubscription(clientId);
 
+  // advisorId rides along on the row we already load for firmId — POST needs it
+  // to address the submit notification, and re-selecting the same row would be
+  // a second round trip for a column that is right here.
   const [clientRow] = await db
-    .select({ firmId: clients.firmId })
+    .select({ firmId: clients.firmId, advisorId: clients.advisorId })
     .from(clients)
     .where(eq(clients.id, clientId))
     .limit(1);
@@ -33,7 +41,7 @@ async function resolveAuth(): Promise<{ clientId: string; firmId: string }> {
     throw new ForbiddenError("client not found");
   }
 
-  return { clientId, firmId: clientRow.firmId };
+  return { clientId, firmId: clientRow.firmId, advisorId: clientRow.advisorId };
 }
 
 // ── GET — seed/load ───────────────────────────────────────────────────────────
@@ -129,11 +137,12 @@ export async function PATCH(req: Request): Promise<Response> {
 // stored payload before strict validation (eliminates the race where the last
 // debounced autosave hasn't landed before the client hits Submit).
 //
-// On success: status → "submitted", submittedAt set, audit written.
+// On success: status → "submitted", submittedAt set, audit written, and the
+// owning advisor notified (best-effort, after the write commits).
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    const { clientId, firmId } = await resolveAuth();
+    const { clientId, firmId, advisorId } = await resolveAuth();
 
     const form = await loadActivePrefilledForm(clientId);
     if (!form) {
@@ -223,6 +232,20 @@ export async function POST(req: Request): Promise<Response> {
       clientId,
       resourceType: "intake_form",
       resourceId: form.id,
+    });
+
+    // Tell the owning advisor. Deliberately AFTER the update above has
+    // committed and outside any transaction (this handler opens none) — an
+    // enqueue failure must never roll back a client's submission.
+    // clientId/advisorId come from resolveAuth, so both are non-null here:
+    // loadActivePrefilledForm matches on `clientId`, and clients.advisor_id is
+    // NOT NULL. No prospect form (null client) can reach this handler.
+    await notifyIntakeSubmitted({
+      firmId,
+      advisorId,
+      clientId,
+      formId: form.id,
+      recipientName: form.recipientName,
     });
 
     return NextResponse.json({ ok: true });
