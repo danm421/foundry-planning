@@ -6,9 +6,7 @@ import { db } from "@/db";
 import { crmHouseholdContacts } from "@/db/schema";
 import { requireClientAccess } from "@/lib/clients/authz";
 import { nullOnAccessDenial } from "@/lib/authz";
-import HouseholdSection from "@/components/portal/household-section";
-import FamilySection from "@/components/portal/family-section";
-import TrustsSection from "@/components/portal/trusts-section";
+import OrganizerHouseholdScreen from "@/components/portal/organizer-household-screen";
 import { PortalAccountsScreen } from "@/components/portal/portal-accounts-screen";
 import TransactionsSection from "@/components/portal/transactions-section";
 import BudgetSection from "@/components/portal/budget-section";
@@ -84,19 +82,10 @@ export default async function PortalPreviewPage({
   if (path === "") {
     section = <PortalDashboard clientId={id} sharing={privacy} />;
   } else if (path === "organizer") {
-    section = (
-      <div className="flex flex-col">
-        <section id="household">
-          <HouseholdSection clientId={id} />
-        </section>
-        <section id="family" className="scroll-mt-4 border-t border-hair">
-          <FamilySection clientId={id} />
-        </section>
-        <section id="trusts" className="scroll-mt-4 border-t border-hair">
-          <TrustsSection clientId={id} />
-        </section>
-      </div>
-    );
+    // Same component the client portal's Organizer → Household renders, so the
+    // preview cannot drift from what the client actually sees. No
+    // `ScrollToHash` child: nothing redirects into the preview by fragment.
+    section = <OrganizerHouseholdScreen clientId={id} />;
   } else if (path === "organizer/accounts") {
     section = <PortalAccountsScreen clientId={id} />;
   } else if (path === "organizer/goals") {
