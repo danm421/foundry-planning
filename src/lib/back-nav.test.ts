@@ -80,7 +80,7 @@ describe("labelForSection", () => {
     expect(labelForSection("client:a", { "client:a": "Steve Martin" })).toBe("Steve Martin");
   });
   it("falls back to the static section label", () => {
-    expect(labelForSection("cma", {})).toBe("CMA's");
+    expect(labelForSection("cma", {})).toBe("Models");
     expect(labelForSection("clients", {})).toBe("Clients");
   });
   it("falls back to 'Client' for an unlabeled client section", () => {

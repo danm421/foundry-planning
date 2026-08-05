@@ -19,7 +19,7 @@ export default function Breadcrumb({
       crumbs.push(clientHouseholdTitle);
     }
   } else if (pathname.startsWith("/cma")) {
-    crumbs.push("CMA's");
+    crumbs.push("Models");
   }
 
   return (

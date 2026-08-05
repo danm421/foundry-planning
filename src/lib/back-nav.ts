@@ -18,7 +18,7 @@ export interface TrailEntry {
 
 /** Friendly labels for top-level sections, mirroring the sidebar nav. */
 export const STATIC_SECTION_LABELS: Record<string, string> = {
-  cma: "CMA's",
+  cma: "Models",
   clients: "Clients",
   tasks: "Tasks",
   settings: "Settings",

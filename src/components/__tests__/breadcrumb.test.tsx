@@ -24,10 +24,10 @@ describe("Breadcrumb", () => {
     expect(container.textContent).toContain("/");
   });
 
-  it("renders 'CMA's' for /cma", () => {
+  it("renders 'Models' for /cma", () => {
     (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/cma");
     const { container } = render(<Breadcrumb />);
-    expect(container.textContent).toBe("CMA's");
+    expect(container.textContent).toBe("Models");
   });
 
   it("renders nothing sensible for unknown routes", () => {

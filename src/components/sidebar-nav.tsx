@@ -35,7 +35,7 @@ const NAV_GROUPS: NavGroup[] = [
       { icon: <BellIcon />, label: "Alerts", href: "/alerts" },
       { icon: <ClientsIcon />, label: "Clients", href: "/clients" },
       { icon: <RiskIcon />, label: "Risk", href: "/risk" },
-      { icon: <FolderIcon />, label: "CMA's", href: "/cma" },
+      { icon: <FolderIcon />, label: "Models", href: "/cma" },
       { icon: <ListCheckIcon />, label: "Tasks", href: "/tasks" },
       { icon: <DataCollectionIcon />, label: "Data Collection", href: "/data-collection" },
     ],
