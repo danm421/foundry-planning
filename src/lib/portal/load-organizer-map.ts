@@ -13,6 +13,26 @@ import { db } from "@/db";
 import { clients, crmHouseholdContacts, entities, familyMembers, scenarios } from "@/db/schema";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { buildMapBoards, type MapBoards } from "@/lib/household-map/build-boards";
+import type { MapItem } from "@/lib/household-map/types";
+
+/**
+ * The three `kind`s `CashFlowBoard` draws — its `BANDS` in
+ * `components/household-map/cash-flow-board.tsx` and nothing else. `buildMapBoards`
+ * also emits `account` and `liability` items for the Net Worth board, which the
+ * Cash Flow board silently drops at render.
+ *
+ * The filter lives HERE, in the server loader, rather than in
+ * `organizer-cash-flow-screen.tsx`, because this is a disclosure boundary and not
+ * a rendering detail: the screen is a server component handing `items` to a
+ * `"use client"` board, so EVERY item is serialized into the RSC Flight payload
+ * the client's browser receives whether or not the board renders it. Account and
+ * liability cards carry the name and value of rows the portal deliberately hides
+ * from clients — the advisor-only categories, engine `isDefaultChecking` cash
+ * buckets and business sub-accounts named in `./account-visibility.ts`, the single
+ * source of truth for what a client may see. Dropping them at render would ship
+ * them anyway.
+ */
+const CASH_FLOW_KINDS: readonly MapItem["kind"][] = ["income", "savings", "expense"];
 
 export interface OrganizerMapData {
   // All three aliased off the builder rather than restated: each value is
@@ -20,6 +40,7 @@ export interface OrganizerMapData {
   // does not apply and a field added to one of these shapes would be carried at
   // runtime while being silently absent from this type.
   people: MapBoards["people"];
+  /** Flow rows only — see `CASH_FLOW_KINDS`. Never accounts or liabilities. */
   items: MapBoards["items"];
   goals: MapBoards["goals"];
   canEdit: boolean;
@@ -96,5 +117,10 @@ export async function loadOrganizerMap(clientId: string): Promise<OrganizerMapDa
     today: new Date(),
   });
 
-  return { people, items, goals, canEdit: client.portalEditEnabled };
+  return {
+    people,
+    items: items.filter((i) => CASH_FLOW_KINDS.includes(i.kind)),
+    goals,
+    canEdit: client.portalEditEnabled,
+  };
 }

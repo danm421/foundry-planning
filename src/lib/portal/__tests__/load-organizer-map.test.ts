@@ -137,6 +137,86 @@ describe("loadOrganizerMap", () => {
     expect((await loadOrganizerMap("client-1"))!.canEdit).toBe(false);
   });
 
+  /**
+   * `buildMapBoards` builds `items` from all five spreads, and `CashFlowBoard`
+   * drops the account and liability cards at RENDER — but the board is a
+   * `"use client"` component, so the whole array crosses the server→client
+   * boundary into the RSC Flight payload before any of that. A render-time
+   * filter would still have shipped every hidden account's name and balance to
+   * the client's browser, which is why the filter is in the loader.
+   *
+   * The account here is a `business` one — one of the categories
+   * `./account-visibility.ts` names advisor-only.
+   */
+  it("returns only the three flow kinds, never account or liability cards", async () => {
+    loadEffectiveTree.mockResolvedValueOnce({
+      effectiveTree: {
+        ...BASE_TREE,
+        accounts: [
+          {
+            id: "a1",
+            name: "Reid Consulting LLC",
+            category: "business",
+            subType: "business",
+            value: 1_400_000,
+            basis: 0,
+            growthRate: 0.05,
+            rmdEnabled: false,
+            titlingType: "individual",
+            owners: [],
+          },
+        ],
+        liabilities: [
+          {
+            id: "l1",
+            name: "Mortgage",
+            balance: 420_000,
+            interestRate: 0.055,
+            monthlyPayment: 2_400,
+            startYear: 2020,
+            startMonth: 1,
+            termMonths: 360,
+            extraPayments: [],
+            owners: [],
+          },
+        ],
+        incomes: [
+          {
+            id: "i1",
+            type: "salary",
+            name: "Salary",
+            annualAmount: 180_000,
+            startYear: 2026,
+            endYear: 2041,
+            growthRate: 0.03,
+            owner: "client",
+          },
+        ],
+        expenses: [
+          {
+            id: "e1",
+            type: "living",
+            name: "Living expenses",
+            annualAmount: 90_000,
+            startYear: 2026,
+            endYear: 2066,
+            growthRate: 0.025,
+          },
+        ],
+      },
+      warnings: [],
+    });
+
+    const { items } = (await loadOrganizerMap("client-1"))!;
+
+    // The flow half first, so this cannot pass on an empty array.
+    expect(items.map((i) => i.id).sort()).toEqual(["e1", "i1"]);
+    expect(items.some((i) => i.kind === "account" || i.kind === "liability")).toBe(false);
+    // The payload assertion the two above are proxies for: the hidden account's
+    // NAME is the thing that must not reach the browser.
+    expect(JSON.stringify(items)).not.toContain("Reid Consulting LLC");
+  });
+
   it("carries the spouse CRM contact's date of birth onto the board", async () => {
     mockContacts = [
       { role: "primary", dateOfBirth: "1976-04-01" },
