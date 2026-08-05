@@ -1,4 +1,10 @@
 // @vitest-environment jsdom
+//
+// `tsc --noEmit` is the enforcer of the TYPE half of this file, not vitest:
+// esbuild erases `import type` and the `const props: GoalsBoardProps`
+// annotations without checking them, so this file would run green even if those
+// interfaces did not exist. What the RUN proves is the runtime half — that each
+// board renders from the narrow prop set alone and reads nothing outside it.
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
 import GoalsBoard from "../goals-board";
