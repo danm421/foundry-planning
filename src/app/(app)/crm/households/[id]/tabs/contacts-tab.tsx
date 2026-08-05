@@ -84,8 +84,49 @@ function addressLine(c: Contact): string {
   return parts.join(" · ");
 }
 
-function phoneLine(c: { phone: string | null; mobile: string | null }): string {
-  return [c.phone, c.mobile].filter(Boolean).join(" · ");
+/** Placeholder for a contact detail the advisor hasn't captured yet. Only the
+ *  primary/spouse cards use it — those two rows stay on screen whether or not
+ *  they're filled, so "no email on file" is legible at a glance instead of
+ *  looking identical to a card that simply doesn't render the row. */
+const MISSING = <span className="text-ink-3">—</span>;
+
+const contactLinkClass = "transition-colors hover:text-accent-ink hover:underline";
+
+/** tel: hrefs take digits and a leading +; punctuation from the typed value
+ *  ("(555) 010-1234") would otherwise ride along into the dial string. */
+function telHref(value: string): string {
+  const digits = value.replace(/[^\d]/g, "");
+  return value.trim().startsWith("+") ? `+${digits}` : digits;
+}
+
+/** null — not an empty node — when there's nothing to show, so `rowsOf` can
+ *  drop the row on the cards that hide empties. */
+function emailLink(email: string | null | undefined): ReactNode | null {
+  const value = email?.trim();
+  if (!value) return null;
+  return (
+    <a href={`mailto:${value}`} className={contactLinkClass}>
+      {value}
+    </a>
+  );
+}
+
+function phoneLinks(c: { phone: string | null; mobile: string | null }): ReactNode | null {
+  // Dedupe: the same number in both slots would otherwise render "x · x".
+  const numbers = [...new Set([c.phone, c.mobile].map((n) => n?.trim()).filter(Boolean))] as string[];
+  if (numbers.length === 0) return null;
+  return (
+    <>
+      {numbers.map((n, i) => (
+        <Fragment key={n}>
+          {i > 0 ? " · " : null}
+          <a href={`tel:${telHref(n)}`} className={contactLinkClass}>
+            {n}
+          </a>
+        </Fragment>
+      ))}
+    </>
+  );
 }
 
 function toInitial(c: Contact): CrmContactFormInitial {
@@ -410,8 +451,12 @@ export function ContactsTab({
                 preferredName={c.preferredName}
                 rows={rowsOf(
                   { label: "DOB", value: dobRow(c.dateOfBirth) },
-                  { label: "Email", value: c.email },
-                  { label: "Phone", value: phoneLine(c) },
+                  // Email and Phone hold their place on the client cards even
+                  // when blank — advisors read these off the card constantly,
+                  // and a hidden row makes "missing" indistinguishable from
+                  // "never displayed here".
+                  { label: "Email", value: emailLink(c.email) ?? MISSING },
+                  { label: "Phone", value: phoneLinks(c) ?? MISSING },
                   c.ssnLast4
                     ? {
                         label: "SSN",
@@ -446,10 +491,10 @@ export function ContactsTab({
                   preferredName={contact?.preferredName}
                   rows={rowsOf(
                     { label: "DOB", value: dobRow(member.dateOfBirth) },
-                    { label: "Email", value: contact?.email ?? null },
+                    { label: "Email", value: emailLink(contact?.email) },
                     {
                       label: "Phone",
-                      value: contact ? phoneLine(contact) : null,
+                      value: contact ? phoneLinks(contact) : null,
                     },
                     { label: "Notes", value: contact?.notes ?? null },
                   )}
@@ -498,8 +543,8 @@ export function ContactsTab({
                 preferredName={c.preferredName}
                 rows={rowsOf(
                   { label: "DOB", value: dobRow(c.dateOfBirth) },
-                  { label: "Email", value: c.email },
-                  { label: "Phone", value: phoneLine(c) },
+                  { label: "Email", value: emailLink(c.email) },
+                  { label: "Phone", value: phoneLinks(c) },
                   { label: "Notes", value: c.notes },
                 )}
                 onEdit={() => openUnlinkedEdit(c)}
@@ -556,8 +601,8 @@ export function ContactsTab({
                   }
                   name={`${c.firstName} ${c.lastName}`.trim()}
                   rows={rowsOf(
-                    { label: "Email", value: c.email },
-                    { label: "Phone", value: phoneLine(c) },
+                    { label: "Email", value: emailLink(c.email) },
+                    { label: "Phone", value: phoneLinks(c) },
                     { label: "Notes", value: c.notes },
                   )}
                   onEdit={() => openExternalEdit(c)}

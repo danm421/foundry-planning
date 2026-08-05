@@ -88,6 +88,85 @@ describe("ContactsTab family count", () => {
   });
 });
 
+function cardFor(name: string): HTMLElement {
+  const card = screen.getByText(name).closest("li");
+  if (!card) throw new Error(`No card for ${name}`);
+  return card as HTMLElement;
+}
+
+// Same two roles as primaryAndSpouseOnly, but with contact details on file.
+const withContactDetails = {
+  id: "hh1",
+  contacts: [
+    { id: "p1", role: "primary", firstName: "Dan", lastName: "Cooper", familyMemberId: null,
+      relationshipLabel: null, preferredName: null, dateOfBirth: null,
+      email: "dan@example.com", phone: "(555) 010-1234", mobile: "555-010-9999",
+      addressLine1: null, addressLine2: null, city: null, state: null,
+      postalCode: null, country: null, ssnLast4: null, notes: null },
+    // Same number in both slots — must not render twice.
+    { id: "s1", role: "spouse", firstName: "Kim", lastName: "Cooper", familyMemberId: null,
+      relationshipLabel: null, preferredName: null, dateOfBirth: null,
+      email: null, phone: "555-010-2222", mobile: "555-010-2222",
+      addressLine1: null, addressLine2: null, city: null, state: null,
+      postalCode: null, country: null, ssnLast4: null, notes: null },
+  ],
+  planningClient: null,
+} as never;
+
+describe("ContactsTab client contact details", () => {
+  it("renders email and phone as mailto/tel links on the client card", () => {
+    render(<ContactsTab household={withContactDetails} relationships={[]} />);
+    const card = cardFor("Dan Cooper");
+
+    expect(within(card).getByRole("link", { name: "dan@example.com" })).toHaveAttribute(
+      "href",
+      "mailto:dan@example.com",
+    );
+    // Punctuation is stripped from the dial string but kept in the label.
+    expect(within(card).getByRole("link", { name: "(555) 010-1234" })).toHaveAttribute(
+      "href",
+      "tel:5550101234",
+    );
+    expect(within(card).getByRole("link", { name: "555-010-9999" })).toHaveAttribute(
+      "href",
+      "tel:5550109999",
+    );
+  });
+
+  it("renders a phone held in both slots once", () => {
+    render(<ContactsTab household={withContactDetails} relationships={[]} />);
+
+    expect(
+      within(cardFor("Kim Cooper")).getAllByRole("link", { name: "555-010-2222" }),
+    ).toHaveLength(1);
+  });
+
+  // The point of the change: an advisor should read email and phone off the
+  // card, never by opening Edit. rowsOf drops empty values, so before this the
+  // labels vanished entirely on a household with no details captured — which
+  // is every household created through the New household form, since that form
+  // doesn't collect either field.
+  it("keeps the Email and Phone rows on client cards when nothing is on file", () => {
+    render(<ContactsTab household={primaryAndSpouseOnly} relationships={[]} />);
+    const card = cardFor("Dan Cooper");
+
+    expect(within(card).getByText("Email")).toBeInTheDocument();
+    expect(within(card).getByText("Phone")).toBeInTheDocument();
+    expect(within(card).queryAllByRole("link")).toHaveLength(0);
+  });
+
+  // The placeholder is scoped to primary/spouse. External contacts and family
+  // members keep hiding empty rows, so a household of kids doesn't turn into a
+  // wall of em-dashes.
+  it("still hides empty contact rows on external contact cards", () => {
+    render(<ContactsTab household={household} relationships={[]} />);
+    const card = cardFor("Carl Paulson");
+
+    expect(within(card).queryByText("Email")).not.toBeInTheDocument();
+    expect(within(card).queryByText("Phone")).not.toBeInTheDocument();
+  });
+});
+
 // Two family members so the dialog can be reopened for a *different* record.
 const twoKids = {
   id: "hh1",
