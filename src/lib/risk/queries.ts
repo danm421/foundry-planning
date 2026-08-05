@@ -151,6 +151,16 @@ export function summarizeEvent(e: {
 }
 
 /**
+ * A null actorUserId means the event was never attributed to a person: an
+ * RTQ the client submitted themselves, or a system-driven capacity
+ * recompute. Distinguish the two rather than collapsing both to "System" --
+ * a client's own answers are not a system action.
+ */
+export function nullActorLabel(kind: RiskProfileEventKind): string {
+  return kind === "rtq_completed" ? "Client" : "System";
+}
+
+/**
  * RiskListRow is missing three values the detail page renders (spouse
  * tolerance, when capacity was last computed, and the environment
  * reasoning). Extending it here -- rather than widening RiskListRow itself --
