@@ -42,6 +42,11 @@ vi.mock("@/components/portal/portal-nav", () => ({
     <div data-testid="nav" data-basepath={basePath} />
   ),
 }));
+vi.mock("@/components/portal/organizer-tabs", () => ({
+  default: ({ basePath }: { basePath?: string }) => (
+    <div data-testid="organizer-tabs" data-basepath={basePath} />
+  ),
+}));
 vi.mock("@/components/portal/budget-tabs", () => ({
   default: ({ basePath }: { basePath?: string }) => (
     <div data-testid="budget-tabs" data-basepath={basePath} />
@@ -143,21 +148,12 @@ describe("PortalPreview catch-all", () => {
     expect(node?.getAttribute("data-client")).toBe("c1");
   });
 
-  it("renders HouseholdSection on slug=['profile']", async () => {
-    const { container } = await renderPreview(["profile"]);
+  it("renders Household, Family, and Trusts sections on slug=['organizer']", async () => {
+    const { container } = await renderPreview(["organizer"]);
     expect(container.querySelector("[data-testid='section-household']")).toBeTruthy();
-    expect(container.querySelector("[data-testid='section-dashboard']")).toBeNull();
-  });
-
-  it("renders FamilySection on slug=['profile','family']", async () => {
-    const { container } = await renderPreview(["profile", "family"]);
     expect(container.querySelector("[data-testid='section-family']")).toBeTruthy();
-    expect(container.querySelector("[data-testid='section-household']")).toBeNull();
-  });
-
-  it("renders TrustsSection on slug=['profile','trusts']", async () => {
-    const { container } = await renderPreview(["profile", "trusts"]);
     expect(container.querySelector("[data-testid='section-trusts']")).toBeTruthy();
+    expect(container.querySelector("[data-testid='section-dashboard']")).toBeNull();
   });
 
   it("calls notFound() for unknown slug", async () => {
@@ -219,8 +215,26 @@ describe("PortalPreview catch-all", () => {
   });
 
   it("does not render the Budget tab strip outside the section", async () => {
-    const { container } = await renderPreview(["accounts"]);
+    const { container } = await renderPreview(["organizer"]);
     expect(container.querySelector("[data-testid='budget-tabs']")).toBeNull();
+  });
+
+  // Organizer owns four tabs (Task 3), but only Household and Accounts are
+  // wired through the dispatcher in this task — Goals and Cash Flow land in
+  // Task 10. The tab strip must still render on both live branches.
+  it.each([
+    [["organizer"], "section-household"],
+    [["organizer", "accounts"], "screen-accounts"],
+  ])("renders %j with the Organizer tab strip", async (slug, testid) => {
+    const { container } = await renderPreview(slug as string[]);
+    expect(container.querySelector(`[data-testid='${testid}']`)).toBeTruthy();
+    const tabs = container.querySelector("[data-testid='organizer-tabs']");
+    expect(tabs?.getAttribute("data-basepath")).toBe("/clients/c1/portal/preview");
+  });
+
+  it("does not render the Organizer tab strip outside the section", async () => {
+    const { container } = await renderPreview(["budget"]);
+    expect(container.querySelector("[data-testid='organizer-tabs']")).toBeNull();
   });
 
   it("calls notFound() for the pre-move transactions and recurrings slugs", async () => {
@@ -228,8 +242,16 @@ describe("PortalPreview catch-all", () => {
     await expect(renderPreview(["recurrings"])).rejects.toThrow("NEXT_NOT_FOUND");
   });
 
-  it("renders PortalAccountsScreen on slug=['accounts']", async () => {
-    const { container } = await renderPreview(["accounts"]);
+  // profile/accounts were the pre-Organizer slugs; they must no longer route.
+  it("calls notFound() for the pre-move profile and accounts slugs", async () => {
+    await expect(renderPreview(["profile"])).rejects.toThrow("NEXT_NOT_FOUND");
+    await expect(renderPreview(["profile", "family"])).rejects.toThrow("NEXT_NOT_FOUND");
+    await expect(renderPreview(["profile", "trusts"])).rejects.toThrow("NEXT_NOT_FOUND");
+    await expect(renderPreview(["accounts"])).rejects.toThrow("NEXT_NOT_FOUND");
+  });
+
+  it("renders PortalAccountsScreen on slug=['organizer','accounts']", async () => {
+    const { container } = await renderPreview(["organizer", "accounts"]);
     const node = container.querySelector("[data-testid='screen-accounts']");
     expect(node).toBeTruthy();
     expect(node?.getAttribute("data-client")).toBe("c1");
