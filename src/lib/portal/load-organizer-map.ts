@@ -13,12 +13,16 @@ import { and, eq, asc } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, crmHouseholdContacts, entities, familyMembers, scenarios } from "@/db/schema";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
-import { buildMapBoards } from "@/lib/household-map/build-boards";
-import type { MapItem, MapPerson } from "@/lib/household-map/types";
+import { buildMapBoards, type MapBoards } from "@/lib/household-map/build-boards";
+import type { MapItem } from "@/lib/household-map/types";
 import type { MapGoal } from "@/lib/household-map/goals";
 
 export interface OrganizerMapData {
-  people: { client: MapPerson; spouse: MapPerson | null; children: MapPerson[] };
+  // Aliased off the builder rather than restated: the value is destructured
+  // into a variable before the return, so excess-property checking does not
+  // apply and a field added to `MapBoards["people"]` would be carried at
+  // runtime while being silently absent from this type.
+  people: MapBoards["people"];
   items: MapItem[];
   goals: MapGoal[];
   canEdit: boolean;
