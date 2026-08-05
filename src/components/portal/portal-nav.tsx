@@ -11,17 +11,18 @@ import {
   type PortalNavItem,
 } from "@/components/portal/portal-nav-items";
 
-/** Rail order (key order). No group carries a visible subheader now that
- *  Organizer has absorbed the four Profile-and-Accounts destinations. */
-const GROUP_HEADINGS: Record<PortalNavGroup, string | null> = {
-  overview: null,
-  money: null,
-  settings: null,
-};
+/**
+ * Rail order. Groups are spacing only — no group carries a visible subheader
+ * now that Organizer has absorbed the four Profile-and-Accounts destinations,
+ * and "Profile" was the only one that ever had one.
+ *
+ * Still grouped rather than one flat list: the `mb-3` on each group below is
+ * what separates Dashboard from the four money items from Settings.
+ */
+const GROUP_ORDER: readonly PortalNavGroup[] = ["overview", "money", "settings"];
 
-const GROUPS = (Object.keys(GROUP_HEADINGS) as PortalNavGroup[]).map((group) => ({
+const GROUPS = GROUP_ORDER.map((group) => ({
   group,
-  heading: GROUP_HEADINGS[group],
   items: PORTAL_NAV_ITEMS.filter((i) => i.group === group),
 }));
 
@@ -79,13 +80,8 @@ export default function PortalNav({
         <div className="truncate text-[12px] text-ink-3">{email}</div>
       </header>
 
-      {GROUPS.map(({ group, items, heading }) => (
+      {GROUPS.map(({ group, items }) => (
         <div key={group} className="mb-3">
-          {heading && (
-            <div className="mb-1 text-[11px] uppercase tracking-wide text-ink-3">
-              {heading}
-            </div>
-          )}
           <ul className="space-y-0.5">
             {items.map((item) => {
               const href = `${basePath}${item.suffix}`;
