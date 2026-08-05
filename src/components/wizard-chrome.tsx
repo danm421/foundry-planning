@@ -32,8 +32,13 @@ export function WizardChrome({
   busy,
 }: WizardChromeProps) {
   const pct = Math.round(((current + 1) / stepLabels.length) * 100);
+  // flex-1 only bites when the parent is a full-height flex column (the intake
+  // wizard); elsewhere the container stays content-height as before. Either way
+  // the footer sticks to the bottom of the viewport while the body scrolls.
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8">
+    // No bottom padding: the footer's own py-4 is the page's bottom gutter, so
+    // its resting position matches where sticky pins it mid-scroll.
+    <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 pt-8">
       <div className="mb-6">
         <div className="mb-2 flex items-center justify-between font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
           <span>{eyebrow}</span>
@@ -49,8 +54,8 @@ export function WizardChrome({
         </div>
       </div>
       <h1 className="mb-5 text-[20px] font-semibold tracking-tight text-ink">{title}</h1>
-      <div className="mb-8">{children}</div>
-      <div className="flex items-center justify-between">
+      <div className="mb-8 flex-1">{children}</div>
+      <div className="sticky bottom-0 -mx-4 flex items-center justify-between border-t border-hair bg-paper/95 px-4 py-4 backdrop-blur">
         <button
           type="button"
           onClick={onBack}

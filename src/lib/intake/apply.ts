@@ -50,6 +50,10 @@ import {
   type IntakePayload,
 } from "@/lib/intake/schema";
 import { loadFormForFirm } from "@/lib/intake/queries";
+import {
+  loadFamilyRoleIds,
+  synthesizeAccountOwners,
+} from "@/lib/imports/commit/family-resolver";
 import { createClientForHousehold } from "@/lib/clients/create-client";
 import { recordAudit, recordCreate, recordUpdate } from "@/lib/audit";
 import { syncHouseholdNameFromContacts } from "@/lib/crm/sync-household-name";
@@ -58,6 +62,7 @@ import { upsertPrimaryAndSpouseContacts } from "@/lib/crm/upsert-household-conta
 
 // Drizzle transaction handle — same convention as create-client.ts / ownership.ts.
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 
 /** What applySectionsToClient inserted/changed — drives audits + a no-op guard. */
 type ApplyResult = {
@@ -212,6 +217,12 @@ async function applySectionsToClient(
   }
 
   // ── Accounts ──────────────────────────────────────────────────────────────
+  // The form's owner enum (client/spouse/joint) becomes account_owners rows via
+  // the coarse synthesis shared with the AI-import commit, so an intake account
+  // never lands ownerless. Retirement is passed as non-joint because a
+  // retirement account is singly owned — note the DB's retirement trigger keys
+  // on sub_type and so never fires on these rows (we write sub_type "other").
+  const familyRoleIds = await loadFamilyRoleIds(tx, clientId);
   for (const account of payload.accounts) {
     const [row] = await tx
       .insert(accounts)
@@ -222,12 +233,19 @@ async function applySectionsToClient(
         category: account.category,
         subType: "other",
         value: String(account.value),
-        basis: "0",
+        basis: String(account.basis ?? 0),
         custodian: account.custodian ?? null,
         source: "manual",
       })
       .returning({ id: accounts.id });
     result.accountIds.push(row.id);
+    await synthesizeAccountOwners(
+      tx,
+      row.id,
+      account.owner,
+      familyRoleIds,
+      account.category === "retirement",
+    );
   }
 
   // ── Income ────────────────────────────────────────────────────────────────

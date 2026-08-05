@@ -10,7 +10,11 @@ import {
 } from "@/lib/ownership";
 
 import { getExistingId, linkCreated, type ImportPayload } from "../types";
-import { loadFamilyRoleIds, type FamilyRoleIds } from "./family-resolver";
+import {
+  loadFamilyRoleIds,
+  synthesizeAccountOwners,
+  type FamilyRoleIds,
+} from "./family-resolver";
 import { writeAccountHoldings } from "./holdings";
 import { accountHoldingsGuardrail } from "./holdings-guardrail";
 import { emptyResult, type CommitContext, type CommitResult, type Tx } from "./types";
@@ -264,47 +268,4 @@ async function writeImportedOwners(
     // validation/tenant failure → fall through to coarse synthesis below.
   }
   await synthesizeAccountOwners(tx, accountId, row.owner, family, isRetirement);
-}
-
-async function synthesizeAccountOwners(
-  tx: Tx,
-  accountId: string,
-  owner: "client" | "spouse" | "joint" | undefined,
-  family: { clientFmId: string | null; spouseFmId: string | null },
-  isRetirement: boolean,
-): Promise<void> {
-  const { clientFmId, spouseFmId } = family;
-
-  // Retirement accounts can't be jointly held — skip the 50/50 split and fall
-  // through to the single-owner branches (spouse if the extractor said 'spouse',
-  // otherwise the primary client at 100%).
-  if (!isRetirement && owner === "joint" && clientFmId && spouseFmId) {
-    await tx.insert(accountOwners).values([
-      { accountId, familyMemberId: clientFmId, entityId: null, percent: "0.5000" },
-      { accountId, familyMemberId: spouseFmId, entityId: null, percent: "0.5000" },
-    ]);
-    return;
-  }
-
-  if (owner === "spouse" && spouseFmId) {
-    await tx.insert(accountOwners).values({
-      accountId,
-      familyMemberId: spouseFmId,
-      entityId: null,
-      percent: "1.0000",
-    });
-    return;
-  }
-
-  // Default: client at 100% (covers explicit 'client', missing/unknown, and
-  // 'joint' fallback when the spouse FM row doesn't exist yet). Skip if even
-  // the client FM row is missing — the row stays ownerless for now.
-  if (clientFmId) {
-    await tx.insert(accountOwners).values({
-      accountId,
-      familyMemberId: clientFmId,
-      entityId: null,
-      percent: "1.0000",
-    });
-  }
 }

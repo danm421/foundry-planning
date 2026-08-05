@@ -108,12 +108,18 @@ export default async function IntakePage({
   // Active draft — hand off to the client wrapper.
   // Only pass what the client needs: token + their own saved draft payload.
   // NO live advisor/client/plan data crosses into the blank intake flow.
+  // The full-height column is the shell's job, not the wizard's: it lets the
+  // wizard's Back/Next footer sit on the bottom edge of the viewport on short
+  // steps. The portal host deliberately does NOT do this (it has its own
+  // scrollport) — see the comment on IntakeWizard's root.
   return (
-    <IntakeClient
-      token={token}
-      recipientName={form.recipientName ?? null}
-      initialPayload={form.payload}
-      branding={branding}
-    />
+    <div className="flex min-h-dvh flex-col">
+      <IntakeClient
+        token={token}
+        recipientName={form.recipientName ?? null}
+        initialPayload={form.payload}
+        branding={branding}
+      />
+    </div>
   );
 }

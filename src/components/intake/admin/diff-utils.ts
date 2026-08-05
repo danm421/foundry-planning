@@ -74,13 +74,21 @@ export function buildIntakeDiff(
     annualRetirementExpenses: field(baseline?.goals.annualRetirementExpenses, submitted.goals.annualRetirementExpenses),
   };
 
+  // Owner and basis ride along in `secondary`: apply writes both (account_owners
+  // rows and the basis column), so the advisor has to see them before approving.
   const accounts: ListSectionDiff = {
     baselineCount: baseline?.accounts.length ?? 0,
     submittedCount: submitted.accounts.length,
     submittedItems: submitted.accounts.map((a) => ({
       name: a.name,
       value: a.value,
-      secondary: a.category,
+      secondary: [
+        a.category,
+        a.owner,
+        a.basis === undefined ? undefined : `basis $${a.basis.toLocaleString()}`,
+      ]
+        .filter(Boolean)
+        .join(" · "),
     })),
   };
 

@@ -34,7 +34,9 @@ export function IntakePreview({
   }
 
   return (
-    <div>
+    // Full-height column so the previewed wizard pins its footer exactly the way
+    // the standalone /intake shell does — the preview's whole promise.
+    <div className="flex min-h-dvh flex-col">
       <div
         role="status"
         className="sticky top-0 z-50 bg-accent px-4 py-2 text-center text-[13px] font-medium text-accent-on"

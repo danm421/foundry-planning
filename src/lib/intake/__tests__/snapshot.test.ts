@@ -16,6 +16,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { db } from "@/db";
 import {
+  accountOwners,
   crmHouseholds,
   crmHouseholdContacts,
   clients,
@@ -25,7 +26,7 @@ import {
   incomes,
   familyMembers,
 } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { snapshotClientToPayload } from "../snapshot";
 
 const FIRM = "test-firm-snapshot-intake-2026";
@@ -163,6 +164,65 @@ describe("snapshotClientToPayload", () => {
     expect(payload.family.children[0].firstName).toBe("Bobby");
     expect(payload.family.children[0].lastName).toBe("Tester");
     expect(payload.family.children[0].dateOfBirth).toBe("2005-06-01");
+  });
+
+  it("carries tax basis and maps account_owners onto the form's owner enum", async () => {
+    // A spouse-owned taxable account: the form must pre-fill owner=spouse, not
+    // the "client" default, and surface the basis the advisor already has.
+    const fmRows = await db
+      .insert(familyMembers)
+      .values([
+        {
+          clientId,
+          role: "client" as const,
+          relationship: "other" as const,
+          firstName: "Alice",
+          lastName: "Tester",
+          dateOfBirth: "1970-03-15",
+        },
+        {
+          clientId,
+          role: "spouse" as const,
+          relationship: "other" as const,
+          firstName: "Bob",
+          lastName: "Tester",
+          dateOfBirth: "1972-09-20",
+        },
+      ])
+      .returning();
+    const spouseFmId = fmRows.find((f) => f.role === "spouse")!.id;
+
+    const [acct] = await db
+      .insert(accounts)
+      .values({
+        clientId,
+        scenarioId,
+        name: "Bob Brokerage",
+        category: "taxable",
+        value: "400000.00",
+        basis: "250000.00",
+      })
+      .returning();
+    await db
+      .insert(accountOwners)
+      .values({ accountId: acct.id, familyMemberId: spouseFmId, percent: "1.0000" });
+
+    try {
+      const payload = await snapshotClientToPayload(clientId, FIRM);
+      const brokerage = payload.accounts.find((a) => a.name === "Bob Brokerage");
+      expect(brokerage?.basis).toBe(250000);
+      expect(brokerage?.owner).toBe("spouse");
+
+      // The unowned 401k falls back to the form's default.
+      expect(payload.accounts.find((a) => a.name === "401k Rollover")?.owner).toBe(
+        "client",
+      );
+    } finally {
+      // accounts before familyMembers — the deferred owner-sum trigger raises if
+      // the family member goes first and orphans the account's owner row.
+      await db.delete(accounts).where(eq(accounts.id, acct.id));
+      await db.delete(familyMembers).where(inArray(familyMembers.id, fmRows.map((f) => f.id)));
+    }
   });
 
   it("returns mapped account with numeric value", async () => {

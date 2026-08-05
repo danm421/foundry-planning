@@ -144,7 +144,16 @@ export function IntakeWizard({
       case "family":
         return <FamilyStep value={value.family} onChange={setFamily} />;
       case "assets":
-        if (step.subStep === "accounts") return <AccountsStep value={value.accounts} onChange={setAccounts} />;
+        if (step.subStep === "accounts")
+          return (
+            <AccountsStep
+              value={value.accounts}
+              onChange={setAccounts}
+              clientName={value.family?.primary?.firstName}
+              spouseName={value.family?.spouse?.firstName ?? undefined}
+              hasSpouse={value.family?.spouse != null}
+            />
+          );
         if (step.subStep === "income")
           return (
             <IncomeStep
@@ -172,7 +181,12 @@ export function IntakeWizard({
   }
 
   return (
-    <div>
+    // A column so WizardChrome's footer can be pushed to the bottom — but the
+    // HEIGHT comes from the host, never from this component. The standalone
+    // /intake shells wrap us in `min-h-dvh` and the footer lands on the viewport
+    // edge; the client portal renders us inside its own `lg:h-dvh` scrollport,
+    // where claiming a viewport height here would overflow it on every step.
+    <div className="flex flex-1 flex-col">
       <IntakeBrandingHeader branding={branding} />
       {error && (
         <div

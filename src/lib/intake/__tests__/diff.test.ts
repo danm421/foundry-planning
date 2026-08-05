@@ -48,13 +48,27 @@ describe("buildIntakeDiff", () => {
     const withAccounts: IntakePayload = {
       ...minPayload,
       accounts: [
-        { name: "Fidelity", category: "taxable", value: 100000 },
-        { name: "Roth", category: "retirement", value: 50000 },
+        { name: "Fidelity", category: "taxable", value: 100000, owner: "client" },
+        { name: "Roth", category: "retirement", value: 50000, owner: "spouse" },
       ],
     };
     const diff = buildIntakeDiff(null, withAccounts);
     expect(diff.accounts.submittedCount).toBe(2);
     expect(diff.accounts.submittedItems[0].name).toBe("Fidelity");
+  });
+
+  it("surfaces owner and tax basis so the advisor approves what apply will write", () => {
+    const withAccounts: IntakePayload = {
+      ...minPayload,
+      accounts: [
+        { name: "Joint Brokerage", category: "taxable", value: 100000, basis: 60000, owner: "joint" },
+        { name: "Checking", category: "cash", value: 5000, owner: "client" },
+      ],
+    };
+    const diff = buildIntakeDiff(null, withAccounts);
+    expect(diff.accounts.submittedItems[0].secondary).toBe("taxable · joint · basis $60,000");
+    // No basis collected → nothing to show for it.
+    expect(diff.accounts.submittedItems[1].secondary).toBe("cash · client");
   });
 
   it("detects goals retirement age change", () => {

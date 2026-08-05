@@ -67,6 +67,79 @@ export function MoneyInput({
   );
 }
 
+// ─── Owner field ──────────────────────────────────────────────────────────────
+//
+// Shared by every step that asks "whose is this?" (income, accounts). Two rules
+// live here so the steps can't disagree: a household with no spouse is only
+// offered the client, and a stored owner that isn't on offer (e.g. a spouse
+// removed after the fact) falls back to the client rather than rendering blank.
+
+export type IntakeOwner = "client" | "spouse" | "joint";
+
+/** Names for the owner options; omit `hasSpouse` for a single-person household. */
+export interface OwnerNames {
+  clientName?: string;
+  spouseName?: string;
+  hasSpouse?: boolean;
+}
+
+export function ownerOptions({
+  clientName,
+  spouseName,
+  hasSpouse = false,
+}: OwnerNames): { value: IntakeOwner; label: string }[] {
+  const opts: { value: IntakeOwner; label: string }[] = [
+    { value: "client", label: clientName?.trim() || "Client" },
+  ];
+  if (hasSpouse) {
+    opts.push({ value: "spouse", label: spouseName?.trim() || "Spouse" });
+    opts.push({ value: "joint", label: "Joint" });
+  }
+  return opts;
+}
+
+/** Label for a stored owner, for read-only surfaces (e.g. a collapsed row). */
+export function ownerLabel(
+  owner: IntakeOwner | undefined,
+  options: { value: IntakeOwner; label: string }[],
+): string {
+  return options.find((o) => o.value === owner)?.label ?? options[0].label;
+}
+
+export function OwnerField({
+  id,
+  value,
+  options,
+  onChange,
+}: {
+  id: string;
+  value: IntakeOwner | undefined;
+  options: { value: IntakeOwner; label: string }[];
+  onChange: (next: IntakeOwner) => void;
+}) {
+  const offered = new Set(options.map((o) => o.value));
+  return (
+    <div>
+      <label htmlFor={id} className={labelCls}>
+        Owner
+      </label>
+      <select
+        id={id}
+        className={selectCls}
+        value={value && offered.has(value) ? value : "client"}
+        onChange={(e) => onChange(e.target.value as IntakeOwner)}
+        aria-label="Owner"
+      >
+        {options.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 // ─── RemoveButton ─────────────────────────────────────────────────────────────
 
 function RemoveButton({ label, onRemove }: { label: string; onRemove: () => void }) {

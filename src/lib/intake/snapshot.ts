@@ -10,6 +10,7 @@
 
 import { db } from "@/db";
 import {
+  accountOwners,
   clients,
   crmHouseholds,
   crmHouseholdContacts,
@@ -57,6 +58,41 @@ const PROPERTY_CATEGORIES = new Set<string>(["real_estate", "business"]);
 // Mapping: DB "deferred" | "capital_gains" | "trust" → form "other"
 
 type IntakeIncomeType = "salary" | "social_security" | "business" | "other";
+
+// ── Account ownership → the form's coarse owner enum ─────────────────────────
+//
+// account_owners is polymorphic (family member / entity / external beneficiary)
+// and percent-weighted; the form offers only client | spouse | joint. Entity-
+// and beneficiary-owned accounts have no household role, so they fall back to
+// "client" — the same default the form itself uses.
+
+type IntakeOwner = "client" | "spouse" | "joint";
+
+async function loadAccountOwners(clientId: string): Promise<Map<string, IntakeOwner>> {
+  const rows = await db
+    .select({ accountId: accountOwners.accountId, role: familyMembers.role })
+    .from(accountOwners)
+    .innerJoin(familyMembers, eq(accountOwners.familyMemberId, familyMembers.id))
+    .where(eq(familyMembers.clientId, clientId));
+
+  const roles = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const set = roles.get(row.accountId) ?? new Set<string>();
+    set.add(row.role);
+    roles.set(row.accountId, set);
+  }
+
+  const owners = new Map<string, IntakeOwner>();
+  for (const [accountId, set] of roles) {
+    const hasClient = set.has("client");
+    const hasSpouse = set.has("spouse");
+    owners.set(
+      accountId,
+      hasClient && hasSpouse ? "joint" : hasSpouse ? "spouse" : "client",
+    );
+  }
+  return owners;
+}
 
 function mapIncomeType(dbType: string): IntakeIncomeType {
   switch (dbType) {
@@ -178,12 +214,16 @@ export async function snapshotClientToPayload(
       .from(accounts)
       .where(and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, scenarioId)));
 
+    const ownerByAccountId = await loadAccountOwners(clientId);
+
     for (const row of accountRows) {
       if (FORM_ACCOUNT_CATEGORIES.has(row.category)) {
         payloadAccounts.push({
           name: row.name,
           category: row.category as IntakeAccountCategory,
           value: Number(row.value),
+          basis: Number(row.basis),
+          owner: ownerByAccountId.get(row.id) ?? "client",
           custodian: row.custodian ?? undefined,
         });
       } else if (PROPERTY_CATEGORIES.has(row.category)) {

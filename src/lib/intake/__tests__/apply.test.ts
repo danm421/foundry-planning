@@ -15,6 +15,7 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { db } from "@/db";
 import {
+  accountOwners,
   crmHouseholds,
   crmHouseholdContacts,
   clients,
@@ -25,7 +26,7 @@ import {
   intakeForms,
   scenarios,
 } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { createClientForHousehold } from "@/lib/clients/create-client";
 import { newIntakeToken, defaultExpiry } from "../tokens";
 import type { IntakePayload } from "../schema";
@@ -134,8 +135,11 @@ async function cleanup(ids: {
   const { formId, clientId, householdId } = ids;
   if (formId) await db.delete(intakeForms).where(eq(intakeForms.id, formId));
   if (clientId) {
-    await db.delete(familyMembers).where(eq(familyMembers.clientId, clientId));
+    // accounts before familyMembers: deleting a family member cascades its
+    // account_owners rows, and the deferred owner-sum trigger then raises on the
+    // still-present account. Dropping the account first short-circuits it.
     await db.delete(accounts).where(eq(accounts.clientId, clientId));
+    await db.delete(familyMembers).where(eq(familyMembers.clientId, clientId));
     await db.delete(incomes).where(eq(incomes.clientId, clientId));
     await db.delete(expenses).where(eq(expenses.clientId, clientId));
     await db.delete(scenarios).where(eq(scenarios.clientId, clientId));
@@ -158,9 +162,10 @@ describe("applyIntake (existing-client path)", () => {
   afterAll(async () => {
     if (formId) await db.delete(intakeForms).where(eq(intakeForms.id, formId));
     if (clientId) {
+      // accounts first — see the note in cleanup() above.
+      await db.delete(accounts).where(eq(accounts.clientId, clientId));
       await db.delete(familyMembers).where(eq(familyMembers.clientId, clientId));
       await db.delete(incomes).where(eq(incomes.clientId, clientId));
-      await db.delete(accounts).where(eq(accounts.clientId, clientId));
       await db.delete(clients).where(eq(clients.id, clientId));
     }
     if (householdId) {
@@ -225,7 +230,7 @@ describe("applyIntake (existing-client path)", () => {
         ],
       },
       accounts: [
-        { name: "Pat 401k", category: "retirement", value: 425000 },
+        { name: "Pat 401k", category: "retirement", value: 425000, owner: "client" },
       ],
       income: [
         {
@@ -367,9 +372,10 @@ describe("applyIntake (prospect path — creates client on approve)", () => {
   afterAll(async () => {
     if (formId) await db.delete(intakeForms).where(eq(intakeForms.id, formId));
     if (clientId) {
+      // accounts first — see the note in cleanup() above.
+      await db.delete(accounts).where(eq(accounts.clientId, clientId));
       await db.delete(familyMembers).where(eq(familyMembers.clientId, clientId));
       await db.delete(incomes).where(eq(incomes.clientId, clientId));
-      await db.delete(accounts).where(eq(accounts.clientId, clientId));
       await db.delete(expenses).where(eq(expenses.clientId, clientId));
       await db.delete(scenarios).where(eq(scenarios.clientId, clientId));
       await db.delete(clients).where(eq(clients.id, clientId));
@@ -405,7 +411,18 @@ describe("applyIntake (prospect path — creates client on approve)", () => {
         ],
       },
       accounts: [
-        { name: "Robin 401k", category: "retirement", value: 310000 },
+        // Cast: this row deliberately omits `owner`, the way a payload staged
+        // before the field existed does. Apply must still place it (on the
+        // primary client) rather than throw.
+        { name: "Robin 401k", category: "retirement", value: 310000 } as
+          IntakePayload["accounts"][number],
+        {
+          name: "Joint Brokerage",
+          category: "taxable",
+          value: 500000,
+          basis: 300000,
+          owner: "joint",
+        },
       ],
       income: [
         {
@@ -477,6 +494,38 @@ describe("applyIntake (prospect path — creates client on approve)", () => {
     expect(retirement).toBeTruthy();
     expect(retirement?.category).toBe("retirement");
     expect(retirement?.value).toBe("310000.00");
+
+    // ── Assert: tax basis carried through (and defaults to 0) ─────────────
+    const brokerage = accountRows.find((a) => a.name === "Joint Brokerage");
+    expect(brokerage?.basis).toBe("300000.00");
+    expect(retirement?.basis).toBe("0.00");
+
+    // ── Assert: the owner enum became account_owners rows ─────────────────
+    const fmRows = await db
+      .select()
+      .from(familyMembers)
+      .where(eq(familyMembers.clientId, clientId));
+    const clientFmId = fmRows.find((f) => f.role === "client")?.id;
+    const spouseFmId = fmRows.find((f) => f.role === "spouse")?.id;
+
+    const ownerRows = await db
+      .select()
+      .from(accountOwners)
+      .where(inArray(accountOwners.accountId, [retirement!.id, brokerage!.id]));
+
+    // joint taxable → 50/50 across both spouses
+    const jointOwners = ownerRows.filter((o) => o.accountId === brokerage!.id);
+    expect(jointOwners).toHaveLength(2);
+    expect(jointOwners.every((o) => o.percent === "0.5000")).toBe(true);
+    expect(new Set(jointOwners.map((o) => o.familyMemberId))).toEqual(
+      new Set([clientFmId, spouseFmId]),
+    );
+
+    // owner omitted → the primary client at 100%
+    const iraOwners = ownerRows.filter((o) => o.accountId === retirement!.id);
+    expect(iraOwners).toHaveLength(1);
+    expect(iraOwners[0].familyMemberId).toBe(clientFmId);
+    expect(iraOwners[0].percent).toBe("1.0000");
 
     // ── Assert: salary income applied ─────────────────────────────────────
     const incomeRows = await db

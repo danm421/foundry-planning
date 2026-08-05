@@ -1,13 +1,20 @@
 "use client";
 
 import type { IntakeDraft } from "@/lib/intake/schema";
-import { CardList, MoneyInput, inputCls, labelCls, selectCls } from "./card-list";
+import {
+  CardList,
+  MoneyInput,
+  OwnerField,
+  inputCls,
+  labelCls,
+  ownerOptions,
+  selectCls,
+} from "./card-list";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type IncomeSlice = IntakeDraft["income"];
 type IncomeItem = NonNullable<IncomeSlice>[number];
-type Owner = NonNullable<IncomeItem["owner"]>;
 
 export interface IncomeStepProps {
   value: IncomeSlice;
@@ -29,20 +36,6 @@ const TYPE_OPTIONS = [
   { value: "other",            label: "Other" },
 ] as const;
 
-function ownerOptions(
-  clientName: string | undefined,
-  spouseName: string | undefined,
-  hasSpouse: boolean,
-): { value: Owner; label: string }[] {
-  const opts: { value: Owner; label: string }[] = [
-    { value: "client", label: clientName?.trim() || "Client" },
-  ];
-  if (hasSpouse) {
-    opts.push({ value: "spouse", label: spouseName?.trim() || "Spouse" });
-    opts.push({ value: "joint", label: "Joint" });
-  }
-  return opts;
-}
 
 // ─── Blank template ──────────────────────────────────────────────────────────
 
@@ -60,8 +53,7 @@ export function IncomeStep({
   hasSpouse = false,
 }: IncomeStepProps) {
   const income = value ?? [];
-  const ownerOpts = ownerOptions(clientName, spouseName, hasSpouse);
-  const ownerValues = new Set<Owner>(ownerOpts.map((o) => o.value));
+  const ownerOpts = ownerOptions({ clientName, spouseName, hasSpouse });
 
   function addIncome() {
     onChange([...income, blankIncome()]);
@@ -126,26 +118,12 @@ export function IncomeStep({
             </div>
 
             {/* Owner */}
-            <div>
-              <label htmlFor={`${idp}-owner`} className={labelCls}>
-                Owner
-              </label>
-              <select
-                id={`${idp}-owner`}
-                className={selectCls}
-                value={item.owner && ownerValues.has(item.owner) ? item.owner : "client"}
-                onChange={(e) =>
-                  updateIncome(i, { owner: e.target.value as IncomeItem["owner"] })
-                }
-                aria-label="Owner"
-              >
-                {ownerOpts.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <OwnerField
+              id={`${idp}-owner`}
+              value={item.owner}
+              options={ownerOpts}
+              onChange={(owner) => updateIncome(i, { owner })}
+            />
 
             {/* Annual amount */}
             <div className="sm:col-span-2">

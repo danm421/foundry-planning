@@ -16,10 +16,22 @@ export const intakeChildSchema = z.object({
 });
 
 // Form offers a curated subset of accountCategoryEnum (manual entry only).
+//
+// `owner` carries a default rather than being required (income's is required):
+// forms submitted before the field existed still have to parse here — apply
+// re-parses the stored payload at apply time, so a required owner would throw
+// on every in-flight form. "client" matches the pre-field behaviour, where
+// apply left the account owned by the primary.
+//
+// `basis` is the account's tax (cost) basis. Optional — it's only asked for on
+// the categories where it drives taxes (taxable / annuity / life insurance),
+// and a client who doesn't know it leaves it blank.
 export const intakeAccountSchema = z.object({
   name: z.string().trim().min(1).max(120),
   category: z.enum(["taxable", "cash", "retirement", "annuity", "life_insurance"]),
   value: z.number().nonnegative().max(1e12),
+  basis: z.number().nonnegative().max(1e12).optional(),
+  owner: z.enum(["client", "spouse", "joint"]).default("client"),
   custodian: z.string().trim().max(120).optional(),
 });
 
@@ -92,6 +104,8 @@ const intakeAccountDraftSchema = z.object({
   name: draftStr(120),
   category: z.enum(["taxable", "cash", "retirement", "annuity", "life_insurance"]).optional(),
   value: z.number().max(1e12).optional(),
+  basis: z.number().max(1e12).optional(),
+  owner: z.enum(["client", "spouse", "joint"]).optional(),
   custodian: draftStr(120),
 });
 
@@ -150,7 +164,13 @@ export function pruneIntakeBlankRows(payload: unknown): unknown {
   const rows = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
 
   const accounts = rows<Record<string, unknown>>(p.accounts).filter(
-    (a) => !(blankStr(a.name) && blankNum(a.value) && blankStr(a.custodian)),
+    (a) =>
+      !(
+        blankStr(a.name) &&
+        blankNum(a.value) &&
+        blankNum(a.basis) &&
+        blankStr(a.custodian)
+      ),
   );
   const income = rows<Record<string, unknown>>(p.income).filter(
     (i) => !(blankStr(i.name) && blankNum(i.annualAmount)),
