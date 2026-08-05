@@ -48,6 +48,9 @@ describe("isPortalWritableExpense", () => {
   it("refuses entity-owned expense", () => {
     expect(isPortalWritableExpense(expense({ ownerEntityId: "ent-1" }))).toBe(false);
   });
+  it("refuses business-account-owned expense", () => {
+    expect(isPortalWritableExpense(expense({ ownerAccountId: "biz-1" }))).toBe(false);
+  });
 });
 
 describe("isPortalWritableSavingsRule", () => {

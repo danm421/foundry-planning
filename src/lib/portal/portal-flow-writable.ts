@@ -9,7 +9,7 @@
 // quick-edit drawer safely hydrate this?" A row can be perfectly hydratable for
 // an advisor and still be off-limits to a client.
 import { isSocialSecurityIncome } from "@/lib/household-map/social-security";
-import { isPortalVisibleAccount } from "./account-visibility";
+import { isPortalVisibleAccount, type PortalAccountVisibility } from "./account-visibility";
 import type { Expense, Income, SavingsRule } from "@/engine/types";
 
 /** Entity- or business-account-owned flows. Their raw amounts are not household
@@ -67,13 +67,18 @@ export function isPortalWritableExpense(
  * `education_savings` is not a portal-visible category, so a client cannot add
  * or edit a 529 contribution from the portal. That is deliberate under the
  * current visibility rules, not an oversight.
+ *
+ * `accountById`'s value type is `PortalAccountVisibility` itself — the same
+ * required (non-optional) shape `isPortalVisibleAccount` demands — on purpose.
+ * Task 4's loader and the Task 7 route each build this map independently; if
+ * either one under-selects `isDefaultChecking`/`parentAccountId`, that is now a
+ * type error at the call site instead of a silent `?? false`/`?? null` fallback
+ * that would make an engine cash bucket or business sub-account
+ * portal-writable with nothing to catch it.
  */
 export function isPortalWritableSavingsRule(
   rule: Pick<SavingsRule, "accountId" | "annualPercent" | "contributeMax" | "scheduleOverrides">,
-  accountById: ReadonlyMap<
-    string,
-    { category: string; isDefaultChecking?: boolean; parentAccountId?: string | null }
-  >,
+  accountById: ReadonlyMap<string, PortalAccountVisibility>,
 ): boolean {
   if (rule.scheduleOverrides && Object.keys(rule.scheduleOverrides).length > 0) return false;
   if (rule.contributeMax) return false;
@@ -81,9 +86,5 @@ export function isPortalWritableSavingsRule(
 
   const account = accountById.get(rule.accountId);
   if (!account) return false;
-  return isPortalVisibleAccount({
-    category: account.category,
-    isDefaultChecking: account.isDefaultChecking ?? false,
-    parentAccountId: account.parentAccountId ?? null,
-  });
+  return isPortalVisibleAccount(account);
 }

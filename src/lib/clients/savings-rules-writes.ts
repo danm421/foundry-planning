@@ -63,8 +63,11 @@ export async function createSavingsRuleForClient(args: {
   actorId: string;
   input: unknown;
   crossFirmMeta?: Record<string, unknown>;
+  // 'client' for portal edits; omitted (→ recordAudit's own 'advisor' default)
+  // for every advisor call site. Never change that default from here.
+  actorKind?: "advisor" | "client" | "system";
 }): Promise<EntityWriteResult<SavingsRuleRow>> {
-  const { clientId, firmId, actorId, crossFirmMeta } = args;
+  const { clientId, firmId, actorId, crossFirmMeta, actorKind } = args;
   const p = (args.input ?? {}) as SavingsRuleInput;
 
   const scenarioId = await baseCaseScenarioId(clientId, firmId);
@@ -108,6 +111,7 @@ export async function createSavingsRuleForClient(args: {
     clientId,
     firmId,
     actorId,
+    actorKind,
     metadata: { accountId: rule.accountId, ...(crossFirmMeta ?? {}) },
   });
 
@@ -121,8 +125,9 @@ export async function updateSavingsRuleForClient(args: {
   ruleId: string;
   input: unknown;
   crossFirmMeta?: Record<string, unknown>;
+  actorKind?: "advisor" | "client" | "system";
 }): Promise<EntityWriteResult<SavingsRuleRow>> {
-  const { clientId, firmId, actorId, ruleId, crossFirmMeta } = args;
+  const { clientId, firmId, actorId, ruleId, crossFirmMeta, actorKind } = args;
   const p = (args.input ?? {}) as SavingsRuleInput;
 
   if (p.accountId !== undefined) {
@@ -180,6 +185,7 @@ export async function updateSavingsRuleForClient(args: {
     clientId,
     firmId,
     actorId,
+    actorKind,
     metadata: { accountId: updated.accountId, ...(crossFirmMeta ?? {}) },
   });
 
@@ -192,8 +198,9 @@ export async function deleteSavingsRuleForClient(args: {
   actorId: string;
   ruleId: string;
   crossFirmMeta?: Record<string, unknown>;
+  actorKind?: "advisor" | "client" | "system";
 }): Promise<EntityWriteResult<{ id: string }>> {
-  const { clientId, firmId, actorId, ruleId, crossFirmMeta } = args;
+  const { clientId, firmId, actorId, ruleId, crossFirmMeta, actorKind } = args;
 
   // Transaction + prune lifted verbatim from the route (route.ts's db.transaction
   // wrapping the delete + pruneOrphanScenarioChanges call) — the write-core spec
@@ -213,6 +220,7 @@ export async function deleteSavingsRuleForClient(args: {
     clientId,
     firmId,
     actorId,
+    actorKind,
     metadata: crossFirmMeta,
   });
 

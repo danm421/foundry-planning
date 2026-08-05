@@ -23,11 +23,24 @@ export interface PortalWriteContext {
   actorId: string;
   mode: PortalActorMode;
   /**
-   * Provenance for the audit row. Passed to the shared write-cores through
-   * their `crossFirmMeta` parameter, which is spread into `metadata` verbatim.
-   * The parameter name is a legacy from the cross-firm sharing feature and
-   * reads oddly here; renaming it to `extraAuditMeta` across all six write-cores
-   * and their advisor call sites is worth doing, but is not this change.
+   * The value for `audit_log.actor_kind` — a first-class, `notNull` column
+   * (`src/db/schema.ts`), not jsonb. `PortalActorMode` is already exactly
+   * "client" | "advisor", the same strings the column expects, so this is
+   * just `mode` under the name the audit call sites need. Must be passed as
+   * the write-cores' top-level `actorKind` parameter to `recordAudit` — NOT
+   * folded into `auditMeta`/`crossFirmMeta`, which only reaches the jsonb
+   * `metadata` blob and is invisible to `getPortalActivity`'s
+   * `eq(auditLog.actorKind, "client")` filter that powers the advisor's
+   * "Manage Portal → Recent activity" panel.
+   */
+  actorKind: PortalActorMode;
+  /**
+   * Provenance for the jsonb `metadata` blob only. Passed to the shared
+   * write-cores through their `crossFirmMeta` parameter, which is spread into
+   * `metadata` verbatim. The parameter name is a legacy from the cross-firm
+   * sharing feature and reads oddly here; renaming it to `extraAuditMeta`
+   * across all six write-cores and their advisor call sites is worth doing,
+   * but is not this change.
    */
   auditMeta: Record<string, unknown>;
 }
@@ -49,9 +62,9 @@ export async function resolvePortalWriteContext(): Promise<PortalWriteContext> {
     firmId: row.firmId,
     actorId: clerkUserId,
     mode,
+    actorKind: mode,
     auditMeta: {
       via: "portal",
-      actorKind: mode === "advisor" ? "advisor" : "client",
       ...(mode === "advisor" ? { viaPreview: true } : {}),
     },
   };

@@ -45,8 +45,11 @@ export async function createIncomeForClient(args: {
   actorId: string;
   input: unknown;
   crossFirmMeta?: Record<string, unknown>;
+  // 'client' for portal edits; omitted (→ recordAudit's own 'advisor' default)
+  // for every advisor call site. Never change that default from here.
+  actorKind?: "advisor" | "client" | "system";
 }): Promise<EntityWriteResult<IncomeRow>> {
-  const { clientId, firmId, actorId, input, crossFirmMeta } = args;
+  const { clientId, firmId, actorId, input, crossFirmMeta, actorKind } = args;
 
   const scenarioId = await baseCaseScenarioId(clientId, firmId);
   if (!scenarioId) return writeError(404, "Client not found");
@@ -109,6 +112,7 @@ export async function createIncomeForClient(args: {
     clientId,
     firmId,
     actorId,
+    actorKind,
     metadata: { type: income.type, name: income.name, ...(crossFirmMeta ?? {}) },
   });
 
@@ -122,8 +126,9 @@ export async function updateIncomeForClient(args: {
   incomeId: string;
   input: unknown;
   crossFirmMeta?: Record<string, unknown>;
+  actorKind?: "advisor" | "client" | "system";
 }): Promise<EntityWriteResult<IncomeRow>> {
-  const { clientId, firmId, actorId, incomeId, input, crossFirmMeta } = args;
+  const { clientId, firmId, actorId, incomeId, input, crossFirmMeta, actorKind } = args;
 
   const a = await verifyClientAccess(clientId);
   if (!a.ok || a.firmId !== firmId) {
@@ -214,6 +219,7 @@ export async function updateIncomeForClient(args: {
     clientId,
     firmId,
     actorId,
+    actorKind,
     metadata: { type: updated.type, name: updated.name, ...(crossFirmMeta ?? {}) },
   });
 
@@ -226,8 +232,9 @@ export async function deleteIncomeForClient(args: {
   actorId: string;
   incomeId: string;
   crossFirmMeta?: Record<string, unknown>;
+  actorKind?: "advisor" | "client" | "system";
 }): Promise<EntityWriteResult<{ id: string }>> {
-  const { clientId, firmId, actorId, incomeId, crossFirmMeta } = args;
+  const { clientId, firmId, actorId, incomeId, crossFirmMeta, actorKind } = args;
 
   const a = await verifyClientAccess(clientId);
   if (!a.ok || a.firmId !== firmId) {
@@ -249,6 +256,7 @@ export async function deleteIncomeForClient(args: {
     clientId,
     firmId,
     actorId,
+    actorKind,
     metadata: crossFirmMeta,
   });
 
