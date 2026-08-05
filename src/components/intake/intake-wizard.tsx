@@ -1,7 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import type { IntakeDraft } from "@/lib/intake/schema";
+import {
+  isBlankIntakeIncomeRow,
+  isBlankIntakePropertyRow,
+  type IntakeDraft,
+} from "@/lib/intake/schema";
 import { WizardChrome } from "@/components/wizard-chrome";
 import {
   IntakeBrandingHeader,
@@ -71,6 +75,24 @@ function useDraftSliceSetters(value: IntakeDraft, onChange: (next: IntakeDraft) 
   return { setFamily, setAccounts, setIncome, setProperty, setGoals };
 }
 
+// ─── Skip affordance ─────────────────────────────────────────────────────────
+
+/**
+ * A skipable step keeps its "Skip for now" label only while it is genuinely
+ * empty. Once the client has entered something, "Skip for now" reads as
+ * "discard what I just typed" — so the button becomes a plain "Next".
+ *
+ * A card the client added but never filled in doesn't count as content: that's
+ * the same row submit prunes (`isBlankIntake*Row`), so the label agrees with
+ * what actually gets saved.
+ */
+function offersSkip(step: StepDescriptor, draft: IntakeDraft): boolean {
+  if (!step.skipable) return false;
+  if (step.subStep === "income") return (draft.income ?? []).every(isBlankIntakeIncomeRow);
+  if (step.subStep === "property") return (draft.property ?? []).every(isBlankIntakePropertyRow);
+  return true;
+}
+
 // ─── Section → flat index map ────────────────────────────────────────────────
 // Used by ReviewStep's onEdit to jump back to the right step.
 
@@ -137,7 +159,7 @@ export function IntakeWizard({
   const isReview = step.section === "review";
 
   // On review: the chrome Next button IS the Submit (single affordance).
-  const nextLabel = isReview ? "Submit" : step.skipable ? "Skip for now" : "Next";
+  const nextLabel = isReview ? "Submit" : offersSkip(step, value) ? "Skip for now" : "Next";
 
   function renderBody() {
     switch (step.section) {

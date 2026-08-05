@@ -160,6 +160,22 @@ export const intakeDraftSchema = z.object({
 export type IntakePayload = z.infer<typeof intakeSubmitSchema>;
 export type IntakeDraft = z.infer<typeof intakeDraftSchema>;
 
+const blankStr = (v: unknown) => v === undefined || v === null || String(v).trim() === "";
+const blankNum = (v: unknown) => v === undefined || v === null || v === 0;
+
+/**
+ * "The client added this row but never filled it in." Shared by the submit-time
+ * prune below and by the wizard, which offers "Skip for now" only while every
+ * row on an optional step is blank — one definition so the two can't drift.
+ */
+export function isBlankIntakeIncomeRow(row: { name?: unknown; annualAmount?: unknown }): boolean {
+  return blankStr(row.name) && blankNum(row.annualAmount);
+}
+
+export function isBlankIntakePropertyRow(row: { name?: unknown; value?: unknown }): boolean {
+  return blankStr(row.name) && blankNum(row.value);
+}
+
 /**
  * Drop optional rows the user added but left entirely untouched, so a stray
  * blank card (e.g. "Add income" then "Skip for now") doesn't fail the strict
@@ -173,9 +189,6 @@ export function pruneIntakeBlankRows(payload: unknown): unknown {
   if (payload === null || typeof payload !== "object") return payload;
   const p = payload as Record<string, unknown>;
 
-  const blankStr = (v: unknown) => v === undefined || v === null || String(v).trim() === "";
-  const blankNum = (v: unknown) => v === undefined || v === null || v === 0;
-
   const rows = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
 
   const accounts = rows<Record<string, unknown>>(p.accounts).filter(
@@ -188,10 +201,10 @@ export function pruneIntakeBlankRows(payload: unknown): unknown {
       ),
   );
   const income = rows<Record<string, unknown>>(p.income).filter(
-    (i) => !(blankStr(i.name) && blankNum(i.annualAmount)),
+    (i) => !isBlankIntakeIncomeRow(i),
   );
   const property = rows<Record<string, unknown>>(p.property).filter(
-    (pr) => !(blankStr(pr.name) && blankNum(pr.value)),
+    (pr) => !isBlankIntakePropertyRow(pr),
   );
 
   const family = p.family && typeof p.family === "object"

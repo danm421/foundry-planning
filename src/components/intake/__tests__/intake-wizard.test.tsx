@@ -107,6 +107,49 @@ describe("IntakeWizard", () => {
     expect(onSubmit).toHaveBeenCalledOnce();
   });
 
+  it("labels the Income step Next once an income has been entered, and Property still Skip", () => {
+    render(
+      <IntakeWizard
+        {...makeProps({
+          value: {
+            income: [
+              { name: "Salary at Acme", type: "salary", annualAmount: 120_000, owner: "client" },
+            ],
+          },
+        })}
+      />,
+    );
+
+    // Welcome → Family → Accounts → Income
+    fireEvent.click(screen.getByRole("button", { name: /start here/i }));
+    fireEvent.click(screen.getByRole("button", { name: /next/i }));
+    fireEvent.click(screen.getByRole("button", { name: /next/i }));
+
+    expect(screen.getByRole("button", { name: /^next$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /skip for now/i })).not.toBeInTheDocument();
+
+    // Property is still empty, so it keeps the skip affordance
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i }));
+    expect(screen.getByRole("button", { name: /skip for now/i })).toBeInTheDocument();
+  });
+
+  it("keeps Skip for now on the Income step while every row is blank", () => {
+    render(
+      <IntakeWizard
+        {...makeProps({
+          // A card the client added via "Add income" and never filled in.
+          value: { income: [{ name: "", type: "salary", annualAmount: 0, owner: "client" }] },
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /start here/i }));
+    fireEvent.click(screen.getByRole("button", { name: /next/i }));
+    fireEvent.click(screen.getByRole("button", { name: /next/i }));
+
+    expect(screen.getByRole("button", { name: /skip for now/i })).toBeInTheDocument();
+  });
+
   it("shows the firm logo letterhead when branding is provided, on welcome and chrome steps", () => {
     render(
       <IntakeWizard
