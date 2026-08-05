@@ -18,7 +18,7 @@ import {
   toMapItem,
 } from "./map-items";
 import { ssStartNote } from "./social-security";
-import type { ColumnContext, MapItem, MapPerson } from "./types";
+import type { ColumnContext, MapItem, MapPeople, MapPerson } from "./types";
 import type {
   Account,
   ClientData,
@@ -44,7 +44,7 @@ export interface MapBoardsInput {
 export interface MapBoards {
   ctx: ColumnContext;
   milestones: ClientMilestones;
-  people: { client: MapPerson; spouse: MapPerson | null; children: MapPerson[] };
+  people: MapPeople;
   items: MapItem[];
   goals: MapGoal[];
   netWorth: number;

@@ -85,6 +85,21 @@ export interface MapPerson {
   birthYear: number | null;
 }
 
+/**
+ * The household as every board's column header renders it.
+ *
+ * Declared once and referenced by `HouseholdMapProps`, `GoalsBoardProps`,
+ * `CashFlowBoardProps` and `MapBoards` rather than spelled out inline in each.
+ * Structural typing would let four hand-written copies silently disagree — add a
+ * field to one and the others keep compiling while carrying it only at runtime,
+ * which is the exact hazard `load-organizer-map.ts` aliases its DTO to avoid.
+ */
+export interface MapPeople {
+  client: MapPerson;
+  spouse: MapPerson | null;
+  children: MapPerson[];
+}
+
 /** One card on a board. Assembled server-side by the map route's adapters. */
 export interface MapItem {
   id: string;
@@ -139,7 +154,7 @@ export interface MapItem {
 /** The single prop object every Household Map board reads. */
 export interface HouseholdMapProps {
   clientId: string;
-  people: { client: MapPerson; spouse: MapPerson | null; children: MapPerson[] };
+  people: MapPeople;
   netWorthLabel: string;
   items: MapItem[];
   goals: MapGoal[];
@@ -358,7 +373,7 @@ export interface HouseholdMapProps {
  * `<GoalsBoard {...props} />` spread keeps compiling unchanged.
  */
 export interface GoalsBoardProps {
-  people: { client: MapPerson; spouse: MapPerson | null; children: MapPerson[] };
+  people: MapPeople;
   goals: MapGoal[];
   canEdit: boolean;
   /**
@@ -371,7 +386,7 @@ export interface GoalsBoardProps {
 
 /** Exactly what `CashFlowBoard` reads. Same rationale as `GoalsBoardProps`. */
 export interface CashFlowBoardProps {
-  people: { client: MapPerson; spouse: MapPerson | null; children: MapPerson[] };
+  people: MapPeople;
   items: MapItem[];
   canEdit: boolean;
 }

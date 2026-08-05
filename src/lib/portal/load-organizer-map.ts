@@ -1,9 +1,8 @@
 // src/lib/portal/load-organizer-map.ts
 //
 // Server loader for the Organizer's Goals and Cash Flow tabs. One loader, not
-// two: both boards need the same effective tree, the same ColumnContext and the
-// same `people`, so splitting it would write the derivation twice and let the
-// two tabs disagree.
+// two: both boards need the same effective tree and the same `people`, so
+// splitting it would write the derivation twice and let the two tabs disagree.
 //
 // The tree is resolved with the literal "base" — the portal has no scenario
 // concept and must never render one. `buildMapBoards` is the SAME builder the
@@ -14,17 +13,15 @@ import { db } from "@/db";
 import { clients, crmHouseholdContacts, entities, familyMembers, scenarios } from "@/db/schema";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { buildMapBoards, type MapBoards } from "@/lib/household-map/build-boards";
-import type { MapItem } from "@/lib/household-map/types";
-import type { MapGoal } from "@/lib/household-map/goals";
 
 export interface OrganizerMapData {
-  // Aliased off the builder rather than restated: the value is destructured
-  // into a variable before the return, so excess-property checking does not
-  // apply and a field added to `MapBoards["people"]` would be carried at
+  // All three aliased off the builder rather than restated: each value is
+  // destructured into a variable before the return, so excess-property checking
+  // does not apply and a field added to one of these shapes would be carried at
   // runtime while being silently absent from this type.
   people: MapBoards["people"];
-  items: MapItem[];
-  goals: MapGoal[];
+  items: MapBoards["items"];
+  goals: MapBoards["goals"];
   canEdit: boolean;
 }
 
