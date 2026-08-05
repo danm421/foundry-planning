@@ -1,20 +1,14 @@
 import type { ReactNode } from "react";
-import { eq } from "drizzle-orm";
-import { db } from "@/db";
-import { planSettings } from "@/db/schema";
 import { requireClientAccess } from "@/lib/clients/authz";
 import { getOrComputeCapacity, type CapacityResult } from "@/lib/risk/capacity";
 import { getRiskProfileDetail } from "@/lib/risk/queries";
-import { band, type BindingConstraint } from "@/lib/risk/scoring";
-import { resolveScenarioId } from "@/lib/compute-cache/resolve-scenario-id";
-import { resolveRiskPortfolioId, getPortfolioNames } from "@/lib/cma/resolve-risk-portfolio";
+import { band } from "@/lib/risk/scoring";
+import { resolveMismatchState } from "@/lib/risk/detail-mismatch";
 import {
-  describeBucketSource,
-  describeMismatch,
-  effectiveScenarioPortfolioId,
-  type BucketReadout,
-  type MismatchState,
-} from "@/lib/risk/portfolio-mismatch";
+  TOLERANCE_SOURCE_LABELS,
+  bindingConstraintLine,
+  formatAdjustment,
+} from "@/lib/risk/labels";
 import { RiskLevelBadge } from "@/components/risk/risk-level-badge";
 import { CHIP_NEUTRAL } from "@/components/risk/risk-status-chips";
 import { ComponentCard } from "@/components/risk/component-card";
@@ -26,12 +20,7 @@ import { EnvironmentEditor } from "@/components/risk/environment-editor";
 import { RtqDialog } from "@/components/risk/rtq-dialog";
 import { SendRtqDialog } from "@/components/risk/send-rtq-dialog";
 import { PortfolioMismatch } from "@/components/risk/portfolio-mismatch";
-
-const TOLERANCE_SOURCE_LABELS: Record<string, string> = {
-  rtq_client: "Client RTQ",
-  rtq_advisor: "Advisor RTQ",
-  manual: "Manual",
-};
+import { RiskPdfButton } from "@/components/risk/risk-pdf-button";
 
 const SUBJECT_LABELS: Record<"primary" | "spouse", string> = {
   primary: "Primary",
@@ -46,17 +35,6 @@ const DASH = <span className="text-ink-3">—</span>;
 
 function formatDate(d: Date | null): ReactNode {
   return d ? <span className="tabular">{new Date(d).toISOString().slice(0, 10)}</span> : DASH;
-}
-
-function bindingConstraintLine(binding: BindingConstraint): string {
-  if (binding === "capacity") return "Capacity is the binding constraint";
-  if (binding === "tolerance") return "Tolerance is the binding constraint";
-  return "No capacity yet - profile is provisional";
-}
-
-function formatAdjustment(adj: number): string {
-  if (adj > 0) return `+${adj}`;
-  return String(adj);
 }
 
 export async function RiskDetailContent({
@@ -81,85 +59,24 @@ export async function RiskDetailContent({
   const { row, flags, events, unreviewedNotes, pendingRtqs, contacts } =
     await getRiskProfileDetail(clientId);
 
-  // A household with no base scenario / plan settings throws inside
-  // resolveScenarioId -- same "not an error page" treatment as the capacity
-  // guard above. Falling back to `no_profile` renders nothing rather than
-  // crashing a page that works fine for a planless household today.
-  let mismatch: MismatchState = { kind: "no_profile" };
-  if (row.compositeLevel) {
-    try {
-      // resolveRiskPortfolioId needs only firmId + compositeLevel, both known
-      // before this block, so it rides alongside the scenario lookup instead of
-      // queueing behind it. getPortfolioNames genuinely must stay last -- it
-      // needs ids from both.
-      const [settingsRows, profilePortfolioId] = await Promise.all([
-        resolveScenarioId(clientId, "base").then((baseScenarioId) =>
-          db
-            .select({
-              growthSourceTaxable: planSettings.growthSourceTaxable,
-              growthSourceRetirement: planSettings.growthSourceRetirement,
-              modelPortfolioIdTaxable: planSettings.modelPortfolioIdTaxable,
-              modelPortfolioIdRetirement: planSettings.modelPortfolioIdRetirement,
-              defaultGrowthTaxable: planSettings.defaultGrowthTaxable,
-              defaultGrowthRetirement: planSettings.defaultGrowthRetirement,
-            })
-            .from(planSettings)
-            .where(eq(planSettings.scenarioId, baseScenarioId)),
-        ),
-        resolveRiskPortfolioId(firmId, row.compositeLevel),
-      ]);
-      const [settings] = settingsRows;
-      const names = await getPortfolioNames(firmId, [
-        settings?.modelPortfolioIdTaxable,
-        settings?.modelPortfolioIdRetirement,
-        profilePortfolioId,
-      ]);
-      // No plan settings row -> no buckets to describe. The card still renders
-      // its headline; describeMismatch treats a null scenario portfolio as a
-      // mismatch, which is the intended reading.
-      const buckets: BucketReadout[] = settings
-        ? [
-            {
-              label: "Taxable",
-              value: describeBucketSource({
-                source: settings.growthSourceTaxable,
-                portfolioId: settings.modelPortfolioIdTaxable,
-                customRate: settings.defaultGrowthTaxable,
-                portfolioNames: names,
-              }),
-            },
-            {
-              label: "Retirement",
-              value: describeBucketSource({
-                source: settings.growthSourceRetirement,
-                portfolioId: settings.modelPortfolioIdRetirement,
-                customRate: settings.defaultGrowthRetirement,
-                portfolioNames: names,
-              }),
-            },
-          ]
-        : [];
-      mismatch = describeMismatch({
-        compositeLevel: row.compositeLevel,
-        profilePortfolioId,
-        profilePortfolioName: profilePortfolioId ? (names.get(profilePortfolioId) ?? null) : null,
-        scenarioPortfolioId: effectiveScenarioPortfolioId(settings ?? null),
-        buckets,
-      });
-    } catch {
-      mismatch = { kind: "no_profile" };
-    }
-  }
+  const mismatch = await resolveMismatchState({
+    clientId,
+    firmId,
+    compositeLevel: row.compositeLevel,
+  });
 
   return (
     <div className="space-y-6 p-6">
-      <div>
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-ink">{row.householdName}</h1>
-          <RiskLevelBadge level={row.compositeLevel} score={row.compositeScore} />
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-ink">{row.householdName}</h1>
+            <RiskLevelBadge level={row.compositeLevel} score={row.compositeScore} />
+          </div>
+          <p className="mt-1 text-sm text-ink-2">{bindingConstraintLine(row.bindingConstraint)}</p>
+          <p className="mt-0.5 text-xs text-ink-3">Last updated {formatDate(row.updatedAt)}</p>
         </div>
-        <p className="mt-1 text-sm text-ink-2">{bindingConstraintLine(row.bindingConstraint)}</p>
-        <p className="mt-0.5 text-xs text-ink-3">Last updated {formatDate(row.updatedAt)}</p>
+        <RiskPdfButton clientId={clientId} householdName={row.householdName} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">

@@ -1,5 +1,5 @@
 import type { ClientRiskProfileEventRow } from "@/db/schema";
-import { summarizeEvent } from "@/lib/risk/queries";
+import { summarizeEvent, nullActorLabel } from "@/lib/risk/queries";
 import { resolveActors } from "@/lib/activity/resolve-actors";
 
 const TH =
@@ -7,16 +7,6 @@ const TH =
 
 function formatDate(d: Date): string {
   return new Date(d).toISOString().slice(0, 10);
-}
-
-/**
- * A null actorUserId means the event was never attributed to a person: an
- * RTQ the client submitted themselves, or a system-driven capacity
- * recompute. Distinguish the two rather than collapsing both to "System" --
- * a client's own answers are not a system action.
- */
-function nullActorLabel(kind: ClientRiskProfileEventRow["kind"]): string {
-  return kind === "rtq_completed" ? "Client" : "System";
 }
 
 /** Async server component -- resolves actor display names itself so callers

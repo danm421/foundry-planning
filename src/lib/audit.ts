@@ -413,6 +413,7 @@ export type AuditAction =
   | "risk_profile.rtq_completed"
   | "risk_profile.portfolio_applied"
   | "risk_profile.rtq_sent"
+  | "risk_profile.export_pdf"
   // Notifications ("Alerts")
   | "notification.preferences.update"
   // Advisor first-run onboarding (Task 2: lazy row creation; Task 3 adds
