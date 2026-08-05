@@ -18,6 +18,8 @@ import { PortalDocumentsScreen } from "@/components/portal/portal-documents-scre
 import PortalDashboard from "@/components/portal/portal-dashboard";
 import PortalNav from "@/components/portal/portal-nav";
 import OrganizerTabs from "@/components/portal/organizer-tabs";
+import OrganizerGoalsScreen from "@/components/portal/organizer-goals-screen";
+import OrganizerCashFlowScreen from "@/components/portal/organizer-cash-flow-screen";
 import BudgetTabs from "@/components/portal/budget-tabs";
 import PortalPreviewBanner from "@/components/portal/portal-preview-banner";
 import { PortalModeProvider } from "@/components/portal/portal-mode-context";
@@ -97,6 +99,10 @@ export default async function PortalPreviewPage({
     );
   } else if (path === "organizer/accounts") {
     section = <PortalAccountsScreen clientId={id} />;
+  } else if (path === "organizer/goals") {
+    section = <OrganizerGoalsScreen clientId={id} />;
+  } else if (path === "organizer/cash-flow") {
+    section = <OrganizerCashFlowScreen clientId={id} />;
   } else if (path === "budget") {
     section = privacy.shareBudgets ? (
       <BudgetSection clientId={id} />

@@ -32,6 +32,16 @@ vi.mock("@/components/portal/portal-accounts-screen", () => ({
     <div data-testid="screen-accounts" data-client={clientId} />
   ),
 }));
+vi.mock("@/components/portal/organizer-goals-screen", () => ({
+  default: ({ clientId }: { clientId: string }) => (
+    <div data-testid="screen-goals" data-client={clientId} />
+  ),
+}));
+vi.mock("@/components/portal/organizer-cash-flow-screen", () => ({
+  default: ({ clientId }: { clientId: string }) => (
+    <div data-testid="screen-cash-flow" data-client={clientId} />
+  ),
+}));
 vi.mock("@/components/portal/portal-documents-screen", () => ({
   PortalDocumentsScreen: ({ editEnabled }: { editEnabled: boolean }) => (
     <div data-testid="screen-documents" data-edit={String(editEnabled)} />
@@ -219,12 +229,14 @@ describe("PortalPreview catch-all", () => {
     expect(container.querySelector("[data-testid='budget-tabs']")).toBeNull();
   });
 
-  // Organizer owns four tabs (Task 3), but only Household and Accounts are
-  // wired through the dispatcher in this task — Goals and Cash Flow land in
-  // Task 10. The tab strip must still render on both live branches.
+  // Organizer owns four tabs (Task 3): Household, Accounts, Goals and Cash
+  // Flow all route through the dispatcher. The tab strip must still render on
+  // every live branch.
   it.each([
     [["organizer"], "section-household"],
     [["organizer", "accounts"], "screen-accounts"],
+    [["organizer", "goals"], "screen-goals"],
+    [["organizer", "cash-flow"], "screen-cash-flow"],
   ])("renders %j with the Organizer tab strip", async (slug, testid) => {
     const { container } = await renderPreview(slug as string[]);
     expect(container.querySelector(`[data-testid='${testid}']`)).toBeTruthy();
