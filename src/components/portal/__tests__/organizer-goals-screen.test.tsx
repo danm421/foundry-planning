@@ -21,6 +21,28 @@ const CLIENT = {
   birthYear: 1976,
 };
 
+// Shared by both goal-bearing tests below — one asserts the row renders, the
+// other asserts it renders inert. Identical `loadOrganizerMap` payload in both
+// cases is the point: the two tests must disagree only on what they assert.
+const DATA_WITH_GOAL = {
+  people: { client: CLIENT, spouse: null, children: [] },
+  items: [],
+  canEdit: true,
+  goals: [
+    {
+      id: "expense:e1",
+      year: 2030,
+      kind: "purchase",
+      side: "joint",
+      title: "New roof",
+      detail: "$40,000",
+      expenseId: "e1",
+      forFamilyMemberName: null,
+      lifeExpectancy: null,
+    },
+  ],
+};
+
 describe("OrganizerGoalsScreen", () => {
   it("renders a notice when the household has no board data", async () => {
     loadOrganizerMap.mockResolvedValue(null);
@@ -30,47 +52,13 @@ describe("OrganizerGoalsScreen", () => {
   });
 
   it("renders one row per goal", async () => {
-    loadOrganizerMap.mockResolvedValue({
-      people: { client: CLIENT, spouse: null, children: [] },
-      items: [],
-      canEdit: true,
-      goals: [
-        {
-          id: "expense:e1",
-          year: 2030,
-          kind: "purchase",
-          side: "joint",
-          title: "New roof",
-          detail: "$40,000",
-          expenseId: "e1",
-          forFamilyMemberName: null,
-          lifeExpectancy: null,
-        },
-      ],
-    });
+    loadOrganizerMap.mockResolvedValue(DATA_WITH_GOAL);
     const { getByTestId } = render(await OrganizerGoalsScreen({ clientId: "c1" }));
     expect(getByTestId("goal-row-expense:e1").textContent).toContain("New roof");
   });
 
   it("never renders an editable goal card, even when canEdit is true", async () => {
-    loadOrganizerMap.mockResolvedValue({
-      people: { client: CLIENT, spouse: null, children: [] },
-      items: [],
-      canEdit: true,
-      goals: [
-        {
-          id: "expense:e1",
-          year: 2030,
-          kind: "purchase",
-          side: "joint",
-          title: "New roof",
-          detail: "$40,000",
-          expenseId: "e1",
-          forFamilyMemberName: null,
-          lifeExpectancy: null,
-        },
-      ],
-    });
+    loadOrganizerMap.mockResolvedValue(DATA_WITH_GOAL);
     const { container } = render(await OrganizerGoalsScreen({ clientId: "c1" }));
     expect(container.querySelectorAll("button")).toHaveLength(0);
   });
