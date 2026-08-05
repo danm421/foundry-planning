@@ -23,7 +23,13 @@ import { useEffect } from "react";
  */
 export default function ScrollToHash(): null {
   useEffect(() => {
-    const id = decodeURIComponent(window.location.hash.slice(1));
+    // Deliberately NOT decodeURIComponent'd. Every id this can target
+    // (`household`, `family`, `trusts`) is plain ASCII, so a decode buys
+    // nothing — but it throws an uncaught `URIError` on a malformed fragment
+    // like `#%`, and there is no `error.tsx` under `(portal)`, so that throw
+    // escalates to `global-error.tsx` and blanks the entire portal. Only add a
+    // decode back alongside a non-ASCII anchor id and a try/catch.
+    const id = window.location.hash.slice(1);
     if (!id) return;
     document.getElementById(id)?.scrollIntoView();
   }, []);
