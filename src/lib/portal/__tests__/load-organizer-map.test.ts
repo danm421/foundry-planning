@@ -51,10 +51,11 @@ function rowsFor(table: string): unknown[] {
  * Every link is itself awaitable AND returns a fresh link, so the fake is
  * order-independent: `.where()`, `.where().limit()` and `.where().orderBy()`
  * all resolve to the same rows. `load-accounts-page.test.ts` branches on the
- * terminator instead (`.where()` returns either a `{ limit }` or a `{ then }`),
- * which cannot serve this loader — it mixes all three shapes, and the two
- * queries ending in `.orderBy()` would be awaited against a non-thenable and
- * hang.
+ * terminator instead — its `.where()` returns either a `{ limit }` or a
+ * `{ then }`, and neither object carries an `orderBy` property. That shape
+ * cannot serve this loader, which mixes all three terminators: the two queries
+ * ending in `.orderBy()` would throw `TypeError: ....orderBy is not a function`
+ * at call time.
  */
 function chainFor(rows: unknown[]) {
   const link = {
@@ -80,26 +81,25 @@ vi.mock("@/db", () => ({
 const { loadEffectiveTree } = vi.hoisted(() => ({ loadEffectiveTree: vi.fn() }));
 vi.mock("@/lib/scenario/loader", () => ({ loadEffectiveTree }));
 
-loadEffectiveTree.mockResolvedValue({
-  effectiveTree: {
-    client: {
-      firstName: "Cooper",
-      spouseName: null,
-      retirementAge: 65,
-      planEndAge: 95,
-      lifeExpectancy: 90,
-      spouseRetirementAge: null,
-      spouseLifeExpectancy: null,
-    },
-    planSettings: { planStartYear: 2026, planEndYear: 2066 },
-    accounts: [],
-    liabilities: [],
-    incomes: [],
-    savingsRules: [],
-    expenses: [],
+const BASE_TREE = {
+  client: {
+    firstName: "Cooper",
+    spouseName: null as string | null,
+    retirementAge: 65,
+    planEndAge: 95,
+    lifeExpectancy: 90,
+    spouseRetirementAge: null as number | null,
+    spouseLifeExpectancy: null as number | null,
   },
-  warnings: [],
-});
+  planSettings: { planStartYear: 2026, planEndYear: 2066 },
+  accounts: [],
+  liabilities: [],
+  incomes: [],
+  savingsRules: [],
+  expenses: [],
+};
+
+loadEffectiveTree.mockResolvedValue({ effectiveTree: BASE_TREE, warnings: [] });
 
 import { loadOrganizerMap } from "../load-organizer-map";
 
@@ -135,5 +135,33 @@ describe("loadOrganizerMap", () => {
   it("reports canEdit from portalEditEnabled", async () => {
     mockClient = { ...mockClient!, portalEditEnabled: false };
     expect((await loadOrganizerMap("client-1"))!.canEdit).toBe(false);
+  });
+
+  it("carries the spouse CRM contact's date of birth onto the board", async () => {
+    mockContacts = [
+      { role: "primary", dateOfBirth: "1976-04-01" },
+      { role: "spouse", dateOfBirth: "1978-09-15" },
+    ];
+    loadEffectiveTree.mockResolvedValueOnce({
+      effectiveTree: {
+        ...BASE_TREE,
+        client: { ...BASE_TREE.client, spouseName: "Riley", spouseLifeExpectancy: 90 },
+      },
+      warnings: [],
+    });
+
+    const data = (await loadOrganizerMap("client-1"))!;
+
+    // Both assertions turn on the spouse BIRTH YEAR, which reaches
+    // `buildMapBoards` only through `identity.spouseDob`. Asserting
+    // `people.spouse` is merely non-null would NOT hold this line: that node is
+    // gated on the tree's `spouseName` alone and survives `spouseDob = null`.
+    expect(data.people.spouse?.birthYear).toBe(1978);
+    // The milestone that silently disappears when the spouse DOB is dropped —
+    // gated on spouse name + birth year in `lifeExpectancyMilestones`.
+    expect(data.goals.find((g) => g.id === "milestone:spouse_life_expectancy")).toMatchObject({
+      year: 2068, // 1978 + 90
+      side: "spouse",
+    });
   });
 });
