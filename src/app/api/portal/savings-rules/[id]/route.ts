@@ -17,6 +17,7 @@ import {
   loadPortalAccountVisibility,
 } from "@/lib/portal/assert-portal-visible-target";
 import { isPortalWritableSavingsRule } from "@/lib/portal/portal-flow-writable";
+import { assertPortalSavingsInput } from "@/lib/portal/portal-savings-input";
 import { resolvePortalWriteContext } from "@/lib/portal/portal-write-context";
 
 export const dynamic = "force-dynamic";
@@ -93,6 +94,13 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
     }
 
     const input = (await req.json().catch(() => ({}))) as { accountId?: string };
+
+    // Same DTO the create path enforces. `loadWritable` above only proves the
+    // rule is writable TODAY; without this a client could edit it into a
+    // contributeMax/percent-of-pay rule and lock themselves out of it for good.
+    const shape = assertPortalSavingsInput(input);
+    if (!shape.ok) return NextResponse.json({ error: shape.error }, { status: shape.status });
+
     if (input.accountId !== undefined) {
       const target = await assertPortalVisibleTarget(clientId, input.accountId);
       if (!target.ok) return NextResponse.json({ error: target.error }, { status: target.status });

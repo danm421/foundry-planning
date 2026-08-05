@@ -4,10 +4,14 @@
 // same way, or the collection route and the item route drift.
 //
 // It lives in `lib/` rather than being exported from `savings-rules/route.ts`
-// and imported by `[id]/route.ts`: Next.js 16 type-checks route modules and a
-// non-handler export from a `route.ts` fails `npm run build`. That failure
-// surfaces only at the build gate — `tsc --noEmit` and vitest both pass — so it
-// is worth the separate module.
+// and imported by `[id]/route.ts` for two ordinary reasons: two route modules
+// share it, and here it is testable without standing up either handler. Route
+// files in this app export handlers and `dynamic` only — a convention worth
+// keeping, but only a convention: Next 16.2.10's generated route validator
+// (`.next/types/validator.ts`) is an `extends RouteHandlerConfig<…>` constraint,
+// which extra exports satisfy structurally, so a non-handler export builds
+// clean. Measured, not assumed — do not repeat the folklore that it fails
+// `npm run build`.
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { accounts } from "@/db/schema";

@@ -16,6 +16,7 @@ import { NextResponse } from "next/server";
 import { authErrorResponse } from "@/lib/authz";
 import { createSavingsRuleForClient } from "@/lib/clients/savings-rules-writes";
 import { assertPortalVisibleTarget } from "@/lib/portal/assert-portal-visible-target";
+import { assertPortalSavingsInput } from "@/lib/portal/portal-savings-input";
 import { resolvePortalWriteContext } from "@/lib/portal/portal-write-context";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +25,12 @@ export async function POST(req: Request): Promise<Response> {
   try {
     const { clientId, firmId, actorId, actorKind, auditMeta } = await resolvePortalWriteContext();
     const input = (await req.json().catch(() => ({}))) as { accountId?: string };
+
+    // The mode gate, on the create path. Without it a client can POST the very
+    // shapes `isPortalWritableSavingsRule` refuses to let them edit — see
+    // `portal-savings-input.ts`.
+    const shape = assertPortalSavingsInput(input);
+    if (!shape.ok) return NextResponse.json({ error: shape.error }, { status: shape.status });
 
     const target = await assertPortalVisibleTarget(clientId, input.accountId);
     if (!target.ok) return NextResponse.json({ error: target.error }, { status: target.status });

@@ -157,6 +157,43 @@ describe("POST /api/portal/savings-rules", () => {
     expect(createRule).not.toHaveBeenCalled();
   });
 
+  // The mode gate on the CREATE path. `isPortalWritableSavingsRule` refuses to
+  // let a client EDIT an IRS-max rule, but the write-core would happily CREATE
+  // one — and the resulting row is invisible on the Organizer (filtered by that
+  // same predicate) and undeletable (the item route 403s it), while still
+  // moving the projection.
+  it("refuses a create carrying contributeMax, naming the field", async () => {
+    const res = await POST(req({ ...NEW_RULE, contributeMax: true }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "Not editable from the portal: contributeMax" });
+    expect(createRule).not.toHaveBeenCalled();
+  });
+
+  it("refuses a create carrying annualPercent", async () => {
+    const res = await POST(req({ ...NEW_RULE, annualPercent: "0.2" }));
+    expect(res.status).toBe(400);
+    expect(createRule).not.toHaveBeenCalled();
+  });
+
+  it("refuses a create carrying an employer match", async () => {
+    const res = await POST(req({ ...NEW_RULE, employerMatchPct: "0.05", employerMatchCap: "0.06" }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "Not editable from the portal: employerMatchPct, employerMatchCap",
+    });
+    expect(createRule).not.toHaveBeenCalled();
+  });
+
+  // Asserts the BODY, not just the status: an array body reaches the account
+  // gate with `accountId` undefined and 400s there too, so a status-only
+  // assertion would pass with this guard deleted.
+  it("refuses a body that is not a JSON object", async () => {
+    const res = await POST(req([{ ...NEW_RULE }]));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "Expected a JSON object body" });
+    expect(createRule).not.toHaveBeenCalled();
+  });
+
   it("propagates a ForbiddenError from the guard as 403 and writes nothing", async () => {
     const { ForbiddenError } = await import("@/lib/authz");
     ctx.mockRejectedValue(new ForbiddenError("Portal editing disabled by advisor"));
@@ -224,6 +261,32 @@ describe("PUT /api/portal/savings-rules/[id]", () => {
     const call = updateRule.mock.calls[0][0];
     expect(call.actorKind).toBe("client");
     expect(call.crossFirmMeta).toEqual({ via: "portal" });
+  });
+
+  // `loadWritable` only proves the rule is writable TODAY. Without the DTO
+  // gate a client could edit a perfectly ordinary flat-dollar rule into an
+  // IRS-max one and lock themselves out of it permanently.
+  it("refuses an update carrying contributeMax, naming the field", async () => {
+    const res = await PUT(req({ annualAmount: "1", contributeMax: true }), params("s1"));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "Not editable from the portal: contributeMax" });
+    expect(updateRule).not.toHaveBeenCalled();
+  });
+
+  it("refuses an update carrying rothPercent", async () => {
+    const res = await PUT(req({ annualAmount: "1", rothPercent: 0.5 }), params("s1"));
+    expect(res.status).toBe(400);
+    expect(updateRule).not.toHaveBeenCalled();
+  });
+
+  it("accepts an update carrying the full portal DTO", async () => {
+    accountRows = [VISIBLE_ACCOUNT, VISIBLE_ACCOUNT];
+    const res = await PUT(
+      req({ accountId: "acct-2", annualAmount: "900", startYear: 2027, endYear: 2041 }),
+      params("s1"),
+    );
+    expect(res.status).toBe(200);
+    expect(updateRule).toHaveBeenCalled();
   });
 
   it("moves the rule to another portal-visible account", async () => {
