@@ -17,6 +17,7 @@ import { PortalInvestmentsScreen } from "@/components/portal/portal-investments-
 import { PortalDocumentsScreen } from "@/components/portal/portal-documents-screen";
 import PortalDashboard from "@/components/portal/portal-dashboard";
 import PortalNav from "@/components/portal/portal-nav";
+import OrganizerTabs from "@/components/portal/organizer-tabs";
 import BudgetTabs from "@/components/portal/budget-tabs";
 import PortalPreviewBanner from "@/components/portal/portal-preview-banner";
 import { PortalModeProvider } from "@/components/portal/portal-mode-context";
@@ -75,18 +76,26 @@ export default async function PortalPreviewPage({
   ]);
   const navAlerts = { "/settings": connectionAlert };
 
-  // Dispatch on slug. Empty / ["profile"] → Household.
+  // Dispatch on slug. Empty → Dashboard; ["organizer"] → Household.
   const path = (slug ?? []).join("/");
   let section: ReactElement;
   if (path === "") {
     section = <PortalDashboard clientId={id} sharing={privacy} />;
-  } else if (path === "profile") {
-    section = <HouseholdSection clientId={id} />;
-  } else if (path === "profile/family") {
-    section = <FamilySection clientId={id} />;
-  } else if (path === "profile/trusts") {
-    section = <TrustsSection clientId={id} />;
-  } else if (path === "accounts") {
+  } else if (path === "organizer") {
+    section = (
+      <div className="flex flex-col">
+        <section id="household">
+          <HouseholdSection clientId={id} />
+        </section>
+        <section id="family" className="scroll-mt-4 border-t border-hair">
+          <FamilySection clientId={id} />
+        </section>
+        <section id="trusts" className="scroll-mt-4 border-t border-hair">
+          <TrustsSection clientId={id} />
+        </section>
+      </div>
+    );
+  } else if (path === "organizer/accounts") {
     section = <PortalAccountsScreen clientId={id} />;
   } else if (path === "budget") {
     section = privacy.shareBudgets ? (
@@ -124,6 +133,7 @@ export default async function PortalPreviewPage({
   }
 
   const inBudget = path === "budget" || path.startsWith("budget/");
+  const inOrganizer = path === "organizer" || path.startsWith("organizer/");
 
   const primary = contacts.find((c) => c.role === "primary") ?? contacts[0];
   const displayName = primary
@@ -159,6 +169,7 @@ export default async function PortalPreviewPage({
           <PortalBrandingStrip branding={branding} />
           {/* The Budget section's tab strip sits above the privacy gate, so an
               advisor can still move between tabs when one area isn't shared. */}
+          {inOrganizer && <OrganizerTabs basePath={basePath} />}
           {inBudget && <BudgetTabs basePath={basePath} />}
           <PortalModeProvider value={{ mode: "advisor", clientId: id }}>
             {section}
