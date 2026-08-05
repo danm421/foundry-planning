@@ -102,6 +102,68 @@ describe("POST /api/portal/expenses", () => {
       expect.objectContaining({ input: expect.objectContaining({ isGoal: true }) }),
     );
   });
+
+  // Task 7b: the write-core accepts these as a valid expense shape (they're
+  // just FK columns to it), but they point at accounts/entities the portal
+  // never proves are visible — see src/lib/portal/portal-write-dto.ts.
+  it.each(["ownerEntityId", "ownerAccountId", "cashAccountId"])(
+    "refuses a create body carrying %s, naming the field and calling the write-core with nothing",
+    async (field) => {
+      const res = await POST(
+        req({ type: "other", name: "Vacation", startYear: 2026, endYear: 2040, [field]: "acct-1" }),
+      );
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: `${field} cannot be set from the portal` });
+      expect(createExpense).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["ownerEntityId", "ownerAccountId", "cashAccountId"])(
+    "allows a create body carrying %s set to null — a round-tripped cleared field must not 400",
+    async (field) => {
+      const res = await POST(
+        req({ type: "other", name: "Vacation", startYear: 2026, endYear: 2040, [field]: null }),
+      );
+      expect(res.status).toBe(201);
+      expect(createExpense).toHaveBeenCalled();
+    },
+  );
+
+  // dedicatedAccountIds is expense-only (no income counterpart) and gets the
+  // array-specific carve-out: empty is allowed, non-empty is refused.
+  it("refuses a create body carrying a non-empty dedicatedAccountIds, naming the field", async () => {
+    const res = await POST(
+      req({ type: "other", name: "Vacation", startYear: 2026, endYear: 2040, dedicatedAccountIds: ["acct-1"] }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "dedicatedAccountIds cannot be set from the portal" });
+    expect(createExpense).not.toHaveBeenCalled();
+  });
+
+  it("allows a create body carrying an empty dedicatedAccountIds array", async () => {
+    const res = await POST(
+      req({ type: "other", name: "Vacation", startYear: 2026, endYear: 2040, dedicatedAccountIds: [] }),
+    );
+    expect(res.status).toBe(201);
+    expect(createExpense).toHaveBeenCalled();
+  });
+
+  // The positive control for the whole DTO guard: proves the ordinary fields
+  // the portal form actually sends reach the write-core UNCHANGED, not just
+  // that a 201 comes back. A guard mutated to refuse everything would still
+  // pass every test above while failing this one.
+  it("passes an ordinary create body through untouched, with the same field values", async () => {
+    const body = {
+      type: "other",
+      name: "Vacation",
+      startYear: 2026,
+      endYear: 2040,
+      isGoal: false,
+      annualAmount: "500",
+    };
+    await POST(req(body));
+    expect(createExpense).toHaveBeenCalledWith(expect.objectContaining({ input: body }));
+  });
 });
 
 describe("PUT /api/portal/expenses/[id]", () => {
@@ -129,6 +191,58 @@ describe("PUT /api/portal/expenses/[id]", () => {
     const res = await PUT(req({ name: "New name" }), params("e1"));
     expect(res.status).toBe(200);
     expect(updateExpense).toHaveBeenCalledWith(expect.objectContaining({ expenseId: "e1" }));
+  });
+
+  // Task 7b: same deny-list as POST, applied AFTER loadWritable. See the 403
+  // test below for why the ordering matters.
+  it.each(["ownerEntityId", "ownerAccountId", "cashAccountId"])(
+    "refuses an update body carrying %s, naming the field and calling the write-core with nothing",
+    async (field) => {
+      const res = await PUT(req({ name: "hack", [field]: "acct-1" }), params("e1"));
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: `${field} cannot be set from the portal` });
+      expect(updateExpense).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["ownerEntityId", "ownerAccountId", "cashAccountId"])(
+    "allows an update body carrying %s set to null",
+    async (field) => {
+      const res = await PUT(req({ name: "New name", [field]: null }), params("e1"));
+      expect(res.status).toBe(200);
+      expect(updateExpense).toHaveBeenCalled();
+    },
+  );
+
+  it("refuses an update body carrying a non-empty dedicatedAccountIds, naming the field", async () => {
+    const res = await PUT(req({ name: "hack", dedicatedAccountIds: ["acct-1"] }), params("e1"));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "dedicatedAccountIds cannot be set from the portal" });
+    expect(updateExpense).not.toHaveBeenCalled();
+  });
+
+  it("allows an update body carrying an empty dedicatedAccountIds array", async () => {
+    const res = await PUT(req({ name: "New name", dedicatedAccountIds: [] }), params("e1"));
+    expect(res.status).toBe(200);
+    expect(updateExpense).toHaveBeenCalled();
+  });
+
+  it("passes an ordinary update body through untouched, with the same field values", async () => {
+    const body = { name: "New name", annualAmount: "700" };
+    await PUT(req(body), params("e1"));
+    expect(updateExpense).toHaveBeenCalledWith(expect.objectContaining({ expenseId: "e1", input: body }));
+  });
+
+  // The writability gate must win over the DTO guard: a client probing a row
+  // they cannot touch is entitled to the SAME 403 whether or not their body
+  // also happens to carry a refused field. A 400 here would leak that the row
+  // exists (and that it's a recognized expense shape) to an attacker who
+  // shouldn't get past the gate at all.
+  it("403s a probe carrying a refused field against a row the client cannot touch — the gate runs first, not the DTO guard", async () => {
+    dbRow = { id: "e1", clientId: "c1", source: "policy", ownerEntityId: null, ownerAccountId: null };
+    const res = await PUT(req({ name: "hack", ownerEntityId: "acct-1" }), params("e1"));
+    expect(res.status).toBe(403);
+    expect(updateExpense).not.toHaveBeenCalled();
   });
 
   // Same regression class as the POST discriminator above, at the PUT call

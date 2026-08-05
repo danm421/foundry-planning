@@ -94,6 +94,49 @@ describe("POST /api/portal/incomes", () => {
     expect(res.status).toBe(403);
     expect(createIncome).not.toHaveBeenCalled();
   });
+
+  // Task 7b: the write-core accepts these as a valid income shape (they're just
+  // FK columns to it), but they point at accounts/entities the portal never
+  // proves are visible — see src/lib/portal/portal-write-dto.ts.
+  it.each(["ownerEntityId", "ownerAccountId", "cashAccountId", "linkedPropertyId"])(
+    "refuses a create body carrying %s, naming the field and calling the write-core with nothing",
+    async (field) => {
+      const res = await POST(
+        req({ type: "salary", name: "Job", startYear: 2026, endYear: 2040, [field]: "acct-1" }),
+      );
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: `${field} cannot be set from the portal` });
+      expect(createIncome).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["ownerEntityId", "ownerAccountId", "cashAccountId", "linkedPropertyId"])(
+    "allows a create body carrying %s set to null — a round-tripped cleared field must not 400",
+    async (field) => {
+      const res = await POST(
+        req({ type: "salary", name: "Job", startYear: 2026, endYear: 2040, [field]: null }),
+      );
+      expect(res.status).toBe(201);
+      expect(createIncome).toHaveBeenCalled();
+    },
+  );
+
+  // The positive control for the whole DTO guard: proves the ordinary fields
+  // the portal form actually sends reach the write-core UNCHANGED, not just
+  // that a 201 comes back. A guard mutated to refuse everything would still
+  // pass every test above while failing this one.
+  it("passes an ordinary create body through untouched, with the same field values", async () => {
+    const body = {
+      type: "salary",
+      name: "Job",
+      startYear: 2026,
+      endYear: 2040,
+      owner: "client",
+      annualAmount: "1000",
+    };
+    await POST(req(body));
+    expect(createIncome).toHaveBeenCalledWith(expect.objectContaining({ input: body }));
+  });
 });
 
 describe("PUT /api/portal/incomes/[id]", () => {
@@ -127,6 +170,52 @@ describe("PUT /api/portal/incomes/[id]", () => {
     const res = await PUT(req({ name: "New name" }), params("i1"));
     expect(res.status).toBe(200);
     expect(updateIncome).toHaveBeenCalledWith(expect.objectContaining({ incomeId: "i1" }));
+  });
+
+  // Task 7b: same deny-list as POST, applied AFTER loadWritable. See the 403
+  // test below for why the ordering matters.
+  it.each(["ownerEntityId", "ownerAccountId", "cashAccountId", "linkedPropertyId"])(
+    "refuses an update body carrying %s, naming the field and calling the write-core with nothing",
+    async (field) => {
+      const res = await PUT(req({ name: "hack", [field]: "acct-1" }), params("i1"));
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: `${field} cannot be set from the portal` });
+      expect(updateIncome).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["ownerEntityId", "ownerAccountId", "cashAccountId", "linkedPropertyId"])(
+    "allows an update body carrying %s set to null",
+    async (field) => {
+      const res = await PUT(req({ name: "New name", [field]: null }), params("i1"));
+      expect(res.status).toBe(200);
+      expect(updateIncome).toHaveBeenCalled();
+    },
+  );
+
+  it("passes an ordinary update body through untouched, with the same field values", async () => {
+    const body = { name: "New name", annualAmount: "2000" };
+    await PUT(req(body), params("i1"));
+    expect(updateIncome).toHaveBeenCalledWith(expect.objectContaining({ incomeId: "i1", input: body }));
+  });
+
+  // The writability gate must win over the DTO guard: a client probing a row
+  // they cannot touch is entitled to the SAME 403 whether or not their body
+  // also happens to carry a refused field. A 400 here would leak that the row
+  // exists (and that it's a recognized income shape) to an attacker who
+  // shouldn't get past the gate at all.
+  it("403s a probe carrying a refused field against a row the client cannot touch — the gate runs first, not the DTO guard", async () => {
+    dbRow = {
+      id: "i1",
+      clientId: "c1",
+      source: "manual",
+      type: "social_security",
+      ownerEntityId: null,
+      ownerAccountId: null,
+    };
+    const res = await PUT(req({ name: "hack", ownerEntityId: "acct-1" }), params("i1"));
+    expect(res.status).toBe(403);
+    expect(updateIncome).not.toHaveBeenCalled();
   });
 
   // Same regression class as the POST discriminator above, at the PUT call

@@ -9,6 +9,7 @@ import { authErrorResponse } from "@/lib/authz";
 import { deleteExpenseForClient, updateExpenseForClient } from "@/lib/clients/expenses-writes";
 import { isPortalWritableExpense } from "@/lib/portal/portal-flow-writable";
 import { resolvePortalWriteContext } from "@/lib/portal/portal-write-context";
+import { findRefusedFlowField } from "@/lib/portal/portal-write-dto";
 import type { Expense } from "@/engine/types";
 
 export const dynamic = "force-dynamic";
@@ -58,12 +59,22 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
       );
     }
 
+    const input = await req.json().catch(() => ({}));
+
+    // Applied AFTER the gate above: a probe against a row the client cannot
+    // touch must still get the gate's 403/404, not a 400 that leaks the row's
+    // existence. See portal-write-dto.ts.
+    const refused = findRefusedFlowField(input);
+    if (refused) {
+      return NextResponse.json({ error: `${refused} cannot be set from the portal` }, { status: 400 });
+    }
+
     const result = await updateExpenseForClient({
       clientId,
       firmId,
       actorId,
       expenseId: id,
-      input: await req.json().catch(() => ({})),
+      input,
       crossFirmMeta: auditMeta,
       actorKind,
     });

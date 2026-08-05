@@ -17,17 +17,28 @@ import { NextResponse } from "next/server";
 import { authErrorResponse } from "@/lib/authz";
 import { createExpenseForClient } from "@/lib/clients/expenses-writes";
 import { resolvePortalWriteContext } from "@/lib/portal/portal-write-context";
+import { findRefusedFlowField } from "@/lib/portal/portal-write-dto";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request): Promise<Response> {
   try {
     const { clientId, firmId, actorId, actorKind, auditMeta } = await resolvePortalWriteContext();
+    const input = await req.json().catch(() => ({}));
+
+    // Deny-list, not an allowlist: expenses carry far more legitimate fields
+    // than savings does. See portal-write-dto.ts for why these fields are
+    // refused rather than passed to the shared write-core.
+    const refused = findRefusedFlowField(input);
+    if (refused) {
+      return NextResponse.json({ error: `${refused} cannot be set from the portal` }, { status: 400 });
+    }
+
     const result = await createExpenseForClient({
       clientId,
       firmId,
       actorId,
-      input: await req.json().catch(() => ({})),
+      input,
       crossFirmMeta: auditMeta,
       actorKind,
     });
