@@ -14,6 +14,27 @@ import { clients, crmHouseholdContacts, entities, familyMembers, scenarios } fro
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { buildMapBoards, type MapBoards } from "@/lib/household-map/build-boards";
 import type { MapItem } from "@/lib/household-map/types";
+import { birthYearFromDob } from "@/lib/age-year";
+import { approximateMilestones } from "@/lib/household-map/approximate-milestones";
+import {
+  expenseEngineToView,
+  incomeEngineToView,
+  savingsRuleEngineToView,
+  type ExpenseView,
+  type IncomeView,
+  type SavingsRuleView,
+} from "@/lib/scenario/view-adapters";
+import {
+  isPortalVisibleAccount,
+  toPortalAccountVisibility,
+  type PortalAccountVisibility,
+} from "./account-visibility";
+import {
+  isPortalWritableExpense,
+  isPortalWritableIncome,
+  isPortalWritableSavingsRule,
+} from "./portal-flow-writable";
+import type { ClientMilestones } from "@/lib/milestones";
 
 /**
  * The three `kind`s `CashFlowBoard` draws — its `BANDS` in
@@ -44,6 +65,28 @@ export interface OrganizerMapData {
   items: MapBoards["items"];
   goals: MapBoards["goals"];
   canEdit: boolean;
+  /**
+   * Editor hydration rows, filtered by the PORTAL writability predicates in
+   * `./portal-flow-writable`. Membership is the writability probe: the client
+   * components ask `item.id in incomeRows` exactly the way the advisor Map's
+   * `isItemEditable` does. A row omitted here keeps its CARD and keeps counting
+   * toward the band subtotal — it simply renders inert.
+   */
+  incomeRows: Record<string, IncomeView>;
+  expenseRows: Record<string, ExpenseView>;
+  savingsRuleRows: Record<string, SavingsRuleView>;
+  /** Savings targets. Portal-visible accounts only — the same gate the portal
+   *  Accounts list applies, so a client cannot fund an account they cannot see. */
+  savingsAccountOptions: { id: string; name: string }[];
+  /** Beneficiary options for an education goal. `birthYear` drives the goal's
+   *  auto-fill and is nullable — a member with no DOB just doesn't move the dates. */
+  familyMemberOptions: { id: string; firstName: string; birthYear: number | null }[];
+  /** Seeds the Start/End year pickers. Approximate by design — see
+   *  `approximateMilestones`. */
+  milestones: ClientMilestones;
+  /** Display-only hint for the growth line. The engine re-resolves the effective
+   *  rate at load time; a hard-coded 3% told clients on a 2.4% plan the wrong number. */
+  resolvedInflationRate: number;
 }
 
 /**
@@ -105,6 +148,12 @@ export async function loadOrganizerMap(clientId: string): Promise<OrganizerMapDa
 
   const { effectiveTree } = await loadEffectiveTree(clientId, client.firmId, "base", {});
 
+  // One clock read for the whole load: `buildMapBoards`'s ages and
+  // `approximateMilestones`'s current-year anchor must agree on "now", and two
+  // independent `new Date()` calls could straddle a year rollover (rare, but a
+  // free thing to rule out).
+  const now = new Date();
+
   const { people, items, goals } = buildMapBoards({
     effectiveTree,
     identity: {
@@ -114,13 +163,51 @@ export async function loadOrganizerMap(clientId: string): Promise<OrganizerMapDa
     },
     familyMemberRows,
     entityRows,
-    today: new Date(),
+    today: now,
   });
+
+  // One pass over the tree's accounts builds both the savings-rule visibility
+  // gate AND the savings-target options list, rather than filtering/recomputing
+  // the same `PortalAccountVisibility` projection over the array twice.
+  const accountVisibilityById = new Map<string, PortalAccountVisibility>();
+  const savingsAccountOptions: { id: string; name: string }[] = [];
+  for (const a of effectiveTree.accounts) {
+    const visibility = toPortalAccountVisibility(a);
+    accountVisibilityById.set(a.id, visibility);
+    if (isPortalVisibleAccount(visibility)) savingsAccountOptions.push({ id: a.id, name: a.name });
+  }
+
+  const incomeRows: Record<string, IncomeView> = Object.fromEntries(
+    effectiveTree.incomes
+      .filter(isPortalWritableIncome)
+      .map((i) => [i.id, incomeEngineToView(i)] as const),
+  );
+  const expenseRows: Record<string, ExpenseView> = Object.fromEntries(
+    effectiveTree.expenses
+      .filter(isPortalWritableExpense)
+      .map((e) => [e.id, expenseEngineToView(e)] as const),
+  );
+  const savingsRuleRows: Record<string, SavingsRuleView> = Object.fromEntries(
+    effectiveTree.savingsRules
+      .filter((s) => isPortalWritableSavingsRule(s, accountVisibilityById))
+      .map((s) => [s.id, savingsRuleEngineToView(s)] as const),
+  );
 
   return {
     people,
     items: items.filter((i) => CASH_FLOW_KINDS.includes(i.kind)),
     goals,
     canEdit: client.portalEditEnabled,
+    incomeRows,
+    expenseRows,
+    savingsRuleRows,
+    savingsAccountOptions,
+    familyMemberOptions: familyMemberRows.map(({ id, firstName, dateOfBirth }) => ({
+      id,
+      firstName,
+      birthYear: birthYearFromDob(dateOfBirth),
+    })),
+    milestones: approximateMilestones(people, goals, now.getFullYear()),
+    resolvedInflationRate: effectiveTree.planSettings.inflationRate,
   };
 }
