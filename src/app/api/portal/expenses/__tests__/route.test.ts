@@ -130,6 +130,17 @@ describe("PUT /api/portal/expenses/[id]", () => {
     expect(res.status).toBe(200);
     expect(updateExpense).toHaveBeenCalledWith(expect.objectContaining({ expenseId: "e1" }));
   });
+
+  // Same regression class as the POST discriminator above, at the PUT call
+  // site: a fold of actorKind into crossFirmMeta here would leave every other
+  // PUT assertion green while making a client's edit invisible to
+  // getPortalActivity's actor_kind filter.
+  it("passes actorKind as its own write-core argument on update, not folded into crossFirmMeta", async () => {
+    await PUT(req({ name: "New name" }), params("e1"));
+    const call = updateExpense.mock.calls[0][0];
+    expect(call.actorKind).toBe("client");
+    expect(call.crossFirmMeta).toEqual({ via: "portal" });
+  });
 });
 
 describe("DELETE /api/portal/expenses/[id]", () => {
@@ -137,6 +148,17 @@ describe("DELETE /api/portal/expenses/[id]", () => {
     const res = await DELETE(new Request("http://t", { method: "DELETE" }), params("e1"));
     expect(res.status).toBe(204);
     expect(deleteExpense).toHaveBeenCalledWith(expect.objectContaining({ expenseId: "e1" }));
+  });
+
+  // Same regression class as the POST discriminator above, at the DELETE call
+  // site: a fold of actorKind into crossFirmMeta here would leave every other
+  // DELETE assertion green while making a client's delete invisible to
+  // getPortalActivity's actor_kind filter.
+  it("passes actorKind as its own write-core argument on delete, not folded into crossFirmMeta", async () => {
+    await DELETE(new Request("http://t", { method: "DELETE" }), params("e1"));
+    const call = deleteExpense.mock.calls[0][0];
+    expect(call.actorKind).toBe("client");
+    expect(call.crossFirmMeta).toEqual({ via: "portal" });
   });
 
   it("lets the write-core answer for a default living-expense delete", async () => {
