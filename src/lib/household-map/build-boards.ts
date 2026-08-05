@@ -8,7 +8,7 @@
 // Pure: no DB, no React, no `new Date()`. The caller passes `today` so ages are
 // reproducible in tests and cannot drift a Jan-1 DOB across timezones.
 import { ageOnDate, birthYearFromDob, yearForAge } from "@/lib/age-year";
-import { buildClientMilestones, type ClientMilestones } from "@/lib/milestones";
+import { buildClientMilestones } from "@/lib/milestones";
 import { buildMapGoals, type MapGoal } from "./goals";
 import {
   ACCOUNT_CATEGORY,
@@ -42,8 +42,6 @@ export interface MapBoardsInput {
 }
 
 export interface MapBoards {
-  ctx: ColumnContext;
-  milestones: ClientMilestones;
   people: MapPeople;
   items: MapItem[];
   goals: MapGoal[];
@@ -189,5 +187,8 @@ export function buildMapBoards(input: MapBoardsInput): MapBoards {
       }),
   };
 
-  return { ctx, milestones, people, items, goals, netWorth };
+  // `ctx` and `milestones` stay LOCAL. Both are inputs to `items` and `goals`
+  // above, and neither has ever had a consumer on the far side of this return —
+  // returning them would only invite a second, divergent derivation.
+  return { people, items, goals, netWorth };
 }
