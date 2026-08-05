@@ -88,22 +88,41 @@ beforeEach(() => {
   delete process.env.BILLING_ENFORCEMENT_MODE;
 });
 
+/** Pathname of a redirect response, so assertions can be exact rather than
+ *  substring — `/portal/organizer` is a prefix of `/portal/organizer/accounts`,
+ *  and `toContain` could not tell the legacy shims from the real landings. */
+function redirectPath(res: Response): string {
+  return new URL(res.headers.get("location") ?? "", "https://x.invalid").pathname;
+}
+
 describe("proxy portal branching", () => {
-  it("redirects bound portal user from /clients to /portal/profile", async () => {
+  // Exact, not `toContain`: the point of this assertion is that the catch-all
+  // lands on the Organizer itself and NOT on the retired /portal/profile shim,
+  // which under the portal's streaming boundary costs a second full page load.
+  it("redirects bound portal user from /clients to /portal/organizer", async () => {
     getPortalClientIdMock.mockResolvedValue("client-1");
     const res = await captured.handler!(
       authWith("u1", null) as never,
       makeReq("/clients"),
     );
     expect(res.status).toBe(307);
-    expect(res.headers.get("location")).toContain("/portal/profile");
+    expect(redirectPath(res)).toBe("/portal/organizer");
   });
 
   it("lets bound portal user reach /portal/*", async () => {
     getPortalClientIdMock.mockResolvedValue("client-1");
     const res = await captured.handler!(
       authWith("u1", null) as never,
-      makeReq("/portal/profile"),
+      makeReq("/portal/organizer"),
+    );
+    expect(res.status).not.toBe(307);
+  });
+
+  it("lets bound portal user reach a nested Organizer tab", async () => {
+    getPortalClientIdMock.mockResolvedValue("client-1");
+    const res = await captured.handler!(
+      authWith("u1", null) as never,
+      makeReq("/portal/organizer/accounts"),
     );
     expect(res.status).not.toBe(307);
   });
@@ -121,7 +140,7 @@ describe("proxy portal branching", () => {
   it("redirects advisor away from /portal/* to /clients", async () => {
     const res = await captured.handler!(
       authWith("u1", "org_advisor") as never,
-      makeReq("/portal/profile"),
+      makeReq("/portal/organizer"),
     );
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toContain("/clients");
@@ -157,7 +176,7 @@ describe("proxy portal branching", () => {
     expect(res.headers.get("location")).toContain("/clients");
   });
 
-  it("self-heals an org-less user with a pending claim and sends them to /portal/profile", async () => {
+  it("self-heals an org-less user with a pending claim and sends them to /portal/organizer", async () => {
     getPortalClientIdMock.mockResolvedValue(null);
     claimPortalBindingMock.mockResolvedValue("client-2");
     const res = await captured.handler!(
@@ -165,7 +184,7 @@ describe("proxy portal branching", () => {
       makeReq("/clients"),
     );
     expect(res.status).toBe(307);
-    expect(res.headers.get("location")).toContain("/portal/profile");
+    expect(redirectPath(res)).toBe("/portal/organizer");
   });
 
   it("redirects to /select-organization when there is no binding and no claim", async () => {
@@ -181,13 +200,13 @@ describe("proxy portal branching", () => {
 });
 
 describe("proxy soft-route: intake redirect", () => {
-  it("redirects bound portal client with pending intake from /portal/profile to /portal/intake", async () => {
+  it("redirects bound portal client with pending intake from /portal/organizer to /portal/intake", async () => {
     getPortalClientIdMock.mockResolvedValue("client-intake-1");
     hasUnsubmittedPrefilledFormMock.mockResolvedValue(true);
 
     const res = await captured.handler!(
       authWith("u1", null) as never,
-      makeReq("/portal/profile"),
+      makeReq("/portal/organizer"),
     );
     expect(res.status).toBe(307); // temporary, method-preserving — not 308
     expect(res.headers.get("location")).toContain("/portal/intake");
@@ -199,7 +218,7 @@ describe("proxy soft-route: intake redirect", () => {
 
     const res = await captured.handler!(
       authWith("u1", null) as never,
-      makeReq("/portal/profile"),
+      makeReq("/portal/organizer"),
     );
     // Should pass through, not redirect to /portal/intake
     expect(res.headers.get("location") ?? "").not.toContain("/portal/intake");
