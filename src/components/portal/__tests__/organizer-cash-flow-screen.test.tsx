@@ -1,6 +1,10 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
+import {
+  TEST_SOLO_PEOPLE,
+  TEST_INCOME_ITEM,
+} from "@/components/household-map/__tests__/fixtures";
 
 // `vi.mock`'s factory is hoisted above every import, including the `const`
 // below it — a plain `const loadOrganizerMap = vi.fn()` would be read by the
@@ -13,31 +17,15 @@ vi.mock("@/lib/portal/load-organizer-map", () => ({ loadOrganizerMap }));
 
 import OrganizerCashFlowScreen from "../organizer-cash-flow-screen";
 
-const CLIENT = {
-  familyMemberId: "fm-1",
-  firstName: "Cooper",
-  age: 50,
-  retirementYear: 2040,
-  birthYear: 1976,
+// Shared by both card-bearing tests below — one asserts the card lands in its
+// owner column, the other asserts it renders inert. Identical payload in both
+// cases is the point: the two tests must disagree only on what they assert.
+const DATA_WITH_ITEM = {
+  people: TEST_SOLO_PEOPLE,
+  goals: [],
+  canEdit: true,
+  items: [TEST_INCOME_ITEM],
 };
-
-function item(overrides: Record<string, unknown> = {}) {
-  return {
-    id: "i1",
-    kind: "income",
-    category: "investments",
-    name: "Salary",
-    valueLabel: "$200,000",
-    value: 200000,
-    column: "client",
-    splitChip: null,
-    trayOwnerLabel: null,
-    noteChip: null,
-    timing: null,
-    editableAmount: 200000,
-    ...overrides,
-  };
-}
 
 describe("OrganizerCashFlowScreen", () => {
   it("renders a notice when the household has no board data", async () => {
@@ -48,23 +36,13 @@ describe("OrganizerCashFlowScreen", () => {
   });
 
   it("places a card in its owner column", async () => {
-    loadOrganizerMap.mockResolvedValue({
-      people: { client: CLIENT, spouse: null, children: [] },
-      goals: [],
-      canEdit: true,
-      items: [item()],
-    });
+    loadOrganizerMap.mockResolvedValue(DATA_WITH_ITEM);
     const { getByTestId } = render(await OrganizerCashFlowScreen({ clientId: "c1" }));
     expect(getByTestId("band-income-column-client").textContent).toContain("Salary");
   });
 
   it("offers no add or edit affordance, even when canEdit is true", async () => {
-    loadOrganizerMap.mockResolvedValue({
-      people: { client: CLIENT, spouse: null, children: [] },
-      goals: [],
-      canEdit: true,
-      items: [item()],
-    });
+    loadOrganizerMap.mockResolvedValue(DATA_WITH_ITEM);
     const { container } = render(await OrganizerCashFlowScreen({ clientId: "c1" }));
     expect(container.querySelectorAll("button")).toHaveLength(0);
   });

@@ -1,6 +1,10 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
+import {
+  TEST_SOLO_PEOPLE,
+  TEST_PURCHASE_GOAL,
+} from "@/components/household-map/__tests__/fixtures";
 
 // `vi.mock`'s factory is hoisted above every import, including the `const`
 // below it — a plain `const loadOrganizerMap = vi.fn()` would be read by the
@@ -13,34 +17,14 @@ vi.mock("@/lib/portal/load-organizer-map", () => ({ loadOrganizerMap }));
 
 import OrganizerGoalsScreen from "../organizer-goals-screen";
 
-const CLIENT = {
-  familyMemberId: "fm-1",
-  firstName: "Cooper",
-  age: 50,
-  retirementYear: 2040,
-  birthYear: 1976,
-};
-
 // Shared by both goal-bearing tests below — one asserts the row renders, the
 // other asserts it renders inert. Identical `loadOrganizerMap` payload in both
 // cases is the point: the two tests must disagree only on what they assert.
 const DATA_WITH_GOAL = {
-  people: { client: CLIENT, spouse: null, children: [] },
+  people: TEST_SOLO_PEOPLE,
   items: [],
   canEdit: true,
-  goals: [
-    {
-      id: "expense:e1",
-      year: 2030,
-      kind: "purchase",
-      side: "joint",
-      title: "New roof",
-      detail: "$40,000",
-      expenseId: "e1",
-      forFamilyMemberName: null,
-      lifeExpectancy: null,
-    },
-  ],
+  goals: [TEST_PURCHASE_GOAL],
 };
 
 describe("OrganizerGoalsScreen", () => {
