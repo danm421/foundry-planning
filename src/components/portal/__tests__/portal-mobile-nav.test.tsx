@@ -2,7 +2,10 @@
 import { describe, it, expect, vi, beforeAll } from "vitest";
 import { render, screen } from "@testing-library/react";
 
-let mockPathname = "/portal/accounts";
+// Overwritten by every test below; a live path so nothing here names a route
+// this branch retired (`/portal/accounts` and `/portal/profile` are now redirect
+// shims onto Organizer tabs).
+let mockPathname = "/portal";
 vi.mock("next/navigation", () => ({
   usePathname: () => mockPathname,
 }));
@@ -96,7 +99,7 @@ describe("PortalMobileNav", () => {
   });
 
   it("falls back to a generic title when displayName is empty", () => {
-    mockPathname = "/portal/profile";
+    mockPathname = "/portal/settings";
     render(<PortalMobileNav displayName="" />);
     expect(screen.getByText("Your portal")).toBeInTheDocument();
   });
@@ -125,7 +128,7 @@ describe("PortalMobileNav", () => {
   });
 
   it("renders an attention dot only on the alerted item", () => {
-    mockPathname = "/portal/accounts";
+    mockPathname = "/portal/organizer/accounts";
     const { container } = render(
       <PortalMobileNav displayName="Jane" alerts={{ "/settings": true }} />,
     );
@@ -138,7 +141,7 @@ describe("PortalMobileNav", () => {
   });
 
   it("renders no attention dot when alerts is omitted (default {})", () => {
-    mockPathname = "/portal/accounts";
+    mockPathname = "/portal/organizer/accounts";
     const { container } = render(<PortalMobileNav displayName="Jane" />);
     expect(
       container.querySelectorAll('[aria-label="Needs attention"]'),
