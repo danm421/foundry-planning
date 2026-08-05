@@ -15,7 +15,11 @@ import {
   type PlaidLinkMetadata,
 } from "@/lib/portal/plaid-link-complete";
 
-const ACCOUNTS_PATH = "/portal/accounts";
+// The Organizer's Accounts tab. Deliberately not the legacy /portal/accounts:
+// that path is a redirect shim which, under the portal's streaming boundary,
+// resolves as a client-side meta refresh inside a 200 rather than a 308 — so
+// routing OAuth returns through it would cost a second full page load.
+const ACCOUNTS_PATH = "/portal/organizer/accounts";
 
 /**
  * Landing page for the Plaid OAuth redirect. An OAuth bank sends the browser

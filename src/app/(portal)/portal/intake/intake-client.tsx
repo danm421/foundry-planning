@@ -138,7 +138,7 @@ export function PortalIntakeClient({
     return (
       <IntakeThankYou
         recipientName={recipientName}
-        continueHref="/portal/profile"
+        continueHref="/portal/organizer"
         branding={branding}
       />
     );

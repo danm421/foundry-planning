@@ -129,7 +129,12 @@ export default clerkMiddleware(async (auth, request) => {
 
       if (isPortalRoute(request)) return passthroughResponse;
       if (path.startsWith("/api/")) return passthroughResponse;
-      return NextResponse.redirect(new URL("/portal/profile", request.url));
+      // Organizer → Household: the surface the legacy /portal/profile used to
+      // render, and what that path now redirects to. Target it directly — the
+      // shim sits under the portal's streaming boundary, where
+      // `permanentRedirect()` lands as a `<meta http-equiv="refresh">` inside a
+      // 200 rather than a 308, i.e. a second full page load.
+      return NextResponse.redirect(new URL("/portal/organizer", request.url));
     }
     // Unbound + no org → existing org-picker behavior.
     if (!isOrgPickerRoute(request) && !request.nextUrl.pathname.startsWith("/api/")) {

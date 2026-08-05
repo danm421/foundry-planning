@@ -19,7 +19,9 @@ export default async function PortalIntakePage(): Promise<ReactElement> {
     .where(eq(clients.id, clientId))
     .limit(1);
 
-  if (!clientRow) redirect("/portal/profile");
+  // No clients row behind the portal binding — nothing to seed a form from.
+  // Fall back to the portal proper rather than rendering an empty wizard.
+  if (!clientRow) redirect("/portal/organizer");
   const { firmId, advisorId } = clientRow;
 
   // Independent reads — the seed (snapshot + possible insert) and the branding
@@ -28,7 +30,11 @@ export default async function PortalIntakePage(): Promise<ReactElement> {
     loadOrSeedPortalIntakeForm(clientId, firmId),
     resolveIntakeBrandingForClient(firmId, advisorId),
   ]);
-  if (!result) redirect("/portal/profile");
+  // No active prefilled form (never sent, or already applied) — there is no
+  // intake to show. `loadActivePrefilledForm` covers draft ∪ submitted, a
+  // superset of the middleware's draft-only soft gate, so landing on a portal
+  // page here cannot bounce back to /portal/intake.
+  if (!result) redirect("/portal/organizer");
 
   return (
     <PortalIntakeClient
