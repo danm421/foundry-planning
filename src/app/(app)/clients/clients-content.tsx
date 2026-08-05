@@ -13,7 +13,7 @@ import { SharedWithMeTable } from "@/components/sharing/shared-with-me-table";
 import { resolveSharesForRecipient, type ShareDetail } from "@/lib/clients/shared-access";
 import { resolveActors } from "@/lib/activity/resolve-actors";
 import { resolveFirmNames } from "@/lib/activity/resolve-firm-names";
-import { resolveSort, clampTake, shouldShowLoadMore, type ClientsView } from "@/lib/crm/sort";
+import { resolveClientsView, resolveSort, clampTake, shouldShowLoadMore } from "@/lib/crm/sort";
 import { ClientsLoadMore } from "@/components/clients-load-more";
 
 // ---------------------------------------------------------------------------
@@ -73,21 +73,12 @@ export async function ClientsContent({
   const { userId, orgRole } = await auth();
   const canManage = orgRole === "org:admin";
 
-  const deletedView = params.view === "deleted";
-  const sharedView = params.view === "shared";
-  // Default to the "Recently opened" view; ?view=all, ?view=deleted, and
-  // ?view=shared opt out.
-  const recentView = !deletedView && !sharedView && params.view !== "all";
-
-  const view: ClientsView = deletedView ? "deleted" : recentView ? "recent" : "all";
-  const sort = resolveSort(view, params.sort, params.dir);
-  const take = clampTake(params.take);
-  // Fetch one extra row: if it comes back, there is another page. Exact, and
-  // avoids a separate COUNT(*).
-  const fetchLimit = take + 1;
+  // Defaults to "Recently opened"; ?view= opts out, and a search widens that
+  // default to every client — see `resolveClientsView`.
+  const { view, widenedBySearch } = resolveClientsView(params.view, params.search);
 
   // ── "Shared with me" branch ────────────────────────────────────────────────
-  if (sharedView) {
+  if (view === "shared") {
     const sharedRows = await resolveSharedView(userId);
     return (
       <ClientsShell canManage={canManage}>
@@ -96,8 +87,14 @@ export async function ClientsContent({
     );
   }
 
+  const sort = resolveSort(view, params.sort, params.dir);
+  const take = clampTake(params.take);
+  // Fetch one extra row: if it comes back, there is another page. Exact, and
+  // avoids a separate COUNT(*).
+  const fetchLimit = take + 1;
+
   // ── Normal branch (recently opened / all / deleted) ───────────────────────
-  const households = deletedView
+  const households = view === "deleted"
     ? await listCrmHouseholds({
         search: params.search,
         status: params.status,
@@ -107,7 +104,7 @@ export async function ClientsContent({
         dir: sort.dir,
         limit: fetchLimit,
       })
-    : recentView && userId
+    : view === "recent" && userId
       ? await listRecentlyOpenedHouseholds({
           userId,
           search: params.search,
@@ -147,14 +144,19 @@ export async function ClientsContent({
 
   return (
     <ClientsShell canManage={canManage}>
+      {widenedBySearch && (
+        <p className="mt-3 text-[13px] text-ink-3">
+          Showing matches from all clients, not just recently opened.
+        </p>
+      )}
       <UnifiedClientsTable
         rows={rows}
         canManage={canManage}
         sort={sort}
         emptyMessage={
-          deletedView
+          view === "deleted"
             ? "Trash is empty."
-            : recentView
+            : view === "recent"
               ? "No recently opened clients yet. Open a client's CRM or Planning to see it here."
               : undefined
         }

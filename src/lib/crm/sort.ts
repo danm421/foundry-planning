@@ -33,6 +33,31 @@ const VIEW_DEFAULT: Record<ClientsView, ClientSortKey | null> = {
   deleted: null,
 };
 
+/**
+ * Which listing the clients page should load, given the URL.
+ *
+ * Search is global by intent: the tabs choose the default listing, not the
+ * haystack. So a search from "Recently opened" widens to every client —
+ * otherwise a household the user has never opened reads as one that doesn't
+ * exist. Trash keeps its own scope: deleted households are a separate set,
+ * not a subset of the live list, so widening it would make the only rows it
+ * exists to show unsearchable.
+ *
+ * `widenedBySearch` reports that widening, so the page can say why rows the
+ * Recently-opened tab wouldn't normally show are on screen.
+ */
+export function resolveClientsView(
+  rawView: string | undefined,
+  rawSearch: string | undefined,
+): { view: ClientsView | "shared"; widenedBySearch: boolean } {
+  if (rawView === "shared") return { view: "shared", widenedBySearch: false };
+  if (rawView === "deleted") return { view: "deleted", widenedBySearch: false };
+  if (rawView === "all") return { view: "all", widenedBySearch: false };
+  // Everything else — including no ?view= at all — is Recently opened.
+  const searching = Boolean(rawSearch?.trim());
+  return { view: searching ? "all" : "recent", widenedBySearch: searching };
+}
+
 function isSortKey(v: string | undefined): v is ClientSortKey {
   return v === "name" || v === "status" || v === "primary" || v === "spouse" || v === "updated";
 }

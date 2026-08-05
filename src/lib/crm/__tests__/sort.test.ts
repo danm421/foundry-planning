@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 import {
+  resolveClientsView,
   resolveSort,
   clampTake,
   shouldShowLoadMore,
@@ -9,6 +10,56 @@ import {
   type SortDir,
 } from "../sort";
 import { buildOrderBy } from "../sort-order";
+
+describe("resolveClientsView", () => {
+  it("defaults to Recently opened when no view and no search are given", () => {
+    expect(resolveClientsView(undefined, undefined)).toEqual({
+      view: "recent",
+      widenedBySearch: false,
+    });
+  });
+
+  it("widens Recently opened to every client while a search is active", () => {
+    expect(resolveClientsView(undefined, "smith")).toEqual({
+      view: "all",
+      widenedBySearch: true,
+    });
+  });
+
+  it("treats a whitespace-only search as no search", () => {
+    expect(resolveClientsView(undefined, "   ")).toEqual({
+      view: "recent",
+      widenedBySearch: false,
+    });
+  });
+
+  it("returns to Recently opened when the search is cleared", () => {
+    expect(resolveClientsView(undefined, "").view).toBe("recent");
+  });
+
+  it("widens an unrecognized view too — it renders as Recently opened", () => {
+    expect(resolveClientsView("bogus", "smith")).toEqual({
+      view: "all",
+      widenedBySearch: true,
+    });
+    expect(resolveClientsView("bogus", undefined).view).toBe("recent");
+  });
+
+  it("keeps Trash scoped to deleted households — searching must not widen it", () => {
+    expect(resolveClientsView("deleted", "smith")).toEqual({
+      view: "deleted",
+      widenedBySearch: false,
+    });
+  });
+
+  it("leaves the All and Shared views alone", () => {
+    expect(resolveClientsView("all", "smith")).toEqual({ view: "all", widenedBySearch: false });
+    expect(resolveClientsView("shared", "smith")).toEqual({
+      view: "shared",
+      widenedBySearch: false,
+    });
+  });
+});
 
 describe("resolveSort — per-view defaults", () => {
   it("defaults the All view to last-name ascending", () => {
