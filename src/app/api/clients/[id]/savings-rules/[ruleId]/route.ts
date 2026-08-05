@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/db";
-import { savingsRules } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
-import { recordAudit } from "@/lib/audit";
-import { assertAccountsInClient } from "@/lib/db-scoping";
-import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
+import {
+  updateSavingsRuleForClient,
+  deleteSavingsRuleForClient,
+} from "@/lib/clients/savings-rules-writes";
 
 export const dynamic = "force-dynamic";
 
@@ -19,77 +17,20 @@ export async function PUT(
 ) {
   try {
     const { id, ruleId } = await params;
-    const callerOrg = await requireOrgId();
+    const { userId, orgId: callerOrg } = await requireOrgAndUser();
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
-
-    const body = await request.json();
-    const {
-      accountId,
-      annualAmount,
-      annualPercent,
-      rothPercent,
-      isDeductible,
-      applyContributionLimit,
-      contributeMax,
-      startYear,
-      endYear,
-      growthRate,
-      growthSource,
-      employerMatchPct,
-      employerMatchCap,
-      employerMatchAmount,
-    } = body;
-
-    if (accountId !== undefined) {
-      const acctCheck = await assertAccountsInClient(id, [accountId]);
-      if (!acctCheck.ok) {
-        return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
-      }
-    }
-
-    const [updated] = await db
-      .update(savingsRules)
-      .set({
-        ...(accountId !== undefined && { accountId }),
-        ...(annualAmount !== undefined && { annualAmount }),
-        ...(annualPercent !== undefined && { annualPercent: annualPercent ?? null }),
-        ...(rothPercent !== undefined && {
-          rothPercent: rothPercent != null ? String(rothPercent) : null,
-        }),
-        ...(isDeductible !== undefined && { isDeductible }),
-        ...(applyContributionLimit !== undefined && { applyContributionLimit }),
-        ...(contributeMax !== undefined && { contributeMax }),
-        ...(startYear !== undefined && { startYear: Number(startYear) }),
-        ...(endYear !== undefined && { endYear: Number(endYear) }),
-        ...(growthRate != null && { growthRate: String(growthRate) }),
-        ...(growthSource !== undefined && { growthSource: growthSource === "inflation" ? "inflation" : "custom" }),
-        ...(employerMatchPct !== undefined && { employerMatchPct: employerMatchPct ?? null }),
-        ...(employerMatchCap !== undefined && { employerMatchCap: employerMatchCap ?? null }),
-        ...(employerMatchAmount !== undefined && {
-          employerMatchAmount: employerMatchAmount ?? null,
-        }),
-        ...(body.startYearRef !== undefined && { startYearRef: body.startYearRef }),
-        ...(body.endYearRef !== undefined && { endYearRef: body.endYearRef }),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(savingsRules.id, ruleId), eq(savingsRules.clientId, id)))
-      .returning();
-
-    if (!updated) {
-      return NextResponse.json({ error: "Savings rule not found" }, { status: 404 });
-    }
-
-    await recordAudit({
-      action: "savings_rule.update",
-      resourceType: "savings_rule",
-      resourceId: ruleId,
+    const result = await updateSavingsRuleForClient({
       clientId: id,
       firmId,
-      metadata: crossFirmAuditMeta({ access }, callerOrg, { accountId: updated.accountId }),
+      actorId: userId,
+      ruleId,
+      input: await request.json(),
+      crossFirmMeta: crossFirmAuditMeta({ access }, callerOrg),
     });
-
-    return NextResponse.json(updated);
+    return result.ok
+      ? NextResponse.json(result.data)
+      : NextResponse.json({ error: result.error }, { status: result.status });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });
@@ -105,27 +46,19 @@ export async function DELETE(
 ) {
   try {
     const { id, ruleId } = await params;
-    const callerOrg = await requireOrgId();
+    const { userId, orgId: callerOrg } = await requireOrgAndUser();
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
-
-    await db.transaction(async (tx) => {
-      await tx
-        .delete(savingsRules)
-        .where(and(eq(savingsRules.id, ruleId), eq(savingsRules.clientId, id)));
-      await pruneOrphanScenarioChanges(tx, ruleId);
-    });
-
-    await recordAudit({
-      action: "savings_rule.delete",
-      resourceType: "savings_rule",
-      resourceId: ruleId,
+    const result = await deleteSavingsRuleForClient({
       clientId: id,
       firmId,
-      metadata: crossFirmAuditMeta({ access }, callerOrg),
+      actorId: userId,
+      ruleId,
+      crossFirmMeta: crossFirmAuditMeta({ access }, callerOrg),
     });
-
-    return new NextResponse(null, { status: 204 });
+    return result.ok
+      ? new NextResponse(null, { status: 204 })
+      : NextResponse.json({ error: result.error }, { status: result.status });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });
