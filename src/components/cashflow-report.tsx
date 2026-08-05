@@ -29,6 +29,7 @@ import { isFullyEntityOwned } from "@/engine/ownership";
 import {
   liquidBucketWeights,
   liquidPortfolioAdditions,
+  liquidPortfolioBoy,
   liquidPortfolioDistributions,
   liquidPortfolioGrowth,
   liquidPortfolioWeights,
@@ -924,17 +925,6 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     return sum;
   }
 
-  function portfolioBoy(r: ProjectionYear, _idx: number): number {
-    // Look up previous year in the full projection (not the visible window) so
-    // BoY is always the actual prior-year ending balance, even when the slider
-    // starts mid-projection.
-    const prevYear = years.find((y) => y.year === r.year - 1);
-    // H1: roll forward the canonical liquid portfolio total so BoY ties to the
-    // chart bar height and the summary "Portfolio Assets" cell.
-    if (prevYear) return prevYear.portfolioAssets.liquidTotal;
-    return Object.values(r.accountLedgers).reduce((s, l) => s + l.beginningValue, 0);
-  }
-
   // ── Portfolio growth helpers ──────────────────────────────────────────────
 
   // Each account's share of the liquid portfolio, built once per year — every
@@ -960,7 +950,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
   // Growth/activity totals must be measured over the same accounts and ownership
   // shares that compose `liquidTotal` — the figure the Portfolio Assets column
-  // shows and `portfolioBoy` rolls forward — or the row stops reconciling.
+  // shows and `liquidPortfolioBoy` rolls forward — or the row stops reconciling.
   function portfolioGrowthTotal(r: ProjectionYear): number {
     return liquidPortfolioGrowth(r, weightsFor(r));
   }
@@ -1857,12 +1847,12 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         ...baseColumns,
         ...categoryCols,
         numCol("wd_total", "Total Withdrawals", (r) => r.withdrawals.total, true),
-        numCol("portfolio_boy", "Portfolio (BoY)", (r, idx) => portfolioBoy(r, idx)),
+        numCol("portfolio_boy", "Portfolio (BoY)", (r) => liquidPortfolioBoy(r, years)),
         col(
           "wd_pct",
           "Withdrawal %",
-          (r, idx) => {
-            const boy = portfolioBoy(r, idx);
+          (r) => {
+            const boy = liquidPortfolioBoy(r, years);
             // RMDs are forced withdrawals and belong in the numerator even
             // though the engine tracks them on ledger.rmdAmount rather than
             // inside withdrawals.byAccount. Advisors reading the column

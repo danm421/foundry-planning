@@ -11,14 +11,14 @@ import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { buildYearlyLiquidityReport } from "@/lib/estate/yearly-liquidity-report";
 import { PortfolioBarsChart } from "@/components/charts/portfolio-bars-chart";
 import { SolverCashFlowChart } from "@/components/charts/solver-cash-flow-chart";
-import { SolverIncomeChart } from "@/components/charts/solver-income-chart";
+import { SolverWithdrawalChart } from "@/components/charts/solver-withdrawal-chart";
 import { YearlyLiquidityChart } from "@/components/yearly-liquidity-chart";
 import { LiNeedOverTimeView } from "./li-need-over-time-view";
 import { useNeedOverTime } from "./use-need-over-time";
 import { hasSpouse } from "@/lib/life-insurance/need-over-time";
 import { SolverYearTablePanel } from "./solver-year-table-panel";
-import { SolverIncomePanel } from "./solver-income-panel";
-import { buildIncomeReportRows } from "@/lib/solver/income-report";
+import { SolverWithdrawalPanel } from "./solver-withdrawal-panel";
+import { buildWithdrawalReportRows } from "@/lib/solver/withdrawal-report";
 import { EstateComparisonChart } from "@/components/charts/estate-comparison-chart";
 import { TaxBracketChart } from "@/components/cashflow/charts/tax-bracket-chart";
 import { TaxBracketTab } from "@/components/cashflow/tax-bracket-tab";
@@ -227,7 +227,7 @@ export function SolverChartPanel({
   const [showTable, setShowTable] = useState(false);
   const [showCustomize, setShowCustomize] = useState(false);
   const [estateSubTab, setEstateSubTab] = useState<"charts" | "flow">("charts");
-  const [cashflowSubTab, setCashflowSubTab] = useState<"cashflow" | "income">("cashflow");
+  const [cashflowSubTab, setCashflowSubTab] = useState<"cashflow" | "withdrawals">("cashflow");
   const chartHeight = useSyncExternalStore(
     subscribeChartHeight,
     getChartHeightSnapshot,
@@ -309,15 +309,15 @@ export function SolverChartPanel({
     }).rows;
   }, [tab, currentProjection, workingTree, ownerNames]);
 
-  const isIncomeSubTab = tab === "cashflow" && cashflowSubTab === "income";
+  const isWithdrawalSubTab = tab === "cashflow" && cashflowSubTab === "withdrawals";
 
-  // Built only while the Income sub-tab is open — the chart and the table below
+  // Built only while the Withdrawals sub-tab is open — the chart and the table below
   // it read the same rows, so the account→tax-bucket walk happens once per
   // recompute rather than once per consumer.
-  const incomeRows = useMemo(
+  const withdrawalRows = useMemo(
     () =>
-      isIncomeSubTab ? buildIncomeReportRows(currentProjection, workingTree.accounts) : [],
-    [isIncomeSubTab, currentProjection, workingTree.accounts],
+      isWithdrawalSubTab ? buildWithdrawalReportRows(currentProjection, workingTree.accounts) : [],
+    [isWithdrawalSubTab, currentProjection, workingTree.accounts],
   );
 
   // The flow chart needs the FULL projection (death events + ledgers), not the
@@ -438,9 +438,9 @@ export function SolverChartPanel({
           }
         />
       </div>
-    ) : isIncomeSubTab ? (
-      <SolverIncomePanel
-        rows={incomeRows}
+    ) : isWithdrawalSubTab ? (
+      <SolverWithdrawalPanel
+        rows={withdrawalRows}
         selectedYear={selectedYear}
         onYearClick={onYearClick}
         clientLifeExpectancy={workingTree.client.lifeExpectancy}
@@ -452,10 +452,10 @@ export function SolverChartPanel({
     <DialogTabs
       tabs={[
         { id: "cashflow", label: "Cash Flow" },
-        { id: "income", label: "Income" },
+        { id: "withdrawals", label: "Withdrawals" },
       ]}
       activeTab={cashflowSubTab}
-      onTabChange={(id) => setCashflowSubTab(id === "income" ? "income" : "cashflow")}
+      onTabChange={(id) => setCashflowSubTab(id === "withdrawals" ? "withdrawals" : "cashflow")}
     />
   );
 
@@ -632,9 +632,9 @@ export function SolverChartPanel({
             onYearClick={onYearClick}
           />
         ) : null}
-        {tab === "cashflow" && cashflowSubTab === "income" ? (
-          <SolverIncomeChart
-            rows={incomeRows}
+        {isWithdrawalSubTab ? (
+          <SolverWithdrawalChart
+            rows={withdrawalRows}
             selectedYear={selectedYear}
             onYearClick={onYearClick}
           />

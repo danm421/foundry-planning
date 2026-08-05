@@ -60,16 +60,16 @@ vi.mock("@/components/cashflow/tax-bracket-tab", () => ({
     <div data-testid="table-tax-bracket">{thresholds}</div>
   ),
 }));
-vi.mock("@/components/charts/solver-income-chart", () => ({
-  SolverIncomeChart: ({ rows }: { rows: { year: number }[] }) => (
-    <div data-testid="chart-income">rows:{rows.length}</div>
+vi.mock("@/components/charts/solver-withdrawal-chart", () => ({
+  SolverWithdrawalChart: ({ rows }: { rows: { year: number }[] }) => (
+    <div data-testid="chart-withdrawals">rows:{rows.length}</div>
   ),
 }));
 // Renders `rows` so the assertions below can tell a wired-up panel from one
-// that was handed the empty array the non-Income branches pass.
-vi.mock("../solver-income-panel", () => ({
-  SolverIncomePanel: ({ rows }: { rows: { year: number }[] }) => (
-    <div data-testid="table-income">rows:{rows.length}</div>
+// that was handed the empty array the non-Withdrawals branches pass.
+vi.mock("../solver-withdrawal-panel", () => ({
+  SolverWithdrawalPanel: ({ rows }: { rows: { year: number }[] }) => (
+    <div data-testid="table-withdrawals">rows:{rows.length}</div>
   ),
 }));
 vi.mock("../solver-monte-carlo-panel", () => ({
@@ -115,9 +115,9 @@ const workingTree = {
   accounts: [],
 } as unknown as ClientData;
 
-// Two years, enough for the Income sub-tab's row builder to produce something
+// Two years, enough for the Withdrawals sub-tab's row builder to produce something
 // distinguishable from the empty default the other reports render with.
-const incomeProjection = [2026, 2027].map(
+const withdrawalProjection = [2026, 2027].map(
   (year) =>
     ({
       year,
@@ -126,6 +126,7 @@ const incomeProjection = [2026, 2027].map(
       withdrawals: { byAccount: {}, total: 0 },
       accountLedgers: {},
       expenses: { living: 0 },
+      portfolioAssets: { liquidTotal: 0 },
       totalIncome: 0,
       totalExpenses: 0,
       netCashFlow: 0,
@@ -234,49 +235,49 @@ describe("SolverChartPanel", () => {
     expect(screen.queryByTestId("chart-portfolio")).not.toBeInTheDocument();
   });
 
-  it("offers Cash Flow and Income sub-tabs on the Cash Flow report, defaulting to Cash Flow", async () => {
+  it("offers Cash Flow and Withdrawals sub-tabs on the Cash Flow report, defaulting to Cash Flow", async () => {
     render(<ControlledPanel />);
     await userEvent.click(screen.getByRole("tab", { name: "Cash Flow" }));
 
-    expect(screen.getByRole("button", { name: "Income" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Withdrawals" })).toBeInTheDocument();
     // Default sub-tab: the existing cash-flow chart, behind the expand toggle.
     expect(screen.getByTestId("chart-cashflow")).toBeInTheDocument();
-    expect(screen.queryByTestId("chart-income")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("chart-withdrawals")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Expand table" })).toBeInTheDocument();
   });
 
-  it("swaps chart and table together on the Income sub-tab, and drops the expand toggle", async () => {
+  it("swaps chart and table together on the Withdrawals sub-tab, and drops the expand toggle", async () => {
     render(<ControlledPanel />);
     await userEvent.click(screen.getByRole("tab", { name: "Cash Flow" }));
-    await userEvent.click(screen.getByRole("button", { name: "Income" }));
+    await userEvent.click(screen.getByRole("button", { name: "Withdrawals" }));
 
-    expect(screen.getByTestId("chart-income")).toBeInTheDocument();
+    expect(screen.getByTestId("chart-withdrawals")).toBeInTheDocument();
     expect(screen.queryByTestId("chart-cashflow")).not.toBeInTheDocument();
     // The table is part of the report here, so it needs no expand control.
-    expect(screen.getByTestId("table-income")).toBeInTheDocument();
+    expect(screen.getByTestId("table-withdrawals")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Expand table" }),
     ).not.toBeInTheDocument();
   });
 
-  it("feeds the same built rows to both the Income chart and its table", async () => {
-    render(<ControlledPanel currentProjection={incomeProjection} />);
+  it("feeds the same built rows to both the Withdrawals chart and its table", async () => {
+    render(<ControlledPanel currentProjection={withdrawalProjection} />);
     await userEvent.click(screen.getByRole("tab", { name: "Cash Flow" }));
-    await userEvent.click(screen.getByRole("button", { name: "Income" }));
+    await userEvent.click(screen.getByRole("button", { name: "Withdrawals" }));
 
     // `rows:0` here would mean the memo's gate never opened for one of them.
-    expect(screen.getByTestId("chart-income")).toHaveTextContent("rows:2");
-    expect(screen.getByTestId("table-income")).toHaveTextContent("rows:2");
+    expect(screen.getByTestId("chart-withdrawals")).toHaveTextContent("rows:2");
+    expect(screen.getByTestId("table-withdrawals")).toHaveTextContent("rows:2");
   });
 
   it("returns to the cash-flow chart when the Cash Flow sub-tab is re-selected", async () => {
     render(<ControlledPanel />);
     await userEvent.click(screen.getByRole("tab", { name: "Cash Flow" }));
-    await userEvent.click(screen.getByRole("button", { name: "Income" }));
+    await userEvent.click(screen.getByRole("button", { name: "Withdrawals" }));
     await userEvent.click(screen.getByRole("button", { name: "Cash Flow" }));
 
     expect(screen.getByTestId("chart-cashflow")).toBeInTheDocument();
-    expect(screen.queryByTestId("table-income")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("table-withdrawals")).not.toBeInTheDocument();
   });
 
   it("switches to the Tax Bracket chart and shows its table inline", async () => {

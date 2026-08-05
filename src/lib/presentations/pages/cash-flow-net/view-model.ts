@@ -6,6 +6,7 @@
 
 import type { ProjectionYear, ClientData } from "@/engine/types";
 import { isFullyEntityOwned } from "@/engine/ownership";
+import { liquidPortfolioBoy } from "@/engine/portfolio-snapshot";
 import type {
   DrillColumn,
   DrillPageData,
@@ -90,22 +91,6 @@ export function buildNetCashFlowDrillData(input: BuildNetCashFlowDrillInput): Dr
     return sum;
   }
 
-  function portfolioBoy(r: ProjectionYear): number {
-    const prev = years.find((y) => y.year === r.year - 1);
-    // H1: roll the canonical liquid portfolio total forward so the withdrawal %
-    // is taken against the same base the chart/cell show.
-    if (prev) return prev.portfolioAssets.liquidTotal;
-    // Year-1 fallback: only liquid-category ledgers (mirrors the liquidTotal
-    // definition). Accessible-trust accounts won't carry a category in year 1,
-    // so this is best-effort for the first year only; the `prev` path is exact
-    // for every year thereafter.
-    const LIQUID = new Set(["taxable", "cash", "retirement", "life_insurance"]);
-    return Object.entries(r.accountLedgers).reduce(
-      (s, [id, l]) => s + (LIQUID.has(accountCategoryById[id] ?? "") ? l.beginningValue : 0),
-      0,
-    );
-  }
-
   // Supplemental withdrawals from accounts that never resolve to a category
   // (absent from clientData.accounts and every portfolio bucket). They still
   // count in withdrawals.total, so without an "Other" column the per-category
@@ -150,7 +135,7 @@ export function buildNetCashFlowDrillData(input: BuildNetCashFlowDrillInput): Dr
     for (const c of activeCats) cells[c.key] = withdrawalByCategory(py, c.key);
     if (hasUncategorized) cells.other = uncategorizedWithdrawal(py);
     cells.total = py.withdrawals.total;
-    const boy = portfolioBoy(py);
+    const boy = liquidPortfolioBoy(py, years);
     cells.boy = boy;
     // F82: the engine sets `rmdAmount` on EVERY rmd-enabled ledger, but
     // entity-owned (non-IIP trust) accounts route their RMD to entity checking —

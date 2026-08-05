@@ -8,6 +8,7 @@ import { PDF_THEME } from "@/components/pdf/theme";
 import type { ReportArtifact, FetchDataResult, RenderPdfInput, CsvFile, ChartImage as ChartImageType } from "../types";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjection } from "@/engine";
+import { liquidPortfolioBoy } from "@/engine/portfolio-snapshot";
 import type { ProjectionYear, ClientData } from "@/engine";
 import { serializeCsv } from "../csv";
 
@@ -309,16 +310,6 @@ function buildAccountCategoryMap(
   return map;
 }
 
-function portfolioBoy(year: ProjectionYear, years: ProjectionYear[]): number {
-  const prev = years.find((y) => y.year === year.year - 1);
-  // H1: roll forward the canonical liquid portfolio total so BoY ties to the cell.
-  if (prev) return prev.portfolioAssets.liquidTotal;
-  return Object.values(year.accountLedgers).reduce(
-    (s, l) => s + (l?.beginningValue ?? 0),
-    0,
-  );
-}
-
 function buildWithdrawalsSection(years: ProjectionYear[], c: ClientData): CashflowSection {
   const accountCategoryById = buildAccountCategoryMap(years, c);
   const withdrawalCategoriesUsed = new Set<string>();
@@ -352,7 +343,7 @@ function buildWithdrawalsSection(years: ProjectionYear[], c: ClientData): Cashfl
   };
 
   const rows: CashflowRow[] = years.map((y) => {
-    const boy = portfolioBoy(y, years);
+    const boy = liquidPortfolioBoy(y, years);
     const rmdTotal = Object.values(y.accountLedgers ?? {}).reduce(
       (s, l) => s + (l?.rmdAmount ?? 0),
       0,

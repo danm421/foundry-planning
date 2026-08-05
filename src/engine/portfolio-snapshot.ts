@@ -228,6 +228,31 @@ export function computePortfolioSnapshot(args: {
 /** The slice of a projection year these helpers read. */
 type PortfolioYear = Pick<ProjectionYear, "portfolioAssets" | "accountLedgers">;
 
+/** {@link PortfolioYear} plus the year label the BoY roll-forward keys on. */
+type DatedPortfolioYear = PortfolioYear & Pick<ProjectionYear, "year">;
+
+/**
+ * Beginning-of-year portfolio: the same canonical `liquidTotal`, one year back.
+ * The denominator of every "Withdrawal %" in the app — keep it here beside
+ * `LIQUID_PORTFOLIO_BUCKETS` so the balance and its roll-forward can't drift.
+ *
+ * `years` must be the *full* projection, not the visible window, so BoY is the
+ * real prior-year ending balance even when a year-range slider starts mid-plan.
+ */
+export function liquidPortfolioBoy(
+  year: DatedPortfolioYear,
+  years: readonly DatedPortfolioYear[],
+): number {
+  const prev = years.find((y) => y.year === year.year - 1);
+  if (prev) return prev.portfolioAssets.liquidTotal;
+  // Year 1 has no prior year to roll forward, so rebuild the figure from the
+  // ledgers — over exactly the accounts and ownership shares that compose
+  // `liquidTotal`, at their beginning value. Every account gets a ledger,
+  // including real estate and business, so an unfiltered sum here would count
+  // net worth as portfolio.
+  return sumWeighted(year, liquidPortfolioWeights(year), (led) => led.beginningValue);
+}
+
 /** Per-account fraction of the whole-account ledger that rolls into `liquidTotal`. */
 export function liquidPortfolioWeights(py: PortfolioYear): Map<string, number> {
   return bucketWeights(py, LIQUID_PORTFOLIO_BUCKETS);

@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
-import { incomeRow as row } from "@/lib/solver/__tests__/income-report-fixtures";
+import { withdrawalRow as row } from "@/lib/solver/__tests__/withdrawal-report-fixtures";
 
-import { SolverIncomePanel } from "../solver-income-panel";
+import { SolverWithdrawalPanel } from "../solver-withdrawal-panel";
 
 function headers(): string[] {
   return screen
@@ -11,10 +11,10 @@ function headers(): string[] {
     .map((th) => th.textContent?.replace(/ⓘ/g, "").trim() ?? "");
 }
 
-describe("SolverIncomePanel", () => {
+describe("SolverWithdrawalPanel", () => {
   it("shows a column per drawn source and drops the sources never used", () => {
     render(
-      <SolverIncomePanel
+      <SolverWithdrawalPanel
         rows={[
           row({ year: 2026, withdrawals: { cash: 0, taxable: 5_000, preTax: 0, roth: 0 } }),
           row({ year: 2027, withdrawals: { cash: 0, taxable: 0, preTax: 7_000, roth: 0 } }),
@@ -31,28 +31,86 @@ describe("SolverIncomePanel", () => {
     expect(h).not.toContain("Roth");
   });
 
-  it("keeps the totals and Net Cash Flow even when every year reads zero", () => {
+  it("carries one income column — the engine's Total Income — and no per-source income breakdown", () => {
     render(
-      <SolverIncomePanel rows={[row()]} selectedYear={null} onYearClick={vi.fn()} />,
+      <SolverWithdrawalPanel
+        rows={[
+          row({
+            year: 2026,
+            totalIncome: 120_000,
+            withdrawals: { cash: 0, taxable: 5_000, preTax: 0, roth: 0 },
+            withdrawalsTotal: 5_000,
+            portfolioBoy: 1_000_000,
+            withdrawalRate: 0.045,
+          }),
+        ]}
+        selectedYear={null}
+        onYearClick={vi.fn()}
+      />,
     );
 
-    const h = headers();
-    expect(h).toEqual(
-      expect.arrayContaining([
-        "Total Income",
-        "Total Withdrawals",
-        "Living Expenses",
-        "Total Expenses",
-        "Net Cash Flow",
-      ]),
+    // Exact order, so a column added in the wrong group fails here too.
+    expect(headers()).toEqual([
+      "Year",
+      "Age",
+      "Total Income",
+      "Taxable",
+      "Total Withdrawals",
+      "Portfolio (BoY)",
+      "Withdrawal %",
+      "Living Expenses",
+      "Total Expenses",
+      "Net Cash Flow",
+    ]);
+  });
+
+  it("shows the withdrawal rate as a percent, beside the portfolio it is measured against", () => {
+    render(
+      <SolverWithdrawalPanel
+        rows={[
+          row({
+            year: 2031,
+            withdrawalsTotal: 37_500,
+            portfolioBoy: 1_000_000,
+            withdrawalRate: 0.0375,
+          }),
+        ]}
+        selectedYear={null}
+        onYearClick={vi.fn()}
+      />,
     );
-    // Social Security / Salaries / RMDs are all zero here, so they drop out.
-    expect(h).not.toContain("Social Security");
+
+    const cells = within(screen.getAllByRole("row")[1]);
+    expect(cells.getByText("3.75%")).toBeTruthy();
+    expect(cells.getByText("$1,000,000")).toBeTruthy();
+  });
+
+  it("still shows the rate and its denominator for a plan that never withdraws", () => {
+    // 0% is a real answer, not an empty column — a plan funded entirely by
+    // income should say so rather than drop the two columns that prove it.
+    render(
+      <SolverWithdrawalPanel rows={[row()]} selectedYear={null} onYearClick={vi.fn()} />,
+    );
+
+    // No draw anywhere, so `activeWithdrawalSources` contributes no per-source
+    // column and the portfolio group opens at Total Withdrawals.
+    expect(headers()).toEqual([
+      "Year",
+      "Age",
+      "Total Income",
+      "Total Withdrawals",
+      "Portfolio (BoY)",
+      "Withdrawal %",
+      "Living Expenses",
+      "Total Expenses",
+      "Net Cash Flow",
+    ]);
+    expect(within(screen.getAllByRole("row")[1]).getByText("0.00%")).toBeTruthy();
   });
 
   it("renders each year's figures as currency and flags a negative Net Cash Flow", () => {
     render(
-      <SolverIncomePanel
+      <SolverWithdrawalPanel
         rows={[
           row({
             year: 2031,
@@ -82,7 +140,7 @@ describe("SolverIncomePanel", () => {
   it("selects a year when its Year cell is clicked", () => {
     const onYearClick = vi.fn();
     render(
-      <SolverIncomePanel
+      <SolverWithdrawalPanel
         rows={[row({ year: 2031 })]}
         selectedYear={null}
         onYearClick={onYearClick}
@@ -95,7 +153,7 @@ describe("SolverIncomePanel", () => {
 
   it("highlights the row for the selected year", () => {
     render(
-      <SolverIncomePanel
+      <SolverWithdrawalPanel
         rows={[row({ year: 2031 }), row({ year: 2032 })]}
         selectedYear={2032}
         onYearClick={vi.fn()}
@@ -110,7 +168,7 @@ describe("SolverIncomePanel", () => {
     // accent-wash is translucent; on a `position: sticky` cell it has to ride on
     // top of the opaque card color, never replace it.
     render(
-      <SolverIncomePanel
+      <SolverWithdrawalPanel
         rows={[row({ year: 2031, netCashFlow: -1_000 })]}
         selectedYear={2031}
         onYearClick={vi.fn()}
@@ -128,7 +186,7 @@ describe("SolverIncomePanel", () => {
   });
 
   it("falls back to a message when the projection is empty", () => {
-    render(<SolverIncomePanel rows={[]} selectedYear={null} onYearClick={vi.fn()} />);
+    render(<SolverWithdrawalPanel rows={[]} selectedYear={null} onYearClick={vi.fn()} />);
     expect(screen.getByText("No projection years to show.")).toBeTruthy();
     expect(screen.queryByRole("table")).toBeNull();
   });

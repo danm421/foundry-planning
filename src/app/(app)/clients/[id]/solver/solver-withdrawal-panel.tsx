@@ -5,11 +5,11 @@ import { TaxDetailTooltip } from "@/components/cashflow/tax-detail-tooltip";
 import { formatProjectionAges } from "@/components/cashflow/projection-ages";
 import {
   activeWithdrawalSources,
-  type IncomeReportRow,
-} from "@/lib/solver/income-report";
+  type WithdrawalReportRow,
+} from "@/lib/solver/withdrawal-report";
 
 interface Props {
-  rows: IncomeReportRow[];
+  rows: WithdrawalReportRow[];
   /** Highlights the row for the year selected on the chart above. */
   selectedYear: number | null;
   onYearClick: (year: number) => void;
@@ -21,6 +21,13 @@ const fmt = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
   maximumFractionDigits: 0,
+});
+// Two decimals, matching the cash-flow report's Withdrawal % — at plan-level
+// draw rates the difference between 3.7% and 3.75% is a real distinction.
+const fmtPct = new Intl.NumberFormat("en-US", {
+  style: "percent",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 });
 
 // `accent-wash` is translucent by design, so it can't be the only background on
@@ -34,64 +41,32 @@ interface Column {
   key: string;
   label: string;
   tooltip?: string;
-  value: (r: IncomeReportRow) => number;
-  /** Kept even when every year reads zero — totals and reconciling columns. */
-  alwaysKeep?: boolean;
+  value: (r: WithdrawalReportRow) => number;
   /** Starts a new column group: draws the vertical rule to its left. */
   groupStart?: boolean;
   /** Red when negative. Only Net Cash Flow, where the sign is the message. */
   signed?: boolean;
+  /** Percent columns are ratios, not dollars. */
+  format?: "percent";
 }
 
 /**
  * Reads left to right as the year's cash story: what came in without touching
  * the portfolio, what the portfolio had to cover and from which tax treatment,
- * then what went out and what was left over.
+ * how hard that leaned on it, then what went out and what was left over.
+ *
+ * There is no all-zero column sweep here, unlike the cash-flow drill-downs:
+ * every column below is a total, a reconciling figure, or a ratio whose zero is
+ * itself the answer. The only columns that come and go are the per-source draws,
+ * and `activeWithdrawalSources` has already dropped the ones never drawn on.
  */
-function buildColumns(rows: IncomeReportRow[]): Column[] {
-  const columns: Column[] = [
-    {
-      key: "socialSecurity",
-      label: "Social Security",
-      tooltip: "Household Social Security benefits received this year, before tax.",
-      value: (r) => r.socialSecurity,
-    },
-    {
-      key: "salaries",
-      label: "Salaries",
-      tooltip: "Earned income from employment.",
-      value: (r) => r.salaries,
-    },
-    {
-      key: "otherIncome",
-      label: "Other Income",
-      tooltip:
-        "Everything else in Total Income: business, deferred comp, capital gains, trust distributions, note payments, and equity-sale proceeds.",
-      value: (r) => r.otherIncome,
-    },
-    {
-      key: "rmds",
-      label: "RMDs",
-      tooltip:
-        "Required minimum distributions. Forced out of tax-deferred accounts and credited straight to cash, so they fund expenses before any discretionary withdrawal is needed.",
-      value: (r) => r.rmds,
-    },
-    {
-      key: "totalIncome",
-      label: "Total Income",
-      tooltip: "Social Security + salaries + other income + RMDs.",
-      value: (r) => r.totalIncome,
-      alwaysKeep: true,
-    },
-    // `activeWithdrawalSources` has already dropped the never-drawn sources, so
-    // these are exempt from the all-zero sweep below rather than re-scanned by it.
-    ...activeWithdrawalSources(rows).map((source, i) => ({
+function buildColumns(rows: WithdrawalReportRow[]): Column[] {
+  const draws: Column[] = [
+    ...activeWithdrawalSources(rows).map((source) => ({
       key: `wd_${source.key}`,
       label: source.label,
       tooltip: `Portfolio withdrawn from ${source.label.toLowerCase()} accounts to cover the year's shortfall.`,
-      value: (r: IncomeReportRow) => r.withdrawals[source.key],
-      alwaysKeep: true,
-      groupStart: i === 0,
+      value: (r: WithdrawalReportRow) => r.withdrawals[source.key],
     })),
     {
       key: "withdrawalsTotal",
@@ -99,14 +74,43 @@ function buildColumns(rows: IncomeReportRow[]): Column[] {
       tooltip:
         "Total drawn from the portfolio this year. In a deficit year this equals the negative Net Cash Flow — the withdrawal is what closes the gap.",
       value: (r) => r.withdrawalsTotal,
-      alwaysKeep: true,
     },
+    {
+      // Shown beside the rate for the same reason the cash-flow drill-down
+      // shows it: a ratio whose denominator is invisible can't be checked.
+      key: "portfolioBoy",
+      label: "Portfolio (BoY)",
+      tooltip:
+        "The liquid portfolio at the start of the year — last year's ending Portfolio Assets. Withdrawal % is measured against it.",
+      value: (r) => r.portfolioBoy,
+    },
+    {
+      key: "withdrawalRate",
+      label: "Withdrawal %",
+      tooltip:
+        "Total Withdrawals plus RMDs, over Portfolio (BoY). RMDs leave the portfolio too, so in an RMD year this reads higher than Total Withdrawals alone would give.",
+      value: (r) => r.withdrawalRate,
+      format: "percent",
+    },
+  ];
+  // The portfolio group opens at whichever draw column comes first: a plan that
+  // never withdraws has no per-source columns to open it.
+  draws[0].groupStart = true;
+
+  return [
+    {
+      key: "totalIncome",
+      label: "Total Income",
+      tooltip:
+        "Everything that funded the year without a portfolio withdrawal — Social Security, salaries, other income, and RMDs.",
+      value: (r) => r.totalIncome,
+    },
+    ...draws,
     {
       key: "livingExpenses",
       label: "Living Expenses",
       tooltip: "The household's living expense need — the line on the chart above.",
       value: (r) => r.livingExpenses,
-      alwaysKeep: true,
       groupStart: true,
     },
     {
@@ -114,7 +118,6 @@ function buildColumns(rows: IncomeReportRow[]): Column[] {
       label: "Total Expenses",
       tooltip: "Living expenses plus liabilities, insurance, taxes, savings, and gifts.",
       value: (r) => r.totalExpenses,
-      alwaysKeep: true,
     },
     {
       key: "netCashFlow",
@@ -122,16 +125,9 @@ function buildColumns(rows: IncomeReportRow[]): Column[] {
       tooltip:
         "Total Income − Total Expenses. Negative years are funded by the withdrawals to the left.",
       value: (r) => r.netCashFlow,
-      alwaysKeep: true,
       signed: true,
     },
   ];
-
-  // Same rule as the cash-flow drill-downs: a column that reads zero in every
-  // year of the projection is noise, but totals stay so the row still adds up.
-  return columns.filter(
-    (c) => c.alwaysKeep || rows.some((r) => Math.abs(c.value(r)) >= 0.5),
-  );
 }
 
 // Memoized: unlike every other report tab's table this one is mounted at all
@@ -139,7 +135,7 @@ function buildColumns(rows: IncomeReportRow[]): Column[] {
 // pointermove of the chart-height drag — which changes nothing above it. Every
 // prop is stable across such a render (`rows` is the parent's useMemo,
 // `onYearClick` is a setState).
-export const SolverIncomePanel = memo(function SolverIncomePanel({
+export const SolverWithdrawalPanel = memo(function SolverWithdrawalPanel({
   rows,
   selectedYear,
   onYearClick,
@@ -160,7 +156,8 @@ export const SolverIncomePanel = memo(function SolverIncomePanel({
     <div className="mt-3 overflow-x-auto rounded-lg border border-hair bg-card">
       <table className="min-w-full border-separate border-spacing-0 text-sm">
         <caption className="sr-only">
-          Year-by-year income, portfolio withdrawals by source, and net cash flow
+          Year-by-year portfolio withdrawals by source, the rate they draw the
+          portfolio down at, and net cash flow
         </caption>
         <thead className="bg-card text-xs uppercase text-ink-3">
           <tr>
@@ -213,7 +210,7 @@ export const SolverIncomePanel = memo(function SolverIncomePanel({
                       key={col.key}
                       className={`border-b border-hair px-3 py-2 text-right tabular-nums group-hover:shadow-[inset_0_1px_0_var(--color-ink),inset_0_-1px_0_var(--color-ink)] ${col.groupStart ? "border-l" : ""} ${isLast ? "sticky right-0 z-10 border-l" : ""} ${col.signed && v < 0 ? "text-crit" : ""} ${rowBg}`}
                     >
-                      {fmt.format(v)}
+                      {col.format === "percent" ? fmtPct.format(v) : fmt.format(v)}
                     </td>
                   );
                 })}

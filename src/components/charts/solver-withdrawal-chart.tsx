@@ -19,9 +19,9 @@ import { colors, colorsLight, data as brandData, dataLight as brandDataLight } f
 import type { DataColorKey } from "@/brand";
 import {
   activeWithdrawalSources,
-  type IncomeReportRow,
+  type WithdrawalReportRow,
   type WithdrawalSourceKey,
-} from "@/lib/solver/income-report";
+} from "@/lib/solver/withdrawal-report";
 
 ChartJS.register(
   BarController,
@@ -57,7 +57,7 @@ const SOURCE_COLOR: Record<WithdrawalSourceKey, DataColorKey> = {
   roth: "green",
 };
 
-interface IncomeChartDataset {
+interface WithdrawalChartDataset {
   type: "bar" | "line";
   label: string;
   data: number[];
@@ -72,7 +72,7 @@ interface IncomeChartDataset {
 }
 
 /**
- * Pure dataset builder for the solver Income chart. Same bars-plus-line shape as
+ * Pure dataset builder for the solver Withdrawals chart. Same bars-plus-line shape as
  * `buildSolverCashFlowChartData`, narrowed to the portfolio draw: the stack is
  * the year's withdrawals split by where they came from, and the line is the
  * living expense they help cover. The gap between the stack and the line is what
@@ -81,12 +81,12 @@ interface IncomeChartDataset {
  * Sources with no draw anywhere in the projection are dropped rather than
  * rendered as a flat zero band, so the legend only names what's in play.
  */
-export function buildSolverIncomeChartData(
-  rows: IncomeReportRow[],
+export function buildSolverWithdrawalChartData(
+  rows: WithdrawalReportRow[],
   theme: "dark" | "light" = "dark",
 ): {
   labels: string[];
-  datasets: IncomeChartDataset[];
+  datasets: WithdrawalChartDataset[];
 } {
   const c = theme === "light" ? colorsLight : colors;
   const palette = theme === "light" ? brandDataLight : brandData;
@@ -119,23 +119,23 @@ export function buildSolverIncomeChartData(
 }
 
 interface Props {
-  rows: IncomeReportRow[];
+  rows: WithdrawalReportRow[];
   onYearClick?: (year: number) => void;
   selectedYear?: number | null;
 }
 
-// Memoized for the same reason as SolverIncomePanel: this sub-tab keeps its
+// Memoized for the same reason as SolverWithdrawalPanel: this sub-tab keeps its
 // content mounted, and the chart-height drag re-renders the parent per
 // pointermove. Chart.js resizes itself off the wrapper, so it needs no help
 // from React to follow the drag.
-export const SolverIncomeChart = memo(function SolverIncomeChart({
+export const SolverWithdrawalChart = memo(function SolverWithdrawalChart({
   rows,
   onYearClick,
   selectedYear,
 }: Props) {
   const theme = useThemeName();
 
-  const data = useMemo(() => buildSolverIncomeChartData(rows, theme), [rows, theme]);
+  const data = useMemo(() => buildSolverWithdrawalChartData(rows, theme), [rows, theme]);
 
   const chrome = chartChrome(theme);
 
