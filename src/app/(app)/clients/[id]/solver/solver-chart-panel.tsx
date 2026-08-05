@@ -11,11 +11,14 @@ import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { buildYearlyLiquidityReport } from "@/lib/estate/yearly-liquidity-report";
 import { PortfolioBarsChart } from "@/components/charts/portfolio-bars-chart";
 import { SolverCashFlowChart } from "@/components/charts/solver-cash-flow-chart";
+import { SolverIncomeChart } from "@/components/charts/solver-income-chart";
 import { YearlyLiquidityChart } from "@/components/yearly-liquidity-chart";
 import { LiNeedOverTimeView } from "./li-need-over-time-view";
 import { useNeedOverTime } from "./use-need-over-time";
 import { hasSpouse } from "@/lib/life-insurance/need-over-time";
 import { SolverYearTablePanel } from "./solver-year-table-panel";
+import { SolverIncomePanel } from "./solver-income-panel";
+import { buildIncomeReportRows } from "@/lib/solver/income-report";
 import { EstateComparisonChart } from "@/components/charts/estate-comparison-chart";
 import { TaxBracketChart } from "@/components/cashflow/charts/tax-bracket-chart";
 import { TaxBracketTab } from "@/components/cashflow/tax-bracket-tab";
@@ -224,6 +227,7 @@ export function SolverChartPanel({
   const [showTable, setShowTable] = useState(false);
   const [showCustomize, setShowCustomize] = useState(false);
   const [estateSubTab, setEstateSubTab] = useState<"charts" | "flow">("charts");
+  const [cashflowSubTab, setCashflowSubTab] = useState<"cashflow" | "income">("cashflow");
   const chartHeight = useSyncExternalStore(
     subscribeChartHeight,
     getChartHeightSnapshot,
@@ -304,6 +308,17 @@ export function SolverChartPanel({
       },
     }).rows;
   }, [tab, currentProjection, workingTree, ownerNames]);
+
+  const isIncomeSubTab = tab === "cashflow" && cashflowSubTab === "income";
+
+  // Built only while the Income sub-tab is open — the chart and the table below
+  // it read the same rows, so the account→tax-bucket walk happens once per
+  // recompute rather than once per consumer.
+  const incomeRows = useMemo(
+    () =>
+      isIncomeSubTab ? buildIncomeReportRows(currentProjection, workingTree.accounts) : [],
+    [isIncomeSubTab, currentProjection, workingTree.accounts],
+  );
 
   // The flow chart needs the FULL projection (death events + ledgers), not the
   // ProjectionYear[] this panel holds. Fetched only while the sub-tab is open.
@@ -400,6 +415,47 @@ export function SolverChartPanel({
       ]}
       activeTab={estateSubTab}
       onTabChange={(id) => setEstateSubTab(id === "flow" ? "flow" : "charts")}
+    />
+  );
+
+  // Views whose table is part of the report itself rather than an opt-in drill.
+  // Null for every other tab, which falls back to the "Expand table" toggle.
+  const inlineTable =
+    tab === "taxBracket" ? (
+      <div className="mt-3">
+        {/* Thresholds is a scope of the Taxes report, not a report of its
+            own — it rides the same Federal/State group the bracket tables
+            use. Only the solver has the base projection and working tree it
+            needs, so it's passed down as a ready-made node. */}
+        <TaxBracketTab
+          years={currentProjection}
+          thresholds={
+            <SolverThresholdsPanel
+              years={currentProjection}
+              baseProjection={baseProjection}
+              workingTree={workingTree}
+            />
+          }
+        />
+      </div>
+    ) : isIncomeSubTab ? (
+      <SolverIncomePanel
+        rows={incomeRows}
+        selectedYear={selectedYear}
+        onYearClick={onYearClick}
+        clientLifeExpectancy={workingTree.client.lifeExpectancy}
+        spouseLifeExpectancy={workingTree.client.spouseLifeExpectancy}
+      />
+    ) : null;
+
+  const cashflowSubTabs = (
+    <DialogTabs
+      tabs={[
+        { id: "cashflow", label: "Cash Flow" },
+        { id: "income", label: "Income" },
+      ]}
+      activeTab={cashflowSubTab}
+      onTabChange={(id) => setCashflowSubTab(id === "income" ? "income" : "cashflow")}
     />
   );
 
@@ -554,6 +610,7 @@ export function SolverChartPanel({
     <div className="rounded-lg border border-hair bg-card px-4 pt-2.5 pb-2">
       <div className="mb-3">{reportTabs}</div>
       {tab === "estate" ? <div className="mb-3">{estateSubTabs}</div> : null}
+      {tab === "cashflow" ? <div className="mb-3">{cashflowSubTabs}</div> : null}
       {/* One shared, resizable height for every chart tab — so the drag handle
           below always applies and no tab's content can overflow onto the page.
           The Estate tab stacks two charts, so it gets twice the height (plus the
@@ -568,9 +625,16 @@ export function SolverChartPanel({
             baseline={baseProjection}
           />
         ) : null}
-        {tab === "cashflow" ? (
+        {tab === "cashflow" && cashflowSubTab === "cashflow" ? (
           <SolverCashFlowChart
             years={currentProjection}
+            selectedYear={selectedYear}
+            onYearClick={onYearClick}
+          />
+        ) : null}
+        {tab === "cashflow" && cashflowSubTab === "income" ? (
+          <SolverIncomeChart
+            rows={incomeRows}
             selectedYear={selectedYear}
             onYearClick={onYearClick}
           />
@@ -651,9 +715,10 @@ export function SolverChartPanel({
         <ResizeChevron direction="down" />
       </div>
 
-      {/* The Taxes report shows its bracket table inline at all times, so it
-          needs no expand/collapse control. Every other tab keeps the toggle. */}
-      {tab === "taxBracket" ? null : (
+      {/* A view that owns its own always-on table gets no expand/collapse
+          control — one `inlineTable` value decides both, so the two can't drift
+          when a third such view is added. */}
+      {inlineTable ? null : (
         <div className="mt-3 flex items-center justify-end gap-3">
           {tab === "estate" ? (
             <label className="inline-flex items-center gap-1.5 text-[12px] text-ink-3">
@@ -677,30 +742,14 @@ export function SolverChartPanel({
         </div>
       )}
 
-      {tab === "taxBracket" ? (
-        <div className="mt-3">
-          {/* Thresholds is a scope of the Taxes report, not a report of its
-              own — it rides the same Federal/State group the bracket tables
-              use. Only the solver has the base projection and working tree it
-              needs, so it's passed down as a ready-made node. */}
-          <TaxBracketTab
+      {inlineTable ??
+        (showTable ? (
+          <SolverYearTablePanel
             years={currentProjection}
-            thresholds={
-              <SolverThresholdsPanel
-                years={currentProjection}
-                baseProjection={baseProjection}
-                workingTree={workingTree}
-              />
-            }
+            hasSpouse={isMarried}
+            clientData={workingTree}
           />
-        </div>
-      ) : showTable ? (
-        <SolverYearTablePanel
-          years={currentProjection}
-          hasSpouse={isMarried}
-          clientData={workingTree}
-        />
-      ) : null}
+        ) : null)}
 
       {recalculating}
     </div>
