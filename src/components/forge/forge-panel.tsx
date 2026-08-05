@@ -1,7 +1,7 @@
 // src/components/forge/forge-panel.tsx
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { sectionKeyForPath } from "@/lib/back-nav";
 import { useForge } from "./forge-provider";
@@ -34,6 +34,10 @@ import { FactFinderDuplicateCard } from "./fact-finder-duplicate-card";
 // Mirrors ScenarioDrawer's explicit width — the CSS slide transition needs a
 // concrete translateX distance, so the px width can't live in Tailwind alone.
 const PANEL_WIDTH = 420;
+
+// The composer grows with the message up to this cap (~7 lines at 13px/1.5),
+// then scrolls. Past that it starts eating the conversation above it.
+const COMPOSER_MAX_HEIGHT = 160;
 
 // NAVIGATE_ALLOWLIST_PREFIXES is imported from navigate-allowlist.ts above — the
 // pure (LangChain-free) source of truth for the client-side nav guard (defence in
@@ -271,6 +275,16 @@ export function ForgePanel({
   useEffect(() => {
     if (open && !locked) composerRef.current?.focus();
   }, [open, locked]);
+
+  // Grow the composer with the message. Reset to `auto` first so it shrinks
+  // back when text is deleted or cleared after a send; cap it at
+  // COMPOSER_MAX_HEIGHT, past which the textarea scrolls its own overflow.
+  useLayoutEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_HEIGHT)}px`;
+  }, [input]);
 
   // Shared helper so all three refresh sites stay DRY.
   // Pass clientId directly: null (global mode) → SQL IS NULL filter;
@@ -731,9 +745,9 @@ export function ForgePanel({
             type="button"
             onClick={close}
             aria-label="Close Forge"
-            className="flex h-9 w-9 items-center justify-center rounded-md text-ink-3 hover:bg-card-hover hover:text-ink"
+            className="flex h-11 w-11 items-center justify-center rounded-md text-ink-3 hover:bg-card-hover hover:text-ink"
           >
-            <span aria-hidden className="text-2xl leading-none">×</span>
+            <span aria-hidden className="text-[32px] leading-none">×</span>
           </button>
         </div>
 
@@ -1184,6 +1198,7 @@ export function ForgePanel({
               <p className="mb-1.5 text-[11px] font-medium text-ink-3">Paste a meeting transcript</p>
               <textarea
                 aria-label="Paste transcript here"
+                autoFocus // the box only mounts on an explicit menu pick
                 rows={4}
                 value={transcriptPasteText}
                 onChange={(e) => setTranscriptPasteText(e.target.value)}
@@ -1295,35 +1310,14 @@ export function ForgePanel({
                 </svg>
               </button>
             )}
-            {/* Explicit transcript affordance — client-only (transcript tools need a client context). */}
+            {/* Explicit transcript affordance — client-only (transcript tools
+                need a client context), tucked behind the "+" menu so the
+                composer row stays quiet. */}
             {clientId != null && (
-              <button
-                type="button"
-                onClick={() => setShowTranscriptPaste((v) => !v)}
+              <ComposerAddMenu
                 disabled={locked}
-                aria-label="Paste a meeting transcript"
-                aria-pressed={showTranscriptPaste}
-                className="flex h-8 shrink-0 items-center justify-center gap-1 rounded-[var(--radius-sm)] border border-hair px-2 text-[11px] text-ink-3 hover:text-ink disabled:opacity-40"
-              >
-                {/* Inline doc-text icon */}
-                <svg
-                  aria-hidden
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={1.5}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M14 3v4a1 1 0 0 0 1 1h4" />
-                  <path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" />
-                  <line x1="9" y1="13" x2="15" y2="13" />
-                  <line x1="9" y1="17" x2="13" y2="17" />
-                </svg>
-                Transcript
-              </button>
+                onPasteTranscript={() => setShowTranscriptPaste(true)}
+              />
             )}
             <textarea
               ref={composerRef}
@@ -1374,7 +1368,7 @@ export function ForgePanel({
                     : "Ask about this plan…"
               }
               disabled={locked}
-              className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-[13px] text-ink placeholder:text-ink-4 focus:outline-none disabled:opacity-50"
+              className="min-w-0 flex-1 resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-[13px] text-ink placeholder:text-ink-4 focus:outline-none disabled:opacity-50"
             />
             {busy ? (
               <button
@@ -1438,6 +1432,109 @@ function formatBytes(bytes: number): string {
   const kb = bytes / 1024;
   if (kb < 1024) return `${Math.round(kb)} KB`;
   return `${(kb / 1024).toFixed(1)} MB`;
+}
+
+/**
+ * The composer's "+" menu. Holds the transcript affordance (and whatever we
+ * add next to it) so the composer row stays a single glyph wide instead of a
+ * labelled pill. Opens upward — the composer sits at the bottom of the panel.
+ * Escape closes the menu and stops there, so it doesn't also close the panel
+ * (ForgePanel listens for Escape on `window`, this listener sits on `document`).
+ */
+function ComposerAddMenu({
+  disabled,
+  onPasteTranscript,
+}: {
+  disabled: boolean;
+  onPasteTranscript: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: MouseEvent) {
+      if (!wrapperRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      setOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={wrapperRef} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        disabled={disabled}
+        aria-label="More options"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] border border-hair text-ink-2 hover:text-ink disabled:opacity-40"
+      >
+        {/* Inline Lucide-style plus — lucide-react isn't a repo dep. */}
+        <svg
+          aria-hidden
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M12 5v14" />
+          <path d="M5 12h14" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute bottom-full left-0 z-30 mb-1.5 rounded-[var(--radius-sm)] border border-hair bg-paper p-1 shadow-lg"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onPasteTranscript();
+            }}
+            className="flex w-full items-center gap-2 whitespace-nowrap rounded-[var(--radius-sm)] px-2.5 py-1.5 text-left text-[13px] text-ink-2 transition-colors hover:bg-card-2 hover:text-ink"
+          >
+            {/* Inline doc-text icon */}
+            <svg
+              aria-hidden
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="shrink-0"
+            >
+              <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+              <path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" />
+              <line x1="9" y1="13" x2="15" y2="13" />
+              <line x1="9" y1="17" x2="13" y2="17" />
+            </svg>
+            Paste a meeting transcript
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function TypingDots() {

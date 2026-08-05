@@ -267,16 +267,20 @@ describe("ForgePanel transcript paste-detection", () => {
     expect(addedErrorMsg).toBe(true);
   });
 
-  it("(6) the explicit Transcript affordance button toggles the paste box", async () => {
+  it("(6) the transcript option lives behind the + menu and opens the paste box", async () => {
     mountPanel();
 
-    const transcriptBtn = screen.getByRole("button", { name: /paste a meeting transcript/i });
-    expect(transcriptBtn).toBeInTheDocument();
-
-    // Before click: no paste box
+    // The affordance is not on the composer row until the + menu is opened.
+    expect(screen.queryByRole("menuitem", { name: /paste a meeting transcript/i })).toBeNull();
     expect(screen.queryByRole("textbox", { name: /paste transcript here/i })).toBeNull();
 
+    await userEvent.click(screen.getByRole("button", { name: /more options/i }));
+
+    const transcriptBtn = screen.getByRole("menuitem", { name: /paste a meeting transcript/i });
     await userEvent.click(transcriptBtn);
+
+    // Picking the option closes the menu.
+    expect(screen.queryByRole("menuitem", { name: /paste a meeting transcript/i })).toBeNull();
 
     // After click: paste box visible
     expect(screen.getByRole("textbox", { name: /paste transcript here/i })).toBeInTheDocument();
@@ -286,6 +290,17 @@ describe("ForgePanel transcript paste-detection", () => {
     const cancelBtn = screen.getByRole("button", { name: /cancel/i });
     await userEvent.click(cancelBtn);
     expect(screen.queryByRole("textbox", { name: /paste transcript here/i })).toBeNull();
+  });
+
+  it("(6b) Escape closes the + menu", async () => {
+    mountPanel();
+
+    await userEvent.click(screen.getByRole("button", { name: /more options/i }));
+    expect(screen.getByRole("menuitem", { name: /paste a meeting transcript/i })).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(screen.queryByRole("menuitem", { name: /paste a meeting transcript/i })).toBeNull();
   });
 
   it("(7) explicit affordance Summarize POSTs to /forge/transcript with source=explicit and calls send with pendingTranscriptId", async () => {
@@ -301,9 +316,9 @@ describe("ForgePanel transcript paste-detection", () => {
 
     mountPanel();
 
-    // Open the explicit paste box
-    const transcriptBtn = screen.getByRole("button", { name: /paste a meeting transcript/i });
-    await userEvent.click(transcriptBtn);
+    // Open the explicit paste box via the + menu
+    await userEvent.click(screen.getByRole("button", { name: /more options/i }));
+    await userEvent.click(screen.getByRole("menuitem", { name: /paste a meeting transcript/i }));
 
     // Type transcript text into the box
     const pasteBox = screen.getByRole("textbox", { name: /paste transcript here/i });
