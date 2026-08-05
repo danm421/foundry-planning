@@ -2,12 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { scenarios, savingsRules } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
-import { recordAudit } from "@/lib/audit";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
-import { assertAccountsInClient } from "@/lib/db-scoping";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
+import { createSavingsRuleForClient } from "@/lib/clients/savings-rules-writes";
 
 export const dynamic = "force-dynamic";
 
@@ -58,77 +57,19 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const callerOrg = await requireOrgId();
+    const { userId, orgId: callerOrg } = await requireOrgAndUser();
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
-    const scenarioId = await getBaseCaseScenarioId(id);
-    if (!scenarioId) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-
-    const body = await request.json();
-    const {
-      accountId,
-      annualAmount,
-      annualPercent,
-      rothPercent,
-      isDeductible,
-      applyContributionLimit,
-      contributeMax,
-      startYear,
-      endYear,
-      growthRate,
-      growthSource,
-      employerMatchPct,
-      employerMatchCap,
-      employerMatchAmount,
-    } = body;
-    const startYearRef = body.startYearRef ?? null;
-    const endYearRef = body.endYearRef ?? null;
-
-    if (!accountId || !startYear || !endYear) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
-    }
-
-    const acctCheck = await assertAccountsInClient(id, [accountId]);
-    if (!acctCheck.ok) {
-      return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
-    }
-
-    const [rule] = await db
-      .insert(savingsRules)
-      .values({
-        clientId: id,
-        scenarioId,
-        accountId,
-        annualAmount: annualAmount ?? "0",
-        annualPercent: annualPercent ?? null,
-        rothPercent: rothPercent != null ? String(rothPercent) : null,
-        isDeductible: isDeductible ?? true,
-        applyContributionLimit: applyContributionLimit ?? true,
-        contributeMax: contributeMax ?? false,
-        startYear: Number(startYear),
-        endYear: Number(endYear),
-        growthRate: growthRate != null ? String(growthRate) : undefined,
-        growthSource: growthSource === "inflation" ? "inflation" : "custom",
-        employerMatchPct: employerMatchPct ?? null,
-        employerMatchCap: employerMatchCap ?? null,
-        employerMatchAmount: employerMatchAmount ?? null,
-        startYearRef,
-        endYearRef,
-      })
-      .returning();
-
-    await recordAudit({
-      action: "savings_rule.create",
-      resourceType: "savings_rule",
-      resourceId: rule.id,
+    const result = await createSavingsRuleForClient({
       clientId: id,
       firmId,
-      metadata: crossFirmAuditMeta({ access }, callerOrg, { accountId: rule.accountId }),
+      actorId: userId,
+      input: await request.json(),
+      crossFirmMeta: crossFirmAuditMeta({ access }, callerOrg),
     });
-
-    return NextResponse.json(rule, { status: 201 });
+    return result.ok
+      ? NextResponse.json(result.data, { status: 201 })
+      : NextResponse.json({ error: result.error }, { status: result.status });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });

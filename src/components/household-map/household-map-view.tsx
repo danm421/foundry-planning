@@ -11,7 +11,7 @@ import { accountToInitial } from "@/components/balance-sheet-view";
 import { useRouter } from "next/navigation";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
 import SavingsRuleDialog, { type SavingsRuleRow } from "@/components/forms/savings-rule-dialog";
-import type { ClientMilestones } from "@/lib/milestones";
+import { approximateMilestones } from "@/lib/household-map/approximate-milestones";
 import type { HouseholdMapProps, MapColumn, MapItem } from "@/lib/household-map/types";
 import type { LifeExpectancyOwner, MapGoal } from "@/lib/household-map/goals";
 import {
@@ -62,44 +62,6 @@ function flowWriteTarget(
   }
 }
 
-/**
- * Rough `ClientMilestones` built from what's already in `HouseholdMapProps` —
- * no new fetch. `planStart` is an estimate (the exact value lives server-side
- * and isn't part of this page's props). This is only ever used to seed the
- * quick-edit drawer's milestone-anchor picker options; whichever ref the user
- * picks is stored alongside the resolved year, and the engine re-resolves the
- * effective year from the ref (not the stored year) on every future load — see
- * `resolvedStart`/`resolvedEnd` in `lib/projection/load-client-data.ts`. An
- * approximate resolution here is cosmetic only and self-corrects on the next
- * page refresh.
- *
- * `clientEnd` / `spouseEnd` are now read off the two life-expectancy milestone
- * cards, which carry each person's OWN death year. They used to be a single
- * shared `approxEnd` taken from the one "plan end" card, so the picker offered
- * "Spouse End of Plan" and "Client End of Plan" as the same year for every
- * household — and for at least one of the two it was the wrong year.
- */
-function approximateMilestones(
-  people: HouseholdMapProps["people"],
-  goals: MapGoal[],
-): ClientMilestones {
-  const currentYear = new Date().getFullYear();
-  const clientRetirement = people.client.retirementYear ?? currentYear + 10;
-  const clientEnd =
-    goals.find((g) => g.lifeExpectancy?.owner === "client")?.year ?? currentYear + 30;
-  const spouseEnd = goals.find((g) => g.lifeExpectancy?.owner === "spouse")?.year;
-  return {
-    planStart: currentYear,
-    // The plan runs to the LAST death, which is the whole reason both cards
-    // exist — never just the client's.
-    planEnd: Math.max(clientEnd, spouseEnd ?? clientEnd),
-    clientRetirement,
-    clientEnd,
-    spouseRetirement: people.spouse?.retirementYear ?? undefined,
-    spouseEnd,
-  };
-}
-
 export default function HouseholdMapView(props: HouseholdMapProps) {
   const { clientId, people, goals, canEdit, incomeRows, ssIncomeRows, expenseRows, savingsRuleRows } =
     props;
@@ -117,7 +79,7 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
 
   const [addAccountOpen, setAddAccountOpen] = useState(false);
 
-  const milestones = approximateMilestones(people, goals);
+  const milestones = approximateMilestones(people, goals, new Date().getFullYear());
 
   const writer = useScenarioWriter(clientId);
   const router = useRouter();

@@ -103,6 +103,149 @@ loadEffectiveTree.mockResolvedValue({ effectiveTree: BASE_TREE, warnings: [] });
 
 import { loadOrganizerMap } from "../load-organizer-map";
 
+const CLIENT_ID = "client-1";
+
+// ---------- editor-hydration fixtures (Task 4) ----------
+const SS_INCOME_ID = "inc-ss-1";
+const POLICY_PREMIUM_ID = "premium-1";
+const ENTITY_INCOME_ID = "inc-entity-1";
+const TAXABLE_ACCOUNT_ID = "acct-taxable-1";
+const DEFAULT_CHECKING_ID = "acct-checking-1";
+const LIFE_INSURANCE_ACCOUNT_ID = "acct-life-insurance-1";
+const WRITABLE_SAVINGS_RULE_ID = "rule-flat-taxable-1";
+const LIFE_INSURANCE_SAVINGS_RULE_ID = "rule-flat-life-insurance-1";
+const CONTRIBUTE_MAX_SAVINGS_RULE_ID = "rule-contribute-max-taxable-1";
+
+/**
+ * One effective tree exercising every editor-hydration exclusion at once: a
+ * social-security income (excluded from incomeRows but still a card), a
+ * synthesized policy-premium expense (excluded from expenseRows but still a
+ * card), an entity-owned income (excluded, tray-owned), three accounts
+ * spanning the portal visibility gate, and three savings rules exercising
+ * BOTH halves of `isPortalWritableSavingsRule` independently: a flat-dollar
+ * rule funding the portal-visible taxable account (writable), a flat-dollar
+ * rule funding the non-portal-visible life-insurance account (excluded by the
+ * ACCOUNT gate alone), and a `contributeMax` rule funding that same taxable
+ * account (excluded by the MODE gate alone — its account would otherwise
+ * pass). Also carries a spouse whose life expectancy lands LATER than the
+ * client's, so the milestones test below is discriminating rather than
+ * trivially true. Reused across the tests below instead of one bespoke tree
+ * per case, the same way `BASE_TREE` is shared above.
+ */
+function buildRichFixture() {
+  return {
+    ...BASE_TREE,
+    client: { ...BASE_TREE.client, spouseName: "Riley", spouseLifeExpectancy: 90 },
+    accounts: [
+      {
+        id: TAXABLE_ACCOUNT_ID,
+        name: "Taxable Brokerage",
+        category: "taxable",
+        subType: "brokerage",
+        value: 250_000,
+        basis: 200_000,
+        growthRate: 0.06,
+        rmdEnabled: false,
+        titlingType: "individual",
+        owners: [],
+        isDefaultChecking: false,
+        parentAccountId: null,
+      },
+      {
+        id: DEFAULT_CHECKING_ID,
+        name: "Household Cash",
+        category: "cash",
+        subType: "checking",
+        value: 15_000,
+        basis: 15_000,
+        growthRate: 0,
+        rmdEnabled: false,
+        titlingType: "individual",
+        owners: [],
+        isDefaultChecking: true,
+        parentAccountId: null,
+      },
+      {
+        id: LIFE_INSURANCE_ACCOUNT_ID,
+        name: "Whole Life Policy",
+        category: "life_insurance",
+        subType: "whole_life",
+        value: 50_000,
+        basis: 40_000,
+        growthRate: 0.03,
+        rmdEnabled: false,
+        titlingType: "individual",
+        owners: [],
+        isDefaultChecking: false,
+        parentAccountId: null,
+      },
+    ],
+    incomes: [
+      {
+        id: SS_INCOME_ID,
+        type: "social_security",
+        name: "Client Social Security",
+        annualAmount: 28_000,
+        startYear: 2026,
+        endYear: 2066,
+        growthRate: 0.02,
+        owner: "client",
+      },
+      {
+        id: ENTITY_INCOME_ID,
+        type: "business",
+        name: "Consulting LLC income",
+        annualAmount: 60_000,
+        startYear: 2026,
+        endYear: 2041,
+        growthRate: 0.02,
+        owner: "client",
+        ownerEntityId: "ent-1",
+      },
+    ],
+    expenses: [
+      {
+        id: POLICY_PREMIUM_ID,
+        type: "insurance",
+        name: "Policy premium",
+        annualAmount: 4_800,
+        startYear: 2026,
+        endYear: 2050,
+        growthRate: 0,
+        source: "policy",
+        sourcePolicyAccountId: LIFE_INSURANCE_ACCOUNT_ID,
+      },
+    ],
+    savingsRules: [
+      {
+        id: WRITABLE_SAVINGS_RULE_ID,
+        accountId: TAXABLE_ACCOUNT_ID,
+        annualAmount: 12_000,
+        isDeductible: false,
+        startYear: 2026,
+        endYear: 2066,
+      },
+      {
+        id: LIFE_INSURANCE_SAVINGS_RULE_ID,
+        accountId: LIFE_INSURANCE_ACCOUNT_ID,
+        annualAmount: 5_000,
+        isDeductible: false,
+        startYear: 2026,
+        endYear: 2066,
+      },
+      {
+        id: CONTRIBUTE_MAX_SAVINGS_RULE_ID,
+        accountId: TAXABLE_ACCOUNT_ID,
+        annualAmount: 0,
+        contributeMax: true,
+        isDeductible: true,
+        startYear: 2026,
+        endYear: 2066,
+      },
+    ],
+  };
+}
+
 describe("loadOrganizerMap", () => {
   beforeEach(() => {
     mockClient = {
@@ -242,6 +385,74 @@ describe("loadOrganizerMap", () => {
     expect(data.goals.find((g) => g.id === "milestone:spouse_life_expectancy")).toMatchObject({
       year: 2068, // 1978 + 90
       side: "spouse",
+    });
+  });
+
+  describe("editor hydration", () => {
+    beforeEach(() => {
+      mockContacts = [
+        { role: "primary", dateOfBirth: "1976-04-01" },
+        { role: "spouse", dateOfBirth: "1978-09-15" },
+      ];
+      loadEffectiveTree.mockResolvedValueOnce({ effectiveTree: buildRichFixture(), warnings: [] });
+    });
+
+    it("omits a social-security income from incomeRows while keeping its card", async () => {
+      // The SS card must still appear on the board and in the Income subtotal —
+      // it is real income. It just must not be editable from the portal.
+      const data = await loadOrganizerMap(CLIENT_ID);
+      expect(data).not.toBeNull();
+      expect(data!.items.some((i) => i.id === SS_INCOME_ID)).toBe(true);
+      expect(SS_INCOME_ID in data!.incomeRows).toBe(false);
+    });
+
+    it("omits a synthesized policy premium from expenseRows while keeping its card", async () => {
+      const data = await loadOrganizerMap(CLIENT_ID);
+      expect(data!.items.some((i) => i.id === POLICY_PREMIUM_ID)).toBe(true);
+      expect(POLICY_PREMIUM_ID in data!.expenseRows).toBe(false);
+    });
+
+    it("omits an entity-owned income from incomeRows", async () => {
+      const data = await loadOrganizerMap(CLIENT_ID);
+      expect(ENTITY_INCOME_ID in data!.incomeRows).toBe(false);
+    });
+
+    it("offers only portal-visible accounts as savings targets", async () => {
+      const data = await loadOrganizerMap(CLIENT_ID);
+      const ids = data!.savingsAccountOptions.map((a) => a.id);
+      expect(ids).toContain(TAXABLE_ACCOUNT_ID);
+      expect(ids).not.toContain(DEFAULT_CHECKING_ID);
+      expect(ids).not.toContain(LIFE_INSURANCE_ACCOUNT_ID);
+    });
+
+    it("derives milestones with planEnd at the LATER life expectancy", async () => {
+      const data = await loadOrganizerMap(CLIENT_ID);
+      expect(data!.milestones.planEnd).toBe(
+        Math.max(data!.milestones.clientEnd, data!.milestones.spouseEnd ?? 0),
+      );
+    });
+
+    it("includes a flat-dollar savings rule funding a portal-visible account in savingsRuleRows", async () => {
+      const data = await loadOrganizerMap(CLIENT_ID);
+      expect(data!.items.some((i) => i.id === WRITABLE_SAVINGS_RULE_ID)).toBe(true);
+      expect(WRITABLE_SAVINGS_RULE_ID in data!.savingsRuleRows).toBe(true);
+    });
+
+    it("omits a savings rule funding a non-portal-visible account from savingsRuleRows while keeping its card", async () => {
+      // Same flat-dollar mode as the writable rule above — only the ACCOUNT
+      // gate distinguishes them.
+      const data = await loadOrganizerMap(CLIENT_ID);
+      expect(data!.items.some((i) => i.id === LIFE_INSURANCE_SAVINGS_RULE_ID)).toBe(true);
+      expect(LIFE_INSURANCE_SAVINGS_RULE_ID in data!.savingsRuleRows).toBe(false);
+    });
+
+    it("omits a contributeMax savings rule from savingsRuleRows even though its account is portal-visible, while keeping its card", async () => {
+      // Same portal-visible taxable account as the writable rule above — only
+      // the MODE gate (contributeMax resolves an IRS limit the engine
+      // computes, not a number a client can type over) excludes this one.
+      const data = await loadOrganizerMap(CLIENT_ID);
+      expect(data!.items.some((i) => i.id === CONTRIBUTE_MAX_SAVINGS_RULE_ID)).toBe(true);
+      expect(CONTRIBUTE_MAX_SAVINGS_RULE_ID in data!.savingsRuleRows).toBe(false);
     });
   });
 });

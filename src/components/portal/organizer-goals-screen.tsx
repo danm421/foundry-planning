@@ -1,25 +1,21 @@
 import type { ReactElement } from "react";
-import GoalsBoard from "@/components/household-map/goals-board";
 import { loadOrganizerMap } from "@/lib/portal/load-organizer-map";
+import OrganizerGoalsClient from "@/components/portal/organizer-goals-client";
 
 /**
  * Organizer → Goals. The same board the advisor sees on the Household Map,
  * fed by the same builder over the same base tree.
  *
- * READ-ONLY in this phase. `canEdit={false}` is the gate, passed literally
- * rather than from `data.canEdit`: it is the FIRST clause of `clickHandlerFor`
- * (`goals-board.tsx`), so every card returns undefined there and renders as a
- * plain div rather than a button that does nothing, and it also suppresses the
- * "Add goal" button and the life-expectancy age editor. There is no write route
- * behind any of them until the next plan.
+ * A loader and nothing else: it fetches, handles the not-ready state, and hands
+ * the data to the client shell that owns the editor. `canEdit` and `expenseRows`
+ * now come from the DATA — the write routes behind the goal cards exist as of
+ * this branch, and membership in `expenseRows` is what decides which cards open
+ * an editor.
  *
- * `expenseRows: {}` is a SECOND lock, not the mechanism — `clickHandlerFor`
- * short-circuits on `canEdit` before it ever probes that map. Flipping one
- * without the other enables nothing.
- *
- * `onSaveLifeExpectancy` is omitted permanently, not just for this phase. Those
- * cards move the plan horizon (`client.planEndAge` + `planSettings.planEndYear`)
- * and that is an advisor lever — the board falls back to its static detail line.
+ * `onSaveLifeExpectancy` stays omitted permanently, not just for this phase.
+ * Those cards move the plan horizon (`client.planEndAge` +
+ * `planSettings.planEndYear`) and that is an advisor lever — the board falls
+ * back to its static detail line.
  */
 export default async function OrganizerGoalsScreen({
   clientId,
@@ -37,14 +33,5 @@ export default async function OrganizerGoalsScreen({
     );
   }
 
-  return (
-    <div className="p-5">
-      <GoalsBoard
-        people={data.people}
-        goals={data.goals}
-        canEdit={false}
-        expenseRows={{}}
-      />
-    </div>
-  );
+  return <OrganizerGoalsClient data={data} />;
 }
