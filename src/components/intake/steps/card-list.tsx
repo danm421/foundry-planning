@@ -67,6 +67,61 @@ export function MoneyInput({
   );
 }
 
+// ─── YearInput ────────────────────────────────────────────────────────────────
+//
+// Four-digit calendar-year field. Like MoneyInput it holds an internal raw
+// string so a half-typed year survives, but it only reports a number once four
+// digits are in — "20" on the way to "2040" would be a valid-looking int that
+// the submit schema rejects with a confusing message, so a partial entry reads
+// as "not answered" instead, and the step's default takes over.
+
+export function YearInput({
+  id,
+  value,
+  onChange,
+  ariaLabel,
+  placeholder,
+  disabled,
+}: {
+  id?: string;
+  value: number | undefined;
+  onChange: (next: number | undefined) => void;
+  ariaLabel: string;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  // Same "adjust state during render on prop change" pattern as MoneyInput:
+  // re-render with the value we just reported is a no-op, which is what lets a
+  // partial entry stay on screen.
+  const [raw, setRaw] = useState(value === undefined ? "" : String(value));
+  const [prevValue, setPrevValue] = useState(value);
+  if (value !== prevValue) {
+    setPrevValue(value);
+    setRaw(value === undefined ? "" : String(value));
+  }
+
+  return (
+    <input
+      id={id}
+      type="text"
+      inputMode="numeric"
+      maxLength={4}
+      className={`${inputCls} tabular disabled:cursor-not-allowed disabled:opacity-50`}
+      value={raw}
+      onChange={(e) => {
+        const digits = e.target.value.replace(/\D/g, "").slice(0, 4);
+        setRaw(digits);
+        const next = digits.length === 4 ? Number(digits) : undefined;
+        setPrevValue(next);
+        onChange(next);
+      }}
+      placeholder={placeholder}
+      aria-label={ariaLabel}
+      disabled={disabled}
+    />
+  );
+}
+
 // ─── Owner field ──────────────────────────────────────────────────────────────
 //
 // Shared by every step that asks "whose is this?" (income, accounts). Two rules

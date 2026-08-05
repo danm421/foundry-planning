@@ -75,13 +75,47 @@ describe("buildIntakeDiff", () => {
     const withIncome: IntakePayload = {
       ...minPayload,
       income: [
-        { name: "Consulting", type: "business", annualAmount: 40000, owner: "spouse" },
-        { name: "Day job", type: "salary", annualAmount: 120000, owner: "client" },
+        {
+          name: "Consulting",
+          type: "business",
+          annualAmount: 40000,
+          owner: "spouse",
+          startYear: 2026,
+          endYear: 2035,
+          endsAtRetirement: false,
+        },
+        {
+          name: "Day job",
+          type: "salary",
+          annualAmount: 120000,
+          owner: "client",
+          startYear: 2026,
+          endYear: 2040,
+          endsAtRetirement: false,
+        },
       ],
     };
     const diff = buildIntakeDiff(null, withIncome);
-    expect(diff.income.submittedItems[0].secondary).toBe("business · spouse");
-    expect(diff.income.submittedItems[1].secondary).toBe("salary · client");
+    expect(diff.income.submittedItems[0].secondary).toBe("business · spouse · 2026 – 2035");
+    expect(diff.income.submittedItems[1].secondary).toBe("salary · client · 2026 – 2040");
+  });
+
+  it("shows a retirement-anchored income as its anchor, not a frozen year", () => {
+    const withIncome: IntakePayload = {
+      ...minPayload,
+      income: [
+        {
+          name: "Day job",
+          type: "salary",
+          annualAmount: 120000,
+          owner: "client",
+          startYear: 2026,
+          endsAtRetirement: true,
+        },
+      ],
+    };
+    const diff = buildIntakeDiff(null, withIncome);
+    expect(diff.income.submittedItems[0].secondary).toBe("salary · client · 2026 – retirement");
   });
 
   it("detects goals retirement age change", () => {

@@ -238,6 +238,17 @@ describe("applyIntake (existing-client path)", () => {
           type: "salary",
           annualAmount: 180000,
           owner: "client",
+          startYear: 2026,
+          endYear: 2035,
+          endsAtRetirement: false,
+        },
+        {
+          name: "Pat Consulting",
+          type: "business",
+          annualAmount: 40000,
+          owner: "client",
+          startYear: 2027,
+          endsAtRetirement: true,
         },
       ],
       property: [],
@@ -290,6 +301,20 @@ describe("applyIntake (existing-client path)", () => {
     expect(salary).toBeTruthy();
     expect(salary?.type).toBe("salary");
     expect(salary?.annualAmount).toBe("180000.00");
+    // Fixed window: the years the form supplied, with no milestone anchor.
+    expect(salary?.startYear).toBe(2026);
+    expect(salary?.endYear).toBe(2035);
+    expect(salary?.endYearRef).toBeNull();
+
+    // ── Assert: "ends at retirement" lands as an anchored row ─────────────
+    // Pat was born 1975 and the form sets clientRetirementAge 67, so retirement
+    // is 2042 and the last year of this income is 2041. The ref is what makes
+    // the row follow the retirement age if the advisor later moves it.
+    const consulting = incomeRows.find((i) => i.name === "Pat Consulting");
+    expect(consulting).toBeTruthy();
+    expect(consulting?.startYear).toBe(2027);
+    expect(consulting?.endYear).toBe(2041);
+    expect(consulting?.endYearRef).toBe("client_retirement");
 
     // ── Assert: a child familyMember exists ───────────────────────────────
     const childRows = await db
@@ -430,6 +455,7 @@ describe("applyIntake (prospect path — creates client on approve)", () => {
           type: "salary",
           annualAmount: 200000,
           owner: "client",
+          endsAtRetirement: false,
         },
       ],
       property: [],

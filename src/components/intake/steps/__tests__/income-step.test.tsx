@@ -36,6 +36,9 @@ describe("IncomeStep", () => {
     const next: IncomeSlice = onChange.mock.calls[0][0];
     expect(next).toHaveLength(1);
     expect(next?.[0]?.owner).toBe("client");
+    // Seeded so the client sees a sensible year rather than a blank field.
+    expect(next?.[0]?.startYear).toBe(new Date().getFullYear());
+    expect(next?.[0]?.endsAtRetirement).toBe(false);
   });
 
   it("renders an existing income source collapsed, with its type, owner, and amount", () => {
@@ -201,6 +204,138 @@ describe("IncomeStep", () => {
     const next: IncomeSlice = onChange.mock.calls[0][0];
     expect(next).toHaveLength(1);
     expect(next?.[0]?.name).toBe("Salary B");
+  });
+
+  // ── Year window ──────────────────────────────────────────────────────────
+
+  it("edits the start and end years alongside the amount", () => {
+    const onChange = vi.fn();
+    const value: IncomeSlice = [
+      { name: "Job", type: "salary", annualAmount: 100000, owner: "client" },
+    ];
+    render(<IncomeStep {...makeProps({ value, onChange })} />);
+
+    expandRow(/edit job/i);
+    fireEvent.change(screen.getByRole("textbox", { name: /start year/i }), {
+      target: { value: "2028" },
+    });
+    expect(onChange.mock.calls[0][0]?.[0]?.startYear).toBe(2028);
+
+    fireEvent.change(screen.getByRole("textbox", { name: /end year/i }), {
+      target: { value: "2040" },
+    });
+    expect(onChange.mock.calls[1][0]?.[0]?.endYear).toBe(2040);
+  });
+
+  it("reports a year only once four digits are in, so a partial entry can't submit", () => {
+    // Stateful host: the year field re-syncs from its prop, so a fake onChange
+    // would snap the half-typed year back the way the money field does.
+    const seen: IncomeSlice[] = [];
+    function Host() {
+      const [income, setIncome] = useState<IncomeSlice>([
+        { name: "Job", type: "salary", annualAmount: 100000, owner: "client", startYear: 2026 },
+      ]);
+      return (
+        <IncomeStep
+          value={income}
+          onChange={(next) => {
+            seen.push(next);
+            setIncome(next);
+          }}
+        />
+      );
+    }
+    render(<Host />);
+
+    expandRow(/edit job/i);
+    const start = screen.getByRole("textbox", { name: /start year/i });
+    fireEvent.change(start, { target: { value: "20" } });
+
+    // "20" is a valid int the submit schema would reject; it reads as blank…
+    expect(seen[0]?.[0]?.startYear).toBeUndefined();
+    // …but stays on screen so the user can finish typing it.
+    expect(start).toHaveValue("20");
+
+    fireEvent.change(start, { target: { value: "2028" } });
+    expect(seen[1]?.[0]?.startYear).toBe(2028);
+  });
+
+  it("checking Retirement clears a stale end year", () => {
+    const onChange = vi.fn();
+    const value: IncomeSlice = [
+      { name: "Job", type: "salary", annualAmount: 100000, owner: "client", endYear: 2035 },
+    ];
+    render(<IncomeStep {...makeProps({ value, onChange })} />);
+
+    expandRow(/edit job/i);
+    fireEvent.click(screen.getByRole("checkbox", { name: /retirement/i }));
+
+    const next: IncomeSlice = onChange.mock.calls[0][0];
+    expect(next?.[0]?.endsAtRetirement).toBe(true);
+    expect(next?.[0]?.endYear).toBeUndefined();
+  });
+
+  it("disables the end year field while Retirement is checked", () => {
+    const value: IncomeSlice = [
+      {
+        name: "Job",
+        type: "salary",
+        annualAmount: 100000,
+        owner: "client",
+        endsAtRetirement: true,
+      },
+    ];
+    render(<IncomeStep {...makeProps({ value })} />);
+
+    expandRow(/edit job/i);
+    expect(screen.getByRole("textbox", { name: /end year/i })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: /retirement/i })).toBeChecked();
+  });
+
+  it("unchecking Retirement leaves the end year unset rather than inventing one", () => {
+    const onChange = vi.fn();
+    const value: IncomeSlice = [
+      {
+        name: "Job",
+        type: "salary",
+        annualAmount: 100000,
+        owner: "client",
+        endsAtRetirement: true,
+      },
+    ];
+    render(<IncomeStep {...makeProps({ value, onChange })} />);
+
+    expandRow(/edit job/i);
+    fireEvent.click(screen.getByRole("checkbox", { name: /retirement/i }));
+
+    const next: IncomeSlice = onChange.mock.calls[0][0];
+    expect(next?.[0]?.endsAtRetirement).toBe(false);
+    expect(next?.[0]?.endYear).toBeUndefined();
+  });
+
+  it("shows the span on the collapsed row", () => {
+    const value: IncomeSlice = [
+      {
+        name: "Day job",
+        type: "salary",
+        annualAmount: 120000,
+        owner: "client",
+        startYear: 2026,
+        endsAtRetirement: true,
+      },
+      {
+        name: "Rental",
+        type: "other",
+        annualAmount: 12000,
+        owner: "client",
+        startYear: 2026,
+        endYear: 2035,
+      },
+    ];
+    render(<IncomeStep {...makeProps({ value })} clientName="Pat" />);
+
+    expect(screen.getByText("Salary / wages · Pat · 2026 – retirement")).toBeInTheDocument();
+    expect(screen.getByText("Other · Pat · 2026 – 2035")).toBeInTheDocument();
   });
 
   // ── KPI totals ───────────────────────────────────────────────────────────

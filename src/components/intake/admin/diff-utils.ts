@@ -1,4 +1,5 @@
 import type { IntakePayload } from "@/lib/intake/schema";
+import { incomeSpanLabel } from "@/lib/intake/income-years";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -57,6 +58,8 @@ export function buildIntakeDiff(
 ): IntakeDiff {
   const bf = baseline?.family;
   const sf = submitted.family;
+  // Matches the clock apply reads when it fills a blank start year.
+  const currentYear = new Date().getFullYear();
 
   const family: FamilyDiff = {
     primaryName: field(fullName(bf?.primary), fullName(sf.primary)),
@@ -92,15 +95,18 @@ export function buildIntakeDiff(
     })),
   };
 
-  // Owner rides along here too: apply writes it onto the income row, so the
-  // advisor has to see whose income they're approving.
+  // Owner and the year window ride along here too: apply writes all three onto
+  // the income row, so the advisor has to see whose income it is and how long it
+  // runs before approving. A blank year shows as the default apply will use, and
+  // "ends at retirement" shows as the anchor rather than a year, because that is
+  // what gets stored — an `endYearRef` that follows the retirement age.
   const income: ListSectionDiff = {
     baselineCount: baseline?.income.length ?? 0,
     submittedCount: submitted.income.length,
     submittedItems: submitted.income.map((i) => ({
       name: i.name,
       value: i.annualAmount,
-      secondary: [i.type, i.owner].filter(Boolean).join(" · "),
+      secondary: [i.type, i.owner, incomeSpanLabel(i, currentYear)].join(" · "),
     })),
   };
 

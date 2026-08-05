@@ -21,6 +21,7 @@ import {
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import type { IntakePayload } from "@/lib/intake/schema";
+import { incomeFormYears } from "@/lib/intake/income-years";
 
 // ── DB → form category mapping ────────────────────────────────────────────────
 //
@@ -247,6 +248,7 @@ export async function snapshotClientToPayload(
       type: mapIncomeType(row.type),
       annualAmount: Number(row.annualAmount),
       owner: row.owner,
+      ...incomeFormYears(row),
     }));
 
     // ── 10. Assemble and return ───────────────────────────────────────────

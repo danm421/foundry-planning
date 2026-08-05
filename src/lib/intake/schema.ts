@@ -35,11 +35,23 @@ export const intakeAccountSchema = z.object({
   custodian: z.string().trim().max(120).optional(),
 });
 
+// `startYear` / `endYear` / `endsAtRetirement` are optional for the same reason
+// the account `owner` above carries a default: apply re-parses the stored
+// payload, so forms submitted before these fields existed still have to parse.
+// Absent years mean exactly the pre-field behaviour — apply spans the row from
+// the current year to plan end.
+//
+// `endsAtRetirement` beats `endYear`: the step clears the year when the box is
+// checked, and apply anchors the row to the owner's retirement milestone
+// instead of a fixed year. See `income-years.ts`.
 export const intakeIncomeSchema = z.object({
   name: z.string().trim().min(1).max(120),
   type: z.enum(["salary", "social_security", "business", "other"]),
   annualAmount: z.number().nonnegative().max(1e10),
   owner: z.enum(["client", "spouse", "joint"]),
+  startYear: z.number().int().min(1900).max(2200).optional(),
+  endYear: z.number().int().min(1900).max(2200).optional(),
+  endsAtRetirement: z.boolean().default(false),
 });
 
 export const intakePropertySchema = z.object({
@@ -114,6 +126,9 @@ const intakeIncomeDraftSchema = z.object({
   type: z.enum(["salary", "social_security", "business", "other"]).optional(),
   annualAmount: z.number().max(1e10).optional(),
   owner: z.enum(["client", "spouse", "joint"]).optional(),
+  startYear: z.number().max(2200).optional(),
+  endYear: z.number().max(2200).optional(),
+  endsAtRetirement: z.boolean().optional(),
 });
 
 const intakePropertyDraftSchema = z.object({

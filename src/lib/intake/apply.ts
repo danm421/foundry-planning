@@ -50,6 +50,8 @@ import {
   type IntakePayload,
 } from "@/lib/intake/schema";
 import { loadFormForFirm } from "@/lib/intake/queries";
+import { incomeYearWindow } from "@/lib/intake/income-years";
+import { buildClientMilestones } from "@/lib/milestones";
 import {
   loadFamilyRoleIds,
   synthesizeAccountOwners,
@@ -121,6 +123,13 @@ async function applySectionsToClient(
   const currentYear = new Date().getFullYear();
   const planEndYear = primaryDobYear + client.planEndAge;
 
+  // The ages this apply is settling on — written to the client row below and
+  // used to place every milestone-anchored row. One source so the anchors can't
+  // disagree with the retirement age actually persisted.
+  const clientRetirementAge = payload.goals.clientRetirementAge ?? client.retirementAge;
+  const spouseRetirementAge =
+    payload.goals.spouseRetirementAge ?? client.spouseRetirementAge;
+
   // ── Family scalars ────────────────────────────────────────────────────────
   // Primary + spouse CRM contacts (source of truth) via the shared upsert: the
   // primary always exists so it UPDATEs; a spouse is INSERTED when the household
@@ -167,9 +176,8 @@ async function applySectionsToClient(
   await tx
     .update(clients)
     .set({
-      retirementAge: payload.goals.clientRetirementAge ?? client.retirementAge,
-      spouseRetirementAge:
-        payload.goals.spouseRetirementAge ?? client.spouseRetirementAge,
+      retirementAge: clientRetirementAge,
+      spouseRetirementAge,
       filingStatus,
       updatedAt: new Date(),
     })
@@ -249,9 +257,30 @@ async function applySectionsToClient(
   }
 
   // ── Income ────────────────────────────────────────────────────────────────
-  // v1: every intake income spans currentYear → planEndYear. Salary-specific
-  // end-at-retirement is deferred.
+  // The form collects a start year, and either an end year or an "ends at
+  // retirement" box. A retirement-ending row is written with an `endYearRef` so
+  // it follows the retirement age the advisor settles on rather than freezing
+  // the year the client happened to submit. Rows from before those fields
+  // existed carry no years and fall back to currentYear → planEndYear.
+  // Same milestone table the projection loader resolves against, so the year
+  // stored here is the one `resolveRefYears` recomputes on load. `plan_start` is
+  // unused by income anchors; currentYear stands in for it.
+  const milestones = buildClientMilestones(
+    {
+      dateOfBirth: primary.dateOfBirth,
+      retirementAge: clientRetirementAge,
+      planEndAge: client.planEndAge,
+      spouseDob: spouse?.dateOfBirth ?? null,
+      spouseRetirementAge,
+    },
+    currentYear,
+    planEndYear,
+  );
   for (const income of payload.income) {
+    const window = incomeYearWindow(income, milestones, {
+      currentYear,
+      planEndYear,
+    });
     const [row] = await tx
       .insert(incomes)
       .values({
@@ -261,8 +290,9 @@ async function applySectionsToClient(
         name: income.name,
         annualAmount: String(income.annualAmount),
         owner: income.owner,
-        startYear: currentYear,
-        endYear: planEndYear,
+        startYear: window.startYear,
+        endYear: window.endYear,
+        endYearRef: window.endYearRef,
         source: "manual",
       })
       .returning({ id: incomes.id });
