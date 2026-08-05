@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from "vitest";
-import { render } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
 import {
   TEST_SOLO_PEOPLE,
   TEST_PURCHASE_GOAL,
@@ -15,6 +15,9 @@ import type { MapGoal } from "@/lib/household-map/goals";
 // value. Mirrors `organizer-redirects.test.ts`'s mock of `permanentRedirect`.
 const { loadOrganizerMap } = vi.hoisted(() => ({ loadOrganizerMap: vi.fn() }));
 vi.mock("@/lib/portal/load-organizer-map", () => ({ loadOrganizerMap }));
+// The screen now returns a client component, and the panel it can open uses
+// the router.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 import OrganizerGoalsScreen from "../organizer-goals-screen";
 
@@ -26,8 +29,7 @@ import OrganizerGoalsScreen from "../organizer-goals-screen";
  *
  * It is here rather than beside the purchase goal because it is the only card
  * shape that reaches `GoalsBoard`'s `detailSlotFor` — the `InlineAmount` age
- * editor, one of the two affordances a purchase-goal-only fixture leaves
- * completely unexercised (the other being the "Add goal" button).
+ * editor, which the portal must never render.
  */
 const TEST_LIFE_EXPECTANCY_GOAL: MapGoal = {
   id: "milestone:client_life_expectancy",
@@ -41,15 +43,37 @@ const TEST_LIFE_EXPECTANCY_GOAL: MapGoal = {
   lifeExpectancy: { owner: "client", age: 90, assumed: false },
 };
 
-// Shared by both goal-bearing tests below — one asserts the row renders, the
-// other asserts it renders inert. Identical `loadOrganizerMap` payload in both
-// cases is the point: the two tests must disagree only on what they assert.
-const DATA_WITH_GOAL = {
+const MILESTONES = {
+  planStart: 2026,
+  planEnd: 2070,
+  clientRetirement: 2040,
+  clientEnd: 2070,
+};
+
+const DATA = {
   people: TEST_SOLO_PEOPLE,
   items: [],
   canEdit: true,
   goals: [TEST_PURCHASE_GOAL, TEST_LIFE_EXPECTANCY_GOAL],
+  incomeRows: {},
+  // TEST_PURCHASE_GOAL is backed by expense e1. Membership here is what makes
+  // its card clickable; the life-expectancy milestone has expenseId null and
+  // can never be in this map.
+  expenseRows: {
+    e1: { id: "e1", name: "New roof", annualAmount: "40000", startYear: 2030, endYear: 2030, type: "other", growthRate: "0.03", isGoal: true },
+  },
+  savingsRuleRows: {},
+  savingsAccountOptions: [{ id: "acct-1", name: "Joint Brokerage" }],
+  familyMemberOptions: [],
+  milestones: MILESTONES,
+  resolvedInflationRate: 0.03,
 };
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  loadOrganizerMap.mockResolvedValue(DATA);
+  document.body.innerHTML = "";
+});
 
 describe("OrganizerGoalsScreen", () => {
   it("renders a notice when the household has no board data", async () => {
@@ -60,24 +84,49 @@ describe("OrganizerGoalsScreen", () => {
   });
 
   it("renders one row per goal", async () => {
-    loadOrganizerMap.mockResolvedValue(DATA_WITH_GOAL);
     const { getByTestId } = render(await OrganizerGoalsScreen({ clientId: "c1" }));
     expect(getByTestId("goal-row-expense:e1").textContent).toContain("New roof");
-    // Also what keeps the assertion below honest: a life-expectancy card that
-    // silently stopped rendering would make the zero-button count vacuous again.
     expect(getByTestId("goal-row-milestone:client_life_expectancy").textContent).toContain(
       "age 90",
     );
   });
 
-  // Every affordance `GoalsBoard` can draw is in scope here, which is why the
-  // fixture carries a life-expectancy card as well as a purchase goal: the
-  // "Add goal" button (`canEdit && onAddGoal`) and the age editor
-  // (`canEdit && onSaveLifeExpectancy`) are the two the purchase goal alone
-  // cannot reach, and the age editor needs a `lifeExpectancy` card to hang off.
-  it("never renders an editable goal card, even when canEdit is true", async () => {
-    loadOrganizerMap.mockResolvedValue(DATA_WITH_GOAL);
-    const { container } = render(await OrganizerGoalsScreen({ clientId: "c1" }));
-    expect(container.querySelectorAll("button")).toHaveLength(0);
+  it("renders the header Add goal button when editing is enabled", async () => {
+    render(await OrganizerGoalsScreen({ clientId: "c1" }));
+    expect(screen.getByRole("button", { name: "Add goal" })).toBeInTheDocument();
+  });
+
+  it("renders exactly ONE Add goal button, not the board's as well", async () => {
+    render(await OrganizerGoalsScreen({ clientId: "c1" }));
+    expect(screen.getAllByRole("button", { name: "Add goal" })).toHaveLength(1);
+  });
+
+  it("renders no Add goal button when the advisor has editing off", async () => {
+    loadOrganizerMap.mockResolvedValue({ ...DATA, canEdit: false });
+    render(await OrganizerGoalsScreen({ clientId: "c1" }));
+    expect(screen.queryByRole("button", { name: "Add goal" })).not.toBeInTheDocument();
+  });
+
+  it("makes an expense-backed goal card clickable", async () => {
+    document.body.innerHTML = '<aside id="portal-detail"></aside>';
+    render(await OrganizerGoalsScreen({ clientId: "c1" }));
+    fireEvent.click(screen.getByTestId("goal-card-joint-expense:e1"));
+    expect(await screen.findByRole("heading", { name: "Edit expense" })).toBeInTheDocument();
+  });
+
+  it("leaves life-expectancy milestones inert and offers no age editor", async () => {
+    // These cards move the plan horizon. Advisor lever — the board must fall
+    // back to its static detail line.
+    render(await OrganizerGoalsScreen({ clientId: "c1" }));
+    const card = screen.getByTestId("goal-card-left-milestone:client_life_expectancy");
+    expect(card.tagName).toBe("DIV");
+    expect(screen.queryByRole("button", { name: /life expectancy/i })).not.toBeInTheDocument();
+  });
+
+  it("opens the panel with 'Show as a goal' pre-ticked from Add goal", async () => {
+    document.body.innerHTML = '<aside id="portal-detail"></aside>';
+    render(await OrganizerGoalsScreen({ clientId: "c1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add goal" }));
+    expect(await screen.findByLabelText("Show as a goal")).toBeChecked();
   });
 });
