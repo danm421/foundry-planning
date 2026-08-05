@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { IntakeDraft } from "@/lib/intake/schema";
 import { IntakeWizard } from "@/components/intake/intake-wizard";
 import { IntakeThankYou } from "@/components/intake/thank-you";
@@ -20,12 +21,20 @@ interface IntakeClientProps {
 
 const AUTOSAVE_DEBOUNCE_MS = 800;
 
+// Nothing is persisted in the browser — the draft lives in React state and on
+// the server. The old copy here promised the work was "safe locally", which was
+// never true: closing the tab after a failed save loses it.
+const AUTOSAVE_FAILED_MSG =
+  "Couldn't save your last change. Check your connection and keep this tab open.";
+
 export function IntakeClient({
   token,
   recipientName,
   initialPayload,
   branding,
 }: IntakeClientProps) {
+  const router = useRouter();
+
   // Seed local draft from the stored payload.
   // The payload is a full IntakePayload (strict) when filled, or a partial
   // IntakeDraft when mid-flight — both satisfy IntakeDraft (lenient superset).
@@ -72,6 +81,15 @@ export function IntakeClient({
             body: JSON.stringify(next),
             signal: controller.signal,
           });
+          if (res.status === 401) {
+            // The 12h identity session lapsed mid-form. Nothing will save from
+            // here, so send them back to the gate rather than let them keep
+            // typing into a form that silently drops every keystroke. Work up to
+            // the last successful autosave is on the server and comes back with
+            // them once they re-confirm.
+            router.refresh();
+            return;
+          }
           if (!res.ok && res.status !== 410 && res.status !== 409) {
             // 410 = expired, 409 = already submitted — both are non-recoverable
             // states that will surface on the next submit attempt. For transient
@@ -79,15 +97,15 @@ export function IntakeClient({
             const data = (await res.json().catch(() => ({}))) as {
               error?: string;
             };
-            setError(data.error ?? "Autosave failed. Your work is safe locally.");
+            setError(data.error ?? AUTOSAVE_FAILED_MSG);
           }
         } catch (err) {
           if (err instanceof DOMException && err.name === "AbortError") return;
-          setError("Autosave failed. Your work is safe locally.");
+          setError(AUTOSAVE_FAILED_MSG);
         }
       }, AUTOSAVE_DEBOUNCE_MS);
     },
-    [token],
+    [token, router],
   );
 
   const handleSubmit = useCallback(async () => {
@@ -129,6 +147,11 @@ export function IntakeClient({
         setError("This advisor's account is not currently active. Please contact them directly.");
       } else if (res.status === 410) {
         setError("This form link has expired. Please contact your advisor for a new one.");
+      } else if (res.status === 401) {
+        // Identity session lapsed before they hit Submit. The gate check runs
+        // ahead of the persist, so this request saved nothing — but autosave
+        // 401s first and bounces them, capping the loss at one debounce window.
+        router.refresh();
       } else if (res.status === 409) {
         // Already submitted — surface the thank-you
         setSubmitted(true);
@@ -140,7 +163,7 @@ export function IntakeClient({
     } finally {
       setBusy(false);
     }
-  }, [token, value]);
+  }, [token, value, router]);
 
   if (submitted) {
     return <IntakeThankYou recipientName={recipientName} branding={branding} />;

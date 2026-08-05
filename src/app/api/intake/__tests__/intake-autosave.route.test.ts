@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from "vitest";
 import { db } from "@/db";
 import { intakeForms } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -16,6 +16,15 @@ vi.mock("@/lib/rate-limit", () => ({
       headers: { "Content-Type": "application/json" },
     });
   },
+}));
+
+// --- Identity gate mock ---
+// The handlers are invoked outside a Next request scope here, so the real
+// cookie read would throw. Default to verified; the gate's own block is
+// asserted explicitly below.
+const gateVerifiedMock = vi.fn(async () => true);
+vi.mock("@/lib/intake/gate-session", () => ({
+  isGateVerified: () => gateVerifiedMock(),
 }));
 
 import { PATCH } from "@/app/api/intake/[token]/route";
@@ -90,6 +99,31 @@ function makeReq(token: string, body: unknown) {
 }
 
 describe("PATCH /api/intake/[token] — autosave", () => {
+  beforeEach(() => {
+    gateVerifiedMock.mockResolvedValue(true);
+  });
+
+  it("401: an unverified caller cannot write, and the stored payload is untouched", async () => {
+    checkAutosaveMock.mockResolvedValue({ allowed: true });
+    gateVerifiedMock.mockResolvedValue(false);
+
+    const before = await db
+      .select()
+      .from(intakeForms)
+      .where(eq(intakeForms.token, draftToken));
+
+    const res = await PATCH(makeReq(draftToken, { meta: { currentSection: "goals" } }), {
+      params: Promise.resolve({ token: draftToken }),
+    });
+    expect(res.status).toBe(401);
+
+    const after = await db
+      .select()
+      .from(intakeForms)
+      .where(eq(intakeForms.token, draftToken));
+    expect(after[0]?.payload).toEqual(before[0]?.payload);
+  }, 30000);
+
   it("200: persists a valid partial payload for a draft token", async () => {
     checkAutosaveMock.mockResolvedValue({ allowed: true });
 

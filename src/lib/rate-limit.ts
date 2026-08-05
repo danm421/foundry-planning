@@ -413,6 +413,11 @@ export async function checkPortalPlaidLinkRateLimit(
 // rare (one per session effectively) so 10/hr is more than enough.
 const getIntakeAutosaveLimiter = buildLimiter(120, "1 h", "rl:intake-autosave");
 const getIntakeSubmitLimiter = buildLimiter(10, "1 h", "rl:intake-submit");
+// Identity gate on the public intake link. This is the brute-force surface for
+// guessing a recipient's surname/email, so it is deliberately far tighter than
+// autosave: 8/hr allows for genuine typos and a spouse's second guess, and
+// nothing like enough for an attacker holding the link to enumerate.
+const getIntakeVerifyLimiter = buildLimiter(8, "1 h", "rl:intake-verify");
 
 export async function checkIntakeAutosaveRateLimit(key: string): Promise<RateLimitResult> {
   const limiter = getIntakeAutosaveLimiter();
@@ -422,6 +427,12 @@ export async function checkIntakeAutosaveRateLimit(key: string): Promise<RateLim
 
 export async function checkIntakeSubmitRateLimit(key: string): Promise<RateLimitResult> {
   const limiter = getIntakeSubmitLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
+export async function checkIntakeVerifyRateLimit(key: string): Promise<RateLimitResult> {
+  const limiter = getIntakeVerifyLimiter();
   if (!limiter) return { allowed: false, reason: "unconfigured" };
   return safeLimit(limiter, key);
 }

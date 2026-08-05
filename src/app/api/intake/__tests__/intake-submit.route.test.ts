@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from "vitest";
 import { db } from "@/db";
 import {
   intakeForms,
@@ -48,6 +48,14 @@ vi.mock("@/lib/authz", () => ({
   ForbiddenError,
   requireActiveSubscriptionForFirmNoSession: (firmId: string) =>
     requireActiveSubscriptionForFirmMock(firmId),
+}));
+
+// --- Identity gate mock ---
+// The handler runs outside a Next request scope here, so the real cookie read
+// would throw. Default to verified; the gate's own block is asserted below.
+const gateVerifiedMock = vi.fn(async () => true);
+vi.mock("@/lib/intake/gate-session", () => ({
+  isGateVerified: () => gateVerifiedMock(),
 }));
 
 import { POST } from "@/app/api/intake/[token]/submit/route";
@@ -220,6 +228,30 @@ function makeReq(token: string, body?: unknown) {
 }
 
 describe("POST /api/intake/[token]/submit", () => {
+  beforeEach(() => {
+    gateVerifiedMock.mockResolvedValue(true);
+  });
+
+  // Runs before the 200 case below, which flips draftToken to "submitted" —
+  // this needs the row to still be a draft to prove the gate is what stopped it.
+  it("401: an unverified caller cannot submit, and the form stays a draft", async () => {
+    checkSubmitMock.mockResolvedValue({ allowed: true });
+    requireActiveSubscriptionForFirmMock.mockResolvedValue(undefined);
+    gateVerifiedMock.mockResolvedValue(false);
+
+    const res = await POST(makeReq(draftToken), {
+      params: Promise.resolve({ token: draftToken }),
+    });
+    expect(res.status).toBe(401);
+
+    const rows = await db
+      .select()
+      .from(intakeForms)
+      .where(eq(intakeForms.token, draftToken));
+    expect(rows[0]?.status).toBe("draft");
+    expect(rows[0]?.submittedAt).toBeNull();
+  }, 30000);
+
   it("200: submits a draft with a complete stored payload (no body)", async () => {
     checkSubmitMock.mockResolvedValue({ allowed: true });
     requireActiveSubscriptionForFirmMock.mockResolvedValue(undefined);

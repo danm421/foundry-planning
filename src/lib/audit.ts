@@ -382,6 +382,10 @@ export type AuditAction =
   | "intake.form.applied"
   | "intake.form.discarded"
   | "intake.form.revoked"
+  // Public-link identity gate: a failed attempt is the signal that someone is
+  // guessing against a live link, so it is audited as well as rate-limited.
+  | "intake.form.verified"
+  | "intake.form.verify_failed"
   | "intake.email_settings.update"
   // Phase 4 — spending transactions / categorization
   | "portal.transaction.create"

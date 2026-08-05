@@ -10,6 +10,7 @@ import {
 } from "@/lib/rate-limit";
 import { loadFormByToken } from "@/lib/intake/queries";
 import { isExpired } from "@/lib/intake/tokens";
+import { isGateVerified } from "@/lib/intake/gate-session";
 import {
   intakeDraftSchema,
   intakeSubmitSchema,
@@ -60,6 +61,12 @@ export async function POST(
       { error: "This form has already been submitted." },
       { status: 409 },
     );
+  }
+
+  // 4b. Identity gate — same authority as the page and autosave. Without this a
+  //     link-holder could freeze a half-finished form as "submitted".
+  if (!(await isGateVerified(form.id))) {
+    return NextResponse.json({ error: "Verification required." }, { status: 401 });
   }
 
   // 5. Race-free finalize: merge an optional last-draft body into the stored

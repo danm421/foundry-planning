@@ -10,6 +10,7 @@ import {
 } from "@/lib/rate-limit";
 import { loadFormByToken } from "@/lib/intake/queries";
 import { isExpired } from "@/lib/intake/tokens";
+import { isGateVerified } from "@/lib/intake/gate-session";
 import { intakeDraftSchema, type IntakePayload } from "@/lib/intake/schema";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +49,12 @@ export async function PATCH(
       { error: "This form has already been submitted." },
       { status: 409 },
     );
+  }
+
+  // 4b. Identity gate — the token alone must not authorize writes, or a
+  //     link-holder could still overwrite or wipe the client's answers.
+  if (!(await isGateVerified(form.id))) {
+    return NextResponse.json({ error: "Verification required." }, { status: 401 });
   }
 
   // 5. Parse + validate body

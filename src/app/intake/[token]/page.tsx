@@ -7,6 +7,8 @@ import {
 } from "@/lib/branding/branding";
 import { IntakeBrandingHeader } from "@/components/intake/branding-header";
 import { IntakeThankYou } from "@/components/intake/thank-you";
+import { IntakeVerifyGate } from "@/components/intake/verify-gate";
+import { isGateVerified } from "@/lib/intake/gate-session";
 import { IntakeClient } from "./intake-client";
 
 // ─── Public intake page ──────────────────────────────────────────────────────
@@ -93,6 +95,14 @@ export default async function IntakePage({
         branding={branding}
       />
     );
+  }
+
+  // Identity gate. The token says WHICH form; it no longer grants access to its
+  // contents. Until the visitor proves the recipient's surname + email we render
+  // the challenge and pass NO payload — an unverified link-holder cannot read
+  // back what the client typed, not even in the RSC stream.
+  if (!(await isGateVerified(form.id))) {
+    return <IntakeVerifyGate token={token} branding={branding} />;
   }
 
   // Active draft — hand off to the client wrapper.

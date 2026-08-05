@@ -24,6 +24,22 @@ vi.mock("@/lib/branding/branding", () => ({
   resolveIntakeBranding: vi.fn(),
 }));
 
+// ─── Mock the identity gate ──────────────────────────────────────────────────
+// Default to verified so the pre-existing branching tests keep exercising the
+// branch they were written for; the gate itself is asserted separately below.
+
+vi.mock("@/lib/intake/gate-session", () => ({
+  isGateVerified: vi.fn(),
+}));
+
+vi.mock("@/components/intake/verify-gate", () => ({
+  IntakeVerifyGate: ({ token }: { token: string }) => (
+    <div data-testid="verify-gate">
+      <span data-testid="gate-token">{token}</span>
+    </div>
+  ),
+}));
+
 // ─── Mock IntakeClient so the branching test stays pure ─────────────────────
 
 vi.mock("../intake-client", () => ({
@@ -31,6 +47,7 @@ vi.mock("../intake-client", () => ({
     token,
     recipientName,
     branding,
+    initialPayload,
   }: {
     token: string;
     recipientName: string | null;
@@ -41,6 +58,9 @@ vi.mock("../intake-client", () => ({
       <span data-testid="token">{token}</span>
       <span data-testid="recipient">{recipientName ?? "anonymous"}</span>
       <span data-testid="branding">{branding?.firmName ?? "none"}</span>
+      {/* Serialized so a payload-leak assertion has something real to catch —
+          without this the leak test would pass no matter what the page did. */}
+      <span data-testid="payload">{JSON.stringify(initialPayload ?? null)}</span>
     </div>
   ),
 }));
@@ -50,11 +70,13 @@ vi.mock("../intake-client", () => ({
 import { loadFormByToken } from "@/lib/intake/queries";
 import { isExpired } from "@/lib/intake/tokens";
 import { resolveIntakeBranding } from "@/lib/branding/branding";
+import { isGateVerified } from "@/lib/intake/gate-session";
 import IntakePage, { generateMetadata } from "../page";
 
 const mockLoadFormByToken = vi.mocked(loadFormByToken);
 const mockIsExpired = vi.mocked(isExpired);
 const mockResolveIntakeBranding = vi.mocked(resolveIntakeBranding);
+const mockIsGateVerified = vi.mocked(isGateVerified);
 
 const ACME_BRANDING = {
   logoUrl: "https://cdn.example/logo.png",
@@ -104,6 +126,7 @@ function makeForm(
 describe("IntakePage server component branching", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mockIsGateVerified.mockResolvedValue(true);
   });
 
   it("renders ExpiredLink when loadFormByToken returns null (missing token)", async () => {
@@ -159,6 +182,48 @@ describe("IntakePage server component branching", () => {
 
     expect(screen.getByRole("heading", { name: /thank you\./i })).toBeInTheDocument();
     expect(screen.queryByTestId("intake-client")).not.toBeInTheDocument();
+  });
+
+  // ─── Identity gate ─────────────────────────────────────────────────────────
+  // The whole point of the gate: holding the link must not be enough to read
+  // back what the client already typed.
+
+  it("renders the verify gate — not the form — for an unverified visitor", async () => {
+    const draftForm = makeForm({
+      status: "draft",
+      recipientName: "Jane Client",
+      payload: { family: { primary: { firstName: "Jane" } } },
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockLoadFormByToken.mockResolvedValue(draftForm as any);
+    mockIsExpired.mockReturnValue(false);
+    mockIsGateVerified.mockResolvedValue(false);
+
+    const jsx = await IntakePage({ params: makeParams() });
+    render(jsx);
+
+    expect(screen.getByTestId("verify-gate")).toBeInTheDocument();
+    expect(screen.getByTestId("gate-token")).toHaveTextContent(TOKEN);
+    expect(screen.queryByTestId("intake-client")).not.toBeInTheDocument();
+  });
+
+  it("does not put the saved payload in the unverified render tree", async () => {
+    const draftForm = makeForm({
+      status: "draft",
+      recipientName: "Jane Client",
+      payload: { family: { primary: { firstName: "Jane", lastName: "Prydwen" } } },
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockLoadFormByToken.mockResolvedValue(draftForm as any);
+    mockIsExpired.mockReturnValue(false);
+    mockIsGateVerified.mockResolvedValue(false);
+
+    const jsx = await IntakePage({ params: makeParams() });
+    const { container } = render(jsx);
+
+    // "Prydwen" is a distinctive value that only exists inside the saved
+    // payload — if the gate leaked it, it would appear in the served markup.
+    expect(container.innerHTML).not.toContain("Prydwen");
   });
 
   it("renders IntakeClient for an active draft, passing token + recipientName (no plan data)", async () => {

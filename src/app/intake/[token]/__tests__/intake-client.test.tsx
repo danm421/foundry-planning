@@ -8,6 +8,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, act, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+// ─── Mock the app router ──────────────────────────────────────────────────────
+// The wrapper bounces to the identity gate via router.refresh() when the gate
+// session lapses (401); jsdom has no mounted router.
+
+const refreshMock = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: refreshMock }),
+}));
+
 // ─── Mock IntakeWizard ────────────────────────────────────────────────────────
 // Exposes controlled buttons that invoke onChange / onSubmit so tests can
 // exercise the client wrapper's fetch wiring without a full wizard render.
@@ -181,6 +190,33 @@ describe("IntakeClient submit wiring", () => {
     );
     expect(patchCalls).toHaveLength(1);
     expect(patchCalls[0][0]).toBe("/api/intake/tok2");
+  });
+
+  // A lapsed gate session means nothing can save any more. Bounce to the gate
+  // rather than let the client keep typing into a form that silently drops
+  // every keystroke — and never tell them the work is safe.
+  it("bounces to the identity gate when autosave 401s (lapsed session)", async () => {
+    vi.useFakeTimers();
+
+    vi.mocked(global.fetch).mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: "Verification required." }),
+    } as Response);
+
+    render(<IntakeClient token="tok401" recipientName={null} initialPayload={{}} />);
+
+    act(() => { fireEvent.click(screen.getByRole("button", { name: "change" })); });
+
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(refreshMock).toHaveBeenCalled();
+    // No "autosave failed" copy — the session is gone, not the network.
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("a failed autosave surfaces a non-blocking error without losing the wizard", async () => {
