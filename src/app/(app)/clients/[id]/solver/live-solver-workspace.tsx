@@ -23,7 +23,7 @@ import { shouldAutoRunMc, AUTO_RUN_DEBOUNCE_MS } from "./auto-run-mc";
 import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-chart";
 import { SolverChartPanel } from "./solver-chart-panel";
 import { SolverKpiStrip } from "./solver-kpi-strip";
-import { SolverPaneDivider } from "./solver-pane-divider";
+import { SolverPaneToggle } from "./solver-pane-toggle";
 import { type InputTab, type ReportKey } from "./report-tab-link";
 import {
   resolveActiveReport,
@@ -129,9 +129,10 @@ const LEFT_TABS: {
   { id: "education", label: "Education", short: "Education", icon: EducationIcon },
 ];
 
-// Persisted, draggable split between the inputs (left) and reports (right) panes.
-const SOLVER_LEFT_PCT_KEY = "foundry.solver.leftPct";
-const SOLVER_LEFT_PCT_DEFAULT = 35;
+// Persisted collapse of the inputs (left) pane, so the reports pane can run the
+// full width of the workspace.
+const SOLVER_LEFT_COLLAPSED_KEY = "foundry.solver.leftCollapsed";
+const SOLVER_INPUTS_PANE_ID = "solver-inputs-pane";
 
 export function LiveSolverWorkspace({
   clientId,
@@ -204,17 +205,19 @@ export function LiveSolverWorkspace({
 
   const [activeTab, setActiveTab] = useState<InputTab>("retirement");
 
-  // Left-pane (inputs) width as a percent of the workspace. Default 35; the user
-  // can drag the divider and we remember their choice across sessions. Read from
-  // localStorage after mount (not in the initializer) so SSR markup stays stable.
-  const [leftPct, setLeftPct] = useState(SOLVER_LEFT_PCT_DEFAULT);
-  const workspaceRef = useRef<HTMLDivElement | null>(null);
+  // Inputs pane collapsed? Starts open and we remember the advisor's choice
+  // across sessions. Read from localStorage after mount (not in the initializer)
+  // so SSR markup stays stable.
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
   useEffect(() => {
-    const stored = Number(window.localStorage.getItem(SOLVER_LEFT_PCT_KEY));
-    if (Number.isFinite(stored) && stored > 0) setLeftPct(stored);
+    setLeftCollapsed(window.localStorage.getItem(SOLVER_LEFT_COLLAPSED_KEY) === "1");
   }, []);
-  const persistLeftPct = useCallback((pct: number) => {
-    window.localStorage.setItem(SOLVER_LEFT_PCT_KEY, String(pct));
+  const toggleLeftPane = useCallback(() => {
+    setLeftCollapsed((prev) => {
+      const next = !prev;
+      window.localStorage.setItem(SOLVER_LEFT_COLLAPSED_KEY, next ? "1" : "0");
+      return next;
+    });
   }, []);
 
   const { showToast } = useToast();
@@ -1210,14 +1213,27 @@ export function LiveSolverWorkspace({
           offset can't see them and leaves a dead gap below the workspace.
           On mobile (<lg) the shell stays min-h-screen: the panes stack and the
           page scrolls normally. */}
+      {/* Collapsed drops the inputs track entirely rather than zeroing it: the
+          hidden pane is out of flow, so a leading 0px track would swallow the
+          rail and push the report pane into the rail's width. */}
       <div
-        ref={workspaceRef}
-        style={{ "--solver-left": `${leftPct}%` } as React.CSSProperties}
-        className="relative grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[var(--solver-left,35%)_minmax(0,1fr)]"
+        className={`relative grid min-h-0 flex-1 grid-cols-1 ${
+          leftCollapsed
+            ? "lg:grid-cols-[1.75rem_minmax(0,1fr)]"
+            : "lg:grid-cols-[35%_1.75rem_minmax(0,1fr)]"
+        }`}
       >
-        {/* LEFT — inputs, independent scroll. The right hairline is drawn by the
-            draggable divider (rendered below), so no lg:border-r here. */}
-        <div className="min-h-0 overflow-x-hidden overflow-y-auto border-b border-hair lg:border-b-0">
+        {/* LEFT — inputs, independent scroll. The boundary hairline is drawn by
+            the toggle rail (the middle column), so no lg:border-r here. Collapse
+            hides the pane on desktop only: below lg the panes stack, the rail is
+            hidden, and the inputs always show. Hidden rather than unmounted so
+            the tab and form state survive a collapse. */}
+        <div
+          id={SOLVER_INPUTS_PANE_ID}
+          className={`min-h-0 overflow-x-hidden overflow-y-auto border-b border-hair lg:border-b-0${
+            leftCollapsed ? " lg:hidden" : ""
+          }`}
+        >
           <div
             role="tablist"
             aria-label="Solver editing surface"
@@ -1428,6 +1444,12 @@ export function LiveSolverWorkspace({
           </div>
         </div>
 
+        <SolverPaneToggle
+          collapsed={leftCollapsed}
+          onToggle={toggleLeftPane}
+          controls={SOLVER_INPUTS_PANE_ID}
+        />
+
         {/* RIGHT — reports, scroll as one document */}
         <div ref={reportPaneRef} className="min-h-0 overflow-y-auto">
           <div className="space-y-4 p-4">
@@ -1567,13 +1589,6 @@ export function LiveSolverWorkspace({
             ) : null}
           </div>
         </div>
-
-        <SolverPaneDivider
-          containerRef={workspaceRef}
-          value={leftPct}
-          onChange={setLeftPct}
-          onCommit={persistLeftPct}
-        />
       </div>
 
       {/* Portaled into the client header row next to the scenario chip. It
