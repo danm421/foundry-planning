@@ -11,6 +11,11 @@ describe("PlaidConsentNotice", () => {
     ).toBeDefined();
   });
 
+  it("hangs the notice off a labelled trigger", () => {
+    render(<PlaidConsentNotice />);
+    expect(screen.getByRole("button", { name: "How Foundry uses Plaid" })).toBeDefined();
+  });
+
   it("links Foundry's Privacy Policy in a new tab", () => {
     render(<PlaidConsentNotice />);
     const link = screen.getByRole("link", { name: "Privacy Policy" });

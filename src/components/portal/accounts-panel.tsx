@@ -94,7 +94,10 @@ export function AccountsPanel({
 
     return (
       <section className="space-y-3">
-        <h2 className="text-[15px] font-semibold text-ink">
+        {/* The transparent y-border + py-2 reproduce the rail hero's box
+            (border + py-2, same 15px line box), so this heading's baseline
+            lands on "Total Net Worth" across the gutter. */}
+        <h2 className="border-y border-transparent py-2 text-[15px] font-semibold text-ink">
           {row.label}: <span className="tabular">{fmtUsd(row.total)}</span>
         </h2>
         <CardList cards={cardsForRow(row)} onOpen={openFor(row)} />

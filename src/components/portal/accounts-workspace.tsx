@@ -311,7 +311,8 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
       <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-[22px] font-semibold text-ink">Accounts</h1>
         {dto.editEnabled && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <PlaidConsentNotice />
             <PlaidLinkButton mode="link" onLinkSuccess={setLinkPayload} />
             <button
               type="button"
@@ -324,7 +325,6 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
           </div>
         )}
       </header>
-      {dto.editEnabled && <PlaidConsentNotice />}
       {linkPayload && (
         <PlaidAccountPicker payload={linkPayload} onClose={() => setLinkPayload(null)} />
       )}
