@@ -140,6 +140,21 @@ describe("POST /api/portal/expenses", () => {
     expect(createExpense).not.toHaveBeenCalled();
   });
 
+  // Task 9 resolution of the Task 7b parked decision. Held back until the plan's
+  // Tasks 9/10 could answer whether an education-goal beneficiary picker was
+  // coming; neither ships one, so the field is denied. Asserted HERE at the
+  // route, not only through the parameterized deny-list test, because that test
+  // draws its cases FROM `PORTAL_REFUSED_FLOW_FIELDS` — dropping a field there
+  // deletes its own coverage. This one reddens instead.
+  it("refuses a create body carrying forFamilyMemberId, naming the field", async () => {
+    const res = await POST(
+      req({ type: "education", name: "Tuition", startYear: 2030, endYear: 2034, forFamilyMemberId: "fm-1" }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "forFamilyMemberId cannot be set from the portal" });
+    expect(createExpense).not.toHaveBeenCalled();
+  });
+
   it("allows a create body carrying an empty dedicatedAccountIds array", async () => {
     const res = await POST(
       req({ type: "other", name: "Vacation", startYear: 2026, endYear: 2040, dedicatedAccountIds: [] }),
@@ -218,6 +233,13 @@ describe("PUT /api/portal/expenses/[id]", () => {
     const res = await PUT(req({ name: "hack", dedicatedAccountIds: ["acct-1"] }), params("e1"));
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "dedicatedAccountIds cannot be set from the portal" });
+    expect(updateExpense).not.toHaveBeenCalled();
+  });
+
+  it("refuses an update body carrying forFamilyMemberId, naming the field", async () => {
+    const res = await PUT(req({ name: "hack", forFamilyMemberId: "fm-1" }), params("e1"));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "forFamilyMemberId cannot be set from the portal" });
     expect(updateExpense).not.toHaveBeenCalled();
   });
 

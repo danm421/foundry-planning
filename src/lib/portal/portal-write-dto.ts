@@ -10,8 +10,10 @@
 // `ownerAccountId` (`assertEntitiesInClient` / `assertAccountsInClient` check
 // only that the target belongs to the CLIENT, never that it is
 // PORTAL-VISIBLE per `isPortalVisibleAccount`), `cashAccountId` and
-// `dedicatedAccountIds` (which bucket a projection draws from), and
-// `linkedPropertyId` (incomes only). Task 4 already ships these ids to the
+// `dedicatedAccountIds` (which bucket a projection draws from),
+// `linkedPropertyId` (incomes only) and `forFamilyMemberId` (expenses only, and
+// the one field here with no ownership check behind it at all). Task 4 already
+// ships these ids to the
 // browser as opaque UUIDs — no names or balances, so reading them back is not
 // a boundary breach — but accepting them back as write targets is: a client
 // could redirect a living expense's funding account to a hidden business
@@ -22,7 +24,7 @@
 // Refuse, don't strip. A silent strip would let a client believe they saved a
 // funding account that never landed.
 
-/** The five advisor-only pointer fields, across both incomes and expenses.
+/** The advisor-only pointer fields, across both incomes and expenses.
  *  Kept in ONE place so POST and PUT cannot drift on which fields they check. */
 export const PORTAL_REFUSED_FLOW_FIELDS = [
   "ownerEntityId",
@@ -30,6 +32,16 @@ export const PORTAL_REFUSED_FLOW_FIELDS = [
   "cashAccountId",
   "dedicatedAccountIds",
   "linkedPropertyId",
+  // Expenses only, and the WEAKEST of the set: `expenses-writes.ts` writes
+  // `forFamilyMemberId` with no ownership check at all, so only the DB's global
+  // FK stands between a hand-rolled request and another tenant's family-member
+  // id. Refused rather than root-caused because the fix at the write-core would
+  // change the ADVISOR's surface too; this branch's charter is the portal
+  // boundary. Held back until Task 9/10 could answer whether an education-goal
+  // BENEFICIARY PICKER was coming, since that picker is the one thing that
+  // would legitimately set this field — neither task ships one, and neither
+  // client component even passes `familyMemberOptions`, so it is denied.
+  "forFamilyMemberId",
 ] as const;
 
 /**
