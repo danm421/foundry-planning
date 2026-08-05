@@ -1219,8 +1219,8 @@ export function LiveSolverWorkspace({
       <div
         className={`relative grid min-h-0 flex-1 grid-cols-1 ${
           leftCollapsed
-            ? "lg:grid-cols-[1.75rem_minmax(0,1fr)]"
-            : "lg:grid-cols-[35%_1.75rem_minmax(0,1fr)]"
+            ? "lg:grid-cols-[2.75rem_minmax(0,1fr)]"
+            : "lg:grid-cols-[35%_2.75rem_minmax(0,1fr)]"
         }`}
       >
         {/* LEFT — inputs, independent scroll. The boundary hairline is drawn by
