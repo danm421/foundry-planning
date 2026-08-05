@@ -7,6 +7,8 @@ import {
   OwnerField,
   inputCls,
   labelCls,
+  labelFor,
+  money,
   ownerOptions,
   selectCls,
 } from "./card-list";
@@ -44,6 +46,10 @@ function blankIncome(): IncomeItem {
 }
 
 // ─── IncomeStep ───────────────────────────────────────────────────────────────
+//
+// One income source is open for editing at a time; every other one collapses to
+// a summary row (name · type · owner · annual amount) with Edit / remove
+// controls — the same shape as the Accounts step.
 
 export function IncomeStep({
   value,
@@ -54,6 +60,8 @@ export function IncomeStep({
 }: IncomeStepProps) {
   const income = value ?? [];
   const ownerOpts = ownerOptions({ clientName, spouseName, hasSpouse });
+
+  const total = income.reduce((sum, item) => sum + (item.annualAmount ?? 0), 0);
 
   function addIncome() {
     onChange([...income, blankIncome()]);
@@ -69,12 +77,21 @@ export function IncomeStep({
 
   return (
     <CardList
-      heading="Income"
       addLabel="Add income"
-      emptyMessage="No income sources added yet."
+      emptyMessage="No income sources added yet"
+      emptyHint="Add salary, Social Security, business, and any other income."
       items={income}
+      kpis={[
+        { label: "Total annual income", value: money(total) },
+        { label: "Income sources", value: String(income.length) },
+      ]}
       onAdd={addIncome}
       onRemove={removeIncome}
+      renderSummary={(item) => ({
+        title: item.name?.trim() || "Untitled income",
+        subtitle: `${labelFor(TYPE_OPTIONS, item.type)} · ${labelFor(ownerOpts, item.owner)}`,
+        amount: item.annualAmount,
+      })}
       renderItem={(item, i) => {
         const idp = `income-${i}`;
         return (

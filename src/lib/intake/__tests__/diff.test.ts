@@ -71,6 +71,19 @@ describe("buildIntakeDiff", () => {
     expect(diff.accounts.submittedItems[1].secondary).toBe("cash · client");
   });
 
+  it("surfaces the income owner so the advisor approves whose income it is", () => {
+    const withIncome: IntakePayload = {
+      ...minPayload,
+      income: [
+        { name: "Consulting", type: "business", annualAmount: 40000, owner: "spouse" },
+        { name: "Day job", type: "salary", annualAmount: 120000, owner: "client" },
+      ],
+    };
+    const diff = buildIntakeDiff(null, withIncome);
+    expect(diff.income.submittedItems[0].secondary).toBe("business · spouse");
+    expect(diff.income.submittedItems[1].secondary).toBe("salary · client");
+  });
+
   it("detects goals retirement age change", () => {
     const updated: IntakePayload = {
       ...minPayload,

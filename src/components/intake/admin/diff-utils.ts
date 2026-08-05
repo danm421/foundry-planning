@@ -92,13 +92,15 @@ export function buildIntakeDiff(
     })),
   };
 
+  // Owner rides along here too: apply writes it onto the income row, so the
+  // advisor has to see whose income they're approving.
   const income: ListSectionDiff = {
     baselineCount: baseline?.income.length ?? 0,
     submittedCount: submitted.income.length,
     submittedItems: submitted.income.map((i) => ({
       name: i.name,
       value: i.annualAmount,
-      secondary: i.type,
+      secondary: [i.type, i.owner].filter(Boolean).join(" · "),
     })),
   };
 
