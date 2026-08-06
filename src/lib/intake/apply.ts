@@ -88,6 +88,11 @@ type ApplyResult = {
   // mortgage liability, each audited like the account itself.
   expenseIds: string[];
   liabilityIds: string[];
+  /**
+   * Drives the `client.base_facts.update` audit. Set by the Family scalars block
+   * AND by the Goals retirement-age write — either one changes a base fact, and
+   * a Goals-only form must not lose its audit trail.
+   */
   familyScalarsChanged: boolean;
 };
 
@@ -207,19 +212,43 @@ async function applySectionsToClient(
   // 1-indexed, matching liabilities.start_month / balance_as_of_month.
   const currentMonth = now.getMonth() + 1;
 
-  // The projection horizon is anchored to the primary's birth year. A form that
-  // did not collect Family has none, so fall back to the CRM contact the client
-  // already has — `clients` carries no birth date of its own, only planEndAge.
-  const primaryDob = primary?.dateOfBirth ?? (await primaryDobFromCrm(tx, client.crmHouseholdId));
-  const primaryDobYear = new Date(primaryDob).getFullYear();
-  const planEndYear = primaryDobYear + client.planEndAge;
+  /**
+   * The birth-date anchors: the primary's date of birth, its year, and the
+   * projection horizon. A form that did not collect Family carries no date, so
+   * this falls back to the CRM contact the client already has — `clients`
+   * carries no birth date of its own, only planEndAge.
+   *
+   * LAZY and memoized (at most one query, and only if something asks). A
+   * documents-only or family-only apply writes nothing anchored to a birth date,
+   * and CRM contacts frequently carry no DOB, so resolving this eagerly would
+   * hard-fail the flagship documents-only send on a value it never uses. The
+   * throw inside `primaryDobFromCrm` still fires the moment a section that DOES
+   * need an anchor is applied — which is exactly when guessing would be unsafe.
+   */
+  let anchorsPromise: Promise<{ dob: string; dobYear: number; planEndYear: number }> | undefined;
+  const anchors = () =>
+    (anchorsPromise ??= (async () => {
+      const dob = primary?.dateOfBirth ?? (await primaryDobFromCrm(tx, client.crmHouseholdId));
+      const dobYear = new Date(dob).getFullYear();
+      return { dob, dobYear, planEndYear: dobYear + client.planEndAge };
+    })());
 
-  // The ages this apply is settling on — written to the client row below and
+  // The ages this apply is settling on — persisted by the Goals block below and
   // used to place every milestone-anchored row. One source so the anchors can't
   // disagree with the retirement age actually persisted.
-  const clientRetirementAge = payload.goals.clientRetirementAge ?? client.retirementAge;
+  //
+  // A section the form did not collect contributes NOTHING, which is why the
+  // payload read is gated rather than taken at face value: a PREFILLED form
+  // seeded its `goals` from a plan snapshot at SEND time, so a form that does
+  // not collect Goals still carries a retirement age the client never saw. Any
+  // advisor edit made between the send and the submit would be silently
+  // reverted by honouring it.
+  const clientRetirementAge =
+    (sections.includes("goals") ? payload.goals.clientRetirementAge : undefined) ??
+    client.retirementAge;
   const spouseRetirementAge =
-    payload.goals.spouseRetirementAge ?? client.spouseRetirementAge;
+    (sections.includes("goals") ? payload.goals.spouseRetirementAge : undefined) ??
+    client.spouseRetirementAge;
 
   // ── Family scalars ────────────────────────────────────────────────────────
   // Primary + spouse CRM contacts (source of truth) via the shared upsert: the
@@ -263,16 +292,14 @@ async function applySectionsToClient(
         .where(eq(crmHouseholds.id, client.crmHouseholdId));
     }
 
-    // Planning client scalars: retirement ages + filing status.
+    // Planning client scalars owned by THIS step: filing status only. It derives
+    // from the primary's marital status, so it genuinely belongs to Family. The
+    // retirement ages are typed on the Goals step and are written by the Goals
+    // block below — see the note there.
     const filingStatus = maritalToFilingStatus(primary.maritalStatus);
     await tx
       .update(clients)
-      .set({
-        retirementAge: clientRetirementAge,
-        spouseRetirementAge,
-        filingStatus,
-        updatedAt: new Date(),
-      })
+      .set({ filingStatus, updatedAt: new Date() })
       .where(eq(clients.id, clientId));
 
     // Sync family_members role=client/spouse name + DOB (keeps the planning-side
@@ -297,6 +324,26 @@ async function applySectionsToClient(
         })
         .where(and(eq(familyMembers.clientId, clientId), eq(familyMembers.role, "spouse")));
     }
+  }
+
+  // ── Retirement ages ───────────────────────────────────────────────────────
+  // Persisted under GOALS, not Family: the client types both on the Goals step,
+  // and `clients.retirement_age` is what the projection loader re-derives every
+  // `client_retirement`-anchored row from on load. Gating this write on Family
+  // fails in both directions — a Goals-without-Family form would have the
+  // client's typed age silently discarded (the anchored rows written here would
+  // snap back to the old age on the next load), and a Family-without-Goals form
+  // would write a stale seeded age back over the advisor's live plan.
+  if (sections.includes("goals")) {
+    await tx
+      .update(clients)
+      .set({
+        retirementAge: clientRetirementAge,
+        spouseRetirementAge,
+        updatedAt: new Date(),
+      })
+      .where(eq(clients.id, clientId));
+    result.familyScalarsChanged = true;
   }
 
   // ── Children ──────────────────────────────────────────────────────────────
@@ -367,9 +414,10 @@ async function applySectionsToClient(
   // stored here is the one `resolveRefYears` recomputes on load. `plan_start` is
   // unused by income anchors; currentYear stands in for it.
   if (sections.includes("income")) {
+    const { dob, planEndYear } = await anchors();
     const milestones = buildClientMilestones(
       {
-        dateOfBirth: primaryDob,
+        dateOfBirth: dob,
         retirementAge: clientRetirementAge,
         planEndAge: client.planEndAge,
         spouseDob: spouse?.dateOfBirth ?? null,
@@ -413,6 +461,8 @@ async function applySectionsToClient(
   //                  expense running to plan end and growing with inflation.
   //   liabilities  — when a mortgage with a balance was declared.
   if (sections.includes("property")) {
+    // Needed only for the insurance expense's plan-end horizon.
+    const { planEndYear } = await anchors();
     for (const property of payload.property) {
       const isRealEstate = property.kind === "real_estate";
       const [row] = await tx
@@ -591,13 +641,18 @@ async function applySectionsToClient(
         .set({ annualAmount: amount, updatedAt: new Date() })
         .where(eq(expenses.id, existing.id));
     } else {
+      // Only the INSERT needs a birth-date anchor; the far more common UPDATE
+      // above rewrites an amount and nothing else.
+      const { dobYear, planEndYear } = await anchors();
       await tx.insert(expenses).values({
         clientId,
         scenarioId,
         type: "living",
         name: "Retirement Living Expenses",
         annualAmount: amount,
-        startYear: primaryDobYear + (payload.goals.clientRetirementAge ?? client.retirementAge),
+        // The same age the Goals block persists — one source, so the row and
+        // `clients.retirement_age` can't disagree.
+        startYear: dobYear + clientRetirementAge,
         startYearRef: "client_retirement",
         endYear: planEndYear,
         endYearRef: "plan_end",

@@ -29,6 +29,11 @@ import {
 } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { snapshotClientToPayload } from "../snapshot";
+import { DEFAULT_INTAKE_SECTIONS } from "../sections";
+
+// `sections` is a required argument — these cases all exercise the default
+// (everything-but-risk) set; the two at the bottom pass their own.
+const ALL = [...DEFAULT_INTAKE_SECTIONS];
 
 const FIRM = "test-firm-snapshot-intake-2026";
 const ADVISOR = "user_test_snapshot";
@@ -151,7 +156,7 @@ describe("snapshotClientToPayload", () => {
   // this file). These cases call the seeder with the DEFAULT section set, which
   // does include Family, so the `!` is asserting exactly that.
   it("returns family.primary from the primary contact", async () => {
-    const payload = await snapshotClientToPayload(clientId, FIRM);
+    const payload = await snapshotClientToPayload(clientId, FIRM, ALL);
     expect(payload.family!.primary.firstName).toBe("Alice");
     expect(payload.family!.primary.lastName).toBe("Tester");
     expect(payload.family!.primary.dateOfBirth).toBe("1970-03-15");
@@ -159,12 +164,12 @@ describe("snapshotClientToPayload", () => {
   });
 
   it("returns stateOfResidence from the household", async () => {
-    const payload = await snapshotClientToPayload(clientId, FIRM);
+    const payload = await snapshotClientToPayload(clientId, FIRM, ALL);
     expect(payload.family!.stateOfResidence).toBe("CA");
   });
 
   it("returns children from familyMembers role=child", async () => {
-    const payload = await snapshotClientToPayload(clientId, FIRM);
+    const payload = await snapshotClientToPayload(clientId, FIRM, ALL);
     expect(payload.family!.children).toHaveLength(1);
     expect(payload.family!.children[0].firstName).toBe("Bobby");
     expect(payload.family!.children[0].lastName).toBe("Tester");
@@ -213,7 +218,7 @@ describe("snapshotClientToPayload", () => {
       .values({ accountId: acct.id, familyMemberId: spouseFmId, percent: "1.0000" });
 
     try {
-      const payload = await snapshotClientToPayload(clientId, FIRM);
+      const payload = await snapshotClientToPayload(clientId, FIRM, ALL);
       const brokerage = payload.accounts.find((a) => a.name === "Bob Brokerage");
       expect(brokerage?.basis).toBe(250000);
       expect(brokerage?.owner).toBe("spouse");
@@ -231,7 +236,7 @@ describe("snapshotClientToPayload", () => {
   });
 
   it("returns mapped account with numeric value", async () => {
-    const payload = await snapshotClientToPayload(clientId, FIRM);
+    const payload = await snapshotClientToPayload(clientId, FIRM, ALL);
     const acc = payload.accounts.find((a) => a.name === "401k Rollover");
     expect(acc).toBeDefined();
     expect(acc?.category).toBe("retirement");
@@ -240,7 +245,7 @@ describe("snapshotClientToPayload", () => {
   });
 
   it("returns mapped income with correct type", async () => {
-    const payload = await snapshotClientToPayload(clientId, FIRM);
+    const payload = await snapshotClientToPayload(clientId, FIRM, ALL);
     const inc = payload.income.find((i) => i.name === "Alice Salary");
     expect(inc).toBeDefined();
     expect(inc?.type).toBe("salary");
@@ -249,14 +254,14 @@ describe("snapshotClientToPayload", () => {
   });
 
   it("returns goals.clientRetirementAge from client row", async () => {
-    const payload = await snapshotClientToPayload(clientId, FIRM);
+    const payload = await snapshotClientToPayload(clientId, FIRM, ALL);
     expect(payload.goals.clientRetirementAge).toBe(65);
     expect(payload.goals.spouseRetirementAge).toBe(63);
   });
 
   it("throws when the firmId does not match (org scoping)", async () => {
     await expect(
-      snapshotClientToPayload(clientId, "other-firm"),
+      snapshotClientToPayload(clientId, "other-firm", ALL),
     ).rejects.toThrow();
   });
 
@@ -276,7 +281,7 @@ describe("snapshotClientToPayload", () => {
       .returning();
 
     try {
-      const payload = await snapshotClientToPayload(clientId, FIRM);
+      const payload = await snapshotClientToPayload(clientId, FIRM, ALL);
       const allNames = [
         ...payload.accounts.map((a) => a.name),
         ...payload.property.map((p) => p.name),
@@ -302,7 +307,7 @@ describe("snapshotClientToPayload", () => {
       .returning();
 
     try {
-      const payload = await snapshotClientToPayload(clientId, FIRM);
+      const payload = await snapshotClientToPayload(clientId, FIRM, ALL);
       const prop = payload.property.find((p) => p.name === "Primary Home");
       expect(prop).toBeDefined();
       expect(prop?.kind).toBe("real_estate");
@@ -352,7 +357,7 @@ describe("snapshotClientToPayload", () => {
       .returning();
 
     try {
-      const payload = await snapshotClientToPayload(clientId, FIRM);
+      const payload = await snapshotClientToPayload(clientId, FIRM, ALL);
       const prop = payload.property.find((p) => p.name === "Mortgaged Home");
       expect(prop?.annualPropertyTax).toBe(12000);
       expect(prop?.mortgage?.balance).toBe(420000);

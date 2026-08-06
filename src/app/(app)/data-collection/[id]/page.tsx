@@ -21,16 +21,19 @@ export default async function DataCollectionReviewPage({ params }: Props) {
   const form = await loadFormForFirm(id, orgId);
   if (!form) notFound();
 
-  const parseResult = intakeSubmitSchemaFor(sectionsForForm(form.sections)).safeParse(
-    form.payload,
-  );
+  const sections = sectionsForForm(form.sections);
+  const parseResult = intakeSubmitSchemaFor(sections).safeParse(form.payload);
   if (!parseResult.success) notFound();
   const submitted = parseResult.data;
 
   let baseline = null;
   if (form.clientId) {
     try {
-      baseline = await snapshotClientToPayload(form.clientId, orgId);
+      // Same section set the submission was parsed against. An un-sectioned
+      // baseline would carry live accounts/income the form never asked for, and
+      // the list diffs would render "3 → 0" — a deletion, on the very screen
+      // where the advisor decides whether to write this to the plan.
+      baseline = await snapshotClientToPayload(form.clientId, orgId, sections);
     } catch {
       // client not found or no scenario — treat as no baseline
       baseline = null;

@@ -22,10 +22,7 @@ import {
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import type { IntakePayload } from "@/lib/intake/schema";
-import {
-  DEFAULT_INTAKE_SECTIONS,
-  type IntakeSectionKey,
-} from "@/lib/intake/sections";
+import type { IntakeSectionKey } from "@/lib/intake/sections";
 import { incomeFormYears } from "@/lib/intake/income-years";
 
 // ── DB → form category mapping ────────────────────────────────────────────────
@@ -175,7 +172,11 @@ export async function snapshotClientToPayload(
   // Seeding a section the form does not collect would put data in the payload
   // that the client never sees and apply never writes — dead weight at best,
   // and a stale-data hazard if the apply gate ever regresses.
-  sections: readonly IntakeSectionKey[] = [...DEFAULT_INTAKE_SECTIONS],
+  //
+  // REQUIRED, deliberately. A default here reads as harmless and isn't: it lets
+  // a caller that forgot to thread the form's sections through compile clean and
+  // silently snapshot everything. Callers pass `sectionsForForm(form.sections)`.
+  sections: readonly IntakeSectionKey[],
 ): Promise<IntakePayload> {
   // ── 1. Load client row ────────────────────────────────────────────────────
   const [client] = await db
