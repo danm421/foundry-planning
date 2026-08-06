@@ -24,6 +24,7 @@ vi.mock("@/lib/tax-returns/load-analysis-context", () => ({ loadAnalysisContext:
 
 import { getTaxReturn, deleteTaxReturn } from "@/lib/tax-returns/store";
 import { saveReviewedFacts } from "@/lib/tax-returns/save-facts";
+import { EmptyRecomputeError } from "@/lib/tax-returns/errors";
 import { loadAnalysisContext } from "@/lib/tax-returns/load-analysis-context";
 import { emptyTaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 import { createTaxResolver } from "@/lib/tax/resolver";
@@ -131,6 +132,22 @@ describe("PUT .../tax-returns/[taxYear]", () => {
     );
     expect(res.status).toBe(400);
     expect(saveReviewedFacts).not.toHaveBeenCalled();
+  });
+
+  it("409s with a clear message rather than blanking a document-less return", async () => {
+    vi.mocked(saveReviewedFacts).mockRejectedValue(new EmptyRecomputeError("r1"));
+    const res = await PUT(
+      new NextRequest("http://test", {
+        method: "PUT",
+        body: JSON.stringify({ facts: emptyTaxReturnFacts(2025) }),
+        headers: { "content-type": "application/json" },
+      }),
+      routeParams,
+    );
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error).toBe("empty_return");
+    expect(body.message).toMatch(/document/i);
   });
 });
 

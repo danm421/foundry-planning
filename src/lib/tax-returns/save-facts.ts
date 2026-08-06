@@ -2,6 +2,8 @@ import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 import { listDocuments, getState, putOverrides, rowToMergeDocument } from "./documents-store";
 import { mergeDocuments } from "./merge/merge-documents";
 import { diffOverrides } from "./merge/overrides";
+import { EmptyRecomputeError } from "./errors";
+import { isUndefinedTable } from "./pg-errors";
 import { recomputeFacts } from "./recompute";
 import { getTaxReturn, updateFacts, setStatus } from "./store";
 
@@ -18,7 +20,20 @@ import { getTaxReturn, updateFacts, setStatus } from "./store";
  * convenience: `MissingTaxReturnStateError` exists so a row the backfill
  * deliberately refused is never recomputed against an empty override map,
  * which would discard the advisor's corrections wholesale. Creating the state
- * row here would disarm that guard one call earlier.
+ * row here would disarm that guard one call earlier. A `getState` that fails
+ * with Postgres `undefined_table` (migration `0233` not applied yet) takes
+ * the same legacy path: if the tables don't exist, no state row and no
+ * overrides exist anywhere, so the direct write loses nothing — same
+ * degrade-not-500 posture as `assemble-analysis.ts`'s read path.
+ *
+ * `putOverrides` commits immediately, before `recomputeFacts` gets a chance
+ * to refuse — so the empty-derivation guard `recomputeFacts` already applies
+ * is checked here too, BEFORE the write, not just inside it. Without this, a
+ * document-less return (every manually-entered/backfilled row with no
+ * documents at all: `planBackfill`'s `document: null` case) whose advisor
+ * clears every field would diff to `{}`, `putOverrides` would commit that
+ * over the overrides holding its only data, and only then would
+ * `recomputeFacts` refuse — too late, the data is already gone.
  */
 export async function saveReviewedFacts(args: {
   clientId: string;
@@ -29,7 +44,13 @@ export async function saveReviewedFacts(args: {
   const row = await getTaxReturn(args.clientId, args.taxYear);
   if (!row) return null;
 
-  const state = await getState(row.id);
+  let state;
+  try {
+    state = await getState(row.id);
+  } catch (err) {
+    if (!isUndefinedTable(err)) throw err;
+    state = null;
+  }
   if (!state) {
     const updated = await updateFacts(args.clientId, args.taxYear, args.submitted, args.nextStatus);
     return updated ? { taxYear: updated.taxYear, status: updated.status } : null;
@@ -37,7 +58,12 @@ export async function saveReviewedFacts(args: {
 
   const docs = await listDocuments(row.id);
   const base = mergeDocuments(args.taxYear, docs.map(rowToMergeDocument)).facts;
-  await putOverrides(row.id, diffOverrides(base, args.submitted));
+  const overrides = diffOverrides(base, args.submitted);
+  if (docs.length === 0 && Object.keys(overrides).length === 0) {
+    throw new EmptyRecomputeError(row.id);
+  }
+
+  await putOverrides(row.id, overrides);
   await recomputeFacts(row.id, args.taxYear);
 
   if (args.nextStatus) {

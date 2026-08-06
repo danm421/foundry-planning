@@ -6,6 +6,7 @@ import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz
 import { recordAudit } from "@/lib/audit";
 import { deleteTaxReturn } from "@/lib/tax-returns/store";
 import { saveReviewedFacts } from "@/lib/tax-returns/save-facts";
+import { EmptyRecomputeError } from "@/lib/tax-returns/errors";
 import { assembleTaxAnalysis, parseYear } from "@/lib/tax-returns/assemble-analysis";
 import { taxReturnFactsSchema } from "@/lib/schemas/tax-return-facts";
 
@@ -76,12 +77,31 @@ export async function PUT(
       );
     }
     const nextStatus = parsed.data.reopen ? "needs_review" : parsed.data.markReady ? "ready" : undefined;
-    const saved = await saveReviewedFacts({
-      clientId: id,
-      taxYear,
-      submitted: parsed.data.facts,
-      nextStatus,
-    });
+    let saved;
+    try {
+      saved = await saveReviewedFacts({
+        clientId: id,
+        taxYear,
+        submitted: parsed.data.facts,
+        nextStatus,
+      });
+    } catch (err) {
+      if (err instanceof EmptyRecomputeError) {
+        // Same refusal as removing the last document (Task 7): this return
+        // has no documents, so its data lives only in overrides, and saving
+        // with everything blank would erase the only copy. The advisor
+        // deletes the YEAR if that is what they meant.
+        return NextResponse.json(
+          {
+            error: "empty_return",
+            message:
+              "This year has no supporting documents, so its data lives only in these fields. Saving with everything blank would erase it. Delete the year instead if that's what you want.",
+          },
+          { status: 409 },
+        );
+      }
+      throw err;
+    }
     if (!saved) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     await recordAudit({
