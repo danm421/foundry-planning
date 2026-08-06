@@ -141,6 +141,24 @@ describe("DialogShell", () => {
     trigger.remove();
   });
 
+  it("focuses a [data-autofocus] field on open so the user can type immediately", () => {
+    render(
+      <DialogShell open title="T" onOpenChange={() => {}}>
+        <input aria-label="Name" data-autofocus />
+      </DialogShell>
+    );
+    expect(document.activeElement).toBe(screen.getByLabelText("Name"));
+  });
+
+  it("falls back to focusing the surface when no field opts in", () => {
+    render(
+      <DialogShell open title="T" onOpenChange={() => {}}>
+        <input aria-label="Name" />
+      </DialogShell>
+    );
+    expect(document.activeElement).toBe(screen.getByRole("dialog"));
+  });
+
   it("wraps Tab from the last focusable back to the first (focus trap)", () => {
     render(
       <DialogShell

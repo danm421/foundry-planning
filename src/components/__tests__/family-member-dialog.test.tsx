@@ -86,6 +86,13 @@ describe("FamilyMemberDialog", () => {
     expect(onSaved).toHaveBeenCalledWith(expect.anything(), "edit");
   });
 
+  it("focuses First Name on open so a child can be typed straight in", () => {
+    render(
+      <FamilyMemberDialog clientId="c1" open onOpenChange={() => {}} onSaved={vi.fn()} />,
+    );
+    expect(document.activeElement).toBe(screen.getByLabelText(/first name/i));
+  });
+
   it("renders a Delete button when editing + onRequestDelete is passed", () => {
     const onRequestDelete = vi.fn();
     render(
