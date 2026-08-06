@@ -22,6 +22,7 @@ function makeForm(overrides: Partial<IntakeFormRow> = {}): IntakeFormRow {
     recipientEmail: "jane@example.com",
     recipientName: "Jane Doe",
     payload: {} as IntakeFormRow["payload"],
+    sections: null,
     createdByUserId: "user-1",
     sentAt: null,
     openedAt: null,

@@ -27,6 +27,7 @@ import type { BracketTier, SaversCreditTier } from "@/lib/tax/types";
 import type { IrmaaTier } from "@/engine/types";
 import type { TrustSubType } from "@/lib/entities/trust";
 import type { IntakePayload } from "@/lib/intake/schema";
+import type { IntakeSectionKey } from "@/lib/intake/sections";
 import type { ReportLayoutEntry } from "@/lib/solver/report-layout";
 import type {
   NotificationCategory,
@@ -5454,6 +5455,14 @@ export const intakeForms = pgTable("intake_forms", {
   recipientEmail: text("recipient_email").notNull(),
   recipientName: text("recipient_name"),
   payload: jsonb("payload").$type<IntakePayload>().notNull().default({} as unknown as IntakePayload),
+  // Which sections this form collects. NULL means DEFAULT_INTAKE_SECTIONS —
+  // which is what every pre-existing row means, so this column never needs a
+  // backfill and is safe in either deploy order (old code ignores it, new code
+  // reads null and gets today's behaviour).
+  //
+  // Snapshotted at SEND time on purpose: editing your saved default must never
+  // reshape a form already out with a client.
+  sections: jsonb("sections").$type<IntakeSectionKey[]>(),
   createdByUserId: text("created_by_user_id").notNull(),
   sentAt: timestamp("sent_at"),
   // First time the recipient loaded the form by token. `sent_at` records that
@@ -5487,6 +5496,11 @@ export const intakeEmailSettings = pgTable(
     fromName: text("from_name"),
     subject: text("subject"),
     introBody: text("intro_body"),
+    // The advisor's default section set. Same null-means-default contract as
+    // every other column on this table. Lives here rather than in a new table
+    // because POST /api/data-collection already SELECTs this row on the send
+    // path — a separate table would cost a second query for one array.
+    sections: jsonb("sections").$type<IntakeSectionKey[]>(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
