@@ -12,7 +12,7 @@
  * Note: Neon dev branch cold-starts after idle; run with --testTimeout=30000.
  */
 
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, afterEach } from "vitest";
 import { db } from "@/db";
 import {
   accountOwners,
@@ -33,6 +33,7 @@ import { eq, and, inArray } from "drizzle-orm";
 import { createClientForHousehold } from "@/lib/clients/create-client";
 import { newIntakeToken, defaultExpiry } from "../tokens";
 import type { IntakePayload } from "../schema";
+import type { IntakeSectionKey } from "../sections";
 import { applyIntake } from "../apply";
 
 const FIRM = "test-firm-apply-intake-2026";
@@ -120,6 +121,34 @@ async function submitForm(
       recipientEmail: "john@example.com",
       recipientName: "John Smith",
       payload,
+      createdByUserId: advisorId,
+      submittedAt: new Date(),
+      expiresAt: defaultExpiry(new Date()),
+    })
+    .returning();
+  return form.id;
+}
+
+/** Inserts a `submitted` intake form with an explicit section set + payload. */
+async function submitFormWithSections(
+  firmId: string,
+  advisorId: string,
+  clientId: string,
+  sections: IntakeSectionKey[] | null,
+  payload: IntakePayload,
+): Promise<string> {
+  const [form] = await db
+    .insert(intakeForms)
+    .values({
+      firmId,
+      clientId,
+      mode: "blank",
+      status: "submitted",
+      token: newIntakeToken(),
+      recipientEmail: "john@example.com",
+      recipientName: "John Smith",
+      payload,
+      sections,
       createdByUserId: advisorId,
       submittedAt: new Date(),
       expiresAt: defaultExpiry(new Date()),
@@ -830,5 +859,60 @@ describe("applyIntake (household name sync — merge path adds a spouse)", () =>
     await applyIntake({ formId, firmId: SFIRM, actorId: SADVISOR });
 
     expect(await householdName(householdId)).toBe("John & Jane Smith");
+  });
+});
+
+describe("applyIntake — section gating", () => {
+  const FIRM_S = "test-firm-apply-sections-2026";
+  const ADVISOR_S = "user_test_apply_sections";
+  let ids: { householdId?: string; clientId?: string; formId?: string } = {};
+
+  afterEach(async () => {
+    await cleanup(ids);
+    ids = {};
+  });
+
+  it("does not write accounts when the form's sections exclude accounts", async () => {
+    // A PREFILLED form seeded from a plan snapshot still carries account rows
+    // the client never saw. Applying them would write stale snapshot data back
+    // over the live plan.
+    const { householdId, clientId } = await seedJohnSmithHousehold(FIRM_S, ADVISOR_S);
+    const formId = await submitFormWithSections(FIRM_S, ADVISOR_S, clientId, ["family", "documents"], {
+      family: {
+        primary: { firstName: "John", lastName: "Smith", dateOfBirth: "1975-04-01" },
+        children: [],
+      },
+      accounts: [
+        { name: "Stale Brokerage", category: "taxable", value: 100_000, owner: "client" },
+      ],
+      income: [],
+      property: [],
+      goals: { expenseGoals: [], topics: [] },
+      meta: { completedSections: [] },
+    });
+    ids = { householdId, clientId, formId };
+
+    await applyIntake({ formId, firmId: FIRM_S, actorId: ADVISOR_S });
+
+    const rows = await db.select({ name: accounts.name }).from(accounts).where(eq(accounts.clientId, clientId));
+    expect(rows.map((r) => r.name)).not.toContain("Stale Brokerage");
+  });
+
+  it("applies a family-less form for an existing client without throwing", async () => {
+    // No family payload at all — the DOB anchor has to come from the CRM
+    // primary contact seeded above (1975-04-01), not from the payload.
+    const { householdId, clientId } = await seedJohnSmithHousehold(FIRM_S, ADVISOR_S);
+    const formId = await submitFormWithSections(FIRM_S, ADVISOR_S, clientId, ["documents"], {
+      accounts: [],
+      income: [],
+      property: [],
+      goals: { expenseGoals: [], topics: [] },
+      meta: { completedSections: [] },
+    });
+    ids = { householdId, clientId, formId };
+
+    await expect(
+      applyIntake({ formId, firmId: FIRM_S, actorId: ADVISOR_S }),
+    ).resolves.toEqual({ clientId });
   });
 });

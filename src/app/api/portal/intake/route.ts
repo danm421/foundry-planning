@@ -48,9 +48,9 @@ async function resolveAuth(): Promise<{
 // ── GET — seed/load ───────────────────────────────────────────────────────────
 //
 // Loads the active prefilled form for the authenticated portal client.
-// If the stored payload is empty ({} / no `family`), lazily seeds it from the
-// client's live planning data via snapshotClientToPayload, persists the seed,
-// and returns it. Otherwise returns the stored payload.
+// If the stored payload is empty ({} — the column default), lazily seeds it
+// from the client's live planning data via snapshotClientToPayload, persists
+// the seed, and returns it. Otherwise returns the stored payload.
 //
 // Auth chain: requireClientPortalAccess → requirePortalActiveSubscription
 // (NO requireEditEnabled — intake is its own gated surface)
