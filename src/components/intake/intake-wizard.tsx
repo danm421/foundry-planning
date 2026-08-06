@@ -34,13 +34,24 @@ export interface IntakeWizardProps {
   /** Firm letterhead; null/undefined renders the Foundry Planning lockup. */
   branding?: IntakeHeaderBranding | null;
   /** Public link token — the upload zones post to it. Absent in the
-   *  authenticated portal wizard and the advisor's preview, where uploads
-   *  are not offered. */
+   *  authenticated portal wizard and the advisor's preview, neither of which
+   *  uploads anything. */
   token?: string;
   /** Documents already uploaded against this form. */
   documents?: IntakeDocumentView[];
   /** Refetch `documents` — the wizard never fetches, its owner does. */
   onDocumentsChanged?: () => void;
+  /**
+   * Render the upload UI as an inert visual sample: the Documents step and the
+   * three contextual zones appear with their real layout and copy, but nothing
+   * is wired to them. For the advisor's preview, which shows a firm what its
+   * clients will fill in and must make no request while doing it.
+   *
+   * Deliberately a separate flag rather than a placeholder `token`: the sample
+   * has no credential to hand anything, so no code path from the preview can
+   * reach the upload routes. Ignored when the live upload props are present.
+   */
+  sampleUploads?: boolean;
 }
 
 // ─── Section / sub-step state machine ───────────────────────────────────────
@@ -81,9 +92,9 @@ const REVIEW_STEP: StepDescriptor = {
 };
 
 /**
- * The Documents step exists only where uploads do. The portal wizard and the
- * advisor's preview have no public token, so they must not show a step whose
- * only content is an upload zone that can't post anywhere.
+ * The Documents step exists only where an upload surface does — live on the
+ * public form, inert in the advisor's preview. The portal wizard has neither,
+ * so it must not show a step whose only content is a zone it can't use.
  */
 function buildSteps(withDocuments: boolean): readonly StepDescriptor[] {
   return withDocuments
@@ -191,6 +202,7 @@ export function IntakeWizard({
   token,
   documents,
   onDocumentsChanged,
+  sampleUploads,
 }: IntakeWizardProps) {
   // 0 = welcome; 1 = family; 2 = accounts; 3 = income; 4 = property; 5 = goals;
   // then Documents (only where uploads are offered), then review.
@@ -198,13 +210,21 @@ export function IntakeWizard({
   const { setFamily, setAccounts, setIncome, setProperty, setGoals } =
     useDraftSliceSetters(value, onChange);
 
-  // All three or none: a list with no token can't upload, and uploads with no
-  // refetch callback would leave the client staring at a stale list.
+  // Live uploads are all three or none: a list with no token can't upload, and
+  // uploads with no refetch callback would leave the client staring at a stale
+  // list. Falling short of all three doesn't fall back to the sample — that has
+  // to be asked for, so a host that simply forgot a prop still gets nothing.
   const uploads: IntakeUploadContext | undefined =
     token && documents && onDocumentsChanged
-      ? { token, documents, onChanged: onDocumentsChanged }
-      : undefined;
-  const docs = uploads?.documents ?? [];
+      ? { kind: "live", token, documents, onChanged: onDocumentsChanged }
+      : sampleUploads
+        ? { kind: "sample" }
+        : undefined;
+
+  // Only real uploads count as answers. The sample's illustrative row lives
+  // inside the zone and is invisible here on purpose: it must not flip a step's
+  // "Skip for now" to "Next", or the preview would misreport its own copy.
+  const docs = uploads?.kind === "live" ? uploads.documents : [];
 
   const steps = buildSteps(uploads != null);
   const step = steps[flatIndex];

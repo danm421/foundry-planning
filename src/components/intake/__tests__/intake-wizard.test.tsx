@@ -179,9 +179,15 @@ describe("IntakeWizard", () => {
 
 // ─── Uploads ─────────────────────────────────────────────────────────────────
 //
-// Everything above renders the wizard with no upload props, which is also the
-// portal wizard's and the preview's configuration — so those tests double as
-// the "no uploads offered" case (6 chrome steps, no Documents step).
+// The wizard has three upload cases, and each host picks exactly one:
+//
+//   live     the public /intake/[token] form — token + documents + onChanged.
+//   sample   the advisor's preview — `sampleUploads`, an inert visual sample.
+//   none     the portal wizard — no upload props at all, no affordance anywhere.
+//
+// Everything above renders the wizard with no upload props, so those tests
+// double as the `none` case (6 chrome steps, no Documents step). The preview is
+// NOT that case any more: it takes `sampleUploads` and gets 7.
 
 function doc(over: Partial<IntakeDocumentView> & { id: string }): IntakeDocumentView {
   return {
@@ -215,7 +221,8 @@ describe("IntakeWizard uploads", () => {
     ).toBeGreaterThan(0);
     unmount();
 
-    // Same wizard without the upload props keeps its six steps.
+    // The portal wizard's configuration — no upload props, and no `sampleUploads`
+    // either — keeps its six steps.
     render(<IntakeWizard {...makeProps()} />);
     startWizard();
     expect(
@@ -292,5 +299,135 @@ describe("IntakeWizard uploads", () => {
     fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // → Accounts
 
     expect(screen.queryByText(/drag and drop/i)).not.toBeInTheDocument();
+  });
+});
+
+// ─── Sample uploads (the advisor's preview) ──────────────────────────────────
+//
+// `sampleUploads` is the third case: the upload UI renders with its real layout
+// and copy, and nothing is wired to it. The preview page makes no request at
+// all, so these tests police the absence of every mechanism that could make one.
+
+/** Walk from the Family step to Documents. The wizard must already be started. */
+function advanceFromFamilyToDocuments() {
+  fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // Family
+  fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // Accounts
+  fireEvent.click(screen.getByRole("button", { name: /skip for now/i })); // Income
+  fireEvent.click(screen.getByRole("button", { name: /skip for now/i })); // Property
+  fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // Goals
+}
+
+describe("IntakeWizard sample uploads", () => {
+  it("adds the Documents step, exactly as the live form has it", () => {
+    render(<IntakeWizard {...makeProps({ sampleUploads: true })} />);
+    startWizard();
+
+    expect(
+      screen.getAllByText((_, el) => {
+        if (el?.tagName !== "SPAN") return false;
+        return /step\s+1\s*\/\s*7/i.test(el.textContent ?? "");
+      }).length,
+    ).toBeGreaterThan(0);
+
+    advanceFromFamilyToDocuments();
+    expect(screen.getByRole("heading", { name: /^documents$/i })).toBeInTheDocument();
+    expect(screen.getByText("Add a document")).toBeInTheDocument();
+  });
+
+  it("shows the contextual zone on Accounts, Income and Property", () => {
+    render(<IntakeWizard {...makeProps({ sampleUploads: true })} />);
+
+    startWizard();
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // → Accounts
+    expect(screen.getByText("Or upload your statements")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // → Income
+    expect(screen.getByText("Or upload a pay stub or W-2")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /skip for now/i })); // → Property
+    expect(
+      screen.getByText("Upload a mortgage statement or property tax bill"),
+    ).toBeInTheDocument();
+  });
+
+  it("renders no file input, and a drop target that is not a button", () => {
+    const { container } = render(<IntakeWizard {...makeProps({ sampleUploads: true })} />);
+
+    const zones: [label: string, advance: RegExp][] = [
+      ["Or upload your statements", /^next$/i],
+      ["Or upload a pay stub or W-2", /skip for now/i],
+      ["Upload a mortgage statement or property tax bill", /skip for now/i],
+    ];
+
+    startWizard();
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // → Accounts
+    for (const [label, advance] of zones) {
+      // The live zone wraps this copy in a <button> that opens a file picker.
+      // The sample's is a <div>, so there is nothing to click and no input to
+      // open — the two mechanisms that could reach the upload route.
+      expect(screen.getByText(label).closest("button")).toBeNull();
+      expect(container.querySelectorAll('input[type="file"]')).toHaveLength(0);
+      fireEvent.click(screen.getByRole("button", { name: advance }));
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // Goals → Documents
+    expect(screen.getByText("Add a document").closest("button")).toBeNull();
+    expect(container.querySelectorAll('input[type="file"]')).toHaveLength(0);
+  });
+
+  it("shows a sample file row whose Remove button is inert", () => {
+    render(<IntakeWizard {...makeProps({ sampleUploads: true })} />);
+    startWizard();
+    advanceFromFamilyToDocuments();
+
+    const row = screen.getByText("example-tax-return.pdf").closest("li");
+    expect(row).not.toBeNull();
+    expect(row).toHaveTextContent("Tax return");
+
+    // The control renders — the advisor should see it — but cannot fire.
+    expect(
+      screen.getByRole("button", { name: "Remove example-tax-return.pdf" }),
+    ).toBeDisabled();
+  });
+
+  it("offers no way to retrieve the sample document", () => {
+    const { container } = render(<IntakeWizard {...makeProps({ sampleUploads: true })} />);
+    startWizard();
+    advanceFromFamilyToDocuments();
+
+    // Same property the live zone holds: there is no client-facing download
+    // route, so a row must never carry a link or a locator.
+    expect(container.querySelectorAll("a")).toHaveLength(0);
+    expect(container.innerHTML).not.toContain("blob.vercel-storage.com");
+  });
+
+  it("leaves every Skip label reading as it does for a client with nothing uploaded", () => {
+    render(<IntakeWizard {...makeProps({ sampleUploads: true })} />);
+
+    startWizard();
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // → Accounts
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // → Income
+
+    // A live paystub would flip Income to "Next" (see the live suite above); the
+    // sample's rows are invisible to that logic, so the preview keeps showing
+    // the copy a fresh client actually gets.
+    expect(screen.getByRole("button", { name: /skip for now/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /skip for now/i })); // → Property
+    fireEvent.click(screen.getByRole("button", { name: /skip for now/i })); // → Goals
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // → Documents
+
+    // ...including on Documents itself, where a live document would mean "Next".
+    expect(screen.getByRole("button", { name: /skip for now/i })).toBeInTheDocument();
+  });
+
+  it("keeps the live zone when a host passes both — a real token always wins", () => {
+    const { container } = render(
+      <IntakeWizard {...makeProps({ ...uploadProps([]), sampleUploads: true })} />,
+    );
+
+    startWizard();
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // → Accounts
+
+    expect(container.querySelectorAll('input[type="file"]')).toHaveLength(1);
   });
 });

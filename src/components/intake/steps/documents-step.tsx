@@ -2,12 +2,29 @@
 
 import {
   IntakeUploadZone,
+  SampleUploadZone,
   type IntakeUploadContext,
 } from "@/components/intake/intake-upload-zone";
+import type { IntakeDocumentView } from "@/lib/intake/document-types";
 
 export interface DocumentsStepProps {
   uploads: IntakeUploadContext;
 }
+
+/**
+ * One illustrative row for the advisor's preview, so the sample shows the list
+ * state and not only an empty drop target. Named for what it is: nobody
+ * uploaded this, and no advisor should read it as a file a client sent.
+ */
+const SAMPLE_DOCUMENTS: IntakeDocumentView[] = [
+  {
+    id: "sample-tax-return",
+    filename: "example-tax-return.pdf",
+    docType: "tax_return",
+    sizeBytes: 428_000,
+    uploadedAt: "2026-01-01T00:00:00.000Z",
+  },
+];
 
 // ─── DocumentsStep ───────────────────────────────────────────────────────────
 //
@@ -24,14 +41,23 @@ export function DocumentsStep({ uploads }: DocumentsStepProps) {
         policies. Your advisor is the only person who sees these.
       </p>
 
-      <IntakeUploadZone
-        token={uploads.token}
-        docType="other"
-        allowTypeChoice
-        documents={uploads.documents}
-        onChanged={uploads.onChanged}
-        label="Add a document"
-      />
+      {uploads.kind === "sample" ? (
+        <SampleUploadZone
+          docType="other"
+          allowTypeChoice
+          documents={SAMPLE_DOCUMENTS}
+          label="Add a document"
+        />
+      ) : (
+        <IntakeUploadZone
+          token={uploads.token}
+          docType="other"
+          allowTypeChoice
+          documents={uploads.documents}
+          onChanged={uploads.onChanged}
+          label="Add a document"
+        />
+      )}
     </div>
   );
 }
