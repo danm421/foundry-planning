@@ -15,19 +15,27 @@ import { labelCls, selectCls } from "./steps/card-list";
 // ─── Public interface ────────────────────────────────────────────────────────
 
 /**
- * Everything a step needs to offer uploads, in one optional prop.
+ * Everything a step needs to render its upload surface, in one optional prop.
  *
- * `undefined` is the whole contract for "no uploads here": the portal wizard
- * and the advisor's preview have no public token, so they pass nothing and no
- * upload affordance renders anywhere in the wizard.
+ * Three cases, and the type says so:
+ *   `{ kind: "live" }`  the public /intake/[token] form — uploads really post.
+ *   `{ kind: "sample" }` the advisor's preview — the real layout and copy with
+ *                        nothing wired to it. Note it carries NO token field:
+ *                        there is nowhere to put a fake credential, so an inert
+ *                        zone cannot drift into posting somewhere.
+ *   `undefined`          no upload affordance at all — the portal wizard.
  */
-export interface IntakeUploadContext {
-  token: string;
-  /** Every document on the form; each zone filters to the types it owns. */
-  documents: IntakeDocumentView[];
-  /** Refetch the list — the wizard's owner holds it. */
-  onChanged: () => void;
-}
+export type IntakeUploadContext =
+  | {
+      kind: "live";
+      /** The form's public token — the only credential these routes take. */
+      token: string;
+      /** Every document on the form; each zone filters to the types it owns. */
+      documents: IntakeDocumentView[];
+      /** Refetch the list — the wizard's owner holds it. */
+      onChanged: () => void;
+    }
+  | { kind: "sample" };
 
 export interface IntakeUploadZoneProps {
   /** The intake form's public token — the only credential these routes take. */
@@ -77,6 +85,12 @@ const ACCEPTED_EXTENSIONS = [
 ];
 
 const DEFAULT_HINT = `PDF, Word, Excel, CSV, or a photo — up to ${MAX_MB}MB each.`;
+
+/** Shape and spacing of the dashed drop target, shared by the live zone and the
+ *  preview's inert twin so the sample can't drift from what clients see. The
+ *  border colour is the caller's: only a live zone reacts to a drag or a hover. */
+const DROP_ZONE_CLS =
+  "w-full rounded-[var(--radius-sm)] border border-dashed px-4 py-8 text-center transition-colors";
 
 // ─── In-flight uploads ───────────────────────────────────────────────────────
 //
@@ -310,17 +324,11 @@ export function IntakeUploadZone({
           setIsDragging(false);
           if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files);
         }}
-        className={`w-full rounded-[var(--radius-sm)] border border-dashed px-4 py-8 text-center transition-colors ${
+        className={`${DROP_ZONE_CLS} ${
           isDragging ? "border-accent bg-accent-wash" : "border-hair-2 hover:border-accent"
         }`}
       >
-        {/* Spans, not paragraphs: a <button>'s content model is phrasing only. */}
-        <UploadGlyph />
-        <span className="mt-2 block text-[14px] text-ink">{label}</span>
-        <span className="mt-1 block text-[13px] text-ink-3">
-          Drag and drop, or <span className="text-accent">browse</span>
-        </span>
-        <span className="mt-1 block text-[12px] text-ink-4">{hint ?? DEFAULT_HINT}</span>
+        <DropZoneBody label={label} hint={hint} />
       </button>
 
       <input
@@ -366,6 +374,87 @@ export function IntakeUploadZone({
   );
 }
 
+// ─── SampleUploadZone ────────────────────────────────────────────────────────
+
+export interface SampleUploadZoneProps {
+  /** Seeds the type picker, and names the picker's element id. */
+  docType: IntakeDocType;
+  /** Show the "what kind of document is this?" picker, as the Documents step does. */
+  allowTypeChoice?: boolean;
+  /** Illustrative rows, so the advisor sees the list state and not only an
+   *  empty drop target. Nothing here was ever uploaded. */
+  documents?: IntakeDocumentView[];
+  label: string;
+  hint?: string;
+}
+
+/**
+ * The upload zone's layout and copy with nothing wired to it — the advisor's
+ * preview at /data-collection/preview, which must make no request at all.
+ *
+ * Deliberately NOT the live zone in a disabled costume, and deliberately not
+ * the live zone handed a placeholder token: it renders no `<input type="file">`,
+ * opens no picker, and holds no token, so there is no code path from here to
+ * `/api/intake/.../documents` for a future edit to re-enable by accident. The
+ * two pieces most likely to drift from the real thing — the drop-zone copy and
+ * the uploaded-file row — are the same components the live zone renders.
+ *
+ * The type picker is a real `<select>` on purpose: changing it has no
+ * consequence beyond its own local state, and an advisor should see the choices
+ * their client is offered. That matches the rest of the preview, where form
+ * fields accept typing that goes nowhere.
+ */
+export function SampleUploadZone({
+  docType,
+  allowTypeChoice = false,
+  documents = [],
+  label,
+  hint,
+}: SampleUploadZoneProps) {
+  const [selectedType, setSelectedType] = useState<IntakeDocType>(docType);
+  const typePickerId = `intake-sample-doctype-${docType}`;
+
+  return (
+    <div className="space-y-3">
+      {allowTypeChoice && (
+        <div>
+          <label htmlFor={typePickerId} className={labelCls}>
+            What kind of document is this?
+          </label>
+          <select
+            id={typePickerId}
+            className={selectCls}
+            value={selectedType}
+            onChange={(e) => setSelectedType(e.target.value as IntakeDocType)}
+          >
+            {INTAKE_DOC_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {INTAKE_DOC_TYPE_LABELS[t]}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* A div, not a button: there is no picker to open. It keeps the live
+          zone's dimensions and copy but drops the hover cue, so the sample
+          never advertises an affordance it doesn't have. */}
+      <div className={`${DROP_ZONE_CLS} border-hair-2`}>
+        <DropZoneBody label={label} hint={hint} />
+      </div>
+
+      {documents.length > 0 && (
+        <ul className="space-y-2">
+          {documents.map((doc) => (
+            // No `onRemove`: the row's button renders disabled — see DocumentRow.
+            <DocumentRow key={doc.id} doc={doc} />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 // ─── ContextualUploadZone ────────────────────────────────────────────────────
 
 /**
@@ -373,6 +462,10 @@ export function IntakeUploadZone({
  * one fixed type, and a list filtered to that type so a client on the Income
  * step sees their pay stubs and not their will. Renders nothing at all where
  * uploads aren't offered, which is what keeps the portal wizard unchanged.
+ *
+ * The sample carries no rows: one illustrative file on the Documents step is
+ * enough to show the list state, and a fake statement here would clutter the
+ * preview of a step that is really about its card list.
  */
 export function ContextualUploadZone({
   uploads,
@@ -384,6 +477,9 @@ export function ContextualUploadZone({
   label: string;
 }) {
   if (!uploads) return null;
+  if (uploads.kind === "sample") {
+    return <SampleUploadZone docType={docType} label={label} />;
+  }
   return (
     <IntakeUploadZone
       token={uploads.token}
@@ -395,6 +491,23 @@ export function ContextualUploadZone({
   );
 }
 
+// ─── Drop zone body ──────────────────────────────────────────────────────────
+
+/** The glyph and three lines inside the drop target. Spans, not paragraphs: a
+ *  `<button>`'s content model is phrasing only, and the live zone is a button. */
+function DropZoneBody({ label, hint }: { label: string; hint?: string }) {
+  return (
+    <>
+      <UploadGlyph />
+      <span className="mt-2 block text-[14px] text-ink">{label}</span>
+      <span className="mt-1 block text-[13px] text-ink-3">
+        Drag and drop, or <span className="text-accent">browse</span>
+      </span>
+      <span className="mt-1 block text-[12px] text-ink-4">{hint ?? DEFAULT_HINT}</span>
+    </>
+  );
+}
+
 // ─── Rows ────────────────────────────────────────────────────────────────────
 //
 // A row shows a name, a size and a type. There is deliberately no link, no
@@ -403,12 +516,15 @@ export function ContextualUploadZone({
 
 function DocumentRow({
   doc,
-  removing,
+  removing = false,
   onRemove,
 }: {
   doc: IntakeDocumentView;
-  removing: boolean;
-  onRemove: () => void;
+  removing?: boolean;
+  /** Omitted by the preview's sample: the control still renders, so the advisor
+   *  sees it, but disabled — a live-looking button with nowhere to post is
+   *  exactly the confusion an inert sample exists to avoid. */
+  onRemove?: () => void;
 }) {
   const type = intakeDocTypeLabel(doc.docType);
   return (
@@ -424,7 +540,7 @@ function DocumentRow({
       <button
         type="button"
         onClick={onRemove}
-        disabled={removing}
+        disabled={removing || onRemove == null}
         aria-label={`Remove ${doc.filename}`}
         className="shrink-0 rounded-[var(--radius-sm)] border border-hair px-3 py-2 text-[12px] text-ink-2 transition-colors hover:border-crit hover:text-crit disabled:opacity-50"
       >

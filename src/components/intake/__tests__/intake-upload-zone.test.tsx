@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import type { IntakeDocumentView } from "@/lib/intake/document-types";
-import { IntakeUploadZone } from "../intake-upload-zone";
+import { IntakeUploadZone, SampleUploadZone } from "../intake-upload-zone";
 
 // ─── Fake XHR ────────────────────────────────────────────────────────────────
 //
@@ -247,5 +247,96 @@ describe("IntakeUploadZone", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/couldn't remove that file/i);
     expect(onChanged).not.toHaveBeenCalled();
     expect(screen.getByText("brokerage-statement.pdf")).toBeInTheDocument();
+  });
+});
+
+// ─── SampleUploadZone ────────────────────────────────────────────────────────
+//
+// The advisor's preview renders this instead of the live zone. It must show the
+// same layout and copy while holding no token and owning no mechanism that
+// could reach the network — which is what makes it safe on a page whose whole
+// promise is that nothing is saved or sent.
+
+describe("SampleUploadZone", () => {
+  it("shows the live zone's drop-target copy, including the size and format hint", () => {
+    render(<SampleUploadZone docType="statement" label="Add a statement" />);
+
+    expect(screen.getByText("Add a statement")).toBeInTheDocument();
+    expect(screen.getByText(/drag and drop, or/i)).toBeInTheDocument();
+    expect(screen.getByText(/PDF, Word, Excel, CSV, or a photo/i)).toBeInTheDocument();
+  });
+
+  it("renders no file input and no clickable drop target", () => {
+    const { container } = render(
+      <SampleUploadZone docType="statement" label="Add a statement" />,
+    );
+
+    expect(container.querySelectorAll('input[type="file"]')).toHaveLength(0);
+    // The live zone's drop target is a <button> that opens the picker; the
+    // sample's is a <div>, so there is nothing here to click at all.
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("lists a sample document by name, size and type, exactly as the live row does", () => {
+    render(
+      <SampleUploadZone
+        docType="other"
+        documents={[STATEMENT]}
+        label="Add a document"
+      />,
+    );
+
+    const row = screen.getByText("brokerage-statement.pdf").closest("li");
+    expect(row).toHaveTextContent("240 KB · Account statement");
+  });
+
+  it("renders the Remove control disabled — it has nowhere to post", () => {
+    render(
+      <SampleUploadZone
+        docType="other"
+        documents={[STATEMENT]}
+        label="Add a document"
+      />,
+    );
+
+    const remove = screen.getByRole("button", { name: /remove brokerage-statement\.pdf/i });
+    expect(remove).toBeDisabled();
+
+    fireEvent.click(remove);
+    expect(FakeXhr.instances).toHaveLength(0);
+    expect(screen.getByText("brokerage-statement.pdf")).toBeInTheDocument();
+  });
+
+  it("offers no way to retrieve a listed document", () => {
+    const { container } = render(
+      <SampleUploadZone
+        docType="other"
+        documents={[STATEMENT]}
+        label="Add a document"
+      />,
+    );
+
+    expect(container.querySelectorAll("a")).toHaveLength(0);
+    expect(container.querySelectorAll("img")).toHaveLength(0);
+    expect(container.innerHTML).not.toContain("blob.vercel-storage.com");
+  });
+
+  it("offers the same doc-type picker the live zone does, with no consequence", () => {
+    render(<SampleUploadZone docType="other" allowTypeChoice label="Add a document" />);
+
+    const picker = screen.getByLabelText(/what kind of document is this/i);
+    expect(picker).toHaveValue("other");
+    expect(screen.getByRole("option", { name: "Pay stub" })).toBeInTheDocument();
+
+    // Changing it moves local state and nothing else — no request, ever.
+    fireEvent.change(picker, { target: { value: "paystub" } });
+    expect(picker).toHaveValue("paystub");
+    expect(FakeXhr.instances).toHaveLength(0);
+  });
+
+  it("hides the picker when the caller does not ask for it", () => {
+    render(<SampleUploadZone docType="statement" label="Add a statement" />);
+
+    expect(screen.queryByLabelText(/what kind of document is this/i)).toBeNull();
   });
 });
