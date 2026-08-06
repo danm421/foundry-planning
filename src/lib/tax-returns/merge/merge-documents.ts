@@ -9,7 +9,7 @@ import {
 import type {
   DroppedValue, EntityCollection, FieldConflict, MergeDocument, MergeEntity, MergeResult,
 } from "./types";
-import { entityKey, entityPath } from "./paths";
+import { entityKey, entityPath, parseEntityPath } from "./paths";
 
 /** Roles permitted to contribute entities. A W-2 names one employer; it is
  *  never a K-1 and never a Schedule C. */
@@ -95,49 +95,84 @@ function setLeaf(facts: TaxReturnFacts, path: string, value: unknown): void {
  * re-uploaded K-1 UPDATES its entry rather than appending a duplicate.
  * Unkeyable entities (no EIN, no name) are kept under a per-document synthetic
  * key — dropping them would lose a real K-1 over a missing header.
+ *
+ * Conflict resolution mirrors the scalar path exactly (see the loop below vs.
+ * `mergeDocuments`'s own `candidates` loop): every document's non-null value
+ * for a given entity field is accumulated as a `Candidate` first, and only
+ * once every document has been seen is one `FieldConflict` emitted per path —
+ * winner is the true final value, losers are every earlier candidate that
+ * differs from it. Resolving pairwise as documents arrive would let `winner`
+ * drift from what the merge actually kept once a third document showed up,
+ * and would silently drop an earlier document's attribution whenever two
+ * adjacent values happened to repeat before the value changed.
+ *
+ * A document whose role may not contribute entities (anything but
+ * `full_return` / `k1`, and not `other`) records one `DroppedValue` per
+ * entity it tried to write — never silently discarded, mirroring the scalar
+ * path's `dropped.push` for the same "never permissible" situation.
  */
 function mergeEntities(
   docs: MergeDocument[],
   collection: EntityCollection,
   provenance: Record<string, string>,
   conflicts: FieldConflict[],
+  dropped: DroppedValue[],
 ): MergeEntity[] {
-  const byKey = new Map<string, { entity: Record<string, unknown>; key: string }>();
+  const entities = new Map<string, Record<string, unknown>>();
+  const candidates = new Map<string, Candidate[]>();
 
   for (const doc of docs) {
-    if (!doc.facts || !ENTITY_AUTHORITATIVE.has(doc.role)) continue;
-    const list = (doc.facts as unknown as Record<string, unknown>)[collection] as MergeEntity[];
-    if (!Array.isArray(list)) continue;
+    if (!doc.facts) continue;
+    if (doc.role === "other") continue; // stored for the list, never merged — silent on both sides
 
-    for (const [index, incoming] of list.entries()) {
+    const entityList = (doc.facts as unknown as Record<string, unknown>)[collection] as MergeEntity[];
+    if (!Array.isArray(entityList)) continue;
+
+    if (!ENTITY_AUTHORITATIVE.has(doc.role)) {
+      for (const [index, incoming] of entityList.entries()) {
+        const key = entityKey(incoming) ?? `doc:${doc.id}:${index}`;
+        dropped.push({
+          path: entityPath(collection, key, "*"),
+          documentId: doc.id,
+          value: incoming,
+          reason: `a ${doc.role} document cannot contribute ${collection}`,
+        });
+      }
+      continue;
+    }
+
+    for (const [index, incoming] of entityList.entries()) {
       const key = entityKey(incoming) ?? `doc:${doc.id}:${index}`;
-      const existing = byKey.get(key);
-      if (!existing) {
-        byKey.set(key, { entity: { ...(incoming as Record<string, unknown>) }, key });
-        for (const [field, value] of Object.entries(incoming as Record<string, unknown>)) {
-          if (value !== null) provenance[entityPath(collection, key, field)] = doc.id;
-        }
-        continue;
+      if (!entities.has(key)) {
+        entities.set(key, { ...(incoming as Record<string, unknown>) });
       }
       for (const [field, value] of Object.entries(incoming as Record<string, unknown>)) {
         if (value === null || value === undefined) continue;
         const path = entityPath(collection, key, field);
-        const previous = existing.entity[field];
-        const previousDoc = provenance[path];
-        if (previous !== null && previous !== undefined && previous !== value && previousDoc) {
-          conflicts.push({
-            path,
-            winner: { documentId: doc.id, value },
-            losers: [{ documentId: previousDoc, value: previous }],
-          });
-        }
-        existing.entity[field] = value;
-        provenance[path] = doc.id;
+        const fieldCandidates = candidates.get(path) ?? [];
+        fieldCandidates.push({ documentId: doc.id, value });
+        candidates.set(path, fieldCandidates);
       }
     }
   }
 
-  return [...byKey.values()].map((e) => e.entity as unknown as MergeEntity);
+  for (const [path, pathCandidates] of candidates) {
+    const parsed = parseEntityPath(path);
+    if (!parsed) continue; // entityPath always produces a parseable path
+    const winner = pathCandidates[pathCandidates.length - 1];
+    const entity = entities.get(parsed.key);
+    if (entity) entity[parsed.field] = winner.value;
+    provenance[path] = winner.documentId;
+
+    const losers = pathCandidates
+      .slice(0, -1)
+      .filter((c) => c.value !== winner.value);
+    if (losers.length > 0) {
+      conflicts.push({ path, winner, losers });
+    }
+  }
+
+  return [...entities.values()].map((e) => e as unknown as MergeEntity);
 }
 
 /**
@@ -199,7 +234,7 @@ export function mergeDocuments(taxYear: number, docs: MergeDocument[]): MergeRes
   }
 
   for (const collection of ENTITY_COLLECTIONS) {
-    const merged = mergeEntities(docs, collection, provenance, conflicts);
+    const merged = mergeEntities(docs, collection, provenance, conflicts, dropped);
     (facts as unknown as Record<string, unknown>)[collection] = merged;
   }
 
