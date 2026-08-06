@@ -140,14 +140,19 @@ async function firmIdForForm(formId: string): Promise<string> {
 export const MAX_INTAKE_FILES = 25;
 export const MAX_INTAKE_TOTAL_BYTES = 50 * 1024 * 1024;
 
-export type IntakeDocType =
-  | "statement"
-  | "paystub"
-  | "mortgage"
-  | "tax_return"
-  | "estate"
-  | "insurance"
-  | "other";
+/** Single source of truth for the intake doc-type picker (Tasks 8/9 reuse this
+ *  array; do not fork a second literal list — see Task 5 review). */
+export const INTAKE_DOC_TYPES = [
+  "statement",
+  "paystub",
+  "mortgage",
+  "tax_return",
+  "estate",
+  "insurance",
+  "other",
+] as const;
+
+export type IntakeDocType = (typeof INTAKE_DOC_TYPES)[number];
 
 /** What the client is allowed to see: names, never locations. */
 export interface IntakeDocumentView {

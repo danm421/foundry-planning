@@ -10,21 +10,12 @@ import { isGateVerified } from "@/lib/intake/gate-session";
 import {
   uploadIntakeDocument,
   listIntakeDocuments,
+  INTAKE_DOC_TYPES,
   type IntakeDocType,
 } from "@/lib/intake/documents";
 import { MAX_DOCUMENT_SIZE_BYTES } from "@/lib/crm/document-constants";
 
 export const dynamic = "force-dynamic";
-
-const DOC_TYPES: readonly IntakeDocType[] = [
-  "statement",
-  "paystub",
-  "mortgage",
-  "tax_return",
-  "estate",
-  "insurance",
-  "other",
-];
 
 /**
  * Public (no auth), token-scoped document upload for the intake wizard.
@@ -91,7 +82,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     return NextResponse.json({ error: "No file provided." }, { status: 400 });
   }
   const docType = String(formData.get("docType") ?? "other");
-  if (!DOC_TYPES.includes(docType as IntakeDocType)) {
+  if (!(INTAKE_DOC_TYPES as readonly string[]).includes(docType)) {
     return NextResponse.json({ error: "Unknown document type." }, { status: 400 });
   }
 
