@@ -1,4 +1,4 @@
-import { entityKey, ENTITY_COLLECTIONS, parseEntityPath } from "./paths";
+import { entityKey, entityPath, ENTITY_COLLECTIONS, parseEntityPath } from "./paths";
 import { NULLABLE_BLOCK_FACTORIES } from "./nullable-blocks";
 import type { OverrideMap } from "./types";
 import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
@@ -98,7 +98,7 @@ export function diffOverrides(base: TaxReturnFacts, submitted: TaxReturnFacts): 
       const original = baseList.find((e) => entityKey(e) === key);
       for (const [field, value] of Object.entries(entity)) {
         if (!original || original[field] !== value) {
-          overrides[`${collection}[${key}].${field}`] = value;
+          overrides[entityPath(collection, key, field)] = value;
         }
       }
     }

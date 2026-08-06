@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { emptyTaxReturnFacts } from "@/lib/schemas/tax-return-facts";
+import { emptyTaxReturnFacts, taxReturnFactsSchema } from "@/lib/schemas/tax-return-facts";
 import { applyOverrides, diffOverrides } from "../overrides";
 import { deriveProvenance } from "../provenance";
 
@@ -23,6 +23,27 @@ describe("applyOverrides", () => {
     expect(base.deductions.qbi).toBeNull();
     const out = applyOverrides(base, { "deductions.qbi.w2Wages": 60000 });
     expect(out.deductions.qbi?.w2Wages).toBe(60000);
+    // The materialized block must satisfy every OTHER required key too — a
+    // factory that omitted one would pass the assertion above yet fail the
+    // strict schema, exactly the class of bug Task 5's `setLeaf` shipped.
+    expect(taxReturnFactsSchema.safeParse(out).success).toBe(true);
+  });
+
+  it("creates the income.scheduleE nullable block when overriding into it", () => {
+    const base = emptyTaxReturnFacts(2025);
+    expect(base.income.scheduleE).toBeNull();
+    const out = applyOverrides(base, { "income.scheduleE.grossRents": 19600 });
+    expect(out.income.scheduleE?.grossRents).toBe(19600);
+    // `income.scheduleE` is the block with the live `.default(null)`
+    // production trap: parseRowFacts re-validates persisted jsonb through
+    // this exact schema on every read.
+    expect(taxReturnFactsSchema.safeParse(out).success).toBe(true);
+  });
+
+  it("ignores an override into an unknown intermediate block rather than growing the object", () => {
+    const base = emptyTaxReturnFacts(2025);
+    const out = applyOverrides(base, { "income.bogusBlock.field": 1 });
+    expect((out.income as Record<string, unknown>).bogusBlock).toBeUndefined();
   });
 
   it("applies an entity override by merge key, not index", () => {
@@ -36,10 +57,12 @@ describe("applyOverrides", () => {
         section179: null, w2WagesFromEntity: null, qbiIncome: 42000, isSstb: false },
     ];
 
-    const out = applyOverrides(base, { "k1s[98-7654321].w2WagesFromEntity": 85000 });
+    // Target the SECOND entity (index 1), not index 0 — a positional
+    // implementation (`list[0]`) must fail this, not just happen to pass.
+    const out = applyOverrides(base, { "k1s[12-3456789].w2WagesFromEntity": 85000 });
 
-    expect(out.k1s.find((k) => k.ein === "98-7654321")?.w2WagesFromEntity).toBe(85000);
-    expect(out.k1s.find((k) => k.ein === "12-3456789")?.w2WagesFromEntity).toBeNull();
+    expect(out.k1s.find((k) => k.ein === "12-3456789")?.w2WagesFromEntity).toBe(85000);
+    expect(out.k1s.find((k) => k.ein === "98-7654321")?.w2WagesFromEntity).toBeNull();
   });
 
   it("ignores an entity override whose key is no longer present", () => {
