@@ -9,6 +9,7 @@ import { sanitizeFilename, STORAGE_PROVIDER } from "@/lib/crm/documents";
 import { validateDocumentUpload } from "@/lib/files/content-type";
 import { toSafeDisplayFilename } from "@/lib/files/safe-filename";
 import { recordAudit } from "@/lib/audit";
+import type { IntakeDocType, IntakeDocumentView } from "./document-types";
 
 /**
  * Client-uploaded intake documents.
@@ -140,28 +141,16 @@ async function firmIdForForm(formId: string): Promise<string> {
 export const MAX_INTAKE_FILES = 25;
 export const MAX_INTAKE_TOTAL_BYTES = 50 * 1024 * 1024;
 
-/** Single source of truth for the intake doc-type picker (Tasks 8/9 reuse this
- *  array; do not fork a second literal list — see Task 5 review). */
-export const INTAKE_DOC_TYPES = [
-  "statement",
-  "paystub",
-  "mortgage",
-  "tax_return",
-  "estate",
-  "insurance",
-  "other",
-] as const;
-
-export type IntakeDocType = (typeof INTAKE_DOC_TYPES)[number];
-
-/** What the client is allowed to see: names, never locations. */
-export interface IntakeDocumentView {
-  id: string;
-  filename: string;
-  docType: string | null;
-  sizeBytes: number | null;
-  uploadedAt: string;
-}
+/** The doc-type taxonomy and the client-facing view shape live in
+ *  `document-types.ts` so the wizard's client components can import them
+ *  without dragging `@/db` and `@vercel/blob` into the browser bundle. They
+ *  are re-exported here so server callers keep their existing import path. */
+export {
+  INTAKE_DOC_TYPES,
+  INTAKE_DOC_TYPE_LABELS,
+  type IntakeDocType,
+  type IntakeDocumentView,
+} from "./document-types";
 
 function toView(row: typeof crmHouseholdDocuments.$inferSelect): IntakeDocumentView {
   return {
