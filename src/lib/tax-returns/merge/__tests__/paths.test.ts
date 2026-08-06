@@ -19,6 +19,10 @@ describe("entityKey", () => {
     expect(entityKey({ ein: null, entityName: null })).toBeNull();
     expect(entityKey({ ein: null, entityName: "   " })).toBeNull();
   });
+
+  it("keys a business (no ein/entityName fields, just name) by normalized name", () => {
+    expect(entityKey({ name: "Mueller Consulting" })).toBe("name:mueller consulting");
+  });
 });
 
 describe("entityPath / parseEntityPath", () => {

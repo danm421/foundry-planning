@@ -7,11 +7,17 @@ import type { EntityCollection } from "./types";
  * This is deliberately derived from the DOCUMENT's values, not from merged or
  * overridden ones: an advisor correcting a misread entity name must not
  * change the key their other edits are filed under.
+ *
+ * Accepts both entity shapes: a K-1's `entityName`/`ein` and a Schedule C's
+ * `name` (it has neither of the other two). EIN wins when present, then
+ * `entityName`, then `name`.
  */
-export function entityKey(entity: { ein: string | null; entityName: string | null }): string | null {
+export function entityKey(
+  entity: { ein?: string | null; entityName?: string | null; name?: string | null },
+): string | null {
   const ein = entity.ein?.trim();
   if (ein) return ein;
-  const normalized = (entity.entityName ?? "")
+  const normalized = (entity.entityName ?? entity.name ?? "")
     .toLowerCase()
     .replace(/[.,]/g, "")
     .replace(/\s+/g, " ")

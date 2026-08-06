@@ -7,15 +7,23 @@ import {
   type TaxReturnFacts,
 } from "@/lib/schemas/tax-return-facts";
 import type {
-  DroppedValue, FieldConflict, MergeDocument, MergeResult,
+  DroppedValue, EntityCollection, FieldConflict, MergeDocument, MergeEntity, MergeResult,
 } from "./types";
+import { entityKey, entityPath } from "./paths";
+
+/** Roles permitted to contribute entities. A W-2 names one employer; it is
+ *  never a K-1 and never a Schedule C. */
+const ENTITY_AUTHORITATIVE: ReadonlySet<MergeDocument["role"]> = new Set(["full_return", "k1"]);
+
+const ENTITY_COLLECTIONS: readonly EntityCollection[] = ["businesses", "k1s"];
 
 /** Roles permitted to write 1040 aggregate scalars. A W-2 is one of many on
  *  line 1a and a K-1 is one of many inside Schedule 1 line 5, so neither can
  *  ever state the aggregate — this is structural, not a prompt promise. */
 const SCALAR_AUTHORITATIVE: ReadonlySet<MergeDocument["role"]> = new Set(["full_return"]);
 
-/** Blocks walked as scalars. `businesses` / `k1s` are handled in Task 6.
+/** Blocks walked as scalars. `businesses` / `k1s` are entity arrays, merged
+ *  separately by `mergeEntities` below — never scalar leaves.
  *
  *  Precedence inside a nullable block (`income.scheduleE`, `deductions.qbi`,
  *  etc.) is PER-LEAF, same as every other scalar — `collectLeaves` flattens
@@ -83,6 +91,56 @@ function setLeaf(facts: TaxReturnFacts, path: string, value: unknown): void {
 }
 
 /**
+ * Union entities across documents, keyed by EIN or normalized name so that a
+ * re-uploaded K-1 UPDATES its entry rather than appending a duplicate.
+ * Unkeyable entities (no EIN, no name) are kept under a per-document synthetic
+ * key — dropping them would lose a real K-1 over a missing header.
+ */
+function mergeEntities(
+  docs: MergeDocument[],
+  collection: EntityCollection,
+  provenance: Record<string, string>,
+  conflicts: FieldConflict[],
+): MergeEntity[] {
+  const byKey = new Map<string, { entity: Record<string, unknown>; key: string }>();
+
+  for (const doc of docs) {
+    if (!doc.facts || !ENTITY_AUTHORITATIVE.has(doc.role)) continue;
+    const list = (doc.facts as unknown as Record<string, unknown>)[collection] as MergeEntity[];
+    if (!Array.isArray(list)) continue;
+
+    for (const [index, incoming] of list.entries()) {
+      const key = entityKey(incoming) ?? `doc:${doc.id}:${index}`;
+      const existing = byKey.get(key);
+      if (!existing) {
+        byKey.set(key, { entity: { ...(incoming as Record<string, unknown>) }, key });
+        for (const [field, value] of Object.entries(incoming as Record<string, unknown>)) {
+          if (value !== null) provenance[entityPath(collection, key, field)] = doc.id;
+        }
+        continue;
+      }
+      for (const [field, value] of Object.entries(incoming as Record<string, unknown>)) {
+        if (value === null || value === undefined) continue;
+        const path = entityPath(collection, key, field);
+        const previous = existing.entity[field];
+        const previousDoc = provenance[path];
+        if (previous !== null && previous !== undefined && previous !== value && previousDoc) {
+          conflicts.push({
+            path,
+            winner: { documentId: doc.id, value },
+            losers: [{ documentId: previousDoc, value: previous }],
+          });
+        }
+        existing.entity[field] = value;
+        provenance[path] = doc.id;
+      }
+    }
+  }
+
+  return [...byKey.values()].map((e) => e.entity as unknown as MergeEntity);
+}
+
+/**
  * Merge every document's extraction into one set of facts.
  *
  * Documents arrive OLDEST FIRST. Within the set of documents permitted to
@@ -138,6 +196,11 @@ export function mergeDocuments(taxYear: number, docs: MergeDocument[]): MergeRes
     if (losers.length > 0) {
       conflicts.push({ path, winner, losers });
     }
+  }
+
+  for (const collection of ENTITY_COLLECTIONS) {
+    const merged = mergeEntities(docs, collection, provenance, conflicts);
+    (facts as unknown as Record<string, unknown>)[collection] = merged;
   }
 
   return { facts, provenance, conflicts, dropped };
