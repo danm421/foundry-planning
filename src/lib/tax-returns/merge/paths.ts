@@ -1,5 +1,10 @@
 import type { EntityCollection } from "./types";
 
+/** The entity-array fields on `TaxReturnFacts` — merged and overridden by
+ *  key, never as scalar leaves. Shared so `merge-documents.ts` and
+ *  `overrides.ts` walk the same set of collections. */
+export const ENTITY_COLLECTIONS: readonly EntityCollection[] = ["businesses", "k1s"];
+
 /**
  * Identity for an entity across documents and recomputes. EIN when the
  * document carried one, otherwise a normalized name.

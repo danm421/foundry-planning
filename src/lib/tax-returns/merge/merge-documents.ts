@@ -1,21 +1,16 @@
 import {
-  emptyAdjustmentsDetail,
-  emptyQbi,
-  emptyScheduleA,
-  emptyScheduleE,
   emptyTaxReturnFacts,
   type TaxReturnFacts,
 } from "@/lib/schemas/tax-return-facts";
 import type {
   DroppedValue, EntityCollection, FieldConflict, MergeDocument, MergeEntity, MergeResult,
 } from "./types";
-import { entityKey, entityPath, parseEntityPath } from "./paths";
+import { entityKey, entityPath, ENTITY_COLLECTIONS, parseEntityPath } from "./paths";
+import { NULLABLE_BLOCK_FACTORIES } from "./nullable-blocks";
 
 /** Roles permitted to contribute entities. A W-2 names one employer; it is
  *  never a K-1 and never a Schedule C. */
 const ENTITY_AUTHORITATIVE: ReadonlySet<MergeDocument["role"]> = new Set(["full_return", "k1"]);
-
-const ENTITY_COLLECTIONS: readonly EntityCollection[] = ["businesses", "k1s"];
 
 /** Roles permitted to write 1040 aggregate scalars. A W-2 is one of many on
  *  line 1a and a K-1 is one of many inside Schedule 1 line 5, so neither can
@@ -38,20 +33,6 @@ const SCALAR_ROOTS = ["income", "deductions", "tax", "payments", "carryovers"] a
 const TOP_LEVEL_SCALARS = [
   "filingStatus", "residenceState", "dependentsUnder17", "dependents17to23",
 ] as const;
-
-/** `setLeaf` seeds a missing intermediate object from these factories rather
- *  than `{}`. Every field in these blocks is `.nullable()` with no
- *  `.optional()`/`.default()`, so the strict schema REQUIRES every key —
- *  seeding `{}` and filling only the touched fields leaves the rest
- *  `undefined`, which fails `taxReturnFactsSchema` (and, once persisted,
- *  fails `parseRowFacts` on the next read). Keyed by the dotted path to the
- *  block itself, checked while `setLeaf` walks the path's prefix. */
-const NULLABLE_BLOCK_FACTORIES: Readonly<Record<string, () => object>> = {
-  "income.scheduleE": emptyScheduleE,
-  "income.adjustmentsDetail": emptyAdjustmentsDetail,
-  "deductions.scheduleA": emptyScheduleA,
-  "deductions.qbi": emptyQbi,
-};
 
 interface Candidate {
   documentId: string;
