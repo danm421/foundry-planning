@@ -112,6 +112,35 @@ export async function ensureSharedFolder(
   return folder.id;
 }
 
+export const INTAKE_FOLDER_NAME = "Intake Documents";
+
+/** Find-or-create the household's "Intake Documents" system folder — where
+ *  client-uploaded intake files land. Mirrors ensureMeetingPrepFolder
+ *  (idempotent on this specific folder, unlike ensureSystemFolders which bails
+ *  if ANY system folder exists).
+ *
+ *  Deliberately does NOT set isPortalRoot: that flag marks the subtree the
+ *  client portal can browse AND download from. Intake uploads are write-only to
+ *  the client, so they must stay outside it. */
+export async function ensureIntakeFolder(
+  householdId: string,
+  firmId: string,
+): Promise<string> {
+  const existing = await db.query.crmDocumentFolders.findFirst({
+    where: and(
+      eq(crmDocumentFolders.householdId, householdId),
+      eq(crmDocumentFolders.name, INTAKE_FOLDER_NAME),
+    ),
+    columns: { id: true },
+  });
+  if (existing) return existing.id;
+  const [folder] = await db
+    .insert(crmDocumentFolders)
+    .values({ householdId, firmId, name: INTAKE_FOLDER_NAME, isSystem: true })
+    .returning({ id: crmDocumentFolders.id });
+  return folder.id;
+}
+
 export async function listFolders(
   householdId: string,
 ): Promise<CrmDocumentFolderRow[]> {

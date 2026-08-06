@@ -424,7 +424,10 @@ export type AuditAction =
   // advisor_onboarding.start / advisor_onboarding.dismiss for the route)
   | "advisor_onboarding.create"
   | "advisor_onboarding.start"
-  | "advisor_onboarding.dismiss";
+  | "advisor_onboarding.dismiss"
+  // Intake document uploads (public client-facing path, no Clerk session)
+  | "intake.document.uploaded"
+  | "intake.document.deleted";
 
 type Args = {
   action: AuditAction;

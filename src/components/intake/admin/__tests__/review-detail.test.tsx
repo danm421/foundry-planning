@@ -15,6 +15,7 @@ function makeForm(overrides: Partial<IntakeFormRow> = {}): IntakeFormRow {
     id: "form-1",
     firmId: "firm-1",
     clientId: "client-1",
+    crmHouseholdId: null,
     mode: "prefilled",
     status: "submitted",
     token: "tok-abc",
@@ -180,5 +181,38 @@ describe("ReviewDetail", () => {
     // Same blank mode as the prospect case above — only clientId differs.
     render(<ReviewDetail form={makeForm({ clientId: "client-1", mode: "blank" })} diff={baseDiff} />);
     expect(screen.getByText("Existing client")).toBeInTheDocument();
+  });
+
+  // ── Documents ──────────────────────────────────────────────────────────────
+
+  it("says so when the client attached nothing", () => {
+    render(<ReviewDetail form={makeForm()} diff={baseDiff} documents={[]} householdId="hh-1" />);
+    expect(screen.getByText("Documents")).toBeInTheDocument();
+    expect(screen.getByText("No documents uploaded.")).toBeInTheDocument();
+  });
+
+  it("links each uploaded document to the audited advisor vault route", () => {
+    render(
+      <ReviewDetail
+        form={makeForm()}
+        diff={baseDiff}
+        householdId="hh-1"
+        documents={[
+          {
+            id: "doc-1",
+            filename: "schwab-statement.pdf",
+            docType: "statement",
+            sizeBytes: 245_760,
+            uploadedAt: "2026-08-01T12:00:00.000Z",
+          },
+        ]}
+      />,
+    );
+
+    const link = screen.getByRole("link", { name: "schwab-statement.pdf" });
+    // The existing org-scoped, audited route — never a blob URL or a new path.
+    expect(link).toHaveAttribute("href", "/api/crm/households/hh-1/documents/doc-1");
+    expect(screen.getByText("Account statement")).toBeInTheDocument();
+    expect(screen.getByText("240 KB")).toBeInTheDocument();
   });
 });

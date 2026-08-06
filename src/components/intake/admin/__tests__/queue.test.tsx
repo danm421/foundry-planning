@@ -9,6 +9,7 @@ function makeForm(overrides: Partial<IntakeFormRow> = {}): IntakeFormRow {
     id: "form-1",
     firmId: "firm-1",
     clientId: null,
+    crmHouseholdId: null,
     mode: "blank",
     status: "draft",
     token: "tok-abc",

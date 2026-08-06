@@ -751,27 +751,64 @@ export async function applyIntake(args: {
       //    syncHouseholdNameFromContacts against the contact rows inserted in
       //    step 2, in this same transaction, and that sync overwrites
       //    whatever name lands here. Deriving it now means the row is never
-      //    even transiently wrong, and keeps this insert correct on its own
+      //    even transiently wrong, and keeps this correct on its own
       //    if the sync call in applySectionsToClient is ever moved.
-      const [household] = await tx
-        .insert(crmHouseholds)
-        .values({
-          firmId,
-          advisorId: form.createdByUserId,
-          name:
-            deriveHouseholdNameFromContacts([
-              { role: "primary", firstName: primary.firstName, lastName: primary.lastName },
-              ...(spouse
-                ? [{ role: "spouse", firstName: spouse.firstName, lastName: spouse.lastName }]
-                : []),
-            ]) ?? `${primary.lastName} Household`,
-          state: payload.family.stateOfResidence ?? null,
-        })
-        .returning({ id: crmHouseholds.id });
+      const derivedName =
+        deriveHouseholdNameFromContacts([
+          { role: "primary", firstName: primary.firstName, lastName: primary.lastName },
+          ...(spouse
+            ? [{ role: "spouse", firstName: spouse.firstName, lastName: spouse.lastName }]
+            : []),
+        ]) ?? `${primary.lastName} Household`;
+
+      // Find-or-create: a prospect who uploaded a document before submitting
+      // already has a household, minted by resolveIntakeHousehold and parked on
+      // the form (see src/lib/intake/documents.ts). Inserting a second one here
+      // would strand those documents on an orphan record no client points at.
+      let householdId: string;
+      if (form.crmHouseholdId) {
+        householdId = form.crmHouseholdId;
+        // The upload path only had recipientName to go on, and never knew the
+        // state. Now that the real payload exists, overwrite both. Scoped by
+        // firmId as well as id: resolveIntakeHousehold mints against the form's
+        // own firm so the two always agree, but this is a write to a firm-owned
+        // table and never gets to rely on that agreement holding.
+        //
+        // The `.returning()` is the point of the guard, not a convenience: an
+        // UPDATE that matches nothing is silent, so without it a parked id from
+        // another firm would skip the rename and then fall straight through to
+        // wiring this firm's contacts and client onto that foreign household.
+        // Throwing inside the transaction rolls the whole apply back.
+        const updated = await tx
+          .update(crmHouseholds)
+          .set({
+            name: derivedName,
+            state: payload.family.stateOfResidence ?? null,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(crmHouseholds.id, householdId), eq(crmHouseholds.firmId, firmId)))
+          .returning({ id: crmHouseholds.id });
+        if (updated.length === 0) {
+          throw new Error(
+            `Intake form ${formId} parks household ${householdId} outside firm ${firmId}`,
+          );
+        }
+      } else {
+        const [inserted] = await tx
+          .insert(crmHouseholds)
+          .values({
+            firmId,
+            advisorId: form.createdByUserId,
+            name: derivedName,
+            state: payload.family.stateOfResidence ?? null,
+          })
+          .returning({ id: crmHouseholds.id });
+        householdId = inserted.id;
+      }
 
       // 2. CRM contacts — primary (carries recipientEmail), spouse if present.
       await tx.insert(crmHouseholdContacts).values({
-        householdId: household.id,
+        householdId,
         role: "primary",
         firstName: primary.firstName,
         lastName: primary.lastName,
@@ -781,7 +818,7 @@ export async function applyIntake(args: {
       });
       if (spouse) {
         await tx.insert(crmHouseholdContacts).values({
-          householdId: household.id,
+          householdId,
           role: "spouse",
           firstName: spouse.firstName,
           lastName: spouse.lastName,
@@ -795,7 +832,7 @@ export async function applyIntake(args: {
       //    atomic with the household/contacts above and the sections below.
       const { clientId, scenarioId } = await createClientForHousehold({
         household: {
-          id: household.id,
+          id: householdId,
           firmId,
           advisorId: form.createdByUserId,
           state: payload.family.stateOfResidence ?? null,

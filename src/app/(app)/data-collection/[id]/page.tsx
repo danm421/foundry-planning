@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { requireOrgId } from "@/lib/db-helpers";
 import { loadFormForFirm } from "@/lib/intake/queries";
+import { findIntakeHousehold, listIntakeDocuments } from "@/lib/intake/documents";
 import { intakeSubmitSchema } from "@/lib/intake/schema";
 import { snapshotClientToPayload } from "@/lib/intake/snapshot";
 import { buildIntakeDiff } from "@/components/intake/admin/diff-utils";
@@ -35,6 +36,15 @@ export default async function DataCollectionReviewPage({ params }: Props) {
 
   const diff = buildIntakeDiff(baseline, submitted);
 
+  // Both of these are non-minting: a prospect who never uploaded has no
+  // household, and merely opening this page must not create one. `findIntake-
+  // Household` is called alongside the list because the vault download link
+  // needs the id, and the client-facing document view deliberately omits it.
+  const [documents, householdId] = await Promise.all([
+    listIntakeDocuments(form.id),
+    findIntakeHousehold(form.id),
+  ]);
+
   return (
     <div className="mx-auto max-w-2xl px-4 py-8">
       <div className="mb-6">
@@ -49,7 +59,12 @@ export default async function DataCollectionReviewPage({ params }: Props) {
           {form.recipientName ?? form.recipientEmail}
         </h1>
       </div>
-      <ReviewDetail form={form} diff={diff} />
+      <ReviewDetail
+        form={form}
+        diff={diff}
+        documents={documents}
+        householdId={householdId}
+      />
     </div>
   );
 }

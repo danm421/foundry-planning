@@ -52,6 +52,32 @@ import { IntakeClient } from "../intake-client";
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
+/**
+ * The wrapper GETs its uploaded-document list on mount (IntakeClient's
+ * refreshDocuments), so every test here sees one fetch it did not ask for.
+ * Left to a bare `mockResolvedValueOnce`, that mount request would consume the
+ * response queued for the submit under test — so responses are routed by URL
+ * instead, and the documents GET is answered with an empty list.
+ */
+function mockSubmitResponse(response: Partial<Response>) {
+  vi.mocked(global.fetch).mockImplementation(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/documents")) {
+      return { ok: true, status: 200, json: async () => ({ documents: [] }) } as Response;
+    }
+    // Matched explicitly, not as "anything that isn't /documents": that way a
+    // submit sent to the wrong endpoint fails every test here, rather than
+    // only the one that asserts the URL.
+    if (url.endsWith("/submit")) return response as Response;
+    throw new Error(`Unexpected fetch in submit-wiring test: ${url}`);
+  });
+}
+
+/** Autosave/submit calls only — never the mount-time documents GET. */
+function nonDocumentCalls() {
+  return vi.mocked(global.fetch).mock.calls.filter((c) => !String(c[0]).endsWith("/documents"));
+}
+
 describe("IntakeClient submit wiring", () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -65,7 +91,7 @@ describe("IntakeClient submit wiring", () => {
 
   it("POSTs current value to /api/intake/[token]/submit on submit and flips to thank-you on 200", async () => {
     const user = userEvent.setup();
-    vi.mocked(global.fetch).mockResolvedValueOnce({
+    mockSubmitResponse({
       ok: true,
       status: 200,
       json: async () => ({ ok: true }),
@@ -90,7 +116,7 @@ describe("IntakeClient submit wiring", () => {
 
   it("surfaces 422 validation error message", async () => {
     const user = userEvent.setup();
-    vi.mocked(global.fetch).mockResolvedValueOnce({
+    mockSubmitResponse({
       ok: false,
       status: 422,
       json: async () => ({
@@ -112,7 +138,7 @@ describe("IntakeClient submit wiring", () => {
 
   it("surfaces 403 advisory message when firm subscription is inactive", async () => {
     const user = userEvent.setup();
-    vi.mocked(global.fetch).mockResolvedValueOnce({
+    mockSubmitResponse({
       ok: false,
       status: 403,
       json: async () => ({ error: "Subscription inactive." }),
@@ -127,7 +153,7 @@ describe("IntakeClient submit wiring", () => {
 
   it("treats 409 (already submitted) as success and flips to thank-you", async () => {
     const user = userEvent.setup();
-    vi.mocked(global.fetch).mockResolvedValueOnce({
+    mockSubmitResponse({
       ok: false,
       status: 409,
       json: async () => ({ error: "Already submitted." }),
@@ -142,7 +168,7 @@ describe("IntakeClient submit wiring", () => {
 
   it("shows expired-link message on 410", async () => {
     const user = userEvent.setup();
-    vi.mocked(global.fetch).mockResolvedValueOnce({
+    mockSubmitResponse({
       ok: false,
       status: 410,
       json: async () => ({ error: "Link expired." }),
@@ -173,8 +199,10 @@ describe("IntakeClient submit wiring", () => {
     act(() => { fireEvent.click(changeBtn); });
     act(() => { fireEvent.click(changeBtn); });
 
-    // No fetch yet — debounce hasn't fired
-    expect(global.fetch).not.toHaveBeenCalled();
+    // No autosave yet — debounce hasn't fired. Asserted against non-document
+    // calls only: the mount-time documents GET has legitimately already run,
+    // so a bare not.toHaveBeenCalled() would fail for the wrong reason.
+    expect(nonDocumentCalls()).toHaveLength(0);
 
     // Advance past debounce threshold and flush all pending microtasks
     await act(async () => {

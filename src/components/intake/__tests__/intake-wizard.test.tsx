@@ -2,6 +2,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import type { IntakeDraft } from "@/lib/intake/schema";
+import type { IntakeDocumentView } from "@/lib/intake/document-types";
 import { IntakeWizard } from "../intake-wizard";
 
 const emptyDraft: IntakeDraft = {};
@@ -173,5 +174,123 @@ describe("IntakeWizard", () => {
     expect(
       screen.getByRole("img", { name: "Foundry Planning" }),
     ).toBeInTheDocument();
+  });
+});
+
+// ─── Uploads ─────────────────────────────────────────────────────────────────
+//
+// Everything above renders the wizard with no upload props, which is also the
+// portal wizard's and the preview's configuration — so those tests double as
+// the "no uploads offered" case (6 chrome steps, no Documents step).
+
+function doc(over: Partial<IntakeDocumentView> & { id: string }): IntakeDocumentView {
+  return {
+    filename: "file.pdf",
+    docType: "other",
+    sizeBytes: 1024,
+    uploadedAt: "2026-08-01T12:00:00.000Z",
+    ...over,
+  };
+}
+
+/** The three props that together turn uploads on. */
+function uploadProps(documents: IntakeDocumentView[]) {
+  return { token: "tok_abc", documents, onDocumentsChanged: vi.fn() };
+}
+
+function startWizard() {
+  fireEvent.click(screen.getByRole("button", { name: /start here/i }));
+}
+
+describe("IntakeWizard uploads", () => {
+  it("adds a Documents step before Review only where uploads are offered", () => {
+    const { unmount } = render(<IntakeWizard {...makeProps(uploadProps([]))} />);
+    startWizard();
+
+    expect(
+      screen.getAllByText((_, el) => {
+        if (el?.tagName !== "SPAN") return false;
+        return /step\s+1\s*\/\s*7/i.test(el.textContent ?? "");
+      }).length,
+    ).toBeGreaterThan(0);
+    unmount();
+
+    // Same wizard without the upload props keeps its six steps.
+    render(<IntakeWizard {...makeProps()} />);
+    startWizard();
+    expect(
+      screen.getAllByText((_, el) => {
+        if (el?.tagName !== "SPAN") return false;
+        return /step\s+1\s*\/\s*6/i.test(el.textContent ?? "");
+      }).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("reaches the Documents step between Goals and Review", () => {
+    render(<IntakeWizard {...makeProps(uploadProps([]))} />);
+
+    startWizard();
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // Family
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // Accounts
+    fireEvent.click(screen.getByRole("button", { name: /skip for now/i })); // Income
+    fireEvent.click(screen.getByRole("button", { name: /skip for now/i })); // Property
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // Goals
+
+    expect(screen.getByRole("heading", { name: /^documents$/i })).toBeInTheDocument();
+    // Nothing uploaded yet, so the step still offers to be skipped.
+    fireEvent.click(screen.getByRole("button", { name: /skip for now/i }));
+    expect(screen.getByRole("button", { name: /submit/i })).toBeInTheDocument();
+  });
+
+  it("stops offering to skip a step once a document answers it", () => {
+    render(
+      <IntakeWizard
+        {...makeProps(uploadProps([doc({ id: "d1", docType: "paystub" })]))}
+      />,
+    );
+
+    startWizard();
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // Family
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // Accounts
+
+    // Income: no rows, but a pay stub is on file — that is not a skipped step.
+    expect(screen.getByRole("button", { name: /^next$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /skip for now/i })).not.toBeInTheDocument();
+
+    // Property has neither a row nor a mortgage document, so it still skips.
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i }));
+    expect(screen.getByRole("button", { name: /skip for now/i })).toBeInTheDocument();
+  });
+
+  it("shows each contextual zone only the documents of its own type", () => {
+    render(
+      <IntakeWizard
+        {...makeProps(
+          uploadProps([
+            doc({ id: "d1", docType: "statement", filename: "schwab.pdf" }),
+            doc({ id: "d2", docType: "paystub", filename: "june-paystub.pdf" }),
+          ]),
+        )}
+      />,
+    );
+
+    startWizard();
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // → Accounts
+
+    expect(screen.getByText("schwab.pdf")).toBeInTheDocument();
+    expect(screen.queryByText("june-paystub.pdf")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // → Income
+    expect(screen.getByText("june-paystub.pdf")).toBeInTheDocument();
+    expect(screen.queryByText("schwab.pdf")).not.toBeInTheDocument();
+  });
+
+  it("offers no upload affordance at all without the upload props", () => {
+    render(<IntakeWizard {...makeProps()} />);
+
+    startWizard();
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // → Accounts
+
+    expect(screen.queryByText(/drag and drop/i)).not.toBeInTheDocument();
   });
 });
