@@ -48,6 +48,8 @@ const baseDiff: IntakeDiff = {
     spouseRetirementAge: { changed: false, value: undefined },
     annualRetirementExpenses: { changed: false, value: 80000 },
   },
+  expenseGoals: { baselineCount: 0, submittedCount: 0, submittedItems: [] },
+  radar: { topics: [], note: undefined },
   accounts: {
     baselineCount: 2,
     submittedCount: 3,
@@ -75,9 +77,52 @@ describe("ReviewDetail", () => {
 
   it("renders diff sections", () => {
     render(<ReviewDetail form={makeForm()} diff={baseDiff} />);
-    expect(screen.getByText(/family/i)).toBeInTheDocument();
-    expect(screen.getByText(/goals/i)).toBeInTheDocument();
-    expect(screen.getByText(/accounts/i)).toBeInTheDocument();
+    // Exact headings — "Goals" and "Upcoming goals" are two distinct sections,
+    // so a loose /goals/i matches both and the query throws.
+    expect(screen.getByText("Family")).toBeInTheDocument();
+    expect(screen.getByText("Goals")).toBeInTheDocument();
+    expect(screen.getByText("Upcoming goals")).toBeInTheDocument();
+    expect(screen.getByText("Accounts")).toBeInTheDocument();
+  });
+
+  it("hides the On-your-radar card when nothing was checked or written", () => {
+    render(<ReviewDetail form={makeForm()} diff={baseDiff} />);
+    expect(screen.queryByText("On your radar")).toBeNull();
+  });
+
+  it("shows checked topics and the free-text note as their client-facing labels", () => {
+    const diff = {
+      ...baseDiff,
+      radar: {
+        topics: ["Charitable giving", "Leaving an inheritance"],
+        note: "Thinking about a cabin.",
+      },
+    };
+    render(<ReviewDetail form={makeForm()} diff={diff} />);
+    expect(screen.getByText("On your radar")).toBeInTheDocument();
+    expect(screen.getByText("Charitable giving")).toBeInTheDocument();
+    expect(screen.getByText("Leaving an inheritance")).toBeInTheDocument();
+    expect(screen.getByText("Thinking about a cabin.")).toBeInTheDocument();
+  });
+
+  it("lists funded goals with the span apply will write", () => {
+    const diff = {
+      ...baseDiff,
+      expenseGoals: {
+        baselineCount: 0,
+        submittedCount: 1,
+        submittedItems: [
+          {
+            name: "Emma's college",
+            value: 40000,
+            secondary: "Education · for Emma · 2034–2037",
+          },
+        ],
+      },
+    };
+    render(<ReviewDetail form={makeForm()} diff={diff} />);
+    expect(screen.getByText("Emma's college")).toBeInTheDocument();
+    expect(screen.getByText("Education · for Emma · 2034–2037")).toBeInTheDocument();
   });
 
   it("shows Apply and Discard buttons for submitted form", () => {

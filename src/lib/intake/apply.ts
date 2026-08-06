@@ -43,6 +43,7 @@ import {
   incomes,
   intakeForms,
   liabilities,
+  planSettings,
   scenarios,
 } from "@/db/schema";
 import {
@@ -50,6 +51,12 @@ import {
   maritalToFilingStatus,
   type IntakePayload,
 } from "@/lib/intake/schema";
+import {
+  childIndexFromRef,
+  goalExpenseType,
+  goalTopicLabel,
+  goalYearWindow,
+} from "@/lib/intake/goal-rows";
 import { loadFormForFirm } from "@/lib/intake/queries";
 import { incomeYearWindow } from "@/lib/intake/income-years";
 import { buildClientMilestones } from "@/lib/milestones";
@@ -60,6 +67,7 @@ import {
 } from "@/lib/imports/commit/family-resolver";
 import { createClientForHousehold } from "@/lib/clients/create-client";
 import { recordAudit, recordCreate, recordUpdate } from "@/lib/audit";
+import { recordActivityNonFatal } from "@/lib/crm/activity";
 import { syncHouseholdNameFromContacts } from "@/lib/crm/sync-household-name";
 import { deriveHouseholdNameFromContacts } from "@/lib/crm/household-name";
 import { upsertPrimaryAndSpouseContacts } from "@/lib/crm/upsert-household-contact";
@@ -73,12 +81,38 @@ type ApplyResult = {
   accountIds: string[];
   incomeIds: string[];
   childIds: string[];
+  /** Carried out so the post-commit CRM note doesn't have to re-query for it. */
+  crmHouseholdId: string;
   // Property fans out beyond its account row: an insurance expense and a
   // mortgage liability, each audited like the account itself.
   expenseIds: string[];
   liabilityIds: string[];
   familyScalarsChanged: boolean;
 };
+
+/**
+ * Resolve a goal's "who is this for" ref to a family_members id.
+ *
+ * The form carries a structural ref rather than a name (see `goal-rows.ts`), so
+ * this is a direct lookup with nothing to disambiguate: children match by
+ * POSITION, and `childIds` was pushed in payload order moments earlier, so the
+ * index the client picked IS the row apply just wrote.
+ *
+ * Null for a ref pointing at somebody who isn't there — `forFamilyMemberId` is
+ * attribution only, so the projection is identical either way and the advisor
+ * re-points it during review.
+ */
+function beneficiaryId(
+  ref: string | undefined,
+  childIds: string[],
+  familyRoleIds: { clientFmId: string | null; spouseFmId: string | null },
+): string | null {
+  if (!ref) return null;
+  if (ref === "client") return familyRoleIds.clientFmId;
+  if (ref === "spouse") return familyRoleIds.spouseFmId;
+  const index = childIndexFromRef(ref);
+  return index === null ? null : (childIds[index] ?? null);
+}
 
 /**
  * Apply the parsed intake payload onto a single client's base scenario.
@@ -109,15 +143,6 @@ async function applySectionsToClient(
   _opts: { mode: "merge" | "fresh" },
 ): Promise<ApplyResult> {
   void _opts; // reserved for the prospect path (next task); see doc comment.
-  const result: ApplyResult = {
-    accountIds: [],
-    incomeIds: [],
-    childIds: [],
-    expenseIds: [],
-    liabilityIds: [],
-    familyScalarsChanged: false,
-  };
-
   // ── Resolve the client row (need crmHouseholdId + planEndAge) ─────────────
   const [client] = await tx
     .select()
@@ -125,6 +150,16 @@ async function applySectionsToClient(
     .where(eq(clients.id, clientId))
     .limit(1);
   if (!client) throw new Error(`Client ${clientId} not found`);
+
+  const result: ApplyResult = {
+    accountIds: [],
+    incomeIds: [],
+    childIds: [],
+    crmHouseholdId: client.crmHouseholdId,
+    expenseIds: [],
+    liabilityIds: [],
+    familyScalarsChanged: false,
+  };
 
   const { primary, spouse } = payload.family;
   const primaryDobYear = new Date(primary.dateOfBirth).getFullYear();
@@ -418,6 +453,62 @@ async function applySectionsToClient(
     }
   }
 
+  // ── Funded goals → goal-flagged expenses ─────────────────────────────────
+  //
+  // The form's seven client-facing goal types collapse to the DB's two relevant
+  // ones: "education" (always a goal — see `lib/goals.ts`) and "other" for
+  // everything else, flagged `isGoal` so the Household Map's Goals board and the
+  // wizard's step status pick it up. The specific flavour (wedding vs vehicle vs
+  // travel) survives in the row's name, which is what the client typed.
+  //
+  // `inflationStartYear` is the plan start, NOT the goal's own start year. That
+  // is the "today's dollars" default the advisor-side expense dialog writes, and
+  // it is what makes the step's promise true: a client who types today's college
+  // price gets a row that inflates to the year the goal actually lands. Anchoring
+  // at the goal year instead would silently read the number as nominal-at-2032
+  // and understate every goal.
+  //
+  // The basis year comes from the PERSISTED plan start, not the wall clock: an
+  // existing client's plan may have started in an earlier year, and inflating a
+  // today's-dollars goal from this year instead would quietly shave off every
+  // year between the two. Falls back to the current year only when a scenario
+  // somehow has no plan_settings row.
+  if (payload.goals.expenseGoals.length > 0) {
+    const [settings] = await tx
+      .select({ planStartYear: planSettings.planStartYear })
+      .from(planSettings)
+      .where(
+        and(
+          eq(planSettings.clientId, clientId),
+          eq(planSettings.scenarioId, scenarioId),
+        ),
+      )
+      .limit(1);
+    const planStartYear = settings?.planStartYear ?? currentYear;
+
+    for (const goal of payload.goals.expenseGoals) {
+      const window = goalYearWindow(goal, currentYear);
+      const [row] = await tx
+        .insert(expenses)
+        .values({
+          clientId,
+          scenarioId,
+          type: goalExpenseType(goal.type),
+          name: goal.name,
+          annualAmount: String(goal.amount),
+          startYear: window.startYear,
+          endYear: window.endYear,
+          growthRate: "0.03",
+          growthSource: "inflation",
+          inflationStartYear: planStartYear,
+          isGoal: true,
+          forFamilyMemberId: beneficiaryId(goal.forWhom, result.childIds, familyRoleIds),
+        })
+        .returning({ id: expenses.id });
+      result.expenseIds.push(row.id);
+    }
+  }
+
   // ── Retirement expenses ───────────────────────────────────────────────────
   // Only touch the retirement-living row when the form supplied an amount.
   if (payload.goals.annualRetirementExpenses != null) {
@@ -460,6 +551,51 @@ async function applySectionsToClient(
   }
 
   return result;
+}
+
+/**
+ * The "On your radar" answers as a CRM note body, or null when the client
+ * checked nothing and wrote nothing.
+ *
+ * These are deliberately NOT expense rows. A checked box carries no amount and
+ * no date, so projecting one would mean inventing both; what the client has
+ * given us is an agenda for the first conversation. The household timeline is
+ * where that belongs — and unlike the staged form payload (which the advisor
+ * only sees while the form sits in review), a note survives the apply and is
+ * still there at the next meeting.
+ */
+function radarNoteBody(goals: IntakePayload["goals"]): string | null {
+  const topics = goals.topics.map((t) => `• ${goalTopicLabel(t)}`).join("\n");
+  const note = goals.topicsNote?.trim();
+  return [topics, note].filter(Boolean).join("\n\n") || null;
+}
+
+/**
+ * File the "On your radar" answers on the household timeline. Post-commit and
+ * best-effort, exactly like the audits beside it: the note narrates an apply
+ * that already succeeded, so a timeline failure must not report a false error
+ * for durable writes. Routed through `recordActivity` rather than a raw insert
+ * so the row gets the same actor-name snapshot every other CRM note has — that
+ * is what keeps the author's name on it after they leave the firm.
+ */
+async function emitRadarNote(args: {
+  applied: ApplyResult;
+  payload: IntakePayload;
+  actorId: string;
+}): Promise<void> {
+  const body = radarNoteBody(args.payload.goals);
+  if (!body) return;
+  await recordActivityNonFatal(
+    {
+      householdId: args.applied.crmHouseholdId,
+      kind: "note",
+      title: "Goals to discuss (from intake)",
+      body,
+      occurredAt: new Date(),
+    },
+    { actorUserId: args.actorId },
+    "intake-apply",
+  );
 }
 
 /**
@@ -710,6 +846,7 @@ export async function applyIntake(args: {
     });
 
     await emitApplyAudits({ applied, clientId, firmId, actorId, formId });
+    await emitRadarNote({ applied, payload, actorId });
     return { clientId };
   }
 
@@ -746,5 +883,6 @@ export async function applyIntake(args: {
   });
 
   await emitApplyAudits({ applied, clientId, firmId, actorId, formId });
+  await emitRadarNote({ applied, payload, actorId });
   return { clientId };
 }

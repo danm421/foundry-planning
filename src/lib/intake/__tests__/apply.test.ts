@@ -16,6 +16,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { db } from "@/db";
 import {
   accountOwners,
+  crmActivity,
   crmHouseholds,
   crmHouseholdContacts,
   clients,
@@ -103,7 +104,7 @@ async function submitForm(
     accounts: [],
     income: [],
     property: [],
-    goals: {},
+    goals: { expenseGoals: [], topics: [] },
     meta: { completedSections: [] },
   };
 
@@ -278,6 +279,22 @@ describe("applyIntake (existing-client path)", () => {
       goals: {
         clientRetirementAge: 67,
         annualRetirementExpenses: 145000,
+        expenseGoals: [
+          {
+            name: "Kid's college",
+            type: "education",
+            amount: 40000,
+            startYear: 2028,
+            years: 4,
+            // Structural ref — index 0 of family.children, which apply matches
+            // back to the child row it inserts in that same order.
+            forWhom: "child:0",
+          },
+          // No start year and nobody named: apply has to fill both in.
+          { name: "Anniversary trip", type: "travel", amount: 25000, years: 1 },
+        ],
+        topics: ["charitable", "legacy"],
+        topicsNote: "Thinking about a cabin.",
       },
       meta: { completedSections: [] },
     };
@@ -406,6 +423,50 @@ describe("applyIntake (existing-client path)", () => {
     expect(childRows).toHaveLength(1);
     expect(childRows[0].firstName).toBe("Kid");
 
+    // ── Assert: a funded goal lands as a goal-flagged education expense ───
+    // Education is the one form type that maps across to a DB type; the rest
+    // land as "other". `isGoal` is what puts it on the Household Map's Goals
+    // board, and `inflationStartYear` is what makes the amount today's dollars —
+    // without it the $40,000 would be read as the 2028 price.
+    const college = expenseRows.find((e) => e.name === "Kid's college");
+    expect(college).toBeTruthy();
+    expect(college?.type).toBe("education");
+    expect(college?.isGoal).toBe(true);
+    expect(college?.annualAmount).toBe("40000.00");
+    expect(college?.startYear).toBe(2028);
+    // Both ends inclusive → four funded years is 2028–2031, not 2028–2032.
+    expect(college?.endYear).toBe(2031);
+    expect(college?.growthSource).toBe("inflation");
+    expect(college?.inflationStartYear).toBe(new Date().getFullYear());
+    // "Who is this for" is a NAME on the form; apply resolves it to the child
+    // row it inserted moments earlier.
+    expect(college?.forFamilyMemberId).toBe(childRows[0].id);
+
+    // ── Assert: a non-education goal lands as a flagged "other" expense ───
+    const trip = expenseRows.find((e) => e.name === "Anniversary trip");
+    expect(trip).toBeTruthy();
+    expect(trip?.type).toBe("other");
+    expect(trip?.isGoal).toBe(true);
+    // No start year given → this year; one year → start and end coincide.
+    expect(trip?.startYear).toBe(new Date().getFullYear());
+    expect(trip?.endYear).toBe(new Date().getFullYear());
+    expect(trip?.forFamilyMemberId).toBeNull();
+
+    // ── Assert: "On your radar" lands as a CRM note, not as expenses ──────
+    // A checked box has no amount and no date, so it must NOT become a
+    // projected row; the household timeline is where it belongs.
+    const notes = await db
+      .select()
+      .from(crmActivity)
+      .where(and(eq(crmActivity.householdId, householdId), eq(crmActivity.kind, "note")));
+    expect(notes).toHaveLength(1);
+    expect(notes[0].title).toBe("Goals to discuss (from intake)");
+    expect(notes[0].body).toContain("Charitable giving");
+    expect(notes[0].body).toContain("Leaving an inheritance");
+    expect(notes[0].body).toContain("Thinking about a cabin.");
+    // Only the two boxes that were checked.
+    expect(notes[0].body).not.toContain("Paying off debt");
+
     // ── Assert: crmHouseholds.state === "NJ" ──────────────────────────────
     const [hhAfter] = await db
       .select()
@@ -460,6 +521,21 @@ describe("applyIntake (existing-client path)", () => {
       .from(familyMembers)
       .where(and(eq(familyMembers.clientId, clientId), eq(familyMembers.role, "child")));
     expect(childRows2).toHaveLength(1);
+
+    // Goals fan out to two different tables, so both need the no-op check: a
+    // duplicated goal row would double a projected cost, and a duplicated note
+    // would clutter the timeline on every re-apply.
+    const expenseRows2 = await db
+      .select()
+      .from(expenses)
+      .where(and(eq(expenses.clientId, clientId), eq(expenses.scenarioId, scenarioId)));
+    expect(expenseRows2.filter((e) => e.name === "Kid's college")).toHaveLength(1);
+
+    const notes2 = await db
+      .select()
+      .from(crmActivity)
+      .where(and(eq(crmActivity.householdId, householdId), eq(crmActivity.kind, "note")));
+    expect(notes2).toHaveLength(1);
   });
 });
 
@@ -542,6 +618,8 @@ describe("applyIntake (prospect path — creates client on approve)", () => {
         clientRetirementAge: 66,
         spouseRetirementAge: 64,
         annualRetirementExpenses: 120000,
+        expenseGoals: [],
+        topics: [],
       },
       meta: { completedSections: [] },
     };

@@ -97,10 +97,91 @@ export const intakePropertySchema = z.object({
   mortgage: intakeMortgageSchema.optional(),
 });
 
+// ── Funded goals ─────────────────────────────────────────────────────────────
+//
+// A goal the client can put a number and a date on — college, a wedding, a
+// second home. Each one becomes an `expenses` row flagged `is_goal` (education
+// gets `type: "education"`, which is always a goal; see `lib/goals.ts`).
+//
+// The form's seven types are a client-facing vocabulary, NOT the DB's four-member
+// expenseTypeEnum: only "education" maps across, and everything else lands as
+// "other". Keeping them separate is what lets the Goals board say "wedding"
+// while the engine only has to know it's a goal-flagged other expense.
+export const INTAKE_GOAL_TYPES = [
+  "education",
+  "wedding",
+  "home",
+  "vehicle",
+  "travel",
+  "gift",
+  "other",
+] as const;
+
+export type IntakeGoalType = (typeof INTAKE_GOAL_TYPES)[number];
+
+/**
+ * Legal shapes for a goal's "who is this for": the two principals by role, or a
+ * child by INDEX into `family.children`. Lives here rather than in `goal-rows.ts`
+ * (which owns the encode/decode helpers) because `goal-rows` imports this module
+ * for the enums — the dependency only runs one way.
+ */
+export const BENEFICIARY_REF_RE = /^(client|spouse|child:\d{1,2})$/;
+
+// `amount` is ONE year's cost in today's dollars — a one-year goal's total, a
+// multi-year goal's per-year figure — matching `expenses.annual_amount`. Apply
+// writes it with `inflationStartYear = plan start`, the same "today's dollars"
+// default the advisor-side expense dialog uses, so the number the client types
+// inflates to the goal year rather than being read as a nominal figure there.
+//
+// `startYear` and `years` are optional/defaulted for the same reason the account
+// `owner` is: apply re-parses the stored payload, so a payload written before
+// these fields existed still has to parse. A blank start year means "starting
+// now" — apply fills in the current year.
+//
+// `forWhom` is a STRUCTURAL reference — "client", "spouse", or "child:<index
+// into family.children>" — never a name. The form's children don't exist as
+// family_members rows until apply inserts them, so there is no id to reference
+// at fill-in time; a name would survive that but break the moment the client
+// goes back and fixes a spelling. See `goal-rows.ts` for the encoding.
+export const intakeExpenseGoalSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  type: z.enum(INTAKE_GOAL_TYPES),
+  amount: z.number().nonnegative().max(1e9),
+  startYear: z.number().int().min(1900).max(2200).optional(),
+  years: z.number().int().min(1).max(60).default(1),
+  forWhom: z.string().trim().regex(BENEFICIARY_REF_RE).optional(),
+});
+
+// ── "On your radar" ──────────────────────────────────────────────────────────
+//
+// Goals the client has no numbers for yet but wants on the agenda. Deliberately
+// NOT plan data: apply writes them as a CRM note on the household timeline, not
+// as expense rows, because a checked box carries no amount and no date — turning
+// one into a projected expense would invent both.
+export const INTAKE_GOAL_TOPICS = [
+  "home",
+  "education",
+  "wedding",
+  "travel",
+  "business",
+  "family_support",
+  "charitable",
+  "legacy",
+  "care",
+  "relocate",
+  "career",
+  "debt",
+] as const;
+
+export type IntakeGoalTopic = (typeof INTAKE_GOAL_TOPICS)[number];
+
 export const intakeGoalsSchema = z.object({
   clientRetirementAge: z.number().int().min(40).max(100).optional(),
   spouseRetirementAge: z.number().int().min(40).max(100).optional(),
   annualRetirementExpenses: z.number().nonnegative().max(1e9).optional(),
+  expenseGoals: z.array(intakeExpenseGoalSchema).max(20).default([]),
+  topics: z.array(z.enum(INTAKE_GOAL_TOPICS)).max(20).default([]),
+  topicsNote: z.string().trim().max(2000).optional(),
 });
 
 export const intakeMetaSchema = z.object({
@@ -119,7 +200,9 @@ export const intakeSubmitSchema = z.object({
   accounts: z.array(intakeAccountSchema).max(50).default([]),
   income: z.array(intakeIncomeSchema).max(50).default([]),
   property: z.array(intakePropertySchema).max(50).default([]),
-  goals: intakeGoalsSchema.default({}),
+  // The default has to satisfy the OUTPUT type, so the two array members are
+  // spelled out — `{}` no longer type-checks now that they're `.default([])`.
+  goals: intakeGoalsSchema.default({ expenseGoals: [], topics: [] }),
   meta: intakeMetaSchema.default({ completedSections: [] }),
 });
 
@@ -186,10 +269,26 @@ const intakePropertyDraftSchema = z.object({
   mortgage: intakeMortgageDraftSchema.optional(),
 });
 
+const intakeExpenseGoalDraftSchema = z.object({
+  name: draftStr(120),
+  type: z.enum(INTAKE_GOAL_TYPES).optional(),
+  amount: z.number().max(1e9).optional(),
+  startYear: z.number().max(2200).optional(),
+  years: z.number().max(60).optional(),
+  forWhom: draftStr(200),
+});
+
+// `topics` is a loose string array here, not the enum: a draft saved against a
+// different revision of INTAKE_GOAL_TOPICS must still round-trip rather than 422
+// the autosave. The enum runs on submit, which is where an unknown topic should
+// surface.
 const intakeGoalsDraftSchema = z.object({
   clientRetirementAge: z.number().max(150).optional(),
   spouseRetirementAge: z.number().max(150).optional(),
   annualRetirementExpenses: z.number().max(1e9).optional(),
+  expenseGoals: z.array(intakeExpenseGoalDraftSchema).max(20).optional(),
+  topics: z.array(z.string().max(40)).max(20).optional(),
+  topicsNote: draftStr(2000),
 });
 
 export const intakeDraftSchema = z.object({
@@ -251,6 +350,25 @@ export function isBlankIntakePropertyRow(row: {
 }
 
 /**
+ * A goal card the client opened and abandoned. `type` and `years` are NOT
+ * content — a blank card already carries "other" and 1 from its template, so
+ * counting them would make every abandoned card unprunable.
+ */
+export function isBlankIntakeExpenseGoalRow(row: {
+  name?: unknown;
+  amount?: unknown;
+  startYear?: unknown;
+  forWhom?: unknown;
+}): boolean {
+  return (
+    blankStr(row.name) &&
+    blankNum(row.amount) &&
+    blankNum(row.startYear) &&
+    blankStr(row.forWhom)
+  );
+}
+
+/**
  * Drop optional rows the user added but left entirely untouched, so a stray
  * blank card (e.g. "Add income" then "Skip for now") doesn't fail the strict
  * submit validator with a confusing "complete the required fields" message.
@@ -290,12 +408,27 @@ export function pruneIntakeBlankRows(payload: unknown): unknown {
       )
     : undefined;
 
+  // Goal cards are nested a level down, under `goals`, rather than being a
+  // top-level array — so the spread has to rebuild the goals object, not just
+  // swap an array in.
+  const goals = p.goals && typeof p.goals === "object"
+    ? (p.goals as Record<string, unknown>)
+    : undefined;
+  const expenseGoals = goals
+    ? rows<Record<string, unknown>>(goals.expenseGoals).filter(
+        (g) => !isBlankIntakeExpenseGoalRow(g),
+      )
+    : undefined;
+
   return {
     ...p,
     ...(Array.isArray(p.accounts) ? { accounts } : {}),
     ...(Array.isArray(p.income) ? { income } : {}),
     ...(Array.isArray(p.property) ? { property } : {}),
     ...(family ? { family: { ...family, ...(Array.isArray(family.children) ? { children } : {}) } } : {}),
+    ...(goals
+      ? { goals: { ...goals, ...(Array.isArray(goals.expenseGoals) ? { expenseGoals } : {}) } }
+      : {}),
   };
 }
 

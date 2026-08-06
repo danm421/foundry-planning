@@ -199,6 +199,29 @@ export default function ReviewDetail({ form, diff }: ReviewDetailProps) {
       <ListSection label="Accounts" data={diff.accounts} />
       <ListSection label="Income" data={diff.income} />
       <ListSection label="Property" data={diff.property} />
+      <ListSection label="Upcoming goals" data={diff.expenseGoals} />
+
+      {/* ── On your radar ───────────────────────────────────────────────── */}
+      {/* Rendered only when the client checked or wrote something: an empty card
+          on every other form would train the advisor to scroll past the one that
+          isn't empty. Apply files the same content as a CRM note. */}
+      {(diff.radar.topics.length > 0 || diff.radar.note) && (
+        <div className="rounded-[var(--radius-sm)] border border-hair bg-card p-5">
+          <h3 className={`${labelCls} mb-3`}>On your radar</h3>
+          {diff.radar.topics.length > 0 && (
+            <ul className="space-y-1 text-[14px] text-ink-2">
+              {diff.radar.topics.map((topic) => (
+                <li key={topic}>{topic}</li>
+              ))}
+            </ul>
+          )}
+          {diff.radar.note && (
+            <p className="mt-3 whitespace-pre-wrap border-t border-hair pt-3 text-[14px] text-ink-2">
+              {diff.radar.note}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* ── Action bar ──────────────────────────────────────────────────── */}
       {!alreadyActioned && (

@@ -1,6 +1,6 @@
 "use client";
 
-import type { IntakeDraft } from "@/lib/intake/schema";
+import { isBlankIntakeExpenseGoalRow, type IntakeDraft } from "@/lib/intake/schema";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -73,6 +73,13 @@ export function ReviewStep({ value, onEdit }: ReviewStepProps) {
   const primary = family?.primary;
   const spouse = family?.spouse;
   const children = family?.children ?? [];
+  // Abandoned cards are filtered out, not just left to render: a blank goal
+  // carries `amount: 0`, which formats as "$0" and would list a row here that
+  // submit then prunes away. Same predicate submit uses, so the two agree.
+  const expenseGoals = (goals?.expenseGoals ?? []).filter(
+    (g) => !isBlankIntakeExpenseGoalRow(g),
+  );
+  const topics = goals?.topics ?? [];
 
   return (
     <div className="space-y-6">
@@ -152,17 +159,50 @@ export function ReviewStep({ value, onEdit }: ReviewStepProps) {
 
       {/* ── Goals ─────────────────────────────────────────────────── */}
       <SectionCard title="Goals" section="goals" onEdit={onEdit}>
-        {!goals?.clientRetirementAge && !goals?.spouseRetirementAge && !goals?.annualRetirementExpenses ? (
+        {isGoalsEmpty(goals, expenseGoals.length, topics.length) ? (
           <p className="text-[13px] text-ink-4">No goals entered.</p>
         ) : (
           <>
             <Row label="Client retirement age" value={goals?.clientRetirementAge} />
             <Row label="Spouse retirement age" value={goals?.spouseRetirementAge} />
             <Row label="Annual retirement expenses" value={formatMoney(goals?.annualRetirementExpenses)} />
+            {expenseGoals.map((g, i) => (
+              <Row
+                key={i}
+                label={g.name?.trim() || `Goal ${i + 1}`}
+                value={formatMoney(g.amount)}
+              />
+            ))}
+            {topics.length > 0 && (
+              <Row label="On your radar" value={`${topics.length} to discuss`} />
+            )}
           </>
         )}
       </SectionCard>
 
     </div>
+  );
+}
+
+/**
+ * True only when the client left the whole step alone. Every field counts —
+ * including a lone checked "On your radar" box, which is the one thing on this
+ * step a client can answer without typing a single number.
+ *
+ * The two counts are passed in already filtered, so "one abandoned goal card"
+ * reads as empty here exactly as it does on submit.
+ */
+function isGoalsEmpty(
+  goals: IntakeDraft["goals"],
+  goalCount: number,
+  topicCount: number,
+): boolean {
+  return (
+    !goals?.clientRetirementAge &&
+    !goals?.spouseRetirementAge &&
+    !goals?.annualRetirementExpenses &&
+    goalCount === 0 &&
+    topicCount === 0 &&
+    !goals?.topicsNote?.trim()
   );
 }

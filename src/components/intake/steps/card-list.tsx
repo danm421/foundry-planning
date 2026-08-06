@@ -150,20 +150,17 @@ export function YearInput({
   );
 }
 
-// ─── DecimalInput ─────────────────────────────────────────────────────────────
+// ─── Suffixed number fields ───────────────────────────────────────────────────
 //
 // Plain positive number with an optional unit adornment — an interest rate
-// ("6.5 %") or a count of years ("22 years"). Unlike MoneyInput it adds no
-// thousands separators, because nothing it collects is ever that large.
+// ("6.5 %") or a count of years ("22 years"). Unlike MoneyInput these add no
+// thousands separators, because nothing they collect is ever that large.
+//
+// The two exports below differ only in how they parse, which is the one thing
+// `useNumericField` already takes as a parameter — so they share this body
+// rather than a second copy of the suffix chrome.
 
-export function DecimalInput({
-  id,
-  value,
-  onChange,
-  ariaLabel,
-  placeholder,
-  suffix,
-}: {
+interface SuffixedNumberProps {
   id?: string;
   value: number | undefined;
   onChange: (next: number | undefined) => void;
@@ -171,15 +168,29 @@ export function DecimalInput({
   placeholder?: string;
   /** Unit shown inside the field's right edge, e.g. "%" or "years". */
   suffix?: string;
+}
+
+function SuffixedNumberInput({
+  id,
+  value,
+  onChange,
+  ariaLabel,
+  placeholder,
+  suffix,
+  parse,
+  inputMode,
+}: SuffixedNumberProps & {
+  parse: (typed: string) => ParsedInput;
+  inputMode: "decimal" | "numeric";
 }) {
-  const { raw, onType } = useNumericField(value, onChange, parseDecimal);
+  const { raw, onType } = useNumericField(value, onChange, parse);
 
   return (
     <div className="relative">
       <input
         id={id}
         type="text"
-        inputMode="decimal"
+        inputMode={inputMode}
         className={`${inputCls} tabular ${suffix ? "pr-14" : ""}`}
         value={raw}
         onChange={(e) => onType(e.target.value)}
@@ -193,6 +204,26 @@ export function DecimalInput({
       )}
     </div>
   );
+}
+
+/** Fractional values allowed — a rate, a part-year term. */
+export function DecimalInput(props: SuffixedNumberProps) {
+  return <SuffixedNumberInput {...props} parse={parseDecimal} inputMode="decimal" />;
+}
+
+/**
+ * Whole numbers only. The fields it serves are `z.number().int()` on submit, and
+ * letting a "2.5" through would fail the strict schema with a message the client
+ * can't act on, long after they typed it.
+ */
+export function IntegerInput(props: SuffixedNumberProps) {
+  return <SuffixedNumberInput {...props} parse={parseInteger} inputMode="numeric" />;
+}
+
+/** Digits only; "" reads as unanswered. */
+function parseInteger(typed: string): ParsedInput {
+  const raw = typed.replace(/\D/g, "");
+  return { raw, value: raw === "" ? undefined : Number(raw) };
 }
 
 // ─── Owner field ──────────────────────────────────────────────────────────────

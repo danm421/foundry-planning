@@ -74,7 +74,7 @@ const COMPLETE_PAYLOAD: IntakePayload = {
   accounts: [],
   income: [],
   property: [],
-  goals: {},
+  goals: { expenseGoals: [], topics: [] },
   meta: { completedSections: [] },
 };
 
@@ -93,7 +93,7 @@ const SEEDED_PAYLOAD: IntakePayload = {
   accounts: [],
   income: [],
   property: [],
-  goals: {},
+  goals: { expenseGoals: [], topics: [] },
   meta: { completedSections: [] },
 };
 

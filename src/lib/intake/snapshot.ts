@@ -324,6 +324,14 @@ export async function snapshotClientToPayload(
         spouseRetirementAge: client.spouseRetirementAge ?? undefined,
         // annualRetirementExpenses: sourcing would require querying the
         // "Retirement Living Expenses" default expense row — deferred; leave undefined.
+        //
+        // expenseGoals / topics: not sourced either, for the same reason plus a
+        // lossy one — the form's seven goal types all collapse to "other" in the
+        // DB, so a round-trip would relabel a client's wedding as "Something
+        // else". A prefilled form starts these sections empty; the advisor sees
+        // whatever the client enters on the review diff regardless.
+        expenseGoals: [],
+        topics: [],
       },
       meta: { completedSections: [] },
     };
@@ -343,6 +351,8 @@ export async function snapshotClientToPayload(
     goals: {
       clientRetirementAge: client.retirementAge ?? undefined,
       spouseRetirementAge: client.spouseRetirementAge ?? undefined,
+      expenseGoals: [],
+      topics: [],
     },
     meta: { completedSections: [] },
   };

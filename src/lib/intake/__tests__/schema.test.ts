@@ -188,3 +188,140 @@ describe("intake schema", () => {
     expect(maritalToFilingStatus("widowed")).toBe("single");
   });
 });
+
+// ── Goals: funded goals + "On your radar" ────────────────────────────────────
+
+const MIN_FAMILY = {
+  primary: { firstName: "Cooper", lastName: "Sample", dateOfBirth: "1975-06-20" },
+  children: [],
+};
+
+/** Strict-parse a goals slice on an otherwise-minimal payload. */
+function submitGoals(goals: unknown) {
+  return intakeSubmitSchema.safeParse({ family: MIN_FAMILY, goals });
+}
+
+describe("intake goals", () => {
+  it("accepts a fully-specified funded goal", () => {
+    const ok = submitGoals({
+      expenseGoals: [
+        {
+          name: "Emma's college",
+          type: "education",
+          amount: 40000,
+          startYear: 2034,
+          years: 4,
+          forWhom: "child:0",
+        },
+      ],
+    });
+    expect(ok.success).toBe(true);
+  });
+
+  it("rejects a beneficiary reference that isn't a structural ref", () => {
+    // A NAME used to be legal here. It isn't: a name breaks the moment the
+    // client goes back and fixes a spelling, so the schema refuses one.
+    const named = submitGoals({
+      expenseGoals: [{ name: "College", type: "education", amount: 1, forWhom: "Emma" }],
+    });
+    expect(named.success).toBe(false);
+
+    for (const ref of ["client", "spouse", "child:0", "child:19"]) {
+      expect(
+        submitGoals({
+          expenseGoals: [{ name: "College", type: "education", amount: 1, forWhom: ref }],
+        }).success,
+      ).toBe(true);
+    }
+  });
+
+  it("defaults a goal to one year so a one-time expense needs no duration", () => {
+    const ok = submitGoals({
+      expenseGoals: [{ name: "Wedding", type: "wedding", amount: 45000 }],
+    });
+    expect(ok.success).toBe(true);
+    expect(ok.data?.goals.expenseGoals[0].years).toBe(1);
+  });
+
+  it("rejects a fractional duration", () => {
+    const bad = submitGoals({
+      expenseGoals: [{ name: "Trip", type: "travel", amount: 20000, years: 2.5 }],
+    });
+    expect(bad.success).toBe(false);
+  });
+
+  it("rejects a goal type that isn't on offer", () => {
+    const bad = submitGoals({
+      expenseGoals: [{ name: "Yacht", type: "boat", amount: 1 }],
+    });
+    expect(bad.success).toBe(false);
+  });
+
+  it("rejects an unknown discussion topic on submit", () => {
+    expect(submitGoals({ topics: ["charitable"] }).success).toBe(true);
+    expect(submitGoals({ topics: ["astrology"] }).success).toBe(false);
+  });
+
+  it("defaults both goal lists to empty when the step is skipped entirely", () => {
+    const ok = intakeSubmitSchema.safeParse({ family: MIN_FAMILY });
+    expect(ok.success).toBe(true);
+    expect(ok.data?.goals.expenseGoals).toEqual([]);
+    expect(ok.data?.goals.topics).toEqual([]);
+  });
+
+  it("draft schema accepts a freshly-added blank goal card", () => {
+    const draft = intakeDraftSchema.safeParse({
+      goals: { expenseGoals: [{ name: "", type: "other", amount: 0, years: 1 }] },
+    });
+    expect(draft.success).toBe(true);
+  });
+
+  it("draft schema round-trips a topic the current list no longer has", () => {
+    // A draft saved against an older revision must autosave, not 422 — the enum
+    // is enforced on submit, which is where an unknown topic should surface.
+    const draft = intakeDraftSchema.safeParse({ goals: { topics: ["retired_early"] } });
+    expect(draft.success).toBe(true);
+  });
+
+  it("prunes an abandoned goal card but keeps one with any content", () => {
+    const pruned = pruneIntakeBlankRows({
+      goals: {
+        clientRetirementAge: 65,
+        expenseGoals: [
+          { name: "", type: "other", amount: 0, years: 1 },
+          { name: "Wedding", type: "wedding", amount: 0, years: 1 },
+          { name: "", type: "other", amount: 30000, years: 1 },
+        ],
+      },
+    }) as { goals: { clientRetirementAge: number; expenseGoals: { name: string }[] } };
+
+    expect(pruned.goals.expenseGoals).toHaveLength(2);
+    expect(pruned.goals.expenseGoals.map((g) => g.name)).toEqual(["Wedding", ""]);
+    // Pruning rebuilds the goals object; the scalars on it must survive.
+    expect(pruned.goals.clientRetirementAge).toBe(65);
+  });
+
+  it("a pruned payload with an abandoned goal card passes strict submit", () => {
+    const pruned = pruneIntakeBlankRows({
+      family: MIN_FAMILY,
+      goals: { expenseGoals: [{ name: "", type: "other", amount: 0, years: 1 }] },
+    });
+    expect(intakeSubmitSchema.safeParse(pruned).success).toBe(true);
+  });
+
+  it("leaves a payload with no goals key untouched", () => {
+    const pruned = pruneIntakeBlankRows({ family: MIN_FAMILY }) as Record<string, unknown>;
+    expect(pruned.goals).toBeUndefined();
+  });
+
+  it("caps the goal list", () => {
+    const tooMany = submitGoals({
+      expenseGoals: Array.from({ length: 21 }, () => ({
+        name: "x",
+        type: "other",
+        amount: 1,
+      })),
+    });
+    expect(tooMany.success).toBe(false);
+  });
+});

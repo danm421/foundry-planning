@@ -14,7 +14,7 @@ const minPayload: IntakePayload = {
   accounts: [],
   income: [],
   property: [],
-  goals: { clientRetirementAge: 65 },
+  goals: { clientRetirementAge: 65, expenseGoals: [], topics: [] },
   meta: emptyMeta,
 };
 
@@ -121,7 +121,7 @@ describe("buildIntakeDiff", () => {
   it("detects goals retirement age change", () => {
     const updated: IntakePayload = {
       ...minPayload,
-      goals: { clientRetirementAge: 60 },
+      goals: { clientRetirementAge: 60, expenseGoals: [], topics: [] },
     };
     const diff = buildIntakeDiff(minPayload, updated);
     expect(diff.goals.clientRetirementAge).toEqual({ changed: true, old: 65, new: 60 });
@@ -130,5 +130,95 @@ describe("buildIntakeDiff", () => {
   it("handles missing spouse gracefully", () => {
     const diff = buildIntakeDiff(null, minPayload);
     expect(diff.family.spouseName).toEqual({ changed: false, value: undefined });
+  });
+
+  it("surfaces a funded goal's type, beneficiary, and span", () => {
+    const withGoal: IntakePayload = {
+      ...minPayload,
+      family: {
+        ...minPayload.family,
+        children: [{ firstName: "Emma", dateOfBirth: "2014-03-02" }],
+      },
+      goals: {
+        ...minPayload.goals,
+        expenseGoals: [
+          {
+            name: "Emma's college",
+            type: "education",
+            amount: 40000,
+            startYear: 2034,
+            years: 4,
+            // A structural ref, resolved back to a name against the same
+            // payload's family — so a rename can't orphan the attribution.
+            forWhom: "child:0",
+          },
+        ],
+      },
+    };
+    const diff = buildIntakeDiff(null, withGoal);
+    expect(diff.expenseGoals.submittedCount).toBe(1);
+    expect(diff.expenseGoals.submittedItems[0]).toEqual({
+      name: "Emma's college",
+      value: 40000,
+      secondary: "Education · for Emma · 2034–2037",
+    });
+  });
+
+  it("omits the beneficiary when the ref points at a child no longer listed", () => {
+    const withGoal: IntakePayload = {
+      ...minPayload,
+      goals: {
+        ...minPayload.goals,
+        expenseGoals: [
+          { name: "College", type: "education", amount: 40000, startYear: 2034, years: 4, forWhom: "child:3" },
+        ],
+      },
+    };
+    const diff = buildIntakeDiff(null, withGoal);
+    // A stale name would be worse than none — the advisor sees the goal, just
+    // not an attribution the family no longer supports.
+    expect(diff.expenseGoals.submittedItems[0].secondary).toBe("Education · 2034–2037");
+  });
+
+  it("shows a one-time goal as a single year, and a blank start year as this one", () => {
+    const currentYear = new Date().getFullYear();
+    const withGoal: IntakePayload = {
+      ...minPayload,
+      goals: {
+        ...minPayload.goals,
+        expenseGoals: [{ name: "Wedding", type: "wedding", amount: 45000, years: 1 }],
+      },
+    };
+    const diff = buildIntakeDiff(null, withGoal);
+    // No start year given — apply fills in the current year, so the diff must
+    // show the year the advisor is actually approving.
+    expect(diff.expenseGoals.submittedItems[0].secondary).toBe(
+      `Wedding · ${currentYear}`,
+    );
+  });
+
+  it("resolves discussion topics to the labels the client read", () => {
+    const withTopics: IntakePayload = {
+      ...minPayload,
+      goals: {
+        ...minPayload.goals,
+        topics: ["charitable", "care"],
+        topicsNote: "  Thinking about a cabin.  ",
+      },
+    };
+    const diff = buildIntakeDiff(null, withTopics);
+    expect(diff.radar.topics).toEqual([
+      "Charitable giving",
+      "Long-term care, for us or a parent",
+    ]);
+    expect(diff.radar.note).toBe("Thinking about a cabin.");
+  });
+
+  it("drops a whitespace-only note so the review card stays hidden", () => {
+    const withBlankNote: IntakePayload = {
+      ...minPayload,
+      goals: { ...minPayload.goals, topicsNote: "   " },
+    };
+    expect(buildIntakeDiff(null, withBlankNote).radar.note).toBeUndefined();
   });
 });

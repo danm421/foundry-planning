@@ -1,4 +1,10 @@
 import type { IntakePayload } from "@/lib/intake/schema";
+import {
+  beneficiaryName,
+  goalSpanLabel,
+  goalTopicLabel,
+  goalTypeLabel,
+} from "@/lib/intake/goal-rows";
 import { incomeSpanLabel } from "@/lib/intake/income-years";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -23,6 +29,13 @@ export interface GoalsDiff {
   annualRetirementExpenses: FieldDiff<number | undefined>;
 }
 
+/** The "On your radar" answers — checked topics plus the free-text note. */
+export interface RadarDiff {
+  /** Already resolved to the client-facing labels. */
+  topics: string[];
+  note: string | undefined;
+}
+
 export interface ListSectionDiff {
   baselineCount: number;
   submittedCount: number;
@@ -35,6 +48,9 @@ export interface IntakeDiff {
   accounts: ListSectionDiff;
   income: ListSectionDiff;
   property: ListSectionDiff;
+  /** Funded goals — apply writes one goal-flagged expense row per entry. */
+  expenseGoals: ListSectionDiff;
+  radar: RadarDiff;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -92,6 +108,43 @@ export function buildIntakeDiff(
     clientRetirementAge: field(baseline?.goals.clientRetirementAge, submitted.goals.clientRetirementAge),
     spouseRetirementAge: field(baseline?.goals.spouseRetirementAge, submitted.goals.spouseRetirementAge),
     annualRetirementExpenses: field(baseline?.goals.annualRetirementExpenses, submitted.goals.annualRetirementExpenses),
+  };
+
+  // The goal's TYPE, span, and beneficiary all ride in `secondary`: apply turns
+  // each entry into an expense row whose DB type, year window, and
+  // `forFamilyMemberId` come straight from them, so the advisor has to see all
+  // three before approving. The value shown is one year's cost — the same figure
+  // the client typed and the same one that lands in `annual_amount` — with the
+  // span alongside it saying how many years it repeats for.
+  //
+  // Type, span, and beneficiary all go through the shared helpers, so what the
+  // advisor approves is word-for-word what the client picked and exactly the
+  // window apply will write.
+  const expenseGoals: ListSectionDiff = {
+    baselineCount: baseline?.goals.expenseGoals.length ?? 0,
+    submittedCount: submitted.goals.expenseGoals.length,
+    submittedItems: submitted.goals.expenseGoals.map((g) => {
+      const forName = beneficiaryName(g.forWhom, submitted.family);
+      return {
+        name: g.name,
+        value: g.amount,
+        secondary: [
+          goalTypeLabel(g.type),
+          forName ? `for ${forName}` : undefined,
+          goalSpanLabel(g, currentYear),
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      };
+    }),
+  };
+
+  // Topics resolve to labels here rather than in the view: the CRM note apply
+  // writes uses the same `goalTopicLabel`, so what the advisor reads on the
+  // review screen is word-for-word what lands on the household timeline.
+  const radar: RadarDiff = {
+    topics: submitted.goals.topics.map(goalTopicLabel),
+    note: submitted.goals.topicsNote?.trim() || undefined,
   };
 
   // Owner and basis ride along in `secondary`: apply writes both (account_owners
@@ -155,5 +208,5 @@ export function buildIntakeDiff(
     })),
   };
 
-  return { family, goals, accounts, income, property };
+  return { family, goals, accounts, income, property, expenseGoals, radar };
 }

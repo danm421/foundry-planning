@@ -6,6 +6,7 @@ import {
   isBlankIntakePropertyRow,
   type IntakeDraft,
 } from "@/lib/intake/schema";
+import { childBeneficiaryRef } from "@/lib/intake/goal-rows";
 import { WizardChrome } from "@/components/wizard-chrome";
 import {
   IntakeBrandingHeader,
@@ -16,7 +17,7 @@ import { FamilyStep } from "./steps/family-step";
 import { AccountsStep } from "./steps/accounts-step";
 import { IncomeStep } from "./steps/income-step";
 import { PropertyStep } from "./steps/property-step";
-import { GoalsStep } from "./steps/goals-step";
+import { GoalsStep, type GoalBeneficiary } from "./steps/goals-step";
 import { ReviewStep } from "./review-step";
 
 // ─── Public interface ────────────────────────────────────────────────────────
@@ -91,6 +92,34 @@ function offersSkip(step: StepDescriptor, draft: IntakeDraft): boolean {
   if (step.subStep === "income") return (draft.income ?? []).every(isBlankIntakeIncomeRow);
   if (step.subStep === "property") return (draft.property ?? []).every(isBlankIntakePropertyRow);
   return true;
+}
+
+// ─── Goal beneficiaries ──────────────────────────────────────────────────────
+
+/**
+ * Everyone the Family step has named, for the Goals step's "who is this for"
+ * picker: the client, the spouse, then the children in entry order.
+ *
+ * The picker's VALUE is a structural ref, not the name, so two children called
+ * Emma stay distinguishable and a later rename doesn't orphan the goal. Only
+ * rows with a name are offered — an unnamed one has nothing to show — but the
+ * child refs stay pinned to the ORIGINAL index, because that's what apply
+ * matches against.
+ */
+function goalBeneficiaries(draft: IntakeDraft): GoalBeneficiary[] {
+  const family = draft.family;
+  const people: GoalBeneficiary[] = [
+    { ref: "client", name: family?.primary?.firstName ?? "", dateOfBirth: family?.primary?.dateOfBirth },
+    { ref: "spouse", name: family?.spouse?.firstName ?? "", dateOfBirth: family?.spouse?.dateOfBirth },
+    ...(family?.children ?? []).map((child, i) => ({
+      ref: childBeneficiaryRef(i),
+      name: child.firstName ?? "",
+      dateOfBirth: child.dateOfBirth,
+    })),
+  ];
+  return people
+    .map((p) => ({ ...p, name: p.name.trim() }))
+    .filter((p) => p.name !== "");
 }
 
 // ─── Section → flat index map ────────────────────────────────────────────────
@@ -198,7 +227,13 @@ export function IntakeWizard({
           );
         return null;
       case "goals":
-        return <GoalsStep value={value.goals} onChange={setGoals} />;
+        return (
+          <GoalsStep
+            value={value.goals}
+            onChange={setGoals}
+            beneficiaries={goalBeneficiaries(value)}
+          />
+        );
       case "review":
         return (
           <ReviewStep
