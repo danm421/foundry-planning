@@ -12,7 +12,7 @@ function doc(id: string, role: MergeDocument["role"], mutate: (f: TaxReturnFacts
 }
 
 const ridge = {
-  entityName: "Ridge Partners LLC", ein: "12-3456789",
+  entityId: null, entityName: "Ridge Partners LLC", ein: "12-3456789",
   entityType: "partnership" as const, ordinaryBusinessIncome: 42000,
   rentalIncome: null, guaranteedPayments: 30000, section179: null,
   w2WagesFromEntity: null, qbiIncome: 42000, isSstb: false,
@@ -147,10 +147,55 @@ describe("mergeDocuments — entity arrays", () => {
 
     expect(result.facts.k1s).toHaveLength(1);
   });
+});
+
+describe("mergeDocuments — stamped entity identity", () => {
+  it("stamps every merged entity with the key it was filed under", () => {
+    const a = doc("a", "k1", (f) => { f.k1s = [ridge]; });
+    const b = doc("b", "full_return", (f) => {
+      f.businesses = [{ entityId: null, name: "Mueller Consulting", netProfit: 90000,
+                        grossReceipts: null, totalExpenses: null, depreciation: null,
+                        isSstb: false }];
+    });
+
+    const result = mergeDocuments(2025, [a, b]);
+
+    // The stamp is what makes the entity addressable AFTER a rename: every
+    // later layer reads `entityId` instead of re-deriving from OCR'd text.
+    expect(result.facts.k1s[0].entityId).toBe("12-3456789");
+    expect(result.facts.businesses[0].entityId).toBe("name:mueller consulting");
+    expect(taxReturnFactsSchema.safeParse(result.facts).success).toBe(true);
+  });
+
+  it("stamps an UNKEYABLE entity with its synthetic key, making it addressable", () => {
+    // Before the stamp this entity was kept by the merge but could never be
+    // edited: `entityKey` returned null for it, so `diffOverrides` skipped it
+    // and `applyOverrides` could never match a `doc:` key.
+    const a = doc("a", "k1", (f) => {
+      f.k1s = [{ ...ridge, ein: null, entityName: null }];
+    });
+
+    const result = mergeDocuments(2025, [a]);
+
+    expect(result.facts.k1s[0].entityId).toBe("doc:a:0");
+  });
+
+  it("never treats a document's own entityId as a merged value", () => {
+    // A document echoing back a stale id must not re-key the merged entity nor
+    // show up as a field conflict for the advisor to resolve.
+    const a = doc("a", "k1", (f) => { f.k1s = [{ ...ridge, entityId: "stale-a" }]; });
+    const b = doc("b", "k1", (f) => { f.k1s = [{ ...ridge, entityId: "stale-b" }]; });
+
+    const result = mergeDocuments(2025, [a, b]);
+
+    expect(result.facts.k1s).toHaveLength(1);
+    expect(result.facts.k1s[0].entityId).toBe("12-3456789");
+    expect(result.conflicts).toEqual([]);
+  });
 
   it("lets a full_return document contribute businesses too", () => {
     const a = doc("a", "full_return", (f) => {
-      f.businesses = [{ name: "Mueller Consulting", netProfit: 180000,
+      f.businesses = [{ entityId: null, name: "Mueller Consulting", netProfit: 180000,
                         grossReceipts: 240000, totalExpenses: 60000,
                         depreciation: 4000, isSstb: false }];
     });

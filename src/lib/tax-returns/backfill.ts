@@ -133,16 +133,13 @@ function firstDifference(replayed: unknown, stored: unknown, path: string): stri
  * and only the first is actual data loss, which is why the paths matter:
  *
  *  1. REAL LOSS (`k1s` / `businesses`) — an entity the override layer cannot
- *     express. `diffOverrides` emits per-field overrides for an entity present
- *     in `facts` but absent from the base (its `!original` branch), while
- *     `applyOverrides` deliberately DROPS an entity override whose key is not
- *     already in the list, because letting an override CREATE an entity would
- *     also let a stale one resurrect an entity the advisor deleted. So a
- *     manually-entered return holding a K-1, or an extracted one where the
- *     advisor added a Schedule C in the review form, has its entity carried by
- *     the diff and silently discarded by the replay. The mirror case — the
- *     advisor DELETING an extracted entity — emits no override at all and the
- *     document puts it back.
+ *     express. This was the COMMON case before entities carried a stored
+ *     identity: an entity present in `facts` but absent from the base was
+ *     emitted by the diff and dropped by the replay, and a DELETED entity
+ *     emitted nothing at all so the document put it back. Both now round-trip
+ *     (`adv:` keys create, `__deleted` markers delete), so what remains in this
+ *     category is an entity neither layer can address at all — which is what
+ *     the gate is here to catch if it ever recurs.
  *
  *  2. CONSERVATIVE REFUSAL — an extraction that materialized a nullable block
  *     (`deductions.scheduleA`, `income.scheduleE`, `deductions.qbi`,
@@ -160,10 +157,17 @@ function firstDifference(replayed: unknown, stored: unknown, path: string): stri
  *
  * Writing a state row for a category-1 return would make the first
  * `recomputeFacts` rewrite `tax_returns.facts` with those K-1s and businesses
- * gone: silent client data loss, no error. Rather than invent an
- * entity-creation override (a design decision this backfill has no standing to
- * make), the runner SKIPS every rejected row. A skipped row has no state row,
- * so `recomputeFacts` throws `MissingTaxReturnStateError` loudly instead.
+ * gone: silent client data loss, no error. The runner SKIPS every rejected row.
+ * A skipped row has no state row, so `recomputeFacts` throws
+ * `MissingTaxReturnStateError` loudly instead.
+ *
+ * `entityId` is erased on both sides before comparing. It is ASSIGNED by the
+ * assembly layer — `mergeEntities` stamps it, `applyOverrides` mints one for an
+ * advisor-created entity — so no legacy row carries it and the replay always
+ * does. Comparing it would report every entity-bearing row as differing, and
+ * because the path lands inside an entity collection, `differencesIncludeEntities`
+ * would classify a purely structural GAIN as data loss and skip a row that
+ * replays perfectly.
  *
  * `taxYear` is the `tax_returns.tax_year` COLUMN, not `facts.taxYear` — it is
  * what `recomputeFacts` will be called with. No document can write `taxYear`
@@ -175,6 +179,18 @@ function firstDifference(replayed: unknown, stored: unknown, path: string): stri
  * is accepted on purpose — the backfill preserves an existing inconsistency,
  * it does not introduce one.
  */
+function withoutEntityIds(facts: TaxReturnFacts): Record<string, unknown> {
+  const copy = structuredClone(facts) as unknown as Record<string, unknown>;
+  for (const collection of ENTITY_COLLECTIONS) {
+    const list = copy[collection];
+    if (!Array.isArray(list)) continue;
+    for (const entity of list) {
+      (entity as Record<string, unknown>).entityId = null;
+    }
+  }
+  return copy;
+}
+
 export function backfillReplayDifferences(
   taxYear: number,
   plan: BackfillPlan,
@@ -190,9 +206,8 @@ export function backfillReplayDifferences(
         facts: plan.document.extractedFacts,
       }]
     : [];
-  const replayed = assembleFacts(taxYear, docs, plan.overrides).facts as unknown as
-    Record<string, unknown>;
-  const stored = facts as unknown as Record<string, unknown>;
+  const replayed = withoutEntityIds(assembleFacts(taxYear, docs, plan.overrides).facts);
+  const stored = withoutEntityIds(facts);
 
   const roots = [...new Set([...Object.keys(replayed), ...Object.keys(stored)])].sort();
   return roots

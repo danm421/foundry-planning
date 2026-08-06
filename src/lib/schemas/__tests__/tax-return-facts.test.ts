@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   taxReturnFactsSchema,
   emptyTaxReturnFacts,
+  emptyBusiness,
+  emptyK1,
   TAX_RETURN_MIN_YEAR,
 } from "../tax-return-facts";
 
@@ -108,6 +110,27 @@ describe("taxReturnFactsSchema", () => {
     expect(parsed.data.k1s).toEqual([]);
   });
 
+  it("accepts a persisted ENTITY written before entityId existed", () => {
+    // Same production trap one level down: `parseRowFacts` re-validates
+    // persisted jsonb on every read, and every entity written before identity
+    // was stamped has no `entityId` key. A plain `.nullable()` here would fail
+    // those rows and blank the whole Tax Analysis tab.
+    const legacy = emptyTaxReturnFacts(2025) as Record<string, unknown>;
+    const k1 = { ...emptyK1() } as Record<string, unknown>;
+    delete k1.entityId;
+    const business = { ...emptyBusiness() } as Record<string, unknown>;
+    delete business.entityId;
+    legacy.k1s = [k1];
+    legacy.businesses = [business];
+
+    const parsed = taxReturnFactsSchema.safeParse(legacy);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    // Defaulted, not merely absent — `entityKey` reads it unguarded.
+    expect(parsed.data.k1s[0].entityId).toBeNull();
+    expect(parsed.data.businesses[0].entityId).toBeNull();
+  });
+
   it("still rejects a facts blob missing a pre-existing deductions key", () => {
     const broken = emptyTaxReturnFacts(2025) as Record<string, unknown>;
     const deductions = { ...(broken.deductions as Record<string, unknown>) };
@@ -127,11 +150,12 @@ describe("taxReturnFactsSchema", () => {
       selfEmployedHealthInsurance: 9600, hsaDeduction: 0,
     };
     facts.businesses = [{
-      name: "Mueller Consulting", netProfit: 180000, grossReceipts: 240000,
+      entityId: null, name: "Mueller Consulting", netProfit: 180000, grossReceipts: 240000,
       totalExpenses: 60000, depreciation: 4000, isSstb: false,
     }];
     facts.k1s = [{
-      entityName: "Ridge Partners LLC", ein: "12-3456789", entityType: "partnership",
+      entityId: null, entityName: "Ridge Partners LLC", ein: "12-3456789",
+      entityType: "partnership",
       ordinaryBusinessIncome: 42000, rentalIncome: null, guaranteedPayments: 30000,
       section179: 0, w2WagesFromEntity: null, qbiIncome: 42000, isSstb: false,
     }];

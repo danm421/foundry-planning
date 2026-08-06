@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { emptyTaxReturnFacts } from "@/lib/schemas/tax-return-facts";
+import { emptyK1, emptyTaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 import {
   assembleFacts,
   recomputeFacts,
@@ -93,6 +93,7 @@ describe("assembleFacts", () => {
     const { taxReturnFactsSchema } = await import("@/lib/schemas/tax-return-facts");
     const facts = emptyTaxReturnFacts(2025);
     facts.k1s = [{
+      entityId: null,
       entityName: "Ridge Partners LLC", ein: "12-3456789", entityType: "partnership",
       ordinaryBusinessIncome: 42000, rentalIncome: null, guaranteedPayments: 30000,
       section179: null, w2WagesFromEntity: null, qbiIncome: 42000, isSstb: false,
@@ -106,6 +107,38 @@ describe("assembleFacts", () => {
     // parses — a schema-satisfying result is necessary but not sufficient,
     // since w2WagesFromEntity: null also parses.
     expect(result.facts.k1s[0].w2WagesFromEntity).toBe(85000);
+  });
+
+  it("keeps an advisor's rename and their other edits across a recompute", async () => {
+    // End to end through the layers that actually run in production: the
+    // document stamps identity, the review form submits a corrected name, the
+    // diff files the edits, and the NEXT recompute — same document, unchanged —
+    // reproduces them. Keyed off the entity's own text, this loses both edits.
+    const { diffOverrides } = await import("../merge/overrides");
+
+    const extracted = emptyTaxReturnFacts(2025);
+    extracted.k1s = [{
+      ...emptyK1(),
+      entityName: "RIDGE PARTNRS LLC", ein: null, entityType: "partnership",
+      ordinaryBusinessIncome: 42000,
+    }];
+    const docs = [{ id: "a", role: "full_return" as const, taxYear: 2025, facts: extracted }];
+
+    const shown = assembleFacts(2025, docs, {}).facts;
+    const submitted = structuredClone(shown);
+    submitted.k1s[0].entityName = "Ridge Partners LLC";
+    submitted.k1s[0].w2WagesFromEntity = 85000;
+
+    const overrides = diffOverrides(shown, submitted);
+    const recomputed = assembleFacts(2025, docs, overrides).facts;
+
+    expect(recomputed.k1s).toHaveLength(1);
+    expect(recomputed.k1s[0].entityName).toBe("Ridge Partners LLC");
+    expect(recomputed.k1s[0].w2WagesFromEntity).toBe(85000);
+    // And a SECOND round trip is stable — the corrected name must not re-key
+    // the entity now that it is the value the form submits from.
+    const twice = assembleFacts(2025, docs, diffOverrides(shown, recomputed)).facts;
+    expect(twice.k1s).toEqual(recomputed.k1s);
   });
 });
 

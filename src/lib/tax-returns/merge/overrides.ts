@@ -1,5 +1,8 @@
-import { entityKey, entityPath, ENTITY_COLLECTIONS, parseEntityPath } from "./paths";
-import { NULLABLE_BLOCK_FACTORIES } from "./nullable-blocks";
+import {
+  derivedEntityKey, entityKey, entityPath, ENTITY_COLLECTIONS, ENTITY_DELETED_FIELD,
+  isAdvisorKey, newAdvisorKey, parseEntityPath,
+} from "./paths";
+import { ENTITY_FACTORIES, NULLABLE_BLOCK_FACTORIES } from "./nullable-blocks";
 import type { OverrideMap } from "./types";
 import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 
@@ -22,11 +25,34 @@ function applyScalarPath(facts: Record<string, unknown>, path: string, value: un
   node[leaf] = value;
 }
 
-/** Advisor edits layered over the document-merged facts. Pure — the input is
- *  never mutated. Unknown paths are ignored, so a stale override left by a
- *  removed document can never corrupt the shape. */
+/**
+ * Advisor edits layered over the document-merged facts. Pure — the input is
+ * never mutated. Unknown paths are ignored, so a stale override left by a
+ * removed document can never corrupt the shape.
+ *
+ * Entities are addressed by their stamped `entityId` (see `entityKey`), which
+ * is what lets an edit outlive the advisor renaming the entity it belongs to.
+ *
+ * An override may CREATE an entity only under an `adv:` key, and DELETE one
+ * under any key. Those two are not symmetric, and the asymmetry is the point:
+ * no document can produce an `adv:` key, so a stale override can never
+ * resurrect a document-sourced entity — the failure Task 7's blanket refusal
+ * was protecting against — while a deletion left over from a removed document
+ * simply matches nothing and is dropped like any other unknown key.
+ */
 export function applyOverrides(facts: TaxReturnFacts, overrides: OverrideMap): TaxReturnFacts {
   const out = structuredClone(facts) as unknown as Record<string, unknown>;
+
+  // Deletions are collected up front so the result never depends on the
+  // enumeration order of a persisted jsonb object: a deletion always outranks
+  // a field edit on the same entity, whichever key the map happens to list first.
+  const deleted = new Set<string>();
+  for (const [path, value] of Object.entries(overrides)) {
+    const entity = parseEntityPath(path);
+    if (entity && entity.field === ENTITY_DELETED_FIELD && value === true) {
+      deleted.add(`${entity.collection}[${entity.key}]`);
+    }
+  }
 
   for (const [path, value] of Object.entries(overrides)) {
     const entity = parseEntityPath(path);
@@ -34,20 +60,28 @@ export function applyOverrides(facts: TaxReturnFacts, overrides: OverrideMap): T
       applyScalarPath(out, path, value);
       continue;
     }
+    if (entity.field === ENTITY_DELETED_FIELD) continue; // handled above
+    if (deleted.has(`${entity.collection}[${entity.key}]`)) continue;
+
     const list = out[entity.collection] as Array<Record<string, unknown>> | undefined;
     if (!Array.isArray(list)) continue;
-    const target = list.find((e) => entityKey(e) === entity.key);
-    // An override whose key is no longer present is dropped, never used to
-    // CREATE an entity. `diffOverrides` emits per-field overrides for a
-    // brand-new entity in `submitted` (the `!original` branch below), so an
-    // advisor adding a K-1 in the review form produces overrides this layer
-    // will silently ignore. That's intentional, not a gap to close here:
-    // letting an override create an entity would also let a stale override
-    // RESURRECT one the advisor deleted, which is exactly the failure this
-    // ignore-unknown-key rule exists to prevent. Adding/removing entities is
-    // a document-layer operation, not an override-layer one.
+
+    let target = list.find((e) => entityKey(e) === entity.key);
+    if (!target && isAdvisorKey(entity.key)) {
+      target = { ...ENTITY_FACTORIES[entity.collection](), entityId: entity.key };
+      list.push(target);
+    }
     if (!target || !(entity.field in target)) continue;
     target[entity.field] = value;
+  }
+
+  for (const collection of ENTITY_COLLECTIONS) {
+    if (deleted.size === 0) break;
+    const list = out[collection];
+    if (!Array.isArray(list)) continue;
+    out[collection] = (list as Array<Record<string, unknown>>).filter(
+      (e) => !deleted.has(`${collection}[${entityKey(e)}]`),
+    );
   }
 
   return out as unknown as TaxReturnFacts;
@@ -64,9 +98,34 @@ function collectLeafPaths(node: unknown, path: string, out: Map<string, unknown>
 }
 
 /**
+ * Which entity in `base` is this submitted entity? Its stamped `entityId`
+ * first, then the derived key.
+ *
+ * The derived fallback is what pairs the two on the FIRST save after a
+ * backfill, when neither side carries a stamp yet. It is tried only when the
+ * stamp is absent — trying it first would undo the whole point, since renaming
+ * the entity is precisely what changes the derived value.
+ */
+function matchBaseEntity(
+  baseList: ReadonlyArray<Record<string, unknown>>,
+  submitted: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const stored = typeof submitted.entityId === "string" ? submitted.entityId.trim() : "";
+  if (stored) return baseList.find((e) => entityKey(e) === stored);
+  const derived = derivedEntityKey(submitted);
+  return derived ? baseList.find((e) => entityKey(e) === derived) : undefined;
+}
+
+/**
  * The sparse set of edits that turns `base` into `submitted`. The review form
  * still PUTs a whole facts object; this is what reduces it to overrides, so
  * the form never has to know overrides exist.
+ *
+ * NOT deterministic for an entity the advisor ADDED: it has no identity yet,
+ * so one is minted (`newAdvisorKey`). Every other output is a pure function of
+ * the inputs. The minted key is stable from the advisor's second save onward,
+ * because `applyOverrides` writes it onto the created entity and the form
+ * round-trips it back.
  */
 export function diffOverrides(base: TaxReturnFacts, submitted: TaxReturnFacts): OverrideMap {
   const overrides: OverrideMap = {};
@@ -92,14 +151,34 @@ export function diffOverrides(base: TaxReturnFacts, submitted: TaxReturnFacts): 
   for (const collection of ENTITY_COLLECTIONS) {
     const baseList = (baseRecord[collection] ?? []) as Array<Record<string, unknown>>;
     const submittedList = (submittedRecord[collection] ?? []) as Array<Record<string, unknown>>;
+    const kept = new Set<string>();
+
     for (const entity of submittedList) {
-      const key = entityKey(entity);
+      const original = matchBaseEntity(baseList, entity);
+      // An entity matching nothing in `base` is one the advisor ADDED, and it
+      // gets an `adv:` key — the only namespace `applyOverrides` will create
+      // under. A matched entity keeps the base entity's key, so a rename edits
+      // the entity it renames instead of forking a second copy of it.
+      const stored = typeof entity.entityId === "string" ? entity.entityId.trim() : "";
+      const key = original ? entityKey(original) : stored || newAdvisorKey();
       if (!key) continue;
-      const original = baseList.find((e) => entityKey(e) === key);
+      kept.add(key);
+
       for (const [field, value] of Object.entries(entity)) {
+        if (field === "entityId") continue; // identity is the key, never a value
         if (!original || original[field] !== value) {
           overrides[entityPath(collection, key, field)] = value;
         }
+      }
+    }
+
+    // An entity the advisor REMOVED. Only document-sourced entities need a
+    // marker: an `adv:` one exists purely as overrides, so leaving it out of
+    // this map already deletes it.
+    for (const original of baseList) {
+      const key = entityKey(original);
+      if (key && !kept.has(key)) {
+        overrides[entityPath(collection, key, ENTITY_DELETED_FIELD)] = true;
       }
     }
   }

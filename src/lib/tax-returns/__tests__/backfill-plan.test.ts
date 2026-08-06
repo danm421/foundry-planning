@@ -73,23 +73,23 @@ describe("planBackfill", () => {
 });
 
 /**
- * The lossless-replay gate. `planBackfill` cannot itself guarantee the
- * property its docstring wants, because `diffOverrides` emits per-field
- * overrides for an entity that exists in `facts` but not in the base, while
- * `applyOverrides` deliberately REFUSES to create entities from overrides (a
- * stale override must never resurrect a deleted K-1). Diff emits it, replay
- * discards it. Without this gate the backfill would write a state row whose
- * first `recomputeFacts` silently deletes those K-1s and Schedule C
- * businesses from `tax_returns.facts`.
- *
- * The runner therefore SKIPS any row this rejects: no state row means
- * `recomputeFacts` throws `MissingTaxReturnStateError` loudly instead.
+ * The lossless-replay gate. `planBackfill` cannot itself guarantee the property
+ * its docstring wants, so this is what decides whether a row may migrate: the
+ * runner SKIPS any row it rejects, and a skipped row has no state row, so
+ * `recomputeFacts` throws `MissingTaxReturnStateError` loudly instead of
+ * rewriting `tax_returns.facts` with something lossy.
  *
  * These assert the RETURNED PATH, not just a verdict, because the path is what
  * the runner logs and what classifies a rejected row: `k1s` / `businesses` is
  * real loss needing an owner decision, anything else is the gate refusing
  * structurally where nothing would be lost. A test that only pinned
  * accept/reject would let the two collapse into one opaque bucket again.
+ *
+ * The entity cases below USED to be the gate's main population — an entity in
+ * `facts` but not in the base was emitted by the diff and dropped by the
+ * replay, and a deleted one emitted nothing so the document put it back. Stored
+ * entity identity closed both, so they now assert the round trip. The gate
+ * stays because it is what would catch a regression of either.
  */
 describe("backfillReplayDifferences", () => {
   const ridgeK1 = {
@@ -116,7 +116,7 @@ describe("backfillReplayDifferences", () => {
     expect(backfillReplayDifferences(2025, plan, facts)).toEqual([]);
   });
 
-  it("rejects a manually-entered row carrying a K-1, whose replay drops it", () => {
+  it("migrates a manually-entered row carrying a K-1, under an advisor key", () => {
     const facts = emptyTaxReturnFacts(2025);
     facts.income.wages = 100000;
     facts.k1s = [ridgeK1];
@@ -127,15 +127,20 @@ describe("backfillReplayDifferences", () => {
       warnings: [], promptVersion: "manual", model: "manual",
     })!;
 
-    // The diff DOES carry the K-1's fields...
-    expect(plan.overrides).toHaveProperty("k1s[12-3456789].ordinaryBusinessIncome", 42000);
-    // ...but the replay drops the whole entity, which is the loss this gate
-    // exists to refuse.
-    expect(assembleFacts(2025, [], plan.overrides).facts.k1s).toEqual([]);
-    expect(backfillReplayDifferences(2025, plan, facts)).toEqual(["k1s"]);
+    // No document contributes it, so the entity exists ONLY as overrides — and
+    // only an `adv:` key may create one. Pins the key SHAPE, not just the
+    // verdict: a document-derived key here would replay to nothing.
+    const k1Paths = Object.keys(plan.overrides).filter((p) => p.startsWith("k1s["));
+    expect(k1Paths.length).toBeGreaterThan(0);
+    expect(k1Paths.every((p) => /^k1s\[adv:[0-9a-f-]{36}\]\./.test(p))).toBe(true);
+
+    const replayed = assembleFacts(2025, [], plan.overrides).facts;
+    expect(replayed.k1s).toHaveLength(1);
+    expect(replayed.k1s[0].ordinaryBusinessIncome).toBe(42000);
+    expect(backfillReplayDifferences(2025, plan, facts)).toEqual([]);
   });
 
-  it("rejects an extracted row where the advisor ADDED a K-1 the document lacks", () => {
+  it("migrates an extracted row where the advisor ADDED a K-1 the document lacks", () => {
     const extracted = emptyTaxReturnFacts(2025);
     extracted.income.wages = 250000;
     const facts = structuredClone(extracted);
@@ -150,13 +155,14 @@ describe("backfillReplayDifferences", () => {
     expect(plan.document).not.toBeNull();
     expect(assembleFacts(2025, [
       { id: "doc-1", role: "full_return", taxYear: 2025, facts: extracted },
-    ], plan.overrides).facts.k1s).toEqual([]);
-    expect(backfillReplayDifferences(2025, plan, facts)).toEqual(["k1s"]);
+    ], plan.overrides).facts.k1s).toHaveLength(1);
+    expect(backfillReplayDifferences(2025, plan, facts)).toEqual([]);
   });
 
-  it("rejects an extracted row where the advisor DELETED an extracted K-1", () => {
-    // The mirror image: `diffOverrides` only walks `submitted`, so a removal
-    // emits nothing at all and the document resurrects the entity on replay.
+  it("migrates an extracted row where the advisor DELETED an extracted K-1", () => {
+    // The mirror image, and the one that needs a marker rather than an absence:
+    // the document still contains the K-1, so without an explicit deletion the
+    // replay puts it straight back.
     const extracted = emptyTaxReturnFacts(2025);
     extracted.k1s = [ridgeK1];
     const facts = structuredClone(extracted);
@@ -168,14 +174,18 @@ describe("backfillReplayDifferences", () => {
       warnings: [], promptVersion: null, model: null,
     })!;
 
-    expect(backfillReplayDifferences(2025, plan, facts)).toEqual(["k1s"]);
+    expect(plan.overrides).toHaveProperty("k1s[12-3456789].__deleted", true);
+    expect(assembleFacts(2025, [
+      { id: "doc-1", role: "full_return", taxYear: 2025, facts: extracted },
+    ], plan.overrides).facts.k1s).toEqual([]);
+    expect(backfillReplayDifferences(2025, plan, facts)).toEqual([]);
   });
 
-  it("rejects a manually-entered row carrying a Schedule C business", () => {
+  it("migrates a manually-entered row carrying a Schedule C business", () => {
     // `businesses` is the OTHER entity collection and it keys differently:
-    // `entityKey` falls back to a normalized `name` because a Schedule C has
-    // neither `ein` nor `entityName`. The k1s tests above all key on `ein`, so
-    // without this one the whole name-keyed branch is uncovered.
+    // `derivedEntityKey` falls back to a normalized `name` because a Schedule C
+    // has neither `ein` nor `entityName`. The k1s tests above all key on `ein`,
+    // so without this one the whole name-keyed branch is uncovered.
     const facts = emptyTaxReturnFacts(2025);
     facts.businesses = [{
       ...emptyBusiness(), name: "Mueller Consulting", netProfit: 90000, isSstb: false,
@@ -187,12 +197,30 @@ describe("backfillReplayDifferences", () => {
       warnings: [], promptVersion: "manual", model: "manual",
     })!;
 
-    // Pins the name-derived key, not just the verdict — dropping `entityKey`'s
-    // `name` fallback would leave the row rejected for a DIFFERENT reason and
-    // a verdict-only test would still pass.
-    expect(plan.overrides).toHaveProperty("businesses[name:mueller consulting].netProfit", 90000);
-    expect(assembleFacts(2025, [], plan.overrides).facts.businesses).toEqual([]);
-    expect(backfillReplayDifferences(2025, plan, facts)).toEqual(["businesses"]);
+    const replayed = assembleFacts(2025, [], plan.overrides).facts;
+    expect(replayed.businesses).toHaveLength(1);
+    expect(replayed.businesses[0].name).toBe("Mueller Consulting");
+    expect(replayed.businesses[0].netProfit).toBe(90000);
+    expect(backfillReplayDifferences(2025, plan, facts)).toEqual([]);
+  });
+
+  it("still REJECTS a row whose entity the replay would genuinely drop", () => {
+    // The gate's remaining job. An override keyed to a document-derived entity
+    // that no document supplies can never create it — Task 7's rule, kept — so
+    // a plan carrying one is lossy and the row must not migrate. Constructed
+    // directly rather than via `planBackfill`, because the diff no longer emits
+    // this shape; the point is that the GATE still catches it if anything does.
+    const facts = emptyTaxReturnFacts(2025);
+    facts.k1s = [ridgeK1];
+
+    const paths = backfillReplayDifferences(2025, {
+      taxReturnId: "row-7",
+      document: null,
+      overrides: { "k1s[12-3456789].ordinaryBusinessIncome": 42000 },
+    }, facts);
+
+    expect(paths).toEqual(["k1s"]);
+    expect(differencesIncludeEntities(paths)).toBe(true);
   });
 
   it("rejects an extracted row whose facts.taxYear disagrees with the tax_year column", () => {
@@ -268,13 +296,19 @@ describe("backfillReplayDifferences", () => {
     const facts = structuredClone(extracted);
     facts.k1s = [ridgeK1];                             // real loss, sorts later
 
-    const plan = planBackfill({
-      id: "row-9", taxYear: 2025, extractedFacts: extracted, facts,
-      sourceFilename: "1040.pdf", vaultDocumentId: null,
-      warnings: [], promptVersion: null, model: null,
-    })!;
-
-    const paths = backfillReplayDifferences(2025, plan, facts);
+    // Hand-built. `planBackfill` no longer emits a lossy entity override, so
+    // the masking hazard is reproduced with the shape that still IS lossy: an
+    // override keyed to a document-derived entity nothing supplies, which
+    // `applyOverrides` refuses to create.
+    const paths = backfillReplayDifferences(2025, {
+      taxReturnId: "row-9",
+      document: {
+        role: "full_return", filename: "1040.pdf", vaultDocumentId: null,
+        extractedFacts: extracted, warnings: [], promptVersion: null,
+        model: null, taxYear: 2025,
+      },
+      overrides: { "k1s[12-3456789].ordinaryBusinessIncome": 42000 },
+    }, facts);
     expect(paths).toEqual(["deductions.scheduleA", "k1s"]);
     // The classification the operator block promises must come out as loss.
     expect(differencesIncludeEntities(paths)).toBe(true);

@@ -1,9 +1,12 @@
 import {
   emptyAdjustmentsDetail,
+  emptyBusiness,
+  emptyK1,
   emptyQbi,
   emptyScheduleA,
   emptyScheduleE,
 } from "@/lib/schemas/tax-return-facts";
+import type { EntityCollection } from "./types";
 
 /**
  * Nullable blocks that must be materialized from a factory, never `{}`,
@@ -24,4 +27,16 @@ export const NULLABLE_BLOCK_FACTORIES: Readonly<Record<string, () => object>> = 
   "income.adjustmentsDetail": emptyAdjustmentsDetail,
   "deductions.scheduleA": emptyScheduleA,
   "deductions.qbi": emptyQbi,
+};
+
+/**
+ * All-null template for one entity, by collection. `applyOverrides` needs it to
+ * materialize an advisor-CREATED entity, for the same reason the table above
+ * exists: both entity schemas are `.strict()` with every key required, so an
+ * entity built from `{}` and filled only where the advisor typed something
+ * fails `taxReturnFactsSchema` and, once persisted, blanks the whole tab.
+ */
+export const ENTITY_FACTORIES: Readonly<Record<EntityCollection, () => object>> = {
+  businesses: emptyBusiness,
+  k1s: emptyK1,
 };

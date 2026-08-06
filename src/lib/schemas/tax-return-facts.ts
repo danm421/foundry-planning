@@ -93,10 +93,27 @@ const adjustmentsDetailSchema = z
   })
   .strict();
 
+/**
+ * Stable identity for one merged entity, stamped by `mergeEntities` and
+ * carried back through the review form. It is what the override layer files an
+ * advisor's edits under, so it must NOT be re-derived from the entity's own
+ * name or EIN — correcting a garbled name is exactly the edit that would then
+ * re-key the entity out from under its own corrections.
+ *
+ * Null on every DOCUMENT's extracted facts: extraction never emits one, and
+ * `.default(null)` is load-bearing for the same reason `income.scheduleE`
+ * needs it — `parseRowFacts` re-validates already-persisted jsonb on every
+ * read, and no row written before this field existed carries the key. Bare
+ * `.default`, never `.optional().default()`: Zod 4 nests those into a
+ * different shape.
+ */
+const entityId = z.string().nullable().default(null);
+
 /** One Schedule C. Aggregate `income.scheduleCNet` averages a profitable
  *  business against a losing one into a number that describes neither. */
 const businessSchema = z
   .object({
+    entityId,
     name: z.string().nullable(),
     netProfit: money,      // Sched C line 31
     grossReceipts: money,  // line 1
@@ -115,6 +132,7 @@ const businessSchema = z
  */
 const k1Schema = z
   .object({
+    entityId,
     entityName: z.string().nullable(),
     ein: z.string().nullable(),
     entityType: z.enum(["s_corp", "partnership", "estate_trust"]).nullable(),
@@ -166,12 +184,12 @@ export const emptyAdjustmentsDetail = (): AdjustmentsDetailFacts => ({
 });
 
 export const emptyBusiness = (): BusinessFacts => ({
-  name: null, netProfit: null, grossReceipts: null,
+  entityId: null, name: null, netProfit: null, grossReceipts: null,
   totalExpenses: null, depreciation: null, isSstb: null,
 });
 
 export const emptyK1 = (): K1Facts => ({
-  entityName: null, ein: null, entityType: null,
+  entityId: null, entityName: null, ein: null, entityType: null,
   ordinaryBusinessIncome: null, rentalIncome: null, guaranteedPayments: null,
   section179: null, w2WagesFromEntity: null, qbiIncome: null, isSstb: null,
 });

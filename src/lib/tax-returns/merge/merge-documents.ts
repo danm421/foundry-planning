@@ -5,7 +5,7 @@ import {
 import type {
   DroppedValue, EntityCollection, FieldConflict, MergeDocument, MergeEntity, MergeResult,
 } from "./types";
-import { entityKey, entityPath, ENTITY_COLLECTIONS, parseEntityPath } from "./paths";
+import { derivedEntityKey, entityPath, ENTITY_COLLECTIONS, parseEntityPath } from "./paths";
 import { NULLABLE_BLOCK_FACTORIES } from "./nullable-blocks";
 
 /** Roles permitted to contribute entities. A W-2 names one employer; it is
@@ -104,6 +104,16 @@ function setLeaf(facts: TaxReturnFacts, path: string, value: unknown): void {
  * Unkeyable entities (no EIN, no name) are kept under a per-document synthetic
  * key — dropping them would lose a real K-1 over a missing header.
  *
+ * The union key is DERIVED, never the incoming `entityId`: two independent
+ * extractions of the same K-1 could never agree on a minted id, so honouring
+ * one would split the entity in two. Extraction does not emit `entityId` at
+ * all — the field is stamped HERE, onto each merged entity, from the key it
+ * was filed under. That stamp is the entity's stable identity for every layer
+ * above: it survives the advisor renaming the entity, and it gives an entity
+ * with neither EIN nor name an address it otherwise never had. `entityId` is
+ * consequently excluded from the candidate/conflict machinery below — it is
+ * identity, not a value any document gets to state.
+ *
  * Conflict resolution mirrors the scalar path exactly (see the loop below vs.
  * `mergeDocuments`'s own `candidates` loop): every document's non-null value
  * for a given entity field is accumulated as a `Candidate` first, and only
@@ -138,7 +148,7 @@ function mergeEntities(
 
     if (!ENTITY_AUTHORITATIVE.has(doc.role)) {
       for (const [index, incoming] of entityList.entries()) {
-        const key = entityKey(incoming) ?? `doc:${doc.id}:${index}`;
+        const key = derivedEntityKey(incoming) ?? `doc:${doc.id}:${index}`;
         dropped.push({
           path: entityPath(collection, key, "*"),
           documentId: doc.id,
@@ -150,11 +160,12 @@ function mergeEntities(
     }
 
     for (const [index, incoming] of entityList.entries()) {
-      const key = entityKey(incoming) ?? `doc:${doc.id}:${index}`;
+      const key = derivedEntityKey(incoming) ?? `doc:${doc.id}:${index}`;
       if (!entities.has(key)) {
         entities.set(key, { ...(incoming as Record<string, unknown>) });
       }
       for (const [field, value] of Object.entries(incoming as Record<string, unknown>)) {
+        if (field === "entityId") continue; // stamped from `key` below, never merged
         if (value === null || value === undefined) continue;
         const path = entityPath(collection, key, field);
         const fieldCandidates = candidates.get(path) ?? [];
@@ -180,7 +191,9 @@ function mergeEntities(
     }
   }
 
-  return [...entities.values()].map((e) => e as unknown as MergeEntity);
+  return [...entities.entries()].map(
+    ([key, entity]) => ({ ...entity, entityId: key }) as unknown as MergeEntity,
+  );
 }
 
 /**
