@@ -1,4 +1,8 @@
 import {
+  emptyAdjustmentsDetail,
+  emptyQbi,
+  emptyScheduleA,
+  emptyScheduleE,
   emptyTaxReturnFacts,
   type TaxReturnFacts,
 } from "@/lib/schemas/tax-return-facts";
@@ -11,12 +15,35 @@ import type {
  *  ever state the aggregate — this is structural, not a prompt promise. */
 const SCALAR_AUTHORITATIVE: ReadonlySet<MergeDocument["role"]> = new Set(["full_return"]);
 
-/** Blocks walked as scalars. `businesses` / `k1s` are handled in Task 6. */
+/** Blocks walked as scalars. `businesses` / `k1s` are handled in Task 6.
+ *
+ *  Precedence inside a nullable block (`income.scheduleE`, `deductions.qbi`,
+ *  etc.) is PER-LEAF, same as every other scalar — `collectLeaves` flattens
+ *  the block into individual dotted paths and each one is resolved
+ *  independently. A document can therefore win `scheduleE.grossRents` while
+ *  an earlier document keeps `scheduleE.totalExpenses`. That is intentional,
+ *  not an oversight to "fix" into whole-block replacement: it is the same
+ *  null-fill-without-conflict rule this file's first test pins for top-level
+ *  scalars, just applied one level deeper. */
 const SCALAR_ROOTS = ["income", "deductions", "tax", "payments", "carryovers"] as const;
 
 const TOP_LEVEL_SCALARS = [
   "filingStatus", "residenceState", "dependentsUnder17", "dependents17to23",
 ] as const;
+
+/** `setLeaf` seeds a missing intermediate object from these factories rather
+ *  than `{}`. Every field in these blocks is `.nullable()` with no
+ *  `.optional()`/`.default()`, so the strict schema REQUIRES every key —
+ *  seeding `{}` and filling only the touched fields leaves the rest
+ *  `undefined`, which fails `taxReturnFactsSchema` (and, once persisted,
+ *  fails `parseRowFacts` on the next read). Keyed by the dotted path to the
+ *  block itself, checked while `setLeaf` walks the path's prefix. */
+const NULLABLE_BLOCK_FACTORIES: Readonly<Record<string, () => object>> = {
+  "income.scheduleE": emptyScheduleE,
+  "income.adjustmentsDetail": emptyAdjustmentsDetail,
+  "deductions.scheduleA": emptyScheduleA,
+  "deductions.qbi": emptyQbi,
+};
 
 interface Candidate {
   documentId: string;
@@ -42,9 +69,14 @@ function collectLeaves(
 function setLeaf(facts: TaxReturnFacts, path: string, value: unknown): void {
   const segments = path.split(".");
   let node = facts as unknown as Record<string, unknown>;
+  let prefix = "";
   for (let i = 0; i < segments.length - 1; i++) {
     const key = segments[i];
-    if (node[key] === null || node[key] === undefined) node[key] = {};
+    prefix = prefix ? `${prefix}.${key}` : key;
+    if (node[key] === null || node[key] === undefined) {
+      const seed = NULLABLE_BLOCK_FACTORIES[prefix];
+      node[key] = seed ? seed() : {};
+    }
     node = node[key] as Record<string, unknown>;
   }
   node[segments[segments.length - 1]] = value;

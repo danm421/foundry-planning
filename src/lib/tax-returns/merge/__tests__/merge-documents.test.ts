@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { emptyTaxReturnFacts, type TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
+import {
+  emptyScheduleA,
+  emptyScheduleE,
+  emptyTaxReturnFacts,
+  taxReturnFactsSchema,
+  type TaxReturnFacts,
+} from "@/lib/schemas/tax-return-facts";
 import { mergeDocuments } from "../merge-documents";
 import type { MergeDocument } from "../types";
 
@@ -85,5 +91,60 @@ describe("mergeDocuments — aggregate protection", () => {
     const broken: MergeDocument = { id: "x", role: "full_return", taxYear: 2025, facts: null };
     const good = doc("g", "full_return", (f) => { f.income.wages = 5; });
     expect(mergeDocuments(2025, [broken, good]).facts.income.wages).toBe(5);
+  });
+});
+
+describe("mergeDocuments — nullable blocks", () => {
+  it("seeds untouched fields in a populated nullable block as null, not undefined", () => {
+    const a = doc("a", "full_return", (f) => {
+      f.income.scheduleE = {
+        ...emptyScheduleE(), grossRents: 19600, totalExpenses: 25741, depreciation: 6000,
+      };
+      f.deductions.scheduleA = {
+        ...emptyScheduleA(), saltPaid: 30000, saltDeducted: 10000,
+      };
+    });
+
+    const result = mergeDocuments(2025, [a]);
+
+    // toEqual (not toMatchObject) fails on an undefined key the same as a
+    // missing one — pin every key so a `{}`-seeded block would show red.
+    expect(result.facts.income.scheduleE).toEqual({
+      grossRents: 19600, totalExpenses: 25741, depreciation: 6000,
+      mortgageInterest: null, propertyTaxes: null, suspendedPassiveLoss: null,
+    });
+    expect(result.facts.deductions.scheduleA).toEqual({
+      saltPaid: 30000, saltDeducted: 10000, mortgageInterest: null,
+      charitableCash: null, charitableNonCash: null, medical: null,
+    });
+  });
+
+  it("produces facts that satisfy the strict schema after a nested-block merge", () => {
+    const a = doc("a", "full_return", (f) => {
+      f.income.scheduleE = { ...emptyScheduleE(), grossRents: 19600, totalExpenses: 25741 };
+      f.deductions.scheduleA = { ...emptyScheduleA(), saltPaid: 30000, saltDeducted: 10000 };
+    });
+
+    const result = mergeDocuments(2025, [a]);
+
+    expect(taxReturnFactsSchema.safeParse(result.facts).success).toBe(true);
+  });
+
+  it("merges a nullable block leaf-by-leaf across documents (deliberate, see SCALAR_ROOTS comment)", () => {
+    const a = doc("a", "full_return", (f) => {
+      f.income.scheduleE = { ...emptyScheduleE(), grossRents: 19600, totalExpenses: 25741 };
+    });
+    const b = doc("b", "full_return", (f) => {
+      f.income.scheduleE = { ...emptyScheduleE(), grossRents: 21000 }; // totalExpenses stays null
+    });
+
+    const result = mergeDocuments(2025, [a, b]);
+
+    // grossRents from b (newer), totalExpenses from a (never overwritten by
+    // b's null) — a hybrid of two documents, by design.
+    expect(result.facts.income.scheduleE).toEqual({
+      grossRents: 21000, totalExpenses: 25741, depreciation: null,
+      mortgageInterest: null, propertyTaxes: null, suspendedPassiveLoss: null,
+    });
   });
 });
