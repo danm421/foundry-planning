@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 import { requireOrgId } from "@/lib/db-helpers";
 import { loadFormForFirm } from "@/lib/intake/queries";
 import { findIntakeHousehold, listIntakeDocuments } from "@/lib/intake/documents";
-import { intakeSubmitSchema } from "@/lib/intake/schema";
+import { intakeSubmitSchemaFor } from "@/lib/intake/schema";
+import { sectionsForForm } from "@/lib/intake/sections";
 import { snapshotClientToPayload } from "@/lib/intake/snapshot";
 import { buildIntakeDiff } from "@/components/intake/admin/diff-utils";
 import ReviewDetail from "@/components/intake/admin/review-detail";
@@ -20,7 +21,9 @@ export default async function DataCollectionReviewPage({ params }: Props) {
   const form = await loadFormForFirm(id, orgId);
   if (!form) notFound();
 
-  const parseResult = intakeSubmitSchema.safeParse(form.payload);
+  const parseResult = intakeSubmitSchemaFor(sectionsForForm(form.sections)).safeParse(
+    form.payload,
+  );
   if (!parseResult.success) notFound();
   const submitted = parseResult.data;
 

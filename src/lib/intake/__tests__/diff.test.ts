@@ -138,6 +138,15 @@ describe("buildIntakeDiff", () => {
     expect(diff.family.spouseName).toEqual({ changed: false, value: undefined });
   });
 
+  it("shows the children count as undefined — not 0 — on a docs-only submission with no family", () => {
+    // A form whose sections exclude Family submits with no `family` at all.
+    // `displayValue` renders "—" only for `undefined`; if this fell back to
+    // 0 it would show the advisor a count the client never gave.
+    const docsOnly: IntakePayload = { ...minPayload, family: undefined };
+    const diff = buildIntakeDiff(null, docsOnly);
+    expect(diff.family.childrenCount).toEqual({ changed: false, value: undefined });
+  });
+
   it("surfaces a funded goal's type, beneficiary, and span", () => {
     const withGoal: IntakePayload = {
       ...minPayload,

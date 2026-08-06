@@ -104,7 +104,7 @@ export function buildIntakeDiff(
     spouseName: field(fullName(bf?.spouse), fullName(sf?.spouse)),
     spouseDob: field(bf?.spouse?.dateOfBirth, sf?.spouse?.dateOfBirth),
     stateOfResidence: field(bf?.stateOfResidence, sf?.stateOfResidence),
-    childrenCount: field(bf?.children?.length ?? 0, sf?.children?.length ?? 0),
+    childrenCount: field(bf?.children?.length, sf?.children?.length),
   };
 
   const goals: GoalsDiff = {
