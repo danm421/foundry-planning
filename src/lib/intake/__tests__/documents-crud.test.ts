@@ -109,7 +109,12 @@ describe("uploadIntakeDocument", () => {
     );
   });
 
-  it("enforces the per-form file cap", async () => {
+  // 26 sequential round trips to a shared dev Postgres — comfortably over
+  // vitest's 5s default once the full suite is competing for that database.
+  // The timeout is stated here rather than left to the runner's --testTimeout
+  // flag, so this passes under a bare `npm test` and not just the scoped
+  // command the plan happens to use.
+  it("enforces the per-form file cap", { timeout: 30_000 }, async () => {
     const formId = await seedForm();
     for (let i = 0; i < MAX_INTAKE_FILES; i++) {
       await uploadIntakeDocument(formId, pdf(`s${i}.pdf`), "statement");
