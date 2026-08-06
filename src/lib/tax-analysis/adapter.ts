@@ -62,11 +62,22 @@ export function factsToCalcInput(
   const input: CalcInput = {
     year: facts.taxYear,
     filingStatus: facts.filingStatus ?? "single",
+    // `earnedIncome` is W-2 wages plus SE PROFIT only: it drives calcFica /
+    // calcAdditionalMedicare (see CalcInput docs in lib/tax/types.ts), and a
+    // Schedule C LOSS does not refund payroll tax on wages. So the floor stays
+    // here — but the loss itself is real and belongs in the bracket-tax bucket,
+    // which is where the `Math.min(0, ...)` term below puts it. Between the two
+    // terms the whole of Schedule C now reaches the calculation exactly once.
     earnedIncome: n(inc.wages) + Math.max(0, n(inc.scheduleCNet)),
     ordinaryIncome:
       n(inc.iraDistributionsTaxable) +
       n(inc.pensionsTaxable) +
-      Math.max(0, n(inc.scheduleENet)) +
+      // Schedule E is NOT floored: a rental that nets to a loss after
+      // depreciation reduces ordinary income on the filed return, and flooring
+      // it at zero silently overstated computed tax (a $6k rental loss moved
+      // pre-credit tax by ~$1.3k against a ~$350 reconstruction tolerance).
+      n(inc.scheduleENet) +
+      Math.min(0, n(inc.scheduleCNet)) +
       n(inc.unemployment) +
       n(inc.otherIncome) +
       Math.max(0, n(inc.ordinaryDividends) - n(inc.qualifiedDividends)),

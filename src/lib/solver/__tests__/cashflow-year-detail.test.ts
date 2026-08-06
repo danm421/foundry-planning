@@ -136,6 +136,30 @@ describe("buildCashFlowYearDetail", () => {
     expect(residual?.total).toBe(7_000);
   });
 
+  it("names an out-of-pocket education goal under Other Expenses", () => {
+    // The engine keys the cash-flow-funded slice of an education goal by the
+    // goal's own expense id and folds it into expenses.other. Without the
+    // "education" type in the Other filter it landed in a nameless balancing row.
+    const client = makeClientData();
+    client.expenses.push({ id: "exp-college", name: "Chris - Education", type: "education" } as never);
+    const year = makeYear({
+      expenses: {
+        ...makeYear().expenses,
+        other: 12_000, // 5k misc + 7k out-of-pocket college
+        bySource: { "exp-mortgage-ins": 3_000, "exp-misc": 5_000, "exp-college": 7_000 },
+      },
+    });
+
+    const other = buildCashFlowYearDetail(year, client).outflows.find((c) => c.key === "other")!;
+    expect(other.total).toBe(12_000);
+    expect(other.items).toEqual([
+      { id: "exp-misc", label: "Misc", amount: 5_000 },
+      { id: "exp-college", label: "Chris - Education", amount: 7_000 },
+    ]);
+    // No nameless balancing row: the enumerated items already tie to the total.
+    expect(other.items.some((i) => i.label === "Other")).toBe(false);
+  });
+
   it("builds an age label with the spouse age only when married", () => {
     const married = buildCashFlowYearDetail(makeYear(), makeClientData());
     expect(married.ageLabel).toBe("Age 67 / 65");

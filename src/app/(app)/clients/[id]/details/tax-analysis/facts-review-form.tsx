@@ -1,7 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import type { TaxReturnFacts, TaxReturnFilingStatus } from "@/lib/schemas/tax-return-facts";
+import { useState, type ReactNode } from "react";
+import {
+  emptyScheduleA,
+  emptyScheduleE,
+  type ScheduleAFacts,
+  type ScheduleEFacts,
+  type TaxReturnFacts,
+  type TaxReturnFilingStatus,
+} from "@/lib/schemas/tax-return-facts";
 import { fmtUsd } from "@/lib/tax-analysis/format";
 import { StateSelect } from "@/components/state-select";
 import { selectClassName, selectBaseClassName, inputBaseClassName } from "@/components/forms/input-styles";
@@ -15,20 +22,25 @@ const FILING_STATUS_OPTIONS: Array<{ value: TaxReturnFilingStatus; label: string
   { value: "head_of_household", label: "Head of household" },
 ];
 
+/** Keys holding a plain money value. Object-valued members (`income.scheduleE`,
+ *  and `deductions.scheduleA` were it listed here) render through their own
+ *  sub-grid and must not be addressable as a MoneyPath — otherwise `get`/`set`'s
+ *  `Record<string, number | null>` cast would be a lie. Derived from the value
+ *  type rather than hand-excluded, so a future nested block drops out on its
+ *  own instead of waiting for someone to remember this line. */
+type MoneyKeys<T> = {
+  [K in keyof T]-?: NonNullable<T[K]> extends object ? never : K;
+}[keyof T];
+
 type MoneyPath =
-  | ["income", keyof TaxReturnFacts["income"]]
+  | ["income", MoneyKeys<TaxReturnFacts["income"]>]
   | ["deductions", "deductionAmount" | "qbiDeduction" | "taxableIncome"]
-  | ["tax", keyof TaxReturnFacts["tax"]]
-  | ["payments", keyof TaxReturnFacts["payments"]]
+  | ["tax", MoneyKeys<TaxReturnFacts["tax"]>]
+  | ["payments", MoneyKeys<TaxReturnFacts["payments"]>]
   | ["carryovers", "capitalLossCarryover"];
 
-type ScheduleAFacts = NonNullable<TaxReturnFacts["deductions"]["scheduleA"]>;
 type ScheduleAKey = keyof ScheduleAFacts;
-
-const EMPTY_SCHEDULE_A: ScheduleAFacts = {
-  saltPaid: null, saltDeducted: null, mortgageInterest: null,
-  charitableCash: null, charitableNonCash: null, medical: null,
-};
+type ScheduleEKey = keyof ScheduleEFacts;
 
 const SCHEDULE_A_FIELDS: Array<{ label: string; key: ScheduleAKey }> = [
   { label: "SALT paid (Sch A 5d)", key: "saltPaid" },
@@ -38,6 +50,47 @@ const SCHEDULE_A_FIELDS: Array<{ label: string; key: ScheduleAKey }> = [
   { label: "Charitable — non-cash (Sch A 12)", key: "charitableNonCash" },
   { label: "Medical — after AGI floor (Sch A 4)", key: "medical" },
 ];
+
+const SCHEDULE_E_FIELDS: Array<{ label: string; key: ScheduleEKey }> = [
+  { label: "Gross rents received (Sch E 3)", key: "grossRents" },
+  { label: "Total expenses (Sch E 20)", key: "totalExpenses" },
+  { label: "Depreciation — non-cash (Sch E 18)", key: "depreciation" },
+  { label: "Mortgage interest (Sch E 12)", key: "mortgageInterest" },
+  { label: "Property taxes (Sch E 16)", key: "propertyTaxes" },
+  { label: "Suspended passive loss (8582)", key: "suspendedPassiveLoss" },
+];
+
+/** The indented money sub-grid used by both the Schedule A and Schedule E
+ *  breakdowns. `footer` is where a block adds a derived readout under its
+ *  fields (Schedule E's cash-flow line); Schedule A passes none. */
+function ScheduleSubGrid<K extends string>({
+  heading,
+  fields,
+  values,
+  onChange,
+  footer,
+}: {
+  heading: string;
+  fields: Array<{ label: string; key: K }>;
+  values: Record<K, number | null>;
+  onChange: (key: K, value: number | null) => void;
+  footer?: ReactNode;
+}) {
+  return (
+    <div className="mt-3 border-l-2 border-hair pl-4">
+      <p className="mb-2 text-xs font-medium uppercase text-ink-3">{heading}</p>
+      <div className="grid grid-cols-1 gap-x-6 gap-y-2 md:grid-cols-2">
+        {fields.map((f) => (
+          <label key={f.key} className="flex items-center justify-between gap-3 text-sm">
+            <span className="text-ink-2">{f.label}</span>
+            <MoneyField value={values[f.key]} onChange={(v) => onChange(f.key, v)} />
+          </label>
+        ))}
+      </div>
+      {footer}
+    </div>
+  );
+}
 
 const SECTIONS: Array<{ heading: string; fields: Array<{ label: string; path: MoneyPath }> }> = [
   {
@@ -163,7 +216,7 @@ export function FactsReviewForm({
       ...prev,
       deductions: {
         ...prev.deductions,
-        scheduleA: { ...(prev.deductions.scheduleA ?? EMPTY_SCHEDULE_A), [key]: v },
+        scheduleA: { ...(prev.deductions.scheduleA ?? emptyScheduleA()), [key]: v },
       },
     }));
   }
@@ -171,7 +224,24 @@ export function FactsReviewForm({
   function addScheduleA() {
     setFacts((prev) => ({
       ...prev,
-      deductions: { ...prev.deductions, scheduleA: { ...EMPTY_SCHEDULE_A } },
+      deductions: { ...prev.deductions, scheduleA: { ...emptyScheduleA() } },
+    }));
+  }
+
+  function setScheduleE(key: ScheduleEKey, v: number | null) {
+    setFacts((prev) => ({
+      ...prev,
+      income: {
+        ...prev.income,
+        scheduleE: { ...(prev.income.scheduleE ?? emptyScheduleE()), [key]: v },
+      },
+    }));
+  }
+
+  function addScheduleE() {
+    setFacts((prev) => ({
+      ...prev,
+      income: { ...prev.income, scheduleE: { ...emptyScheduleE() } },
     }));
   }
 
@@ -308,21 +378,52 @@ export function FactsReviewForm({
             ))}
           </div>
 
+          {section.heading === "Income" && facts.income.scheduleE && (
+            <ScheduleSubGrid
+              heading="Schedule E rental breakdown"
+              fields={SCHEDULE_E_FIELDS}
+              values={facts.income.scheduleE}
+              onChange={setScheduleE}
+              /* Depreciation is a non-cash deduction, so a rental can show a
+                 taxable LOSS while still putting money in the client's pocket.
+                 Surfacing the add-back is the whole reason this breakdown
+                 exists — the net alone hides it. */
+              footer={
+                facts.income.scheduleENet != null &&
+                facts.income.scheduleE.depreciation != null ? (
+                  <p className="mt-2 text-xs text-ink-3">
+                    Approximate rental cash flow:{" "}
+                    <span className="text-ink-2">
+                      {fmtUsd(
+                        facts.income.scheduleENet + facts.income.scheduleE.depreciation,
+                      )}
+                    </span>{" "}
+                    (net {fmtUsd(facts.income.scheduleENet)} + depreciation add-back)
+                  </p>
+                ) : null
+              }
+            />
+          )}
+
+          {section.heading === "Income" &&
+            !facts.income.scheduleE &&
+            facts.income.scheduleENet != null && (
+              <button
+                type="button"
+                className="mt-3 rounded border border-hair px-3 py-1.5 text-sm text-ink-2"
+                onClick={addScheduleE}
+              >
+                Add Schedule E rental breakdown
+              </button>
+            )}
+
           {section.heading === "Deductions" && facts.deductions.scheduleA && (
-            <div className="mt-3 border-l-2 border-hair pl-4">
-              <p className="mb-2 text-xs font-medium uppercase text-ink-3">Schedule A breakdown</p>
-              <div className="grid grid-cols-1 gap-x-6 gap-y-2 md:grid-cols-2">
-                {SCHEDULE_A_FIELDS.map((f) => (
-                  <label key={f.key} className="flex items-center justify-between gap-3 text-sm">
-                    <span className="text-ink-2">{f.label}</span>
-                    <MoneyField
-                      value={facts.deductions.scheduleA![f.key]}
-                      onChange={(v) => setScheduleA(f.key, v)}
-                    />
-                  </label>
-                ))}
-              </div>
-            </div>
+            <ScheduleSubGrid
+              heading="Schedule A breakdown"
+              fields={SCHEDULE_A_FIELDS}
+              values={facts.deductions.scheduleA}
+              onChange={setScheduleA}
+            />
           )}
 
           {section.heading === "Deductions" &&

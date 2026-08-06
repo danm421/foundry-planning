@@ -40,6 +40,20 @@ export function roleAffectsHouseholdName(role: string): boolean {
 }
 
 /**
+ * "Cooper, John" — the surname-first reading the clients list's Primary and
+ * Spouse columns use, so a column of names scans by the part it sorts on.
+ * A missing half drops the comma rather than leading or trailing with one;
+ * with neither half this returns "", which callers render as an em dash.
+ */
+export function formatNameLastFirst(p: { firstName: string; lastName: string }): string {
+  const firstName = p.firstName.trim();
+  const lastName = p.lastName.trim();
+  if (!lastName) return firstName;
+  if (!firstName) return lastName;
+  return `${lastName}, ${firstName}`;
+}
+
+/**
  * Derives the auto-generated household name from a set of CRM contacts.
  * The primary contact drives the name; the spouse (if any) is folded in via
  * buildHouseholdName. Dependents and other roles are ignored. Returns null

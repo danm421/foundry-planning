@@ -15,7 +15,7 @@ import { sendIntakeFormEmail } from "@/lib/intake/email";
 import { getAdvisorProfile } from "@/lib/branding/advisor-profile";
 import { resolveFirmName } from "@/lib/activity/resolve-firm-names";
 import { newIntakeToken, defaultExpiry } from "@/lib/intake/tokens";
-import { EMAIL_RE } from "@/lib/intake/schema";
+import { EMAIL_RE, normalizeRecipientName } from "@/lib/intake/schema";
 import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -59,8 +59,7 @@ export async function POST(req: Request): Promise<Response> {
       );
     }
 
-    const recipientNameStr =
-      typeof recipientName === "string" ? recipientName : undefined;
+    const recipientNameStr = normalizeRecipientName(recipientName);
     const clientIdStr =
       typeof clientId === "string" ? clientId : undefined;
 

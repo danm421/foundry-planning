@@ -5249,6 +5249,19 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // across goals and folded into taxFreeRetirementIncome (same as supplemental).
     let educationTaxFreeIncome = 0;
 
+    // Out-of-pocket education spend, accumulated across household-owned goals and
+    // folded into `expenses.other` below. ONLY the out-of-pocket slice counts: the
+    // dedicated draw pays the school straight out of the 529 (it never touches
+    // household cash and never lands in `withdrawals.total`), and an unfunded
+    // shortfall moves no money at all. The out-of-pocket slice DOES drain checking,
+    // which provokes a gap-fill withdrawal — so leaving it out of expenses made the
+    // cash-flow chart's stacked bars overshoot the Total Expenses line by exactly
+    // this amount, and inflated the phase-12 surplus available to spend.
+    // Entity-owned goals are excluded: resolveCashAccount routes their spend to the
+    // entity's checking, not the household's (mirrors householdSyntheticExpenseTotal).
+    let educationOutOfPocketTotal = 0;
+    const educationOutOfPocketBySource: Record<string, number> = {};
+
     const educationGoalYears: EducationGoalYear[] = [];
     for (const { goal, gate } of educationGoalsThisYear) {
       const goalCost = educationGoalCost(goal, gate);
@@ -5341,12 +5354,21 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // Out-of-pocket: spill the shortfall to household cash (→ normal
       // waterfall via the step-11 cashDelta flush + phase-12 gap-fill).
       if (goal.payShortfallOutOfPocket && drawResult.shortfall > 0) {
-        creditCash(resolveCashAccount(goal.ownerEntityId, goal.cashAccountId), -drawResult.shortfall, {
+        const eduCashId = resolveCashAccount(goal.ownerEntityId, goal.cashAccountId);
+        creditCash(eduCashId, -drawResult.shortfall, {
           category: "expense",
           label: `Education (out of pocket): ${goal.name}`,
           sourceId: goal.id,
           basis: -drawResult.shortfall, // cash outflow: basis == amount (signed)
         });
+        // Book it as a household expense only where the cash actually left
+        // household checking: creditCash no-ops on an unresolved account (a plan
+        // with no default checking), and an entity-owned goal drains the entity's.
+        if (eduCashId != null && goal.ownerEntityId == null) {
+          educationOutOfPocketTotal += drawResult.shortfall;
+          // One entry per expense row (allEducationGoals), so no key collides.
+          educationOutOfPocketBySource[goal.id] = drawResult.shortfall;
+        }
       }
 
       const eoy = ids.reduce((s, id) => s + (accountBalances[id] ?? 0), 0);
@@ -6839,7 +6861,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     const expenses = {
       living: expenseBreakdown.living - hypoFromExpenseReduction,
       liabilities: liabResult.totalPayment,
-      other: expenseBreakdown.other + techniqueExpenses + householdCashGiftsTotal,
+      other:
+        expenseBreakdown.other +
+        techniqueExpenses +
+        householdCashGiftsTotal +
+        educationOutOfPocketTotal,
       insurance: expenseBreakdown.insurance,
       realEstate: householdSyntheticExpenseTotal,
       taxes: totalTaxes,
@@ -6854,7 +6880,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         liabResult.totalPayment +
         totalTaxes +
         techniqueExpenses +
-        householdCashGiftsTotal,
+        householdCashGiftsTotal +
+        educationOutOfPocketTotal,
       bySource: {
         ...expenseBreakdown.bySource,
         ...Object.fromEntries(
@@ -6864,6 +6891,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         ),
         ...techniqueExpenseBySource,
         ...penaltyBySource,
+        // Keyed by the education goal's own expense id, so the report's
+        // expense-name lookup resolves it to the goal name.
+        ...educationOutOfPocketBySource,
       },
       byLiability: liabResult.byLiability,
       interestByLiability: liabResult.interestByLiability,

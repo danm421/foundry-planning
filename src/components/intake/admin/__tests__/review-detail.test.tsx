@@ -174,7 +174,13 @@ describe("ReviewDetail", () => {
       accounts: { baselineCount: 0, submittedCount: 2, submittedItems: [{ name: "Savings", value: 5000 }] },
     };
     render(<ReviewDetail form={makeForm({ clientId: null, mode: "blank" })} diff={prospectDiff} />);
-    expect(screen.getByText(/prospect/i)).toBeInTheDocument();
+    expect(screen.getByText("New household")).toBeInTheDocument();
+  });
+
+  it("reads 'applies to' off the bound client, not the mode", () => {
+    // Same blank mode as the prospect case above — only clientId differs.
+    render(<ReviewDetail form={makeForm({ clientId: "client-1", mode: "blank" })} diff={baseDiff} />);
+    expect(screen.getByText("Existing client")).toBeInTheDocument();
   });
 
   // ── Documents ──────────────────────────────────────────────────────────────

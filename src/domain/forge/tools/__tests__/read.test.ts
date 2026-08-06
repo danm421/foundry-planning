@@ -1,5 +1,6 @@
 // src/domain/forge/tools/__tests__/read.test.ts
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { ClientSearchResult } from "@/lib/client-search";
 
 // --- mocks -----------------------------------------------------------------
 // firmId is re-derived server-side, never trusted from the model. Pin it to
@@ -13,7 +14,7 @@ const searchClients =
       query: string,
       firmId: string,
       caller: { userId: string; orgRole: string | null | undefined },
-    ) => Promise<{ id: string; householdTitle: string }[]>
+    ) => Promise<ClientSearchResult[]>
   >();
 vi.mock("@/lib/client-search", () => ({
   searchClients: (q: string, f: string, c: { userId: string; orgRole: string | null | undefined }) =>
@@ -149,14 +150,23 @@ beforeEach(() => {
 });
 
 describe("read.ts — find_client", () => {
-  it("searches the firm's roster and returns matching rows", async () => {
-    const rows = [{ id: "client-1", householdTitle: "Doe, Jane & John" }];
-    searchClients.mockResolvedValue(rows);
+  it("searches the firm's roster and returns id + title only (no contact PII)", async () => {
+    searchClients.mockResolvedValue([
+      {
+        id: "client-1",
+        householdTitle: "Doe, Jane & John",
+        primaryFirstName: "Jane",
+        primaryLastName: "Doe",
+        primaryEmail: "jane@doe.test",
+      },
+    ]);
 
     const out = await tool("find_client").invoke({ query: "do" });
 
     expect(searchClients).toHaveBeenCalledWith("do", "firmA", { userId: "u1", orgRole: undefined });
-    expect(JSON.parse(out as string)).toEqual(rows);
+    expect(JSON.parse(out as string)).toEqual([
+      { id: "client-1", householdTitle: "Doe, Jane & John" },
+    ]);
   });
 });
 

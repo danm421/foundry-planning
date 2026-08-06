@@ -440,7 +440,26 @@ export function maritalToFilingStatus(
 
 /**
  * Lightweight recipient-email check shared by the intake send surfaces (advisor
- * send-client + send-prospect forms and the create route). Intentionally
+ * send-client + send-intake forms and the create route). Intentionally
  * permissive — the authoritative validation is Resend's / Clerk's at send time.
  */
 export const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+/** Longest recipient name we store — well past any real name, short enough
+ *  that the queue and email greeting can't be stuffed with prose. */
+const RECIPIENT_NAME_MAX = 200;
+
+/**
+ * Normalize an advisor-supplied recipient name for storage: trimmed, capped,
+ * and `undefined` (→ null) rather than "" when nothing usable was typed.
+ *
+ * The empty case matters twice over: every display surface falls back with
+ * `recipientName ?? recipientEmail`, which an empty string wins to render a
+ * nameless row, and `intake/gate.ts` reads this field as the public link's
+ * second identity factor.
+ */
+export function normalizeRecipientName(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim().slice(0, RECIPIENT_NAME_MAX);
+  return trimmed.length > 0 ? trimmed : undefined;
+}

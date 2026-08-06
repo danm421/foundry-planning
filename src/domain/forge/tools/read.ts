@@ -154,7 +154,9 @@ export function buildReadTools(
       // treats as a non-privileged caller (safe default: never widens scope,
       // may under-scope a firm-admin's Forge search in a siloed firm).
       const rows = await searchClients(query, firmId, { userId: ctx.userId, orgRole: undefined });
-      return JSON.stringify(rows);
+      // Project to id + title: searchClients also carries primary-contact name
+      // and email for UI prefill, and none of that belongs in a model prompt.
+      return JSON.stringify(rows.map((r) => ({ id: r.id, householdTitle: r.householdTitle })));
     },
     {
       name: "find_client",

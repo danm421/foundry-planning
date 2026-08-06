@@ -173,6 +173,9 @@ export default function FamilyMemberDialog({
               id="fm-first"
               name="firstName"
               type="text"
+              // DialogShell focuses this on open (see its [data-autofocus] hook)
+              // so "+ Add" lands the cursor straight in the name field.
+              data-autofocus
               required
               defaultValue={editing?.firstName ?? ""}
               className={inputClassName}

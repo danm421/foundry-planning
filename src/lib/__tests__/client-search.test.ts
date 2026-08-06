@@ -20,9 +20,11 @@ type Seed = {
   dateOfBirth: string;
   retirementAge: number;
   planEndAge: number;
+  email?: string;
   spouseFirstName?: string;
   spouseLastName?: string;
   spouseDob?: string;
+  spouseEmail?: string;
 };
 
 async function insertSeed(seed: Seed): Promise<void> {
@@ -36,6 +38,7 @@ async function insertSeed(seed: Seed): Promise<void> {
     firstName: seed.firstName,
     lastName: seed.lastName,
     dateOfBirth: seed.dateOfBirth,
+    email: seed.email ?? null,
   });
   if (seed.spouseFirstName) {
     await db.insert(crmHouseholdContacts).values({
@@ -44,6 +47,7 @@ async function insertSeed(seed: Seed): Promise<void> {
       firstName: seed.spouseFirstName,
       lastName: seed.spouseLastName ?? seed.lastName,
       dateOfBirth: seed.spouseDob ?? null,
+      email: seed.spouseEmail ?? null,
     });
   }
   await db.insert(clients).values({
@@ -70,6 +74,7 @@ async function seed() {
     dateOfBirth: "1970-01-01",
     retirementAge: 65,
     planEndAge: 95,
+    email: "alice@anderson.test",
   });
   await insertSeed({
     firmId: FIRM_A,
@@ -82,6 +87,9 @@ async function seed() {
     spouseFirstName: "Beth",
     spouseLastName: "Baxter",
     spouseDob: "1967-09-20",
+    // Only the SPOUSE carries an email here, so a role mix-up in the result
+    // assembly shows up as Beth's address on the primary.
+    spouseEmail: "beth@baxter.test",
   });
   await insertSeed({
     firmId: FIRM_B,
@@ -118,6 +126,22 @@ describe("searchClients", () => {
   it("returns household title with spouse when present", async () => {
     const results = await searchClients("baxter", FIRM_A, CALLER_A);
     expect(results[0].householdTitle).toBe("Bob & Beth Baxter");
+  });
+
+  it("returns the primary contact's name and email alongside the title", async () => {
+    const [result] = await searchClients("anderson", FIRM_A, CALLER_A);
+    expect(result).toMatchObject({
+      householdTitle: "Alice Anderson",
+      primaryFirstName: "Alice",
+      primaryLastName: "Anderson",
+      primaryEmail: "alice@anderson.test",
+    });
+  });
+
+  it("reports a null primary email rather than the spouse's", async () => {
+    const [result] = await searchClients("baxter", FIRM_A, CALLER_A);
+    expect(result.primaryFirstName).toBe("Bob");
+    expect(result.primaryEmail).toBeNull();
   });
 
   it("returns empty array on empty query", async () => {

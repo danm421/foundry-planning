@@ -1,4 +1,4 @@
-export const TAX_RETURN_FACTS_VERSION = "2026-07-10.1";
+export const TAX_RETURN_FACTS_VERSION = "2026-08-06.1";
 
 export const TAX_RETURN_FACTS_PROMPT = `You are a tax-document extraction assistant.
 Extract the FILED FACTS from the following US individual income tax return (Form 1040 and attached schedules).
@@ -19,7 +19,8 @@ Return ONLY a JSON object with exactly this structure (no markdown, no explanati
       "pensionsGross": null, "pensionsTaxable": null,
       "ssBenefitsGross": null, "ssBenefitsTaxable": null,
       "capitalGainOrLoss": null, "netLongTermGain": null, "netShortTermGain": null,
-      "scheduleCNet": null, "scheduleENet": null, "unemployment": null,
+      "scheduleCNet": null, "scheduleENet": null, "scheduleE": null,
+      "unemployment": null,
       "otherIncome": null, "totalIncome": null, "adjustmentsToIncome": null,
       "agi": null
     },
@@ -55,6 +56,16 @@ Line mapping (2022-2025 Form 1040 layouts):
   loss carryover TO NEXT YEAR shown on the Schedule D or its worksheet, as a POSITIVE number.
 - From Schedule 1: scheduleCNet = line 3, scheduleENet = line 5, unemployment = line 7;
   otherIncome = remaining Schedule 1 part I items; adjustmentsToIncome = 1040 line 10.
+  scheduleCNet and scheduleENet are NET figures and are NEGATIVE when the
+  activity ran at a loss — report the loss, never zero and never omit it.
+- When Schedule E is attached WITH rental real estate (Part I), set income.scheduleE to:
+  { "grossRents": line 3, "totalExpenses": line 20, "depreciation": line 18,
+    "mortgageInterest": line 12, "propertyTaxes": line 16,
+    "suspendedPassiveLoss": Form 8582 unallowed loss as a POSITIVE number }
+  Sum every property column (A/B/C) into one set of totals; prefer the
+  "Totals" column (lines 23a-23e) when the form prints one. Leave scheduleE
+  null when Schedule E has no Part I rental property (e.g. K-1 pass-through
+  income only). Do NOT restate the net here — that is scheduleENet.
 - income.totalIncome = line 9; income.agi = line 11.
 - deductions.deductionAmount = line 12; deductions.qbiDeduction = line 13;
   deductions.taxableIncome = line 15. deductionTaken = "itemized" only when Schedule A
