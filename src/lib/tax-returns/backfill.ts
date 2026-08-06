@@ -5,6 +5,7 @@ import {
   type TaxReturnFacts,
 } from "@/lib/schemas/tax-return-facts";
 import { diffOverrides } from "./merge/overrides";
+import { ENTITY_COLLECTIONS } from "./merge/paths";
 import type { MergeDocument, OverrideMap } from "./merge/types";
 import { assembleFacts } from "./recompute";
 
@@ -44,7 +45,7 @@ export interface BackfillPlan {
  *
  * This plan is a PROPOSAL, not a guarantee. Whether replaying it actually
  * reproduces the row's `facts` is a separate question answered by
- * `backfillReplayDifference` below — see that docstring for why it cannot be
+ * `backfillReplayDifferences` below — see that docstring for why it cannot be
  * assumed. Callers must gate on it.
  */
 export function planBackfill(row: BackfillSourceRow): BackfillPlan | null {
@@ -114,13 +115,22 @@ function firstDifference(replayed: unknown, stored: unknown, path: string): stri
 }
 
 /**
- * Where does replaying this plan stop reproducing `facts`? Pure. `null` means
- * the replay is EXACT and the row is safe to backfill; any string is the first
- * differing dotted path and the row must be SKIPPED.
+ * Where does replaying this plan stop reproducing `facts`? Pure. An EMPTY
+ * array means the replay is exact and the row is safe to backfill; any entry
+ * means the row must be SKIPPED.
+ *
+ * One entry PER DIFFERING TOP-LEVEL KEY, each the first differing dotted path
+ * within that key, sorted. Not a single first-difference: a row can differ in
+ * more than one place, and reporting only the sorted-first one lets a benign
+ * `deductions.*` difference MASK a real `k1s` loss behind it — which would
+ * tell an operator "nothing was lost" about a row that is losing a K-1. Three
+ * of the four benign nullable blocks sort before `k1s`, so that masking is the
+ * common case, not a corner. Callers classify with
+ * `differencesIncludeEntities`, never by reading one path.
  *
  * Exact, not "equivalent" — the gate cannot tell a real loss from a harmless
- * shape difference, so it refuses both. Three kinds of row are rejected today
- * and only the first is actual data loss, which is why the path matters:
+ * shape difference, so it refuses both. Three kinds of difference occur today
+ * and only the first is actual data loss, which is why the paths matter:
  *
  *  1. REAL LOSS (`k1s` / `businesses`) — an entity the override layer cannot
  *     express. `diffOverrides` emits per-field overrides for an entity present
@@ -145,6 +155,9 @@ function firstDifference(replayed: unknown, stored: unknown, path: string): stri
  *  3. CONSERVATIVE REFUSAL — a persisted `facts.taxYear` disagreeing with the
  *     `tax_year` column, on an extracted row. See the `taxYear` note below.
  *
+ * A row can be BOTH 1 and 2 at once. That row is category 1: any entity path
+ * present means data would be lost, whatever else is alongside it.
+ *
  * Writing a state row for a category-1 return would make the first
  * `recomputeFacts` rewrite `tax_returns.facts` with those K-1s and businesses
  * gone: silent client data loss, no error. Rather than invent an
@@ -162,11 +175,11 @@ function firstDifference(replayed: unknown, stored: unknown, path: string): stri
  * is accepted on purpose — the backfill preserves an existing inconsistency,
  * it does not introduce one.
  */
-export function backfillReplayDifference(
+export function backfillReplayDifferences(
   taxYear: number,
   plan: BackfillPlan,
   facts: TaxReturnFacts,
-): string | null {
+): string[] {
   // The id stands in for the not-yet-inserted document row; only provenance
   // and conflict attribution use it, and neither is compared here.
   const docs: MergeDocument[] = plan.document
@@ -177,5 +190,29 @@ export function backfillReplayDifference(
         facts: plan.document.extractedFacts,
       }]
     : [];
-  return firstDifference(assembleFacts(taxYear, docs, plan.overrides).facts, facts, "");
+  const replayed = assembleFacts(taxYear, docs, plan.overrides).facts as unknown as
+    Record<string, unknown>;
+  const stored = facts as unknown as Record<string, unknown>;
+
+  const roots = [...new Set([...Object.keys(replayed), ...Object.keys(stored)])].sort();
+  return roots
+    .map((root) => firstDifference(replayed[root], stored[root], root))
+    .filter((path): path is string => path !== null);
+}
+
+/**
+ * Do any of these differing paths name an entity collection? That is the whole
+ * classification an operator needs: true means a K-1 or Schedule C business
+ * would be dropped and the row cannot migrate until the owner decides how
+ * advisor-added entities are represented; false means the gate refused on
+ * structure alone and nothing would actually have been lost.
+ *
+ * An entity difference surfaces either as the collection itself (`"k1s"`, when
+ * the lengths differ) or as an indexed field (`"k1s[0].qbiIncome"`), so both
+ * shapes are matched.
+ */
+export function differencesIncludeEntities(paths: readonly string[]): boolean {
+  return paths.some((path) =>
+    ENTITY_COLLECTIONS.some((c) => path === c || path.startsWith(`${c}[`)),
+  );
 }

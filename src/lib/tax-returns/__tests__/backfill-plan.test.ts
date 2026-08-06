@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   emptyTaxReturnFacts, emptyK1, emptyBusiness, emptyScheduleA,
 } from "@/lib/schemas/tax-return-facts";
-import { planBackfill, backfillReplayDifference } from "@/lib/tax-returns/backfill";
+import {
+  planBackfill, backfillReplayDifferences, differencesIncludeEntities,
+} from "@/lib/tax-returns/backfill";
 import { assembleFacts } from "@/lib/tax-returns/recompute";
 
 describe("planBackfill", () => {
@@ -89,7 +91,7 @@ describe("planBackfill", () => {
  * structurally where nothing would be lost. A test that only pinned
  * accept/reject would let the two collapse into one opaque bucket again.
  */
-describe("backfillReplayDifference", () => {
+describe("backfillReplayDifferences", () => {
   const ridgeK1 = {
     ...emptyK1(),
     entityName: "Ridge Partners LLC", ein: "12-3456789",
@@ -111,7 +113,7 @@ describe("backfillReplayDifference", () => {
       warnings: [], promptVersion: null, model: null,
     })!;
 
-    expect(backfillReplayDifference(2025, plan, facts)).toBeNull();
+    expect(backfillReplayDifferences(2025, plan, facts)).toEqual([]);
   });
 
   it("rejects a manually-entered row carrying a K-1, whose replay drops it", () => {
@@ -130,7 +132,7 @@ describe("backfillReplayDifference", () => {
     // ...but the replay drops the whole entity, which is the loss this gate
     // exists to refuse.
     expect(assembleFacts(2025, [], plan.overrides).facts.k1s).toEqual([]);
-    expect(backfillReplayDifference(2025, plan, facts)).toBe("k1s");
+    expect(backfillReplayDifferences(2025, plan, facts)).toEqual(["k1s"]);
   });
 
   it("rejects an extracted row where the advisor ADDED a K-1 the document lacks", () => {
@@ -149,7 +151,7 @@ describe("backfillReplayDifference", () => {
     expect(assembleFacts(2025, [
       { id: "doc-1", role: "full_return", taxYear: 2025, facts: extracted },
     ], plan.overrides).facts.k1s).toEqual([]);
-    expect(backfillReplayDifference(2025, plan, facts)).toBe("k1s");
+    expect(backfillReplayDifferences(2025, plan, facts)).toEqual(["k1s"]);
   });
 
   it("rejects an extracted row where the advisor DELETED an extracted K-1", () => {
@@ -166,7 +168,7 @@ describe("backfillReplayDifference", () => {
       warnings: [], promptVersion: null, model: null,
     })!;
 
-    expect(backfillReplayDifference(2025, plan, facts)).toBe("k1s");
+    expect(backfillReplayDifferences(2025, plan, facts)).toEqual(["k1s"]);
   });
 
   it("rejects a manually-entered row carrying a Schedule C business", () => {
@@ -190,7 +192,7 @@ describe("backfillReplayDifference", () => {
     // a verdict-only test would still pass.
     expect(plan.overrides).toHaveProperty("businesses[name:mueller consulting].netProfit", 90000);
     expect(assembleFacts(2025, [], plan.overrides).facts.businesses).toEqual([]);
-    expect(backfillReplayDifference(2025, plan, facts)).toBe("businesses");
+    expect(backfillReplayDifferences(2025, plan, facts)).toEqual(["businesses"]);
   });
 
   it("rejects an extracted row whose facts.taxYear disagrees with the tax_year column", () => {
@@ -208,7 +210,7 @@ describe("backfillReplayDifference", () => {
     })!;
 
     expect(plan.overrides).toEqual({});
-    expect(backfillReplayDifference(2025, plan, facts)).toBe("taxYear");
+    expect(backfillReplayDifferences(2025, plan, facts)).toEqual(["taxYear"]);
   });
 
   it("ACCEPTS the same taxYear disagreement on a manually-entered row", () => {
@@ -227,7 +229,7 @@ describe("backfillReplayDifference", () => {
     })!;
 
     expect(plan.overrides).toHaveProperty("taxYear", 2024);
-    expect(backfillReplayDifference(2025, plan, facts)).toBeNull();
+    expect(backfillReplayDifferences(2025, plan, facts)).toEqual([]);
   });
 
   it("rejects an all-null nullable block even though nothing would be lost", () => {
@@ -250,6 +252,51 @@ describe("backfillReplayDifference", () => {
     })!;
 
     expect(plan.overrides).toEqual({});
-    expect(backfillReplayDifference(2025, plan, facts)).toBe("deductions.scheduleA");
+    expect(backfillReplayDifferences(2025, plan, facts)).toEqual(["deductions.scheduleA"]);
+    expect(differencesIncludeEntities(backfillReplayDifferences(2025, plan, facts))).toBe(false);
+  });
+
+  it("reports BOTH roots when a benign difference sits alongside a lost K-1", () => {
+    // The masking case. `deductions` sorts before `k1s`, so reporting only the
+    // sorted-FIRST difference would name `deductions.scheduleA` and nothing
+    // else — and the runner would tell the operator this row lost nothing,
+    // while it is in fact dropping a K-1. Three of the four benign nullable
+    // blocks sort ahead of `k1s`, so this is the common shape, not a corner.
+    const extracted = emptyTaxReturnFacts(2025);
+    extracted.income.wages = 250000;
+    extracted.deductions.scheduleA = emptyScheduleA(); // benign, sorts first
+    const facts = structuredClone(extracted);
+    facts.k1s = [ridgeK1];                             // real loss, sorts later
+
+    const plan = planBackfill({
+      id: "row-9", taxYear: 2025, extractedFacts: extracted, facts,
+      sourceFilename: "1040.pdf", vaultDocumentId: null,
+      warnings: [], promptVersion: null, model: null,
+    })!;
+
+    const paths = backfillReplayDifferences(2025, plan, facts);
+    expect(paths).toEqual(["deductions.scheduleA", "k1s"]);
+    // The classification the operator block promises must come out as loss.
+    expect(differencesIncludeEntities(paths)).toBe(true);
+  });
+});
+
+describe("differencesIncludeEntities", () => {
+  it("matches an entity collection whether it differs whole or by field", () => {
+    expect(differencesIncludeEntities(["k1s"])).toBe(true);
+    expect(differencesIncludeEntities(["businesses"])).toBe(true);
+    // Equal lengths, one field differing — `firstDifference` descends by index.
+    expect(differencesIncludeEntities(["k1s[0].qbiIncome"])).toBe(true);
+    expect(differencesIncludeEntities(["deductions.scheduleA", "businesses[1].netProfit"]))
+      .toBe(true);
+  });
+
+  it("does not match the structural-only paths, including lookalikes", () => {
+    expect(differencesIncludeEntities([])).toBe(false);
+    expect(differencesIncludeEntities(["deductions.scheduleA", "taxYear"])).toBe(false);
+    // A scalar leaf whose name merely STARTS with a collection name must not
+    // be read as an entity difference — `startsWith(c)` alone would say true.
+    expect(differencesIncludeEntities(["k1sSomething"])).toBe(false);
+    expect(differencesIncludeEntities(["businessesTotal"])).toBe(false);
   });
 });
