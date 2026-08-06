@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   intakeSubmitSchema,
+  intakeSubmitSchemaFor,
   intakeDraftSchema,
   maritalToFilingStatus,
   pruneIntakeBlankRows,
@@ -323,5 +324,45 @@ describe("intake goals", () => {
       })),
     });
     expect(tooMany.success).toBe(false);
+  });
+});
+
+describe("intakeSubmitSchemaFor", () => {
+  const completeFamily = {
+    primary: {
+      firstName: "Jane",
+      lastName: "Smith",
+      dateOfBirth: "1980-04-01",
+      maritalStatus: "single" as const,
+    },
+    children: [],
+  };
+
+  it("requires family when the family section is included", () => {
+    const schema = intakeSubmitSchemaFor(["family", "documents"]);
+    expect(() => schema.parse({})).toThrow();
+  });
+
+  it("accepts a payload with no family when the family section is excluded", () => {
+    const schema = intakeSubmitSchemaFor(["documents"]);
+    const parsed = schema.parse({});
+    expect(parsed.family).toBeUndefined();
+    expect(parsed.accounts).toEqual([]);
+  });
+
+  it("still validates a PRESENT family even when the section is excluded", () => {
+    // A half-filled family that somehow rode along is still bad data.
+    const schema = intakeSubmitSchemaFor(["documents"]);
+    expect(() => schema.parse({ family: { primary: { firstName: "Jane" } } })).toThrow();
+  });
+
+  it("parses a complete family when the section is included", () => {
+    const schema = intakeSubmitSchemaFor(["family"]);
+    const parsed = schema.parse({ family: completeFamily });
+    expect(parsed.family?.primary.firstName).toBe("Jane");
+  });
+
+  it("intakeSubmitSchema still requires family (default set includes it)", () => {
+    expect(() => intakeSubmitSchema.parse({})).toThrow();
   });
 });

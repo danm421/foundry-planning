@@ -90,18 +90,21 @@ export function buildIntakeDiff(
   submitted: IntakePayload,
 ): IntakeDiff {
   const bf = baseline?.family;
+  // Optional since the form may not have collected a Family step at all
+  // (an existing-client docs-only send). The FieldRows below then render "—"
+  // for every family field, which is the honest answer: nothing was asked.
   const sf = submitted.family;
   // Matches the clock apply reads when it fills a blank start year.
   const currentYear = new Date().getFullYear();
 
   const family: FamilyDiff = {
-    primaryName: field(fullName(bf?.primary), fullName(sf.primary)),
-    primaryDob: field(bf?.primary?.dateOfBirth, sf.primary.dateOfBirth),
-    primaryMarital: field(bf?.primary?.maritalStatus, sf.primary.maritalStatus),
-    spouseName: field(fullName(bf?.spouse ?? undefined), fullName(sf.spouse ?? undefined)),
-    spouseDob: field(bf?.spouse?.dateOfBirth, sf.spouse?.dateOfBirth),
-    stateOfResidence: field(bf?.stateOfResidence, sf.stateOfResidence),
-    childrenCount: field(bf?.children?.length, sf.children.length),
+    primaryName: field(fullName(bf?.primary), fullName(sf?.primary)),
+    primaryDob: field(bf?.primary?.dateOfBirth, sf?.primary?.dateOfBirth),
+    primaryMarital: field(bf?.primary?.maritalStatus, sf?.primary?.maritalStatus),
+    spouseName: field(fullName(bf?.spouse), fullName(sf?.spouse)),
+    spouseDob: field(bf?.spouse?.dateOfBirth, sf?.spouse?.dateOfBirth),
+    stateOfResidence: field(bf?.stateOfResidence, sf?.stateOfResidence),
+    childrenCount: field(bf?.children?.length ?? 0, sf?.children?.length ?? 0),
   };
 
   const goals: GoalsDiff = {

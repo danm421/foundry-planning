@@ -4,13 +4,19 @@ import type { IntakePayload } from "@/lib/intake/schema";
 
 const emptyMeta = { completedSections: [] as string[] };
 
+// Typed separately (rather than read back off `minPayload.family`) so the
+// fixtures below don't have to narrow away the `| undefined` that `family`
+// now carries in `IntakePayload` — this suite's `minPayload` always includes
+// one, it's just `IntakePayload`'s type that can't express that.
+const minFamily: NonNullable<IntakePayload["family"]> = {
+  primary: { firstName: "Jane", lastName: "Doe", dateOfBirth: "1975-06-15", maritalStatus: "married" },
+  spouse: null,
+  stateOfResidence: "CA",
+  children: [],
+};
+
 const minPayload: IntakePayload = {
-  family: {
-    primary: { firstName: "Jane", lastName: "Doe", dateOfBirth: "1975-06-15", maritalStatus: "married" },
-    spouse: null,
-    stateOfResidence: "CA",
-    children: [],
-  },
+  family: minFamily,
   accounts: [],
   income: [],
   property: [],
@@ -29,8 +35,8 @@ describe("buildIntakeDiff", () => {
     const updated: IntakePayload = {
       ...minPayload,
       family: {
-        ...minPayload.family,
-        primary: { ...minPayload.family.primary, firstName: "Janet" },
+        ...minFamily,
+        primary: { ...minFamily.primary, firstName: "Janet" },
       },
     };
     const diff = buildIntakeDiff(minPayload, updated);
@@ -136,7 +142,7 @@ describe("buildIntakeDiff", () => {
     const withGoal: IntakePayload = {
       ...minPayload,
       family: {
-        ...minPayload.family,
+        ...minFamily,
         children: [{ firstName: "Emma", dateOfBirth: "2014-03-02" }],
       },
       goals: {

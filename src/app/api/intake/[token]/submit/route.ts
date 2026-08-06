@@ -11,9 +11,10 @@ import {
 import { loadFormByToken } from "@/lib/intake/queries";
 import { isExpired } from "@/lib/intake/tokens";
 import { isGateVerified } from "@/lib/intake/gate-session";
+import { sectionsForForm } from "@/lib/intake/sections";
 import {
   intakeDraftSchema,
-  intakeSubmitSchema,
+  intakeSubmitSchemaFor,
   pruneIntakeBlankRows,
   type IntakePayload,
 } from "@/lib/intake/schema";
@@ -132,12 +133,16 @@ export async function POST(
     throw e;
   }
 
-  // 7. Strict validation — the merged draft must now be complete. Drop any
-  //    optional rows the user added but left blank ("Add income" → "Skip for
-  //    now") so they don't read as incomplete required fields.
-  let validatedPayload: ReturnType<typeof intakeSubmitSchema.parse>;
+  // 7. Strict validation — the merged draft must now be complete, against the
+  //    sections THIS form actually collects. Drop any optional rows the user
+  //    added but left blank ("Add income" → "Skip for now") so they don't read
+  //    as incomplete required fields.
+  const sections = sectionsForForm(form.sections);
+  let validatedPayload: IntakePayload;
   try {
-    validatedPayload = intakeSubmitSchema.parse(pruneIntakeBlankRows(finalPayload));
+    validatedPayload = intakeSubmitSchemaFor(sections).parse(
+      pruneIntakeBlankRows(finalPayload),
+    );
   } catch (err) {
     if (err instanceof ZodError) {
       return NextResponse.json(

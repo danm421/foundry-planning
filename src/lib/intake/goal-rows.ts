@@ -16,6 +16,7 @@ import {
   INTAKE_GOAL_TYPES,
   type IntakeGoalTopic,
   type IntakeGoalType,
+  type IntakePayload,
 } from "@/lib/intake/schema";
 
 export { BENEFICIARY_REF_RE } from "@/lib/intake/schema";
@@ -144,17 +145,13 @@ export function childIndexFromRef(ref: string | undefined): number | null {
 /**
  * Resolve a ref to the person's first name for display, or undefined when it
  * points at somebody the family no longer lists (a child removed after the goal
- * was entered). Callers show nothing rather than a stale name.
+ * was entered) — or when the form never collected a Family step at all.
  */
 export function beneficiaryName(
   ref: string | undefined,
-  family: {
-    primary?: { firstName?: string } | null;
-    spouse?: { firstName?: string } | null;
-    children?: { firstName?: string }[];
-  },
+  family: IntakePayload["family"] | undefined,
 ): string | undefined {
-  if (!ref) return undefined;
+  if (!ref || !family) return undefined;
   if (ref === "client") return family.primary?.firstName?.trim() || undefined;
   if (ref === "spouse") return family.spouse?.firstName?.trim() || undefined;
   const index = childIndexFromRef(ref);
