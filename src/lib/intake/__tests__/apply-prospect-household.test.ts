@@ -36,6 +36,11 @@ const ADVISOR = "user_test_apply_prospect_hh";
 const RECIPIENT_NAME = "Jordan Reyes";
 const RECIPIENT_EMAIL = "jordan@example.com";
 
+// A second firm, used only by the cross-firm guard test below.
+const OTHER_FIRM = "test-firm-apply-prospect-hh-other-2026";
+const OTHER_ADVISOR = "user_test_apply_prospect_hh_other";
+const FOREIGN_NAME = "Someone Else's Household";
+
 /** What resolveIntakeHousehold names the household on the upload path. */
 const PLACEHOLDER = placeholderHouseholdName(RECIPIENT_NAME, RECIPIENT_EMAIL);
 /** What deriveHouseholdNameFromContacts produces for a lone primary. */
@@ -71,15 +76,15 @@ const PAYLOAD: IntakePayload = {
  * still-present account or liability. plan_settings and crm_activity are ON
  * DELETE CASCADE from scenarios/clients and crm_households respectively.
  */
-async function clearFirm(): Promise<void> {
+async function clearFirm(firmId: string): Promise<void> {
   // intake_forms references BOTH clients and crm_households — drop it first
   // rather than lean on its ON DELETE SET NULL.
-  await db.delete(intakeForms).where(eq(intakeForms.firmId, FIRM));
+  await db.delete(intakeForms).where(eq(intakeForms.firmId, firmId));
 
   const clientRows = await db
     .select({ id: clients.id })
     .from(clients)
-    .where(eq(clients.firmId, FIRM));
+    .where(eq(clients.firmId, firmId));
   const clientIds = clientRows.map((c) => c.id);
   if (clientIds.length > 0) {
     await db.delete(liabilities).where(inArray(liabilities.clientId, clientIds));
@@ -94,7 +99,7 @@ async function clearFirm(): Promise<void> {
   const hhRows = await db
     .select({ id: crmHouseholds.id })
     .from(crmHouseholds)
-    .where(eq(crmHouseholds.firmId, FIRM));
+    .where(eq(crmHouseholds.firmId, firmId));
   const hhIds = hhRows.map((h) => h.id);
   if (hhIds.length > 0) {
     await db
@@ -104,8 +109,17 @@ async function clearFirm(): Promise<void> {
   }
 }
 
-beforeEach(clearFirm);
-afterAll(clearFirm);
+/** FIRM before OTHER_FIRM: if the cross-firm guard ever regresses, a client in
+ *  FIRM points at a household OTHER_FIRM owns, so that client has to go first.
+ *  Wrapped rather than passed to beforeEach directly — vitest hands the hook a
+ *  TestContext, which would arrive as `firmId`. */
+async function clearBothFirms(): Promise<void> {
+  await clearFirm(FIRM);
+  await clearFirm(OTHER_FIRM);
+}
+
+beforeEach(clearBothFirms);
+afterAll(clearBothFirms);
 
 async function seedSubmittedProspectForm(): Promise<string> {
   const [form] = await db
@@ -235,5 +249,58 @@ describe("applyIntake — prospect with a pre-minted household", () => {
       .from(crmHouseholdContacts)
       .where(eq(crmHouseholdContacts.householdId, preMinted));
     expect(contacts).toHaveLength(1);
+  });
+
+  it("refuses a household parked from another firm, and rolls the apply back", async () => {
+    const formId = await seedSubmittedProspectForm();
+
+    // A household owned by a DIFFERENT firm, parked on this form. Not reachable
+    // through today's writers — resolveIntakeHousehold always mints against the
+    // form's own firm — but the guard has to hold the moment a second writer of
+    // crm_household_id exists (e.g. "link this form to an existing household").
+    const [foreign] = await db
+      .insert(crmHouseholds)
+      .values({ firmId: OTHER_FIRM, advisorId: OTHER_ADVISOR, name: FOREIGN_NAME })
+      .returning({ id: crmHouseholds.id });
+
+    await db
+      .update(intakeForms)
+      .set({ crmHouseholdId: foreign.id, updatedAt: new Date() })
+      .where(eq(intakeForms.id, formId));
+
+    await expect(
+      applyIntake({ formId, firmId: FIRM, actorId: ADVISOR }),
+    ).rejects.toThrow(/outside firm/);
+
+    // A throw on its own isn't the guarantee — the transaction has to roll back,
+    // or the apply leaves a half-built client wired to another firm's household.
+    const clientRows = await db
+      .select({ id: clients.id })
+      .from(clients)
+      .where(eq(clients.firmId, FIRM));
+    expect(clientRows).toHaveLength(0);
+
+    const contacts = await db
+      .select({ id: crmHouseholdContacts.id })
+      .from(crmHouseholdContacts)
+      .where(eq(crmHouseholdContacts.householdId, foreign.id));
+    expect(contacts).toHaveLength(0);
+
+    // The other firm's household is untouched — this is the row the unguarded
+    // UPDATE would have renamed out from under them.
+    const [after] = await db
+      .select({ name: crmHouseholds.name, state: crmHouseholds.state })
+      .from(crmHouseholds)
+      .where(eq(crmHouseholds.id, foreign.id));
+    expect(after.name).toBe(FOREIGN_NAME);
+    expect(after.state).toBeNull();
+
+    // The form stays applicable rather than being flipped to "applied".
+    const [form] = await db
+      .select({ status: intakeForms.status, clientId: intakeForms.clientId })
+      .from(intakeForms)
+      .where(eq(intakeForms.id, formId));
+    expect(form.status).toBe("submitted");
+    expect(form.clientId).toBeNull();
   });
 });

@@ -773,14 +773,26 @@ export async function applyIntake(args: {
         // firmId as well as id: resolveIntakeHousehold mints against the form's
         // own firm so the two always agree, but this is a write to a firm-owned
         // table and never gets to rely on that agreement holding.
-        await tx
+        //
+        // The `.returning()` is the point of the guard, not a convenience: an
+        // UPDATE that matches nothing is silent, so without it a parked id from
+        // another firm would skip the rename and then fall straight through to
+        // wiring this firm's contacts and client onto that foreign household.
+        // Throwing inside the transaction rolls the whole apply back.
+        const updated = await tx
           .update(crmHouseholds)
           .set({
             name: derivedName,
             state: payload.family.stateOfResidence ?? null,
             updatedAt: new Date(),
           })
-          .where(and(eq(crmHouseholds.id, householdId), eq(crmHouseholds.firmId, firmId)));
+          .where(and(eq(crmHouseholds.id, householdId), eq(crmHouseholds.firmId, firmId)))
+          .returning({ id: crmHouseholds.id });
+        if (updated.length === 0) {
+          throw new Error(
+            `Intake form ${formId} parks household ${householdId} outside firm ${firmId}`,
+          );
+        }
       } else {
         const [inserted] = await tx
           .insert(crmHouseholds)
