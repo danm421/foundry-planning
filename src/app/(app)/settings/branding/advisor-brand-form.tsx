@@ -6,7 +6,7 @@ import { AlertCircleIcon } from "@/components/icons";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { validatePrimaryColor } from "@/lib/branding/validation";
 // Generic email-shape regex, already the established client-mirrors-server
-// pattern for form validation (see send-client-form.tsx / send-prospect-form.tsx).
+// pattern for form validation (see send-client-form.tsx / send-intake-form.tsx).
 import { EMAIL_RE } from "@/lib/intake/schema";
 import {
   uploadAdvisorBrandingAsset,

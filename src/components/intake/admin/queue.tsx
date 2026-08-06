@@ -10,10 +10,11 @@ function formatDate(d: Date | null | undefined): string {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(d));
 }
 
-const MODE_LABEL: Record<string, string> = {
-  blank: "Prospect",
-  prefilled: "Client",
-};
+// Who the form is FOR, which is `clientId` — not `mode`. A blank form can be
+// addressed to someone already on the roster (its answers merge onto their
+// plan), so reading the recipient off the mode would label those "Prospect".
+const recipientLabel = (form: IntakeFormRow): "Client" | "Prospect" =>
+  form.clientId ? "Client" : "Prospect";
 
 const STATUS_STYLE: Record<string, string> = {
   submitted: "bg-accent/10 text-accent",
@@ -59,8 +60,8 @@ export default function Queue({ groups }: QueueProps) {
                     <div className="mt-0.5 text-[12px] text-ink-3 truncate">{form.recipientEmail}</div>
                   </div>
                   <div className="shrink-0 text-right space-y-0.5">
-                    <div className={`chip rounded px-2 py-0.5 text-[11px] ${MODE_LABEL[form.mode] === "Prospect" ? "bg-violet-500/10 text-violet-700" : "bg-blue-500/10 text-blue-700"}`}>
-                      {MODE_LABEL[form.mode] ?? form.mode}
+                    <div className={`chip rounded px-2 py-0.5 text-[11px] ${recipientLabel(form) === "Prospect" ? "bg-violet-500/10 text-violet-700" : "bg-blue-500/10 text-blue-700"}`}>
+                      {recipientLabel(form)}
                     </div>
                     <div className="tabular text-[11px] text-ink-4">
                       {form.submittedAt ? formatDate(form.submittedAt) : formatDate(form.createdAt)}

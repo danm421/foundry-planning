@@ -149,8 +149,10 @@ export default function ReviewDetail({ form, diff }: ReviewDetailProps) {
             <span className="tabular text-ink">{form.recipientEmail}</span>
           </div>
           <div className="flex items-center justify-between gap-4 py-1">
-            <span className="text-ink-3">Mode</span>
-            <span className="text-ink">{form.mode === "blank" ? "Prospect" : "Client update"}</span>
+            <span className="text-ink-3">Applies to</span>
+            {/* clientId, not mode: a blank form can be addressed to an existing
+                client, and then applying it merges onto that client's plan. */}
+            <span className="text-ink">{form.clientId ? "Existing client" : "New household"}</span>
           </div>
           <div className="flex items-center justify-between gap-4 py-1">
             <span className="text-ink-3">Status</span>

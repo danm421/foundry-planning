@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireOrgId } from "@/lib/db-helpers";
 import { listFormsForFirm } from "@/lib/intake/queries";
 import Queue from "@/components/intake/admin/queue";
-import SendProspectForm from "@/components/intake/admin/send-prospect-form";
+import SendIntakeForm from "@/components/intake/admin/send-intake-form";
 
 export default async function DataCollectionPage() {
   const orgId = await requireOrgId();
@@ -26,7 +26,7 @@ export default async function DataCollectionPage() {
           Data Collection
         </h1>
         <p className="mt-1 text-[14px] text-ink-3">
-          Review submitted intake forms and send new ones to prospects.
+          Review submitted intake forms and send new ones to clients and prospects.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1">
           <Link href="/data-collection/email-settings"
@@ -44,7 +44,7 @@ export default async function DataCollectionPage() {
       </div>
       <div className="space-y-8">
         <Queue groups={groups} />
-        <SendProspectForm />
+        <SendIntakeForm />
       </div>
     </div>
   );

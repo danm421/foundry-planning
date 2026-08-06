@@ -7,6 +7,16 @@ import { containsPattern } from "@/lib/like-pattern";
 export interface ClientSearchResult {
   id: string;
   householdTitle: string;
+  /**
+   * Primary contact detail, so a caller that has to address the household —
+   * the intake sender prefilling a recipient — doesn't need a second round
+   * trip. `primaryEmail` is frequently null: CRM contacts carry an email only
+   * when one was imported or typed, so callers must treat it as a hint and
+   * keep the field editable.
+   */
+  primaryFirstName: string;
+  primaryLastName: string;
+  primaryEmail: string | null;
 }
 
 const MAX_RESULTS = 8;
@@ -52,6 +62,7 @@ export async function searchClients(
       contactRole: crmHouseholdContacts.role,
       contactFirstName: crmHouseholdContacts.firstName,
       contactLastName: crmHouseholdContacts.lastName,
+      contactEmail: crmHouseholdContacts.email,
     })
     .from(clients)
     .innerJoin(
@@ -70,13 +81,14 @@ export async function searchClients(
       ),
     );
 
+  interface Contact {
+    firstName: string;
+    lastName: string;
+    email: string | null;
+  }
   const byClient = new Map<
     string,
-    {
-      id: string;
-      primary: { firstName: string; lastName: string } | null;
-      spouse: { firstName: string; lastName: string } | null;
-    }
+    { id: string; primary: Contact | null; spouse: Contact | null }
   >();
   for (const row of rows) {
     const entry = byClient.get(row.id) ?? {
@@ -84,10 +96,15 @@ export async function searchClients(
       primary: null,
       spouse: null,
     };
+    const contact: Contact = {
+      firstName: row.contactFirstName,
+      lastName: row.contactLastName,
+      email: row.contactEmail,
+    };
     if (row.contactRole === "primary") {
-      entry.primary = { firstName: row.contactFirstName, lastName: row.contactLastName };
+      entry.primary = contact;
     } else if (row.contactRole === "spouse") {
-      entry.spouse = { firstName: row.contactFirstName, lastName: row.contactLastName };
+      entry.spouse = contact;
     }
     byClient.set(row.id, entry);
   }
@@ -101,7 +118,13 @@ export async function searchClients(
     const householdTitle = spouseFirst
       ? `${firstName} & ${spouseFirst} ${spouseLast}`.trim()
       : `${firstName} ${lastName}`.trim();
-    results.push({ id: entry.id, householdTitle });
+    results.push({
+      id: entry.id,
+      householdTitle,
+      primaryFirstName: firstName,
+      primaryLastName: lastName,
+      primaryEmail: entry.primary.email ?? null,
+    });
   }
   results.sort((a, b) => a.householdTitle.localeCompare(b.householdTitle));
   return results.slice(0, MAX_RESULTS);

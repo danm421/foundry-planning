@@ -71,6 +71,26 @@ describe("Queue", () => {
     expect(hrefs).toContain("/data-collection/f-applied");
   });
 
+  it("labels a form by its recipient, not its mode", () => {
+    // A blank form bound to a client is an existing-client send: its answers
+    // merge onto that client, so it must not read as a prospect.
+    render(
+      <Queue
+        groups={[
+          {
+            label: "In flight",
+            forms: [
+              makeForm({ id: "f-prospect", mode: "blank", clientId: null, recipientName: "Pat" }),
+              makeForm({ id: "f-client", mode: "blank", clientId: "client-1", recipientName: "Quinn" }),
+            ],
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText("Prospect")).toBeInTheDocument();
+    expect(screen.getByText("Client")).toBeInTheDocument();
+  });
+
   it("renders empty state when no forms exist", () => {
     render(<Queue groups={[{ label: "Needs review", forms: [] }, { label: "In flight", forms: [] }, { label: "History", forms: [] }]} />);
     expect(screen.getByText(/no intake forms yet/i)).toBeInTheDocument();
