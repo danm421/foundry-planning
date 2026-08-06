@@ -1,7 +1,8 @@
 import {
   derivedEntityKey, entityKey, entityPath, ENTITY_COLLECTIONS, ENTITY_DELETED_FIELD,
-  isAdvisorKey, newAdvisorKey, parseEntityPath,
+  isAdvisorKey, newAdvisorKey, parseEntityPath, storedEntityId,
 } from "./paths";
+import type { EntityCollection } from "./types";
 import { ENTITY_FACTORIES, NULLABLE_BLOCK_FACTORIES } from "./nullable-blocks";
 import type { OverrideMap } from "./types";
 import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
@@ -23,6 +24,13 @@ function applyScalarPath(facts: Record<string, unknown>, path: string, value: un
   const leaf = segments[segments.length - 1];
   if (!(leaf in node)) return; // unknown leaf — ignore rather than invent
   node[leaf] = value;
+}
+
+/** One entity, collection-qualified — the same `collection[key]` prefix
+ *  `entityPath` builds, without a field. Deletions are tracked by it so a
+ *  `k1s[X]` marker can never delete `businesses[X]`. */
+function entityRef(collection: EntityCollection, key: string): string {
+  return `${collection}[${key}]`;
 }
 
 /**
@@ -50,7 +58,7 @@ export function applyOverrides(facts: TaxReturnFacts, overrides: OverrideMap): T
   for (const [path, value] of Object.entries(overrides)) {
     const entity = parseEntityPath(path);
     if (entity && entity.field === ENTITY_DELETED_FIELD && value === true) {
-      deleted.add(`${entity.collection}[${entity.key}]`);
+      deleted.add(entityRef(entity.collection, entity.key));
     }
   }
 
@@ -61,7 +69,7 @@ export function applyOverrides(facts: TaxReturnFacts, overrides: OverrideMap): T
       continue;
     }
     if (entity.field === ENTITY_DELETED_FIELD) continue; // handled above
-    if (deleted.has(`${entity.collection}[${entity.key}]`)) continue;
+    if (deleted.has(entityRef(entity.collection, entity.key))) continue;
 
     const list = out[entity.collection] as Array<Record<string, unknown>> | undefined;
     if (!Array.isArray(list)) continue;
@@ -75,13 +83,14 @@ export function applyOverrides(facts: TaxReturnFacts, overrides: OverrideMap): T
     target[entity.field] = value;
   }
 
-  for (const collection of ENTITY_COLLECTIONS) {
-    if (deleted.size === 0) break;
-    const list = out[collection];
-    if (!Array.isArray(list)) continue;
-    out[collection] = (list as Array<Record<string, unknown>>).filter(
-      (e) => !deleted.has(`${collection}[${entityKey(e)}]`),
-    );
+  if (deleted.size > 0) {
+    for (const collection of ENTITY_COLLECTIONS) {
+      const list = out[collection];
+      if (!Array.isArray(list)) continue;
+      out[collection] = (list as Array<Record<string, unknown>>).filter(
+        (e) => !deleted.has(entityRef(collection, entityKey(e) ?? "")),
+      );
+    }
   }
 
   return out as unknown as TaxReturnFacts;
@@ -110,7 +119,7 @@ function matchBaseEntity(
   baseList: ReadonlyArray<Record<string, unknown>>,
   submitted: Record<string, unknown>,
 ): Record<string, unknown> | undefined {
-  const stored = typeof submitted.entityId === "string" ? submitted.entityId.trim() : "";
+  const stored = storedEntityId(submitted);
   if (stored) return baseList.find((e) => entityKey(e) === stored);
   const derived = derivedEntityKey(submitted);
   return derived ? baseList.find((e) => entityKey(e) === derived) : undefined;
@@ -159,8 +168,9 @@ export function diffOverrides(base: TaxReturnFacts, submitted: TaxReturnFacts): 
       // gets an `adv:` key — the only namespace `applyOverrides` will create
       // under. A matched entity keeps the base entity's key, so a rename edits
       // the entity it renames instead of forking a second copy of it.
-      const stored = typeof entity.entityId === "string" ? entity.entityId.trim() : "";
-      const key = original ? entityKey(original) : stored || newAdvisorKey();
+      const key = original
+        ? entityKey(original)
+        : storedEntityId(entity) ?? newAdvisorKey();
       if (!key) continue;
       kept.add(key);
 

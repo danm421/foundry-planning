@@ -93,9 +93,16 @@ export function entityKey(
     name?: string | null;
   },
 ): string | null {
-  const stored = entity.entityId?.trim();
-  if (stored) return stored;
-  return derivedEntityKey(entity);
+  return storedEntityId(entity) ?? derivedEntityKey(entity);
+}
+
+/** The entity's stamped identity, or null when it has none yet — a document's
+ *  extraction, a row persisted before the stamp existed, or an entity the
+ *  advisor has just added in the form. Blank strings count as none. */
+export function storedEntityId(entity: { entityId?: unknown }): string | null {
+  if (typeof entity.entityId !== "string") return null;
+  const trimmed = entity.entityId.trim();
+  return trimmed || null;
 }
 
 export function entityPath(collection: EntityCollection, key: string, field: string): string {
