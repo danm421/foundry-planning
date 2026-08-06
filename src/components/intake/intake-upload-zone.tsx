@@ -13,6 +13,21 @@ import { labelCls, selectCls } from "./steps/card-list";
 
 // ─── Public interface ────────────────────────────────────────────────────────
 
+/**
+ * Everything a step needs to offer uploads, in one optional prop.
+ *
+ * `undefined` is the whole contract for "no uploads here": the portal wizard
+ * and the advisor's preview have no public token, so they pass nothing and no
+ * upload affordance renders anywhere in the wizard.
+ */
+export interface IntakeUploadContext {
+  token: string;
+  /** Every document on the form; each zone filters to the types it owns. */
+  documents: IntakeDocumentView[];
+  /** Refetch the list — the wizard's owner holds it. */
+  onChanged: () => void;
+}
+
 export interface IntakeUploadZoneProps {
   /** The intake form's public token — the only credential these routes take. */
   token: string;
@@ -352,6 +367,35 @@ export function IntakeUploadZone({
         </p>
       )}
     </div>
+  );
+}
+
+// ─── ContextualUploadZone ────────────────────────────────────────────────────
+
+/**
+ * The zone the Accounts, Income and Property steps hang below their card list:
+ * one fixed type, and a list filtered to that type so a client on the Income
+ * step sees their pay stubs and not their will. Renders nothing at all where
+ * uploads aren't offered, which is what keeps the portal wizard unchanged.
+ */
+export function ContextualUploadZone({
+  uploads,
+  docType,
+  label,
+}: {
+  uploads: IntakeUploadContext | undefined;
+  docType: IntakeDocType;
+  label: string;
+}) {
+  if (!uploads) return null;
+  return (
+    <IntakeUploadZone
+      token={uploads.token}
+      docType={docType}
+      documents={uploads.documents.filter((d) => d.docType === docType)}
+      onChanged={uploads.onChanged}
+      label={label}
+    />
   );
 }
 
