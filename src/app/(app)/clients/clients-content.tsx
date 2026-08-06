@@ -14,6 +14,7 @@ import { resolveSharesForRecipient, type ShareDetail } from "@/lib/clients/share
 import { resolveActors } from "@/lib/activity/resolve-actors";
 import { resolveFirmNames } from "@/lib/activity/resolve-firm-names";
 import { resolveClientsView, resolveSort, clampTake, shouldShowLoadMore } from "@/lib/crm/sort";
+import { formatNameLastFirst } from "@/lib/crm/household-name";
 import { ClientsLoadMore } from "@/components/clients-load-more";
 
 // ---------------------------------------------------------------------------
@@ -134,8 +135,8 @@ export async function ClientsContent({
       householdId: h.id,
       name: h.name,
       status: h.status,
-      primaryName: primary ? `${primary.firstName} ${primary.lastName}`.trim() : null,
-      spouseName: spouse ? `${spouse.firstName} ${spouse.lastName}`.trim() : null,
+      primaryName: primary ? formatNameLastFirst(primary) : null,
+      spouseName: spouse ? formatNameLastFirst(spouse) : null,
       planningClientId: h.planningClient?.id ?? null,
       updatedAt: h.updatedAt.toISOString(),
       deletedAt: h.deletedAt ? h.deletedAt.toISOString() : null,

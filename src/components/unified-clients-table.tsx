@@ -119,14 +119,14 @@ export function UnifiedClientsTable({ rows, emptyMessage, canManage, sort }: Uni
               // Shortened from "Primary contact" so the header fits its column
               // without wrapping; `srLabel` keeps the full meaning for AT.
               label="Primary"
-              srLabel="Sort by primary contact first name"
+              srLabel="Sort by primary contact last name"
               activeKey={sort?.key ?? null}
               activeDir={sort?.dir ?? "asc"}
             />
             <ClientsSortHeader
               sortKey="spouse"
               label="Spouse"
-              srLabel="Sort by spouse first name"
+              srLabel="Sort by spouse last name"
               activeKey={sort?.key ?? null}
               activeDir={sort?.dir ?? "asc"}
             />

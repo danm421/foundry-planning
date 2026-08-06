@@ -90,7 +90,10 @@ describe("listCrmHouseholds sorting", () => {
     expect(rows.map((r) => r.name)).toEqual(["Amy Baker", "Zoe Adams", "No Contacts"]);
   });
 
-  it("sorts the primary-contact key by FIRST name", async () => {
+  // The Primary cell reads "Adams, Zoe", so its key sorts on the last name and
+  // tie-breaks on the first. The fixture discriminates: were it still ordering
+  // by first name, this would come back Amy, Bob, Zoe.
+  it("sorts the primary-contact key by LAST name, then first", async () => {
     await seed([
       { name: "Zoe Adams", primary: ["Zoe", "Adams"] },
       { name: "Amy Baker", primary: ["Amy", "Baker"] },
@@ -99,7 +102,7 @@ describe("listCrmHouseholds sorting", () => {
 
     const rows = await listCrmHouseholds({ sort: "primary", dir: "asc" });
 
-    expect(rows.map((r) => r.name)).toEqual(["Amy Baker", "Bob Adams", "Zoe Adams"]);
+    expect(rows.map((r) => r.name)).toEqual(["Bob Adams", "Zoe Adams", "Amy Baker"]);
   });
 
   it("keeps the existing updatedAt default when no sort is given", async () => {

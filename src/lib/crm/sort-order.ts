@@ -50,13 +50,16 @@ export function buildOrderBy(key: ClientSortKey, dir: SortDir): SQL[] {
     // The Name column reads "John & Jane Cooper" but sorts on the LAST name.
     case "name":
       return [d(primaryLast), d(primaryFirst), idTieBreak];
-    // The Primary contact cell reads "John Cooper", so it sorts on FIRST name.
-    // Deliberately a different key from `name` — were both to sort on last
-    // name, one of the two headers would be decorative.
+    // The Primary and Spouse cells read "Cooper, John", so they sort on LAST
+    // name — sorting a surname-first column by the first name reads as unsorted.
+    // That makes `primary` order the same way as `name` whenever the household
+    // name was derived from the primary contact; the two stay separate keys
+    // because a renamed household breaks that coupling, and because Spouse
+    // (whose surname can differ) needs the same treatment to make sense.
     case "primary":
-      return [d(primaryFirst), d(primaryLast), idTieBreak];
+      return [d(primaryLast), d(primaryFirst), idTieBreak];
     case "spouse":
-      return [d(spouseFirst), d(spouseLast), idTieBreak];
+      return [d(spouseLast), d(spouseFirst), idTieBreak];
     // Postgres sorts enums by declaration order, and crmHouseholdStatusEnum is
     // declared prospect → active → inactive → archived. That is lifecycle
     // order, which beats alphabetical (active, archived, inactive, prospect).

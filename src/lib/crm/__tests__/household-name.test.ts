@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildHouseholdName,
   deriveHouseholdNameFromContacts,
+  formatNameLastFirst,
   roleAffectsHouseholdName,
 } from "../household-name";
 
@@ -95,6 +96,22 @@ describe("deriveHouseholdNameFromContacts", () => {
 
   it("returns null for an empty contact list", () => {
     expect(deriveHouseholdNameFromContacts([])).toBeNull();
+  });
+});
+
+describe("formatNameLastFirst", () => {
+  it("puts the last name first, separated by a comma", () => {
+    expect(formatNameLastFirst({ firstName: "John", lastName: "Cooper" })).toBe("Cooper, John");
+  });
+
+  it("drops the comma when only one half is present", () => {
+    expect(formatNameLastFirst({ firstName: "John", lastName: "" })).toBe("John");
+    expect(formatNameLastFirst({ firstName: "", lastName: "Cooper" })).toBe("Cooper");
+  });
+
+  it("treats whitespace-only halves as missing, and an empty name as empty", () => {
+    expect(formatNameLastFirst({ firstName: "  John ", lastName: "   " })).toBe("John");
+    expect(formatNameLastFirst({ firstName: " ", lastName: " " })).toBe("");
   });
 });
 
