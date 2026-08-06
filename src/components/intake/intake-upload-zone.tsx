@@ -284,28 +284,15 @@ export function IntakeUploadZone({
   }
 
   const visiblePending = pending.filter((row) => stillPending(row, documents));
-  const typePickerId = `intake-doctype-${docType}`;
 
   return (
     <div className="space-y-3">
       {allowTypeChoice && (
-        <div>
-          <label htmlFor={typePickerId} className={labelCls}>
-            What kind of document is this?
-          </label>
-          <select
-            id={typePickerId}
-            className={selectCls}
-            value={selectedType}
-            onChange={(e) => setSelectedType(e.target.value as IntakeDocType)}
-          >
-            {INTAKE_DOC_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {INTAKE_DOC_TYPE_LABELS[t]}
-              </option>
-            ))}
-          </select>
-        </div>
+        <DocTypePicker
+          id={`intake-doctype-${docType}`}
+          value={selectedType}
+          onChange={setSelectedType}
+        />
       )}
 
       <button
@@ -385,7 +372,6 @@ export interface SampleUploadZoneProps {
    *  empty drop target. Nothing here was ever uploaded. */
   documents?: IntakeDocumentView[];
   label: string;
-  hint?: string;
 }
 
 /**
@@ -409,38 +395,24 @@ export function SampleUploadZone({
   allowTypeChoice = false,
   documents = [],
   label,
-  hint,
 }: SampleUploadZoneProps) {
   const [selectedType, setSelectedType] = useState<IntakeDocType>(docType);
-  const typePickerId = `intake-sample-doctype-${docType}`;
 
   return (
     <div className="space-y-3">
       {allowTypeChoice && (
-        <div>
-          <label htmlFor={typePickerId} className={labelCls}>
-            What kind of document is this?
-          </label>
-          <select
-            id={typePickerId}
-            className={selectCls}
-            value={selectedType}
-            onChange={(e) => setSelectedType(e.target.value as IntakeDocType)}
-          >
-            {INTAKE_DOC_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {INTAKE_DOC_TYPE_LABELS[t]}
-              </option>
-            ))}
-          </select>
-        </div>
+        <DocTypePicker
+          id={`intake-sample-doctype-${docType}`}
+          value={selectedType}
+          onChange={setSelectedType}
+        />
       )}
 
       {/* A div, not a button: there is no picker to open. It keeps the live
           zone's dimensions and copy but drops the hover cue, so the sample
           never advertises an affordance it doesn't have. */}
       <div className={`${DROP_ZONE_CLS} border-hair-2`}>
-        <DropZoneBody label={label} hint={hint} />
+        <DropZoneBody label={label} />
       </div>
 
       {documents.length > 0 && (
@@ -491,7 +463,43 @@ export function ContextualUploadZone({
   );
 }
 
-// ─── Drop zone body ──────────────────────────────────────────────────────────
+// ─── Shared chrome ───────────────────────────────────────────────────────────
+//
+// The parts the live zone and the preview's sample both render. Sharing them is
+// what keeps the sample honest: the copy an advisor previews is the same string
+// literal their client is shown, not a second copy of it that can drift.
+
+/** "What kind of document is this?" — the Documents step's type picker. */
+function DocTypePicker({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: IntakeDocType;
+  onChange: (next: IntakeDocType) => void;
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className={labelCls}>
+        What kind of document is this?
+      </label>
+      <select
+        id={id}
+        className={selectCls}
+        value={value}
+        onChange={(e) => onChange(e.target.value as IntakeDocType)}
+      >
+        {INTAKE_DOC_TYPES.map((t) => (
+          <option key={t} value={t}>
+            {INTAKE_DOC_TYPE_LABELS[t]}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 
 /** The glyph and three lines inside the drop target. Spans, not paragraphs: a
  *  `<button>`'s content model is phrasing only, and the live zone is a button. */
