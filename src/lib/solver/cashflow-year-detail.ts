@@ -213,8 +213,12 @@ export function buildCashFlowYearDetail(
   const liabilityItems = Object.entries(year.expenses.byLiability)
     .map(([id, amount]) => ({ id, label: m.liabilityNames[id] ?? id, amount }));
 
+  // Education goals reach bySource only for the slice paid out of household cash
+  // flow (the engine folds that slice into expenses.other); the dedicated 529 draw
+  // and any unfunded shortfall are absent. Enumerate them here so the out-of-pocket
+  // spend shows under its goal name instead of a nameless balancing "Other" row.
   const otherExpenseItems = Object.entries(year.expenses.bySource)
-    .filter(([id]) => m.expenseTypeById[id] === "other")
+    .filter(([id]) => m.expenseTypeById[id] === "other" || m.expenseTypeById[id] === "education")
     .map(([id, amount]) => ({ id, label: m.expenseNames[id] ?? id, amount }));
 
   const insuranceItems = Object.entries(year.expenses.bySource)
