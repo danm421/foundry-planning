@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { and, eq, isNull } from "drizzle-orm";
+import { db } from "@/db";
+import { intakeForms } from "@/db/schema";
 import {
   checkIntakeVerifyRateLimit,
   rateLimitErrorResponse,
@@ -86,15 +89,30 @@ export async function POST(
   const res = NextResponse.json({ ok: true });
   res.cookies.set(gateCookieName(form.id), signGateSession(form.id), gateCookieOptions());
 
-  await recordAudit({
-    action: "intake.form.verified",
-    actorKind: "client",
-    actorId: "system",
-    firmId: form.firmId,
-    clientId: form.clientId ?? null,
-    resourceType: "intake_form",
-    resourceId: form.id,
-  });
+  // 7. Stamp first access. This is the seam — not the page render — because
+  //    holding the link is not access: only a caller who produced the
+  //    recipient's own surname + email has demonstrably opened the form.
+  //    `isNull` lives in the WHERE, not in a read-then-write, so a re-verify
+  //    (or two racing tabs) can never move the stamp forward off FIRST access.
+  //    Deliberately does NOT touch `updated_at` — that column dates the
+  //    History row for a discarded form, and opening a link is not an edit.
+  //    Concurrent with the audit insert: different tables, neither reads the
+  //    other, so the gate's success path pays the slower write, not the sum.
+  await Promise.all([
+    db
+      .update(intakeForms)
+      .set({ openedAt: new Date() })
+      .where(and(eq(intakeForms.id, form.id), isNull(intakeForms.openedAt))),
+    recordAudit({
+      action: "intake.form.verified",
+      actorKind: "client",
+      actorId: "system",
+      firmId: form.firmId,
+      clientId: form.clientId ?? null,
+      resourceType: "intake_form",
+      resourceId: form.id,
+    }),
+  ]);
 
   return res;
 }

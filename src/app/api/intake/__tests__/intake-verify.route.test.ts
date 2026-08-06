@@ -37,6 +37,10 @@ let expiredToken: string;
 let submittedToken: string;
 let namelessToken: string;
 let draftFormId: string;
+// Two forms nothing else touches, so `opened_at` starts null for the stamp
+// assertions instead of carrying whatever an earlier test's verify left.
+let stampToken: string;
+let failStampToken: string;
 
 beforeAll(async () => {
   process.env.INTAKE_GATE_SECRET = "test-gate-secret-do-not-use-in-prod";
@@ -45,6 +49,8 @@ beforeAll(async () => {
   expiredToken = newIntakeToken();
   submittedToken = newIntakeToken();
   namelessToken = newIntakeToken();
+  stampToken = newIntakeToken();
+  failStampToken = newIntakeToken();
 
   const base = {
     firmId: FIRM,
@@ -86,6 +92,22 @@ beforeAll(async () => {
         token: namelessToken,
         recipientEmail: EMAIL,
         recipientName: null,
+        expiresAt: defaultExpiry(now),
+      },
+      {
+        ...base,
+        status: "draft",
+        token: stampToken,
+        recipientEmail: EMAIL,
+        recipientName: NAME,
+        expiresAt: defaultExpiry(now),
+      },
+      {
+        ...base,
+        status: "draft",
+        token: failStampToken,
+        recipientEmail: EMAIL,
+        recipientName: NAME,
         expiresAt: defaultExpiry(now),
       },
     ])
@@ -206,5 +228,41 @@ describe("POST /api/intake/[token]/verify", () => {
     // A guess that never reaches the comparison must not be audited as a
     // failed attempt, or the limiter would be self-defeating noise.
     expect(recordAuditMock).not.toHaveBeenCalled();
+  }, 30000);
+
+  // `opened_at` drives the Data Collection queue's "Accessed" column. Nothing
+  // wrote it before this route did, so these pin the only write site.
+  it("stamps opened_at on the first successful verify, and never moves it after", async () => {
+    const openedAt = async () =>
+      (
+        await db
+          .select({ openedAt: intakeForms.openedAt })
+          .from(intakeForms)
+          .where(eq(intakeForms.token, stampToken))
+          .limit(1)
+      )[0]!.openedAt;
+
+    expect(await openedAt()).toBeNull();
+
+    expect((await call(stampToken, { lastName: "Client", email: EMAIL })).status).toBe(200);
+    const first = await openedAt();
+    expect(first).toBeInstanceOf(Date);
+
+    // FIRST access, not latest: a second unlock must leave the stamp alone, or
+    // "Accessed" would silently track the most recent visit instead.
+    expect((await call(stampToken, { lastName: "Client", email: EMAIL })).status).toBe(200);
+    expect((await openedAt())!.getTime()).toBe(first!.getTime());
+  }, 30000);
+
+  it("does NOT stamp opened_at when the identity check fails", async () => {
+    // Holding the link is not access. A link-holder who can't produce the
+    // recipient's surname must not be able to make the row read as opened.
+    expect((await call(failStampToken, { lastName: "Wrong", email: EMAIL })).status).toBe(401);
+    const [row] = await db
+      .select({ openedAt: intakeForms.openedAt })
+      .from(intakeForms)
+      .where(eq(intakeForms.token, failStampToken))
+      .limit(1);
+    expect(row!.openedAt).toBeNull();
   }, 30000);
 });

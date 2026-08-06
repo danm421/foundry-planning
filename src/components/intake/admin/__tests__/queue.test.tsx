@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
-import Queue from "../queue";
+import Queue, { type QueueGroup } from "../queue";
 import type { IntakeFormRow } from "@/lib/intake/queries";
 
 function makeForm(overrides: Partial<IntakeFormRow> = {}): IntakeFormRow {
@@ -32,10 +32,12 @@ const draftForm = makeForm({ id: "f-draft", status: "draft", recipientName: "Car
 const appliedForm = makeForm({ id: "f-applied", status: "applied", recipientName: "Dave" });
 const discardedForm = makeForm({ id: "f-discarded", status: "discarded", recipientName: "Eve" });
 
-const groups = [
-  { label: "In flight", forms: [draftForm] },
-  { label: "Needs review", forms: [submittedForm] },
-  { label: "History", forms: [appliedForm, discardedForm] },
+// Mirrors the buckets src/app/(app)/data-collection/page.tsx builds, including
+// their date columns — the point of the column set is that it varies per tab.
+const groups: QueueGroup[] = [
+  { label: "In flight", forms: [draftForm], dateColumns: ["sent", "accessed"] },
+  { label: "Needs review", forms: [submittedForm], dateColumns: ["sent", "accessed", "completed"] },
+  { label: "History", forms: [appliedForm, discardedForm], dateColumns: ["closed"] },
 ];
 
 /** The panel a tab controls, found through its aria-controls wiring. */
@@ -69,9 +71,9 @@ describe("Queue", () => {
     render(
       <Queue
         groups={[
-          { label: "In flight", forms: [] },
-          { label: "Needs review", forms: [submittedForm] },
-          { label: "History", forms: [] },
+          { label: "In flight", forms: [], dateColumns: ["sent", "accessed"] },
+          { label: "Needs review", forms: [submittedForm], dateColumns: ["sent"] },
+          { label: "History", forms: [], dateColumns: ["closed"] },
         ]}
       />,
     );
@@ -128,6 +130,7 @@ describe("Queue", () => {
               makeForm({ id: "f-prospect", mode: "blank", clientId: null, recipientName: "Pat" }),
               makeForm({ id: "f-client", mode: "blank", clientId: "client-1", recipientName: "Quinn" }),
             ],
+            dateColumns: ["sent"],
           },
         ]}
       />,
@@ -146,11 +149,131 @@ describe("Queue", () => {
     render(
       <Queue
         groups={[
-          { label: "In flight", forms: [], empty: "No forms are out with a client right now." },
-          { label: "Needs review", forms: [], empty: "Nothing to review." },
+          {
+            label: "In flight",
+            forms: [],
+            dateColumns: ["sent", "accessed"],
+            empty: "No forms are out with a client right now.",
+          },
+          { label: "Needs review", forms: [], dateColumns: ["sent"], empty: "Nothing to review." },
         ]}
       />,
     );
     expect(within(panelFor(/in flight/i)).getByText(/out with a client/i)).toBeInTheDocument();
+  });
+
+  it("gives each bucket its own date columns", () => {
+    render(<Queue groups={groups} />);
+    const inFlight = within(panelFor(/in flight/i));
+    const needsReview = within(panelFor(/needs review/i));
+
+    // In flight chases a reply: sent, and whether they've looked.
+    expect(inFlight.getByText("Sent")).toBeInTheDocument();
+    expect(inFlight.getByText("Accessed")).toBeInTheDocument();
+    expect(inFlight.queryByText("Completed")).not.toBeInTheDocument();
+
+    // Needs review adds the round-trip close.
+    expect(needsReview.getByText("Sent")).toBeInTheDocument();
+    expect(needsReview.getByText("Accessed")).toBeInTheDocument();
+    expect(needsReview.getByText("Completed")).toBeInTheDocument();
+
+    // History keeps its single, status-aware date.
+    const history = within(panelFor(/history/i));
+    expect(history.getByText("Closed")).toBeInTheDocument();
+    expect(history.queryByText("Sent")).not.toBeInTheDocument();
+  });
+
+  it("reads each column off its own timestamp", () => {
+    render(
+      <Queue
+        groups={[
+          {
+            label: "Needs review",
+            forms: [
+              makeForm({
+                id: "f-dates",
+                status: "submitted",
+                recipientName: "Rae",
+                sentAt: new Date("2026-03-02T12:00:00Z"),
+                openedAt: new Date("2026-04-03T12:00:00Z"),
+                submittedAt: new Date("2026-05-04T12:00:00Z"),
+              }),
+            ],
+            dateColumns: ["sent", "accessed", "completed"],
+          },
+        ]}
+      />,
+    );
+    // Three distinct months, so a column reading the wrong timestamp shows up
+    // as the wrong month rather than passing on a shared value. Asserted as
+    // label+value together — each cell carries its own screen-reader label, so
+    // this also pins the date to the column it belongs to.
+    const row = screen.getByRole("link");
+    expect(row).toHaveTextContent("Sent: Mar 2, 2026");
+    expect(row).toHaveTextContent("Accessed: Apr 3, 2026");
+    expect(row).toHaveTextContent("Completed: May 4, 2026");
+  });
+
+  it("shows an em-dash for a form the recipient has never opened", () => {
+    render(
+      <Queue
+        groups={[
+          {
+            label: "In flight",
+            forms: [
+              // Midday UTC so the assertion can't flip a day under the runner's
+              // local zone — `formatDate` renders in local time.
+              makeForm({
+                id: "f-unopened",
+                openedAt: null,
+                sentAt: new Date("2026-06-01T12:00:00Z"),
+              }),
+            ],
+            dateColumns: ["sent", "accessed"],
+          },
+        ]}
+      />,
+    );
+    // "Accessed" has no createdAt fallback: an em-dash is the honest answer,
+    // and a fallback would read as "they opened it the day it was created".
+    const row = screen.getByRole("link");
+    expect(row).toHaveTextContent("Accessed: not yet");
+    // Sent still resolves — only the columns with no fallback go blank.
+    expect(row).toHaveTextContent("Sent: Jun 1, 2026");
+  });
+
+  it("dates a History row from the timestamp its end state actually ended on", () => {
+    render(
+      <Queue
+        groups={[
+          {
+            label: "History",
+            forms: [
+              makeForm({
+                id: "f-applied",
+                status: "applied",
+                recipientName: "Sam",
+                submittedAt: new Date("2026-05-04T12:00:00Z"),
+                appliedAt: new Date("2026-06-05T12:00:00Z"),
+                updatedAt: new Date("2026-07-06T12:00:00Z"),
+              }),
+              makeForm({
+                id: "f-discarded",
+                status: "discarded",
+                recipientName: "Tal",
+                appliedAt: null,
+                updatedAt: new Date("2026-08-07T12:00:00Z"),
+              }),
+            ],
+            dateColumns: ["closed"],
+          },
+        ]}
+      />,
+    );
+    // appliedAt wins over the later updatedAt; a discarded form has no
+    // appliedAt, so it falls to updatedAt.
+    const [applied, discarded] = screen.getAllByRole("link");
+    expect(applied).toHaveTextContent("Closed: Jun 5, 2026");
+    expect(discarded).toHaveTextContent("Closed: Aug 7, 2026");
   });
 });

@@ -19,11 +19,17 @@ export default async function DataCollectionPage() {
     {
       label: "In flight",
       forms: forms.filter((f) => f.status === "draft"),
+      // The chasing question: did they get it, and did they look? Sent alone
+      // can't tell an ignored invite from one that's half-filled.
+      dateColumns: ["sent", "accessed"],
       empty: "No forms are out with a client right now.",
     },
     {
       label: "Needs review",
       forms: forms.filter((f) => f.status === "submitted"),
+      // Adds Completed — how long the whole round trip took, and how stale the
+      // answers are by the time you open them.
+      dateColumns: ["sent", "accessed", "completed"],
       empty: "Nothing to review. Submitted forms land here.",
     },
     {
@@ -31,6 +37,9 @@ export default async function DataCollectionPage() {
       forms: forms.filter(
         (f) => f.status === "applied" || f.status === "discarded" || f.status === "expired",
       ),
+      // One date: this is the record, and the only question it answers is when
+      // the form left the queue. Which timestamp that is varies by end state.
+      dateColumns: ["closed"],
       empty: "No applied or discarded forms yet.",
     },
   ];
