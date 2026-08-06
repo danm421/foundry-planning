@@ -10,12 +10,14 @@ const {
   isGateVerified,
   uploadIntakeDocument,
   listIntakeDocuments,
+  deleteIntakeDocument,
   checkIntakeDocumentRateLimit,
 } = vi.hoisted(() => ({
   loadFormByToken: vi.fn(),
   isGateVerified: vi.fn(),
   uploadIntakeDocument: vi.fn(),
   listIntakeDocuments: vi.fn(),
+  deleteIntakeDocument: vi.fn(),
   checkIntakeDocumentRateLimit: vi.fn(),
 }));
 
@@ -24,6 +26,7 @@ vi.mock("@/lib/intake/gate-session", () => ({ isGateVerified }));
 vi.mock("@/lib/intake/documents", () => ({
   uploadIntakeDocument,
   listIntakeDocuments,
+  deleteIntakeDocument,
   // The route imports this as a real value (not just the IntakeDocType type),
   // so the mock has to provide it too — kept in sync with the real array in
   // src/lib/intake/documents.ts by inspection; it's a stable, near-frozen list.
@@ -36,6 +39,7 @@ vi.mock("@/lib/rate-limit", () => ({
 }));
 
 import { POST, GET } from "../[token]/documents/route";
+import { DELETE } from "../[token]/documents/[docId]/route";
 
 const DRAFT_FORM = {
   id: "form-1",
@@ -69,6 +73,7 @@ beforeEach(() => {
   isGateVerified.mockResolvedValue(true);
   uploadIntakeDocument.mockResolvedValue(DOC_VIEW);
   listIntakeDocuments.mockResolvedValue([]);
+  deleteIntakeDocument.mockResolvedValue(true);
   checkIntakeDocumentRateLimit.mockResolvedValue({ allowed: true });
 });
 
@@ -158,5 +163,36 @@ describe("GET /api/intake/[token]/documents", () => {
     const res = await GET(new Request("http://localhost/api/intake/tok/documents"), params);
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toEqual({ documents: [DOC_VIEW] });
+  });
+});
+
+const delParams = { params: Promise.resolve({ token: "tok", docId: "d1" }) };
+
+// No test below reads the body, so one Request per test is unnecessary —
+// unlike uploadRequest() above, this one never varies.
+function deleteRequest(): Request {
+  return new Request("http://localhost/x", { method: "DELETE" });
+}
+
+describe("DELETE /api/intake/[token]/documents/[docId]", () => {
+  it("401s when the identity gate is unverified", async () => {
+    isGateVerified.mockResolvedValue(false);
+    expect((await DELETE(deleteRequest(), delParams)).status).toBe(401);
+    expect(deleteIntakeDocument).not.toHaveBeenCalled();
+  });
+
+  it("409s once the form has been submitted", async () => {
+    loadFormByToken.mockResolvedValue({ ...DRAFT_FORM, status: "submitted" });
+    expect((await DELETE(deleteRequest(), delParams)).status).toBe(409);
+  });
+
+  it("404s when the document isn't the client's to delete", async () => {
+    deleteIntakeDocument.mockResolvedValue(false);
+    expect((await DELETE(deleteRequest(), delParams)).status).toBe(404);
+  });
+
+  it("204s on success", async () => {
+    deleteIntakeDocument.mockResolvedValue(true);
+    expect((await DELETE(deleteRequest(), delParams)).status).toBe(204);
   });
 });

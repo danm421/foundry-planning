@@ -1,12 +1,5 @@
 import { NextResponse } from "next/server";
-import {
-  extractClientIp,
-  checkIntakeDocumentRateLimit,
-  rateLimitErrorResponse,
-} from "@/lib/rate-limit";
-import { loadFormByToken, type IntakeFormRow } from "@/lib/intake/queries";
-import { isExpired } from "@/lib/intake/tokens";
-import { isGateVerified } from "@/lib/intake/gate-session";
+import { gateIntakeDocumentRequest } from "@/lib/intake/document-gate";
 import {
   uploadIntakeDocument,
   listIntakeDocuments,
@@ -25,41 +18,9 @@ export const dynamic = "force-dynamic";
  * the bytes — enforced by the route not existing, not by a check.
  */
 
-type GateResult =
-  | { error: NextResponse; form?: undefined }
-  | { error?: undefined; form: IntakeFormRow };
-
-/** Shared gate: rate limit → token → form → expiry → status → identity cookie. */
-async function gate(token: string, req: Request): Promise<GateResult> {
-  const ip = extractClientIp(req);
-  const rl = await checkIntakeDocumentRateLimit(`${token}:${ip}`);
-  if (!rl.allowed) {
-    return { error: rateLimitErrorResponse(rl, "Too many uploads. Please slow down.") };
-  }
-
-  const form = await loadFormByToken(token);
-  if (!form) return { error: NextResponse.json({ error: "Not found" }, { status: 404 }) };
-
-  if (isExpired(form, new Date())) {
-    return { error: NextResponse.json({ error: "This form link has expired." }, { status: 410 }) };
-  }
-  if (form.status !== "draft") {
-    return {
-      error: NextResponse.json(
-        { error: "This form has already been submitted." },
-        { status: 409 },
-      ),
-    };
-  }
-  if (!(await isGateVerified(form.id))) {
-    return { error: NextResponse.json({ error: "Verification required." }, { status: 401 }) };
-  }
-  return { form };
-}
-
 export async function POST(req: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const gated = await gate(token, req);
+  const gated = await gateIntakeDocumentRequest(token, req);
   if (gated.error) return gated.error;
 
   // Cheap pre-flight before buffering the body. +64KB covers multipart
@@ -103,7 +64,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
 
 export async function GET(req: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const gated = await gate(token, req);
+  const gated = await gateIntakeDocumentRequest(token, req);
   if (gated.error) return gated.error;
 
   const documents = await listIntakeDocuments(gated.form.id);
