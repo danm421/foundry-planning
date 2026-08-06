@@ -1,7 +1,16 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { emptyTaxReturnFacts } from "@/lib/schemas/tax-return-facts";
-import { assembleFacts } from "../recompute";
+import { assembleFacts, recomputeFacts, MissingTaxReturnStateError } from "../recompute";
 import type { MergeDocument } from "../merge/types";
+
+// Drives getState → null without touching a database. `@/db` builds its
+// Neon Pool lazily at import time, so nothing connects here either way —
+// this mock exists so `listDocuments`/`getState` don't have to.
+vi.mock("../documents-store", () => ({
+  listDocuments: vi.fn(async () => []),
+  rowToMergeDocument: vi.fn(),
+  getState: vi.fn(async () => null),
+}));
 
 describe("assembleFacts", () => {
   it("is the identity for a single document with no overrides", () => {
@@ -60,5 +69,22 @@ describe("assembleFacts", () => {
     ], { "k1s[12-3456789].w2WagesFromEntity": 85000 });
 
     expect(taxReturnFactsSchema.safeParse(result.facts).success).toBe(true);
+    // Pins that the override actually LANDED, not just that the shape still
+    // parses — a schema-satisfying result is necessary but not sufficient,
+    // since w2WagesFromEntity: null also parses.
+    expect(result.facts.k1s[0].w2WagesFromEntity).toBe(85000);
+  });
+});
+
+describe("recomputeFacts", () => {
+  it("throws MissingTaxReturnStateError rather than silently discarding advisor corrections when no state row exists", async () => {
+    // getState() is mocked to null above, standing in for an un-backfilled
+    // tax_return_state row. A `state?.factsOverrides ?? {}` rewrite would
+    // swallow this case and recompute against an empty override map instead
+    // of failing loudly — this test exists to pin the throw so that rewrite
+    // cannot pass silently.
+    await expect(
+      recomputeFacts("11111111-1111-1111-1111-111111111111", 2025),
+    ).rejects.toThrow(MissingTaxReturnStateError);
   });
 });

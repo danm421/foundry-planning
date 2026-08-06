@@ -1,18 +1,28 @@
 import { db } from "@/db";
 import { taxReturnDocuments, taxReturnState } from "@/db/schema";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { taxReturnFactsSchema } from "@/lib/schemas/tax-return-facts";
 import type { MergeDocument, OverrideMap } from "./merge/types";
 
 export type TaxReturnDocumentRow = typeof taxReturnDocuments.$inferSelect;
 
-/** Ordered OLDEST FIRST — mergeDocuments treats array order as write order. */
+/**
+ * Ordered OLDEST FIRST — mergeDocuments treats array order as write order.
+ *
+ * `created_at` is `DEFAULT now()`, which is transaction start time, so two
+ * documents inserted in the same transaction can share an identical
+ * timestamp and Postgres may return them in either order. The secondary sort
+ * on `id` only makes that tie STABLE across queries — the same two rows come
+ * back in the same relative order every time — it does not recover a true
+ * write order between them. Genuinely fixing that needs a monotonic sequence
+ * column (e.g. `bigserial`), which is a migration; out of scope here.
+ */
 export async function listDocuments(taxReturnId: string): Promise<TaxReturnDocumentRow[]> {
   return db
     .select()
     .from(taxReturnDocuments)
     .where(eq(taxReturnDocuments.taxReturnId, taxReturnId))
-    .orderBy(asc(taxReturnDocuments.createdAt));
+    .orderBy(asc(taxReturnDocuments.createdAt), asc(taxReturnDocuments.id));
 }
 
 /** A document whose stored facts no longer satisfy the schema contributes
@@ -43,10 +53,16 @@ export async function insertDocument(args: {
   return row;
 }
 
-export async function deleteDocument(id: string): Promise<TaxReturnDocumentRow | null> {
+/** Scoped to `taxReturnId` so a request authz'd for one tax return can never
+ *  delete another one's document row — the route can't pre-check ownership
+ *  itself because the row only comes back after the delete. */
+export async function deleteDocument(
+  taxReturnId: string,
+  id: string,
+): Promise<TaxReturnDocumentRow | null> {
   const [row] = await db
     .delete(taxReturnDocuments)
-    .where(eq(taxReturnDocuments.id, id))
+    .where(and(eq(taxReturnDocuments.taxReturnId, taxReturnId), eq(taxReturnDocuments.id, id)))
     .returning();
   return row ?? null;
 }
