@@ -42,6 +42,7 @@ import {
   familyMembers,
   incomes,
   intakeForms,
+  liabilities,
   scenarios,
 } from "@/db/schema";
 import {
@@ -55,6 +56,7 @@ import { buildClientMilestones } from "@/lib/milestones";
 import {
   loadFamilyRoleIds,
   synthesizeAccountOwners,
+  synthesizeLiabilityOwners,
 } from "@/lib/imports/commit/family-resolver";
 import { createClientForHousehold } from "@/lib/clients/create-client";
 import { recordAudit, recordCreate, recordUpdate } from "@/lib/audit";
@@ -71,6 +73,10 @@ type ApplyResult = {
   accountIds: string[];
   incomeIds: string[];
   childIds: string[];
+  // Property fans out beyond its account row: an insurance expense and a
+  // mortgage liability, each audited like the account itself.
+  expenseIds: string[];
+  liabilityIds: string[];
   familyScalarsChanged: boolean;
 };
 
@@ -107,6 +113,8 @@ async function applySectionsToClient(
     accountIds: [],
     incomeIds: [],
     childIds: [],
+    expenseIds: [],
+    liabilityIds: [],
     familyScalarsChanged: false,
   };
 
@@ -120,7 +128,10 @@ async function applySectionsToClient(
 
   const { primary, spouse } = payload.family;
   const primaryDobYear = new Date(primary.dateOfBirth).getFullYear();
-  const currentYear = new Date().getFullYear();
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  // 1-indexed, matching liabilities.start_month / balance_as_of_month.
+  const currentMonth = now.getMonth() + 1;
   const planEndYear = primaryDobYear + client.planEndAge;
 
   // The ages this apply is settling on — written to the client row below and
@@ -299,8 +310,18 @@ async function applySectionsToClient(
     result.incomeIds.push(row.id);
   }
 
-  // ── Property (real_estate / business) → accounts ──────────────────────────
+  // ── Property (real_estate / business) → accounts (+ expense, + liability) ──
+  //
+  // A property row can fan out to three tables:
+  //   accounts     — always. Carries the value, the cost basis, and (real
+  //                  estate only) the annual property tax, which the projection
+  //                  turns into its own synthetic expense.
+  //   expenses     — when insurance was given. Property tax has a column;
+  //                  insurance does not, so it lands as an ordinary recurring
+  //                  expense running to plan end and growing with inflation.
+  //   liabilities  — when a mortgage with a balance was declared.
   for (const property of payload.property) {
+    const isRealEstate = property.kind === "real_estate";
     const [row] = await tx
       .insert(accounts)
       .values({
@@ -310,11 +331,91 @@ async function applySectionsToClient(
         category: property.kind,
         subType: "other",
         value: String(property.value),
-        basis: "0",
+        basis: String(property.basis ?? 0),
+        // Real estate only: the engine reads this column for `real_estate`
+        // accounts and ignores it everywhere else, and the form asks
+        // accordingly. Left at the column default (0) when unanswered.
+        ...(isRealEstate && property.annualPropertyTax != null
+          ? { annualPropertyTax: String(property.annualPropertyTax) }
+          : {}),
         source: "manual",
       })
       .returning({ id: accounts.id });
     result.accountIds.push(row.id);
+    // Property is never a retirement account, so joint always splits 50/50.
+    await synthesizeAccountOwners(tx, row.id, property.owner, familyRoleIds, false);
+
+    // Insurance → its own expense row. Typed "insurance" so it reports in the
+    // cash-flow Insurance bucket alongside modeled premiums.
+    if (isRealEstate && property.annualInsurance) {
+      const [expenseRow] = await tx
+        .insert(expenses)
+        .values({
+          clientId,
+          scenarioId,
+          type: "insurance",
+          name: `Insurance – ${property.name}`,
+          annualAmount: String(property.annualInsurance),
+          startYear: currentYear,
+          endYear: planEndYear,
+          endYearRef: "plan_end",
+          growthRate: "0.03",
+          growthSource: "inflation",
+          source: "manual",
+        })
+        .returning({ id: expenses.id });
+      result.expenseIds.push(expenseRow.id);
+    }
+
+    // Mortgage → a liability linked back to the property it encumbers.
+    //
+    // The form asks what a client knows — balance left and years left — but the
+    // schedule is built from an origination year plus a full term. Anchoring the
+    // loan at today makes the two equivalent: elapsed months is zero, so
+    // buildLiabilitySchedule amortizes exactly the declared balance over exactly
+    // the declared remaining years.
+    //
+    // A balance is the one field we can't amortize without, so it gates the
+    // write; the advisor still sees the declared mortgage on the review screen
+    // when it's missing.
+    //
+    // `isInterestDeductible` is set true rather than left at the column default:
+    // mortgage interest on a residence is deductible, and starting from the
+    // common case means the advisor corrects the exception (a rental, where the
+    // interest is a Schedule E offset instead) rather than remembering to tick
+    // the box on every intake. Note this feeds the itemized-deduction path, so
+    // it does move tax results — it is why the review screen shows the mortgage
+    // before anything is applied.
+    const mortgage = isRealEstate ? property.mortgage : undefined;
+    if (mortgage?.balance) {
+      const [liabilityRow] = await tx
+        .insert(liabilities)
+        .values({
+          clientId,
+          scenarioId,
+          name: `Mortgage – ${property.name}`,
+          balance: String(mortgage.balance),
+          balanceAsOfMonth: currentMonth,
+          balanceAsOfYear: currentYear,
+          interestRate: String((mortgage.interestRatePct ?? 0) / 100),
+          monthlyPayment: String(mortgage.monthlyPayment ?? 0),
+          startYear: currentYear,
+          startMonth: currentMonth,
+          termMonths: Math.round((mortgage.yearsRemaining ?? 0) * 12),
+          termUnit: "annual",
+          linkedPropertyId: row.id,
+          liabilityType: "mortgage",
+          isInterestDeductible: true,
+        })
+        .returning({ id: liabilities.id });
+      result.liabilityIds.push(liabilityRow.id);
+      await synthesizeLiabilityOwners(
+        tx,
+        liabilityRow.id,
+        property.owner,
+        familyRoleIds,
+      );
+    }
   }
 
   // ── Retirement expenses ───────────────────────────────────────────────────
@@ -404,6 +505,32 @@ async function emitApplyAudits(args: {
       extraMetadata: { via: "intake.apply", formId },
     });
   }
+  for (const id of applied.expenseIds) {
+    await recordCreate({
+      action: "expense.create",
+      resourceType: "expense",
+      resourceId: id,
+      clientId,
+      firmId,
+      actorId,
+      actorKind: "advisor",
+      snapshot: {},
+      extraMetadata: { via: "intake.apply", formId },
+    });
+  }
+  for (const id of applied.liabilityIds) {
+    await recordCreate({
+      action: "liability.create",
+      resourceType: "liability",
+      resourceId: id,
+      clientId,
+      firmId,
+      actorId,
+      actorKind: "advisor",
+      snapshot: {},
+      extraMetadata: { via: "intake.apply", formId },
+    });
+  }
   for (const id of applied.childIds) {
     await recordCreate({
       action: "family_member.create",
@@ -445,6 +572,8 @@ async function emitApplyAudits(args: {
       accounts: applied.accountIds.length,
       incomes: applied.incomeIds.length,
       children: applied.childIds.length,
+      expenses: applied.expenseIds.length,
+      liabilities: applied.liabilityIds.length,
     },
   });
 }

@@ -186,7 +186,16 @@ export function IntakeWizard({
               hasSpouse={value.family?.spouse != null}
             />
           );
-        if (step.subStep === "property") return <PropertyStep value={value.property} onChange={setProperty} />;
+        if (step.subStep === "property")
+          return (
+            <PropertyStep
+              value={value.property}
+              onChange={setProperty}
+              clientName={value.family?.primary?.firstName}
+              spouseName={value.family?.spouse?.firstName ?? undefined}
+              hasSpouse={value.family?.spouse != null}
+            />
+          );
         return null;
       case "goals":
         return <GoalsStep value={value.goals} onChange={setGoals} />;

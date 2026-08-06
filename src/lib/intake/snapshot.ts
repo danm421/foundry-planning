@@ -18,6 +18,7 @@ import {
   scenarios,
   accounts,
   incomes,
+  liabilities,
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import type { IntakePayload } from "@/lib/intake/schema";
@@ -93,6 +94,53 @@ async function loadAccountOwners(clientId: string): Promise<Map<string, IntakeOw
     );
   }
   return owners;
+}
+
+// ── Mortgages → the form's property.mortgage sub-object ──────────────────────
+//
+// Only liabilities linked to a property come back: an unlinked debt (a car
+// loan, a card) has no property row to hang off, and the form has no other
+// place to put it.
+//
+// Years remaining is derived, not stored — the row carries an origination year
+// plus a full term, and the form asks how long is left. Anything already paid
+// off comes back as 0 rather than a negative.
+
+type IntakeMortgage = NonNullable<IntakePayload["property"][number]["mortgage"]>;
+
+async function loadMortgagesByPropertyId(
+  clientId: string,
+  scenarioId: string,
+): Promise<Map<string, IntakeMortgage>> {
+  const rows = await db
+    .select()
+    .from(liabilities)
+    .where(
+      and(eq(liabilities.clientId, clientId), eq(liabilities.scenarioId, scenarioId)),
+    );
+
+  const now = new Date();
+  const elapsedMonthsFrom = (startYear: number, startMonth: number) =>
+    (now.getFullYear() - startYear) * 12 + (now.getMonth() + 1 - startMonth);
+
+  const byProperty = new Map<string, IntakeMortgage>();
+  for (const row of rows) {
+    if (!row.linkedPropertyId) continue;
+    // One mortgage per property in the form's shape; keep the first.
+    if (byProperty.has(row.linkedPropertyId)) continue;
+    const monthsLeft = Math.max(
+      0,
+      (row.termMonths ?? 0) - elapsedMonthsFrom(row.startYear, row.startMonth),
+    );
+    byProperty.set(row.linkedPropertyId, {
+      balance: Number(row.balance),
+      yearsRemaining: Math.round((monthsLeft / 12) * 10) / 10,
+      // The column stores a decimal fraction; the form asks for a percent.
+      interestRatePct: Math.round(Number(row.interestRate) * 10000) / 100,
+      monthlyPayment: Number(row.monthlyPayment ?? 0),
+    });
+  }
+  return byProperty;
 }
 
 function mapIncomeType(dbType: string): IntakeIncomeType {
@@ -216,6 +264,7 @@ export async function snapshotClientToPayload(
       .where(and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, scenarioId)));
 
     const ownerByAccountId = await loadAccountOwners(clientId);
+    const mortgageByPropertyId = await loadMortgagesByPropertyId(clientId, scenarioId);
 
     for (const row of accountRows) {
       if (FORM_ACCOUNT_CATEGORIES.has(row.category)) {
@@ -232,6 +281,14 @@ export async function snapshotClientToPayload(
           name: row.name,
           kind: row.category as "real_estate" | "business",
           value: Number(row.value),
+          basis: Number(row.basis),
+          owner: ownerByAccountId.get(row.id) ?? "client",
+          annualPropertyTax: Number(row.annualPropertyTax),
+          mortgage: mortgageByPropertyId.get(row.id),
+          // annualInsurance is deliberately absent: unlike property tax it has
+          // no column, so recovering it would mean name-matching the expense
+          // row apply wrote — too fragile to round-trip. The client re-enters
+          // it, and the advisor sees it on the review diff either way.
         });
       }
       // stock_options and notes_receivable: DROP — no form representation.

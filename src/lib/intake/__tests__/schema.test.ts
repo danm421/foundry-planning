@@ -94,6 +94,86 @@ describe("intake schema", () => {
     expect(intakeSubmitSchema.safeParse(pruneIntakeBlankRows(raw)).success).toBe(true);
   });
 
+  // ── Property: basis / owner / taxes / insurance / mortgage ───────────────
+
+  it("accepts a fully-specified property with a mortgage", () => {
+    const ok = intakeSubmitSchema.safeParse({
+      family: {
+        primary: { firstName: "A", lastName: "B", dateOfBirth: "1975-06-20" },
+        children: [],
+      },
+      property: [
+        {
+          name: "Home",
+          kind: "real_estate",
+          value: 850000,
+          basis: 500000,
+          owner: "joint",
+          annualPropertyTax: 12000,
+          annualInsurance: 2400,
+          mortgage: {
+            balance: 420000,
+            yearsRemaining: 22,
+            interestRatePct: 6.5,
+            monthlyPayment: 2650,
+          },
+        },
+      ],
+    });
+    expect(ok.success).toBe(true);
+  });
+
+  it("defaults a property owner so pre-field payloads still re-parse on apply", () => {
+    // Apply re-parses the STORED payload; a property saved before `owner`
+    // existed must not throw there.
+    const parsed = intakeSubmitSchema.parse({
+      family: {
+        primary: { firstName: "A", lastName: "B", dateOfBirth: "1975-06-20" },
+        children: [],
+      },
+      property: [{ name: "Home", kind: "real_estate", value: 650000 }],
+    });
+    expect(parsed.property[0].owner).toBe("client");
+  });
+
+  it("accepts a mortgage the client only partly remembers", () => {
+    // Checking the box must never block submit — the advisor chases the rest.
+    const ok = intakeSubmitSchema.safeParse({
+      family: {
+        primary: { firstName: "A", lastName: "B", dateOfBirth: "1975-06-20" },
+        children: [],
+      },
+      property: [
+        { name: "Home", kind: "real_estate", value: 850000, mortgage: { balance: 420000 } },
+      ],
+    });
+    expect(ok.success).toBe(true);
+  });
+
+  it("keeps a property row whose only content is a mortgage balance", () => {
+    // name + value are blank, so the old two-field blankness test would have
+    // pruned this row and silently discarded the balance.
+    const pruned = pruneIntakeBlankRows({
+      property: [
+        { name: "", kind: "real_estate", value: 0, mortgage: { balance: 420000 } },
+        { name: "", kind: "real_estate", value: 0, annualPropertyTax: 12000 },
+        { name: "", kind: "real_estate", value: 0, mortgage: {} },
+        { name: "", kind: "real_estate", value: 0 },
+      ],
+    }) as { property: unknown[] };
+
+    // The balance row and the property-tax row survive; ticking the box with
+    // nothing typed is not content, so the last two go.
+    expect(pruned.property).toHaveLength(2);
+  });
+
+  it("draft schema tolerates a half-typed mortgage", () => {
+    const draft = intakeDraftSchema.safeParse({
+      property: [{ name: "", kind: "real_estate", value: 0, mortgage: { interestRatePct: 6 } }],
+    });
+    expect(draft.success).toBe(true);
+  });
+
   it("caps array lengths", () => {
     const tooMany = intakeSubmitSchema.safeParse({
       family: { primary: { firstName: "A", lastName: "B", dateOfBirth: "1975-06-20" }, children: [] },

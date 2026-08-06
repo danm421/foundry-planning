@@ -24,6 +24,8 @@ import {
   expenses,
   familyMembers,
   intakeForms,
+  liabilities,
+  liabilityOwners,
   scenarios,
 } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
@@ -135,9 +137,13 @@ async function cleanup(ids: {
   const { formId, clientId, householdId } = ids;
   if (formId) await db.delete(intakeForms).where(eq(intakeForms.id, formId));
   if (clientId) {
-    // accounts before familyMembers: deleting a family member cascades its
-    // account_owners rows, and the deferred owner-sum trigger then raises on the
-    // still-present account. Dropping the account first short-circuits it.
+    // accounts + liabilities before familyMembers: deleting a family member
+    // cascades its account_owners / liability_owners rows, and the deferred
+    // owner-sum triggers then raise on the still-present account or liability.
+    // Dropping the owned rows first short-circuits both. (A liability is NOT
+    // taken out by the account delete — linked_property_id is ON DELETE SET
+    // NULL, so a mortgage outlives the property it was linked to.)
+    await db.delete(liabilities).where(eq(liabilities.clientId, clientId));
     await db.delete(accounts).where(eq(accounts.clientId, clientId));
     await db.delete(familyMembers).where(eq(familyMembers.clientId, clientId));
     await db.delete(incomes).where(eq(incomes.clientId, clientId));
@@ -162,7 +168,8 @@ describe("applyIntake (existing-client path)", () => {
   afterAll(async () => {
     if (formId) await db.delete(intakeForms).where(eq(intakeForms.id, formId));
     if (clientId) {
-      // accounts first — see the note in cleanup() above.
+      // liabilities + accounts first — see the note in cleanup() above.
+      await db.delete(liabilities).where(eq(liabilities.clientId, clientId));
       await db.delete(accounts).where(eq(accounts.clientId, clientId));
       await db.delete(familyMembers).where(eq(familyMembers.clientId, clientId));
       await db.delete(incomes).where(eq(incomes.clientId, clientId));
@@ -251,7 +258,23 @@ describe("applyIntake (existing-client path)", () => {
           endsAtRetirement: true,
         },
       ],
-      property: [],
+      property: [
+        {
+          name: "Pat Home",
+          kind: "real_estate",
+          value: 850000,
+          basis: 500000,
+          owner: "client",
+          annualPropertyTax: 12000,
+          annualInsurance: 2400,
+          mortgage: {
+            balance: 420000,
+            yearsRemaining: 22,
+            interestRatePct: 6.5,
+            monthlyPayment: 2650,
+          },
+        },
+      ],
       goals: {
         clientRetirementAge: 67,
         annualRetirementExpenses: 145000,
@@ -316,6 +339,65 @@ describe("applyIntake (existing-client path)", () => {
     expect(consulting?.endYear).toBe(2041);
     expect(consulting?.endYearRef).toBe("client_retirement");
 
+    // ── Assert: property lands as an account carrying basis + property tax ─
+    const home = accountRows.find((a) => a.name === "Pat Home");
+    expect(home).toBeTruthy();
+    expect(home?.category).toBe("real_estate");
+    expect(home?.value).toBe("850000.00");
+    expect(home?.basis).toBe("500000.00");
+    // The column the projection reads to synthesize the property-tax outflow.
+    expect(home?.annualPropertyTax).toBe("12000.00");
+
+    // ── Assert: the property is owned, not ownerless ──────────────────────
+    const homeOwners = await db
+      .select()
+      .from(accountOwners)
+      .where(eq(accountOwners.accountId, home!.id));
+    expect(homeOwners).toHaveLength(1);
+    expect(homeOwners[0].percent).toBe("1.0000");
+
+    // ── Assert: insurance lands as its own expense row ────────────────────
+    const expenseRows = await db
+      .select()
+      .from(expenses)
+      .where(and(eq(expenses.clientId, clientId), eq(expenses.scenarioId, scenarioId)));
+    const insurance = expenseRows.find((e) => e.name === "Insurance – Pat Home");
+    expect(insurance).toBeTruthy();
+    expect(insurance?.type).toBe("insurance");
+    expect(insurance?.annualAmount).toBe("2400.00");
+    expect(insurance?.endYearRef).toBe("plan_end");
+
+    // ── Assert: the mortgage lands as a liability linked to the property ──
+    // The form asks balance + years left; the row has to be anchored at today
+    // so the schedule amortizes exactly that balance over exactly that term.
+    const liabilityRows = await db
+      .select()
+      .from(liabilities)
+      .where(and(eq(liabilities.clientId, clientId), eq(liabilities.scenarioId, scenarioId)));
+    expect(liabilityRows).toHaveLength(1);
+    const mortgage = liabilityRows[0];
+    expect(mortgage.name).toBe("Mortgage – Pat Home");
+    expect(mortgage.balance).toBe("420000.00");
+    expect(mortgage.liabilityType).toBe("mortgage");
+    expect(mortgage.linkedPropertyId).toBe(home!.id);
+    // Percent in, decimal fraction out.
+    expect(mortgage.interestRate).toBe("0.0650");
+    expect(mortgage.monthlyPayment).toBe("2650.00");
+    expect(mortgage.termMonths).toBe(264); // 22 years
+    // Deductible by default — the advisor un-ticks it for a rental.
+    expect(mortgage.isInterestDeductible).toBe(true);
+    expect(mortgage.startYear).toBe(new Date().getFullYear());
+    expect(mortgage.startMonth).toBe(new Date().getMonth() + 1);
+    // Zero elapsed months → the schedule starts from the declared balance.
+    expect(mortgage.balanceAsOfYear).toBe(mortgage.startYear);
+    expect(mortgage.balanceAsOfMonth).toBe(mortgage.startMonth);
+
+    const mortgageOwners = await db
+      .select()
+      .from(liabilityOwners)
+      .where(eq(liabilityOwners.liabilityId, mortgage.id));
+    expect(mortgageOwners).toHaveLength(1);
+
     // ── Assert: a child familyMember exists ───────────────────────────────
     const childRows = await db
       .select()
@@ -335,10 +417,6 @@ describe("applyIntake (existing-client path)", () => {
     expect(hhAfter.name).toBe("Pat Prospect");
 
     // ── Assert: the default "Retirement Living Expenses" row updated ──────
-    const expenseRows = await db
-      .select()
-      .from(expenses)
-      .where(and(eq(expenses.clientId, clientId), eq(expenses.scenarioId, scenarioId)));
     const retExpense = expenseRows.find(
       (e) => e.name === "Retirement Living Expenses",
     );
@@ -397,7 +475,8 @@ describe("applyIntake (prospect path — creates client on approve)", () => {
   afterAll(async () => {
     if (formId) await db.delete(intakeForms).where(eq(intakeForms.id, formId));
     if (clientId) {
-      // accounts first — see the note in cleanup() above.
+      // liabilities + accounts first — see the note in cleanup() above.
+      await db.delete(liabilities).where(eq(liabilities.clientId, clientId));
       await db.delete(accounts).where(eq(accounts.clientId, clientId));
       await db.delete(familyMembers).where(eq(familyMembers.clientId, clientId));
       await db.delete(incomes).where(eq(incomes.clientId, clientId));

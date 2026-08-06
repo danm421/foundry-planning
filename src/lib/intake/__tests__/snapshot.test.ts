@@ -25,6 +25,7 @@ import {
   accounts,
   incomes,
   familyMembers,
+  liabilities,
 } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { snapshotClientToPayload } from "../snapshot";
@@ -302,9 +303,62 @@ describe("snapshotClientToPayload", () => {
       expect(prop).toBeDefined();
       expect(prop?.kind).toBe("real_estate");
       expect(prop?.value).toBe(800000);
+      // Basis rides back so a pre-filled form isn't lossy.
+      expect(prop?.basis).toBe(200000);
       // Must NOT appear in accounts
       expect(payload.accounts.map((a) => a.name)).not.toContain("Primary Home");
     } finally {
+      await db.delete(accounts).where(eq(accounts.id, reAccount.id));
+    }
+  });
+
+  it("carries property tax and a linked mortgage back onto the property entry", async () => {
+    const thisYear = new Date().getFullYear();
+    const [reAccount] = await db
+      .insert(accounts)
+      .values({
+        clientId,
+        scenarioId,
+        name: "Mortgaged Home",
+        category: "real_estate",
+        value: "850000.00",
+        basis: "500000.00",
+        annualPropertyTax: "12000.00",
+        rmdEnabled: false,
+      })
+      .returning();
+
+    // A 30-year loan taken out 8 years ago leaves 22.
+    const [loan] = await db
+      .insert(liabilities)
+      .values({
+        clientId,
+        scenarioId,
+        name: "Mortgage – Mortgaged Home",
+        balance: "420000.00",
+        interestRate: "0.0650",
+        monthlyPayment: "2650.00",
+        startYear: thisYear - 8,
+        startMonth: new Date().getMonth() + 1,
+        termMonths: 360,
+        termUnit: "annual",
+        linkedPropertyId: reAccount.id,
+        liabilityType: "mortgage",
+      })
+      .returning();
+
+    try {
+      const payload = await snapshotClientToPayload(clientId, FIRM);
+      const prop = payload.property.find((p) => p.name === "Mortgaged Home");
+      expect(prop?.annualPropertyTax).toBe(12000);
+      expect(prop?.mortgage?.balance).toBe(420000);
+      expect(prop?.mortgage?.monthlyPayment).toBe(2650);
+      // Fraction in the column, percent in the form.
+      expect(prop?.mortgage?.interestRatePct).toBe(6.5);
+      // 360 months less the 96 already elapsed = 264 = 22 years.
+      expect(prop?.mortgage?.yearsRemaining).toBe(22);
+    } finally {
+      await db.delete(liabilities).where(eq(liabilities.id, loan.id));
       await db.delete(accounts).where(eq(accounts.id, reAccount.id));
     }
   });

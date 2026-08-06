@@ -10,12 +10,66 @@ export const labelCls =
   "block text-[12px] font-medium uppercase tracking-[0.06em] text-ink-3 mb-1";
 export const selectCls = inputCls;
 
+// ─── Numeric field plumbing ───────────────────────────────────────────────────
+//
+// Every numeric field below keeps an internal raw string of what was literally
+// typed, so a partial entry survives round-tripping through a number: a
+// trailing "." on the way to "1234.50", a lone "20" on the way to "2040". Only
+// the parsed value flows up.
+//
+// The re-sync rule is the subtle part. State is adjusted during render when
+// `value` changes — React's documented "adjust state on prop change" pattern —
+// but a re-render carrying the number we ourselves just reported must be a
+// no-op, or the in-progress text would be rewritten under the caret. Recording
+// the reported value as `prevValue` at the moment we report it is what makes
+// our own echo indistinguishable from no change at all.
+//
+// `parse` is the only thing the three fields disagree about: it turns what was
+// typed into the text to keep and the number to report, where `undefined`
+// means "not answered yet".
+
+type ParsedInput = { raw: string; value: number | undefined };
+
+function useNumericField(
+  value: number | undefined,
+  onChange: (next: number | undefined) => void,
+  parse: (typed: string) => ParsedInput,
+): { raw: string; onType: (typed: string) => void } {
+  const [raw, setRaw] = useState(value === undefined ? "" : String(value));
+  const [prevValue, setPrevValue] = useState(value);
+  if (value !== prevValue) {
+    setPrevValue(value);
+    setRaw(value === undefined ? "" : String(value));
+  }
+
+  return {
+    raw,
+    onType(typed: string) {
+      const next = parse(typed);
+      setRaw(next.raw);
+      setPrevValue(next.value);
+      onChange(next.value);
+    },
+  };
+}
+
+/** Digits with at most one decimal point; "" and "." read as unanswered. */
+function parseDecimal(typed: string): ParsedInput {
+  // No sign — nothing these fields collect is ever negative.
+  const raw = typed.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1");
+  return { raw, value: raw === "" || raw === "." ? undefined : Number(raw) };
+}
+
 // ─── MoneyInput ───────────────────────────────────────────────────────────────
 //
 // Dollar field that formats with a "$" prefix + thousands separators as you
 // type (e.g. 50000 → "$50,000"), reusing the app's shared currency helpers but
-// styled to match the intake form. Keeps an internal raw string so partial
-// entries ("50000.", "0") survive while the numeric value flows up via onChange.
+// styled to match the intake form.
+
+function parseMoney(typed: string): ParsedInput {
+  const raw = cleanInput(typed);
+  return { raw, value: raw === "" || raw === "." ? undefined : Number(raw) };
+}
 
 export function MoneyInput({
   id,
@@ -30,17 +84,7 @@ export function MoneyInput({
   ariaLabel: string;
   placeholder?: string;
 }) {
-  // Keep an internal raw string so partial entries survive (e.g. a trailing
-  // "." while typing "1234.50"). Re-sync from the prop only when `value` truly
-  // changes externally — re-render with the same numeric value (our own echo)
-  // is a no-op, which is what preserves the in-progress decimal. This is React's
-  // documented "adjust state during render on prop change" pattern.
-  const [raw, setRaw] = useState(value === undefined ? "" : String(value));
-  const [prevValue, setPrevValue] = useState(value);
-  if (value !== prevValue) {
-    setPrevValue(value);
-    setRaw(value === undefined ? "" : String(value));
-  }
+  const { raw, onType } = useNumericField(value, onChange, parseMoney);
 
   return (
     <div className="relative">
@@ -53,13 +97,7 @@ export function MoneyInput({
         inputMode="decimal"
         className={`${inputCls} pl-7 tabular`}
         value={formatDisplay(raw)}
-        onChange={(e) => {
-          const cleaned = cleanInput(e.target.value);
-          setRaw(cleaned);
-          const num = cleaned === "" || cleaned === "." ? undefined : Number(cleaned);
-          setPrevValue(num);
-          onChange(num);
-        }}
+        onChange={(e) => onType(e.target.value)}
         placeholder={placeholder}
         aria-label={ariaLabel}
       />
@@ -69,11 +107,15 @@ export function MoneyInput({
 
 // ─── YearInput ────────────────────────────────────────────────────────────────
 //
-// Four-digit calendar-year field. Like MoneyInput it holds an internal raw
-// string so a half-typed year survives, but it only reports a number once four
-// digits are in — "20" on the way to "2040" would be a valid-looking int that
-// the submit schema rejects with a confusing message, so a partial entry reads
-// as "not answered" instead, and the step's default takes over.
+// Four-digit calendar-year field. It only reports a number once four digits are
+// in — "20" on the way to "2040" would be a valid-looking int that the submit
+// schema rejects with a confusing message, so a partial entry reads as "not
+// answered" instead, and the step's default takes over.
+
+function parseYear(typed: string): ParsedInput {
+  const raw = typed.replace(/\D/g, "").slice(0, 4);
+  return { raw, value: raw.length === 4 ? Number(raw) : undefined };
+}
 
 export function YearInput({
   id,
@@ -90,15 +132,7 @@ export function YearInput({
   placeholder?: string;
   disabled?: boolean;
 }) {
-  // Same "adjust state during render on prop change" pattern as MoneyInput:
-  // re-render with the value we just reported is a no-op, which is what lets a
-  // partial entry stay on screen.
-  const [raw, setRaw] = useState(value === undefined ? "" : String(value));
-  const [prevValue, setPrevValue] = useState(value);
-  if (value !== prevValue) {
-    setPrevValue(value);
-    setRaw(value === undefined ? "" : String(value));
-  }
+  const { raw, onType } = useNumericField(value, onChange, parseYear);
 
   return (
     <input
@@ -108,17 +142,56 @@ export function YearInput({
       maxLength={4}
       className={`${inputCls} tabular disabled:cursor-not-allowed disabled:opacity-50`}
       value={raw}
-      onChange={(e) => {
-        const digits = e.target.value.replace(/\D/g, "").slice(0, 4);
-        setRaw(digits);
-        const next = digits.length === 4 ? Number(digits) : undefined;
-        setPrevValue(next);
-        onChange(next);
-      }}
+      onChange={(e) => onType(e.target.value)}
       placeholder={placeholder}
       aria-label={ariaLabel}
       disabled={disabled}
     />
+  );
+}
+
+// ─── DecimalInput ─────────────────────────────────────────────────────────────
+//
+// Plain positive number with an optional unit adornment — an interest rate
+// ("6.5 %") or a count of years ("22 years"). Unlike MoneyInput it adds no
+// thousands separators, because nothing it collects is ever that large.
+
+export function DecimalInput({
+  id,
+  value,
+  onChange,
+  ariaLabel,
+  placeholder,
+  suffix,
+}: {
+  id?: string;
+  value: number | undefined;
+  onChange: (next: number | undefined) => void;
+  ariaLabel: string;
+  placeholder?: string;
+  /** Unit shown inside the field's right edge, e.g. "%" or "years". */
+  suffix?: string;
+}) {
+  const { raw, onType } = useNumericField(value, onChange, parseDecimal);
+
+  return (
+    <div className="relative">
+      <input
+        id={id}
+        type="text"
+        inputMode="decimal"
+        className={`${inputCls} tabular ${suffix ? "pr-14" : ""}`}
+        value={raw}
+        onChange={(e) => onType(e.target.value)}
+        placeholder={placeholder}
+        aria-label={ariaLabel}
+      />
+      {suffix && (
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-ink-3">
+          {suffix}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -225,20 +298,6 @@ function XGlyph() {
   );
 }
 
-function RemoveButton({ label, onRemove }: { label: string; onRemove: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onRemove}
-      className="absolute right-3 top-3 flex items-center gap-1 rounded-[var(--radius-sm)] border border-hair px-2 py-1 text-[11px] font-medium uppercase tracking-[0.06em] text-ink-3 transition-colors hover:border-crit hover:text-crit"
-    >
-      <XGlyph />
-      Remove
-      <span className="sr-only">{label}</span>
-    </button>
-  );
-}
-
 // ─── Kpi ──────────────────────────────────────────────────────────────────────
 
 function Kpi({ label, value }: { label: string; value: string }) {
@@ -327,68 +386,42 @@ function SummaryRow({
 
 // ─── CardList ─────────────────────────────────────────────────────────────────
 //
-// Generic add/remove list of cards, in one of two shapes:
+// Generic add/remove list of cards. One item is open for editing at a time;
+// every other one folds to a summary row, so the form stays short no matter how
+// many items a client lists. KPI totals sit above, and the Add button is a
+// prominent accent button. Every intake step that collects a list uses it.
 //
-//   collapsed  — pass `renderSummary`. One item is open for editing at a time;
-//                every other one folds to a summary row, so the form stays short
-//                no matter how many items a client lists. KPI totals sit above,
-//                and the Add button is a prominent accent button.
-//   expanded   — omit `renderSummary`. Every card renders in full under a
-//                section heading. The original shape; Property is its last
-//                caller, and migrating it means adding `renderSummary` + `kpis`.
-//
-// Shared props:
+// Props:
 //   addLabel      — button label (e.g. "Add account")
 //   emptyMessage  — shown when the list is empty
+//   emptyHint     — second line in the dashed empty panel
 //   items         — the array currently in state
+//   kpis          — totals above the list; exactly two (fixed two-up grid)
 //   onAdd         — called with no args; caller appends exactly one blank item
-//                   at the end (collapsed mode then opens it)
+//                   at the end, which CardList then opens
 //   onRemove      — called with the index to drop; caller drops exactly that one
+//   renderSummary — the folded row for item[i]
 //   renderItem    — render the card body for item[i]; must NOT include the
 //                   wrapper div — CardList provides it
-
-interface CardListBase<T> {
-  addLabel: string;
-  emptyMessage: string;
-  items: T[];
-  onAdd: () => void;
-  onRemove: (index: number) => void;
-  renderItem: (item: T, index: number) => ReactNode;
-}
 
 export interface KpiSpec {
   label: string;
   value: string;
 }
 
-interface CollapsedProps<T> extends CardListBase<T> {
-  /** The folded row for item[i] — supplying this selects collapsed mode. */
-  renderSummary: (item: T, index: number) => CardSummary;
-  /** Totals above the list. Exactly two — the row is a fixed two-up grid. */
-  kpis: [KpiSpec, KpiSpec];
-  /** Second line in the dashed empty panel. */
+export interface CardListProps<T> {
+  addLabel: string;
+  emptyMessage: string;
   emptyHint: string;
-  heading?: never;
+  items: T[];
+  kpis: [KpiSpec, KpiSpec];
+  onAdd: () => void;
+  onRemove: (index: number) => void;
+  renderSummary: (item: T, index: number) => CardSummary;
+  renderItem: (item: T, index: number) => ReactNode;
 }
 
-interface ExpandedProps<T> extends CardListBase<T> {
-  /** Section eyebrow (e.g. "Property"). */
-  heading: string;
-  renderSummary?: never;
-  kpis?: never;
-  emptyHint?: never;
-}
-
-/** Collapsed mode when `renderSummary` is given, expanded mode otherwise. */
-export type CardListProps<T> = CollapsedProps<T> | ExpandedProps<T>;
-
-export function CardList<T>(props: CardListProps<T>) {
-  return props.renderSummary ? <CollapsedList {...props} /> : <ExpandedList {...props} />;
-}
-
-// ─── Collapsed mode ───────────────────────────────────────────────────────────
-
-function CollapsedList<T>({
+export function CardList<T>({
   addLabel,
   emptyMessage,
   emptyHint,
@@ -398,7 +431,7 @@ function CollapsedList<T>({
   onRemove,
   renderItem,
   renderSummary,
-}: CollapsedProps<T>) {
+}: CardListProps<T>) {
   // Index of the item currently expanded for editing; null = all collapsed.
   // Adding opens the new item; revisiting the step opens nothing.
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -476,56 +509,6 @@ function CollapsedList<T>({
           ),
         )}
       </div>
-    </div>
-  );
-}
-
-// ─── Expanded mode ────────────────────────────────────────────────────────────
-
-function ExpandedList<T>({
-  heading,
-  addLabel,
-  emptyMessage,
-  items,
-  onAdd,
-  onRemove,
-  renderItem,
-}: ExpandedProps<T>) {
-  return (
-    <div className="space-y-6">
-      {/* ── Section heading + Add button ──────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">
-          {heading}
-        </h2>
-        <button
-          type="button"
-          onClick={onAdd}
-          className="rounded-[var(--radius-sm)] border border-hair px-3 py-1.5 text-[13px] text-ink-2 transition-colors hover:border-accent hover:text-accent"
-        >
-          {addLabel}
-        </button>
-      </div>
-
-      {/* ── Empty state ───────────────────────────────────────────── */}
-      {items.length === 0 && (
-        <p className="text-[13px] text-ink-4">{emptyMessage}</p>
-      )}
-
-      {/* ── Item cards ────────────────────────────────────────────── */}
-      {items.length > 0 && (
-        <div className="space-y-3">
-          {items.map((item, i) => (
-            <div
-              key={i}
-              className="relative rounded-[var(--radius-sm)] border border-hair bg-card p-4"
-            >
-              <RemoveButton label={`item ${i + 1}`} onRemove={() => onRemove(i)} />
-              {renderItem(item, i)}
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

@@ -54,10 +54,47 @@ export const intakeIncomeSchema = z.object({
   endsAtRetirement: z.boolean().default(false),
 });
 
+// A mortgage on a property. Presence of the object IS the "yes I have one"
+// answer — the step adds it when the box is checked and drops it when cleared.
+//
+// Every field is optional even on submit: a client who checks the box but can't
+// remember their rate must still be able to submit, and the advisor sees the
+// declared mortgage on the review screen either way. Apply skips the liability
+// when there's no balance to amortize (see apply.ts).
+//
+// `interestRatePct` is a PERCENT as typed (6.5), not the decimal fraction the
+// `liabilities.interest_rate` column stores — apply divides by 100. The name
+// carries the unit so the two can't be confused.
+//
+// `yearsRemaining` is what a client actually knows; the DB wants an origination
+// year + full term, so apply anchors the loan at today and treats the remaining
+// years as its term.
+export const intakeMortgageSchema = z.object({
+  balance: z.number().nonnegative().max(1e12).optional(),
+  yearsRemaining: z.number().nonnegative().max(60).optional(),
+  interestRatePct: z.number().nonnegative().max(30).optional(),
+  monthlyPayment: z.number().nonnegative().max(1e7).optional(),
+});
+
+// `basis` and `owner` mirror the account schema above, for the same reasons:
+// basis is optional because a client may not know it, and owner carries a
+// default rather than being required so pre-field payloads still re-parse at
+// apply time.
+//
+// `annualPropertyTax`, `annualInsurance` and `mortgage` are asked for on real
+// estate only — the projection reads `annualPropertyTax` on real_estate
+// accounts alone, and a business interest carries neither a homeowner's policy
+// nor a mortgage. The step clears them when the kind changes away, so a hidden
+// field can't submit a stale number.
 export const intakePropertySchema = z.object({
   name: z.string().trim().min(1).max(120),
   kind: z.enum(["real_estate", "business"]),
   value: z.number().nonnegative().max(1e12),
+  basis: z.number().nonnegative().max(1e12).optional(),
+  owner: z.enum(["client", "spouse", "joint"]).default("client"),
+  annualPropertyTax: z.number().nonnegative().max(1e9).optional(),
+  annualInsurance: z.number().nonnegative().max(1e9).optional(),
+  mortgage: intakeMortgageSchema.optional(),
 });
 
 export const intakeGoalsSchema = z.object({
@@ -131,10 +168,22 @@ const intakeIncomeDraftSchema = z.object({
   endsAtRetirement: z.boolean().optional(),
 });
 
+const intakeMortgageDraftSchema = z.object({
+  balance: z.number().max(1e12).optional(),
+  yearsRemaining: z.number().max(60).optional(),
+  interestRatePct: z.number().max(30).optional(),
+  monthlyPayment: z.number().max(1e7).optional(),
+});
+
 const intakePropertyDraftSchema = z.object({
   name: draftStr(120),
   kind: z.enum(["real_estate", "business"]).optional(),
   value: z.number().max(1e12).optional(),
+  basis: z.number().max(1e12).optional(),
+  owner: z.enum(["client", "spouse", "joint"]).optional(),
+  annualPropertyTax: z.number().max(1e9).optional(),
+  annualInsurance: z.number().max(1e9).optional(),
+  mortgage: intakeMortgageDraftSchema.optional(),
 });
 
 const intakeGoalsDraftSchema = z.object({
@@ -172,8 +221,33 @@ export function isBlankIntakeIncomeRow(row: { name?: unknown; annualAmount?: unk
   return blankStr(row.name) && blankNum(row.annualAmount);
 }
 
-export function isBlankIntakePropertyRow(row: { name?: unknown; value?: unknown }): boolean {
-  return blankStr(row.name) && blankNum(row.value);
+/**
+ * Every field the Property step can collect counts, not just name + value: a
+ * client who typed only a mortgage balance has given us something, and pruning
+ * that row would silently discard it. Ticking the mortgage box without filling
+ * anything in is NOT content — there's no number to keep.
+ */
+export function isBlankIntakePropertyRow(row: {
+  name?: unknown;
+  value?: unknown;
+  basis?: unknown;
+  annualPropertyTax?: unknown;
+  annualInsurance?: unknown;
+  mortgage?: { balance?: unknown; yearsRemaining?: unknown; interestRatePct?: unknown; monthlyPayment?: unknown } | null;
+}): boolean {
+  const m = row.mortgage;
+  return (
+    blankStr(row.name) &&
+    blankNum(row.value) &&
+    blankNum(row.basis) &&
+    blankNum(row.annualPropertyTax) &&
+    blankNum(row.annualInsurance) &&
+    (m == null ||
+      (blankNum(m.balance) &&
+        blankNum(m.yearsRemaining) &&
+        blankNum(m.interestRatePct) &&
+        blankNum(m.monthlyPayment)))
+  );
 }
 
 /**

@@ -44,6 +44,23 @@ function field<T>(oldVal: T, newVal: T): FieldDiff<T> {
   return { changed: true, old: oldVal, new: newVal };
 }
 
+/**
+ * "mortgage $420,000 @ 6.5% · 22yr · $2,650/mo" — every field the client gave,
+ * dropped from the string when they didn't. Bare "mortgage" means they ticked
+ * the box and filled in nothing.
+ */
+function mortgageSummary(m: NonNullable<IntakePayload["property"][number]["mortgage"]>): string {
+  const head = m.balance === undefined ? "mortgage" : `mortgage $${m.balance.toLocaleString()}`;
+  const parts = [
+    m.interestRatePct === undefined ? undefined : `@ ${m.interestRatePct}%`,
+    m.yearsRemaining === undefined ? undefined : `${m.yearsRemaining}yr`,
+    m.monthlyPayment === undefined
+      ? undefined
+      : `$${m.monthlyPayment.toLocaleString()}/mo`,
+  ].filter(Boolean);
+  return [head, ...parts].join(" · ");
+}
+
 function fullName(p: { firstName?: string; lastName?: string } | undefined | null): string | undefined {
   if (!p) return undefined;
   const parts = [p.firstName, p.lastName].filter(Boolean);
@@ -110,13 +127,31 @@ export function buildIntakeDiff(
     })),
   };
 
+  // A property row fans out to three tables on apply — the account, an
+  // insurance expense, and a mortgage liability — so everything that drives one
+  // of those writes has to be visible before the advisor approves. A declared
+  // mortgage shows even with no balance, because that's a fact about the
+  // household the advisor should chase down even though apply can't act on it.
   const property: ListSectionDiff = {
     baselineCount: baseline?.property.length ?? 0,
     submittedCount: submitted.property.length,
     submittedItems: submitted.property.map((p) => ({
       name: p.name,
       value: p.value,
-      secondary: p.kind,
+      secondary: [
+        p.kind,
+        p.owner,
+        p.basis === undefined ? undefined : `basis $${p.basis.toLocaleString()}`,
+        p.annualPropertyTax === undefined
+          ? undefined
+          : `tax $${p.annualPropertyTax.toLocaleString()}/yr`,
+        p.annualInsurance === undefined
+          ? undefined
+          : `insurance $${p.annualInsurance.toLocaleString()}/yr`,
+        p.mortgage === undefined ? undefined : mortgageSummary(p.mortgage),
+      ]
+        .filter(Boolean)
+        .join(" · "),
     })),
   };
 

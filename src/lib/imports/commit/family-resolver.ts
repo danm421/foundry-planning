@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 
-import { accountOwners, familyMembers } from "@/db/schema";
+import { accountOwners, familyMembers, liabilityOwners } from "@/db/schema";
 
 import type { Tx } from "./types";
 
@@ -75,6 +75,54 @@ export async function synthesizeAccountOwners(
   if (clientFmId) {
     await tx.insert(accountOwners).values({
       accountId,
+      familyMemberId: clientFmId,
+      entityId: null,
+      percent: "1.0000",
+    });
+  }
+}
+
+/**
+ * The liability_owners twin of synthesizeAccountOwners: same coarse
+ * client | spouse | joint enum, same 50/50 joint split, same "write nothing
+ * rather than block the commit" fallback. Kept beside its account sibling so
+ * the ownership rule is stated once even though the two satellite tables key
+ * on different columns.
+ *
+ * A liability left ownerless is not harmless — downstream balance-sheet and
+ * portal debt readouts attribute by owner and drop what nobody owns — so every
+ * writer that has the enum should call this.
+ *
+ * There is no retirement carve-out here: unlike a retirement account, nothing
+ * stops a debt from being jointly held.
+ */
+export async function synthesizeLiabilityOwners(
+  tx: Tx,
+  liabilityId: string,
+  owner: "client" | "spouse" | "joint" | undefined,
+  { clientFmId, spouseFmId }: FamilyRoleIds,
+): Promise<void> {
+  if (owner === "joint" && clientFmId && spouseFmId) {
+    await tx.insert(liabilityOwners).values([
+      { liabilityId, familyMemberId: clientFmId, entityId: null, percent: "0.5000" },
+      { liabilityId, familyMemberId: spouseFmId, entityId: null, percent: "0.5000" },
+    ]);
+    return;
+  }
+
+  if (owner === "spouse" && spouseFmId) {
+    await tx.insert(liabilityOwners).values({
+      liabilityId,
+      familyMemberId: spouseFmId,
+      entityId: null,
+      percent: "1.0000",
+    });
+    return;
+  }
+
+  if (clientFmId) {
+    await tx.insert(liabilityOwners).values({
+      liabilityId,
       familyMemberId: clientFmId,
       entityId: null,
       percent: "1.0000",
