@@ -1,7 +1,8 @@
 import { db } from "@/db";
 import { taxReturns } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
+import { taxReturnFactsSchema, type TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
+import { MissingTaxReturnStateError, EmptyRecomputeError } from "./errors";
 import { mergeDocuments } from "./merge/merge-documents";
 import { applyOverrides } from "./merge/overrides";
 import { deriveProvenance } from "./merge/provenance";
@@ -31,21 +32,26 @@ export function assembleFacts(
   };
 }
 
-export class MissingTaxReturnStateError extends Error {
-  constructor(taxReturnId: string) {
-    super(`tax_return_state row missing for ${taxReturnId} — backfill has not run`);
-    this.name = "MissingTaxReturnStateError";
-  }
-}
+export { MissingTaxReturnStateError, EmptyRecomputeError } from "./errors";
 
 /**
  * The SINGLE writer of `tax_returns.facts`. Called on document add, document
  * remove, and review-form save.
  *
- * Throws when no state row exists rather than assuming empty overrides: an
- * un-backfilled row still carries the advisor's corrections in `facts`, and
- * recomputing it against `{}` would silently discard them. Failing loudly is
- * the whole point.
+ * Refuses in two situations rather than writing something destructive:
+ *  - no state row (see `MissingTaxReturnStateError`) — an un-backfilled row
+ *    still carries the advisor's corrections in `facts`, and recomputing it
+ *    against `{}` would silently discard them;
+ *  - nothing to derive from at all (see `EmptyRecomputeError`) — zero documents
+ *    AND zero overrides merges to all-nulls, which would blank a filed return.
+ *
+ * The assembled facts are re-validated before they are persisted. `facts` is
+ * re-parsed by `parseRowFacts` on EVERY read, so persisting a value that does
+ * not satisfy the schema does not fail here — it blanks the client's whole Tax
+ * Analysis tab on every subsequent read, permanently. Overrides are the one
+ * input to this function that is never schema-checked (`facts_overrides` is
+ * bare jsonb, and `applyOverrides` type-checks nothing), so this is the only
+ * place that can catch it.
  */
 export async function recomputeFacts(taxReturnId: string, taxYear: number): Promise<TaxReturnFacts> {
   const [docs, state] = await Promise.all([
@@ -54,16 +60,18 @@ export async function recomputeFacts(taxReturnId: string, taxYear: number): Prom
   ]);
   if (!state) throw new MissingTaxReturnStateError(taxReturnId);
 
-  const assembled = assembleFacts(
-    taxYear,
-    docs.map(rowToMergeDocument),
-    state.factsOverrides ?? {},
-  );
+  const overrides = state.factsOverrides ?? {};
+  if (docs.length === 0 && Object.keys(overrides).length === 0) {
+    throw new EmptyRecomputeError(taxReturnId);
+  }
+
+  const assembled = assembleFacts(taxYear, docs.map(rowToMergeDocument), overrides);
+  const facts = taxReturnFactsSchema.parse(assembled.facts);
 
   await db
     .update(taxReturns)
-    .set({ facts: assembled.facts, updatedAt: new Date() })
+    .set({ facts, updatedAt: new Date() })
     .where(eq(taxReturns.id, taxReturnId));
 
-  return assembled.facts;
+  return facts;
 }

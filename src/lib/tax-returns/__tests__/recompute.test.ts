@@ -1,16 +1,49 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { emptyTaxReturnFacts } from "@/lib/schemas/tax-return-facts";
-import { assembleFacts, recomputeFacts, MissingTaxReturnStateError } from "../recompute";
+import {
+  assembleFacts,
+  recomputeFacts,
+  MissingTaxReturnStateError,
+  EmptyRecomputeError,
+} from "../recompute";
 import type { MergeDocument } from "../merge/types";
 
-// Drives getState → null without touching a database. `@/db` builds its
-// Neon Pool lazily at import time, so nothing connects here either way —
-// this mock exists so `listDocuments`/`getState` don't have to.
-vi.mock("../documents-store", () => ({
-  listDocuments: vi.fn(async () => []),
-  rowToMergeDocument: vi.fn(),
-  getState: vi.fn(async () => null),
+// Per-test control over what the store returns. `vi.hoisted` because the mock
+// factories below are hoisted above these declarations.
+const store = vi.hoisted(() => ({
+  docs: [] as unknown[],
+  state: null as null | { factsOverrides: Record<string, unknown> },
 }));
+
+vi.mock("../documents-store", () => ({
+  listDocuments: vi.fn(async () => store.docs),
+  rowToMergeDocument: vi.fn((row: unknown) => row),
+  getState: vi.fn(async () => store.state),
+}));
+
+// The write is mocked so a REGRESSION cannot reach the real database. These
+// tests assert that recomputeFacts refuses to write; if a guard were removed,
+// an unmocked `db` would issue a genuine UPDATE against the dev branch that
+// `.env.local` points at.
+const writes = vi.hoisted(() => ({ count: 0, lastFacts: undefined as unknown }));
+vi.mock("@/db", () => ({
+  db: {
+    update: () => ({
+      set: (values: { facts: unknown }) => {
+        writes.count += 1;
+        writes.lastFacts = values.facts;
+        return { where: async () => undefined };
+      },
+    }),
+  },
+}));
+
+beforeEach(() => {
+  store.docs = [];
+  store.state = null;
+  writes.count = 0;
+  writes.lastFacts = undefined;
+});
 
 describe("assembleFacts", () => {
   it("is the identity for a single document with no overrides", () => {
@@ -86,5 +119,54 @@ describe("recomputeFacts", () => {
     await expect(
       recomputeFacts("11111111-1111-1111-1111-111111111111", 2025),
     ).rejects.toThrow(MissingTaxReturnStateError);
+    expect(writes.count).toBe(0);
+  });
+
+  it("refuses to blank a return when the last document is removed and there are no overrides", async () => {
+    // The destructive case this guard exists for. Every production tax return
+    // today has `facts` byte-identical to `extracted_facts`, so the backfill
+    // gives it ONE document and an EMPTY override map — deleting that document
+    // leaves exactly this state, and merging zero documents yields
+    // emptyTaxReturnFacts (every leaf null, both entity arrays empty). Without
+    // the guard that all-null object is persisted over the client's filed
+    // return, with no error.
+    store.docs = [];
+    store.state = { factsOverrides: {} };
+
+    await expect(
+      recomputeFacts("11111111-1111-1111-1111-111111111111", 2025),
+    ).rejects.toThrow(EmptyRecomputeError);
+    expect(writes.count).toBe(0);
+  });
+
+  it("still recomputes a manually-entered return, which legitimately has no document", async () => {
+    // The negative half of the guard, and the reason it tests BOTH inputs
+    // rather than just `docs.length === 0`. The backfill plans a hand-entered
+    // row as document: null with the whole of its facts as overrides, so a
+    // docs-only check would refuse every manual return and throw on a row that
+    // is perfectly well-formed.
+    store.docs = [];
+    store.state = { factsOverrides: { "income.wages": 250000 } };
+
+    const facts = await recomputeFacts("11111111-1111-1111-1111-111111111111", 2025);
+
+    expect(facts.income.wages).toBe(250000);
+    expect(writes.count).toBe(1);
+  });
+
+  it("refuses to persist facts that do not satisfy the schema", async () => {
+    // `facts_overrides` is bare jsonb and applyOverrides type-checks nothing,
+    // so a bad override value reaches the persisted column unchallenged. That
+    // does not fail here — it fails on every subsequent READ, because
+    // parseRowFacts re-validates the stored jsonb, blanking the client's whole
+    // Tax Analysis tab permanently. This is the only place it can be caught.
+    const facts = emptyTaxReturnFacts(2025);
+    store.docs = [{ id: "a", role: "full_return", taxYear: 2025, facts }];
+    store.state = { factsOverrides: { "income.wages": "250000" } };
+
+    await expect(
+      recomputeFacts("11111111-1111-1111-1111-111111111111", 2025),
+    ).rejects.toThrow();
+    expect(writes.count).toBe(0);
   });
 });

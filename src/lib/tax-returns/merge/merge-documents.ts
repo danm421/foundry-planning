@@ -34,6 +34,33 @@ const TOP_LEVEL_SCALARS = [
   "filingStatus", "residenceState", "dependentsUnder17", "dependents17to23",
 ] as const;
 
+/**
+ * Compile-time proof that every top-level key of `TaxReturnFacts` is claimed by
+ * one of the lists above (or is `taxYear`, which the merge takes from its
+ * argument rather than from any document).
+ *
+ * This matters more than it looks. `recomputeFacts` is the SINGLE writer of
+ * `tax_returns.facts`, and `mergeDocuments` starts from `emptyTaxReturnFacts`
+ * and fills in only what these lists name. A root that appears in the schema
+ * but in none of them is therefore not merely un-merged — it is silently reset
+ * to null on every recompute. Adding a block to the facts schema and
+ * forgetting this file would quietly blank total tax, withholding, refunds or
+ * the filing status, with no error and no failing test.
+ *
+ * If this line stops compiling, the fix is to add the new key to `SCALAR_ROOTS`
+ * (a nested block of scalars), `TOP_LEVEL_SCALARS` (a bare scalar), or
+ * `ENTITY_COLLECTIONS` in `paths.ts` (an array merged by identity).
+ */
+type CoveredFactsKey =
+  | (typeof SCALAR_ROOTS)[number]
+  | (typeof TOP_LEVEL_SCALARS)[number]
+  | EntityCollection
+  | "taxYear";
+
+type MustBeNever<T extends never> = T;
+export type UnmergedFactsKey =
+  MustBeNever<Exclude<keyof TaxReturnFacts, CoveredFactsKey>>;
+
 interface Candidate {
   documentId: string;
   value: unknown;

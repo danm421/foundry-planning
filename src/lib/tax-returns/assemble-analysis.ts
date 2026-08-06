@@ -53,11 +53,15 @@ export async function loadDocumentContext(taxReturnId: string): Promise<Document
   }
 }
 
-/** Shared by both `/tax-returns/[taxYear]` route handlers (GET and
- *  export-pdf): fetch the row, parse its facts, and — when facts parsed
- *  cleanly — build the full TaxAnalysis bundle against the prior year's
- *  facts and this client's tax-parameter/age context. Each caller maps this
- *  onto its own response shape and 404 semantics. */
+/** Used by the `/tax-returns/[taxYear]` GET handler — its ONLY caller: fetch
+ *  the row, parse its facts, and — when facts parsed cleanly — build the full
+ *  TaxAnalysis bundle against the prior year's facts and this client's
+ *  tax-parameter/age context. The caller maps this onto its own response shape
+ *  and 404 semantics.
+ *
+ *  NB `export-pdf` does NOT go through here; it calls the sibling
+ *  `buildAnalysisForFacts` directly, so it is unaffected by the document
+ *  context added below. */
 export interface AssembledTaxAnalysis {
   row: TaxReturnRow;
   facts: TaxReturnFacts | null;

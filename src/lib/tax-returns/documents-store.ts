@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { taxReturnDocuments, taxReturnState } from "@/db/schema";
 import { and, asc, eq } from "drizzle-orm";
 import { taxReturnFactsSchema } from "@/lib/schemas/tax-return-facts";
+import { MissingTaxReturnStateError } from "./errors";
 import type { MergeDocument, OverrideMap } from "./merge/types";
 
 export type TaxReturnDocumentRow = typeof taxReturnDocuments.$inferSelect;
@@ -76,12 +77,41 @@ export async function getState(taxReturnId: string) {
   return row ?? null;
 }
 
-export async function putOverrides(taxReturnId: string, overrides: OverrideMap): Promise<void> {
+/**
+ * Create the state row for a return that does not have one yet. Idempotent.
+ *
+ * State CREATION is deliberately separated from override WRITES. If a single
+ * upsert did both, it would create the state row as a side effect of saving
+ * the review form — and `recomputeFacts`' `MissingTaxReturnStateError` guard,
+ * whose entire job is to stop a row the backfill deliberately refused from
+ * being recomputed, would be disarmed one call earlier by the very code path
+ * it protects against. Ordering the deploy cannot fix that: rows the backfill
+ * skips get no state row BY DESIGN, and rows created afterwards by the legacy
+ * `tax_returns` writers have none either.
+ *
+ * So: the backfill and the document-add path call this explicitly, and
+ * `putOverrides` refuses to create.
+ */
+export async function initState(taxReturnId: string): Promise<void> {
   await db
     .insert(taxReturnState)
-    .values({ taxReturnId, factsOverrides: overrides })
-    .onConflictDoUpdate({
-      target: taxReturnState.taxReturnId,
-      set: { factsOverrides: overrides, updatedAt: new Date() },
-    });
+    .values({ taxReturnId, factsOverrides: {} })
+    .onConflictDoNothing();
+}
+
+/**
+ * UPDATE-only. Throws `MissingTaxReturnStateError` when no state row exists,
+ * rather than creating one — see `initState` for why that distinction is
+ * load-bearing rather than stylistic.
+ *
+ * `updatedAt` is set explicitly: the column has `.defaultNow()` but no
+ * `$onUpdate`, so it does not advance by itself.
+ */
+export async function putOverrides(taxReturnId: string, overrides: OverrideMap): Promise<void> {
+  const updated = await db
+    .update(taxReturnState)
+    .set({ factsOverrides: overrides, updatedAt: new Date() })
+    .where(eq(taxReturnState.taxReturnId, taxReturnId))
+    .returning({ taxReturnId: taxReturnState.taxReturnId });
+  if (updated.length === 0) throw new MissingTaxReturnStateError(taxReturnId);
 }

@@ -51,6 +51,33 @@ describe("mergeDocuments — entity arrays", () => {
       .toEqual(["k1s[12-3456789].ordinaryBusinessIncome"]);
   });
 
+  it("does not let a newer document ERASE an entity field it simply did not read", () => {
+    // The entity-array half of the null-fill rule. Re-uploading a corrected
+    // K-1 whose extraction happens to read fewer boxes than the first must not
+    // blank the values the earlier document supplied — which is the whole
+    // reason the union layer exists rather than last-document-wins.
+    //
+    // The equivalent rule on the SCALAR path is pinned in merge-documents.test.ts;
+    // this side was unpinned, so deleting the `value === null` skip in
+    // mergeEntities left the entire suite green.
+    const a = doc("a", "k1", (f) => { f.k1s = [ridge]; });               // guaranteedPayments: 30000
+    const b = doc("b", "k1", (f) => {
+      f.k1s = [{ ...ridge, ordinaryBusinessIncome: 45000, guaranteedPayments: null }];
+    });
+
+    const result = mergeDocuments(2025, [a, b]);
+
+    expect(result.facts.k1s).toHaveLength(1);
+    expect(result.facts.k1s[0].guaranteedPayments).toBe(30000);
+    // The field b DID read still wins, so this pins the null-skip specifically
+    // rather than "b never overwrites a".
+    expect(result.facts.k1s[0].ordinaryBusinessIncome).toBe(45000);
+    // A null is an absence, not a disagreement — it must not be reported as a
+    // conflict for the advisor to resolve.
+    expect(result.conflicts.map((c) => c.path))
+      .toEqual(["k1s[12-3456789].ordinaryBusinessIncome"]);
+  });
+
   it("emits exactly one conflict per path, with the true final winner, across 3+ documents", () => {
     const a = doc("a", "k1", (f) => { f.k1s = [{ ...ridge, ordinaryBusinessIncome: 42000 }]; });
     const b = doc("b", "k1", (f) => { f.k1s = [{ ...ridge, ordinaryBusinessIncome: 45000 }]; });
