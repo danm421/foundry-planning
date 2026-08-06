@@ -7,22 +7,34 @@
  * alone, and the state insert is `ON CONFLICT DO NOTHING`.
  *
  * SAFETY: a row is backfilled only when replaying its plan reproduces the
- * current `facts` EXACTLY (`backfillPlanReplaysFacts`). Rows that fail that
- * gate — today, ones carrying a K-1 or Schedule C business the document layer
- * cannot reproduce — are SKIPPED, not approximated. A skipped row has no
- * state row, so `recomputeFacts` throws `MissingTaxReturnStateError` loudly
- * rather than silently rewriting `facts` with those entities deleted.
+ * current `facts` EXACTLY (`backfillReplayDifference`). Rows that fail that
+ * gate are SKIPPED, not approximated — they get no state row, so
+ * `recomputeFacts` throws `MissingTaxReturnStateError` loudly rather than
+ * silently rewriting `facts`.
+ *
+ * The skipped bucket is NOT all data loss, so every LOSSY line carries the
+ * first differing dotted path and the run exits non-zero when the bucket is
+ * non-empty. `k1s` / `businesses` means an entity the override layer cannot
+ * express — real loss, and a design decision is owed before those returns can
+ * migrate. Any other path is the gate refusing structurally where nothing
+ * would actually be lost (an extraction that wrote an all-null
+ * `deductions.scheduleA` instead of omitting it; a `facts.taxYear` that
+ * disagrees with the `tax_year` column). See `backfillReplayDifference`.
  *
  * Usage (env inline — never edit .env.local):
  *   DATABASE_URL=<url> npx tsx scripts/backfill-tax-return-state.ts
+ *
+ * Exit: 0 = nothing needs a human. 1 = at least one row was skipped by the
+ * gate; classify the logged paths before merging anything that depends on
+ * every return having a state row.
  */
 import { db } from "@/db";
 import { taxReturns, taxReturnDocuments, taxReturnState } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { taxReturnFactsSchema } from "@/lib/schemas/tax-return-facts";
-import { planBackfill, backfillPlanReplaysFacts } from "@/lib/tax-returns/backfill";
+import { planBackfill, backfillReplayDifference } from "@/lib/tax-returns/backfill";
 
-async function main() {
+async function main(): Promise<number> {
   const rows = await db.select().from(taxReturns);
   console.log(`scanning ${rows.length} tax return(s)`);
   let planned = 0, skipped = 0, corrupted = 0, lossy = 0;
@@ -57,12 +69,13 @@ async function main() {
       continue;
     }
 
-    if (!backfillPlanReplaysFacts(row.taxYear, plan, parsed.data)) {
+    const diffPath = backfillReplayDifference(row.taxYear, plan, parsed.data);
+    if (diffPath !== null) {
       lossy++;
       console.warn(
         `  LOSSY   ${row.id} client=${row.clientId} year=${row.taxYear} ` +
         `businesses=${parsed.data.businesses.length} k1s=${parsed.data.k1s.length} ` +
-        `— replay would not reproduce facts; no state row written`,
+        `first-diff=${diffPath} — replay would not reproduce facts; no state row written`,
       );
       continue;
     }
@@ -84,6 +97,28 @@ async function main() {
   console.log(
     `backfilled=${planned} skipped=${skipped} corrupted-skipped=${corrupted} lossy-skipped=${lossy}`,
   );
+
+  if (lossy > 0) {
+    // Non-zero ONLY for the gate. `corrupted` is a genuine skip-and-continue:
+    // a row whose facts never parsed already had no working recovery path and
+    // this script does not change that. A LOSSY row is different — it is a
+    // return this migration cannot carry forward, and someone has to decide
+    // what to do about it before the pipeline can rely on state rows existing.
+    console.error(
+      `\n${lossy} return(s) were SKIPPED by the replay gate. Nothing was written for them and ` +
+      `re-running is safe — it will report the same rows.\n` +
+      `WHAT TO DO: read the first-diff= path on each LOSSY line above.\n` +
+      `  · first-diff=k1s or businesses  → real data loss. The return holds an entity the ` +
+      `override layer cannot express; it needs an owner decision on how advisor-added ` +
+      `entities are represented before it can migrate. Do NOT hand-write a state row.\n` +
+      `  · any other path                → the gate refusing structurally where nothing would ` +
+      `be lost (e.g. an all-null deductions.scheduleA, or facts.taxYear disagreeing with the ` +
+      `tax_year column). Safe to revisit as a follow-up.\n` +
+      `Until then these returns have no tax_return_state row, so recomputeFacts throws ` +
+      `MissingTaxReturnStateError for them instead of corrupting them.`,
+    );
+  }
+  return lossy > 0 ? 1 : 0;
 }
 
-main().then(() => process.exit(0)).catch((e) => { console.error(e); process.exit(1); });
+main().then((code) => process.exit(code)).catch((e) => { console.error(e); process.exit(1); });

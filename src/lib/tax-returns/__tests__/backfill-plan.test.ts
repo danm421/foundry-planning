@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { emptyTaxReturnFacts, emptyK1 } from "@/lib/schemas/tax-return-facts";
-import { planBackfill, backfillPlanReplaysFacts } from "@/lib/tax-returns/backfill";
+import {
+  emptyTaxReturnFacts, emptyK1, emptyBusiness, emptyScheduleA,
+} from "@/lib/schemas/tax-return-facts";
+import { planBackfill, backfillReplayDifference } from "@/lib/tax-returns/backfill";
 import { assembleFacts } from "@/lib/tax-returns/recompute";
 
 describe("planBackfill", () => {
@@ -80,8 +82,14 @@ describe("planBackfill", () => {
  *
  * The runner therefore SKIPS any row this rejects: no state row means
  * `recomputeFacts` throws `MissingTaxReturnStateError` loudly instead.
+ *
+ * These assert the RETURNED PATH, not just a verdict, because the path is what
+ * the runner logs and what classifies a rejected row: `k1s` / `businesses` is
+ * real loss needing an owner decision, anything else is the gate refusing
+ * structurally where nothing would be lost. A test that only pinned
+ * accept/reject would let the two collapse into one opaque bucket again.
  */
-describe("backfillPlanReplaysFacts", () => {
+describe("backfillReplayDifference", () => {
   const ridgeK1 = {
     ...emptyK1(),
     entityName: "Ridge Partners LLC", ein: "12-3456789",
@@ -103,7 +111,7 @@ describe("backfillPlanReplaysFacts", () => {
       warnings: [], promptVersion: null, model: null,
     })!;
 
-    expect(backfillPlanReplaysFacts(2025, plan, facts)).toBe(true);
+    expect(backfillReplayDifference(2025, plan, facts)).toBeNull();
   });
 
   it("rejects a manually-entered row carrying a K-1, whose replay drops it", () => {
@@ -122,7 +130,7 @@ describe("backfillPlanReplaysFacts", () => {
     // ...but the replay drops the whole entity, which is the loss this gate
     // exists to refuse.
     expect(assembleFacts(2025, [], plan.overrides).facts.k1s).toEqual([]);
-    expect(backfillPlanReplaysFacts(2025, plan, facts)).toBe(false);
+    expect(backfillReplayDifference(2025, plan, facts)).toBe("k1s");
   });
 
   it("rejects an extracted row where the advisor ADDED a K-1 the document lacks", () => {
@@ -141,7 +149,7 @@ describe("backfillPlanReplaysFacts", () => {
     expect(assembleFacts(2025, [
       { id: "doc-1", role: "full_return", taxYear: 2025, facts: extracted },
     ], plan.overrides).facts.k1s).toEqual([]);
-    expect(backfillPlanReplaysFacts(2025, plan, facts)).toBe(false);
+    expect(backfillReplayDifference(2025, plan, facts)).toBe("k1s");
   });
 
   it("rejects an extracted row where the advisor DELETED an extracted K-1", () => {
@@ -158,6 +166,90 @@ describe("backfillPlanReplaysFacts", () => {
       warnings: [], promptVersion: null, model: null,
     })!;
 
-    expect(backfillPlanReplaysFacts(2025, plan, facts)).toBe(false);
+    expect(backfillReplayDifference(2025, plan, facts)).toBe("k1s");
+  });
+
+  it("rejects a manually-entered row carrying a Schedule C business", () => {
+    // `businesses` is the OTHER entity collection and it keys differently:
+    // `entityKey` falls back to a normalized `name` because a Schedule C has
+    // neither `ein` nor `entityName`. The k1s tests above all key on `ein`, so
+    // without this one the whole name-keyed branch is uncovered.
+    const facts = emptyTaxReturnFacts(2025);
+    facts.businesses = [{
+      ...emptyBusiness(), name: "Mueller Consulting", netProfit: 90000, isSstb: false,
+    }];
+
+    const plan = planBackfill({
+      id: "row-5", taxYear: 2025, extractedFacts: null, facts,
+      sourceFilename: null, vaultDocumentId: null,
+      warnings: [], promptVersion: "manual", model: "manual",
+    })!;
+
+    // Pins the name-derived key, not just the verdict — dropping `entityKey`'s
+    // `name` fallback would leave the row rejected for a DIFFERENT reason and
+    // a verdict-only test would still pass.
+    expect(plan.overrides).toHaveProperty("businesses[name:mueller consulting].netProfit", 90000);
+    expect(assembleFacts(2025, [], plan.overrides).facts.businesses).toEqual([]);
+    expect(backfillReplayDifference(2025, plan, facts)).toBe("businesses");
+  });
+
+  it("rejects an extracted row whose facts.taxYear disagrees with the tax_year column", () => {
+    // No document can write `taxYear` — it is in neither SCALAR_ROOTS nor
+    // TOP_LEVEL_SCALARS — and here the diff is empty, so the replay yields the
+    // COLUMN's year and the stored 2024 is unreachable.
+    const extracted = emptyTaxReturnFacts(2024);
+    extracted.income.wages = 100;
+    const facts = structuredClone(extracted);
+
+    const plan = planBackfill({
+      id: "row-6", taxYear: 2025, extractedFacts: extracted, facts,
+      sourceFilename: "1040.pdf", vaultDocumentId: null,
+      warnings: [], promptVersion: null, model: null,
+    })!;
+
+    expect(plan.overrides).toEqual({});
+    expect(backfillReplayDifference(2025, plan, facts)).toBe("taxYear");
+  });
+
+  it("ACCEPTS the same taxYear disagreement on a manually-entered row", () => {
+    // The documented asymmetry, pinned so the rejection above is not mistaken
+    // for a universal rule. The manual base is `emptyTaxReturnFacts(column)`,
+    // so `taxYear` differs from it and the diff emits it as an ordinary scalar
+    // override — the replay then reproduces the disagreement faithfully. The
+    // backfill preserves an existing inconsistency rather than introducing one.
+    const facts = emptyTaxReturnFacts(2024);
+    facts.income.wages = 100;
+
+    const plan = planBackfill({
+      id: "row-7", taxYear: 2025, extractedFacts: null, facts,
+      sourceFilename: null, vaultDocumentId: null,
+      warnings: [], promptVersion: "manual", model: "manual",
+    })!;
+
+    expect(plan.overrides).toHaveProperty("taxYear", 2024);
+    expect(backfillReplayDifference(2025, plan, facts)).toBeNull();
+  });
+
+  it("rejects an all-null nullable block even though nothing would be lost", () => {
+    // An extraction that MATERIALIZED `deductions.scheduleA` as an all-null
+    // object instead of omitting it. `collectLeaves` returns early on every
+    // null, so the merge leaves the block `null` and the diff has nothing to
+    // say — yet `null` and an all-null block are the same thing to every
+    // reader. This is the gate being conservative, not data loss, and it is
+    // why the runner logs the path: `deductions.scheduleA` classifies very
+    // differently from `k1s`. Pinned so the distinction cannot quietly vanish.
+    const extracted = emptyTaxReturnFacts(2025);
+    extracted.income.wages = 100;
+    extracted.deductions.scheduleA = emptyScheduleA();
+    const facts = structuredClone(extracted);
+
+    const plan = planBackfill({
+      id: "row-8", taxYear: 2025, extractedFacts: extracted, facts,
+      sourceFilename: "1040.pdf", vaultDocumentId: null,
+      warnings: [], promptVersion: null, model: null,
+    })!;
+
+    expect(plan.overrides).toEqual({});
+    expect(backfillReplayDifference(2025, plan, facts)).toBe("deductions.scheduleA");
   });
 });
