@@ -20,16 +20,18 @@ function makeProps(overrides: Partial<Parameters<typeof IntakeWizard>[0]> = {}) 
 }
 
 describe("IntakeWizard", () => {
-  it("shows the Welcome screen with four sections and a Start Here control on initial render", () => {
+  it("shows the Welcome screen with the default section set and a Start Here control on initial render", () => {
     render(<IntakeWizard {...makeProps()} />);
 
     // Welcome heading present
     expect(screen.getByRole("heading", { name: /welcome/i })).toBeInTheDocument();
 
-    // Four section labels visible (Family, Assets, Goals, Review)
+    // Named by card, not counted — a count assertion rots the moment a
+    // section is added. Default set: Family, Assets, Goals, Documents, Review.
     expect(screen.getByText(/family/i)).toBeInTheDocument();
     expect(screen.getByText(/assets/i)).toBeInTheDocument();
     expect(screen.getByText(/goals/i)).toBeInTheDocument();
+    expect(screen.getByText(/documents/i)).toBeInTheDocument();
     expect(screen.getByText(/review/i)).toBeInTheDocument();
 
     // Start Here CTA
@@ -429,5 +431,33 @@ describe("IntakeWizard sample uploads", () => {
     fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // → Accounts
 
     expect(container.querySelectorAll('input[type="file"]')).toHaveLength(1);
+  });
+});
+
+describe("IntakeWizard — section set", () => {
+  it("renders only the selected steps in canonical order", () => {
+    render(<IntakeWizard {...makeProps({ sections: ["family", "documents"], sampleUploads: true })} />);
+    fireEvent.click(screen.getByRole("button", { name: /start here/i }));
+
+    // Family first, then Documents, then Review — no Accounts/Income/Property.
+    expect(screen.getByRole("heading", { name: /^family$/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /next|skip for now/i }));
+    expect(screen.getByRole("heading", { name: /^documents$/i })).toBeInTheDocument();
+  });
+
+  it("suppresses the Documents step when there is no upload surface, even if selected", () => {
+    // The portal wizard has no token and no sample: a step whose only content is
+    // an upload zone it cannot use must not appear.
+    render(<IntakeWizard {...makeProps({ sections: ["family", "documents"] })} />);
+    fireEvent.click(screen.getByRole("button", { name: /start here/i }));
+    fireEvent.click(screen.getByRole("button", { name: /next|skip for now/i }));
+    expect(screen.getByRole("heading", { name: /review/i })).toBeInTheDocument();
+  });
+
+  it("defaults to the full default set when no sections prop is given", () => {
+    render(<IntakeWizard {...makeProps()} />);
+    fireEvent.click(screen.getByRole("button", { name: /start here/i }));
+    fireEvent.click(screen.getByRole("button", { name: /next|skip for now/i }));
+    expect(screen.getByRole("heading", { name: /^accounts$/i })).toBeInTheDocument();
   });
 });

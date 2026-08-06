@@ -42,6 +42,7 @@ export default async function PortalIntakePage(): Promise<ReactElement> {
       initialStatus={result.status}
       recipientName={result.recipientName}
       branding={branding}
+      sections={result.sections}
     />
   );
 }

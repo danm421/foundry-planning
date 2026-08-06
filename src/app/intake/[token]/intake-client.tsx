@@ -7,6 +7,7 @@ import { IntakeWizard } from "@/components/intake/intake-wizard";
 import { IntakeThankYou } from "@/components/intake/thank-you";
 import type { IntakeHeaderBranding } from "@/components/intake/branding-header";
 import type { IntakeDocumentView } from "@/lib/intake/document-types";
+import type { IntakeSectionKey } from "@/lib/intake/sections";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -16,6 +17,8 @@ interface IntakeClientProps {
   initialPayload: unknown; // IntakePayload from DB, cast to IntakeDraft on mount
   /** Firm letterhead; null renders the Foundry Planning lockup. */
   branding?: IntakeHeaderBranding | null;
+  /** Which sections this form collects. Optional, defaulting inside IntakeWizard. */
+  sections?: readonly IntakeSectionKey[];
 }
 
 // ─── Client wrapper ───────────────────────────────────────────────────────────
@@ -33,6 +36,7 @@ export function IntakeClient({
   recipientName,
   initialPayload,
   branding,
+  sections,
 }: IntakeClientProps) {
   const router = useRouter();
 
@@ -209,6 +213,7 @@ export function IntakeClient({
       token={token}
       documents={documents}
       onDocumentsChanged={handleDocumentsChanged}
+      sections={sections}
     />
   );
 }

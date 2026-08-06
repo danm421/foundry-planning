@@ -22,6 +22,10 @@ import { DocumentsStep } from "./steps/documents-step";
 import { ReviewStep } from "./review-step";
 import type { IntakeUploadContext } from "./intake-upload-zone";
 import type { IntakeDocumentView } from "@/lib/intake/document-types";
+import {
+  DEFAULT_INTAKE_SECTIONS,
+  type IntakeSectionKey,
+} from "@/lib/intake/sections";
 
 // ─── Public interface ────────────────────────────────────────────────────────
 export interface IntakeWizardProps {
@@ -52,6 +56,13 @@ export interface IntakeWizardProps {
    * reach the upload routes. Ignored when the live upload props are present.
    */
   sampleUploads?: boolean;
+  /**
+   * Which sections this form collects. Optional, defaulting to the full default
+   * set: unlike `token`/`documents` (where a forgotten prop must fail closed and
+   * offer nothing), a forgotten `sections` should show the form everyone got
+   * before this feature existed, never a silently truncated one.
+   */
+  sections?: readonly IntakeSectionKey[];
 }
 
 // ─── Section / sub-step state machine ───────────────────────────────────────
@@ -59,7 +70,7 @@ export interface IntakeWizardProps {
 //   welcome → family → assets:accounts → assets:income → assets:property → goals → review
 
 interface StepDescriptor {
-  section: "welcome" | "family" | "assets" | "goals" | "documents" | "review";
+  section: "welcome" | "family" | "assets" | "goals" | "documents" | "risk" | "review";
   subStep?: "accounts" | "income" | "property";
   /** Chrome label (shown in progress bar + eyebrow) */
   label: string;
@@ -69,37 +80,37 @@ interface StepDescriptor {
   skipable?: boolean;
 }
 
-const STEPS_BEFORE_DOCUMENTS: readonly StepDescriptor[] = [
-  { section: "welcome", label: "Welcome", title: "Welcome" },
-  { section: "family",  label: "Family",   title: "Family" },
-  { section: "assets",  subStep: "accounts", label: "Accounts", title: "Accounts" },
-  { section: "assets",  subStep: "income",   label: "Income",   title: "Income", skipable: true },
-  { section: "assets",  subStep: "property", label: "Property", title: "Property", skipable: true },
-  { section: "goals",   label: "Goals",   title: "Goals" },
-] as const;
-
-const DOCUMENTS_STEP: StepDescriptor = {
-  section: "documents",
-  label: "Documents",
-  title: "Documents",
-  skipable: true,
+/** Every switchable step, keyed by its section. Order here is irrelevant —
+ *  `buildSteps` walks `sections`, which is already in canonical order. */
+const STEP_BY_SECTION: Record<IntakeSectionKey, StepDescriptor> = {
+  family:    { section: "family", label: "Family", title: "Family" },
+  accounts:  { section: "assets", subStep: "accounts", label: "Accounts", title: "Accounts" },
+  income:    { section: "assets", subStep: "income", label: "Income", title: "Income", skipable: true },
+  property:  { section: "assets", subStep: "property", label: "Property", title: "Property", skipable: true },
+  goals:     { section: "goals", label: "Goals", title: "Goals" },
+  documents: { section: "documents", label: "Documents", title: "Documents", skipable: true },
+  risk:      { section: "risk", label: "Risk", title: "Risk tolerance", skipable: true },
 };
 
-const REVIEW_STEP: StepDescriptor = {
-  section: "review",
-  label: "Review",
-  title: "Review & Submit",
-};
+const WELCOME_STEP: StepDescriptor = { section: "welcome", label: "Welcome", title: "Welcome" };
+const REVIEW_STEP: StepDescriptor = { section: "review", label: "Review", title: "Review & Submit" };
 
 /**
+ * Welcome → the selected sections in canonical order → Review.
+ *
  * The Documents step exists only where an upload surface does — live on the
  * public form, inert in the advisor's preview. The portal wizard has neither,
- * so it must not show a step whose only content is a zone it can't use.
+ * so selecting Documents there must still not produce a step whose only content
+ * is a zone it can't use.
  */
-function buildSteps(withDocuments: boolean): readonly StepDescriptor[] {
-  return withDocuments
-    ? [...STEPS_BEFORE_DOCUMENTS, DOCUMENTS_STEP, REVIEW_STEP]
-    : [...STEPS_BEFORE_DOCUMENTS, REVIEW_STEP];
+function buildSteps(
+  sections: readonly IntakeSectionKey[],
+  hasUploads: boolean,
+): readonly StepDescriptor[] {
+  const body = sections
+    .filter((s) => s !== "documents" || hasUploads)
+    .map((s) => STEP_BY_SECTION[s]);
+  return [WELCOME_STEP, ...body, REVIEW_STEP];
 }
 
 /**
@@ -109,7 +120,7 @@ function buildSteps(withDocuments: boolean): readonly StepDescriptor[] {
  */
 function indexOfSection(
   steps: readonly StepDescriptor[],
-  section: "family" | "accounts" | "income" | "property" | "goals",
+  section: "family" | "accounts" | "income" | "property" | "goals" | "documents" | "risk",
 ): number {
   return steps.findIndex((s) => (s.subStep ?? s.section) === section);
 }
@@ -203,9 +214,10 @@ export function IntakeWizard({
   documents,
   onDocumentsChanged,
   sampleUploads,
+  sections,
 }: IntakeWizardProps) {
-  // 0 = welcome; 1 = family; 2 = accounts; 3 = income; 4 = property; 5 = goals;
-  // then Documents (only where uploads are offered), then review.
+  // 0 = welcome; then the selected sections in canonical order (Documents only
+  // where uploads are offered); then review.
   const [flatIndex, setFlatIndex] = useState(0);
   const { setFamily, setAccounts, setIncome, setProperty, setGoals } =
     useDraftSliceSetters(value, onChange);
@@ -226,7 +238,7 @@ export function IntakeWizard({
   // "Skip for now" to "Next", or the preview would misreport its own copy.
   const docs = uploads?.kind === "live" ? uploads.documents : [];
 
-  const steps = buildSteps(uploads != null);
+  const steps = buildSteps(sections ?? DEFAULT_INTAKE_SECTIONS, uploads != null);
   const step = steps[flatIndex];
   const isFirst = flatIndex === 0;
   const isLast = flatIndex === steps.length - 1;
@@ -237,7 +249,9 @@ export function IntakeWizard({
   function goBack() {
     if (!isFirst) setFlatIndex((i) => i - 1);
   }
-  function goToSection(section: "family" | "accounts" | "income" | "property" | "goals") {
+  function goToSection(
+    section: "family" | "accounts" | "income" | "property" | "goals" | "documents" | "risk",
+  ) {
     const idx = indexOfSection(steps, section);
     if (idx >= 0) setFlatIndex(idx);
   }
@@ -255,7 +269,11 @@ export function IntakeWizard({
             {error}
           </div>
         )}
-        <WelcomeScreen mode={mode} onStart={goNext} />
+        <WelcomeScreen
+          mode={mode}
+          onStart={goNext}
+          sections={sections ?? DEFAULT_INTAKE_SECTIONS}
+        />
       </div>
     );
   }
