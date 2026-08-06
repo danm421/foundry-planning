@@ -22,6 +22,68 @@ import type { IntakeDocType, IntakeDocumentView } from "./document-types";
  * a thin parallel module beats making audited advisor code dual-tenant.
  */
 
+/** Public surface — the 10MB per-file cap alone doesn't bound a form's total. */
+export const MAX_INTAKE_FILES = 25;
+export const MAX_INTAKE_TOTAL_BYTES = 50 * 1024 * 1024;
+
+/** The doc-type taxonomy and the client-facing view shape live in
+ *  `document-types.ts` so the wizard's client components can import them
+ *  without dragging `@/db` and `@vercel/blob` into the browser bundle. They
+ *  are re-exported here so server callers keep their existing import path. */
+export {
+  INTAKE_DOC_TYPES,
+  INTAKE_DOC_TYPE_LABELS,
+  type IntakeDocType,
+  type IntakeDocumentView,
+} from "./document-types";
+
+// ─── Form → household routing ────────────────────────────────────────────────
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type DbOrTx = typeof db | Tx;
+
+/** Everything this module routes on, in one read of the form row: which firm
+ *  owns it, and where its documents belong. */
+interface FormRouting {
+  firmId: string;
+  clientId: string | null;
+  crmHouseholdId: string | null;
+}
+
+async function loadFormRouting(formId: string): Promise<FormRouting> {
+  const [form] = await db
+    .select({
+      firmId: intakeForms.firmId,
+      clientId: intakeForms.clientId,
+      crmHouseholdId: intakeForms.crmHouseholdId,
+    })
+    .from(intakeForms)
+    .where(eq(intakeForms.id, formId));
+
+  if (!form) throw new Error(`Intake form ${formId} not found`);
+  return form;
+}
+
+/** An existing client's household. Shared by the minting and non-minting
+ *  resolvers — takes the executor so the minting path can run it inside its
+ *  own locked transaction — so "client with no CRM household" is stated once. */
+async function householdForClient(exec: DbOrTx, clientId: string): Promise<string> {
+  const [client] = await exec
+    .select({ crmHouseholdId: clients.crmHouseholdId })
+    .from(clients)
+    .where(eq(clients.id, clientId));
+  if (!client?.crmHouseholdId) {
+    throw new Error(`Client ${clientId} has no CRM household`);
+  }
+  return client.crmHouseholdId;
+}
+
+/** Where an already-routed form's documents live, without minting anything. */
+async function householdFromRouting(form: FormRouting): Promise<string | null> {
+  if (form.clientId) return householdForClient(db, form.clientId);
+  return form.crmHouseholdId ?? null;
+}
+
 /** Household display name for a prospect whose real contacts don't exist yet.
  *  applyIntake later overwrites this via syncHouseholdNameFromContacts. */
 export function placeholderHouseholdName(
@@ -60,16 +122,7 @@ export async function resolveIntakeHousehold(formId: string): Promise<string> {
     if (!form) throw new Error(`Intake form ${formId} not found`);
 
     // Existing client: the household already exists; never park it on the form.
-    if (form.clientId) {
-      const [client] = await tx
-        .select({ crmHouseholdId: clients.crmHouseholdId })
-        .from(clients)
-        .where(eq(clients.id, form.clientId));
-      if (!client?.crmHouseholdId) {
-        throw new Error(`Client ${form.clientId} has no CRM household`);
-      }
-      return client.crmHouseholdId;
-    }
+    if (form.clientId) return householdForClient(tx, form.clientId);
 
     if (form.crmHouseholdId) return form.crmHouseholdId;
 
@@ -104,53 +157,8 @@ export async function resolveIntakeHousehold(formId: string): Promise<string> {
  * treats `null` as "nothing here yet."
  */
 export async function findIntakeHousehold(formId: string): Promise<string | null> {
-  const [form] = await db
-    .select({
-      clientId: intakeForms.clientId,
-      crmHouseholdId: intakeForms.crmHouseholdId,
-    })
-    .from(intakeForms)
-    .where(eq(intakeForms.id, formId));
-
-  if (!form) throw new Error(`Intake form ${formId} not found`);
-
-  if (form.clientId) {
-    const [client] = await db
-      .select({ crmHouseholdId: clients.crmHouseholdId })
-      .from(clients)
-      .where(eq(clients.id, form.clientId));
-    if (!client?.crmHouseholdId) {
-      throw new Error(`Client ${form.clientId} has no CRM household`);
-    }
-    return client.crmHouseholdId;
-  }
-
-  return form.crmHouseholdId ?? null;
+  return householdFromRouting(await loadFormRouting(formId));
 }
-
-async function firmIdForForm(formId: string): Promise<string> {
-  const [row] = await db
-    .select({ firmId: intakeForms.firmId })
-    .from(intakeForms)
-    .where(eq(intakeForms.id, formId));
-  if (!row) throw new Error(`Intake form ${formId} not found`);
-  return row.firmId;
-}
-
-/** Public surface — the 10MB per-file cap alone doesn't bound a form's total. */
-export const MAX_INTAKE_FILES = 25;
-export const MAX_INTAKE_TOTAL_BYTES = 50 * 1024 * 1024;
-
-/** The doc-type taxonomy and the client-facing view shape live in
- *  `document-types.ts` so the wizard's client components can import them
- *  without dragging `@/db` and `@vercel/blob` into the browser bundle. They
- *  are re-exported here so server callers keep their existing import path. */
-export {
-  INTAKE_DOC_TYPES,
-  INTAKE_DOC_TYPE_LABELS,
-  type IntakeDocType,
-  type IntakeDocumentView,
-} from "./document-types";
 
 function toView(row: typeof crmHouseholdDocuments.$inferSelect): IntakeDocumentView {
   return {
@@ -173,7 +181,7 @@ export async function uploadIntakeDocument(
     );
   }
 
-  const firmId = await firmIdForForm(formId);
+  const { firmId } = await loadFormRouting(formId);
   const householdId = await resolveIntakeHousehold(formId);
 
   const [existing] = await db
@@ -260,7 +268,10 @@ export async function listIntakeDocuments(formId: string): Promise<IntakeDocumen
 /** Returns false (not a throw) when the target isn't the client's to delete —
  *  the route turns that into a 404 so nothing about other documents leaks. */
 export async function deleteIntakeDocument(formId: string, docId: string): Promise<boolean> {
-  const householdId = await findIntakeHousehold(formId);
+  // One routing read serves both the ownership check below and the audit's
+  // firmId at the end — the delete path used to read the form row twice.
+  const form = await loadFormRouting(formId);
+  const householdId = await householdFromRouting(form);
   if (!householdId) return false;
 
   const [doc] = await db
@@ -286,12 +297,11 @@ export async function deleteIntakeDocument(formId: string, docId: string): Promi
   }
   await db.delete(crmHouseholdDocuments).where(eq(crmHouseholdDocuments.id, docId));
 
-  const firmId = await firmIdForForm(formId);
   await recordAudit({
     action: "intake.document.deleted",
     resourceType: "crm_document",
     resourceId: docId,
-    firmId,
+    firmId: form.firmId,
     actorKind: "client",
     actorId: "system", // no Clerk session on the public intake flow
     metadata: { formId, filename: doc.filename },

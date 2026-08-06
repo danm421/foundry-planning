@@ -5,6 +5,7 @@ import { MAX_DOCUMENT_SIZE_BYTES } from "@/lib/crm/document-constants";
 import {
   INTAKE_DOC_TYPES,
   INTAKE_DOC_TYPE_LABELS,
+  intakeDocTypeLabel,
   type IntakeDocType,
   type IntakeDocumentView,
 } from "@/lib/intake/document-types";
@@ -120,13 +121,6 @@ function errorFromResponse(status: number, body: string): string {
   return `Upload failed (${status}). Please try again.`;
 }
 
-/** Human label for a stored type; an unrecognised one shows nothing rather
- *  than a raw enum value. */
-function docTypeLabel(docType: string | null): string | null {
-  if (!docType) return null;
-  return INTAKE_DOC_TYPE_LABELS[docType as IntakeDocType] ?? null;
-}
-
 // ─── IntakeUploadZone ────────────────────────────────────────────────────────
 
 export function IntakeUploadZone({
@@ -229,13 +223,15 @@ export function IntakeUploadZone({
     (id: string) => {
       const row = pending.find((r) => r.id === id);
       if (!row) return;
+      // One statement of the retry transition, applied to both the row that
+      // renders and the row that uploads — two literals could drift apart.
       const refreshed: PendingUpload = {
         ...row,
         state: "uploading",
         progress: 0,
         errorMessage: undefined,
       };
-      patchRow(id, { state: "uploading", progress: 0, errorMessage: undefined });
+      patchRow(id, refreshed);
       startUpload(refreshed);
     },
     [pending, patchRow, startUpload],
@@ -414,7 +410,7 @@ function DocumentRow({
   removing: boolean;
   onRemove: () => void;
 }) {
-  const type = docTypeLabel(doc.docType);
+  const type = intakeDocTypeLabel(doc.docType);
   return (
     <li className="flex items-center gap-3 rounded-[var(--radius-sm)] border border-hair bg-card px-3 py-2.5">
       <FileGlyph />

@@ -3,11 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { IntakeFormRow } from "@/lib/intake/queries";
-import {
-  INTAKE_DOC_TYPE_LABELS,
-  type IntakeDocType,
-  type IntakeDocumentView,
-} from "@/lib/intake/document-types";
+import { intakeDocTypeLabel, type IntakeDocumentView } from "@/lib/intake/document-types";
 import { formatBytes } from "@/components/portal/documents/vault-format";
 import type { IntakeDiff, FieldDiff, ListSectionDiff } from "./diff-utils";
 
@@ -122,9 +118,7 @@ function DocumentsSection({
       ) : (
         <ul className="space-y-1">
           {documents.map((doc) => {
-            const type = doc.docType
-              ? INTAKE_DOC_TYPE_LABELS[doc.docType as IntakeDocType]
-              : undefined;
+            const type = intakeDocTypeLabel(doc.docType);
             return (
               <li
                 key={doc.id}

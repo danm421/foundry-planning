@@ -34,6 +34,15 @@ export const INTAKE_DOC_TYPE_LABELS: Record<IntakeDocType, string> = {
   other: "Something else",
 };
 
+/** Human label for a stored type. `description` on the document row is a free
+ *  text column, so an unrecognised value yields null and the caller shows
+ *  nothing rather than a raw enum string. Used by both the client's upload
+ *  zone and the advisor's review panel. */
+export function intakeDocTypeLabel(docType: string | null | undefined): string | null {
+  if (!docType) return null;
+  return INTAKE_DOC_TYPE_LABELS[docType as IntakeDocType] ?? null;
+}
+
 /** What the client is allowed to see: names, never locations. */
 export interface IntakeDocumentView {
   id: string;

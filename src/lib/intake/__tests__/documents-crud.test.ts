@@ -266,6 +266,27 @@ describe("deleteIntakeDocument", () => {
     expect(await listIntakeDocuments(formId)).toHaveLength(0);
   });
 
+  // The delete audit is the only record that a client removed a file, and its
+  // firmId is what scopes it to the owning firm — including this file's own
+  // teardown. It comes from the same form-routing read that resolves the
+  // household, so a wrong firmId here is silent: the row still writes.
+  it("audits the removal against the form's own firm", async () => {
+    const formId = await seedForm();
+    const view = await uploadIntakeDocument(formId, pdf(), "statement");
+    await deleteIntakeDocument(formId, view.id);
+
+    const auditRows = await db
+      .select({ firmId: auditLog.firmId, actorKind: auditLog.actorKind })
+      .from(auditLog)
+      .where(
+        and(eq(auditLog.action, "intake.document.deleted"), eq(auditLog.resourceId, view.id)),
+      );
+
+    expect(auditRows).toHaveLength(1);
+    expect(auditRows[0].firmId).toBe(FIRM);
+    expect(auditRows[0].actorKind).toBe("client");
+  });
+
   it("refuses to delete a document the advisor uploaded", async () => {
     const formId = await seedForm();
     const view = await uploadIntakeDocument(formId, pdf(), "statement");
