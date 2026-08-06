@@ -239,6 +239,7 @@ export async function uploadIntakeDocument(
     resourceId: doc.id,
     firmId,
     actorKind: "client",
+    actorId: "system", // no Clerk session on the public intake flow
     metadata: { formId, filename: displayName, sizeBytes: file.size, docType },
   });
 
@@ -298,6 +299,7 @@ export async function deleteIntakeDocument(formId: string, docId: string): Promi
     resourceId: docId,
     firmId,
     actorKind: "client",
+    actorId: "system", // no Clerk session on the public intake flow
     metadata: { formId, filename: doc.filename },
   });
 

@@ -8,15 +8,18 @@ vi.mock("@vercel/blob", () => ({
 
 import { randomUUID } from "node:crypto";
 import { db } from "@/db";
-import { crmHouseholds, crmHouseholdDocuments, intakeForms } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { crmHouseholds, crmHouseholdDocuments, intakeForms, auditLog } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
+import { STORAGE_PROVIDER } from "@/lib/crm/documents";
 import { newIntakeToken, defaultExpiry } from "../tokens";
 import type { IntakePayload } from "../schema";
 import {
   uploadIntakeDocument,
   listIntakeDocuments,
   deleteIntakeDocument,
+  resolveIntakeHousehold,
   MAX_INTAKE_FILES,
+  MAX_INTAKE_TOTAL_BYTES,
 } from "../documents";
 
 const FIRM = "test-firm-intake-docs-crud-2026";
@@ -55,6 +58,12 @@ async function householdCountForFirm(): Promise<number> {
 }
 
 afterAll(async () => {
+  // Fix round 1: actorId now lands correctly on the public intake path, so
+  // this file's uploads/deletes leave real audit_log rows behind. Clear the
+  // ones this file created — no FK ties them to firmId, so this is safe and
+  // sufficient on its own.
+  await db.delete(auditLog).where(eq(auditLog.firmId, FIRM));
+
   const hhs = await db
     .select({ id: crmHouseholds.id })
     .from(crmHouseholds)
@@ -110,6 +119,88 @@ describe("uploadIntakeDocument", () => {
       /too many documents/i,
     );
   });
+
+  it("records an audit_log row for the upload", async () => {
+    const formId = await seedForm();
+    const view = await uploadIntakeDocument(formId, pdf(), "statement");
+
+    const auditRows = await db
+      .select({
+        actorId: auditLog.actorId,
+        actorKind: auditLog.actorKind,
+        resourceType: auditLog.resourceType,
+      })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.action, "intake.document.uploaded"),
+          eq(auditLog.resourceId, view.id),
+        ),
+      );
+
+    expect(auditRows).toHaveLength(1);
+    // No Clerk session exists on the public intake path — recordAudit must be
+    // told this explicitly via actorId, not left to fall through to auth().
+    expect(auditRows[0].actorId).toBe("system");
+    expect(auditRows[0].actorKind).toBe("client");
+    expect(auditRows[0].resourceType).toBe("crm_document");
+  });
+
+  // The per-file-count cap above never reaches the byte-sum guard (25 tiny
+  // PDFs total ~400 bytes, nowhere near 50MB) — this test fabricates an
+  // existing row instead of uploading real 50MB of bytes, so the guard at
+  // documents.ts is actually exercised at least once.
+  it("rejects a total that would exceed the form's byte cap", async () => {
+    const formId = await seedForm();
+    const householdId = await resolveIntakeHousehold(formId);
+    await db.insert(crmHouseholdDocuments).values({
+      householdId,
+      filename: "existing.pdf",
+      storageProvider: STORAGE_PROVIDER,
+      storageKey: `crm/${householdId}/fabricated-existing.pdf`,
+      mimeType: "application/pdf",
+      sizeBytes: MAX_INTAKE_TOTAL_BYTES,
+      uploadedBy: null,
+      folderId: null,
+      description: "statement",
+      sourceKind: "intake_upload",
+    });
+
+    await expect(uploadIntakeDocument(formId, pdf("overflow2.pdf"), "statement")).rejects.toThrow(
+      /exceed the total size limit/i,
+    );
+  });
+
+  // Discriminates the `Number(existing.bytes)` cast at documents.ts against a
+  // reintroduced string-concatenation bug. The raw sql aggregate's bigint sum
+  // arrives as a string over the wire; without Number(), `existing.bytes +
+  // file.size` string-concatenates instead of adding. Concatenating digits
+  // onto a large existing total always makes the *apparent* value bigger, so
+  // a "should reject" fixture (as above) can't tell the two implementations
+  // apart — both throw either way. This one asserts the opposite direction:
+  // a total safely under the cap must still succeed. Under the bug,
+  // "52427800" + 15 -> "5242780015" -> reinterpreted as ~5.2 billion, which
+  // is > the 50MB cap, so the buggy code wrongly rejects a legitimate upload.
+  it("does not falsely reject a total safely under the byte cap", async () => {
+    const formId = await seedForm();
+    const householdId = await resolveIntakeHousehold(formId);
+    await db.insert(crmHouseholdDocuments).values({
+      householdId,
+      filename: "existing.pdf",
+      storageProvider: STORAGE_PROVIDER,
+      storageKey: `crm/${householdId}/fabricated-existing2.pdf`,
+      mimeType: "application/pdf",
+      sizeBytes: MAX_INTAKE_TOTAL_BYTES - 1000,
+      uploadedBy: null,
+      folderId: null,
+      description: "statement",
+      sourceKind: "intake_upload",
+    });
+
+    await expect(
+      uploadIntakeDocument(formId, pdf("safe.pdf"), "statement"),
+    ).resolves.toBeTruthy();
+  });
 });
 
 describe("listIntakeDocuments", () => {
@@ -121,18 +212,28 @@ describe("listIntakeDocuments", () => {
 
     expect(list).toHaveLength(1);
     expect(list[0].filename).toBe("w2.pdf");
-    // The write-only guarantee: nothing in the payload can locate the bytes.
-    const serialized = JSON.stringify(list[0]);
-    expect(serialized).not.toContain("storageKey");
-    expect(serialized).not.toContain("blob.vercel-storage.com");
+    // The write-only guarantee: assert the exact key set rather than
+    // scanning the serialized string for known-bad substrings — a future
+    // convenience field (e.g. `url`) would slip past a substring check but
+    // must redden this.
+    expect(Object.keys(list[0]).sort()).toEqual(
+      ["docType", "filename", "id", "sizeBytes", "uploadedAt"].sort(),
+    );
   });
 
   it("does not leak documents from another form's household", async () => {
     const mine = await seedForm();
     const theirs = await seedForm();
+    // Both households must actually hold a document — otherwise `mine`
+    // resolves to no household at all and listIntakeDocuments short-circuits
+    // to [] before the householdId predicate is ever evaluated, so the test
+    // would prove nothing about the predicate's discrimination.
+    await uploadIntakeDocument(mine, pdf("mine.pdf"), "statement");
     await uploadIntakeDocument(theirs, pdf("theirs.pdf"), "statement");
 
-    expect(await listIntakeDocuments(mine)).toHaveLength(0);
+    const list = await listIntakeDocuments(mine);
+    expect(list).toHaveLength(1);
+    expect(list[0].filename).toBe("mine.pdf");
   });
 
   // PLAN DEFECT fix (controller resolution 2): listing must never mint a
@@ -180,9 +281,17 @@ describe("deleteIntakeDocument", () => {
   it("refuses to delete a document belonging to another form's household", async () => {
     const mine = await seedForm();
     const theirs = await seedForm();
-    const view = await uploadIntakeDocument(theirs, pdf(), "statement");
+    // `mine` must resolve to a real household too — otherwise
+    // findIntakeHousehold(mine) returns null and deleteIntakeDocument
+    // short-circuits to false before the householdId predicate in the
+    // lookup query is ever evaluated, proving nothing about it.
+    await uploadIntakeDocument(mine, pdf("mine.pdf"), "statement");
+    const theirsDoc = await uploadIntakeDocument(theirs, pdf("theirs.pdf"), "statement");
 
-    expect(await deleteIntakeDocument(mine, view.id)).toBe(false);
+    expect(await deleteIntakeDocument(mine, theirsDoc.id)).toBe(false);
+    // The target document must actually survive, not just the boolean.
+    expect(await listIntakeDocuments(mine)).toHaveLength(1);
+    expect(await listIntakeDocuments(theirs)).toHaveLength(1);
   });
 
   // PLAN DEFECT fix (controller resolution 2): same as the list case — a
