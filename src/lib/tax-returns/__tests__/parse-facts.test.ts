@@ -38,6 +38,43 @@ describe("parseTaxReturnFactsJson", () => {
     expect(warnings.some((w) => w.includes("bogusField"))).toBe(true);
   });
 
+  // The nullable nested blocks have a template value of null, so conform()
+  // reads them as scalars and would pass the model's object through untouched —
+  // a single stray key would then fail the STRICT schema and sink the whole
+  // extraction. These cover the Schedule E block added alongside scheduleENet.
+  it("conforms a Schedule E block, coercing strings and dropping unknown keys", () => {
+    const base = emptyTaxReturnFacts(2025);
+    const raw = JSON.stringify({
+      isAmended: false,
+      facts: {
+        ...base,
+        income: {
+          ...base.income,
+          scheduleENet: -6141,
+          scheduleE: {
+            grossRents: "$19,600",
+            totalExpenses: 25741,
+            depreciation: 8413,
+            mortgageInterest: 6210,
+            propertyTaxes: 5024,
+            suspendedPassiveLoss: 0,
+            netRent: -6141, // not in the schema; must be dropped, not fatal
+          },
+        },
+      },
+    });
+    const { facts, warnings } = parseTaxReturnFactsJson(raw);
+    expect(facts.income.scheduleENet).toBe(-6141);
+    expect(facts.income.scheduleE?.grossRents).toBe(19600);
+    expect(facts.income.scheduleE?.depreciation).toBe(8413);
+    expect(warnings.some((w) => w.includes("scheduleE.netRent"))).toBe(true);
+  });
+
+  it("leaves scheduleE null when the model omits it", () => {
+    const { facts } = parseTaxReturnFactsJson(aiResponse({ filingStatus: "single" }));
+    expect(facts.income.scheduleE).toBeNull();
+  });
+
   it("passes isAmended through", () => {
     expect(parseTaxReturnFactsJson(aiResponse({}, true)).isAmended).toBe(true);
   });

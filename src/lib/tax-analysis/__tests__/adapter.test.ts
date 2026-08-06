@@ -34,6 +34,44 @@ describe("factsToCalcInput", () => {
     expect(notes.length).toBe(1);
   });
 
+  // A rental that nets to a loss after depreciation used to be floored at zero
+  // here, silently overstating ordinary income (and therefore tax) by the
+  // amount of the loss.
+  it("carries a Schedule E LOSS into ordinary income rather than flooring it", () => {
+    const f = retireeMfj();
+    f.income.scheduleENet = -6141;
+    const { input } = factsToCalcInput(f, ctx);
+    expect(input.ordinaryIncome).toBe(93000 - 6141);
+  });
+
+  it("carries a Schedule E PROFIT into ordinary income", () => {
+    const f = retireeMfj();
+    f.income.scheduleENet = 6141;
+    const { input } = factsToCalcInput(f, ctx);
+    expect(input.ordinaryIncome).toBe(93000 + 6141);
+  });
+
+  // Schedule C is split deliberately: the PROFIT side feeds earnedIncome
+  // (which drives FICA / Additional Medicare), the LOSS side feeds the
+  // bracket-tax bucket. A Sched C loss must never reduce FICA wages.
+  it("keeps a Schedule C loss out of earnedIncome but inside ordinary income", () => {
+    const f = retireeMfj();
+    f.income.wages = 50000;
+    f.income.scheduleCNet = -10000;
+    const { input } = factsToCalcInput(f, ctx);
+    expect(input.earnedIncome).toBe(50000);
+    expect(input.ordinaryIncome).toBe(93000 - 10000);
+  });
+
+  it("adds a Schedule C profit to earnedIncome exactly once", () => {
+    const f = retireeMfj();
+    f.income.wages = 50000;
+    f.income.scheduleCNet = 10000;
+    const { input } = factsToCalcInput(f, ctx);
+    expect(input.earnedIncome).toBe(60000);
+    expect(input.ordinaryIncome).toBe(93000);
+  });
+
   it("inverts QBI deduction to qbiIncome", () => {
     const f = retireeMfj();
     f.deductions.qbiDeduction = 4000;

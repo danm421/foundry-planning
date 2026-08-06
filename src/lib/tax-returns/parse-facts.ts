@@ -1,6 +1,8 @@
 import {
   taxReturnFactsSchema,
   emptyTaxReturnFacts,
+  emptyScheduleA,
+  emptyScheduleE,
   TAX_RETURN_MIN_YEAR,
   type TaxReturnFacts,
 } from "@/lib/schemas/tax-return-facts";
@@ -97,18 +99,27 @@ export function parseTaxReturnFactsJson(raw: string): {
 
   const template = emptyTaxReturnFacts(taxYear);
 
-  // scheduleA's template value is null, so conform() can't learn its shape from
-  // the template — conform it explicitly when the AI returned an object.
-  const deductions = rawFacts.deductions as Record<string, unknown> | undefined;
-  if (deductions && typeof deductions.scheduleA === "object" && deductions.scheduleA !== null) {
-    const scheduleATemplate = {
-      saltPaid: null, saltDeducted: null, mortgageInterest: null,
-      charitableCash: null, charitableNonCash: null, medical: null,
-    };
-    deductions.scheduleA = conform(
-      scheduleATemplate, deductions.scheduleA, "facts.deductions.scheduleA", warnings,
-    );
-  }
+  // A nullable nested block (scheduleA, scheduleE) has a template value of
+  // null, so conform() reads it as a scalar and hands the AI's object straight
+  // through — unknown keys and all, which the strict schema then rejects,
+  // failing the WHOLE extraction over one stray field. Conform each block
+  // explicitly against its own shape instead.
+  const conformBlock = (
+    parent: unknown,
+    key: string,
+    blockTemplate: Record<string, unknown>,
+    path: string,
+  ) => {
+    if (typeof parent !== "object" || parent === null) return;
+    const owner = parent as Record<string, unknown>;
+    const block = owner[key];
+    if (typeof block === "object" && block !== null && !Array.isArray(block)) {
+      owner[key] = conform(blockTemplate, block, path, warnings);
+    }
+  };
+
+  conformBlock(rawFacts.deductions, "scheduleA", emptyScheduleA(), "facts.deductions.scheduleA");
+  conformBlock(rawFacts.income, "scheduleE", emptyScheduleE(), "facts.income.scheduleE");
 
   const conformed = conform(template, { ...rawFacts, taxYear }, "facts", warnings);
 

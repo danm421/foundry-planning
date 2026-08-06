@@ -28,6 +28,57 @@ const scheduleASchema = z
   })
   .strict();
 
+/**
+ * Schedule E Part I detail, TOTALLED across every rental property on the
+ * return. `income.scheduleENet` already carries the bottom line (Sched 1
+ * line 5), so the net is deliberately NOT restated here — this block exists to
+ * answer the questions the net alone cannot:
+ *
+ *  - `grossRents` is the actual money the properties collected. A rental that
+ *    nets to a LOSS after depreciation still produced real rent, and before
+ *    this block existed that figure had nowhere to live: a $19,600 rental
+ *    showing a $6,141 loss looked identical to no rental at all.
+ *  - `depreciation` is a NON-CASH deduction, so cash flow is roughly
+ *    `scheduleENet + depreciation` — the loss-on-paper / positive-in-cash case
+ *    this app exists to model.
+ *  - `suspendedPassiveLoss` is the §469 loss the return could NOT use this
+ *    year (Form 8582). It carries forward, so it is a future-year tax asset.
+ *
+ * Per-PROPERTY breakdown is deliberately out of scope here: these facts are a
+ * single-year 1040 snapshot for tax analysis, and the import wizard already
+ * emits one income row per property for plan building.
+ */
+const scheduleESchema = z
+  .object({
+    grossRents: money,           // Sched E line 3, all properties
+    totalExpenses: money,        // line 20
+    depreciation: money,         // line 18 (non-cash)
+    mortgageInterest: money,     // line 12
+    propertyTaxes: money,        // line 16
+    suspendedPassiveLoss: money, // Form 8582 unallowed loss; positive number
+  })
+  .strict();
+
+export type ScheduleAFacts = z.infer<typeof scheduleASchema>;
+export type ScheduleEFacts = z.infer<typeof scheduleESchema>;
+
+/**
+ * Canonical all-null blocks. Both the extraction conformer (which needs the
+ * shape as a template) and the review form (which needs it as initial state)
+ * read these, so adding a field to a block above can no longer leave either
+ * site silently behind. Functions, not shared constants — callers treat the
+ * result as their own mutable state.
+ */
+export const emptyScheduleA = (): ScheduleAFacts => ({
+  saltPaid: null, saltDeducted: null, mortgageInterest: null,
+  charitableCash: null, charitableNonCash: null, medical: null,
+});
+
+export const emptyScheduleE = (): ScheduleEFacts => ({
+  grossRents: null, totalExpenses: null, depreciation: null,
+  mortgageInterest: null, propertyTaxes: null, suspendedPassiveLoss: null,
+});
+
 export const taxReturnFactsSchema = z
   .object({
     taxYear: z.number().int().min(TAX_RETURN_MIN_YEAR).max(TAX_RETURN_MAX_YEAR),
@@ -53,6 +104,16 @@ export const taxReturnFactsSchema = z
         netShortTermGain: money,      // Sched D line 7
         scheduleCNet: money,          // Sched 1 line 3
         scheduleENet: money,          // Sched 1 line 5
+        /**
+         * `.default(null)` is LOAD-BEARING, not decoration. `parseRowFacts`
+         * re-validates ALREADY-PERSISTED jsonb through this schema on every
+         * read, and every row written before this field existed has no
+         * `scheduleE` key. A plain `.nullable()` still requires the key, so it
+         * would fail those rows and blank the Tax Analysis tab for every
+         * existing client. The default makes the key optional on INPUT while
+         * keeping the output type non-optional. Do not "tidy" it away.
+         */
+        scheduleE: scheduleESchema.nullable().default(null),
         unemployment: money,          // Sched 1 line 7
         otherIncome: money,           // Sched 1 line 9 remainder
         totalIncome: money,           // 1040 line 9
@@ -120,7 +181,7 @@ export function emptyTaxReturnFacts(taxYear: number): TaxReturnFacts {
       pensionsGross: null, pensionsTaxable: null,
       ssBenefitsGross: null, ssBenefitsTaxable: null,
       capitalGainOrLoss: null, netLongTermGain: null, netShortTermGain: null,
-      scheduleCNet: null, scheduleENet: null, unemployment: null,
+      scheduleCNet: null, scheduleENet: null, scheduleE: null, unemployment: null,
       otherIncome: null, totalIncome: null, adjustmentsToIncome: null,
       agi: null,
     },
