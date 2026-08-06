@@ -21,9 +21,13 @@ import type { ClientSearchResult } from "@/lib/client-search";
  * Portal tab where the invite state is visible.
  */
 
+// py-3 is not arbitrary: it matches `.btn-primary`'s own 0.75rem padding, so the
+// inputs and the Send button end up the same height. That class lives unlayered
+// in globals.css and outranks any Tailwind padding utility on the button, so the
+// row has to be squared up from the input side.
 const inputCls =
-  "w-full rounded-[var(--radius-sm)] border border-hair bg-paper px-3 py-2 text-[14px] text-ink outline-none focus:border-accent";
-const labelCls = "block mb-1 text-[12px] text-ink-3";
+  "w-full rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-3 text-[14px] text-ink outline-none transition-colors placeholder:text-ink-4 hover:border-hair-2 focus:border-accent focus:ring-1 focus:ring-accent";
+const labelCls = "mb-1.5 block text-[12px] font-medium text-ink-2";
 
 export default function SendIntakeForm() {
   const router = useRouter();
@@ -100,12 +104,21 @@ export default function SendIntakeForm() {
   }
 
   return (
-    <div className="rounded-[var(--radius-sm)] border border-hair bg-card p-5">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-4">
-          Send intake form
-        </h2>
-        <div className="flex items-center gap-1" role="group" aria-label="Recipient">
+    <section className="overflow-hidden rounded-[var(--radius-md)] border border-hair bg-card">
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 border-b border-hair px-5 py-4">
+        <div className="min-w-0">
+          <h2 className="text-[15px] font-semibold text-ink">Send an intake form</h2>
+          <p className="mt-0.5 text-[13px] text-ink-3">
+            {recipientKind === "client"
+              ? "Answers merge onto the client's existing plan when you apply the form."
+              : "Answers create a new household when you apply the form."}
+          </p>
+        </div>
+        <div
+          className="flex shrink-0 items-center gap-0.5 rounded-full border border-hair bg-card-2 p-0.5"
+          role="group"
+          aria-label="Recipient"
+        >
           <KindButton
             label="New prospect"
             active={recipientKind === "prospect"}
@@ -119,19 +132,23 @@ export default function SendIntakeForm() {
         </div>
       </div>
 
+      <div className="px-5 py-5">
       {recipientKind === "client" && (
-        <div className="mb-3">
+        <div className="mb-4">
           {selected ? (
-            <div className="flex items-center gap-3 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-2">
-              <span className="flex-1 truncate text-[14px] text-ink">{selected.householdTitle}</span>
-              <button
-                type="button"
-                onClick={() => setSelected(null)}
-                className="shrink-0 text-[12px] text-accent hover:underline"
-              >
-                Change
-              </button>
-            </div>
+            <>
+              <span className={labelCls}>Client</span>
+              <div className="flex items-center gap-3 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-2.5">
+                <span className="flex-1 truncate text-[14px] text-ink">{selected.householdTitle}</span>
+                <button
+                  type="button"
+                  onClick={() => setSelected(null)}
+                  className="shrink-0 text-[12px] font-medium text-accent hover:underline"
+                >
+                  Change
+                </button>
+              </div>
+            </>
           ) : (
             <ClientPicker onPick={pickClient} />
           )}
@@ -162,7 +179,7 @@ export default function SendIntakeForm() {
               not the order they're written here. */}
           <label
             htmlFor="recipient-last-name"
-            className="mb-1 flex items-center gap-1.5 text-[12px] text-ink-3"
+            className="mb-1.5 flex items-center gap-1.5 text-[12px] font-medium text-ink-2"
           >
             Last name
             <FieldTooltip text="The client types this and their email to open the form link. Leave it blank and the link opens on email alone." />
@@ -193,29 +210,24 @@ export default function SendIntakeForm() {
         <button
           type="submit"
           disabled={sending}
-          className="btn-primary shrink-0 rounded-[var(--radius-sm)] bg-accent px-5 py-2 text-[14px] font-medium text-accent-on transition-opacity hover:opacity-90 disabled:opacity-50"
+          className="btn-primary shrink-0 text-[14px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50"
         >
           {sending ? "Sending…" : "Send"}
         </button>
       </form>
 
-      <p className="mt-2 text-[12px] text-ink-4">
-        {recipientKind === "client"
-          ? "Answers merge onto the client's existing plan when you apply the form."
-          : "Answers create a new household when you apply the form."}
-      </p>
-
       {error && (
-        <p role="alert" className="mt-2 text-[13px] text-crit">
+        <p role="alert" className="mt-3 text-[13px] text-crit">
           {error}
         </p>
       )}
       {success && (
-        <p role="status" className="mt-2 text-[13px] text-good">
+        <p role="status" className="mt-3 text-[13px] text-good">
           Intake form sent.
         </p>
       )}
-    </div>
+      </div>
+    </section>
   );
 }
 
@@ -233,11 +245,11 @@ function KindButton({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={
+      className={`rounded-full px-3 py-1.5 text-[12px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
         active
-          ? "rounded-[var(--radius-sm)] bg-accent-wash px-2.5 py-1 text-[12px] font-medium text-ink"
-          : "rounded-[var(--radius-sm)] border border-hair px-2.5 py-1 text-[12px] text-ink-3 hover:text-ink"
-      }
+          ? "bg-accent-wash font-medium text-accent"
+          : "text-ink-3 hover:text-ink"
+      }`}
     >
       {label}
     </button>
@@ -271,7 +283,7 @@ function ClientPicker({ onPick }: { onPick: (hit: ClientSearchResult) => void })
         <ul
           id="intake-client-listbox"
           role="listbox"
-          className="absolute inset-x-0 top-full z-30 mt-1 overflow-hidden rounded-[var(--radius-sm)] border border-hair-2 bg-card-2"
+          className="absolute inset-x-0 top-full z-30 mt-1 overflow-hidden rounded-[var(--radius-md)] border border-hair-2 bg-card-2 shadow-lg shadow-black/20"
         >
           {results.length === 0 ? (
             <li className="px-3 py-2 text-[13px] text-ink-4">No matches</li>

@@ -1,50 +1,78 @@
 import Link from "next/link";
 import { requireOrgId } from "@/lib/db-helpers";
 import { listFormsForFirm } from "@/lib/intake/queries";
-import Queue from "@/components/intake/admin/queue";
+import Queue, { type QueueGroup } from "@/components/intake/admin/queue";
 import SendIntakeForm from "@/components/intake/admin/send-intake-form";
+import { ExternalLinkIcon, PencilIcon } from "@/components/icons";
+
+const headerActionCls =
+  "inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-hair px-3 py-1.5 text-[13px] text-ink-2 transition-colors hover:border-hair-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
 export default async function DataCollectionPage() {
   const orgId = await requireOrgId();
   const forms = await listFormsForFirm(orgId);
 
-  const groups = [
-    { label: "Needs review", forms: forms.filter((f) => f.status === "submitted") },
-    { label: "In flight", forms: forms.filter((f) => f.status === "draft") },
+  // Order is the tab order: what you're waiting on, then what's waiting on you,
+  // then the record. History stays a tab rather than a separate page so applied
+  // and discarded forms are still one click from here.
+  const groups: QueueGroup[] = [
+    {
+      label: "In flight",
+      forms: forms.filter((f) => f.status === "draft"),
+      empty: "No forms are out with a client right now.",
+    },
+    {
+      label: "Needs review",
+      forms: forms.filter((f) => f.status === "submitted"),
+      empty: "Nothing to review. Submitted forms land here.",
+    },
     {
       label: "History",
-      forms: forms.filter((f) =>
-        f.status === "applied" || f.status === "discarded" || f.status === "expired",
+      forms: forms.filter(
+        (f) => f.status === "applied" || f.status === "discarded" || f.status === "expired",
       ),
+      empty: "No applied or discarded forms yet.",
     },
   ];
 
+  // `w-full min-w-0`: the app shell's `main` is a flex container, so without it
+  // this page inherits `min-width: auto` and inflates to its widest descendant's
+  // min-content — the tab strip. Pinned to the column width, the strip scrolls
+  // itself instead of pushing the page past a narrow viewport.
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
-      <div className="mb-8">
-        <h1 className="text-[24px] font-semibold leading-tight tracking-[-0.02em] text-ink">
-          Data Collection
-        </h1>
-        <p className="mt-1 text-[14px] text-ink-3">
-          Review submitted intake forms and send new ones to clients and prospects.
-        </p>
-        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1">
-          <Link href="/data-collection/email-settings"
-            className="text-[13px] font-medium text-accent hover:underline">
-            Customize invitation email →
+    <div className="mx-auto w-full min-w-0 max-w-4xl px-6 py-10 sm:px-8 lg:py-12">
+      <header className="mb-8 flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+        <div className="min-w-0">
+          <h1 className="text-[32px] font-semibold leading-[1.15] tracking-[-0.025em] text-ink">
+            Data Collection<span className="dot">.</span>
+          </h1>
+          <p className="mt-2 max-w-[52ch] text-[15px] leading-[1.55] text-ink-2">
+            Send an intake form, then review what comes back before it touches a plan.
+          </p>
+        </div>
+        {/* No `shrink-0` here: it would pin the group at its two-buttons-wide
+            max-content and push the whole header past a narrow viewport. Let it
+            shrink and the inner wrap stack the buttons instead. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href="/data-collection/email-settings" className={headerActionCls}>
+            <PencilIcon width={14} height={14} aria-hidden="true" />
+            Invitation email
           </Link>
           <a
             href="/data-collection/preview"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[13px] font-medium text-accent hover:underline">
-            Preview form ↗
+            className={headerActionCls}
+          >
+            <ExternalLinkIcon width={14} height={14} aria-hidden="true" />
+            Preview form
           </a>
         </div>
-      </div>
-      <div className="space-y-8">
-        <Queue groups={groups} />
+      </header>
+
+      <div className="space-y-10">
         <SendIntakeForm />
+        <Queue groups={groups} />
       </div>
     </div>
   );

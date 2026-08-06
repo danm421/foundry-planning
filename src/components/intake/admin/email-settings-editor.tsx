@@ -138,7 +138,7 @@ export default function EmailSettingsEditor({ initial, advisorName, advisorEmail
 
       {/* Preview */}
       <div className="rounded-[var(--radius-sm)] border border-hair bg-card p-5">
-        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-4">Preview</h2>
+        <h2 className="mb-3 text-[15px] font-semibold text-ink">Preview</h2>
         <div className="mb-3 rounded-[var(--radius-sm)] border border-hair bg-paper px-3 py-2 text-[12px] text-ink-3">
           <div><span className="text-ink-4">From:</span> {previewFrom}</div>
           <div><span className="text-ink-4">Subject:</span> {previewSubject}</div>
