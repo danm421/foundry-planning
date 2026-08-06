@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   taxReturnFactsSchema,
   emptyTaxReturnFacts,
+  emptyBusiness,
+  emptyK1,
   TAX_RETURN_MIN_YEAR,
 } from "../tax-return-facts";
 
@@ -82,5 +84,100 @@ describe("taxReturnFactsSchema", () => {
     };
     facts.tax.totalTax = 41180;
     expect(taxReturnFactsSchema.safeParse(facts).success).toBe(true);
+  });
+
+  // Same paired shape as the scheduleE guard above: the first test proves the
+  // new keys are optional on INPUT, the second proves the schema did not
+  // become lenient about missing keys generally.
+  it("accepts a persisted facts blob written before the v2 blocks existed", () => {
+    const legacy = emptyTaxReturnFacts(2025) as Record<string, unknown>;
+    const income = { ...(legacy.income as Record<string, unknown>) };
+    const deductions = { ...(legacy.deductions as Record<string, unknown>) };
+    delete income.adjustmentsDetail;
+    delete deductions.qbi;
+    delete legacy.businesses;
+    delete legacy.k1s;
+    legacy.income = income;
+    legacy.deductions = deductions;
+
+    const parsed = taxReturnFactsSchema.safeParse(legacy);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    // Defaulted, not merely absent — downstream reads these unguarded.
+    expect(parsed.data.income.adjustmentsDetail).toBeNull();
+    expect(parsed.data.deductions.qbi).toBeNull();
+    expect(parsed.data.businesses).toEqual([]);
+    expect(parsed.data.k1s).toEqual([]);
+  });
+
+  it("accepts a persisted ENTITY written before entityId existed", () => {
+    // Same production trap one level down: `parseRowFacts` re-validates
+    // persisted jsonb on every read, and every entity written before identity
+    // was stamped has no `entityId` key. A plain `.nullable()` here would fail
+    // those rows and blank the whole Tax Analysis tab.
+    const legacy = emptyTaxReturnFacts(2025) as Record<string, unknown>;
+    const k1 = { ...emptyK1() } as Record<string, unknown>;
+    delete k1.entityId;
+    const business = { ...emptyBusiness() } as Record<string, unknown>;
+    delete business.entityId;
+    legacy.k1s = [k1];
+    legacy.businesses = [business];
+
+    const parsed = taxReturnFactsSchema.safeParse(legacy);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    // Defaulted, not merely absent — `entityKey` reads it unguarded.
+    expect(parsed.data.k1s[0].entityId).toBeNull();
+    expect(parsed.data.businesses[0].entityId).toBeNull();
+  });
+
+  it("still rejects a facts blob missing a pre-existing deductions key", () => {
+    const broken = emptyTaxReturnFacts(2025) as Record<string, unknown>;
+    const deductions = { ...(broken.deductions as Record<string, unknown>) };
+    delete deductions.qbiDeduction;
+    broken.deductions = deductions;
+    expect(taxReturnFactsSchema.safeParse(broken).success).toBe(false);
+  });
+
+  it("accepts populated v2 blocks and rejects unknown keys inside them", () => {
+    const facts = emptyTaxReturnFacts(2025);
+    facts.deductions.qbi = {
+      qualifiedBusinessIncome: 180000, reitPtpDividends: 0,
+      w2Wages: 60000, ubia: 0, sstbPresent: false,
+    };
+    facts.income.adjustmentsDetail = {
+      seTaxDeduction: 12000, sepSimpleSolo401k: 0,
+      selfEmployedHealthInsurance: 9600, hsaDeduction: 0,
+    };
+    facts.businesses = [{
+      entityId: null, name: "Mueller Consulting", netProfit: 180000, grossReceipts: 240000,
+      totalExpenses: 60000, depreciation: 4000, isSstb: false,
+    }];
+    facts.k1s = [{
+      entityId: null, entityName: "Ridge Partners LLC", ein: "12-3456789",
+      entityType: "partnership",
+      ordinaryBusinessIncome: 42000, rentalIncome: null, guaranteedPayments: 30000,
+      section179: 0, w2WagesFromEntity: null, qbiIncome: 42000, isSstb: false,
+    }];
+    expect(taxReturnFactsSchema.safeParse(facts).success).toBe(true);
+
+    const bogus = {
+      ...facts,
+      k1s: [{ ...facts.k1s[0], box20Code: "Z" }],
+    };
+    expect(taxReturnFactsSchema.safeParse(bogus).success).toBe(false);
+  });
+
+  it("rejects an unknown entityType", () => {
+    const facts = emptyTaxReturnFacts(2025);
+    const bad = {
+      ...facts,
+      k1s: [{
+        entityName: "X", ein: null, entityType: "c_corp",
+        ordinaryBusinessIncome: null, rentalIncome: null, guaranteedPayments: null,
+        section179: null, w2WagesFromEntity: null, qbiIncome: null, isSstb: null,
+      }],
+    };
+    expect(taxReturnFactsSchema.safeParse(bad).success).toBe(false);
   });
 });

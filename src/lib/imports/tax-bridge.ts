@@ -1,5 +1,5 @@
 import { extractTaxReturnFacts } from "@/lib/tax-returns/extract-facts";
-import { upsertExtracted } from "@/lib/tax-returns/store";
+import { getTaxReturn, upsertExtracted } from "@/lib/tax-returns/store";
 import type { UploadKind } from "@/lib/extraction/validate-upload";
 
 /**
@@ -31,9 +31,21 @@ export async function bridgeTaxReturn(args: {
       model: args.model,
     });
 
+    const taxYear = extracted.facts.taxYear;
+    const existing = await getTaxReturn(args.clientId, taxYear);
+    if (existing) {
+      // The import pipeline must never clobber a year an advisor has already
+      // reviewed and corrected. The Tax Analysis upload route asks before
+      // replacing; this path has no UI to ask from, so it declines.
+      return {
+        ok: false,
+        warning: `A ${taxYear} tax return already exists for this client and was left unchanged. The document was still imported — replace the year from the Tax Analysis tab if you want these figures.`,
+      };
+    }
+
     await upsertExtracted({
       clientId: args.clientId,
-      taxYear: extracted.facts.taxYear,
+      taxYear,
       facts: extracted.facts,
       warnings: extracted.warnings,
       promptVersion: extracted.promptVersion,

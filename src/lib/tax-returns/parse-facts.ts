@@ -3,6 +3,10 @@ import {
   emptyTaxReturnFacts,
   emptyScheduleA,
   emptyScheduleE,
+  emptyQbi,
+  emptyAdjustmentsDetail,
+  emptyBusiness,
+  emptyK1,
   TAX_RETURN_MIN_YEAR,
   type TaxReturnFacts,
 } from "@/lib/schemas/tax-return-facts";
@@ -39,6 +43,22 @@ function conform(
       return typeof template === "number" ? template : value === "" ? null : value;
     }
     return value === undefined ? template : value;
+  }
+  if (Array.isArray(template)) {
+    // An array template carries its element shape at index 0 — seeded onto
+    // `seeded.businesses`/`seeded.k1s` just before the conform(seeded, ...)
+    // call below. A bare [] means "no element shape", which only happens for
+    // a template we forgot to seed.
+    const elementTemplate = (template as unknown[])[0];
+    if (value === null || value === undefined) return [];
+    if (!Array.isArray(value)) {
+      warnings.push(`Expected an array at ${path} — dropped`);
+      return [];
+    }
+    if (elementTemplate === undefined) return [];
+    return value.map((element, i) =>
+      conform(elementTemplate, element, `${path}.${i}`, warnings),
+    );
   }
   if (typeof template === "object" && template !== null) {
     // A missing section (income/deductions/tax/...) defaults to the empty template.
@@ -120,8 +140,17 @@ export function parseTaxReturnFactsJson(raw: string): {
 
   conformBlock(rawFacts.deductions, "scheduleA", emptyScheduleA(), "facts.deductions.scheduleA");
   conformBlock(rawFacts.income, "scheduleE", emptyScheduleE(), "facts.income.scheduleE");
+  conformBlock(rawFacts.deductions, "qbi", emptyQbi(), "facts.deductions.qbi");
+  conformBlock(rawFacts.income, "adjustmentsDetail", emptyAdjustmentsDetail(), "facts.income.adjustmentsDetail");
 
-  const conformed = conform(template, { ...rawFacts, taxYear }, "facts", warnings);
+  // conform() needs an element shape to recurse into; emptyTaxReturnFacts
+  // returns bare [] because that is what the schema's `.default([])` produces.
+  const seeded = {
+    ...template,
+    businesses: [emptyBusiness()],
+    k1s: [emptyK1()],
+  };
+  const conformed = conform(seeded, { ...rawFacts, taxYear }, "facts", warnings);
 
   const result = taxReturnFactsSchema.safeParse(conformed);
   if (!result.success) {

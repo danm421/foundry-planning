@@ -112,4 +112,62 @@ describe("parseTaxReturnFactsJson", () => {
       TaxReturnParseError,
     );
   });
+
+  it("preserves entity arrays instead of flattening them to an object", () => {
+    const raw = JSON.stringify({
+      isAmended: false,
+      facts: {
+        taxYear: 2025,
+        k1s: [
+          { entityName: "Ridge Partners LLC", ein: "12-3456789",
+            entityType: "partnership", ordinaryBusinessIncome: 42000,
+            rentalIncome: null, guaranteedPayments: "30,000", section179: null,
+            w2WagesFromEntity: null, qbiIncome: 42000, isSstb: false },
+        ],
+        businesses: [],
+      },
+    });
+
+    const { facts, warnings } = parseTaxReturnFactsJson(raw);
+
+    expect(Array.isArray(facts.k1s)).toBe(true);
+    expect(facts.k1s).toHaveLength(1);
+    expect(facts.k1s[0].entityName).toBe("Ridge Partners LLC");
+    // Per-element string coercion still applies inside the array.
+    expect(facts.k1s[0].guaranteedPayments).toBe(30000);
+    expect(warnings.some((w) => w.includes("k1s.0.guaranteedPayments"))).toBe(true);
+  });
+
+  it("drops unknown keys inside an array element with a warning", () => {
+    const raw = JSON.stringify({
+      isAmended: false,
+      facts: {
+        taxYear: 2025,
+        k1s: [
+          { entityName: "X", ein: null, entityType: null,
+            ordinaryBusinessIncome: null, rentalIncome: null,
+            guaranteedPayments: null, section179: null, w2WagesFromEntity: null,
+            qbiIncome: null, isSstb: null, box20Code: "Z" },
+        ],
+      },
+    });
+
+    const { facts, warnings } = parseTaxReturnFactsJson(raw);
+
+    expect(facts.k1s).toHaveLength(1);
+    expect(warnings.some((w) => w.includes("box20Code"))).toBe(true);
+  });
+
+  it("coerces a non-array into an empty array rather than failing the parse", () => {
+    const raw = JSON.stringify({
+      isAmended: false,
+      facts: { taxYear: 2025, k1s: null, businesses: "none" },
+    });
+
+    const { facts, warnings } = parseTaxReturnFactsJson(raw);
+
+    expect(facts.k1s).toEqual([]);
+    expect(facts.businesses).toEqual([]);
+    expect(warnings.some((w) => w.includes("businesses"))).toBe(true);
+  });
 });
