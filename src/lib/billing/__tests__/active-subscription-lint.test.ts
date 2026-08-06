@@ -326,6 +326,10 @@ const ALLOWLIST: Record<string, string> = {
   // gate via their own sub helpers. The three below are deliberately exempt:
   "src/app/api/intake/[token]/route.ts":
     "public token-scoped autosave — staging-only (writes only intake_forms.payload, never live data); firm-active is gated at submit",
+  "src/app/api/intake/[token]/documents/route.ts":
+    "public token-scoped document upload — same shape as the autosave above: no Clerk org session exists to check, authorization IS the intake identity gate, and it writes only the client's own staged attachments; firm-active is gated at submit",
+  "src/app/api/intake/[token]/documents/[docId]/route.ts":
+    "public token-scoped delete of a document the same client just uploaded, draft-only — no live planning data, and refusing it on a lapsed subscription would strand a client with a mis-uploaded file they cannot remove",
   "src/app/api/data-collection/[id]/discard/route.ts":
     "advisor lifecycle — flips a form to discarded; writes no live planning data",
   "src/app/api/data-collection/[id]/revoke/route.ts":
