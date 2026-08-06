@@ -135,16 +135,6 @@ export type AdjustmentsDetailFacts = z.infer<typeof adjustmentsDetailSchema>;
 export type BusinessFacts = z.infer<typeof businessSchema>;
 export type K1Facts = z.infer<typeof k1Schema>;
 
-export const emptyQbi = (): QbiFacts => ({
-  qualifiedBusinessIncome: null, reitPtpDividends: null,
-  w2Wages: null, ubia: null, sstbPresent: null,
-});
-
-export const emptyAdjustmentsDetail = (): AdjustmentsDetailFacts => ({
-  seTaxDeduction: null, sepSimpleSolo401k: null,
-  selfEmployedHealthInsurance: null, hsaDeduction: null,
-});
-
 export type ScheduleAFacts = z.infer<typeof scheduleASchema>;
 export type ScheduleEFacts = z.infer<typeof scheduleESchema>;
 
@@ -163,6 +153,27 @@ export const emptyScheduleA = (): ScheduleAFacts => ({
 export const emptyScheduleE = (): ScheduleEFacts => ({
   grossRents: null, totalExpenses: null, depreciation: null,
   mortgageInterest: null, propertyTaxes: null, suspendedPassiveLoss: null,
+});
+
+export const emptyQbi = (): QbiFacts => ({
+  qualifiedBusinessIncome: null, reitPtpDividends: null,
+  w2Wages: null, ubia: null, sstbPresent: null,
+});
+
+export const emptyAdjustmentsDetail = (): AdjustmentsDetailFacts => ({
+  seTaxDeduction: null, sepSimpleSolo401k: null,
+  selfEmployedHealthInsurance: null, hsaDeduction: null,
+});
+
+export const emptyBusiness = (): BusinessFacts => ({
+  name: null, netProfit: null, grossReceipts: null,
+  totalExpenses: null, depreciation: null, isSstb: null,
+});
+
+export const emptyK1 = (): K1Facts => ({
+  entityName: null, ein: null, entityType: null,
+  ordinaryBusinessIncome: null, rentalIncome: null, guaranteedPayments: null,
+  section179: null, w2WagesFromEntity: null, qbiIncome: null, isSstb: null,
 });
 
 export const taxReturnFactsSchema = z
