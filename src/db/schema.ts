@@ -610,6 +610,7 @@ export const crmDocumentSourceKindEnum = pgEnum("crm_document_source_kind", [
   "upload",
   "generated_plan",
   "import_ref",
+  "intake_upload",
 ]);
 
 // ── CRM tables ───────────────────────────────────────────────────────────────
@@ -2707,7 +2708,13 @@ export const taxReturnDocuments = pgTable("tax_return_documents", {
   model: text("model"),
   taxYear: integer("tax_year").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (t) => [
+  // Postgres does not index the referencing side of a foreign key. This column
+  // is both the only query predicate the table has (listDocuments, which runs
+  // on every recompute AND every read of the Tax Analysis tab) and what
+  // Postgres scans on every `DELETE FROM tax_returns` cascade.
+  index("tax_return_documents_return_idx").on(t.taxReturnId),
+]);
 
 /**
  * 1:1 with tax_returns. Deliberately a SIDE TABLE rather than columns on
@@ -5499,6 +5506,14 @@ export const intakeForms = pgTable("intake_forms", {
   id: uuid("id").defaultRandom().primaryKey(),
   firmId: text("firm_id").notNull(),
   clientId: uuid("client_id").references(() => clients.id, { onDelete: "set null" }),
+  // Prospect forms have no client (and therefore no household) until applyIntake
+  // runs. A document upload needs a household NOW, so the first upload mints one
+  // and parks its id here; applyIntake then adopts it instead of inserting a
+  // second household. Null for prefilled/existing-client forms, which resolve
+  // through clients.crmHouseholdId.
+  crmHouseholdId: uuid("crm_household_id").references(() => crmHouseholds.id, {
+    onDelete: "set null",
+  }),
   mode: intakeModeEnum("mode").notNull(),
   status: intakeStatusEnum("status").notNull().default("draft"),
   token: text("token").notNull(),

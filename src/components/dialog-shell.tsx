@@ -116,7 +116,12 @@ export default function DialogShell({
   useEffect(() => {
     if (!open) return;
     const opener = document.activeElement as HTMLElement | null;
-    surfaceRef.current?.focus();
+    // Prefer a field the dialog marked as its entry point (data-autofocus) so
+    // the user can start typing right away. React's own autoFocus can't be used
+    // here: it fires on child mount, and this parent effect would steal focus
+    // back to the surface immediately after.
+    const initial = surfaceRef.current?.querySelector<HTMLElement>("[data-autofocus]");
+    (initial ?? surfaceRef.current)?.focus();
 
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== "Tab") return;

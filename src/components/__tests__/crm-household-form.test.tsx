@@ -40,6 +40,11 @@ function submitCreate(container: HTMLElement) {
   fireEvent.submit(container.querySelector("form")!);
 }
 
+it("focuses First name on mount so the advisor can type straight after 'New household'", () => {
+  render(<CrmHouseholdForm mode="create" />);
+  expect(document.activeElement).toBe(screen.getByLabelText(/^first name$/i));
+});
+
 it("keeps the name in sync with the contacts until the box is ticked", () => {
   render(<CrmHouseholdForm mode="create" />);
   fireEvent.change(screen.getByLabelText(/^first name$/i), { target: { value: "John" } });

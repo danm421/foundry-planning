@@ -19,17 +19,23 @@ vi.mock("@/components/intake/intake-wizard", () => ({
     onChange,
     mode,
     branding,
+    token,
+    sampleUploads,
   }: {
     onSubmit: () => Promise<void>;
     onChange: (d: unknown) => void;
     value: unknown;
     mode: string;
     branding?: { firmName: string } | null;
+    token?: string;
+    sampleUploads?: boolean;
   }) => (
     <div
       data-testid="wizard"
       data-mode={mode}
       data-branding={branding?.firmName ?? "none"}
+      data-token={token ?? "none"}
+      data-sample-uploads={String(sampleUploads ?? false)}
     >
       <button onClick={() => onChange({ family: { primary: { firstName: "Test" } } })}>
         change
@@ -56,6 +62,23 @@ describe("IntakePreview", () => {
 
     expect(screen.getByTestId("wizard")).toHaveAttribute("data-mode", "blank");
     expect(screen.getByText(/nothing is saved or sent/i)).toBeInTheDocument();
+  });
+
+  it("asks for the inert upload sample, and hands the wizard no token to post with", () => {
+    render(<IntakePreview />);
+
+    const wizard = screen.getByTestId("wizard");
+    expect(wizard).toHaveAttribute("data-sample-uploads", "true");
+    // The point of the sample: the preview shows the upload UI WITHOUT holding a
+    // credential. A placeholder token here would satisfy the live zone's gate
+    // and put a bogus value into the routes' only means of authorization.
+    expect(wizard).toHaveAttribute("data-token", "none");
+  });
+
+  it("says the uploads are a sample, since the banner promises an exact likeness", () => {
+    render(<IntakePreview />);
+
+    expect(screen.getByText(/the document uploads are a sample/i)).toBeInTheDocument();
   });
 
   it("does not call fetch when the form changes", async () => {

@@ -1518,6 +1518,11 @@ export interface ProjectionYear {
   expenses: {
     living: number;
     liabilities: number;
+    /** Includes education-goal cost paid out of household cash flow
+     *  (`payShortfallOutOfPocket`), keyed by the goal's expense id in `bySource`.
+     *  The dedicated-account draw is NOT here — it pays the school straight out of
+     *  the 529 without touching household cash — and neither is an unfunded
+     *  shortfall, which moves no money. See EducationGoalYear. */
     other: number;
     insurance: number;
     realEstate: number;

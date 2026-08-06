@@ -121,6 +121,45 @@ describe("applyEducationFunding", () => {
     expect(y0.accountLedgers["chk"].endingValue).toBeCloseTo(85000, 0);
   });
 
+  it("out-of-pocket spend reports as an Other expense on the cash-flow row", () => {
+    // The cash-flow chart draws its Total Expenses line from `totalExpenses`
+    // and stacks withdrawals as an inflow. An out-of-pocket education spill
+    // that drains checking (and so provokes a gap-fill withdrawal) must appear
+    // on the expense side too, or the bars overshoot the line by the spill.
+    const data = makeData(
+      [checking, p529(5000)],
+      eduExpense({ payShortfallOutOfPocket: true, name: "College" }),
+    );
+    const y0 = runProjection(data)[0];
+
+    expect(y0.expenses.bySource["edu"]).toBeCloseTo(15000, 6);
+    expect(y0.expenses.other).toBeCloseTo(15000, 6);
+    expect(y0.totalExpenses).toBeCloseTo(15000, 6);
+    expect(y0.netCashFlow).toBeCloseTo(-15000, 6);
+  });
+
+  it("an unfunded shortfall is NOT an expense (no cash left the household)", () => {
+    const data = makeData([checking, p529(5000)], eduExpense({}));
+    const y0 = runProjection(data)[0];
+
+    expect(y0.expenses.bySource["edu"]).toBeUndefined();
+    expect(y0.expenses.other).toBe(0);
+    expect(y0.totalExpenses).toBe(0);
+  });
+
+  it("a fully dedicated-funded goal is NOT an expense (the 529 paid the school direct)", () => {
+    // The dedicated draw never touches household cash and never lands in
+    // `withdrawals.total`, so adding it to expenses would push the line ABOVE
+    // the bars — the mirror image of the bug this pass guards.
+    const data = makeData([checking, p529(30000)], eduExpense({ payShortfallOutOfPocket: true }));
+    const y0 = runProjection(data)[0];
+
+    expect(y0.educationGoals!.find((g) => g.goalId === "edu")!.dedicatedWithdrawal).toBe(20000);
+    expect(y0.expenses.bySource["edu"]).toBeUndefined();
+    expect(y0.expenses.other).toBe(0);
+    expect(y0.totalExpenses).toBe(0);
+  });
+
   it("a non-529 taxable dedicated account books ordinary/cap-gains into the year's tax (ordering guard)", () => {
     // A taxable brokerage funding the goal recognizes capital gains on the draw.
     // This case only passes if the education pass runs BEFORE baselineTaxDetail

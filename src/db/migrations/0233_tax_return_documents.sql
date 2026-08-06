@@ -25,4 +25,5 @@ CREATE TABLE "tax_return_state" (
 --> statement-breakpoint
 ALTER TABLE "tax_return_documents" ADD CONSTRAINT "tax_return_documents_tax_return_id_tax_returns_id_fk" FOREIGN KEY ("tax_return_id") REFERENCES "public"."tax_returns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tax_return_documents" ADD CONSTRAINT "tax_return_documents_vault_document_id_crm_household_documents_id_fk" FOREIGN KEY ("vault_document_id") REFERENCES "public"."crm_household_documents"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "tax_return_state" ADD CONSTRAINT "tax_return_state_tax_return_id_tax_returns_id_fk" FOREIGN KEY ("tax_return_id") REFERENCES "public"."tax_returns"("id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "tax_return_state" ADD CONSTRAINT "tax_return_state_tax_return_id_tax_returns_id_fk" FOREIGN KEY ("tax_return_id") REFERENCES "public"."tax_returns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "tax_return_documents_return_idx" ON "tax_return_documents" USING btree ("tax_return_id");

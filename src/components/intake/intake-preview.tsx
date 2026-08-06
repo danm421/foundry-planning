@@ -15,6 +15,12 @@ import type { IntakeHeaderBranding } from "@/components/intake/branding-header";
  * persistent banner marks the page as a non-live preview so a click-through is
  * never mistaken for a real submission.
  *
+ * The upload surface is the one part that can't simply be handed through, since
+ * it posts to a token this page doesn't have. `sampleUploads` renders it inert
+ * instead — real layout, real copy, nothing wired to it — rather than passing a
+ * placeholder token, which would leave a zone that looks live and fails on the
+ * first click.
+ *
  * Compare {@link file://src/app/intake/[token]/intake-client.tsx} — the live
  * wrapper this deliberately strips down.
  */
@@ -41,7 +47,8 @@ export function IntakePreview({
         role="status"
         className="sticky top-0 z-50 bg-accent px-4 py-2 text-center text-[13px] font-medium text-accent-on"
       >
-        Preview — this is exactly what your client sees. Nothing is saved or sent.
+        Preview — this is exactly what your client sees. Nothing is saved or
+        sent, and the document uploads are a sample.
       </div>
       {submitted ? (
         <IntakeThankYou recipientName={null} branding={branding} />
@@ -52,6 +59,7 @@ export function IntakePreview({
           onChange={setValue}
           onSubmit={handleSubmit}
           branding={branding}
+          sampleUploads
         />
       )}
     </div>

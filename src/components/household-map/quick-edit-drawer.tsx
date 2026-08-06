@@ -183,7 +183,7 @@ interface QuickEditDrawerProps {
    * just the children: a grandchild's 529 is an `other`-role member, and the
    * full editor offers the same unfiltered list.
    *
-   * `birthYear` drives the auto-fill (start = the year they turn 16, per
+   * `birthYear` drives the auto-fill (start = the year they turn 18, per
    * `educationGoalYears`) and is nullable, so a member with no DOB just doesn't
    * move the dates.
    */

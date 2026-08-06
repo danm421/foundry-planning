@@ -418,6 +418,9 @@ const getIntakeSubmitLimiter = buildLimiter(10, "1 h", "rl:intake-submit");
 // autosave: 8/hr allows for genuine typos and a spouse's second guess, and
 // nothing like enough for an attacker holding the link to enumerate.
 const getIntakeVerifyLimiter = buildLimiter(8, "1 h", "rl:intake-verify");
+// Document uploads on the public intake link. Lower than autosave — each call
+// carries up to 10MB and writes a live vault row.
+const getIntakeDocumentLimiter = buildLimiter(30, "1 h", "rl:intake-documents");
 
 export async function checkIntakeAutosaveRateLimit(key: string): Promise<RateLimitResult> {
   const limiter = getIntakeAutosaveLimiter();
@@ -433,6 +436,12 @@ export async function checkIntakeSubmitRateLimit(key: string): Promise<RateLimit
 
 export async function checkIntakeVerifyRateLimit(key: string): Promise<RateLimitResult> {
   const limiter = getIntakeVerifyLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
+export async function checkIntakeDocumentRateLimit(key: string): Promise<RateLimitResult> {
+  const limiter = getIntakeDocumentLimiter();
   if (!limiter) return { allowed: false, reason: "unconfigured" };
   return safeLimit(limiter, key);
 }

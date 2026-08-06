@@ -6,6 +6,7 @@ import type { IntakeDraft } from "@/lib/intake/schema";
 import { IntakeWizard } from "@/components/intake/intake-wizard";
 import { IntakeThankYou } from "@/components/intake/thank-you";
 import type { IntakeHeaderBranding } from "@/components/intake/branding-header";
+import type { IntakeDocumentView } from "@/lib/intake/document-types";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -44,6 +45,7 @@ export function IntakeClient({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [documents, setDocuments] = useState<IntakeDocumentView[]>([]);
 
   // Debounce timer ref — cancelled on each new onChange before rescheduling
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -59,6 +61,32 @@ export function IntakeClient({
       if (autosaveAbort.current) autosaveAbort.current.abort();
     };
   }, []);
+
+  // The uploaded-document list lives here, not in the wizard: the wizard
+  // renders it in several places and never fetches anything itself.
+  //
+  // A failed refetch deliberately leaves the previous list on screen rather
+  // than blanking it — the upload zone reports its own failures, and the GET
+  // shares the upload rate-limit bucket, so a burst of retries here would eat
+  // the client's ability to upload.
+  const refreshDocuments = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/intake/${token}/documents`);
+      if (!res.ok) return;
+      const data = (await res.json()) as { documents?: IntakeDocumentView[] };
+      setDocuments(data.documents ?? []);
+    } catch {
+      /* keep whatever is on screen */
+    }
+  }, [token]);
+
+  useEffect(() => {
+    void refreshDocuments();
+  }, [refreshDocuments]);
+
+  const handleDocumentsChanged = useCallback(() => {
+    void refreshDocuments();
+  }, [refreshDocuments]);
 
   const handleChange = useCallback(
     (next: IntakeDraft) => {
@@ -178,6 +206,9 @@ export function IntakeClient({
       busy={busy}
       error={error}
       branding={branding}
+      token={token}
+      documents={documents}
+      onDocumentsChanged={handleDocumentsChanged}
     />
   );
 }

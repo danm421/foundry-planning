@@ -198,7 +198,7 @@ describe("GoalsStep — upcoming goals", () => {
     expect(screen.queryByRole("combobox", { name: /who is this for/i })).toBeNull();
   });
 
-  it("dates an education goal from the student's 16th birthday when the type is picked", () => {
+  it("dates an education goal from the student's 18th birthday when the type is picked", () => {
     const onChange = vi.fn();
     const forEmma: GoalItem = {
       name: "College",
@@ -223,8 +223,8 @@ describe("GoalsStep — upcoming goals", () => {
     });
 
     const goal = onChange.mock.calls[0][0]?.expenseGoals?.[0];
-    // educationGoalYears: born 2014 → funding starts at 16, four years long.
-    expect(goal?.startYear).toBe(2030);
+    // educationGoalYears: born 2014 → funding starts at 18, four years long.
+    expect(goal?.startYear).toBe(2032);
     expect(goal?.years).toBe(4);
   });
 
@@ -246,7 +246,7 @@ describe("GoalsStep — upcoming goals", () => {
       target: { value: "child:0" },
     });
 
-    expect(onChange.mock.calls[0][0]?.expenseGoals?.[0].startYear).toBe(2030);
+    expect(onChange.mock.calls[0][0]?.expenseGoals?.[0].startYear).toBe(2032);
   });
 
   it("leaves the year alone for a beneficiary with no date of birth", () => {

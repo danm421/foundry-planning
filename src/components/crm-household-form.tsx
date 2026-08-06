@@ -157,6 +157,9 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
             <input
               id="firstName"
               name="firstName"
+              // Landing here from "New household" should let the advisor type
+              // immediately — this is always the first field they fill.
+              autoFocus
               required
               maxLength={100}
               value={firstName}

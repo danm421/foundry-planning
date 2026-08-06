@@ -3,7 +3,7 @@
  * The education goal's date auto-fill on the detailed Inflows & Outflows
  * expense form (ExpenseDialog inside IncomeExpensesView) — the same dialog the
  * guided walkthrough's Goals step renders. Picking a beneficiary time-boxes the
- * goal to four years starting the year they turn 16, or the current year once
+ * goal to four years starting the year they turn 18, or the current year once
  * that birthday has passed.
  *
  * Asserted on the SAVE payload, not the year pickers: the payload is what
@@ -40,12 +40,12 @@ const FM_TEEN = "22222222-2222-4222-8222-222222222222";
 const FM_ADULT = "33333333-3333-4333-8333-333333333333";
 const FM_NO_DOB = "44444444-4444-4444-8444-444444444444";
 
-// The four branches of `handleForChange`: a 10-year-old (turns 16 in six
-// years), a 17-year-old (that birthday is already behind them), an adult past
-// 18, and a member with no DOB at all.
+// The four branches of `handleForChange`: a 10-year-old (turns 18 in eight
+// years), an 18-year-old (the boundary — that birthday lands this year), an
+// adult well past 18, and a member with no DOB at all.
 const FAMILY_MEMBERS = [
   { id: FM_CHILD, firstName: "Kelly", role: "child", dateOfBirth: `${NOW - 10}-06-15` },
-  { id: FM_TEEN, firstName: "Rae", role: "child", dateOfBirth: `${NOW - 17}-06-15` },
+  { id: FM_TEEN, firstName: "Rae", role: "child", dateOfBirth: `${NOW - 18}-06-15` },
   { id: FM_ADULT, firstName: "Pat", role: "child", dateOfBirth: `${NOW - 30}-06-15` },
   { id: FM_NO_DOB, firstName: "Sam", role: "child", dateOfBirth: null },
 ];
@@ -102,17 +102,17 @@ describe("ExpenseDialog education date auto-fill", () => {
     expect((screen.getByLabelText(/^name/i) as HTMLInputElement).value).toBe("Kelly - Education");
   });
 
-  it("starts four years at the year a 10-year-old turns 16", async () => {
+  it("starts four years at the year a 10-year-old turns 18", async () => {
     pickEducationFor(FM_CHILD);
 
     const body = await saveAndReadBody();
-    expect(body.startYear).toBe(String(NOW + 6));
-    expect(body.endYear).toBe(String(NOW + 9));
+    expect(body.startYear).toBe(String(NOW + 8));
+    expect(body.endYear).toBe(String(NOW + 11));
   });
 
-  // 16 is already behind a 17-year-old, so the start floors at the current year
-  // rather than landing one year in the past.
-  it("floors the start at the current year for a 17-year-old", async () => {
+  // The boundary: an 18th birthday inside the current year starts now, and is
+  // neither pushed out a year nor floored from somewhere in the past.
+  it("starts this year for a beneficiary who turns 18 this year", async () => {
     pickEducationFor(FM_TEEN);
 
     const body = await saveAndReadBody();

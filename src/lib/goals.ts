@@ -19,16 +19,16 @@ export function isGoalExpense(e: GoalFlaggedExpense): boolean {
 }
 
 /** Funding starts the year the beneficiary turns this age. */
-export const EDUCATION_GOAL_START_AGE = 16;
+export const EDUCATION_GOAL_START_AGE = 18;
 
 /** Length of the default programme, in funded years. */
 export const EDUCATION_GOAL_YEARS = 4;
 
 /**
  * Default start/end years for an education goal, from the beneficiary's birth
- * year: a four-year programme beginning the year they turn 16, or `firstYear`
- * when that birthday has already passed — a beneficiary who is already 16 or
- * older (including one past 18) starts funding now rather than in the past.
+ * year: a four-year programme beginning the year they turn 18, or `firstYear`
+ * when that birthday has already passed — a beneficiary who is already 18 or
+ * older starts funding now rather than in the past.
  *
  * Both ends are INCLUSIVE, the way the engine reads an expense
  * (`year >= startYear && year <= endYear`), so four years is `start + 3`.

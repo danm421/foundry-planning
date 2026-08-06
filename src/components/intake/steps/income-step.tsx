@@ -3,6 +3,10 @@
 import type { IntakeDraft } from "@/lib/intake/schema";
 import { incomeSpanLabel } from "@/lib/intake/income-years";
 import {
+  ContextualUploadZone,
+  type IntakeUploadContext,
+} from "@/components/intake/intake-upload-zone";
+import {
   CardList,
   MoneyInput,
   OwnerField,
@@ -29,6 +33,8 @@ export interface IncomeStepProps {
   spouseName?: string;
   /** When false, only the client is offered as an owner. */
   hasSpouse?: boolean;
+  /** Present only on the public wizard; omit and no upload zone renders. */
+  uploads?: IntakeUploadContext;
 }
 
 // ─── Options ─────────────────────────────────────────────────────────────────
@@ -65,6 +71,7 @@ export function IncomeStep({
   clientName,
   spouseName,
   hasSpouse = false,
+  uploads,
 }: IncomeStepProps) {
   const income = value ?? [];
   const ownerOpts = ownerOptions({ clientName, spouseName, hasSpouse });
@@ -88,136 +95,144 @@ export function IncomeStep({
   }
 
   return (
-    <CardList
-      addLabel="Add income"
-      emptyMessage="No income sources added yet"
-      emptyHint="Add salary, Social Security, business, and any other income."
-      items={income}
-      kpis={[
-        { label: "Total annual income", value: money(total) },
-        { label: "Income sources", value: String(income.length) },
-      ]}
-      onAdd={addIncome}
-      onRemove={removeIncome}
-      renderSummary={(item) => ({
-        title: item.name?.trim() || "Untitled income",
-        subtitle: `${labelFor(TYPE_OPTIONS, item.type)} · ${labelFor(ownerOpts, item.owner)} · ${incomeSpanLabel(item, currentYear)}`,
-        amount: item.annualAmount,
-      })}
-      renderItem={(item, i) => {
-        const idp = `income-${i}`;
-        const endsAtRetirement = item.endsAtRetirement ?? false;
-        return (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {/* Name */}
-            <div className="sm:col-span-2">
-              <label htmlFor={`${idp}-name`} className={labelCls}>
-                Description
-              </label>
-              <input
-                id={`${idp}-name`}
-                type="text"
-                className={inputCls}
-                value={item.name ?? ""}
-                onChange={(e) => updateIncome(i, { name: e.target.value })}
-                placeholder="e.g. Salary at Acme Corp"
-                aria-label="Description"
+    <div className="space-y-6">
+      <CardList
+        addLabel="Add income"
+        emptyMessage="No income sources added yet"
+        emptyHint="Add salary, Social Security, business, and any other income."
+        items={income}
+        kpis={[
+          { label: "Total annual income", value: money(total) },
+          { label: "Income sources", value: String(income.length) },
+        ]}
+        onAdd={addIncome}
+        onRemove={removeIncome}
+        renderSummary={(item) => ({
+          title: item.name?.trim() || "Untitled income",
+          subtitle: `${labelFor(TYPE_OPTIONS, item.type)} · ${labelFor(ownerOpts, item.owner)} · ${incomeSpanLabel(item, currentYear)}`,
+          amount: item.annualAmount,
+        })}
+        renderItem={(item, i) => {
+          const idp = `income-${i}`;
+          const endsAtRetirement = item.endsAtRetirement ?? false;
+          return (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {/* Name */}
+              <div className="sm:col-span-2">
+                <label htmlFor={`${idp}-name`} className={labelCls}>
+                  Description
+                </label>
+                <input
+                  id={`${idp}-name`}
+                  type="text"
+                  className={inputCls}
+                  value={item.name ?? ""}
+                  onChange={(e) => updateIncome(i, { name: e.target.value })}
+                  placeholder="e.g. Salary at Acme Corp"
+                  aria-label="Description"
+                />
+              </div>
+
+              {/* Type */}
+              <div>
+                <label htmlFor={`${idp}-type`} className={labelCls}>
+                  Type
+                </label>
+                <select
+                  id={`${idp}-type`}
+                  className={selectCls}
+                  value={item.type ?? "salary"}
+                  onChange={(e) =>
+                    updateIncome(i, { type: e.target.value as IncomeItem["type"] })
+                  }
+                  aria-label="Type"
+                >
+                  {TYPE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Owner */}
+              <OwnerField
+                id={`${idp}-owner`}
+                value={item.owner}
+                options={ownerOpts}
+                onChange={(owner) => updateIncome(i, { owner })}
               />
-            </div>
 
-            {/* Type */}
-            <div>
-              <label htmlFor={`${idp}-type`} className={labelCls}>
-                Type
-              </label>
-              <select
-                id={`${idp}-type`}
-                className={selectCls}
-                value={item.type ?? "salary"}
-                onChange={(e) =>
-                  updateIncome(i, { type: e.target.value as IncomeItem["type"] })
-                }
-                aria-label="Type"
-              >
-                {TYPE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Owner */}
-            <OwnerField
-              id={`${idp}-owner`}
-              value={item.owner}
-              options={ownerOpts}
-              onChange={(owner) => updateIncome(i, { owner })}
-            />
-
-            {/* Amount · Starts · Ends — one line */}
-            <div className="grid grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-3">
-              <div>
-                <label htmlFor={`${idp}-annualAmount`} className={labelCls}>
-                  Annual amount
-                </label>
-                <MoneyInput
-                  id={`${idp}-annualAmount`}
-                  value={item.annualAmount}
-                  onChange={(num) => updateIncome(i, { annualAmount: num })}
-                  ariaLabel="Annual amount"
-                  placeholder="0"
-                />
-              </div>
-
-              <div>
-                <label htmlFor={`${idp}-startYear`} className={labelCls}>
-                  Starts
-                </label>
-                <YearInput
-                  id={`${idp}-startYear`}
-                  value={item.startYear}
-                  onChange={(year) => updateIncome(i, { startYear: year })}
-                  ariaLabel="Start year"
-                  placeholder={String(currentYear)}
-                />
-              </div>
-
-              <div>
-                <label htmlFor={`${idp}-endYear`} className={labelCls}>
-                  Ends
-                </label>
-                <div className="flex items-center gap-2">
-                  <YearInput
-                    id={`${idp}-endYear`}
-                    value={item.endYear}
-                    onChange={(year) => updateIncome(i, { endYear: year })}
-                    ariaLabel="End year"
-                    placeholder={endsAtRetirement ? "—" : "Plan end"}
-                    disabled={endsAtRetirement}
-                  />
-                  <label className="flex shrink-0 items-center gap-1.5 text-[13px] text-ink-2">
-                    <input
-                      type="checkbox"
-                      checked={endsAtRetirement}
-                      onChange={(e) =>
-                        updateIncome(i, {
-                          endsAtRetirement: e.target.checked,
-                          // Drop a year the row no longer ends on, so a disabled
-                          // field can't submit a stale one.
-                          ...(e.target.checked ? { endYear: undefined } : {}),
-                        })
-                      }
-                      className="h-4 w-4 shrink-0 rounded border-hair bg-card-2 text-accent focus:ring-1 focus:ring-accent"
-                    />
-                    Retirement
+              {/* Amount · Starts · Ends — one line */}
+              <div className="grid grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-3">
+                <div>
+                  <label htmlFor={`${idp}-annualAmount`} className={labelCls}>
+                    Annual amount
                   </label>
+                  <MoneyInput
+                    id={`${idp}-annualAmount`}
+                    value={item.annualAmount}
+                    onChange={(num) => updateIncome(i, { annualAmount: num })}
+                    ariaLabel="Annual amount"
+                    placeholder="0"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor={`${idp}-startYear`} className={labelCls}>
+                    Starts
+                  </label>
+                  <YearInput
+                    id={`${idp}-startYear`}
+                    value={item.startYear}
+                    onChange={(year) => updateIncome(i, { startYear: year })}
+                    ariaLabel="Start year"
+                    placeholder={String(currentYear)}
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor={`${idp}-endYear`} className={labelCls}>
+                    Ends
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <YearInput
+                      id={`${idp}-endYear`}
+                      value={item.endYear}
+                      onChange={(year) => updateIncome(i, { endYear: year })}
+                      ariaLabel="End year"
+                      placeholder={endsAtRetirement ? "—" : "Plan end"}
+                      disabled={endsAtRetirement}
+                    />
+                    <label className="flex shrink-0 items-center gap-1.5 text-[13px] text-ink-2">
+                      <input
+                        type="checkbox"
+                        checked={endsAtRetirement}
+                        onChange={(e) =>
+                          updateIncome(i, {
+                            endsAtRetirement: e.target.checked,
+                            // Drop a year the row no longer ends on, so a disabled
+                            // field can't submit a stale one.
+                            ...(e.target.checked ? { endYear: undefined } : {}),
+                          })
+                        }
+                        className="h-4 w-4 shrink-0 rounded border-hair bg-card-2 text-accent focus:ring-1 focus:ring-accent"
+                      />
+                      Retirement
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        );
-      }}
-    />
+          );
+        }}
+      />
+
+      <ContextualUploadZone
+        uploads={uploads}
+        docType="paystub"
+        label="Or upload a pay stub or W-2"
+      />
+    </div>
   );
 }

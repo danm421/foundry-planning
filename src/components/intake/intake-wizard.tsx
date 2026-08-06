@@ -18,7 +18,10 @@ import { AccountsStep } from "./steps/accounts-step";
 import { IncomeStep } from "./steps/income-step";
 import { PropertyStep } from "./steps/property-step";
 import { GoalsStep, type GoalBeneficiary } from "./steps/goals-step";
+import { DocumentsStep } from "./steps/documents-step";
 import { ReviewStep } from "./review-step";
+import type { IntakeUploadContext } from "./intake-upload-zone";
+import type { IntakeDocumentView } from "@/lib/intake/document-types";
 
 // ─── Public interface ────────────────────────────────────────────────────────
 export interface IntakeWizardProps {
@@ -30,6 +33,25 @@ export interface IntakeWizardProps {
   error?: string | null;
   /** Firm letterhead; null/undefined renders the Foundry Planning lockup. */
   branding?: IntakeHeaderBranding | null;
+  /** Public link token — the upload zones post to it. Absent in the
+   *  authenticated portal wizard and the advisor's preview, neither of which
+   *  uploads anything. */
+  token?: string;
+  /** Documents already uploaded against this form. */
+  documents?: IntakeDocumentView[];
+  /** Refetch `documents` — the wizard never fetches, its owner does. */
+  onDocumentsChanged?: () => void;
+  /**
+   * Render the upload UI as an inert visual sample: the Documents step and the
+   * three contextual zones appear with their real layout and copy, but nothing
+   * is wired to them. For the advisor's preview, which shows a firm what its
+   * clients will fill in and must make no request while doing it.
+   *
+   * Deliberately a separate flag rather than a placeholder `token`: the sample
+   * has no credential to hand anything, so no code path from the preview can
+   * reach the upload routes. Ignored when the live upload props are present.
+   */
+  sampleUploads?: boolean;
 }
 
 // ─── Section / sub-step state machine ───────────────────────────────────────
@@ -37,7 +59,7 @@ export interface IntakeWizardProps {
 //   welcome → family → assets:accounts → assets:income → assets:property → goals → review
 
 interface StepDescriptor {
-  section: "welcome" | "family" | "assets" | "goals" | "review";
+  section: "welcome" | "family" | "assets" | "goals" | "documents" | "review";
   subStep?: "accounts" | "income" | "property";
   /** Chrome label (shown in progress bar + eyebrow) */
   label: string;
@@ -47,18 +69,50 @@ interface StepDescriptor {
   skipable?: boolean;
 }
 
-const STEPS: readonly StepDescriptor[] = [
+const STEPS_BEFORE_DOCUMENTS: readonly StepDescriptor[] = [
   { section: "welcome", label: "Welcome", title: "Welcome" },
   { section: "family",  label: "Family",   title: "Family" },
   { section: "assets",  subStep: "accounts", label: "Accounts", title: "Accounts" },
   { section: "assets",  subStep: "income",   label: "Income",   title: "Income", skipable: true },
   { section: "assets",  subStep: "property", label: "Property", title: "Property", skipable: true },
   { section: "goals",   label: "Goals",   title: "Goals" },
-  { section: "review",  label: "Review",  title: "Review & Submit" },
 ] as const;
 
-/** Step labels passed to WizardChrome (excludes the Welcome screen which has its own chrome). */
-const CHROME_STEP_LABELS = STEPS.slice(1).map((s) => s.label) as string[];
+const DOCUMENTS_STEP: StepDescriptor = {
+  section: "documents",
+  label: "Documents",
+  title: "Documents",
+  skipable: true,
+};
+
+const REVIEW_STEP: StepDescriptor = {
+  section: "review",
+  label: "Review",
+  title: "Review & Submit",
+};
+
+/**
+ * The Documents step exists only where an upload surface does — live on the
+ * public form, inert in the advisor's preview. The portal wizard has neither,
+ * so it must not show a step whose only content is a zone it can't use.
+ */
+function buildSteps(withDocuments: boolean): readonly StepDescriptor[] {
+  return withDocuments
+    ? [...STEPS_BEFORE_DOCUMENTS, DOCUMENTS_STEP, REVIEW_STEP]
+    : [...STEPS_BEFORE_DOCUMENTS, REVIEW_STEP];
+}
+
+/**
+ * Flat index of a step, for ReviewStep's jump-back links. Derived from the
+ * step list rather than a parallel map, so the optional Documents step can't
+ * shift `review` out from under a hardcoded number.
+ */
+function indexOfSection(
+  steps: readonly StepDescriptor[],
+  section: "family" | "accounts" | "income" | "property" | "goals",
+): number {
+  return steps.findIndex((s) => (s.subStep ?? s.section) === section);
+}
 
 // ─── Slice setters ──────────────────────────────────────────────────────────
 
@@ -86,11 +140,24 @@ function useDraftSliceSetters(value: IntakeDraft, onChange: (next: IntakeDraft) 
  * A card the client added but never filled in doesn't count as content: that's
  * the same row submit prunes (`isBlankIntake*Row`), so the label agrees with
  * what actually gets saved.
+ *
+ * An uploaded document is content too — a client who answered the Income step
+ * with a pay stub instead of a row has not skipped it.
  */
-function offersSkip(step: StepDescriptor, draft: IntakeDraft): boolean {
+function offersSkip(
+  step: StepDescriptor,
+  draft: IntakeDraft,
+  documents: IntakeDocumentView[],
+): boolean {
   if (!step.skipable) return false;
-  if (step.subStep === "income") return (draft.income ?? []).every(isBlankIntakeIncomeRow);
-  if (step.subStep === "property") return (draft.property ?? []).every(isBlankIntakePropertyRow);
+  const hasDoc = (t: string) => documents.some((d) => d.docType === t);
+  if (step.subStep === "income") {
+    return (draft.income ?? []).every(isBlankIntakeIncomeRow) && !hasDoc("paystub");
+  }
+  if (step.subStep === "property") {
+    return (draft.property ?? []).every(isBlankIntakePropertyRow) && !hasDoc("mortgage");
+  }
+  if (step.section === "documents") return documents.length === 0;
   return true;
 }
 
@@ -122,17 +189,6 @@ function goalBeneficiaries(draft: IntakeDraft): GoalBeneficiary[] {
     .filter((p) => p.name !== "");
 }
 
-// ─── Section → flat index map ────────────────────────────────────────────────
-// Used by ReviewStep's onEdit to jump back to the right step.
-
-const SECTION_TO_INDEX: Record<string, number> = {
-  family: 1,
-  accounts: 2,
-  income: 3,
-  property: 4,
-  goals: 5,
-};
-
 // ─── Shell ───────────────────────────────────────────────────────────────────
 
 export function IntakeWizard({
@@ -143,15 +199,37 @@ export function IntakeWizard({
   busy,
   error,
   branding,
+  token,
+  documents,
+  onDocumentsChanged,
+  sampleUploads,
 }: IntakeWizardProps) {
-  // 0 = welcome; 1 = family; 2 = accounts; 3 = income; 4 = property; 5 = goals; 6 = review
+  // 0 = welcome; 1 = family; 2 = accounts; 3 = income; 4 = property; 5 = goals;
+  // then Documents (only where uploads are offered), then review.
   const [flatIndex, setFlatIndex] = useState(0);
   const { setFamily, setAccounts, setIncome, setProperty, setGoals } =
     useDraftSliceSetters(value, onChange);
 
-  const step = STEPS[flatIndex];
+  // Live uploads are all three or none: a list with no token can't upload, and
+  // uploads with no refetch callback would leave the client staring at a stale
+  // list. Falling short of all three doesn't fall back to the sample — that has
+  // to be asked for, so a host that simply forgot a prop still gets nothing.
+  const uploads: IntakeUploadContext | undefined =
+    token && documents && onDocumentsChanged
+      ? { kind: "live", token, documents, onChanged: onDocumentsChanged }
+      : sampleUploads
+        ? { kind: "sample" }
+        : undefined;
+
+  // Only real uploads count as answers. The sample's illustrative row lives
+  // inside the zone and is invisible here on purpose: it must not flip a step's
+  // "Skip for now" to "Next", or the preview would misreport its own copy.
+  const docs = uploads?.kind === "live" ? uploads.documents : [];
+
+  const steps = buildSteps(uploads != null);
+  const step = steps[flatIndex];
   const isFirst = flatIndex === 0;
-  const isLast = flatIndex === STEPS.length - 1;
+  const isLast = flatIndex === steps.length - 1;
 
   function goNext() {
     if (!isLast) setFlatIndex((i) => i + 1);
@@ -160,8 +238,8 @@ export function IntakeWizard({
     if (!isFirst) setFlatIndex((i) => i - 1);
   }
   function goToSection(section: "family" | "accounts" | "income" | "property" | "goals") {
-    const idx = SECTION_TO_INDEX[section];
-    if (idx !== undefined) setFlatIndex(idx);
+    const idx = indexOfSection(steps, section);
+    if (idx >= 0) setFlatIndex(idx);
   }
 
   // Welcome screen uses its own full-page chrome
@@ -183,12 +261,16 @@ export function IntakeWizard({
   }
 
   // All other steps use WizardChrome
-  // flatIndex 1-6 → chrome step index 0-5
+  // The Welcome screen has its own chrome, so chrome index trails flat by one.
   const chromeIndex = flatIndex - 1;
   const isReview = step.section === "review";
 
   // On review: the chrome Next button IS the Submit (single affordance).
-  const nextLabel = isReview ? "Submit" : offersSkip(step, value) ? "Skip for now" : "Next";
+  const nextLabel = isReview
+    ? "Submit"
+    : offersSkip(step, value, docs)
+      ? "Skip for now"
+      : "Next";
 
   function renderBody() {
     switch (step.section) {
@@ -203,6 +285,7 @@ export function IntakeWizard({
               clientName={value.family?.primary?.firstName}
               spouseName={value.family?.spouse?.firstName ?? undefined}
               hasSpouse={value.family?.spouse != null}
+              uploads={uploads}
             />
           );
         if (step.subStep === "income")
@@ -213,6 +296,7 @@ export function IntakeWizard({
               clientName={value.family?.primary?.firstName}
               spouseName={value.family?.spouse?.firstName ?? undefined}
               hasSpouse={value.family?.spouse != null}
+              uploads={uploads}
             />
           );
         if (step.subStep === "property")
@@ -223,6 +307,7 @@ export function IntakeWizard({
               clientName={value.family?.primary?.firstName}
               spouseName={value.family?.spouse?.firstName ?? undefined}
               hasSpouse={value.family?.spouse != null}
+              uploads={uploads}
             />
           );
         return null;
@@ -234,6 +319,8 @@ export function IntakeWizard({
             beneficiaries={goalBeneficiaries(value)}
           />
         );
+      case "documents":
+        return uploads ? <DocumentsStep uploads={uploads} /> : null;
       case "review":
         return (
           <ReviewStep
@@ -263,7 +350,7 @@ export function IntakeWizard({
         </div>
       )}
       <WizardChrome
-        stepLabels={CHROME_STEP_LABELS}
+        stepLabels={steps.slice(1).map((s) => s.label)}
         eyebrow="Intake"
         current={chromeIndex}
         title={step.title}

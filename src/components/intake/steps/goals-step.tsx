@@ -59,7 +59,7 @@ function blankGoal(): GoalItem {
 // ─── Education defaults ──────────────────────────────────────────────────────
 //
 // Education is the one goal type the app already has an opinion about: a
-// four-year programme starting the year the student turns 16 (`lib/goals.ts`,
+// four-year programme starting the year the student turns 18 (`lib/goals.ts`,
 // shared with the advisor-side expense dialog and the Household Map drawer). The
 // same rule runs here so a goal a client enters lands on the years an advisor
 // entering it by hand would get.

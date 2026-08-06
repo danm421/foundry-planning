@@ -433,17 +433,17 @@ describe("QuickEditDrawer — education goals", () => {
       expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Kelly - Education");
     });
 
-    // Kelly turns 16 in 2028, so the goal is 2028-2031. Asserted on the SAVE
+    // Kelly turns 18 in 2030, so the goal is 2030-2033. Asserted on the SAVE
     // payload rather than on the year pickers because the payload is what
     // reaches the DB — and because `startYearRef`/`endYearRef` have no rendered
     // form of their own.
-    it("time-boxes it to a four-year program starting the year they turn 16", async () => {
+    it("time-boxes it to a four-year program starting the year they turn 18", async () => {
       const calls = captureFetch();
       pickEducationFor(FM_KELLY);
 
       const body = await saveAndReadBody(calls);
-      expect(body.startYear).toBe("2028");
-      expect(body.endYear).toBe("2031");
+      expect(body.startYear).toBe("2030");
+      expect(body.endYear).toBe("2033");
     });
 
     // THE ONE THAT MATTERS. Both refs seed to plan_start/plan_end, and on every
