@@ -17,12 +17,13 @@ vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 vi.mock("@/lib/tax-returns/store", () => ({
   getTaxReturn: vi.fn(),
   getPriorTaxReturn: vi.fn().mockResolvedValue(null),
-  updateFacts: vi.fn(),
   deleteTaxReturn: vi.fn(),
 }));
+vi.mock("@/lib/tax-returns/save-facts", () => ({ saveReviewedFacts: vi.fn() }));
 vi.mock("@/lib/tax-returns/load-analysis-context", () => ({ loadAnalysisContext: vi.fn() }));
 
-import { getTaxReturn, updateFacts, deleteTaxReturn } from "@/lib/tax-returns/store";
+import { getTaxReturn, deleteTaxReturn } from "@/lib/tax-returns/store";
+import { saveReviewedFacts } from "@/lib/tax-returns/save-facts";
 import { loadAnalysisContext } from "@/lib/tax-returns/load-analysis-context";
 import { emptyTaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 import { createTaxResolver } from "@/lib/tax/resolver";
@@ -76,7 +77,7 @@ describe("GET .../tax-returns/[taxYear]", () => {
 
 describe("PUT .../tax-returns/[taxYear]", () => {
   it("saves corrected facts and can mark ready", async () => {
-    vi.mocked(updateFacts).mockResolvedValue({ ...makeRow(), status: "ready" } as never);
+    vi.mocked(saveReviewedFacts).mockResolvedValue({ taxYear: 2025, status: "ready" });
     const res = await PUT(
       new NextRequest("http://test", {
         method: "PUT",
@@ -86,11 +87,13 @@ describe("PUT .../tax-returns/[taxYear]", () => {
       routeParams,
     );
     expect(res.status).toBe(200);
-    expect(updateFacts).toHaveBeenCalledWith(CLIENT_ID, 2025, expect.anything(), "ready");
+    expect(saveReviewedFacts).toHaveBeenCalledWith({
+      clientId: CLIENT_ID, taxYear: 2025, submitted: expect.anything(), nextStatus: "ready",
+    });
   });
 
   it("reopens a ready return to needs_review", async () => {
-    vi.mocked(updateFacts).mockResolvedValue({ ...makeRow(), status: "needs_review" } as never);
+    vi.mocked(saveReviewedFacts).mockResolvedValue({ taxYear: 2025, status: "needs_review" });
     const res = await PUT(
       new NextRequest("http://test", {
         method: "PUT",
@@ -100,7 +103,9 @@ describe("PUT .../tax-returns/[taxYear]", () => {
       routeParams,
     );
     expect(res.status).toBe(200);
-    expect(updateFacts).toHaveBeenCalledWith(CLIENT_ID, 2025, expect.anything(), "needs_review");
+    expect(saveReviewedFacts).toHaveBeenCalledWith({
+      clientId: CLIENT_ID, taxYear: 2025, submitted: expect.anything(), nextStatus: "needs_review",
+    });
   });
 
   it("400s on facts that fail the schema", async () => {
@@ -125,7 +130,7 @@ describe("PUT .../tax-returns/[taxYear]", () => {
       routeParams, // URL year is 2025
     );
     expect(res.status).toBe(400);
-    expect(updateFacts).not.toHaveBeenCalled();
+    expect(saveReviewedFacts).not.toHaveBeenCalled();
   });
 });
 

@@ -68,7 +68,9 @@ export async function deleteDocument(
   return row ?? null;
 }
 
-export async function getState(taxReturnId: string) {
+export type TaxReturnStateRow = typeof taxReturnState.$inferSelect;
+
+export async function getState(taxReturnId: string): Promise<TaxReturnStateRow | null> {
   const [row] = await db
     .select()
     .from(taxReturnState)

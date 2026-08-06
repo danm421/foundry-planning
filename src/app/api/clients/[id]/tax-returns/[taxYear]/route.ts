@@ -4,7 +4,8 @@ import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
-import { updateFacts, deleteTaxReturn } from "@/lib/tax-returns/store";
+import { deleteTaxReturn } from "@/lib/tax-returns/store";
+import { saveReviewedFacts } from "@/lib/tax-returns/save-facts";
 import { assembleTaxAnalysis, parseYear } from "@/lib/tax-returns/assemble-analysis";
 import { taxReturnFactsSchema } from "@/lib/schemas/tax-return-facts";
 
@@ -75,8 +76,13 @@ export async function PUT(
       );
     }
     const nextStatus = parsed.data.reopen ? "needs_review" : parsed.data.markReady ? "ready" : undefined;
-    const row = await updateFacts(id, taxYear, parsed.data.facts, nextStatus);
-    if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const saved = await saveReviewedFacts({
+      clientId: id,
+      taxYear,
+      submitted: parsed.data.facts,
+      nextStatus,
+    });
+    if (!saved) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     await recordAudit({
       action: "tax_return.update",
@@ -86,7 +92,7 @@ export async function PUT(
       firmId,
       metadata: { taxYear, markReady: parsed.data.markReady === true, reopen: parsed.data.reopen === true },
     });
-    return NextResponse.json({ taxYear: row.taxYear, status: row.status });
+    return NextResponse.json({ taxYear: saved.taxYear, status: saved.status });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });
