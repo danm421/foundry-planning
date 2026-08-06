@@ -4,10 +4,10 @@ vi.mock("@/lib/tax-returns/extract-facts", () => ({
   extractTaxReturnFacts: vi.fn(),
   TaxReturnExtractionError: class extends Error {},
 }));
-vi.mock("@/lib/tax-returns/store", () => ({ upsertExtracted: vi.fn() }));
+vi.mock("@/lib/tax-returns/store", () => ({ getTaxReturn: vi.fn(), upsertExtracted: vi.fn() }));
 
 import { extractTaxReturnFacts } from "@/lib/tax-returns/extract-facts";
-import { upsertExtracted } from "@/lib/tax-returns/store";
+import { getTaxReturn, upsertExtracted } from "@/lib/tax-returns/store";
 import { bridgeTaxReturn } from "../tax-bridge";
 
 const ARGS = {
@@ -18,7 +18,10 @@ const ARGS = {
   model: "full" as const,
 };
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(getTaxReturn).mockResolvedValue(null);
+});
 
 describe("bridgeTaxReturn", () => {
   it("stores the extracted facts under the return's own tax year", async () => {
@@ -65,5 +68,43 @@ describe("bridgeTaxReturn", () => {
     const res = await bridgeTaxReturn(ARGS);
     expect(res.ok).toBe(false);
     expect(res.warning).toMatch(/tax analysis/i);
+  });
+
+  it("does not overwrite a year the advisor already reviewed", async () => {
+    vi.mocked(extractTaxReturnFacts).mockResolvedValue({
+      facts: { taxYear: 2024 },
+      isAmended: false,
+      warnings: [],
+      promptVersion: "v3",
+    } as unknown as Awaited<ReturnType<typeof extractTaxReturnFacts>>);
+    vi.mocked(getTaxReturn).mockResolvedValue({
+      id: "row-1",
+      taxYear: 2024,
+      status: "ready",
+    } as unknown as Awaited<ReturnType<typeof getTaxReturn>>);
+
+    const res = await bridgeTaxReturn(ARGS);
+
+    expect(upsertExtracted).not.toHaveBeenCalled();
+    expect(res.ok).toBe(false);
+    expect(res.warning).toContain("2024");
+  });
+
+  it("writes when no return exists for that year", async () => {
+    vi.mocked(extractTaxReturnFacts).mockResolvedValue({
+      facts: { taxYear: 2025 },
+      isAmended: false,
+      warnings: [],
+      promptVersion: "v3",
+    } as unknown as Awaited<ReturnType<typeof extractTaxReturnFacts>>);
+    vi.mocked(upsertExtracted).mockResolvedValue({
+      id: "row-1",
+    } as unknown as Awaited<ReturnType<typeof upsertExtracted>>);
+    // getTaxReturn defaults to resolving null in beforeEach.
+
+    const res = await bridgeTaxReturn(ARGS);
+
+    expect(upsertExtracted).toHaveBeenCalledOnce();
+    expect(res.ok).toBe(true);
   });
 });
