@@ -166,7 +166,12 @@ describe("GET /api/intake/[token]/documents", () => {
   });
 });
 
-const delParams = { params: Promise.resolve({ token: "tok", docId: "d1" }) };
+// A real UUID shape — the [docId] route 404s a malformed id before it ever
+// reaches deleteIntakeDocument, so these path-param fixtures must look like
+// the real crm_household_documents.id column (uuid) or every test past the
+// gate would be exercising that guard by accident instead of what it claims to.
+const DOC_ID = "123e4567-e89b-12d3-a456-426614174000";
+const delParams = { params: Promise.resolve({ token: "tok", docId: DOC_ID }) };
 
 // No test below reads the body, so one Request per test is unnecessary —
 // unlike uploadRequest() above, this one never varies.
@@ -191,8 +196,15 @@ describe("DELETE /api/intake/[token]/documents/[docId]", () => {
     expect((await DELETE(deleteRequest(), delParams)).status).toBe(404);
   });
 
-  it("204s on success", async () => {
+  it("204s on success, deleting exactly the gated form and the requested doc", async () => {
     deleteIntakeDocument.mockResolvedValue(true);
     expect((await DELETE(deleteRequest(), delParams)).status).toBe(204);
+    expect(deleteIntakeDocument).toHaveBeenCalledWith("form-1", DOC_ID);
+  });
+
+  it("404s on a non-UUID docId without ever calling deleteIntakeDocument", async () => {
+    const badParams = { params: Promise.resolve({ token: "tok", docId: "not-a-uuid" }) };
+    expect((await DELETE(deleteRequest(), badParams)).status).toBe(404);
+    expect(deleteIntakeDocument).not.toHaveBeenCalled();
   });
 });
