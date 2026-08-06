@@ -176,4 +176,37 @@ describe("ReviewDetail", () => {
     render(<ReviewDetail form={makeForm({ clientId: null, mode: "blank" })} diff={prospectDiff} />);
     expect(screen.getByText(/prospect/i)).toBeInTheDocument();
   });
+
+  // ── Documents ──────────────────────────────────────────────────────────────
+
+  it("says so when the client attached nothing", () => {
+    render(<ReviewDetail form={makeForm()} diff={baseDiff} documents={[]} householdId="hh-1" />);
+    expect(screen.getByText("Documents")).toBeInTheDocument();
+    expect(screen.getByText("No documents uploaded.")).toBeInTheDocument();
+  });
+
+  it("links each uploaded document to the audited advisor vault route", () => {
+    render(
+      <ReviewDetail
+        form={makeForm()}
+        diff={baseDiff}
+        householdId="hh-1"
+        documents={[
+          {
+            id: "doc-1",
+            filename: "schwab-statement.pdf",
+            docType: "statement",
+            sizeBytes: 245_760,
+            uploadedAt: "2026-08-01T12:00:00.000Z",
+          },
+        ]}
+      />,
+    );
+
+    const link = screen.getByRole("link", { name: "schwab-statement.pdf" });
+    // The existing org-scoped, audited route — never a blob URL or a new path.
+    expect(link).toHaveAttribute("href", "/api/crm/households/hh-1/documents/doc-1");
+    expect(screen.getByText("Account statement")).toBeInTheDocument();
+    expect(screen.getByText("240 KB")).toBeInTheDocument();
+  });
 });
