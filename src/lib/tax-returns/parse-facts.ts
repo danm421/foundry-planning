@@ -44,10 +44,15 @@ function conform(
     // Array-typed blocks (businesses, k1s) template as `[]`, so the generic
     // object branch below — keyed off Object.keys(template) — would see zero
     // keys on an empty template and collapse any input into `{}`. Nothing
-    // extracts INTO these arrays yet (that's Plan 2's job), so there is no
-    // per-item shape to conform against: pass an actual array through
-    // untouched, default to the empty template otherwise.
-    return Array.isArray(value) ? value : structuredClone(template);
+    // extracts INTO these arrays yet, so always default rather than pass a
+    // model-emitted array through: businessSchema/k1Schema ARE the per-item
+    // shape, but there is no per-element TEMPLATE (emptyBusiness()/emptyK1())
+    // to conform against yet, so an unconformed array would reach the strict
+    // element schema untouched — a stray key or money-string would fail the
+    // WHOLE extraction instead of being dropped/coerced with a warning like
+    // every other field. A later task adds the element templates and
+    // replaces this branch with real per-element conforming.
+    return structuredClone(template);
   }
   if (typeof template === "object" && template !== null) {
     // A missing section (income/deductions/tax/...) defaults to the empty template.
