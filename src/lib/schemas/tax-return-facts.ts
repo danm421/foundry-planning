@@ -59,6 +59,92 @@ const scheduleESchema = z
   })
   .strict();
 
+/**
+ * Form 8995 / 8995-A detail. `deductions.qbiDeduction` (1040 line 13) already
+ * carries the bottom line; this block is the detail beside it — the same
+ * relationship `deductions.scheduleA` has to `deductionAmount`. It exists so
+ * the QBI finding can state a PHASE-OUT POSITION rather than a number:
+ * `qualifiedBusinessIncome` against `deductions.taxableIncome` and the
+ * `params.qbi` thresholds gives how far into the phase-in range the return
+ * sits and what a deductible contribution would restore.
+ */
+const qbiSchema = z
+  .object({
+    qualifiedBusinessIncome: money, // 8995 line 4 / 8995-A line 15
+    reitPtpDividends: money,        // 8995 line 6
+    w2Wages: money,                 // 8995-A line 19; null on the simplified form
+    ubia: money,                    // 8995-A line 20
+    sstbPresent: z.boolean().nullable(),
+  })
+  .strict();
+
+/**
+ * Schedule 1 Part II detail. `income.adjustmentsToIncome` (1040 line 10) is the
+ * total; this block answers the questions the total cannot — most importantly
+ * whether a self-employed filer has ANY retirement plan (`sepSimpleSolo401k`,
+ * line 16), which is routinely the largest single miss on such a return.
+ */
+const adjustmentsDetailSchema = z
+  .object({
+    seTaxDeduction: money,              // Sched 1 line 15 (half of SE tax)
+    sepSimpleSolo401k: money,           // line 16
+    selfEmployedHealthInsurance: money, // line 17
+    hsaDeduction: money,                // line 13
+  })
+  .strict();
+
+/** One Schedule C. Aggregate `income.scheduleCNet` averages a profitable
+ *  business against a losing one into a number that describes neither. */
+const businessSchema = z
+  .object({
+    name: z.string().nullable(),
+    netProfit: money,      // Sched C line 31
+    grossReceipts: money,  // line 1
+    totalExpenses: money,  // line 28
+    depreciation: money,   // line 13
+    isSstb: z.boolean().nullable(),
+  })
+  .strict();
+
+/**
+ * One Schedule K-1. `entityType` is load-bearing, not descriptive:
+ * reasonable-compensation advice is valid for an S-corp and WRONG for a
+ * partnership, and guaranteed payments carry SE tax where S-corp
+ * distributions do not. A finding that turns on entity type must not fire
+ * when this is null.
+ */
+const k1Schema = z
+  .object({
+    entityName: z.string().nullable(),
+    ein: z.string().nullable(),
+    entityType: z.enum(["s_corp", "partnership", "estate_trust"]).nullable(),
+    ordinaryBusinessIncome: money, // box 1
+    rentalIncome: money,           // box 2
+    guaranteedPayments: money,     // 1065 K-1 box 4
+    section179: money,             // box 11 / 12
+    /** Owner W-2 from THIS entity. Never extracted from the 1040 — line 1a is
+     *  the total across every W-2. Populated only by an advisor assignment. */
+    w2WagesFromEntity: money,
+    qbiIncome: money,              // box 20 code Z / box 17 code V
+    isSstb: z.boolean().nullable(),
+  })
+  .strict();
+
+export type QbiFacts = z.infer<typeof qbiSchema>;
+export type AdjustmentsDetailFacts = z.infer<typeof adjustmentsDetailSchema>;
+export type BusinessFacts = z.infer<typeof businessSchema>;
+export type K1Facts = z.infer<typeof k1Schema>;
+
+export const emptyQbi = (): QbiFacts => ({
+  qualifiedBusinessIncome: null, reitPtpDividends: null,
+  w2Wages: null, ubia: null, sstbPresent: null,
+});
+
+export const emptyAdjustmentsDetail = (): AdjustmentsDetailFacts => ({
+  seTaxDeduction: null, sepSimpleSolo401k: null,
+  selfEmployedHealthInsurance: null, hsaDeduction: null,
+});
+
 export type ScheduleAFacts = z.infer<typeof scheduleASchema>;
 export type ScheduleEFacts = z.infer<typeof scheduleESchema>;
 
@@ -114,6 +200,7 @@ export const taxReturnFactsSchema = z
          * keeping the output type non-optional. Do not "tidy" it away.
          */
         scheduleE: scheduleESchema.nullable().default(null),
+        adjustmentsDetail: adjustmentsDetailSchema.nullable().default(null),
         unemployment: money,          // Sched 1 line 7
         otherIncome: money,           // Sched 1 line 9 remainder
         totalIncome: money,           // 1040 line 9
@@ -128,6 +215,7 @@ export const taxReturnFactsSchema = z
         qbiDeduction: money,          // 1040 line 13
         taxableIncome: money,         // 1040 line 15
         scheduleA: scheduleASchema.nullable(),
+        qbi: qbiSchema.nullable().default(null),
       })
       .strict(),
     tax: z
@@ -161,6 +249,12 @@ export const taxReturnFactsSchema = z
         capitalLossCarryover: money,  // Sched D worksheet; positive number
       })
       .strict(),
+    /** `.default([])` is load-bearing for the same reason `income.scheduleE`
+     *  needs `.default(null)` — `parseRowFacts` re-validates persisted jsonb on
+     *  every read and no pre-existing row has these keys. Bare `.default`, never
+     *  `.optional().default()`: Zod 4 nests those into a different shape. */
+    businesses: z.array(businessSchema).default([]),
+    k1s: z.array(k1Schema).default([]),
   })
   .strict();
 
@@ -181,13 +275,14 @@ export function emptyTaxReturnFacts(taxYear: number): TaxReturnFacts {
       pensionsGross: null, pensionsTaxable: null,
       ssBenefitsGross: null, ssBenefitsTaxable: null,
       capitalGainOrLoss: null, netLongTermGain: null, netShortTermGain: null,
-      scheduleCNet: null, scheduleENet: null, scheduleE: null, unemployment: null,
+      scheduleCNet: null, scheduleENet: null, scheduleE: null,
+      adjustmentsDetail: null, unemployment: null,
       otherIncome: null, totalIncome: null, adjustmentsToIncome: null,
       agi: null,
     },
     deductions: {
       deductionTaken: null, deductionAmount: null, qbiDeduction: null,
-      taxableIncome: null, scheduleA: null,
+      taxableIncome: null, scheduleA: null, qbi: null,
     },
     tax: {
       taxBeforeCredits: null, amt: null, excessAptcRepayment: null,
@@ -200,5 +295,6 @@ export function emptyTaxReturnFacts(taxYear: number): TaxReturnFacts {
       refund: null, amountOwed: null,
     },
     carryovers: { capitalLossCarryover: null },
+    businesses: [], k1s: [],
   };
 }

@@ -40,6 +40,15 @@ function conform(
     }
     return value === undefined ? template : value;
   }
+  if (Array.isArray(template)) {
+    // Array-typed blocks (businesses, k1s) template as `[]`, so the generic
+    // object branch below — keyed off Object.keys(template) — would see zero
+    // keys on an empty template and collapse any input into `{}`. Nothing
+    // extracts INTO these arrays yet (that's Plan 2's job), so there is no
+    // per-item shape to conform against: pass an actual array through
+    // untouched, default to the empty template otherwise.
+    return Array.isArray(value) ? value : structuredClone(template);
+  }
   if (typeof template === "object" && template !== null) {
     // A missing section (income/deductions/tax/...) defaults to the empty template.
     if (value === null || value === undefined) return structuredClone(template);
