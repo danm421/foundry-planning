@@ -99,11 +99,93 @@ describe("resolveIntakeHousehold", () => {
   it("mints exactly one household under concurrent first uploads (shared client+spouse token)", async () => {
     const formId = await seedProspectForm("Jordan Reyes");
 
-    const results = await Promise.all(
-      Array.from({ length: 10 }, () => resolveIntakeHousehold(formId)),
-    );
+    const results = await Promise.all([
+      resolveIntakeHousehold(formId),
+      resolveIntakeHousehold(formId),
+      resolveIntakeHousehold(formId),
+    ]);
 
     expect(new Set(results).size).toBe(1);
+  });
+
+  it("blocks a concurrent resolver until the row-locking winner commits (deterministic interleaving)", async () => {
+    // Unlike the Promise.all smoke test above, this forces the exact
+    // interleaving the race guard exists for, instead of hoping the scheduler
+    // produces it: transaction A takes the row lock and holds the transaction
+    // open; only once we know A holds the lock do we start B
+    // (resolveIntakeHousehold). With `.for("update")` in place, B's own
+    // locking SELECT must block until A commits, so it can only ever observe
+    // A's committed `crmHouseholdId` — never mint a second household. Remove
+    // the lock and B's plain SELECT reads the still-uncommitted `null`,
+    // mints a duplicate, and only overwrites the form's FK after the fact —
+    // by then the second household row already exists.
+    const formId = await seedProspectForm("Jordan Reyes");
+
+    let markALocked: () => void;
+    const aHasLock = new Promise<void>((resolve) => {
+      markALocked = resolve;
+    });
+    let releaseA: () => void;
+    const letAProceed = new Promise<void>((resolve) => {
+      releaseA = resolve;
+    });
+
+    const aPromise = db.transaction(async (tx) => {
+      await tx
+        .select({ id: intakeForms.id })
+        .from(intakeForms)
+        .where(eq(intakeForms.id, formId))
+        .for("update");
+
+      markALocked();
+      await letAProceed;
+
+      const [household] = await tx
+        .insert(crmHouseholds)
+        .values({
+          firmId: FIRM,
+          advisorId: ADVISOR,
+          name: "Transaction A Household",
+          nameIsCustom: false,
+        })
+        .returning({ id: crmHouseholds.id });
+
+      await tx
+        .update(intakeForms)
+        .set({ crmHouseholdId: household.id, updatedAt: new Date() })
+        .where(eq(intakeForms.id, formId));
+
+      return household.id;
+    });
+
+    // Don't start B until A has provably taken the row lock.
+    await aHasLock;
+
+    const householdCountBefore = await db
+      .select({ id: crmHouseholds.id })
+      .from(crmHouseholds)
+      .where(eq(crmHouseholds.firmId, FIRM));
+
+    const bPromise = resolveIntakeHousehold(formId);
+
+    // Give B's own SELECT time to actually reach Postgres (and, with the lock
+    // in place, register as waiting on A) before we let A finish and commit.
+    // Without this pause, A could commit before B's query is even in flight,
+    // which would make the unlocked case pass by accident rather than by
+    // exercising the race.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    releaseA!();
+
+    const [householdAId, householdBId] = await Promise.all([aPromise, bPromise]);
+
+    expect(householdBId).toBe(householdAId);
+
+    const householdCountAfter = await db
+      .select({ id: crmHouseholds.id })
+      .from(crmHouseholds)
+      .where(eq(crmHouseholds.firmId, FIRM));
+    expect(householdCountAfter.length - householdCountBefore.length).toBe(1);
   });
 
   it("resolves an existing client's household without minting", async () => {
