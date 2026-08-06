@@ -99,11 +99,9 @@ describe("resolveIntakeHousehold", () => {
   it("mints exactly one household under concurrent first uploads (shared client+spouse token)", async () => {
     const formId = await seedProspectForm("Jordan Reyes");
 
-    const results = await Promise.all([
-      resolveIntakeHousehold(formId),
-      resolveIntakeHousehold(formId),
-      resolveIntakeHousehold(formId),
-    ]);
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () => resolveIntakeHousehold(formId)),
+    );
 
     expect(new Set(results).size).toBe(1);
   });
