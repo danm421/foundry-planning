@@ -2,6 +2,7 @@ import { cache } from "react";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { intakeForms } from "@/db/schema";
+import { portalCollectsNothing } from "./sections";
 
 export type IntakeFormRow = typeof intakeForms.$inferSelect;
 
@@ -62,15 +63,22 @@ export const loadFormForFirm = cache(async (
 
 /**
  * Returns true if the client has a prefilled form in DRAFT state (not yet
- * submitted). Used by the middleware soft-route to redirect clients to the
- * intake page before they can access the rest of the portal.
+ * submitted) THAT THE PORTAL CAN ACTUALLY RENDER. Used by the middleware
+ * soft-route to redirect clients to the intake page before they can access the
+ * rest of the portal.
+ *
+ * The renderability half is not a nicety: the portal intake page bounces a form
+ * it cannot render back to the Organizer, so a gate that still pushed the client
+ * at /portal/intake would be an infinite redirect. Both sides ask
+ * `portalCollectsNothing`, which is what keeps them in step.
+ *
  * Wrapped in React.cache for middleware + page deduplication.
  */
 export const hasUnsubmittedPrefilledForm = cache(async (
   clientId: string,
 ): Promise<boolean> => {
   const rows = await db
-    .select({ id: intakeForms.id })
+    .select({ sections: intakeForms.sections })
     .from(intakeForms)
     .where(
       and(
@@ -80,7 +88,7 @@ export const hasUnsubmittedPrefilledForm = cache(async (
       ),
     )
     .limit(1);
-  return rows.length > 0;
+  return rows.length > 0 && !portalCollectsNothing(rows[0].sections);
 });
 
 /**

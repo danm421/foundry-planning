@@ -25,6 +25,7 @@ import type { IntakeDocumentView } from "@/lib/intake/document-types";
 import {
   DEFAULT_INTAKE_SECTIONS,
   INTAKE_SECTION_LABELS,
+  renderableSections,
   type IntakeSectionKey,
 } from "@/lib/intake/sections";
 
@@ -240,12 +241,13 @@ export function IntakeWizard({
   // "Skip for now" to "Next", or the preview would misreport its own copy.
   const docs = uploads?.kind === "live" ? uploads.documents : [];
 
-  // Documents is offered only where an upload surface is: live on the public
-  // form, inert in the advisor's preview, absent in the portal. Filtering once,
-  // here, is what keeps the welcome overview, the step list and the review
-  // screen from disagreeing about what this form collects.
-  const activeSections = (sections ?? DEFAULT_INTAKE_SECTIONS).filter(
-    (s) => s !== "documents" || uploads != null,
+  // Resolved once, here, and fed to the step list, the welcome overview and the
+  // review screen alike — that is what keeps the three from disagreeing about
+  // what this form collects. The portal's own "nothing to render" fallback asks
+  // the same function, so the two cannot drift into a redirect loop.
+  const activeSections = renderableSections(
+    sections ?? DEFAULT_INTAKE_SECTIONS,
+    uploads != null,
   );
 
   const steps = buildSteps(activeSections);

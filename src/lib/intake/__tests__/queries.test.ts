@@ -17,6 +17,7 @@ const ADVISOR_ID = "advisor_queries_test";
 // IDs populated in beforeAll
 let draftClientId: string;
 let submittedClientId: string;
+let docsOnlyClientId: string;
 const householdIds: string[] = [];
 
 async function seedClientAndHousehold(): Promise<string> {
@@ -50,6 +51,7 @@ async function seedClientAndHousehold(): Promise<string> {
 beforeAll(async () => {
   draftClientId = await seedClientAndHousehold();
   submittedClientId = await seedClientAndHousehold();
+  docsOnlyClientId = await seedClientAndHousehold();
 
   await db.insert(intakeForms).values([
     {
@@ -71,6 +73,20 @@ beforeAll(async () => {
       token: newIntakeToken(),
       recipientEmail: "submitted@example.com",
       payload: {} as unknown as IntakePayload,
+      createdByUserId: "user_test",
+      expiresAt: defaultExpiry(new Date()),
+    },
+    {
+      // Draft, but it collects only documents — and the portal wizard has no
+      // upload surface, so there is nothing for this client to fill in.
+      firmId: FIRM_ID,
+      clientId: docsOnlyClientId,
+      mode: "prefilled" as const,
+      status: "draft" as const,
+      token: newIntakeToken(),
+      recipientEmail: "docsonly@example.com",
+      payload: {} as unknown as IntakePayload,
+      sections: ["documents"],
       createdByUserId: "user_test",
       expiresAt: defaultExpiry(new Date()),
     },
@@ -129,5 +145,13 @@ describe("intake queries", () => {
     // Submitted form → false (the soft-gate must NOT redirect after submission)
     const submittedResult = await hasUnsubmittedPrefilledForm(submittedClientId);
     expect(submittedResult).toBe(false);
+  }, 30000);
+
+  it("hasUnsubmittedPrefilledForm: false for a draft the portal cannot render", async () => {
+    // A documents-only form is a real draft, but the portal has no upload
+    // surface — the wizard would be Welcome → Review with nothing between.
+    // The gate must not push the client at a page that will bounce them back
+    // to the Organizer: the two redirects would form an infinite loop.
+    expect(await hasUnsubmittedPrefilledForm(docsOnlyClientId)).toBe(false);
   }, 30000);
 });

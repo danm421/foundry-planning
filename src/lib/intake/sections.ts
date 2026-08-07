@@ -67,6 +67,40 @@ export function sectionsForForm(stored: unknown): IntakeSectionKey[] {
 }
 
 /**
+ * The sections a host will actually put on screen. `documents` is the one
+ * section that needs somewhere to put a file — live on the public form, inert
+ * in the advisor's preview, absent in the authenticated portal — so a host with
+ * no upload surface must never be handed it.
+ *
+ * ONE rule, ONE place: the wizard's step list, its welcome overview and its
+ * review screen all derive from this call. Two filters over the same input is
+ * how the welcome screen came to promise a Documents step the wizard skipped.
+ */
+export function renderableSections(
+  s: readonly IntakeSectionKey[],
+  hasUploads: boolean,
+): IntakeSectionKey[] {
+  return s.filter((k) => k !== "documents" || hasUploads);
+}
+
+/**
+ * True when the PORTAL wizard would have nothing to show — a form collecting
+ * only `documents`, which is a shipped preset. The portal is the one host with
+ * no upload surface, so that form renders as Welcome → Review with nothing in
+ * between, and Submit files a form that collected nothing.
+ *
+ * Both the proxy's soft gate and the portal intake page ask this, and they MUST
+ * agree: a gate that pushed the client at /portal/intake while the page pushed
+ * them back to the Organizer is an infinite redirect — strictly worse than the
+ * empty wizard it replaces.
+ *
+ * Takes the STORED value, so `null` (never customized) reads as the default set.
+ */
+export function portalCollectsNothing(stored: unknown): boolean {
+  return renderableSections(sectionsForForm(stored), false).length === 0;
+}
+
+/**
  * A prospect send has no client row to borrow a date of birth from, and a
  * household with no birth year cannot be projected — so Family is not optional
  * there. Applied at WRITE time in the create route, which is why no downstream

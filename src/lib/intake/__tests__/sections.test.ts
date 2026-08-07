@@ -6,6 +6,8 @@ import {
   forceFamilyForProspect,
   matchPreset,
   INTAKE_SECTION_PRESETS,
+  renderableSections,
+  portalCollectsNothing,
 } from "../sections";
 
 describe("normalizeSections", () => {
@@ -81,5 +83,36 @@ describe("matchPreset", () => {
     for (const p of INTAKE_SECTION_PRESETS) {
       expect(matchPreset(p.sections)).toBe(p.key);
     }
+  });
+});
+
+describe("renderableSections", () => {
+  it("drops documents where there is no upload surface", () => {
+    expect(renderableSections(["family", "documents"], false)).toEqual(["family"]);
+  });
+
+  it("keeps documents where there is one", () => {
+    expect(renderableSections(["family", "documents"], true)).toEqual([
+      "family",
+      "documents",
+    ]);
+  });
+
+  it("leaves every other section alone either way", () => {
+    expect(renderableSections(["family", "goals"], false)).toEqual(["family", "goals"]);
+  });
+});
+
+describe("portalCollectsNothing", () => {
+  it("is true for a documents-only form — the portal has no upload surface", () => {
+    expect(portalCollectsNothing(["documents"])).toBe(true);
+  });
+
+  it("is false as soon as one section survives", () => {
+    expect(portalCollectsNothing(["documents", "family"])).toBe(false);
+  });
+
+  it("is false for the null column, which means the default set", () => {
+    expect(portalCollectsNothing(null)).toBe(false);
   });
 });
