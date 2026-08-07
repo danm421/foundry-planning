@@ -1,4 +1,4 @@
-export const TAX_RETURN_FACTS_VERSION = "2026-08-06.2";
+export const TAX_RETURN_FACTS_VERSION = "2026-08-07.1";
 
 export const TAX_RETURN_FACTS_PROMPT = `You are a tax-document extraction assistant.
 Extract the FILED FACTS from the following US individual income tax return (Form 1040 and attached schedules).
@@ -51,6 +51,12 @@ Line mapping (2022-2025 Form 1040 layouts):
 - income.wages = line 1a (or 1z when present)
 - income.taxableInterest = 2b; income.taxExemptInterest = 2a
 - income.qualifiedDividends = 3a; income.ordinaryDividends = 3b
+  INTEREST AND DIVIDENDS ARE ROUTINELY SWAPPED because 2b and 3b sit adjacent and
+  a return often carries only one of them. Resolve them from Schedule B, never by
+  position: Schedule B Part I (line 4) is INTEREST and feeds 2b; Schedule B Part II
+  (line 6) is ORDINARY DIVIDENDS and feeds 3b. When Schedule B lists payers under
+  only ONE part, the other field is null — do not assign the amount you found to
+  both, and do not assign a Part II dividend to taxableInterest.
 - income.iraDistributionsGross = 4a; income.iraDistributionsTaxable = 4b
 - income.pensionsGross = 5a; income.pensionsTaxable = 5b
 - income.ssBenefitsGross = 6a; income.ssBenefitsTaxable = 6b
@@ -66,10 +72,21 @@ Line mapping (2022-2025 Form 1040 layouts):
   { "grossRents": line 3, "totalExpenses": line 20, "depreciation": line 18,
     "mortgageInterest": line 12, "propertyTaxes": line 16,
     "suspendedPassiveLoss": Form 8582 unallowed loss as a POSITIVE number }
-  Sum every property column (A/B/C) into one set of totals; prefer the
-  "Totals" column (lines 23a-23e) when the form prints one. Leave scheduleE
-  null when Schedule E has no Part I rental property (e.g. K-1 pass-through
-  income only). Do NOT restate the net here — that is scheduleENet.
+  Sum every property column (A/B/C) into one set of totals. PREFER the labelled
+  "Totals" lines when the form prints them, because they are unambiguous where the
+  per-column expense lines are not:
+    line 23a = grossRents · 23c = mortgageInterest · 23d = depreciation ·
+    23e = totalExpenses.
+  propertyTaxes has no Totals line — take line 16 and sum the columns.
+  DEPRECIATION IS LINE 18 AND IS FREQUENTLY MISREAD as the line above it. In the
+  expense block line 16 is Taxes, line 17 is Utilities, and line 18 is Depreciation
+  — the LAST expense line before the line 20 total. When line 23d is printed it is
+  authoritative; never report Utilities or Taxes as depreciation.
+  Leave scheduleE null when Schedule E has no Part I rental property (e.g. K-1
+  pass-through income only). Do NOT restate the net here — that is scheduleENet.
+  SELF-CHECK before returning: grossRents - totalExpenses must equal scheduleENet.
+  If it does not, you have mis-assigned a line — re-read Part I rather than
+  adjusting a figure to force the identity.
 - income.totalIncome = line 9; income.agi = line 11.
 - deductions.deductionAmount = line 12; deductions.qbiDeduction = line 13;
   deductions.taxableIncome = line 15. deductionTaken = "itemized" only when Schedule A
@@ -121,4 +138,11 @@ Line mapping (2022-2025 Form 1040 layouts):
 Rules:
 - Dollar amounts as plain numbers: $12,345 → 12345. Losses negative where noted.
 - Use null for any value not present or not legible — NEVER guess or compute.
-- Values must come from the FILED return, not from worksheets or instructions.`;
+- Values must come from the FILED return, not from worksheets or instructions.
+- A form's values often appear in the extracted text DETACHED from their line
+  labels — as a bare run of numbers in form-field order. Do not resolve a value to
+  a line by counting position in such a run. Confirm it against a labelled total or
+  the supporting schedule that feeds the line (Schedule B for 2b/3b, Schedule D for
+  line 7, Schedule E lines 23a-23e for the rental block, Schedule C line 31 for
+  scheduleCNet). When a value cannot be confirmed that way, return null rather than
+  the positional guess.`;
