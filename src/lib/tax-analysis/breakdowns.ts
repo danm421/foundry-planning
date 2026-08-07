@@ -1,5 +1,6 @@
 import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 import { fmtUsd, fmtPct } from "./format";
+import { grossForKey, type GrossIncome } from "./gross-income";
 
 /** Derived display blocks for the report + PDF. Computed per-request inside
  *  buildTaxAnalysis (never persisted); the PDF route receives `analysis`
@@ -8,10 +9,15 @@ import { fmtUsd, fmtPct } from "./format";
 export interface IncomeCompositionRow {
   key: string;
   label: string;
+  /** As filed — the figure that reaches 1040 line 9. */
   amount: number;
-  /** Fraction of total income (sign preserved); null when the denominator
-   *  is unavailable or not positive. */
-  pctOfTotal: number | null;
+  /** What the source took in, before basis recovery and business/rental
+   *  expenses. Equals `amount` for every source with nothing to gross up. */
+  gross: number;
+  /** Fraction of GROSS income (sign preserved), not of line 9 — a rental loss
+   *  netted into line 9 is what made wages read 105% of it. Null when the
+   *  denominator is unavailable or not positive. */
+  pctOfGross: number | null;
 }
 
 export interface ScheduleADetail {
@@ -47,16 +53,29 @@ const INCOME_ROWS: Array<{ key: string; label: string; get: (f: TaxReturnFacts) 
   { key: "other", label: "Other income", get: (f) => f.income.otherIncome },
 ];
 
-export function buildIncomeComposition(facts: TaxReturnFacts): IncomeCompositionRow[] | null {
-  const present: Array<{ key: string; label: string; amount: number }> = [];
+export function buildIncomeComposition(
+  facts: TaxReturnFacts,
+  gross: GrossIncome,
+): IncomeCompositionRow[] | null {
+  const present: Array<{ key: string; label: string; amount: number; gross: number }> = [];
   for (const row of INCOME_ROWS) {
     const amount = row.get(facts);
-    if (amount != null) present.push({ key: row.key, label: row.label, amount });
+    if (amount != null) {
+      present.push({ key: row.key, label: row.label, amount, gross: grossForKey(gross, row.key, amount) });
+    }
   }
   if (present.length === 0) return null;
-  const denom = facts.income.totalIncome ?? present.reduce((s, r) => s + r.amount, 0);
+  const denom = gross.total ?? present.reduce((s, r) => s + r.gross, 0);
   const usePct = denom > 0;
-  return present.map((r) => ({ ...r, pctOfTotal: usePct ? r.amount / denom : null }));
+  return present.map((r) => ({ ...r, pctOfGross: usePct ? r.gross / denom : null }));
+}
+
+/** True when at least one source's gross differs from what it contributed to
+ *  line 9 — i.e. when a Gross column would say something the Amount column
+ *  doesn't. Shared so the report view and the PDF can't disagree about whether
+ *  the table is three columns wide or four. */
+export function hasGrossColumn(rows: IncomeCompositionRow[]): boolean {
+  return rows.some((r) => r.gross !== r.amount);
 }
 
 /** Total row for the Income composition table — shared by the report view and
@@ -64,12 +83,14 @@ export function buildIncomeComposition(facts: TaxReturnFacts): IncomeComposition
  *  extracted (no total row rendered; we never pass a summed-rows figure off as
  *  an authoritative total). % is 100% for a positive total, em dash for a
  *  zero/negative (loss-year) total, mirroring buildIncomeComposition's usePct
- *  guard. */
+ *  guard — and it is the GROSS total that anchors the percentages. */
 export function incomeCompositionTotal(
   totalIncome: number | null,
-): { amount: string; pct: string } | null {
+  grossTotal: number | null,
+): { amount: string; gross: string; pct: string } | null {
   if (totalIncome == null) return null;
-  return { amount: fmtUsd(totalIncome), pct: totalIncome > 0 ? fmtPct(1) : "—" };
+  const g = grossTotal ?? totalIncome;
+  return { amount: fmtUsd(totalIncome), gross: fmtUsd(g), pct: g > 0 ? fmtPct(1) : "—" };
 }
 
 export function buildDeductionDetail(facts: TaxReturnFacts): DeductionDetail | null {

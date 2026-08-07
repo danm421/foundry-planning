@@ -14,9 +14,14 @@ import {
   type DeductionDetail,
 } from "./breakdowns";
 import { buildActivityDetail, type ActivityDetail } from "./activity-detail";
+import { buildGrossIncome } from "./gross-income";
 
 export interface TaxAnalysisKeyFigures {
   totalIncome: number | null; // 1040 line 9
+  /** Line 9 with each activity's net swapped for its gross basis. Equal to
+   *  totalIncome when the return has nothing to gross up — the tile is hidden
+   *  in that case rather than printing the same number twice. */
+  grossIncome: number | null;
   agi: number | null;
   taxableIncome: number | null;
   totalTax: number | null;
@@ -63,11 +68,15 @@ export function buildTaxAnalysis(args: BuildTaxAnalysisArgs): TaxAnalysis {
   const bracketMap = buildBracketMap(facts, params);
   const agi = facts.income.agi;
   const totalTax = facts.tax.totalTax;
+  // Built once here: keyFigures reads the total and buildIncomeComposition
+  // reads the per-source uplifts, so the two can't disagree about what gross is.
+  const gross = buildGrossIncome(facts);
 
   return {
     taxYear: facts.taxYear,
     keyFigures: {
       totalIncome: facts.income.totalIncome,
+      grossIncome: gross.total,
       agi,
       taxableIncome: facts.deductions.taxableIncome,
       totalTax,
@@ -77,7 +86,7 @@ export function buildTaxAnalysis(args: BuildTaxAnalysisArgs): TaxAnalysis {
       amountOwed: facts.payments.amountOwed,
     },
     bracketMap,
-    incomeComposition: buildIncomeComposition(facts),
+    incomeComposition: buildIncomeComposition(facts, gross),
     activityDetail: buildActivityDetail(facts),
     deductionDetail: buildDeductionDetail(facts),
     observations: buildObservations({ facts, prior, params, irmaaParams, primaryAge, spouseAge, calc, bracketMap }),

@@ -4,65 +4,115 @@ import {
   buildIncomeComposition,
   buildDeductionDetail,
   deductionDetailRows,
+  hasGrossColumn,
   incomeCompositionTotal,
 } from "../breakdowns";
+import { buildGrossIncome } from "../gross-income";
 import { buildTaxAnalysis } from "../analysis";
 import { createTaxResolver } from "@/lib/tax/resolver";
-import { params2025, retireeMfj, highEarnerMfj } from "./fixtures";
+import { params2025, retireeMfj, highEarnerMfj, landlordSingle } from "./fixtures";
+import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
+
+/** buildIncomeComposition takes the gross bundle rather than re-deriving it, so
+ *  the analysis can build it once. Tests pair the two the same way. */
+const composition = (f: TaxReturnFacts) => buildIncomeComposition(f, buildGrossIncome(f));
 
 describe("buildIncomeComposition", () => {
-  it("returns present rows in 1040 line order with % of the summed total (retiree: no totalIncome extracted)", () => {
-    const rows = buildIncomeComposition(retireeMfj())!;
+  it("returns present rows in 1040 line order with % of the summed gross (retiree: no totalIncome extracted)", () => {
+    const rows = composition(retireeMfj())!;
     // 1040 order: 2b interest, 3b dividends, 4b IRA, 6b SS, 7 capital gains
     expect(rows.map((r) => r.key)).toEqual([
       "taxableInterest", "dividends", "ira", "socialSecurity", "capitalGains",
     ]);
-    // denominator = sum of rows = 8000 + 18000 + 20000 + 90000 + 52700 = 188700
+    // denominator = sum of GROSS rows: SS shows 6a (62,000) not 6b (52,700), so
+    // 8000 + 18000 + 90000 + 62000 + 20000 = 198000
     const ira = rows.find((r) => r.key === "ira")!;
     expect(ira.amount).toBe(90000);
-    expect(ira.pctOfTotal).toBeCloseTo(90000 / 188700, 5);
+    expect(ira.gross).toBe(90000); // 4a === 4b on this fixture
+    expect(ira.pctOfGross).toBeCloseTo(90000 / 198000, 5);
   });
 
-  it("uses income.totalIncome as the denominator when extracted", () => {
+  it("carries the 6a gross beside the 6b amount for Social Security", () => {
+    const ss = composition(retireeMfj())!.find((r) => r.key === "socialSecurity")!;
+    expect(ss.amount).toBe(52700);
+    expect(ss.gross).toBe(62000);
+  });
+
+  it("uses the grossed-up total as the denominator when line 9 was extracted", () => {
     const f = retireeMfj();
     f.income.totalIncome = 200000;
-    const ira = buildIncomeComposition(f)!.find((r) => r.key === "ira")!;
-    expect(ira.pctOfTotal).toBeCloseTo(90000 / 200000, 5);
+    const ira = composition(f)!.find((r) => r.key === "ira")!;
+    expect(ira.pctOfGross).toBeCloseTo(90000 / (200000 + 9300), 5); // + the SS uplift
+  });
+
+  it("stops wages reading over 100% on a rental-loss return", () => {
+    // The bug this column exists for: 124,624 / 118,546 (line 9, net of a 6,141
+    // rental loss) rendered as 105.1%.
+    const rows = composition(landlordSingle())!;
+    const wages = rows.find((r) => r.key === "wages")!;
+    expect(wages.pctOfGross).toBeCloseTo(124624 / 144287, 5);
+    expect(wages.pctOfGross!).toBeLessThan(1);
+
+    const rental = rows.find((r) => r.key === "rental")!;
+    expect(rental.amount).toBe(-6141); // as filed
+    expect(rental.gross).toBe(19600);  // rents received
   });
 
   it("negative rows keep their sign in amount and pct", () => {
     const f = retireeMfj();
-    f.income.scheduleENet = -6141;
-    const rental = buildIncomeComposition(f)!.find((r) => r.key === "rental")!;
+    f.income.scheduleENet = -6141; // no scheduleE block, so nothing to gross up
+    const rental = composition(f)!.find((r) => r.key === "rental")!;
     expect(rental.amount).toBe(-6141);
-    expect(rental.pctOfTotal).toBeLessThan(0);
+    expect(rental.gross).toBe(-6141);
+    expect(rental.pctOfGross).toBeLessThan(0);
   });
 
   it("omits the % when the denominator is not positive", () => {
     const f = emptyTaxReturnFacts(2025);
     f.income.capitalGainOrLoss = -3000;
-    const rows = buildIncomeComposition(f)!;
+    const rows = composition(f)!;
     expect(rows).toHaveLength(1);
-    expect(rows[0].pctOfTotal).toBeNull();
+    expect(rows[0].pctOfGross).toBeNull();
   });
 
   it("returns null when no income fields are present", () => {
-    expect(buildIncomeComposition(emptyTaxReturnFacts(2025))).toBeNull();
+    expect(composition(emptyTaxReturnFacts(2025))).toBeNull();
+  });
+});
+
+describe("hasGrossColumn", () => {
+  it("is true when a source's gross differs from what it put on line 9", () => {
+    expect(hasGrossColumn(composition(landlordSingle())!)).toBe(true);
+    expect(hasGrossColumn(composition(retireeMfj())!)).toBe(true); // SS 6a vs 6b
+  });
+
+  it("is false for a wage-and-portfolio return, keeping the table three columns wide", () => {
+    expect(hasGrossColumn(composition(highEarnerMfj())!)).toBe(false);
   });
 });
 
 describe("incomeCompositionTotal", () => {
   it("returns null when line 9 was not extracted (gates the total row off)", () => {
-    expect(incomeCompositionTotal(null)).toBeNull();
+    expect(incomeCompositionTotal(null, null)).toBeNull();
   });
 
-  it("formats a positive total at 100%", () => {
-    expect(incomeCompositionTotal(195700)).toEqual({ amount: "$195,700", pct: "100%" });
+  it("formats a positive total at 100%, with the gross beside it", () => {
+    expect(incomeCompositionTotal(195700, 205000)).toEqual({
+      amount: "$195,700", gross: "$205,000", pct: "100%",
+    });
+  });
+
+  it("falls back to line 9 as its own gross when no uplift applies", () => {
+    expect(incomeCompositionTotal(195700, null)).toEqual({
+      amount: "$195,700", gross: "$195,700", pct: "100%",
+    });
   });
 
   it("shows an em dash for the % of a loss-year (non-positive) total", () => {
-    expect(incomeCompositionTotal(-5000)).toEqual({ amount: "-$5,000", pct: "—" });
-    expect(incomeCompositionTotal(0)).toEqual({ amount: "$0", pct: "—" });
+    expect(incomeCompositionTotal(-5000, -5000)).toEqual({
+      amount: "-$5,000", gross: "-$5,000", pct: "—",
+    });
+    expect(incomeCompositionTotal(0, 0)).toEqual({ amount: "$0", gross: "$0", pct: "—" });
   });
 });
 
@@ -108,5 +158,15 @@ describe("buildTaxAnalysis wiring", () => {
     const a = buildTaxAnalysis({ facts: highEarnerMfj(), prior: null, resolver, primaryAge: 45, spouseAge: 45 });
     expect(a.incomeComposition?.length).toBeGreaterThan(0);
     expect(a.deductionDetail?.scheduleA?.saltLostToCap).toBe(22000);
+  });
+
+  it("exposes grossIncome as a key figure and feeds the same gross to the composition rows", () => {
+    const resolver = createTaxResolver([params2025], { taxInflationRate: 0.025, ssWageGrowthRate: 0.03 });
+    const a = buildTaxAnalysis({ facts: landlordSingle(), prior: null, resolver, primaryAge: 41, spouseAge: null });
+    expect(a.keyFigures.totalIncome).toBe(118546);
+    expect(a.keyFigures.grossIncome).toBe(144287);
+    // The rows' gross column must reconcile to the same figure the tile shows.
+    const summed = a.incomeComposition!.reduce((s, r) => s + r.gross, 0);
+    expect(summed).toBe(a.keyFigures.grossIncome);
   });
 });

@@ -112,7 +112,12 @@ describe("TaxAnalysisPdfDocument", () => {
     // Guard the data the new KPI + total row render from — the buffer assertion
     // alone can't distinguish "rendered" from "skipped as —/null".
     expect(analysis.keyFigures.totalIncome).toBe(195700);
-    expect(incomeCompositionTotal(analysis.keyFigures.totalIncome)).toEqual({ amount: "$195,700", pct: "100%" });
+    // The retiree fixture's SS is 62,000 gross / 52,700 taxable, so the gross
+    // tile and the Gross column both render on this page.
+    expect(analysis.keyFigures.grossIncome).toBe(205000);
+    expect(incomeCompositionTotal(analysis.keyFigures.totalIncome, analysis.keyFigures.grossIncome)).toEqual({
+      amount: "$195,700", gross: "$205,000", pct: "100%",
+    });
 
     const buffer = await renderToBuffer(
       <TaxAnalysisPdfDocument

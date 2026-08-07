@@ -31,8 +31,9 @@ describe("TaxReportView — income composition + deductions", () => {
     render(<TaxReportView clientId="c1" detail={detail} onEditFacts={vi.fn()} />);
     expect(screen.getByText(/income composition/i)).toBeTruthy();
     expect(screen.getByText("IRA distributions")).toBeTruthy();
-    expect(screen.getByText("$90,000")).toBeTruthy();
-    expect(screen.getByText("47.7%")).toBeTruthy(); // 90000 / 188700
+    // $90,000 twice: the as-filed 4b amount and its 4a gross (equal here).
+    expect(screen.getAllByText("$90,000")).toHaveLength(2);
+    expect(screen.getByText("45.5%")).toBeTruthy(); // 90000 / 198000 gross
   });
 
   it("renders the deductions table including the SALT-lost-to-cap row for an itemized return", () => {
@@ -67,7 +68,9 @@ describe("TaxReportView — business & rental detail", () => {
     expect(screen.getByText(/business & rental detail/i)).toBeTruthy();
     expect(screen.getByText("Rental real estate")).toBeTruthy();
     expect(screen.getByText("Rents received")).toBeTruthy();
-    expect(screen.getByText("$19,600")).toBeTruthy();      // gross — absent before this section
+    // $19,600 twice: the activity card's gross rent and the composition table's
+    // Gross column for the same rental.
+    expect(screen.getAllByText("$19,600")).toHaveLength(2);
     expect(screen.getByText("-$25,741")).toBeTruthy();     // total expenses
     expect(screen.getByText("Net taxable")).toBeTruthy();
     expect(screen.getByText("Cash flow before depreciation")).toBeTruthy();
@@ -111,5 +114,46 @@ describe("TaxReportView — total income", () => {
     render(<TaxReportView clientId="c1" detail={detail} onEditFacts={vi.fn()} />);
     expect(screen.getByText("Total income")).toBeTruthy(); // KPI label present (value —)
     expect(screen.queryByText("100%")).toBeNull();         // no total row
+  });
+});
+
+describe("TaxReportView — gross income top line", () => {
+  function detailFor(facts: ReturnType<typeof landlordSingle>, age: number): YearDetail {
+    return {
+      taxYear: 2025, status: "ready", facts, extractedFacts: facts, warnings: [],
+      analysis: buildTaxAnalysis({ facts, prior: null, resolver, primaryAge: age, spouseAge: null }),
+      documents: [], conflicts: [], provenance: {},
+    };
+  }
+
+  it("shows a Gross income KPI of rents received rather than the netted line 9", () => {
+    render(<TaxReportView clientId="c1" detail={detailFor(landlordSingle(), 41)} onEditFacts={vi.fn()} />);
+    expect(screen.getByText("Gross income")).toBeTruthy();
+    // 118,546 (line 9) + 6,141 rental loss + 19,600 rents received. Twice: the
+    // KPI tile and the composition table's Gross total — proving both read it.
+    expect(screen.getAllByText("$144,287")).toHaveLength(2);
+    // Line 9 still shown as filed (Total income KPI, AGI KPI, total-row cell).
+    expect(screen.getAllByText("$118,546").length).toBeGreaterThan(0);
+  });
+
+  it("widens the composition table to As filed / Gross and rebases the % on gross", () => {
+    render(<TaxReportView clientId="c1" detail={detailFor(landlordSingle(), 41)} onEditFacts={vi.fn()} />);
+    expect(screen.getByText("As filed")).toBeTruthy();
+    expect(screen.getByText("Gross")).toBeTruthy();
+    expect(screen.getByText("% of gross")).toBeTruthy();
+    expect(screen.queryByText("% of total")).toBeNull();
+    // The defect this replaces: wages read 105.1% of line 9. 124,624/144,287.
+    expect(screen.getByText("86.4%")).toBeTruthy();
+    expect(screen.queryByText("105.1%")).toBeNull();
+  });
+
+  it("keeps the three-column table and hides the tile when nothing grosses up", () => {
+    const facts = highEarnerMfj();
+    facts.income.totalIncome = 467000;
+    render(<TaxReportView clientId="c1" detail={detailFor(facts, 45)} onEditFacts={vi.fn()} />);
+    expect(screen.queryByText("Gross income")).toBeNull();
+    expect(screen.queryByText("Gross")).toBeNull();
+    expect(screen.getByText("Amount")).toBeTruthy();
+    expect(screen.getByText("% of total")).toBeTruthy();
   });
 });

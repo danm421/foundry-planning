@@ -4,7 +4,7 @@ import type { TaxAnalysis } from "@/lib/tax-analysis/analysis";
 import type { Observation } from "@/lib/tax-analysis/types";
 import { computeBracketBarLayout } from "@/lib/tax-analysis/bracket-map";
 import { fmtUsd, fmtPct } from "@/lib/tax-analysis/format";
-import { deductionDetailRows, incomeCompositionTotal } from "@/lib/tax-analysis/breakdowns";
+import { deductionDetailRows, hasGrossColumn, incomeCompositionTotal } from "@/lib/tax-analysis/breakdowns";
 import { activityDetailRows } from "@/lib/tax-analysis/activity-detail";
 import { PDF_THEME } from "@/components/balance-sheet-report/tokens";
 
@@ -35,8 +35,9 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: "bold" },
   subtitle: { color: PDF_THEME.text.muted, fontSize: 10, marginTop: 2 },
   logo: { height: 28, objectFit: "contain" },
-  figuresRow: { flexDirection: "row", gap: 8, marginBottom: 16 },
+  figuresRow: { flexDirection: "row", gap: 8, marginBottom: 8 },
   panel: { flex: 1, borderWidth: 1, borderColor: PDF_THEME.surface.panelBorder, backgroundColor: PDF_THEME.surface.panel, borderRadius: 4, padding: 8 },
+  panelSpacer: { flex: 1 },
   panelLabel: { fontSize: 7, textTransform: "uppercase", color: PDF_THEME.text.muted },
   panelValue: { fontSize: 13, fontWeight: "bold", marginTop: 2 },
   sectionHeading: { fontSize: 9, textTransform: "uppercase", color: PDF_THEME.text.muted, marginTop: 14, marginBottom: 6 },
@@ -90,6 +91,10 @@ function KeyFigure({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** Panels per row. Seven across already crowded the page; the gross-income
+ *  tile would make eight. Chunking matches the screen's md:grid-cols-4. */
+const FIGURES_PER_ROW = 4;
+
 function KeyFiguresRow({ analysis }: { analysis: TaxAnalysis }) {
   const k = analysis.keyFigures;
   const refundLabel = k.refund != null && k.refund > 0 ? "Refund" : "Owed at filing";
@@ -97,15 +102,39 @@ function KeyFiguresRow({ analysis }: { analysis: TaxAnalysis }) {
     k.refund != null && k.refund > 0
       ? fmtUsd(k.refund)
       : k.amountOwed != null ? fmtUsd(k.amountOwed) : "—";
+
+  const figures: Array<{ label: string; value: string }> = [
+    // Only when it says something line 9 doesn't — otherwise the same number twice.
+    ...(k.grossIncome != null && k.grossIncome !== k.totalIncome
+      ? [{ label: "Gross income", value: fmtUsd(k.grossIncome) }]
+      : []),
+    { label: "Total income", value: k.totalIncome != null ? fmtUsd(k.totalIncome) : "—" },
+    { label: "AGI", value: k.agi != null ? fmtUsd(k.agi) : "—" },
+    { label: "Taxable income", value: k.taxableIncome != null ? fmtUsd(k.taxableIncome) : "—" },
+    { label: "Total tax", value: k.totalTax != null ? fmtUsd(k.totalTax) : "—" },
+    { label: "Effective rate", value: k.effectiveRate != null ? fmtPct(k.effectiveRate) : "—" },
+    { label: "Marginal rate", value: k.marginalRate != null ? fmtPct(k.marginalRate) : "—" },
+    { label: refundLabel, value: refundValue },
+  ];
+
+  const rows: Array<typeof figures> = [];
+  for (let i = 0; i < figures.length; i += FIGURES_PER_ROW) {
+    rows.push(figures.slice(i, i + FIGURES_PER_ROW));
+  }
+
   return (
-    <View style={styles.figuresRow}>
-      <KeyFigure label="Total income" value={k.totalIncome != null ? fmtUsd(k.totalIncome) : "—"} />
-      <KeyFigure label="AGI" value={k.agi != null ? fmtUsd(k.agi) : "—"} />
-      <KeyFigure label="Taxable income" value={k.taxableIncome != null ? fmtUsd(k.taxableIncome) : "—"} />
-      <KeyFigure label="Total tax" value={k.totalTax != null ? fmtUsd(k.totalTax) : "—"} />
-      <KeyFigure label="Effective rate" value={k.effectiveRate != null ? fmtPct(k.effectiveRate) : "—"} />
-      <KeyFigure label="Marginal rate" value={k.marginalRate != null ? fmtPct(k.marginalRate) : "—"} />
-      <KeyFigure label={refundLabel} value={refundValue} />
+    <View>
+      {rows.map((row) => (
+        <View key={row[0].label} style={styles.figuresRow}>
+          {row.map((f) => (
+            <KeyFigure key={f.label} label={f.label} value={f.value} />
+          ))}
+          {/* Keeps a short trailing row's panels the same width as a full one. */}
+          {Array.from({ length: FIGURES_PER_ROW - row.length }, (_, i) => (
+            <View key={`spacer-${i}`} style={styles.panelSpacer} />
+          ))}
+        </View>
+      ))}
     </View>
   );
 }
@@ -172,27 +201,32 @@ function BracketMapSection({ analysis }: { analysis: TaxAnalysis }) {
 function IncomeCompositionSection({ analysis }: { analysis: TaxAnalysis }) {
   const rows = analysis.incomeComposition;
   if (!rows) return null;
-  const total = incomeCompositionTotal(analysis.keyFigures.totalIncome);
+  const k = analysis.keyFigures;
+  const total = incomeCompositionTotal(k.totalIncome, k.grossIncome);
+  const showGross = hasGrossColumn(rows);
   return (
     <View>
       <Text style={styles.sectionHeading}>Income composition</Text>
       <View style={styles.table}>
         <View style={styles.tableHeaderRow}>
           <Text style={styles.tableHeaderLabelCell}>Source</Text>
-          <Text style={styles.tableHeaderValueCell}>Amount</Text>
-          <Text style={styles.tableHeaderValueCell}>% of total</Text>
+          <Text style={styles.tableHeaderValueCell}>{showGross ? "As filed" : "Amount"}</Text>
+          {showGross && <Text style={styles.tableHeaderValueCell}>Gross</Text>}
+          <Text style={styles.tableHeaderValueCell}>{showGross ? "% of gross" : "% of total"}</Text>
         </View>
         {rows.map((r) => (
           <View key={r.key} style={styles.tableRow}>
             <Text style={styles.tableLabelCell}>{r.label}</Text>
             <Text style={styles.tableValueCell}>{fmtUsd(r.amount)}</Text>
-            <Text style={styles.tableValueCell}>{r.pctOfTotal != null ? fmtPct(r.pctOfTotal) : "—"}</Text>
+            {showGross && <Text style={styles.tableValueCell}>{fmtUsd(r.gross)}</Text>}
+            <Text style={styles.tableValueCell}>{r.pctOfGross != null ? fmtPct(r.pctOfGross) : "—"}</Text>
           </View>
         ))}
         {total && (
           <View style={styles.tableTotalRow}>
             <Text style={styles.tableTotalLabelCell}>Total income</Text>
             <Text style={styles.tableTotalValueCell}>{total.amount}</Text>
+            {showGross && <Text style={styles.tableTotalValueCell}>{total.gross}</Text>}
             <Text style={styles.tableTotalValueCell}>{total.pct}</Text>
           </View>
         )}

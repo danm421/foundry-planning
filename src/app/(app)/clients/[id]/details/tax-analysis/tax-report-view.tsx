@@ -2,7 +2,7 @@
 
 import type { Observation } from "@/lib/tax-analysis/types";
 import { fmtUsd, fmtPct } from "@/lib/tax-analysis/format";
-import { deductionDetailRows, incomeCompositionTotal } from "@/lib/tax-analysis/breakdowns";
+import { deductionDetailRows, hasGrossColumn, incomeCompositionTotal } from "@/lib/tax-analysis/breakdowns";
 import { activityDetailRows, type ActivityDetail } from "@/lib/tax-analysis/activity-detail";
 import { BracketMapBars } from "./bracket-map-bars";
 import type { YearDetail } from "./tax-analysis-content";
@@ -66,7 +66,12 @@ export function TaxReportView({
 }) {
   const a = detail.analysis!;
   const k = a.keyFigures;
-  const incomeTotal = incomeCompositionTotal(k.totalIncome);
+  const incomeTotal = incomeCompositionTotal(k.totalIncome, k.grossIncome);
+  // Each shows only when it says something line 9 doesn't. They differ: the
+  // tile needs a filed line 9 to anchor to, the column needs only one source
+  // whose gross differs — a return with no line 9 gets the column, not the tile.
+  const grossTile = k.grossIncome != null && k.grossIncome !== k.totalIncome ? k.grossIncome : null;
+  const showGrossColumn = a.incomeComposition != null && hasGrossColumn(a.incomeComposition);
 
   async function exportPdf() {
     const res = await fetch(`/api/clients/${clientId}/tax-returns/${detail.taxYear}/export-pdf`, { method: "POST" });
@@ -94,7 +99,8 @@ export function TaxReportView({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        {grossTile != null && <KeyFigure label="Gross income" value={fmtUsd(grossTile)} />}
         <KeyFigure label="Total income" value={k.totalIncome != null ? fmtUsd(k.totalIncome) : "—"} />
         <KeyFigure label="AGI" value={k.agi != null ? fmtUsd(k.agi) : "—"} />
         <KeyFigure label="Taxable income" value={k.taxableIncome != null ? fmtUsd(k.taxableIncome) : "—"} />
@@ -124,8 +130,11 @@ export function TaxReportView({
             <thead>
               <tr className="border-b border-hair text-left text-ink-3">
                 <th className="py-1 font-normal">Source</th>
-                <th className="py-1 text-right font-normal">Amount</th>
-                <th className="py-1 text-right font-normal">% of total</th>
+                <th className="py-1 text-right font-normal">{showGrossColumn ? "As filed" : "Amount"}</th>
+                {showGrossColumn && <th className="py-1 text-right font-normal">Gross</th>}
+                <th className="py-1 text-right font-normal">
+                  {showGrossColumn ? "% of gross" : "% of total"}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -133,8 +142,11 @@ export function TaxReportView({
                 <tr key={r.key} className="border-b border-hair">
                   <td className="py-1">{r.label}</td>
                   <td className="py-1 text-right tabular-nums">{fmtUsd(r.amount)}</td>
+                  {showGrossColumn && (
+                    <td className="py-1 text-right tabular-nums">{fmtUsd(r.gross)}</td>
+                  )}
                   <td className="py-1 text-right tabular-nums">
-                    {r.pctOfTotal != null ? fmtPct(r.pctOfTotal) : "—"}
+                    {r.pctOfGross != null ? fmtPct(r.pctOfGross) : "—"}
                   </td>
                 </tr>
               ))}
@@ -144,6 +156,9 @@ export function TaxReportView({
                 <tr className="border-t-2 border-hair font-medium">
                   <td className="py-1">Total income</td>
                   <td className="py-1 text-right tabular-nums">{incomeTotal.amount}</td>
+                  {showGrossColumn && (
+                    <td className="py-1 text-right tabular-nums">{incomeTotal.gross}</td>
+                  )}
                   <td className="py-1 text-right tabular-nums">{incomeTotal.pct}</td>
                 </tr>
               </tfoot>
