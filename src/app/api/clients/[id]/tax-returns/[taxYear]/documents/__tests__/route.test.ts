@@ -75,13 +75,25 @@ beforeEach(() => {
 });
 
 describe("POST /tax-returns/[taxYear]/documents", () => {
-  it("adds the document and returns its id and role", async () => {
+  it("adds the document, returns its id and role, and records the audit row", async () => {
     vi.mocked(addDocumentToReturn).mockResolvedValue({
       documentId: "doc-9", role: "k1", warnings: [],
     });
     const res = await POST(postRequest(), params);
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toMatchObject({ documentId: "doc-9", role: "k1" });
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "tax_return.document_add" }),
+    );
+  });
+
+  it("429s when the extract rate limit is exceeded", async () => {
+    vi.mocked(checkImportRateLimit).mockResolvedValue({
+      allowed: false, reason: "exceeded",
+    } as never);
+    const res = await POST(postRequest(), params);
+    expect(res.status).toBe(429);
+    expect(addDocumentToReturn).not.toHaveBeenCalled();
   });
 
   it("passes the advisor's explicit role straight through", async () => {
@@ -139,7 +151,10 @@ describe("POST /tax-returns/[taxYear]/documents", () => {
   });
 });
 
-vi.mock("@/lib/tax-returns/documents-store", () => ({ deleteDocument: vi.fn() }));
+vi.mock("@/lib/tax-returns/documents-store", () => ({
+  deleteDocument: vi.fn(),
+  insertDocument: vi.fn(),
+}));
 vi.mock("@/lib/tax-returns/recompute", async () => {
   const actual = await vi.importActual<typeof import("@/lib/tax-returns/recompute")>(
     "@/lib/tax-returns/recompute",
@@ -147,10 +162,11 @@ vi.mock("@/lib/tax-returns/recompute", async () => {
   return { ...actual, recomputeFacts: vi.fn() };
 });
 
-import { deleteDocument } from "@/lib/tax-returns/documents-store";
+import { deleteDocument, insertDocument } from "@/lib/tax-returns/documents-store";
 import { recomputeFacts } from "@/lib/tax-returns/recompute";
 import { EmptyRecomputeError } from "@/lib/tax-returns/errors";
 import { emptyTaxReturnFacts } from "@/lib/schemas/tax-return-facts";
+import { recordAudit } from "@/lib/audit";
 import { DELETE } from "../[documentId]/route";
 
 const DOC_ID = "44444444-4444-4444-4444-444444444444";
@@ -159,16 +175,40 @@ const deleteParams = {
 };
 const deleteRequest = () => new NextRequest("http://localhost/api/x", { method: "DELETE" });
 
+// The full row `deleteDocument` returns via `.returning()` — every field
+// `insertDocument` needs to restore it on a failed recompute.
+function removedRow() {
+  return {
+    id: DOC_ID,
+    taxReturnId: RETURN_ID,
+    role: "k1",
+    filename: "k1.pdf",
+    vaultDocumentId: null,
+    extractedFacts: { taxYear: 2024 },
+    supportingPayload: null,
+    warnings: [],
+    promptVersion: "v1",
+    model: "full",
+    taxYear: 2024,
+    createdAt: new Date(),
+  };
+}
+
 describe("DELETE /tax-returns/[taxYear]/documents/[documentId]", () => {
-  it("removes the document and recomputes", async () => {
-    vi.mocked(deleteDocument).mockResolvedValue({ id: DOC_ID } as never);
+  it("removes the document, recomputes, records the audit row, and returns removed:true", async () => {
+    vi.mocked(deleteDocument).mockResolvedValue(removedRow() as never);
     vi.mocked(recomputeFacts).mockResolvedValue(emptyTaxReturnFacts(2024));
 
     const res = await DELETE(deleteRequest(), deleteParams);
 
     expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ removed: true });
     expect(deleteDocument).toHaveBeenCalledWith(RETURN_ID, DOC_ID);
     expect(recomputeFacts).toHaveBeenCalledWith(RETURN_ID, 2024);
+    expect(insertDocument).not.toHaveBeenCalled();
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "tax_return.document_remove" }),
+    );
   });
 
   it("404s when the document is not on this return", async () => {
@@ -178,13 +218,30 @@ describe("DELETE /tax-returns/[taxYear]/documents/[documentId]", () => {
     expect(recomputeFacts).not.toHaveBeenCalled();
   });
 
-  it("409s rather than blanking the year when the last document is removed", async () => {
-    vi.mocked(deleteDocument).mockResolvedValue({ id: DOC_ID } as never);
+  it("409s rather than blanking the year when the last document is removed, and restores it", async () => {
+    const removed = removedRow();
+    vi.mocked(deleteDocument).mockResolvedValue(removed as never);
     vi.mocked(recomputeFacts).mockRejectedValue(new EmptyRecomputeError(RETURN_ID));
 
     const res = await DELETE(deleteRequest(), deleteParams);
 
     expect(res.status).toBe(409);
     await expect(res.json()).resolves.toMatchObject({ error: "last_document" });
+    expect(insertDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ extractedFacts: removed.extractedFacts, role: removed.role }),
+    );
+  });
+
+  it("restores the document and 500s on a non-refusal recompute failure", async () => {
+    const removed = removedRow();
+    vi.mocked(deleteDocument).mockResolvedValue(removed as never);
+    vi.mocked(recomputeFacts).mockRejectedValue(new Error("boom"));
+
+    const res = await DELETE(deleteRequest(), deleteParams);
+
+    expect(res.status).toBe(500);
+    expect(insertDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ extractedFacts: removed.extractedFacts, role: removed.role }),
+    );
   });
 });
