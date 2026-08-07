@@ -1,4 +1,9 @@
-import { isUSPSStateCode, USPS_STATE_NAMES } from "@/lib/usps-states";
+import {
+  isUSPSStateCode,
+  USPS_STATE_CODES,
+  USPS_STATE_NAMES,
+  type USPSStateCode,
+} from "@/lib/usps-states";
 
 /**
  * Per-cell coercion for the bulk import.
@@ -79,16 +84,16 @@ export function parseStatus(raw: string): { value: CrmHouseholdStatus; recognize
 }
 
 /** USPS 2-letter code or full state name → the code. Null when unreadable. */
-export function parseState(raw: string): string | null {
+export function parseState(raw: string): USPSStateCode | null {
   const s = raw.trim();
   if (!s) return null;
   const upper = s.toUpperCase();
   if (isUSPSStateCode(upper)) return upper;
   const lower = s.toLowerCase();
-  const byName = Object.entries(USPS_STATE_NAMES).find(
-    ([, name]) => name.toLowerCase() === lower,
+  const byName = USPS_STATE_CODES.find(
+    (code) => USPS_STATE_NAMES[code].toLowerCase() === lower,
   );
-  return byName ? byName[0] : null;
+  return byName ?? null;
 }
 
 /** Lowercased address, or null when blank or malformed. */
