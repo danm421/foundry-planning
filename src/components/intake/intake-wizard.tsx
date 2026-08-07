@@ -19,9 +19,16 @@ import { IncomeStep } from "./steps/income-step";
 import { PropertyStep } from "./steps/property-step";
 import { GoalsStep, type GoalBeneficiary } from "./steps/goals-step";
 import { DocumentsStep } from "./steps/documents-step";
+import { RiskStep } from "./steps/risk-step";
 import { ReviewStep } from "./review-step";
 import type { IntakeUploadContext } from "./intake-upload-zone";
 import type { IntakeDocumentView } from "@/lib/intake/document-types";
+import {
+  DEFAULT_INTAKE_SECTIONS,
+  INTAKE_SECTION_LABELS,
+  renderableSections,
+  type IntakeSectionKey,
+} from "@/lib/intake/sections";
 
 // ─── Public interface ────────────────────────────────────────────────────────
 export interface IntakeWizardProps {
@@ -52,6 +59,13 @@ export interface IntakeWizardProps {
    * reach the upload routes. Ignored when the live upload props are present.
    */
   sampleUploads?: boolean;
+  /**
+   * Which sections this form collects. Optional, defaulting to the full default
+   * set: unlike `token`/`documents` (where a forgotten prop must fail closed and
+   * offer nothing), a forgotten `sections` should show the form everyone got
+   * before this feature existed, never a silently truncated one.
+   */
+  sections?: readonly IntakeSectionKey[];
 }
 
 // ─── Section / sub-step state machine ───────────────────────────────────────
@@ -59,7 +73,7 @@ export interface IntakeWizardProps {
 //   welcome → family → assets:accounts → assets:income → assets:property → goals → review
 
 interface StepDescriptor {
-  section: "welcome" | "family" | "assets" | "goals" | "documents" | "review";
+  section: "welcome" | "family" | "assets" | "goals" | "documents" | "risk" | "review";
   subStep?: "accounts" | "income" | "property";
   /** Chrome label (shown in progress bar + eyebrow) */
   label: string;
@@ -69,37 +83,38 @@ interface StepDescriptor {
   skipable?: boolean;
 }
 
-const STEPS_BEFORE_DOCUMENTS: readonly StepDescriptor[] = [
-  { section: "welcome", label: "Welcome", title: "Welcome" },
-  { section: "family",  label: "Family",   title: "Family" },
-  { section: "assets",  subStep: "accounts", label: "Accounts", title: "Accounts" },
-  { section: "assets",  subStep: "income",   label: "Income",   title: "Income", skipable: true },
-  { section: "assets",  subStep: "property", label: "Property", title: "Property", skipable: true },
-  { section: "goals",   label: "Goals",   title: "Goals" },
-] as const;
+/** A step's H1 is always the section's canonical label, and the progress-bar
+ *  chip reuses it unless a shorter one is passed. */
+function sectionStep(
+  key: IntakeSectionKey,
+  rest: Omit<StepDescriptor, "label" | "title"> & { label?: string },
+): StepDescriptor {
+  const title = INTAKE_SECTION_LABELS[key];
+  return { label: title, title, ...rest };
+}
 
-const DOCUMENTS_STEP: StepDescriptor = {
-  section: "documents",
-  label: "Documents",
-  title: "Documents",
-  skipable: true,
+/** Every switchable step, keyed by its section. Order here is irrelevant —
+ *  `buildSteps` walks `sections`, which is already in canonical order. */
+const STEP_BY_SECTION: Record<IntakeSectionKey, StepDescriptor> = {
+  family:    sectionStep("family",    { section: "family" }),
+  accounts:  sectionStep("accounts",  { section: "assets", subStep: "accounts" }),
+  income:    sectionStep("income",    { section: "assets", subStep: "income", skipable: true }),
+  property:  sectionStep("property",  { section: "assets", subStep: "property", skipable: true }),
+  goals:     sectionStep("goals",     { section: "goals" }),
+  documents: sectionStep("documents", { section: "documents", skipable: true }),
+  // The only step whose chip and H1 differ: the progress bar lays every label
+  // out on one row, so Risk stays compact there while the H1 reads in full.
+  risk:      sectionStep("risk",      { section: "risk", label: "Risk", skipable: true }),
 };
 
-const REVIEW_STEP: StepDescriptor = {
-  section: "review",
-  label: "Review",
-  title: "Review & Submit",
-};
+// Welcome and Review are wizard chrome, not sections — they always render and
+// are deliberately absent from INTAKE_SECTIONS, so their labels live here.
+const WELCOME_STEP: StepDescriptor = { section: "welcome", label: "Welcome", title: "Welcome" };
+const REVIEW_STEP: StepDescriptor = { section: "review", label: "Review", title: "Review & Submit" };
 
-/**
- * The Documents step exists only where an upload surface does — live on the
- * public form, inert in the advisor's preview. The portal wizard has neither,
- * so it must not show a step whose only content is a zone it can't use.
- */
-function buildSteps(withDocuments: boolean): readonly StepDescriptor[] {
-  return withDocuments
-    ? [...STEPS_BEFORE_DOCUMENTS, DOCUMENTS_STEP, REVIEW_STEP]
-    : [...STEPS_BEFORE_DOCUMENTS, REVIEW_STEP];
+/** Welcome → the selected sections in canonical order → Review. */
+function buildSteps(sections: readonly IntakeSectionKey[]): readonly StepDescriptor[] {
+  return [WELCOME_STEP, ...sections.map((s) => STEP_BY_SECTION[s]), REVIEW_STEP];
 }
 
 /**
@@ -109,7 +124,7 @@ function buildSteps(withDocuments: boolean): readonly StepDescriptor[] {
  */
 function indexOfSection(
   steps: readonly StepDescriptor[],
-  section: "family" | "accounts" | "income" | "property" | "goals",
+  section: "family" | "accounts" | "income" | "property" | "goals" | "documents" | "risk",
 ): number {
   return steps.findIndex((s) => (s.subStep ?? s.section) === section);
 }
@@ -127,7 +142,9 @@ function useDraftSliceSetters(value: IntakeDraft, onChange: (next: IntakeDraft) 
     onChange({ ...value, property: patch });
   const setGoals: (patch: IntakeDraft["goals"]) => void = (patch) =>
     onChange({ ...value, goals: patch });
-  return { setFamily, setAccounts, setIncome, setProperty, setGoals };
+  const setRisk: (patch: IntakeDraft["risk"]) => void = (patch) =>
+    onChange({ ...value, risk: patch });
+  return { setFamily, setAccounts, setIncome, setProperty, setGoals, setRisk };
 }
 
 // ─── Skip affordance ─────────────────────────────────────────────────────────
@@ -158,6 +175,12 @@ function offersSkip(
     return (draft.property ?? []).every(isBlankIntakePropertyRow) && !hasDoc("mortgage");
   }
   if (step.section === "documents") return documents.length === 0;
+  // Same rule as Income and Property: "Skip for now" only while the step is
+  // genuinely empty. Once an answer exists, the label would read as "discard
+  // what I just picked".
+  if (step.section === "risk") {
+    return Object.keys(draft.risk?.answers ?? {}).length === 0;
+  }
   return true;
 }
 
@@ -203,11 +226,12 @@ export function IntakeWizard({
   documents,
   onDocumentsChanged,
   sampleUploads,
+  sections,
 }: IntakeWizardProps) {
-  // 0 = welcome; 1 = family; 2 = accounts; 3 = income; 4 = property; 5 = goals;
-  // then Documents (only where uploads are offered), then review.
+  // 0 = welcome; then the selected sections in canonical order (Documents only
+  // where uploads are offered); then review.
   const [flatIndex, setFlatIndex] = useState(0);
-  const { setFamily, setAccounts, setIncome, setProperty, setGoals } =
+  const { setFamily, setAccounts, setIncome, setProperty, setGoals, setRisk } =
     useDraftSliceSetters(value, onChange);
 
   // Live uploads are all three or none: a list with no token can't upload, and
@@ -226,7 +250,16 @@ export function IntakeWizard({
   // "Skip for now" to "Next", or the preview would misreport its own copy.
   const docs = uploads?.kind === "live" ? uploads.documents : [];
 
-  const steps = buildSteps(uploads != null);
+  // Resolved once, here, and fed to the step list, the welcome overview and the
+  // review screen alike — that is what keeps the three from disagreeing about
+  // what this form collects. The portal's own "nothing to render" fallback asks
+  // the same function, so the two cannot drift into a redirect loop.
+  const activeSections = renderableSections(
+    sections ?? DEFAULT_INTAKE_SECTIONS,
+    uploads != null,
+  );
+
+  const steps = buildSteps(activeSections);
   const step = steps[flatIndex];
   const isFirst = flatIndex === 0;
   const isLast = flatIndex === steps.length - 1;
@@ -237,7 +270,9 @@ export function IntakeWizard({
   function goBack() {
     if (!isFirst) setFlatIndex((i) => i - 1);
   }
-  function goToSection(section: "family" | "accounts" | "income" | "property" | "goals") {
+  function goToSection(
+    section: "family" | "accounts" | "income" | "property" | "goals" | "documents" | "risk",
+  ) {
     const idx = indexOfSection(steps, section);
     if (idx >= 0) setFlatIndex(idx);
   }
@@ -255,7 +290,7 @@ export function IntakeWizard({
             {error}
           </div>
         )}
-        <WelcomeScreen mode={mode} onStart={goNext} />
+        <WelcomeScreen mode={mode} onStart={goNext} sections={activeSections} />
       </div>
     );
   }
@@ -321,10 +356,13 @@ export function IntakeWizard({
         );
       case "documents":
         return uploads ? <DocumentsStep uploads={uploads} /> : null;
+      case "risk":
+        return <RiskStep value={value.risk} onChange={setRisk} />;
       case "review":
         return (
           <ReviewStep
             value={value}
+            sections={activeSections}
             onEdit={goToSection}
           />
         );

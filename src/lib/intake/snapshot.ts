@@ -22,6 +22,7 @@ import {
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import type { IntakePayload } from "@/lib/intake/schema";
+import type { IntakeSectionKey } from "@/lib/intake/sections";
 import { incomeFormYears } from "@/lib/intake/income-years";
 
 // ── DB → form category mapping ────────────────────────────────────────────────
@@ -168,6 +169,14 @@ function mapIncomeType(dbType: string): IntakeIncomeType {
 export async function snapshotClientToPayload(
   clientId: string,
   firmId: string,
+  // Seeding a section the form does not collect would put data in the payload
+  // that the client never sees and apply never writes — dead weight at best,
+  // and a stale-data hazard if the apply gate ever regresses.
+  //
+  // REQUIRED, deliberately. A default here reads as harmless and isn't: it lets
+  // a caller that forgot to thread the form's sections through compile clean and
+  // silently snapshot everything. Callers pass `sectionsForForm(form.sections)`.
+  sections: readonly IntakeSectionKey[],
 ): Promise<IntakePayload> {
   // ── 1. Load client row ────────────────────────────────────────────────────
   const [client] = await db
@@ -203,7 +212,11 @@ export async function snapshotClientToPayload(
   }
 
   // ── 4. Build family.primary ───────────────────────────────────────────────
-  const primary: IntakePayload["family"]["primary"] = {
+  // `family` is optional on IntakePayload (a form that does not collect it omits
+  // the key entirely), so the slice types have to unwrap that optionality.
+  type IntakeFamily = NonNullable<IntakePayload["family"]>;
+
+  const primary: IntakeFamily["primary"] = {
     firstName: primaryContact.firstName,
     lastName: primaryContact.lastName,
     dateOfBirth: primaryContact.dateOfBirth ?? "",
@@ -216,7 +229,7 @@ export async function snapshotClientToPayload(
   };
 
   // ── 5. Build family.spouse ────────────────────────────────────────────────
-  let spouse: IntakePayload["family"]["spouse"] = undefined;
+  let spouse: IntakeFamily["spouse"] = undefined;
   if (spouseContact) {
     spouse = {
       firstName: spouseContact.firstName,
@@ -237,7 +250,7 @@ export async function snapshotClientToPayload(
     .from(familyMembers)
     .where(and(eq(familyMembers.clientId, clientId), eq(familyMembers.role, "child")));
 
-  const children: IntakePayload["family"]["children"] = childRows.map((fm) => ({
+  const children: IntakeFamily["children"] = childRows.map((fm) => ({
     firstName: fm.firstName,
     lastName: fm.lastName ?? undefined,
     dateOfBirth: fm.dateOfBirth ?? "",
@@ -309,16 +322,24 @@ export async function snapshotClientToPayload(
     }));
 
     // ── 10. Assemble and return ───────────────────────────────────────────
+    // Each slice is seeded only when the form collects it. `goals` stays
+    // populated regardless: it carries clientRetirementAge / spouseRetirementAge,
+    // which the wizard's Income step reads for its retirement anchor even when
+    // the Goals step itself is excluded.
     return {
-      family: {
-        primary,
-        spouse,
-        stateOfResidence: stateOfResidence as string | undefined,
-        children,
-      },
-      accounts: payloadAccounts,
-      income: payloadIncome,
-      property: payloadProperty,
+      ...(sections.includes("family")
+        ? {
+            family: {
+              primary,
+              spouse,
+              stateOfResidence: stateOfResidence as string | undefined,
+              children,
+            },
+          }
+        : {}),
+      accounts: sections.includes("accounts") ? payloadAccounts : [],
+      income: sections.includes("income") ? payloadIncome : [],
+      property: sections.includes("property") ? payloadProperty : [],
       goals: {
         clientRetirementAge: client.retirementAge ?? undefined,
         spouseRetirementAge: client.spouseRetirementAge ?? undefined,
@@ -339,12 +360,16 @@ export async function snapshotClientToPayload(
 
   // No base scenario — return the family data with empty arrays
   return {
-    family: {
-      primary,
-      spouse,
-      stateOfResidence: stateOfResidence as string | undefined,
-      children,
-    },
+    ...(sections.includes("family")
+      ? {
+          family: {
+            primary,
+            spouse,
+            stateOfResidence: stateOfResidence as string | undefined,
+            children,
+          },
+        }
+      : {}),
     accounts: [],
     income: [],
     property: [],

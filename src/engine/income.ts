@@ -30,6 +30,42 @@ const incomeTypeToKey: Record<Income["type"], keyof Omit<IncomeBreakdown, "total
   other: "other",
 };
 
+/**
+ * Stress test — disability: the disabled person's own earned income stops from
+ * `startYear` forward.
+ *
+ * Applied by clipping `endYear` on the row itself (the mechanism the death event
+ * uses in `applyIncomeTermination`) so `itemProrationGate` hides the row from
+ * EVERY consumer: the cash-routing loop, the tax-base mapping, and the display
+ * totals alike. Suppressing it inside `computeIncome` instead only blanked the
+ * display — the cash-routing fallback re-derived the full paycheck from
+ * annualAmount × growth and the tax loop kept taxing it, so the stress made the
+ * household richer instead of poorer.
+ *
+ * `endYearRef` is cleared alongside the clip: an end-at-retirement row otherwise
+ * keeps a prorated slice of its retirement year even once `endYear` has passed.
+ *
+ * Entity- and business-account-owned rows are left alone — the disabled owner
+ * stops earning, but the business keeps operating and its K-1 / distribution
+ * incidence is modeled elsewhere.
+ */
+export function applyDisabilityEvent(
+  incomes: Income[],
+  event: { person: "client" | "spouse"; startYear: number } | undefined,
+): Income[] {
+  if (!event) return incomes;
+  return incomes.map((inc) => {
+    if (inc.owner !== event.person) return inc;
+    if (inc.type !== "salary" && inc.type !== "business") return inc;
+    if (inc.ownerEntityId != null || inc.ownerAccountId != null) return inc;
+    return {
+      ...inc,
+      endYear: Math.min(inc.endYear, event.startYear - 1),
+      endYearRef: null,
+    };
+  });
+}
+
 export function computeIncome(
   incomes: Income[],
   year: number,
@@ -37,7 +73,6 @@ export function computeIncome(
   filter?: (inc: Income) => boolean,
   stress?: {
     ssBenefitHaircut?: { pct: number; startYear: number };
-    disabilityEvent?: { person: "client" | "spouse"; startYear: number };
   },
 ): IncomeBreakdown {
   const result: IncomeBreakdown = {
@@ -61,16 +96,6 @@ export function computeIncome(
     const gate = itemProrationGate(inc, year, client);
     if (!gate.include) continue;
     if (filter && !filter(inc)) continue;
-
-    // Stress test — disability: stop the disabled person's earned income.
-    if (
-      stress?.disabilityEvent &&
-      (inc.type === "salary" || inc.type === "business") &&
-      inc.owner === stress.disabilityEvent.person &&
-      year >= stress.disabilityEvent.startYear
-    ) {
-      continue;
-    }
 
     // Social Security: delay until claiming age
     if (inc.type === "social_security" && inc.claimingAge != null) {

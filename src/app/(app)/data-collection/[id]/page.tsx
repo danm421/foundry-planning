@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 import { requireOrgId } from "@/lib/db-helpers";
 import { loadFormForFirm } from "@/lib/intake/queries";
 import { findIntakeHousehold, listIntakeDocuments } from "@/lib/intake/documents";
-import { intakeSubmitSchema } from "@/lib/intake/schema";
+import { intakeSubmitSchemaFor } from "@/lib/intake/schema";
+import { sectionsForForm } from "@/lib/intake/sections";
 import { snapshotClientToPayload } from "@/lib/intake/snapshot";
 import { buildIntakeDiff } from "@/components/intake/admin/diff-utils";
 import ReviewDetail from "@/components/intake/admin/review-detail";
@@ -20,14 +21,19 @@ export default async function DataCollectionReviewPage({ params }: Props) {
   const form = await loadFormForFirm(id, orgId);
   if (!form) notFound();
 
-  const parseResult = intakeSubmitSchema.safeParse(form.payload);
+  const sections = sectionsForForm(form.sections);
+  const parseResult = intakeSubmitSchemaFor(sections).safeParse(form.payload);
   if (!parseResult.success) notFound();
   const submitted = parseResult.data;
 
   let baseline = null;
   if (form.clientId) {
     try {
-      baseline = await snapshotClientToPayload(form.clientId, orgId);
+      // Same section set the submission was parsed against. An un-sectioned
+      // baseline would carry live accounts/income the form never asked for, and
+      // the list diffs would render "3 → 0" — a deletion, on the very screen
+      // where the advisor decides whether to write this to the plan.
+      baseline = await snapshotClientToPayload(form.clientId, orgId, sections);
     } catch {
       // client not found or no scenario — treat as no baseline
       baseline = null;

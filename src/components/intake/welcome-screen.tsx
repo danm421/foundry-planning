@@ -1,34 +1,55 @@
 "use client";
 
+import {
+  INTAKE_SECTION_LABELS,
+  type IntakeSectionKey,
+} from "@/lib/intake/sections";
+
 interface WelcomeScreenProps {
   mode: "blank" | "prefilled";
   onStart: () => void;
+  sections: readonly IntakeSectionKey[];
 }
 
-const SECTIONS = [
-  {
-    key: "family",
-    label: "Family",
-    description: "Who the plan covers — you, a spouse, and any dependents.",
-  },
-  {
-    key: "assets",
-    label: "Assets",
-    description: "Investment accounts, income sources, and property you own.",
-  },
-  {
-    key: "goals",
-    label: "Goals",
-    description: "When you want to retire and what retirement should cost.",
-  },
-  {
-    key: "review",
-    label: "Review",
-    description: "Confirm everything looks right before submitting to your advisor.",
-  },
-] as const;
+interface WelcomeCard { key: string; label: string; description: string }
 
-export function WelcomeScreen({ mode, onStart }: WelcomeScreenProps) {
+/**
+ * The overview cards. Accounts / Income / Property collapse into one "Assets"
+ * card because that is how the client experiences them — three short steps
+ * under one idea — and because six cards in a two-column grid reads as a longer
+ * form than it is. Review always appears; it is chrome, not a section.
+ */
+export function welcomeCards(sections: readonly IntakeSectionKey[]): WelcomeCard[] {
+  const cards: WelcomeCard[] = [];
+  const card = (key: IntakeSectionKey, description: string): WelcomeCard => ({
+    key,
+    label: INTAKE_SECTION_LABELS[key],
+    description,
+  });
+
+  if (sections.includes("family")) {
+    cards.push(card("family", "Who the plan covers — you, a spouse, and any dependents."));
+  }
+  if (sections.some((s) => s === "accounts" || s === "income" || s === "property")) {
+    // Hand-authored: a bucket spanning three sections has no key to read from.
+    cards.push({ key: "assets", label: "Assets", description: "Investment accounts, income sources, and property you own." });
+  }
+  if (sections.includes("goals")) {
+    cards.push(card("goals", "When you want to retire and what retirement should cost."));
+  }
+  if (sections.includes("documents")) {
+    cards.push(card("documents", "Statements, tax returns, and anything else worth sharing."));
+  }
+  if (sections.includes("risk")) {
+    cards.push(card("risk", "A few questions about how you'd handle market ups and downs."));
+  }
+  // Likewise hand-authored: Review is chrome, so it has no section key either.
+  cards.push({ key: "review", label: "Review", description: "Confirm everything looks right before submitting to your advisor." });
+  return cards;
+}
+
+export function WelcomeScreen({ mode, onStart, sections }: WelcomeScreenProps) {
+  const cards = welcomeCards(sections);
   return (
     <div className="mx-auto max-w-2xl px-4 py-12">
       {/* Header */}
@@ -46,20 +67,20 @@ export function WelcomeScreen({ mode, onStart }: WelcomeScreenProps) {
         </p>
       </div>
 
-      {/* Four-section overview */}
+      {/* Section overview */}
       <div className="mb-10 grid grid-cols-2 gap-3">
-        {SECTIONS.map((section, i) => (
+        {cards.map((card, i) => (
           <div
-            key={section.key}
+            key={card.key}
             className="card rounded-[var(--radius-sm)] border border-hair bg-card p-4"
           >
             <div className="mb-2 flex items-center gap-2">
               <span className="chip font-mono text-[11px] uppercase tracking-[0.08em] text-ink-3">
                 {String(i + 1).padStart(2, "0")}
               </span>
-              <span className="text-[13px] font-semibold text-ink">{section.label}</span>
+              <span className="text-[13px] font-semibold text-ink">{card.label}</span>
             </div>
-            <p className="text-[13px] leading-[1.4] text-ink-3">{section.description}</p>
+            <p className="text-[13px] leading-[1.4] text-ink-3">{card.description}</p>
           </div>
         ))}
       </div>

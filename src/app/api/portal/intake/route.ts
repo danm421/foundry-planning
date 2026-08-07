@@ -7,9 +7,10 @@ import { requireClientPortalAccess, authErrorResponse, ForbiddenError } from "@/
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { loadActivePrefilledForm } from "@/lib/intake/queries";
 import { loadOrSeedPortalIntakeForm } from "@/lib/intake/load-or-seed";
+import { sectionsForForm } from "@/lib/intake/sections";
 import {
   intakeDraftSchema,
-  intakeSubmitSchema,
+  intakeSubmitSchemaFor,
   pruneIntakeBlankRows,
   type IntakePayload,
 } from "@/lib/intake/schema";
@@ -47,9 +48,9 @@ async function resolveAuth(): Promise<{
 // ── GET — seed/load ───────────────────────────────────────────────────────────
 //
 // Loads the active prefilled form for the authenticated portal client.
-// If the stored payload is empty ({} / no `family`), lazily seeds it from the
-// client's live planning data via snapshotClientToPayload, persists the seed,
-// and returns it. Otherwise returns the stored payload.
+// If the stored payload is empty ({} — the column default), lazily seeds it
+// from the client's live planning data via snapshotClientToPayload, persists
+// the seed, and returns it. Otherwise returns the stored payload.
 //
 // Auth chain: requireClientPortalAccess → requirePortalActiveSubscription
 // (NO requireEditEnabled — intake is its own gated surface)
@@ -196,11 +197,15 @@ export async function POST(req: Request): Promise<Response> {
       finalPayload = merged;
     }
 
-    // Strict validation — the merged draft must now be complete. Drop optional
-    // rows added but left blank so they don't read as incomplete required fields.
-    let validatedPayload: ReturnType<typeof intakeSubmitSchema.parse>;
+    // Strict validation — the merged draft must now be complete, against the
+    // sections THIS form actually collects. Drop optional rows added but left
+    // blank so they don't read as incomplete required fields.
+    const sections = sectionsForForm(form.sections);
+    let validatedPayload: IntakePayload;
     try {
-      validatedPayload = intakeSubmitSchema.parse(pruneIntakeBlankRows(finalPayload));
+      validatedPayload = intakeSubmitSchemaFor(sections).parse(
+        pruneIntakeBlankRows(finalPayload),
+      );
     } catch (err) {
       if (err instanceof ZodError) {
         return NextResponse.json(

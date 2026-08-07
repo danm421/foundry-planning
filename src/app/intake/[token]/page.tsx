@@ -9,6 +9,7 @@ import { IntakeBrandingHeader } from "@/components/intake/branding-header";
 import { IntakeThankYou } from "@/components/intake/thank-you";
 import { IntakeVerifyGate } from "@/components/intake/verify-gate";
 import { isGateVerified } from "@/lib/intake/gate-session";
+import { sectionsForForm } from "@/lib/intake/sections";
 import { IntakeClient } from "./intake-client";
 
 // ─── Public intake page ──────────────────────────────────────────────────────
@@ -119,6 +120,7 @@ export default async function IntakePage({
         recipientName={form.recipientName ?? null}
         initialPayload={form.payload}
         branding={branding}
+        sections={sectionsForForm(form.sections)}
       />
     </div>
   );

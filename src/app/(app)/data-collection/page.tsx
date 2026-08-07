@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { requireOrgId } from "@/lib/db-helpers";
-import { listFormsForFirm } from "@/lib/intake/queries";
+import { requireOrgAndUser } from "@/lib/db-helpers";
+import { listFormsForFirm, loadAdvisorDefaultSections } from "@/lib/intake/queries";
 import Queue, { type QueueGroup } from "@/components/intake/admin/queue";
 import SendIntakeForm from "@/components/intake/admin/send-intake-form";
 import { ExternalLinkIcon, PencilIcon } from "@/components/icons";
@@ -9,8 +9,9 @@ const headerActionCls =
   "inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-hair px-3 py-1.5 text-[13px] text-ink-2 transition-colors hover:border-hair-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
 export default async function DataCollectionPage() {
-  const orgId = await requireOrgId();
+  const { orgId, userId } = await requireOrgAndUser();
   const forms = await listFormsForFirm(orgId);
+  const defaultSections = await loadAdvisorDefaultSections(orgId, userId);
 
   // Order is the tab order: what you're waiting on, then what's waiting on you,
   // then the record. History stays a tab rather than a separate page so applied
@@ -65,7 +66,7 @@ export default async function DataCollectionPage() {
         <div className="flex flex-wrap items-center gap-2">
           <Link href="/data-collection/email-settings" className={headerActionCls}>
             <PencilIcon width={14} height={14} aria-hidden="true" />
-            Invitation email
+            Form settings
           </Link>
           <a
             href="/data-collection/preview"
@@ -80,7 +81,7 @@ export default async function DataCollectionPage() {
       </header>
 
       <div className="space-y-10">
-        <SendIntakeForm />
+        <SendIntakeForm defaultSections={defaultSections} />
         <Queue groups={groups} />
       </div>
     </div>

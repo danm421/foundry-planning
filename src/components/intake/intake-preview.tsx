@@ -5,6 +5,7 @@ import type { IntakeDraft } from "@/lib/intake/schema";
 import { IntakeWizard } from "@/components/intake/intake-wizard";
 import { IntakeThankYou } from "@/components/intake/thank-you";
 import type { IntakeHeaderBranding } from "@/components/intake/branding-header";
+import type { IntakeSectionKey } from "@/lib/intake/sections";
 
 /**
  * Advisor-facing preview of the client intake form.
@@ -26,9 +27,12 @@ import type { IntakeHeaderBranding } from "@/components/intake/branding-header";
  */
 export function IntakePreview({
   branding,
+  sections,
 }: {
   /** Firm letterhead; null renders the Foundry Planning lockup. */
   branding?: IntakeHeaderBranding | null;
+  /** Which sections this form collects. Optional, defaulting inside IntakeWizard. */
+  sections?: readonly IntakeSectionKey[];
 }) {
   const [value, setValue] = useState<IntakeDraft>({});
   const [submitted, setSubmitted] = useState(false);
@@ -60,6 +64,7 @@ export function IntakePreview({
           onSubmit={handleSubmit}
           branding={branding}
           sampleUploads
+          sections={sections}
         />
       )}
     </div>

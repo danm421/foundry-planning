@@ -11,6 +11,7 @@ import {
 import { and, eq } from "drizzle-orm";
 import { newIntakeToken, defaultExpiry } from "@/lib/intake/tokens";
 import type { IntakePayload } from "@/lib/intake/schema";
+import { DEFAULT_INTAKE_SECTIONS } from "@/lib/intake/sections";
 import { ForbiddenError } from "@/lib/authz";
 
 // ── Auth chain mocks ──────────────────────────────────────────────────────────
@@ -97,11 +98,31 @@ const SEEDED_PAYLOAD: IntakePayload = {
   meta: { completedSections: [] },
 };
 
+// No `family` at all — legal on a form whose `sections` exclude it (e.g. the
+// "Documents only" preset). `IntakePayload.family` is optional for exactly
+// this case.
+const DOCS_ONLY_PAYLOAD: IntakePayload = {
+  accounts: [],
+  income: [],
+  property: [],
+  goals: { expenseGoals: [], topics: [] },
+  meta: { completedSections: [] },
+};
+
+// An ALREADY-SEEDED docs-only form carrying work the client has done. It has no
+// `family` key (its sections exclude Family) but it is emphatically not empty.
+const DOCS_ONLY_IN_PROGRESS: IntakePayload = {
+  ...DOCS_ONLY_PAYLOAD,
+  meta: { currentSection: "documents", completedSections: ["documents"] },
+};
+
 // ── Captured IDs (set in beforeAll) ──────────────────────────────────────────
 
 let clientEmpty: string;   // has empty-payload form → tests lazy seed
 let clientPatch: string;   // has complete draft → tests autosave
 let clientPost: string;    // has complete draft → tests submit
+let clientPostDocsOnly: string; // sections exclude family → tests section-aware submit
+let clientDocsSeeded: string; // seeded docs-only draft → tests the re-seed guard
 let clientNoForm: string;  // no form at all → tests 404
 
 const householdIds: string[] = [];
@@ -142,6 +163,8 @@ beforeAll(async () => {
   clientEmpty  = await seedClientAndHousehold();
   clientPatch  = await seedClientAndHousehold();
   clientPost   = await seedClientAndHousehold();
+  clientPostDocsOnly = await seedClientAndHousehold();
+  clientDocsSeeded = await seedClientAndHousehold();
   clientNoForm = await seedClientAndHousehold(); // no intake_forms row
 
   const rows = await db
@@ -180,6 +203,34 @@ beforeAll(async () => {
         token: newIntakeToken(),
         recipientEmail: "submit@example.com",
         payload: COMPLETE_PAYLOAD,
+        createdByUserId: "user-test",
+        expiresAt: defaultExpiry(now),
+      },
+      // CLIENT_POST_DOCS_ONLY → sections exclude "family" → no family in the
+      // payload is legal here; submit must not 422 (Finding 1 regression test).
+      {
+        firmId: FIRM_ID,
+        clientId: clientPostDocsOnly,
+        mode: "prefilled" as const,
+        status: "draft" as const,
+        token: newIntakeToken(),
+        recipientEmail: "docs-only@example.com",
+        sections: ["documents"],
+        payload: DOCS_ONLY_PAYLOAD,
+        createdByUserId: "user-test",
+        expiresAt: defaultExpiry(now),
+      },
+      // CLIENT_DOCS_SEEDED → a docs-only form that HAS been seeded and worked
+      // on. The GET seed guard must leave it alone (see the re-seed test).
+      {
+        firmId: FIRM_ID,
+        clientId: clientDocsSeeded,
+        mode: "prefilled" as const,
+        status: "draft" as const,
+        token: newIntakeToken(),
+        recipientEmail: "docs-seeded@example.com",
+        sections: ["documents"],
+        payload: DOCS_ONLY_IN_PROGRESS,
         createdByUserId: "user-test",
         expiresAt: defaultExpiry(now),
       },
@@ -233,8 +284,13 @@ describe("GET /api/portal/intake", () => {
     expect(res.status).toBe(200);
     const json = await res.json();
 
-    // Snapshot was called with correct args
-    expect(snapshotMock).toHaveBeenCalledWith(clientEmpty, FIRM_ID);
+    // Snapshot was called with correct args — including the form's section set.
+    // This row's `sections` column is null, which means the DEFAULT set: the
+    // seeder must be told which slices to build, and null must never be passed
+    // through as "collect nothing".
+    expect(snapshotMock).toHaveBeenCalledWith(clientEmpty, FIRM_ID, [
+      ...DEFAULT_INTAKE_SECTIONS,
+    ]);
 
     // Returned payload matches what snapshot returned
     expect(json.payload).toMatchObject({ family: { primary: { firstName: "Seeded" } } });
@@ -245,6 +301,34 @@ describe("GET /api/portal/intake", () => {
       .from(intakeForms)
       .where(eq(intakeForms.clientId, clientEmpty));
     expect((row?.payload as IntakePayload | undefined)?.family?.primary?.firstName).toBe("Seeded");
+  }, 30000);
+
+  it("does not re-seed a docs-only form that has already been seeded", async () => {
+    // The seed guard used to ask "is there a `family` key?". A form whose
+    // sections exclude Family is seeded WITHOUT that key, so the old sentinel
+    // read this already-seeded form as never-seeded and re-seeded it on every
+    // single load — silently discarding the client's in-progress answers.
+    requirePortalMock.mockResolvedValue({ clientId: clientDocsSeeded });
+    snapshotMock.mockClear();
+    snapshotMock.mockResolvedValue(SEEDED_PAYLOAD);
+
+    const res = await GET();
+    expect(res.status).toBe(200);
+    const json = await res.json();
+
+    expect(snapshotMock).not.toHaveBeenCalled();
+    // The client's own progress came back, not a fresh snapshot.
+    expect(json.payload.meta.completedSections).toEqual(["documents"]);
+    expect(json.payload.family).toBeUndefined();
+
+    // ...and the stored row was left alone.
+    const [row] = await db
+      .select({ payload: intakeForms.payload })
+      .from(intakeForms)
+      .where(eq(intakeForms.clientId, clientDocsSeeded));
+    expect((row?.payload as IntakePayload | undefined)?.meta?.completedSections).toEqual([
+      "documents",
+    ]);
   }, 30000);
 
   it("returns 404 when no active prefilled form exists for the client", async () => {
@@ -339,6 +423,24 @@ describe("POST /api/portal/intake (submit)", () => {
     // Form is now "submitted" from prior test — POST again should 409
     const res = await POST(makePost());
     expect(res.status).toBe(409);
+  }, 30000);
+
+  it("200: submits a form with no family when its sections exclude it (does not 422)", async () => {
+    // Regression test for Finding 1: this route used to validate every
+    // submission against the DEFAULT section set (which always requires
+    // family), so a "Documents only" form would 422 here even though the
+    // token route accepted the identical shape.
+    requirePortalMock.mockResolvedValue({ clientId: clientPostDocsOnly });
+
+    const res = await POST(makePost());
+    expect(res.status).toBe(200);
+
+    const [row] = await db
+      .select({ status: intakeForms.status, payload: intakeForms.payload })
+      .from(intakeForms)
+      .where(eq(intakeForms.clientId, clientPostDocsOnly));
+    expect(row?.status).toBe("submitted");
+    expect((row?.payload as IntakePayload | undefined)?.family).toBeUndefined();
   }, 30000);
 });
 

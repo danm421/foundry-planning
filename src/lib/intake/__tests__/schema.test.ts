@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   intakeSubmitSchema,
+  intakeSubmitSchemaFor,
   intakeDraftSchema,
   maritalToFilingStatus,
   pruneIntakeBlankRows,
@@ -323,5 +324,87 @@ describe("intake goals", () => {
       })),
     });
     expect(tooMany.success).toBe(false);
+  });
+});
+
+describe("intakeSubmitSchemaFor", () => {
+  const completeFamily = {
+    primary: {
+      firstName: "Jane",
+      lastName: "Smith",
+      dateOfBirth: "1980-04-01",
+      maritalStatus: "single" as const,
+    },
+    children: [],
+  };
+
+  it("requires family when the family section is included", () => {
+    const schema = intakeSubmitSchemaFor(["family", "documents"]);
+    expect(() => schema.parse({})).toThrow();
+  });
+
+  it("accepts a payload with no family when the family section is excluded", () => {
+    const schema = intakeSubmitSchemaFor(["documents"]);
+    const parsed = schema.parse({});
+    expect(parsed.family).toBeUndefined();
+    expect(parsed.accounts).toEqual([]);
+  });
+
+  it("still validates a PRESENT family even when the section is excluded", () => {
+    // A half-filled family that somehow rode along is still bad data.
+    const schema = intakeSubmitSchemaFor(["documents"]);
+    expect(() => schema.parse({ family: { primary: { firstName: "Jane" } } })).toThrow();
+  });
+
+  it("parses a complete family when the section is included", () => {
+    const schema = intakeSubmitSchemaFor(["family"]);
+    const parsed = schema.parse({ family: completeFamily });
+    expect(parsed.family?.primary.firstName).toBe("Jane");
+  });
+
+  it("intakeSubmitSchema still requires family (default set includes it)", () => {
+    expect(() => intakeSubmitSchema.parse({})).toThrow();
+  });
+});
+
+describe("the risk payload slice", () => {
+  const COMPLETE_FAMILY = {
+    primary: {
+      firstName: "Jane",
+      lastName: "Smith",
+      dateOfBirth: "1980-04-01",
+      maritalStatus: "single" as const,
+    },
+    children: [],
+  };
+  const schema = intakeSubmitSchemaFor(["family", "risk"]);
+  const withRisk = (risk: unknown) => ({ family: COMPLETE_FAMILY, risk });
+
+  it("stays optional even when the risk section IS selected", () => {
+    // A client may legitimately skip the step. There is no superRefine for risk.
+    expect(schema.parse({ family: COMPLETE_FAMILY }).risk).toBeUndefined();
+  });
+
+  it("accepts PARTIAL answers — stored, and left unscored downstream", () => {
+    const parsed = schema.parse(withRisk({ answers: { loss_reaction: "hold" }, rtqVersion: 1 }));
+    expect(parsed.risk?.answers).toEqual({ loss_reaction: "hold" });
+  });
+
+  it("requires rtqVersion on a present risk block", () => {
+    // Which is why the submit route drops a block it could not stamp.
+    expect(() => schema.parse(withRisk({ answers: { loss_reaction: "hold" } }))).toThrow();
+  });
+
+  it("keeps the environment note", () => {
+    const parsed = schema.parse(
+      withRisk({ answers: {}, environmentNote: "Sold a business.", rtqVersion: 1 }),
+    );
+    expect(parsed.risk?.environmentNote).toBe("Sold a business.");
+  });
+
+  it("the draft schema tolerates a half-typed risk block", () => {
+    const draft = intakeDraftSchema.parse({ risk: { answers: { loss_reaction: "hold" } } });
+    expect(draft.risk?.answers).toEqual({ loss_reaction: "hold" });
+    expect(draft.risk?.rtqVersion).toBeUndefined();
   });
 });

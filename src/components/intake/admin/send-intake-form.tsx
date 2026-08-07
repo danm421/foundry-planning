@@ -6,6 +6,12 @@ import { EMAIL_RE } from "@/lib/intake/schema";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { useClientTypeahead } from "@/hooks/use-client-typeahead";
 import type { ClientSearchResult } from "@/lib/client-search";
+import { SectionPicker } from "./section-picker";
+import {
+  forceFamilyForProspect,
+  sectionsForForm,
+  type IntakeSectionKey,
+} from "@/lib/intake/sections";
 
 /**
  * The Data Collection page's send card.
@@ -29,9 +35,21 @@ const inputCls =
   "w-full rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-3 text-[14px] text-ink outline-none transition-colors placeholder:text-ink-4 hover:border-hair-2 focus:border-accent focus:ring-1 focus:ring-accent";
 const labelCls = "mb-1.5 block text-[12px] font-medium text-ink-2";
 
-export default function SendIntakeForm() {
+export default function SendIntakeForm({
+  defaultSections,
+}: {
+  /** The advisor's saved default, or null for the system default. Seeds the
+   *  picker only — what gets stored is whatever is on screen when Send is
+   *  pressed, so editing the saved default later never reshapes this form. */
+  defaultSections: IntakeSectionKey[] | null;
+}) {
   const router = useRouter();
   const [recipientKind, setRecipientKind] = useState<"prospect" | "client">("prospect");
+  // Prospect is the initial kind, so seed through the same family rule the
+  // create route enforces — the picker must never show a set it can't send.
+  const [sections, setSections] = useState<IntakeSectionKey[]>(() =>
+    forceFamilyForProspect(sectionsForForm(defaultSections), false),
+  );
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
@@ -44,6 +62,10 @@ export default function SendIntakeForm() {
     setRecipientKind(kind);
     setSelected(null);
     setError(null);
+    // The create route forces Family into a prospect send. Do it here too so
+    // the advisor sees the set that will actually be stored, rather than
+    // discovering the difference on the review screen.
+    if (kind === "prospect") setSections((s) => forceFamilyForProspect(s, false));
   }
 
   function pickClient(hit: ClientSearchResult) {
@@ -78,6 +100,7 @@ export default function SendIntakeForm() {
           ...(selected ? { clientId: selected.id } : {}),
           recipientName: `${firstName.trim()} ${lastName.trim()}`.trim(),
           recipientEmail: email,
+          sections,
         }),
       });
 
@@ -155,6 +178,20 @@ export default function SendIntakeForm() {
         </div>
       )}
 
+      <div className="mb-5">
+        <span className={labelCls}>Form steps</span>
+        <SectionPicker
+          value={sections}
+          // Every set the picker emits goes through the prospect rule, not just
+          // the ones `pickKind` produces: a preset chip replaces the whole set
+          // outright, and "Documents only" would otherwise drop Family from a
+          // prospect send — leaving it unchecked AND locked, with the create
+          // route quietly putting it back at write time.
+          onChange={(next) => setSections(forceFamilyForProspect(next, recipientKind === "client"))}
+          familyLocked={recipientKind === "prospect"}
+        />
+      </div>
+
       <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <div className="flex-1">
           <label htmlFor="recipient-first-name" className={labelCls}>
@@ -215,6 +252,18 @@ export default function SendIntakeForm() {
           {sending ? "Sending…" : "Send"}
         </button>
       </form>
+
+      {/* The steps ride in the URL rather than the saved default, so the
+          advisor previews the form they are about to send, not the one they
+          usually send. */}
+      <a
+        href={`/data-collection/preview?steps=${sections.join(",")}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-3 inline-block text-[12px] text-ink-3 hover:text-ink hover:underline"
+      >
+        Preview this form
+      </a>
 
       {error && (
         <p role="alert" className="mt-3 text-[13px] text-crit">

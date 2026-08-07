@@ -3,9 +3,9 @@
  * route (GET /api/portal/intake) and the portal intake page (server component).
  *
  * Loads the active prefilled form for a client. If the form payload is empty
- * (no `family` key / zero keys), lazily seeds it from the client's live
+ * (zero keys — the column default), lazily seeds it from the client's live
  * planning data via snapshotClientToPayload and persists it. Returns the
- * payload, status, and formId — or null when no active form exists.
+ * payload, status, sections, and formId — or null when no active form exists.
  *
  * Auth: both callers have already verified portal access and resolved firmId
  * before calling this. firmId is the org-scoping guard.
@@ -16,6 +16,7 @@ import { db } from "@/db";
 import { intakeForms } from "@/db/schema";
 import { loadActivePrefilledForm } from "./queries";
 import { snapshotClientToPayload } from "./snapshot";
+import { sectionsForForm, type IntakeSectionKey } from "./sections";
 import type { IntakePayload } from "./schema";
 
 export interface PortalIntakeFormResult {
@@ -23,6 +24,8 @@ export interface PortalIntakeFormResult {
   payload: IntakePayload;
   status: typeof intakeForms.$inferSelect["status"];
   recipientName: string | null;
+  /** What this form collects. A null column means the default set. */
+  sections: IntakeSectionKey[];
 }
 
 export async function loadOrSeedPortalIntakeForm(
@@ -32,11 +35,18 @@ export async function loadOrSeedPortalIntakeForm(
   const form = await loadActivePrefilledForm(clientId);
   if (!form) return null;
 
+  const sections = sectionsForForm(form.sections);
+
   const raw = form.payload as IntakePayload | Record<string, never>;
-  const isEmpty = !raw || !("family" in raw) || Object.keys(raw).length === 0;
+  // "Never seeded" is ZERO KEYS — `intake_forms.payload` defaults to `{}`.
+  // It must NOT key on the presence of `family`: a form whose sections exclude
+  // Family is seeded WITHOUT that key at all, so a family-based sentinel would
+  // read every seeded docs-only form as never-seeded and re-seed it on every
+  // load, discarding whatever the client had already filled in.
+  const isEmpty = !raw || Object.keys(raw).length === 0;
 
   if (isEmpty) {
-    const seed = await snapshotClientToPayload(clientId, firmId);
+    const seed = await snapshotClientToPayload(clientId, firmId, sections);
     await db
       .update(intakeForms)
       .set({ payload: seed, updatedAt: new Date() })
@@ -47,6 +57,7 @@ export async function loadOrSeedPortalIntakeForm(
       payload: seed,
       status: form.status,
       recipientName: form.recipientName ?? null,
+      sections,
     };
   }
 
@@ -55,5 +66,6 @@ export async function loadOrSeedPortalIntakeForm(
     payload: raw as IntakePayload,
     status: form.status,
     recipientName: form.recipientName ?? null,
+    sections,
   };
 }

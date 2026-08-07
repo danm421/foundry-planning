@@ -12,7 +12,7 @@
  * Note: Neon dev branch cold-starts after idle; run with --testTimeout=30000.
  */
 
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, afterEach, beforeAll } from "vitest";
 import { db } from "@/db";
 import {
   accountOwners,
@@ -27,13 +27,19 @@ import {
   intakeForms,
   liabilities,
   liabilityOwners,
+  auditLog,
+  firms,
+  riskQuestionnaires,
+  clientRiskProfiles,
   scenarios,
 } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { createClientForHousehold } from "@/lib/clients/create-client";
 import { newIntakeToken, defaultExpiry } from "../tokens";
 import type { IntakePayload } from "../schema";
+import type { IntakeSectionKey } from "../sections";
 import { applyIntake } from "../apply";
+import { scoreRtq } from "@/lib/risk/rtq";
 
 const FIRM = "test-firm-apply-intake-2026";
 const ADVISOR = "user_test_apply";
@@ -128,6 +134,34 @@ async function submitForm(
   return form.id;
 }
 
+/** Inserts a `submitted` intake form with an explicit section set + payload. */
+async function submitFormWithSections(
+  firmId: string,
+  advisorId: string,
+  clientId: string,
+  sections: IntakeSectionKey[] | null,
+  payload: IntakePayload,
+): Promise<string> {
+  const [form] = await db
+    .insert(intakeForms)
+    .values({
+      firmId,
+      clientId,
+      mode: "blank",
+      status: "submitted",
+      token: newIntakeToken(),
+      recipientEmail: "john@example.com",
+      recipientName: "John Smith",
+      payload,
+      sections,
+      createdByUserId: advisorId,
+      submittedAt: new Date(),
+      expiresAt: defaultExpiry(new Date()),
+    })
+    .returning();
+  return form.id;
+}
+
 /** Shared teardown for the household-name-sync tests (client cascade-deletes
  * scenarios/expenses, but we're explicit so cleanup doesn't rely on that). */
 async function cleanup(ids: {
@@ -150,6 +184,8 @@ async function cleanup(ids: {
     await db.delete(incomes).where(eq(incomes.clientId, clientId));
     await db.delete(expenses).where(eq(expenses.clientId, clientId));
     await db.delete(scenarios).where(eq(scenarios.clientId, clientId));
+    await db.delete(riskQuestionnaires).where(eq(riskQuestionnaires.clientId, clientId));
+    await db.delete(clientRiskProfiles).where(eq(clientRiskProfiles.clientId, clientId));
     await db.delete(clients).where(eq(clients.id, clientId));
   }
   if (householdId) {
@@ -831,4 +867,328 @@ describe("applyIntake (household name sync — merge path adds a spouse)", () =>
 
     expect(await householdName(householdId)).toBe("John & Jane Smith");
   });
+});
+
+describe("applyIntake — section gating", () => {
+  const FIRM_S = "test-firm-apply-sections-2026";
+  const ADVISOR_S = "user_test_apply_sections";
+  let ids: { householdId?: string; clientId?: string; formId?: string } = {};
+
+  afterEach(async () => {
+    await cleanup(ids);
+    ids = {};
+  });
+
+  it("does not write accounts when the form's sections exclude accounts", async () => {
+    // A PREFILLED form seeded from a plan snapshot still carries account rows
+    // the client never saw. Applying them would write stale snapshot data back
+    // over the live plan.
+    const { householdId, clientId } = await seedJohnSmithHousehold(FIRM_S, ADVISOR_S);
+    const formId = await submitFormWithSections(FIRM_S, ADVISOR_S, clientId, ["family", "documents"], {
+      family: {
+        primary: { firstName: "John", lastName: "Smith", dateOfBirth: "1975-04-01" },
+        children: [],
+      },
+      accounts: [
+        { name: "Stale Brokerage", category: "taxable", value: 100_000, owner: "client" },
+      ],
+      income: [],
+      property: [],
+      goals: { expenseGoals: [], topics: [] },
+      meta: { completedSections: [] },
+    });
+    ids = { householdId, clientId, formId };
+
+    await applyIntake({ formId, firmId: FIRM_S, actorId: ADVISOR_S });
+
+    const rows = await db.select({ name: accounts.name }).from(accounts).where(eq(accounts.clientId, clientId));
+    expect(rows.map((r) => r.name)).not.toContain("Stale Brokerage");
+  });
+
+  it("applies a family-less form for an existing client without throwing", async () => {
+    // No family payload at all — the DOB anchor has to come from the CRM
+    // primary contact seeded above (1975-04-01), not from the payload.
+    const { householdId, clientId } = await seedJohnSmithHousehold(FIRM_S, ADVISOR_S);
+    const formId = await submitFormWithSections(FIRM_S, ADVISOR_S, clientId, ["documents"], {
+      accounts: [],
+      income: [],
+      property: [],
+      goals: { expenseGoals: [], topics: [] },
+      meta: { completedSections: [] },
+    });
+    ids = { householdId, clientId, formId };
+
+    await expect(
+      applyIntake({ formId, firmId: FIRM_S, actorId: ADVISOR_S }),
+    ).resolves.toEqual({ clientId });
+    // ...and it touched nothing it wasn't asked to: the household keeps its name.
+    expect(await householdName(householdId)).toBe("John Smith");
+  });
+
+  it("persists the retirement age from a Goals-without-Family form", async () => {
+    // The two retirement ages are typed on the GOALS step. Gating their write on
+    // Family would discard the client's answer here — and silently, because the
+    // rows this apply anchors to `client_retirement` are re-derived from
+    // `clients.retirement_age` on every load, so they'd snap back to 65.
+    const { householdId, clientId } = await seedJohnSmithHousehold(FIRM_S, ADVISOR_S);
+    const formId = await submitFormWithSections(FIRM_S, ADVISOR_S, clientId, ["goals"], {
+      accounts: [],
+      income: [],
+      property: [],
+      goals: { clientRetirementAge: 62, expenseGoals: [], topics: [] },
+      meta: { completedSections: [] },
+    });
+    ids = { householdId, clientId, formId };
+
+    await applyIntake({ formId, firmId: FIRM_S, actorId: ADVISOR_S });
+
+    const [row] = await db
+      .select({ retirementAge: clients.retirementAge })
+      .from(clients)
+      .where(eq(clients.id, clientId));
+    // Seeded at 65; the client typed 62.
+    expect(row.retirementAge).toBe(62);
+  });
+
+  it("ignores a stale retirement age on a Family-without-Goals form", async () => {
+    // THE CORRUPTION CASE. A prefilled form seeds `goals` from a plan snapshot at
+    // SEND time. On a form that does not collect Goals the client never sees that
+    // age, so honouring it writes a stale number back over whatever the advisor
+    // has since changed — and re-anchors every retirement-anchored row with it.
+    const { householdId, clientId } = await seedJohnSmithHousehold(FIRM_S, ADVISOR_S);
+    const formId = await submitFormWithSections(FIRM_S, ADVISOR_S, clientId, ["family", "income"], {
+      family: {
+        primary: { firstName: "John", lastName: "Smith", dateOfBirth: "1975-04-01" },
+        children: [],
+      },
+      accounts: [],
+      income: [
+        {
+          name: "John Salary",
+          type: "salary",
+          annualAmount: 100_000,
+          owner: "client",
+          startYear: 2026,
+          endsAtRetirement: true,
+        },
+      ],
+      property: [],
+      // STALE — snapshotted at send time, never shown to this client.
+      goals: { clientRetirementAge: 62, expenseGoals: [], topics: [] },
+      meta: { completedSections: [] },
+    });
+    ids = { householdId, clientId, formId };
+
+    await applyIntake({ formId, firmId: FIRM_S, actorId: ADVISOR_S });
+
+    const [row] = await db
+      .select({ retirementAge: clients.retirementAge })
+      .from(clients)
+      .where(eq(clients.id, clientId));
+    expect(row.retirementAge).toBe(65);
+
+    // And the anchor the income row was placed on came from the PERSISTED age,
+    // not the stale payload: born 1975, retiring at 65 → last earning year 2039.
+    // The stale 62 would have put it at 2036.
+    //
+    // Matched by NAME: createClientForHousehold seeds a $0 Social Security row
+    // that runs to plan end (2070), and an unfiltered read picks that up first.
+    const [salary] = await db
+      .select({ endYear: incomes.endYear, endYearRef: incomes.endYearRef })
+      .from(incomes)
+      .where(and(eq(incomes.clientId, clientId), eq(incomes.name, "John Salary")));
+    expect(salary.endYearRef).toBe("client_retirement");
+    expect(salary.endYear).toBe(2039);
+  });
+
+  it("does not touch the household when a stale family rides along on a form that excludes it", async () => {
+    // `schema.ts` documents that a payload MAY carry a family block on a form
+    // whose sections exclude it — a draft filled in before the section set
+    // changed. Applying it would rename the household and overwrite the CRM
+    // contacts from data the client was never shown on THIS form.
+    const { householdId, clientId } = await seedJohnSmithHousehold(FIRM_S, ADVISOR_S);
+    const formId = await submitFormWithSections(FIRM_S, ADVISOR_S, clientId, ["accounts"], {
+      family: {
+        primary: {
+          firstName: "Jonathan",
+          lastName: "Stale",
+          dateOfBirth: "1960-01-01",
+          maritalStatus: "married",
+        },
+        stateOfResidence: "NJ",
+        children: [{ firstName: "Ghost", dateOfBirth: "2015-01-01" }],
+      },
+      accounts: [
+        { name: "Real Brokerage", category: "taxable", value: 10_000, owner: "client" },
+      ],
+      income: [],
+      property: [],
+      goals: { expenseGoals: [], topics: [] },
+      meta: { completedSections: [] },
+    });
+    ids = { householdId, clientId, formId };
+
+    await applyIntake({ formId, firmId: FIRM_S, actorId: ADVISOR_S });
+
+    // The section the form DOES collect still applied — this is not a no-op.
+    const acctRows = await db
+      .select({ name: accounts.name })
+      .from(accounts)
+      .where(eq(accounts.clientId, clientId));
+    expect(acctRows.map((r) => r.name)).toContain("Real Brokerage");
+
+    // ...but nothing family-shaped moved.
+    expect(await householdName(householdId)).toBe("John Smith");
+    const [contact] = await db
+      .select({
+        firstName: crmHouseholdContacts.firstName,
+        lastName: crmHouseholdContacts.lastName,
+        dateOfBirth: crmHouseholdContacts.dateOfBirth,
+      })
+      .from(crmHouseholdContacts)
+      .where(
+        and(
+          eq(crmHouseholdContacts.householdId, householdId),
+          eq(crmHouseholdContacts.role, "primary"),
+        ),
+      );
+    expect(contact.firstName).toBe("John");
+    expect(contact.lastName).toBe("Smith");
+    expect(contact.dateOfBirth).toBe("1975-04-01");
+    const kids = await db
+      .select({ id: familyMembers.id })
+      .from(familyMembers)
+      .where(and(eq(familyMembers.clientId, clientId), eq(familyMembers.role, "child")));
+    expect(kids).toHaveLength(0);
+  });
+});
+
+describe("applyIntake — risk", () => {
+  const FIRM_R = "test-firm-apply-risk-2026";
+  const ADVISOR_R = "user_test_apply_risk";
+  const FAMILY = {
+    primary: { firstName: "John", lastName: "Smith", dateOfBirth: "1975-04-01" },
+    children: [],
+  };
+  const COMPLETE = {
+    loss_reaction: "hold",
+    outcome_range: "wide",
+    goal_priority: "balanced",
+    prior_behavior: "held",
+    experience: "comfortable",
+  };
+  const base = (risk: unknown): IntakePayload =>
+    ({
+      family: FAMILY,
+      accounts: [],
+      income: [],
+      property: [],
+      goals: { expenseGoals: [], topics: [] },
+      meta: { completedSections: [] },
+      risk,
+    }) as IntakePayload;
+
+  // Unlike every other table this file touches, risk_questionnaires.firm_id
+  // carries a real FK to `firms` — so this describe needs the firm to exist.
+  beforeAll(async () => {
+    await db
+      .insert(firms)
+      .values({ firmId: FIRM_R, displayName: "Test Firm (apply risk)" })
+      .onConflictDoNothing();
+    // Audit rows outlive a crashed run — and the counts below are absolute, so
+    // one stray row from last time reads as a regression here.
+    await db.delete(auditLog).where(eq(auditLog.firmId, FIRM_R));
+  }, 30000);
+
+  const rtqAuditCount = async () =>
+    (
+      await db
+        .select({ id: auditLog.id })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.firmId, FIRM_R),
+            eq(auditLog.action, "risk_profile.rtq_completed"),
+          ),
+        )
+    ).length;
+
+  let ids: { householdId?: string; clientId?: string; formId?: string } = {};
+  afterEach(async () => {
+    await db.delete(auditLog).where(eq(auditLog.firmId, FIRM_R));
+    await cleanup(ids);
+    ids = {};
+  });
+
+  it("inserts a questionnaire row and sets tolerance when answers are complete", async () => {
+    const { householdId, clientId } = await seedJohnSmithHousehold(FIRM_R, ADVISOR_R);
+    const formId = await submitFormWithSections(
+      FIRM_R, ADVISOR_R, clientId, ["family", "risk"],
+      base({ answers: COMPLETE, rtqVersion: 1 }),
+    );
+    ids = { householdId, clientId, formId };
+
+    await applyIntake({ formId, firmId: FIRM_R, actorId: ADVISOR_R });
+
+    const [q] = await db
+      .select()
+      .from(riskQuestionnaires)
+      .where(eq(riskQuestionnaires.clientId, clientId));
+    expect(q).toBeDefined();
+    expect(q.subject).toBe("primary");
+    expect(q.status).toBe("applied");
+    expect(q.score).toBe(scoreRtq(COMPLETE));
+    expect(q.rtqVersion).toBe(1);
+    // The intake token must NEVER land here: loadQuestionnaireByToken would then
+    // resolve it, and the public /risk-questionnaire/[token] route would serve a
+    // live questionnaire to anyone holding an intake link.
+    expect(q.token).toBeNull();
+
+    const [profile] = await db
+      .select()
+      .from(clientRiskProfiles)
+      .where(eq(clientRiskProfiles.clientId, clientId));
+    expect(profile.toleranceScore).toBe(scoreRtq(COMPLETE));
+    expect(profile.toleranceSource).toBe("rtq_client");
+
+    expect(await rtqAuditCount()).toBe(1);
+  }, 30000);
+
+  it("writes nothing when the answers are partial", async () => {
+    const { householdId, clientId } = await seedJohnSmithHousehold(FIRM_R, ADVISOR_R);
+    const formId = await submitFormWithSections(
+      FIRM_R, ADVISOR_R, clientId, ["family", "risk"],
+      base({ answers: { loss_reaction: "hold" }, rtqVersion: 1 }),
+    );
+    ids = { householdId, clientId, formId };
+
+    await applyIntake({ formId, firmId: FIRM_R, actorId: ADVISOR_R });
+
+    const qs = await db
+      .select()
+      .from(riskQuestionnaires)
+      .where(eq(riskQuestionnaires.clientId, clientId));
+    expect(qs).toHaveLength(0);
+    // No sitting happened, so no "the client completed the RTQ" trail either.
+    expect(await rtqAuditCount()).toBe(0);
+  }, 30000);
+
+  it("writes nothing when the form did not COLLECT risk, even with answers in the payload", async () => {
+    // Presence in the payload is not consent. An API caller can post any
+    // payload it likes; the section set is what the client was actually asked.
+    const { householdId, clientId } = await seedJohnSmithHousehold(FIRM_R, ADVISOR_R);
+    const formId = await submitFormWithSections(
+      FIRM_R, ADVISOR_R, clientId, ["family"],
+      base({ answers: COMPLETE, rtqVersion: 1 }),
+    );
+    ids = { householdId, clientId, formId };
+
+    await applyIntake({ formId, firmId: FIRM_R, actorId: ADVISOR_R });
+
+    const qs = await db
+      .select()
+      .from(riskQuestionnaires)
+      .where(eq(riskQuestionnaires.clientId, clientId));
+    expect(qs).toHaveLength(0);
+  }, 30000);
 });

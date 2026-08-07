@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeIncome } from "../income";
+import { computeIncome, applyDisabilityEvent } from "../income";
 import { sampleIncomes, baseClient } from "./fixtures";
 import type { Income, ClientInfo } from "../types";
 
@@ -259,12 +259,18 @@ describe("computeIncome — stress test", () => {
     expect(cut.socialSecurity).toBeCloseTo(base.socialSecurity, 2);
   });
 
+  // Disability clips the row itself (applyDisabilityEvent) rather than being
+  // filtered inside computeIncome, so the stop is visible to the cash-routing
+  // and tax-base loops too. The end-to-end consequences live in
+  // stress-disability.test.ts; these assert the clip itself.
   it("stops the disabled person's salary from startYear forward", () => {
     // 2030: John salary active (owner client), Jane salary active (owner spouse).
     const before = computeIncome(sampleIncomes, 2030, baseClient);
-    const disabled = computeIncome(sampleIncomes, 2030, baseClient, undefined, {
-      disabilityEvent: { person: "client", startYear: 2030 },
-    });
+    const disabled = computeIncome(
+      applyDisabilityEvent(sampleIncomes, { person: "client", startYear: 2030 }),
+      2030,
+      baseClient,
+    );
     // John's salary drops out; Jane's remains.
     const janeOnly = computeIncome(
       sampleIncomes.filter((i) => i.id === "inc-salary-jane"),
@@ -277,10 +283,40 @@ describe("computeIncome — stress test", () => {
 
   it("leaves salary intact before the disability startYear", () => {
     const before = computeIncome(sampleIncomes, 2030, baseClient);
-    const notYet = computeIncome(sampleIncomes, 2030, baseClient, undefined, {
-      disabilityEvent: { person: "client", startYear: 2031 },
-    });
+    const notYet = computeIncome(
+      applyDisabilityEvent(sampleIncomes, { person: "client", startYear: 2031 }),
+      2030,
+      baseClient,
+    );
     expect(notYet.salaries).toBeCloseTo(before.salaries, 2);
+  });
+
+  it("clips an end-at-retirement salary without leaving a prorated slice", () => {
+    // A row whose end is anchored to retirement stays partly included in the
+    // retirement year even past `endYear` — the clip must clear `endYearRef`
+    // too, or the disabled person keeps a sliver of paycheck.
+    const anchored: Income[] = [
+      { ...sampleIncomes[0], endYear: 2034, endYearRef: "client_retirement" },
+    ];
+    const clipped = applyDisabilityEvent(anchored, { person: "client", startYear: 2030 });
+    const retirementYear = 2035; // baseClient: born 1970, retires at 65
+    expect(computeIncome(clipped, retirementYear, {
+      ...baseClient,
+      retirementMonth: 7,
+    }).salaries).toBe(0);
+  });
+
+  it("leaves an entity-owned business row alone", () => {
+    const entityOwned: Income[] = [
+      { ...sampleIncomes[0], type: "business", ownerEntityId: "ent-1" },
+    ];
+    expect(
+      applyDisabilityEvent(entityOwned, { person: "client", startYear: 2030 }),
+    ).toEqual(entityOwned);
+  });
+
+  it("returns the rows untouched when no disability is configured", () => {
+    expect(applyDisabilityEvent(sampleIncomes, undefined)).toBe(sampleIncomes);
   });
 
   it("haircuts SS total AND per-spouse detail buckets on the pia_at_fra path", () => {

@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  DEFAULT_INTAKE_SECTIONS,
+  type IntakeSectionKey,
+} from "./sections";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -189,22 +193,79 @@ export const intakeMetaSchema = z.object({
   completedSections: z.array(z.string().max(40)).max(10).default([]),
 });
 
+// ── Risk tolerance ───────────────────────────────────────────────────────────
+//
+// The RTQ answers ride HERE rather than in `risk_questionnaires` because that
+// table's client_id is NOT NULL and a prospect form has no client until apply.
+// Apply mints the row (see apply.ts) once the client exists.
+//
+// `rtqVersion` is stamped at SUBMIT time, for exactly the reason the column
+// exists: a form answered under v1 must still apply under v1 after v2 ships.
+const intakeRiskSchema = z.object({
+  answers: z.record(z.string().max(40), z.string().max(40)),
+  environmentNote: z.string().trim().max(2000).optional(),
+  rtqVersion: z.number().int().min(1).max(1000),
+});
+
+const intakeRiskDraftSchema = z.object({
+  answers: z.record(z.string().max(40), z.string().max(40)).optional(),
+  environmentNote: z.string().trim().max(2000).optional(),
+  rtqVersion: z.number().int().min(1).max(1000).optional(),
+});
+
 // Strict — used on submit + on apply.
-export const intakeSubmitSchema = z.object({
-  family: z.object({
-    primary: intakePersonSchema,
-    spouse: intakePersonSchema.nullable().optional(),
-    stateOfResidence: z.string().length(2).optional(),
-    children: z.array(intakeChildSchema).max(20).default([]),
-  }),
+//
+// `family` is OPTIONAL in the base shape and its required-ness is enforced by
+// `intakeSubmitSchemaFor` below. Two reasons it is done this way rather than
+// building two different object schemas:
+//   1. One output type. A conditional `z.object` would make `IntakePayload` a
+//      union of two shapes, which every consumer would then have to narrow.
+//   2. A family that IS present still has to satisfy its own validators even
+//      when the section is excluded — a half-filled family that rode along in
+//      a stale draft is bad data either way.
+const intakeSubmitBaseSchema = z.object({
+  family: z
+    .object({
+      primary: intakePersonSchema,
+      spouse: intakePersonSchema.nullable().optional(),
+      stateOfResidence: z.string().length(2).optional(),
+      children: z.array(intakeChildSchema).max(20).default([]),
+    })
+    .optional(),
   accounts: z.array(intakeAccountSchema).max(50).default([]),
   income: z.array(intakeIncomeSchema).max(50).default([]),
   property: z.array(intakePropertySchema).max(50).default([]),
   // The default has to satisfy the OUTPUT type, so the two array members are
   // spelled out — `{}` no longer type-checks now that they're `.default([])`.
   goals: intakeGoalsSchema.default({ expenseGoals: [], topics: [] }),
+  // Optional even when the Risk section IS selected: a client may legitimately
+  // skip the step, and partial answers are stored but never scored. There is
+  // deliberately no superRefine for risk.
+  risk: intakeRiskSchema.optional(),
   meta: intakeMetaSchema.default({ completedSections: [] }),
 });
+
+/**
+ * The submit/apply validator for a form collecting `sections`.
+ *
+ * BOTH the submit route AND applyIntake must call this with the form row's own
+ * sections. applyIntake re-parses the stored payload, so if only one of the two
+ * were section-aware, every docs-only form would submit cleanly and then throw
+ * on apply — after a real client had already filled it in.
+ */
+export function intakeSubmitSchemaFor(sections: readonly IntakeSectionKey[]) {
+  return intakeSubmitBaseSchema.superRefine((val, ctx) => {
+    if (sections.includes("family") && val.family === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["family"],
+        message: "Family is required on a form that collects it",
+      });
+    }
+  });
+}
+
+export const intakeSubmitSchema = intakeSubmitSchemaFor(DEFAULT_INTAKE_SECTIONS);
 
 // Lenient — used on autosave so half-filled drafts persist.
 //
@@ -302,10 +363,11 @@ export const intakeDraftSchema = z.object({
   income: z.array(intakeIncomeDraftSchema).max(50).optional(),
   property: z.array(intakePropertyDraftSchema).max(50).optional(),
   goals: intakeGoalsDraftSchema.optional(),
+  risk: intakeRiskDraftSchema.optional(),
   meta: intakeMetaSchema.partial().optional(),
 }).strip();
 
-export type IntakePayload = z.infer<typeof intakeSubmitSchema>;
+export type IntakePayload = z.infer<typeof intakeSubmitBaseSchema>;
 export type IntakeDraft = z.infer<typeof intakeDraftSchema>;
 
 const blankStr = (v: unknown) => v === undefined || v === null || String(v).trim() === "";

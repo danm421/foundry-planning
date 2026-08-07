@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { clients } from "@/db/schema";
 import { requireClientPortalAccess } from "@/lib/authz";
 import { loadOrSeedPortalIntakeForm } from "@/lib/intake/load-or-seed";
+import { portalCollectsNothing } from "@/lib/intake/sections";
 import { resolveIntakeBrandingForClient } from "@/lib/branding/resolve-for-client";
 import { PortalIntakeClient } from "./intake-client";
 
@@ -35,6 +36,14 @@ export default async function PortalIntakePage(): Promise<ReactElement> {
   // superset of the middleware's draft-only soft gate, so landing on a portal
   // page here cannot bounce back to /portal/intake.
   if (!result) redirect("/portal/organizer");
+  // The form exists but collects nothing this host can render — "Documents
+  // only" is a shipped preset and the portal has no upload surface, so the
+  // wizard would be Welcome → Review with nothing in between and Submit would
+  // file a form that collected nothing. The proxy's soft gate asks this same
+  // question of this same row (`hasUnsubmittedPrefilledForm` shares both the
+  // predicate and the ordering), so it never sends a client here to be bounced
+  // straight back — that pair of redirects would loop.
+  if (portalCollectsNothing(result.sections)) redirect("/portal/organizer");
 
   return (
     <PortalIntakeClient
@@ -42,6 +51,7 @@ export default async function PortalIntakePage(): Promise<ReactElement> {
       initialStatus={result.status}
       recipientName={result.recipientName}
       branding={branding}
+      sections={result.sections}
     />
   );
 }

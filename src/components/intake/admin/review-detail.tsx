@@ -6,6 +6,7 @@ import type { IntakeFormRow } from "@/lib/intake/queries";
 import { intakeDocTypeLabel, type IntakeDocumentView } from "@/lib/intake/document-types";
 import { formatBytes } from "@/components/portal/documents/vault-format";
 import type { IntakeDiff, FieldDiff, ListSectionDiff } from "./diff-utils";
+import { RISK_LEVEL_LABELS } from "@/lib/risk-levels";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -291,6 +292,36 @@ export default function ReviewDetail({
           {diff.radar.note && (
             <p className="mt-3 whitespace-pre-wrap border-t border-hair pt-3 text-[14px] text-ink-2">
               {diff.radar.note}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* ── Risk tolerance ──────────────────────────────────────────────── */}
+      {/* Only when the client actually answered something. A partial sitting
+          still shows: apply writes nothing for it, and the advisor needs to
+          know that before they wonder why the score never landed. */}
+      {diff.risk.answered > 0 && (
+        <div className="rounded-[var(--radius-sm)] border border-hair bg-card p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className={labelCls}>Risk tolerance</h3>
+            <span className="tabular text-[12px] text-ink-3">
+              {diff.risk.score === null
+                ? `Partially answered — no score (${diff.risk.answered}/${diff.risk.total})`
+                : `${diff.risk.score} · ${RISK_LEVEL_LABELS[diff.risk.level!]}`}
+            </span>
+          </div>
+          <dl className="space-y-2">
+            {diff.risk.answers.map((a) => (
+              <div key={a.prompt}>
+                <dt className="text-[13px] text-ink-3">{a.prompt}</dt>
+                <dd className="text-[14px] text-ink">{a.label}</dd>
+              </div>
+            ))}
+          </dl>
+          {diff.risk.note && (
+            <p className="mt-3 whitespace-pre-wrap border-t border-hair pt-3 text-[14px] text-ink-2">
+              {diff.risk.note}
             </p>
           )}
         </div>

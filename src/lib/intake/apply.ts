@@ -44,13 +44,19 @@ import {
   intakeForms,
   liabilities,
   planSettings,
+  riskQuestionnaires,
   scenarios,
 } from "@/db/schema";
+import { isCompleteRtq, scoreRtq, type RtqAnswers } from "@/lib/risk/rtq";
+import { applyRtqPatch } from "@/lib/risk/apply-rtq";
+import { recomputeProfileTx } from "@/lib/risk/profile";
+import { loadExistingScores } from "@/lib/risk/existing-scores";
 import {
-  intakeSubmitSchema,
+  intakeSubmitSchemaFor,
   maritalToFilingStatus,
   type IntakePayload,
 } from "@/lib/intake/schema";
+import { sectionsForForm, type IntakeSectionKey } from "@/lib/intake/sections";
 import {
   childIndexFromRef,
   goalExpenseType,
@@ -87,6 +93,11 @@ type ApplyResult = {
   // mortgage liability, each audited like the account itself.
   expenseIds: string[];
   liabilityIds: string[];
+  /**
+   * Drives the `client.base_facts.update` audit. Set by the Family scalars block
+   * AND by the Goals retirement-age write — either one changes a base fact, and
+   * a Goals-only form must not lose its audit trail.
+   */
   familyScalarsChanged: boolean;
 };
 
@@ -115,6 +126,39 @@ function beneficiaryId(
 }
 
 /**
+ * Date of birth of the household's primary contact. Only reached when the form
+ * did not collect a Family step, which the create route permits ONLY for an
+ * existing client — so a contact row exists. Throwing on a missing or
+ * date-less contact is correct: silently guessing a birth year would place
+ * every milestone-anchored row on the wrong calendar.
+ *
+ * Returns the DATE, not just its year: the year alone anchors `planEndYear`,
+ * but `buildClientMilestones` (which places every retirement-anchored income
+ * row) wants the full date, and the two must not come from different sources.
+ */
+async function primaryDobFromCrm(tx: Tx, householdId: string | null): Promise<string> {
+  if (!householdId) {
+    throw new Error("Cannot apply a family-less intake form: client has no CRM household");
+  }
+  const [contact] = await tx
+    .select({ dateOfBirth: crmHouseholdContacts.dateOfBirth })
+    .from(crmHouseholdContacts)
+    .where(
+      and(
+        eq(crmHouseholdContacts.householdId, householdId),
+        eq(crmHouseholdContacts.role, "primary"),
+      ),
+    )
+    .limit(1);
+  if (!contact?.dateOfBirth) {
+    throw new Error(
+      `Cannot apply a family-less intake form: household ${householdId} has no primary date of birth`,
+    );
+  }
+  return contact.dateOfBirth;
+}
+
+/**
  * Apply the parsed intake payload onto a single client's base scenario.
  *
  * All writes run on the supplied tx handle so the caller controls atomicity.
@@ -138,6 +182,11 @@ async function applySectionsToClient(
   _firmId: string,
   _actorId: string,
   payload: IntakePayload,
+  // Which sections the form actually collected. Every block below is gated on
+  // this: a PREFILLED form seeds its payload from a plan snapshot, so a send
+  // with Accounts excluded still carries seeded rows the client never saw, and
+  // applying them would write stale snapshot data back over the live plan.
+  sections: readonly IntakeSectionKey[],
   // opts.mode is reserved for the prospect path; the merge/fresh logic is
   // identical today (see the doc comment above).
   _opts: { mode: "merge" | "fresh" },
@@ -161,20 +210,50 @@ async function applySectionsToClient(
     familyScalarsChanged: false,
   };
 
-  const { primary, spouse } = payload.family;
-  const primaryDobYear = new Date(primary.dateOfBirth).getFullYear();
+  const primary = payload.family?.primary;
+  const spouse = payload.family?.spouse;
   const now = new Date();
   const currentYear = now.getFullYear();
   // 1-indexed, matching liabilities.start_month / balance_as_of_month.
   const currentMonth = now.getMonth() + 1;
-  const planEndYear = primaryDobYear + client.planEndAge;
 
-  // The ages this apply is settling on — written to the client row below and
+  /**
+   * The birth-date anchors: the primary's date of birth, its year, and the
+   * projection horizon. A form that did not collect Family carries no date, so
+   * this falls back to the CRM contact the client already has — `clients`
+   * carries no birth date of its own, only planEndAge.
+   *
+   * LAZY and memoized (at most one query, and only if something asks). A
+   * documents-only or family-only apply writes nothing anchored to a birth date,
+   * and CRM contacts frequently carry no DOB, so resolving this eagerly would
+   * hard-fail the flagship documents-only send on a value it never uses. The
+   * throw inside `primaryDobFromCrm` still fires the moment a section that DOES
+   * need an anchor is applied — which is exactly when guessing would be unsafe.
+   */
+  let anchorsPromise: Promise<{ dob: string; dobYear: number; planEndYear: number }> | undefined;
+  const anchors = () =>
+    (anchorsPromise ??= (async () => {
+      const dob = primary?.dateOfBirth ?? (await primaryDobFromCrm(tx, client.crmHouseholdId));
+      const dobYear = new Date(dob).getFullYear();
+      return { dob, dobYear, planEndYear: dobYear + client.planEndAge };
+    })());
+
+  // The ages this apply is settling on — persisted by the Goals block below and
   // used to place every milestone-anchored row. One source so the anchors can't
   // disagree with the retirement age actually persisted.
-  const clientRetirementAge = payload.goals.clientRetirementAge ?? client.retirementAge;
+  //
+  // A section the form did not collect contributes NOTHING, which is why the
+  // payload read is gated rather than taken at face value: a PREFILLED form
+  // seeded its `goals` from a plan snapshot at SEND time, so a form that does
+  // not collect Goals still carries a retirement age the client never saw. Any
+  // advisor edit made between the send and the submit would be silently
+  // reverted by honouring it.
+  const clientRetirementAge =
+    (sections.includes("goals") ? payload.goals.clientRetirementAge : undefined) ??
+    client.retirementAge;
   const spouseRetirementAge =
-    payload.goals.spouseRetirementAge ?? client.spouseRetirementAge;
+    (sections.includes("goals") ? payload.goals.spouseRetirementAge : undefined) ??
+    client.spouseRetirementAge;
 
   // ── Family scalars ────────────────────────────────────────────────────────
   // Primary + spouse CRM contacts (source of truth) via the shared upsert: the
@@ -182,93 +261,120 @@ async function applySectionsToClient(
   // started single (single→married), UPDATEd otherwise. This is the same helper
   // the AI-import commit and the manual PUT route through, so the three paths
   // can't drift.
-  await upsertPrimaryAndSpouseContacts(
-    tx,
-    client.crmHouseholdId,
-    {
-      primary: {
-        firstName: primary.firstName,
-        lastName: primary.lastName,
-        dateOfBirth: primary.dateOfBirth,
-        maritalStatus: primary.maritalStatus ?? null,
+  if (sections.includes("family") && primary) {
+    await upsertPrimaryAndSpouseContacts(
+      tx,
+      client.crmHouseholdId,
+      {
+        primary: {
+          firstName: primary.firstName,
+          lastName: primary.lastName,
+          dateOfBirth: primary.dateOfBirth,
+          maritalStatus: primary.maritalStatus ?? null,
+        },
+        spouse: spouse
+          ? {
+              firstName: spouse.firstName,
+              lastName: spouse.lastName,
+              dateOfBirth: spouse.dateOfBirth,
+              maritalStatus: spouse.maritalStatus ?? null,
+            }
+          : undefined,
       },
-      spouse: spouse
-        ? {
-            firstName: spouse.firstName,
-            lastName: spouse.lastName,
-            dateOfBirth: spouse.dateOfBirth,
-            maritalStatus: spouse.maritalStatus ?? null,
-          }
-        : undefined,
-    },
-    primary.lastName,
-  );
-  result.familyScalarsChanged = true;
+      primary.lastName,
+    );
+    result.familyScalarsChanged = true;
 
-  // Primary rename, spouse rename, and first-time spouse insert all land above
-  // and all change the derived household label. One sync covers all three.
-  await syncHouseholdNameFromContacts(tx, client.crmHouseholdId);
+    // Primary rename, spouse rename, and first-time spouse insert all land above
+    // and all change the derived household label. One sync covers all three.
+    await syncHouseholdNameFromContacts(tx, client.crmHouseholdId);
 
-  // Household residence state.
-  if (payload.family.stateOfResidence) {
+    // Household residence state.
+    if (payload.family?.stateOfResidence) {
+      await tx
+        .update(crmHouseholds)
+        .set({ state: payload.family.stateOfResidence, updatedAt: new Date() })
+        .where(eq(crmHouseholds.id, client.crmHouseholdId));
+    }
+
+    // Planning client scalars owned by THIS step: filing status only. It derives
+    // from the primary's marital status, so it genuinely belongs to Family. The
+    // retirement ages are typed on the Goals step and are written by the Goals
+    // block below — see the note there.
+    const filingStatus = maritalToFilingStatus(primary.maritalStatus);
     await tx
-      .update(crmHouseholds)
-      .set({ state: payload.family.stateOfResidence, updatedAt: new Date() })
-      .where(eq(crmHouseholds.id, client.crmHouseholdId));
-  }
+      .update(clients)
+      .set({ filingStatus, updatedAt: new Date() })
+      .where(eq(clients.id, clientId));
 
-  // Planning client scalars: retirement ages + filing status.
-  const filingStatus = maritalToFilingStatus(primary.maritalStatus);
-  await tx
-    .update(clients)
-    .set({
-      retirementAge: clientRetirementAge,
-      spouseRetirementAge,
-      filingStatus,
-      updatedAt: new Date(),
-    })
-    .where(eq(clients.id, clientId));
-
-  // Sync family_members role=client/spouse name + DOB (keeps the planning-side
-  // identity rows aligned with the CRM contacts the form just updated).
-  await tx
-    .update(familyMembers)
-    .set({
-      firstName: primary.firstName,
-      lastName: primary.lastName,
-      dateOfBirth: primary.dateOfBirth,
-      updatedAt: new Date(),
-    })
-    .where(and(eq(familyMembers.clientId, clientId), eq(familyMembers.role, "client")));
-  if (spouse) {
+    // Sync family_members role=client/spouse name + DOB (keeps the planning-side
+    // identity rows aligned with the CRM contacts the form just updated).
     await tx
       .update(familyMembers)
       .set({
-        firstName: spouse.firstName,
-        lastName: spouse.lastName,
-        dateOfBirth: spouse.dateOfBirth,
+        firstName: primary.firstName,
+        lastName: primary.lastName,
+        dateOfBirth: primary.dateOfBirth,
         updatedAt: new Date(),
       })
-      .where(and(eq(familyMembers.clientId, clientId), eq(familyMembers.role, "spouse")));
+      .where(and(eq(familyMembers.clientId, clientId), eq(familyMembers.role, "client")));
+    if (spouse) {
+      await tx
+        .update(familyMembers)
+        .set({
+          firstName: spouse.firstName,
+          lastName: spouse.lastName,
+          dateOfBirth: spouse.dateOfBirth,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(familyMembers.clientId, clientId), eq(familyMembers.role, "spouse")));
+    }
+  }
+
+  // ── Retirement ages ───────────────────────────────────────────────────────
+  // Persisted under GOALS, not Family: the client types both on the Goals step,
+  // and `clients.retirement_age` is what the projection loader re-derives every
+  // `client_retirement`-anchored row from on load. Gating this write on Family
+  // fails in both directions — a Goals-without-Family form would have the
+  // client's typed age silently discarded (the anchored rows written here would
+  // snap back to the old age on the next load), and a Family-without-Goals form
+  // would write a stale seeded age back over the advisor's live plan.
+  if (sections.includes("goals")) {
+    await tx
+      .update(clients)
+      .set({
+        retirementAge: clientRetirementAge,
+        spouseRetirementAge,
+        updatedAt: new Date(),
+      })
+      .where(eq(clients.id, clientId));
+    result.familyScalarsChanged = true;
   }
 
   // ── Children ──────────────────────────────────────────────────────────────
   // v1 APPENDS each child (no dedup) — the advisor reviews per form, so a
   // re-sent form's children are expected to be net-new. Dedup deferred.
-  for (const child of payload.family.children) {
-    const [row] = await tx
-      .insert(familyMembers)
-      .values({
-        clientId,
-        role: "child",
-        relationship: "child",
-        firstName: child.firstName,
-        lastName: child.lastName ?? null,
-        dateOfBirth: child.dateOfBirth,
-      })
-      .returning({ id: familyMembers.id });
-    result.childIds.push(row.id);
+  if (sections.includes("family")) {
+    for (const child of payload.family?.children ?? []) {
+      const [row] = await tx
+        .insert(familyMembers)
+        .values({
+          clientId,
+          role: "child",
+          relationship: "child",
+          firstName: child.firstName,
+          lastName: child.lastName ?? null,
+          dateOfBirth: child.dateOfBirth,
+        })
+        .returning({ id: familyMembers.id });
+      result.childIds.push(row.id);
+    }
   }
+
+  // Resolved outside every gate below: Accounts, Property, and the funded-goal
+  // beneficiary lookup all need it, so a form that skips Accounts must still be
+  // able to place an owned property or a goal pointed at the spouse.
+  const familyRoleIds = await loadFamilyRoleIds(tx, clientId);
 
   // ── Accounts ──────────────────────────────────────────────────────────────
   // The form's owner enum (client/spouse/joint) becomes account_owners rows via
@@ -276,30 +382,31 @@ async function applySectionsToClient(
   // never lands ownerless. Retirement is passed as non-joint because a
   // retirement account is singly owned — note the DB's retirement trigger keys
   // on sub_type and so never fires on these rows (we write sub_type "other").
-  const familyRoleIds = await loadFamilyRoleIds(tx, clientId);
-  for (const account of payload.accounts) {
-    const [row] = await tx
-      .insert(accounts)
-      .values({
-        clientId,
-        scenarioId,
-        name: account.name,
-        category: account.category,
-        subType: "other",
-        value: String(account.value),
-        basis: String(account.basis ?? 0),
-        custodian: account.custodian ?? null,
-        source: "manual",
-      })
-      .returning({ id: accounts.id });
-    result.accountIds.push(row.id);
-    await synthesizeAccountOwners(
-      tx,
-      row.id,
-      account.owner,
-      familyRoleIds,
-      account.category === "retirement",
-    );
+  if (sections.includes("accounts")) {
+    for (const account of payload.accounts) {
+      const [row] = await tx
+        .insert(accounts)
+        .values({
+          clientId,
+          scenarioId,
+          name: account.name,
+          category: account.category,
+          subType: "other",
+          value: String(account.value),
+          basis: String(account.basis ?? 0),
+          custodian: account.custodian ?? null,
+          source: "manual",
+        })
+        .returning({ id: accounts.id });
+      result.accountIds.push(row.id);
+      await synthesizeAccountOwners(
+        tx,
+        row.id,
+        account.owner,
+        familyRoleIds,
+        account.category === "retirement",
+      );
+    }
   }
 
   // ── Income ────────────────────────────────────────────────────────────────
@@ -311,38 +418,41 @@ async function applySectionsToClient(
   // Same milestone table the projection loader resolves against, so the year
   // stored here is the one `resolveRefYears` recomputes on load. `plan_start` is
   // unused by income anchors; currentYear stands in for it.
-  const milestones = buildClientMilestones(
-    {
-      dateOfBirth: primary.dateOfBirth,
-      retirementAge: clientRetirementAge,
-      planEndAge: client.planEndAge,
-      spouseDob: spouse?.dateOfBirth ?? null,
-      spouseRetirementAge,
-    },
-    currentYear,
-    planEndYear,
-  );
-  for (const income of payload.income) {
-    const window = incomeYearWindow(income, milestones, {
+  if (sections.includes("income")) {
+    const { dob, planEndYear } = await anchors();
+    const milestones = buildClientMilestones(
+      {
+        dateOfBirth: dob,
+        retirementAge: clientRetirementAge,
+        planEndAge: client.planEndAge,
+        spouseDob: spouse?.dateOfBirth ?? null,
+        spouseRetirementAge,
+      },
       currentYear,
       planEndYear,
-    });
-    const [row] = await tx
-      .insert(incomes)
-      .values({
-        clientId,
-        scenarioId,
-        type: income.type,
-        name: income.name,
-        annualAmount: String(income.annualAmount),
-        owner: income.owner,
-        startYear: window.startYear,
-        endYear: window.endYear,
-        endYearRef: window.endYearRef,
-        source: "manual",
-      })
-      .returning({ id: incomes.id });
-    result.incomeIds.push(row.id);
+    );
+    for (const income of payload.income) {
+      const window = incomeYearWindow(income, milestones, {
+        currentYear,
+        planEndYear,
+      });
+      const [row] = await tx
+        .insert(incomes)
+        .values({
+          clientId,
+          scenarioId,
+          type: income.type,
+          name: income.name,
+          annualAmount: String(income.annualAmount),
+          owner: income.owner,
+          startYear: window.startYear,
+          endYear: window.endYear,
+          endYearRef: window.endYearRef,
+          source: "manual",
+        })
+        .returning({ id: incomes.id });
+      result.incomeIds.push(row.id);
+    }
   }
 
   // ── Property (real_estate / business) → accounts (+ expense, + liability) ──
@@ -355,101 +465,105 @@ async function applySectionsToClient(
   //                  insurance does not, so it lands as an ordinary recurring
   //                  expense running to plan end and growing with inflation.
   //   liabilities  — when a mortgage with a balance was declared.
-  for (const property of payload.property) {
-    const isRealEstate = property.kind === "real_estate";
-    const [row] = await tx
-      .insert(accounts)
-      .values({
-        clientId,
-        scenarioId,
-        name: property.name,
-        category: property.kind,
-        subType: "other",
-        value: String(property.value),
-        basis: String(property.basis ?? 0),
-        // Real estate only: the engine reads this column for `real_estate`
-        // accounts and ignores it everywhere else, and the form asks
-        // accordingly. Left at the column default (0) when unanswered.
-        ...(isRealEstate && property.annualPropertyTax != null
-          ? { annualPropertyTax: String(property.annualPropertyTax) }
-          : {}),
-        source: "manual",
-      })
-      .returning({ id: accounts.id });
-    result.accountIds.push(row.id);
-    // Property is never a retirement account, so joint always splits 50/50.
-    await synthesizeAccountOwners(tx, row.id, property.owner, familyRoleIds, false);
-
-    // Insurance → its own expense row. Typed "insurance" so it reports in the
-    // cash-flow Insurance bucket alongside modeled premiums.
-    if (isRealEstate && property.annualInsurance) {
-      const [expenseRow] = await tx
-        .insert(expenses)
+  if (sections.includes("property")) {
+    // Needed only for the insurance expense's plan-end horizon.
+    const { planEndYear } = await anchors();
+    for (const property of payload.property) {
+      const isRealEstate = property.kind === "real_estate";
+      const [row] = await tx
+        .insert(accounts)
         .values({
           clientId,
           scenarioId,
-          type: "insurance",
-          name: `Insurance – ${property.name}`,
-          annualAmount: String(property.annualInsurance),
-          startYear: currentYear,
-          endYear: planEndYear,
-          endYearRef: "plan_end",
-          growthRate: "0.03",
-          growthSource: "inflation",
+          name: property.name,
+          category: property.kind,
+          subType: "other",
+          value: String(property.value),
+          basis: String(property.basis ?? 0),
+          // Real estate only: the engine reads this column for `real_estate`
+          // accounts and ignores it everywhere else, and the form asks
+          // accordingly. Left at the column default (0) when unanswered.
+          ...(isRealEstate && property.annualPropertyTax != null
+            ? { annualPropertyTax: String(property.annualPropertyTax) }
+            : {}),
           source: "manual",
         })
-        .returning({ id: expenses.id });
-      result.expenseIds.push(expenseRow.id);
-    }
+        .returning({ id: accounts.id });
+      result.accountIds.push(row.id);
+      // Property is never a retirement account, so joint always splits 50/50.
+      await synthesizeAccountOwners(tx, row.id, property.owner, familyRoleIds, false);
 
-    // Mortgage → a liability linked back to the property it encumbers.
-    //
-    // The form asks what a client knows — balance left and years left — but the
-    // schedule is built from an origination year plus a full term. Anchoring the
-    // loan at today makes the two equivalent: elapsed months is zero, so
-    // buildLiabilitySchedule amortizes exactly the declared balance over exactly
-    // the declared remaining years.
-    //
-    // A balance is the one field we can't amortize without, so it gates the
-    // write; the advisor still sees the declared mortgage on the review screen
-    // when it's missing.
-    //
-    // `isInterestDeductible` is set true rather than left at the column default:
-    // mortgage interest on a residence is deductible, and starting from the
-    // common case means the advisor corrects the exception (a rental, where the
-    // interest is a Schedule E offset instead) rather than remembering to tick
-    // the box on every intake. Note this feeds the itemized-deduction path, so
-    // it does move tax results — it is why the review screen shows the mortgage
-    // before anything is applied.
-    const mortgage = isRealEstate ? property.mortgage : undefined;
-    if (mortgage?.balance) {
-      const [liabilityRow] = await tx
-        .insert(liabilities)
-        .values({
-          clientId,
-          scenarioId,
-          name: `Mortgage – ${property.name}`,
-          balance: String(mortgage.balance),
-          balanceAsOfMonth: currentMonth,
-          balanceAsOfYear: currentYear,
-          interestRate: String((mortgage.interestRatePct ?? 0) / 100),
-          monthlyPayment: String(mortgage.monthlyPayment ?? 0),
-          startYear: currentYear,
-          startMonth: currentMonth,
-          termMonths: Math.round((mortgage.yearsRemaining ?? 0) * 12),
-          termUnit: "annual",
-          linkedPropertyId: row.id,
-          liabilityType: "mortgage",
-          isInterestDeductible: true,
-        })
-        .returning({ id: liabilities.id });
-      result.liabilityIds.push(liabilityRow.id);
-      await synthesizeLiabilityOwners(
-        tx,
-        liabilityRow.id,
-        property.owner,
-        familyRoleIds,
-      );
+      // Insurance → its own expense row. Typed "insurance" so it reports in the
+      // cash-flow Insurance bucket alongside modeled premiums.
+      if (isRealEstate && property.annualInsurance) {
+        const [expenseRow] = await tx
+          .insert(expenses)
+          .values({
+            clientId,
+            scenarioId,
+            type: "insurance",
+            name: `Insurance – ${property.name}`,
+            annualAmount: String(property.annualInsurance),
+            startYear: currentYear,
+            endYear: planEndYear,
+            endYearRef: "plan_end",
+            growthRate: "0.03",
+            growthSource: "inflation",
+            source: "manual",
+          })
+          .returning({ id: expenses.id });
+        result.expenseIds.push(expenseRow.id);
+      }
+
+      // Mortgage → a liability linked back to the property it encumbers.
+      //
+      // The form asks what a client knows — balance left and years left — but the
+      // schedule is built from an origination year plus a full term. Anchoring the
+      // loan at today makes the two equivalent: elapsed months is zero, so
+      // buildLiabilitySchedule amortizes exactly the declared balance over exactly
+      // the declared remaining years.
+      //
+      // A balance is the one field we can't amortize without, so it gates the
+      // write; the advisor still sees the declared mortgage on the review screen
+      // when it's missing.
+      //
+      // `isInterestDeductible` is set true rather than left at the column default:
+      // mortgage interest on a residence is deductible, and starting from the
+      // common case means the advisor corrects the exception (a rental, where the
+      // interest is a Schedule E offset instead) rather than remembering to tick
+      // the box on every intake. Note this feeds the itemized-deduction path, so
+      // it does move tax results — it is why the review screen shows the mortgage
+      // before anything is applied.
+      const mortgage = isRealEstate ? property.mortgage : undefined;
+      if (mortgage?.balance) {
+        const [liabilityRow] = await tx
+          .insert(liabilities)
+          .values({
+            clientId,
+            scenarioId,
+            name: `Mortgage – ${property.name}`,
+            balance: String(mortgage.balance),
+            balanceAsOfMonth: currentMonth,
+            balanceAsOfYear: currentYear,
+            interestRate: String((mortgage.interestRatePct ?? 0) / 100),
+            monthlyPayment: String(mortgage.monthlyPayment ?? 0),
+            startYear: currentYear,
+            startMonth: currentMonth,
+            termMonths: Math.round((mortgage.yearsRemaining ?? 0) * 12),
+            termUnit: "annual",
+            linkedPropertyId: row.id,
+            liabilityType: "mortgage",
+            isInterestDeductible: true,
+          })
+          .returning({ id: liabilities.id });
+        result.liabilityIds.push(liabilityRow.id);
+        await synthesizeLiabilityOwners(
+          tx,
+          liabilityRow.id,
+          property.owner,
+          familyRoleIds,
+        );
+      }
     }
   }
 
@@ -473,7 +587,7 @@ async function applySectionsToClient(
   // today's-dollars goal from this year instead would quietly shave off every
   // year between the two. Falls back to the current year only when a scenario
   // somehow has no plan_settings row.
-  if (payload.goals.expenseGoals.length > 0) {
+  if (sections.includes("goals") && payload.goals.expenseGoals.length > 0) {
     const [settings] = await tx
       .select({ planStartYear: planSettings.planStartYear })
       .from(planSettings)
@@ -511,7 +625,7 @@ async function applySectionsToClient(
 
   // ── Retirement expenses ───────────────────────────────────────────────────
   // Only touch the retirement-living row when the form supplied an amount.
-  if (payload.goals.annualRetirementExpenses != null) {
+  if (sections.includes("goals") && payload.goals.annualRetirementExpenses != null) {
     const amount = String(payload.goals.annualRetirementExpenses);
     const [existing] = await tx
       .select({ id: expenses.id })
@@ -532,13 +646,18 @@ async function applySectionsToClient(
         .set({ annualAmount: amount, updatedAt: new Date() })
         .where(eq(expenses.id, existing.id));
     } else {
+      // Only the INSERT needs a birth-date anchor; the far more common UPDATE
+      // above rewrites an amount and nothing else.
+      const { dobYear, planEndYear } = await anchors();
       await tx.insert(expenses).values({
         clientId,
         scenarioId,
         type: "living",
         name: "Retirement Living Expenses",
         annualAmount: amount,
-        startYear: primaryDobYear + (payload.goals.clientRetirementAge ?? client.retirementAge),
+        // The same age the Goals block persists — one source, so the row and
+        // `clients.retirement_age` can't disagree.
+        startYear: dobYear + clientRetirementAge,
         startYearRef: "client_retirement",
         endYear: planEndYear,
         endYearRef: "plan_end",
@@ -606,14 +725,114 @@ async function emitRadarNote(args: {
  * fires the SAME audits as the existing-client path (the section ids come back
  * from applySectionsToClient regardless of which path created the client).
  */
+/**
+ * Turn a completed in-form questionnaire into a real RTQ sitting.
+ *
+ * Runs inside the apply transaction, after the client row exists — which is the
+ * whole reason the answers rode in the payload: risk_questionnaires.client_id is
+ * NOT NULL, and a prospect form has no client until this moment.
+ *
+ * Partial answers write NOTHING. scoreRtq throws on a missing answer, and a
+ * fragment is not a measurement.
+ */
+async function applyIntakeRisk(
+  tx: Tx,
+  args: {
+    clientId: string;
+    firmId: string;
+    actorId: string;
+    risk: NonNullable<IntakePayload["risk"]>;
+  },
+): Promise<boolean> {
+  const answers = args.risk.answers as RtqAnswers;
+  // Partial answers write NOTHING and report false, so the caller doesn't emit
+  // an "rtq_completed" audit for a sitting that never happened.
+  if (!isCompleteRtq(answers)) return false;
+
+  const score = scoreRtq(answers);
+  const now = new Date();
+
+  const { existingPrimaryScore, existingSpouseScore } = await loadExistingScores(tx, {
+    clientId: args.clientId,
+    firmId: args.firmId,
+    subject: "primary",
+  });
+
+  await tx.insert(riskQuestionnaires).values({
+    clientId: args.clientId,
+    firmId: args.firmId,
+    createdByUserId: args.actorId,
+    subject: "primary",
+    // NULL, and this is load-bearing. Writing the INTAKE token here would make
+    // loadQuestionnaireByToken resolve it, and the public
+    // /risk-questionnaire/[token] route would then serve a live questionnaire to
+    // anyone holding an intake link.
+    token: null,
+    status: "applied",
+    rtqVersion: args.risk.rtqVersion,
+    answers,
+    score,
+    environmentNote: args.risk.environmentNote ?? null,
+    submittedAt: now,
+    appliedAt: now,
+  });
+
+  await recomputeProfileTx(tx, {
+    clientId: args.clientId,
+    firmId: args.firmId,
+    // Null actor is what makes the history row read "Client" rather than
+    // "System" (risk-history-table.tsx) — the client answered these, the
+    // advisor only pressed Apply.
+    actorUserId: null,
+    kind: "rtq_completed",
+    reason: "Client-completed questionnaire (intake form)",
+    patch: {
+      ...applyRtqPatch({ subject: "primary", score, existingPrimaryScore, existingSpouseScore }),
+      toleranceSource: "rtq_client",
+    },
+  });
+  return true;
+}
+
+/**
+ * The apply-time gate for the Risk block.
+ *
+ * Gated on the SECTION SET as well as on the payload, unlike the plan's own
+ * sketch and like every sibling block in `applySectionsToClient`. Presence
+ * alone would let an API caller post a documents-only form carrying risk
+ * answers and mint an RTQ sitting the form never collected — a measurement the
+ * client was never asked for, attributed to them.
+ */
+async function applyRiskIfCollected(
+  tx: Tx,
+  args: {
+    clientId: string;
+    firmId: string;
+    actorId: string;
+    sections: readonly IntakeSectionKey[];
+    payload: IntakePayload;
+  },
+): Promise<boolean> {
+  if (!args.sections.includes("risk") || !args.payload.risk) return false;
+  return applyIntakeRisk(tx, {
+    clientId: args.clientId,
+    firmId: args.firmId,
+    actorId: args.actorId,
+    risk: args.payload.risk,
+  });
+}
+
 async function emitApplyAudits(args: {
   applied: ApplyResult;
   clientId: string;
   firmId: string;
   actorId: string;
   formId: string;
+  /** Only true when a questionnaire row was actually written — partial answers
+   *  must not leave an "rtq_completed" trail for a sitting that never happened. */
+  riskApplied: boolean;
 }): Promise<void> {
-  const { applied, clientId, firmId, actorId, formId } = args;
+  const { applied, clientId, firmId, actorId, formId, riskApplied } = args;
 
   for (const id of applied.accountIds) {
     await recordCreate({
@@ -696,6 +915,19 @@ async function emitApplyAudits(args: {
     });
   }
 
+  if (riskApplied) {
+    await recordAudit({
+      action: "risk_profile.rtq_completed",
+      resourceType: "client_risk_profile",
+      resourceId: clientId,
+      clientId,
+      firmId,
+      actorId,
+      actorKind: "advisor",
+      metadata: { source: "intake_form", subject: "primary", formId },
+    });
+  }
+
   await recordAudit({
     action: "intake.form.applied",
     resourceType: "intake_form",
@@ -738,12 +970,21 @@ export async function applyIntake(args: {
     return { clientId: form.clientId ?? "" };
   }
 
-  const payload = intakeSubmitSchema.parse(form.payload);
+  const sections = sectionsForForm(form.sections);
+  const payload = intakeSubmitSchemaFor(sections).parse(form.payload);
 
   // ── Prospect path: no client yet — build the whole tree, then apply. ──────
   if (!form.clientId) {
-    const { clientId, applied } = await db.transaction(async (tx) => {
-      const { primary, spouse } = payload.family;
+    const { clientId, applied, riskApplied } = await db.transaction(async (tx) => {
+      const family = payload.family;
+      if (!family) {
+        // Unreachable: the create route forces `family` into the section set
+        // for any send with no clientId, so a prospect form cannot be persisted
+        // without it. Explicit rather than a `!` so a future change to that
+        // rule fails loudly here instead of inserting a nameless household.
+        throw new Error(`Prospect intake form ${formId} has no family payload`);
+      }
+      const { primary, spouse } = family;
 
       // 1. Household — leave status at the enum default ("prospect").
       //    This derive is defense-in-depth, not the source of truth for the
@@ -783,7 +1024,7 @@ export async function applyIntake(args: {
           .update(crmHouseholds)
           .set({
             name: derivedName,
-            state: payload.family.stateOfResidence ?? null,
+            state: family.stateOfResidence ?? null,
             updatedAt: new Date(),
           })
           .where(and(eq(crmHouseholds.id, householdId), eq(crmHouseholds.firmId, firmId)))
@@ -800,7 +1041,7 @@ export async function applyIntake(args: {
             firmId,
             advisorId: form.createdByUserId,
             name: derivedName,
-            state: payload.family.stateOfResidence ?? null,
+            state: family.stateOfResidence ?? null,
           })
           .returning({ id: crmHouseholds.id });
         householdId = inserted.id;
@@ -835,7 +1076,7 @@ export async function applyIntake(args: {
           id: householdId,
           firmId,
           advisorId: form.createdByUserId,
-          state: payload.family.stateOfResidence ?? null,
+          state: family.stateOfResidence ?? null,
         },
         primaryContact: {
           firstName: primary.firstName,
@@ -865,8 +1106,17 @@ export async function applyIntake(args: {
         firmId,
         actorId,
         payload,
+        sections,
         { mode: "fresh" },
       );
+
+      const riskApplied = await applyRiskIfCollected(tx, {
+        clientId,
+        firmId,
+        actorId,
+        sections,
+        payload,
+      });
 
       // 5. Back-fill clientId + flip status, all in the same tx.
       await tx
@@ -879,10 +1129,10 @@ export async function applyIntake(args: {
         })
         .where(eq(intakeForms.id, formId));
 
-      return { clientId, applied: sectionResult };
+      return { clientId, applied: sectionResult, riskApplied };
     });
 
-    await emitApplyAudits({ applied, clientId, firmId, actorId, formId });
+    await emitApplyAudits({ applied, clientId, firmId, actorId, formId, riskApplied });
     await emitRadarNote({ applied, payload, actorId });
     return { clientId };
   }
@@ -890,7 +1140,7 @@ export async function applyIntake(args: {
   // ── Existing-client path: merge onto the base scenario. ───────────────────
   const clientId = form.clientId;
 
-  const applied = await db.transaction(async (tx) => {
+  const { sectionResult: applied, riskApplied } = await db.transaction(async (tx) => {
     // Resolve the base-case scenario directly (no Clerk auth() outside a request).
     const [baseScenario] = await tx
       .select({ id: scenarios.id })
@@ -908,18 +1158,27 @@ export async function applyIntake(args: {
       firmId,
       actorId,
       payload,
+      sections,
       { mode: "merge" },
     );
+
+    const riskApplied = await applyRiskIfCollected(tx, {
+      clientId,
+      firmId,
+      actorId,
+      sections,
+      payload,
+    });
 
     await tx
       .update(intakeForms)
       .set({ status: "applied", appliedAt: new Date(), updatedAt: new Date() })
       .where(eq(intakeForms.id, formId));
 
-    return sectionResult;
+    return { sectionResult, riskApplied };
   });
 
-  await emitApplyAudits({ applied, clientId, firmId, actorId, formId });
+  await emitApplyAudits({ applied, clientId, firmId, actorId, formId, riskApplied });
   await emitRadarNote({ applied, payload, actorId });
   return { clientId };
 }

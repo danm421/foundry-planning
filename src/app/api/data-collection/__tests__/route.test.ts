@@ -316,6 +316,109 @@ describe("POST /api/data-collection — prefilled mode, already-bound client", (
   });
 });
 
+describe("POST /api/data-collection — sections", () => {
+  const insertValues = () =>
+    dbInsertMock.mock.calls[0][0] as Record<string, unknown>;
+
+  it("stores null when the caller sends no sections", async () => {
+    await POST(postReq({ mode: "blank", recipientEmail: "a@b.com" }));
+    expect(insertValues().sections).toBeNull();
+  });
+
+  it("forces family into a prospect send that omitted it", async () => {
+    await POST(
+      postReq({ mode: "blank", recipientEmail: "a@b.com", sections: ["documents"] }),
+    );
+    expect(insertValues().sections).toEqual(["family", "documents"]);
+  });
+
+  it("does not force family on an existing-client send", async () => {
+    await POST(
+      postReq({
+        mode: "blank",
+        clientId: "client-1",
+        recipientEmail: "a@b.com",
+        sections: ["documents"],
+      }),
+    );
+    expect(insertValues().sections).toEqual(["documents"]);
+  });
+
+  it("stores canonical order regardless of the order sent", async () => {
+    await POST(
+      postReq({
+        mode: "blank",
+        clientId: "client-1",
+        recipientEmail: "a@b.com",
+        sections: ["risk", "family"],
+      }),
+    );
+    expect(insertValues().sections).toEqual(["family", "risk"]);
+  });
+
+  it("rejects a set that collects nothing, before any row is written", async () => {
+    const res = await POST(
+      postReq({
+        mode: "blank",
+        clientId: "client-1",
+        recipientEmail: "a@b.com",
+        sections: ["nope"],
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/data-collection — a prefilled send has to be renderable in the portal", () => {
+  it("rejects a documents-only prefilled send, before the form row and before the invite", async () => {
+    // Prefilled is delivered as a portal invite and nothing else. The portal
+    // wizard has no upload surface, so this form would render nothing, bounce
+    // the client to the Organizer, and sit in draft forever unmentioned.
+    const res = await POST(
+      postReq({
+        mode: "prefilled",
+        clientId: "client-1",
+        recipientEmail: "a@b.com",
+        sections: ["documents"],
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(dbInsertMock).not.toHaveBeenCalled();
+    expect(createInvitationMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts the same documents-only set on a blank send — that one is an emailed token link", async () => {
+    const res = await POST(
+      postReq({
+        mode: "blank",
+        clientId: "client-1",
+        recipientEmail: "a@b.com",
+        sections: ["documents"],
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(dbInsertMock.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ sections: ["documents"] }),
+    );
+  });
+
+  it("accepts a prefilled send that pairs documents with a step the portal can render", async () => {
+    const res = await POST(
+      postReq({
+        mode: "prefilled",
+        clientId: "client-1",
+        recipientEmail: "a@b.com",
+        sections: ["documents", "goals"],
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(dbInsertMock.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ sections: ["goals", "documents"] }),
+    );
+  });
+});
+
 describe("POST /api/data-collection — rate limiting", () => {
   it("returns 429 when rate-limited on prefilled", async () => {
     checkLimitMock.mockResolvedValue({ allowed: false, reason: "too many invites" });

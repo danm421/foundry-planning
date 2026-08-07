@@ -54,6 +54,7 @@ describe("SendClientForm", () => {
           clientId: "client-abc",
           recipientEmail: "jane@example.com",
           recipientName: "Jane Smith",
+          sections: ["family", "accounts", "income", "property", "goals", "documents"],
         }),
       });
     });
@@ -74,6 +75,29 @@ describe("SendClientForm", () => {
           recipientName: "Jane Smith",
         }),
       });
+    });
+  });
+
+  it("sends the picked set on a blank send", async () => {
+    render(<SendClientForm {...defaultProps} defaultSections={["family", "documents"]} />);
+    fireEvent.click(screen.getByRole("button", { name: /send blank form/i }));
+
+    await waitFor(() => {
+      const post = vi.mocked(fetch).mock.calls[0];
+      expect(JSON.parse(post[1]!.body as string).sections).toEqual(["family", "documents"]);
+    });
+  });
+
+  it("omits sections on a pre-filled send even when the picker was changed", async () => {
+    // A pre-filled send is a portal invite; the portal wizard reads the seeded
+    // form row. Storing a reduced set here is what the create route rejects as
+    // undeliverable, so the picker must not reach this body at all.
+    render(<SendClientForm {...defaultProps} defaultSections={["family", "documents"]} />);
+    fireEvent.click(screen.getByRole("button", { name: /send pre-filled form/i }));
+
+    await waitFor(() => {
+      const post = vi.mocked(fetch).mock.calls[0];
+      expect(JSON.parse(post[1]!.body as string)).not.toHaveProperty("sections");
     });
   });
 
@@ -152,6 +176,7 @@ describe("SendClientForm", () => {
           clientId: "client-abc",
           recipientEmail: "spouse@example.com",
           recipientName: "Bob Smith",
+          sections: ["family", "accounts", "income", "property", "goals", "documents"],
         }),
       });
     });
@@ -179,6 +204,7 @@ describe("SendClientForm", () => {
           clientId: "client-abc",
           recipientEmail: "jane@example.com",
           recipientName: "Jane Smith",
+          sections: ["family", "accounts", "income", "property", "goals", "documents"],
         }),
       });
     });
