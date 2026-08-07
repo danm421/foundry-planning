@@ -10,7 +10,7 @@ vi.mock("@/lib/tax-returns/extract-facts", async () => {
 });
 vi.mock("@/lib/tax-returns/extract-supporting", () => ({ extractSupportingDocument: vi.fn() }));
 vi.mock("@/lib/tax-returns/documents-store", () => ({
-  initState: vi.fn(), insertDocument: vi.fn(),
+  initState: vi.fn(), insertDocument: vi.fn(), deleteDocument: vi.fn(),
 }));
 vi.mock("@/lib/tax-returns/recompute", async () => {
   const actual = await vi.importActual<typeof import("@/lib/tax-returns/recompute")>(
@@ -23,7 +23,7 @@ import { readDocumentText } from "@/lib/tax-returns/document-text";
 import { classifyDocumentRole } from "@/lib/tax-returns/classify-role";
 import { extractTaxReturnFacts } from "@/lib/tax-returns/extract-facts";
 import { extractSupportingDocument } from "@/lib/tax-returns/extract-supporting";
-import { initState, insertDocument } from "@/lib/tax-returns/documents-store";
+import { initState, insertDocument, deleteDocument } from "@/lib/tax-returns/documents-store";
 import { recomputeFacts } from "@/lib/tax-returns/recompute";
 import { emptyTaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 import { addDocumentToReturn, TaxYearMismatchError } from "../add-document";
@@ -125,5 +125,34 @@ describe("addDocumentToReturn", () => {
 
     const stored = vi.mocked(insertDocument).mock.calls[0][0];
     expect(stored.warnings).toEqual(["OCR was used — verify.", "Truncated."]);
+    expect(stored.role).toBe("k1");
+    expect(stored.taxYear).toBe(2024);
+  });
+
+  it("REJECTS a full_return whose year differs too — the gate isn't lane-specific", async () => {
+    vi.mocked(classifyDocumentRole).mockResolvedValue("full_return");
+    vi.mocked(extractTaxReturnFacts).mockResolvedValue({
+      facts: emptyTaxReturnFacts(2023), isAmended: false,
+      warnings: [], promptVersion: "tax_return_facts:x",
+    });
+
+    const err = await addDocumentToReturn(baseArgs({ taxYear: 2024 })).catch((e) => e);
+
+    expect(err).toBeInstanceOf(TaxYearMismatchError);
+    expect(insertDocument).not.toHaveBeenCalled();
+    expect(recomputeFacts).not.toHaveBeenCalled();
+  });
+
+  it("deletes the just-inserted row and rethrows the original error when recompute fails", async () => {
+    vi.mocked(classifyDocumentRole).mockResolvedValue("k1");
+    vi.mocked(extractSupportingDocument).mockResolvedValue(k1Extraction());
+    vi.mocked(insertDocument).mockResolvedValue({ id: "doc-9", warnings: [] } as never);
+    const recomputeError = new Error("boom");
+    vi.mocked(recomputeFacts).mockRejectedValue(recomputeError);
+
+    const err = await addDocumentToReturn(baseArgs()).catch((e) => e);
+
+    expect(err).toBe(recomputeError);
+    expect(deleteDocument).toHaveBeenCalledWith(RETURN_ID, "doc-9");
   });
 });

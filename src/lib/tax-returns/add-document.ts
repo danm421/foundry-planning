@@ -3,9 +3,11 @@ import { readDocumentText } from "./document-text";
 import { classifyDocumentRole } from "./classify-role";
 import { extractTaxReturnFacts } from "./extract-facts";
 import { extractSupportingDocument } from "./extract-supporting";
-import { initState, insertDocument } from "./documents-store";
+import { initState, insertDocument, deleteDocument } from "./documents-store";
 import { recomputeFacts } from "./recompute";
 import type { DocumentRole } from "./merge/types";
+import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
+import type { SupportingPayload } from "./supporting-payload";
 
 /**
  * D9: the tax year is a HARD GATE, not a merge field. The document's own
@@ -28,6 +30,13 @@ export class TaxYearMismatchError extends Error {
  * `initState` → `insertDocument` → `recomputeFacts`. Lives in `lib/` rather
  * than a route so it is testable without HTTP and so a shared route helper
  * is never exported from a `route.ts`.
+ *
+ * Preconditions this function does NOT check: the caller owns
+ * `requireClientEditAccess` + `recordAudit` (this function has no `clientId`
+ * to check against — `getTaxReturn` is keyed by client+year, so it
+ * structurally cannot be consumed here; authz belongs to the route that
+ * resolves `taxReturnId` from the year). The caller must also ensure
+ * `args.taxYear` is the `taxYear` of the row identified by `args.taxReturnId`.
  */
 export async function addDocumentToReturn(args: {
   taxReturnId: string;
@@ -39,17 +48,30 @@ export async function addDocumentToReturn(args: {
   role: DocumentRole | "auto";
   vaultDocumentId: string | null;
 }): Promise<{ documentId: string; role: DocumentRole; warnings: string[] }> {
-  const { pages, warnings: readWarnings } = await readDocumentText({
-    buffer: args.buffer,
-    uploadKind: args.uploadKind,
-    model: args.model,
-  });
+  // Skip the initial read entirely when the advisor already named
+  // `full_return`: the 1040 lane re-reads the buffer itself below (it owns
+  // the page-selection pass for long returns), so reading here would just be
+  // a discarded OCR pass on any scanned full return — paid for and thrown
+  // away, doubling latency and doubling exposure to OCR failure. The `auto`
+  // path that later CLASSIFIES as `full_return` still double-reads; that is
+  // the plan's accepted cost, because the classifier genuinely needs pages.
+  let pages: string[] = [];
+  let readWarnings: string[] = [];
+  if (args.role !== "full_return") {
+    const read = await readDocumentText({
+      buffer: args.buffer,
+      uploadKind: args.uploadKind,
+      model: args.model,
+    });
+    pages = read.pages;
+    readWarnings = read.warnings;
+  }
 
   const role = args.role === "auto" ? await classifyDocumentRole(pages) : args.role;
 
   let documentYear: number;
-  let extractedFacts: unknown = null;
-  let supportingPayload: unknown = null;
+  let extractedFacts: TaxReturnFacts | null;
+  let supportingPayload: SupportingPayload | null = null;
   let extractWarnings: string[];
   let promptVersion: string;
 
@@ -82,6 +104,14 @@ export async function addDocumentToReturn(args: {
   // recompute would throw until someone noticed.
   await initState(args.taxReturnId);
 
+  // The 1040 lane's `extraction.warnings` already includes its own internal
+  // read's warnings (`extractTaxReturnFacts` calls `readDocumentText` itself),
+  // so prefixing our `readWarnings` here would store every read warning
+  // twice, permanently, on every scanned full-return upload. The supporting
+  // lane never re-reads, so its warnings still need the prefix.
+  const warnings =
+    role === "full_return" ? extractWarnings : [...readWarnings, ...extractWarnings];
+
   const row = await insertDocument({
     taxReturnId: args.taxReturnId,
     role,
@@ -89,13 +119,28 @@ export async function addDocumentToReturn(args: {
     vaultDocumentId: args.vaultDocumentId,
     extractedFacts,
     supportingPayload,
-    warnings: [...readWarnings, ...extractWarnings],
+    warnings,
     promptVersion,
     model: args.model,
     taxYear: documentYear,
   });
 
-  await recomputeFacts(args.taxReturnId, args.taxYear);
+  try {
+    await recomputeFacts(args.taxReturnId, args.taxYear);
+  } catch (err) {
+    // A partially-completed add must not leave a document row whose figures
+    // are not reflected in `tax_returns.facts` — that silent inconsistency is
+    // exactly what this pipeline's refuse-rather-than-corrupt posture (D9,
+    // Task 7's `EmptyRecomputeError`) exists to prevent. Compensate by
+    // deleting the row we just inserted, then rethrow the ORIGINAL error — a
+    // failure in the cleanup delete must not mask it.
+    try {
+      await deleteDocument(args.taxReturnId, row.id);
+    } catch {
+      // swallow — the original recompute error is what the caller needs to see
+    }
+    throw err;
+  }
 
   return { documentId: row.id, role, warnings: row.warnings };
 }
