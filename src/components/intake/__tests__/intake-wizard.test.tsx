@@ -27,11 +27,13 @@ describe("IntakeWizard", () => {
     expect(screen.getByRole("heading", { name: /welcome/i })).toBeInTheDocument();
 
     // Named by card, not counted — a count assertion rots the moment a
-    // section is added. Default set: Family, Assets, Goals, Documents, Review.
+    // section is added. Default set, rendered with no upload surface (these
+    // props are the portal's): Family, Assets, Goals, Review. Documents is in
+    // the default set but has no step here, so it gets no card either.
     expect(screen.getByText(/family/i)).toBeInTheDocument();
     expect(screen.getByText(/assets/i)).toBeInTheDocument();
     expect(screen.getByText(/goals/i)).toBeInTheDocument();
-    expect(screen.getByText(/documents/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^documents$/i)).not.toBeInTheDocument();
     expect(screen.getByText(/review/i)).toBeInTheDocument();
 
     // Start Here CTA
@@ -459,5 +461,27 @@ describe("IntakeWizard — section set", () => {
     fireEvent.click(screen.getByRole("button", { name: /start here/i }));
     fireEvent.click(screen.getByRole("button", { name: /next|skip for now/i }));
     expect(screen.getByRole("heading", { name: /^accounts$/i })).toBeInTheDocument();
+  });
+
+  it("offers no Documents card on Welcome without an upload surface", () => {
+    // The portal wizard's configuration. The overview must not promise a step
+    // the wizard then silently skips.
+    render(<IntakeWizard {...makeProps()} />);
+    expect(screen.queryByText(/^documents$/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the Documents card on Welcome where uploads are offered", () => {
+    render(<IntakeWizard {...makeProps({ sampleUploads: true })} />);
+    expect(screen.getByText(/^documents$/i)).toBeInTheDocument();
+  });
+
+  it("threads the section set through to the Review screen", () => {
+    render(<IntakeWizard {...makeProps({ sections: ["family"] })} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /start here/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // Family → Review
+
+    expect(screen.getByRole("button", { name: /submit/i })).toBeInTheDocument();
+    expect(screen.queryByText(/no accounts added/i)).not.toBeInTheDocument();
   });
 });

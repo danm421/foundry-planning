@@ -24,6 +24,7 @@ import type { IntakeUploadContext } from "./intake-upload-zone";
 import type { IntakeDocumentView } from "@/lib/intake/document-types";
 import {
   DEFAULT_INTAKE_SECTIONS,
+  INTAKE_SECTION_LABELS,
   type IntakeSectionKey,
 } from "@/lib/intake/sections";
 
@@ -80,37 +81,38 @@ interface StepDescriptor {
   skipable?: boolean;
 }
 
+/** A step's H1 is always the section's canonical label, and the progress-bar
+ *  chip reuses it unless a shorter one is passed. */
+function sectionStep(
+  key: IntakeSectionKey,
+  rest: Omit<StepDescriptor, "label" | "title"> & { label?: string },
+): StepDescriptor {
+  const title = INTAKE_SECTION_LABELS[key];
+  return { label: title, title, ...rest };
+}
+
 /** Every switchable step, keyed by its section. Order here is irrelevant —
  *  `buildSteps` walks `sections`, which is already in canonical order. */
 const STEP_BY_SECTION: Record<IntakeSectionKey, StepDescriptor> = {
-  family:    { section: "family", label: "Family", title: "Family" },
-  accounts:  { section: "assets", subStep: "accounts", label: "Accounts", title: "Accounts" },
-  income:    { section: "assets", subStep: "income", label: "Income", title: "Income", skipable: true },
-  property:  { section: "assets", subStep: "property", label: "Property", title: "Property", skipable: true },
-  goals:     { section: "goals", label: "Goals", title: "Goals" },
-  documents: { section: "documents", label: "Documents", title: "Documents", skipable: true },
-  risk:      { section: "risk", label: "Risk", title: "Risk tolerance", skipable: true },
+  family:    sectionStep("family",    { section: "family" }),
+  accounts:  sectionStep("accounts",  { section: "assets", subStep: "accounts" }),
+  income:    sectionStep("income",    { section: "assets", subStep: "income", skipable: true }),
+  property:  sectionStep("property",  { section: "assets", subStep: "property", skipable: true }),
+  goals:     sectionStep("goals",     { section: "goals" }),
+  documents: sectionStep("documents", { section: "documents", skipable: true }),
+  // The only step whose chip and H1 differ: the progress bar lays every label
+  // out on one row, so Risk stays compact there while the H1 reads in full.
+  risk:      sectionStep("risk",      { section: "risk", label: "Risk", skipable: true }),
 };
 
+// Welcome and Review are wizard chrome, not sections — they always render and
+// are deliberately absent from INTAKE_SECTIONS, so their labels live here.
 const WELCOME_STEP: StepDescriptor = { section: "welcome", label: "Welcome", title: "Welcome" };
 const REVIEW_STEP: StepDescriptor = { section: "review", label: "Review", title: "Review & Submit" };
 
-/**
- * Welcome → the selected sections in canonical order → Review.
- *
- * The Documents step exists only where an upload surface does — live on the
- * public form, inert in the advisor's preview. The portal wizard has neither,
- * so selecting Documents there must still not produce a step whose only content
- * is a zone it can't use.
- */
-function buildSteps(
-  sections: readonly IntakeSectionKey[],
-  hasUploads: boolean,
-): readonly StepDescriptor[] {
-  const body = sections
-    .filter((s) => s !== "documents" || hasUploads)
-    .map((s) => STEP_BY_SECTION[s]);
-  return [WELCOME_STEP, ...body, REVIEW_STEP];
+/** Welcome → the selected sections in canonical order → Review. */
+function buildSteps(sections: readonly IntakeSectionKey[]): readonly StepDescriptor[] {
+  return [WELCOME_STEP, ...sections.map((s) => STEP_BY_SECTION[s]), REVIEW_STEP];
 }
 
 /**
@@ -238,7 +240,15 @@ export function IntakeWizard({
   // "Skip for now" to "Next", or the preview would misreport its own copy.
   const docs = uploads?.kind === "live" ? uploads.documents : [];
 
-  const steps = buildSteps(sections ?? DEFAULT_INTAKE_SECTIONS, uploads != null);
+  // Documents is offered only where an upload surface is: live on the public
+  // form, inert in the advisor's preview, absent in the portal. Filtering once,
+  // here, is what keeps the welcome overview, the step list and the review
+  // screen from disagreeing about what this form collects.
+  const activeSections = (sections ?? DEFAULT_INTAKE_SECTIONS).filter(
+    (s) => s !== "documents" || uploads != null,
+  );
+
+  const steps = buildSteps(activeSections);
   const step = steps[flatIndex];
   const isFirst = flatIndex === 0;
   const isLast = flatIndex === steps.length - 1;
@@ -269,11 +279,7 @@ export function IntakeWizard({
             {error}
           </div>
         )}
-        <WelcomeScreen
-          mode={mode}
-          onStart={goNext}
-          sections={sections ?? DEFAULT_INTAKE_SECTIONS}
-        />
+        <WelcomeScreen mode={mode} onStart={goNext} sections={activeSections} />
       </div>
     );
   }
@@ -343,6 +349,7 @@ export function IntakeWizard({
         return (
           <ReviewStep
             value={value}
+            sections={activeSections}
             onEdit={goToSection}
           />
         );

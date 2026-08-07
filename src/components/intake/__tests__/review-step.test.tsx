@@ -33,6 +33,7 @@ function makeProps(overrides: Partial<Parameters<typeof ReviewStep>[0]> = {}) {
   return {
     value: richDraft,
     onEdit: vi.fn(),
+    sections: ["family", "accounts", "income", "property", "goals"] as const,
     ...overrides,
   };
 }
@@ -84,5 +85,28 @@ describe("ReviewStep", () => {
     // With an empty draft, empty-state messages are shown for each section.
     // No in-body Submit button — the chrome's "Submit" button is the sole affordance.
     expect(screen.queryByRole("button", { name: /^submit$/i })).not.toBeInTheDocument();
+  });
+
+  it("summarizes only the sections the form collects", () => {
+    render(<ReviewStep {...makeProps({ sections: ["family"] })} />);
+
+    expect(screen.getByText(/jane/i)).toBeInTheDocument();
+    // The CARD is gone, not just its empty state: richDraft has real accounts,
+    // so a rendered-but-empty card would still show this row.
+    expect(screen.queryByText("Fidelity Brokerage")).not.toBeInTheDocument();
+    expect(screen.queryByText(/no accounts added/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no income sources added/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no property added/i)).not.toBeInTheDocument();
+  });
+
+  it("swaps the intro when the form collects nothing this screen reviews", () => {
+    render(<ReviewStep {...makeProps({ sections: ["documents"] })} />);
+
+    // A documents-only form reaches Review with nothing to summarize; the intro
+    // must not still tell the client to check what they shared.
+    expect(screen.getByText(/you're all set/i)).toBeInTheDocument();
+    expect(screen.queryByText(/review what you/i)).not.toBeInTheDocument();
+    // One Edit button per card, so no Edit button means no cards.
+    expect(screen.queryByRole("button", { name: /^edit/i })).not.toBeInTheDocument();
   });
 });

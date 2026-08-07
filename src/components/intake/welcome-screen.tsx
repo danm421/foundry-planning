@@ -1,6 +1,9 @@
 "use client";
 
-import type { IntakeSectionKey } from "@/lib/intake/sections";
+import {
+  INTAKE_SECTION_LABELS,
+  type IntakeSectionKey,
+} from "@/lib/intake/sections";
 
 interface WelcomeScreenProps {
   mode: "blank" | "prefilled";
@@ -18,21 +21,29 @@ interface WelcomeCard { key: string; label: string; description: string }
  */
 export function welcomeCards(sections: readonly IntakeSectionKey[]): WelcomeCard[] {
   const cards: WelcomeCard[] = [];
+  const card = (key: IntakeSectionKey, description: string): WelcomeCard => ({
+    key,
+    label: INTAKE_SECTION_LABELS[key],
+    description,
+  });
+
   if (sections.includes("family")) {
-    cards.push({ key: "family", label: "Family", description: "Who the plan covers — you, a spouse, and any dependents." });
+    cards.push(card("family", "Who the plan covers — you, a spouse, and any dependents."));
   }
   if (sections.some((s) => s === "accounts" || s === "income" || s === "property")) {
+    // Hand-authored: a bucket spanning three sections has no key to read from.
     cards.push({ key: "assets", label: "Assets", description: "Investment accounts, income sources, and property you own." });
   }
   if (sections.includes("goals")) {
-    cards.push({ key: "goals", label: "Goals", description: "When you want to retire and what retirement should cost." });
+    cards.push(card("goals", "When you want to retire and what retirement should cost."));
   }
   if (sections.includes("documents")) {
-    cards.push({ key: "documents", label: "Documents", description: "Statements, tax returns, and anything else worth sharing." });
+    cards.push(card("documents", "Statements, tax returns, and anything else worth sharing."));
   }
   if (sections.includes("risk")) {
-    cards.push({ key: "risk", label: "Risk", description: "A few questions about how you'd handle market ups and downs." });
+    cards.push(card("risk", "A few questions about how you'd handle market ups and downs."));
   }
+  // Likewise hand-authored: Review is chrome, so it has no section key either.
   cards.push({ key: "review", label: "Review", description: "Confirm everything looks right before submitting to your advisor." });
   return cards;
 }
