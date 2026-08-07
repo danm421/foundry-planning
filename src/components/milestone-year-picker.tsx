@@ -96,6 +96,27 @@ export default function MilestoneYearPicker({
     return 1;
   });
 
+  // Adopt a year the parent sets programmatically. The picker owns its year
+  // between edits, so without this it keeps rendering its mount-time value
+  // while the parent holds a newer one — which is exactly what an education
+  // goal does when the beneficiary changes and the dialog re-dates the goal to
+  // their 18th year.
+  //
+  // Both guards are load-bearing. The outer one requires the props to have
+  // actually CHANGED, so a parent that drops `onChange` on the floor can't
+  // revert an edit the picker is mid-way through. The inner one ignores a
+  // parent echoing back what this picker just emitted, which would otherwise
+  // reset `mode` and knock the advisor out of Duration.
+  const [prevProps, setPrevProps] = useState({ value, yearRef });
+  if (value !== prevProps.value || yearRef !== prevProps.yearRef) {
+    setPrevProps({ value, yearRef });
+    if (value !== currentYear || yearRef !== currentRef) {
+      setCurrentYear(value);
+      setCurrentRef(yearRef);
+      setMode(yearRef ? "milestone" : "manual");
+    }
+  }
+
   // Re-resolve milestone when milestones change
   useEffect(() => {
     if (currentRef) {

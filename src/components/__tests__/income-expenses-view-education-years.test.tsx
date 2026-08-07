@@ -30,6 +30,7 @@ vi.mock("next/link", () => ({
 
 import IncomeExpensesView from "@/components/income-expenses-view";
 import { ClientAccessProvider } from "@/components/client-access-provider";
+import { buildClientMilestones } from "@/lib/milestones";
 
 const fetchMock = vi.fn();
 
@@ -50,6 +51,22 @@ const FAMILY_MEMBERS = [
   { id: FM_NO_DOB, firstName: "Sam", role: "child", dateOfBirth: null },
 ];
 
+// Real milestones, because that is what every production caller passes: with
+// them the dialog renders MilestoneYearPicker, and without them it falls back
+// to plain number inputs. Testing the fallback would leave the picker — the
+// half that actually shows the advisor a year — unexercised.
+const MILESTONES = buildClientMilestones(
+  {
+    dateOfBirth: `${NOW - 50}-03-02`,
+    retirementAge: 65,
+    planEndAge: 95,
+    spouseDob: null,
+    spouseRetirementAge: null,
+  } as never,
+  NOW,
+  NOW + 45,
+);
+
 const BASE_PROPS = {
   clientId: "c1",
   initialIncomes: [],
@@ -63,6 +80,13 @@ const BASE_PROPS = {
   flowScenarioFields: {},
   resolvedInflationRate: 0.024,
   familyMembers: FAMILY_MEMBERS,
+  clientInfo: {
+    milestones: MILESTONES,
+    planStartYear: NOW,
+    planEndYear: NOW + 45,
+    clientRetirementYear: NOW + 15,
+    clientEndYear: NOW + 45,
+  },
 };
 
 /** Opens the Add Expense dialog, switches it to education, picks `fmId`. */
@@ -110,6 +134,27 @@ describe("ExpenseDialog education date auto-fill", () => {
     expect(body.endYear).toBe(String(NOW + 11));
   });
 
+  // The payload assertions above pass even when the year pickers still show
+  // their mount-time defaults, because the payload reads dialog state directly.
+  // The advisor only ever sees the pickers, so assert them too: they open on
+  // the plan's first/last year and must re-date to the beneficiary's span.
+  it("shows the beneficiary's span in the year pickers, not the plan bounds", () => {
+    pickEducationFor(FM_CHILD);
+
+    expect((screen.getByLabelText(/^start year$/i) as HTMLInputElement).value).toBe(String(NOW + 8));
+    expect((screen.getByLabelText(/^end year$/i) as HTMLInputElement).value).toBe(String(NOW + 11));
+  });
+
+  // Re-dating has to survive a change of mind — the second pick must not be
+  // ignored on the grounds that the picker already moved off its default once.
+  it("re-dates again when the beneficiary changes", () => {
+    pickEducationFor(FM_CHILD);
+    fireEvent.change(screen.getByLabelText(/^for$/i), { target: { value: FM_TEEN } });
+
+    expect((screen.getByLabelText(/^start year$/i) as HTMLInputElement).value).toBe(String(NOW));
+    expect((screen.getByLabelText(/^end year$/i) as HTMLInputElement).value).toBe(String(NOW + 3));
+  });
+
   // The boundary: an 18th birthday inside the current year starts now, and is
   // neither pushed out a year nor floored from somewhere in the past.
   it("starts this year for a beneficiary who turns 18 this year", async () => {
@@ -135,7 +180,9 @@ describe("ExpenseDialog education date auto-fill", () => {
     pickEducationFor(FM_NO_DOB);
     expect((screen.getByLabelText(/^name/i) as HTMLInputElement).value).toBe("Sam - Education");
 
+    // Untouched, so still the plan bounds the dialog opened on.
     const body = await saveAndReadBody();
-    expect(body.endYear).toBe(String(NOW + 20));
+    expect(body.startYear).toBe(String(NOW));
+    expect(body.endYear).toBe(String(NOW + 45));
   });
 });
