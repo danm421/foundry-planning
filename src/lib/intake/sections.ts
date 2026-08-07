@@ -90,9 +90,11 @@ export function renderableSections(
  * between, and Submit files a form that collected nothing.
  *
  * Both the proxy's soft gate and the portal intake page ask this, and they MUST
- * agree: a gate that pushed the client at /portal/intake while the page pushed
- * them back to the Organizer is an infinite redirect — strictly worse than the
- * empty wizard it replaces.
+ * agree ABOUT THE SAME FORM: a gate that pushed the client at /portal/intake
+ * while the page pushed them back to the Organizer is an infinite redirect —
+ * strictly worse than the empty wizard it replaces. Asking the same predicate
+ * of two different rows is how that happens, so the two queries share their
+ * WHERE and their ORDER BY (see `queries.ts`).
  *
  * Takes the STORED value, so `null` (never customized) reads as the default set.
  */

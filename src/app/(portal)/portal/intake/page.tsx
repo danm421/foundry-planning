@@ -39,9 +39,10 @@ export default async function PortalIntakePage(): Promise<ReactElement> {
   // The form exists but collects nothing this host can render — "Documents
   // only" is a shipped preset and the portal has no upload surface, so the
   // wizard would be Welcome → Review with nothing in between and Submit would
-  // file a form that collected nothing. The proxy's soft gate asks the same
-  // question (`hasUnsubmittedPrefilledForm`), so it never sends a client here
-  // to be bounced straight back.
+  // file a form that collected nothing. The proxy's soft gate asks this same
+  // question of this same row (`hasUnsubmittedPrefilledForm` shares both the
+  // predicate and the ordering), so it never sends a client here to be bounced
+  // straight back — that pair of redirects would loop.
   if (portalCollectsNothing(result.sections)) redirect("/portal/organizer");
 
   return (

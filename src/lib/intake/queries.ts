@@ -22,6 +22,25 @@ export const loadFormByToken = cache(async (
 });
 
 /**
+ * THE one row that "the client's active intake" means. A client can hold more
+ * than one — an advisor resending data collection leaves the old form active —
+ * so which one is picked has to be defined, not incidental: the portal page
+ * bounces a form it cannot render back to the Organizer while the proxy's soft
+ * gate pushes the other way, and if the two resolved different rows that pair
+ * of redirects would loop forever.
+ *
+ * Newest wins. The id tiebreak matters because two forms written in one
+ * transaction share a `createdAt` to the microsecond.
+ */
+const activePrefilledFormWhere = (clientId: string) =>
+  and(
+    eq(intakeForms.clientId, clientId),
+    eq(intakeForms.mode, "prefilled"),
+    inArray(intakeForms.status, ["draft", "submitted"]),
+  );
+const ACTIVE_PREFILLED_ORDER = [desc(intakeForms.createdAt), desc(intakeForms.id)];
+
+/**
  * Load the active (draft or submitted) prefilled form for a client.
  * React.cache'd so the middleware soft-route check + the page render in the
  * same request only hit the DB once, consistent with the sibling queries.
@@ -32,13 +51,8 @@ export const loadActivePrefilledForm = cache(async (
   const rows = await db
     .select()
     .from(intakeForms)
-    .where(
-      and(
-        eq(intakeForms.clientId, clientId),
-        eq(intakeForms.mode, "prefilled"),
-        inArray(intakeForms.status, ["draft", "submitted"]),
-      ),
-    )
+    .where(activePrefilledFormWhere(clientId))
+    .orderBy(...ACTIVE_PREFILLED_ORDER)
     .limit(1);
   return rows[0] ?? null;
 });
@@ -69,8 +83,11 @@ export const loadFormForFirm = cache(async (
  *
  * The renderability half is not a nicety: the portal intake page bounces a form
  * it cannot render back to the Organizer, so a gate that still pushed the client
- * at /portal/intake would be an infinite redirect. Both sides ask
- * `portalCollectsNothing`, which is what keeps them in step.
+ * at /portal/intake would be an infinite redirect. This asks the SAME predicate
+ * and the SAME ordering the page resolves through `loadActivePrefilledForm`, so
+ * the two cannot answer about different rows — status is filtered here rather
+ * than in the WHERE clause for exactly that reason. Narrow select: this runs on
+ * every portal request and the row carries a whole payload.
  *
  * Wrapped in React.cache for middleware + page deduplication.
  */
@@ -78,17 +95,13 @@ export const hasUnsubmittedPrefilledForm = cache(async (
   clientId: string,
 ): Promise<boolean> => {
   const rows = await db
-    .select({ sections: intakeForms.sections })
+    .select({ status: intakeForms.status, sections: intakeForms.sections })
     .from(intakeForms)
-    .where(
-      and(
-        eq(intakeForms.clientId, clientId),
-        eq(intakeForms.mode, "prefilled"),
-        eq(intakeForms.status, "draft"),
-      ),
-    )
+    .where(activePrefilledFormWhere(clientId))
+    .orderBy(...ACTIVE_PREFILLED_ORDER)
     .limit(1);
-  return rows.length > 0 && !portalCollectsNothing(rows[0].sections);
+  const form = rows[0];
+  return form?.status === "draft" && !portalCollectsNothing(form.sections);
 });
 
 /**
