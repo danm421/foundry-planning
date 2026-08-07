@@ -159,7 +159,7 @@ export function SolverStressTestTab({
       {/* Market crash */}
       <StressRow
         label="Market crash"
-        hint="One-time drawdown of investment balances (taxable + retirement) in the chosen year. Cash, real estate, and business are unaffected."
+        hint="One-time drawdown of investment balances (taxable, retirement, and 529s) in the chosen year. Cash, real estate, business, annuities, and life insurance are unaffected."
         on={crashOn}
         onToggle={(checked) =>
           checked
