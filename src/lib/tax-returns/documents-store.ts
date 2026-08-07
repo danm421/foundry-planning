@@ -49,6 +49,13 @@ export async function insertDocument(args: {
   promptVersion: string | null;
   model: string | null;
   taxYear: number;
+  /** Omit on a genuine add — the column defaults to `now()`. Supplied ONLY when
+   *  restoring a row that was just deleted, because `listDocuments` orders by
+   *  this column and `mergeDocuments` reads that order as WRITE order: letting
+   *  a restored document take a fresh timestamp moves it to the end and hands
+   *  it last-write-wins over scalars that previously beat it. Same figures,
+   *  different answer. */
+  createdAt?: Date;
 }): Promise<TaxReturnDocumentRow> {
   const [row] = await db.insert(taxReturnDocuments).values(args).returning();
   return row;

@@ -41,9 +41,12 @@ export async function DELETE(
       // `.returning()` already carries every field `insertDocument` needs, so
       // no re-extraction is required. Mirrors `add-document.ts`'s
       // compensating delete on a failed recompute, in the opposite
-      // direction. The restored row gets a new `id`/`created_at`; nothing
-      // persisted depends on either staying stable. A failure of this
-      // restoring insert is swallowed so it can't mask the original error.
+      // direction. The restored row gets a new `id`, which nothing persisted
+      // depends on — but `created_at` is carried over deliberately: it is the
+      // merge's write-order key, so a fresh one would silently promote this
+      // document to last-write-wins over scalars that previously beat it. A
+      // failure of this restoring insert is swallowed so it can't mask the
+      // original error.
       try {
         await insertDocument({
           taxReturnId: removed.taxReturnId,
@@ -56,6 +59,7 @@ export async function DELETE(
           promptVersion: removed.promptVersion,
           model: removed.model,
           taxYear: removed.taxYear,
+          createdAt: removed.createdAt,
         });
       } catch {
         // swallow — the original recompute error is what the caller needs to see

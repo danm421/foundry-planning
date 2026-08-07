@@ -209,7 +209,7 @@ function removedRow() {
     promptVersion: "v1",
     model: "full",
     taxYear: 2024,
-    createdAt: new Date(),
+    createdAt: new Date("2026-08-01T00:00:00Z"),
   };
 }
 
@@ -248,6 +248,13 @@ describe("DELETE /tax-returns/[taxYear]/documents/[documentId]", () => {
     await expect(res.json()).resolves.toMatchObject({ error: "last_document" });
     expect(insertDocument).toHaveBeenCalledWith(
       expect.objectContaining({ extractedFacts: removed.extractedFacts, role: removed.role }),
+    );
+    // `listDocuments` orders by `created_at` and the merge reads that order as
+    // write order. A restore that takes a fresh timestamp moves this document
+    // to the end and flips scalar last-write-wins — same documents, different
+    // published figures, with nothing in the UI to show it happened.
+    expect(insertDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ createdAt: removed.createdAt }),
     );
   });
 
