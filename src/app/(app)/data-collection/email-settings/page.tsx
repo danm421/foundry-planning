@@ -25,18 +25,25 @@ export default async function EmailSettingsPage() {
     <div className="mx-auto max-w-5xl px-4 py-8">
       <div className="mb-8">
         <h1 className="text-[24px] font-semibold leading-tight tracking-[-0.02em] text-ink">
-          Invitation email
+          Data collection settings
         </h1>
         <p className="mt-1 text-[14px] text-ink-3">
-          Customize how your data-collection invitation looks to clients. Changes apply to every form you send.
+          Customize the invitation email and which steps your forms collect. Changes apply to every form you send from here on.
         </p>
       </div>
-      <EmailSettingsEditor
-        initial={{ fromName: row?.fromName ?? "", subject: row?.subject ?? "", introBody: row?.introBody ?? "" }}
-        advisorName={advisorName}
-        advisorEmail={advisorEmail}
-        firmName={firmName}
-      />
+
+      {/* Two independent sections, each savable on its own. The editor below
+          renders its own cards, so this is a section heading rather than a
+          third card wrapping two. */}
+      <section>
+        <h2 className="mb-3 text-[15px] font-semibold text-ink">Invitation email</h2>
+        <EmailSettingsEditor
+          initial={{ fromName: row?.fromName ?? "", subject: row?.subject ?? "", introBody: row?.introBody ?? "" }}
+          advisorName={advisorName}
+          advisorEmail={advisorEmail}
+          firmName={firmName}
+        />
+      </section>
     </div>
   );
 }

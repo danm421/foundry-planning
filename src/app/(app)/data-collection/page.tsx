@@ -65,7 +65,7 @@ export default async function DataCollectionPage() {
         <div className="flex flex-wrap items-center gap-2">
           <Link href="/data-collection/email-settings" className={headerActionCls}>
             <PencilIcon width={14} height={14} aria-hidden="true" />
-            Invitation email
+            Form settings
           </Link>
           <a
             href="/data-collection/preview"
