@@ -17,7 +17,10 @@ const STATUSES: readonly CrmHouseholdStatus[] = ["prospect", "active", "inactive
 const EXCEL_EPOCH_AFTER_BUG = Date.UTC(1899, 11, 30);
 const EXCEL_EPOCH_BEFORE_BUG = Date.UTC(1899, 11, 31);
 const EXCEL_PHANTOM_LEAP_SERIAL = 60;
-const EXCEL_MIN_SERIAL = 2; // 1900-01-01
+// Serial 2 is 1900-01-02. Serial 1 (1900-01-01) is deliberately excluded: a
+// bare `1` in a date cell is far more likely to be junk (or a stray
+// boolean/flag) than a genuine 1900-01-01 birthday.
+const EXCEL_MIN_SERIAL = 2;
 const EXCEL_MAX_SERIAL = 73415; // 2100-12-31
 const MS_PER_DAY = 86_400_000;
 
