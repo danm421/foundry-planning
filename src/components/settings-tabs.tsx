@@ -13,21 +13,41 @@ interface Props {
 const TABS: {
   label: string;
   href: string;
-  roles?: ReadonlyArray<string>;
+  /** Admin-only surface. A tab with neither this nor `billingContact` is a
+   *  member surface, visible to everyone in the firm. */
+  adminOnly?: boolean;
+  /** The billing contact is a per-firm pointer, not a role — see authz.ts. */
   billingContact?: boolean;
 }[] = [
-  { label: "Team", href: "/settings/team", roles: ["org:admin", "org:member"] },
-  { label: "Sharing", href: "/settings/sharing", roles: ["org:admin", "org:member"] },
-  { label: "Firm", href: "/settings/firm", roles: ["org:admin"] },
-  { label: "Branding", href: "/settings/branding", roles: ["org:admin", "org:member"] },
-  { label: "Integrations", href: "/settings/integrations", roles: ["org:admin"] },
+  { label: "Team", href: "/settings/team" },
+  { label: "Sharing", href: "/settings/sharing" },
+  { label: "Firm", href: "/settings/firm", adminOnly: true },
+  { label: "Branding", href: "/settings/branding" },
+  { label: "Integrations", href: "/settings/integrations", adminOnly: true },
   { label: "Billing", href: "/settings/billing", billingContact: true },
 ];
 
 export default function SettingsTabs({ role, isBillingContact, pathname }: Props): ReactElement {
-  const visible = TABS.filter((t) =>
-    t.billingContact ? isBillingContact : !!(role && t.roles!.includes(role)),
-  );
+  // The member tabs are deliberately NOT an allowlist of role strings. The
+  // proxy already redirects every org-less request away from /settings (to the
+  // org picker or the portal), so anyone rendering this strip is a firm
+  // member — and a role string we don't recognise (a custom Clerk role, a
+  // legacy `basic_member`, or a session whose org claim we couldn't read) is
+  // still a firm member. Matching exactly ["org:admin", "org:member"] turned
+  // that case into an EMPTY tab strip: no Team, no Sharing, no Branding, and
+  // nothing on screen to explain why. That was the live bug — a granted
+  // advisor could not reach Branding at all.
+  //
+  // Showing a member tab grants nothing on its own: Clerk's OrganizationProfile
+  // scopes Team, sharing-content.tsx scopes its query unless the caller is
+  // org:admin, and the Branding page gates the firm form, the grant list and
+  // the other-advisor view on `isAdmin` while every write re-checks
+  // assertCanEditAdvisorBranding server-side.
+  const visible = TABS.filter((t) => {
+    if (t.billingContact) return isBillingContact;
+    if (t.adminOnly) return role === "org:admin";
+    return true;
+  });
   return (
     <nav className="flex gap-1 border-b border-hair px-[var(--pad-card)]">
       {visible.map((t) => {

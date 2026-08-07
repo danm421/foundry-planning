@@ -33,6 +33,7 @@ describe("GET /api/advisors", () => {
         email: null,
         imageUrl: null,
         role: "Member",
+        roleKey: "org:member",
       },
     ]);
     const res = await GET();
@@ -46,9 +47,9 @@ describe("GET /api/advisors", () => {
   it("filters out non advisor-eligible roles", async () => {
     mockAuth({ userId: "u_admin", orgId: "org_a", orgRole: "org:admin" });
     mockListFirmMembers.mockResolvedValue([
-      { userId: "adv_a", displayName: "Alice", email: null, imageUrl: null, role: "Member" },
-      { userId: "adv_b", displayName: "Bob", email: null, imageUrl: null, role: "Admin" },
-      { userId: "ops_c", displayName: "Carol", email: null, imageUrl: null, role: "Operations" },
+      { userId: "adv_a", displayName: "Alice", email: null, imageUrl: null, role: "Member", roleKey: "org:member" },
+      { userId: "adv_b", displayName: "Bob", email: null, imageUrl: null, role: "Admin", roleKey: "org:admin" },
+      { userId: "ops_c", displayName: "Carol", email: null, imageUrl: null, role: "Operations", roleKey: "org:operations" },
     ]);
     const res = await GET();
     const body = await res.json();
@@ -56,6 +57,38 @@ describe("GET /api/advisors", () => {
       body.advisors.map((a: { userId: string }) => a.userId).sort(),
     ).toEqual(["adv_a", "adv_b"]);
   });
+
+  // The live regression: Dan invited an advisor under a CUSTOM Clerk role
+  // ("Advisor" → key org:advisor), and the eligible-role allowlist
+  // ["Admin", "Member"] dropped them from the book-switcher entirely — the
+  // admin had no way to view their book. Book ownership is the DEFAULT for a
+  // firm member; only the book-scoped staff roles are excluded.
+  it.each(["org:advisor", "basic_member", "org:senior_advisor", "org:associate"])(
+    "includes a member holding the role key %s",
+    async (roleKey) => {
+      mockAuth({ userId: "u_admin", orgId: "org_a", orgRole: "org:admin" });
+      mockListFirmMembers.mockResolvedValue([
+        { userId: "adv_a", displayName: "Alice", email: null, imageUrl: null, role: "X", roleKey },
+      ]);
+      const res = await GET();
+      const body = await res.json();
+      expect(body.advisors.map((a: { userId: string }) => a.userId)).toEqual(["adv_a"]);
+    },
+  );
+
+  it.each(["org:operations", "org:planner"])(
+    "still excludes the book-scoped staff role %s",
+    async (roleKey) => {
+      mockAuth({ userId: "u_admin", orgId: "org_a", orgRole: "org:admin" });
+      mockListFirmMembers.mockResolvedValue([
+        { userId: "adv_a", displayName: "Alice", email: null, imageUrl: null, role: "X", roleKey: "org:advisor" },
+        { userId: "staff_c", displayName: "Carol", email: null, imageUrl: null, role: "X", roleKey },
+      ]);
+      const res = await GET();
+      const body = await res.json();
+      expect(body.advisors.map((a: { userId: string }) => a.userId)).toEqual(["adv_a"]);
+    },
+  );
 
   it("403 for a non-admin", async () => {
     mockAuth({ userId: "u_adv", orgId: "org_a", orgRole: "org:member" });

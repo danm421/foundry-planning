@@ -21,7 +21,15 @@ const TASKS: Capability[] = ["tasks:read", "tasks:write"];
 // org:operations, and org:planner are retired from the live path but kept here
 // so reactivation = recreate the Clerk roles + re-point provisioning. No user
 // can hold these keys today, so the extra entries are inert. Live roles:
-// org:admin, org:member. See spec 2026-06-11-role-downgrade-admin-member.
+// org:admin, org:member, org:advisor. See spec
+// 2026-06-11-role-downgrade-admin-member.
+//
+// ⚠️ 2026-08-07: `roleHasCapability` is DENY-BY-DEFAULT — a role key that is
+// not in this map has NO capabilities (asserted in capabilities.test.ts). So
+// every custom Clerk role a firm actually invites people under MUST be
+// registered here, or the first route to adopt requireCapability() 403s every
+// advisor holding it. Not hypothetical: an "Advisor" custom role was live in
+// production and absent from this map.
 //
 // 2026-07-23: org:operations and org:planner were also DELETED from the Clerk
 // Dashboard (they lingered as selectable roles in the OrganizationProfile invite
@@ -46,6 +54,11 @@ const ROLE_CAPABILITIES: Record<string, ReadonlySet<Capability>> = {
     "team:manage",
   ]),
   "org:member": new Set<Capability>([...PLANNING, ...CRM, ...TASKS]),
+  // A LIVE custom Clerk role: firms invite their advisors under "Advisor"
+  // rather than the built-in Member. Firm-wide (deliberately NOT in
+  // STAFF_ROLES), so it carries the same set as org:member and never reaches
+  // firm:config / team:manage / billing:manage.
+  "org:advisor": new Set<Capability>([...PLANNING, ...CRM, ...TASKS]),
   "org:operations": new Set<Capability>([...CRM, ...TASKS]),
   "org:planner": new Set<Capability>([...PLANNING, ...CRM, ...TASKS]),
 };
