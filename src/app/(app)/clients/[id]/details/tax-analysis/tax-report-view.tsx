@@ -3,6 +3,7 @@
 import type { Observation } from "@/lib/tax-analysis/types";
 import { fmtUsd, fmtPct } from "@/lib/tax-analysis/format";
 import { deductionDetailRows, incomeCompositionTotal } from "@/lib/tax-analysis/breakdowns";
+import { activityDetailRows, type ActivityDetail } from "@/lib/tax-analysis/activity-detail";
 import { BracketMapBars } from "./bracket-map-bars";
 import type { YearDetail } from "./tax-analysis-content";
 
@@ -11,6 +12,39 @@ const GROUPS: Array<{ severity: Observation["severity"]; heading: string }> = [
   { severity: "watch", heading: "Watch items" },
   { severity: "info", heading: "Notes" },
 ];
+
+/** Per-variant row/label classes. `detail` rows are components of the line
+ *  above them; `memo` rows sit below the net and are not terms of its
+ *  arithmetic. Keyed rather than nested ternaries so adding a variant can't
+ *  leave one of the two cells behind. */
+const ACTIVITY_VARIANT_CLASSES = {
+  primary: { row: "", label: "" },
+  detail: { row: "", label: "pl-4 text-ink-2" },
+  total: { row: "border-t border-hair font-medium", label: "" },
+  memo: { row: "text-ink-2", label: "" },
+} as const;
+
+function ActivityCard({ activity }: { activity: ActivityDetail }) {
+  return (
+    <div className="rounded border border-hair bg-card p-4">
+      <p className="font-medium">{activity.title}</p>
+      {activity.subtitle && <p className="mb-2 text-xs uppercase text-ink-3">{activity.subtitle}</p>}
+      <table className="w-full border-collapse text-sm">
+        <tbody>
+          {activityDetailRows(activity).map((r) => {
+            const c = ACTIVITY_VARIANT_CLASSES[r.variant];
+            return (
+              <tr key={r.label} className={c.row}>
+                <td className={`py-1 ${c.label}`}>{r.label}</td>
+                <td className="py-1 text-right tabular-nums">{r.value}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 function KeyFigure({ label, value }: { label: string; value: string }) {
   return (
@@ -115,6 +149,19 @@ export function TaxReportView({
               </tfoot>
             )}
           </table>
+        </section>
+      )}
+
+      {a.activityDetail && (
+        <section>
+          <h3 className="mb-2 text-sm font-medium uppercase text-ink-3">
+            Business &amp; rental detail
+          </h3>
+          <div className="flex flex-col gap-3">
+            {a.activityDetail.map((activity) => (
+              <ActivityCard key={activity.key} activity={activity} />
+            ))}
+          </div>
         </section>
       )}
 

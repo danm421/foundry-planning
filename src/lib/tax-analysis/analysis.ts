@@ -13,6 +13,7 @@ import {
   type IncomeCompositionRow,
   type DeductionDetail,
 } from "./breakdowns";
+import { buildActivityDetail, type ActivityDetail } from "./activity-detail";
 
 export interface TaxAnalysisKeyFigures {
   totalIncome: number | null; // 1040 line 9
@@ -30,6 +31,8 @@ export interface TaxAnalysis {
   keyFigures: TaxAnalysisKeyFigures;
   bracketMap: BracketMap | null;
   incomeComposition: IncomeCompositionRow[] | null;
+  /** Gross-to-net per business/rental/K-1. The income table shows only nets. */
+  activityDetail: ActivityDetail[] | null;
   deductionDetail: DeductionDetail | null;
   observations: Observation[];
   yoy: YoYRow[] | null;
@@ -75,6 +78,7 @@ export function buildTaxAnalysis(args: BuildTaxAnalysisArgs): TaxAnalysis {
     },
     bracketMap,
     incomeComposition: buildIncomeComposition(facts),
+    activityDetail: buildActivityDetail(facts),
     deductionDetail: buildDeductionDetail(facts),
     observations: buildObservations({ facts, prior, params, irmaaParams, primaryAge, spouseAge, calc, bracketMap }),
     yoy: prior ? buildYoY(facts, prior) : null,

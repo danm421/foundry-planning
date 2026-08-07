@@ -4,7 +4,7 @@ import { render, screen } from "@testing-library/react";
 import { TaxReportView } from "../tax-report-view";
 import { buildTaxAnalysis } from "@/lib/tax-analysis/analysis";
 import { createTaxResolver } from "@/lib/tax/resolver";
-import { params2025, retireeMfj, highEarnerMfj } from "@/lib/tax-analysis/__tests__/fixtures";
+import { params2025, retireeMfj, highEarnerMfj, landlordSingle } from "@/lib/tax-analysis/__tests__/fixtures";
 import type { YearDetail } from "../tax-analysis-content";
 
 const resolver = createTaxResolver([params2025], { taxInflationRate: 0.025, ssWageGrowthRate: 0.03 });
@@ -49,6 +49,41 @@ describe("TaxReportView — income composition + deductions", () => {
     // Both "SALT lost to the cap" and "Mortgage interest" are $22,000 for
     // this fixture — getByText would throw on the duplicate.
     expect(screen.getAllByText("$22,000").length).toBeGreaterThan(0);
+  });
+});
+
+describe("TaxReportView — business & rental detail", () => {
+  function landlordDetail(): YearDetail {
+    const facts = landlordSingle();
+    return {
+      taxYear: 2025, status: "ready", facts, extractedFacts: facts, warnings: [],
+      analysis: buildTaxAnalysis({ facts, prior: null, resolver, primaryAge: 41, spouseAge: null }),
+      documents: [], conflicts: [], provenance: {},
+    };
+  }
+
+  it("surfaces gross rent and the depreciation add-back that the net alone hides", () => {
+    render(<TaxReportView clientId="c1" detail={landlordDetail()} onEditFacts={vi.fn()} />);
+    expect(screen.getByText(/business & rental detail/i)).toBeTruthy();
+    expect(screen.getByText("Rental real estate")).toBeTruthy();
+    expect(screen.getByText("Rents received")).toBeTruthy();
+    expect(screen.getByText("$19,600")).toBeTruthy();      // gross — absent before this section
+    expect(screen.getByText("-$25,741")).toBeTruthy();     // total expenses
+    expect(screen.getByText("Net taxable")).toBeTruthy();
+    expect(screen.getByText("Cash flow before depreciation")).toBeTruthy();
+    expect(screen.getByText("$2,272")).toBeTruthy();       // -6,141 + 8,413
+  });
+
+  it("still renders the net in the income composition table — the section adds, never replaces", () => {
+    render(<TaxReportView clientId="c1" detail={landlordDetail()} onEditFacts={vi.fn()} />);
+    expect(screen.getByText("Rental / passthrough (Sch E)")).toBeTruthy();
+    // -$6,141 appears twice: the composition row and the activity net row.
+    expect(screen.getAllByText("-$6,141")).toHaveLength(2);
+  });
+
+  it("omits the section entirely for a return with no business or rental activity", () => {
+    render(<TaxReportView clientId="c1" detail={detail} onEditFacts={vi.fn()} />);
+    expect(screen.queryByText(/business & rental detail/i)).toBeNull();
   });
 });
 

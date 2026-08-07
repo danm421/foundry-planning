@@ -5,6 +5,7 @@ import type { Observation } from "@/lib/tax-analysis/types";
 import { computeBracketBarLayout } from "@/lib/tax-analysis/bracket-map";
 import { fmtUsd, fmtPct } from "@/lib/tax-analysis/format";
 import { deductionDetailRows, incomeCompositionTotal } from "@/lib/tax-analysis/breakdowns";
+import { activityDetailRows } from "@/lib/tax-analysis/activity-detail";
 import { PDF_THEME } from "@/components/balance-sheet-report/tokens";
 
 export interface TaxAnalysisPdfProps {
@@ -70,6 +71,14 @@ const styles = StyleSheet.create({
   tableTotalRow: { flexDirection: "row", borderTopWidth: 1, borderTopColor: PDF_THEME.surface.divider, paddingTop: 3, marginTop: 1 },
   tableTotalLabelCell: { flex: 2, fontSize: 9, fontWeight: "bold" },
   tableTotalValueCell: { flex: 1, fontSize: 9, fontWeight: "bold", textAlign: "right" },
+
+  // Business & rental detail
+  activityCard: { borderWidth: 1, borderColor: PDF_THEME.surface.panelBorder, borderRadius: 4, padding: 8, marginBottom: 6 },
+  activityTitle: { fontSize: 10, fontWeight: "bold" },
+  activitySubtitle: { fontSize: 7, textTransform: "uppercase", color: PDF_THEME.text.muted, marginBottom: 4 },
+  activityDetailLabelCell: { flex: 2, fontSize: 9, paddingLeft: 10, color: PDF_THEME.text.muted },
+  activityMemoLabelCell: { flex: 2, fontSize: 9, color: PDF_THEME.text.muted },
+  activityMemoValueCell: { flex: 1, fontSize: 9, textAlign: "right", color: PDF_THEME.text.muted },
 });
 
 function KeyFigure({ label, value }: { label: string; value: string }) {
@@ -192,6 +201,40 @@ function IncomeCompositionSection({ analysis }: { analysis: TaxAnalysis }) {
   );
 }
 
+/** Per-variant row/label/value styles, keyed so the three lookups stay aligned
+ *  — a nested ternary per cell drifts the moment a variant is added. */
+const ACTIVITY_VARIANT_STYLES = {
+  primary: { row: styles.tableRow, label: styles.tableLabelCell, value: styles.tableValueCell },
+  detail: { row: styles.tableRow, label: styles.activityDetailLabelCell, value: styles.tableValueCell },
+  total: { row: styles.tableTotalRow, label: styles.tableTotalLabelCell, value: styles.tableTotalValueCell },
+  memo: { row: styles.tableRow, label: styles.activityMemoLabelCell, value: styles.activityMemoValueCell },
+} as const;
+
+function ActivityDetailSection({ analysis }: { analysis: TaxAnalysis }) {
+  const activities = analysis.activityDetail;
+  if (!activities) return null;
+  return (
+    <View>
+      <Text style={styles.sectionHeading}>Business &amp; rental detail</Text>
+      {activities.map((activity) => (
+        <View key={activity.key} style={styles.activityCard} wrap={false}>
+          <Text style={styles.activityTitle}>{activity.title}</Text>
+          {activity.subtitle && <Text style={styles.activitySubtitle}>{activity.subtitle}</Text>}
+          {activityDetailRows(activity).map((r) => {
+            const s = ACTIVITY_VARIANT_STYLES[r.variant];
+            return (
+              <View key={r.label} style={s.row}>
+                <Text style={s.label}>{r.label}</Text>
+                <Text style={s.value}>{r.value}</Text>
+              </View>
+            );
+          })}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function DeductionsSection({ analysis }: { analysis: TaxAnalysis }) {
   const d = analysis.deductionDetail;
   if (!d) return null;
@@ -279,6 +322,7 @@ export function TaxAnalysisPdfDocument(props: TaxAnalysisPdfProps) {
         <BracketMapSection analysis={a} />
 
         <IncomeCompositionSection analysis={a} />
+        <ActivityDetailSection analysis={a} />
 
         <DeductionsSection analysis={a} />
 

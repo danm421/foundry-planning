@@ -163,6 +163,41 @@ export function highEarnerMfj(): TaxReturnFacts {
   return f;
 }
 
+/**
+ * Single W-2 earner with one rental property — figures taken verbatim from a
+ * real filed 2025 return. The rental collected $19,600 of rent and still nets
+ * to a $6,141 LOSS after $8,413 of depreciation, so it is the case that proves
+ * gross rent survives to the report instead of hiding behind the net.
+ */
+export function landlordSingle(): TaxReturnFacts {
+  const f = emptyTaxReturnFacts(2025);
+  f.filingStatus = "single";
+  f.residenceState = "PA";
+  f.income.wages = 124624;
+  f.income.ordinaryDividends = 5;
+  f.income.capitalGainOrLoss = 58;
+  f.income.netShortTermGain = 58;
+  f.income.scheduleENet = -6141;
+  f.income.scheduleE = {
+    grossRents: 19600,
+    totalExpenses: 25741,
+    depreciation: 8413,
+    mortgageInterest: 6210,
+    propertyTaxes: 5024,
+    suspendedPassiveLoss: 0,
+  };
+  f.income.totalIncome = 118546;
+  f.income.agi = 118546;
+  f.deductions.deductionTaken = "standard";
+  f.deductions.deductionAmount = 15750;
+  f.deductions.taxableIncome = 102796;
+  f.tax.taxBeforeCredits = 17529;
+  f.tax.totalTax = 17529;
+  f.payments.withholding = 19139;
+  f.payments.refund = 1610;
+  return f;
+}
+
 /** Single retiree, 66, MAGI $1,500 below the first single IRMAA cliff. */
 export function singleNearIrmaa(): TaxReturnFacts {
   const f = emptyTaxReturnFacts(2025);

@@ -3,8 +3,10 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import { TaxAnalysisPdfDocument } from "../tax-analysis-pdf-document";
 import { buildTaxAnalysis } from "@/lib/tax-analysis/analysis";
 import { createTaxResolver } from "@/lib/tax/resolver";
-import { params2025, retireeMfj, highEarnerMfj } from "@/lib/tax-analysis/__tests__/fixtures";
+import { params2025, retireeMfj, highEarnerMfj, landlordSingle } from "@/lib/tax-analysis/__tests__/fixtures";
 import { incomeCompositionTotal } from "@/lib/tax-analysis/breakdowns";
+import { activityDetailRows } from "@/lib/tax-analysis/activity-detail";
+import { emptyBusiness, emptyK1 } from "@/lib/schemas/tax-return-facts";
 
 const resolver = createTaxResolver([params2025], { taxInflationRate: 0.025, ssWageGrowthRate: 0.03 });
 
@@ -62,6 +64,40 @@ describe("TaxAnalysisPdfDocument", () => {
         clientName="Sam & Casey Cooper"
         taxYear={facts.taxYear}
         generatedAt="July 12, 2026"
+        analysis={analysis}
+      />,
+    );
+    expect(buffer.length).toBeGreaterThan(2000);
+  }, 30000);
+
+  it("renders the business & rental detail section across all three activity kinds", async () => {
+    const facts = landlordSingle();
+    facts.businesses = [{
+      ...emptyBusiness(),
+      name: "Acme Consulting", grossReceipts: 240000, totalExpenses: 85000,
+      depreciation: 12000, netProfit: 155000,
+    }];
+    facts.k1s = [{
+      ...emptyK1(),
+      entityName: "Harbor Partners LP", ein: "12-3456789", entityType: "partnership",
+      ordinaryBusinessIncome: 48000, section179: 5000,
+    }];
+    const analysis = buildTaxAnalysis({ facts, prior: null, resolver, primaryAge: 41, spouseAge: null });
+    // The buffer assertion alone can't tell "section rendered" from "skipped as
+    // null", and every line variant (primary/detail/total/memo) must be
+    // exercised — an unknown react-pdf style key throws at render, not at build.
+    const activities = analysis.activityDetail!;
+    expect(activities.map((a) => a.title)).toEqual([
+      "Acme Consulting", "Rental real estate", "Harbor Partners LP",
+    ]);
+    const variants = new Set(activities.flatMap((a) => activityDetailRows(a).map((r) => r.variant)));
+    expect([...variants].sort()).toEqual(["detail", "memo", "primary", "total"]);
+
+    const buffer = await renderToBuffer(
+      <TaxAnalysisPdfDocument
+        clientName="Dan Mueller"
+        taxYear={facts.taxYear}
+        generatedAt="August 7, 2026"
         analysis={analysis}
       />,
     );
