@@ -4,6 +4,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import type { IntakeDraft } from "@/lib/intake/schema";
 import type { IntakeDocumentView } from "@/lib/intake/document-types";
 import { IntakeWizard } from "../intake-wizard";
+import { RTQ_V1 } from "@/lib/risk/rtq";
 
 const emptyDraft: IntakeDraft = {};
 
@@ -497,6 +498,42 @@ describe("IntakeWizard — section set", () => {
   it("shows the Documents card on Welcome where uploads are offered", () => {
     render(<IntakeWizard {...makeProps({ sampleUploads: true })} />);
     expect(screen.getByText(/^documents$/i)).toBeInTheDocument();
+  });
+
+  it("renders the RTQ on the Risk step and lifts an answer into the draft", () => {
+    const onChange = vi.fn();
+    render(<IntakeWizard {...makeProps({ sections: ["risk"], onChange })} />);
+    fireEvent.click(screen.getByRole("button", { name: /start here/i }));
+
+    const first = RTQ_V1[0];
+    expect(screen.getByText(first.prompt)).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(first.options[0].label));
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        risk: expect.objectContaining({ answers: { [first.id]: first.options[0].value } }),
+      }),
+    );
+  });
+
+  it("offers Skip on an unanswered Risk step and plain Next once answered", () => {
+    const first = RTQ_V1[0];
+    const { unmount } = render(<IntakeWizard {...makeProps({ sections: ["risk"] })} />);
+    fireEvent.click(screen.getByRole("button", { name: /start here/i }));
+    expect(screen.getByRole("button", { name: /skip for now/i })).toBeInTheDocument();
+    unmount();
+
+    render(
+      <IntakeWizard
+        {...makeProps({
+          sections: ["risk"],
+          value: { risk: { answers: { [first.id]: first.options[0].value } } },
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /start here/i }));
+    expect(screen.queryByRole("button", { name: /skip for now/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^next$/i })).toBeInTheDocument();
   });
 
   it("threads the section set through to the Review screen", () => {

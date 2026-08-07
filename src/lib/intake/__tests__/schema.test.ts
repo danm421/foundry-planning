@@ -366,3 +366,45 @@ describe("intakeSubmitSchemaFor", () => {
     expect(() => intakeSubmitSchema.parse({})).toThrow();
   });
 });
+
+describe("the risk payload slice", () => {
+  const COMPLETE_FAMILY = {
+    primary: {
+      firstName: "Jane",
+      lastName: "Smith",
+      dateOfBirth: "1980-04-01",
+      maritalStatus: "single" as const,
+    },
+    children: [],
+  };
+  const schema = intakeSubmitSchemaFor(["family", "risk"]);
+  const withRisk = (risk: unknown) => ({ family: COMPLETE_FAMILY, risk });
+
+  it("stays optional even when the risk section IS selected", () => {
+    // A client may legitimately skip the step. There is no superRefine for risk.
+    expect(schema.parse({ family: COMPLETE_FAMILY }).risk).toBeUndefined();
+  });
+
+  it("accepts PARTIAL answers — stored, and left unscored downstream", () => {
+    const parsed = schema.parse(withRisk({ answers: { loss_reaction: "hold" }, rtqVersion: 1 }));
+    expect(parsed.risk?.answers).toEqual({ loss_reaction: "hold" });
+  });
+
+  it("requires rtqVersion on a present risk block", () => {
+    // Which is why the submit route drops a block it could not stamp.
+    expect(() => schema.parse(withRisk({ answers: { loss_reaction: "hold" } }))).toThrow();
+  });
+
+  it("keeps the environment note", () => {
+    const parsed = schema.parse(
+      withRisk({ answers: {}, environmentNote: "Sold a business.", rtqVersion: 1 }),
+    );
+    expect(parsed.risk?.environmentNote).toBe("Sold a business.");
+  });
+
+  it("the draft schema tolerates a half-typed risk block", () => {
+    const draft = intakeDraftSchema.parse({ risk: { answers: { loss_reaction: "hold" } } });
+    expect(draft.risk?.answers).toEqual({ loss_reaction: "hold" });
+    expect(draft.risk?.rtqVersion).toBeUndefined();
+  });
+});

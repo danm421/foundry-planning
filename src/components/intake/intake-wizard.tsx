@@ -19,6 +19,7 @@ import { IncomeStep } from "./steps/income-step";
 import { PropertyStep } from "./steps/property-step";
 import { GoalsStep, type GoalBeneficiary } from "./steps/goals-step";
 import { DocumentsStep } from "./steps/documents-step";
+import { RiskStep } from "./steps/risk-step";
 import { ReviewStep } from "./review-step";
 import type { IntakeUploadContext } from "./intake-upload-zone";
 import type { IntakeDocumentView } from "@/lib/intake/document-types";
@@ -141,7 +142,9 @@ function useDraftSliceSetters(value: IntakeDraft, onChange: (next: IntakeDraft) 
     onChange({ ...value, property: patch });
   const setGoals: (patch: IntakeDraft["goals"]) => void = (patch) =>
     onChange({ ...value, goals: patch });
-  return { setFamily, setAccounts, setIncome, setProperty, setGoals };
+  const setRisk: (patch: IntakeDraft["risk"]) => void = (patch) =>
+    onChange({ ...value, risk: patch });
+  return { setFamily, setAccounts, setIncome, setProperty, setGoals, setRisk };
 }
 
 // ─── Skip affordance ─────────────────────────────────────────────────────────
@@ -172,6 +175,12 @@ function offersSkip(
     return (draft.property ?? []).every(isBlankIntakePropertyRow) && !hasDoc("mortgage");
   }
   if (step.section === "documents") return documents.length === 0;
+  // Same rule as Income and Property: "Skip for now" only while the step is
+  // genuinely empty. Once an answer exists, the label would read as "discard
+  // what I just picked".
+  if (step.section === "risk") {
+    return Object.keys(draft.risk?.answers ?? {}).length === 0;
+  }
   return true;
 }
 
@@ -222,7 +231,7 @@ export function IntakeWizard({
   // 0 = welcome; then the selected sections in canonical order (Documents only
   // where uploads are offered); then review.
   const [flatIndex, setFlatIndex] = useState(0);
-  const { setFamily, setAccounts, setIncome, setProperty, setGoals } =
+  const { setFamily, setAccounts, setIncome, setProperty, setGoals, setRisk } =
     useDraftSliceSetters(value, onChange);
 
   // Live uploads are all three or none: a list with no token can't upload, and
@@ -347,6 +356,8 @@ export function IntakeWizard({
         );
       case "documents":
         return uploads ? <DocumentsStep uploads={uploads} /> : null;
+      case "risk":
+        return <RiskStep value={value.risk} onChange={setRisk} />;
       case "review":
         return (
           <ReviewStep

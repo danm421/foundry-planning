@@ -193,6 +193,26 @@ export const intakeMetaSchema = z.object({
   completedSections: z.array(z.string().max(40)).max(10).default([]),
 });
 
+// ── Risk tolerance ───────────────────────────────────────────────────────────
+//
+// The RTQ answers ride HERE rather than in `risk_questionnaires` because that
+// table's client_id is NOT NULL and a prospect form has no client until apply.
+// Apply mints the row (see apply.ts) once the client exists.
+//
+// `rtqVersion` is stamped at SUBMIT time, for exactly the reason the column
+// exists: a form answered under v1 must still apply under v1 after v2 ships.
+const intakeRiskSchema = z.object({
+  answers: z.record(z.string().max(40), z.string().max(40)),
+  environmentNote: z.string().trim().max(2000).optional(),
+  rtqVersion: z.number().int().min(1).max(1000),
+});
+
+const intakeRiskDraftSchema = z.object({
+  answers: z.record(z.string().max(40), z.string().max(40)).optional(),
+  environmentNote: z.string().trim().max(2000).optional(),
+  rtqVersion: z.number().int().min(1).max(1000).optional(),
+});
+
 // Strict — used on submit + on apply.
 //
 // `family` is OPTIONAL in the base shape and its required-ness is enforced by
@@ -218,6 +238,10 @@ const intakeSubmitBaseSchema = z.object({
   // The default has to satisfy the OUTPUT type, so the two array members are
   // spelled out — `{}` no longer type-checks now that they're `.default([])`.
   goals: intakeGoalsSchema.default({ expenseGoals: [], topics: [] }),
+  // Optional even when the Risk section IS selected: a client may legitimately
+  // skip the step, and partial answers are stored but never scored. There is
+  // deliberately no superRefine for risk.
+  risk: intakeRiskSchema.optional(),
   meta: intakeMetaSchema.default({ completedSections: [] }),
 });
 
@@ -339,6 +363,7 @@ export const intakeDraftSchema = z.object({
   income: z.array(intakeIncomeDraftSchema).max(50).optional(),
   property: z.array(intakePropertyDraftSchema).max(50).optional(),
   goals: intakeGoalsDraftSchema.optional(),
+  risk: intakeRiskDraftSchema.optional(),
   meta: intakeMetaSchema.partial().optional(),
 }).strip();
 

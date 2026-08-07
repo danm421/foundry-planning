@@ -10,6 +10,7 @@ import {
 } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { newIntakeToken, defaultExpiry } from "@/lib/intake/tokens";
+import { RTQ_VERSION } from "@/lib/risk/rtq";
 import type { IntakePayload } from "@/lib/intake/schema";
 
 // --- Rate-limit mock ---
@@ -99,6 +100,9 @@ let inactiveToken: string;
 // an existing client" flow. This is the case that must notify the advisor.
 let clientBearingToken: string;
 let clientBearingId: string;
+// Risk answers ride in the payload; the ROUTE stamps rtqVersion at submit.
+let riskAnsweredToken: string;
+let riskNoteOnlyToken: string;
 let householdId: string;
 const createdIds: string[] = [];
 
@@ -108,6 +112,8 @@ beforeAll(async () => {
   incompleteToken = newIntakeToken();
   inactiveToken = newIntakeToken();
   clientBearingToken = newIntakeToken();
+  riskAnsweredToken = newIntakeToken();
+  riskNoteOnlyToken = newIntakeToken();
 
   const [hh] = await db
     .insert(crmHouseholds)
@@ -175,6 +181,34 @@ beforeAll(async () => {
         token: inactiveToken,
         recipientEmail: "inactive@example.com",
         payload: COMPLETE_PAYLOAD,
+        createdByUserId: "user-test",
+        expiresAt: defaultExpiry(now),
+      },
+      {
+        firmId: FIRM,
+        mode: "blank",
+        status: "draft",
+        token: riskAnsweredToken,
+        recipientEmail: "risk-answered@example.com",
+        payload: {
+          ...COMPLETE_PAYLOAD,
+          risk: { answers: { loss_reaction: "hold" }, environmentNote: "Just retired." },
+        } as unknown as IntakePayload,
+        sections: ["family", "risk"],
+        createdByUserId: "user-test",
+        expiresAt: defaultExpiry(now),
+      },
+      {
+        firmId: FIRM,
+        mode: "blank",
+        status: "draft",
+        token: riskNoteOnlyToken,
+        recipientEmail: "risk-note-only@example.com",
+        payload: {
+          ...COMPLETE_PAYLOAD,
+          risk: { answers: {}, environmentNote: "Typed a note, answered nothing." },
+        } as unknown as IntakePayload,
+        sections: ["family", "risk"],
         createdByUserId: "user-test",
         expiresAt: defaultExpiry(now),
       },
@@ -383,6 +417,43 @@ describe("POST /api/intake/[token]/submit", () => {
       .from(notifications)
       .where(eq(notifications.entityId, form!.id));
     expect(rows.length).toBe(0);
+  }, 30000);
+
+  it("stamps RTQ_VERSION on submit, not in the wizard", async () => {
+    checkSubmitMock.mockResolvedValue({ allowed: true });
+    requireActiveSubscriptionForFirmMock.mockResolvedValue(undefined);
+
+    const res = await POST(makeReq(riskAnsweredToken), {
+      params: Promise.resolve({ token: riskAnsweredToken }),
+    });
+    expect(res.status).toBe(200);
+
+    const [row] = await db
+      .select()
+      .from(intakeForms)
+      .where(eq(intakeForms.token, riskAnsweredToken));
+    const risk = (row?.payload as { risk?: { rtqVersion?: number; answers?: unknown } }).risk;
+    expect(risk?.rtqVersion).toBe(RTQ_VERSION);
+    expect(risk?.answers).toEqual({ loss_reaction: "hold" });
+  }, 30000);
+
+  it("drops a risk block with no answers instead of 422ing the whole submission", async () => {
+    // The strict schema requires rtqVersion, and nothing stamps one on an
+    // unanswered questionnaire — so a client who typed only the note would
+    // otherwise be unable to submit at all.
+    checkSubmitMock.mockResolvedValue({ allowed: true });
+    requireActiveSubscriptionForFirmMock.mockResolvedValue(undefined);
+
+    const res = await POST(makeReq(riskNoteOnlyToken), {
+      params: Promise.resolve({ token: riskNoteOnlyToken }),
+    });
+    expect(res.status).toBe(200);
+
+    const [row] = await db
+      .select()
+      .from(intakeForms)
+      .where(eq(intakeForms.token, riskNoteOnlyToken));
+    expect((row?.payload as { risk?: unknown }).risk).toBeUndefined();
   }, 30000);
 
   it("429: rate-limit exceeded returns Too Many Requests", async () => {
