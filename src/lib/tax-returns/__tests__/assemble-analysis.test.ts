@@ -87,7 +87,10 @@ describe("loadDocumentContext", () => {
       {
         id: "doc-1", role: "full_return", filename: "1040.pdf", taxYear: 2024,
         warnings: [], createdAt: new Date("2026-08-01T00:00:00Z"),
-        extractedFacts: emptyTaxReturnFacts(2024), supportingPayload: null,
+        extractedFacts: emptyTaxReturnFacts(2024),
+        // Populated on purpose: a null payload parses to `[]` anyway, so it
+        // could not tell a working role gate from a missing one.
+        supportingPayload: { w2s: [{ employer: "Should Be Ignored Inc", wages: 1 }] },
       },
       {
         id: "doc-2", role: "w2", filename: "w2-ridgeline.pdf", taxYear: 2024,
@@ -106,7 +109,11 @@ describe("loadDocumentContext", () => {
       warnings: ["Transcribed from an image."],
     });
     expect(ctx.summaries[1].w2s).toEqual([{ employer: "Ridgeline Partners LLC", wages: 95_000 }]);
+    // The role gate, not the payload's emptiness, is what keeps this empty.
     expect(ctx.summaries[0].w2s).toEqual([]);
+    // The strip renders the upload date off this field, and `toMatchObject`
+    // above would not notice it going missing.
+    expect(ctx.summaries[0].createdAt).toBe("2026-08-01T00:00:00.000Z");
   });
 
   it("reports summaries empty, not a crash, in the pre-migration window", async () => {

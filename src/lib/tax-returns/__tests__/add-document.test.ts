@@ -120,6 +120,24 @@ describe("addDocumentToReturn", () => {
     expect(extractSupportingDocument).not.toHaveBeenCalled();
   });
 
+  // Regression guard for a behaviour a refactor merging the two branches would
+  // silently undo: when the advisor NAMES `full_return`, the initial read is
+  // skipped because the 1040 lane re-reads the buffer itself. Restoring it
+  // costs a paid 30-page Azure vision pass whose output nothing consumes, and
+  // a second exposure to the jailbreak-block-on-OCR failure. The `auto` path
+  // that CLASSIFIES as full_return still double-reads by design.
+  it("skips the initial read when the advisor named full_return", async () => {
+    vi.mocked(extractTaxReturnFacts).mockResolvedValue({
+      facts: emptyTaxReturnFacts(2024), isAmended: false,
+      warnings: [], promptVersion: "tax_return_facts:x",
+    });
+
+    await addDocumentToReturn(baseArgs({ role: "full_return" }));
+
+    expect(readDocumentText).not.toHaveBeenCalled();
+    expect(extractTaxReturnFacts).toHaveBeenCalled();
+  });
+
   it("REJECTS a document whose year differs, naming both years", async () => {
     vi.mocked(classifyDocumentRole).mockResolvedValue("k1");
     vi.mocked(extractSupportingDocument).mockResolvedValue(k1Extraction(2023));

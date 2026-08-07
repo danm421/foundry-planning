@@ -88,6 +88,50 @@ describe("extractSupportingDocument", () => {
     expect(result.payload).toBeNull();
   });
 
+  // D6 — the ROLE decides what a document may contribute, never the model's
+  // output. Both directions matter: without these, inverting either gate
+  // (`role === "k1"` ↔ `role === "w2"`) leaves every other test green, and a
+  // W-2 would be free to write 1040-adjacent K-1 facts.
+  it("keeps the payload null on a k1 even when the model returns W-2 pairs", async () => {
+    vi.mocked(callAIExtraction).mockResolvedValue(
+      JSON.stringify({
+        taxYear: 2024,
+        k1s: [{
+          entityName: "Ridgeline", ein: null, entityType: "partnership",
+          ordinaryBusinessIncome: 180_000, rentalIncome: null, guaranteedPayments: null,
+          section179: null, qbiIncome: null, isSstb: null,
+        }],
+        w2s: [{ employer: "Ridgeline Partners LLC", wages: 95_000 }],
+      }),
+    );
+    const result = await extractSupportingDocument({
+      pages: ["Schedule K-1"], role: "k1", model: "mini",
+    });
+
+    expect(result.payload).toBeNull();
+    expect(result.facts?.k1s).toHaveLength(1);
+  });
+
+  it("keeps facts null on a w2 even when the model returns K-1s", async () => {
+    vi.mocked(callAIExtraction).mockResolvedValue(
+      JSON.stringify({
+        taxYear: 2024,
+        k1s: [{
+          entityName: "Ridgeline", ein: null, entityType: "partnership",
+          ordinaryBusinessIncome: 180_000, rentalIncome: null, guaranteedPayments: null,
+          section179: null, qbiIncome: null, isSstb: null,
+        }],
+        w2s: [{ employer: "Ridgeline Partners LLC", wages: 95_000 }],
+      }),
+    );
+    const result = await extractSupportingDocument({
+      pages: ["Form W-2"], role: "w2", model: "mini",
+    });
+
+    expect(result.facts).toBeNull();
+    expect(result.payload?.w2s).toHaveLength(1);
+  });
+
   it("throws a user-safe error when the document states no tax year", async () => {
     vi.mocked(callAIExtraction).mockResolvedValue(
       JSON.stringify({ taxYear: null, k1s: [], w2s: [] }),
