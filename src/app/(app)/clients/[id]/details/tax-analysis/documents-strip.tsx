@@ -119,6 +119,7 @@ export function DocumentsStrip({
               )}
               <button
                 type="button"
+                aria-label={`Remove ${doc.filename ?? "document"}`}
                 className="ml-auto shrink-0 text-xs text-ink-3 underline hover:text-crit disabled:opacity-50"
                 disabled={busy}
                 onClick={() => {

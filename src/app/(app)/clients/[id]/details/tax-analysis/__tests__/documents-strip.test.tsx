@@ -35,13 +35,26 @@ describe("DocumentsStrip", () => {
     expect(screen.getByText(/1 warning/i)).toBeInTheDocument();
   });
 
+  it("passes the picked file and the chosen role to onAdd", async () => {
+    const onAdd = vi.fn();
+    const user = userEvent.setup();
+    const { container } = render(
+      <DocumentsStrip documents={docs} unavailable={false} busy={false} onAdd={onAdd} onRemove={noop} />,
+    );
+    await user.selectOptions(screen.getByLabelText(/document type/i), "k1");
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(["x"], "k1-new.pdf", { type: "application/pdf" });
+    await user.upload(fileInput, file);
+    expect(onAdd).toHaveBeenCalledWith(file, "k1");
+  });
+
   it("confirms before removing, and passes the document id when confirmed", async () => {
     const onRemove = vi.fn();
     vi.spyOn(window, "confirm").mockReturnValue(true);
     render(
       <DocumentsStrip documents={docs} unavailable={false} busy={false} onAdd={noop} onRemove={onRemove} />,
     );
-    await userEvent.click(screen.getAllByRole("button", { name: /remove/i })[1]);
+    await userEvent.click(screen.getByRole("button", { name: /remove k1-ridgeline\.pdf/i }));
     expect(onRemove).toHaveBeenCalledWith("doc-2");
   });
 
@@ -51,7 +64,7 @@ describe("DocumentsStrip", () => {
     render(
       <DocumentsStrip documents={docs} unavailable={false} busy={false} onAdd={noop} onRemove={onRemove} />,
     );
-    await userEvent.click(screen.getAllByRole("button", { name: /remove/i })[0]);
+    await userEvent.click(screen.getByRole("button", { name: /remove 1040-2024\.pdf/i }));
     expect(onRemove).not.toHaveBeenCalled();
   });
 

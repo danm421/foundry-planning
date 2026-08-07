@@ -155,8 +155,8 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
         `/api/clients/${clientId}/tax-returns/${selectedYear}/documents`,
         { method: "POST", body: form },
       );
-      const body = await res.json();
       if (!res.ok) {
+        const body = await res.json().catch(() => ({}) as { message?: string; error?: string });
         setError(
           typeof body.message === "string"
             ? body.message
@@ -297,7 +297,7 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
             </button>
           </div>
 
-          {detail && (
+          {detail && !detailLoading && (
             <DocumentsStrip
               documents={detail.documents ?? []}
               unavailable={detail.documentsUnavailable ?? false}
