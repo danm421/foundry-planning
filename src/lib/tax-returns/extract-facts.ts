@@ -1,8 +1,5 @@
 import { z } from "zod";
-import { extractPdfPages } from "@/lib/extraction/pdf-parser";
-import { redactSsns } from "@/lib/extraction/redact-ssn";
 import { callAIExtraction } from "@/lib/extraction/azure-client";
-import { visionOcrPdf, visionOcrImage } from "@/lib/extraction/vision-ocr";
 import { buildPageOutline } from "@/lib/extraction/page-outline";
 import { parseAIResponse } from "@/lib/extraction/parse-response";
 import type { UploadKind } from "@/lib/extraction/validate-upload";
@@ -13,17 +10,13 @@ import {
 import { TAX_FORM_CLASSIFIER_PROMPT } from "@/lib/extraction/prompts/tax-form-classifier";
 import { parseTaxReturnFactsJson, TaxReturnParseError } from "./parse-facts";
 import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
+import { TaxReturnExtractionError } from "./errors";
+import { readDocumentText } from "./document-text";
+export { TaxReturnExtractionError } from "./errors";
 
 const SINGLE_PASS_MAX_PAGES = 15;
 const MAX_SELECTED_PAGES = 40;
 const MAX_INPUT_CHARS = 150_000;
-
-export class TaxReturnExtractionError extends Error {
-  constructor(message: string, readonly userMessage: string) {
-    super(message);
-    this.name = "TaxReturnExtractionError";
-  }
-}
 
 export interface ExtractFactsResult {
   facts: TaxReturnFacts;
@@ -84,63 +77,12 @@ export async function extractTaxReturnFacts(args: {
   uploadKind: UploadKind;
   model: "mini" | "full";
 }): Promise<ExtractFactsResult> {
-  const warnings: string[] = [];
-  let pages: string[];
-
-  if (args.uploadKind === "pdf") {
-    pages = await extractPdfPages(args.buffer);
-    if (pages.join("").trim().length < 30) {
-      let ocr;
-      try {
-        ocr = await visionOcrPdf(args.buffer, { maxPages: 30, model: args.model });
-      } catch (err) {
-        throw new TaxReturnExtractionError(
-          err instanceof Error ? err.message : "vision OCR failed",
-          "This PDF has no readable text and automatic OCR failed. Try a clearer copy, or enter the return's figures manually in the review form.",
-        );
-      }
-      if (ocr.text.trim().length < 30) {
-        throw new TaxReturnExtractionError(
-          "no text layer and OCR produced nothing",
-          "This PDF has no readable text. Try a clearer copy, or enter the return's figures manually in the review form.",
-        );
-      }
-      pages = [ocr.text];
-      warnings.push(
-        "This document had no text layer; figures were recovered via image OCR — please verify them.",
-      );
-      if (ocr.truncated) {
-        warnings.push(
-          `Only the first ${ocr.pagesProcessed} of ${ocr.pageCount} pages were read via OCR — verify completeness of extracted figures.`,
-        );
-      }
-    }
-  } else if (args.uploadKind === "png" || args.uploadKind === "jpeg") {
-    let text: string;
-    try {
-      text = await visionOcrImage(args.buffer, { model: args.model });
-    } catch (err) {
-      throw new TaxReturnExtractionError(
-        err instanceof Error ? err.message : "vision OCR failed",
-        "The image couldn't be read. Try a clearer photo or PDF, or enter figures manually.",
-      );
-    }
-    if (text.trim().length < 30) {
-      throw new TaxReturnExtractionError(
-        "image transcription empty",
-        "The image couldn't be read. Try a clearer photo or PDF, or enter figures manually.",
-      );
-    }
-    pages = [text];
-    warnings.push("Figures were transcribed from an image — please verify them.");
-  } else {
-    throw new TaxReturnExtractionError(
-      `unsupported kind ${args.uploadKind}`,
-      "Tax return analysis accepts PDF or image uploads.",
-    );
-  }
-
-  pages = pages.map((p) => redactSsns(p).text);
+  const { pages, warnings: readWarnings } = await readDocumentText({
+    buffer: args.buffer,
+    uploadKind: args.uploadKind,
+    model: args.model,
+  });
+  const warnings: string[] = [...readWarnings];
 
   let inputText: string;
   if (pages.length <= SINGLE_PASS_MAX_PAGES) {

@@ -71,6 +71,8 @@ export type AuditAction =
   | "tax_return.update"
   | "tax_return.delete"
   | "tax_return.export_pdf"
+  | "tax_return.document_add"
+  | "tax_return.document_remove"
   // Scenario-level movements
   | "transfer.create"
   | "transfer.update"

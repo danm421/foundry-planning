@@ -4,7 +4,9 @@ import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
-import { updateFacts, deleteTaxReturn } from "@/lib/tax-returns/store";
+import { deleteTaxReturn } from "@/lib/tax-returns/store";
+import { saveReviewedFacts } from "@/lib/tax-returns/save-facts";
+import { EmptyRecomputeError } from "@/lib/tax-returns/errors";
 import { assembleTaxAnalysis, parseYear } from "@/lib/tax-returns/assemble-analysis";
 import { taxReturnFactsSchema } from "@/lib/schemas/tax-return-facts";
 
@@ -39,6 +41,10 @@ export async function GET(
       warnings: assembled.row.warnings,
       factsParseError: assembled.parseError,
       analysis: assembled.analysis,
+      documents: assembled.documentSummaries,
+      conflicts: assembled.conflicts,
+      provenance: assembled.provenance,
+      documentsUnavailable: assembled.documentsUnavailable,
     });
   } catch (err) {
     if (err instanceof UnauthorizedError || (err instanceof Error && err.message === "Unauthorized")) {
@@ -75,8 +81,32 @@ export async function PUT(
       );
     }
     const nextStatus = parsed.data.reopen ? "needs_review" : parsed.data.markReady ? "ready" : undefined;
-    const row = await updateFacts(id, taxYear, parsed.data.facts, nextStatus);
-    if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    let saved;
+    try {
+      saved = await saveReviewedFacts({
+        clientId: id,
+        taxYear,
+        submitted: parsed.data.facts,
+        nextStatus,
+      });
+    } catch (err) {
+      if (err instanceof EmptyRecomputeError) {
+        // Same refusal as removing the last document (Task 7): this return
+        // has no documents, so its data lives only in overrides, and saving
+        // with everything blank would erase the only copy. The advisor
+        // deletes the YEAR if that is what they meant.
+        return NextResponse.json(
+          {
+            error: "empty_return",
+            message:
+              "This year has no supporting documents, so its data lives only in these fields. Saving with everything blank would erase it. Delete the year instead if that's what you want.",
+          },
+          { status: 409 },
+        );
+      }
+      throw err;
+    }
+    if (!saved) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     await recordAudit({
       action: "tax_return.update",
@@ -86,7 +116,7 @@ export async function PUT(
       firmId,
       metadata: { taxYear, markReady: parsed.data.markReady === true, reopen: parsed.data.reopen === true },
     });
-    return NextResponse.json({ taxYear: row.taxYear, status: row.status });
+    return NextResponse.json({ taxYear: saved.taxYear, status: saved.status });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });

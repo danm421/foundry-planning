@@ -49,6 +49,13 @@ export async function insertDocument(args: {
   promptVersion: string | null;
   model: string | null;
   taxYear: number;
+  /** Omit on a genuine add — the column defaults to `now()`. Supplied ONLY when
+   *  restoring a row that was just deleted, because `listDocuments` orders by
+   *  this column and `mergeDocuments` reads that order as WRITE order: letting
+   *  a restored document take a fresh timestamp moves it to the end and hands
+   *  it last-write-wins over scalars that previously beat it. Same figures,
+   *  different answer. */
+  createdAt?: Date;
 }): Promise<TaxReturnDocumentRow> {
   const [row] = await db.insert(taxReturnDocuments).values(args).returning();
   return row;
@@ -68,7 +75,9 @@ export async function deleteDocument(
   return row ?? null;
 }
 
-export async function getState(taxReturnId: string) {
+export type TaxReturnStateRow = typeof taxReturnState.$inferSelect;
+
+export async function getState(taxReturnId: string): Promise<TaxReturnStateRow | null> {
   const [row] = await db
     .select()
     .from(taxReturnState)
@@ -78,31 +87,29 @@ export async function getState(taxReturnId: string) {
 }
 
 /**
- * Create the state row for a return that does not have one yet. Idempotent.
- *
- * State CREATION is deliberately separated from override WRITES. If a single
- * upsert did both, it would create the state row as a side effect of saving
- * the review form — and `recomputeFacts`' `MissingTaxReturnStateError` guard,
- * whose entire job is to stop a row the backfill deliberately refused from
- * being recomputed, would be disarmed one call earlier by the very code path
- * it protects against. Ordering the deploy cannot fix that: rows the backfill
- * skips get no state row BY DESIGN, and rows created afterwards by the legacy
- * `tax_returns` writers have none either.
- *
- * So: the backfill and the document-add path call this explicitly, and
- * `putOverrides` refuses to create.
- */
-export async function initState(taxReturnId: string): Promise<void> {
-  await db
-    .insert(taxReturnState)
-    .values({ taxReturnId, factsOverrides: {} })
-    .onConflictDoNothing();
-}
-
-/**
  * UPDATE-only. Throws `MissingTaxReturnStateError` when no state row exists,
- * rather than creating one — see `initState` for why that distinction is
- * load-bearing rather than stylistic.
+ * rather than creating one. That distinction is load-bearing, not stylistic.
+ *
+ * NOTHING in the request path may CREATE a state row. `recomputeFacts`'
+ * `MissingTaxReturnStateError` guard exists to stop a row the backfill has not
+ * converted (or deliberately refused) from being recomputed — and a recompute
+ * of such a row merges only its documents over `tax_returns.facts`, blanking
+ * every figure the documents do not restate. Any code that creates the row
+ * first disarms that guard one call earlier, so the very next line destroys
+ * data. Ordering the deploy cannot fix it: rows the backfill skips get no
+ * state row BY DESIGN, and the legacy `tax_returns` writers (`upsertExtracted`)
+ * keep minting rows without one indefinitely.
+ *
+ * The precise rule is therefore not "never create a state row" but "never
+ * create one without SIMULTANEOUSLY representing the return's existing facts as
+ * documents". Exactly two writers can honour that, and both do it in one
+ * transaction: the backfill script (after its replay gate passes) and
+ * `adoptExtractedReturn` (the state row and the document carrying those same
+ * facts are written together). `adoptManualReturn` is the degenerate case —
+ * the row's facts are empty, so there is nothing to represent.
+ *
+ * Everything else must refuse: `saveReviewedFacts` takes the legacy path when
+ * there is no state row, and `addDocumentToReturn` refuses outright.
  *
  * `updatedAt` is set explicitly: the column has `.defaultNow()` but no
  * `$onUpdate`, so it does not advance by itself.

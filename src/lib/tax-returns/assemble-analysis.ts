@@ -4,22 +4,41 @@ import { buildTaxAnalysis } from "@/lib/tax-analysis/analysis";
 import { getTaxReturn, getPriorTaxReturn } from "./store";
 import { parseRowFacts, type TaxReturnRow } from "./db";
 import { loadAnalysisContext } from "./load-analysis-context";
-import { listDocuments, getState, rowToMergeDocument } from "./documents-store";
+import {
+  listDocuments,
+  getState,
+  rowToMergeDocument,
+  type TaxReturnDocumentRow,
+} from "./documents-store";
 import { assembleFacts } from "./recompute";
-import type { FieldConflict, MergeDocument, OverrideMap } from "./merge/types";
+import { isUndefinedTable } from "./pg-errors";
+import { parseSupportingPayload, type W2Pair } from "./supporting-payload";
+import type { DocumentRole, FieldConflict, MergeDocument, OverrideMap } from "./merge/types";
 
-/** Postgres undefined_table. */
-const UNDEFINED_TABLE = "42P01";
+/** What the documents strip renders. Deliberately separate from `MergeDocument`
+ *  — the merge needs facts, the UI needs metadata, and sending both over the
+ *  wire would ship a full facts payload per document for nothing. */
+export interface DocumentSummary {
+  id: string;
+  role: DocumentRole;
+  filename: string | null;
+  taxYear: number;
+  warnings: string[];
+  createdAt: string;
+  /** Empty for every role but `w2`. Feeds the K-1 wage-assignment dropdown. */
+  w2s: W2Pair[];
+}
 
-/** Drizzle wraps every driver error in `DrizzleQueryError`, whose own `.code`
- *  is undefined — the Postgres code lives on `.cause`. Same unwrap as
- *  `isUniqueViolation` in `lib/crm/household-relationships.ts`; checking only
- *  `err.code` here would never match a real query failure, just the shape a
- *  test rejects with directly. */
-function isUndefinedTable(err: unknown): boolean {
-  if (typeof err !== "object" || err === null) return false;
-  const e = err as { code?: unknown; cause?: { code?: unknown } };
-  return e.code === UNDEFINED_TABLE || e.cause?.code === UNDEFINED_TABLE;
+function rowToSummary(row: TaxReturnDocumentRow): DocumentSummary {
+  return {
+    id: row.id,
+    role: row.role,
+    filename: row.filename,
+    taxYear: row.taxYear,
+    warnings: row.warnings ?? [],
+    createdAt: row.createdAt.toISOString(),
+    w2s: row.role === "w2" ? parseSupportingPayload(row.supportingPayload).w2s : [],
+  };
 }
 
 export interface DocumentContext {
@@ -28,6 +47,7 @@ export interface DocumentContext {
   /** True only in the deploy-before-migrate window. The tab still renders from
    *  `tax_returns.facts`; the documents panel reports itself unavailable. */
   unavailable: boolean;
+  summaries: DocumentSummary[];
 }
 
 /**
@@ -43,11 +63,12 @@ export async function loadDocumentContext(taxReturnId: string): Promise<Document
       documents: docs.map(rowToMergeDocument),
       overrides: state?.factsOverrides ?? {},
       unavailable: false,
+      summaries: docs.map(rowToSummary),
     };
   } catch (err) {
     if (isUndefinedTable(err)) {
       console.warn("tax_return document tables not migrated yet — documents panel unavailable");
-      return { documents: [], overrides: {}, unavailable: true };
+      return { documents: [], overrides: {}, unavailable: true, summaries: [] };
     }
     throw err;
   }
@@ -69,6 +90,7 @@ export interface AssembledTaxAnalysis {
   parseError: boolean;
   analysis: TaxAnalysis | null;
   documents: MergeDocument[];
+  documentSummaries: DocumentSummary[];
   conflicts: FieldConflict[];
   provenance: Record<string, string>;
   documentsUnavailable: boolean;
@@ -94,6 +116,7 @@ export async function assembleTaxAnalysis(
   return {
     row, facts, extractedFacts, parseError, analysis,
     documents: docContext.documents,
+    documentSummaries: docContext.summaries,
     conflicts: assembled.conflicts,
     provenance: assembled.provenance,
     documentsUnavailable: docContext.unavailable,

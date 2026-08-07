@@ -38,6 +38,9 @@ function manualEntryDetail(): YearDetail {
     extractedFacts: null,
     warnings: [],
     analysis: null,
+    documents: [],
+    conflicts: [],
+    provenance: {},
   };
 }
 
@@ -94,6 +97,9 @@ describe("FactsReviewForm — filing status + residence state (editable)", () =>
       extractedFacts: retireeMfj(),
       warnings: [],
       analysis: null,
+      documents: [],
+      conflicts: [],
+      provenance: {},
     };
     render(<FactsReviewForm clientId="c1" detail={detail} onSaved={vi.fn()} />);
 
@@ -119,6 +125,9 @@ describe("FactsReviewForm — filing status + residence state (editable)", () =>
       extractedFacts: retireeMfj(),
       warnings: [],
       analysis: null,
+      documents: [],
+      conflicts: [],
+      provenance: {},
     };
     render(<FactsReviewForm clientId="c1" detail={detail} onSaved={vi.fn()} />);
 
@@ -138,6 +147,9 @@ function retireeDetail(): YearDetail {
     extractedFacts: retireeMfj(),
     warnings: [],
     analysis: null,
+    documents: [],
+    conflicts: [],
+    provenance: {},
   };
 }
 
@@ -192,6 +204,9 @@ function highEarnerDetail(): YearDetail {
     extractedFacts: highEarnerMfj(),
     warnings: [],
     analysis: null,
+    documents: [],
+    conflicts: [],
+    provenance: {},
   };
 }
 

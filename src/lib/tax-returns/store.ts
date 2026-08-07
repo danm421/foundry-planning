@@ -88,6 +88,22 @@ export async function updateFacts(
   return row ?? null;
 }
 
+/** Status-only transition. Separate from `updateFacts` because the override
+ *  save path writes `facts` through `recomputeFacts` and must not write it a
+ *  second time here — `recomputeFacts` is the single writer (D3). */
+export async function setStatus(
+  clientId: string,
+  taxYear: number,
+  status: "ready" | "needs_review",
+): Promise<TaxReturnRow | null> {
+  const [row] = await db
+    .update(taxReturns)
+    .set({ status, updatedAt: new Date() })
+    .where(and(eq(taxReturns.clientId, clientId), eq(taxReturns.taxYear, taxYear)))
+    .returning();
+  return row ?? null;
+}
+
 export async function deleteTaxReturn(clientId: string, taxYear: number): Promise<boolean> {
   const rows = await db
     .delete(taxReturns)

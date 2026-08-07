@@ -5,9 +5,10 @@ import { requireActiveSubscription } from "@/lib/authz";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
-import { detectUploadKind } from "@/lib/extraction/validate-upload";
+import { detectUploadKind, MAX_UPLOAD_BYTES } from "@/lib/extraction/validate-upload";
 import { savePlanToVault } from "@/lib/crm/vault-plans";
 import { listTaxReturns, getTaxReturn, upsertExtracted } from "@/lib/tax-returns/store";
+import { adoptExtractedReturn, adoptManualReturn } from "@/lib/tax-returns/adopt-extraction";
 import { rowToSummary } from "@/lib/tax-returns/db";
 import {
   extractTaxReturnFacts,
@@ -21,8 +22,6 @@ import {
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // synchronous AI extraction, like imports extract
-
-const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 export async function GET(
   _request: NextRequest,
@@ -119,6 +118,8 @@ export async function POST(
         sourceFilename: "",
         vaultDocumentId: null,
       });
+      // Document-shaped from birth, so the documents pipeline can reach it.
+      await adoptManualReturn(row.id);
       await recordAudit({
         action: "tax_return.extract",
         resourceType: "tax_return",
@@ -184,6 +185,21 @@ export async function POST(
       promptVersion: extraction.promptVersion,
       model,
       sourceFilename: fileName,
+      vaultDocumentId: vaultDoc?.id ?? null,
+    });
+
+    // The extraction becomes the return's `full_return` DOCUMENT, atomically
+    // with its state row. Without this the upload path keeps minting returns
+    // the documents pipeline must refuse, and re-uploading a corrected 1040
+    // would discard the year's K-1s and the advisor's corrections.
+    await adoptExtractedReturn({
+      taxReturnId: row.id,
+      taxYear,
+      facts: extraction.facts,
+      warnings: extraction.warnings,
+      promptVersion: extraction.promptVersion,
+      model,
+      filename: fileName,
       vaultDocumentId: vaultDoc?.id ?? null,
     });
 

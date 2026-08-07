@@ -12,7 +12,7 @@ const analysis = buildTaxAnalysis({ facts: retireeMfj(), prior: null, resolver, 
 
 const detail: YearDetail = {
   taxYear: 2025, status: "ready", facts: retireeMfj(), extractedFacts: retireeMfj(),
-  warnings: [], analysis,
+  warnings: [], analysis, documents: [], conflicts: [], provenance: {},
 };
 
 describe("TaxReportView", () => {
@@ -40,6 +40,7 @@ describe("TaxReportView — income composition + deductions", () => {
     const a = buildTaxAnalysis({ facts, prior: null, resolver, primaryAge: 45, spouseAge: 45 });
     const d: YearDetail = {
       taxYear: 2025, status: "ready", facts, extractedFacts: facts, warnings: [], analysis: a,
+      documents: [], conflicts: [], provenance: {},
     };
     render(<TaxReportView clientId="c1" detail={d} onEditFacts={vi.fn()} />);
     expect(screen.getByText(/^deductions$/i)).toBeTruthy();
@@ -59,6 +60,7 @@ describe("TaxReportView — total income", () => {
     const a = buildTaxAnalysis({ facts, prior: null, resolver, primaryAge: 72, spouseAge: 72 });
     const d: YearDetail = {
       taxYear: 2025, status: "ready", facts, extractedFacts: facts, warnings: [], analysis: a,
+      documents: [], conflicts: [], provenance: {},
     };
     render(<TaxReportView clientId="c1" detail={d} onEditFacts={vi.fn()} />);
     // "Total income" appears twice: the KPI label and the total-row label.

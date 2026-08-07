@@ -170,4 +170,51 @@ describe("parseTaxReturnFactsJson", () => {
     expect(facts.businesses).toEqual([]);
     expect(warnings.some((w) => w.includes("businesses"))).toBe(true);
   });
+
+  it("conforms a v2 full-return response carrying all four new blocks", () => {
+    const raw = JSON.stringify({
+      isAmended: false,
+      facts: {
+        taxYear: 2024, filingStatus: "married_joint", residenceState: "MN",
+        dependentsUnder17: 1, dependents17to23: 0,
+        income: {
+          wages: 95_000, scheduleCNet: 40_000, agi: 300_000,
+          adjustmentsDetail: {
+            seTaxDeduction: 2_826, sepSimpleSolo401k: null,
+            selfEmployedHealthInsurance: 9_400, hsaDeduction: null,
+          },
+        },
+        deductions: {
+          deductionTaken: "standard", qbiDeduction: 8_000,
+          qbi: {
+            qualifiedBusinessIncome: 40_000, reitPtpDividends: null,
+            w2Wages: 95_000, ubia: null, sstbPresent: false,
+          },
+        },
+        tax: { totalTax: 61_000 },
+        payments: {}, carryovers: {},
+        businesses: [{
+          name: "Cedar Consulting", netProfit: 40_000, grossReceipts: 52_000,
+          totalExpenses: 12_000, depreciation: 1_800, isSstb: true,
+        }],
+        k1s: [{
+          entityName: "Ridgeline Partners LLC", ein: "12-3456789",
+          entityType: "partnership", ordinaryBusinessIncome: 180_000,
+          guaranteedPayments: 60_000, qbiIncome: 180_000, isSstb: false,
+        }],
+      },
+    });
+
+    const { facts } = parseTaxReturnFactsJson(raw);
+
+    expect(facts.deductions.qbi?.qualifiedBusinessIncome).toBe(40_000);
+    expect(facts.deductions.qbi?.sstbPresent).toBe(false);
+    expect(facts.income.adjustmentsDetail?.sepSimpleSolo401k).toBeNull();
+    expect(facts.businesses).toHaveLength(1);
+    expect(facts.businesses[0].name).toBe("Cedar Consulting");
+    expect(facts.k1s[0].entityType).toBe("partnership");
+    // Identity is stamped at merge time, never by extraction.
+    expect(facts.k1s[0].entityId).toBeNull();
+    expect(facts.businesses[0].entityId).toBeNull();
+  });
 });

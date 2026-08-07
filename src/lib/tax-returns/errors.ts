@@ -37,3 +37,13 @@ export class EmptyRecomputeError extends Error {
     this.name = "EmptyRecomputeError";
   }
 }
+
+/** Every failure from the extraction orchestrators carries a user-safe
+ *  `userMessage`; the `message` is for logs only and must never be returned to
+ *  a client. */
+export class TaxReturnExtractionError extends Error {
+  constructor(message: string, readonly userMessage: string) {
+    super(message);
+    this.name = "TaxReturnExtractionError";
+  }
+}

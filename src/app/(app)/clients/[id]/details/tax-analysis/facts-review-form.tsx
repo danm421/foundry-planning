@@ -13,6 +13,7 @@ import { fmtUsd } from "@/lib/tax-analysis/format";
 import { StateSelect } from "@/components/state-select";
 import { selectClassName, selectBaseClassName, inputBaseClassName } from "@/components/forms/input-styles";
 import { MoneyField } from "./money-field";
+import { BusinessesEditor, K1sEditor } from "./entity-array-editor";
 import type { YearDetail } from "./tax-analysis-content";
 
 const FILING_STATUS_OPTIONS: Array<{ value: TaxReturnFilingStatus; label: string }> = [
@@ -170,6 +171,18 @@ export function FactsReviewForm({
   const [facts, setFacts] = useState<TaxReturnFacts>(detail.facts!);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // `YearDetail` declares all three required and the GET route sends them on
+  // every 200, so these fallbacks are unreachable through the real contract.
+  // They exist because the alternative failure mode is the worst one available:
+  // `detail.documents.flatMap(...)` on an undefined value throws DURING RENDER,
+  // which trips the error boundary and white-screens the whole Tax Analysis tab
+  // rather than degrading the one panel. `tax-analysis-content.tsx` already
+  // takes this posture on the same field; the two disagreeing is what let a
+  // fixture gap present as an opaque component crash.
+  const editorDocuments = detail.documents ?? [];
+  const editorProvenance = detail.provenance ?? {};
+  const editorConflicts = detail.conflicts ?? [];
 
   function get(path: MoneyPath): number | null {
     const [section, key] = path;
@@ -416,6 +429,26 @@ export function FactsReviewForm({
                 Add Schedule E rental breakdown
               </button>
             )}
+
+          {section.heading === "Income" && (
+            <>
+              <BusinessesEditor
+                businesses={facts.businesses}
+                provenance={editorProvenance}
+                conflicts={editorConflicts}
+                documents={editorDocuments}
+                onChange={(businesses) => setFacts((prev) => ({ ...prev, businesses }))}
+              />
+              <K1sEditor
+                k1s={facts.k1s}
+                w2Options={editorDocuments.flatMap((d) => d.w2s)}
+                provenance={editorProvenance}
+                conflicts={editorConflicts}
+                documents={editorDocuments}
+                onChange={(k1s) => setFacts((prev) => ({ ...prev, k1s }))}
+              />
+            </>
+          )}
 
           {section.heading === "Deductions" && facts.deductions.scheduleA && (
             <ScheduleSubGrid
