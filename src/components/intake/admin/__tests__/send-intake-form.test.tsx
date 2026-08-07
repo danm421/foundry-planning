@@ -42,14 +42,14 @@ describe("SendIntakeForm", () => {
   });
 
   it("renders first name, last name, and email inputs", () => {
-    render(<SendIntakeForm />);
+    render(<SendIntakeForm defaultSections={null} />);
     expect(screen.getByLabelText(/first name/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/last name/i, { selector: "input" })).toBeInTheDocument();
     expect(screen.getByLabelText(/^email/i)).toBeInTheDocument();
   });
 
   it("sends the two name fields as one recipientName, with no clientId", async () => {
-    render(<SendIntakeForm />);
+    render(<SendIntakeForm defaultSections={null} />);
     fireEvent.change(screen.getByLabelText(/first name/i), { target: { value: "Jane" } });
     fireEvent.change(screen.getByLabelText(/last name/i, { selector: "input" }), { target: { value: "Smith" } });
     fireEvent.change(screen.getByLabelText(/^email/i), { target: { value: "jane@example.com" } });
@@ -63,13 +63,14 @@ describe("SendIntakeForm", () => {
           mode: "blank",
           recipientName: "Jane Smith",
           recipientEmail: "jane@example.com",
+          sections: ["family", "accounts", "income", "property", "goals", "documents"],
         }),
       });
     });
   });
 
   it("sends a last name alone without a leading space", async () => {
-    render(<SendIntakeForm />);
+    render(<SendIntakeForm defaultSections={null} />);
     fireEvent.change(screen.getByLabelText(/last name/i, { selector: "input" }), { target: { value: "Smith" } });
     fireEvent.change(screen.getByLabelText(/^email/i), { target: { value: "jane@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: /^send$/i }));
@@ -82,7 +83,7 @@ describe("SendIntakeForm", () => {
 
   it("prefills name and email from a picked client and posts its clientId", async () => {
     vi.stubGlobal("fetch", searchFetch([HIT]));
-    render(<SendIntakeForm />);
+    render(<SendIntakeForm defaultSections={null} />);
 
     await pickClient("Bob & Beth Baxter");
 
@@ -102,13 +103,14 @@ describe("SendIntakeForm", () => {
         clientId: "client-1",
         recipientName: "Bob Baxter",
         recipientEmail: "bob@baxter.test",
+        sections: ["family", "accounts", "income", "property", "goals", "documents"],
       });
     });
   });
 
   it("keeps a typed email when the picked client has none", async () => {
     vi.stubGlobal("fetch", searchFetch([{ ...HIT, primaryEmail: null }]));
-    render(<SendIntakeForm />);
+    render(<SendIntakeForm defaultSections={null} />);
 
     fireEvent.change(screen.getByLabelText(/^email/i), { target: { value: "typed@example.com" } });
     await pickClient("Bob & Beth Baxter");
@@ -117,7 +119,7 @@ describe("SendIntakeForm", () => {
   });
 
   it("blocks an existing-client send until a client is picked", async () => {
-    render(<SendIntakeForm />);
+    render(<SendIntakeForm defaultSections={null} />);
     fireEvent.click(screen.getByRole("button", { name: /existing client/i }));
     fireEvent.change(screen.getByLabelText(/^email/i), { target: { value: "jane@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: /^send$/i }));
@@ -130,7 +132,7 @@ describe("SendIntakeForm", () => {
 
   it("drops the picked client when switching back to a prospect send", async () => {
     vi.stubGlobal("fetch", searchFetch([HIT]));
-    render(<SendIntakeForm />);
+    render(<SendIntakeForm defaultSections={null} />);
 
     await pickClient("Bob & Beth Baxter");
     fireEvent.click(screen.getByRole("button", { name: /new prospect/i }));
@@ -146,7 +148,7 @@ describe("SendIntakeForm", () => {
   });
 
   it("shows validation error for invalid email", async () => {
-    const { container } = render(<SendIntakeForm />);
+    const { container } = render(<SendIntakeForm defaultSections={null} />);
     fireEvent.change(screen.getByLabelText(/^email/i), { target: { value: "not-an-email" } });
     // Use fireEvent.submit on the form to bypass jsdom constraint-validation
     // that blocks the click on a type=submit button
@@ -157,9 +159,54 @@ describe("SendIntakeForm", () => {
     });
   });
 
+  it("seeds the picker from the advisor's saved default", async () => {
+    render(<SendIntakeForm defaultSections={["family", "documents"]} />);
+    expect(screen.getByRole("checkbox", { name: /^documents$/i })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /^goals$/i })).not.toBeChecked();
+
+    fireEvent.change(screen.getByLabelText(/^email/i), { target: { value: "a@b.com" } });
+    fireEvent.click(screen.getByRole("button", { name: /^send$/i }));
+    await waitFor(() => {
+      const post = vi.mocked(fetch).mock.calls.find(([url]) => url === "/api/data-collection");
+      expect(JSON.parse(post![1]!.body as string).sections).toEqual(["family", "documents"]);
+    });
+  });
+
+  it("forces family back into a saved default that omits it, for a prospect send", async () => {
+    // The create route does this at write time. Doing it here too is what stops
+    // the advisor from sending a set that differs from the one on screen.
+    render(<SendIntakeForm defaultSections={["documents"]} />);
+    expect(screen.getByRole("checkbox", { name: /family/i })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /family/i })).toBeDisabled();
+  });
+
+  it("unlocks Family for an existing-client send and re-locks it for a prospect", async () => {
+    vi.stubGlobal("fetch", searchFetch([HIT]));
+    render(<SendIntakeForm defaultSections={["documents"]} />);
+
+    await pickClient("Bob & Beth Baxter");
+    const family = () => screen.getByRole("checkbox", { name: /family/i });
+    expect(family()).not.toBeDisabled();
+
+    fireEvent.click(family());
+    expect(family()).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole("button", { name: /new prospect/i }));
+    expect(family()).toBeChecked();
+    expect(family()).toBeDisabled();
+  });
+
+  it("points the Preview link at the set on screen", () => {
+    render(<SendIntakeForm defaultSections={["family", "documents"]} />);
+    expect(screen.getByRole("link", { name: /preview this form/i })).toHaveAttribute(
+      "href",
+      "/data-collection/preview?steps=family,documents",
+    );
+  });
+
   it("shows 429 rate limit error", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 429, json: async () => ({}) }));
-    render(<SendIntakeForm />);
+    render(<SendIntakeForm defaultSections={null} />);
     fireEvent.change(screen.getByLabelText(/^email/i), { target: { value: "a@b.com" } });
     fireEvent.click(screen.getByRole("button", { name: /^send$/i }));
     await waitFor(() => {

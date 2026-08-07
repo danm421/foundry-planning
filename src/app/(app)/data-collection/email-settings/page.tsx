@@ -5,6 +5,7 @@ import { intakeEmailSettings } from "@/db/schema";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { resolveFirmName } from "@/lib/activity/resolve-firm-names";
 import EmailSettingsEditor from "@/components/intake/admin/email-settings-editor";
+import FormStepsEditor from "@/components/intake/admin/form-steps-editor";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +44,14 @@ export default async function EmailSettingsPage() {
           advisorEmail={advisorEmail}
           firmName={firmName}
         />
+      </section>
+
+      <section className="mt-8">
+        <h2 className="mb-1 text-[15px] font-semibold text-ink">Form steps</h2>
+        <p className="mb-3 text-[13px] text-ink-3">
+          The steps every new form starts with. You can still change them on any single send.
+        </p>
+        <FormStepsEditor initial={row?.sections ?? null} />
       </section>
     </div>
   );

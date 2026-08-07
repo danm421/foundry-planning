@@ -1,8 +1,8 @@
 import { cache } from "react";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { intakeForms } from "@/db/schema";
-import { portalCollectsNothing } from "./sections";
+import { intakeEmailSettings, intakeForms } from "@/db/schema";
+import { portalCollectsNothing, type IntakeSectionKey } from "./sections";
 
 export type IntakeFormRow = typeof intakeForms.$inferSelect;
 
@@ -138,4 +138,24 @@ export const listFormsForFirm = cache(
       .from(intakeForms)
       .where(eq(intakeForms.firmId, firmId))
       .orderBy(desc(intakeForms.createdAt)),
+);
+
+/**
+ * The advisor's saved default section set, or null when they never set one.
+ *
+ * Read only where a form is being COMPOSED — the send cards and the preview.
+ * A form row's own `sections` is a snapshot taken at send time, so nothing on a
+ * render or apply path may ever resolve sections from here instead.
+ */
+export const loadAdvisorDefaultSections = cache(
+  async (firmId: string, userId: string): Promise<IntakeSectionKey[] | null> => {
+    const rows = await db
+      .select({ sections: intakeEmailSettings.sections })
+      .from(intakeEmailSettings)
+      .where(
+        and(eq(intakeEmailSettings.firmId, firmId), eq(intakeEmailSettings.userId, userId)),
+      )
+      .limit(1);
+    return rows[0]?.sections ?? null;
+  },
 );
