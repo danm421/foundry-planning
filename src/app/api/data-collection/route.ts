@@ -16,6 +16,12 @@ import { getAdvisorProfile } from "@/lib/branding/advisor-profile";
 import { resolveFirmName } from "@/lib/activity/resolve-firm-names";
 import { newIntakeToken, defaultExpiry } from "@/lib/intake/tokens";
 import { EMAIL_RE, normalizeRecipientName } from "@/lib/intake/schema";
+import {
+  normalizeSections,
+  forceFamilyForProspect,
+  portalCollectsNothing,
+  type IntakeSectionKey,
+} from "@/lib/intake/sections";
 import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -30,10 +36,11 @@ export async function POST(req: Request): Promise<Response> {
       clientId?: unknown;
       recipientEmail?: unknown;
       recipientName?: unknown;
+      sections?: unknown;
     };
 
     // ── Validate body ──────────────────────────────────────────────────────
-    const { mode, clientId, recipientEmail, recipientName } = body;
+    const { mode, clientId, recipientEmail, recipientName, sections } = body;
 
     if (mode !== "blank" && mode !== "prefilled") {
       return NextResponse.json(
@@ -62,6 +69,44 @@ export async function POST(req: Request): Promise<Response> {
     const recipientNameStr = normalizeRecipientName(recipientName);
     const clientIdStr =
       typeof clientId === "string" ? clientId : undefined;
+
+    // ── Sections ───────────────────────────────────────────────────────────
+    // Absent means "use the default", which is stored as NULL — never as an
+    // explicit copy of DEFAULT_INTAKE_SECTIONS, so a later change to the
+    // default doesn't require rewriting rows that never customized anything.
+    //
+    // A caller that DID send something gets it normalized (canonical order,
+    // de-duplicated, unknown keys dropped) and then family-forced when the send
+    // has no clientId. An empty result means the request asked for a form that
+    // collects nothing — a bug, not a preference.
+    let sectionsToStore: IntakeSectionKey[] | null = null;
+    if (sections !== undefined) {
+      const normalized = normalizeSections(sections);
+      if (normalized.length === 0) {
+        return NextResponse.json(
+          { error: "A form must collect at least one section" },
+          { status: 400 },
+        );
+      }
+      sectionsToStore = forceFamilyForProspect(normalized, Boolean(clientIdStr));
+    }
+
+    // A prefilled send is delivered as a portal invite and nothing else: no
+    // token email, and the advisor UI never surfaces the token. The portal
+    // wizard is the one host with no upload surface, so a documents-only form
+    // there renders nothing, the page bounces the client to the Organizer, and
+    // the request sits in draft forever having never been mentioned to anyone.
+    // Refused at WRITE time, the same way Family is forced for a prospect —
+    // the alternative is persisting a form that cannot be delivered.
+    if (mode === "prefilled" && portalCollectsNothing(sectionsToStore)) {
+      return NextResponse.json(
+        {
+          error:
+            "A portal request can't collect documents only — the portal has no upload step. Send it as an email link instead, or include another step.",
+        },
+        { status: 400 },
+      );
+    }
 
     // ── Auth ───────────────────────────────────────────────────────────────
     const { orgId, userId } = await requireOrgAndUser();
@@ -109,6 +154,7 @@ export async function POST(req: Request): Promise<Response> {
         token,
         recipientEmail,
         recipientName: recipientNameStr ?? null,
+        sections: sectionsToStore,
         createdByUserId: userId,
         sentAt: now,
         expiresAt,

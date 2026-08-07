@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { EMAIL_RE } from "@/lib/intake/schema";
 import PortalCard, { portalBtn, portalInput } from "@/components/portal/portal-card";
 import { MailIcon } from "@/components/portal/portal-icons";
+import { SectionPicker } from "@/components/intake/admin/section-picker";
+import { sectionsForForm, type IntakeSectionKey } from "@/lib/intake/sections";
 
 interface Props {
   clientId: string;
@@ -15,6 +17,8 @@ interface Props {
   spouseName?: string;
   clientAlreadyBound: boolean;
   pendingFormId: string | null;
+  /** The advisor's saved default, or null for the system default. */
+  defaultSections?: IntakeSectionKey[] | null;
 }
 
 export default function SendClientForm({
@@ -25,9 +29,16 @@ export default function SendClientForm({
   spouseName,
   clientAlreadyBound,
   pendingFormId,
+  defaultSections = null,
 }: Props) {
   const router = useRouter();
   const [recipientEmail, setRecipientEmail] = useState(primaryEmail);
+  // Blank sends only. A pre-filled send is a portal invite whose wizard reads
+  // the seeded form row, so the picker would be describing a form the client
+  // never opens by that route.
+  const [sections, setSections] = useState<IntakeSectionKey[]>(() =>
+    sectionsForForm(defaultSections),
+  );
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -56,6 +67,9 @@ export default function SendClientForm({
           clientId,
           recipientEmail,
           recipientName,
+          // Deliberately absent on a pre-filled send: that stores NULL, which
+          // means the default set, which is what the portal wizard renders.
+          ...(mode === "blank" ? { sections } : {}),
         }),
       });
 
@@ -113,6 +127,11 @@ export default function SendClientForm({
             </button>
           )}
         </div>
+      </div>
+
+      <div className="mt-4">
+        <span className="mb-1 block text-[12px] text-ink-3">Form steps (blank form)</span>
+        <SectionPicker value={sections} onChange={setSections} />
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">

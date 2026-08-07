@@ -1,13 +1,25 @@
 "use client";
 
 import { isBlankIntakeExpenseGoalRow, type IntakeDraft } from "@/lib/intake/schema";
+import type { IntakeSectionKey } from "@/lib/intake/sections";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+/** The sections this screen can summarize. Documents is reviewed on its own
+ *  step, and Risk has no summary yet. */
+const REVIEWABLE_SECTIONS = ["family", "accounts", "income", "property", "goals"] as const;
+
+type ReviewableSection = (typeof REVIEWABLE_SECTIONS)[number];
+
 export interface ReviewStepProps {
   value: IntakeDraft;
+  /**
+   * What this form collects. Required, with no default: a caller that forgets it
+   * should not silently summarize sections the client was never shown.
+   */
+  sections: readonly IntakeSectionKey[];
   /** Called with the section name so the wizard can jump back. */
-  onEdit: (section: "family" | "accounts" | "income" | "property" | "goals") => void;
+  onEdit: (section: ReviewableSection) => void;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -24,7 +36,7 @@ function SectionCard({
   children,
 }: {
   title: string;
-  section: ReviewStepProps["onEdit"] extends (s: infer S) => void ? S : never;
+  section: ReviewableSection;
   onEdit: ReviewStepProps["onEdit"];
   children: React.ReactNode;
 }) {
@@ -67,8 +79,11 @@ function formatMoney(n: number | undefined): string | undefined {
 // is the SOLE submit control. ReviewStep renders only the accordion summary +
 // Edit jump-back affordances — no in-body Submit button.
 
-export function ReviewStep({ value, onEdit }: ReviewStepProps) {
+export function ReviewStep({ value, sections, onEdit }: ReviewStepProps) {
   const { family, accounts, income, property, goals } = value;
+
+  const collects = (s: ReviewableSection) => sections.includes(s);
+  const anyReviewable = REVIEWABLE_SECTIONS.some(collects);
 
   const primary = family?.primary;
   const spouse = family?.spouse;
@@ -85,100 +100,112 @@ export function ReviewStep({ value, onEdit }: ReviewStepProps) {
     <div className="space-y-6">
       {/* ── Intro ──────────────────────────────────────────────────── */}
       <p className="text-[14px] text-ink-3">
-        Review what you&apos;ve shared. Use Edit to go back and correct anything.
+        {anyReviewable
+          ? "Review what you've shared. Use Edit to go back and correct anything."
+          : "You're all set — submit when you're ready."}
       </p>
 
       {/* ── Family ────────────────────────────────────────────────── */}
-      <SectionCard title="Family" section="family" onEdit={onEdit}>
-        {primary?.firstName || primary?.lastName ? (
-          <Row
-            label="Client"
-            value={[primary.firstName, primary.lastName].filter(Boolean).join(" ")}
-          />
-        ) : (
-          <p className="text-[13px] text-ink-4">No family information entered.</p>
-        )}
-        {spouse && (
-          <Row
-            label="Spouse"
-            value={[spouse.firstName, spouse.lastName].filter(Boolean).join(" ")}
-          />
-        )}
-        {family?.stateOfResidence && (
-          <Row label="State" value={family.stateOfResidence} />
-        )}
-        {children.length > 0 && (
-          <Row label="Children" value={children.length} />
-        )}
-      </SectionCard>
+      {collects("family") && (
+        <SectionCard title="Family" section="family" onEdit={onEdit}>
+          {primary?.firstName || primary?.lastName ? (
+            <Row
+              label="Client"
+              value={[primary.firstName, primary.lastName].filter(Boolean).join(" ")}
+            />
+          ) : (
+            <p className="text-[13px] text-ink-4">No family information entered.</p>
+          )}
+          {spouse && (
+            <Row
+              label="Spouse"
+              value={[spouse.firstName, spouse.lastName].filter(Boolean).join(" ")}
+            />
+          )}
+          {family?.stateOfResidence && (
+            <Row label="State" value={family.stateOfResidence} />
+          )}
+          {children.length > 0 && (
+            <Row label="Children" value={children.length} />
+          )}
+        </SectionCard>
+      )}
 
       {/* ── Accounts ──────────────────────────────────────────────── */}
-      <SectionCard title="Accounts" section="accounts" onEdit={onEdit}>
-        {(accounts?.length ?? 0) === 0 ? (
-          <p className="text-[13px] text-ink-4">No accounts added.</p>
-        ) : (
-          accounts!.map((a, i) => (
-            <Row
-              key={i}
-              label={a.name ?? `Account ${i + 1}`}
-              value={formatMoney(a.value)}
-            />
-          ))
-        )}
-      </SectionCard>
-
-      {/* ── Income ────────────────────────────────────────────────── */}
-      <SectionCard title="Income" section="income" onEdit={onEdit}>
-        {(income?.length ?? 0) === 0 ? (
-          <p className="text-[13px] text-ink-4">No income sources added.</p>
-        ) : (
-          income!.map((inc, i) => (
-            <Row
-              key={i}
-              label={inc.name ?? `Income ${i + 1}`}
-              value={formatMoney(inc.annualAmount)}
-            />
-          ))
-        )}
-      </SectionCard>
-
-      {/* ── Property ──────────────────────────────────────────────── */}
-      <SectionCard title="Property" section="property" onEdit={onEdit}>
-        {(property?.length ?? 0) === 0 ? (
-          <p className="text-[13px] text-ink-4">No property added.</p>
-        ) : (
-          property!.map((p, i) => (
-            <Row
-              key={i}
-              label={p.name ?? `Property ${i + 1}`}
-              value={formatMoney(p.value)}
-            />
-          ))
-        )}
-      </SectionCard>
-
-      {/* ── Goals ─────────────────────────────────────────────────── */}
-      <SectionCard title="Goals" section="goals" onEdit={onEdit}>
-        {isGoalsEmpty(goals, expenseGoals.length, topics.length) ? (
-          <p className="text-[13px] text-ink-4">No goals entered.</p>
-        ) : (
-          <>
-            <Row label="Client retirement age" value={goals?.clientRetirementAge} />
-            <Row label="Spouse retirement age" value={goals?.spouseRetirementAge} />
-            <Row label="Annual retirement expenses" value={formatMoney(goals?.annualRetirementExpenses)} />
-            {expenseGoals.map((g, i) => (
+      {collects("accounts") && (
+        <SectionCard title="Accounts" section="accounts" onEdit={onEdit}>
+          {(accounts?.length ?? 0) === 0 ? (
+            <p className="text-[13px] text-ink-4">No accounts added.</p>
+          ) : (
+            accounts!.map((a, i) => (
               <Row
                 key={i}
-                label={g.name?.trim() || `Goal ${i + 1}`}
-                value={formatMoney(g.amount)}
+                label={a.name ?? `Account ${i + 1}`}
+                value={formatMoney(a.value)}
               />
-            ))}
-            {topics.length > 0 && (
-              <Row label="On your radar" value={`${topics.length} to discuss`} />
-            )}
-          </>
-        )}
-      </SectionCard>
+            ))
+          )}
+        </SectionCard>
+      )}
+
+      {/* ── Income ────────────────────────────────────────────────── */}
+      {collects("income") && (
+        <SectionCard title="Income" section="income" onEdit={onEdit}>
+          {(income?.length ?? 0) === 0 ? (
+            <p className="text-[13px] text-ink-4">No income sources added.</p>
+          ) : (
+            income!.map((inc, i) => (
+              <Row
+                key={i}
+                label={inc.name ?? `Income ${i + 1}`}
+                value={formatMoney(inc.annualAmount)}
+              />
+            ))
+          )}
+        </SectionCard>
+      )}
+
+      {/* ── Property ──────────────────────────────────────────────── */}
+      {collects("property") && (
+        <SectionCard title="Property" section="property" onEdit={onEdit}>
+          {(property?.length ?? 0) === 0 ? (
+            <p className="text-[13px] text-ink-4">No property added.</p>
+          ) : (
+            property!.map((p, i) => (
+              <Row
+                key={i}
+                label={p.name ?? `Property ${i + 1}`}
+                value={formatMoney(p.value)}
+              />
+            ))
+          )}
+        </SectionCard>
+      )}
+
+      {/* ── Goals ─────────────────────────────────────────────────── */}
+      {collects("goals") && (
+        <SectionCard title="Goals" section="goals" onEdit={onEdit}>
+          {isGoalsEmpty(goals, expenseGoals.length, topics.length) ? (
+            <p className="text-[13px] text-ink-4">No goals entered.</p>
+          ) : (
+            <>
+              <Row label="Client retirement age" value={goals?.clientRetirementAge} />
+              <Row label="Spouse retirement age" value={goals?.spouseRetirementAge} />
+              <Row label="Annual retirement expenses" value={formatMoney(goals?.annualRetirementExpenses)} />
+              {expenseGoals.map((g, i) => (
+                <Row
+                  key={i}
+                  label={g.name?.trim() || `Goal ${i + 1}`}
+                  value={formatMoney(g.amount)}
+                />
+              ))}
+              {topics.length > 0 && (
+                <Row label="On your radar" value={`${topics.length} to discuss`} />
+              )}
+            </>
+          )}
+        </SectionCard>
+      )}
 
     </div>
   );

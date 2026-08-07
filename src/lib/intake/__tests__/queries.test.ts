@@ -17,6 +17,8 @@ const ADVISOR_ID = "advisor_queries_test";
 // IDs populated in beforeAll
 let draftClientId: string;
 let submittedClientId: string;
+let docsOnlyClientId: string;
+let twoFormClientId: string;
 const householdIds: string[] = [];
 
 async function seedClientAndHousehold(): Promise<string> {
@@ -50,6 +52,8 @@ async function seedClientAndHousehold(): Promise<string> {
 beforeAll(async () => {
   draftClientId = await seedClientAndHousehold();
   submittedClientId = await seedClientAndHousehold();
+  docsOnlyClientId = await seedClientAndHousehold();
+  twoFormClientId = await seedClientAndHousehold();
 
   await db.insert(intakeForms).values([
     {
@@ -72,6 +76,50 @@ beforeAll(async () => {
       recipientEmail: "submitted@example.com",
       payload: {} as unknown as IntakePayload,
       createdByUserId: "user_test",
+      expiresAt: defaultExpiry(new Date()),
+    },
+    {
+      // Draft, but it collects only documents — and the portal wizard has no
+      // upload surface, so there is nothing for this client to fill in.
+      firmId: FIRM_ID,
+      clientId: docsOnlyClientId,
+      mode: "prefilled" as const,
+      status: "draft" as const,
+      token: newIntakeToken(),
+      recipientEmail: "docsonly@example.com",
+      payload: {} as unknown as IntakePayload,
+      sections: ["documents"],
+      createdByUserId: "user_test",
+      expiresAt: defaultExpiry(new Date()),
+    },
+    // Two active forms for ONE client — an advisor resending data collection.
+    // The older one collects only documents; the newer is a full intake. The
+    // soft gate and the portal page must resolve to the SAME row (the newer),
+    // or they redirect at each other forever. Explicit createdAt values: a
+    // batch insert would stamp both with the same transaction clock.
+    {
+      firmId: FIRM_ID,
+      clientId: twoFormClientId,
+      mode: "prefilled" as const,
+      status: "submitted" as const,
+      token: newIntakeToken(),
+      recipientEmail: "older-docs-only@example.com",
+      payload: {} as unknown as IntakePayload,
+      sections: ["documents"],
+      createdByUserId: "user_test",
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      expiresAt: defaultExpiry(new Date()),
+    },
+    {
+      firmId: FIRM_ID,
+      clientId: twoFormClientId,
+      mode: "prefilled" as const,
+      status: "draft" as const,
+      token: newIntakeToken(),
+      recipientEmail: "newer-full-intake@example.com",
+      payload: {} as unknown as IntakePayload,
+      createdByUserId: "user_test",
+      createdAt: new Date("2026-02-01T00:00:00.000Z"),
       expiresAt: defaultExpiry(new Date()),
     },
   ]);
@@ -129,5 +177,23 @@ describe("intake queries", () => {
     // Submitted form → false (the soft-gate must NOT redirect after submission)
     const submittedResult = await hasUnsubmittedPrefilledForm(submittedClientId);
     expect(submittedResult).toBe(false);
+  }, 30000);
+
+  it("hasUnsubmittedPrefilledForm: false for a draft the portal cannot render", async () => {
+    // A documents-only form is a real draft, but the portal has no upload
+    // surface — the wizard would be Welcome → Review with nothing between.
+    // The gate must not push the client at a page that will bounce them back
+    // to the Organizer: the two redirects would form an infinite loop.
+    expect(await hasUnsubmittedPrefilledForm(docsOnlyClientId)).toBe(false);
+  }, 30000);
+
+  it("the soft gate answers about the SAME form the portal page will render", async () => {
+    // With two active forms, the gate deciding on one row while the page
+    // renders another is an infinite redirect: the page bounces a form it
+    // cannot render to the Organizer, and the gate pushes straight back.
+    // Both must resolve the newest form.
+    const active = await loadActivePrefilledForm(twoFormClientId);
+    expect(active?.recipientEmail).toBe("newer-full-intake@example.com");
+    expect(await hasUnsubmittedPrefilledForm(twoFormClientId)).toBe(true);
   }, 30000);
 });

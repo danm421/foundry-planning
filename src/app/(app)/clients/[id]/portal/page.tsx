@@ -3,7 +3,7 @@ import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, crmHouseholdContacts } from "@/db/schema";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import PortalAccessCard from "@/components/portal/portal-access-card";
 import PortalEditToggle from "@/components/portal/portal-edit-toggle";
 import PortalActivityFeed from "@/components/portal/portal-activity-feed";
@@ -11,7 +11,7 @@ import PortalCard, { portalBtn } from "@/components/portal/portal-card";
 import PortalManageShell from "@/components/portal/portal-manage-shell";
 import { EyeIcon } from "@/components/portal/portal-icons";
 import SendClientForm from "@/components/intake/send-client-form";
-import { loadSubmittedFormForClient } from "@/lib/intake/queries";
+import { loadAdvisorDefaultSections, loadSubmittedFormForClient } from "@/lib/intake/queries";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -19,7 +19,8 @@ interface Props {
 
 export default async function PortalManagePage({ params }: Props): Promise<ReactElement> {
   const { id } = await params;
-  const orgId = await requireOrgId();
+  const { orgId, userId } = await requireOrgAndUser();
+  const defaultSections = await loadAdvisorDefaultSections(orgId, userId);
 
   const [row] = await db
     .select({
@@ -100,6 +101,7 @@ export default async function PortalManagePage({ params }: Props): Promise<React
             spouseName={spouseName}
             clientAlreadyBound={!!row?.clerkUserId}
             pendingFormId={pending?.id ?? null}
+            defaultSections={defaultSections}
           />
         }
         preview={

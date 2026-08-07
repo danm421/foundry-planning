@@ -4,6 +4,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import type { IntakeDraft } from "@/lib/intake/schema";
 import type { IntakeDocumentView } from "@/lib/intake/document-types";
 import { IntakeWizard } from "../intake-wizard";
+import { RTQ_V1 } from "@/lib/risk/rtq";
 
 const emptyDraft: IntakeDraft = {};
 
@@ -20,16 +21,20 @@ function makeProps(overrides: Partial<Parameters<typeof IntakeWizard>[0]> = {}) 
 }
 
 describe("IntakeWizard", () => {
-  it("shows the Welcome screen with four sections and a Start Here control on initial render", () => {
+  it("shows the Welcome screen with the default section set and a Start Here control on initial render", () => {
     render(<IntakeWizard {...makeProps()} />);
 
     // Welcome heading present
     expect(screen.getByRole("heading", { name: /welcome/i })).toBeInTheDocument();
 
-    // Four section labels visible (Family, Assets, Goals, Review)
+    // Named by card, not counted — a count assertion rots the moment a
+    // section is added. Default set, rendered with no upload surface (these
+    // props are the portal's): Family, Assets, Goals, Review. Documents is in
+    // the default set but has no step here, so it gets no card either.
     expect(screen.getByText(/family/i)).toBeInTheDocument();
     expect(screen.getByText(/assets/i)).toBeInTheDocument();
     expect(screen.getByText(/goals/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^documents$/i)).not.toBeInTheDocument();
     expect(screen.getByText(/review/i)).toBeInTheDocument();
 
     // Start Here CTA
@@ -429,5 +434,115 @@ describe("IntakeWizard sample uploads", () => {
     fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // → Accounts
 
     expect(container.querySelectorAll('input[type="file"]')).toHaveLength(1);
+  });
+});
+
+describe("IntakeWizard — section set", () => {
+  it("renders only the selected steps in canonical order", () => {
+    render(<IntakeWizard {...makeProps({ sections: ["family", "documents"], sampleUploads: true })} />);
+    fireEvent.click(screen.getByRole("button", { name: /start here/i }));
+
+    // Family first, then Documents, then Review — no Accounts/Income/Property.
+    expect(screen.getByRole("heading", { name: /^family$/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /next|skip for now/i }));
+    expect(screen.getByRole("heading", { name: /^documents$/i })).toBeInTheDocument();
+  });
+
+  it("suppresses the Documents step when there is no upload surface, even if selected", () => {
+    // The portal wizard has no token and no sample: a step whose only content is
+    // an upload zone it cannot use must not appear.
+    render(<IntakeWizard {...makeProps({ sections: ["family", "documents"] })} />);
+    fireEvent.click(screen.getByRole("button", { name: /start here/i }));
+    fireEvent.click(screen.getByRole("button", { name: /next|skip for now/i }));
+    expect(screen.getByRole("heading", { name: /review/i })).toBeInTheDocument();
+  });
+
+  // Risk is the one section whose progress-bar chip and H1 differ. Both halves
+  // are pinned: the chip is compact because the bar lays every label out on one
+  // row, and the welcome card takes the full label because a card is not width
+  // constrained the same way.
+  it("names the Risk card by its full label on the Welcome screen", () => {
+    render(<IntakeWizard {...makeProps({ sections: ["family", "risk"] })} />);
+    expect(screen.getByText("Risk tolerance")).toBeInTheDocument();
+  });
+
+  it("keeps the Risk chip compact while its heading reads in full", () => {
+    render(<IntakeWizard {...makeProps({ sections: ["family", "risk"] })} />);
+    fireEvent.click(screen.getByRole("button", { name: /start here/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // Family → Risk
+
+    expect(screen.getByRole("heading", { name: /^risk tolerance$/i })).toBeInTheDocument();
+    // Anchored: "Step 2 / 3 · Risk tolerance" must not satisfy this.
+    expect(
+      screen.getAllByText((_, el) => {
+        if (el?.tagName !== "SPAN") return false;
+        return /step\s+2\s*\/\s*3\s*·\s*risk$/i.test((el.textContent ?? "").trim());
+      }).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("defaults to the full default set when no sections prop is given", () => {
+    render(<IntakeWizard {...makeProps()} />);
+    fireEvent.click(screen.getByRole("button", { name: /start here/i }));
+    fireEvent.click(screen.getByRole("button", { name: /next|skip for now/i }));
+    expect(screen.getByRole("heading", { name: /^accounts$/i })).toBeInTheDocument();
+  });
+
+  it("offers no Documents card on Welcome without an upload surface", () => {
+    // The portal wizard's configuration. The overview must not promise a step
+    // the wizard then silently skips.
+    render(<IntakeWizard {...makeProps()} />);
+    expect(screen.queryByText(/^documents$/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the Documents card on Welcome where uploads are offered", () => {
+    render(<IntakeWizard {...makeProps({ sampleUploads: true })} />);
+    expect(screen.getByText(/^documents$/i)).toBeInTheDocument();
+  });
+
+  it("renders the RTQ on the Risk step and lifts an answer into the draft", () => {
+    const onChange = vi.fn();
+    render(<IntakeWizard {...makeProps({ sections: ["risk"], onChange })} />);
+    fireEvent.click(screen.getByRole("button", { name: /start here/i }));
+
+    const first = RTQ_V1[0];
+    expect(screen.getByText(first.prompt)).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(first.options[0].label));
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        risk: expect.objectContaining({ answers: { [first.id]: first.options[0].value } }),
+      }),
+    );
+  });
+
+  it("offers Skip on an unanswered Risk step and plain Next once answered", () => {
+    const first = RTQ_V1[0];
+    const { unmount } = render(<IntakeWizard {...makeProps({ sections: ["risk"] })} />);
+    fireEvent.click(screen.getByRole("button", { name: /start here/i }));
+    expect(screen.getByRole("button", { name: /skip for now/i })).toBeInTheDocument();
+    unmount();
+
+    render(
+      <IntakeWizard
+        {...makeProps({
+          sections: ["risk"],
+          value: { risk: { answers: { [first.id]: first.options[0].value } } },
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /start here/i }));
+    expect(screen.queryByRole("button", { name: /skip for now/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^next$/i })).toBeInTheDocument();
+  });
+
+  it("threads the section set through to the Review screen", () => {
+    render(<IntakeWizard {...makeProps({ sections: ["family"] })} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /start here/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // Family → Review
+
+    expect(screen.getByRole("button", { name: /submit/i })).toBeInTheDocument();
+    expect(screen.queryByText(/no accounts added/i)).not.toBeInTheDocument();
   });
 });

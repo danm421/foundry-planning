@@ -48,6 +48,7 @@ vi.mock("../intake/intake-client", () => ({
 }));
 
 import PortalIntakePage from "../intake/page";
+import { DEFAULT_INTAKE_SECTIONS } from "@/lib/intake/sections";
 
 const CLIENT_ROW = { firmId: "firm-1", advisorId: "advisor-1" };
 const FORM = {
@@ -55,6 +56,7 @@ const FORM = {
   payload: { family: {} },
   status: "draft",
   recipientName: "Jane",
+  sections: [...DEFAULT_INTAKE_SECTIONS],
 };
 
 beforeEach(() => {
@@ -81,6 +83,29 @@ describe("portal intake page fallbacks", () => {
       "NEXT_REDIRECT:/portal/organizer",
     );
     expect(h.redirect).toHaveBeenCalledWith("/portal/organizer");
+  });
+
+  // The third fallback. "Documents only" is a shipped preset, and the portal is
+  // the one host with no upload surface — so its wizard would be Welcome →
+  // Review with nothing in between, and Submit would file a form that collected
+  // nothing.
+  //
+  // The proxy's soft gate must agree (it asks the same question via
+  // `hasUnsubmittedPrefilledForm`): a gate that still pushed this client at
+  // /portal/intake while this page pushed them back would be an infinite
+  // redirect, which is worse than the empty wizard it replaces.
+  it("redirects to /portal/organizer when the portal can render no section", async () => {
+    h.loadOrSeed.mockResolvedValue({ ...FORM, sections: ["documents"] });
+    await expect(PortalIntakePage()).rejects.toThrow(
+      "NEXT_REDIRECT:/portal/organizer",
+    );
+    expect(h.redirect).toHaveBeenCalledWith("/portal/organizer");
+  });
+
+  it("renders when one section survives the portal's missing upload surface", async () => {
+    h.loadOrSeed.mockResolvedValue({ ...FORM, sections: ["family", "documents"] });
+    await expect(PortalIntakePage()).resolves.toBeTruthy();
+    expect(h.redirect).not.toHaveBeenCalled();
   });
 
   // Discriminator: without this, a page that redirected unconditionally would

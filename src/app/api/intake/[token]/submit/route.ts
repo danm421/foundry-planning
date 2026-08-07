@@ -11,9 +11,11 @@ import {
 import { loadFormByToken } from "@/lib/intake/queries";
 import { isExpired } from "@/lib/intake/tokens";
 import { isGateVerified } from "@/lib/intake/gate-session";
+import { sectionsForForm } from "@/lib/intake/sections";
+import { RTQ_VERSION } from "@/lib/risk/rtq";
 import {
   intakeDraftSchema,
-  intakeSubmitSchema,
+  intakeSubmitSchemaFor,
   pruneIntakeBlankRows,
   type IntakePayload,
 } from "@/lib/intake/schema";
@@ -132,12 +134,31 @@ export async function POST(
     throw e;
   }
 
-  // 7. Strict validation — the merged draft must now be complete. Drop any
-  //    optional rows the user added but left blank ("Add income" → "Skip for
-  //    now") so they don't read as incomplete required fields.
-  let validatedPayload: ReturnType<typeof intakeSubmitSchema.parse>;
+  // 7. Strict validation — the merged draft must now be complete, against the
+  //    sections THIS form actually collects. Drop any optional rows the user
+  //    added but left blank ("Add income" → "Skip for now") so they don't read
+  //    as incomplete required fields.
+  const sections = sectionsForForm(form.sections);
+
+  // Stamp the questionnaire version the answers were submitted under. Done here
+  // rather than in the wizard so a draft that sat open across a v1→v2 release
+  // records the version it was actually finalized against. An unanswered risk
+  // step stays absent — a version stamp on nothing is not a measurement.
+  const pruned = pruneIntakeBlankRows(finalPayload) as Record<string, unknown>;
+  const risk = pruned.risk as { answers?: Record<string, string> } | undefined;
+  const withVersion = { ...pruned };
+  if (risk?.answers && Object.keys(risk.answers).length > 0) {
+    withVersion.risk = { ...risk, rtqVersion: RTQ_VERSION };
+  } else {
+    // A risk block with no answers is not a partial measurement, it is nothing
+    // — and left in place it would 422 on the required `rtqVersion`, failing a
+    // whole submission because the client typed a note and answered none of it.
+    delete withVersion.risk;
+  }
+
+  let validatedPayload: IntakePayload;
   try {
-    validatedPayload = intakeSubmitSchema.parse(pruneIntakeBlankRows(finalPayload));
+    validatedPayload = intakeSubmitSchemaFor(sections).parse(withVersion);
   } catch (err) {
     if (err instanceof ZodError) {
       return NextResponse.json(

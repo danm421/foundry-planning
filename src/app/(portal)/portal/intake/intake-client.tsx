@@ -5,6 +5,7 @@ import type { IntakeDraft } from "@/lib/intake/schema";
 import { IntakeWizard } from "@/components/intake/intake-wizard";
 import { IntakeThankYou } from "@/components/intake/thank-you";
 import type { IntakeHeaderBranding } from "@/components/intake/branding-header";
+import type { IntakeSectionKey } from "@/lib/intake/sections";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -14,6 +15,8 @@ interface PortalIntakeClientProps {
   recipientName: string | null;
   /** Firm letterhead; null renders the Foundry Planning lockup. */
   branding?: IntakeHeaderBranding | null;
+  /** Which sections this form collects. Optional, defaulting inside IntakeWizard. */
+  sections?: readonly IntakeSectionKey[];
 }
 
 // ─── Portal client wrapper ────────────────────────────────────────────────────
@@ -25,6 +28,7 @@ export function PortalIntakeClient({
   initialStatus,
   recipientName,
   branding,
+  sections,
 }: PortalIntakeClientProps) {
   // Seed local draft from the stored payload.
   const [value, setValue] = useState<IntakeDraft>(
@@ -153,6 +157,7 @@ export function PortalIntakeClient({
       busy={busy}
       error={error}
       branding={branding}
+      sections={sections}
     />
   );
 }
