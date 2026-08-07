@@ -3,8 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { TaxAnalysis } from "@/lib/tax-analysis/analysis";
 import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
+import type { DocumentSummary } from "@/lib/tax-returns/assemble-analysis";
+import type { FieldConflict } from "@/lib/tax-returns/merge/types";
 import { FactsReviewForm } from "./facts-review-form";
 import { TaxReportView } from "./tax-report-view";
+import { DocumentsStrip } from "./documents-strip";
 
 interface Summary {
   taxYear: number;
@@ -25,6 +28,11 @@ export interface YearDetail {
    *  that case even though a row exists. Renders a recovery notice instead
    *  of a blank panel. */
   factsParseError?: boolean;
+  documents: DocumentSummary[];
+  conflicts: FieldConflict[];
+  provenance: Record<string, string>;
+  /** True only in the deploy-before-migrate window — see `documents-strip.tsx`. */
+  documentsUnavailable?: boolean;
 }
 
 export function TaxAnalysisContent({ clientId }: { clientId: string }) {
@@ -135,6 +143,58 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
     await selectYearAfterMutation(y);
   }
 
+  async function addDocument(file: File, role: string) {
+    if (selectedYear == null) return;
+    setUploading(true);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.set("file", file);
+      form.set("role", role);
+      const res = await fetch(
+        `/api/clients/${clientId}/tax-returns/${selectedYear}/documents`,
+        { method: "POST", body: form },
+      );
+      const body = await res.json();
+      if (!res.ok) {
+        setError(
+          typeof body.message === "string"
+            ? body.message
+            : typeof body.error === "string"
+              ? body.error
+              : "Couldn't add the document",
+        );
+        return;
+      }
+      await loadList();
+      void loadDetail(selectedYear);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function removeDocument(documentId: string) {
+    if (selectedYear == null) return;
+    setError(null);
+    const res = await fetch(
+      `/api/clients/${clientId}/tax-returns/${selectedYear}/documents/${documentId}`,
+      { method: "DELETE" },
+    );
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}) as { message?: string; error?: string });
+      setError(
+        typeof body.message === "string"
+          ? body.message
+          : typeof body.error === "string"
+            ? body.error
+            : "Couldn't remove the document",
+      );
+      return;
+    }
+    await loadList();
+    void loadDetail(selectedYear);
+  }
+
   // L3: a corrupted facts row (stored JSON that failed to parse) leaves
   // `facts`/`analysis` null even though the row exists — neither the
   // needs_review nor ready branches below would render anything, so this
@@ -236,6 +296,16 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
               Add year
             </button>
           </div>
+
+          {detail && (
+            <DocumentsStrip
+              documents={detail.documents ?? []}
+              unavailable={detail.documentsUnavailable ?? false}
+              busy={uploading}
+              onAdd={(file, role) => void addDocument(file, role)}
+              onRemove={(id) => void removeDocument(id)}
+            />
+          )}
 
           {detailLoading && <div className="p-8 text-ink-3">Loading {selectedYear}…</div>}
 

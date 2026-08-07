@@ -256,6 +256,9 @@ describe("TaxAnalysisContent", () => {
       extractedFacts: null,
       warnings: [],
       analysis: null,
+      documents: [],
+      conflicts: [],
+      provenance: {},
     };
     const detail2023: YearDetail = {
       taxYear: 2023,
@@ -269,6 +272,9 @@ describe("TaxAnalysisContent", () => {
       extractedFacts: null,
       warnings: [],
       analysis: null,
+      documents: [],
+      conflicts: [],
+      provenance: {},
     };
 
     // No `key` — FactsReviewForm seeds `useState(detail.facts!)` once at mount,
