@@ -5,7 +5,7 @@ import { requireActiveSubscription } from "@/lib/authz";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
-import { detectUploadKind } from "@/lib/extraction/validate-upload";
+import { detectUploadKind, MAX_UPLOAD_BYTES } from "@/lib/extraction/validate-upload";
 import { savePlanToVault } from "@/lib/crm/vault-plans";
 import { listTaxReturns, getTaxReturn, upsertExtracted } from "@/lib/tax-returns/store";
 import { rowToSummary } from "@/lib/tax-returns/db";
@@ -21,8 +21,6 @@ import {
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // synchronous AI extraction, like imports extract
-
-const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 export async function GET(
   _request: NextRequest,

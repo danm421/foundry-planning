@@ -1,6 +1,8 @@
+import { z } from "zod";
 import type { TaxReturnFacts, BusinessFacts, K1Facts } from "@/lib/schemas/tax-return-facts";
 
-export type DocumentRole = "full_return" | "k1" | "w2" | "other";
+export const documentRoleSchema = z.enum(["full_return", "k1", "w2", "other"]);
+export type DocumentRole = z.infer<typeof documentRoleSchema>;
 
 /** One uploaded document's own extraction. Callers pass these sorted OLDEST
  *  FIRST — scalar precedence among equal-role documents is last-write-wins. */

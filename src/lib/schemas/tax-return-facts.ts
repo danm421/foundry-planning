@@ -123,6 +123,13 @@ const businessSchema = z
   })
   .strict();
 
+/** The three K-1-issuing entity types a filed return can carry — an S-corp
+ *  (1120-S), a partnership (1065), or an estate/trust (1041). Exported so the
+ *  supporting-document extraction (a K-1-only lane, which does not import the
+ *  full K-1 shape) can classify against the same set rather than a second
+ *  hand-written copy. */
+export const k1EntityTypeSchema = z.enum(["s_corp", "partnership", "estate_trust"]);
+
 /**
  * One Schedule K-1. `entityType` is load-bearing, not descriptive:
  * reasonable-compensation advice is valid for an S-corp and WRONG for a
@@ -135,7 +142,7 @@ const k1Schema = z
     entityId,
     entityName: z.string().nullable(),
     ein: z.string().nullable(),
-    entityType: z.enum(["s_corp", "partnership", "estate_trust"]).nullable(),
+    entityType: k1EntityTypeSchema.nullable(),
     ordinaryBusinessIncome: money, // box 1
     rentalIncome: money,           // box 2
     guaranteedPayments: money,     // 1065 K-1 box 4

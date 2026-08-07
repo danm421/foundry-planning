@@ -3,14 +3,14 @@ import { callAIExtraction } from "@/lib/extraction/azure-client";
 import { parseAIResponse } from "@/lib/extraction/parse-response";
 import { TAX_DOCUMENT_ROLE_PROMPT } from "@/lib/extraction/prompts/tax-document-role";
 import { TaxReturnExtractionError } from "./errors";
-import type { DocumentRole } from "./merge/types";
+import { documentRoleSchema, type DocumentRole } from "./merge/types";
 
 /** The role is legible from form titles in the opening pages; sending more
  *  buys nothing and costs tokens on every upload. */
 const MAX_CLASSIFIER_CHARS = 6_000;
 
 const roleSchema = z.object({
-  role: z.enum(["full_return", "k1", "w2", "other"]),
+  role: documentRoleSchema,
 });
 
 /**

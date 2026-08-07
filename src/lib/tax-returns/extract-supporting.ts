@@ -8,6 +8,7 @@ import {
 import {
   emptyTaxReturnFacts,
   emptyK1,
+  k1EntityTypeSchema,
   TAX_RETURN_MIN_YEAR,
   TAX_RETURN_MAX_YEAR,
   type TaxReturnFacts,
@@ -24,7 +25,7 @@ const responseSchema = z.object({
       z.object({
         entityName: z.string().nullable().default(null),
         ein: z.string().nullable().default(null),
-        entityType: z.enum(["s_corp", "partnership", "estate_trust"]).nullable().default(null),
+        entityType: k1EntityTypeSchema.nullable().default(null),
         ordinaryBusinessIncome: z.number().finite().nullable().default(null),
         rentalIncome: z.number().finite().nullable().default(null),
         guaranteedPayments: z.number().finite().nullable().default(null),

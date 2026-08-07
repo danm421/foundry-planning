@@ -25,7 +25,12 @@ vi.mock("@/lib/tax-returns/extract-facts", async () => {
   );
   return { ...actual, extractTaxReturnFacts: vi.fn() };
 });
-vi.mock("@/lib/extraction/validate-upload", () => ({ detectUploadKind: vi.fn() }));
+vi.mock("@/lib/extraction/validate-upload", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/extraction/validate-upload")>(
+    "@/lib/extraction/validate-upload",
+  );
+  return { ...actual, detectUploadKind: vi.fn() };
+});
 
 import { auth } from "@clerk/nextjs/server";
 import { requireOrgId } from "@/lib/db-helpers";

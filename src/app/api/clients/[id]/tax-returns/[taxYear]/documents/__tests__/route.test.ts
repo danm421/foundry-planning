@@ -25,7 +25,12 @@ vi.mock("@/lib/clients/authz", () => ({
 vi.mock("@/lib/rate-limit", () => ({ checkImportRateLimit: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 vi.mock("@/lib/crm/vault-plans", () => ({ savePlanToVault: vi.fn().mockResolvedValue(null) }));
-vi.mock("@/lib/extraction/validate-upload", () => ({ detectUploadKind: vi.fn(() => "pdf") }));
+vi.mock("@/lib/extraction/validate-upload", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/extraction/validate-upload")>(
+    "@/lib/extraction/validate-upload",
+  );
+  return { ...actual, detectUploadKind: vi.fn(() => "pdf") };
+});
 vi.mock("@/lib/tax-returns/store", () => ({ getTaxReturn: vi.fn() }));
 vi.mock("@/lib/tax-returns/add-document", async () => {
   const actual = await vi.importActual<typeof import("@/lib/tax-returns/add-document")>(

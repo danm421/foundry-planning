@@ -6,9 +6,10 @@ import { requireActiveSubscription } from "@/lib/authz";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
-import { detectUploadKind } from "@/lib/extraction/validate-upload";
+import { detectUploadKind, MAX_UPLOAD_BYTES } from "@/lib/extraction/validate-upload";
 import { savePlanToVault } from "@/lib/crm/vault-plans";
 import { getTaxReturn } from "@/lib/tax-returns/store";
+import { documentRoleSchema } from "@/lib/tax-returns/merge/types";
 import { addDocumentToReturn, TaxYearMismatchError } from "@/lib/tax-returns/add-document";
 import { TaxReturnExtractionError } from "@/lib/tax-returns/errors";
 import { parseYear } from "@/lib/tax-returns/assemble-analysis";
@@ -16,9 +17,7 @@ import { parseYear } from "@/lib/tax-returns/assemble-analysis";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // synchronous AI extraction, like the year POST
 
-const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
-
-const roleSchema = z.enum(["auto", "full_return", "k1", "w2", "other"]);
+const roleSchema = z.enum([...documentRoleSchema.options, "auto"]);
 
 export async function POST(
   request: NextRequest,

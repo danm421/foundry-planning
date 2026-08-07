@@ -12,6 +12,8 @@
 
 export type UploadKind = "pdf" | "xlsx" | "docx" | "csv" | "png" | "jpeg";
 
+export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+
 const TEXTUAL_CONTROL_CHARS = /[\x00-\x08\x0B\x0C\x0E-\x1F]/;
 
 export function detectUploadKind(buffer: Buffer): UploadKind | null {
