@@ -39,7 +39,7 @@ const ROWS: TaskListRow[] = [
 ];
 
 const MEMBERS: FirmMember[] = [
-  { userId: "u_me", displayName: "Dan Mueller", email: "dan@firm.com", imageUrl: null, role: "Admin" },
+  { userId: "u_me", displayName: "Dan Mueller", email: "dan@firm.com", imageUrl: null, role: "Admin", roleKey: "org:admin" },
 ];
 
 function renderPage(props: Partial<Parameters<typeof TasksPage>[0]> = {}) {

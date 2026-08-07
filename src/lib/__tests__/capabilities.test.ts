@@ -23,6 +23,22 @@ describe("roleHasCapability", () => {
     expect(roleHasCapability("org:member", "team:manage")).toBe(false);
   });
 
+  // org:advisor is a LIVE custom Clerk role (firms invite their advisors under
+  // it). It is firm-wide, not staff, so it carries the member capability set —
+  // and must never reach the admin-only capabilities.
+  it("advisor gets planning + CRM + tasks but not firm/team/billing", () => {
+    expect(roleHasCapability("org:advisor", "planning:write")).toBe(true);
+    expect(roleHasCapability("org:advisor", "crm:write")).toBe(true);
+    expect(roleHasCapability("org:advisor", "tasks:write")).toBe(true);
+    expect(roleHasCapability("org:advisor", "firm:config")).toBe(false);
+    expect(roleHasCapability("org:advisor", "team:manage")).toBe(false);
+    expect(roleHasCapability("org:advisor", "billing:manage")).toBe(false);
+  });
+
+  it("treats advisor as firm-wide, not book-scoped staff", () => {
+    expect(STAFF_ROLES.has("org:advisor")).toBe(false);
+  });
+
   it("unknown / null role has no capabilities", () => {
     expect(roleHasCapability(null, "crm:read")).toBe(false);
     expect(roleHasCapability("org:bogus", "crm:read")).toBe(false);

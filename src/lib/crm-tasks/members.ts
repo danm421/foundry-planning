@@ -7,8 +7,15 @@ export type FirmMember = {
   displayName: string;
   email: string | null;
   imageUrl: string | null;
-  /** Friendly Clerk org role, e.g. "Admin" / "Member". */
+  /** Friendly Clerk org role, e.g. "Admin" / "Member". DISPLAY ONLY. */
   role: string;
+  /**
+   * The raw Clerk org role key, e.g. "org:admin" / "org:advisor". Gate on THIS,
+   * never on `role` — `role` is a lossy display transform (it strips the
+   * "org:" prefix, title-cases, and collapses `basic_member` to "Member"), so
+   * two distinct Clerk roles can render the same string.
+   */
+  roleKey: string;
 };
 
 /**
@@ -42,6 +49,7 @@ export const listFirmMembers = cache(async (firmId: string): Promise<FirmMember[
       email: u?.identifier ?? null,
       imageUrl: u?.imageUrl ?? null,
       role,
+      roleKey: m.role,
     };
   });
 });
