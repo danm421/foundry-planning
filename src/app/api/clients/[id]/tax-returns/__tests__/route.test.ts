@@ -14,6 +14,10 @@ vi.mock("@/lib/clients/authz", () => ({ verifyClientAccess: vi.fn() }));
 vi.mock("@/lib/rate-limit", () => ({ checkImportRateLimit: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 vi.mock("@/lib/crm/vault-plans", () => ({ savePlanToVault: vi.fn().mockResolvedValue(null) }));
+vi.mock("@/lib/tax-returns/adopt-extraction", () => ({
+  adoptExtractedReturn: vi.fn(),
+  adoptManualReturn: vi.fn(),
+}));
 vi.mock("@/lib/tax-returns/store", () => ({
   listTaxReturns: vi.fn(),
   getTaxReturn: vi.fn(),
@@ -37,6 +41,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { listTaxReturns, getTaxReturn, upsertExtracted } from "@/lib/tax-returns/store";
+import { adoptExtractedReturn, adoptManualReturn } from "@/lib/tax-returns/adopt-extraction";
 import { extractTaxReturnFacts, TaxReturnExtractionError } from "@/lib/tax-returns/extract-facts";
 import { detectUploadKind } from "@/lib/extraction/validate-upload";
 import { emptyTaxReturnFacts } from "@/lib/schemas/tax-return-facts";
@@ -103,12 +108,33 @@ describe("POST /api/clients/[id]/tax-returns", () => {
       facts, isAmended: false, warnings: ["w1"], promptVersion: "tax_return_facts:2026-07-10.1",
     });
     vi.mocked(getTaxReturn).mockResolvedValue(null);
-    vi.mocked(upsertExtracted).mockResolvedValue({ taxYear: 2025, status: "needs_review", warnings: ["w1"] } as never);
+    vi.mocked(upsertExtracted).mockResolvedValue({ id: "ret-1", taxYear: 2025, status: "needs_review", warnings: ["w1"] } as never);
     const res = await POST(postRequest(), params);
     const body = await res.json();
     expect(res.status).toBe(200);
     expect(body.taxYear).toBe(2025);
     expect(upsertExtracted).toHaveBeenCalledWith(expect.objectContaining({ clientId: CLIENT_ID, taxYear: 2025 }));
+  });
+
+  // Without this the upload path keeps minting returns that have no state row
+  // and no document, which `addDocumentToReturn` must refuse — the documents
+  // feature would be permanently unreachable for every return an advisor
+  // actually creates. The extraction itself must be the document's facts; a
+  // regression passing `emptyTaxReturnFacts` would make the year merge to
+  // blanks on the next recompute.
+  it("adopts the extraction as the return's full_return document", async () => {
+    const facts = { ...emptyTaxReturnFacts(2025), filingStatus: "single" as const };
+    vi.mocked(extractTaxReturnFacts).mockResolvedValue({
+      facts, isAmended: false, warnings: ["w1"], promptVersion: "tax_return_facts:2026-07-10.1",
+    });
+    vi.mocked(getTaxReturn).mockResolvedValue(null);
+    vi.mocked(upsertExtracted).mockResolvedValue({ id: "ret-1", taxYear: 2025, status: "needs_review", warnings: ["w1"] } as never);
+
+    await POST(postRequest(), params);
+
+    expect(adoptExtractedReturn).toHaveBeenCalledWith(
+      expect.objectContaining({ taxReturnId: "ret-1", taxYear: 2025, facts }),
+    );
   });
 
   it("409s when the year exists and replace was not confirmed", async () => {
@@ -148,7 +174,7 @@ describe("POST /api/clients/[id]/tax-returns", () => {
 
   it("creates an empty-facts row in manual mode without touching the extractor", async () => {
     vi.mocked(getTaxReturn).mockResolvedValue(null);
-    vi.mocked(upsertExtracted).mockResolvedValue({ taxYear: 2023, status: "needs_review", warnings: [] } as never);
+    vi.mocked(upsertExtracted).mockResolvedValue({ id: "ret-2", taxYear: 2023, status: "needs_review", warnings: [] } as never);
     const form = new FormData();
     form.set("manualTaxYear", "2023");
     const res = await POST(
@@ -158,6 +184,11 @@ describe("POST /api/clients/[id]/tax-returns", () => {
     expect(res.status).toBe(200);
     expect(extractTaxReturnFacts).not.toHaveBeenCalled();
     expect(upsertExtracted).toHaveBeenCalledWith(expect.objectContaining({ taxYear: 2023, model: "manual" }));
+    // A manual year gets its state row but NO document — there are no facts for
+    // one to represent. `adoptExtractedReturn` here would invent a full_return
+    // document holding `emptyTaxReturnFacts`.
+    expect(adoptManualReturn).toHaveBeenCalledWith("ret-2");
+    expect(adoptExtractedReturn).not.toHaveBeenCalled();
   });
 
   it("400s in manual mode for a tax year past the upper bound", async () => {

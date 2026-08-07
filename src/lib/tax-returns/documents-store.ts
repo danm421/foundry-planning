@@ -93,10 +93,16 @@ export async function getState(taxReturnId: string): Promise<TaxReturnStateRow |
  * state row BY DESIGN, and the legacy `tax_returns` writers (`upsertExtracted`)
  * keep minting rows without one indefinitely.
  *
- * So the ONLY writer that may create a state row is the backfill script, which
- * does it inside the same transaction as the document insert after its replay
- * gate has passed. `saveReviewedFacts` takes the legacy path when there is no
- * state row, and `addDocumentToReturn` refuses outright.
+ * The precise rule is therefore not "never create a state row" but "never
+ * create one without SIMULTANEOUSLY representing the return's existing facts as
+ * documents". Exactly two writers can honour that, and both do it in one
+ * transaction: the backfill script (after its replay gate passes) and
+ * `adoptExtractedReturn` (the state row and the document carrying those same
+ * facts are written together). `adoptManualReturn` is the degenerate case —
+ * the row's facts are empty, so there is nothing to represent.
+ *
+ * Everything else must refuse: `saveReviewedFacts` takes the legacy path when
+ * there is no state row, and `addDocumentToReturn` refuses outright.
  *
  * `updatedAt` is set explicitly: the column has `.defaultNow()` but no
  * `$onUpdate`, so it does not advance by itself.
