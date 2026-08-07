@@ -1,4 +1,4 @@
-export const TAX_RETURN_FACTS_VERSION = "2026-08-06.1";
+export const TAX_RETURN_FACTS_VERSION = "2026-08-06.2";
 
 export const TAX_RETURN_FACTS_PROMPT = `You are a tax-document extraction assistant.
 Extract the FILED FACTS from the following US individual income tax return (Form 1040 and attached schedules).
@@ -20,6 +20,7 @@ Return ONLY a JSON object with exactly this structure (no markdown, no explanati
       "ssBenefitsGross": null, "ssBenefitsTaxable": null,
       "capitalGainOrLoss": null, "netLongTermGain": null, "netShortTermGain": null,
       "scheduleCNet": null, "scheduleENet": null, "scheduleE": null,
+      "adjustmentsDetail": null,
       "unemployment": null,
       "otherIncome": null, "totalIncome": null, "adjustmentsToIncome": null,
       "agi": null
@@ -27,7 +28,8 @@ Return ONLY a JSON object with exactly this structure (no markdown, no explanati
     "deductions": {
       "deductionTaken": "standard or itemized or null",
       "deductionAmount": null, "qbiDeduction": null, "taxableIncome": null,
-      "scheduleA": null
+      "scheduleA": null,
+      "qbi": null
     },
     "tax": {
       "taxBeforeCredits": null, "amt": null, "excessAptcRepayment": null,
@@ -39,7 +41,9 @@ Return ONLY a JSON object with exactly this structure (no markdown, no explanati
       "withholding": null, "estimatedPayments": null, "otherPayments": null,
       "refund": null, "amountOwed": null
     },
-    "carryovers": { "capitalLossCarryover": null }
+    "carryovers": { "capitalLossCarryover": null },
+    "businesses": [],
+    "k1s": []
   }
 }
 
@@ -73,6 +77,33 @@ Line mapping (2022-2025 Form 1040 layouts):
 - When Schedule A is attached, set deductions.scheduleA to:
   { "saltPaid": line 5d, "saltDeducted": line 7, "mortgageInterest": line 8e,
     "charitableCash": line 11, "charitableNonCash": line 12, "medical": line 4 }
+- When Schedule 1 Part II has entries, set income.adjustmentsDetail to:
+  { "seTaxDeduction": line 15, "sepSimpleSolo401k": line 16,
+    "selfEmployedHealthInsurance": line 17, "hsaDeduction": line 13 }
+  Leave it null when Part II is absent. income.adjustmentsToIncome (1040 line 10)
+  is the TOTAL and is reported separately — do not omit it because this block exists.
+- When Form 8995 or 8995-A is attached, set deductions.qbi to:
+  { "qualifiedBusinessIncome": 8995 line 4 or 8995-A line 15,
+    "reitPtpDividends": 8995 line 6, "w2Wages": 8995-A line 19,
+    "ubia": 8995-A line 20, "sstbPresent": true only when the form marks the
+    activity a specified service trade or business }
+  w2Wages and ubia are null on the simplified Form 8995 — report null, never zero.
+  deductions.qbiDeduction (1040 line 13) stays the bottom line and is still required.
+- One "businesses" entry per Schedule C attached:
+  { "name": line C business name, "netProfit": line 31, "grossReceipts": line 1,
+    "totalExpenses": line 28, "depreciation": line 13, "isSstb": true only when
+    the return marks it a specified service trade or business, else null }
+  Emit an empty array when no Schedule C is attached. income.scheduleCNet
+  (Schedule 1 line 3) is still the TOTAL across every Schedule C.
+- One "k1s" entry per Schedule K-1 attached:
+  { "entityName": the issuing entity, "ein": its EIN as printed with the hyphen,
+    "entityType": "s_corp" for Form 1120-S, "partnership" for 1065,
+    "estate_trust" for 1041, "ordinaryBusinessIncome": box 1,
+    "rentalIncome": box 2, "guaranteedPayments": 1065 box 4 (null on an 1120-S),
+    "section179": box 11 or 12, "qbiIncome": box 17 code V or box 20 code Z,
+    "isSstb": true only when the statement says so, else null }
+  Emit an empty array when no K-1 is attached. Do NOT report owner W-2 wages on
+  a K-1 entry — 1040 line 1a is the total across every W-2 and no K-1 states it.
 - tax.taxBeforeCredits = 1040 line 16. From Schedule 2: amt = line 1,
   excessAptcRepayment = line 2, seTax = line 4, additionalMedicareTax = line 11,
   niit = line 12; otherTaxes = remaining Schedule 2 part II.
