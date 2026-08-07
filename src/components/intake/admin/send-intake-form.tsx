@@ -182,7 +182,12 @@ export default function SendIntakeForm({
         <span className={labelCls}>Form steps</span>
         <SectionPicker
           value={sections}
-          onChange={setSections}
+          // Every set the picker emits goes through the prospect rule, not just
+          // the ones `pickKind` produces: a preset chip replaces the whole set
+          // outright, and "Documents only" would otherwise drop Family from a
+          // prospect send — leaving it unchecked AND locked, with the create
+          // route quietly putting it back at write time.
+          onChange={(next) => setSections(forceFamilyForProspect(next, recipientKind === "client"))}
           familyLocked={recipientKind === "prospect"}
         />
       </div>

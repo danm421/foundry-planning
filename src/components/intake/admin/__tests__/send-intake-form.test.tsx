@@ -180,6 +180,39 @@ describe("SendIntakeForm", () => {
     expect(screen.getByRole("checkbox", { name: /family/i })).toBeDisabled();
   });
 
+  it("keeps family in a prospect send when a preset chip would have dropped it", async () => {
+    // A preset chip replaces the whole set, so it bypasses the checkbox's own
+    // lock. Without the prospect rule on every emission, "Documents only" left
+    // Family unchecked AND disabled — unfixable on screen — while the create
+    // route put it back at write time, so the form sent was not the one shown.
+    render(<SendIntakeForm defaultSections={null} />);
+    fireEvent.click(screen.getByRole("button", { name: /documents only/i }));
+
+    expect(screen.getByRole("checkbox", { name: /family/i })).toBeChecked();
+    expect(screen.getByRole("link", { name: /preview this form/i })).toHaveAttribute(
+      "href",
+      "/data-collection/preview?steps=family,documents",
+    );
+
+    fireEvent.change(screen.getByLabelText(/^email/i), { target: { value: "a@b.com" } });
+    fireEvent.click(screen.getByRole("button", { name: /^send$/i }));
+    await waitFor(() => {
+      const post = vi.mocked(fetch).mock.calls.find(([url]) => url === "/api/data-collection");
+      expect(JSON.parse(post![1]!.body as string).sections).toEqual(["family", "documents"]);
+    });
+  });
+
+  it("lets an existing-client send drop family via a preset chip", async () => {
+    // The mirror of the case above: the rule is prospect-only, so a client send
+    // must still be able to reach a genuine Documents-only form.
+    vi.stubGlobal("fetch", searchFetch([HIT]));
+    render(<SendIntakeForm defaultSections={null} />);
+    await pickClient("Bob & Beth Baxter");
+    fireEvent.click(screen.getByRole("button", { name: /documents only/i }));
+
+    expect(screen.getByRole("checkbox", { name: /family/i })).not.toBeChecked();
+  });
+
   it("unlocks Family for an existing-client send and re-locks it for a prospect", async () => {
     vi.stubGlobal("fetch", searchFetch([HIT]));
     render(<SendIntakeForm defaultSections={["documents"]} />);
