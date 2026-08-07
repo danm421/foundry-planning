@@ -78,6 +78,31 @@ describe("buildRows — spouse", () => {
     expect(r.spouse?.lastName).toBe("Smith");
   });
 
+  it("reads the spouse's own email and date of birth, not the primary's", () => {
+    const map: ColumnMapping = {
+      primaryFirst: 0,
+      primaryLast: 1,
+      spouseFirst: 2,
+      spouseEmail: 3,
+      spouseDob: 4,
+      primaryEmail: 5,
+      primaryDob: 6,
+    };
+    // The primary's own email and DOB columns are mapped but blank, so if the
+    // spouse block ever read them instead of the spouse's, both legs below
+    // flip: the spouse loses its values and the primary gains them.
+    const [r] = buildRows(
+      [["Jane", "Smith", "John", "john@example.com", "1979-03-04", "", ""]],
+      map,
+    );
+    expect(r.errors).toEqual([]);
+    expect(r.spouse?.email).toBe("john@example.com");
+    expect(r.spouse?.dateOfBirth).toBe("1979-03-04");
+    expect(r.primary.email).toBeUndefined();
+    expect(r.primary.dateOfBirth).toBeUndefined();
+    expect(r.warnings).toEqual([]);
+  });
+
   it("warns and drops the spouse when only spouse data, no spouse name, is present", () => {
     const map: ColumnMapping = { primaryFirst: 0, primaryLast: 1, spouseEmail: 2 };
     const [r] = buildRows([["Jane", "Smith", "john@example.com"]], map);
@@ -124,6 +149,16 @@ describe("buildRows — tolerant cells", () => {
     const [r] = rows(["Jane", "Smith", "", "", "", "", "", "", "Ontario"]);
     expect(r.household.state).toBeUndefined();
     expect(r.warnings.some((w) => w.field === "state")).toBe(true);
+  });
+
+  it("warns and shortens an over-long cell but still imports the row", () => {
+    const [r] = buildRows(
+      [["Jane", "Smith", "n".repeat(6000)]],
+      { primaryFirst: 0, primaryLast: 1, notes: 2 },
+    );
+    expect(r.errors).toEqual([]);
+    expect(r.household.notes?.length).toBe(5000);
+    expect(r.warnings.some((w) => w.field === "notes")).toBe(true);
   });
 
   it("zero-pads a numeric postal code", () => {

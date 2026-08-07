@@ -24,8 +24,11 @@ import {
 
 export const MAX_IMPORT_ROWS = 1000;
 
-// Column limits from crm_households / crm_household_contacts. Over-long cells
-// are clamped with a warning rather than 400ing the commit.
+// These mirror the `.max()` caps in createCrmHouseholdSchema and
+// createCrmContactSchema (@/lib/crm/schemas) — NOT the database, whose
+// crm_households / crm_household_contacts columns are unbounded `text()`.
+// The zod caps are the only thing an over-long cell would hit, so clamping
+// here turns a commit-time rejection into a warning on one row.
 const MAX_NAME = 100;
 const MAX_HOUSEHOLD_NAME = 200;
 const MAX_NOTES = 5000;
@@ -42,6 +45,13 @@ export type RowOverride = { rowIndex: number; field: ImportField; value: string 
 export type ParsedRow = {
   /** 0-based index into the file's data rows, header excluded. */
   rowIndex: number;
+  /**
+   * Valid ONLY when `errors` is empty. An errored row still carries a
+   * household so the UI can render what it read, but with no primary name
+   * there is nothing to derive from and `name` is `""` — which
+   * importHouseholdSchema rejects. Never commit a row whose `errors` is
+   * non-empty; filter on `errors.length === 0`, don't rely on try/catch.
+   */
   household: ImportHouseholdInput;
   primary: CreateCrmContactInput;
   spouse?: CreateCrmContactInput;
@@ -87,8 +97,8 @@ export function buildRows(
     const errors: RowIssue[] = [];
     const warnings: RowIssue[] = [];
 
-    const clamp = (field: ImportField, max: number): string => {
-      const { value, truncated } = clampText(text(field), max);
+    const clampValue = (field: ImportField, raw: string, max: number): string => {
+      const { value, truncated } = clampText(raw, max);
       if (truncated) {
         warnings.push({
           field,
@@ -97,13 +107,21 @@ export function buildRows(
       }
       return value;
     };
+    const clamp = (field: ImportField, max: number): string =>
+      clampValue(field, text(field), max);
 
     // --- required -------------------------------------------------------
     const primaryFirst = clamp("primaryFirst", MAX_NAME);
     const primaryLast = clamp("primaryLast", MAX_NAME);
+    // Keyed lookup, not a ternary: a future REQUIRED_FIELDS entry with no
+    // value here reads as missing and errors loudly, rather than being
+    // silently validated against the primary's last name.
+    const requiredValues: Partial<Record<ImportField, string>> = {
+      primaryFirst,
+      primaryLast,
+    };
     for (const field of REQUIRED_FIELDS) {
-      const value = field === "primaryFirst" ? primaryFirst : primaryLast;
-      if (value) continue;
+      if (requiredValues[field]) continue;
       errors.push({
         field,
         message:
@@ -160,10 +178,13 @@ export function buildRows(
     }
 
     // xlsx turns "02110" into the number 2110; recover the common US zip.
+    // Both branches clamp, so an over-long postal code is a warning either
+    // way — an unclamped value would be a silent zod rejection at commit,
+    // i.e. a row lost with nothing shown to the advisor.
     const postalRaw = raw("postalCode");
     const postalCode =
       typeof postalRaw === "number"
-        ? String(postalRaw).padStart(5, "0")
+        ? clampValue("postalCode", String(postalRaw).padStart(5, "0"), MAX_POSTAL)
         : clamp("postalCode", MAX_POSTAL);
 
     // --- spouse ---------------------------------------------------------
