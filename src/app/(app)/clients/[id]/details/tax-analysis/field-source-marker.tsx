@@ -1,0 +1,60 @@
+"use client";
+
+import type { DocumentSummary } from "@/lib/tax-returns/assemble-analysis";
+import type { FieldConflict } from "@/lib/tax-returns/merge/types";
+import { fmtUsd } from "@/lib/tax-analysis/format";
+
+function docLabel(documents: DocumentSummary[], id: string): string {
+  return documents.find((d) => d.id === id)?.filename ?? "another document";
+}
+
+function fmt(value: unknown): string {
+  return typeof value === "number" ? fmtUsd(value) : String(value ?? "—");
+}
+
+/**
+ * Provenance renders LIGHTLY on purpose. Marking every field would be noise —
+ * on a normal return almost everything comes from the 1040. Two cases earn ink:
+ * a value that came from somewhere other than the primary return, and a genuine
+ * CONFLICT, which is the one case the advisor must adjudicate rather than
+ * merely notice.
+ */
+export function FieldSourceMarker({
+  path,
+  provenance,
+  conflicts,
+  documents,
+}: {
+  path: string;
+  provenance: Record<string, string>;
+  conflicts: FieldConflict[];
+  documents: DocumentSummary[];
+}) {
+  const conflict = conflicts.find((c) => c.path === path);
+  if (conflict) {
+    return (
+      <span className="mt-1 block text-xs text-crit">
+        {docLabel(documents, conflict.winner.documentId)} says {fmt(conflict.winner.value)};{" "}
+        {conflict.losers
+          .map((l) => `${docLabel(documents, l.documentId)} says ${fmt(l.value)}`)
+          .join("; ")}
+        . Using the first — edit the field to override.
+      </span>
+    );
+  }
+
+  const sourceId = provenance[path];
+  if (!sourceId || sourceId === "advisor") return null;
+  const source = documents.find((d) => d.id === sourceId);
+  if (!source || source.role === "full_return") return null;
+
+  return (
+    <span
+      className="ml-1 inline-block align-middle text-[10px] text-ink-3"
+      title={`From ${source.filename ?? "a supporting document"}`}
+      aria-label={`From ${source.filename ?? "a supporting document"}`}
+    >
+      ●
+    </span>
+  );
+}

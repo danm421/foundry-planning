@@ -13,6 +13,7 @@ import { fmtUsd } from "@/lib/tax-analysis/format";
 import { StateSelect } from "@/components/state-select";
 import { selectClassName, selectBaseClassName, inputBaseClassName } from "@/components/forms/input-styles";
 import { MoneyField } from "./money-field";
+import { BusinessesEditor, K1sEditor } from "./entity-array-editor";
 import type { YearDetail } from "./tax-analysis-content";
 
 const FILING_STATUS_OPTIONS: Array<{ value: TaxReturnFilingStatus; label: string }> = [
@@ -416,6 +417,26 @@ export function FactsReviewForm({
                 Add Schedule E rental breakdown
               </button>
             )}
+
+          {section.heading === "Income" && (
+            <>
+              <BusinessesEditor
+                businesses={facts.businesses}
+                provenance={detail.provenance}
+                conflicts={detail.conflicts}
+                documents={detail.documents}
+                onChange={(businesses) => setFacts((prev) => ({ ...prev, businesses }))}
+              />
+              <K1sEditor
+                k1s={facts.k1s}
+                w2Options={detail.documents.flatMap((d) => d.w2s)}
+                provenance={detail.provenance}
+                conflicts={detail.conflicts}
+                documents={detail.documents}
+                onChange={(k1s) => setFacts((prev) => ({ ...prev, k1s }))}
+              />
+            </>
+          )}
 
           {section.heading === "Deductions" && facts.deductions.scheduleA && (
             <ScheduleSubGrid

@@ -153,6 +153,9 @@ describe("TaxAnalysisContent", () => {
           warnings: [],
           analysis: null,
           factsParseError: false,
+          documents: [],
+          conflicts: [],
+          provenance: {},
         }),
       );
 
@@ -208,6 +211,9 @@ describe("TaxAnalysisContent", () => {
           extractedFacts: facts2024,
           warnings: [],
           analysis: null,
+          documents: [],
+          conflicts: [],
+          provenance: {},
         }),
       )
       // 3. detail fetch for 2023 (after clicking the 2023 tab)
@@ -219,6 +225,9 @@ describe("TaxAnalysisContent", () => {
           extractedFacts: facts2023,
           warnings: [],
           analysis: null,
+          documents: [],
+          conflicts: [],
+          provenance: {},
         }),
       );
 
