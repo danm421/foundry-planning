@@ -9,6 +9,18 @@ import { FactsReviewForm } from "./facts-review-form";
 import { TaxReportView } from "./tax-report-view";
 import { DocumentsStrip } from "./documents-strip";
 
+/** Both `message` (documents endpoints) and `error` (year endpoints) show up
+ *  across these routes' failure bodies; a response can also fail to parse as
+ *  JSON at all (a 413, or an HTML 500 page). Always resolves — never throws —
+ *  so every caller's `setError` is reached instead of an uncaught rejection
+ *  silently returning the UI to idle. */
+async function errorMessage(res: Response, fallback: string): Promise<string> {
+  const body = await res.json().catch(() => ({}) as { message?: string; error?: string });
+  if (typeof body.message === "string") return body.message;
+  if (typeof body.error === "string") return body.error;
+  return fallback;
+}
+
 interface Summary {
   taxYear: number;
   status: "extracting" | "needs_review" | "ready" | "failed";
@@ -105,19 +117,19 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
       form.set("file", file);
       if (replace) form.set("replace", "true");
       const res = await fetch(`/api/clients/${clientId}/tax-returns`, { method: "POST", body: form });
-      const body = await res.json();
       if (res.status === 409) {
+        const body = (await res.json().catch(() => ({}))) as { taxYear?: number };
         if (window.confirm(`A ${body.taxYear} return already exists. Replace it?`)) {
           await upload(file, true);
         }
         return;
       }
       if (!res.ok) {
-        setError(typeof body.error === "string" ? body.error : "Extraction failed");
+        setError(await errorMessage(res, "Extraction failed"));
         return;
       }
-      const y = body.taxYear as number;
-      await selectYearAfterMutation(y);
+      const body = (await res.json()) as { taxYear: number };
+      await selectYearAfterMutation(body.taxYear);
     } finally {
       setUploading(false);
     }
@@ -134,13 +146,12 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
     const form = new FormData();
     form.set("manualTaxYear", yearRaw.trim());
     const res = await fetch(`/api/clients/${clientId}/tax-returns`, { method: "POST", body: form });
-    const body = await res.json();
     if (!res.ok) {
-      setError(typeof body.error === "string" ? body.error : "Could not create the year");
+      setError(await errorMessage(res, "Could not create the year"));
       return;
     }
-    const y = body.taxYear as number;
-    await selectYearAfterMutation(y);
+    const body = (await res.json()) as { taxYear: number };
+    await selectYearAfterMutation(body.taxYear);
   }
 
   async function addDocument(file: File, role: string) {
@@ -156,14 +167,7 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
         { method: "POST", body: form },
       );
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}) as { message?: string; error?: string });
-        setError(
-          typeof body.message === "string"
-            ? body.message
-            : typeof body.error === "string"
-              ? body.error
-              : "Couldn't add the document",
-        );
+        setError(await errorMessage(res, "Couldn't add the document"));
         return;
       }
       await loadList();
@@ -181,14 +185,7 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
       { method: "DELETE" },
     );
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}) as { message?: string; error?: string });
-      setError(
-        typeof body.message === "string"
-          ? body.message
-          : typeof body.error === "string"
-            ? body.error
-            : "Couldn't remove the document",
-      );
+      setError(await errorMessage(res, "Couldn't remove the document"));
       return;
     }
     await loadList();

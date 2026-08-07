@@ -21,6 +21,43 @@ interface Marking {
   documents: DocumentSummary[];
 }
 
+/** Both editors' `update(index, patch)` — replace one list entry by spreading
+ *  the EXISTING entity under the patch, so untouched fields (notably
+ *  `entityId`) survive. */
+function updateAt<T>(list: T[], index: number, patch: Partial<T>): T[] {
+  return list.map((item, i) => (i === index ? { ...item, ...patch } : item));
+}
+
+/** The money-field grid both editors render inside their `EntityCard`: one
+ *  labelled `MoneyField` per entry in `fields`, each with its provenance
+ *  marker. */
+function MoneyFieldGrid<T extends Record<string, unknown>>({
+  fields,
+  entity,
+  markerFor,
+  onChange,
+}: {
+  fields: Array<{ label: string; key: keyof T & string }>;
+  entity: T;
+  markerFor: (field: string) => React.ReactNode;
+  onChange: (patch: Partial<T>) => void;
+}) {
+  return (
+    <>
+      {fields.map((f) => (
+        <label key={f.key} className="text-xs text-ink-2">
+          {f.label}
+          {markerFor(f.key)}
+          <MoneyField
+            value={entity[f.key] as number | null}
+            onChange={(v) => onChange({ [f.key]: v } as Partial<T>)}
+          />
+        </label>
+      ))}
+    </>
+  );
+}
+
 /** The card chrome both editors share: heading, remove, and the marker lookup
  *  keyed off the entity's stored identity. */
 function EntityCard({
@@ -88,7 +125,7 @@ export function K1sEditor({
   // a key from the submitted values would file a name correction — the
   // canonical review-form edit — under a key nothing matches.
   const update = (index: number, patch: Partial<K1Facts>) =>
-    onChange(k1s.map((k, i) => (i === index ? { ...k, ...patch } : k)));
+    onChange(updateAt(k1s, index, patch));
 
   // A W-2 pair with no wages figure can't back an assignment — an option for
   // it would be selectable and a silent no-op. `wages` narrows to `number`
@@ -142,15 +179,12 @@ export function K1sEditor({
                   <option value="estate_trust">Estate or trust (1041)</option>
                 </select>
               </label>
-              {K1_MONEY_FIELDS.map((f) => (
-                <label key={String(f.key)} className="text-xs text-ink-2">
-                  {f.label}{markerFor(String(f.key))}
-                  <MoneyField
-                    value={k[f.key] as number | null}
-                    onChange={(v) => update(i, { [f.key]: v } as Partial<K1Facts>)}
-                  />
-                </label>
-              ))}
+              <MoneyFieldGrid
+                fields={K1_MONEY_FIELDS}
+                entity={k}
+                markerFor={markerFor}
+                onChange={(patch) => update(i, patch)}
+              />
               {/* D10: assignment is MANUAL. No name-matching heuristic — a
                   wrong match silently changes reasonable-comp advice. */}
               <label className="text-xs text-ink-2">
@@ -215,7 +249,7 @@ export function BusinessesEditor({
   onChange: (next: BusinessFacts[]) => void;
 }) {
   const update = (index: number, patch: Partial<BusinessFacts>) =>
-    onChange(businesses.map((b, i) => (i === index ? { ...b, ...patch } : b)));
+    onChange(updateAt(businesses, index, patch));
 
   return (
     <div className="mt-3 flex flex-col gap-2 border-l-2 border-hair pl-4">
@@ -241,15 +275,12 @@ export function BusinessesEditor({
                   onChange={(e) => update(i, { name: e.target.value || null })}
                 />
               </label>
-              {BUSINESS_MONEY_FIELDS.map((f) => (
-                <label key={String(f.key)} className="text-xs text-ink-2">
-                  {f.label}{markerFor(String(f.key))}
-                  <MoneyField
-                    value={b[f.key] as number | null}
-                    onChange={(v) => update(i, { [f.key]: v } as Partial<BusinessFacts>)}
-                  />
-                </label>
-              ))}
+              <MoneyFieldGrid
+                fields={BUSINESS_MONEY_FIELDS}
+                entity={b}
+                markerFor={markerFor}
+                onChange={(patch) => update(i, patch)}
+              />
             </div>
           )}
         </EntityCard>
