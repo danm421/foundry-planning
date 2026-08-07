@@ -1,5 +1,5 @@
 {
-  "id": "dd19a9d1-f287-4604-a57e-31a60c8dd5ef",
+  "id": "91b54516-e51f-4a22-ae2f-85e3fcc07d24",
   "prevId": "1848fccd-87ce-4287-8ba3-79ba86b6071d",
   "version": "7",
   "dialect": "postgresql",
@@ -10502,12 +10502,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "sections": {
-          "name": "sections",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -10635,12 +10629,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'::jsonb"
-        },
-        "sections": {
-          "name": "sections",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
         },
         "created_by_user_id": {
           "name": "created_by_user_id",
@@ -18617,6 +18605,203 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.tax_return_documents": {
+      "name": "tax_return_documents",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "tax_return_id": {
+          "name": "tax_return_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "tax_return_document_role",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "filename": {
+          "name": "filename",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vault_document_id": {
+          "name": "vault_document_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "extracted_facts": {
+          "name": "extracted_facts",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "supporting_payload": {
+          "name": "supporting_payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "warnings": {
+          "name": "warnings",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "prompt_version": {
+          "name": "prompt_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tax_year": {
+          "name": "tax_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "tax_return_documents_return_idx": {
+          "name": "tax_return_documents_return_idx",
+          "columns": [
+            {
+              "expression": "tax_return_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "tax_return_documents_tax_return_id_tax_returns_id_fk": {
+          "name": "tax_return_documents_tax_return_id_tax_returns_id_fk",
+          "tableFrom": "tax_return_documents",
+          "tableTo": "tax_returns",
+          "columnsFrom": [
+            "tax_return_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "tax_return_documents_vault_document_id_crm_household_documents_id_fk": {
+          "name": "tax_return_documents_vault_document_id_crm_household_documents_id_fk",
+          "tableFrom": "tax_return_documents",
+          "tableTo": "crm_household_documents",
+          "columnsFrom": [
+            "vault_document_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.tax_return_state": {
+      "name": "tax_return_state",
+      "schema": "",
+      "columns": {
+        "tax_return_id": {
+          "name": "tax_return_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "facts_overrides": {
+          "name": "facts_overrides",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "ai_second_read": {
+          "name": "ai_second_read",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ai_second_read_doc_hash": {
+          "name": "ai_second_read_doc_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ai_second_read_version": {
+          "name": "ai_second_read_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "tax_return_state_tax_return_id_tax_returns_id_fk": {
+          "name": "tax_return_state_tax_return_id_tax_returns_id_fk",
+          "tableFrom": "tax_return_state",
+          "tableTo": "tax_returns",
+          "columnsFrom": [
+            "tax_return_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.tax_returns": {
       "name": "tax_returns",
       "schema": "",
@@ -21911,6 +22096,16 @@
       "values": [
         "flat",
         "bracket"
+      ]
+    },
+    "public.tax_return_document_role": {
+      "name": "tax_return_document_role",
+      "schema": "public",
+      "values": [
+        "full_return",
+        "k1",
+        "w2",
+        "other"
       ]
     },
     "public.tax_return_status": {

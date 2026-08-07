@@ -2675,6 +2675,65 @@ export const taxReturns = pgTable(
   }),
 );
 
+export const taxReturnDocumentRoleEnum = pgEnum("tax_return_document_role", [
+  "full_return",
+  "k1",
+  "w2",
+  "other",
+]);
+
+/**
+ * Every document uploaded for a return year, append-only. Documents are the
+ * SOURCE OF TRUTH: `tax_returns.facts` is derived from these plus
+ * `tax_return_state.facts_overrides` by `recomputeFacts`.
+ *
+ * `supporting_payload` holds role-specific data that is not 1040 facts — a
+ * W-2's employer name and box 1, which has no home in TaxReturnFacts because
+ * line 1a is the total across every W-2 and a single form can never state it.
+ */
+export const taxReturnDocuments = pgTable("tax_return_documents", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  taxReturnId: uuid("tax_return_id")
+    .notNull()
+    .references(() => taxReturns.id, { onDelete: "cascade" }),
+  role: taxReturnDocumentRoleEnum("role").notNull(),
+  filename: text("filename"),
+  vaultDocumentId: uuid("vault_document_id").references(
+    () => crmHouseholdDocuments.id,
+    { onDelete: "set null" },
+  ),
+  extractedFacts: jsonb("extracted_facts"),
+  supportingPayload: jsonb("supporting_payload"),
+  warnings: jsonb("warnings").$type<string[]>().notNull().default([]),
+  promptVersion: text("prompt_version"),
+  model: text("model"),
+  taxYear: integer("tax_year").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  // Postgres does not index the referencing side of a foreign key. This column
+  // is both the only query predicate the table has (listDocuments, which runs
+  // on every recompute AND every read of the Tax Analysis tab) and what
+  // Postgres scans on every `DELETE FROM tax_returns` cascade.
+  index("tax_return_documents_return_idx").on(t.taxReturnId),
+]);
+
+/**
+ * 1:1 with tax_returns. Deliberately a SIDE TABLE rather than columns on
+ * tax_returns: Drizzle emits explicit column lists, so adding a column there
+ * would break every read of that table between code deploying and `migrate`
+ * running.
+ */
+export const taxReturnState = pgTable("tax_return_state", {
+  taxReturnId: uuid("tax_return_id")
+    .primaryKey()
+    .references(() => taxReturns.id, { onDelete: "cascade" }),
+  factsOverrides: jsonb("facts_overrides").$type<Record<string, unknown>>().notNull().default({}),
+  aiSecondRead: jsonb("ai_second_read"),
+  aiSecondReadDocHash: text("ai_second_read_doc_hash"),
+  aiSecondReadVersion: text("ai_second_read_version"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const expenses = pgTable("expenses", {
   id: uuid("id").defaultRandom().primaryKey(),
   clientId: uuid("client_id")
@@ -4015,6 +4074,13 @@ export const incomesRelations = relations(incomes, ({ one }) => ({
   linkedProperty: one(accounts, {
     fields: [incomes.linkedPropertyId],
     references: [accounts.id],
+  }),
+}));
+
+export const taxReturnDocumentsRelations = relations(taxReturnDocuments, ({ one }) => ({
+  taxReturn: one(taxReturns, {
+    fields: [taxReturnDocuments.taxReturnId],
+    references: [taxReturns.id],
   }),
 }));
 

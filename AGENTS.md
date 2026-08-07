@@ -25,6 +25,15 @@ npx drizzle-kit generate | migrate    # src/db/schema.ts is the source of truth
 - **DB inspection → Neon MCP** (`mcp__Neon__run_sql`), not ad-hoc psql. Use MCP to *inspect and test*; author migrations with drizzle-kit.
 - `src/components/` is flat — one concern per file.
 
+## How to talk to me
+
+- **Ask first, always.** If I need to do or decide something, that's line 1 in plain English. Nothing above it.
+- **Keep the ask to one or two sentences.** Just the question and what it unblocks — no setup, no background, no options I didn't ask for. If I need more I'll ask.
+- **Open every report with one of:** `✅ Done — <what changed>` · `❓ Need you — <the question>` · `⛔ Blocked — <what's stopping me>`.
+- **Under 150 words.** Detail goes below a `---`, or in the vault. Assume I stop reading after the first paragraph.
+- **No reasoning dumps.** Don't explain why you didn't do something in more than one sentence. Don't restate gates that passed — "gates green" is enough.
+- **Commands I should run go alone**, in a code block, with nothing after them.
+
 ## Coding posture
 
 - **Orphans only.** Remove imports/vars/functions *your* change made unused. Leave pre-existing dead code alone — mention it instead of deleting.
