@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { emptyTaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 
 // vi.mock factories are hoisted above top-level `const`s, so referencing
 // plain `const listDocuments = vi.fn()` here throws a TDZ ReferenceError —
@@ -18,7 +19,13 @@ describe("loadDocumentContext", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("returns the documents and state when the tables exist", async () => {
-    listDocuments.mockResolvedValue([{ id: "d1" }]);
+    listDocuments.mockResolvedValue([
+      {
+        id: "d1", role: "full_return", filename: "1040.pdf", taxYear: 2024,
+        warnings: [], createdAt: new Date("2026-08-01T00:00:00Z"),
+        extractedFacts: null, supportingPayload: null,
+      },
+    ]);
     getState.mockResolvedValue({ factsOverrides: { "income.agi": 1 } });
 
     const ctx = await loadDocumentContext("row-1");
@@ -73,5 +80,44 @@ describe("loadDocumentContext", () => {
       Object.assign(new Error("Failed query: select ..."), { cause: pgError }),
     );
     await expect(loadDocumentContext("row-1")).rejects.toThrow("Failed query: select ...");
+  });
+
+  it("summarizes each document with its role, filename and W-2 pairs", async () => {
+    vi.mocked(listDocuments).mockResolvedValue([
+      {
+        id: "doc-1", role: "full_return", filename: "1040.pdf", taxYear: 2024,
+        warnings: [], createdAt: new Date("2026-08-01T00:00:00Z"),
+        extractedFacts: emptyTaxReturnFacts(2024), supportingPayload: null,
+      },
+      {
+        id: "doc-2", role: "w2", filename: "w2-ridgeline.pdf", taxYear: 2024,
+        warnings: ["Transcribed from an image."], createdAt: new Date("2026-08-02T00:00:00Z"),
+        extractedFacts: null,
+        supportingPayload: { w2s: [{ employer: "Ridgeline Partners LLC", wages: 95_000 }] },
+      },
+    ] as never);
+    vi.mocked(getState).mockResolvedValue({ taxReturnId: "r1", factsOverrides: {} } as never);
+
+    const ctx = await loadDocumentContext("r1");
+
+    expect(ctx.summaries).toHaveLength(2);
+    expect(ctx.summaries[1]).toMatchObject({
+      id: "doc-2", role: "w2", filename: "w2-ridgeline.pdf",
+      warnings: ["Transcribed from an image."],
+    });
+    expect(ctx.summaries[1].w2s).toEqual([{ employer: "Ridgeline Partners LLC", wages: 95_000 }]);
+    expect(ctx.summaries[0].w2s).toEqual([]);
+  });
+
+  it("reports summaries empty, not a crash, in the pre-migration window", async () => {
+    vi.mocked(listDocuments).mockRejectedValue(
+      Object.assign(new Error("relation does not exist"), { cause: { code: "42P01" } }),
+    );
+    vi.mocked(getState).mockResolvedValue(null);
+
+    const ctx = await loadDocumentContext("r1");
+
+    expect(ctx.unavailable).toBe(true);
+    expect(ctx.summaries).toEqual([]);
   });
 });

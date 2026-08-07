@@ -41,6 +41,10 @@ export async function GET(
       warnings: assembled.row.warnings,
       factsParseError: assembled.parseError,
       analysis: assembled.analysis,
+      documents: assembled.documentSummaries,
+      conflicts: assembled.conflicts,
+      provenance: assembled.provenance,
+      documentsUnavailable: assembled.documentsUnavailable,
     });
   } catch (err) {
     if (err instanceof UnauthorizedError || (err instanceof Error && err.message === "Unauthorized")) {
