@@ -13,6 +13,7 @@ import type { W2Pair } from "@/lib/tax-returns/supporting-payload";
 import { MoneyField } from "./money-field";
 import { FieldSourceMarker } from "./field-source-marker";
 import { inputBaseClassName, selectClassName } from "@/components/forms/input-styles";
+import { fmtUsd } from "@/lib/tax-analysis/format";
 
 interface Marking {
   provenance: Record<string, string>;
@@ -89,6 +90,13 @@ export function K1sEditor({
   const update = (index: number, patch: Partial<K1Facts>) =>
     onChange(k1s.map((k, i) => (i === index ? { ...k, ...patch } : k)));
 
+  // A W-2 pair with no wages figure can't back an assignment — an option for
+  // it would be selectable and a silent no-op. `wages` narrows to `number`
+  // here so the option below can render its exact value.
+  const wageOptions = w2Options.filter(
+    (w): w is W2Pair & { wages: number } => w.wages != null,
+  );
+
   return (
     <div className="mt-3 flex flex-col gap-2 border-l-2 border-hair pl-4">
       <h3 className="text-xs font-medium uppercase tracking-wide text-ink-3">Schedule K-1s</h3>
@@ -157,8 +165,20 @@ export function K1sEditor({
                   }
                 >
                   <option value="">Not assigned</option>
-                  {w2Options.map((w) => (
-                    <option key={`${w.employer}-${w.wages}`} value={w.wages ?? ""}>
+                  {/* The assignment persists as an override and is never
+                      re-derived from documents — remove the W-2 that backed
+                      it and the stored figure has no matching option below.
+                      Rendering it anyway shows the advisor what is actually
+                      stored rather than silently reporting "Not assigned"
+                      for a value that's still live downstream. */}
+                  {k.w2WagesFromEntity != null &&
+                    !wageOptions.some((w) => w.wages === k.w2WagesFromEntity) && (
+                      <option value={k.w2WagesFromEntity}>
+                        {fmtUsd(k.w2WagesFromEntity)} (source document removed)
+                      </option>
+                    )}
+                  {wageOptions.map((w) => (
+                    <option key={`${w.employer}-${w.wages}`} value={w.wages}>
                       {w.employer ?? "Unnamed employer"}
                     </option>
                   ))}

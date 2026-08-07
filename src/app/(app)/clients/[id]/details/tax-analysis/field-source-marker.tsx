@@ -30,6 +30,18 @@ export function FieldSourceMarker({
   conflicts: FieldConflict[];
   documents: DocumentSummary[];
 }) {
+  const sourceId = provenance[path];
+
+  // `deriveProvenance` rewrites an overridden path to "advisor" regardless of
+  // whether the merge had flagged it as a conflict — `assembleFacts` returns
+  // `conflicts` unfiltered, so the conflict entry survives the override that
+  // resolved it. Checking this FIRST, ahead of the conflict lookup, is what
+  // suppresses both branches: an advisor override means the input already
+  // holds the advisor's value, so neither the conflict banner (which would
+  // misreport what's in use) nor the "from a supporting document" dot (the
+  // existing advisor-suppression rule this extends) should render.
+  if (sourceId === "advisor") return null;
+
   const conflict = conflicts.find((c) => c.path === path);
   if (conflict) {
     return (
@@ -43,8 +55,7 @@ export function FieldSourceMarker({
     );
   }
 
-  const sourceId = provenance[path];
-  if (!sourceId || sourceId === "advisor") return null;
+  if (!sourceId) return null;
   const source = documents.find((d) => d.id === sourceId);
   if (!source || source.role === "full_return") return null;
 
