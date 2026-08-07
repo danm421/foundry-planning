@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { buildIntakeDiff } from "@/components/intake/admin/diff-utils";
 import type { IntakePayload } from "@/lib/intake/schema";
+import { RTQ_V1, scoreRtq } from "@/lib/risk/rtq";
+import { band } from "@/lib/risk/scoring";
 
 const emptyMeta = { completedSections: [] as string[] };
 
@@ -235,5 +237,64 @@ describe("buildIntakeDiff", () => {
       goals: { ...minPayload.goals, topicsNote: "   " },
     };
     expect(buildIntakeDiff(null, withBlankNote).radar.note).toBeUndefined();
+  });
+});
+
+describe("buildIntakeDiff — risk", () => {
+  const COMPLETE = {
+    loss_reaction: "hold",
+    outcome_range: "wide",
+    goal_priority: "balanced",
+    prior_behavior: "held",
+    experience: "comfortable",
+  };
+  const withRisk = (risk: unknown): IntakePayload =>
+    ({ ...minPayload, risk }) as IntakePayload;
+
+  it("reports zero answered when the form carries no risk block", () => {
+    const { risk } = buildIntakeDiff(null, minPayload);
+    expect(risk.answered).toBe(0);
+    expect(risk.score).toBeNull();
+    expect(risk.level).toBeNull();
+    expect(risk.total).toBe(RTQ_V1.length);
+  });
+
+  it("scores and bands a complete sitting", () => {
+    const { risk } = buildIntakeDiff(null, withRisk({ answers: COMPLETE, rtqVersion: 1 }));
+    expect(risk.answered).toBe(RTQ_V1.length);
+    expect(risk.score).toBe(scoreRtq(COMPLETE));
+    expect(risk.level).toBe(band(scoreRtq(COMPLETE)));
+  });
+
+  it("refuses to score a PARTIAL sitting — same rule apply uses", () => {
+    const { risk } = buildIntakeDiff(null, withRisk({ answers: { loss_reaction: "hold" }, rtqVersion: 1 }));
+    expect(risk.answered).toBe(1);
+    expect(risk.score).toBeNull();
+    expect(risk.level).toBeNull();
+  });
+
+  it("lists every question, with an em-dash for the unanswered ones", () => {
+    const { risk } = buildIntakeDiff(null, withRisk({ answers: { loss_reaction: "hold" }, rtqVersion: 1 }));
+    expect(risk.answers).toHaveLength(RTQ_V1.length);
+    expect(risk.answers[0]).toEqual({
+      prompt: RTQ_V1[0].prompt,
+      label: "Do nothing and wait for a recovery",
+    });
+    expect(risk.answers[1].label).toBe("—");
+  });
+
+  it("does not count an answer the questionnaire never offered", () => {
+    // A hand-posted payload can carry anything; only a real option counts.
+    const { risk } = buildIntakeDiff(null, withRisk({ answers: { loss_reaction: "nonsense" }, rtqVersion: 1 }));
+    expect(risk.answered).toBe(0);
+    expect(risk.answers[0].label).toBe("—");
+  });
+
+  it("carries the environment note through", () => {
+    const { risk } = buildIntakeDiff(
+      null,
+      withRisk({ answers: COMPLETE, environmentNote: "Sold a business.", rtqVersion: 1 }),
+    );
+    expect(risk.note).toBe("Sold a business.");
   });
 });

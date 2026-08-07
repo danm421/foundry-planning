@@ -12,7 +12,7 @@
  * Note: Neon dev branch cold-starts after idle; run with --testTimeout=30000.
  */
 
-import { describe, it, expect, afterAll, afterEach } from "vitest";
+import { describe, it, expect, afterAll, afterEach, beforeAll } from "vitest";
 import { db } from "@/db";
 import {
   accountOwners,
@@ -27,6 +27,10 @@ import {
   intakeForms,
   liabilities,
   liabilityOwners,
+  auditLog,
+  firms,
+  riskQuestionnaires,
+  clientRiskProfiles,
   scenarios,
 } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
@@ -35,6 +39,7 @@ import { newIntakeToken, defaultExpiry } from "../tokens";
 import type { IntakePayload } from "../schema";
 import type { IntakeSectionKey } from "../sections";
 import { applyIntake } from "../apply";
+import { scoreRtq } from "@/lib/risk/rtq";
 
 const FIRM = "test-firm-apply-intake-2026";
 const ADVISOR = "user_test_apply";
@@ -179,6 +184,8 @@ async function cleanup(ids: {
     await db.delete(incomes).where(eq(incomes.clientId, clientId));
     await db.delete(expenses).where(eq(expenses.clientId, clientId));
     await db.delete(scenarios).where(eq(scenarios.clientId, clientId));
+    await db.delete(riskQuestionnaires).where(eq(riskQuestionnaires.clientId, clientId));
+    await db.delete(clientRiskProfiles).where(eq(clientRiskProfiles.clientId, clientId));
     await db.delete(clients).where(eq(clients.id, clientId));
   }
   if (householdId) {
@@ -1054,4 +1061,134 @@ describe("applyIntake — section gating", () => {
       .where(and(eq(familyMembers.clientId, clientId), eq(familyMembers.role, "child")));
     expect(kids).toHaveLength(0);
   });
+});
+
+describe("applyIntake — risk", () => {
+  const FIRM_R = "test-firm-apply-risk-2026";
+  const ADVISOR_R = "user_test_apply_risk";
+  const FAMILY = {
+    primary: { firstName: "John", lastName: "Smith", dateOfBirth: "1975-04-01" },
+    children: [],
+  };
+  const COMPLETE = {
+    loss_reaction: "hold",
+    outcome_range: "wide",
+    goal_priority: "balanced",
+    prior_behavior: "held",
+    experience: "comfortable",
+  };
+  const base = (risk: unknown): IntakePayload =>
+    ({
+      family: FAMILY,
+      accounts: [],
+      income: [],
+      property: [],
+      goals: { expenseGoals: [], topics: [] },
+      meta: { completedSections: [] },
+      risk,
+    }) as IntakePayload;
+
+  // Unlike every other table this file touches, risk_questionnaires.firm_id
+  // carries a real FK to `firms` — so this describe needs the firm to exist.
+  beforeAll(async () => {
+    await db
+      .insert(firms)
+      .values({ firmId: FIRM_R, displayName: "Test Firm (apply risk)" })
+      .onConflictDoNothing();
+    // Audit rows outlive a crashed run — and the counts below are absolute, so
+    // one stray row from last time reads as a regression here.
+    await db.delete(auditLog).where(eq(auditLog.firmId, FIRM_R));
+  }, 30000);
+
+  const rtqAuditCount = async () =>
+    (
+      await db
+        .select({ id: auditLog.id })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.firmId, FIRM_R),
+            eq(auditLog.action, "risk_profile.rtq_completed"),
+          ),
+        )
+    ).length;
+
+  let ids: { householdId?: string; clientId?: string; formId?: string } = {};
+  afterEach(async () => {
+    await db.delete(auditLog).where(eq(auditLog.firmId, FIRM_R));
+    await cleanup(ids);
+    ids = {};
+  });
+
+  it("inserts a questionnaire row and sets tolerance when answers are complete", async () => {
+    const { householdId, clientId } = await seedJohnSmithHousehold(FIRM_R, ADVISOR_R);
+    const formId = await submitFormWithSections(
+      FIRM_R, ADVISOR_R, clientId, ["family", "risk"],
+      base({ answers: COMPLETE, rtqVersion: 1 }),
+    );
+    ids = { householdId, clientId, formId };
+
+    await applyIntake({ formId, firmId: FIRM_R, actorId: ADVISOR_R });
+
+    const [q] = await db
+      .select()
+      .from(riskQuestionnaires)
+      .where(eq(riskQuestionnaires.clientId, clientId));
+    expect(q).toBeDefined();
+    expect(q.subject).toBe("primary");
+    expect(q.status).toBe("applied");
+    expect(q.score).toBe(scoreRtq(COMPLETE));
+    expect(q.rtqVersion).toBe(1);
+    // The intake token must NEVER land here: loadQuestionnaireByToken would then
+    // resolve it, and the public /risk-questionnaire/[token] route would serve a
+    // live questionnaire to anyone holding an intake link.
+    expect(q.token).toBeNull();
+
+    const [profile] = await db
+      .select()
+      .from(clientRiskProfiles)
+      .where(eq(clientRiskProfiles.clientId, clientId));
+    expect(profile.toleranceScore).toBe(scoreRtq(COMPLETE));
+    expect(profile.toleranceSource).toBe("rtq_client");
+
+    expect(await rtqAuditCount()).toBe(1);
+  }, 30000);
+
+  it("writes nothing when the answers are partial", async () => {
+    const { householdId, clientId } = await seedJohnSmithHousehold(FIRM_R, ADVISOR_R);
+    const formId = await submitFormWithSections(
+      FIRM_R, ADVISOR_R, clientId, ["family", "risk"],
+      base({ answers: { loss_reaction: "hold" }, rtqVersion: 1 }),
+    );
+    ids = { householdId, clientId, formId };
+
+    await applyIntake({ formId, firmId: FIRM_R, actorId: ADVISOR_R });
+
+    const qs = await db
+      .select()
+      .from(riskQuestionnaires)
+      .where(eq(riskQuestionnaires.clientId, clientId));
+    expect(qs).toHaveLength(0);
+    // No sitting happened, so no "the client completed the RTQ" trail either.
+    expect(await rtqAuditCount()).toBe(0);
+  }, 30000);
+
+  it("writes nothing when the form did not COLLECT risk, even with answers in the payload", async () => {
+    // Presence in the payload is not consent. An API caller can post any
+    // payload it likes; the section set is what the client was actually asked.
+    const { householdId, clientId } = await seedJohnSmithHousehold(FIRM_R, ADVISOR_R);
+    const formId = await submitFormWithSections(
+      FIRM_R, ADVISOR_R, clientId, ["family"],
+      base({ answers: COMPLETE, rtqVersion: 1 }),
+    );
+    ids = { householdId, clientId, formId };
+
+    await applyIntake({ formId, firmId: FIRM_R, actorId: ADVISOR_R });
+
+    const qs = await db
+      .select()
+      .from(riskQuestionnaires)
+      .where(eq(riskQuestionnaires.clientId, clientId));
+    expect(qs).toHaveLength(0);
+  }, 30000);
 });

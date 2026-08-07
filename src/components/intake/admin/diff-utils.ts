@@ -6,6 +6,11 @@ import {
   goalTypeLabel,
 } from "@/lib/intake/goal-rows";
 import { incomeSpanLabel } from "@/lib/intake/income-years";
+import { RTQ_V1, scoreRtq } from "@/lib/risk/rtq";
+import { band } from "@/lib/risk/scoring";
+// RiskLevel lives in risk-levels, NOT risk/labels — that module holds
+// tolerance-source and binding-constraint labels, not level names.
+import type { RiskLevel } from "@/lib/risk-levels";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -42,6 +47,22 @@ export interface ListSectionDiff {
   submittedItems: { name: string; value?: number; secondary?: string }[];
 }
 
+/**
+ * The in-form questionnaire, as the advisor reads it before applying.
+ *
+ * `score` is null unless EVERY question is answered — `scoreRtq` throws on a
+ * gap, and a fragment is not a measurement. That is the same rule apply uses,
+ * so the card never promises a score the apply then declines to write.
+ */
+export interface RiskDiff {
+  answered: number;
+  total: number;
+  score: number | null;
+  level: RiskLevel | null;
+  answers: { prompt: string; label: string }[];
+  note: string | null;
+}
+
 export interface IntakeDiff {
   family: FamilyDiff;
   goals: GoalsDiff;
@@ -51,6 +72,7 @@ export interface IntakeDiff {
   /** Funded goals — apply writes one goal-flagged expense row per entry. */
   expenseGoals: ListSectionDiff;
   radar: RadarDiff;
+  risk: RiskDiff;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -211,5 +233,23 @@ export function buildIntakeDiff(
     })),
   };
 
-  return { family, goals, accounts, income, property, expenseGoals, radar };
+  // Every question is listed, answered or not — an advisor reading a partial
+  // sitting needs to see WHICH ones are missing, not just how many.
+  const rawAnswers = (submitted.risk?.answers ?? {}) as Record<string, string>;
+  const answered = RTQ_V1.filter((q) => q.options.some((o) => o.value === rawAnswers[q.id]));
+  const complete = answered.length === RTQ_V1.length;
+  const score = complete ? scoreRtq(rawAnswers) : null;
+  const risk: RiskDiff = {
+    answered: answered.length,
+    total: RTQ_V1.length,
+    score,
+    level: score === null ? null : band(score),
+    answers: RTQ_V1.map((q) => ({
+      prompt: q.prompt,
+      label: q.options.find((o) => o.value === rawAnswers[q.id])?.label ?? "—",
+    })),
+    note: submitted.risk?.environmentNote ?? null,
+  };
+
+  return { family, goals, accounts, income, property, expenseGoals, radar, risk };
 }

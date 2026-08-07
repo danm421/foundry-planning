@@ -52,6 +52,7 @@ const baseDiff: IntakeDiff = {
   },
   expenseGoals: { baselineCount: 0, submittedCount: 0, submittedItems: [] },
   radar: { topics: [], note: undefined },
+  risk: { answered: 0, total: 5, score: null, level: null, answers: [], note: null },
   accounts: {
     baselineCount: 2,
     submittedCount: 3,
@@ -85,6 +86,48 @@ describe("ReviewDetail", () => {
     expect(screen.getByText("Goals")).toBeInTheDocument();
     expect(screen.getByText("Upcoming goals")).toBeInTheDocument();
     expect(screen.getByText("Accounts")).toBeInTheDocument();
+  });
+
+  it("hides the Risk tolerance card when nothing was answered", () => {
+    render(<ReviewDetail form={makeForm()} diff={baseDiff} />);
+    expect(screen.queryByText("Risk tolerance")).toBeNull();
+  });
+
+  it("shows the score and band for a complete sitting", () => {
+    const diff = {
+      ...baseDiff,
+      risk: {
+        answered: 5,
+        total: 5,
+        score: 62,
+        level: "moderately_aggressive" as const,
+        answers: [{ prompt: "Your investments lose 20%…", label: "Do nothing" }],
+        note: "Sold a business.",
+      },
+    };
+    render(<ReviewDetail form={makeForm()} diff={diff} />);
+    expect(screen.getByText("Risk tolerance")).toBeInTheDocument();
+    expect(screen.getByText(/62 · /)).toBeInTheDocument();
+    expect(screen.getByText("Do nothing")).toBeInTheDocument();
+    expect(screen.getByText("Sold a business.")).toBeInTheDocument();
+  });
+
+  it("says a partial sitting has no score rather than showing a number", () => {
+    // Apply writes nothing for a partial sitting. The card has to say so, or
+    // the advisor applies and then wonders where the tolerance went.
+    const diff = {
+      ...baseDiff,
+      risk: {
+        answered: 2,
+        total: 5,
+        score: null,
+        level: null,
+        answers: [{ prompt: "Your investments lose 20%…", label: "—" }],
+        note: null,
+      },
+    };
+    render(<ReviewDetail form={makeForm()} diff={diff} />);
+    expect(screen.getByText(/partially answered — no score \(2\/5\)/i)).toBeInTheDocument();
   });
 
   it("hides the On-your-radar card when nothing was checked or written", () => {

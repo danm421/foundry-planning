@@ -44,8 +44,13 @@ import {
   intakeForms,
   liabilities,
   planSettings,
+  riskQuestionnaires,
   scenarios,
 } from "@/db/schema";
+import { isCompleteRtq, scoreRtq, type RtqAnswers } from "@/lib/risk/rtq";
+import { applyRtqPatch } from "@/lib/risk/apply-rtq";
+import { recomputeProfileTx } from "@/lib/risk/profile";
+import { loadExistingScores } from "@/lib/risk/existing-scores";
 import {
   intakeSubmitSchemaFor,
   maritalToFilingStatus,
@@ -720,14 +725,114 @@ async function emitRadarNote(args: {
  * fires the SAME audits as the existing-client path (the section ids come back
  * from applySectionsToClient regardless of which path created the client).
  */
+/**
+ * Turn a completed in-form questionnaire into a real RTQ sitting.
+ *
+ * Runs inside the apply transaction, after the client row exists — which is the
+ * whole reason the answers rode in the payload: risk_questionnaires.client_id is
+ * NOT NULL, and a prospect form has no client until this moment.
+ *
+ * Partial answers write NOTHING. scoreRtq throws on a missing answer, and a
+ * fragment is not a measurement.
+ */
+async function applyIntakeRisk(
+  tx: Tx,
+  args: {
+    clientId: string;
+    firmId: string;
+    actorId: string;
+    risk: NonNullable<IntakePayload["risk"]>;
+  },
+): Promise<boolean> {
+  const answers = args.risk.answers as RtqAnswers;
+  // Partial answers write NOTHING and report false, so the caller doesn't emit
+  // an "rtq_completed" audit for a sitting that never happened.
+  if (!isCompleteRtq(answers)) return false;
+
+  const score = scoreRtq(answers);
+  const now = new Date();
+
+  const { existingPrimaryScore, existingSpouseScore } = await loadExistingScores(tx, {
+    clientId: args.clientId,
+    firmId: args.firmId,
+    subject: "primary",
+  });
+
+  await tx.insert(riskQuestionnaires).values({
+    clientId: args.clientId,
+    firmId: args.firmId,
+    createdByUserId: args.actorId,
+    subject: "primary",
+    // NULL, and this is load-bearing. Writing the INTAKE token here would make
+    // loadQuestionnaireByToken resolve it, and the public
+    // /risk-questionnaire/[token] route would then serve a live questionnaire to
+    // anyone holding an intake link.
+    token: null,
+    status: "applied",
+    rtqVersion: args.risk.rtqVersion,
+    answers,
+    score,
+    environmentNote: args.risk.environmentNote ?? null,
+    submittedAt: now,
+    appliedAt: now,
+  });
+
+  await recomputeProfileTx(tx, {
+    clientId: args.clientId,
+    firmId: args.firmId,
+    // Null actor is what makes the history row read "Client" rather than
+    // "System" (risk-history-table.tsx) — the client answered these, the
+    // advisor only pressed Apply.
+    actorUserId: null,
+    kind: "rtq_completed",
+    reason: "Client-completed questionnaire (intake form)",
+    patch: {
+      ...applyRtqPatch({ subject: "primary", score, existingPrimaryScore, existingSpouseScore }),
+      toleranceSource: "rtq_client",
+    },
+  });
+  return true;
+}
+
+/**
+ * The apply-time gate for the Risk block.
+ *
+ * Gated on the SECTION SET as well as on the payload, unlike the plan's own
+ * sketch and like every sibling block in `applySectionsToClient`. Presence
+ * alone would let an API caller post a documents-only form carrying risk
+ * answers and mint an RTQ sitting the form never collected — a measurement the
+ * client was never asked for, attributed to them.
+ */
+async function applyRiskIfCollected(
+  tx: Tx,
+  args: {
+    clientId: string;
+    firmId: string;
+    actorId: string;
+    sections: readonly IntakeSectionKey[];
+    payload: IntakePayload;
+  },
+): Promise<boolean> {
+  if (!args.sections.includes("risk") || !args.payload.risk) return false;
+  return applyIntakeRisk(tx, {
+    clientId: args.clientId,
+    firmId: args.firmId,
+    actorId: args.actorId,
+    risk: args.payload.risk,
+  });
+}
+
 async function emitApplyAudits(args: {
   applied: ApplyResult;
   clientId: string;
   firmId: string;
   actorId: string;
   formId: string;
+  /** Only true when a questionnaire row was actually written — partial answers
+   *  must not leave an "rtq_completed" trail for a sitting that never happened. */
+  riskApplied: boolean;
 }): Promise<void> {
-  const { applied, clientId, firmId, actorId, formId } = args;
+  const { applied, clientId, firmId, actorId, formId, riskApplied } = args;
 
   for (const id of applied.accountIds) {
     await recordCreate({
@@ -810,6 +915,19 @@ async function emitApplyAudits(args: {
     });
   }
 
+  if (riskApplied) {
+    await recordAudit({
+      action: "risk_profile.rtq_completed",
+      resourceType: "client_risk_profile",
+      resourceId: clientId,
+      clientId,
+      firmId,
+      actorId,
+      actorKind: "advisor",
+      metadata: { source: "intake_form", subject: "primary", formId },
+    });
+  }
+
   await recordAudit({
     action: "intake.form.applied",
     resourceType: "intake_form",
@@ -857,7 +975,7 @@ export async function applyIntake(args: {
 
   // ── Prospect path: no client yet — build the whole tree, then apply. ──────
   if (!form.clientId) {
-    const { clientId, applied } = await db.transaction(async (tx) => {
+    const { clientId, applied, riskApplied } = await db.transaction(async (tx) => {
       const family = payload.family;
       if (!family) {
         // Unreachable: the create route forces `family` into the section set
@@ -992,6 +1110,14 @@ export async function applyIntake(args: {
         { mode: "fresh" },
       );
 
+      const riskApplied = await applyRiskIfCollected(tx, {
+        clientId,
+        firmId,
+        actorId,
+        sections,
+        payload,
+      });
+
       // 5. Back-fill clientId + flip status, all in the same tx.
       await tx
         .update(intakeForms)
@@ -1003,10 +1129,10 @@ export async function applyIntake(args: {
         })
         .where(eq(intakeForms.id, formId));
 
-      return { clientId, applied: sectionResult };
+      return { clientId, applied: sectionResult, riskApplied };
     });
 
-    await emitApplyAudits({ applied, clientId, firmId, actorId, formId });
+    await emitApplyAudits({ applied, clientId, firmId, actorId, formId, riskApplied });
     await emitRadarNote({ applied, payload, actorId });
     return { clientId };
   }
@@ -1014,7 +1140,7 @@ export async function applyIntake(args: {
   // ── Existing-client path: merge onto the base scenario. ───────────────────
   const clientId = form.clientId;
 
-  const applied = await db.transaction(async (tx) => {
+  const { sectionResult: applied, riskApplied } = await db.transaction(async (tx) => {
     // Resolve the base-case scenario directly (no Clerk auth() outside a request).
     const [baseScenario] = await tx
       .select({ id: scenarios.id })
@@ -1036,15 +1162,23 @@ export async function applyIntake(args: {
       { mode: "merge" },
     );
 
+    const riskApplied = await applyRiskIfCollected(tx, {
+      clientId,
+      firmId,
+      actorId,
+      sections,
+      payload,
+    });
+
     await tx
       .update(intakeForms)
       .set({ status: "applied", appliedAt: new Date(), updatedAt: new Date() })
       .where(eq(intakeForms.id, formId));
 
-    return sectionResult;
+    return { sectionResult, riskApplied };
   });
 
-  await emitApplyAudits({ applied, clientId, firmId, actorId, formId });
+  await emitApplyAudits({ applied, clientId, firmId, actorId, formId, riskApplied });
   await emitRadarNote({ applied, payload, actorId });
   return { clientId };
 }
