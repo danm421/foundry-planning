@@ -32,6 +32,13 @@ interface MilestoneYearPickerProps {
    */
   startYearForDuration?: number;
   /**
+   * Open in "Duration" mode rather than "Manual" whenever there is no milestone
+   * ref — for records where the SPAN is the meaningful quantity and the end
+   * date is merely where it lands. An education goal is "four years" however
+   * its start moves. Requires `startYearForDuration`; ignored without it.
+   */
+  preferDuration?: boolean;
+  /**
    * Whether this picker is choosing a start year or end year. Drives
    * position-aware milestone resolution: transition refs (retirement, death,
    * SS-claim ages) used as `end` resolve to `year - 1` so the picked stream
@@ -82,19 +89,27 @@ export default function MilestoneYearPicker({
   clientFirstName,
   spouseFirstName,
   startYearForDuration,
+  preferDuration = false,
   position = "start",
   minYear,
 }: MilestoneYearPickerProps) {
   type Mode = "manual" | "milestone" | "duration";
+
+  /** How a given ref/year pair presents: a ref always wins, and a bare year is
+   *  a duration only where the caller asked for one and a start exists. */
+  function modeFor(ref: YearRef | null): Mode {
+    if (ref) return "milestone";
+    return preferDuration && startYearForDuration != null ? "duration" : "manual";
+  }
+  function durationFor(year: number): number {
+    if (startYearForDuration == null) return 1;
+    return Math.max(1, year - startYearForDuration + 1);
+  }
+
   const [currentRef, setCurrentRef] = useState<YearRef | null>(yearRef);
   const [currentYear, setCurrentYear] = useState(value);
-  const [mode, setMode] = useState<Mode>(yearRef ? "milestone" : "manual");
-  const [duration, setDuration] = useState<number>(() => {
-    if (startYearForDuration != null && value >= startYearForDuration) {
-      return value - startYearForDuration + 1;
-    }
-    return 1;
-  });
+  const [mode, setMode] = useState<Mode>(() => modeFor(yearRef));
+  const [duration, setDuration] = useState<number>(() => durationFor(value));
 
   // Adopt a year the parent sets programmatically. The picker owns its year
   // between edits, so without this it keeps rendering its mount-time value
@@ -113,7 +128,8 @@ export default function MilestoneYearPicker({
     if (value !== currentYear || yearRef !== currentRef) {
       setCurrentYear(value);
       setCurrentRef(yearRef);
-      setMode(yearRef ? "milestone" : "manual");
+      setMode(modeFor(yearRef));
+      setDuration(durationFor(value));
     }
   }
 

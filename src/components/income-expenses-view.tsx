@@ -23,7 +23,7 @@ import {
 } from "@/lib/inline-edit/flow-write";
 import { livingSlotRank } from "@/lib/living-slot-order";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
-import { isGoalExpense, educationGoalYears } from "@/lib/goals";
+import { isGoalExpense, educationGoalYears, EDUCATION_GOAL_YEARS } from "@/lib/goals";
 import { isTodaysDollars } from "@/lib/todays-dollars";
 import type { ClientInfo as EngineClientInfo, PlanSettings, Income as EngineIncome } from "@/engine/types";
 import { SocialSecurityCard } from "./social-security-card";
@@ -1148,18 +1148,28 @@ function ExpenseDialog({
   const isEdit = Boolean(editing);
 
   const expDefaultRefs = !isEdit ? defaultExpenseRefs(editing?.type ?? defaultType) : null;
+  // A new education goal funds a programme, not a period of the plan: its end
+  // is the four-year length measured off the start, so it follows the start
+  // when the beneficiary — or the advisor — moves it. Every other expense keeps
+  // the plan's last year. An EXISTING goal keeps whatever span it was saved
+  // with; re-framing the picker must never silently re-length a saved goal.
+  const newEducation = !isEdit && (editing?.type ?? defaultType) === "education";
   const [startYearRef, setStartYearRef] = useState<YearRef | null>(
     (editing?.startYearRef as YearRef) ?? expDefaultRefs?.startYearRef ?? null
   );
   const [endYearRef, setEndYearRef] = useState<YearRef | null>(
-    (editing?.endYearRef as YearRef) ?? expDefaultRefs?.endYearRef ?? null
+    (editing?.endYearRef as YearRef) ?? (newEducation ? null : expDefaultRefs?.endYearRef ?? null)
   );
   const [startYear, setStartYear] = useState<number>(
     editing?.startYear ?? (startYearRef && clientInfo?.milestones ? resolveMilestone(startYearRef, clientInfo.milestones, "start") ?? currentYear : currentYear)
   );
-  const [endYear, setEndYear] = useState<number>(
-    editing?.endYear ?? (endYearRef && clientInfo?.milestones ? resolveMilestone(endYearRef, clientInfo.milestones, "end") ?? (currentYear + 20) : currentYear + 20)
-  );
+  const [endYear, setEndYear] = useState<number>(() => {
+    if (editing?.endYear != null) return editing.endYear;
+    if (newEducation) return startYear + EDUCATION_GOAL_YEARS - 1;
+    const resolved =
+      endYearRef && clientInfo?.milestones ? resolveMilestone(endYearRef, clientInfo.milestones, "end") : null;
+    return resolved ?? currentYear + 20;
+  });
 
   // Eligible education funding = household accounts (client/spouse) plus any
   // owned by the beneficiary. Recomputed as the "For" person changes.
@@ -1167,6 +1177,17 @@ function ExpenseDialog({
     .filter((fm) => fm.role === "client" || fm.role === "spouse")
     .map((fm) => fm.id);
   const allowedFundingOwnerIds = [...householdMemberIds, ...(forFamilyMemberId ? [forFamilyMemberId] : [])];
+
+  // Switching an unsaved expense to education re-frames its end the same way a
+  // dialog opened on education starts out — a four-year programme off the
+  // start. Still editable, and never applied to a saved expense.
+  function handleTypeChange(next: ExpenseType) {
+    setType(next);
+    if (!isEdit && next === "education") {
+      setEndYear(startYear + EDUCATION_GOAL_YEARS - 1);
+      setEndYearRef(null);
+    }
+  }
 
   // Picking the beneficiary auto-titles the goal and time-boxes it — see
   // `educationGoalYears`. Both stay editable afterward.
@@ -1305,7 +1326,7 @@ function ExpenseDialog({
               name="type"
               required
               value={type}
-              onChange={(e) => setType(e.target.value as ExpenseType)}
+              onChange={(e) => handleTypeChange(e.target.value as ExpenseType)}
               disabled={Boolean(editing?.isDefault)}
               className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
             >
@@ -1490,6 +1511,7 @@ function ExpenseDialog({
                   clientFirstName={ownerNames.clientName.split(" ")[0]}
                   spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
                   startYearForDuration={startYear}
+                  preferDuration={type === "education"}
                   position="end"
                 />
               </>

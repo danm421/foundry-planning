@@ -136,13 +136,14 @@ describe("ExpenseDialog education date auto-fill", () => {
 
   // The payload assertions above pass even when the year pickers still show
   // their mount-time defaults, because the payload reads dialog state directly.
-  // The advisor only ever sees the pickers, so assert them too: they open on
-  // the plan's first/last year and must re-date to the beneficiary's span.
-  it("shows the beneficiary's span in the year pickers, not the plan bounds", () => {
+  // The advisor only ever sees the pickers, so assert them too. Education ends
+  // on a DURATION, so the end picker reads "4 years", not a calendar year.
+  it("shows the beneficiary's start year and a four-year duration", () => {
     pickEducationFor(FM_CHILD);
 
     expect((screen.getByLabelText(/^start year$/i) as HTMLInputElement).value).toBe(String(NOW + 8));
-    expect((screen.getByLabelText(/^end year$/i) as HTMLInputElement).value).toBe(String(NOW + 11));
+    expect((screen.getByLabelText(/^end year$/i) as HTMLInputElement).value).toBe("4");
+    expect(screen.getByText(new RegExp(`years → ${NOW + 11}`))).toBeTruthy();
   });
 
   // Re-dating has to survive a change of mind — the second pick must not be
@@ -152,7 +153,20 @@ describe("ExpenseDialog education date auto-fill", () => {
     fireEvent.change(screen.getByLabelText(/^for$/i), { target: { value: FM_TEEN } });
 
     expect((screen.getByLabelText(/^start year$/i) as HTMLInputElement).value).toBe(String(NOW));
-    expect((screen.getByLabelText(/^end year$/i) as HTMLInputElement).value).toBe(String(NOW + 3));
+    expect((screen.getByLabelText(/^end year$/i) as HTMLInputElement).value).toBe("4");
+    expect(screen.getByText(new RegExp(`years → ${NOW + 3}`))).toBeTruthy();
+  });
+
+  // The point of the duration framing: moving the start carries the end with
+  // it, instead of stranding a four-year programme against a fixed end date.
+  it("carries the end along when the advisor moves the start year", async () => {
+    pickEducationFor(FM_CHILD);
+    fireEvent.change(screen.getByLabelText(/^start year$/i), { target: { value: String(NOW + 9) } });
+
+    expect(screen.getByText(new RegExp(`years → ${NOW + 12}`))).toBeTruthy();
+    const body = await saveAndReadBody();
+    expect(body.startYear).toBe(String(NOW + 9));
+    expect(body.endYear).toBe(String(NOW + 12));
   });
 
   // The boundary: an 18th birthday inside the current year starts now, and is
@@ -173,16 +187,117 @@ describe("ExpenseDialog education date auto-fill", () => {
     expect(body.endYear).toBe(String(NOW + 3));
   });
 
-  // The control for the three above: with no DOB the dialog must not guess a
-  // year, so "the years are right" cannot be passing on a dialog that always
-  // writes the same dates.
-  it("names the goal but leaves the dates alone for a member with no birth date", async () => {
+  // The control for the four above: with no DOB the dialog must not guess a
+  // start year. The saved START REF is what separates the two cases — a picked
+  // beneficiary re-dates to a literal year and drops the ref, while this one
+  // stays pinned to the plan's first year. Without it "the years are right"
+  // could pass on a dialog that always writes the same dates, since a
+  // beneficiary already past 18 lands on the plan's first year too.
+  it("names the goal but does not re-date for a member with no birth date", async () => {
     pickEducationFor(FM_NO_DOB);
     expect((screen.getByLabelText(/^name/i) as HTMLInputElement).value).toBe("Sam - Education");
 
-    // Untouched, so still the plan bounds the dialog opened on.
     const body = await saveAndReadBody();
+    expect(body.startYearRef).toBe("plan_start");
     expect(body.startYear).toBe(String(NOW));
+    expect(body.endYear).toBe(String(NOW + 3));
+  });
+
+  it("drops the start ref when a beneficiary with a birth date is picked", async () => {
+    pickEducationFor(FM_CHILD);
+
+    const body = await saveAndReadBody();
+    expect(body.startYearRef).toBeNull();
+  });
+});
+
+// The four-year duration is education's alone. Without this, nulling the end
+// ref for every new expense would pass every test above.
+describe("ExpenseDialog end-year framing by type", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    global.fetch = fetchMock;
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: "new-expense-id", ok: true, targetId: "new-expense-id" }),
+    });
+  });
+
+  it("runs a non-education expense to the plan's last year", async () => {
+    render(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <IncomeExpensesView {...BASE_PROPS} />
+      </ClientAccessProvider>,
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: /^\+ Add$/ })[1]);
+
+    // No beneficiary to auto-title this one, and Name is required.
+    fireEvent.change(screen.getByLabelText(/^name/i), { target: { value: "Housing" } });
+    fireEvent.change(screen.getByLabelText(/annual amount/i), { target: { value: "1000" } });
+    fireEvent.click(screen.getByRole("button", { name: /add expense/i }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const call = fetchMock.mock.calls.find(([url]) => String(url).includes("/expenses"));
+    const body = JSON.parse((call![1] as RequestInit).body as string);
+
+    expect(body.endYearRef).toBe("plan_end");
     expect(body.endYear).toBe(String(NOW + 45));
+  });
+
+  // Dan's actual entry point: the walkthrough's Goals step opens the dialog
+  // already on education, so the four-year framing has to be there at MOUNT —
+  // before any beneficiary is picked — not only after a type change.
+  it("opens on the four-year duration from the Goals step's + Add", () => {
+    render(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <IncomeExpensesView {...BASE_PROPS} section="goals" />
+      </ClientAccessProvider>,
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: /^\+ Add$/ })[0]);
+
+    expect((screen.getByLabelText(/^type$/i) as HTMLSelectElement).value).toBe("education");
+    expect((screen.getByLabelText(/^end year$/i) as HTMLInputElement).value).toBe("4");
+    expect(screen.getByText(new RegExp(`years → ${NOW + 3}`))).toBeTruthy();
+  });
+
+  // The four-year default is for NEW goals only. A saved goal keeps its own
+  // span — re-framing the picker must not silently re-length the advisor's work.
+  it("keeps a saved goal's own span when editing it", () => {
+    const SIX_YEAR_GOAL = {
+      id: "exp-1",
+      type: "education",
+      name: "Kelly - Education",
+      annualAmount: "30000",
+      startYear: NOW + 8,
+      endYear: NOW + 13,
+      startYearRef: null,
+      endYearRef: null,
+      growthRate: "0.024",
+      growthSource: "inflation",
+      isGoal: true,
+    };
+    render(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <IncomeExpensesView {...BASE_PROPS} section="goals" initialExpenses={[SIX_YEAR_GOAL] as never} />
+      </ClientAccessProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^Edit Kelly - Education$/ }));
+
+    expect((screen.getByLabelText(/^end year$/i) as HTMLInputElement).value).toBe("6");
+    expect(screen.getByText(new RegExp(`years → ${NOW + 13}`))).toBeTruthy();
+  });
+
+  it("switches an in-progress expense to the four-year duration on type change", () => {
+    render(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <IncomeExpensesView {...BASE_PROPS} />
+      </ClientAccessProvider>,
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: /^\+ Add$/ })[1]);
+    expect((screen.getByLabelText(/^end year$/i) as HTMLInputElement).value).toBe(String(NOW + 45));
+
+    fireEvent.change(screen.getByLabelText(/^type$/i), { target: { value: "education" } });
+
+    expect((screen.getByLabelText(/^end year$/i) as HTMLInputElement).value).toBe("4");
+    expect(screen.getByText(new RegExp(`years → ${NOW + 3}`))).toBeTruthy();
   });
 });
