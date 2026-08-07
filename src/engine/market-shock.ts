@@ -23,9 +23,20 @@ export interface MarketShock {
 /**
  * Multiplies every market-exposed account balance by (1 − drawdownPct) when
  * `year` matches the shock year. Records the negative delta as a growth ledger
- * entry. No-op when the shock is absent, the year doesn't match, or the
- * drawdown is non-positive. Cost basis is intentionally left unchanged — a
- * paper drawdown does not realize a loss in this model.
+ * entry AND in `ledger.growth` — every "Portfolio Growth" surface reads that
+ * scalar rather than summing entries, so leaving it alone makes the crash year
+ * render a normal positive growth number with the crash visible only in the
+ * drill-down underneath it.
+ *
+ * `rothValueMap` is written down by the same factor: it tracks the balance so
+ * the Roth-designated fraction of a 401(k)/403(b) holds constant absent
+ * contributions or withdrawals. Skipping it leaves the Roth slice larger than
+ * the account itself, which zeroes the pre-tax RMD basis
+ * (`Math.max(0, balance − rothValue)`) for every remaining year.
+ *
+ * No-op when the shock is absent, the year doesn't match, or the drawdown is
+ * non-positive. Cost basis is intentionally left unchanged — a paper drawdown
+ * does not realize a loss in this model.
  */
 export function applyMarketShock(
   accountBalances: Record<string, number>,
@@ -33,6 +44,7 @@ export function applyMarketShock(
   year: number,
   shock: MarketShock | undefined,
   accountLedgers: Record<string, AccountLedger>,
+  rothValueMap: Record<string, number>,
 ): void {
   if (!shock || year !== shock.year || !(shock.drawdownPct > 0)) return;
   const factor = Math.max(0, 1 - shock.drawdownPct);
@@ -44,8 +56,10 @@ export function applyMarketShock(
     const after = before * factor;
     const delta = after - before; // negative
     accountBalances[acct.id] = after;
+    if (rothValueMap[acct.id] > 0) rothValueMap[acct.id] *= factor;
     const ledger = accountLedgers[acct.id];
     if (ledger) {
+      ledger.growth += delta;
       ledger.endingValue += delta;
       ledger.entries.push({
         category: "growth",

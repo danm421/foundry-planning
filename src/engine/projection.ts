@@ -1891,7 +1891,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Write down market-exposed balances AFTER growth so the reduced balance
     // feeds RMDs/withdrawals/taxes this year and compounds forward off the
     // lower base (in deterministic and every MC trial alike).
-    applyMarketShock(accountBalances, workingAccounts, year, planSettings.marketShock, accountLedgers);
+    applyMarketShock(accountBalances, workingAccounts, year, planSettings.marketShock, accountLedgers, rothValueMap);
 
     // ── Apply Transfers ─────────────────────────────────────────────────────
     let transferResult: TransfersResult = {
