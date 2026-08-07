@@ -140,8 +140,8 @@ function mergeEntities(
   const candidates = new Map<string, Candidate[]>();
 
   for (const doc of docs) {
-    if (!doc.facts) continue;
-    if (doc.role === "other") continue; // stored for the list, never merged — silent on both sides
+    // `other` is stored for the list, never merged — silent on both sides
+    if (!contributesToMerge(doc)) continue;
 
     const entityList = (doc.facts as unknown as Record<string, unknown>)[collection] as MergeEntity[];
     if (!Array.isArray(entityList)) continue;
@@ -197,6 +197,26 @@ function mergeEntities(
 }
 
 /**
+ * Does this document put ANYTHING into the merge?
+ *
+ * Two stored documents contribute nothing: one whose facts no longer satisfy
+ * the schema (`rowToMergeDocument` hands back `facts: null`), and one with role
+ * `"other"`, which is kept for the document list and never merged. A `w2` row
+ * is the common third case — `extractSupportingDocument` only builds `facts`
+ * for `k1`, so a W-2's figures live in `supportingPayload` and reach the merge
+ * through nothing at all.
+ *
+ * Exported because the two empty-derivation guards (`recomputeFacts` and
+ * `saveReviewedFacts`) must count CONTRIBUTING documents, not rows. Counting
+ * rows lets a year holding only a W-2 pass the guard and then merge to
+ * all-nulls, which overwrites a filed return with blanks. Defined next to the
+ * loops that consume it so the two definitions of "contributes" cannot drift.
+ */
+export function contributesToMerge(doc: MergeDocument): boolean {
+  return doc.facts != null && doc.role !== "other";
+}
+
+/**
  * Merge every document's extraction into one set of facts.
  *
  * Documents arrive OLDEST FIRST. Within the set of documents permitted to
@@ -212,8 +232,8 @@ export function mergeDocuments(taxYear: number, docs: MergeDocument[]): MergeRes
   const candidates = new Map<string, Candidate[]>();
 
   for (const doc of docs) {
-    if (!doc.facts) continue;      // unparseable document contributes nothing
-    if (doc.role === "other") continue; // stored for the list, never merged
+    // unparseable, or `other` — stored for the list, never merged
+    if (!contributesToMerge(doc)) continue;
 
     const leaves = new Map<string, unknown>();
     for (const root of SCALAR_ROOTS) {

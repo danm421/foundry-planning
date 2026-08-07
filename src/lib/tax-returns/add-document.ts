@@ -3,7 +3,8 @@ import { readDocumentText } from "./document-text";
 import { classifyDocumentRole } from "./classify-role";
 import { extractTaxReturnFacts } from "./extract-facts";
 import { extractSupportingDocument } from "./extract-supporting";
-import { initState, insertDocument, deleteDocument } from "./documents-store";
+import { getState, insertDocument, deleteDocument } from "./documents-store";
+import { MissingTaxReturnStateError } from "./errors";
 import { recomputeFacts } from "./recompute";
 import type { DocumentRole } from "./merge/types";
 import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
@@ -27,7 +28,7 @@ export class TaxYearMismatchError extends Error {
 /**
  * The single lib function owning an add: read text → classify (or take the
  * advisor's named role) → extract down one of two lanes → year gate →
- * `initState` → `insertDocument` → `recomputeFacts`. Lives in `lib/` rather
+ * state-row gate → `insertDocument` → `recomputeFacts`. Lives in `lib/` rather
  * than a route so it is testable without HTTP and so a shared route helper
  * is never exported from a `route.ts`.
  *
@@ -99,10 +100,24 @@ export async function addDocumentToReturn(args: {
     throw new TaxYearMismatchError(documentYear, args.taxYear);
   }
 
-  // BEFORE the insert, not after. `recomputeFacts` refuses on a missing state
-  // row, and a document inserted without one would be unreachable — every
-  // recompute would throw until someone noticed.
-  await initState(args.taxReturnId);
+  // REFUSE on a return with no state row — never CREATE one here.
+  //
+  // A row with no state row is one the backfill has not converted (or has
+  // deliberately skipped), so its figures live only in `tax_returns.facts` and
+  // are represented by no document. Creating the state row here would disarm
+  // `recomputeFacts`' `MissingTaxReturnStateError` one call earlier — the same
+  // trap `putOverrides` refuses to walk into (`documents-store.ts`) and
+  // `saveReviewedFacts` documents at its `getState` branch — and the recompute
+  // below would then merge THIS DOCUMENT ALONE over the filed return, silently
+  // blanking every figure the advisor never re-uploaded. `backfill.ts` names
+  // that outcome exactly: "Writing a state row for a category-1 return would
+  // make the first `recomputeFacts` rewrite `tax_returns.facts` with those K-1s
+  // and businesses gone: silent client data loss, no error."
+  //
+  // It is checked BEFORE the insert so a refused add leaves nothing behind.
+  if (!(await getState(args.taxReturnId))) {
+    throw new MissingTaxReturnStateError(args.taxReturnId);
+  }
 
   // The 1040 lane's `extraction.warnings` already includes its own internal
   // read's warnings (`extractTaxReturnFacts` calls `readDocumentText` itself),

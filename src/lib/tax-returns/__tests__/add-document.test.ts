@@ -10,7 +10,7 @@ vi.mock("@/lib/tax-returns/extract-facts", async () => {
 });
 vi.mock("@/lib/tax-returns/extract-supporting", () => ({ extractSupportingDocument: vi.fn() }));
 vi.mock("@/lib/tax-returns/documents-store", () => ({
-  initState: vi.fn(), insertDocument: vi.fn(), deleteDocument: vi.fn(),
+  getState: vi.fn(), insertDocument: vi.fn(), deleteDocument: vi.fn(),
 }));
 vi.mock("@/lib/tax-returns/recompute", async () => {
   const actual = await vi.importActual<typeof import("@/lib/tax-returns/recompute")>(
@@ -23,9 +23,10 @@ import { readDocumentText } from "@/lib/tax-returns/document-text";
 import { classifyDocumentRole } from "@/lib/tax-returns/classify-role";
 import { extractTaxReturnFacts } from "@/lib/tax-returns/extract-facts";
 import { extractSupportingDocument } from "@/lib/tax-returns/extract-supporting";
-import { initState, insertDocument, deleteDocument } from "@/lib/tax-returns/documents-store";
+import { getState, insertDocument, deleteDocument } from "@/lib/tax-returns/documents-store";
 import { recomputeFacts } from "@/lib/tax-returns/recompute";
 import { emptyTaxReturnFacts } from "@/lib/schemas/tax-return-facts";
+import { MissingTaxReturnStateError } from "@/lib/tax-returns/errors";
 import { addDocumentToReturn, TaxYearMismatchError } from "../add-document";
 
 const RETURN_ID = "33333333-3333-3333-3333-333333333333";
@@ -42,6 +43,7 @@ function baseArgs(overrides: Partial<Parameters<typeof addDocumentToReturn>[0]> 
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(readDocumentText).mockResolvedValue({ pages: ["K-1 2024"], warnings: [] });
+  vi.mocked(getState).mockResolvedValue({ factsOverrides: {} } as never);
   vi.mocked(insertDocument).mockResolvedValue({ id: "doc-9" } as never);
   vi.mocked(recomputeFacts).mockResolvedValue(emptyTaxReturnFacts(2024));
 });
@@ -65,19 +67,38 @@ describe("addDocumentToReturn", () => {
 
     expect(result.role).toBe("k1");
     expect(extractTaxReturnFacts).not.toHaveBeenCalled();
-    expect(initState).toHaveBeenCalledWith(RETURN_ID);
+    expect(getState).toHaveBeenCalledWith(RETURN_ID);
     expect(recomputeFacts).toHaveBeenCalledWith(RETURN_ID, 2024);
   });
 
-  it("creates the state row BEFORE inserting, so recompute can never refuse", async () => {
+  // The un-backfilled row is the WHOLE of production: `upsertExtracted` writes
+  // `tax_returns` directly and creates neither a document nor a state row, and
+  // the prod backfill has deliberately not run. Creating the state row here
+  // would disarm `recomputeFacts`' guard and let the recompute below merge this
+  // one document over the filed return — blanking every figure it does not
+  // restate. Refusing is the only non-destructive answer.
+  it("refuses a return with no state row instead of creating one", async () => {
+    vi.mocked(classifyDocumentRole).mockResolvedValue("k1");
+    vi.mocked(extractSupportingDocument).mockResolvedValue(k1Extraction());
+    vi.mocked(getState).mockResolvedValue(null as never);
+
+    await expect(addDocumentToReturn(baseArgs())).rejects.toThrow(MissingTaxReturnStateError);
+
+    // Nothing was written and nothing was recomputed — a refused add leaves the
+    // return byte-identical to how it started.
+    expect(insertDocument).not.toHaveBeenCalled();
+    expect(recomputeFacts).not.toHaveBeenCalled();
+  });
+
+  it("gates on the state row BEFORE inserting, so a refused add leaves no row behind", async () => {
     vi.mocked(classifyDocumentRole).mockResolvedValue("k1");
     vi.mocked(extractSupportingDocument).mockResolvedValue(k1Extraction());
 
     await addDocumentToReturn(baseArgs());
 
-    const initOrder = vi.mocked(initState).mock.invocationCallOrder[0];
+    const gateOrder = vi.mocked(getState).mock.invocationCallOrder[0];
     const insertOrder = vi.mocked(insertDocument).mock.invocationCallOrder[0];
-    expect(initOrder).toBeLessThan(insertOrder);
+    expect(gateOrder).toBeLessThan(insertOrder);
   });
 
   it("skips the classifier when the advisor named the role", async () => {

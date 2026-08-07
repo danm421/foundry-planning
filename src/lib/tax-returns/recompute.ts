@@ -3,7 +3,7 @@ import { taxReturns } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { taxReturnFactsSchema, type TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 import { MissingTaxReturnStateError, EmptyRecomputeError } from "./errors";
-import { mergeDocuments } from "./merge/merge-documents";
+import { mergeDocuments, contributesToMerge } from "./merge/merge-documents";
 import { applyOverrides } from "./merge/overrides";
 import { deriveProvenance } from "./merge/provenance";
 import type { FieldConflict, DroppedValue, MergeDocument, OverrideMap } from "./merge/types";
@@ -61,11 +61,17 @@ export async function recomputeFacts(taxReturnId: string, taxYear: number): Prom
   if (!state) throw new MissingTaxReturnStateError(taxReturnId);
 
   const overrides = state.factsOverrides ?? {};
-  if (docs.length === 0 && Object.keys(overrides).length === 0) {
+  // CONTRIBUTING documents, not rows. A year left holding only a W-2, an
+  // `other`, or a document whose facts no longer parse merges to all-nulls
+  // exactly like a year holding nothing, so counting `docs.length` here would
+  // wave the blanking write through on the ordinary "remove the 1040 to
+  // re-upload a corrected one" path.
+  const mergeDocs = docs.map(rowToMergeDocument);
+  if (!mergeDocs.some(contributesToMerge) && Object.keys(overrides).length === 0) {
     throw new EmptyRecomputeError(taxReturnId);
   }
 
-  const assembled = assembleFacts(taxYear, docs.map(rowToMergeDocument), overrides);
+  const assembled = assembleFacts(taxYear, mergeDocs, overrides);
   const facts = taxReturnFactsSchema.parse(assembled.facts);
 
   await db

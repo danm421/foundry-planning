@@ -80,31 +80,23 @@ export async function getState(taxReturnId: string): Promise<TaxReturnStateRow |
 }
 
 /**
- * Create the state row for a return that does not have one yet. Idempotent.
- *
- * State CREATION is deliberately separated from override WRITES. If a single
- * upsert did both, it would create the state row as a side effect of saving
- * the review form — and `recomputeFacts`' `MissingTaxReturnStateError` guard,
- * whose entire job is to stop a row the backfill deliberately refused from
- * being recomputed, would be disarmed one call earlier by the very code path
- * it protects against. Ordering the deploy cannot fix that: rows the backfill
- * skips get no state row BY DESIGN, and rows created afterwards by the legacy
- * `tax_returns` writers have none either.
- *
- * So: the backfill and the document-add path call this explicitly, and
- * `putOverrides` refuses to create.
- */
-export async function initState(taxReturnId: string): Promise<void> {
-  await db
-    .insert(taxReturnState)
-    .values({ taxReturnId, factsOverrides: {} })
-    .onConflictDoNothing();
-}
-
-/**
  * UPDATE-only. Throws `MissingTaxReturnStateError` when no state row exists,
- * rather than creating one — see `initState` for why that distinction is
- * load-bearing rather than stylistic.
+ * rather than creating one. That distinction is load-bearing, not stylistic.
+ *
+ * NOTHING in the request path may CREATE a state row. `recomputeFacts`'
+ * `MissingTaxReturnStateError` guard exists to stop a row the backfill has not
+ * converted (or deliberately refused) from being recomputed — and a recompute
+ * of such a row merges only its documents over `tax_returns.facts`, blanking
+ * every figure the documents do not restate. Any code that creates the row
+ * first disarms that guard one call earlier, so the very next line destroys
+ * data. Ordering the deploy cannot fix it: rows the backfill skips get no
+ * state row BY DESIGN, and the legacy `tax_returns` writers (`upsertExtracted`)
+ * keep minting rows without one indefinitely.
+ *
+ * So the ONLY writer that may create a state row is the backfill script, which
+ * does it inside the same transaction as the document insert after its replay
+ * gate has passed. `saveReviewedFacts` takes the legacy path when there is no
+ * state row, and `addDocumentToReturn` refuses outright.
  *
  * `updatedAt` is set explicitly: the column has `.defaultNow()` but no
  * `$onUpdate`, so it does not advance by itself.

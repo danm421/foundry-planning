@@ -11,7 +11,7 @@ import { savePlanToVault } from "@/lib/crm/vault-plans";
 import { getTaxReturn } from "@/lib/tax-returns/store";
 import { documentRoleSchema } from "@/lib/tax-returns/merge/types";
 import { addDocumentToReturn, TaxYearMismatchError } from "@/lib/tax-returns/add-document";
-import { TaxReturnExtractionError } from "@/lib/tax-returns/errors";
+import { TaxReturnExtractionError, MissingTaxReturnStateError } from "@/lib/tax-returns/errors";
 import { parseYear } from "@/lib/tax-returns/assemble-analysis";
 
 export const dynamic = "force-dynamic";
@@ -123,6 +123,19 @@ export async function POST(
       }
       if (err instanceof TaxReturnExtractionError) {
         return NextResponse.json({ error: err.userMessage }, { status: 422 });
+      }
+      // The year predates multi-document support and has not been converted.
+      // Adding to it would merge this document over the filed return, so the
+      // add is refused rather than allowed to blank the year.
+      if (err instanceof MissingTaxReturnStateError) {
+        return NextResponse.json(
+          {
+            error: "not_migrated",
+            message:
+              "This tax year was created before multiple documents were supported, so documents can't be added to it yet. Re-upload the return to replace it, or delete the year and start again.",
+          },
+          { status: 409 },
+        );
       }
       throw err;
     }

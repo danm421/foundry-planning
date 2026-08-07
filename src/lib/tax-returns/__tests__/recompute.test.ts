@@ -172,6 +172,46 @@ describe("recomputeFacts", () => {
     expect(writes.count).toBe(0);
   });
 
+  it.each([
+    ["a W-2, whose figures never reach `facts`", { id: "w", role: "w2" as const, taxYear: 2025, facts: null }],
+    ["an `other`, which the merge skips outright", { id: "o", role: "other" as const, taxYear: 2025, facts: emptyTaxReturnFacts(2025) }],
+    ["a document whose stored facts no longer parse", { id: "b", role: "full_return" as const, taxYear: 2025, facts: null }],
+  ])("refuses to blank a return whose only remaining document is %s", async (_label, doc) => {
+    // The guard must count CONTRIBUTING documents, not rows. This is the
+    // ordinary multi-document flow, not a corner: upload a 1040 + a W-2, then
+    // remove the 1040 to re-upload a corrected one. `docs.length === 1` so a
+    // row-count guard waves it through, `mergeDocuments` contributes nothing
+    // from a W-2/`other`/unparseable row, and the resulting all-null object is
+    // a VALID TaxReturnFacts — so the schema re-parse passes and the year is
+    // silently overwritten with blanks, returning 200 OK.
+    store.docs = [doc];
+    store.state = { factsOverrides: {} };
+
+    await expect(
+      recomputeFacts("11111111-1111-1111-1111-111111111111", 2025),
+    ).rejects.toThrow(EmptyRecomputeError);
+    expect(writes.count).toBe(0);
+  });
+
+  it("still recomputes when a non-contributing document sits alongside a contributing one", async () => {
+    // The negative half: a W-2 next to the 1040 must not make the year
+    // unrecomputable. A guard written as "every document contributes" rather
+    // than "some document contributes" would refuse this — the normal case the
+    // whole feature exists to support.
+    const facts = emptyTaxReturnFacts(2025);
+    facts.income.wages = 250000;
+    store.docs = [
+      { id: "w", role: "w2", taxYear: 2025, facts: null },
+      { id: "a", role: "full_return", taxYear: 2025, facts },
+    ];
+    store.state = { factsOverrides: {} };
+
+    const result = await recomputeFacts("11111111-1111-1111-1111-111111111111", 2025);
+
+    expect(result.income.wages).toBe(250000);
+    expect(writes.count).toBe(1);
+  });
+
   it("still recomputes a manually-entered return, which legitimately has no document", async () => {
     // The negative half of the guard, and the reason it tests BOTH inputs
     // rather than just `docs.length === 0`. The backfill plans a hand-entered

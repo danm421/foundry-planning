@@ -1,6 +1,6 @@
 import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 import { listDocuments, getState, putOverrides, rowToMergeDocument } from "./documents-store";
-import { mergeDocuments } from "./merge/merge-documents";
+import { mergeDocuments, contributesToMerge } from "./merge/merge-documents";
 import { diffOverrides } from "./merge/overrides";
 import { EmptyRecomputeError } from "./errors";
 import { isUndefinedTable } from "./pg-errors";
@@ -57,9 +57,14 @@ export async function saveReviewedFacts(args: {
   }
 
   const docs = await listDocuments(row.id);
-  const base = mergeDocuments(args.taxYear, docs.map(rowToMergeDocument)).facts;
+  const mergeDocs = docs.map(rowToMergeDocument);
+  const base = mergeDocuments(args.taxYear, mergeDocs).facts;
   const overrides = diffOverrides(base, args.submitted);
-  if (docs.length === 0 && Object.keys(overrides).length === 0) {
+  // Mirrors `recomputeFacts`: CONTRIBUTING documents, not rows. A year holding
+  // only a W-2 has data in `facts` and nothing that can rebuild it, so an
+  // advisor clearing the form must be refused here — before `putOverrides`
+  // commits — exactly as it is for a year holding no documents at all.
+  if (!mergeDocs.some(contributesToMerge) && Object.keys(overrides).length === 0) {
     throw new EmptyRecomputeError(row.id);
   }
 

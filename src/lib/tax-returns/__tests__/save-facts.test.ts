@@ -132,6 +132,28 @@ describe("saveReviewedFacts", () => {
     expect(recomputeFacts).not.toHaveBeenCalled();
   });
 
+  it("refuses when the only document contributes nothing, not just when there are none", async () => {
+    // Mirrors `recomputeFacts`' guard. A W-2 is stored as a document row but
+    // `extractSupportingDocument` gives it no `facts`, so it contributes
+    // nothing to the merge — the base is all-null, the cleared submission
+    // diffs to `{}`, and a `docs.length === 0` guard sees ONE row and lets
+    // `putOverrides` commit the erasure before `recomputeFacts` can refuse.
+    vi.mocked(listDocuments).mockResolvedValue([
+      { id: "doc-w2", role: "w2", taxYear: 2024, extractedFacts: null },
+    ] as never);
+    vi.mocked(getState).mockResolvedValue({
+      taxReturnId: RETURN_ID,
+      factsOverrides: { "income.wages": 50_000 },
+    } as never);
+
+    await expect(
+      saveReviewedFacts({ clientId: CLIENT_ID, taxYear: 2024, submitted: emptyTaxReturnFacts(2024) }),
+    ).rejects.toThrow(EmptyRecomputeError);
+
+    expect(putOverrides).not.toHaveBeenCalled();
+    expect(recomputeFacts).not.toHaveBeenCalled();
+  });
+
   it("applies the status transition after recomputing, not instead of it", async () => {
     vi.mocked(listDocuments).mockResolvedValue([docRow(emptyTaxReturnFacts(2024))] as never);
     vi.mocked(getState).mockResolvedValue({ taxReturnId: RETURN_ID, factsOverrides: {} } as never);

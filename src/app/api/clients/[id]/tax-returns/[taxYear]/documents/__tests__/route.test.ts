@@ -45,6 +45,7 @@ import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { getTaxReturn } from "@/lib/tax-returns/store";
 import { addDocumentToReturn, TaxYearMismatchError } from "@/lib/tax-returns/add-document";
+import { MissingTaxReturnStateError } from "@/lib/tax-returns/errors";
 import { POST } from "../route";
 
 const CLIENT_ID = "11111111-1111-1111-1111-111111111111";
@@ -131,6 +132,19 @@ describe("POST /tax-returns/[taxYear]/documents", () => {
     expect(body.error).toBe("year_mismatch");
     expect(body.message).toContain("2023");
     expect(body.message).toContain("2024");
+  });
+
+  it("returns 409 not_migrated, not a 500, for a year with no state row", async () => {
+    // `addDocumentToReturn` refuses an un-backfilled return rather than
+    // blanking it. Without this mapping that refusal reaches the catch-all and
+    // the advisor sees "Internal server error" for a deliberate, explainable
+    // decision — on every return on production until the backfill runs.
+    vi.mocked(addDocumentToReturn).mockRejectedValue(new MissingTaxReturnStateError("ret-1"));
+    const res = await POST(postRequest(), params);
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error).toBe("not_migrated");
+    expect(body.message).toMatch(/documents can't be added/i);
   });
 
   it("404s when the year does not exist", async () => {
