@@ -34,7 +34,7 @@ import { computeBusinessYearFlow } from "./business/year-flow";
 import { accrueLockedEntityShare } from "./locked-shares";
 import { computeFamilyAccountShares } from "./family-cashflow";
 import { computeGiftLedger, type GiftLedgerYear } from "./gift-ledger";
-import { computeIncome } from "./income";
+import { computeIncome, applyDisabilityEvent } from "./income";
 import { expandLinkedIncomes } from "./linked-income";
 import { computeExpenses } from "./expenses";
 import { computeLiabilities } from "./liabilities";
@@ -889,14 +889,20 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     | { decedent: "client" | "spouse"; estateTax: EstateTaxResult; transfers: DeathTransfer[]; dsueGenerated: number }
     | null = null;
 
-  let currentIncomes: Income[] = expandLinkedIncomes(data.incomes, {
-    accountById,
-    giftEvents: data.giftEvents ?? [],
-    assetTransactions: data.assetTransactions ?? [],
-    planStartYear: planSettings.planStartYear,
-    clientFmId,
-    spouseFmId,
-  });
+  // The disability stress is applied once, here, as a clip on the income rows —
+  // so the cash routing, the tax base, and the display totals all see the same
+  // stopped paycheck. See `applyDisabilityEvent`.
+  let currentIncomes: Income[] = applyDisabilityEvent(
+    expandLinkedIncomes(data.incomes, {
+      accountById,
+      giftEvents: data.giftEvents ?? [],
+      assetTransactions: data.assetTransactions ?? [],
+      planStartYear: planSettings.planStartYear,
+      clientFmId,
+      spouseFmId,
+    }),
+    planSettings.disabilityEvent,
+  );
   // Snapshot of the year's resolved `allExpenses` (data.expenses + synthetic
   // property-tax rows). Captured each iteration so the post-loop entity
   // cash-flow pass can read entity-tagged synthetic expenses.
@@ -1102,10 +1108,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // must not also contribute to income.total / income.bySource here, or
       // we double-count it in the household tax base and cashflow surplus.
       (inc) => inc.ownerEntityId == null && inc.ownerAccountId == null,
-      {
-        ssBenefitHaircut: planSettings.ssBenefitHaircut,
-        disabilityEvent: planSettings.disabilityEvent,
-      },
+      { ssBenefitHaircut: planSettings.ssBenefitHaircut },
     );
     const grantorIncome = computeIncome(
       currentIncomes,
