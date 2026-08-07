@@ -94,9 +94,10 @@ describe("ReviewStep", () => {
     // The CARD is gone, not just its empty state: richDraft has real accounts,
     // so a rendered-but-empty card would still show this row.
     expect(screen.queryByText("Fidelity Brokerage")).not.toBeInTheDocument();
-    expect(screen.queryByText(/no accounts added/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/no income sources added/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/no property added/i)).not.toBeInTheDocument();
+    // Asserting the empty states are absent would be vacuous here — richDraft
+    // populates all three, so they never render either way. The wizard test
+    // ("threads the section set through to the Review screen") covers the empty
+    // draft, where "No accounts added." is live and the absence means something.
   });
 
   it("swaps the intro when the form collects nothing this screen reviews", () => {

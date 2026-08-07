@@ -456,6 +456,30 @@ describe("IntakeWizard — section set", () => {
     expect(screen.getByRole("heading", { name: /review/i })).toBeInTheDocument();
   });
 
+  // Risk is the one section whose progress-bar chip and H1 differ. Both halves
+  // are pinned: the chip is compact because the bar lays every label out on one
+  // row, and the welcome card takes the full label because a card is not width
+  // constrained the same way.
+  it("names the Risk card by its full label on the Welcome screen", () => {
+    render(<IntakeWizard {...makeProps({ sections: ["family", "risk"] })} />);
+    expect(screen.getByText("Risk tolerance")).toBeInTheDocument();
+  });
+
+  it("keeps the Risk chip compact while its heading reads in full", () => {
+    render(<IntakeWizard {...makeProps({ sections: ["family", "risk"] })} />);
+    fireEvent.click(screen.getByRole("button", { name: /start here/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i })); // Family → Risk
+
+    expect(screen.getByRole("heading", { name: /^risk tolerance$/i })).toBeInTheDocument();
+    // Anchored: "Step 2 / 3 · Risk tolerance" must not satisfy this.
+    expect(
+      screen.getAllByText((_, el) => {
+        if (el?.tagName !== "SPAN") return false;
+        return /step\s+2\s*\/\s*3\s*·\s*risk$/i.test((el.textContent ?? "").trim());
+      }).length,
+    ).toBeGreaterThan(0);
+  });
+
   it("defaults to the full default set when no sections prop is given", () => {
     render(<IntakeWizard {...makeProps()} />);
     fireEvent.click(screen.getByRole("button", { name: /start here/i }));
