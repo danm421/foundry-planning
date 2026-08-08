@@ -6,6 +6,7 @@ import {
 } from "./money-flags";
 import { ctcPhaseout, educationCredits, stateNotes } from "./credits-state";
 import { rentalCashVsPaper, suspendedPassiveLoss } from "./real-estate";
+import { qbiPhaseoutPosition, sCorpElection, seHealthInsurance } from "./business";
 
 const BUILDERS = [
   bracketPosition,
@@ -23,6 +24,9 @@ const BUILDERS = [
   capitalLossCarryover,
   rentalCashVsPaper,
   suspendedPassiveLoss,
+  qbiPhaseoutPosition,
+  sCorpElection,
+  seHealthInsurance,
   stateNotes,
 ] as const;
 
