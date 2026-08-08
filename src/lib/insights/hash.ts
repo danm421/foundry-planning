@@ -9,6 +9,7 @@ export function hashBattery(b: InsightsBattery): string {
     kpis: b.kpis,
     retirementPeople: b.retirementPeople,
     risk: b.risk,
+    signals: b.signals,
     goalsText: b.grounding.goalsText,
     notesText: b.grounding.notesText,
     allocation: b.grounding.allocation,

@@ -9,7 +9,8 @@ const battery: InsightsBattery = {
     { label: "Cooper", currentAge: 60, retirementAge: 65, retirementYear: 2031 },
   ],
   risk: { currentPct: 78, requiredPct: 45, capacityPct: 60, capacityScore: 60, verdict: "over_risked" },
-  needsAttention: [],
+  signals: [],
+  mcBands: null,
   grounding: { goalsText: "Retire at 65, fund grandkids' college", notesText: "Sells in downturns", allocation: [{ group: "equities", pct: 0.78 }] },
 };
 
