@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { irmaaCliff, qcd } from "../findings/retirement";
 import { formatLineRefs } from "../findings/line-refs";
-import { retireeMfj, findingCtx } from "./fixtures";
+import { retireeMfj, highEarnerMfj, findingCtx } from "./fixtures";
 
 describe("irmaaCliff", () => {
   it("prices a tier-1-or-higher surcharge per covered person", () => {
@@ -16,6 +16,9 @@ describe("irmaaCliff", () => {
     expect(f.estimatedImpact).toBe(2635);
     expect(f.whyItMatters).toContain("per covered person");
     expect(f.whatToConsider).not.toBe("");
+    // tier-2 floor is 266,000; MAGI 292,000 is 26,000 above it.
+    expect(f.numbers.reductionToDropTier).toBe(292000 - 266000);
+    expect(f.numbers.surchargePerPerson).toBe(2635);
   });
 
   it("carries NO impact figure when the return is merely near the first cliff", () => {
@@ -23,6 +26,10 @@ describe("irmaaCliff", () => {
     expect(f.numbers.tier).toBe(0);
     expect(f.numbers.distanceToNextCliff).toBe(11300);
     expect(f.estimatedImpact).toBeNull(); // nothing has been incurred yet
+  });
+
+  it("skips filers under 63", () => {
+    expect(irmaaCliff(findingCtx(highEarnerMfj(), { primaryAge: 45, spouseAge: 44 }))).toBeNull();
   });
 });
 
@@ -46,5 +53,15 @@ describe("qcd", () => {
     expect(f.estimatedImpact).toBeNull();
     expect(f.whatTheReturnShows).toContain("If charitable giving");
     expect(formatLineRefs(f.lineRefs)).toBe("Form 1040 line 4a");
+  });
+
+  it("skips when nobody is 70+", () => {
+    expect(qcd(findingCtx(retireeMfj(), { primaryAge: 68, spouseAge: 67 }))).toBeNull();
+  });
+
+  it("skips without IRA distributions", () => {
+    const f = retireeMfj();
+    f.income.iraDistributionsGross = 0;
+    expect(qcd(findingCtx(f, { primaryAge: 72, spouseAge: 72 }))).toBeNull();
   });
 });
