@@ -174,6 +174,17 @@ export function CrmImportWizard() {
     [file],
   );
 
+  // Single reset path for the step state so a future field added to the
+  // wizard only needs updating here, not at every "start over" call site.
+  function resetWizard() {
+    setStep("upload");
+    setFile(null);
+    setMapping({});
+    setOverrides([]);
+    setPreview(null);
+    setChoices({});
+  }
+
   function buildDecisions() {
     if (!preview) return [];
     // The errors filter is load-bearing: the commit route rejects the
@@ -295,14 +306,7 @@ export function CrmImportWizard() {
           <div className="flex items-center justify-between gap-3 pt-1">
             <button
               type="button"
-              onClick={() => {
-                setStep("upload");
-                setFile(null);
-                setMapping({});
-                setOverrides([]);
-                setPreview(null);
-                setChoices({});
-              }}
+              onClick={resetWizard}
               className="text-[13px] text-ink-3 transition-colors hover:text-ink-2"
             >
               Start over
@@ -337,12 +341,7 @@ export function CrmImportWizard() {
             <button
               type="button"
               onClick={() => {
-                setStep("upload");
-                setFile(null);
-                setMapping({});
-                setOverrides([]);
-                setPreview(null);
-                setChoices({});
+                resetWizard();
                 setCommitted(null);
               }}
               className="text-[13px] text-ink-3 transition-colors hover:text-ink-2"
