@@ -1,0 +1,86 @@
+import type { RiskAlignment } from "@/lib/insights/risk-capacity";
+import type { MismatchState } from "@/lib/risk/portfolio-mismatch";
+import type { OverviewLifeEvent } from "@/lib/overview/derive-life-events";
+import type { Observation } from "@/lib/tax-analysis/types";
+import type { RiskLevel } from "@/lib/risk-levels";
+import type { BindingConstraint } from "@/lib/risk/scoring";
+
+export type SignalSeverity = "critical" | "opportunity" | "watch" | "info";
+export type SignalDomain = "risk" | "tax" | "plan" | "portfolio" | "relationship";
+
+/**
+ * One graded, evidence-carrying observation about a household.
+ *
+ * `id` is a CONTRACT, not a label: it is what the AI layer cites in an action
+ * and what a persisted action references after the fact. Renaming one
+ * invalidates stored actions silently.
+ */
+export interface Signal {
+  /** "<domain>.<rule>", snake_case after the dot. */
+  id: string;
+  domain: SignalDomain;
+  severity: SignalSeverity;
+  /** Advisor-worded and deterministic. Never model-generated. */
+  title: string;
+  /** One sentence, figures already interpolated. */
+  detail: string;
+  /** The evidence behind the sentence. */
+  numbers: Record<string, number>;
+  /** Deep link into the app, or null when there is nowhere useful to go. */
+  href: string | null;
+  /** Dollars, for ordering within a severity. Null sorts last. */
+  estimatedImpact: number | null;
+}
+
+/**
+ * Everything the pure rules read. Assembled once by `loadInsightsBattery` —
+ * the rules themselves do no IO and read no clock, so every one of them is
+ * testable with a plain object and a fixed `now`.
+ */
+export interface SignalInput {
+  clientId: string;
+  now: Date;
+  risk: {
+    alignment: RiskAlignment;
+    toleranceScore: number | null;
+    toleranceConfirmedAt: Date | null;
+    compositeLevel: RiskLevel | null;
+    bindingConstraint: BindingConstraint;
+    mismatch: MismatchState;
+  };
+  plan: {
+    mcSuccessRate: number | null;
+    liquidPortfolio: number;
+    /** Positive = outflow exceeds inflow this year. */
+    currentYearNetOutflow: number;
+    /** Smallest projected year-end net worth across the plan. */
+    minNetWorth: number;
+    fundingScore: number;
+  };
+  portfolio: {
+    /** 0..1 share of the allocation rollup sitting in cash. */
+    cashPct: number;
+    liquidPortfolio: number;
+    /** Real geometric returns from the firm CMA. */
+    cashReturn: number;
+    equityReturn: number;
+    /** Largest single position aggregated across accounts, or null. */
+    largestPosition: { label: string; value: number } | null;
+  };
+  relationship: {
+    overdueTaskCount: number;
+    lastContactAt: Date | null;
+    portalInvitedAt: Date | null;
+    portalFirstLoginAt: Date | null;
+    lifeEvents: OverviewLifeEvent[];
+    /** Plan-relative "today". Life-event proximity is measured against this,
+     *  NOT the calendar — the projection is anchored to a persisted
+     *  planStartYear and has no wall-clock input. */
+    planStartYear: number;
+  };
+  tax: {
+    observations: Observation[];
+    /** Tax year of the return the observations came from; null = none on file. */
+    taxYear: number | null;
+  };
+}
