@@ -1,5 +1,12 @@
-import { describe, it, expect } from "vitest";
-import { pickLargestPosition } from "../largest-position";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { largestPosition, pickLargestPosition } from "../largest-position";
+import { resolveScenarioId } from "@/lib/compute-cache/resolve-scenario-id";
+
+// The one seam that throws in production. A household with no base scenario
+// makes the real `resolveScenarioId` throw `No base scenario for client …`.
+vi.mock("@/lib/compute-cache/resolve-scenario-id", () => ({
+  resolveScenarioId: vi.fn(),
+}));
 
 describe("pickLargestPosition", () => {
   it("returns null for no holdings", () => {
@@ -36,5 +43,29 @@ describe("pickLargestPosition", () => {
       { ticker: "VTI", name: "Vanguard", marketValue: 10_000, shares: 0, price: 0 },
     ]);
     expect(out).toEqual({ label: "VTI", value: 10_000 });
+  });
+});
+
+describe("largestPosition (fail-soft)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.mocked(resolveScenarioId).mockReset();
+  });
+
+  // A household with no base scenario used to render a degraded-but-working
+  // 360: `getOverviewData` re-throws only ClientNotFoundError and swallows the
+  // ProjectionInputError into `projectionError`. That makes THIS the first
+  // thing to throw in the battery's Promise.all, so an un-caught throw here
+  // 500s the whole tab. Every other leg of that Promise.all already degrades —
+  // `resolveMismatchState` to `{ kind: "no_profile" }`, `loadTaxObservations`
+  // to an empty bundle. This one must degrade to null.
+  it("returns null instead of rejecting when the scenario cannot be resolved", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(resolveScenarioId).mockRejectedValue(
+      new Error("No base scenario for client abc"),
+    );
+
+    await expect(largestPosition("abc")).resolves.toBeNull();
+    expect(logged).toHaveBeenCalledTimes(1);
   });
 });

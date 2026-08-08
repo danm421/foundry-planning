@@ -51,37 +51,50 @@ export function pickLargestPosition(
  * for exactly the households that model the most alternatives. The client row
  * was already firm-checked at the top of `loadInsightsBattery`, so clientId +
  * scenarioId is the correct and sufficient scope.
+ *
+ * Fail-soft, like every other leg of the battery's Promise.all. A household
+ * with no base scenario makes `resolveScenarioId` throw, and `getOverviewData`
+ * does NOT throw first for that household — it re-throws only
+ * ClientNotFoundError and swallows the rest into `projectionError`. An
+ * un-caught throw here would therefore 500 the entire 360 tab for a household
+ * that until now rendered a degraded-but-working view. Having no concentration
+ * figure is not a reason to break the whole 360.
  */
 export async function largestPosition(
   clientId: string,
 ): Promise<{ label: string; value: number } | null> {
-  const baseScenarioId = await resolveScenarioId(clientId, "base");
-  const accountRows = await db
-    .select({ id: accounts.id })
-    .from(accounts)
-    .where(
-      and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, baseScenarioId)),
+  try {
+    const baseScenarioId = await resolveScenarioId(clientId, "base");
+    const accountRows = await db
+      .select({ id: accounts.id })
+      .from(accounts)
+      .where(
+        and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, baseScenarioId)),
+      );
+    if (accountRows.length === 0) return null;
+
+    const rows = await db
+      .select({
+        ticker: accountHoldings.displayTicker,
+        name: accountHoldings.displayName,
+        marketValue: accountHoldings.marketValue,
+        shares: accountHoldings.shares,
+        price: accountHoldings.price,
+      })
+      .from(accountHoldings)
+      .where(inArray(accountHoldings.accountId, accountRows.map((a) => a.id)));
+
+    return pickLargestPosition(
+      rows.map((r) => ({
+        ticker: r.ticker,
+        name: r.name,
+        marketValue: r.marketValue != null ? Number(r.marketValue) : null,
+        shares: Number(r.shares),
+        price: Number(r.price),
+      })),
     );
-  if (accountRows.length === 0) return null;
-
-  const rows = await db
-    .select({
-      ticker: accountHoldings.displayTicker,
-      name: accountHoldings.displayName,
-      marketValue: accountHoldings.marketValue,
-      shares: accountHoldings.shares,
-      price: accountHoldings.price,
-    })
-    .from(accountHoldings)
-    .where(inArray(accountHoldings.accountId, accountRows.map((a) => a.id)));
-
-  return pickLargestPosition(
-    rows.map((r) => ({
-      ticker: r.ticker,
-      name: r.name,
-      marketValue: r.marketValue != null ? Number(r.marketValue) : null,
-      shares: Number(r.shares),
-      price: Number(r.price),
-    })),
-  );
+  } catch (err) {
+    console.error("[insights] largest position load failed (non-fatal):", err);
+    return null;
+  }
 }
