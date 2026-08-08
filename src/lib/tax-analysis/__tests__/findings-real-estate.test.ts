@@ -30,6 +30,17 @@ describe("rentalCashVsPaper", () => {
     expect(f.numbers.cashFlow).toBe(7213); // −1,200 + 8,413
   });
 
+  it("reads cashFlow off the activity row rather than recomputing net + depreciation", () => {
+    const ctx = findingCtx(landlordSingle(), { primaryAge: 41 });
+    const row = ctx.activityDetail!.find((a) => a.key === "schedule-e")!;
+    // Deliberately inconsistent with net + depreciation (which would be 2,272).
+    // buildActivityDetail owns this figure; the finding must not second-guess it.
+    row.cashFlow = 99999;
+    const f = rentalCashVsPaper(ctx)!;
+    expect(f.numbers.cashFlow).toBe(99999);
+    expect(f.numbers.net).toBe(-6141); // net still comes from the filed line 5
+  });
+
   it("stays silent for a return with no rental at all", () => {
     expect(rentalCashVsPaper(findingCtx(retireeMfj(), { primaryAge: 72, spouseAge: 72 }))).toBeNull();
   });
