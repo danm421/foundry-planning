@@ -11,6 +11,7 @@ vi.mock("@/domain/forge/llm", () => ({
 }));
 
 import { dropUncitedActions, generateInsights } from "../generate";
+import { GeneratedInsightsSchema } from "../schemas";
 
 const sig = (id: string): Signal => ({
   id,
@@ -86,6 +87,109 @@ describe("dropUncitedActions", () => {
       [sig("a"), sig("b")],
     );
     expect(kept.map((a) => a.signalId)).toEqual(["b", "a"]);
+  });
+
+  // Citing a REAL id over and over is the way around the citation check: every
+  // copy passes it. Keep the FIRST — that is the model's own top-ranked framing
+  // of the signal, and dropping to the last would silently re-order the list.
+  it("keeps only the first action citing a given signal", () => {
+    const kept = dropUncitedActions(
+      [
+        { signalId: "a", recommendation: "first", why: "w" },
+        { signalId: "b", recommendation: "r", why: "w" },
+        { signalId: "a", recommendation: "second", why: "w" },
+      ],
+      [sig("a"), sig("b")],
+    );
+    expect(kept.map((x) => x.signalId)).toEqual(["a", "b"]);
+    expect(kept[0].recommendation).toBe("first");
+  });
+
+  // Literal 5 and literal ids on purpose: asserting against MAX_ACTIONS would
+  // track the constant under test and stay green if someone changed it.
+  it("caps the list at five, keeping the model's top five", () => {
+    const ids = ["s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7"];
+    const kept = dropUncitedActions(
+      ids.map((id) => ({ signalId: id, recommendation: "r", why: "w" })),
+      ids.map(sig),
+    );
+    expect(kept.map((a) => a.signalId)).toEqual(["s0", "s1", "s2", "s3", "s4"]);
+  });
+
+  // The cap counts SURVIVORS, not input rows — otherwise a model that pads the
+  // head of its list with junk ids starves the real actions out of the slots.
+  it("counts only survivors against the cap", () => {
+    const kept = dropUncitedActions(
+      [
+        ...["j0", "j1", "j2", "j3"].map((id) => ({ signalId: id, recommendation: "r", why: "w" })),
+        ...["s0", "s1", "s2", "s3", "s4"].map((id) => ({ signalId: id, recommendation: "r", why: "w" })),
+      ],
+      ["s0", "s1", "s2", "s3", "s4"].map(sig),
+    );
+    expect(kept.map((a) => a.signalId)).toEqual(["s0", "s1", "s2", "s3", "s4"]);
+  });
+});
+
+describe("GeneratedInsightsSchema", () => {
+  const valid = {
+    headline: "Single-name concentration is the biggest risk today.",
+    snapshot: "A pre-retiree couple five years from retirement.",
+    goals: "- Retire at 65",
+    actions: [
+      { signalId: "portfolio.concentration", recommendation: "Trim the position", why: "42% of liquid assets" },
+    ],
+    talkingPoints: ["You are more exposed to one stock than you may realise."],
+  };
+
+  it("accepts a realistic profile", () => {
+    expect(GeneratedInsightsSchema.safeParse(valid).success).toBe(true);
+  });
+
+  const tooLong = (n: number) => "x".repeat(n);
+
+  it("rejects an over-long headline", () => {
+    expect(GeneratedInsightsSchema.safeParse({ ...valid, headline: tooLong(301) }).success).toBe(false);
+  });
+
+  it("rejects an over-long snapshot", () => {
+    expect(GeneratedInsightsSchema.safeParse({ ...valid, snapshot: tooLong(2_001) }).success).toBe(false);
+  });
+
+  it("rejects an over-long goals block", () => {
+    expect(GeneratedInsightsSchema.safeParse({ ...valid, goals: tooLong(2_001) }).success).toBe(false);
+  });
+
+  it("rejects an over-long signalId", () => {
+    const actions = [{ signalId: tooLong(121), recommendation: "r", why: "w" }];
+    expect(GeneratedInsightsSchema.safeParse({ ...valid, actions }).success).toBe(false);
+  });
+
+  it("rejects an over-long recommendation", () => {
+    const actions = [{ signalId: "a", recommendation: tooLong(501), why: "w" }];
+    expect(GeneratedInsightsSchema.safeParse({ ...valid, actions }).success).toBe(false);
+  });
+
+  it("rejects an over-long why", () => {
+    const actions = [{ signalId: "a", recommendation: "r", why: tooLong(501) }];
+    expect(GeneratedInsightsSchema.safeParse({ ...valid, actions }).success).toBe(false);
+  });
+
+  it("rejects more than twelve actions", () => {
+    const actions = Array.from({ length: 13 }, (_, i) => ({
+      signalId: `s${i}`, recommendation: "r", why: "w",
+    }));
+    expect(GeneratedInsightsSchema.safeParse({ ...valid, actions }).success).toBe(false);
+  });
+
+  it("rejects an over-long talking point", () => {
+    expect(
+      GeneratedInsightsSchema.safeParse({ ...valid, talkingPoints: [tooLong(501)] }).success,
+    ).toBe(false);
+  });
+
+  it("rejects more than twelve talking points", () => {
+    const talkingPoints = Array.from({ length: 13 }, (_, i) => `tp${i}`);
+    expect(GeneratedInsightsSchema.safeParse({ ...valid, talkingPoints }).success).toBe(false);
   });
 });
 
