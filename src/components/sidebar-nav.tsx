@@ -32,7 +32,6 @@ const NAV_GROUPS: NavGroup[] = [
     label: "WORKSPACE",
     items: [
       { icon: <HomeIcon />, label: "Home", href: "/home" },
-      { icon: <BellIcon />, label: "Alerts", href: "/alerts" },
       { icon: <ClientsIcon />, label: "Clients", href: "/clients" },
       { icon: <RiskIcon />, label: "Risk", href: "/risk" },
       { icon: <FolderIcon />, label: "Models", href: "/cma" },
@@ -43,6 +42,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "FIRM",
     items: [
+      { icon: <BellIcon />, label: "Alerts", href: "/alerts" },
       { icon: <SettingsIcon />, label: "Settings", href: "/settings" },
     ],
   },
