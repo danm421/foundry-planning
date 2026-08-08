@@ -31,6 +31,16 @@ describe("seTaxOn", () => {
     // 120,000 of wages leaves 56,100 of SS cap; 55,410 fits under it.
     expect(seTaxOn(60000, ctx)).toBeCloseTo(8477.73, 2);
   });
+  it("caps the SS portion when W-2 wages already consume most of the wage base", () => {
+    // Local copy — sCorpOwnerMfj() itself stays untouched; nine builders in
+    // Tasks 7-10 depend on its AGI/taxable-income/additional-Medicare figures.
+    const facts = sCorpOwnerMfj();
+    facts.income.wages = 150000;
+    const ctx = findingCtx(facts, { primaryAge: 51, spouseAge: 49 });
+    // 150,000 of wages leaves only 26,100 of SS cap, below the 55,410 SE base:
+    // SS 26,100 × 0.124 = 3,236.40; Medicare 55,410 × 0.029 = 1,606.89.
+    expect(seTaxOn(60000, ctx)).toBeCloseTo(4843.29, 2);
+  });
 });
 
 describe("totalScheduleCProfit / selfEmploymentEarnings", () => {
