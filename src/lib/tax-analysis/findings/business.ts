@@ -137,3 +137,112 @@ export function seHealthInsurance(ctx: FindingContext): Finding | null {
     numbers: { seEarnings },
   };
 }
+
+export function guaranteedPaymentsSeTax(ctx: FindingContext): Finding | null {
+  // entityType is load-bearing: guaranteed payments carry SE tax on a
+  // partnership K-1, and the concept does not exist on an S-corp one. A null
+  // type means we do not know which, so the finding must not fire.
+  const partners = ctx.facts.k1s.filter(
+    (k) => k.entityType === "partnership" && n(k.guaranteedPayments) > 0,
+  );
+  if (partners.length === 0) return null;
+
+  const total = partners.reduce((sum, k) => sum + n(k.guaranteedPayments), 0);
+  const seTax = seTaxOn(total, ctx);
+  const names = partners.map((k) => k.entityName ?? "an unnamed partnership").join(", ");
+
+  return {
+    id: "guaranteed-payments-se-tax",
+    severity: "watch",
+    category: "business",
+    headline: `${fmtUsd(total)} of guaranteed payments carry about ${fmtUsd(seTax)} of self-employment tax`,
+    whatTheReturnShows: `${names} reported ${fmtUsd(total)} of guaranteed payments on Schedule K-1 box 4, alongside ${fmtUsd(ctx.facts.k1s.reduce((s, k) => s + n(k.ordinaryBusinessIncome), 0))} of ordinary business income. Schedule 2 line 4 carries ${fmtUsd(n(ctx.facts.tax.seTax))} of self-employment tax.`,
+    whyItMatters: `Guaranteed payments are compensation for services, so they are subject to self-employment tax in full — unlike an S-corp distribution, and unlike the passive share of partnership income for a limited partner. They are also excluded from qualified business income, so every dollar routed this way is a dollar that earns no §199A deduction either. Both effects push the same direction.`,
+    whatToConsider: `Where the partnership agreement allows, a preferred profit allocation can sometimes achieve the same economics as a guaranteed payment while preserving QBI treatment — the trade-off is that an allocation depends on the partnership having profit and a guaranteed payment does not. This is a partnership-agreement amendment, not a filing position, so it changes future years only. Confirm the treatment with the entity's own CPA before restructuring.`,
+    lineRefs: [
+      { form: "Schedule K-1 (Form 1065)", line: "box 4", label: "Guaranteed payments", amount: total },
+      { form: "Schedule 2", line: "line 4", label: "Self-employment tax", amount: ctx.facts.tax.seTax },
+    ],
+    estimatedImpact: seTax,
+    numbers: { guaranteedPayments: total, seTax },
+  };
+}
+
+export function businessLossMix(ctx: FindingContext): Finding | null {
+  const businesses = ctx.facts.businesses.filter((b) => b.netProfit != null);
+  const profitable = businesses.filter((b) => n(b.netProfit) > 0);
+  const losing = businesses.filter((b) => n(b.netProfit) < 0);
+  // The whole point is the MIX. A single losing business is just a loss; the
+  // aggregate on Schedule 1 line 3 only misleads when both signs are present.
+  if (profitable.length === 0 || losing.length === 0) return null;
+
+  const totalProfit = profitable.reduce((sum, b) => sum + n(b.netProfit), 0);
+  const totalLoss = Math.abs(losing.reduce((sum, b) => sum + n(b.netProfit), 0));
+  const net = totalProfit - totalLoss;
+
+  return {
+    id: "business-loss-mix",
+    severity: "watch",
+    category: "business",
+    headline: `${fmtUsd(totalLoss)} of business losses are netted against ${fmtUsd(totalProfit)} of profit on one line`,
+    whatTheReturnShows: `${businesses.length} Schedule C businesses report to a single ${fmtUsd(net)} on Schedule 1 line 3: ${profitable.map((b) => `${b.name ?? "an unnamed business"} at ${fmtUsd(n(b.netProfit))}`).join(", ")} against ${losing.map((b) => `${b.name ?? "an unnamed business"} at ${fmtUsd(n(b.netProfit))}`).join(", ")}.`,
+    whyItMatters: `The aggregate describes neither business. A loss-making venture beside a profitable one raises three separate questions the netted line hides: whether the losing activity is a business or a §183 hobby (which would deny the loss entirely), whether its losses are passive and therefore suspended rather than deducted, and — at larger scale — whether §461(l) caps the excess business loss that can offset non-business income in one year, deferring the rest to an NOL carryforward. Each of those has a different answer and a different fix.`,
+    whatToConsider: `Confirm the losing activity has a genuine profit motive and the contemporaneous records to show it, since §183 turns on facts rather than on the numbers. Check whether the taxpayer materially participates, because a passive loss is suspended, not lost. Where the loss is large relative to other income, model the §461(l) limitation before assuming it lands in full this year.`,
+    lineRefs: businesses.map((b) => ({
+      form: `Schedule C — ${b.name ?? "unnamed"}`,
+      line: "line 31",
+      label: "Net profit or loss",
+      amount: b.netProfit,
+    })),
+    estimatedImpact: totalLoss,
+    numbers: { totalProfit, totalLoss, net, businessCount: businesses.length },
+  };
+}
+
+export function reasonableCompensation(ctx: FindingContext): Finding | null {
+  // S-corp only. Reasonable compensation is an S-corp doctrine; applying it to
+  // a partnership is simply wrong, and a null entityType means we cannot tell.
+  const sCorps = ctx.facts.k1s.filter((k) => k.entityType === "s_corp");
+  if (sCorps.length === 0) return null;
+
+  const entity = sCorps.reduce((a, b) =>
+    n(b.ordinaryBusinessIncome) > n(a.ordinaryBusinessIncome) ? b : a,
+  );
+  const distributiveShare = n(entity.ordinaryBusinessIncome);
+  if (distributiveShare <= 0) return null;
+  const ownerWages = entity.w2WagesFromEntity;
+  const name = entity.entityName ?? "the S-corporation";
+  const known = ownerWages != null;
+
+  const lineRefs: FindingLineRef[] = [
+    { form: "Schedule K-1 (Form 1120-S)", line: "box 1", label: "Ordinary business income", amount: entity.ordinaryBusinessIncome },
+  ];
+  if (known) {
+    lineRefs.push({ form: "Form W-2", line: "box 1", label: `Owner wages from ${name}`, amount: ownerWages });
+  }
+
+  return {
+    id: "reasonable-compensation",
+    // Sized exposure when the wage is known; a verify-this note when it is not.
+    // Three severities leave no rung between watch and info, so the pair sits
+    // one step down rather than putting an IRS exposure under "Opportunities".
+    severity: known ? "watch" : "info",
+    category: "business",
+    headline: known
+      ? `${fmtUsd(distributiveShare)} of ${name} income passed through against ${fmtUsd(ownerWages)} of owner wages`
+      : `${name}'s owner compensation is not on this return`,
+    whatTheReturnShows: known
+      ? `${name} passed through ${fmtUsd(distributiveShare)} of ordinary business income on Schedule K-1 box 1, while the owner's W-2 from that entity is ${fmtUsd(ownerWages)}.`
+      : `${name} passed through ${fmtUsd(distributiveShare)} of ordinary business income on Schedule K-1 box 1. The 1040 reports ${fmtUsd(n(ctx.facts.income.wages))} of total wages across every employer, which does not say how much of it — if any — came from this entity.`,
+    whyItMatters: `An S-corp owner who works in the business must take reasonable compensation as W-2 wages before taking distributions. The IRS tests the wage against the distributive share, and where it is too low it recharacterises distributions as wages, adding payroll tax, interest and penalties. ${known ? `The ${fmtUsd(distributiveShare)} beside this finding is the amount being tested, not an amount owed.` : `Nothing on this return can size that test, which is why no figure appears beside this finding.`}`,
+    whatToConsider: known
+      ? `Compare the wage against what the role would pay at arm's length — a documented compensation study using regional salary data is what makes the position defensible under examination. The exposure runs both ways: a wage set too high gives away the payroll-tax saving that motivated the election, and it also caps the §199A deduction, which turns on the entity's W-2 wages.`
+      : `Verify the owner's W-2 from this entity before drawing any conclusion — assign it on the K-1 row in the review form and this finding will size itself. Nothing here asserts the compensation is wrong; only that the return does not show it.`,
+    lineRefs,
+    estimatedImpact: known ? distributiveShare : null,
+    numbers: {
+      distributiveShare,
+      ...(known ? { ownerWages } : {}),
+    },
+  };
+}

@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { qbiPhaseoutPosition, sCorpElection, seHealthInsurance } from "../findings/business";
+import { guaranteedPaymentsSeTax, businessLossMix, reasonableCompensation } from "../findings/business";
 import { formatLineRefs } from "../findings/line-refs";
 import { findingCtx, scheduleCOwnerSingle, sCorpOwnerMfj, retireeMfj } from "./fixtures";
+import { emptyBusiness } from "@/lib/schemas/tax-return-facts";
 
 describe("qbiPhaseoutPosition", () => {
   it("names the W-2 wage cap as the binding limit and prices what it costs", () => {
@@ -97,5 +99,66 @@ describe("seHealthInsurance", () => {
     facts.businesses[0].netProfit = 5000;
     facts.income.scheduleCNet = 5000; // selfEmploymentEarnings === 5,000 < 10,000 floor
     expect(seHealthInsurance(findingCtx(facts, { primaryAge: 44 }))).toBeNull();
+  });
+});
+
+describe("guaranteedPaymentsSeTax", () => {
+  it("prices the SE tax the guaranteed payments carry", () => {
+    const f = guaranteedPaymentsSeTax(findingCtx(sCorpOwnerMfj(), { primaryAge: 51, spouseAge: 49 }))!;
+    expect(f.category).toBe("business");
+    expect(f.severity).toBe("watch");
+    expect(f.numbers.guaranteedPayments).toBe(60000);
+    expect(f.estimatedImpact).toBeCloseTo(8477.73, 2);
+    expect(f.whatTheReturnShows).toContain("Harbor Street Partners LP");
+  });
+
+  it("does NOT fire when the K-1's entity type is unknown", () => {
+    const facts = sCorpOwnerMfj();
+    facts.k1s[1].entityType = null;
+    expect(guaranteedPaymentsSeTax(findingCtx(facts, { primaryAge: 51, spouseAge: 49 }))).toBeNull();
+  });
+});
+
+describe("businessLossMix", () => {
+  it("fires only when profit and loss both appear, and sizes the losing side", () => {
+    const facts = scheduleCOwnerSingle();
+    facts.businesses.push({ ...emptyBusiness(), name: "Birch Studio", netProfit: -18000 });
+    const f = businessLossMix(findingCtx(facts, { primaryAge: 44 }))!;
+    expect(f.numbers.totalLoss).toBe(18000);
+    expect(f.numbers.totalProfit).toBe(145000);
+    expect(f.estimatedImpact).toBe(18000);
+    expect(f.whyItMatters).toContain("§461(l)");
+    expect(formatLineRefs(f.lineRefs)).toContain("Birch Studio");
+  });
+
+  it("stays silent when every business is profitable", () => {
+    expect(businessLossMix(findingCtx(scheduleCOwnerSingle(), { primaryAge: 44 }))).toBeNull();
+  });
+});
+
+describe("reasonableCompensation", () => {
+  it("is a sized watch item when the owner's W-2 from the entity is known", () => {
+    const f = reasonableCompensation(findingCtx(sCorpOwnerMfj(), { primaryAge: 51, spouseAge: 49 }))!;
+    expect(f.severity).toBe("watch");
+    expect(f.category).toBe("business");
+    expect(f.numbers.ownerWages).toBe(120000);
+    // The distribution the IRS actually tests — box 1, not the wage.
+    expect(f.estimatedImpact).toBe(310000);
+    expect(f.headline).toContain("Ridgeline Systems Inc");
+  });
+
+  it("degrades to a verify-this note with no figure when no owner wage is assigned", () => {
+    const facts = sCorpOwnerMfj();
+    facts.k1s[0].w2WagesFromEntity = null;
+    const f = reasonableCompensation(findingCtx(facts, { primaryAge: 51, spouseAge: 49 }))!;
+    expect(f.severity).toBe("info");
+    expect(f.estimatedImpact).toBeNull();
+    expect(f.whatToConsider).toContain("Verify");
+  });
+
+  it("does not fire for a partnership K-1 — reasonable comp is an S-corp doctrine", () => {
+    const facts = sCorpOwnerMfj();
+    facts.k1s = [facts.k1s[1]]; // the partnership only
+    expect(reasonableCompensation(findingCtx(facts, { primaryAge: 51, spouseAge: 49 }))).toBeNull();
   });
 });

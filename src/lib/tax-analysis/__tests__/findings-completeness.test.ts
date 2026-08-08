@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
+import { emptyBusiness } from "@/lib/schemas/tax-return-facts";
 import { buildFindings } from "../findings";
 import {
   findingCtx, retireeMfj, highEarnerMfj, landlordSingle, singleNearIrmaa,
+  scheduleCOwnerSingle, sCorpOwnerMfj,
 } from "./fixtures";
 
 /** Hard-coded, NOT imported from findings/index.ts. A test parameterized over
@@ -11,6 +13,9 @@ const EXPECTED_IDS = [
   "bracket-position", "roth-headroom", "ltcg-zero-headroom", "qcd", "irmaa-cliff",
   "charitable-bunching", "niit-exposure", "additional-medicare", "safe-harbor",
   "ctc-phaseout", "education-credits", "capital-loss-carryover", "state-notes",
+  "se-retirement-plan-gap", "qbi-phaseout-position", "s-corp-election",
+  "rental-cash-vs-paper", "suspended-passive-loss", "guaranteed-payments-se-tax",
+  "business-loss-mix", "se-health-insurance", "reasonable-compensation",
 ] as const;
 
 const mutate = (base: TaxReturnFacts, f: (x: TaxReturnFacts) => void): TaxReturnFacts => {
@@ -45,6 +50,20 @@ const CORPUS: Array<{ name: string; facts: TaxReturnFacts; primaryAge: number | 
   {
     name: "landlord in a no-income-tax state",
     facts: mutate(landlordSingle(), (f) => { f.residenceState = "TX"; }),
+    primaryAge: 41, spouseAge: null,
+  },
+  { name: "Schedule C owner single", facts: scheduleCOwnerSingle(), primaryAge: 44, spouseAge: null },
+  { name: "S-corp owner MFJ", facts: sCorpOwnerMfj(), primaryAge: 51, spouseAge: 49 },
+  {
+    name: "Schedule C owner with a second, losing business",
+    facts: mutate(scheduleCOwnerSingle(), (f) => {
+      f.businesses.push({ ...emptyBusiness(), name: "Birch Studio", netProfit: -18000 });
+    }),
+    primaryAge: 44, spouseAge: null,
+  },
+  {
+    name: "landlord with a suspended passive loss",
+    facts: mutate(landlordSingle(), (f) => { f.income.scheduleE!.suspendedPassiveLoss = 12400; }),
     primaryAge: 41, spouseAge: null,
   },
 ];

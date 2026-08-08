@@ -6,7 +6,10 @@ import {
 } from "./money-flags";
 import { ctcPhaseout, educationCredits, stateNotes } from "./credits-state";
 import { rentalCashVsPaper, suspendedPassiveLoss } from "./real-estate";
-import { qbiPhaseoutPosition, sCorpElection, seHealthInsurance } from "./business";
+import {
+  qbiPhaseoutPosition, sCorpElection, seHealthInsurance,
+  guaranteedPaymentsSeTax, businessLossMix, reasonableCompensation,
+} from "./business";
 
 const BUILDERS = [
   bracketPosition,
@@ -22,12 +25,15 @@ const BUILDERS = [
   ctcPhaseout,
   educationCredits,
   capitalLossCarryover,
+  stateNotes,
   rentalCashVsPaper,
   suspendedPassiveLoss,
   qbiPhaseoutPosition,
   sCorpElection,
   seHealthInsurance,
-  stateNotes,
+  guaranteedPaymentsSeTax,
+  businessLossMix,
+  reasonableCompensation,
 ] as const;
 
 export function buildFindings(ctx: FindingContext): Finding[] {
