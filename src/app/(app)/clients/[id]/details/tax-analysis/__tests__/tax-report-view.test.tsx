@@ -203,4 +203,25 @@ describe("TaxReportView — findings", () => {
     render(<TaxReportView clientId="c1" detail={landlordDetail()} onEditFacts={vi.fn()} />);
     expect(screen.getAllByText("Est. impact").length).toBeGreaterThan(0);
   });
+
+  it("lists every finding in the index, in sorted order — one link per card", () => {
+    const { container } = render(<TaxReportView clientId="c1" detail={detail} onEditFacts={vi.fn()} />);
+    const hrefs = [...container.querySelectorAll('nav a[href^="#finding-"]')].map((a) =>
+      a.getAttribute("href"),
+    );
+    // Hard-coded, not derived from sortFindings: a test that calls the function
+    // it guards cannot notice the view dropping the call. Severity groups first
+    // (opportunity, watch, info), then estimatedImpact descending within each.
+    expect(hrefs).toEqual([
+      "#finding-roth-headroom",
+      "#finding-qcd",
+      "#finding-safe-harbor",
+      "#finding-irmaa-cliff",
+      "#finding-bracket-position",
+      "#finding-state-notes",
+    ]);
+    // The converse of the anchor test above: one index entry per card, so a
+    // card can never go unlisted.
+    expect(container.querySelectorAll('[id^="finding-"]')).toHaveLength(hrefs.length);
+  });
 });
