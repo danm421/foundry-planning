@@ -2,19 +2,14 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { db } from "@/db";
 import { crmHouseholds, crmHouseholdContacts } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import {
-  parseCsv,
-  dryRun,
-  commit,
-  type ImportDecision,
-} from "../import";
+import { readGrid, detectMapping, buildPreview, commit, type ImportDecision } from "../import";
 import { createCrmHousehold } from "../households";
 import { syncHouseholdNameFromContacts } from "../sync-household-name";
 
-// End-to-end import scenario against the real DB. Seeds a household,
-// parses a CSV string with five rows (one a typo-near-match of the
-// seed), runs the dry-run, then commits with the duplicate marked
-// "skip" and asserts the row counts.
+// End-to-end import scenario against the real DB. Reads a messy CSV through
+// the full readGrid -> detectMapping -> buildPreview pipeline, then commits
+// with the duplicate marked "skip" and asserts the row counts and the
+// session-assigned advisor.
 
 // Inlined into the mock factories because vi.mock is hoisted above any
 // top-level `const` declarations — referencing an outer var here throws.
@@ -64,86 +59,65 @@ describe("CRM bulk import — e2e", () => {
     await purge();
   });
 
-  it("seeds a household, dry-runs a CSV, then commits with a skipped duplicate", async () => {
-    // 1. Seed an existing household.
+  it("imports a messy file end to end and assigns the session advisor", async () => {
     const seeded = await createCrmHousehold({
-      name: "Smith Family",
+      name: "Jane Smyth",
       status: "active",
       advisorId: "test_advisor_seed",
     });
     expect(seeded.id).toBeDefined();
 
-    // 2. Parse a CSV with 5 households — 2 with spouses, 1 typo-near-match.
-    const header =
-      "household_name,primary_first,primary_last,primary_email,primary_phone,primary_dob,spouse_first,spouse_last,spouse_email,spouse_dob,advisor_id,status,notes,address_line1,city,state,postal_code";
-    const rows = [
-      // Typo near-match to seeded "Smith Family"
-      "Smith Familey,Mike,Smith,mike@example.com,,,Anne,Smith,anne@example.com,,test_advisor_e2e,prospect,,,,,",
-      "Johnson Trust,Bob,Johnson,bob@example.com,,,,,,,test_advisor_e2e,prospect,,,,,",
-      "Patel Estate,Raj,Patel,raj@example.com,,,Priya,Patel,priya@example.com,,test_advisor_e2e,active,,,,,",
-      "Garcia Family,Maria,Garcia,maria@example.com,,,,,,,test_advisor_e2e,prospect,,,,,",
-      "Zellweger Holdings,Renée,Zellweger,renee@example.com,,,,,,,test_advisor_e2e,prospect,,,,,",
-    ];
-    const buf = Buffer.from([header, ...rows].join("\n"), "utf8");
-    const parsed = await parseCsv(buf);
-    expect(parsed.errors).toEqual([]);
-    expect(parsed.proposed).toHaveLength(5);
-
-    // 3. Dry-run against the live list. The seeded "Smith Family" must
-    //    surface as the top match for "Smith Familey".
-    const dryRunResult = await dryRun(parsed.proposed);
-    expect(dryRunResult.rowsToCreate).toHaveLength(4);
-    expect(dryRunResult.duplicates).toHaveLength(1);
-    expect(dryRunResult.duplicates[0].matches[0].id).toBe(seeded.id);
-    expect(dryRunResult.duplicates[0].matches[0].name).toBe("Smith Family");
-    expect(dryRunResult.duplicates[0].matches[0].score).toBeGreaterThanOrEqual(
-      75,
+    // Shuffled headers, no household_name column, no advisor column, a spouse
+    // with no surname, an Excel-serial DOB, and a near-duplicate of the seed
+    // (the row has no household_name column, so its name is derived as
+    // "Jane Smith" — a one-letter typo of the seeded "Jane Smyth").
+    const buf = Buffer.from(
+      [
+        "Last Name,First Name,Spouse,DOB,State",
+        "Smith,Jane,,29221,Illinois",       // near-match of seeded "Jane Smyth"
+        "Jones,Bob,Carol,1/15/1970,IL",
+        "Nguyen,Minh,,,TX",
+        ",Orphan,,,",                        // row error: no last name
+      ].join("\n"),
+      "utf8",
     );
 
-    // 4. Build decisions: create the 4 non-dupes, skip the matched one.
-    const decisions: ImportDecision[] = [
-      ...dryRunResult.rowsToCreate.map<ImportDecision>((row) => ({
-        action: "create",
-        row,
-      })),
-      ...dryRunResult.duplicates.map<ImportDecision>((d) => ({
-        action: "skip",
-        row: d.row,
-        matchedHouseholdId: d.matches[0].id,
-      })),
-    ];
-    const result = await commit(decisions);
-    expect(result.errors).toEqual([]);
-    expect(result.created).toBe(4);
-    expect(result.skipped).toBe(1);
+    const grid = await readGrid(buf);
+    const mapping = detectMapping(grid[0].map(String));
+    const preview = await buildPreview(grid.slice(1), mapping);
 
-    // 5. Confirm the row counts in the DB: 1 seeded + 4 created = 5.
-    const all = await db
-      .select({ id: crmHouseholds.id, name: crmHouseholds.name })
+    expect(preview.rows).toHaveLength(4);
+    expect(preview.rows[3].errors).toHaveLength(1);
+    expect(preview.rows[0].primary.dateOfBirth).toBe("1980-01-01");
+    expect(preview.rows[1].household.name).toBe("Bob & Carol Jones");
+    expect(preview.rows[1].spouse?.lastName).toBe("Jones");
+    expect(preview.duplicates.map((d) => d.rowIndex)).toContain(0);
+
+    const decisions: ImportDecision[] = preview.rows
+      .filter((r) => r.errors.length === 0)
+      .map((r) => {
+        const dup = preview.duplicates.find((d) => d.rowIndex === r.rowIndex);
+        const row = { household: r.household, primary: r.primary, spouse: r.spouse };
+        return dup
+          ? { action: "skip" as const, row, matchedHouseholdId: dup.matches[0].id }
+          : { action: "create" as const, row };
+      });
+
+    const result = await commit(decisions);
+    expect(result.created).toBe(2);
+    expect(result.skipped).toBe(1);
+    expect(result.errors).toEqual([]);
+
+    const landed = await db
+      .select()
       .from(crmHouseholds)
       .where(eq(crmHouseholds.firmId, ORG_ID));
-    expect(all).toHaveLength(5);
-    const names = all.map((h) => h.name).sort();
-    expect(names).toEqual([
-      "Garcia Family",
-      "Johnson Trust",
-      "Patel Estate",
-      "Smith Family",
-      "Zellweger Holdings",
-    ]);
-
-    // Spouses → expect 2 households to have a spouse contact.
-    const contactCounts = await Promise.all(
-      all.map(async (h) => {
-        const cs = await db
-          .select()
-          .from(crmHouseholdContacts)
-          .where(eq(crmHouseholdContacts.householdId, h.id));
-        return { name: h.name, contacts: cs.length };
-      }),
-    );
-    const patel = contactCounts.find((c) => c.name === "Patel Estate");
-    expect(patel?.contacts).toBe(2);
+    const jones = landed.find((h) => h.name === "Bob & Carol Jones");
+    expect(jones).toBeDefined();
+    // The session user, NOT anything from the file.
+    expect(jones!.advisorId).toBe("test_user_import_e2e");
+    expect(jones!.state).toBe("IL");
+    expect(jones!.nameIsCustom).toBe(false);
   });
 
   it("locks a CSV-supplied household name so later contact edits can't clobber it", async () => {
@@ -151,22 +125,25 @@ describe("CRM bulk import — e2e", () => {
     await purge();
 
     // Import a row whose household name is deliberately unlike the derived
-    // one ("Bob Johnson") — same shape as the "Johnson Trust" row in the
-    // dry-run scenario above, committed directly since dedup isn't the
-    // point of this test.
-    const header =
-      "household_name,primary_first,primary_last,primary_email,primary_phone,primary_dob,spouse_first,spouse_last,spouse_email,spouse_dob,advisor_id,status,notes,address_line1,city,state,postal_code";
-    const rows = [
-      "Johnson Trust,Bob,Johnson,bob@example.com,,,,,,,test_advisor_e2e,prospect,,,,,",
-    ];
-    const buf = Buffer.from([header, ...rows].join("\n"), "utf8");
-    const parsed = await parseCsv(buf);
-    expect(parsed.errors).toEqual([]);
-    expect(parsed.proposed).toHaveLength(1);
+    // one ("Bob Johnson") — dedup isn't the point of this test, so it's
+    // committed directly.
+    const buf = Buffer.from(
+      [
+        "Household Name,Last Name,First Name",
+        "Johnson Trust,Johnson,Bob",
+      ].join("\n"),
+      "utf8",
+    );
 
-    const decisions: ImportDecision[] = parsed.proposed.map((row) => ({
-      action: "create",
-      row,
+    const grid = await readGrid(buf);
+    const mapping = detectMapping(grid[0].map(String));
+    const preview = await buildPreview(grid.slice(1), mapping);
+    expect(preview.rows).toHaveLength(1);
+    expect(preview.rows[0].errors).toEqual([]);
+
+    const decisions: ImportDecision[] = preview.rows.map((r) => ({
+      action: "create" as const,
+      row: { household: r.household, primary: r.primary, spouse: r.spouse },
     }));
     const { created } = await commit(decisions);
     expect(created).toBe(1);
@@ -195,20 +172,19 @@ describe("CRM bulk import — e2e", () => {
     // Clean slate so the firmId-scoped lookup below is unambiguous.
     await purge();
 
-    // parseCsv trims cells before validation, so a whitespace-only name
-    // never reaches commit() via the CSV path — but the commit API route
-    // re-validates decisions with a schema that doesn't trim, so a
-    // whitespace-only name CAN reach commit() directly from there. Drive
-    // commit() the same way to prove the lock condition's false branch.
+    // buildRows trims cells and derives nameIsCustom from the trimmed value,
+    // so a whitespace-only name never reaches commit() with nameIsCustom set
+    // via the file-parsing path — but the commit API route re-validates
+    // decisions with a schema that doesn't trim, so a bare whitespace name
+    // (with no nameIsCustom at all) CAN reach commit() directly from there.
+    // commit() no longer recomputes nameIsCustom (rows.ts already sets it),
+    // so this proves createCrmHousehold's own default still lands `false`
+    // rather than a refactor accidentally defaulting it to `true`.
     const decisions: ImportDecision[] = [
       {
         action: "create",
         row: {
-          household: {
-            name: "   ",
-            advisorId: "test_advisor_e2e",
-            status: "prospect",
-          },
+          household: { name: "   ", status: "prospect" },
           primary: { role: "primary", firstName: "Ann", lastName: "NoName" },
         },
       },
