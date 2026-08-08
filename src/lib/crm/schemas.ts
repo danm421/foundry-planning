@@ -45,6 +45,16 @@ export const createCrmHouseholdInteractiveSchema = createCrmHouseholdSchema.exte
   state: usStateSchema,
 });
 
+// Bulk import never carries an advisor id — every imported household is
+// assigned to the advisor doing the upload, resolved server-side from the
+// session. `contacts` is likewise not a wire concern: the importer creates the
+// primary and spouse through createCrmContact after the household lands.
+export const importHouseholdSchema = createCrmHouseholdSchema.omit({
+  advisorId: true,
+  contacts: true,
+});
+export type ImportHouseholdInput = z.infer<typeof importHouseholdSchema>;
+
 // `contacts` is a create-only concern (inline contacts on first creation).
 // Exclude it from the update schema so the PATCH surface can never carry an
 // inline-contacts array into the household .set() (which would be an invalid column).

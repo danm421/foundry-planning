@@ -3,10 +3,7 @@ import { z, ZodError } from "zod";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { checkImportRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { commit, type ImportDecision } from "@/lib/crm/import";
-import {
-  createCrmHouseholdSchema,
-  createCrmContactSchema,
-} from "@/lib/crm/schemas";
+import { importHouseholdSchema, createCrmContactSchema } from "@/lib/crm/schemas";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -14,24 +11,15 @@ export const maxDuration = 60;
 // Re-validate every row before it hits the DB. The wizard sends back
 // whatever was in the preview, but a malicious client could swap in
 // arbitrary payloads — the lib trusts its inputs are valid.
+const rowSchema = z.object({
+  household: importHouseholdSchema,
+  primary: createCrmContactSchema,
+  spouse: createCrmContactSchema.optional(),
+});
+
 const decisionSchema = z.discriminatedUnion("action", [
-  z.object({
-    action: z.literal("create"),
-    row: z.object({
-      household: createCrmHouseholdSchema,
-      primary: createCrmContactSchema,
-      spouse: createCrmContactSchema.optional(),
-    }),
-  }),
-  z.object({
-    action: z.literal("skip"),
-    row: z.object({
-      household: createCrmHouseholdSchema,
-      primary: createCrmContactSchema,
-      spouse: createCrmContactSchema.optional(),
-    }),
-    matchedHouseholdId: z.uuid(),
-  }),
+  z.object({ action: z.literal("create"), row: rowSchema }),
+  z.object({ action: z.literal("skip"), row: rowSchema, matchedHouseholdId: z.uuid() }),
 ]);
 
 const bodySchema = z.object({

@@ -1,53 +1,49 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
 import {
   AlertCircleIcon,
   ArrowRightIcon,
   DownloadIcon,
 } from "@/components/icons";
-import { CrmImportPreview, type Decision } from "@/components/crm-import-preview";
-import type { DryRunResult } from "@/lib/crm/import";
+import { CrmImportFixes } from "@/components/crm-import-fixes";
+import { CrmImportMapping } from "@/components/crm-import-mapping";
+import { CrmImportPreview, resolve } from "@/components/crm-import-preview";
+import {
+  TEMPLATE_HEADERS,
+  missingRequiredFields,
+  type ColumnMapping,
+} from "@/lib/crm/import/columns";
+import type { ParsedRow, RowOverride } from "@/lib/crm/import/rows";
 
 // Wizard step machine — kept as a single component because the three
-// states share too much (file, dry-run result, decisions) to make a
-// router or sub-component split worthwhile.
+// states share too much (uploaded file, mapping, preview, choices) to make
+// a router or sub-component split worthwhile.
 type Step = "upload" | "preview" | "result";
 
-// Canonical upload columns, in the exact order the parser requires. Kept
-// in lockstep with `IMPORT_COLUMNS` in @/lib/crm/import — duplicated here
-// (rather than imported) because that module pulls in server-only deps
-// (xlsx, audit, db) that can't ship to the client. The parser rejects any
-// header that drifts from this order, so a mismatch fails loudly, not
-// silently. Both the on-screen doc and the downloadable template render
-// from this single list.
-const TEMPLATE_COLUMNS = [
-  "household_name",
-  "primary_first",
-  "primary_last",
-  "primary_email",
-  "primary_phone",
-  "primary_dob",
-  "spouse_first",
-  "spouse_last",
-  "spouse_email",
-  "spouse_dob",
-  "advisor_id",
-  "status",
-  "notes",
-  "address_line1",
-  "city",
-  "state",
-  "postal_code",
-] as const;
+// Mirror of PreviewResult in @/lib/crm/import/preview — re-declared because
+// that module reaches the db for the dedup corpus and can't ship to the client.
+export type DuplicateMatch = { id: string; name: string; score: number };
+export type PreviewResult = {
+  rows: ParsedRow[];
+  duplicates: { rowIndex: number; matches: DuplicateMatch[] }[];
+  partialDedupCorpus: boolean;
+  truncated: boolean;
+};
+
+// The uploaded grid, as returned by the preview endpoint and re-sent to
+// remap on every mapping/fix change.
+type UploadedFile = { header: string[]; dataRows: (string | number)[][] };
+// The preview endpoint's success response.
+type PreviewResponse = { file: UploadedFile; mapping: ColumnMapping; preview: PreviewResult };
 
 // One illustrative row so the template documents the expected formats
 // (ISO `YYYY-MM-DD` dates, the `prospect`/`active`/`inactive`/`archived`
-// status set, the Clerk advisor id). The mandatory Review step catches it
-// if an advisor forgets to delete it before committing.
+// status set). The mandatory Review step catches it if an advisor forgets
+// to delete it before committing.
 const TEMPLATE_SAMPLE_ROW = [
-  "The Sample Household",
+  "",                       // household_name — leave blank to auto-name "Jordan & Riley Sample"
   "Jordan",
   "Sample",
   "jordan.sample@example.com",
@@ -57,7 +53,6 @@ const TEMPLATE_SAMPLE_ROW = [
   "Sample",
   "riley.sample@example.com",
   "1972-06-30",
-  "user_REPLACE_WITH_ADVISOR_ID",
   "prospect",
   "Delete this example row before importing",
   "123 Main St",
@@ -73,7 +68,7 @@ function csvCell(value: string): string {
 }
 
 function downloadTemplate() {
-  const csv = `${TEMPLATE_COLUMNS.join(",")}\n${TEMPLATE_SAMPLE_ROW.map(csvCell).join(",")}\n`;
+  const csv = `${TEMPLATE_HEADERS.join(",")}\n${TEMPLATE_SAMPLE_ROW.map(csvCell).join(",")}\n`;
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -85,16 +80,21 @@ function downloadTemplate() {
   URL.revokeObjectURL(url);
 }
 
-// Re-export so existing consumers (crm-import-preview.tsx) keep the
-// import path stable; the canonical definition lives in @/lib/crm/import.
-export type { DryRunResult };
-
 export function CrmImportWizard() {
   const [step, setStep] = useState<Step>("upload");
   const [submitting, setSubmitting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [dryRun, setDryRun] = useState<DryRunResult | null>(null);
-  const [decisions, setDecisions] = useState<Decision[]>([]);
+  const [file, setFile] = useState<UploadedFile | null>(null);
+  const [mapping, setMapping] = useState<ColumnMapping>({});
+  const [overrides, setOverrides] = useState<RowOverride[]>([]);
+  const [preview, setPreview] = useState<PreviewResult | null>(null);
+  // A remap failed, so `preview` was derived from an OLDER mapping/overrides
+  // pair than the one the pickers now show. Tracked separately from `error`,
+  // which a failed COMMIT also sets — blocking on `error` would stop the
+  // advisor retrying a commit that just 500'd.
+  const [previewStale, setPreviewStale] = useState(false);
+  const [choices, setChoices] = useState<Record<number, string>>({});
   const [committed, setCommitted] = useState<{
     created: number;
     skipped: number;
@@ -105,21 +105,21 @@ export function CrmImportWizard() {
     setSubmitting(true);
     setError(null);
     const data = new FormData(e.currentTarget);
-    const file = data.get("file");
-    if (!(file instanceof File) || file.size === 0) {
+    const selected = data.get("file");
+    if (!(selected instanceof File) || selected.size === 0) {
       setError("Choose a CSV file first.");
       setSubmitting(false);
       return;
     }
     const fd = new FormData();
-    fd.append("file", file);
+    fd.append("file", selected);
     try {
       const res = await fetch("/api/crm/import/preview", {
         method: "POST",
         body: fd,
       });
       const json = (await res.json().catch(() => ({}))) as
-        | DryRunResult
+        | PreviewResponse
         | { error?: unknown };
       if (!res.ok) {
         const msg =
@@ -128,22 +128,13 @@ export function CrmImportWizard() {
             : `Preview failed (${res.status})`;
         throw new Error(msg);
       }
-      const result = json as DryRunResult;
-      setDryRun(result);
-      // Default decision per duplicate row → skip the first matched
-      // candidate. Advisor can flip any row to "create" before committing.
-      const defaults: Decision[] = [
-        ...result.rowsToCreate.map<Decision>((row) => ({
-          action: "create",
-          row,
-        })),
-        ...result.duplicates.map<Decision>((d) => ({
-          action: "skip",
-          row: d.row,
-          matchedHouseholdId: d.matches[0]?.id ?? "",
-        })),
-      ];
-      setDecisions(defaults);
+      const result = json as PreviewResponse;
+      setFile(result.file);
+      setMapping(result.mapping);
+      setOverrides([]);
+      setChoices({});
+      setPreview(result.preview);
+      setPreviewStale(false);
       setStep("preview");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Preview failed");
@@ -152,15 +143,96 @@ export function CrmImportWizard() {
     }
   }
 
+  // Re-derive the preview server-side whenever the mapping or an inline fix
+  // changes. Debounced on blur by the callers, not per keystroke — the remap
+  // endpoint is rate-limited at 60/min.
+  const refresh = useCallback(
+    async (nextMapping: ColumnMapping, nextOverrides: RowOverride[]) => {
+      if (!file) return;
+      setRefreshing(true);
+      setError(null);
+      try {
+        const res = await fetch("/api/crm/import/remap", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            dataRows: file.dataRows,
+            mapping: nextMapping,
+            overrides: nextOverrides,
+          }),
+        });
+        // Same shape as onUpload/onCommit read, so the endpoint's own message
+        // (a zod complaint, a rate-limit notice) reaches the advisor instead of
+        // a bare status code.
+        const json = (await res.json().catch(() => ({}))) as
+          | { preview: PreviewResult }
+          | { error?: unknown };
+        if (!res.ok) {
+          const msg =
+            "error" in json && typeof json.error === "string"
+              ? json.error
+              : `Could not rebuild the preview (${res.status})`;
+          throw new Error(msg);
+        }
+        const result = json as { preview: PreviewResult };
+        setPreview((prev) => ({
+          ...result.preview,
+          // Upload capped the grid at MAX_IMPORT_ROWS; remap only ever sees the
+          // already-capped rows and always reports false. Keep the warning sticky.
+          truncated: result.preview.truncated || (prev?.truncated ?? false),
+        }));
+        setPreviewStale(false);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not rebuild the preview");
+        setPreviewStale(true);
+      } finally {
+        setRefreshing(false);
+      }
+    },
+    [file],
+  );
+
+  // Single reset path for the step state so a future field added to the
+  // wizard only needs updating here, not at every "start over" call site.
+  function resetWizard() {
+    setStep("upload");
+    setFile(null);
+    setMapping({});
+    setOverrides([]);
+    setPreview(null);
+    setPreviewStale(false);
+    setChoices({});
+  }
+
+  function buildDecisions() {
+    if (!preview) return [];
+    // Delegates to the same `resolve` the preview table renders from, so a
+    // blocked/create/skip outcome can never differ between what the advisor
+    // saw and what gets posted. Excluding "blocked" here is load-bearing:
+    // the commit route rejects the entire batch with a 400 if a single
+    // errored row reaches it.
+    return preview.rows.flatMap((r) => {
+      const dup = preview.duplicates.find((d) => d.rowIndex === r.rowIndex);
+      const resolved = resolve(r, dup?.matches, choices);
+      if (resolved.kind === "blocked") return [];
+      const row = { household: r.household, primary: r.primary, spouse: r.spouse };
+      const decision =
+        resolved.kind === "create"
+          ? { action: "create" as const, row }
+          : { action: "skip" as const, row, matchedHouseholdId: resolved.householdId };
+      return [decision];
+    });
+  }
+
   async function onCommit() {
-    if (!dryRun) return;
+    if (!preview) return;
     setSubmitting(true);
     setError(null);
     try {
       const res = await fetch("/api/crm/import/commit", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ decisions }),
+        body: JSON.stringify({ decisions: buildDecisions() }),
       });
       const json = (await res.json().catch(() => ({}))) as
         | { created: number; skipped: number }
@@ -180,6 +252,9 @@ export function CrmImportWizard() {
       setSubmitting(false);
     }
   }
+
+  const importableCount = preview?.rows.filter((r) => r.errors.length === 0).length ?? 0;
+  const missingRequired = missingRequiredFields(mapping);
 
   return (
     <section className="rounded-[10px] border border-hair bg-card p-6 sm:p-7">
@@ -203,21 +278,23 @@ export function CrmImportWizard() {
       {step === "upload" && (
         <form onSubmit={onUpload} className="space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-[13px] text-ink-2">
-              CSV columns (header row required, exact order):
-            </p>
+            <div className="text-[13px] text-ink-2">
+              <p className="font-medium text-ink">Upload any client list.</p>
+              <p className="mt-1 text-ink-3">
+                Column order doesn&apos;t matter and extra columns are ignored — you&apos;ll
+                confirm how they map on the next step. Only a first and last name are
+                required; household names are generated for you.
+              </p>
+            </div>
             <button
               type="button"
               onClick={downloadTemplate}
-              className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-1.5 text-[12px] font-medium text-ink-2 transition-colors hover:border-hair-2 hover:text-ink"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-1.5 text-[12px] font-medium text-ink-2 transition-colors hover:border-hair-2 hover:text-ink"
             >
               <DownloadIcon width={14} height={14} aria-hidden="true" />
               Download template
             </button>
           </div>
-          <pre className="overflow-x-auto rounded-[var(--radius-sm)] border border-hair bg-card-2 p-3 text-[12px] text-ink-3">
-            {TEMPLATE_COLUMNS.join(", ")}
-          </pre>
           <div>
             <label
               className="block mb-1.5 text-[13px] font-medium text-ink-2"
@@ -247,21 +324,31 @@ export function CrmImportWizard() {
         </form>
       )}
 
-      {step === "preview" && dryRun && (
+      {step === "preview" && preview && (
         <div className="space-y-5">
-          <CrmImportPreview
-            dryRun={dryRun}
-            decisions={decisions}
-            onChange={setDecisions}
+          {file && (
+            <CrmImportMapping
+              header={file.header}
+              mapping={mapping}
+              onChange={(next) => {
+                setMapping(next);
+                void refresh(next, overrides);
+              }}
+            />
+          )}
+          <CrmImportFixes
+            rows={preview.rows}
+            overrides={overrides}
+            onCommitEdit={(next) => {
+              setOverrides(next);
+              void refresh(mapping, next);
+            }}
           />
+          <CrmImportPreview preview={preview} choices={choices} onChange={setChoices} />
           <div className="flex items-center justify-between gap-3 pt-1">
             <button
               type="button"
-              onClick={() => {
-                setStep("upload");
-                setDryRun(null);
-                setDecisions([]);
-              }}
+              onClick={resetWizard}
               className="text-[13px] text-ink-3 transition-colors hover:text-ink-2"
             >
               Start over
@@ -269,7 +356,13 @@ export function CrmImportWizard() {
             <button
               type="button"
               onClick={onCommit}
-              disabled={submitting || decisions.length === 0}
+              disabled={
+                submitting ||
+                refreshing ||
+                previewStale ||
+                importableCount === 0 ||
+                missingRequired.length > 0
+              }
               className="inline-flex h-10 items-center gap-1.5 rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-ink disabled:opacity-60"
             >
               {submitting ? "Importing…" : "Commit import"}
@@ -296,9 +389,7 @@ export function CrmImportWizard() {
             <button
               type="button"
               onClick={() => {
-                setStep("upload");
-                setDryRun(null);
-                setDecisions([]);
+                resetWizard();
                 setCommitted(null);
               }}
               className="text-[13px] text-ink-3 transition-colors hover:text-ink-2"

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import ExcelJS from "exceljs";
-import { parseCsv, IMPORT_COLUMNS } from "../import";
+import { readGrid, detectMapping, buildRows, TEMPLATE_HEADERS } from "../import";
 
 // Parity fixtures for the xlsx (SheetJS) -> exceljs migration. These lock the
 // parser contract across both input formats so the engine swap can't silently
@@ -31,7 +31,7 @@ vi.mock("@clerk/nextjs/server", async () => {
   };
 });
 
-const HEADER = IMPORT_COLUMNS.join(",");
+const HEADER = TEMPLATE_HEADERS.join(",");
 
 type Cell = string | number | Date | null;
 
@@ -43,42 +43,48 @@ async function xlsxBuffer(rows: Cell[][]): Promise<Buffer> {
   return Buffer.from(out as ArrayBuffer);
 }
 
-describe("parseCsv CSV parity", () => {
+async function parseRows(buf: Buffer) {
+  const grid = await readGrid(buf);
+  const mapping = detectMapping(grid[0].map(String));
+  return buildRows(grid.slice(1), mapping);
+}
+
+describe("readGrid + buildRows CSV parity", () => {
   it("parses quoted fields containing commas and escaped quotes", async () => {
     const buf = Buffer.from(
       [
         HEADER,
-        `"Smith, Jones & Co",Jane,Smith,jane@example.com,,1980-01-01,,,,,advisor_1,active,"He said ""hi"", then left",123 Main,Austin,TX,73301`,
+        `"Smith, Jones & Co",Jane,Smith,jane@example.com,,1980-01-01,,,,,active,"He said ""hi"", then left",123 Main,Austin,TX,73301`,
       ].join("\n"),
       "utf8",
     );
-    const { proposed, errors } = await parseCsv(buf);
-    expect(errors).toEqual([]);
-    expect(proposed).toHaveLength(1);
-    expect(proposed[0].household.name).toBe("Smith, Jones & Co");
-    expect(proposed[0].household.notes).toBe(`He said "hi", then left`);
+    const rows = await parseRows(buf);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].errors).toEqual([]);
+    expect(rows[0].household.name).toBe("Smith, Jones & Co");
+    expect(rows[0].household.notes).toBe(`He said "hi", then left`);
   });
 
   it("handles CRLF line endings and keeps leading-zero postal strings", async () => {
     const buf = Buffer.from(
       [
         HEADER,
-        "Crlf Family,Carl,Crlf,carl@example.com,,1985-03-04,,,,,advisor_1,prospect,,1 Beacon St,Boston,MA,02110",
+        "Crlf Family,Carl,Crlf,carl@example.com,,1985-03-04,,,,,prospect,,1 Beacon St,Boston,MA,02110",
       ].join("\r\n"),
       "utf8",
     );
-    const { proposed, errors } = await parseCsv(buf);
-    expect(errors).toEqual([]);
-    expect(proposed).toHaveLength(1);
-    expect(proposed[0].primary.postalCode).toBe("02110");
-    expect(proposed[0].primary.dateOfBirth).toBe("1985-03-04");
+    const rows = await parseRows(buf);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].errors).toEqual([]);
+    expect(rows[0].primary.postalCode).toBe("02110");
+    expect(rows[0].primary.dateOfBirth).toBe("1985-03-04");
   });
 });
 
-describe("parseCsv xlsx parity", () => {
+describe("readGrid + buildRows xlsx parity", () => {
   it("parses string cells verbatim, pads numeric postal codes, and tolerates trailing-empty cells", async () => {
     const buf = await xlsxBuffer([
-      [...IMPORT_COLUMNS],
+      [...TEMPLATE_HEADERS],
       [
         "Xlsx Family",
         "Ann",
@@ -90,7 +96,6 @@ describe("parseCsv xlsx parity", () => {
         null,
         null,
         null,
-        "advisor_1",
         "prospect",
         null,
         "9 Elm St",
@@ -98,7 +103,7 @@ describe("parseCsv xlsx parity", () => {
         "MA",
         2110, // numeric cell — must recover the leading zero
       ],
-      // Trailing 6 cells absent entirely (xlsx truncates trailing empties).
+      // Trailing cells absent entirely (xlsx truncates trailing empties).
       [
         "Trail Family",
         "Tom",
@@ -110,32 +115,24 @@ describe("parseCsv xlsx parity", () => {
         null,
         null,
         null,
-        "advisor_1",
       ],
     ]);
-    const { proposed, errors } = await parseCsv(buf);
-    expect(errors).toEqual([]);
-    expect(proposed).toHaveLength(2);
-    expect(proposed[0].household.name).toBe("Xlsx Family");
-    expect(proposed[0].primary.dateOfBirth).toBe("1980-01-01");
-    expect(proposed[0].primary.postalCode).toBe("02110");
-    expect(proposed[1].household.name).toBe("Trail Family");
-    expect(proposed[1].household.status).toBe("prospect");
-    expect(proposed[1].primary.postalCode).toBeUndefined();
-    expect(proposed[1].spouse).toBeUndefined();
-  });
-
-  it("rejects an xlsx whose header row doesn't match the canonical columns", async () => {
-    const buf = await xlsxBuffer([
-      ["household_name", "primary_first"],
-      ["Foo", "Bar"],
-    ]);
-    await expect(parseCsv(buf)).rejects.toThrow(/header/i);
+    const rows = await parseRows(buf);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].errors).toEqual([]);
+    expect(rows[0].household.name).toBe("Xlsx Family");
+    expect(rows[0].primary.dateOfBirth).toBe("1980-01-01");
+    expect(rows[0].primary.postalCode).toBe("02110");
+    expect(rows[1].errors).toEqual([]);
+    expect(rows[1].household.name).toBe("Trail Family");
+    expect(rows[1].household.status).toBe("prospect");
+    expect(rows[1].primary.postalCode).toBeUndefined();
+    expect(rows[1].spouse).toBeUndefined();
   });
 
   it("parses real Excel date cells into the ISO date string the advisor intended", async () => {
     const buf = await xlsxBuffer([
-      [...IMPORT_COLUMNS],
+      [...TEMPLATE_HEADERS],
       [
         "Date Family",
         "Dora",
@@ -147,12 +144,11 @@ describe("parseCsv xlsx parity", () => {
         null,
         null,
         null,
-        "advisor_1",
       ],
     ]);
-    const { proposed, errors } = await parseCsv(buf);
-    expect(errors).toEqual([]);
-    expect(proposed).toHaveLength(1);
-    expect(proposed[0].primary.dateOfBirth).toBe("1979-05-12");
+    const rows = await parseRows(buf);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].errors).toEqual([]);
+    expect(rows[0].primary.dateOfBirth).toBe("1979-05-12");
   });
 });

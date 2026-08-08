@@ -1,91 +1,83 @@
 "use client";
 
-import type { DryRunResult } from "@/components/crm-import-wizard";
+import type { ReactNode } from "react";
+import type { DuplicateMatch, PreviewResult } from "@/components/crm-import-wizard";
+import type { ParsedRow } from "@/lib/crm/import/rows";
 
-// Re-exported from the wizard so the API surface stays in one file.
-type ProposedHousehold = DryRunResult["rowsToCreate"][number];
-type DryRunMatch = DryRunResult["duplicates"][number]["matches"][number];
+export type Resolved =
+  | { kind: "create" }
+  | { kind: "skip"; householdId: string }
+  | { kind: "blocked" };
 
-export type Decision =
-  | { action: "create"; row: ProposedHousehold }
-  | { action: "skip"; row: ProposedHousehold; matchedHouseholdId: string };
-
-interface CrmImportPreviewProps {
-  dryRun: DryRunResult;
-  decisions: Decision[];
-  onChange: (next: Decision[]) => void;
+/**
+ * The single source of truth for what a row will do on commit. The stat
+ * tiles and the table both call this, and the wizard's `buildDecisions`
+ * calls this same function (rather than re-deriving the precedence) so
+ * they can never disagree with each other or with the actual commit
+ * payload.
+ */
+export function resolve(
+  row: ParsedRow,
+  matches: DuplicateMatch[] | undefined,
+  choices: Record<number, string>,
+): Resolved {
+  if (row.errors.length > 0) return { kind: "blocked" };
+  const choice = choices[row.rowIndex];
+  if (choice === "create") return { kind: "create" };
+  // A skip choice only counts while its household is STILL one of this row's
+  // matches. `choices` is keyed by rowIndex and survives a remap, so fixing a
+  // cell can change the derived household name and drop the match the advisor
+  // picked. Without this guard the row would resolve to "skip" against a
+  // vanished match while the table's Decision cell — which branches on
+  // `matches?.length` — renders "Create new", and buildDecisions would post
+  // action:"skip". The row would silently never import.
+  if (choice && matches?.some((m) => m.id === choice)) {
+    return { kind: "skip", householdId: choice };
+  }
+  return matches?.length
+    ? { kind: "skip", householdId: matches[0].id }
+    : { kind: "create" };
 }
 
-export function CrmImportPreview({
-  dryRun,
-  decisions,
-  onChange,
-}: CrmImportPreviewProps) {
-  const newCount = decisions.filter((d) => d.action === "create").length;
-  const skipCount = decisions.filter((d) => d.action === "skip").length;
+interface CrmImportPreviewProps {
+  preview: PreviewResult;
+  /** rowIndex → "create" or a matched household id. Absent = default. */
+  choices: Record<number, string>;
+  onChange: (next: Record<number, string>) => void;
+}
 
-  function updateDecision(idx: number, next: Decision) {
-    const copy = decisions.slice();
-    copy[idx] = next;
-    onChange(copy);
+export function CrmImportPreview({ preview, choices, onChange }: CrmImportPreviewProps) {
+  const duplicatesByRow = new Map(preview.duplicates.map((d) => [d.rowIndex, d.matches]));
+
+  let createCount = 0;
+  let skipCount = 0;
+  let blockedCount = 0;
+  const resolvedByRow = new Map<number, Resolved>();
+  for (const row of preview.rows) {
+    const resolved = resolve(row, duplicatesByRow.get(row.rowIndex), choices);
+    resolvedByRow.set(row.rowIndex, resolved);
+    if (resolved.kind === "create") createCount++;
+    else if (resolved.kind === "skip") skipCount++;
+    else blockedCount++;
   }
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Stat label="To create" value={newCount} tone="accent" />
-        <Stat label="To skip" value={skipCount} tone="ink-3" />
-        <Stat label="Parse errors" value={dryRun.errors.length} tone="crit" />
+        <Stat testId="stat-create" label="To create" value={createCount} tone="accent" />
+        <Stat testId="stat-skip" label="To skip" value={skipCount} tone="ink-3" />
+        <Stat testId="stat-blocked" label="Won't import" value={blockedCount} tone="crit" />
       </div>
 
-      {dryRun.partialDedupCorpus && (
-        <div
-          role="status"
-          className="rounded-[var(--radius-sm)] border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[13px] text-amber-700 dark:text-amber-300"
-        >
+      {preview.partialDedupCorpus && (
+        <Banner>
           Duplicate detection was checked against only the first 1,000 existing
           households. Matches beyond that page may be missed — review the
           imported rows after commit.
-        </div>
+        </Banner>
       )}
 
-      {dryRun.errors.length > 0 && (
-        <section>
-          <h2 className="mb-2 text-[13px] font-semibold uppercase tracking-wider text-ink-3">
-            Skipped — invalid rows
-          </h2>
-          <div className="overflow-hidden rounded-lg border border-hair bg-card shadow-sm">
-            <table className="min-w-full divide-y divide-hair">
-              <thead className="bg-card-2">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-ink-3">
-                    Row
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-ink-3">
-                    Problems
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-hair">
-                {dryRun.errors.map((e) => (
-                  <tr key={e.rowIndex}>
-                    <td className="whitespace-nowrap px-6 py-3 text-sm text-ink-2">
-                      {e.rowIndex + 1}
-                    </td>
-                    <td className="px-6 py-3 text-sm text-crit">
-                      <ul className="list-disc pl-4">
-                        {e.messages.map((m, i) => (
-                          <li key={i}>{m}</li>
-                        ))}
-                      </ul>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
+      {preview.truncated && <Banner>Only the first 1,000 rows of this file were read.</Banner>}
 
       <section>
         <h2 className="mb-2 text-[13px] font-semibold uppercase tracking-wider text-ink-3">
@@ -110,37 +102,43 @@ export function CrmImportPreview({
               </tr>
             </thead>
             <tbody className="divide-y divide-hair">
-              {decisions.map((d, idx) => {
-                const dup = findDuplicate(dryRun, d.row);
+              {preview.rows.map((row) => {
+                const matches = duplicatesByRow.get(row.rowIndex);
+                // Every row was resolved once in the counting loop above.
+                const resolved = resolvedByRow.get(row.rowIndex)!;
                 return (
-                  <tr key={idx} className={dup ? "bg-card-2" : undefined}>
+                  <tr key={row.rowIndex} className={matches?.length ? "bg-card-2" : undefined}>
                     <td className="whitespace-nowrap px-6 py-4">
-                      <span className="font-medium text-ink">{d.row.household.name}</span>
-                      <div className="text-[12px] text-ink-3">
-                        {d.row.household.status}
-                      </div>
+                      <span className="font-medium text-ink">
+                        Row {row.rowIndex + 1}
+                        {row.household.name ? ` — ${row.household.name}` : ""}
+                      </span>
+                      {row.household.nameIsCustom === false && row.household.name && (
+                        <span className="ml-2 rounded-[var(--radius-sm)] bg-card-2 px-1.5 py-0.5 text-[11px] text-ink-3">
+                          Generated
+                        </span>
+                      )}
+                      <div className="text-[12px] text-ink-3">{row.household.status}</div>
                     </td>
                     <td className="whitespace-nowrap px-6 py-4 text-sm text-ink-2">
-                      {d.row.primary.firstName} {d.row.primary.lastName}
-                      {d.row.primary.email && (
-                        <div className="text-[12px] text-ink-3">
-                          {d.row.primary.email}
-                        </div>
+                      {row.primary.firstName} {row.primary.lastName}
+                      {row.primary.email && (
+                        <div className="text-[12px] text-ink-3">{row.primary.email}</div>
                       )}
                     </td>
                     <td className="whitespace-nowrap px-6 py-4 text-sm text-ink-2">
-                      {d.row.spouse
-                        ? `${d.row.spouse.firstName} ${d.row.spouse.lastName}`
-                        : "—"}
+                      {row.spouse ? `${row.spouse.firstName} ${row.spouse.lastName}` : "—"}
                     </td>
                     <td className="px-6 py-4 text-sm">
-                      {dup ? (
+                      {resolved.kind === "blocked" ? (
+                        <span className="text-crit">Won&apos;t import</span>
+                      ) : matches?.length ? (
                         <DuplicateResolver
-                          matches={dup.matches}
-                          decision={d}
-                          onChange={(next) => updateDecision(idx, next)}
-                          row={d.row}
-                          rowIndex={idx}
+                          matches={matches}
+                          resolved={resolved}
+                          rowIndex={row.rowIndex}
+                          choices={choices}
+                          onChange={onChange}
                         />
                       ) : (
                         <span className="text-accent">Create new</span>
@@ -157,39 +155,33 @@ export function CrmImportPreview({
   );
 }
 
-function findDuplicate(
-  dryRun: DryRunResult,
-  row: ProposedHousehold,
-): DryRunResult["duplicates"][number] | undefined {
-  return dryRun.duplicates.find((d) => d.row === row);
-}
-
 interface DuplicateResolverProps {
-  matches: DryRunMatch[];
-  decision: Decision;
-  row: ProposedHousehold;
+  matches: DuplicateMatch[];
+  resolved: Resolved;
   rowIndex: number;
-  onChange: (next: Decision) => void;
+  choices: Record<number, string>;
+  onChange: (next: Record<number, string>) => void;
 }
 
 function DuplicateResolver({
   matches,
-  decision,
-  row,
+  resolved,
   rowIndex,
+  choices,
   onChange,
 }: DuplicateResolverProps) {
   // Shared name groups the two radios so keyboard arrow keys move
   // between them and screen readers announce them as a single choice.
   const groupName = `decision-${rowIndex}`;
+  const matchedId = resolved.kind === "skip" ? resolved.householdId : (matches[0]?.id ?? "");
   return (
     <div className="space-y-2">
       <label className="flex items-center gap-2 text-[13px]">
         <input
           type="radio"
           name={groupName}
-          checked={decision.action === "create"}
-          onChange={() => onChange({ action: "create", row })}
+          checked={resolved.kind === "create"}
+          onChange={() => onChange({ ...choices, [rowIndex]: "create" })}
           className="accent-current text-accent"
         />
         <span className="text-ink-2">Create new</span>
@@ -198,28 +190,16 @@ function DuplicateResolver({
         <input
           type="radio"
           name={groupName}
-          checked={decision.action === "skip"}
-          onChange={() =>
-            onChange({
-              action: "skip",
-              row,
-              matchedHouseholdId: matches[0]?.id ?? "",
-            })
-          }
+          checked={resolved.kind === "skip"}
+          onChange={() => onChange({ ...choices, [rowIndex]: matches[0]?.id ?? "" })}
           className="accent-current text-accent"
         />
         <span className="text-ink-2">Skip — matches existing</span>
       </label>
-      {decision.action === "skip" && (
+      {resolved.kind === "skip" && (
         <select
-          value={decision.matchedHouseholdId}
-          onChange={(e) =>
-            onChange({
-              action: "skip",
-              row,
-              matchedHouseholdId: e.target.value,
-            })
-          }
+          value={matchedId}
+          onChange={(e) => onChange({ ...choices, [rowIndex]: e.target.value })}
           className="ml-6 h-8 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-2 text-[12px] text-ink"
         >
           {matches.map((m) => (
@@ -233,11 +213,24 @@ function DuplicateResolver({
   );
 }
 
+function Banner({ children }: { children: ReactNode }) {
+  return (
+    <div
+      role="status"
+      className="rounded-[var(--radius-sm)] border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[13px] text-amber-700 dark:text-amber-300"
+    >
+      {children}
+    </div>
+  );
+}
+
 function Stat({
+  testId,
   label,
   value,
   tone,
 }: {
+  testId: string;
   label: string;
   value: number;
   tone: "accent" | "ink-3" | "crit";
@@ -246,10 +239,10 @@ function Stat({
     tone === "accent" ? "text-accent" : tone === "crit" ? "text-crit" : "text-ink-2";
   return (
     <div className="rounded-[var(--radius-sm)] border border-hair bg-card-2 p-3">
-      <div className="text-[12px] uppercase tracking-wider text-ink-3">
-        {label}
+      <div className="text-[12px] uppercase tracking-wider text-ink-3">{label}</div>
+      <div data-testid={testId} className={`mt-1 text-2xl font-semibold ${toneClass}`}>
+        {value}
       </div>
-      <div className={`mt-1 text-2xl font-semibold ${toneClass}`}>{value}</div>
     </div>
   );
 }
