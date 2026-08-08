@@ -27,6 +27,28 @@ describe("portfolioSignals", () => {
     expect(s!.estimatedImpact).toBeCloseTo(5_000, 6);
   });
 
+  it("floors the impact at zero when the CMA gives cash and equity the same return", () => {
+    const i = signalInputFixture();
+    i.portfolio.cashPct = 0.25;
+    i.portfolio.liquidPortfolio = 1_000_000;
+    i.portfolio.cashReturn = 0.04;
+    i.portfolio.equityReturn = 0.04; // flat CMA — no spread to price
+    const s = portfolioSignals(i).find((x) => x.id === "portfolio.cash_drag");
+    expect(s).toBeDefined();
+    expect(s!.estimatedImpact).toBe(0);
+  });
+
+  it("does not go negative when the CMA is inverted (cash beats equity)", () => {
+    const i = signalInputFixture();
+    i.portfolio.cashPct = 0.25;
+    i.portfolio.liquidPortfolio = 1_000_000;
+    i.portfolio.cashReturn = 0.06;
+    i.portfolio.equityReturn = 0.01; // inverted CMA
+    const s = portfolioSignals(i).find((x) => x.id === "portfolio.cash_drag");
+    expect(s).toBeDefined();
+    expect(s!.estimatedImpact).toBe(0);
+  });
+
   it("does not fire cash_drag exactly at the threshold", () => {
     const i = signalInputFixture();
     i.portfolio.cashPct = 0.10;
