@@ -118,6 +118,29 @@ describe("CRM bulk import — e2e", () => {
     expect(jones!.advisorId).toBe("test_user_import_e2e");
     expect(jones!.state).toBe("IL");
     expect(jones!.nameIsCustom).toBe(false);
+
+    const nguyen = landed.find((h) => h.name === "Minh Nguyen");
+    expect(nguyen).toBeDefined();
+
+    // The only DB-level proof that commit() actually inserts contacts, not
+    // just households: Jones has a spouse row (Carol) in its CSV row, Nguyen
+    // doesn't. A count-only assertion of ">0" wouldn't discriminate a broken
+    // spouse branch from a working one — pin the count per household so the
+    // spouse insert at commit.ts's `if (d.row.spouse)` branch is covered.
+    const jonesContacts = await db
+      .select({ role: crmHouseholdContacts.role, lastName: crmHouseholdContacts.lastName })
+      .from(crmHouseholdContacts)
+      .where(eq(crmHouseholdContacts.householdId, jones!.id));
+    expect(jonesContacts).toHaveLength(2);
+    expect(jonesContacts.map((c) => c.role).sort()).toEqual(["primary", "spouse"]);
+    expect(jonesContacts.every((c) => c.lastName === "Jones")).toBe(true);
+
+    const nguyenContacts = await db
+      .select({ role: crmHouseholdContacts.role })
+      .from(crmHouseholdContacts)
+      .where(eq(crmHouseholdContacts.householdId, nguyen!.id));
+    expect(nguyenContacts).toHaveLength(1);
+    expect(nguyenContacts[0].role).toBe("primary");
   });
 
   it("locks a CSV-supplied household name so later contact edits can't clobber it", async () => {
