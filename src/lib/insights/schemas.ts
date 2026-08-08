@@ -6,6 +6,21 @@
 // produced is dropped by `dropUncitedActions` before anything is persisted.
 import { z } from "zod";
 
+/**
+ * How many actions the 360 tab shows. `actions` is the "what would you do
+ * first" shortlist, not a second rendering of the signal list — the
+ * deterministic SignalsList already shows every signal in full. 18 rules can
+ * fire, and each action renders as signal title + recommendation + why, so an
+ * uncapped list turns a triage queue into a wall of text.
+ *
+ * Declared HERE rather than in `generate.ts` so the client bundle can read it:
+ * `generate.ts` pulls in `@/domain/forge/llm` → `@langchain/openai`, and a
+ * value import of that module from a `"use client"` component would drag the
+ * whole Azure/LangChain graph into the browser. This module is zod-only.
+ * `generate.ts` re-exports it, so its public API is unchanged.
+ */
+export const MAX_ACTIONS = 5;
+
 // Caps follow the sibling contract in src/lib/crm/meeting-prep/schemas.ts.
 // LangChain runtime-validates this schema, so a cap makes an overrunning model
 // fail closed instead of persisting unbounded text into a jsonb column.

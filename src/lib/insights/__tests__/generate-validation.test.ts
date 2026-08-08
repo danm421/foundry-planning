@@ -35,6 +35,7 @@ const battery = (signals: Signal[]): InsightsBattery => ({
   },
   retirementPeople: [],
   risk: { currentPct: 78, requiredPct: 45, capacityPct: 60, capacityScore: 60, verdict: "over_risked" },
+  toleranceScore: 55,
   signals,
   mcBands: null,
   grounding: { goalsText: "", notesText: "", allocation: [] },

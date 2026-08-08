@@ -4,18 +4,18 @@ import { chatModel } from "@/domain/forge/llm";
 import type { InsightsBattery } from "./battery";
 import type { Signal } from "./signals";
 import { buildInsightsPrompt } from "./prompt";
-import { GeneratedInsightsSchema, type GeneratedInsights, type InsightAction } from "./schemas";
+import {
+  GeneratedInsightsSchema,
+  MAX_ACTIONS,
+  type GeneratedInsights,
+  type InsightAction,
+} from "./schemas";
 
 export type { GeneratedInsights, InsightAction } from "./schemas";
-
-/**
- * How many actions the 360 tab shows. `actions` is the "what would you do
- * first" shortlist, not a second rendering of the signal list — the
- * deterministic SignalsList already shows every signal in full. 18 rules can
- * fire, and each action renders as signal title + recommendation + why, so an
- * uncapped list turns a triage queue into a wall of text.
- */
-export const MAX_ACTIONS = 5;
+// Re-exported so this module's public API is unchanged. The constant now lives
+// in `./schemas` (zod-only) so client components can import it without pulling
+// this module's LangChain/Azure graph into the browser bundle.
+export { MAX_ACTIONS } from "./schemas";
 
 /**
  * Keep only actions that cite a supplied signal, one per signal, up to

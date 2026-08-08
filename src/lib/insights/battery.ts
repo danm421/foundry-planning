@@ -30,6 +30,19 @@ export interface InsightsBattery {
   /** Plan-authoritative retirement age + year per person. */
   retirementPeople: PersonRetirementFacts[];
   risk: RiskAlignment;
+  /**
+   * Recorded risk-tolerance rung, on the same 0–100 growth-exposure axis as
+   * `risk`; null when no risk profile is on file. Surfaced separately from
+   * `risk` because `RiskAlignment` is derived purely from planning data and
+   * knows nothing about the RTQ — the 360's alignment scale plots this as a
+   * fourth marker.
+   *
+   * Deliberately NOT in `hashBattery`'s material: a tolerance change that
+   * matters already moves the hash through `signals` (risk.no_profile,
+   * risk.tolerance_below_required), so hashing it again would only invalidate
+   * every persisted profile for no behavioural gain.
+   */
+  toleranceScore: number | null;
   signals: Signal[];
   /** Ending-portfolio percentile bands. Already in the MC payload the battery
    *  pays for; reading them next to successRate costs nothing. */
@@ -197,6 +210,7 @@ export async function loadInsightsBattery(
     },
     retirementPeople: overview.retirementPeople,
     risk,
+    toleranceScore: riskProfile?.toleranceScore ?? null,
     signals,
     mcBands,
     grounding: {

@@ -43,6 +43,7 @@ export async function GET(
     return NextResponse.json({
       kpis: battery.kpis,
       risk: battery.risk,
+      toleranceScore: battery.toleranceScore,
       signals: battery.signals,
       stale,
       profile: profile
