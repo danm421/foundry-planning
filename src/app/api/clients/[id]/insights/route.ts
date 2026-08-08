@@ -43,13 +43,15 @@ export async function GET(
     return NextResponse.json({
       kpis: battery.kpis,
       risk: battery.risk,
-      needsAttention: battery.needsAttention,
+      signals: battery.signals,
       stale,
       profile: profile
         ? {
+            headline: profile.headline,
             snapshot: profile.snapshot,
             goals: profile.goals,
-            opportunities: profile.opportunities,
+            actions: profile.actions ?? [],
+            talkingPoints: profile.talkingPoints ?? [],
             generatedAt: profile.updatedAt.toISOString(),
           }
         : null,
@@ -114,6 +116,7 @@ export async function POST(
         force: parsed.data.force,
         cached,
         verdict: battery.risk.verdict,
+        signalCount: battery.signals.length,
       }),
     });
 

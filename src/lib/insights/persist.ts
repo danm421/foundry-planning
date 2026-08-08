@@ -28,7 +28,9 @@ export async function saveInsightProfile(args: {
     // `opportunities` is deliberately absent: the model no longer emits it.
     // Because `values` doubles as the onConflictDoUpdate SET, omitting it
     // preserves an existing row's old text instead of blanking it.
-    // Task 11 adds headline / actions / talkingPoints here.
+    headline: args.sections.headline,
+    actions: args.sections.actions,
+    talkingPoints: args.sections.talkingPoints,
     inputHash: args.inputHash,
     model: args.model,
     generatedByUserId: args.userId,

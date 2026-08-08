@@ -10,6 +10,7 @@ export function hashBattery(b: InsightsBattery): string {
     retirementPeople: b.retirementPeople,
     risk: b.risk,
     signals: b.signals,
+    mcBands: b.mcBands,
     goalsText: b.grounding.goalsText,
     notesText: b.grounding.notesText,
     allocation: b.grounding.allocation,

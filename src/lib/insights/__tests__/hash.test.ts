@@ -47,6 +47,17 @@ describe("hashBattery", () => {
     );
   });
 
+  // mcBands is interpolated into the AI prompt (the ending-portfolio percentile
+  // spread) but is not reflected in `successRate` alone: a Monte Carlo re-run
+  // can shift p5/p50/p95 without moving the pass/fail rate. Without mcBands in
+  // the hash material, that re-run would report `stale: false` while the
+  // cached profile keeps quoting the old percentiles.
+  it("changes when the MC ending-percentile bands change", () => {
+    expect(hashBattery(sample({ mcBands: { p5: 500_000, p50: 1_500_000, p95: 3_000_000 } }))).not.toBe(
+      hashBattery(sample({ mcBands: { p5: 600_000, p50: 1_500_000, p95: 3_000_000 } })),
+    );
+  });
+
   // Editing a retirement age must invalidate the cached profile, or the AI prose
   // keeps quoting the old retirement year after the advisor corrects the plan.
   it("changes when a retirement age changes", () => {
