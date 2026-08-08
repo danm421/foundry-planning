@@ -1,6 +1,6 @@
 import type { TaxYearParameters } from "@/lib/tax/types";
 import {
-  emptyTaxReturnFacts,
+  emptyTaxReturnFacts, emptyBusiness, emptyK1, emptyQbi, emptyAdjustmentsDetail,
   type TaxReturnFacts,
 } from "@/lib/schemas/tax-return-facts";
 import type { FindingContext } from "../types";
@@ -199,6 +199,119 @@ export function landlordSingle(): TaxReturnFacts {
   f.tax.totalTax = 17529;
   f.payments.withholding = 19139;
   f.payments.refund = 1610;
+  return f;
+}
+
+/**
+ * Single Schedule C owner, no retirement plan and no SE health insurance
+ * deduction — the classic "largest single miss on the return" case.
+ *
+ * Worked SE tax: 145,000 × 0.9235 = 133,907.50.
+ *   SS       min(133,907.50, 176,100) × 0.124 = 16,604.53
+ *   Medicare 133,907.50 × 0.029            =  3,883.32
+ *   seTax 20,488, half 10,244.
+ * AGI 145,000 − 10,244 = 134,756. QBI = AGI (the §199A reduction for half SE
+ * tax is already inside it). 20% × QBI = 26,951, but 20% × (134,756 − 15,750)
+ * = 23,801 is lower, so the taxable-income cap binds. TI 134,756 − 15,750 −
+ * 23,801 = 95,205. Tax on 95,205 single: 1,192.50 + 4,386 + 10,280.60 = 15,859.
+ *
+ * Deliberately does NOT fire qbi-phaseout-position: taxable income before the
+ * QBI deduction is 119,006, below the 197,300 single threshold.
+ */
+export function scheduleCOwnerSingle(): TaxReturnFacts {
+  const f = emptyTaxReturnFacts(2025);
+  f.filingStatus = "single";
+  f.residenceState = "MN";
+  f.businesses = [{
+    ...emptyBusiness(),
+    name: "Cedar Consulting",
+    netProfit: 145000,
+    grossReceipts: 198000,
+    totalExpenses: 53000,
+    depreciation: 4200,
+    isSstb: true,
+  }];
+  f.income.scheduleCNet = 145000;
+  f.income.adjustmentsDetail = { ...emptyAdjustmentsDetail(), seTaxDeduction: 10244 };
+  f.income.adjustmentsToIncome = 10244;
+  f.income.totalIncome = 145000;
+  f.income.agi = 134756;
+  f.deductions.deductionTaken = "standard";
+  f.deductions.deductionAmount = 15750;
+  f.deductions.qbiDeduction = 23801;
+  f.deductions.qbi = {
+    ...emptyQbi(),
+    qualifiedBusinessIncome: 134756,
+    w2Wages: 0,
+    sstbPresent: true,
+  };
+  f.deductions.taxableIncome = 95205;
+  f.tax.taxBeforeCredits = 15859;
+  f.tax.seTax = 20488;
+  f.tax.totalTax = 36347;
+  f.payments.estimatedPayments = 30000;
+  f.payments.amountOwed = 6347;
+  return f;
+}
+
+/**
+ * MFJ S-corp owner with a second partnership interest — the case the W-2 wage
+ * cap and reasonable compensation both turn on.
+ *
+ * Worked SE tax (guaranteed payments only; S-corp box 1 carries none):
+ *   60,000 × 0.9235 = 55,410. Remaining SS cap 176,100 − 120,000 = 56,100,
+ *   so SS = 55,410 × 0.124 = 6,870.84; Medicare 55,410 × 0.029 = 1,606.89.
+ *   seTax 8,478, half 4,239.
+ * Total income 120,000 + 412,000 = 532,000; AGI 527,761; TI 527,761 − 30,000
+ * − 60,000 = 437,761. Tax on 437,761 MFJ: 2,385 + 8,772 + 24,145 + 45,096 +
+ * 13,811.52 = 94,210.
+ *
+ * QBI: 310,000 + 42,000 = 352,000 — guaranteed payments are NOT QBI. Taxable
+ * income before the QBI deduction is 497,761, above 394,600 + 100,000, so the
+ * return sits fully past the phase-in and the W-2 wage cap binds outright:
+ * min(20% × 352,000 = 70,400, 50% × 120,000 = 60,000) = 60,000. 10,400 is
+ * recoverable with more W-2 wage from the entity.
+ *
+ * Additional Medicare is 0: 120,000 + 55,410 = 175,410, below 250,000.
+ */
+export function sCorpOwnerMfj(): TaxReturnFacts {
+  const f = emptyTaxReturnFacts(2025);
+  f.filingStatus = "married_joint";
+  f.residenceState = "MN";
+  f.income.wages = 120000;
+  f.k1s = [
+    {
+      ...emptyK1(),
+      entityName: "Ridgeline Systems Inc", ein: "41-1234567", entityType: "s_corp",
+      ordinaryBusinessIncome: 310000, w2WagesFromEntity: 120000,
+      qbiIncome: 310000, isSstb: false,
+    },
+    {
+      ...emptyK1(),
+      entityName: "Harbor Street Partners LP", ein: "41-7654321", entityType: "partnership",
+      ordinaryBusinessIncome: 42000, guaranteedPayments: 60000,
+      qbiIncome: 42000, isSstb: false,
+    },
+  ];
+  f.income.scheduleENet = 412000; // 310,000 + 42,000 + 60,000
+  f.income.totalIncome = 532000;
+  f.income.adjustmentsDetail = { ...emptyAdjustmentsDetail(), seTaxDeduction: 4239 };
+  f.income.adjustmentsToIncome = 4239;
+  f.income.agi = 527761;
+  f.deductions.deductionTaken = "standard";
+  f.deductions.deductionAmount = 30000;
+  f.deductions.qbiDeduction = 60000;
+  f.deductions.qbi = {
+    ...emptyQbi(),
+    qualifiedBusinessIncome: 352000, w2Wages: 120000, ubia: 0, sstbPresent: false,
+  };
+  f.deductions.taxableIncome = 437761;
+  f.tax.taxBeforeCredits = 94210;
+  f.tax.seTax = 8478;
+  f.tax.additionalMedicareTax = 0;
+  f.tax.totalTax = 102688;
+  f.payments.withholding = 95000;
+  f.payments.amountOwed = 7688;
   return f;
 }
 
