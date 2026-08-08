@@ -487,6 +487,7 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
           // PUT is a full replace, so saving would collapse a 10-year schedule
           // into whatever the advisor typed into the empty one.
           schedule={savingsEditing ? props.savingsSchedules[savingsEditing.id] : undefined}
+          familyMembers={props.familyMemberOptions}
           resolvedInflationRate={props.resolvedInflationRate}
         />
       )}

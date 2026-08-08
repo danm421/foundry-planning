@@ -7,6 +7,7 @@ import {
   defaultExpenseRefs,
   defaultSavingsRuleRefs,
   defaultWithdrawalRefs,
+  savingsRuleOwnerForAccount,
 } from "../milestones";
 
 const CLIENT = {
@@ -193,5 +194,60 @@ describe("defaultSavingsRuleRefs", () => {
 
   it("treats joint as the client", () => {
     expect(defaultSavingsRuleRefs("joint").endYearRef).toBe("client_retirement");
+  });
+});
+
+// A savings rule has no owner column — `accountId` is its only link to a
+// person — so the destination account decides whose retirement it ends on.
+// This mirrors how the engine already resolves a rule's owner
+// (`controllingFamilyMember` in engine/ownership.ts, used for ownerSalary and
+// the IRS contribution limit).
+describe("savingsRuleOwnerForAccount", () => {
+  const FAMILY = [
+    { id: "fm-client", role: "client" },
+    { id: "fm-spouse", role: "spouse" },
+    { id: "fm-child", role: "child" },
+  ];
+  const fm = (familyMemberId: string, percent = 1) =>
+    ({ kind: "family_member", familyMemberId, percent }) as const;
+  const ent = (entityId: string, percent = 1) => ({ kind: "entity", entityId, percent }) as const;
+
+  it("reads the individual owner off the destination account", () => {
+    expect(savingsRuleOwnerForAccount({ owners: [fm("fm-client")] }, FAMILY)).toBe("client");
+    expect(savingsRuleOwnerForAccount({ owners: [fm("fm-spouse")] }, FAMILY)).toBe("spouse");
+  });
+
+  // Each of these has no single retirement to follow, so each ends at the
+  // client's — the same year they default to today.
+  it("falls back to joint when no one individual owns the account", () => {
+    // Split between the two spouses.
+    expect(
+      savingsRuleOwnerForAccount({ owners: [fm("fm-client", 0.5), fm("fm-spouse", 0.5)] }, FAMILY),
+    ).toBe("joint");
+    // A child's 529 — a real household member, but with no retirement.
+    expect(savingsRuleOwnerForAccount({ owners: [fm("fm-child")] }, FAMILY)).toBe("joint");
+    // Wholly entity-owned.
+    expect(savingsRuleOwnerForAccount({ owners: [ent("trust-1")] }, FAMILY)).toBe("joint");
+    // No owners at all, and an owner id matching no household member.
+    expect(savingsRuleOwnerForAccount({ owners: [] }, FAMILY)).toBe("joint");
+    expect(savingsRuleOwnerForAccount({ owners: [fm("fm-ghost")] }, FAMILY)).toBe("joint");
+  });
+
+  // The percent-aware case, and the reason this reads `owners` rather than a
+  // flattened id list: a half-owned account is not the spouse's to date. An
+  // id-only shape cannot see this — it would read as sole spouse ownership.
+  it("treats a part-owned account as joint, not the individual's", () => {
+    expect(
+      savingsRuleOwnerForAccount({ owners: [fm("fm-spouse", 0.5), ent("trust-1", 0.5)] }, FAMILY),
+    ).toBe("joint");
+    // Sole family member but not at 100% — the remainder is unaccounted for.
+    expect(savingsRuleOwnerForAccount({ owners: [fm("fm-spouse", 0.5)] }, FAMILY)).toBe("joint");
+  });
+
+  // The dialogs render before their data arrives, and one call site has no
+  // family-member list at all. Neither may throw, and neither may guess.
+  it("falls back to joint with no account or no family members", () => {
+    expect(savingsRuleOwnerForAccount(undefined, FAMILY)).toBe("joint");
+    expect(savingsRuleOwnerForAccount({ owners: [fm("fm-spouse")] }, undefined)).toBe("joint");
   });
 });

@@ -26,7 +26,7 @@ import type {
   SavingsRule as EngineSavingsRule,
   EntitySummary,
 } from "@/engine/types";
-import { controllingEntity } from "@/engine/ownership";
+import { controllingEntity, type AccountOwner } from "@/engine/ownership";
 
 // ── Income ────────────────────────────────────────────────────────────────────
 
@@ -206,6 +206,11 @@ export interface AccountViewEngineFields {
   growthRate: string | null;
   rmdEnabled: boolean | null;
   ownerEntityId: string | null;
+  /** Ownership rows verbatim. `ownerEntityId` above is a lossy reduction of
+   *  these (null whenever ownership is mixed); consumers that must know WHICH
+   *  individual owns the account — e.g. a savings rule's year defaults, via
+   *  `savingsRuleOwnerForAccount` — need the percents. */
+  owners: AccountOwner[];
   isDefaultChecking: boolean;
 }
 
@@ -221,6 +226,7 @@ export function accountEngineToView(account: EngineAccount): AccountViewEngineFi
     growthRate: account.growthRate != null ? String(account.growthRate) : null,
     rmdEnabled: account.rmdEnabled ?? null,
     ownerEntityId: controllingEntity(account) ?? null,
+    owners: account.owners,
     isDefaultChecking: account.isDefaultChecking ?? false,
   };
 }

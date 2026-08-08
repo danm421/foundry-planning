@@ -26,6 +26,7 @@ import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
 import { isGoalExpense, educationGoalYears, EDUCATION_GOAL_YEARS } from "@/lib/goals";
 import { isTodaysDollars } from "@/lib/todays-dollars";
 import type { ClientInfo as EngineClientInfo, PlanSettings, Income as EngineIncome } from "@/engine/types";
+import type { AccountOwner } from "@/engine/ownership";
 import { SocialSecurityCard } from "./social-security-card";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useClientAccess } from "./client-access-provider";
@@ -141,7 +142,12 @@ interface Account {
   value?: number;
   isDefaultChecking?: boolean | null;
   ownerEntityId?: string | null;
+  /** "Who is this account FOR" — a 529 substitutes its BENEFICIARY here so the
+   *  dedicated-funding picker's eligibility filter keeps it. Not an ownership
+   *  signal; use `owners` for that. */
   ownerFamilyMemberIds?: string[];
+  /** Ownership rows verbatim, for the savings-rule year defaults. */
+  owners?: AccountOwner[];
 }
 
 interface Entity {
@@ -2484,6 +2490,7 @@ export default function IncomeExpensesView({
           schedule={savingsDialog.editing ? savingsSchedules[savingsDialog.editing.id] : undefined}
           clientInfo={clientInfo}
           ownerNames={ownerNames}
+          familyMembers={familyMembers}
           resolvedInflationRate={resolvedInflationRate}
         />
       )}

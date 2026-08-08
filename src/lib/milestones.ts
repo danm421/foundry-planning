@@ -1,3 +1,5 @@
+import { controllingFamilyMember, type AccountOwner } from "@/engine/ownership";
+
 export const YEAR_REFS = [
   "plan_start",
   "plan_end",
@@ -186,7 +188,7 @@ export function availableRefs(
   return refs;
 }
 
-type Owner = "client" | "spouse" | "joint";
+export type Owner = "client" | "spouse" | "joint";
 type IncomeType = "salary" | "social_security" | "business" | "deferred" | "capital_gains" | "trust" | "other";
 type ExpenseType = "living" | "other" | "insurance" | "education";
 
@@ -217,8 +219,41 @@ export function defaultExpenseRefs(_type: ExpenseType): { startYearRef: YearRef 
   return { startYearRef: "plan_start", endYearRef: "plan_end" };
 }
 
+/**
+ * Which individual a savings rule belongs to, read off its DESTINATION account.
+ *
+ * A savings rule carries no owner column of its own — `accountId` is its only
+ * link to a person — so the destination account is what "the spouse's 401(k)"
+ * means here. This is the same reduction the engine already applies to decide
+ * a rule's owner: `projection.ts` grounds both `ownerSalary` (percent-of-salary
+ * contributions and employer match) and the IRS contribution limit on
+ * `controllingFamilyMember`, and `buildAccountRows`' `ownerKeyOf` maps it to
+ * the same three-way union. Routing through the shared primitive is what keeps
+ * the three from drifting — it is percent-aware, so a 50/50 spouse-and-trust
+ * account reads "joint" here exactly as it does in the projection.
+ *
+ * Anything without one sole individual owner — jointly owned, entity-owned, or
+ * a child's 529 — has no single retirement to follow, so it resolves to "joint"
+ * and ends at the client's retirement (see `defaultSavingsRuleRefs`). That is
+ * the year those rules already default to, so the only rule whose default MOVES
+ * is one pointed at an account the spouse solely owns.
+ */
+export function savingsRuleOwnerForAccount(
+  account: { owners?: AccountOwner[] | null } | null | undefined,
+  familyMembers: readonly { id: string; role: string }[] | null | undefined,
+): Owner {
+  if (!account?.owners) return "joint";
+  const cfm = controllingFamilyMember({ owners: account.owners });
+  if (cfm == null) return "joint";
+  const role = familyMembers?.find((fm) => fm.id === cfm)?.role;
+  if (role === "spouse") return "spouse";
+  if (role === "client") return "client";
+  return "joint";
+}
+
 /** Get default year refs for a new savings rule. A rule funded by the spouse's
- *  salary must stop when the SPOUSE retires, not when the client does. */
+ *  salary must stop when the SPOUSE retires, not when the client does. The
+ *  owner comes from the destination account — see `savingsRuleOwnerForAccount`. */
 export function defaultSavingsRuleRefs(owner: Owner = "client"): {
   startYearRef: YearRef | null;
   endYearRef: YearRef | null;

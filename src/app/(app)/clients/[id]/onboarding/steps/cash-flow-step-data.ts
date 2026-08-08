@@ -183,6 +183,7 @@ export async function loadCashFlowStepData(
     value: a.value,
     isDefaultChecking: a.isDefaultChecking ?? null,
     ownerEntityId: controllingEntity(a) ?? null,
+    owners: a.owners,
     // 529s carry no family_member owners — the loader synthesizes a sentinel
     // external_beneficiary owner instead (see engine/ownership.ts). Fall back
     // to the account's actual beneficiary so the education goal's

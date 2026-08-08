@@ -16,7 +16,7 @@ import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import type { SaveResult } from "@/lib/use-tab-auto-save";
 import { useTabAutoSave } from "@/lib/use-tab-auto-save";
 import TabAutoSaveIndicator from "../tab-auto-save-indicator";
-import { defaultSavingsRuleRefs, resolveMilestone } from "@/lib/milestones";
+import { defaultSavingsRuleRefs, resolveMilestone, savingsRuleOwnerForAccount } from "@/lib/milestones";
 import SavingsRuleDialog, { type SavingsRuleRow } from "./savings-rule-dialog";
 import SavingsRulesList from "./savings-rules-list";
 import GrowthSourceRadio from "./growth-source-radio";
@@ -823,8 +823,11 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const currentYear = new Date().getFullYear();
 
   // Savings (create-only) year state — enables MilestoneYearPicker fallback.
-  // Defaults to plan_start → client_retirement when milestones are available.
-  const defaultSavingsRefs = defaultSavingsRuleRefs();
+  // The contribution ends at the retirement of whoever owns the account being
+  // created: the destination IS this account, so its `owners` state is the
+  // owner. Joint / entity-owned / child-owned fall back to client retirement.
+  const savingsRuleOwner = savingsRuleOwnerForAccount({ owners }, familyMembers);
+  const defaultSavingsRefs = defaultSavingsRuleRefs(savingsRuleOwner);
   const initialSavingsStartYear =
     milestones && defaultSavingsRefs.startYearRef
       ? resolveMilestone(defaultSavingsRefs.startYearRef, milestones, "start") ?? currentYear
@@ -841,6 +844,28 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const [savingsEndYearRef, setSavingsEndYearRef] = useState<YearRef | null>(
     milestones ? defaultSavingsRefs.endYearRef : null,
   );
+  // An explicit edit is the advisor's; a later owner change must not clobber it.
+  const savingsStartTouchedRef = useRef<boolean>(false);
+  const savingsEndTouchedRef = useRef<boolean>(false);
+
+  // Re-snap when the advisor changes ownership mid-form. The owner is picked
+  // further up the same form than these year fields, so without this the
+  // defaults would only ever reflect whoever owned the account at mount.
+  useEffect(() => {
+    if (!milestones) return;
+    const refs = defaultSavingsRuleRefs(savingsRuleOwner);
+    if (!savingsStartTouchedRef.current && refs.startYearRef) {
+      setSavingsStartYearRef(refs.startYearRef);
+      const y = resolveMilestone(refs.startYearRef, milestones, "start");
+      if (y != null) setSavingsStartYear(y);
+    }
+    if (!savingsEndTouchedRef.current && refs.endYearRef) {
+      setSavingsEndYearRef(refs.endYearRef);
+      const y = resolveMilestone(refs.endYearRef, milestones, "end");
+      if (y != null) setSavingsEndYear(y);
+    }
+  }, [savingsRuleOwner, milestones]);
+
   const [savingsGrowthSource, setSavingsGrowthSource] = useState<"custom" | "inflation">("inflation");
   const [savingsGrowthRateDisplay, setSavingsGrowthRateDisplay] = useState<string>("0");
   const [matchMode, setMatchMode] = useState<MatchMode>("none");
@@ -2363,6 +2388,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                   yearRef={savingsStartYearRef}
                   milestones={milestones}
                   onChange={(yr, ref) => {
+                    savingsStartTouchedRef.current = true;
                     setSavingsStartYear(yr);
                     setSavingsStartYearRef(ref);
                   }}
@@ -2382,6 +2408,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                     type="number"
                     value={savingsStartYear}
                     onChange={(e) => {
+                      savingsStartTouchedRef.current = true;
                       setSavingsStartYear(Number(e.target.value));
                       setSavingsStartYearRef(null);
                     }}
@@ -2398,6 +2425,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                   yearRef={savingsEndYearRef}
                   milestones={milestones}
                   onChange={(yr, ref) => {
+                    savingsEndTouchedRef.current = true;
                     setSavingsEndYear(yr);
                     setSavingsEndYearRef(ref);
                   }}
@@ -2418,6 +2446,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                     type="number"
                     value={savingsEndYear}
                     onChange={(e) => {
+                      savingsEndTouchedRef.current = true;
                       setSavingsEndYear(Number(e.target.value));
                       setSavingsEndYearRef(null);
                     }}
@@ -2633,7 +2662,15 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     {isEdit && srDialogOpen && (
       <SavingsRuleDialog
         clientId={clientId}
-        accounts={[{ id: initial!.id, name: initial!.name, category: initial!.category, subType: initial!.subType }]}
+        accounts={[{
+          id: initial!.id,
+          name: initial!.name,
+          category: initial!.category,
+          subType: initial!.subType,
+          // Live form state, not `initial.owners` — a rule added right after
+          // re-assigning the account should follow the owner on screen.
+          owners,
+        }]}
         open={srDialogOpen}
         onOpenChange={(o) => { setSrDialogOpen(o); if (!o) setSrDialogEditing(undefined); }}
         editing={srDialogEditing}
@@ -2644,6 +2681,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
         onRequestDelete={() => { if (srDialogEditing) setDeletingSr(srDialogEditing); setSrDialogOpen(false); }}
         clientInfo={milestones ? { milestones } : undefined}
         ownerNames={ownerNames ? { clientName: ownerNames.clientName, spouseName: ownerNames.spouseName } : undefined}
+        familyMembers={familyMembers}
         resolvedInflationRate={resolvedInflationRate}
       />
     )}

@@ -8,8 +8,9 @@ import MilestoneYearPicker from "@/components/milestone-year-picker";
 import ScheduleTab from "@/components/schedule-tab";
 import { useTabAutoSave, type SaveResult } from "@/lib/use-tab-auto-save";
 import TabAutoSaveIndicator from "@/components/tab-auto-save-indicator";
+import type { AccountOwner } from "@/engine/ownership";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
-import { defaultSavingsRuleRefs, resolveMilestone } from "@/lib/milestones";
+import { defaultSavingsRuleRefs, resolveMilestone, savingsRuleOwnerForAccount } from "@/lib/milestones";
 import EmployerMatchFields, {
   type MatchMode,
   supportsEmployerMatch,
@@ -43,6 +44,12 @@ export interface SavingsRuleAccount {
    *  entity-owned; null when household-owned. Used to keep out-of-estate
    *  accounts out of the savings-target dropdown. */
   ownerEntityId?: string | null;
+  /** Full ownership rows, for the year defaults — a rule ends at the retirement
+   *  of whoever solely owns its destination. Percent-aware on purpose; see
+   *  `savingsRuleOwnerForAccount`. Deliberately NOT `ownerFamilyMemberIds`,
+   *  which several producers fill with a 529's beneficiary rather than its
+   *  owner. */
+  owners?: AccountOwner[] | null;
 }
 
 // Savings contributions can only flow into liquid accounts the household owns
@@ -112,6 +119,9 @@ interface SavingsRuleDialogProps {
   schedule?: { year: number; amount: number }[];
   clientInfo?: ClientInfoForDialog;
   ownerNames?: OwnerNamesForDialog;
+  /** Household members with their roles, to turn an account's owner ids into
+   *  client / spouse / joint. Without it every rule defaults to the client. */
+  familyMembers?: readonly { id: string; role: string }[];
   resolvedInflationRate: number;
 }
 
@@ -128,6 +138,7 @@ export default function SavingsRuleDialog({
   schedule,
   clientInfo,
   ownerNames,
+  familyMembers,
   resolvedInflationRate,
 }: SavingsRuleDialogProps) {
   type SavTabId = "details" | "schedule";
@@ -154,20 +165,6 @@ export default function SavingsRuleDialog({
   const [growthRateDisplay, setGrowthRateDisplay] = useState<string>(
     String(pctFromDecimal(editing?.growthRate ?? "0", 2))
   );
-  const defaultRefs = defaultSavingsRuleRefs();
-  const initialStartRef = (editing?.startYearRef as YearRef | null) ?? defaultRefs.startYearRef ?? null;
-  const initialEndRef = (editing?.endYearRef as YearRef | null) ?? defaultRefs.endYearRef ?? null;
-  const initialStartYear = editing?.startYear
-    ?? (initialStartRef && clientInfo?.milestones ? resolveMilestone(initialStartRef, clientInfo.milestones, "start") : null)
-    ?? currentYear;
-  const initialEndYear = editing?.endYear
-    ?? (initialEndRef && clientInfo?.milestones ? resolveMilestone(initialEndRef, clientInfo.milestones, "end") : null)
-    ?? currentYear + 20;
-
-  const [startYear, setStartYear] = useState<number>(initialStartYear);
-  const [endYear, setEndYear] = useState<number>(initialEndYear);
-  const [startYearRef, setStartYearRef] = useState<YearRef | null>(initialStartRef);
-  const [endYearRef, setEndYearRef] = useState<YearRef | null>(initialEndRef);
   const srClientFirstName = ownerNames?.clientName?.split(" ")[0];
   const srSpouseFirstName = ownerNames?.spouseName?.split(" ")[0];
 
@@ -181,6 +178,68 @@ export default function SavingsRuleDialog({
     editing?.accountId ?? (accountOptions[0]?.id ?? "")
   );
   const selectedAccount = accounts.find((a) => a.id === accountId);
+
+  // The rule's year defaults follow whoever owns the DESTINATION account, so
+  // the accountId state above has to be resolved before they can be computed.
+  const ruleOwner = savingsRuleOwnerForAccount(selectedAccount, familyMembers);
+  // Defaults are for NEW rules only. A saved rule with a deliberately manual
+  // (null-ref) year must keep it: `?? defaultRefs.endYearRef` used to inject a
+  // retirement ref onto that null, and MilestoneYearPicker then re-resolved the
+  // year, silently moving a saved end year to the client's retirement on open.
+  // Mirrors IncomeDialog's `!isEdit ? defaultIncomeRefs(...) : null`.
+  const defaultRefs = editing ? null : defaultSavingsRuleRefs(ruleOwner);
+  const initialStartRef = (editing?.startYearRef as YearRef | null) ?? defaultRefs?.startYearRef ?? null;
+  const initialEndRef = (editing?.endYearRef as YearRef | null) ?? defaultRefs?.endYearRef ?? null;
+  const initialStartYear = editing?.startYear
+    ?? (initialStartRef && clientInfo?.milestones ? resolveMilestone(initialStartRef, clientInfo.milestones, "start") : null)
+    ?? currentYear;
+  const initialEndYear = editing?.endYear
+    ?? (initialEndRef && clientInfo?.milestones ? resolveMilestone(initialEndRef, clientInfo.milestones, "end") : null)
+    ?? currentYear + 20;
+
+  const [startYear, setStartYear] = useState<number>(initialStartYear);
+  const [endYear, setEndYear] = useState<number>(initialEndYear);
+  const [startYearRef, setStartYearRef] = useState<YearRef | null>(initialStartRef);
+  const [endYearRef, setEndYearRef] = useState<YearRef | null>(initialEndRef);
+  // An explicit edit is the advisor's; a later account change must not clobber
+  // it. Editing an existing rule counts as touched from the outset — its saved
+  // years are the advisor's too. State rather than refs because the re-snap
+  // below reads these during render, where a ref may not be read.
+  const [startYearTouched, setStartYearTouched] = useState<boolean>(Boolean(editing));
+  const [endYearTouched, setEndYearTouched] = useState<boolean>(Boolean(editing));
+
+  // Re-snap the year refs when the advisor changes the destination account
+  // mid-form. Without this the defaults are only ever right at mount: picking
+  // the spouse's 401(k) after the dialog opened would leave the rule ending at
+  // the CLIENT's retirement.
+  //
+  // Adjusted during render rather than in an effect — the same shape
+  // MilestoneYearPicker uses to adopt a changed prop. React re-runs this
+  // component before committing, so the pickers never paint the stale year, and
+  // there is no second render pass for the DOM to flicker through.
+  const milestonesForRefs = clientInfo?.milestones;
+  const [prevOwnerKey, setPrevOwnerKey] = useState({ ruleOwner, milestonesForRefs });
+  if (
+    !editing &&
+    (ruleOwner !== prevOwnerKey.ruleOwner || milestonesForRefs !== prevOwnerKey.milestonesForRefs)
+  ) {
+    setPrevOwnerKey({ ruleOwner, milestonesForRefs });
+    const refs = defaultSavingsRuleRefs(ruleOwner);
+    if (!startYearTouched && refs.startYearRef) {
+      setStartYearRef(refs.startYearRef);
+      if (milestonesForRefs) {
+        const y = resolveMilestone(refs.startYearRef, milestonesForRefs, "start");
+        if (y != null) setStartYear(y);
+      }
+    }
+    if (!endYearTouched && refs.endYearRef) {
+      setEndYearRef(refs.endYearRef);
+      if (milestonesForRefs) {
+        const y = resolveMilestone(refs.endYearRef, milestonesForRefs, "end");
+        if (y != null) setEndYear(y);
+      }
+    }
+  }
   const showEmployerMatch = supportsEmployerMatch(
     selectedAccount?.category,
     selectedAccount?.subType
@@ -581,6 +640,7 @@ export default function SavingsRuleDialog({
                 yearRef={startYearRef}
                 milestones={clientInfo.milestones}
                 onChange={(yr, ref) => {
+                  setStartYearTouched(true);
                   setStartYear(yr);
                   setStartYearRef(ref);
                 }}
@@ -601,6 +661,7 @@ export default function SavingsRuleDialog({
                   required
                   value={startYear}
                   onChange={(e) => {
+                    setStartYearTouched(true);
                     setStartYear(Number(e.target.value));
                     setStartYearRef(null);
                   }}
@@ -616,6 +677,7 @@ export default function SavingsRuleDialog({
                 yearRef={endYearRef}
                 milestones={clientInfo.milestones}
                 onChange={(yr, ref) => {
+                  setEndYearTouched(true);
                   setEndYear(yr);
                   setEndYearRef(ref);
                 }}
@@ -637,6 +699,7 @@ export default function SavingsRuleDialog({
                   required
                   value={endYear}
                   onChange={(e) => {
+                    setEndYearTouched(true);
                     setEndYear(Number(e.target.value));
                     setEndYearRef(null);
                   }}
