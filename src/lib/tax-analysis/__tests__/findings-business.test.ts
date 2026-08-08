@@ -161,4 +161,10 @@ describe("reasonableCompensation", () => {
     facts.k1s = [facts.k1s[1]]; // the partnership only
     expect(reasonableCompensation(findingCtx(facts, { primaryAge: 51, spouseAge: 49 }))).toBeNull();
   });
+
+  it("does not fire when the K-1's entity type is unknown", () => {
+    const facts = sCorpOwnerMfj();
+    facts.k1s[0].entityType = null;
+    expect(reasonableCompensation(findingCtx(facts, { primaryAge: 51, spouseAge: 49 }))).toBeNull();
+  });
 });
