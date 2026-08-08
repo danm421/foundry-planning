@@ -13,7 +13,11 @@ const SEVERITY_RANK: Record<SignalSeverity, number> = {
  *
  * The id tiebreak is not cosmetic: `hashBattery` hashes the ordered list, so
  * two equal-impact signals swapping places would flip the staleness flag on a
- * household whose data never changed. Returns a new array.
+ * household whose data never changed. The tiebreak is an ordinal (UTF-16
+ * code-unit) comparison, not `localeCompare` — locale-aware collation
+ * depends on the runtime's ICU/CLDR build, so it can reorder two identical
+ * ids across a Node or platform bump even though nothing about the
+ * household changed. Returns a new array.
  */
 export function orderSignals(signals: Signal[]): Signal[] {
   return [...signals].sort((a, b) => {
@@ -23,6 +27,6 @@ export function orderSignals(signals: Signal[]): Signal[] {
     const ai = a.estimatedImpact ?? Number.NEGATIVE_INFINITY;
     const bi = b.estimatedImpact ?? Number.NEGATIVE_INFINITY;
     if (ai !== bi) return bi - ai;
-    return a.id.localeCompare(b.id);
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
   });
 }
