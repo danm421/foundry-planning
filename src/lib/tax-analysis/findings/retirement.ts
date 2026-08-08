@@ -1,11 +1,11 @@
-import type { Observation, ObservationContext } from "../types";
+import type { Finding, FindingContext } from "../types";
 import { fmtUsd } from "../format";
 import { computeMagi, irmaaTiersFor, currentIrmaaTier, nextIrmaaCliff } from "../irmaa-util";
 
 const IRMAA_RELEVANT_AGE = 63; // MAGI this year sets premiums at 65 (2-year lookback)
 const NEAR_CLIFF_DOLLARS = 25000;
 
-export function irmaaCliff(ctx: ObservationContext): Observation | null {
+export function irmaaCliff(ctx: FindingContext): Finding | null {
   const age = Math.max(ctx.primaryAge ?? 0, ctx.spouseAge ?? 0);
   if (age < IRMAA_RELEVANT_AGE) return null;
   const magi = computeMagi(ctx.facts);
@@ -22,8 +22,13 @@ export function irmaaCliff(ctx: ObservationContext): Observation | null {
     return {
       id: "irmaa-cliff",
       severity: "watch",
-      title: "Approaching a Medicare IRMAA threshold",
-      body: `Your ${ctx.facts.taxYear} MAGI of ${fmtUsd(magi)} sits ${fmtUsd(next.distance)} below the first IRMAA surcharge threshold. Crossing it would raise ${premiumYear} Medicare premiums for each covered person — worth watching before any additional Roth conversions or gain realizations.`,
+      category: "retirement",
+      headline: "Approaching a Medicare IRMAA threshold",
+      whatTheReturnShows: `Your ${ctx.facts.taxYear} MAGI of ${fmtUsd(magi)} sits ${fmtUsd(next.distance)} below the first IRMAA surcharge threshold. Crossing it would raise ${premiumYear} Medicare premiums for each covered person — worth watching before any additional Roth conversions or gain realizations.`,
+      whyItMatters: "",
+      whatToConsider: "",
+      lineRefs: [],
+      estimatedImpact: null,
       numbers: { magi, tier: 0, distanceToNextCliff: next.distance },
     };
   }
@@ -33,13 +38,18 @@ export function irmaaCliff(ctx: ObservationContext): Observation | null {
   return {
     id: "irmaa-cliff",
     severity: "watch",
-    title: `MAGI lands in IRMAA tier ${current.tier}`,
-    body: `Your ${ctx.facts.taxYear} MAGI of ${fmtUsd(magi)} falls in IRMAA tier ${current.tier}, adding about ${fmtUsd(perPerson)} per covered person to ${premiumYear} Medicare premiums. Reducing MAGI by ${fmtUsd(reduction)} would have dropped a full tier.`,
+    category: "retirement",
+    headline: `MAGI lands in IRMAA tier ${current.tier}`,
+    whatTheReturnShows: `Your ${ctx.facts.taxYear} MAGI of ${fmtUsd(magi)} falls in IRMAA tier ${current.tier}, adding about ${fmtUsd(perPerson)} per covered person to ${premiumYear} Medicare premiums. Reducing MAGI by ${fmtUsd(reduction)} would have dropped a full tier.`,
+    whyItMatters: "",
+    whatToConsider: "",
+    lineRefs: [],
+    estimatedImpact: null,
     numbers: { magi, tier: current.tier, reductionToDropTier: reduction, surchargePerPerson: perPerson },
   };
 }
 
-export function qcd(ctx: ObservationContext): Observation | null {
+export function qcd(ctx: FindingContext): Finding | null {
   const age70 = (ctx.primaryAge ?? 0) >= 70 || (ctx.spouseAge ?? 0) >= 70;
   const iraGross = ctx.facts.income.iraDistributionsGross ?? 0;
   const charitableCash = ctx.facts.deductions.scheduleA?.charitableCash ?? 0;
@@ -59,8 +69,13 @@ export function qcd(ctx: ObservationContext): Observation | null {
   return {
     id: "qcd",
     severity: "opportunity",
-    title: "Qualified charitable distributions from the IRA",
-    body: `${opening} ${why}`,
+    category: "retirement",
+    headline: "Qualified charitable distributions from the IRA",
+    whatTheReturnShows: `${opening} ${why}`,
+    whyItMatters: "",
+    whatToConsider: "",
+    lineRefs: [],
+    estimatedImpact: null,
     numbers: { iraDistributions: iraGross, charitableCash },
   };
 }

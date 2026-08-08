@@ -1,11 +1,11 @@
 import type { TaxResolver } from "@/lib/tax/resolver";
 import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 import { calculateTaxYear } from "@/lib/tax/calculate";
-import type { Observation } from "./types";
+import type { Finding } from "./types";
 import { factsToCalcInput, type AdapterContext } from "./adapter";
 import { runReconstruction, type ReconstructionCheck } from "./reconstruction";
 import { buildBracketMap, type BracketMap } from "./bracket-map";
-import { buildObservations } from "./observations";
+import { buildFindings } from "./findings";
 import { buildYoY, type YoYRow } from "./yoy";
 import {
   buildIncomeComposition,
@@ -39,7 +39,7 @@ export interface TaxAnalysis {
   /** Gross-to-net per business/rental/K-1. The income table shows only nets. */
   activityDetail: ActivityDetail[] | null;
   deductionDetail: DeductionDetail | null;
-  observations: Observation[];
+  findings: Finding[];
   yoy: YoYRow[] | null;
   reconstruction: ReconstructionCheck;
   adapterNotes: string[];
@@ -60,8 +60,8 @@ export function buildTaxAnalysis(args: BuildTaxAnalysisArgs): TaxAnalysis {
   const ctx: AdapterContext = { taxParams: params, primaryAge, spouseAge };
 
   // Single pass: factsToCalcInput and calculateTaxYear each run once here —
-  // bracketMap and calc are then shared (via ObservationContext) with every
-  // observation builder and with runReconstruction, instead of each of them
+  // bracketMap and calc are then shared (via FindingContext) with every
+  // finding builder and with runReconstruction, instead of each of them
   // re-deriving CalcInput/TaxResult/BracketMap independently.
   const { input, notes } = factsToCalcInput(facts, ctx);
   const calc = facts.filingStatus ? calculateTaxYear(input) : null;
@@ -71,6 +71,10 @@ export function buildTaxAnalysis(args: BuildTaxAnalysisArgs): TaxAnalysis {
   // Built once here: keyFigures reads the total and buildIncomeComposition
   // reads the per-source uplifts, so the two can't disagree about what gross is.
   const gross = buildGrossIncome(facts);
+  // Hoisted out of the return object so the findings context can share the one
+  // computation — rental-cash-vs-paper consumes these rows rather than
+  // re-deriving a rental net that would disagree with the table above it.
+  const activityDetail = buildActivityDetail(facts);
 
   return {
     taxYear: facts.taxYear,
@@ -87,9 +91,11 @@ export function buildTaxAnalysis(args: BuildTaxAnalysisArgs): TaxAnalysis {
     },
     bracketMap,
     incomeComposition: buildIncomeComposition(facts, gross),
-    activityDetail: buildActivityDetail(facts),
+    activityDetail,
     deductionDetail: buildDeductionDetail(facts),
-    observations: buildObservations({ facts, prior, params, irmaaParams, primaryAge, spouseAge, calc, bracketMap }),
+    findings: buildFindings({
+      facts, prior, params, irmaaParams, primaryAge, spouseAge, calc, bracketMap, activityDetail,
+    }),
     yoy: prior ? buildYoY(facts, prior) : null,
     reconstruction: runReconstruction(facts, calc),
     adapterNotes: notes,

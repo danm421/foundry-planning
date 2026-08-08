@@ -1,20 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { bracketPosition, rothHeadroom, ltcgZeroHeadroom } from "../observations/brackets";
-import type { ObservationContext } from "../types";
-import { runCalc } from "../adapter";
-import { buildBracketMap } from "../bracket-map";
-import { params2025, retireeMfj } from "./fixtures";
+import { bracketPosition, rothHeadroom, ltcgZeroHeadroom } from "../findings/brackets";
+import { retireeMfj, findingCtx } from "./fixtures";
 import { emptyTaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 
-function ctxFor(facts = retireeMfj()): ObservationContext {
-  const primaryAge = 72;
-  const spouseAge = 72;
-  return {
-    facts, prior: null, params: params2025, irmaaParams: params2025, primaryAge, spouseAge,
-    calc: runCalc(facts, { taxParams: params2025, primaryAge, spouseAge }),
-    bracketMap: buildBracketMap(facts, params2025),
-  };
-}
+const ctxFor = (facts = retireeMfj()) => findingCtx(facts, { primaryAge: 72, spouseAge: 72 });
 
 describe("bracketPosition", () => {
   it("reports the 22% bracket with headroom", () => {
@@ -23,7 +12,7 @@ describe("bracketPosition", () => {
     expect(o.severity).toBe("info");
     expect(o.numbers.marginalRate).toBe(0.22);
     expect(o.numbers.headroom).toBe(86200);
-    expect(o.body).toContain("22%");
+    expect(o.whatTheReturnShows).toContain("22%");
   });
   it("skips when taxable income is missing", () => {
     expect(bracketPosition(ctxFor(emptyTaxReturnFacts(2025)))).toBeNull();
@@ -35,13 +24,13 @@ describe("rothHeadroom", () => {
     const o = rothHeadroom(ctxFor())!;
     expect(o.severity).toBe("opportunity");
     expect(o.numbers.headroom).toBe(86200);
-    expect(o.body).toContain("$86,200");
+    expect(o.whatTheReturnShows).toContain("$86,200");
   });
   it("adds an IRMAA caveat when a cliff sits inside the headroom", () => {
     // retiree MAGI = 188700 + 12000 = 200700; MFJ tier-1 bound 212000 is
     // 11300 away — inside the 86200 of bracket headroom.
     const o = rothHeadroom(ctxFor())!;
-    expect(o.body).toContain("IRMAA");
+    expect(o.whatTheReturnShows).toContain("IRMAA");
     expect(o.numbers.irmaaCliffDistance).toBe(11300);
   });
 });

@@ -1,13 +1,13 @@
 "use client";
 
-import type { Observation } from "@/lib/tax-analysis/types";
+import type { Finding } from "@/lib/tax-analysis/types";
 import { fmtUsd, fmtPct } from "@/lib/tax-analysis/format";
 import { deductionDetailRows, hasGrossColumn, incomeCompositionTotal } from "@/lib/tax-analysis/breakdowns";
 import { activityDetailRows, type ActivityDetail } from "@/lib/tax-analysis/activity-detail";
 import { BracketMapBars } from "./bracket-map-bars";
 import type { YearDetail } from "./tax-analysis-content";
 
-const GROUPS: Array<{ severity: Observation["severity"]; heading: string }> = [
+const GROUPS: Array<{ severity: Finding["severity"]; heading: string }> = [
   { severity: "opportunity", heading: "Opportunities" },
   { severity: "watch", heading: "Watch items" },
   { severity: "info", heading: "Notes" },
@@ -197,16 +197,20 @@ export function TaxReportView({
       )}
 
       {GROUPS.map(({ severity, heading }) => {
-        const items = a.observations.filter((o) => o.severity === severity);
+        const items = a.findings.filter((f) => f.severity === severity);
         if (items.length === 0) return null;
         return (
           <section key={severity}>
             <h3 className="mb-2 text-sm font-medium uppercase text-ink-3">{heading}</h3>
             <div className="flex flex-col gap-2">
-              {items.map((o) => (
-                <div key={o.id} className="rounded border border-hair bg-card p-4">
-                  <p className="mb-1 font-medium">{o.title}</p>
-                  <p className="text-sm text-ink-2">{o.body}</p>
+              {items.map((f) => (
+                <div key={f.id} className="rounded border border-hair bg-card p-4">
+                  <p className="mb-1 font-medium">{f.headline}</p>
+                  {[f.whatTheReturnShows, f.whyItMatters, f.whatToConsider]
+                    .filter(Boolean)
+                    .map((part, i) => (
+                      <p key={i} className="text-sm text-ink-2">{part}</p>
+                    ))}
                 </div>
               ))}
             </div>

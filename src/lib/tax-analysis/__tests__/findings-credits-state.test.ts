@@ -1,19 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { ctcPhaseout, educationCredits, stateNotes } from "../observations/credits-state";
-import type { ObservationContext } from "../types";
-import { runCalc } from "../adapter";
-import { buildBracketMap } from "../bracket-map";
-import { params2025, retireeMfj, highEarnerMfj } from "./fixtures";
+import { ctcPhaseout, educationCredits, stateNotes } from "../findings/credits-state";
+import { retireeMfj, highEarnerMfj, findingCtx } from "./fixtures";
 
-function ctxFor(facts: ReturnType<typeof retireeMfj>): ObservationContext {
-  const primaryAge = 45;
-  const spouseAge = 44;
-  return {
-    facts, prior: null, params: params2025, irmaaParams: params2025, primaryAge, spouseAge,
-    calc: runCalc(facts, { taxParams: params2025, primaryAge, spouseAge }),
-    bracketMap: buildBracketMap(facts, params2025),
-  };
-}
+const ctxFor = (facts: ReturnType<typeof retireeMfj>) =>
+  findingCtx(facts, { primaryAge: 45, spouseAge: 44 });
 
 describe("ctcPhaseout", () => {
   it("computes the reduction for AGI over the MFJ threshold", () => {
@@ -31,7 +21,7 @@ describe("educationCredits", () => {
     const f = highEarnerMfj();
     f.dependents17to23 = 1;
     const o = educationCredits(ctxFor(f))!;
-    expect(o.body).toContain("education credit");
+    expect(o.whatTheReturnShows).toContain("education credit");
   });
   it("skips without college-age dependents or claimed credits", () => {
     expect(educationCredits(ctxFor(retireeMfj()))).toBeNull();
@@ -43,7 +33,7 @@ describe("stateNotes", () => {
     const f = retireeMfj();
     f.residenceState = "FL";
     const o = stateNotes(ctxFor(f))!;
-    expect(o.body).toContain("no state income tax");
+    expect(o.whatTheReturnShows).toContain("no state income tax");
   });
   it("estimates state tax for PA via the state engine", () => {
     const o = stateNotes(ctxFor(retireeMfj()))!;

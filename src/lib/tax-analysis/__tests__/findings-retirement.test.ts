@@ -1,20 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { irmaaCliff, qcd } from "../observations/retirement";
-import type { ObservationContext } from "../types";
-import { runCalc } from "../adapter";
-import { buildBracketMap } from "../bracket-map";
-import { params2025, retireeMfj, singleNearIrmaa, highEarnerMfj } from "./fixtures";
+import { irmaaCliff, qcd } from "../findings/retirement";
+import { retireeMfj, singleNearIrmaa, highEarnerMfj, findingCtx } from "./fixtures";
 
-function ctxFor(
+const ctxFor = (
   facts: ReturnType<typeof retireeMfj>,
   ages: { primaryAge: number | null; spouseAge: number | null },
-): ObservationContext {
-  return {
-    facts, prior: null, params: params2025, irmaaParams: params2025, ...ages,
-    calc: runCalc(facts, { taxParams: params2025, ...ages }),
-    bracketMap: buildBracketMap(facts, params2025),
-  };
-}
+) => findingCtx(facts, ages);
 
 describe("irmaaCliff", () => {
   it("warns a single filer $1,500 below the first cliff", () => {
@@ -22,7 +13,7 @@ describe("irmaaCliff", () => {
     expect(o.severity).toBe("watch");
     expect(o.numbers.tier).toBe(0);
     expect(o.numbers.distanceToNextCliff).toBe(1500);
-    expect(o.body).toContain("2027"); // taxYear 2025 + 2-year lookback
+    expect(o.whatTheReturnShows).toContain("2027"); // taxYear 2025 + 2-year lookback
   });
 
   it("reports the surcharge and drop-a-tier distance once inside a tier", () => {
@@ -42,10 +33,10 @@ describe("qcd", () => {
   it("flags a 72-year-old standard-deduction filer with IRA distributions", () => {
     const o = qcd(ctxFor(retireeMfj(), { primaryAge: 72, spouseAge: 72 }))!;
     expect(o.severity).toBe("opportunity");
-    expect(o.body).toContain("qualified charitable distribution");
+    expect(o.whatTheReturnShows).toContain("qualified charitable distribution");
     // No Schedule A giving evidence on this return — intent must be conditional, not asserted.
-    expect(o.body).toContain("If charitable giving is part of your plans");
-    expect(o.body).not.toContain("charitable intent");
+    expect(o.whatTheReturnShows).toContain("If charitable giving is part of your plans");
+    expect(o.whatTheReturnShows).not.toContain("charitable intent");
   });
   it("skips when nobody is 70+", () => {
     expect(qcd(ctxFor(retireeMfj(), { primaryAge: 68, spouseAge: 67 }))).toBeNull();

@@ -1,21 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
   charitableBunching, niitExposure, additionalMedicare, safeHarbor, capitalLossCarryover,
-} from "../observations/money-flags";
-import type { ObservationContext } from "../types";
-import { runCalc } from "../adapter";
-import { buildBracketMap } from "../bracket-map";
-import { params2025, retireeMfj, highEarnerMfj } from "./fixtures";
+} from "../findings/money-flags";
+import { retireeMfj, highEarnerMfj, findingCtx } from "./fixtures";
 
-function ctxFor(facts: ReturnType<typeof retireeMfj>, prior: ReturnType<typeof retireeMfj> | null = null): ObservationContext {
-  const primaryAge = 55;
-  const spouseAge = 54;
-  return {
-    facts, prior, params: params2025, irmaaParams: params2025, primaryAge, spouseAge,
-    calc: runCalc(facts, { taxParams: params2025, primaryAge, spouseAge }),
-    bracketMap: buildBracketMap(facts, params2025),
-  };
-}
+const ctxFor = (facts: ReturnType<typeof retireeMfj>, prior: ReturnType<typeof retireeMfj> | null = null) =>
+  findingCtx(facts, { primaryAge: 55, spouseAge: 54, prior });
 
 describe("charitableBunching", () => {
   it("flags a standard-deduction filer who gives cash", () => {
@@ -23,7 +13,7 @@ describe("charitableBunching", () => {
     f.deductions.scheduleA = { saltPaid: null, saltDeducted: null, mortgageInterest: null, charitableCash: 6000, charitableNonCash: null, medical: null };
     const o = charitableBunching(ctxFor(f))!;
     expect(o.severity).toBe("opportunity");
-    expect(o.body).toContain("bunch");
+    expect(o.whatTheReturnShows).toContain("bunch");
   });
   it("flags an itemizer barely above the standard deduction", () => {
     // highEarner: itemized 36000 vs std 30000 → gap 6000 < 20% of std

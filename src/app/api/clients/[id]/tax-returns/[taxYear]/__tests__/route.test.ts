@@ -59,7 +59,7 @@ describe("GET .../tax-returns/[taxYear]", () => {
     const body = await res.json();
     expect(res.status).toBe(200);
     expect(body.analysis.keyFigures.agi).toBe(188700);
-    expect(body.analysis.observations.length).toBeGreaterThan(0);
+    expect(body.analysis.findings.length).toBeGreaterThan(0);
   });
 
   it("404s for a missing year", async () => {

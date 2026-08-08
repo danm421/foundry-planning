@@ -1,4 +1,4 @@
-import type { Observation, ObservationContext } from "../types";
+import type { Finding, FindingContext } from "../types";
 import { bracketPosition, rothHeadroom, ltcgZeroHeadroom } from "./brackets";
 import { irmaaCliff, qcd } from "./retirement";
 import {
@@ -22,6 +22,6 @@ const BUILDERS = [
   stateNotes,
 ] as const;
 
-export function buildObservations(ctx: ObservationContext): Observation[] {
-  return BUILDERS.map((b) => b(ctx)).filter((o): o is Observation => o !== null);
+export function buildFindings(ctx: FindingContext): Finding[] {
+  return BUILDERS.map((b) => b(ctx)).filter((f): f is Finding => f !== null);
 }

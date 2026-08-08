@@ -3,6 +3,10 @@ import {
   emptyTaxReturnFacts,
   type TaxReturnFacts,
 } from "@/lib/schemas/tax-return-facts";
+import type { FindingContext } from "../types";
+import { runCalc } from "../adapter";
+import { buildBracketMap } from "../bracket-map";
+import { buildActivityDetail } from "../activity-detail";
 
 /** Hand-entered 2025-shaped parameters (values realistic, test-local). */
 export const params2025: TaxYearParameters = {
@@ -215,4 +219,25 @@ export function singleNearIrmaa(): TaxReturnFacts {
   f.tax.totalTax = 14000;
   f.payments.withholding = 15500;
   return f;
+}
+
+/** The context every builder test needs, built the way buildTaxAnalysis builds
+ *  it — same calc, same bracketMap, same activityDetail. */
+export function findingCtx(
+  facts: TaxReturnFacts,
+  opts: { primaryAge?: number | null; spouseAge?: number | null; prior?: TaxReturnFacts | null } = {},
+): FindingContext {
+  const primaryAge = opts.primaryAge ?? null;
+  const spouseAge = opts.spouseAge ?? null;
+  return {
+    facts,
+    prior: opts.prior ?? null,
+    params: params2025,
+    irmaaParams: params2025,
+    primaryAge,
+    spouseAge,
+    calc: runCalc(facts, { taxParams: params2025, primaryAge, spouseAge }),
+    bracketMap: buildBracketMap(facts, params2025),
+    activityDetail: buildActivityDetail(facts),
+  };
 }

@@ -1,7 +1,7 @@
 // src/components/tax-analysis-pdf/tax-analysis-pdf-document.tsx
 import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
 import type { TaxAnalysis } from "@/lib/tax-analysis/analysis";
-import type { Observation } from "@/lib/tax-analysis/types";
+import type { Finding } from "@/lib/tax-analysis/types";
 import { computeBracketBarLayout } from "@/lib/tax-analysis/bracket-map";
 import { fmtUsd, fmtPct } from "@/lib/tax-analysis/format";
 import { deductionDetailRows, hasGrossColumn, incomeCompositionTotal } from "@/lib/tax-analysis/breakdowns";
@@ -17,7 +17,7 @@ export interface TaxAnalysisPdfProps {
   logoDataUrl?: string | null; // from resolveBranding — base64 data URL or null
 }
 
-const GROUPS: Array<{ severity: Observation["severity"]; heading: string }> = [
+const GROUPS: Array<{ severity: Finding["severity"]; heading: string }> = [
   { severity: "opportunity", heading: "Opportunities" },
   { severity: "watch", heading: "Watch items" },
   { severity: "info", heading: "Notes" },
@@ -287,19 +287,23 @@ function DeductionsSection({ analysis }: { analysis: TaxAnalysis }) {
   );
 }
 
-function ObservationsSection({ analysis }: { analysis: TaxAnalysis }) {
+function FindingsSection({ analysis }: { analysis: TaxAnalysis }) {
   return (
     <View>
       {GROUPS.map(({ severity, heading }) => {
-        const items = analysis.observations.filter((o) => o.severity === severity);
+        const items = analysis.findings.filter((f) => f.severity === severity);
         if (items.length === 0) return null;
         return (
           <View key={severity}>
             <Text style={styles.sectionHeading}>{heading}</Text>
-            {items.map((o) => (
-              <View key={o.id} style={styles.obsCard}>
-                <Text style={styles.obsTitle}>{o.title}</Text>
-                <Text style={styles.obsBody}>{o.body}</Text>
+            {items.map((f) => (
+              <View key={f.id} style={styles.obsCard}>
+                <Text style={styles.obsTitle}>{f.headline}</Text>
+                {[f.whatTheReturnShows, f.whyItMatters, f.whatToConsider]
+                  .filter(Boolean)
+                  .map((part, i) => (
+                    <Text key={i} style={styles.obsBody}>{part}</Text>
+                  ))}
               </View>
             ))}
           </View>
@@ -360,7 +364,7 @@ export function TaxAnalysisPdfDocument(props: TaxAnalysisPdfProps) {
 
         <DeductionsSection analysis={a} />
 
-        <ObservationsSection analysis={a} />
+        <FindingsSection analysis={a} />
 
         <YoYSection analysis={a} taxYear={props.taxYear} />
 
