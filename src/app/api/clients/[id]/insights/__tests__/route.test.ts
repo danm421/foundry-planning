@@ -101,6 +101,9 @@ describe("GET /insights", () => {
     vi.mocked(loadInsightsBattery).mockResolvedValue({
       kpis: { netWorth: 1 },
       risk: { verdict: "aligned" },
+      // Distinctive on purpose: 37 matches no other number in this fixture, so
+      // the assertion below cannot pass by reading the wrong field.
+      toleranceScore: 37,
       signals,
     } as never);
     vi.mocked(loadInsightProfile).mockResolvedValue({
@@ -124,5 +127,9 @@ describe("GET /insights", () => {
     ]);
     expect(body.profile.talkingPoints).toEqual(["tp1"]);
     expect("needsAttention" in body).toBe(false);
+    // The tolerance rung is the ONLY source for the 360 scale's fourth marker.
+    // Asserting the value (not just presence) also catches a transposed field —
+    // wiring this to kpis.netWorth or risk would yield 1 or undefined, not 37.
+    expect(body.toleranceScore).toBe(37);
   });
 });
