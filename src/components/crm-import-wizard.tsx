@@ -9,7 +9,7 @@ import {
 } from "@/components/icons";
 import { CrmImportFixes } from "@/components/crm-import-fixes";
 import { CrmImportMapping } from "@/components/crm-import-mapping";
-import { CrmImportPreview } from "@/components/crm-import-preview";
+import { CrmImportPreview, resolve } from "@/components/crm-import-preview";
 import {
   TEMPLATE_HEADERS,
   missingRequiredFields,
@@ -190,20 +190,22 @@ export function CrmImportWizard() {
 
   function buildDecisions() {
     if (!preview) return [];
-    // The errors filter is load-bearing: the commit route rejects the
-    // entire batch with a 400 if a single errored row reaches it.
-    return preview.rows
-      .filter((r) => r.errors.length === 0)
-      .map((r) => {
-        const dup = preview.duplicates.find((d) => d.rowIndex === r.rowIndex);
-        const row = { household: r.household, primary: r.primary, spouse: r.spouse };
-        const choice = choices[r.rowIndex];
-        if (choice === "create") return { action: "create" as const, row };
-        if (choice) return { action: "skip" as const, row, matchedHouseholdId: choice };
-        return dup
-          ? { action: "skip" as const, row, matchedHouseholdId: dup.matches[0].id }
-          : { action: "create" as const, row };
-      });
+    // Delegates to the same `resolve` the preview table renders from, so a
+    // blocked/create/skip outcome can never differ between what the advisor
+    // saw and what gets posted. Excluding "blocked" here is load-bearing:
+    // the commit route rejects the entire batch with a 400 if a single
+    // errored row reaches it.
+    return preview.rows.flatMap((r) => {
+      const dup = preview.duplicates.find((d) => d.rowIndex === r.rowIndex);
+      const resolved = resolve(r, dup?.matches, choices);
+      if (resolved.kind === "blocked") return [];
+      const row = { household: r.household, primary: r.primary, spouse: r.spouse };
+      const decision =
+        resolved.kind === "create"
+          ? { action: "create" as const, row }
+          : { action: "skip" as const, row, matchedHouseholdId: resolved.householdId };
+      return [decision];
+    });
   }
 
   async function onCommit() {

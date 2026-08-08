@@ -3,18 +3,19 @@
 import type { DuplicateMatch, PreviewResult } from "@/components/crm-import-wizard";
 import type { ParsedRow } from "@/lib/crm/import/rows";
 
-type Resolved =
+export type Resolved =
   | { kind: "create" }
   | { kind: "skip"; householdId: string }
   | { kind: "blocked" };
 
 /**
  * The single source of truth for what a row will do on commit. The stat
- * tiles and the table both call this, so they can never disagree with each
- * other — or with `buildDecisions` in the wizard, which mirrors this logic
- * for the actual commit payload.
+ * tiles and the table both call this, and the wizard's `buildDecisions`
+ * calls this same function (rather than re-deriving the precedence) so
+ * they can never disagree with each other or with the actual commit
+ * payload.
  */
-function resolve(
+export function resolve(
   row: ParsedRow,
   matches: DuplicateMatch[] | undefined,
   choices: Record<number, string>,
@@ -105,8 +106,11 @@ export function CrmImportPreview({ preview, choices, onChange }: CrmImportPrevie
                 return (
                   <tr key={row.rowIndex} className={matches?.length ? "bg-card-2" : undefined}>
                     <td className="whitespace-nowrap px-6 py-4">
-                      <span className="font-medium text-ink">{row.household.name}</span>
-                      {row.household.nameIsCustom === false && (
+                      <span className="font-medium text-ink">
+                        Row {row.rowIndex + 1}
+                        {row.household.name ? ` — ${row.household.name}` : ""}
+                      </span>
+                      {row.household.nameIsCustom === false && row.household.name && (
                         <span className="ml-2 rounded-[var(--radius-sm)] bg-card-2 px-1.5 py-0.5 text-[11px] text-ink-3">
                           Generated
                         </span>
