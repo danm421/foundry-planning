@@ -33,6 +33,13 @@ describe("portfolioSignals", () => {
     expect(ids(i)).not.toContain("portfolio.cash_drag");
   });
 
+  it("does not fire cash_drag on an empty portfolio, even well above the cash threshold", () => {
+    const i = signalInputFixture();
+    i.portfolio.cashPct = 0.5;
+    i.portfolio.liquidPortfolio = 0;
+    expect(ids(i)).not.toContain("portfolio.cash_drag");
+  });
+
   it("fires concentration as watch above 10% of the liquid portfolio", () => {
     const i = signalInputFixture();
     i.portfolio.liquidPortfolio = 1_000_000;
@@ -42,12 +49,27 @@ describe("portfolioSignals", () => {
     expect(s!.detail).toContain("TSLA");
   });
 
+  it("does not fire concentration exactly at the watch threshold", () => {
+    const i = signalInputFixture();
+    i.portfolio.liquidPortfolio = 1_000_000;
+    i.portfolio.largestPosition = { label: "TSLA", value: 100_000 }; // exactly 10%
+    expect(ids(i)).not.toContain("portfolio.concentration");
+  });
+
   it("escalates concentration to critical above 20%", () => {
     const i = signalInputFixture();
     i.portfolio.liquidPortfolio = 1_000_000;
     i.portfolio.largestPosition = { label: "TSLA", value: 300_000 };
     const s = portfolioSignals(i).find((x) => x.id === "portfolio.concentration");
     expect(s?.severity).toBe("critical");
+  });
+
+  it("stays watch, not critical, exactly at the critical threshold", () => {
+    const i = signalInputFixture();
+    i.portfolio.liquidPortfolio = 1_000_000;
+    i.portfolio.largestPosition = { label: "TSLA", value: 200_000 }; // exactly 20%
+    const s = portfolioSignals(i).find((x) => x.id === "portfolio.concentration");
+    expect(s?.severity).toBe("watch");
   });
 
   it("does not fire concentration when no holdings are known", () => {

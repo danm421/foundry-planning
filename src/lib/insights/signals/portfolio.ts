@@ -22,7 +22,7 @@ export function portfolioSignals(input: SignalInput): Signal[] {
       title: `${Math.round(portfolio.cashPct * 100)}% of the portfolio is in cash`,
       detail: `About ${Math.round(excessDollars).toLocaleString("en-US")} dollars sits above a ${Math.round(CASH_DRAG_PCT * 100)}% cash position, giving up roughly ${Math.round(excessDollars * spread).toLocaleString("en-US")} dollars a year at the firm's own return assumptions.`,
       numbers: { cashPct: portfolio.cashPct, excessDollars, spread },
-      href: `/clients/${clientId}/investments`,
+      href: `/clients/${clientId}/assets/investments`,
       estimatedImpact: excessDollars * spread,
     });
   }
@@ -38,7 +38,7 @@ export function portfolioSignals(input: SignalInput): Signal[] {
         title: `${pos.label} is ${Math.round(share * 100)}% of the liquid portfolio`,
         detail: `The largest single position, ${pos.label}, accounts for ${Math.round(share * 100)}% of liquid assets — a single-name risk the plan's return assumptions do not model.`,
         numbers: { share, value: pos.value },
-        href: `/clients/${clientId}/investments`,
+        href: `/clients/${clientId}/assets/investments`,
         estimatedImpact: pos.value - CONCENTRATION_WATCH_PCT * portfolio.liquidPortfolio,
       });
     }
