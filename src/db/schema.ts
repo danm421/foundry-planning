@@ -5165,6 +5165,12 @@ export const clientInsightProfiles = pgTable("client_insight_profiles", {
   snapshot: text("snapshot").notNull().default(""),
   goals: text("goals").notNull().default(""),
   opportunities: text("opportunities").notNull().default(""),
+  /** One-sentence lead. The single most important thing about this household. */
+  headline: text("headline").notNull().default(""),
+  /** Ranked actions, each citing a signalId. */
+  actions: jsonb("actions"),
+  /** Client-conversation framing for the top actions. */
+  talkingPoints: jsonb("talking_points"),
   inputHash: text("input_hash").notNull().default(""),
   model: text("model").notNull().default(""),
   generatedByUserId: text("generated_by_user_id"),
