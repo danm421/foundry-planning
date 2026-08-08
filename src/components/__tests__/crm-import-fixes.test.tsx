@@ -71,6 +71,49 @@ describe("CrmImportFixes", () => {
     ]);
   });
 
+  it("keeps another field's override untouched when only one field is edited", () => {
+    const onCommitEdit = vi.fn();
+    const flagged = row({
+      errors: [{ field: "primaryLast", message: "Primary last name is required." }],
+      warnings: [{ field: "primaryDob", message: "isn't a date we can read" }],
+    });
+    render(
+      <CrmImportFixes
+        rows={[flagged]}
+        overrides={[
+          { rowIndex: 0, field: "primaryLast", value: "Old" },
+          { rowIndex: 0, field: "primaryDob", value: "1970-01-01" },
+        ]}
+        onCommitEdit={onCommitEdit}
+      />,
+    );
+    const lastInput = screen.getByLabelText(/primary last name/i);
+    fireEvent.change(lastInput, { target: { value: "New" } });
+    fireEvent.blur(lastInput);
+    expect(onCommitEdit).toHaveBeenCalledWith([
+      { rowIndex: 0, field: "primaryDob", value: "1970-01-01" },
+      { rowIndex: 0, field: "primaryLast", value: "New" },
+    ]);
+  });
+
+  it("clears an existing override when the input is blanked", () => {
+    const onCommitEdit = vi.fn();
+    const flagged = row({
+      errors: [{ field: "primaryLast", message: "Primary last name is required." }],
+    });
+    render(
+      <CrmImportFixes
+        rows={[flagged]}
+        overrides={[{ rowIndex: 0, field: "primaryLast", value: "Old" }]}
+        onCommitEdit={onCommitEdit}
+      />,
+    );
+    const input = screen.getByLabelText(/primary last name/i);
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.blur(input);
+    expect(onCommitEdit).toHaveBeenCalledWith([]);
+  });
+
   it("separates rows that cannot import from rows that merely warn", () => {
     const bad = row({ rowIndex: 0, errors: [{ field: "primaryLast", message: "required" }] });
     const warn = row({ rowIndex: 1, warnings: [{ field: "state", message: "not a US state" }] });
