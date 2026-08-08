@@ -57,6 +57,33 @@ describe("taxSignals", () => {
     expect(taxSignals(i)[0].estimatedImpact).toBeNull();
   });
 
+  it("pulls estimatedImpact from qcd's iraDistributions", () => {
+    const i = signalInputFixture();
+    i.tax = {
+      observations: [obs({ id: "qcd", numbers: { iraDistributions: 12_000, charitableCash: 4_000 } })],
+      taxYear: 2025,
+    };
+    expect(taxSignals(i)[0].estimatedImpact).toBe(12_000);
+  });
+
+  it("pulls estimatedImpact from ctc-phaseout's reduction", () => {
+    const i = signalInputFixture();
+    i.tax = {
+      observations: [obs({ id: "ctc-phaseout", numbers: { excess: 10_000, reduction: 500 } })],
+      taxYear: 2025,
+    };
+    expect(taxSignals(i)[0].estimatedImpact).toBe(500);
+  });
+
+  it("leaves estimatedImpact null for the near-threshold ctc-phaseout shape (headroom only)", () => {
+    const i = signalInputFixture();
+    i.tax = {
+      observations: [obs({ id: "ctc-phaseout", numbers: { headroom: 8_000 } })],
+      taxYear: 2025,
+    };
+    expect(taxSignals(i)[0].estimatedImpact).toBeNull();
+  });
+
   it("deep-links to the tax analysis for the year the return covers", () => {
     const i = signalInputFixture();
     i.tax = { observations: [obs({})], taxYear: 2024 };

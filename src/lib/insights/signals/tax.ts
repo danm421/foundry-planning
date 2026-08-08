@@ -20,6 +20,8 @@ const IMPACT_KEY: Record<string, string> = {
   "safe-harbor": "shortfall",
   "irmaa-cliff": "distanceToNextCliff",
   "charitable-bunching": "shortfall",
+  "qcd": "iraDistributions",
+  "ctc-phaseout": "reduction",
 };
 
 export function taxSignals(input: SignalInput): Signal[] {
