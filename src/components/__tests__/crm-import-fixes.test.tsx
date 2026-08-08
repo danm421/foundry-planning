@@ -114,6 +114,49 @@ describe("CrmImportFixes", () => {
     expect(onCommitEdit).toHaveBeenCalledWith([]);
   });
 
+  it("does not commit when a field is blurred without ever being edited", () => {
+    const onCommitEdit = vi.fn();
+    const flagged = row({
+      errors: [{ field: "primaryLast", message: "Primary last name is required." }],
+    });
+    render(
+      <CrmImportFixes
+        rows={[flagged]}
+        overrides={[{ rowIndex: 0, field: "primaryLast", value: "Smith" }]}
+        onCommitEdit={onCommitEdit}
+      />,
+    );
+    const input = screen.getByLabelText(/primary last name/i);
+    input.focus();
+    fireEvent.blur(input);
+    expect(onCommitEdit).not.toHaveBeenCalled();
+  });
+
+  it("does not commit when the typed value matches the existing override", () => {
+    const onCommitEdit = vi.fn();
+    const flagged = row({
+      errors: [{ field: "primaryLast", message: "Primary last name is required." }],
+    });
+    render(
+      <CrmImportFixes
+        rows={[flagged]}
+        overrides={[{ rowIndex: 0, field: "primaryLast", value: "Smith" }]}
+        onCommitEdit={onCommitEdit}
+      />,
+    );
+    const input = screen.getByLabelText(/primary last name/i);
+    // Type something different first, then back to the override's exact
+    // value. Firing `change` straight to the value already on screen is a
+    // no-op in React — it dedupes a same-value controlled input and never
+    // calls onChange — which would leave `drafts` empty and accidentally
+    // re-test "never typed into" instead of "typed value equals the
+    // override." This two-step change genuinely populates the draft first.
+    fireEvent.change(input, { target: { value: "Smithy" } });
+    fireEvent.change(input, { target: { value: "Smith" } });
+    fireEvent.blur(input);
+    expect(onCommitEdit).not.toHaveBeenCalled();
+  });
+
   it("separates rows that cannot import from rows that merely warn", () => {
     const bad = row({ rowIndex: 0, errors: [{ field: "primaryLast", message: "required" }] });
     const warn = row({ rowIndex: 1, warnings: [{ field: "state", message: "not a US state" }] });

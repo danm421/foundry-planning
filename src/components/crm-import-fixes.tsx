@@ -34,7 +34,13 @@ export function CrmImportFixes({ rows, overrides, onCommitEdit }: CrmImportFixes
   }
 
   function commit(rowIndex: number, field: ImportField) {
-    const value = valueFor(rowIndex, field);
+    const k = key(rowIndex, field);
+    // Never typed into — a bare Tab-through blur must not fire a remap POST.
+    if (!(k in drafts)) return;
+    const value = drafts[k] ?? "";
+    const existing = overrides.find((o) => o.rowIndex === rowIndex && o.field === field);
+    // Typed value matches what's already committed — nothing changed.
+    if (value === (existing?.value ?? "")) return;
     const next = overrides.filter((o) => !(o.rowIndex === rowIndex && o.field === field));
     if (value.trim() !== "") next.push({ rowIndex, field, value });
     onCommitEdit(next);
