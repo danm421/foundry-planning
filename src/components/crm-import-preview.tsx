@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import type { DuplicateMatch, PreviewResult } from "@/components/crm-import-wizard";
 import type { ParsedRow } from "@/lib/crm/import/rows";
 
@@ -42,8 +43,10 @@ export function CrmImportPreview({ preview, choices, onChange }: CrmImportPrevie
   let createCount = 0;
   let skipCount = 0;
   let blockedCount = 0;
+  const resolvedByRow = new Map<number, Resolved>();
   for (const row of preview.rows) {
     const resolved = resolve(row, duplicatesByRow.get(row.rowIndex), choices);
+    resolvedByRow.set(row.rowIndex, resolved);
     if (resolved.kind === "create") createCount++;
     else if (resolved.kind === "skip") skipCount++;
     else blockedCount++;
@@ -58,24 +61,14 @@ export function CrmImportPreview({ preview, choices, onChange }: CrmImportPrevie
       </div>
 
       {preview.partialDedupCorpus && (
-        <div
-          role="status"
-          className="rounded-[var(--radius-sm)] border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[13px] text-amber-700 dark:text-amber-300"
-        >
+        <Banner>
           Duplicate detection was checked against only the first 1,000 existing
           households. Matches beyond that page may be missed — review the
           imported rows after commit.
-        </div>
+        </Banner>
       )}
 
-      {preview.truncated && (
-        <div
-          role="status"
-          className="rounded-[var(--radius-sm)] border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[13px] text-amber-700 dark:text-amber-300"
-        >
-          Only the first 1,000 rows of this file were read.
-        </div>
-      )}
+      {preview.truncated && <Banner>Only the first 1,000 rows of this file were read.</Banner>}
 
       <section>
         <h2 className="mb-2 text-[13px] font-semibold uppercase tracking-wider text-ink-3">
@@ -102,7 +95,8 @@ export function CrmImportPreview({ preview, choices, onChange }: CrmImportPrevie
             <tbody className="divide-y divide-hair">
               {preview.rows.map((row) => {
                 const matches = duplicatesByRow.get(row.rowIndex);
-                const resolved = resolve(row, matches, choices);
+                // Every row was resolved once in the counting loop above.
+                const resolved = resolvedByRow.get(row.rowIndex)!;
                 return (
                   <tr key={row.rowIndex} className={matches?.length ? "bg-card-2" : undefined}>
                     <td className="whitespace-nowrap px-6 py-4">
@@ -206,6 +200,17 @@ function DuplicateResolver({
           ))}
         </select>
       )}
+    </div>
+  );
+}
+
+function Banner({ children }: { children: ReactNode }) {
+  return (
+    <div
+      role="status"
+      className="rounded-[var(--radius-sm)] border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[13px] text-amber-700 dark:text-amber-300"
+    >
+      {children}
     </div>
   );
 }

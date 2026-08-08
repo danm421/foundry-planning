@@ -62,6 +62,23 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  {
+    files: ["src/components/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@/lib/crm/import",
+              message:
+                "@/lib/crm/import pulls in exceljs, audit, and db and cannot ship to the browser. Import @/lib/crm/import/columns or @/lib/crm/import/rows instead.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   globalIgnores([
     ".next/**",
     "out/**",

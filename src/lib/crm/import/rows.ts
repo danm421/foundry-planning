@@ -72,7 +72,15 @@ export function buildRows(
   overrides: readonly RowOverride[] = [],
 ): ParsedRow[] {
   const overrideIndex = new Map<string, string>();
-  for (const o of overrides) overrideIndex.set(`${o.rowIndex}:${o.field}`, o.value);
+  // Row indices with at least one non-blank override — mirrors the
+  // `overrides.some((o) => o.rowIndex === rowIndex && o.value.trim() !== "")`
+  // predicate below, precomputed once instead of re-scanning the whole
+  // overrides array per row.
+  const rowsWithNonBlankOverride = new Set<number>();
+  for (const o of overrides) {
+    overrideIndex.set(`${o.rowIndex}:${o.field}`, o.value);
+    if (o.value.trim() !== "") rowsWithNonBlankOverride.add(o.rowIndex);
+  }
 
   const out: ParsedRow[] = [];
 
@@ -91,7 +99,7 @@ export function buildRows(
 
     const anyValue =
       cells.some((c) => String(c ?? "").trim() !== "") ||
-      overrides.some((o) => o.rowIndex === rowIndex && o.value.trim() !== "");
+      rowsWithNonBlankOverride.has(rowIndex);
     if (!anyValue) continue;
 
     const errors: RowIssue[] = [];

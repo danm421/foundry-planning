@@ -54,12 +54,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { dataRows, mapping, overrides } = parsed.data;
-    const columnCount = dataRows.reduce((max, r) => Math.max(max, r.length), 0);
-    const preview = await buildPreview(
-      dataRows,
-      sanitizeMapping(mapping, Math.max(columnCount, MAX_COLUMNS)),
-      overrides,
-    );
+    const preview = await buildPreview(dataRows, sanitizeMapping(mapping, MAX_COLUMNS), overrides);
 
     return NextResponse.json({ preview });
   } catch (err) {

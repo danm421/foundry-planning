@@ -32,6 +32,12 @@ export type PreviewResult = {
   truncated: boolean;
 };
 
+// The uploaded grid, as returned by the preview endpoint and re-sent to
+// remap on every mapping/fix change.
+type UploadedFile = { header: string[]; dataRows: (string | number)[][] };
+// The preview endpoint's success response.
+type PreviewResponse = { file: UploadedFile; mapping: ColumnMapping; preview: PreviewResult };
+
 // One illustrative row so the template documents the expected formats
 // (ISO `YYYY-MM-DD` dates, the `prospect`/`active`/`inactive`/`archived`
 // status set). The mandatory Review step catches it if an advisor forgets
@@ -79,10 +85,7 @@ export function CrmImportWizard() {
   const [submitting, setSubmitting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [file, setFile] = useState<{
-    header: string[];
-    dataRows: (string | number)[][];
-  } | null>(null);
+  const [file, setFile] = useState<UploadedFile | null>(null);
   const [mapping, setMapping] = useState<ColumnMapping>({});
   const [overrides, setOverrides] = useState<RowOverride[]>([]);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
@@ -111,11 +114,7 @@ export function CrmImportWizard() {
         body: fd,
       });
       const json = (await res.json().catch(() => ({}))) as
-        | {
-            file: { header: string[]; dataRows: (string | number)[][] };
-            mapping: ColumnMapping;
-            preview: PreviewResult;
-          }
+        | PreviewResponse
         | { error?: unknown };
       if (!res.ok) {
         const msg =
@@ -124,11 +123,7 @@ export function CrmImportWizard() {
             : `Preview failed (${res.status})`;
         throw new Error(msg);
       }
-      const result = json as {
-        file: { header: string[]; dataRows: (string | number)[][] };
-        mapping: ColumnMapping;
-        preview: PreviewResult;
-      };
+      const result = json as PreviewResponse;
       setFile(result.file);
       setMapping(result.mapping);
       setOverrides([]);
@@ -320,16 +315,14 @@ export function CrmImportWizard() {
               }}
             />
           )}
-          {preview && (
-            <CrmImportFixes
-              rows={preview.rows}
-              overrides={overrides}
-              onCommitEdit={(next) => {
-                setOverrides(next);
-                void refresh(mapping, next);
-              }}
-            />
-          )}
+          <CrmImportFixes
+            rows={preview.rows}
+            overrides={overrides}
+            onCommitEdit={(next) => {
+              setOverrides(next);
+              void refresh(mapping, next);
+            }}
+          />
           <CrmImportPreview preview={preview} choices={choices} onChange={setChoices} />
           <div className="flex items-center justify-between gap-3 pt-1">
             <button

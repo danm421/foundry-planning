@@ -13,21 +13,9 @@ export {
   REQUIRED_FIELDS,
   detectMapping,
   sanitizeMapping,
-  normalizeHeader,
   type ImportField,
   type ColumnMapping,
 } from "./import/columns";
-export {
-  buildRows,
-  MAX_IMPORT_ROWS,
-  type ParsedRow,
-  type RowIssue,
-  type RowOverride,
-} from "./import/rows";
-export {
-  findDuplicates,
-  type DuplicateMatch,
-  type RowDuplicates,
-} from "./import/dedup";
-export { buildPreview, type PreviewResult } from "./import/preview";
-export { commit, type ImportDecision, type CommitRow } from "./import/commit";
+export { buildRows, MAX_IMPORT_ROWS, type ParsedRow, type RowOverride } from "./import/rows";
+export { buildPreview } from "./import/preview";
+export { commit, type ImportDecision } from "./import/commit";

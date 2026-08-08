@@ -1,7 +1,6 @@
-import { buildRows, MAX_IMPORT_ROWS, type RowOverride } from "./rows";
+import { buildRows, MAX_IMPORT_ROWS, type RowOverride, type ParsedRow } from "./rows";
 import { findDuplicates, type RowDuplicates } from "./dedup";
 import type { ColumnMapping } from "./columns";
-import type { ParsedRow } from "./rows";
 
 export type PreviewResult = {
   rows: ParsedRow[];
