@@ -24,7 +24,16 @@ export function resolve(
   if (row.errors.length > 0) return { kind: "blocked" };
   const choice = choices[row.rowIndex];
   if (choice === "create") return { kind: "create" };
-  if (choice) return { kind: "skip", householdId: choice };
+  // A skip choice only counts while its household is STILL one of this row's
+  // matches. `choices` is keyed by rowIndex and survives a remap, so fixing a
+  // cell can change the derived household name and drop the match the advisor
+  // picked. Without this guard the row would resolve to "skip" against a
+  // vanished match while the table's Decision cell — which branches on
+  // `matches?.length` — renders "Create new", and buildDecisions would post
+  // action:"skip". The row would silently never import.
+  if (choice && matches?.some((m) => m.id === choice)) {
+    return { kind: "skip", householdId: choice };
+  }
   return matches?.length
     ? { kind: "skip", householdId: matches[0].id }
     : { kind: "create" };

@@ -60,6 +60,15 @@ describe("bulk import — end to end through the pure pipeline", () => {
     expect(r.household.state).toBe("TX");
     expect(r.primary.lastName).toBe("Smith");
     expect(r.spouse?.firstName).toBe("John");
+    // Restored — nothing else in the tree proves a street, a city, or the
+    // SPOUSE's own email survive the detectMapping -> buildRows round trip,
+    // so a column swap in rows.ts would otherwise be invisible. The spouse
+    // email in particular discriminates a swap with primary_email, which sits
+    // five columns earlier in the template and carries a different address.
+    expect(r.spouse?.email).toBe("john@example.com");
+    expect(r.primary.email).toBe("jane@example.com");
+    expect(r.primary.addressLine1).toBe("123 Main");
+    expect(r.primary.city).toBe("Austin");
   });
 
   it("accepts a blank household name and derives it", async () => {

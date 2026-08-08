@@ -215,7 +215,7 @@ export function buildRows(
     }
 
     // --- household ------------------------------------------------------
-    const suppliedName = clamp("householdName", MAX_HOUSEHOLD_NAME);
+    const suppliedName = text("householdName");
     const derivedName = buildHouseholdName({
       firstName: primaryFirst,
       lastName: primaryLast,
@@ -226,7 +226,13 @@ export function buildRows(
     const household: ImportHouseholdInput = {
       // An advisor who typed a name meant it — lock it against the contact-
       // driven re-derivation, same as ticking "Use a custom name" in the UI.
-      name: suppliedName || derivedName,
+      //
+      // Clamped AFTER the fallback, so the DERIVED name goes through the same
+      // cap as a supplied one. The parts are clamped at MAX_NAME (100) each,
+      // so `"${first} ${last}"` reaches 201 characters — one over
+      // importHouseholdSchema's `name.max(200)`, which would 400 the entire
+      // batch rather than warn on one row.
+      name: clampValue("householdName", suppliedName || derivedName, MAX_HOUSEHOLD_NAME),
       nameIsCustom: Boolean(suppliedName),
       status: statusCell.value,
       state: stateCode,

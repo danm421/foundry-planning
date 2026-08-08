@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { createCrmContactSchema } from "@/lib/crm/schemas";
 import {
   parseImportDate,
   parseStatus,
@@ -93,6 +94,30 @@ describe("parseEmail", () => {
   it("returns null for blank or invalid", () => {
     expect(parseEmail("")).toBeNull();
     expect(parseEmail("not-an-email")).toBeNull();
+  });
+
+  // parseEmail must refuse EXACTLY what createCrmContactSchema.email refuses.
+  // The commit route validates the batch atomically, so an address parseEmail
+  // lets through and Zod then rejects costs the WHOLE import — a 400 with zero
+  // rows created and nothing on screen naming the cell. Every address below is
+  // one the old hand-rolled /^[^\s@]+@[^\s@]+\.[^\s@]+$/ accepted and z.email()
+  // rejects; each must now be a null (i.e. a per-row warning) instead.
+  it.each([
+    ["josé@example.com", "non-ASCII local part"],
+    ["a..b@x.com", "consecutive dots"],
+    ["jane@example.com.", "trailing dot"],
+    [".jane@example.com", "leading dot"],
+    ["a@b.c", "single-character TLD"],
+  ])("rejects %s (%s) rather than deferring to the commit schema", (address) => {
+    expect(parseEmail(address)).toBeNull();
+    expect(createCrmContactSchema.shape.email.safeParse(address).success).toBe(false);
+  });
+
+  it("still accepts the ordinary addresses the schema accepts", () => {
+    for (const address of ["jane@example.com", "j.smith+crm@sub.example.co.uk"]) {
+      expect(parseEmail(address)).toBe(address);
+      expect(createCrmContactSchema.shape.email.safeParse(address).success).toBe(true);
+    }
   });
 });
 

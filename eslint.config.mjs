@@ -63,16 +63,28 @@ const eslintConfig = defineConfig([
     },
   },
   {
-    files: ["src/components/**/*.{ts,tsx}"],
+    // Client-safety guard for the CRM bulk import. `patterns`, not `paths`:
+    // the barrel is only half the hazard — its server-only subpaths reach db,
+    // audit, and exceljs directly and would break the browser bundle just as
+    // hard. Only ./columns and ./rows are pure, and they stay allowed.
+    //
+    // Scope covers src/components/** plus every .tsx under src/app/**, which
+    // is where a client component actually lives (route handlers are route.ts
+    // and are unaffected). A genuine server component that needs the barrel
+    // can opt out with an inline eslint-disable — none does today.
+    files: ["src/components/**/*.{ts,tsx}", "src/app/**/*.tsx"],
     rules: {
       "no-restricted-imports": [
         "error",
         {
-          paths: [
+          patterns: [
             {
-              name: "@/lib/crm/import",
+              // `regex`, not `group`: a `group` entry is matched
+              // gitignore-style, so a bare "@/lib/crm/import" would sweep in
+              // the whole directory and ban ./columns and ./rows too.
+              regex: "^@/lib/crm/import(/(preview|commit|dedup|read-file))?$",
               message:
-                "@/lib/crm/import pulls in exceljs, audit, and db and cannot ship to the browser. Import @/lib/crm/import/columns or @/lib/crm/import/rows instead.",
+                "@/lib/crm/import and its preview/commit/dedup/read-file modules pull in exceljs, audit, and db and cannot ship to the browser. Import @/lib/crm/import/columns or @/lib/crm/import/rows instead.",
             },
           ],
         },

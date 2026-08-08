@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { importHouseholdSchema } from "@/lib/crm/schemas";
 import { buildRows } from "../rows";
 import type { ColumnMapping } from "../columns";
 
@@ -69,6 +70,31 @@ describe("buildRows — household name", () => {
     const [r] = rows(["Jane", "Smith", "   "]);
     expect(r.household.name).toBe("Jane Smith");
     expect(r.household.nameIsCustom).toBe(false);
+  });
+
+  // primaryFirst and primaryLast are each clamped at 100, so a solo derived
+  // name is "100 chars + space + 100 chars" = 201 — one over
+  // importHouseholdSchema's name.max(200). The commit route validates the
+  // batch atomically, so an unclamped derived name 400s the WHOLE import.
+  // Reachable by mis-mapping a long free-text column onto a name field.
+  it("clamps a DERIVED household name to the schema cap, not just a supplied one", () => {
+    const [r] = buildRows([["F".repeat(100), "L".repeat(100)]], {
+      primaryFirst: 0,
+      primaryLast: 1,
+    });
+    expect(r.errors).toEqual([]);
+    expect(r.household.name).toHaveLength(200);
+    expect(r.warnings.filter((w) => w.field === "householdName")).toHaveLength(1);
+    // The contract the clamp exists to satisfy, asserted against the real schema.
+    expect(importHouseholdSchema.safeParse(r.household).success).toBe(true);
+  });
+
+  it("clamps a supplied over-long household name exactly once", () => {
+    const [r] = rows(["Jane", "Smith", "N".repeat(250)]);
+    expect(r.household.name).toHaveLength(200);
+    expect(r.household.nameIsCustom).toBe(true);
+    expect(r.warnings.filter((w) => w.field === "householdName")).toHaveLength(1);
+    expect(importHouseholdSchema.safeParse(r.household).success).toBe(true);
   });
 });
 

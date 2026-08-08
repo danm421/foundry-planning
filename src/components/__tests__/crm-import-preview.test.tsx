@@ -124,7 +124,31 @@ describe("resolve", () => {
 
   it("skips on the chosen household id when the choice isn't \"create\"", () => {
     const r = row(0, "Jane Smith");
+    // "hh-2" IS one of `matches`, which is what makes this the honoured case —
+    // the two below are the same call with a choice that has fallen out.
     expect(resolve(r, matches, { 0: "hh-2" })).toEqual({ kind: "skip", householdId: "hh-2" });
+  });
+
+  // `choices` is keyed by rowIndex and is NOT cleared by the wizard's
+  // `refresh` — only by onUpload and resetWizard. So an advisor who marks row
+  // 3 a duplicate and then fixes a cell can change the derived household name
+  // enough that row 3 no longer matches anything, leaving a choice pointing at
+  // a household that is no longer offered. The table's Decision cell branches
+  // on `matches?.length` and would render "Create new" while this returned
+  // skip, and `buildDecisions` would post action:"skip" — the row silently
+  // never imports. Both variants below pin that a stale choice is ignored.
+  it("ignores a skip choice whose household is no longer among the matches", () => {
+    const r = row(0, "Jane Smith");
+    expect(resolve(r, matches, { 0: "hh-gone" })).toEqual({
+      kind: "skip",
+      householdId: "hh-1",
+    });
+  });
+
+  it("creates when a stale skip choice survives a remap that removed every match", () => {
+    const r = row(0, "Jane Smith");
+    expect(resolve(r, undefined, { 0: "hh-1" })).toEqual({ kind: "create" });
+    expect(resolve(r, [], { 0: "hh-1" })).toEqual({ kind: "create" });
   });
 
   it("defaults to skip on the top match when there's no choice", () => {

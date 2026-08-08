@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   isUSPSStateCode,
   USPS_STATE_CODES,
@@ -100,9 +101,14 @@ export function parseState(raw: string): USPSStateCode | null {
 export function parseEmail(raw: string): string | null {
   const s = raw.trim().toLowerCase();
   if (!s) return null;
-  // Deliberately simpler than the Zod validator it feeds: one @, no spaces,
-  // a dot in the domain. Anything it lets through, Zod validates at commit.
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s) ? s : null;
+  // EXACTLY the validator createCrmContactSchema.email enforces, not a looser
+  // approximation of it. The commit route validates the whole batch atomically
+  // (`decisions: z.array(...).min(1)`), so an address this let through but Zod
+  // rejected would 400 the ENTIRE import — not one row — with nothing on
+  // screen pointing at the offending cell. Anything Zod refuses has to become
+  // a per-row warning here instead. (z.email is browser-safe; this module
+  // stays PURE + CLIENT-SAFE.)
+  return z.email().safeParse(s).success ? s : null;
 }
 
 /** Trim to a column's max length, reporting whether anything was lost. */

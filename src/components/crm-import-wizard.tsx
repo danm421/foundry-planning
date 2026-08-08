@@ -89,6 +89,11 @@ export function CrmImportWizard() {
   const [mapping, setMapping] = useState<ColumnMapping>({});
   const [overrides, setOverrides] = useState<RowOverride[]>([]);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
+  // A remap failed, so `preview` was derived from an OLDER mapping/overrides
+  // pair than the one the pickers now show. Tracked separately from `error`,
+  // which a failed COMMIT also sets — blocking on `error` would stop the
+  // advisor retrying a commit that just 500'd.
+  const [previewStale, setPreviewStale] = useState(false);
   const [choices, setChoices] = useState<Record<number, string>>({});
   const [committed, setCommitted] = useState<{
     created: number;
@@ -129,6 +134,7 @@ export function CrmImportWizard() {
       setOverrides([]);
       setChoices({});
       setPreview(result.preview);
+      setPreviewStale(false);
       setStep("preview");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Preview failed");
@@ -155,16 +161,30 @@ export function CrmImportWizard() {
             overrides: nextOverrides,
           }),
         });
-        if (!res.ok) throw new Error(`Could not rebuild the preview (${res.status})`);
-        const json = (await res.json()) as { preview: PreviewResult };
+        // Same shape as onUpload/onCommit read, so the endpoint's own message
+        // (a zod complaint, a rate-limit notice) reaches the advisor instead of
+        // a bare status code.
+        const json = (await res.json().catch(() => ({}))) as
+          | { preview: PreviewResult }
+          | { error?: unknown };
+        if (!res.ok) {
+          const msg =
+            "error" in json && typeof json.error === "string"
+              ? json.error
+              : `Could not rebuild the preview (${res.status})`;
+          throw new Error(msg);
+        }
+        const result = json as { preview: PreviewResult };
         setPreview((prev) => ({
-          ...json.preview,
+          ...result.preview,
           // Upload capped the grid at MAX_IMPORT_ROWS; remap only ever sees the
           // already-capped rows and always reports false. Keep the warning sticky.
-          truncated: json.preview.truncated || (prev?.truncated ?? false),
+          truncated: result.preview.truncated || (prev?.truncated ?? false),
         }));
+        setPreviewStale(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not rebuild the preview");
+        setPreviewStale(true);
       } finally {
         setRefreshing(false);
       }
@@ -180,6 +200,7 @@ export function CrmImportWizard() {
     setMapping({});
     setOverrides([]);
     setPreview(null);
+    setPreviewStale(false);
     setChoices({});
   }
 
@@ -335,7 +356,13 @@ export function CrmImportWizard() {
             <button
               type="button"
               onClick={onCommit}
-              disabled={submitting || refreshing || importableCount === 0 || missingRequired.length > 0}
+              disabled={
+                submitting ||
+                refreshing ||
+                previewStale ||
+                importableCount === 0 ||
+                missingRequired.length > 0
+              }
               className="inline-flex h-10 items-center gap-1.5 rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-ink disabled:opacity-60"
             >
               {submitting ? "Importing…" : "Commit import"}
