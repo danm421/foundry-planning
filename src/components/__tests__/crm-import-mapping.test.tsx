@@ -17,6 +17,7 @@ describe("CrmImportMapping", () => {
     expect(screen.getByLabelText(/primary last name/i)).toHaveValue("0");
     expect(screen.getByLabelText(/primary first name/i)).toHaveValue("1");
     expect(screen.getByLabelText(/^city$/i)).toHaveValue("");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("emits the updated mapping when a column is chosen", () => {
@@ -35,6 +36,11 @@ describe("CrmImportMapping", () => {
     );
     fireEvent.change(screen.getByLabelText(/primary last name/i), { target: { value: "" } });
     expect(onChange).toHaveBeenCalledWith({});
+    // toHaveBeenCalledWith ignores undefined-valued keys, so `{}` alone can't
+    // tell `delete mapping.primaryLast` from `mapping.primaryLast = undefined`
+    // — pin that the key is actually absent, not just undefined.
+    const emitted = onChange.mock.calls[0][0];
+    expect("primaryLast" in emitted).toBe(false);
   });
 
   it("warns when a required field has no column", () => {

@@ -4,6 +4,7 @@ import {
   FIELD_LABELS,
   IMPORT_FIELDS,
   REQUIRED_FIELDS,
+  missingRequiredFields,
   type ColumnMapping,
   type ImportField,
 } from "@/lib/crm/import/columns";
@@ -20,7 +21,7 @@ interface CrmImportMappingProps {
  * recognise. A field set to "Not imported" is simply absent from the mapping.
  */
 export function CrmImportMapping({ header, mapping, onChange }: CrmImportMappingProps) {
-  const missingRequired = REQUIRED_FIELDS.filter((f) => mapping[f] === undefined);
+  const missingRequired = missingRequiredFields(mapping);
 
   function setField(field: ImportField, raw: string) {
     const next: ColumnMapping = { ...mapping };

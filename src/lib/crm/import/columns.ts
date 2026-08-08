@@ -77,6 +77,11 @@ export const FIELD_LABELS: Record<ImportField, string> = {
 /** Fields whose absence makes a row unimportable. */
 export const REQUIRED_FIELDS: readonly ImportField[] = ["primaryFirst", "primaryLast"];
 
+/** Which required fields have no column mapped yet. */
+export function missingRequiredFields(mapping: ColumnMapping): ImportField[] {
+  return REQUIRED_FIELDS.filter((f) => mapping[f] === undefined);
+}
+
 /**
  * Every spelling we accept for a column, already normalized. The canonical
  * template header is always first. Order within IMPORT_FIELDS decides ties:

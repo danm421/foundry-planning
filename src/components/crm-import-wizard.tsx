@@ -10,8 +10,8 @@ import {
 import { CrmImportMapping } from "@/components/crm-import-mapping";
 import { CrmImportPreview } from "@/components/crm-import-preview";
 import {
-  REQUIRED_FIELDS,
   TEMPLATE_HEADERS,
+  missingRequiredFields,
   type ColumnMapping,
 } from "@/lib/crm/import/columns";
 import type { ParsedRow, RowOverride } from "@/lib/crm/import/rows";
@@ -235,7 +235,7 @@ export function CrmImportWizard() {
   }
 
   const importableCount = preview?.rows.filter((r) => r.errors.length === 0).length ?? 0;
-  const missingRequired = REQUIRED_FIELDS.filter((f) => mapping[f] === undefined);
+  const missingRequired = missingRequiredFields(mapping);
 
   return (
     <section className="rounded-[10px] border border-hair bg-card p-6 sm:p-7">

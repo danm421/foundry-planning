@@ -4,6 +4,7 @@ import {
   detectMapping,
   sanitizeMapping,
   normalizeHeader,
+  missingRequiredFields,
 } from "../columns";
 
 describe("TEMPLATE_HEADERS", () => {
@@ -61,6 +62,16 @@ describe("detectMapping", () => {
 
   it("returns an empty mapping for a header row it cannot read", () => {
     expect(detectMapping(["col1", "col2"])).toEqual({});
+  });
+});
+
+describe("missingRequiredFields", () => {
+  it("returns both required fields when neither is mapped", () => {
+    expect(missingRequiredFields({})).toEqual(["primaryFirst", "primaryLast"]);
+  });
+
+  it("returns an empty array when both required fields are mapped", () => {
+    expect(missingRequiredFields({ primaryFirst: 0, primaryLast: 1 })).toEqual([]);
   });
 });
 
