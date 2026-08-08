@@ -7,8 +7,10 @@ import {
   ArrowRightIcon,
   DownloadIcon,
 } from "@/components/icons";
+import { CrmImportMapping } from "@/components/crm-import-mapping";
 import { CrmImportPreview } from "@/components/crm-import-preview";
 import {
+  REQUIRED_FIELDS,
   TEMPLATE_HEADERS,
   type ColumnMapping,
 } from "@/lib/crm/import/columns";
@@ -232,6 +234,9 @@ export function CrmImportWizard() {
     }
   }
 
+  const importableCount = preview?.rows.filter((r) => r.errors.length === 0).length ?? 0;
+  const missingRequired = REQUIRED_FIELDS.filter((f) => mapping[f] === undefined);
+
   return (
     <section className="rounded-[10px] border border-hair bg-card p-6 sm:p-7">
       <Stepper step={step} />
@@ -302,6 +307,16 @@ export function CrmImportWizard() {
 
       {step === "preview" && preview && (
         <div className="space-y-5">
+          {file && (
+            <CrmImportMapping
+              header={file.header}
+              mapping={mapping}
+              onChange={(next) => {
+                setMapping(next);
+                void refresh(next, overrides);
+              }}
+            />
+          )}
           <CrmImportPreview preview={preview} choices={choices} onChange={setChoices} />
           <div className="flex items-center justify-between gap-3 pt-1">
             <button
@@ -314,7 +329,7 @@ export function CrmImportWizard() {
             <button
               type="button"
               onClick={onCommit}
-              disabled={submitting || buildDecisions().length === 0}
+              disabled={submitting || refreshing || importableCount === 0 || missingRequired.length > 0}
               className="inline-flex h-10 items-center gap-1.5 rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-ink disabled:opacity-60"
             >
               {submitting ? "Importing…" : "Commit import"}
