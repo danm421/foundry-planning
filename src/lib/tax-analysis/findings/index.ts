@@ -5,6 +5,7 @@ import {
   charitableBunching, niitExposure, additionalMedicare, safeHarbor, capitalLossCarryover,
 } from "./money-flags";
 import { ctcPhaseout, educationCredits, stateNotes } from "./credits-state";
+import { rentalCashVsPaper, suspendedPassiveLoss } from "./real-estate";
 
 const BUILDERS = [
   bracketPosition,
@@ -20,6 +21,8 @@ const BUILDERS = [
   ctcPhaseout,
   educationCredits,
   capitalLossCarryover,
+  rentalCashVsPaper,
+  suspendedPassiveLoss,
   stateNotes,
 ] as const;
 
