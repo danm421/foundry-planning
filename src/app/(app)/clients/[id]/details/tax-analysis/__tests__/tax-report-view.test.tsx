@@ -20,7 +20,7 @@ describe("TaxReportView", () => {
     render(<TaxReportView clientId="c1" detail={detail} onEditFacts={vi.fn()} />);
     expect(screen.getByText("$188,700")).toBeTruthy(); // AGI
     expect(screen.getByText(/opportunities/i)).toBeTruthy();
-    expect(screen.getByText(/roth conversion headroom/i)).toBeTruthy();
+    expect(screen.getByText(/roth conversion room/i)).toBeTruthy();
     expect(screen.getByTestId("bracket-map")).toBeTruthy();
     expect(screen.getByText(/not tax advice/i)).toBeTruthy();
   });
