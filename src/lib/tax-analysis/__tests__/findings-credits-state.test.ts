@@ -1,15 +1,17 @@
 import { describe, it, expect } from "vitest";
 import { ctcPhaseout, educationCredits, stateNotes } from "../findings/credits-state";
-import { retireeMfj, highEarnerMfj, findingCtx } from "./fixtures";
+import { retireeMfj, highEarnerMfj, landlordSingle, findingCtx } from "./fixtures";
 
 const ctxFor = (facts: ReturnType<typeof retireeMfj>) =>
   findingCtx(facts, { primaryAge: 45, spouseAge: 44 });
 
 describe("ctcPhaseout", () => {
-  it("computes the reduction for AGI over the MFJ threshold", () => {
-    const o = ctcPhaseout(ctxFor(highEarnerMfj()))!; // agi 467000, over by 67000
-    expect(o.severity).toBe("watch");
-    expect(o.numbers.excess).toBe(67000);
+  it("flags the CTC phase-out with the $50-per-$1,000 reduction", () => {
+    const f = ctcPhaseout(findingCtx(highEarnerMfj(), { primaryAge: 45, spouseAge: 45 }))!;
+    expect(f.category).toBe("credits");
+    expect(f.numbers.reduction).toBe(3350); // ceil(67000/1000) × 50
+    expect(f.estimatedImpact).toBe(3350);
+    expect(f.whatTheReturnShows).toContain("$467,000");
   });
   it("skips without qualifying children", () => {
     expect(ctcPhaseout(ctxFor(retireeMfj()))).toBeNull();
@@ -17,11 +19,12 @@ describe("ctcPhaseout", () => {
 });
 
 describe("educationCredits", () => {
-  it("notes MAGI above the AOTC window for a high earner with college-age kids", () => {
-    const f = highEarnerMfj();
-    f.dependents17to23 = 1;
-    const o = educationCredits(ctxFor(f))!;
-    expect(o.whatTheReturnShows).toContain("education credit");
+  it("never prices the education credit — the lost fraction is not on the return", () => {
+    const facts = highEarnerMfj();
+    facts.dependents17to23 = 1;
+    const f = educationCredits(findingCtx(facts, { primaryAge: 45, spouseAge: 45 }))!;
+    expect(f.estimatedImpact).toBeNull();
+    expect(f.whatToConsider).toContain("529");
   });
   it("skips without college-age dependents or claimed credits", () => {
     expect(educationCredits(ctxFor(retireeMfj()))).toBeNull();
@@ -29,11 +32,14 @@ describe("educationCredits", () => {
 });
 
 describe("stateNotes", () => {
-  it("reports a no-income-tax state", () => {
-    const f = retireeMfj();
-    f.residenceState = "FL";
-    const o = stateNotes(ctxFor(f))!;
-    expect(o.whatTheReturnShows).toContain("no state income tax");
+  it("states the no-income-tax case with four parts and no line refs", () => {
+    const facts = landlordSingle();
+    facts.residenceState = "TX";
+    const f = stateNotes(findingCtx(facts, { primaryAge: 41 }))!;
+    expect(f.category).toBe("state");
+    expect(f.headline).toContain("TX");
+    expect(f.whyItMatters).not.toBe("");
+    expect(f.lineRefs).toEqual([]); // nothing on the FEDERAL return says this
   });
   it("estimates state tax for PA via the state engine", () => {
     const o = stateNotes(ctxFor(retireeMfj()))!;
