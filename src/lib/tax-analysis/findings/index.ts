@@ -1,6 +1,6 @@
 import type { Finding, FindingContext } from "../types";
 import { bracketPosition, rothHeadroom, ltcgZeroHeadroom } from "./brackets";
-import { irmaaCliff, qcd } from "./retirement";
+import { irmaaCliff, qcd, seRetirementPlanGap } from "./retirement";
 import {
   charitableBunching, niitExposure, additionalMedicare, safeHarbor, capitalLossCarryover,
 } from "./money-flags";
@@ -12,6 +12,7 @@ const BUILDERS = [
   ltcgZeroHeadroom,
   qcd,
   irmaaCliff,
+  seRetirementPlanGap,
   charitableBunching,
   niitExposure,
   additionalMedicare,

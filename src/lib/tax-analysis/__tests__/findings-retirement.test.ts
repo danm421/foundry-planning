@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { irmaaCliff, qcd } from "../findings/retirement";
+import { irmaaCliff, qcd, seRetirementPlanGap } from "../findings/retirement";
 import { formatLineRefs } from "../findings/line-refs";
-import { retireeMfj, highEarnerMfj, findingCtx } from "./fixtures";
+import {
+  retireeMfj, highEarnerMfj, scheduleCOwnerSingle, sCorpOwnerMfj, findingCtx,
+} from "./fixtures";
 
 describe("irmaaCliff", () => {
   it("prices a tier-1-or-higher surcharge per covered person", () => {
@@ -63,5 +65,39 @@ describe("qcd", () => {
     const f = retireeMfj();
     f.income.iraDistributionsGross = 0;
     expect(qcd(findingCtx(f, { primaryAge: 72, spouseAge: 72 }))).toBeNull();
+  });
+});
+
+describe("seRetirementPlanGap", () => {
+  it("sizes an uncapped solo-401(k)-style contribution for a Schedule C owner", () => {
+    const f = seRetirementPlanGap(findingCtx(scheduleCOwnerSingle(), { primaryAge: 44 }))!;
+    expect(f.category).toBe("retirement");
+    expect(f.severity).toBe("opportunity");
+    expect(f.numbers.seEarnings).toBe(145000);
+    // 145,000 × 0.9235 = 133,907.50 → SS 16,604.53 + Medicare 3,883.3175
+    // → seTax 20,487.8475, half 10,243.92375
+    expect(f.numbers.halfSeTax).toBeCloseTo(10243.92375, 5);
+    // 23,500 elective + 20% × (145,000 − 10,243.92375) = 50,451.21525
+    expect(f.numbers.contribution).toBeCloseTo(50451.21525, 5);
+    expect(f.estimatedImpact).toBeCloseTo(f.numbers.contribution * f.numbers.marginalRate, 6);
+    expect(formatLineRefs(f.lineRefs)).toBe("Schedule 1 line 3 · line 16 · Schedule 2 line 4");
+  });
+
+  it("fires on guaranteed payments alone when there is no Schedule C", () => {
+    const f = seRetirementPlanGap(findingCtx(sCorpOwnerMfj(), { primaryAge: 51, spouseAge: 49 }))!;
+    expect(f.numbers.seEarnings).toBe(60000);
+    expect(f.whatTheReturnShows).toContain("guaranteed payments");
+  });
+
+  it("stays silent when line 16 already carries a contribution", () => {
+    const facts = scheduleCOwnerSingle();
+    facts.income.adjustmentsDetail!.sepSimpleSolo401k = 30000;
+    expect(seRetirementPlanGap(findingCtx(facts, { primaryAge: 44 }))).toBeNull();
+  });
+
+  it("stays silent when Schedule 1 Part II was never extracted — absence is not evidence", () => {
+    const facts = scheduleCOwnerSingle();
+    facts.income.adjustmentsDetail = null;
+    expect(seRetirementPlanGap(findingCtx(facts, { primaryAge: 44 }))).toBeNull();
   });
 });

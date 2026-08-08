@@ -1,7 +1,8 @@
 import type { Finding, FindingContext, FindingLineRef } from "../types";
-import { fmtUsd } from "../format";
+import { fmtUsd, fmtPct } from "../format";
 import { computeMagi, irmaaTiersFor, currentIrmaaTier, nextIrmaaCliff } from "../irmaa-util";
-import { marginalRateFor } from "./impact";
+import { marginalRateFor, seTaxOn, selfEmploymentEarnings, totalScheduleCProfit } from "./impact";
+import { n } from "../adapter";
 
 const IRMAA_RELEVANT_AGE = 63; // MAGI this year sets premiums at 65 (2-year lookback)
 const NEAR_CLIFF_DOLLARS = 25000;
@@ -98,6 +99,64 @@ export function qcd(ctx: FindingContext): Finding | null {
     numbers: {
       iraDistributions: iraGross,
       charitableCash,
+      ...(rate != null ? { marginalRate: rate } : {}),
+    },
+  };
+}
+
+/** Below this, a plan is usually still worth having but the finding is noise
+ *  next to the administrative cost of opening one. */
+const SE_PLAN_MIN_EARNINGS = 10000;
+
+/** Employer-side share of net SE earnings after the half-SE-tax reduction —
+ *  the 25%-of-compensation limit expressed as 20% of self-employed net, which
+ *  is the standard restatement for someone with no W-2 from their own business. */
+const EMPLOYER_SHARE = 0.2;
+
+export function seRetirementPlanGap(ctx: FindingContext): Finding | null {
+  const detail = ctx.facts.income.adjustmentsDetail;
+  // A null block means Schedule 1 Part II was never extracted. We cannot claim
+  // "nothing on line 16" for a return we never read line 16 from.
+  if (!detail) return null;
+  if (n(detail.sepSimpleSolo401k) > 0) return null;
+
+  const seEarnings = selfEmploymentEarnings(ctx.facts);
+  if (seEarnings < SE_PLAN_MIN_EARNINGS) return null;
+
+  const halfSeTax = seTaxOn(seEarnings, ctx) / 2;
+  const contributionBase = seEarnings - halfSeTax;
+  const elective = ctx.params.contribLimits.ira401kElective;
+  const contribution = Math.min(elective + EMPLOYER_SHARE * contributionBase, contributionBase);
+  const rate = marginalRateFor(ctx);
+  const impact = rate != null ? contribution * rate : null;
+
+  const scheduleC = totalScheduleCProfit(ctx.facts);
+  const guaranteed = seEarnings - scheduleC;
+  const source =
+    scheduleC > 0 && guaranteed > 0
+      ? `${fmtUsd(scheduleC)} of Schedule C profit and ${fmtUsd(guaranteed)} of partnership guaranteed payments`
+      : scheduleC > 0
+        ? `${fmtUsd(scheduleC)} of Schedule C profit (Schedule 1 line 3)`
+        : `${fmtUsd(guaranteed)} of partnership guaranteed payments`;
+
+  return {
+    id: "se-retirement-plan-gap",
+    severity: "opportunity",
+    category: "retirement",
+    headline: `No self-employed retirement plan against ${fmtUsd(seEarnings)} of SE income`,
+    whatTheReturnShows: `The return reports ${source}, carries ${fmtUsd(n(detail.seTaxDeduction))} of half-SE-tax deduction on Schedule 1 line 15 — and nothing at all on line 16, the SEP, SIMPLE and qualified-plan line.`,
+    whyItMatters: `Self-employment income supports a far larger deductible contribution than a salaried job does, because the owner is both employee and employer. On ${fmtUsd(contributionBase)} of net earnings after the half-SE-tax reduction, a solo 401(k) supports roughly ${fmtUsd(elective)} of elective deferral plus ${fmtPct(EMPLOYER_SHARE)} of net as the employer share — about ${fmtUsd(contribution)}${impact != null ? `, worth roughly ${fmtUsd(impact)} of federal tax at this return's marginal rate` : ""}. Nothing on line 16 means none of that was taken.`,
+    whatToConsider: `A solo 401(k) generally maximises the contribution at this income level; a SEP-IRA is simpler but has no elective-deferral component, so it needs materially more profit to reach the same number. The figure above is before any age-50 catch-up and is still subject to the annual defined-contribution limit, so treat it as the shape of the opportunity rather than the exact deposit. A solo 401(k) must be established by year end even where the funding deadline is later.`,
+    lineRefs: [
+      { form: "Schedule 1", line: "line 3", label: "Business income", amount: ctx.facts.income.scheduleCNet },
+      { form: "Schedule 1", line: "line 16", label: "SEP, SIMPLE and qualified plans", amount: detail.sepSimpleSolo401k },
+      { form: "Schedule 2", line: "line 4", label: "Self-employment tax", amount: ctx.facts.tax.seTax },
+    ],
+    estimatedImpact: impact,
+    numbers: {
+      seEarnings,
+      halfSeTax,
+      contribution,
       ...(rate != null ? { marginalRate: rate } : {}),
     },
   };
