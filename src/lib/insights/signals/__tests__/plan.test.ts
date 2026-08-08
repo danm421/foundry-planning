@@ -43,6 +43,13 @@ describe("planSignals", () => {
     expect(ids(i)).not.toContain("plan.liquidity_runway_low");
   });
 
+  it("does not fire liquidity_runway_low for a net-saving household (negative net outflow)", () => {
+    const i = signalInputFixture();
+    i.plan.liquidPortfolio = 100_000;
+    i.plan.currentYearNetOutflow = -50_000; // inflow exceeds outflow this year
+    expect(ids(i)).not.toContain("plan.liquidity_runway_low");
+  });
+
   it("fires negative_net_worth when any year is projected at or below zero", () => {
     const i = signalInputFixture();
     i.plan.minNetWorth = -1;
