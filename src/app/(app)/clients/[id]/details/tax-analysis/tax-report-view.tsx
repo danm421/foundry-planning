@@ -4,14 +4,10 @@ import type { Finding } from "@/lib/tax-analysis/types";
 import { fmtUsd, fmtPct } from "@/lib/tax-analysis/format";
 import { deductionDetailRows, hasGrossColumn, incomeCompositionTotal } from "@/lib/tax-analysis/breakdowns";
 import { activityDetailRows, type ActivityDetail } from "@/lib/tax-analysis/activity-detail";
+import { SEVERITY_GROUPS, CATEGORY_LABEL, sortFindings } from "@/lib/tax-analysis/findings/order";
+import { formatLineRefs } from "@/lib/tax-analysis/findings/line-refs";
 import { BracketMapBars } from "./bracket-map-bars";
 import type { YearDetail } from "./tax-analysis-content";
-
-const GROUPS: Array<{ severity: Finding["severity"]; heading: string }> = [
-  { severity: "opportunity", heading: "Opportunities" },
-  { severity: "watch", heading: "Watch items" },
-  { severity: "info", heading: "Notes" },
-];
 
 /** Per-variant row/label classes. `detail` rows are components of the line
  *  above them; `memo` rows sit below the net and are not terms of its
@@ -55,6 +51,47 @@ function KeyFigure({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** The four parts, in reading order. Keyed rather than written out three times
+ *  so a part added to Finding cannot render on one surface and not the other. */
+const FINDING_PARTS = [
+  { key: "whatTheReturnShows", label: "What the return shows" },
+  { key: "whyItMatters", label: "Why it matters" },
+  { key: "whatToConsider", label: "What to consider" },
+] as const;
+
+function FindingCard({ finding }: { finding: Finding }) {
+  const refs = formatLineRefs(finding.lineRefs);
+  return (
+    <div id={`finding-${finding.id}`} className="scroll-mt-4 rounded border border-hair bg-card p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="font-medium">{finding.headline}</p>
+          <span className="mt-1 inline-block rounded-full border border-hair px-2 py-0.5 text-[11px] uppercase tracking-wide text-ink-3">
+            {CATEGORY_LABEL[finding.category]}
+          </span>
+        </div>
+        {finding.estimatedImpact != null && (
+          <div className="shrink-0 text-right">
+            <span className="block text-[11px] uppercase text-ink-3">Est. impact</span>
+            <span className="text-sm font-semibold tabular-nums">{fmtUsd(finding.estimatedImpact)}</span>
+          </div>
+        )}
+      </div>
+      <div className="mt-3 flex flex-col gap-2">
+        {FINDING_PARTS.map(({ key, label }) =>
+          finding[key] ? (
+            <div key={key}>
+              <p className="text-xs font-medium uppercase text-ink-3">{label}</p>
+              <p className="text-sm text-ink-2">{finding[key]}</p>
+            </div>
+          ) : null,
+        )}
+      </div>
+      {refs !== "" && <p className="mt-3 text-xs italic text-ink-3">{refs}</p>}
+    </div>
+  );
+}
+
 export function TaxReportView({
   clientId,
   detail,
@@ -72,6 +109,9 @@ export function TaxReportView({
   // whose gross differs — a return with no line 9 gets the column, not the tile.
   const grossTile = k.grossIncome != null && k.grossIncome !== k.totalIncome ? k.grossIncome : null;
   const showGrossColumn = a.incomeComposition != null && hasGrossColumn(a.incomeComposition);
+  // Sorted once: the index and every group read the same array, so a jump link
+  // can never point at a card the grouping dropped.
+  const findings = sortFindings(a.findings);
 
   async function exportPdf() {
     const res = await fetch(`/api/clients/${clientId}/tax-returns/${detail.taxYear}/export-pdf`, { method: "POST" });
@@ -196,22 +236,30 @@ export function TaxReportView({
         </section>
       )}
 
-      {GROUPS.map(({ severity, heading }) => {
-        const items = a.findings.filter((f) => f.severity === severity);
+      {findings.length > 0 && (
+        <nav aria-label="Findings index" className="rounded border border-hair bg-card p-4">
+          <h3 className="mb-2 text-sm font-medium uppercase text-ink-3">Findings</h3>
+          <ol className="flex flex-col gap-1">
+            {findings.map((f) => (
+              <li key={f.id}>
+                <a href={`#finding-${f.id}`} className="text-sm text-ink-2 underline-offset-2 hover:underline">
+                  {f.headline}
+                </a>
+              </li>
+            ))}
+          </ol>
+        </nav>
+      )}
+
+      {SEVERITY_GROUPS.map(({ severity, heading }) => {
+        const items = findings.filter((f) => f.severity === severity);
         if (items.length === 0) return null;
         return (
           <section key={severity}>
             <h3 className="mb-2 text-sm font-medium uppercase text-ink-3">{heading}</h3>
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-3">
               {items.map((f) => (
-                <div key={f.id} className="rounded border border-hair bg-card p-4">
-                  <p className="mb-1 font-medium">{f.headline}</p>
-                  {[f.whatTheReturnShows, f.whyItMatters, f.whatToConsider]
-                    .filter(Boolean)
-                    .map((part, i) => (
-                      <p key={i} className="text-sm text-ink-2">{part}</p>
-                    ))}
-                </div>
+                <FindingCard key={f.id} finding={f} />
               ))}
             </div>
           </section>
