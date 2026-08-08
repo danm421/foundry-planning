@@ -7,6 +7,7 @@ import {
   ArrowRightIcon,
   DownloadIcon,
 } from "@/components/icons";
+import { CrmImportFixes } from "@/components/crm-import-fixes";
 import { CrmImportMapping } from "@/components/crm-import-mapping";
 import { CrmImportPreview } from "@/components/crm-import-preview";
 import {
@@ -314,6 +315,16 @@ export function CrmImportWizard() {
               onChange={(next) => {
                 setMapping(next);
                 void refresh(next, overrides);
+              }}
+            />
+          )}
+          {preview && (
+            <CrmImportFixes
+              rows={preview.rows}
+              overrides={overrides}
+              onCommitEdit={(next) => {
+                setOverrides(next);
+                void refresh(mapping, next);
               }}
             />
           )}
