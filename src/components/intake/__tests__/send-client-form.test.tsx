@@ -23,6 +23,7 @@ const defaultProps = {
   primaryName: "Jane Smith",
   clientAlreadyBound: false,
   pendingFormId: null,
+  portalEnabled: true,
 };
 
 describe("SendClientForm", () => {
@@ -39,6 +40,21 @@ describe("SendClientForm", () => {
     expect(screen.getByRole("button", { name: /send blank form/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /send pre-filled form/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/recipient email/i)).toHaveValue("jane@example.com");
+  });
+
+  it("hides the Pre-filled button when the firm has no client portal, keeping Blank", () => {
+    // Pre-filled is delivered as a portal invite; blank is a tokenized email
+    // link, so it survives. Both emission paths, not just the visible state.
+    render(<SendClientForm {...defaultProps} portalEnabled={false} />);
+    expect(screen.queryByRole("button", { name: /send pre-filled form/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /send blank form/i })).toBeInTheDocument();
+  });
+
+  it("drops the already-bound portal hint when the firm has no client portal", () => {
+    render(
+      <SendClientForm {...defaultProps} portalEnabled={false} clientAlreadyBound />,
+    );
+    expect(screen.queryByText(/already has portal access/i)).toBeNull();
   });
 
   it("submitting Blank calls POST /api/data-collection with mode:blank", async () => {

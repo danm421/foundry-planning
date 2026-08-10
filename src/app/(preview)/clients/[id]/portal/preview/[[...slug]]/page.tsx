@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { crmHouseholdContacts } from "@/db/schema";
 import { requireClientAccess } from "@/lib/clients/authz";
-import { nullOnAccessDenial } from "@/lib/authz";
+import { nullOnAccessDenial, requireClientPortalEntitlement } from "@/lib/authz";
 import OrganizerHouseholdScreen from "@/components/portal/organizer-household-screen";
 import { PortalAccountsScreen } from "@/components/portal/portal-accounts-screen";
 import TransactionsSection from "@/components/portal/transactions-section";
@@ -52,6 +52,13 @@ export default async function PortalPreviewPage({
   // propagates and renders a 500 rather than a misleading "no such client".
   const access = await requireClientAccess(id).catch(nullOnAccessDenial);
   if (!access) notFound();
+
+  // This renders the portal itself, so it follows the owning firm's
+  // `client_portal` entitlement — 404, matching the access-denial style above.
+  const entitled = await requireClientPortalEntitlement(access.firmId)
+    .then(() => true)
+    .catch(nullOnAccessDenial);
+  if (!entitled) notFound();
 
   // The client's advisor-sharing switches gate the budgeting sections below.
   // Gated sections render a NotSharedNotice INSTEAD of loading data — nothing

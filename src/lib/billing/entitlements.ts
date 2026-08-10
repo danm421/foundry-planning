@@ -38,6 +38,28 @@ export type EntitlementsInput = {
 export const BASE_ENTITLEMENTS = ["ai_import", "ai_forge", "ai_copilot"] as const;
 
 /**
+ * The client-portal capability key. Deliberately NOT in BASE_ENTITLEMENTS and
+ * not tied to any Stripe price: `deriveEntitlements` seeds only the base set, so
+ * omitting the key here is what makes the portal off for EVERY firm — no
+ * migration and no backfill are involved. An ops `grant` override at
+ * /admin/orgs/[firmId]/entitlements is the only way to turn it on today; if the
+ * portal later becomes a paid add-on, an `addon` item carrying this addonKey
+ * grants it through the existing add-on branch with no change here.
+ */
+export const CLIENT_PORTAL_ENTITLEMENT = "client_portal";
+
+/**
+ * Whether a firm's entitlements grant the client portal. Fails closed: a null,
+ * undefined, or stale Clerk `entitlements` array reads as "not entitled" rather
+ * than throwing, so a metadata gap locks the portal rather than opening it.
+ */
+export function hasClientPortalEntitlement(
+  entitlements: string[] | null | undefined,
+): boolean {
+  return !!entitlements?.includes(CLIENT_PORTAL_ENTITLEMENT);
+}
+
+/**
  * Derive the Clerk-public-metadata `entitlements` array from a subscription's
  * line items. Pure function — no IO, no Date.now, no env reads.
  *

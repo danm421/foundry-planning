@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   deriveEntitlements,
   BASE_ENTITLEMENTS,
+  CLIENT_PORTAL_ENTITLEMENT,
+  hasClientPortalEntitlement,
   type StripeItemView,
   type EntitlementOverride,
 } from "../entitlements";
@@ -111,5 +113,53 @@ describe("deriveEntitlements — override union (final step)", () => {
 
   it("is the base set when no overrides are passed (back-compat)", () => {
     expect(deriveEntitlements({ items: [seat] })).toEqual(BASE);
+  });
+});
+
+describe("client portal — off for every firm until ops grants it", () => {
+  it("is absent from the base set, so it is never seeded", () => {
+    // Literal membership, not a loop over BASE_ENTITLEMENTS: this is the whole
+    // "off by default" property, so it must fail if the key is ever added there.
+    expect([...BASE_ENTITLEMENTS]).not.toContain(CLIENT_PORTAL_ENTITLEMENT);
+  });
+
+  it("a seat does not grant it", () => {
+    expect(deriveEntitlements({ items: [seat] })).not.toContain(CLIENT_PORTAL_ENTITLEMENT);
+  });
+
+  it("an ops grant override is what turns it on for one firm", () => {
+    const overrides: EntitlementOverride[] = [
+      { entitlement: CLIENT_PORTAL_ENTITLEMENT, mode: "grant" },
+    ];
+    expect(deriveEntitlements({ items: [seat], overrides })).toEqual([
+      "ai_copilot",
+      "ai_forge",
+      "ai_import",
+      "client_portal",
+    ]);
+  });
+
+  it("a later revoke takes it back off", () => {
+    const overrides: EntitlementOverride[] = [
+      { entitlement: CLIENT_PORTAL_ENTITLEMENT, mode: "grant" },
+      { entitlement: CLIENT_PORTAL_ENTITLEMENT, mode: "revoke" },
+    ];
+    expect(deriveEntitlements({ items: [seat], overrides })).toEqual(BASE);
+  });
+});
+
+describe("hasClientPortalEntitlement", () => {
+  it("is true only when the key is present", () => {
+    expect(hasClientPortalEntitlement(["ai_import", "client_portal"])).toBe(true);
+  });
+
+  it("fails closed on an org without the key", () => {
+    expect(hasClientPortalEntitlement(["ai_import", "ai_forge"])).toBe(false);
+  });
+
+  it("fails closed on missing or stale Clerk metadata", () => {
+    expect(hasClientPortalEntitlement(null)).toBe(false);
+    expect(hasClientPortalEntitlement(undefined)).toBe(false);
+    expect(hasClientPortalEntitlement([])).toBe(false);
   });
 });

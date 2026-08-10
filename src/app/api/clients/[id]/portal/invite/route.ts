@@ -5,7 +5,11 @@ import { db } from "@/db";
 import { clients } from "@/db/schema";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { requireClientEditAccess } from "@/lib/clients/authz";
-import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import {
+  requireActiveSubscriptionForFirm,
+  requireClientPortalEntitlement,
+  authErrorResponse,
+} from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { clerkInviteErrorResponse } from "@/lib/clients/portal-invite-errors";
 import { checkPortalInviteRateLimit } from "@/lib/rate-limit";
@@ -27,6 +31,9 @@ export async function POST(
     const { orgId: callerOrg } = await requireOrgAndUser();
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
+    // Granting portal access is the one advisor action the entitlement blocks;
+    // DELETE below stays open so an advisor can always revoke.
+    await requireClientPortalEntitlement(firmId);
 
     const limit = await checkPortalInviteRateLimit(firmId);
     if (!limit.allowed) {

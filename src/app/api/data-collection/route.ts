@@ -7,7 +7,11 @@ import { db } from "@/db";
 import { clients, intakeForms, intakeEmailSettings } from "@/db/schema";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { requireClientEditAccess } from "@/lib/clients/authz";
-import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import {
+  requireActiveSubscriptionForFirm,
+  requireClientPortalEntitlement,
+  authErrorResponse,
+} from "@/lib/authz";
 import { clerkInviteErrorResponse } from "@/lib/clients/portal-invite-errors";
 import { checkPortalInviteRateLimit } from "@/lib/rate-limit";
 import { sendPortalInvite } from "@/lib/clients/send-portal-invite";
@@ -131,6 +135,10 @@ export async function POST(req: Request): Promise<Response> {
 
     // ── Rate-limit (prefilled only) ────────────────────────────────────────
     if (mode === "prefilled") {
+      // A prefilled send is delivered AS a portal invite (see below), so it is
+      // the second way to grant portal access and needs the same entitlement as
+      // /portal/invite. A blank send is a tokenized email link — not gated.
+      await requireClientPortalEntitlement(firmId);
       const limit = await checkPortalInviteRateLimit(firmId);
       if (!limit.allowed) {
         return NextResponse.json(

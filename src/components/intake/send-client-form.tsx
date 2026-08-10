@@ -19,6 +19,9 @@ interface Props {
   pendingFormId: string | null;
   /** The advisor's saved default, or null for the system default. */
   defaultSections?: IntakeSectionKey[] | null;
+  /** Whether the firm holds the `client_portal` entitlement. False hides the
+   *  pre-filled send, which is delivered as a portal invite. */
+  portalEnabled: boolean;
 }
 
 export default function SendClientForm({
@@ -30,6 +33,7 @@ export default function SendClientForm({
   clientAlreadyBound,
   pendingFormId,
   defaultSections = null,
+  portalEnabled,
 }: Props) {
   const router = useRouter();
   const [recipientEmail, setRecipientEmail] = useState(primaryEmail);
@@ -135,14 +139,23 @@ export default function SendClientForm({
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <button type="button" disabled={sending} onClick={() => send("blank")} className={portalBtn.ghost}>
+        <button
+          type="button"
+          disabled={sending}
+          onClick={() => send("blank")}
+          className={portalEnabled ? portalBtn.ghost : portalBtn.primary}
+        >
           {sending ? "Sending…" : "Send blank form"}
         </button>
-        <button type="button" disabled={sending} onClick={() => send("prefilled")} className={portalBtn.primary}>
-          {sending ? "Sending…" : "Send pre-filled form"}
-        </button>
+        {/* A pre-filled send is delivered as a portal invite, so it is gone
+            when the firm has no portal — the API refuses it either way. */}
+        {portalEnabled && (
+          <button type="button" disabled={sending} onClick={() => send("prefilled")} className={portalBtn.primary}>
+            {sending ? "Sending…" : "Send pre-filled form"}
+          </button>
+        )}
       </div>
-      {clientAlreadyBound && (
+      {portalEnabled && clientAlreadyBound && (
         <p className="mt-2 text-[11px] text-ink-4">
           Client already has portal access — no new invite will be sent.
         </p>

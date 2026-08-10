@@ -21,9 +21,16 @@ vi.mock("@/lib/branding/advisor-profile", () => ({
   getAdvisorProfile: async () => null,
 }));
 
+const portalEntitlementMock = vi.fn();
 vi.mock("@/lib/authz", () => ({
   requireActiveSubscriptionForFirm: async () => {},
-  authErrorResponse: () => undefined,
+  requireClientPortalEntitlement: async () => portalEntitlementMock(),
+  // Enough of the real mapping for the entitlement 403 below; every other
+  // error in this file is a plain Error and still falls through to 500.
+  authErrorResponse: (err: unknown) =>
+    err instanceof Error && err.name === "ForbiddenError"
+      ? { status: 403, body: { error: err.message } }
+      : undefined,
 }));
 
 vi.mock("@/lib/clients/cross-firm-audit", () => ({
@@ -119,6 +126,7 @@ beforeEach(() => {
   selectClientResultMock.mockReset();
   sendIntakeFormEmailMock.mockReset();
   recordAuditMock.mockReset();
+  portalEntitlementMock.mockReset();
 
   // Happy-path defaults
   checkLimitMock.mockResolvedValue({ allowed: true });
@@ -416,6 +424,41 @@ describe("POST /api/data-collection — a prefilled send has to be renderable in
     expect(dbInsertMock.mock.calls[0][0]).toEqual(
       expect.objectContaining({ sections: ["goals", "documents"] }),
     );
+  });
+});
+
+describe("POST /api/data-collection — client_portal entitlement", () => {
+  /** A ForbiddenError as thrown by the real requireClientPortalEntitlement. */
+  function forbid() {
+    portalEntitlementMock.mockImplementation(() => {
+      const err = new Error("Client portal is not enabled for this firm");
+      err.name = "ForbiddenError";
+      throw err;
+    });
+  }
+
+  it("403s a prefilled send when the firm has no client portal, storing nothing", async () => {
+    forbid();
+    const res = await POST(
+      postReq({
+        mode: "prefilled",
+        clientId: "client-1",
+        recipientEmail: "client@example.com",
+      }),
+    );
+    expect(res.status).toBe(403);
+    expect(dbInsertMock).not.toHaveBeenCalled();
+    expect(createInvitationMock).not.toHaveBeenCalled();
+  });
+
+  it("still sends a blank form — a tokenized email link needs no portal", async () => {
+    forbid();
+    const res = await POST(
+      postReq({ mode: "blank", clientId: "client-1", recipientEmail: "a@b.com" }),
+    );
+    expect(res.status).toBe(200);
+    expect(portalEntitlementMock).not.toHaveBeenCalled();
+    expect(sendIntakeFormEmailMock).toHaveBeenCalled();
   });
 });
 

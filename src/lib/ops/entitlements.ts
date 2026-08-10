@@ -4,13 +4,16 @@ import { db } from "@/db";
 import { opsEntitlementOverrides, subscriptions, subscriptionItems } from "@/db/schema";
 import {
   deriveEntitlements,
+  CLIENT_PORTAL_ENTITLEMENT,
   type EntitlementOverride,
   type StripeItemView,
 } from "@/lib/billing/entitlements";
 import { recordAudit } from "@/lib/audit";
 
 /** Capability keys the Entitlements tab can toggle (label/description drive the
- *  UI). Both ship seat-included today; an override here grants/revokes per-firm. */
+ *  UI). The AI keys are base entitlements — on everywhere, so an override here
+ *  is a per-firm kill switch. `client_portal` is the inverse: off everywhere, so
+ *  a grant here is the only way to turn it on for a firm. */
 export type CapabilityKey = { key: string; label: string; description: string };
 export const CAPABILITY_KEYS: CapabilityKey[] = [
   {
@@ -22,6 +25,12 @@ export const CAPABILITY_KEYS: CapabilityKey[] = [
     key: "ai_forge",
     label: "Forge (AI planning assistant)",
     description: "Conversational planning assistant powered by AI agents.",
+  },
+  {
+    key: CLIENT_PORTAL_ENTITLEMENT,
+    label: "Client portal",
+    description:
+      "Off by default. Grant to let this firm invite clients to the portal; revoking locks out clients already using it.",
   },
 ];
 

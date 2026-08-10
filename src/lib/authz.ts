@@ -1,9 +1,11 @@
+import { cache } from "react";
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { UnauthorizedError } from "./db-helpers";
-import { getPortalClientId } from "@/lib/portal/get-portal-client";
+import { getPortalClientRef } from "@/lib/portal/get-portal-client";
 import { roleHasCapability, type Capability } from "./capabilities";
 import { currentUserIsBillingContact } from "@/lib/billing/billing-contact";
 import { PAST_DUE_GRACE_DAYS } from "@/lib/billing/access-policy";
+import { hasClientPortalEntitlement } from "@/lib/billing/entitlements";
 
 /**
  * Forbidden — the caller is authenticated but lacks the required role
@@ -150,13 +152,68 @@ export async function requireActiveSubscriptionForFirmNoSession(firmId: string):
   if (!metaIsActive(meta)) throw new ForbiddenError("Active subscription required");
 }
 
+/** A firm's entitlements straight from Clerk. React.cache'd because the portal
+ *  gate runs in two nested layouts plus every `/api/portal/*` handler. */
+const firmEntitlements = cache(async (firmId: string): Promise<string[] | null> => {
+  const cc = await clerkClient();
+  const org = await cc.organizations.getOrganization({ organizationId: firmId });
+  const raw = (org.publicMetadata as { entitlements?: unknown } | null)?.entitlements;
+  return Array.isArray(raw) ? raw.map(String) : null;
+});
+
+const PORTAL_NOT_ENTITLED = "Client portal is not enabled for this firm";
+
+/**
+ * Client-portal entitlement gate, keyed to the owning firm. The portal is OFF
+ * for every firm by default — `client_portal` is not a base entitlement — so
+ * this throws unless ops has granted the key to `firmId`.
+ *
+ * Own org: read sessionClaims.org_public_metadata (the advisor-side callers,
+ * no Clerk call). Other firm — including every portal user, who has no orgId of
+ * their own: fetch that org's publicMetadata via Clerk.
+ */
+export async function requireClientPortalEntitlement(firmId: string): Promise<void> {
+  const { userId, orgId, sessionClaims } = await auth();
+  if (!userId) throw new UnauthorizedError();
+  if (orgId && firmId === orgId) {
+    const meta =
+      (sessionClaims as { org_public_metadata?: { entitlements?: string[] } } | null)
+        ?.org_public_metadata ?? {};
+    if (!hasClientPortalEntitlement(meta.entitlements)) {
+      throw new ForbiddenError(PORTAL_NOT_ENTITLED);
+    }
+    return;
+  }
+  if (!hasClientPortalEntitlement(await firmEntitlements(firmId))) {
+    throw new ForbiddenError(PORTAL_NOT_ENTITLED);
+  }
+}
+
+/**
+ * Non-throwing read of the CALLER'S OWN org client-portal entitlement, for
+ * advisor-side UI that hides the portal surface rather than denying it. Reads
+ * sessionClaims only — no Clerk call. Never use it to authorize a mutation;
+ * `requireClientPortalEntitlement` is the gate.
+ */
+export async function currentOrgHasClientPortal(): Promise<boolean> {
+  const { sessionClaims } = await auth();
+  const meta =
+    (sessionClaims as { org_public_metadata?: { entitlements?: string[] } } | null)
+      ?.org_public_metadata ?? {};
+  return hasClientPortalEntitlement(meta.entitlements);
+}
+
 /**
  * Portal-user gate. Returns the bound clientId for the session, or
  * throws — UnauthorizedError if no session, ForbiddenError otherwise
- * (advisor session, or signed-in user with no clients.clerk_user_id).
+ * (advisor session, signed-in user with no clients.clerk_user_id, or a firm
+ * whose `client_portal` entitlement is off).
  *
- * Used by `/portal/*` pages and `/api/portal/*` route handlers. Pairs
- * with the middleware branch that routes portal users to `/portal`.
+ * The entitlement check lives HERE rather than at each call site because this
+ * is the single chokepoint for both `/portal/*` pages and every
+ * `/api/portal/*` route handler — an ops revoke goes fully dark in one place,
+ * and an already-bound client is not grandfathered. Pairs with the middleware
+ * branch that routes portal users to `/portal`.
  */
 export async function requireClientPortalAccess(): Promise<{
   clientId: string;
@@ -167,11 +224,16 @@ export async function requireClientPortalAccess(): Promise<{
   if (orgId) {
     throw new ForbiddenError("Advisor session — portal access denied");
   }
-  const clientId = await getPortalClientId(userId);
-  if (!clientId) {
+  const ref = await getPortalClientRef(userId);
+  if (!ref) {
     throw new ForbiddenError("No portal binding for this user");
   }
-  return { clientId, clerkUserId: userId };
+  // Fail closed: an unowned client has no firm whose entitlement could allow it.
+  if (!ref.firmId) {
+    throw new ForbiddenError("No firm for this client");
+  }
+  await requireClientPortalEntitlement(ref.firmId);
+  return { clientId: ref.id, clerkUserId: userId };
 }
 
 /**

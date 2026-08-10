@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, crmHouseholdContacts } from "@/db/schema";
 import { requireOrgAndUser } from "@/lib/db-helpers";
+import { currentOrgHasClientPortal } from "@/lib/authz";
 import PortalAccessCard from "@/components/portal/portal-access-card";
 import PortalEditToggle from "@/components/portal/portal-edit-toggle";
 import PortalActivityFeed from "@/components/portal/portal-activity-feed";
@@ -17,9 +18,31 @@ interface Props {
   params: Promise<{ id: string }>;
 }
 
+/** Fills the Access panel when the firm has no client portal. The Intake panel
+ *  stays alongside it: a blank data-collection send is a public tokenized link
+ *  that works without the portal. */
+function PortalNotEnabled(): ReactElement {
+  return (
+    <div className="card p-6">
+      <h3 className="text-[15px] font-semibold text-ink">Portal not enabled</h3>
+      <p className="mt-2 text-[14px] text-ink-2">
+        The client portal gives clients their own sign-in to review accounts,
+        upload documents, and fill in the forms you send. It is off for your firm
+        — contact Foundry to turn it on.
+      </p>
+      <p className="mt-3 text-[13px] text-ink-3">
+        You can still send a data-collection form from the Intake form tab.
+      </p>
+    </div>
+  );
+}
+
 export default async function PortalManagePage({ params }: Props): Promise<ReactElement> {
   const { id } = await params;
   const { orgId, userId } = await requireOrgAndUser();
+  // Off for a firm until ops switches it on. Only the portal-specific panels
+  // go dark — the Intake form panel below works without the portal.
+  const portalEnabled = await currentOrgHasClientPortal();
   const defaultSections = await loadAdvisorDefaultSections(orgId, userId);
 
   const [row] = await db
@@ -78,19 +101,24 @@ export default async function PortalManagePage({ params }: Props): Promise<React
       <header className="space-y-1">
         <h2 className="text-[20px] font-semibold text-ink">Manage Portal</h2>
         <p className="text-[13px] text-ink-3">
-          Control portal access, send data-collection forms, and review what the
-          client changes.
+          {portalEnabled
+            ? "Control portal access, send data-collection forms, and review what the client changes."
+            : "Send data-collection forms. Portal access is not enabled for your firm."}
         </p>
       </header>
       <PortalManageShell
         access={
-          <PortalAccessCard
-            clientId={id}
-            status={status}
-            primaryEmail={primaryEmail}
-            invitedAt={row?.portalInvitedAt ?? null}
-            clerkUserId={row?.clerkUserId ?? null}
-          />
+          portalEnabled ? (
+            <PortalAccessCard
+              clientId={id}
+              status={status}
+              primaryEmail={primaryEmail}
+              invitedAt={row?.portalInvitedAt ?? null}
+              clerkUserId={row?.clerkUserId ?? null}
+            />
+          ) : (
+            <PortalNotEnabled />
+          )
         }
         intake={
           <SendClientForm
@@ -102,29 +130,34 @@ export default async function PortalManagePage({ params }: Props): Promise<React
             clientAlreadyBound={!!row?.clerkUserId}
             pendingFormId={pending?.id ?? null}
             defaultSections={defaultSections}
+            portalEnabled={portalEnabled}
           />
         }
         preview={
-          <PortalCard
-            icon={<EyeIcon />}
-            title="Preview as client"
-            description="See exactly what the client sees in their portal — even before you send an invite. Read-only."
-            action={
-              <Link
-                href={`/clients/${id}/portal/preview`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={portalBtn.accent}
-              >
-                Open preview ↗
-              </Link>
-            }
-          />
+          portalEnabled ? (
+            <PortalCard
+              icon={<EyeIcon />}
+              title="Preview as client"
+              description="See exactly what the client sees in their portal — even before you send an invite. Read-only."
+              action={
+                <Link
+                  href={`/clients/${id}/portal/preview`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={portalBtn.accent}
+                >
+                  Open preview ↗
+                </Link>
+              }
+            />
+          ) : null
         }
         editing={
-          <PortalEditToggle clientId={id} initialEnabled={row?.portalEditEnabled ?? false} />
+          portalEnabled ? (
+            <PortalEditToggle clientId={id} initialEnabled={row?.portalEditEnabled ?? false} />
+          ) : null
         }
-        activity={<PortalActivityFeed clientId={id} />}
+        activity={portalEnabled ? <PortalActivityFeed clientId={id} /> : null}
       />
     </div>
   );

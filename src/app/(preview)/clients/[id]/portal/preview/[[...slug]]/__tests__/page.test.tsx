@@ -97,6 +97,16 @@ vi.mock("@/lib/clients/authz", () => ({
   ),
 }));
 
+// The preview renders the portal itself, so it also follows the owning firm's
+// `client_portal` entitlement. Spread the real module: the page's own
+// nullOnAccessDenial — and the ForbiddenError this file throws through it —
+// have to be the actual ones for the denial classification to hold.
+const portalEntitlementMock = vi.fn();
+vi.mock("@/lib/authz", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/authz")>();
+  return { ...actual, requireClientPortalEntitlement: async () => portalEntitlementMock() };
+});
+
 // Generic db query double shared by crmHouseholdContacts (raw await on the
 // builder) and the page's loadPortalConnectionAlert call, which goes through
 // loadPlaidItems and chains an extra .orderBy() — the same stub row shape
@@ -199,6 +209,27 @@ describe("PortalPreview catch-all", () => {
     // `rejects.toBe` pins the identity of the thrown value — the page can only
     // fail this exact way by rethrowing what the gate raised.
     await expect(renderPreview(["profile"])).rejects.toBe(dbFault);
+    expect(notFound).not.toHaveBeenCalled();
+  });
+
+  // Empty slug, not ["profile"] — an unknown slug reaches notFound() on its own,
+  // so it would pass this test with the entitlement gate deleted.
+  it("calls notFound() when the firm has no client_portal entitlement", async () => {
+    vi.mocked(notFound).mockClear();
+    portalEntitlementMock.mockImplementationOnce(() => {
+      throw new ForbiddenError("Client portal is not enabled for this firm");
+    });
+    await expect(renderPreview(undefined)).rejects.toThrow("NEXT_NOT_FOUND");
+    expect(notFound).toHaveBeenCalled();
+  });
+
+  it("propagates a non-denial fault from the entitlement gate", async () => {
+    vi.mocked(notFound).mockClear();
+    const clerkFault = new Error("Clerk 500");
+    portalEntitlementMock.mockImplementationOnce(() => {
+      throw clerkFault;
+    });
+    await expect(renderPreview(undefined)).rejects.toBe(clerkFault);
     expect(notFound).not.toHaveBeenCalled();
   });
 

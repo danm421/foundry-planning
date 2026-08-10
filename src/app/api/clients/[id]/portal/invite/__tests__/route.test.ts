@@ -4,6 +4,8 @@ import { ClerkAPIResponseError } from "@clerk/nextjs/errors";
 // --- Auth mocks (real idiom, not @/lib/authz-clients) ---
 vi.mock("@/lib/db-helpers", () => ({
   requireOrgAndUser: async () => ({ orgId: "firm-1", userId: "advisor-1" }),
+  // The real authErrorResponse (see the @/lib/authz mock) instanceof-checks it.
+  UnauthorizedError: class UnauthorizedError extends Error {},
 }));
 
 vi.mock("@/lib/clients/authz", () => ({
@@ -14,10 +16,17 @@ vi.mock("@/lib/clients/authz", () => ({
   }),
 }));
 
-vi.mock("@/lib/authz", () => ({
-  requireActiveSubscriptionForFirm: async () => {},
-  authErrorResponse: () => undefined,
-}));
+// Real ForbiddenError + authErrorResponse so the 403 path under test is the
+// route's actual error mapping, not a stub of it.
+const portalEntitlementMock = vi.fn();
+vi.mock("@/lib/authz", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/authz")>();
+  return {
+    ...actual,
+    requireActiveSubscriptionForFirm: async () => {},
+    requireClientPortalEntitlement: async () => portalEntitlementMock(),
+  };
+});
 
 vi.mock("@/lib/clients/cross-firm-audit", () => ({
   crossFirmAuditMeta: (..._a: unknown[]) => ({}),
@@ -59,6 +68,7 @@ vi.mock("@/db", () => ({
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 
 import { POST, DELETE } from "@/app/api/clients/[id]/portal/invite/route";
+import { ForbiddenError } from "@/lib/authz";
 
 beforeEach(() => {
   checkLimitMock.mockReset();
@@ -66,6 +76,7 @@ beforeEach(() => {
   revokeInvitationMock.mockReset();
   getInvitationListMock.mockReset();
   updateMock.mockReset();
+  portalEntitlementMock.mockReset();
 });
 
 function postReq(body: unknown) {
@@ -136,6 +147,19 @@ describe("POST /api/clients/[id]/portal/invite", () => {
     });
     expect(res.status).toBe(409);
     expect((await res.json()).error).toMatch(/already pending/i);
+  });
+
+  it("403s without sending an invite when the firm lacks the client_portal entitlement", async () => {
+    checkLimitMock.mockResolvedValue({ allowed: true });
+    portalEntitlementMock.mockImplementation(() => {
+      throw new ForbiddenError("Client portal is not enabled for this firm");
+    });
+    const res = await POST(postReq({ email: "client@example.com" }), {
+      params: Promise.resolve({ id: "c1" }),
+    });
+    expect(res.status).toBe(403);
+    expect(createInvitationMock).not.toHaveBeenCalled();
+    expect(updateMock).not.toHaveBeenCalled();
   });
 
   it("still returns 500 for a non-Clerk failure", async () => {

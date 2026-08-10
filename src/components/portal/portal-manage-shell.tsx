@@ -25,12 +25,14 @@ const TABS: readonly Tab[] = [
   { key: "activity", label: "Activity", icon: <HistoryIcon /> },
 ] as const;
 
+/** A null slot drops its tab from the nav — used when the firm has no client
+ *  portal, where only Access (the "not enabled" notice) and Intake apply. */
 interface Props {
   access: ReactNode;
   intake: ReactNode;
-  preview: ReactNode;
-  editing: ReactNode;
-  activity: ReactNode;
+  preview: ReactNode | null;
+  editing: ReactNode | null;
+  activity: ReactNode | null;
 }
 
 /**
@@ -51,6 +53,8 @@ export default function PortalManageShell({
 }: Props): ReactElement {
   const [active, setActive] = useState<TabKey>("access");
   const panels: Record<TabKey, ReactNode> = { access, intake, preview, editing, activity };
+  // `access` is never null, so the default active tab always survives the filter.
+  const tabs = TABS.filter((tab) => panels[tab.key] !== null);
 
   return (
     <div className="grid grid-cols-1 gap-6 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
@@ -58,7 +62,7 @@ export default function PortalManageShell({
         aria-label="Manage portal sections"
         className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 md:sticky md:top-[100px] md:mx-0 md:flex-col md:overflow-visible md:border-r md:border-hair md:px-0 md:pr-4 md:pb-0"
       >
-        {TABS.map((tab) => {
+        {tabs.map((tab) => {
           const isActive = active === tab.key;
           return (
             <button
@@ -82,7 +86,7 @@ export default function PortalManageShell({
       </nav>
 
       <div className="min-w-0 max-w-2xl">
-        {TABS.map((tab) => (
+        {tabs.map((tab) => (
           <div key={tab.key} className={active === tab.key ? "" : "hidden"}>
             {panels[tab.key]}
           </div>
