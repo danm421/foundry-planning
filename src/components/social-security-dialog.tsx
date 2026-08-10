@@ -6,6 +6,12 @@ import type { Income, ClientInfo, PlanSettings, MedicareCoverage } from "@/engin
 import { fraForBirthDate } from "@/engine/socialSecurity/fra";
 import { computeOwnMonthlyBenefit } from "@/engine/socialSecurity/ownRetirement";
 import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
+import {
+  estimatePiaFromSalary,
+  ownerAnnualSalary,
+  FULL_CAREER_YEARS,
+  type SalaryLike,
+} from "@/lib/social-security/estimate-from-salary";
 import DialogShell from "./dialog-shell";
 import { inputClassName, inputBaseClassName, selectClassName, fieldLabelClassName } from "./forms/input-styles";
 import { MedicareDialogTab } from "./medicare/medicare-dialog-tab";
@@ -13,12 +19,23 @@ import { MedicareDialogTab } from "./medicare/medicare-dialog-tab";
 type SsBenefitMode = "pia_at_fra" | "manual_amount" | "no_benefit";
 type ClaimAgeMode = "fra" | "at_retirement" | "years";
 
+/** UI-only choice: "estimate_from_salary" fills the PIA box and saves as
+ *  `pia_at_fra`, so no reader has to learn a fourth stored mode. */
+type BenefitChoice = SsBenefitMode | "estimate_from_salary";
+
 export interface SocialSecurityDialogProps {
   clientId: string;
   owner: "client" | "spouse";
   existingRow: Income | null;
   clientInfo: ClientInfo;
   planSettings: PlanSettings;
+  /**
+   * The household's income rows, read only to estimate a PIA off the owner's
+   * salary. Passed in rather than fetched because a base-scoped list-GET would
+   * estimate off the base salary while a scenario is active — the rule
+   * `map-content.tsx` states for every client-side editor.
+   */
+  incomes: readonly SalaryLike[];
   onClose: () => void;
   onSaved: () => void;  // parent re-fetches or re-renders
 }
@@ -29,6 +46,7 @@ export function SocialSecurityDialog({
   existingRow,
   clientInfo,
   planSettings,
+  incomes,
   onClose,
   onSaved,
 }: SocialSecurityDialogProps) {
@@ -42,11 +60,17 @@ export function SocialSecurityDialog({
   const currentYear = new Date().getFullYear();
 
   // ── State ────────────────────────────────────────────────
-  const [ssBenefitMode, setSsBenefitMode] = useState<SsBenefitMode>(() => {
+  // No stored PIA means the row was never configured — `create-client` seeds
+  // every new household that way, which is what makes the estimate their
+  // default. A stored amount always wins; never overwrite an SSA figure.
+  const [ssBenefitMode, setSsBenefitMode] = useState<BenefitChoice>(() => {
     const stored = existingRow?.ssBenefitMode;
-    if (stored === "pia_at_fra" || stored === "manual_amount" || stored === "no_benefit") return stored;
-    return existingRow ? "manual_amount" : "pia_at_fra";
+    if (stored === "manual_amount" || stored === "no_benefit") return stored;
+    const hasPia = existingRow?.piaMonthly != null && Number(existingRow.piaMonthly) > 0;
+    return hasPia ? "pia_at_fra" : "estimate_from_salary";
   });
+
+  const usesPia = ssBenefitMode === "pia_at_fra" || ssBenefitMode === "estimate_from_salary";
 
   const [piaMonthly, setPiaMonthly] = useState<string>(
     existingRow?.piaMonthly != null ? String(existingRow.piaMonthly) : ""
@@ -83,6 +107,15 @@ export function SocialSecurityDialog({
       .catch(() => {});
   }, [clientId, owner]);
 
+  // ── Salary-derived PIA estimate ──────────────────────────
+  const ownerSalary = useMemo(
+    () => ownerAnnualSalary(incomes, owner, currentYear),
+    [incomes, owner, currentYear],
+  );
+  const estimateText = ownerSalary > 0 ? String(estimatePiaFromSalary(ownerSalary)) : "";
+  /** Derived under the estimate; the PIA radio commits it into `piaMonthly`. */
+  const piaFieldValue = ssBenefitMode === "estimate_from_salary" ? estimateText : piaMonthly;
+
   // ── Derived display ──────────────────────────────────────
   const fraDisplay = useMemo(() => {
     if (!ownerDob) return null;
@@ -100,8 +133,8 @@ export function SocialSecurityDialog({
       return Math.round(amount * Math.pow(1 + growthPct, 0));
     }
 
-    // pia_at_fra
-    const pia = parseFloat(piaMonthly);
+    // pia_at_fra, and the salary estimate that feeds the same box
+    const pia = parseFloat(piaFieldValue);
     if (isNaN(pia) || pia <= 0 || !ownerDob) return null;
 
     const mockRow: Income = {
@@ -128,12 +161,12 @@ export function SocialSecurityDialog({
       dob: ownerDob,
     });
     return Math.round(monthly * 12);
-  }, [ssBenefitMode, piaMonthly, annualAmount, growthRate, claimingAge, claimingAgeMonths, claimingAgeMode, ownerDob, owner, clientInfo, currentYear]);
+  }, [ssBenefitMode, piaFieldValue, annualAmount, growthRate, claimingAge, claimingAgeMonths, claimingAgeMode, ownerDob, owner, clientInfo, currentYear]);
 
   // ── Save ─────────────────────────────────────────────────
   async function handleSave() {
     const growthPct = parseFloat(growthRate) / 100 || 0;
-    const pia = ssBenefitMode === "pia_at_fra" ? parseFloat(piaMonthly) || 0 : null;
+    const pia = usesPia ? parseFloat(piaFieldValue) || 0 : null;
     const annual = ssBenefitMode === "manual_amount"
       ? (parseFloat(annualAmount) || 0)
       : (existingRow?.annualAmount ?? 0);   // preserve or zero
@@ -150,7 +183,7 @@ export function SocialSecurityDialog({
       claimingAge: claimingAgeMode === "years" ? claimingAge : (existingRow?.claimingAge ?? claimingAge),
       claimingAgeMonths: claimingAgeMode === "years" ? claimingAgeMonths : (existingRow?.claimingAgeMonths ?? 0),
       claimingAgeMode,
-      ssBenefitMode,
+      ssBenefitMode: ssBenefitMode === "estimate_from_salary" ? "pia_at_fra" : ssBenefitMode,
       piaMonthly: pia,
     };
 
@@ -208,7 +241,21 @@ export function SocialSecurityDialog({
           <fieldset className="mb-4">
             <legend className="text-[12px] font-medium text-ink-2 mb-2">Benefit mode</legend>
             <label className="block text-[14px] text-ink-2 mb-1">
-              <input type="radio" checked={ssBenefitMode === "pia_at_fra"} onChange={() => setSsBenefitMode("pia_at_fra")} className="mr-2" />
+              <input type="radio" checked={ssBenefitMode === "estimate_from_salary"} onChange={() => setSsBenefitMode("estimate_from_salary")} className="mr-2" />
+              Estimate from Salary
+            </label>
+            <label className="block text-[14px] text-ink-2 mb-1">
+              <input
+                type="radio"
+                checked={ssBenefitMode === "pia_at_fra"}
+                onChange={() => {
+                  // Hand the estimate over on the way out, so the advisor edits
+                  // the figure they were just shown rather than an empty box.
+                  if (ssBenefitMode === "estimate_from_salary") setPiaMonthly(estimateText);
+                  setSsBenefitMode("pia_at_fra");
+                }}
+                className="mr-2"
+              />
               Primary Insurance Amount (PIA)
             </label>
             <label className="block text-[14px] text-ink-2 mb-1">
@@ -222,17 +269,24 @@ export function SocialSecurityDialog({
           </fieldset>
 
           {/* Conditional amount input */}
-          {ssBenefitMode === "pia_at_fra" && (
+          {usesPia && (
             <div className="mb-4">
               <label className={fieldLabelClassName}>Monthly PIA</label>
               <input
                 type="number"
-                value={piaMonthly}
+                value={piaFieldValue}
                 onChange={(e) => setPiaMonthly(e.target.value)}
                 placeholder="e.g. 2800"
                 className={inputClassName}
+                readOnly={ssBenefitMode === "estimate_from_salary"}
               />
-              <p className="text-[12px] text-ink-3 mt-1">From your SSA statement — monthly benefit at FRA.</p>
+              <p className="text-[12px] text-ink-3 mt-1">
+                {ssBenefitMode === "pia_at_fra"
+                  ? "From your SSA statement — monthly benefit at FRA."
+                  : ownerSalary > 0
+                    ? `Estimated from a $${Math.round(ownerSalary).toLocaleString()} salary earned over a full ${FULL_CAREER_YEARS}-year career. Switch to PIA to enter the figure from an SSA statement.`
+                    : `No salary entered for ${firstName} — add one to estimate the benefit, or switch to PIA to enter it by hand.`}
+              </p>
             </div>
           )}
           {ssBenefitMode === "manual_amount" && (

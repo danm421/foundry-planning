@@ -152,3 +152,14 @@ export const SURVIVOR_FLOOR_PCT_OF_PIA = 0.825;
  * Source: SSA "Benefit Formula Bend Points".
  */
 export const BEND_POINTS = { year: 2025, first: 1226, second: 7391 } as const;
+
+/**
+ * 2026 Social Security wage base — the fallback cap on covered earnings for
+ * callers of `estimatePiaMonthly` that have not read `tax_year_params`.
+ *
+ * Prefer the resolved `ssWageBase` from the tax params where one is already in
+ * hand; this exists so a client component or a planner run can produce an
+ * estimate without a DB round-trip. Pairing it with the 2025 BEND_POINTS above
+ * is deliberate — see that constant's own note.
+ */
+export const DEFAULT_SS_WAGE_BASE = 184_500;

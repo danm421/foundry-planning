@@ -1,10 +1,6 @@
-import { BEND_POINTS } from "@/engine/socialSecurity/constants";
+import { BEND_POINTS, DEFAULT_SS_WAGE_BASE } from "@/engine/socialSecurity/constants";
 import { estimatePiaMonthly } from "@/engine/socialSecurity/estimatePia";
 import type { EstimatePiaToolInput } from "./tools";
-
-/** 2026 Social Security wage base. Overridden by the caller when tax params
- *  have been read; the default keeps the planner usable without a DB round-trip. */
-const DEFAULT_SS_WAGE_BASE = 184_500;
 
 /**
  * Binds the engine's pure estimator to the current year's constants so the
@@ -13,7 +9,7 @@ const DEFAULT_SS_WAGE_BASE = 184_500;
  * `src/lib/imports/planner/tools.ts` stays free of engine and tax-params
  * imports, and its unit tests need no stubs.
  *
- * The wage base above is a 2026 figure while `BEND_POINTS` are SSA's 2025
+ * The default wage base is a 2026 figure while `BEND_POINTS` are SSA's 2025
  * published values — an intentional pairing, analysed in full in that
  * constant's own comment. Don't restate or "fix" it here.
  */

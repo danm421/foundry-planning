@@ -1,6 +1,6 @@
 /** Months in the 35-year averaging period SSA uses. */
 const AVERAGING_MONTHS = 35 * 12;
-const MAX_CREDITED_YEARS = 35;
+export const MAX_CREDITED_YEARS = 35;
 
 const BAND_1_RATE = 0.9;
 const BAND_2_RATE = 0.32;

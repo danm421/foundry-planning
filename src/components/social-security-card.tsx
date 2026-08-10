@@ -121,6 +121,7 @@ export function SocialSecurityCard({ clientId, clientInfo, planSettings, incomes
           existingRow={editing === "client" ? clientRow : spouseRow}
           clientInfo={clientInfo}
           planSettings={planSettings}
+          incomes={incomes}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
