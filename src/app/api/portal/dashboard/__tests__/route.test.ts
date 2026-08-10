@@ -17,6 +17,10 @@ vi.mock("@/lib/portal/privacy", () => ({
   loadPortalPrivacy: (id: string) => loadPrivacyMock(id),
   DEFAULT_PORTAL_PRIVACY: { shareTransactions: true, shareBudgets: true, shareRecurrings: true },
 }));
+const loadFeaturesMock = vi.fn();
+vi.mock("@/lib/portal/load-features", () => ({
+  loadPortalFeatures: (id: string) => loadFeaturesMock(id),
+}));
 
 import { GET } from "@/app/api/portal/dashboard/route";
 
@@ -27,6 +31,8 @@ beforeEach(() => {
   loadDashboardMock.mockResolvedValue({ toReview: { count: 3, sample: [] } });
   loadPrivacyMock.mockReset();
   loadPrivacyMock.mockResolvedValue({ ...ALL_ON, shareBudgets: false });
+  loadFeaturesMock.mockReset();
+  loadFeaturesMock.mockResolvedValue({ investments: true, budget: true, documents: true });
   authErrMock.mockReset();
   authErrMock.mockReturnValue(null);
 });
@@ -39,6 +45,18 @@ describe("GET /api/portal/dashboard", () => {
     expect(loadPrivacyMock).not.toHaveBeenCalled();
     expect(loadDashboardMock).toHaveBeenCalledWith("c1", expect.any(Date), ALL_ON, {
       includeGoals: false,
+      budgetEnabled: true,
+    });
+  });
+
+  // Without this the phone keeps rendering the budgeting tiles the web portal
+  // just dropped — the switches would be a web-only gate.
+  it("passes the advisor's Budget switch through to the loader", async () => {
+    loadFeaturesMock.mockResolvedValue({ investments: true, budget: false, documents: true });
+    await GET();
+    expect(loadDashboardMock).toHaveBeenCalledWith("c1", expect.any(Date), ALL_ON, {
+      includeGoals: false,
+      budgetEnabled: false,
     });
   });
 
@@ -50,7 +68,7 @@ describe("GET /api/portal/dashboard", () => {
       "c1",
       expect.any(Date),
       { ...ALL_ON, shareBudgets: false },
-      { includeGoals: false },
+      { includeGoals: false, budgetEnabled: true },
     );
   });
 

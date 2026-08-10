@@ -183,6 +183,13 @@ export interface PortalDashboardDTO {
    * come back zeroed) and the grid shows a NotSharedNotice tile instead.
    */
   sharing: PortalPrivacy;
+  /**
+   * The advisor's Budget switch. False means the five budgeting tiles are gone
+   * from this client's dashboard — every field they read comes back zeroed
+   * because it was never queried. A different thing from `sharing`, which is
+   * the client hiding their own data from the advisor.
+   */
+  budgetEnabled: boolean;
 }
 
 // ---- GET /api/portal/me ----

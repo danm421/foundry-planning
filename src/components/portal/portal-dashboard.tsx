@@ -17,25 +17,27 @@ interface Props {
 export default async function PortalDashboard({ clientId, sharing }: Props): Promise<ReactElement> {
   // editEnabled mirrors TransactionsSection: the client's portalEditEnabled
   // flag gates the drill-down panel's categorize / mark-reviewed actions.
-  const [dto, [client]] = await Promise.all([
-    loadPortalDashboard(clientId, new Date(), sharing),
-    db
-      .select({
-        portalEditEnabled: clients.portalEditEnabled,
-        ...portalFeatureColumns,
-      })
-      .from(clients)
-      .where(eq(clients.id, clientId))
-      .limit(1),
-  ]);
+  //
+  // This read lands BEFORE the dashboard load rather than beside it: the
+  // advisor's Budget switch decides which queries that loader may run at all,
+  // so it cannot be applied afterwards.
+  const [client] = await db
+    .select({
+      portalEditEnabled: clients.portalEditEnabled,
+      ...portalFeatureColumns,
+    })
+    .from(clients)
+    .where(eq(clients.id, clientId))
+    .limit(1);
+
+  const dto = await loadPortalDashboard(clientId, new Date(), sharing, {
+    budgetEnabled: toPortalFeatures(client).budget,
+  });
+
   return (
     <div className="mx-auto max-w-6xl p-6 lg:p-10">
       <h1 className="mb-6 text-[22px] font-semibold text-ink">Dashboard</h1>
-      <DashboardGrid
-        dto={dto}
-        editEnabled={client?.portalEditEnabled ?? false}
-        budgetEnabled={toPortalFeatures(client).budget}
-      />
+      <DashboardGrid dto={dto} editEnabled={client?.portalEditEnabled ?? false} />
     </div>
   );
 }

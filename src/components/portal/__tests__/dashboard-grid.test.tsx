@@ -75,6 +75,7 @@ const DTO: PortalDashboardDTO = {
   ],
   goalsProjected: true,
   sharing: { shareTransactions: true, shareBudgets: true, shareRecurrings: true },
+  budgetEnabled: true,
 };
 
 // The rail target is a sibling of the grid in the portal layout; the grid must
@@ -145,7 +146,7 @@ describe("DashboardGrid with Budget switched off", () => {
     render(
       <div>
         <main>
-          <DashboardGrid dto={DTO} editEnabled={false} budgetEnabled={false} />
+          <DashboardGrid dto={{ ...DTO, budgetEnabled: false }} editEnabled={false} />
         </main>
         <aside id="portal-detail" />
       </div>,
@@ -163,7 +164,7 @@ describe("DashboardGrid with Budget switched off", () => {
     render(
       <div>
         <main>
-          <DashboardGrid dto={DTO} editEnabled={false} budgetEnabled={false} />
+          <DashboardGrid dto={{ ...DTO, budgetEnabled: false }} editEnabled={false} />
         </main>
         <aside id="portal-detail" />
       </div>,
@@ -171,7 +172,7 @@ describe("DashboardGrid with Budget switched off", () => {
     expect(screen.getByTestId("dashboard-grid").children).toHaveLength(1);
   });
 
-  it("keeps every tile when budgetEnabled is omitted (default on)", () => {
+  it("keeps every tile when the DTO reports Budget on", () => {
     render(<LayoutLike />);
     expect(screen.getByText("Monthly spending")).toBeInTheDocument();
     expect(screen.getByTestId("dashboard-grid").children).toHaveLength(2);

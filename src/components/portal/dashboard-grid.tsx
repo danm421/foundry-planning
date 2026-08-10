@@ -19,19 +19,18 @@ import {
 export function DashboardGrid({
   dto,
   editEnabled,
-  budgetEnabled = true,
 }: {
   dto: PortalDashboardDTO;
   editEnabled: boolean;
-  /**
-   * The advisor's Budget switch. Off drops the five budgeting tiles entirely
-   * (not a NotSharedNotice — that says "you chose to hide this from your
-   * advisor", which is the opposite direction): each one links into
-   * `/budget/*`, which 404s for this client.
-   */
-  budgetEnabled?: boolean;
 }): ReactElement {
-  const { sharing } = dto;
+  /**
+   * `budgetEnabled` is the advisor's Budget switch, read off the DTO because
+   * the loader that skipped the queries is the same one that reports it. Off
+   * drops the five budgeting tiles entirely (not a NotSharedNotice — that says
+   * "you chose to hide this from your advisor", the opposite direction): each
+   * one links into `/budget/*`, which 404s for this client.
+   */
+  const { sharing, budgetEnabled } = dto;
   const portalFetch = usePortalFetch();
   const [detail, setDetail] = useState<DashboardDetailPayload | null>(null);
   const closeDetail = useCallback(() => setDetail(null), []);

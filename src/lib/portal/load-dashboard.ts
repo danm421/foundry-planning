@@ -130,14 +130,30 @@ export interface LoadPortalDashboardOptions {
    * away. Turn it back on the same commit a mobile goals tile lands.
    */
   includeGoals?: boolean;
+  /**
+   * The advisor's Budget switch (`clients.portal_budget_enabled`). Default
+   * true. Off skips every budgeting query — the section is gone from this
+   * client's portal, and gated data must not reach the payload at all, only
+   * to be hidden by the tile. Echoed back on the DTO so the mobile home
+   * screen drops the same tiles the web dashboard does.
+   */
+  budgetEnabled?: boolean;
 }
 
 export async function loadPortalDashboard(
   clientId: string,
   now: Date,
   sharing: PortalPrivacy = DEFAULT_PORTAL_PRIVACY,
-  { includeGoals = true }: LoadPortalDashboardOptions = {},
+  { includeGoals = true, budgetEnabled = true }: LoadPortalDashboardOptions = {},
 ): Promise<PortalDashboardDTO> {
+  // The advisor's Budget switch subsumes the client's three budgeting sharing
+  // switches — everything they gate lives in the section it removes. The DTO
+  // still reports the client's own `sharing`: the two say different things, and
+  // a "you hid this from your advisor" notice would be the wrong one here.
+  const share: PortalPrivacy = budgetEnabled
+    ? sharing
+    : { shareTransactions: false, shareBudgets: false, shareRecurrings: false };
+
   const today = now.toISOString().slice(0, 10);
   const { from, to } = currentMonthRange(now);
   const prior = priorMonthRange(now);
@@ -171,14 +187,14 @@ export async function loadPortalDashboard(
     accountRows,
     goalFunding,
   ] = await Promise.all([
-    sharing.shareBudgets
+    share.shareBudgets
       ? loadBudgetSummary(clientId, now)
       : Promise.resolve(emptyBudget(month)),
-    sharing.shareRecurrings
+    share.shareRecurrings
       ? loadRecurringsData(clientId, now)
       : Promise.resolve(null),
     // This month's expense txns (signed) for the pace curve.
-    sharing.shareTransactions
+    share.shareTransactions
       ? db
           .select({ date: plaidTransactions.date, amount: plaidTransactions.amount })
           .from(plaidTransactions)
@@ -193,7 +209,7 @@ export async function loadPortalDashboard(
           )
       : Promise.resolve([]),
     // Current-month income/spend raw posted totals for the net-this-month tile (like-for-like with priorAgg).
-    sharing.shareTransactions
+    share.shareTransactions
       ? db
           .select({
             type: plaidTransactions.type,
@@ -211,7 +227,7 @@ export async function loadPortalDashboard(
           .groupBy(plaidTransactions.type)
       : Promise.resolve([]),
     // Prior-month income/spend totals for the net-this-month delta.
-    sharing.shareTransactions
+    share.shareTransactions
       ? db
           .select({
             type: plaidTransactions.type,
@@ -229,7 +245,7 @@ export async function loadPortalDashboard(
           .groupBy(plaidTransactions.type)
       : Promise.resolve([]),
     // Uncategorized expense count + sample ("to review").
-    sharing.shareTransactions
+    share.shareTransactions
       ? db
           .select({
             id: plaidTransactions.id,
@@ -347,7 +363,7 @@ export async function loadPortalDashboard(
   });
 
   // ---- To-review count (cheap COUNT alongside the sample) ----
-  const countRows = sharing.shareTransactions
+  const countRows = share.shareTransactions
     ? await db
         .select({ count: sql<number>`count(*)::int` })
         .from(plaidTransactions)
@@ -420,5 +436,6 @@ export async function loadPortalDashboard(
     recurrings: dueWithinDays(recurringRows, now, 14),
     recurringRows,
     sharing,
+    budgetEnabled,
   };
 }
