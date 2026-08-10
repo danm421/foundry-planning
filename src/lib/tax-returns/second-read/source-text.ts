@@ -85,7 +85,8 @@ export async function loadDocumentSourceText(
         filename: document.filename,
         text: pages.join("\n"),
       });
-    } catch {
+    } catch (err) {
+      console.error(`second read: could not read document ${document.id}`, err);
       warnings.push(unreadable(document.filename));
     }
   }
