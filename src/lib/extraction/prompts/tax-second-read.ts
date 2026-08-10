@@ -1,5 +1,3 @@
-export const TAX_SECOND_READ_VERSION = "2026-08-10.1";
-
 export const TAX_SECOND_READ_PROMPT = `You are a second pair of eyes on a US individual tax return that a deterministic rules engine has already analyzed. Your job is to surface things the rules engine was never coded to notice — and NOTHING else.
 
 You will be given: the text of every document filed for one tax year, a summary of the figures already captured from those documents, and the headlines of the findings the rules engine has already reported.

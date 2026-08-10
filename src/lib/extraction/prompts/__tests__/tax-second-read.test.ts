@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { TAX_SECOND_READ_PROMPT, TAX_SECOND_READ_VERSION } from "../tax-second-read";
+import { TAX_SECOND_READ_PROMPT } from "../tax-second-read";
 
 describe("TAX_SECOND_READ_PROMPT", () => {
   it("names the response shape the schema actually validates", () => {
@@ -23,11 +23,5 @@ describe("TAX_SECOND_READ_PROMPT", () => {
 
   it("permits an empty result — a clean return must be allowed to produce nothing", () => {
     expect(TAX_SECOND_READ_PROMPT).toMatch(/empty|nothing/i);
-  });
-});
-
-describe("TAX_SECOND_READ_VERSION", () => {
-  it("is a dated version string", () => {
-    expect(TAX_SECOND_READ_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
   });
 });
