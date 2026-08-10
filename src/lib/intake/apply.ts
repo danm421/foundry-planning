@@ -381,8 +381,13 @@ async function applySectionsToClient(
   // The form's owner enum (client/spouse/joint) becomes account_owners rows via
   // the coarse synthesis shared with the AI-import commit, so an intake account
   // never lands ownerless. Retirement is passed as non-joint because a
-  // retirement account is singly owned — note the DB's retirement trigger keys
-  // on sub_type and so never fires on these rows (we write sub_type "other").
+  // retirement account is singly owned — and now that the form collects a real
+  // sub_type ("roth_ira", not "other"), the DB's retirement single-owner
+  // trigger DOES fire on these rows, so that flag is what keeps a client's
+  // "joint" answer on an IRA from failing the insert.
+  //
+  // A form submitted before the sub-type picker existed carries none; "other"
+  // is both the column default and the pre-picker behaviour.
   if (sections.includes("accounts")) {
     for (const account of payload.accounts) {
       const [row] = await tx
@@ -392,7 +397,7 @@ async function applySectionsToClient(
           scenarioId,
           name: account.name,
           category: account.category,
-          subType: "other",
+          subType: account.subType ?? "other",
           value: String(account.value),
           basis: String(account.basis ?? 0),
           custodian: account.custodian ?? null,

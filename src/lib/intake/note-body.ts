@@ -26,7 +26,7 @@ import {
   INTAKE_SECTION_LABELS,
   type IntakeSectionKey,
 } from "@/lib/intake/sections";
-import { formatAccountCategory } from "@/lib/accounts/category-labels";
+import { intakeAccountTypeLabel } from "@/lib/intake/account-types";
 import { individualOwnerLabel } from "@/lib/owner-labels";
 
 // ── Wording ──────────────────────────────────────────────────────────────────
@@ -36,9 +36,10 @@ import { individualOwnerLabel } from "@/lib/owner-labels";
 
 type Owner = IntakePayload["accounts"][number]["owner"];
 
-// Account categories are NOT re-mapped here — `formatAccountCategory` already
-// owns that wording for every display surface, and its fallback title-cases an
-// unknown value rather than leaking a raw enum.
+// Account wording is NOT re-mapped here — `intakeAccountTypeLabel` owns it for
+// every surface that shows an intake account (this note, the review diff, the
+// form's own rows), and it reads the sub-type where the client gave one
+// ("Roth IRA") rather than only the coarse category ("Retirement").
 
 const INCOME_TYPE_LABELS: Record<IntakePayload["income"][number]["type"], string> = {
   salary: "Salary",
@@ -230,7 +231,7 @@ function accountsLines(payload: IntakePayload): string[] {
   return (payload.accounts ?? []).map(
     (a) =>
       `- ${a.name} — ${detail(
-        unlessEchoed(a.name, formatAccountCategory(a.category)),
+        unlessEchoed(a.name, intakeAccountTypeLabel(a)),
         usd(a.value),
         ownerLabel(a.owner, payload.family),
         a.custodian?.trim() || null,

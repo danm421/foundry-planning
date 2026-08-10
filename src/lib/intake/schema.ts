@@ -3,6 +3,11 @@ import {
   DEFAULT_INTAKE_SECTIONS,
   type IntakeSectionKey,
 } from "./sections";
+import {
+  INTAKE_ACCOUNT_CATEGORY_VALUES,
+  INTAKE_ACCOUNT_SUB_TYPE_VALUES,
+  isSubTypeOfCategory,
+} from "./account-types";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -19,7 +24,12 @@ export const intakeChildSchema = z.object({
   dateOfBirth: z.string().regex(ISO_DATE),
 });
 
-// Form offers a curated subset of accountCategoryEnum (manual entry only).
+// Form offers a curated subset of accountCategoryEnum (manual entry only), plus
+// the sub-type inside it — see `account-types.ts` for the offered pairs.
+//
+// `name` is DERIVED, not typed: the form builds it from type · owner ·
+// custodian. It stays required here because every writer produces one and the
+// downstream surfaces (CRM note, review diff, accounts.name) all read it.
 //
 // `owner` carries a default rather than being required (income's is required):
 // forms submitted before the field existed still have to parse here — apply
@@ -27,17 +37,30 @@ export const intakeChildSchema = z.object({
 // on every in-flight form. "client" matches the pre-field behaviour, where
 // apply left the account owned by the primary.
 //
+// `subType` is optional for that same reason — a form submitted before the
+// picker existed carries none, and apply falls back to the column's "other".
+// The refine rejects a sub-type its category doesn't offer: the DB's retirement
+// single-owner trigger keys on sub_type, so a mismatched pair (a "joint" cash
+// account carrying "traditional_ira") would blow up apply mid-transaction
+// rather than failing validation here.
+//
 // `basis` is the account's tax (cost) basis. Optional — it's only asked for on
 // the categories where it drives taxes (taxable / annuity / life insurance),
 // and a client who doesn't know it leaves it blank.
-export const intakeAccountSchema = z.object({
-  name: z.string().trim().min(1).max(120),
-  category: z.enum(["taxable", "cash", "retirement", "annuity", "life_insurance"]),
-  value: z.number().nonnegative().max(1e12),
-  basis: z.number().nonnegative().max(1e12).optional(),
-  owner: z.enum(["client", "spouse", "joint"]).default("client"),
-  custodian: z.string().trim().max(120).optional(),
-});
+export const intakeAccountSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    category: z.enum(INTAKE_ACCOUNT_CATEGORY_VALUES),
+    subType: z.enum(INTAKE_ACCOUNT_SUB_TYPE_VALUES).optional(),
+    value: z.number().nonnegative().max(1e12),
+    basis: z.number().nonnegative().max(1e12).optional(),
+    owner: z.enum(["client", "spouse", "joint"]).default("client"),
+    custodian: z.string().trim().max(120).optional(),
+  })
+  .refine(
+    (a) => a.subType === undefined || isSubTypeOfCategory(a.category, a.subType),
+    { message: "Account type does not belong to that category", path: ["subType"] },
+  );
 
 // `startYear` / `endYear` / `endsAtRetirement` are optional for the same reason
 // the account `owner` above carries a default: apply re-parses the stored
@@ -295,7 +318,8 @@ const intakeChildDraftSchema = z.object({
 
 const intakeAccountDraftSchema = z.object({
   name: draftStr(120),
-  category: z.enum(["taxable", "cash", "retirement", "annuity", "life_insurance"]).optional(),
+  category: z.enum(INTAKE_ACCOUNT_CATEGORY_VALUES).optional(),
+  subType: z.enum(INTAKE_ACCOUNT_SUB_TYPE_VALUES).optional(),
   value: z.number().max(1e12).optional(),
   basis: z.number().max(1e12).optional(),
   owner: z.enum(["client", "spouse", "joint"]).optional(),

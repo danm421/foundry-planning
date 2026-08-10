@@ -69,14 +69,26 @@ describe("buildIntakeDiff", () => {
     const withAccounts: IntakePayload = {
       ...minPayload,
       accounts: [
-        { name: "Joint Brokerage", category: "taxable", value: 100000, basis: 60000, owner: "joint" },
+        {
+          name: "Brokerage - Dana - Fidelity",
+          category: "taxable",
+          subType: "brokerage",
+          value: 100000,
+          basis: 60000,
+          owner: "joint",
+        },
         { name: "Checking", category: "cash", value: 5000, owner: "client" },
       ],
     };
     const diff = buildIntakeDiff(null, withAccounts);
-    expect(diff.accounts.submittedItems[0].secondary).toBe("taxable · joint · basis $60,000");
-    // No basis collected → nothing to show for it.
-    expect(diff.accounts.submittedItems[1].secondary).toBe("cash · client");
+    // The sub-type is what apply writes to `accounts.sub_type`, so that is the
+    // grain the advisor approves at.
+    expect(diff.accounts.submittedItems[0].secondary).toBe(
+      "Brokerage · joint · basis $60,000",
+    );
+    // No basis collected, and no sub-type on a pre-picker submission → the
+    // category label stands in.
+    expect(diff.accounts.submittedItems[1].secondary).toBe("Cash & savings · client");
   });
 
   it("surfaces the income owner so the advisor approves whose income it is", () => {

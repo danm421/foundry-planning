@@ -373,7 +373,7 @@ function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
 export interface CardSummary {
   /** Left-hand headline, e.g. the item's name. Never blank — supply a fallback. */
   title: string;
-  /** Muted second line, e.g. "Taxable brokerage · Client". */
+  /** Muted second line, e.g. "Roth IRA · Client". */
   subtitle: string;
   /** Right-aligned dollar figure; the row formats it, so every list agrees. */
   amount: number | undefined;

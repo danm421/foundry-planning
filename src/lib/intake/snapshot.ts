@@ -22,18 +22,26 @@ import {
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import type { IntakePayload } from "@/lib/intake/schema";
+import {
+  INTAKE_ACCOUNT_CATEGORY_VALUES,
+  isSubTypeOfCategory,
+  type IntakeAccountCategory,
+  type IntakeAccountSubType,
+} from "@/lib/intake/account-types";
 import type { IntakeSectionKey } from "@/lib/intake/sections";
 import { incomeFormYears } from "@/lib/intake/income-years";
 
 // ── DB → form category mapping ────────────────────────────────────────────────
 //
-// DB accountCategoryEnum has 9 members; the form accepts only 5.
+// DB accountCategoryEnum has 10 members; the form accepts 6 (see
+// `account-types.ts`, which is also what the Accounts step renders).
 //
 // | DB category       | Form disposition                          |
 // |-------------------|-------------------------------------------|
 // | taxable           | pass-through → accounts.category          |
 // | cash              | pass-through → accounts.category          |
 // | retirement        | pass-through → accounts.category          |
+// | education_savings | pass-through → accounts.category          |
 // | annuity           | pass-through → accounts.category          |
 // | life_insurance    | pass-through → accounts.category          |
 // | real_estate       | emit as property entry (kind=real_estate)  |
@@ -41,15 +49,7 @@ import { incomeFormYears } from "@/lib/intake/income-years";
 // | stock_options     | DROP — no form representation             |
 // | notes_receivable  | DROP — no form representation             |
 
-type IntakeAccountCategory = "taxable" | "cash" | "retirement" | "annuity" | "life_insurance";
-
-const FORM_ACCOUNT_CATEGORIES = new Set<string>([
-  "taxable",
-  "cash",
-  "retirement",
-  "annuity",
-  "life_insurance",
-]);
+const FORM_ACCOUNT_CATEGORIES = new Set<string>(INTAKE_ACCOUNT_CATEGORY_VALUES);
 
 const PROPERTY_CATEGORIES = new Set<string>(["real_estate", "business"]);
 
@@ -281,9 +281,17 @@ export async function snapshotClientToPayload(
 
     for (const row of accountRows) {
       if (FORM_ACCOUNT_CATEGORIES.has(row.category)) {
+        const category = row.category as IntakeAccountCategory;
         payloadAccounts.push({
           name: row.name,
-          category: row.category as IntakeAccountCategory,
+          category,
+          // Only a sub-type this category actually offers survives: the DB's
+          // enum is wider than the form's picker (a Plaid-imported "hsa" on a
+          // cash account, say), and a pair the picker can't render is a pair
+          // the submit schema rejects. Dropping it re-seeds the default.
+          subType: isSubTypeOfCategory(category, row.subType)
+            ? (row.subType as IntakeAccountSubType)
+            : undefined,
           value: Number(row.value),
           basis: Number(row.basis),
           owner: ownerByAccountId.get(row.id) ?? "client",

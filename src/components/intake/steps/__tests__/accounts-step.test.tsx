@@ -47,23 +47,29 @@ describe("AccountsStep", () => {
     expect(next?.[0]?.owner).toBe("client");
   });
 
-  it("renders an existing account collapsed, with its category, owner, and value", () => {
+  it("renders an existing account collapsed, with its type, owner, and value", () => {
     const value: AccountsSlice = [
-      { name: "Fidelity Brokerage", category: "taxable", value: 100000, owner: "client" },
+      {
+        name: "Fidelity Brokerage",
+        category: "taxable",
+        subType: "brokerage",
+        value: 100000,
+        owner: "client",
+      },
     ];
     render(<AccountsStep {...makeProps({ value })} />);
 
     expect(screen.getByText("Fidelity Brokerage")).toBeInTheDocument();
-    expect(screen.getByText(/Taxable brokerage · Client/)).toBeInTheDocument();
+    expect(screen.getByText(/Brokerage · Client/)).toBeInTheDocument();
     // Scoped to the row — the KPI total reads $100,000 too with one account.
     const row = screen.getByRole("button", { name: /edit fidelity brokerage/i })
       .parentElement!;
     expect(within(row).getByText("$100,000")).toBeInTheDocument();
     // Collapsed: no editable fields until Edit is clicked.
-    expect(screen.queryByDisplayValue("Fidelity Brokerage")).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: /category/i })).not.toBeInTheDocument();
   });
 
-  it("clicking Edit expands the row into name, category, owner, and value inputs", () => {
+  it("clicking Edit expands the row into category, type, owner, and value inputs", () => {
     const value: AccountsSlice = [
       { name: "Fidelity Brokerage", category: "taxable", value: 100000 },
     ];
@@ -71,29 +77,16 @@ describe("AccountsStep", () => {
 
     expandRow(/edit fidelity brokerage/i);
 
-    expect(screen.getByDisplayValue("Fidelity Brokerage")).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: /category/i })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: /^type$/i })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: /owner/i })).toBeInTheDocument();
     // value input is a formatted money field: 100000 → "100,000"
     expect(screen.getByDisplayValue("100,000")).toBeInTheDocument();
+    // The name is derived, never typed.
+    expect(screen.queryByRole("textbox", { name: /account name/i })).not.toBeInTheDocument();
   });
 
-  it("editing the name calls onChange with updated account name", () => {
-    const onChange = vi.fn();
-    const value: AccountsSlice = [{ name: "Fidelity", category: "taxable", value: 50000 }];
-    render(<AccountsStep {...makeProps({ value, onChange })} />);
-
-    expandRow(/edit fidelity/i);
-    fireEvent.change(screen.getByDisplayValue("Fidelity"), {
-      target: { value: "Vanguard" },
-    });
-
-    expect(onChange).toHaveBeenCalledOnce();
-    const next: AccountsSlice = onChange.mock.calls[0][0];
-    expect(next?.[0]?.name).toBe("Vanguard");
-  });
-
-  it("changing category calls onChange with the new category", () => {
+  it("changing category calls onChange with the new category and its default type", () => {
     const onChange = vi.fn();
     const value: AccountsSlice = [{ name: "IRA", category: "taxable", value: 0 }];
     render(<AccountsStep {...makeProps({ value, onChange })} />);
@@ -106,6 +99,9 @@ describe("AccountsStep", () => {
     expect(onChange).toHaveBeenCalledOnce();
     const next: AccountsSlice = onChange.mock.calls[0][0];
     expect(next?.[0]?.category).toBe("retirement");
+    // A taxable sub-type must not survive into Retirement — the submit schema
+    // rejects a pair the picker can't render.
+    expect(next?.[0]?.subType).toBe("traditional_ira");
   });
 
   it("changing value calls onChange with the numeric value", () => {
@@ -219,35 +215,174 @@ describe("AccountsStep", () => {
       <AccountsStep {...makeProps({ value, clientName: "Dana", spouseName: "Alex", hasSpouse: true })} />,
     );
 
-    expect(screen.getByText(/Retirement \(IRA \/ 401k\) · Alex/)).toBeInTheDocument();
+    expect(screen.getByText(/Retirement · Alex/)).toBeInTheDocument();
+  });
+
+  // ── Account type (category → sub-type) ───────────────────────────────────
+
+  it("offers the six core categories", () => {
+    const value: AccountsSlice = [{ name: "Acct", category: "taxable", value: 0 }];
+    render(<AccountsStep {...makeProps({ value })} />);
+
+    expandRow(/edit acct/i);
+    const category = screen.getByRole("combobox", { name: /category/i });
+    expect(within(category).getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "Taxable investments",
+      "Cash & savings",
+      "Retirement",
+      "Education savings",
+      "Annuity",
+      "Life insurance",
+    ]);
+  });
+
+  it("offers the retirement sub-types under Retirement", () => {
+    const value: AccountsSlice = [
+      { name: "Acct", category: "retirement", subType: "roth_ira", value: 0 },
+    ];
+    render(<AccountsStep {...makeProps({ value })} />);
+
+    expandRow(/edit acct/i);
+    const type = screen.getByRole("combobox", { name: /^type$/i });
+    expect(within(type).getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "Traditional IRA",
+      "Roth IRA",
+      "401(k)",
+      "403(b)",
+      "401(a)",
+      "SEP IRA",
+      "SIMPLE IRA",
+      "HSA",
+      "Other retirement account",
+    ]);
+    expect((type as HTMLSelectElement).value).toBe("roth_ira");
+  });
+
+  it("changing the type calls onChange with the new sub-type", () => {
+    const onChange = vi.fn();
+    const value: AccountsSlice = [
+      { name: "Acct", category: "retirement", subType: "traditional_ira", value: 0 },
+    ];
+    render(<AccountsStep {...makeProps({ value, onChange })} />);
+
+    expandRow(/edit acct/i);
+    fireEvent.change(screen.getByRole("combobox", { name: /^type$/i }), {
+      target: { value: "401k" },
+    });
+
+    const next: AccountsSlice = onChange.mock.calls[0][0];
+    expect(next?.[0]?.subType).toBe("401k");
+  });
+
+  it("hides the type picker where the category has no meaningful split", () => {
+    const value: AccountsSlice = [{ name: "Acct", category: "annuity", value: 0 }];
+    render(<AccountsStep {...makeProps({ value })} />);
+
+    expandRow(/edit acct/i);
+    expect(screen.queryByRole("combobox", { name: /^type$/i })).not.toBeInTheDocument();
+  });
+
+  it("assigns 529 silently rather than showing a one-option picker", () => {
+    const onChange = vi.fn();
+    const value: AccountsSlice = [{ name: "Acct", category: "taxable", value: 0 }];
+    render(<AccountsStep {...makeProps({ value, onChange })} />);
+
+    expandRow(/edit acct/i);
+    fireEvent.change(screen.getByRole("combobox", { name: /category/i }), {
+      target: { value: "education_savings" },
+    });
+
+    const next: AccountsSlice = onChange.mock.calls[0][0];
+    expect(next?.[0]?.subType).toBe("529");
+  });
+
+  // ── Derived name ─────────────────────────────────────────────────────────
+
+  it("names a new account from its type and owner — never blank", () => {
+    const onChange = vi.fn();
+    render(<AccountsStep {...makeProps({ onChange, clientName: "Dana" })} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /add account/i }));
+
+    const next: AccountsSlice = onChange.mock.calls[0][0];
+    expect(next?.[0]?.name).toBe("Brokerage - Dana");
+  });
+
+  it("re-derives the name as type, owner, and custodian change", () => {
+    const onChange = vi.fn();
+    const value: AccountsSlice = [
+      { name: "Brokerage - Dana", category: "retirement", subType: "roth_ira", value: 0 },
+    ];
+    const props = makeProps({
+      value,
+      onChange,
+      clientName: "Dana",
+      spouseName: "Alex",
+      hasSpouse: true,
+    });
+    const { rerender } = render(<AccountsStep {...props} />);
+
+    expandRow(/edit brokerage - dana/i);
+    fireEvent.change(screen.getByRole("combobox", { name: /owner/i }), {
+      target: { value: "spouse" },
+    });
+    const afterOwner: AccountsSlice = onChange.mock.calls[0][0];
+    expect(afterOwner?.[0]?.name).toBe("Roth IRA - Alex");
+
+    rerender(<AccountsStep {...props} value={afterOwner} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /custodian/i }), {
+      target: { value: "Fidelity" },
+    });
+    const afterCustodian: AccountsSlice = onChange.mock.calls[1][0];
+    expect(afterCustodian?.[0]?.name).toBe("Roth IRA - Alex - Fidelity");
+  });
+
+  it("shows the client the name their answers will be saved under", () => {
+    const value: AccountsSlice = [
+      {
+        name: "Roth IRA - Dana - Fidelity",
+        category: "retirement",
+        subType: "roth_ira",
+        value: 0,
+        custodian: "Fidelity",
+      },
+    ];
+    render(<AccountsStep {...makeProps({ value, clientName: "Dana" })} />);
+
+    expandRow(/edit roth ira - dana - fidelity/i);
+    expect(screen.getByText("Saved as")).toBeInTheDocument();
+    // Once in the "Saved as" panel; the collapsed-row title is gone while open.
+    expect(screen.getByText("Roth IRA - Dana - Fidelity")).toBeInTheDocument();
   });
 
   // ── Collapse behaviour ───────────────────────────────────────────────────
 
   it("expands only one account at a time — editing a second collapses the first", () => {
     const value: AccountsSlice = [
-      { name: "Account A", category: "taxable", value: 1000 },
-      { name: "Account B", category: "cash", value: 2000 },
+      { name: "Account A", category: "taxable", value: 1000, custodian: "Alpha" },
+      { name: "Account B", category: "cash", value: 2000, custodian: "Beta" },
     ];
     render(<AccountsStep {...makeProps({ value })} />);
 
     expandRow(/edit account a/i);
-    expect(screen.getByDisplayValue("Account A")).toBeInTheDocument();
-    expect(screen.queryByDisplayValue("Account B")).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue("Alpha")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Beta")).not.toBeInTheDocument();
 
     expandRow(/edit account b/i);
-    expect(screen.getByDisplayValue("Account B")).toBeInTheDocument();
-    expect(screen.queryByDisplayValue("Account A")).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue("Beta")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Alpha")).not.toBeInTheDocument();
   });
 
   it("Done collapses the open editor back to a summary row", () => {
-    const value: AccountsSlice = [{ name: "Account A", category: "taxable", value: 1000 }];
+    const value: AccountsSlice = [
+      { name: "Account A", category: "taxable", value: 1000, custodian: "Alpha" },
+    ];
     render(<AccountsStep {...makeProps({ value })} />);
 
     expandRow(/edit account a/i);
     fireEvent.click(screen.getByRole("button", { name: /^done$/i }));
 
-    expect(screen.queryByDisplayValue("Account A")).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Alpha")).not.toBeInTheDocument();
     expect(screen.getByText("Account A")).toBeInTheDocument();
   });
 

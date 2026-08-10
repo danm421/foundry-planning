@@ -1,4 +1,5 @@
 import type { IntakePayload } from "@/lib/intake/schema";
+import { intakeAccountTypeLabel } from "@/lib/intake/account-types";
 import {
   beneficiaryName,
   goalSpanLabel,
@@ -174,6 +175,8 @@ export function buildIntakeDiff(
 
   // Owner and basis ride along in `secondary`: apply writes both (account_owners
   // rows and the basis column), so the advisor has to see them before approving.
+  // The type shows at the grain the client answered — "Roth IRA", not
+  // "retirement" — because apply now writes that as the account's sub_type.
   const accounts: ListSectionDiff = {
     baselineCount: baseline?.accounts.length ?? 0,
     submittedCount: submitted.accounts.length,
@@ -181,7 +184,7 @@ export function buildIntakeDiff(
       name: a.name,
       value: a.value,
       secondary: [
-        a.category,
+        intakeAccountTypeLabel(a),
         a.owner,
         a.basis === undefined ? undefined : `basis $${a.basis.toLocaleString()}`,
       ]
