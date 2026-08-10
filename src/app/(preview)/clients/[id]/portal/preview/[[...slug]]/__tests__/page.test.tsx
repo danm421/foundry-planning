@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { render } from "@testing-library/react";
 import { ForbiddenError } from "@/lib/authz";
 import { UnauthorizedError } from "@/lib/db-helpers";
@@ -83,13 +83,27 @@ vi.mock("@/components/portal/portal-preview-banner", () => ({
   ),
 }));
 
+// The advisor's section switches ride on the row `requireClientAccess`
+// already returns — the page does not read them a second time. Mutable so the
+// feature tests at the bottom can switch one off.
+const clientFeatures = {
+  portalInvestmentsEnabled: true,
+  portalBudgetEnabled: true,
+  portalDocumentsEnabled: true,
+};
+
 // The page no longer inherits (app)/clients/[id]/layout.tsx — it must call
 // requireClientAccess itself. The mock's client row also feeds the banner
 // (portalEditEnabled) and the contacts lookup (crmHouseholdId).
 vi.mock("@/lib/clients/authz", () => ({
   requireClientAccess: vi.fn(() =>
     Promise.resolve({
-      client: { crmHouseholdId: "h1", portalEditEnabled: true, advisorId: "adv1" },
+      client: {
+        crmHouseholdId: "h1",
+        portalEditEnabled: true,
+        advisorId: "adv1",
+        ...clientFeatures,
+      },
       firmId: "f1",
       permission: "edit",
       access: "own",
@@ -312,5 +326,40 @@ describe("PortalPreview catch-all", () => {
     const node = container.querySelector("[data-testid='screen-documents']");
     expect(node).toBeTruthy();
     expect(node?.getAttribute("data-edit")).toBe("true");
+  });
+});
+
+// The preview is the advisor's proof of what the client sees. A section the
+// advisor switched off must be gone HERE too, or the preview lies.
+describe("PortalPreview feature switches", () => {
+  afterEach(() => {
+    clientFeatures.portalInvestmentsEnabled = true;
+    clientFeatures.portalBudgetEnabled = true;
+    clientFeatures.portalDocumentsEnabled = true;
+  });
+
+  it("calls notFound() for a switched-off section", async () => {
+    clientFeatures.portalInvestmentsEnabled = false;
+    await expect(renderPreview(["investments"])).rejects.toThrow("NEXT_NOT_FOUND");
+    expect(notFound).toHaveBeenCalled();
+  });
+
+  it("gates every Budget tab, not just the section root", async () => {
+    clientFeatures.portalBudgetEnabled = false;
+    await expect(renderPreview(["budget"])).rejects.toThrow("NEXT_NOT_FOUND");
+    await expect(renderPreview(["budget", "transactions"])).rejects.toThrow("NEXT_NOT_FOUND");
+    await expect(renderPreview(["budget", "recurring"])).rejects.toThrow("NEXT_NOT_FOUND");
+  });
+
+  it("leaves the core sections reachable when all three are off", async () => {
+    clientFeatures.portalInvestmentsEnabled = false;
+    clientFeatures.portalBudgetEnabled = false;
+    clientFeatures.portalDocumentsEnabled = false;
+    const { container } = await renderPreview(undefined);
+    expect(container.querySelector("[data-testid='section-dashboard']")).toBeTruthy();
+    const organizer = await renderPreview(["organizer"]);
+    expect(
+      organizer.container.querySelector("[data-testid='section-household']"),
+    ).toBeTruthy();
   });
 });

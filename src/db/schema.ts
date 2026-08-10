@@ -1009,6 +1009,13 @@ export const clients = pgTable("clients", {
   // activation was not recorded anywhere. Drives `portal_first_login`.
   portalFirstLoginAt: timestamp("portal_first_login_at"),
   portalEditEnabled: boolean("portal_edit_enabled").notNull().default(true),
+  // Which optional portal sections this client can reach. Advisor-controlled
+  // from Manage Portal → Features; off removes the rail/tab entry, the
+  // dashboard tiles that link into it, and 404s the route. Dashboard,
+  // Organizer and Settings are core and have no switch.
+  portalInvestmentsEnabled: boolean("portal_investments_enabled").notNull().default(true),
+  portalBudgetEnabled: boolean("portal_budget_enabled").notNull().default(true),
+  portalDocumentsEnabled: boolean("portal_documents_enabled").notNull().default(true),
 }, (t) => [
   index("clients_firm_idx").on(t.firmId),
 ]);

@@ -24,6 +24,8 @@ import { PortalModeProvider } from "@/components/portal/portal-mode-context";
 import { NotSharedNotice } from "@/components/portal/not-shared-notice";
 import { PortalSettingsView } from "@/components/portal/portal-settings-view";
 import { loadPortalPrivacy } from "@/lib/portal/privacy";
+import { toPortalFeatures } from "@/lib/portal/features";
+import { portalFeatureForPath } from "@/components/portal/portal-nav-items";
 import { loadPortalConnectionAlert } from "@/lib/portal/load-plaid-items";
 import { resolveIntakeBrandingForClient } from "@/lib/branding/resolve-for-client";
 import { PortalBrandingStrip } from "@/components/portal/portal-branding-mark";
@@ -62,8 +64,8 @@ export default async function PortalPreviewPage({
 
   // The client's advisor-sharing switches gate the budgeting sections below.
   // Gated sections render a NotSharedNotice INSTEAD of loading data — nothing
-  // the client kept private may enter this page's payload. Both reads sit
-  // behind the access gate above; they are independent of each other.
+  // the client kept private may enter this page's payload. Every read here
+  // sits behind the access gate above and none depends on another.
   const [privacy, contacts, branding, connectionAlert] = await Promise.all([
     loadPortalPrivacy(id),
     access.client.crmHouseholdId
@@ -83,8 +85,17 @@ export default async function PortalPreviewPage({
   ]);
   const navAlerts = { "/settings": connectionAlert };
 
+  // The advisor's own section switches, off the row `requireClientAccess`
+  // already loaded. The preview must hide exactly what the client's portal
+  // hides, or it stops being a preview.
+  const features = toPortalFeatures(access.client);
+
   // Dispatch on slug. Empty → Dashboard; ["organizer"] → Household.
   const path = (slug ?? []).join("/");
+  // Which switch (if any) owns this path is the navs' own mapping, so one
+  // check covers `/budget`, `/budget/transactions` and `/budget/recurring`.
+  const gatedBy = portalFeatureForPath(path);
+  if (gatedBy !== undefined && !features[gatedBy]) notFound();
   let section: ReactElement;
   if (path === "") {
     section = <PortalDashboard clientId={id} sharing={privacy} />;
@@ -166,6 +177,7 @@ export default async function PortalPreviewPage({
           basePath={basePath}
           className="flex min-h-0 overflow-y-auto"
           alerts={navAlerts}
+          features={features}
         />
         <main className="min-h-0 min-w-0 overflow-y-auto border-x border-hair">
           <PortalBrandingStrip branding={branding} />

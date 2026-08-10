@@ -137,6 +137,47 @@ describe("DashboardGrid chart tiles", () => {
   });
 });
 
+// Every budgeting tile links into /budget/*, which 404s once the advisor
+// switches Budget off — a tile left behind is a dead link on the client's
+// landing page.
+describe("DashboardGrid with Budget switched off", () => {
+  it("drops all five budgeting tiles and keeps the plan tiles", () => {
+    render(
+      <div>
+        <main>
+          <DashboardGrid dto={DTO} editEnabled={false} budgetEnabled={false} />
+        </main>
+        <aside id="portal-detail" />
+      </div>,
+    );
+    expect(screen.getByText("Net worth")).toBeInTheDocument();
+    expect(screen.getByText("Goals funded")).toBeInTheDocument();
+    expect(screen.queryByText("Monthly spending")).toBeNull();
+    expect(screen.queryByText("Net this month")).toBeNull();
+    expect(screen.queryByText("Top categories")).toBeNull();
+    expect(screen.queryByText("Transactions to review")).toBeNull();
+    expect(screen.queryByText("Next two weeks")).toBeNull();
+  });
+
+  it("removes the second column entirely so the first is not left at half width", () => {
+    render(
+      <div>
+        <main>
+          <DashboardGrid dto={DTO} editEnabled={false} budgetEnabled={false} />
+        </main>
+        <aside id="portal-detail" />
+      </div>,
+    );
+    expect(screen.getByTestId("dashboard-grid").children).toHaveLength(1);
+  });
+
+  it("keeps every tile when budgetEnabled is omitted (default on)", () => {
+    render(<LayoutLike />);
+    expect(screen.getByText("Monthly spending")).toBeInTheDocument();
+    expect(screen.getByTestId("dashboard-grid").children).toHaveLength(2);
+  });
+});
+
 describe("DashboardGrid rail drill-downs", () => {
   it("portals the category detail into #portal-detail and closes", async () => {
     const user = userEvent.setup();

@@ -3,6 +3,8 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients } from "@/db/schema";
 import { loadPortalDashboard } from "@/lib/portal/load-dashboard";
+import { toPortalFeatures } from "@/lib/portal/features";
+import { portalFeatureColumns } from "@/lib/portal/load-features";
 import type { PortalPrivacy } from "@/lib/portal/privacy";
 import { DashboardGrid } from "@/components/portal/dashboard-grid";
 
@@ -18,7 +20,10 @@ export default async function PortalDashboard({ clientId, sharing }: Props): Pro
   const [dto, [client]] = await Promise.all([
     loadPortalDashboard(clientId, new Date(), sharing),
     db
-      .select({ portalEditEnabled: clients.portalEditEnabled })
+      .select({
+        portalEditEnabled: clients.portalEditEnabled,
+        ...portalFeatureColumns,
+      })
       .from(clients)
       .where(eq(clients.id, clientId))
       .limit(1),
@@ -26,7 +31,11 @@ export default async function PortalDashboard({ clientId, sharing }: Props): Pro
   return (
     <div className="mx-auto max-w-6xl p-6 lg:p-10">
       <h1 className="mb-6 text-[22px] font-semibold text-ink">Dashboard</h1>
-      <DashboardGrid dto={dto} editEnabled={client?.portalEditEnabled ?? false} />
+      <DashboardGrid
+        dto={dto}
+        editEnabled={client?.portalEditEnabled ?? false}
+        budgetEnabled={toPortalFeatures(client).budget}
+      />
     </div>
   );
 }

@@ -10,6 +10,8 @@ import PortalMobileNav from "@/components/portal/portal-mobile-nav";
 import PortalReadOnlyBanner from "@/components/portal/portal-read-only-banner";
 import { PortalBrandingStrip } from "@/components/portal/portal-branding-mark";
 import { PortalModeProvider } from "@/components/portal/portal-mode-context";
+import { toPortalFeatures } from "@/lib/portal/features";
+import { portalFeatureColumns } from "@/lib/portal/load-features";
 
 export default async function PortalLayout({
   children,
@@ -24,6 +26,7 @@ export default async function PortalLayout({
       advisorId: clients.advisorId,
       crmHouseholdId: clients.crmHouseholdId,
       portalEditEnabled: clients.portalEditEnabled,
+      ...portalFeatureColumns,
     })
     .from(clients)
     .where(eq(clients.id, clientId))
@@ -70,6 +73,11 @@ export default async function PortalLayout({
     loadPortalConnectionAlert(clientId).catch(() => false),
   ]);
   const navAlerts = { "/settings": connectionAlert };
+  // Advisor-controlled section switches, read off the row above rather than in
+  // a second query. A missing row can't happen behind
+  // `requireClientPortalAccess`; `toPortalFeatures` defaults it to all-on
+  // rather than presenting an empty portal.
+  const features = toPortalFeatures(row);
 
   return (
     <div className="min-h-dvh bg-paper text-ink lg:grid lg:h-dvh lg:grid-cols-[240px_minmax(0,1fr)_auto] lg:overflow-hidden">
@@ -85,6 +93,7 @@ export default async function PortalLayout({
         email={email}
         className="hidden lg:flex lg:h-dvh lg:overflow-y-auto"
         alerts={navAlerts}
+        features={features}
       />
       <main className="min-w-0 lg:h-dvh lg:overflow-y-auto lg:border-x lg:border-hair">
         {/* Mobile-only swipeable top tab bar. */}
@@ -93,6 +102,7 @@ export default async function PortalLayout({
           branding={branding}
           className="lg:hidden"
           alerts={navAlerts}
+          features={features}
         />
         {/* Desktop-only firm letterhead pinned above the scrolling content. */}
         <PortalBrandingStrip branding={branding} className="hidden lg:flex" />

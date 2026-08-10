@@ -361,6 +361,7 @@ export type AuditAction =
   | "portal.invite.revoked"
   | "portal.access.disabled"
   | "portal.edit_toggle"
+  | "portal.feature_toggle"
   | "portal.family.create"
   | "portal.family.update"
   | "portal.family.delete"

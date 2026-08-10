@@ -5,12 +5,16 @@ import { usePathname } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
 import { useEffect, useRef, type ReactElement } from "react";
 import {
-  PORTAL_NAV_ITEMS,
+  visiblePortalNavItems,
   isPortalNavItemActive,
 } from "@/components/portal/portal-nav-items";
 import PortalBrandingMark, {
   type PortalBranding,
 } from "@/components/portal/portal-branding-mark";
+import {
+  DEFAULT_PORTAL_FEATURES,
+  type PortalFeatures,
+} from "@/lib/portal/features";
 
 interface Props {
   displayName: string;
@@ -25,6 +29,11 @@ interface Props {
    * standalone consumers and existing tests render unchanged.
    */
   alerts?: Record<string, boolean>;
+  /**
+   * Advisor-controlled section switches. Defaults to all-on so standalone
+   * consumers and existing tests render the full strip.
+   */
+  features?: PortalFeatures;
 }
 
 /**
@@ -41,9 +50,11 @@ export default function PortalMobileNav({
   basePath = "/portal",
   className = "",
   alerts = {},
+  features = DEFAULT_PORTAL_FEATURES,
 }: Props): ReactElement {
   const pathname = usePathname();
   const activeRef = useRef<HTMLAnchorElement | null>(null);
+  const items = visiblePortalNavItems(features);
 
   // Keep the active tab centered as the route changes (and on first paint).
   useEffect(() => {
@@ -78,7 +89,7 @@ export default function PortalMobileNav({
         aria-label="Portal sections"
         className="flex snap-x snap-proximity gap-2 overflow-x-auto scroll-smooth px-4 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        {PORTAL_NAV_ITEMS.map((item) => {
+        {items.map((item) => {
           const href = `${basePath}${item.suffix}`;
           const active = isPortalNavItemActive(pathname, href, item);
           return (

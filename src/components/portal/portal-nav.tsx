@@ -5,11 +5,15 @@ import { usePathname } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
 import type { ReactElement } from "react";
 import {
-  PORTAL_NAV_ITEMS,
+  visiblePortalNavItems,
   isPortalNavItemActive,
   type PortalNavGroup,
   type PortalNavItem,
 } from "@/components/portal/portal-nav-items";
+import {
+  DEFAULT_PORTAL_FEATURES,
+  type PortalFeatures,
+} from "@/lib/portal/features";
 
 /**
  * Rail order. Groups are spacing only — no group carries a visible subheader
@@ -20,11 +24,6 @@ import {
  * what separates Dashboard from the four money items from Settings.
  */
 const GROUP_ORDER: readonly PortalNavGroup[] = ["overview", "money", "settings"];
-
-const GROUPS = GROUP_ORDER.map((group) => ({
-  group,
-  items: PORTAL_NAV_ITEMS.filter((i) => i.group === group),
-}));
 
 interface Props {
   displayName: string;
@@ -43,6 +42,11 @@ interface Props {
    * standalone consumers and existing tests render unchanged.
    */
   alerts?: Record<string, boolean>;
+  /**
+   * Advisor-controlled section switches. Defaults to all-on so standalone
+   * consumers and existing tests render the full rail.
+   */
+  features?: PortalFeatures;
 }
 
 export default function PortalNav({
@@ -51,8 +55,14 @@ export default function PortalNav({
   basePath = "/portal",
   className = "flex",
   alerts = {},
+  features = DEFAULT_PORTAL_FEATURES,
 }: Props): ReactElement {
   const pathname = usePathname();
+  const items = visiblePortalNavItems(features);
+  const groups = GROUP_ORDER.map((group) => ({
+    group,
+    items: items.filter((i) => i.group === group),
+  })).filter((g) => g.items.length > 0);
   function itemCls(active: boolean): string {
     return active
       ? "block rounded-md bg-accent/20 px-3 py-1.5 text-[13px] font-medium text-accent"
@@ -80,10 +90,10 @@ export default function PortalNav({
         <div className="truncate text-[12px] text-ink-3">{email}</div>
       </header>
 
-      {GROUPS.map(({ group, items }) => (
+      {groups.map(({ group, items: groupItems }) => (
         <div key={group} className="mb-3">
           <ul className="space-y-0.5">
-            {items.map((item) => {
+            {groupItems.map((item) => {
               const href = `${basePath}${item.suffix}`;
               return (
                 <li key={item.suffix || "dashboard"}>

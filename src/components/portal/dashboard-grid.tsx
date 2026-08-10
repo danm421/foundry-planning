@@ -19,9 +19,17 @@ import {
 export function DashboardGrid({
   dto,
   editEnabled,
+  budgetEnabled = true,
 }: {
   dto: PortalDashboardDTO;
   editEnabled: boolean;
+  /**
+   * The advisor's Budget switch. Off drops the five budgeting tiles entirely
+   * (not a NotSharedNotice — that says "you chose to hide this from your
+   * advisor", which is the opposite direction): each one links into
+   * `/budget/*`, which 404s for this client.
+   */
+  budgetEnabled?: boolean;
 }): ReactElement {
   const { sharing } = dto;
   const portalFetch = usePortalFetch();
@@ -103,51 +111,57 @@ export function DashboardGrid({
         <div className="flex min-w-0 flex-1 flex-col gap-5">
           <TileNetWorth netWorth={dto.netWorth} onOpen={() => setDetail({ kind: "networth" })} />
           <TileGoalsFunded goals={dto.goals} projected={dto.goalsProjected} />
-          {sharing.shareTransactions ? (
-            <TileToReview
-              items={reviewItems}
-              count={reviewCount}
-              error={reviewError}
-              editEnabled={editEnabled}
-              onMarkReviewed={(id) => void markReviewed(id)}
-              onMarkAll={() => void markAllReviewed()}
-              onOpen={(id) => setDetail({ kind: "transaction", id })}
-            />
-          ) : (
-            <NotSharedNotice area="transactions" variant="tile" />
-          )}
-          {sharing.shareTransactions ? (
-            <TileNetThisMonth netThisMonth={dto.netThisMonth} />
-          ) : (
-            <NotSharedNotice area="transactions" variant="tile" />
-          )}
+          {budgetEnabled &&
+            (sharing.shareTransactions ? (
+              <TileToReview
+                items={reviewItems}
+                count={reviewCount}
+                error={reviewError}
+                editEnabled={editEnabled}
+                onMarkReviewed={(id) => void markReviewed(id)}
+                onMarkAll={() => void markAllReviewed()}
+                onOpen={(id) => setDetail({ kind: "transaction", id })}
+              />
+            ) : (
+              <NotSharedNotice area="transactions" variant="tile" />
+            ))}
+          {budgetEnabled &&
+            (sharing.shareTransactions ? (
+              <TileNetThisMonth netThisMonth={dto.netThisMonth} />
+            ) : (
+              <NotSharedNotice area="transactions" variant="tile" />
+            ))}
         </div>
-        <div className="flex min-w-0 flex-1 flex-col gap-5">
-          {sharing.shareBudgets ? (
-            <TileMonthlySpending
-              spending={dto.spending}
-              onOpen={() => setDetail({ kind: "spending" })}
-            />
-          ) : (
-            <NotSharedNotice area="budgets" variant="tile" />
-          )}
-          {sharing.shareBudgets ? (
-            <TileTopCategories
-              topCategories={dto.topCategories}
-              onOpen={(categoryId, name) => setDetail({ kind: "category", categoryId, name })}
-            />
-          ) : (
-            <NotSharedNotice area="budgets" variant="tile" />
-          )}
-          {sharing.shareRecurrings ? (
-            <TileNextTwoWeeks
-              recurrings={dto.recurrings}
-              onOpen={(id) => setDetail({ kind: "recurring", id })}
-            />
-          ) : (
-            <NotSharedNotice area="recurrings" variant="tile" />
-          )}
-        </div>
+        {/* Whole column, not just its tiles — an empty flex-1 sibling would
+            leave the left column stranded at half width on desktop. */}
+        {budgetEnabled && (
+          <div className="flex min-w-0 flex-1 flex-col gap-5">
+            {sharing.shareBudgets ? (
+              <TileMonthlySpending
+                spending={dto.spending}
+                onOpen={() => setDetail({ kind: "spending" })}
+              />
+            ) : (
+              <NotSharedNotice area="budgets" variant="tile" />
+            )}
+            {sharing.shareBudgets ? (
+              <TileTopCategories
+                topCategories={dto.topCategories}
+                onOpen={(categoryId, name) => setDetail({ kind: "category", categoryId, name })}
+              />
+            ) : (
+              <NotSharedNotice area="budgets" variant="tile" />
+            )}
+            {sharing.shareRecurrings ? (
+              <TileNextTwoWeeks
+                recurrings={dto.recurrings}
+                onOpen={(id) => setDetail({ kind: "recurring", id })}
+              />
+            ) : (
+              <NotSharedNotice area="recurrings" variant="tile" />
+            )}
+          </div>
+        )}
       </div>
       {detail && (
         <PortalDetailPortal closeLabel="Close details" onClose={closeDetail}>

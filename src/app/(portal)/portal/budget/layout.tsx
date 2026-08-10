@@ -1,16 +1,26 @@
 import type { ReactElement, ReactNode } from "react";
+import { notFound } from "next/navigation";
+import { requireClientPortalAccess } from "@/lib/authz";
+import { isPortalFeatureEnabled } from "@/lib/portal/load-features";
 import BudgetTabs from "@/components/portal/budget-tabs";
 
 /**
  * Chrome for the Budget section: the tab strip that navigates between Budget,
- * Transactions and Recurring. Nothing here reads the DB — each tab's page
- * still does its own `requireClientPortalAccess()`.
+ * Transactions and Recurring — plus the one gate that covers all three tabs.
+ *
+ * The feature check lives here rather than in each page so a switched-off
+ * Budget takes the tab strip down with it; a page-level `notFound()` would
+ * leave the tabs framing the not-found screen. Each tab's page still does its
+ * own `requireClientPortalAccess()` — this layout does not pass a clientId down.
  */
-export default function BudgetLayout({
+export default async function BudgetLayout({
   children,
 }: {
   children: ReactNode;
-}): ReactElement {
+}): Promise<ReactElement> {
+  const { clientId } = await requireClientPortalAccess();
+  if (!(await isPortalFeatureEnabled(clientId, "budget"))) notFound();
+
   return (
     <>
       <BudgetTabs />

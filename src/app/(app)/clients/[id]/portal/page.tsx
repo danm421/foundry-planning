@@ -8,9 +8,12 @@ import { currentOrgHasClientPortal } from "@/lib/authz";
 import PortalAccessCard from "@/components/portal/portal-access-card";
 import PortalEditToggle from "@/components/portal/portal-edit-toggle";
 import PortalActivityFeed from "@/components/portal/portal-activity-feed";
-import PortalCard, { portalBtn } from "@/components/portal/portal-card";
+import { portalBtn } from "@/components/portal/portal-card";
 import PortalManageShell from "@/components/portal/portal-manage-shell";
+import PortalFeatureToggles from "@/components/portal/portal-feature-toggles";
 import { EyeIcon } from "@/components/portal/portal-icons";
+import { toPortalFeatures } from "@/lib/portal/features";
+import { portalFeatureColumns } from "@/lib/portal/load-features";
 import SendClientForm from "@/components/intake/send-client-form";
 import { loadAdvisorDefaultSections, loadSubmittedFormForClient } from "@/lib/intake/queries";
 
@@ -51,6 +54,7 @@ export default async function PortalManagePage({ params }: Props): Promise<React
       portalInvitedAt: clients.portalInvitedAt,
       portalEditEnabled: clients.portalEditEnabled,
       crmHouseholdId: clients.crmHouseholdId,
+      ...portalFeatureColumns,
     })
     .from(clients)
     .where(eq(clients.id, id))
@@ -99,7 +103,24 @@ export default async function PortalManagePage({ params }: Props): Promise<React
   return (
     <div className="space-y-6">
       <header className="space-y-1">
-        <h2 className="text-[20px] font-semibold text-ink">Manage Portal</h2>
+        {/* Preview sits on the title row rather than in the section nav — it
+            leaves the page (new tab) instead of swapping a panel, so it was
+            the one nav item that never had a panel to come back to. */}
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="text-[20px] font-semibold text-ink">Manage Portal</h2>
+          {portalEnabled && (
+            <Link
+              href={`/clients/${id}/portal/preview`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={portalBtn.accent}
+              title="See exactly what the client sees — read-only, works before you send an invite."
+            >
+              <EyeIcon />
+              Preview as client ↗
+            </Link>
+          )}
+        </div>
         <p className="text-[13px] text-ink-3">
           {portalEnabled
             ? "Control portal access, send data-collection forms, and review what the client changes."
@@ -133,23 +154,9 @@ export default async function PortalManagePage({ params }: Props): Promise<React
             portalEnabled={portalEnabled}
           />
         }
-        preview={
+        features={
           portalEnabled ? (
-            <PortalCard
-              icon={<EyeIcon />}
-              title="Preview as client"
-              description="See exactly what the client sees in their portal — even before you send an invite. Read-only."
-              action={
-                <Link
-                  href={`/clients/${id}/portal/preview`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={portalBtn.accent}
-                >
-                  Open preview ↗
-                </Link>
-              }
-            />
+            <PortalFeatureToggles clientId={id} initialFeatures={toPortalFeatures(row)} />
           ) : null
         }
         editing={

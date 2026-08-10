@@ -4,12 +4,12 @@ import { useState, type ReactElement, type ReactNode } from "react";
 import {
   KeyIcon,
   MailIcon,
-  EyeIcon,
+  SlidersIcon,
   PencilIcon,
   HistoryIcon,
 } from "@/components/portal/portal-icons";
 
-type TabKey = "access" | "intake" | "preview" | "editing" | "activity";
+type TabKey = "access" | "intake" | "features" | "editing" | "activity";
 
 interface Tab {
   key: TabKey;
@@ -20,7 +20,7 @@ interface Tab {
 const TABS: readonly Tab[] = [
   { key: "access", label: "Access", icon: <KeyIcon /> },
   { key: "intake", label: "Intake form", icon: <MailIcon /> },
-  { key: "preview", label: "Preview", icon: <EyeIcon /> },
+  { key: "features", label: "Features", icon: <SlidersIcon /> },
   { key: "editing", label: "Editing", icon: <PencilIcon /> },
   { key: "activity", label: "Activity", icon: <HistoryIcon /> },
 ] as const;
@@ -30,7 +30,7 @@ const TABS: readonly Tab[] = [
 interface Props {
   access: ReactNode;
   intake: ReactNode;
-  preview: ReactNode | null;
+  features: ReactNode | null;
   editing: ReactNode | null;
   activity: ReactNode | null;
 }
@@ -47,12 +47,12 @@ interface Props {
 export default function PortalManageShell({
   access,
   intake,
-  preview,
+  features,
   editing,
   activity,
 }: Props): ReactElement {
   const [active, setActive] = useState<TabKey>("access");
-  const panels: Record<TabKey, ReactNode> = { access, intake, preview, editing, activity };
+  const panels: Record<TabKey, ReactNode> = { access, intake, features, editing, activity };
   // `access` is never null, so the default active tab always survives the filter.
   const tabs = TABS.filter((tab) => panels[tab.key] !== null);
 
