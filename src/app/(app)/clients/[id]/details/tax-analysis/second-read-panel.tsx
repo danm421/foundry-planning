@@ -22,12 +22,17 @@ export function SecondReadPanel({
   secondRead,
   stale,
   busy,
+  error,
   onGenerate,
   onDismiss,
 }: {
   secondRead: SecondRead | null;
   stale: boolean;
   busy: boolean;
+  /** Reported HERE rather than in the page-level banner: that banner is the
+   *  first child of a page this panel sits at the foot of, so a failure shown
+   *  there lands thousands of pixels above the button that produced it. */
+  error: string | null;
   onGenerate: () => void;
   onDismiss: (itemId: string) => void;
 }) {
@@ -71,6 +76,12 @@ export function SecondReadPanel({
       <p role="status" className={busy ? "mt-3 text-xs text-ink-3" : "sr-only"}>
         {busy ? "Reading the documents — this can take a minute…" : ""}
       </p>
+
+      {error !== null && (
+        <p role="alert" className="mt-3 rounded border border-crit bg-crit/10 p-2 text-xs text-crit">
+          {error}
+        </p>
+      )}
 
       {stale && (
         <p className="mt-3 rounded border border-warn/40 bg-warn/10 p-2 text-xs text-ink-2">

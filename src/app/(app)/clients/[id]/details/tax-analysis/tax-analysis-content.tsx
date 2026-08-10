@@ -63,6 +63,11 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
   const [uploading, setUploading] = useState(false);
   const [secondReadBusy, setSecondReadBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Kept separate from `error` so it can render INSIDE the panel. The shared
+  // banner is the first child of this container and the panel is its last
+  // element, so a second-read failure routed through `setError` lands
+  // thousands of pixels above the button the advisor just pressed.
+  const [secondReadError, setSecondReadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadList = useCallback(async (): Promise<Summary[]> => {
@@ -211,11 +216,16 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
   // 2024's panel — flagged `secondReadStale: false`, i.e. "current" — is the
   // worst failure available to a lane whose whole premise is "check this
   // against the form".
+  //
+  // Both also catch a REJECTED fetch, not just a non-ok response. This route
+  // allows 300s and the panel says the read can take a minute, so a browser or
+  // proxy timeout is an ordinary outcome — and an unhandled rejection would
+  // return the panel to idle looking exactly like a successful empty read.
   async function runSecondRead() {
     const year = selectedYear;
     if (year == null) return;
     setSecondReadBusy(true);
-    setError(null);
+    setSecondReadError(null);
     try {
       const res = await fetch(
         `/api/clients/${clientId}/tax-returns/${year}/second-read`,
@@ -225,7 +235,7 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
         // The 403 entitlement body carries a machine code, not prose — every
         // other failure body on this route is already a sentence.
         const message = await errorMessage(res, "The second read couldn't run");
-        setError(
+        setSecondReadError(
           message === "ai_import_not_entitled"
             ? "AI features aren't enabled for this firm."
             : message,
@@ -238,6 +248,8 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
           ? { ...d, secondRead: body.secondRead, secondReadStale: false }
           : d,
       );
+    } catch (e) {
+      setSecondReadError(e instanceof Error ? e.message : "The second read couldn't run");
     } finally {
       setSecondReadBusy(false);
     }
@@ -246,17 +258,21 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
   async function dismissSecondReadItem(itemId: string) {
     const year = selectedYear;
     if (year == null) return;
-    setError(null);
-    const res = await fetch(
-      `/api/clients/${clientId}/tax-returns/${year}/second-read/${itemId}`,
-      { method: "DELETE" },
-    );
-    if (!res.ok) {
-      setError(await errorMessage(res, "Couldn't dismiss that item"));
-      return;
+    setSecondReadError(null);
+    try {
+      const res = await fetch(
+        `/api/clients/${clientId}/tax-returns/${year}/second-read/${itemId}`,
+        { method: "DELETE" },
+      );
+      if (!res.ok) {
+        setSecondReadError(await errorMessage(res, "Couldn't dismiss that item"));
+        return;
+      }
+      const body = (await res.json()) as { secondRead: SecondRead };
+      setDetail((d) => (d && d.taxYear === year ? { ...d, secondRead: body.secondRead } : d));
+    } catch (e) {
+      setSecondReadError(e instanceof Error ? e.message : "Couldn't dismiss that item");
     }
-    const body = (await res.json()) as { secondRead: SecondRead };
-    setDetail((d) => (d && d.taxYear === year ? { ...d, secondRead: body.secondRead } : d));
   }
 
   // L3: a corrupted facts row (stored JSON that failed to parse) leaves
@@ -409,6 +425,7 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
               clientId={clientId}
               detail={detail}
               secondReadBusy={secondReadBusy}
+              secondReadError={secondReadError}
               onRunSecondRead={() => void runSecondRead()}
               onDismissSecondReadItem={(itemId) => void dismissSecondReadItem(itemId)}
               onEditFacts={async () => {

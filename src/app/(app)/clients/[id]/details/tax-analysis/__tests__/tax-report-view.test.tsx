@@ -20,6 +20,7 @@ const detail: YearDetail = {
 // panel props are stubbed once here rather than restated at every render.
 const secondReadProps = {
   secondReadBusy: false,
+  secondReadError: null,
   onRunSecondRead: vi.fn(),
   onDismissSecondReadItem: vi.fn(),
 };

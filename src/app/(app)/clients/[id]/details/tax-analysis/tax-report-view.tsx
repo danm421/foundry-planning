@@ -93,6 +93,7 @@ export function TaxReportView({
   detail,
   onEditFacts,
   secondReadBusy,
+  secondReadError,
   onRunSecondRead,
   onDismissSecondReadItem,
 }: {
@@ -100,6 +101,7 @@ export function TaxReportView({
   detail: YearDetail;
   onEditFacts: () => void | Promise<void>;
   secondReadBusy: boolean;
+  secondReadError: string | null;
   onRunSecondRead: () => void;
   onDismissSecondReadItem: (itemId: string) => void;
 }) {
@@ -257,6 +259,7 @@ export function TaxReportView({
         secondRead={detail.secondRead ?? null}
         stale={detail.secondReadStale === true}
         busy={secondReadBusy}
+        error={secondReadError}
         onGenerate={onRunSecondRead}
         onDismiss={onDismissSecondReadItem}
       />
