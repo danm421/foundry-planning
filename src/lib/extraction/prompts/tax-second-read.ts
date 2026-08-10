@@ -1,3 +1,11 @@
+/**
+ * ⚠️ Editing this prompt REQUIRES bumping `SECOND_READ_VERSION` in
+ * `src/lib/tax-returns/second-read/types.ts`. That constant is what makes a
+ * read produced by an older prompt report itself stale, and it deliberately
+ * lives with the item shape rather than here — so nothing in this file fails
+ * loudly when the two drift. Every sibling prompt keeps its version alongside
+ * it; this one is the exception, which is exactly why it needs saying.
+ */
 export const TAX_SECOND_READ_PROMPT = `You are a second pair of eyes on a US individual tax return that a deterministic rules engine has already analyzed. Your job is to surface things the rules engine was never coded to notice — and NOTHING else.
 
 You will be given: the text of every document filed for one tax year, a summary of the figures already captured from those documents, and the headlines of the findings the rules engine has already reported.
