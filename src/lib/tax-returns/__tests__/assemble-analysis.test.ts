@@ -128,3 +128,86 @@ describe("loadDocumentContext", () => {
     expect(ctx.summaries).toEqual([]);
   });
 });
+
+describe("loadDocumentContext — second read", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const ITEMS = [{
+    id: "sr-1", headline: "h", detail: "d",
+    form: null, line: null, quotedValue: null, dismissed: false,
+  }];
+  const STORED = { generatedAt: "2026-08-10T12:00:00.000Z", warnings: [], items: ITEMS };
+
+  function docs(ids: string[]) {
+    return ids.map((id) => ({
+      id, role: "full_return", filename: `${id}.pdf`, taxYear: 2024,
+      warnings: [], createdAt: new Date("2026-08-01T00:00:00Z"),
+      extractedFacts: null, supportingPayload: null,
+    }));
+  }
+
+  it("reports fresh when the stored hash matches the current document set", async () => {
+    const { secondReadDocHash } = await import("../second-read/doc-hash");
+    const { SECOND_READ_VERSION } = await import("../second-read/types");
+    listDocuments.mockResolvedValue(docs(["d1", "d2"]));
+    getState.mockResolvedValue({
+      factsOverrides: {},
+      aiSecondRead: STORED,
+      aiSecondReadDocHash: secondReadDocHash(["d1", "d2"]),
+      aiSecondReadVersion: SECOND_READ_VERSION,
+    });
+
+    const ctx = await loadDocumentContext("row-1");
+    expect(ctx.secondRead?.items).toHaveLength(1);
+    expect(ctx.secondReadStale).toBe(false);
+  });
+
+  it("reports STALE once a document is added", async () => {
+    const { secondReadDocHash } = await import("../second-read/doc-hash");
+    const { SECOND_READ_VERSION } = await import("../second-read/types");
+    listDocuments.mockResolvedValue(docs(["d1", "d2", "d3"]));
+    getState.mockResolvedValue({
+      factsOverrides: {},
+      aiSecondRead: STORED,
+      aiSecondReadDocHash: secondReadDocHash(["d1", "d2"]),
+      aiSecondReadVersion: SECOND_READ_VERSION,
+    });
+
+    const ctx = await loadDocumentContext("row-1");
+    expect(ctx.secondRead?.items).toHaveLength(1);
+    expect(ctx.secondReadStale).toBe(true);
+  });
+
+  it("reports STALE when the prompt version moved on, even with the same documents", async () => {
+    const { secondReadDocHash } = await import("../second-read/doc-hash");
+    listDocuments.mockResolvedValue(docs(["d1"]));
+    getState.mockResolvedValue({
+      factsOverrides: {},
+      aiSecondRead: STORED,
+      aiSecondReadDocHash: secondReadDocHash(["d1"]),
+      aiSecondReadVersion: "1999-01-01.1",
+    });
+
+    const ctx = await loadDocumentContext("row-1");
+    expect(ctx.secondReadStale).toBe(true);
+  });
+
+  it("is null and not stale when no read has ever been generated", async () => {
+    listDocuments.mockResolvedValue(docs(["d1"]));
+    getState.mockResolvedValue({ factsOverrides: {}, aiSecondRead: null, aiSecondReadDocHash: null, aiSecondReadVersion: null });
+
+    const ctx = await loadDocumentContext("row-1");
+    expect(ctx.secondRead).toBeNull();
+    expect(ctx.secondReadStale).toBe(false);
+  });
+
+  it("is null in the deploy-before-migrate window instead of throwing", async () => {
+    listDocuments.mockRejectedValue(
+      Object.assign(new Error('relation "tax_return_state" does not exist'), { code: "42P01" }),
+    );
+    const ctx = await loadDocumentContext("row-1");
+    expect(ctx.secondRead).toBeNull();
+    expect(ctx.secondReadStale).toBe(false);
+    expect(ctx.unavailable).toBe(true);
+  });
+});

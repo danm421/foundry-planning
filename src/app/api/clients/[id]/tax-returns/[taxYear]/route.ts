@@ -45,6 +45,8 @@ export async function GET(
       conflicts: assembled.conflicts,
       provenance: assembled.provenance,
       documentsUnavailable: assembled.documentsUnavailable,
+      secondRead: assembled.secondRead,
+      secondReadStale: assembled.secondReadStale,
     });
   } catch (err) {
     if (err instanceof UnauthorizedError || (err instanceof Error && err.message === "Unauthorized")) {
