@@ -18,7 +18,7 @@ describe("TAX_SECOND_READ_PROMPT", () => {
   });
 
   it("states the item cap the code also enforces", () => {
-    expect(TAX_SECOND_READ_PROMPT).toContain("6");
+    expect(TAX_SECOND_READ_PROMPT).toMatch(/at most 6 items/i);
   });
 
   it("permits an empty result — a clean return must be allowed to produce nothing", () => {
