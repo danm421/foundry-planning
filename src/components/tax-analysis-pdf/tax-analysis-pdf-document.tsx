@@ -7,6 +7,8 @@ import { fmtUsd, fmtPct } from "@/lib/tax-analysis/format";
 import { deductionDetailRows, hasGrossColumn, incomeCompositionTotal } from "@/lib/tax-analysis/breakdowns";
 import { activityDetailRows } from "@/lib/tax-analysis/activity-detail";
 import { PDF_THEME } from "@/components/balance-sheet-report/tokens";
+import { SEVERITY_GROUPS, CATEGORY_LABEL, sortFindings } from "@/lib/tax-analysis/findings/order";
+import { formatLineRefs } from "@/lib/tax-analysis/findings/line-refs";
 
 export interface TaxAnalysisPdfProps {
   clientName: string;
@@ -16,12 +18,6 @@ export interface TaxAnalysisPdfProps {
   firmName?: string | null;
   logoDataUrl?: string | null; // from resolveBranding — base64 data URL or null
 }
-
-const GROUPS: Array<{ severity: Finding["severity"]; heading: string }> = [
-  { severity: "opportunity", heading: "Opportunities" },
-  { severity: "watch", heading: "Watch items" },
-  { severity: "info", heading: "Notes" },
-];
 
 // Muted-slate fill for "amount filled" bars — deliberately not the Foundry
 // verdigris accent. Client PDFs use the report's own light/print theme
@@ -41,10 +37,17 @@ const styles = StyleSheet.create({
   panelLabel: { fontSize: 7, textTransform: "uppercase", color: PDF_THEME.text.muted },
   panelValue: { fontSize: 13, fontWeight: "bold", marginTop: 2 },
   sectionHeading: { fontSize: 9, textTransform: "uppercase", color: PDF_THEME.text.muted, marginTop: 14, marginBottom: 6 },
-  obsCard: { borderWidth: 1, borderColor: PDF_THEME.surface.panelBorder, borderRadius: 4, padding: 8, marginBottom: 6 },
-  obsTitle: { fontSize: 10, fontWeight: "bold", marginBottom: 2 },
-  obsBody: { fontSize: 9, color: PDF_THEME.text.primary, lineHeight: 1.4 },
   footer: { marginTop: 18, fontSize: 8, color: PDF_THEME.text.muted, lineHeight: 1.4 },
+
+  // Findings
+  findingCard: { borderWidth: 1, borderColor: PDF_THEME.surface.panelBorder, borderRadius: 4, padding: 8, marginBottom: 6 },
+  findingHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
+  findingHeadline: { fontSize: 10, fontWeight: "bold", flex: 4 },
+  findingImpact: { flex: 1, fontSize: 9, fontWeight: "bold", textAlign: "right" },
+  findingCategory: { fontSize: 7, textTransform: "uppercase", color: PDF_THEME.text.muted, marginTop: 2, marginBottom: 4 },
+  findingPartLabel: { fontSize: 7, textTransform: "uppercase", color: PDF_THEME.text.muted, marginTop: 4 },
+  findingPartBody: { fontSize: 9, color: PDF_THEME.text.primary, lineHeight: 1.4 },
+  findingRefs: { fontSize: 8, color: PDF_THEME.text.muted, marginTop: 5, fontStyle: "italic" },
 
   // Bracket map
   bracketBlock: { marginBottom: 12 },
@@ -287,24 +290,50 @@ function DeductionsSection({ analysis }: { analysis: TaxAnalysis }) {
   );
 }
 
+/** Same four parts, same order as the screen's FINDING_PARTS — both surfaces
+ *  read the shared order.ts vocabulary so a card can't diverge between them. */
+const FINDING_PARTS = [
+  { key: "whatTheReturnShows", label: "What the return shows" },
+  { key: "whyItMatters", label: "Why it matters" },
+  { key: "whatToConsider", label: "What to consider" },
+] as const;
+
+function FindingCard({ finding }: { finding: Finding }) {
+  const refs = formatLineRefs(finding.lineRefs);
+  return (
+    <View style={styles.findingCard} wrap={false}>
+      <View style={styles.findingHeaderRow}>
+        <Text style={styles.findingHeadline}>{finding.headline}</Text>
+        {finding.estimatedImpact != null && (
+          <Text style={styles.findingImpact}>{fmtUsd(finding.estimatedImpact)}</Text>
+        )}
+      </View>
+      <Text style={styles.findingCategory}>{CATEGORY_LABEL[finding.category]}</Text>
+      {FINDING_PARTS.map(({ key, label }) =>
+        finding[key] ? (
+          <View key={key}>
+            <Text style={styles.findingPartLabel}>{label}</Text>
+            <Text style={styles.findingPartBody}>{finding[key]}</Text>
+          </View>
+        ) : null,
+      )}
+      {refs !== "" && <Text style={styles.findingRefs}>{refs}</Text>}
+    </View>
+  );
+}
+
 function FindingsSection({ analysis }: { analysis: TaxAnalysis }) {
+  const findings = sortFindings(analysis.findings);
   return (
     <View>
-      {GROUPS.map(({ severity, heading }) => {
-        const items = analysis.findings.filter((f) => f.severity === severity);
+      {SEVERITY_GROUPS.map(({ severity, heading }) => {
+        const items = findings.filter((f) => f.severity === severity);
         if (items.length === 0) return null;
         return (
           <View key={severity}>
             <Text style={styles.sectionHeading}>{heading}</Text>
             {items.map((f) => (
-              <View key={f.id} style={styles.obsCard}>
-                <Text style={styles.obsTitle}>{f.headline}</Text>
-                {[f.whatTheReturnShows, f.whyItMatters, f.whatToConsider]
-                  .filter(Boolean)
-                  .map((part, i) => (
-                    <Text key={i} style={styles.obsBody}>{part}</Text>
-                  ))}
-              </View>
+              <FindingCard key={f.id} finding={f} />
             ))}
           </View>
         );
