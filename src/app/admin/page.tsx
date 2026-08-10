@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getOpsAdmin } from "@/lib/ops/ops-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -7,12 +8,20 @@ const LINKS = [
   { href: "/admin/beta-codes", title: "Beta codes", desc: "Mint and revoke founder access codes." },
 ];
 
-export default function AdminHome() {
+const SUPERADMIN_LINKS = [
+  { href: "/admin/ops-admins", title: "Ops admins", desc: "Grant and revoke ops console access." },
+];
+
+export default async function AdminHome() {
+  const admin = await getOpsAdmin();
+  const links =
+    admin?.role === "superadmin" ? [...LINKS, ...SUPERADMIN_LINKS] : LINKS;
+
   return (
     <div className="space-y-6">
       <h1 className="text-lg font-medium text-ink">Overview</h1>
       <div className="grid gap-3 sm:grid-cols-2">
-        {LINKS.map((l) => (
+        {links.map((l) => (
           <Link
             key={l.href}
             href={l.href}

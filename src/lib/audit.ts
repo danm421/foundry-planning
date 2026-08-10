@@ -244,6 +244,9 @@ export type AuditAction =
   | "ops.billing.trial_extended"
   | "ops.impersonation.started"
   | "ops.impersonation.ended"
+  // Who holds ops access (firmId = "system"; these are not scoped to a firm)
+  | "ops.admin.added"
+  | "ops.admin.updated"
   // Org membership lifecycle (mirrors Clerk events)
   | "member.invited"
   | "member.removed"
