@@ -1,5 +1,6 @@
 import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 import type { TaxResult } from "@/lib/tax/types";
+import { fmtUsd } from "./format";
 
 export interface ReconstructionCheck {
   /** Engine pre-credit income tax: regular bracket tax + preferential
@@ -35,4 +36,21 @@ export function runReconstruction(
     delta,
     withinTolerance: Math.abs(delta) <= tolerance,
   };
+}
+
+/**
+ * The report footer: the cross-check sentence (empty when we couldn't run one)
+ * followed by the disclaimer. Shared by the report view and the PDF because
+ * "is not tax advice" is compliance copy on a client deliverable and must be
+ * byte-identical on both surfaces — two encodings of the same three-state
+ * conditional is exactly where one arm gets fixed on one surface only.
+ */
+export function reconstructionNote(r: ReconstructionCheck): string {
+  const crossCheck =
+    r.withinTolerance === true
+      ? "Cross-check: our independent computation of this return's pre-credit tax matches the filed amount. "
+      : r.withinTolerance === false
+        ? `Cross-check: our computed pre-credit tax (${fmtUsd(r.computedPreCreditTax ?? 0)}) differs from the filed amount — verify the extracted figures. `
+        : "";
+  return `${crossCheck}This analysis is informational, based on the return as provided, and is not tax advice.`;
 }

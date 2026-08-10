@@ -2,16 +2,21 @@ import type { Finding, FindingContext } from "../types";
 import { fmtUsd, fmtPct } from "../format";
 import { n } from "../adapter";
 import { isNoIncomeTaxState } from "@/lib/tax/state-income/data/no-income-tax-states";
+import { STATUTORY_FIXED } from "@/lib/tax/constants";
 import type { USPSStateCode } from "@/lib/usps-states";
 
-// Statutory §24(h) phase-out thresholds (not inflation-indexed, so constants
-// here rather than TaxYearParameters).
-const CTC_THRESHOLD_MFJ = 400000;
-const CTC_THRESHOLD_OTHER = 200000;
+// The §24(h) and §25A(d) figures below are unindexed, so they live in
+// STATUTORY_FIXED rather than TaxYearParameters. Read from there rather than
+// re-declared here — a second copy of a statutory threshold is a second thing
+// to update when Congress moves one.
+const CTC_THRESHOLD_MFJ = STATUTORY_FIXED.ctcPhaseoutThresholdMfj;
+const CTC_THRESHOLD_OTHER = STATUTORY_FIXED.ctcPhaseoutThresholdOther;
 const CTC_NEAR = 50000;
 
-// §25A(d) AOTC/LLC MAGI windows (statutory, unindexed for AOTC).
-const EDU_WINDOW = { mfj: [160000, 180000], other: [80000, 90000] } as const;
+const EDU_WINDOW = {
+  mfj: [STATUTORY_FIXED.aotcPhaseoutStartMfj, STATUTORY_FIXED.aotcPhaseoutEndMfj],
+  other: [STATUTORY_FIXED.aotcPhaseoutStartOther, STATUTORY_FIXED.aotcPhaseoutEndOther],
+} as const;
 
 export function ctcPhaseout(ctx: FindingContext): Finding | null {
   const f = ctx.facts;
@@ -29,7 +34,8 @@ export function ctcPhaseout(ctx: FindingContext): Finding | null {
     // ceiling is knowable then, so the figure degrades to the raw estimate.
     const perChild = ctx.params.ctc.perChild;
     const ceiling = perChild != null ? kids * perChild : null;
-    const rawReduction = Math.ceil(excess / 1000) * 50;
+    const rawReduction =
+      Math.ceil(excess / STATUTORY_FIXED.ctcReductionStep) * STATUTORY_FIXED.ctcReductionPerStep;
     const reduction = ceiling != null ? Math.min(rawReduction, ceiling) : rawReduction;
     const fullyPhasedOut = ceiling != null && rawReduction >= ceiling;
     return {

@@ -11,6 +11,14 @@ import {
   guaranteedPaymentsSeTax, businessLossMix, reasonableCompensation,
 } from "./business";
 
+/**
+ * ⚠️ This order is LOAD-BEARING, not an import-grouping artifact. `sortFindings`
+ * breaks every tie on the finding's original index (order.ts), so for findings
+ * of equal severity with equal — or both-null — `estimatedImpact`, the order
+ * here IS the order the advisor and the client's PDF see. Alphabetizing this
+ * array, or letting an import organizer sort it, silently reorders the report
+ * and reddens the PDF's hard-coded expected-order assertion.
+ */
 const BUILDERS = [
   bracketPosition,
   rothHeadroom,

@@ -1,22 +1,22 @@
 import { describe, it, expect } from "vitest";
 import {
-  marginalRateFor, taxOn, seTaxOn, totalScheduleCProfit, selfEmploymentEarnings,
+  marginalRateFor, seTaxOn, totalScheduleCProfit, selfEmploymentEarnings,
 } from "../findings/impact";
 import {
   findingCtx, retireeMfj, scheduleCOwnerSingle, sCorpOwnerMfj,
 } from "./fixtures";
 import { emptyTaxReturnFacts, emptyBusiness } from "@/lib/schemas/tax-return-facts";
 
-describe("marginalRateFor / taxOn", () => {
+describe("marginalRateFor", () => {
   it("returns null rather than 0 when the return has no filing status", () => {
+    // Null — never 0 — so a builder that can't size an impact publishes null
+    // rather than rendering "$0" as though the opportunity were worthless.
     const ctx = findingCtx(emptyTaxReturnFacts(2025));
     expect(marginalRateFor(ctx)).toBeNull();
-    expect(taxOn(10000, ctx)).toBeNull();
   });
-  it("prices an amount at the return's marginal rate", () => {
+  it("resolves the return's marginal rate when the engine ran", () => {
     const ctx = findingCtx(retireeMfj(), { primaryAge: 72, spouseAge: 72 });
-    const rate = marginalRateFor(ctx)!;
-    expect(taxOn(10000, ctx)).toBeCloseTo(10000 * rate, 6);
+    expect(marginalRateFor(ctx)).toBeCloseTo(0.22, 6);
   });
 });
 

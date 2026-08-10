@@ -1,6 +1,9 @@
 import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 import { fmtUsd, fmtPct } from "./format";
 import { grossForKey, type GrossIncome } from "./gross-income";
+// Type-only, so this does not create a cycle with analysis.ts (which imports
+// the builders below at runtime).
+import type { TaxAnalysisKeyFigures } from "./analysis";
 
 /** Derived display blocks for the report + PDF. Computed per-request inside
  *  buildTaxAnalysis (never persisted); the PDF route receives `analysis`
@@ -76,6 +79,54 @@ export function buildIncomeComposition(
  *  the table is three columns wide or four. */
 export function hasGrossColumn(rows: IncomeCompositionRow[]): boolean {
   return rows.some((r) => r.gross !== r.amount);
+}
+
+/**
+ * The eight key-figure tiles, in display order, already formatted. Shared by
+ * the report view (a grid of tiles) and the PDF (the same list chunked into
+ * rows) so a label, a null fallback, or the Refund/Owed swap cannot say one
+ * thing on screen and another on paper — the PDF's rendered text is not
+ * asserted tile-by-tile, so a drift here would otherwise ship silently.
+ *
+ * The gross tile appears only when it says something line 9 doesn't. Note this
+ * is a DIFFERENT test from hasGrossColumn's: the tile needs a filed line 9 to
+ * anchor against, the column needs only one source whose gross differs, so a
+ * return with no line 9 gets the column and not the tile.
+ */
+export function keyFigureTiles(k: TaxAnalysisKeyFigures): Array<{ label: string; value: string }> {
+  const hasRefund = k.refund != null && k.refund > 0;
+  const money = (v: number | null) => (v != null ? fmtUsd(v) : "—");
+  const rate = (v: number | null) => (v != null ? fmtPct(v) : "—");
+  return [
+    ...(k.grossIncome != null && k.grossIncome !== k.totalIncome
+      ? [{ label: "Gross income", value: fmtUsd(k.grossIncome) }]
+      : []),
+    { label: "Total income", value: money(k.totalIncome) },
+    { label: "AGI", value: money(k.agi) },
+    { label: "Taxable income", value: money(k.taxableIncome) },
+    { label: "Total tax", value: money(k.totalTax) },
+    { label: "Effective rate", value: rate(k.effectiveRate) },
+    { label: "Marginal rate", value: rate(k.marginalRate) },
+    {
+      label: hasRefund ? "Refund" : "Owed at filing",
+      value: hasRefund ? fmtUsd(k.refund!) : money(k.amountOwed),
+    },
+  ];
+}
+
+/** Header cells for the Income composition table, in column order. Shared for
+ *  the same reason hasGrossColumn is: the decision about whether the table is
+ *  three columns wide or four was already shared, but the words that decision
+ *  selects were not — leaving the PDF free to print gross-based percentages
+ *  under a "% of total" heading. */
+export function incomeCompositionHeaders(rows: IncomeCompositionRow[]): string[] {
+  const showGross = hasGrossColumn(rows);
+  return [
+    "Source",
+    showGross ? "As filed" : "Amount",
+    ...(showGross ? ["Gross"] : []),
+    showGross ? "% of gross" : "% of total",
+  ];
 }
 
 /** Total row for the Income composition table — shared by the report view and

@@ -2,9 +2,12 @@
 
 import type { Finding } from "@/lib/tax-analysis/types";
 import { fmtUsd, fmtPct } from "@/lib/tax-analysis/format";
-import { deductionDetailRows, hasGrossColumn, incomeCompositionTotal } from "@/lib/tax-analysis/breakdowns";
+import {
+  deductionDetailRows, hasGrossColumn, incomeCompositionHeaders, incomeCompositionTotal, keyFigureTiles,
+} from "@/lib/tax-analysis/breakdowns";
 import { activityDetailRows, type ActivityDetail } from "@/lib/tax-analysis/activity-detail";
-import { SEVERITY_GROUPS, CATEGORY_LABEL, sortFindings } from "@/lib/tax-analysis/findings/order";
+import { reconstructionNote } from "@/lib/tax-analysis/reconstruction";
+import { SEVERITY_GROUPS, CATEGORY_LABEL, FINDING_PARTS, sortFindings } from "@/lib/tax-analysis/findings/order";
 import { formatLineRefs } from "@/lib/tax-analysis/findings/line-refs";
 import { BracketMapBars } from "./bracket-map-bars";
 import type { YearDetail } from "./tax-analysis-content";
@@ -51,14 +54,6 @@ function KeyFigure({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** The four parts, in reading order. Keyed rather than written out three times
- *  so a part added to Finding cannot render on one surface and not the other. */
-const FINDING_PARTS = [
-  { key: "whatTheReturnShows", label: "What the return shows" },
-  { key: "whyItMatters", label: "Why it matters" },
-  { key: "whatToConsider", label: "What to consider" },
-] as const;
-
 function FindingCard({ finding }: { finding: Finding }) {
   const refs = formatLineRefs(finding.lineRefs);
   return (
@@ -104,10 +99,8 @@ export function TaxReportView({
   const a = detail.analysis!;
   const k = a.keyFigures;
   const incomeTotal = incomeCompositionTotal(k.totalIncome, k.grossIncome);
-  // Each shows only when it says something line 9 doesn't. They differ: the
-  // tile needs a filed line 9 to anchor to, the column needs only one source
-  // whose gross differs — a return with no line 9 gets the column, not the tile.
-  const grossTile = k.grossIncome != null && k.grossIncome !== k.totalIncome ? k.grossIncome : null;
+  // The gross COLUMN and the gross TILE turn on different tests — see
+  // keyFigureTiles in breakdowns.ts, which owns the tile side for both surfaces.
   const showGrossColumn = a.incomeComposition != null && hasGrossColumn(a.incomeComposition);
   // Sorted once: the index and every group read the same array, so a jump link
   // can never point at a card the grouping dropped.
@@ -140,21 +133,9 @@ export function TaxReportView({
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        {grossTile != null && <KeyFigure label="Gross income" value={fmtUsd(grossTile)} />}
-        <KeyFigure label="Total income" value={k.totalIncome != null ? fmtUsd(k.totalIncome) : "—"} />
-        <KeyFigure label="AGI" value={k.agi != null ? fmtUsd(k.agi) : "—"} />
-        <KeyFigure label="Taxable income" value={k.taxableIncome != null ? fmtUsd(k.taxableIncome) : "—"} />
-        <KeyFigure label="Total tax" value={k.totalTax != null ? fmtUsd(k.totalTax) : "—"} />
-        <KeyFigure label="Effective rate" value={k.effectiveRate != null ? fmtPct(k.effectiveRate) : "—"} />
-        <KeyFigure label="Marginal rate" value={k.marginalRate != null ? fmtPct(k.marginalRate) : "—"} />
-        <KeyFigure
-          label={k.refund != null && k.refund > 0 ? "Refund" : "Owed at filing"}
-          value={
-            k.refund != null && k.refund > 0
-              ? fmtUsd(k.refund)
-              : k.amountOwed != null ? fmtUsd(k.amountOwed) : "—"
-          }
-        />
+        {keyFigureTiles(k).map((t) => (
+          <KeyFigure key={t.label} label={t.label} value={t.value} />
+        ))}
       </div>
 
       {a.bracketMap && (
@@ -169,12 +150,11 @@ export function TaxReportView({
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b border-hair text-left text-ink-3">
-                <th className="py-1 font-normal">Source</th>
-                <th className="py-1 text-right font-normal">{showGrossColumn ? "As filed" : "Amount"}</th>
-                {showGrossColumn && <th className="py-1 text-right font-normal">Gross</th>}
-                <th className="py-1 text-right font-normal">
-                  {showGrossColumn ? "% of gross" : "% of total"}
-                </th>
+                {incomeCompositionHeaders(a.incomeComposition).map((h, i) => (
+                  <th key={h} className={`py-1 font-normal${i === 0 ? "" : " text-right"}`}>
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -296,13 +276,7 @@ export function TaxReportView({
         </section>
       )}
 
-      <p className="text-xs text-ink-3">
-        {a.reconstruction.withinTolerance === true &&
-          "Cross-check: our independent computation of this return's pre-credit tax matches the filed amount. "}
-        {a.reconstruction.withinTolerance === false &&
-          `Cross-check: our computed pre-credit tax (${fmtUsd(a.reconstruction.computedPreCreditTax ?? 0)}) differs from the filed amount — verify the extracted figures. `}
-        This analysis is informational, based on the return as provided, and is not tax advice.
-      </p>
+      <p className="text-xs text-ink-3">{reconstructionNote(a.reconstruction)}</p>
     </div>
   );
 }

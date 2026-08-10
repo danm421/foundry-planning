@@ -4,10 +4,13 @@ import type { TaxAnalysis } from "@/lib/tax-analysis/analysis";
 import type { Finding } from "@/lib/tax-analysis/types";
 import { computeBracketBarLayout } from "@/lib/tax-analysis/bracket-map";
 import { fmtUsd, fmtPct } from "@/lib/tax-analysis/format";
-import { deductionDetailRows, hasGrossColumn, incomeCompositionTotal } from "@/lib/tax-analysis/breakdowns";
+import {
+  deductionDetailRows, hasGrossColumn, incomeCompositionHeaders, incomeCompositionTotal, keyFigureTiles,
+} from "@/lib/tax-analysis/breakdowns";
 import { activityDetailRows } from "@/lib/tax-analysis/activity-detail";
+import { reconstructionNote } from "@/lib/tax-analysis/reconstruction";
 import { PDF_THEME } from "@/components/balance-sheet-report/tokens";
-import { SEVERITY_GROUPS, CATEGORY_LABEL, sortFindings } from "@/lib/tax-analysis/findings/order";
+import { SEVERITY_GROUPS, CATEGORY_LABEL, FINDING_PARTS, sortFindings } from "@/lib/tax-analysis/findings/order";
 import { formatLineRefs } from "@/lib/tax-analysis/findings/line-refs";
 
 export interface TaxAnalysisPdfProps {
@@ -99,26 +102,7 @@ function KeyFigure({ label, value }: { label: string; value: string }) {
 const FIGURES_PER_ROW = 4;
 
 function KeyFiguresRow({ analysis }: { analysis: TaxAnalysis }) {
-  const k = analysis.keyFigures;
-  const refundLabel = k.refund != null && k.refund > 0 ? "Refund" : "Owed at filing";
-  const refundValue =
-    k.refund != null && k.refund > 0
-      ? fmtUsd(k.refund)
-      : k.amountOwed != null ? fmtUsd(k.amountOwed) : "—";
-
-  const figures: Array<{ label: string; value: string }> = [
-    // Only when it says something line 9 doesn't — otherwise the same number twice.
-    ...(k.grossIncome != null && k.grossIncome !== k.totalIncome
-      ? [{ label: "Gross income", value: fmtUsd(k.grossIncome) }]
-      : []),
-    { label: "Total income", value: k.totalIncome != null ? fmtUsd(k.totalIncome) : "—" },
-    { label: "AGI", value: k.agi != null ? fmtUsd(k.agi) : "—" },
-    { label: "Taxable income", value: k.taxableIncome != null ? fmtUsd(k.taxableIncome) : "—" },
-    { label: "Total tax", value: k.totalTax != null ? fmtUsd(k.totalTax) : "—" },
-    { label: "Effective rate", value: k.effectiveRate != null ? fmtPct(k.effectiveRate) : "—" },
-    { label: "Marginal rate", value: k.marginalRate != null ? fmtPct(k.marginalRate) : "—" },
-    { label: refundLabel, value: refundValue },
-  ];
+  const figures = keyFigureTiles(analysis.keyFigures);
 
   const rows: Array<typeof figures> = [];
   for (let i = 0; i < figures.length; i += FIGURES_PER_ROW) {
@@ -212,10 +196,11 @@ function IncomeCompositionSection({ analysis }: { analysis: TaxAnalysis }) {
       <Text style={styles.sectionHeading}>Income composition</Text>
       <View style={styles.table}>
         <View style={styles.tableHeaderRow}>
-          <Text style={styles.tableHeaderLabelCell}>Source</Text>
-          <Text style={styles.tableHeaderValueCell}>{showGross ? "As filed" : "Amount"}</Text>
-          {showGross && <Text style={styles.tableHeaderValueCell}>Gross</Text>}
-          <Text style={styles.tableHeaderValueCell}>{showGross ? "% of gross" : "% of total"}</Text>
+          {incomeCompositionHeaders(rows).map((h, i) => (
+            <Text key={h} style={i === 0 ? styles.tableHeaderLabelCell : styles.tableHeaderValueCell}>
+              {h}
+            </Text>
+          ))}
         </View>
         {rows.map((r) => (
           <View key={r.key} style={styles.tableRow}>
@@ -289,14 +274,6 @@ function DeductionsSection({ analysis }: { analysis: TaxAnalysis }) {
     </View>
   );
 }
-
-/** Same four parts, same order as the screen's FINDING_PARTS — both surfaces
- *  read the shared order.ts vocabulary so a card can't diverge between them. */
-const FINDING_PARTS = [
-  { key: "whatTheReturnShows", label: "What the return shows" },
-  { key: "whyItMatters", label: "Why it matters" },
-  { key: "whatToConsider", label: "What to consider" },
-] as const;
 
 function FindingCard({ finding }: { finding: Finding }) {
   const refs = formatLineRefs(finding.lineRefs);
@@ -398,14 +375,7 @@ export function TaxAnalysisPdfDocument(props: TaxAnalysisPdfProps) {
         <YoYSection analysis={a} taxYear={props.taxYear} />
 
         <View style={styles.footer}>
-          <Text>
-            {a.reconstruction.withinTolerance === true
-              ? "Cross-check: our independent computation of this return's pre-credit tax matches the filed amount. "
-              : a.reconstruction.withinTolerance === false
-                ? `Cross-check: our computed pre-credit tax (${fmtUsd(a.reconstruction.computedPreCreditTax ?? 0)}) differs from the filed amount — verify the extracted figures. `
-                : ""}
-            This analysis is informational, based on the return as provided, and is not tax advice.
-          </Text>
+          <Text>{reconstructionNote(a.reconstruction)}</Text>
         </View>
       </Page>
     </Document>

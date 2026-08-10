@@ -2,9 +2,11 @@ import type { Finding, FindingCategory, FindingSeverity } from "../types";
 
 /**
  * The presentation vocabulary shared by the report view and the PDF — the
- * severity grouping, the category chip labels, and the sort. Both renderers
- * used to keep their own copy of the group list (tax-report-view.tsx and
- * tax-analysis-pdf-document.tsx each had one); this is the single copy.
+ * severity grouping, the category chip labels, the four-part labels, and the
+ * sort. Both renderers used to keep their own copy of the group list and of
+ * the part labels (tax-report-view.tsx and tax-analysis-pdf-document.tsx each
+ * had both); this is the single copy. A card cannot diverge between screen
+ * and paper without changing this file.
  */
 
 /** Severity IS the advisor's triage order (spec D17), so the group order and
@@ -14,6 +16,15 @@ export const SEVERITY_GROUPS: Array<{ severity: FindingSeverity; heading: string
   { severity: "watch", heading: "Watch items" },
   { severity: "info", heading: "Notes" },
 ];
+
+/** The three prose parts, in reading order, with the label each renders under.
+ *  Keyed rather than written out three times per surface so a part added to
+ *  `Finding` cannot render on the screen and not on paper. */
+export const FINDING_PARTS = [
+  { key: "whatTheReturnShows", label: "What the return shows" },
+  { key: "whyItMatters", label: "Why it matters" },
+  { key: "whatToConsider", label: "What to consider" },
+] as const;
 
 export const CATEGORY_LABEL: Record<FindingCategory, string> = {
   brackets: "Brackets",
