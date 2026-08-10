@@ -64,9 +64,12 @@ export interface SecondRead {
 }
 
 /** Re-validated on every READ of the persisted jsonb, exactly as
- *  `parseRowFacts` re-validates facts. Every field added here must carry a
- *  `.default(...)` so a blob written by an older version still parses instead
- *  of blanking the panel.
+ *  `parseRowFacts` re-validates facts. Every field added *after v1* must carry
+ *  a `.default(...)` so a blob written by an older version still parses instead
+ *  of blanking the panel. The v1 identity fields (`generatedAt`, `id`,
+ *  `headline`, `detail`) deliberately carry no defaults: a blob missing one of
+ *  them is unusable rather than merely older, and failing to parse it hides the
+ *  panel rather than rendering a broken card.
  *
  *  Deliberately UNANNOTATED. A `z.ZodType<SecondRead>` annotation would fight
  *  the `.default(...)`s — a defaulted field's INPUT type is optional while its
