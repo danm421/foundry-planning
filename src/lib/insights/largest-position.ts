@@ -21,10 +21,22 @@ export interface PositionRow {
  * shares x price — bonds and manual holdings carry an authoritative
  * marketValue because a bond's price quotes per $100 par.
  */
-export function pickLargestPosition(
-  rows: readonly PositionRow[],
-): { label: string; value: number } | null {
+export interface LargestPosition {
+  label: string;
+  value: number;
+  /**
+   * Total market value of every holding this same scan saw — the denominator
+   * the concentration share is taken against. It MUST come from here rather
+   * than from `liquidPortfolio`: that is a sum of `accounts.value`, and nothing
+   * syncs the two (`syncAccountFromHoldings` writes only the asset mix and
+   * `growthSource`). Mixing them lets a share exceed 100%.
+   */
+  holdingsTotal: number;
+}
+
+export function pickLargestPosition(rows: readonly PositionRow[]): LargestPosition | null {
   const byLabel = new Map<string, number>();
+  let holdingsTotal = 0;
   for (const r of rows) {
     const label = r.ticker ?? r.name;
     if (!label) continue; // nothing to name it by; not a reportable position
@@ -34,12 +46,13 @@ export function pickLargestPosition(
       price: r.price,
     });
     byLabel.set(label, (byLabel.get(label) ?? 0) + value);
+    holdingsTotal += value;
   }
   let best: { label: string; value: number } | null = null;
   for (const [label, value] of byLabel) {
     if (!best || value > best.value) best = { label, value };
   }
-  return best;
+  return best ? { ...best, holdingsTotal } : null;
 }
 
 /**
@@ -60,9 +73,7 @@ export function pickLargestPosition(
  * that until now rendered a degraded-but-working view. Having no concentration
  * figure is not a reason to break the whole 360.
  */
-export async function largestPosition(
-  clientId: string,
-): Promise<{ label: string; value: number } | null> {
+export async function largestPosition(clientId: string): Promise<LargestPosition | null> {
   try {
     const baseScenarioId = await resolveScenarioId(clientId, "base");
     const accountRows = await db

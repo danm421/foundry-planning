@@ -4,6 +4,9 @@ import type { OverviewLifeEvent } from "@/lib/overview/derive-life-events";
 import type { Observation } from "@/lib/tax-analysis/types";
 import type { RiskLevel } from "@/lib/risk-levels";
 import type { BindingConstraint } from "@/lib/risk/scoring";
+// Type-only, so it is erased at compile time and the signal rules keep no
+// runtime edge to the module's `@/db` import.
+import type { LargestPosition } from "../largest-position";
 
 export type SignalSeverity = "critical" | "opportunity" | "watch" | "info";
 export type SignalDomain = "risk" | "tax" | "plan" | "portfolio" | "relationship";
@@ -64,12 +67,19 @@ export interface SignalInput {
   portfolio: {
     /** 0..1 share of the allocation rollup sitting in cash. */
     cashPct: number;
-    liquidPortfolio: number;
+    /**
+     * Dollar total the allocation rollup was taken over — i.e. only accounts
+     * carrying an asset mix. `cashPct`'s denominator, and therefore the ONLY
+     * base a cash-dollar figure may be multiplied against. Deliberately not
+     * `liquidPortfolio`, which sums a different set of accounts entirely.
+     */
+    allocatedTotal: number;
     /** Real geometric returns from the firm CMA. */
     cashReturn: number;
     equityReturn: number;
-    /** Largest single position aggregated across accounts, or null. */
-    largestPosition: { label: string; value: number } | null;
+    /** Largest single position aggregated across accounts, or null. Carries its
+     *  own holdings-derived denominator — see LargestPosition. */
+    largestPosition: LargestPosition | null;
   };
   relationship: {
     /** `crmHouseholds.id`, NOT the planning `clients.id`. The CRM deep links

@@ -29,10 +29,13 @@ export function signalInputFixture(over: Partial<SignalInput> = {}): SignalInput
     },
     portfolio: {
       cashPct: 0.03,
-      liquidPortfolio: 2_000_000,
+      // Deliberately NOT equal to liquidPortfolio: the two bases are different
+      // sets in production (164 of 195 prod accounts carry no allocation rows),
+      // and an equal pair could not tell a base mix-up apart.
+      allocatedTotal: 1_500_000,
       cashReturn: 0.01,
       equityReturn: 0.06,
-      largestPosition: { label: "VTI", value: 100_000 },
+      largestPosition: { label: "VTI", value: 100_000, holdingsTotal: 1_250_000 },
     },
     relationship: {
       // Deliberately unequal to the fixture's clientId — the CRM hrefs must key

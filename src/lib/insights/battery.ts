@@ -156,6 +156,12 @@ export async function loadInsightsBattery(
   const cashPct = allocation
     .filter((a) => a.group === "cash")
     .reduce((s, a) => s + a.pct, 0);
+  // The rollup's own dollar base. `pct` above is a share of THIS, not of
+  // `liquidPortfolio` — getAssetAllocationByType starts FROM
+  // account_asset_allocations, so only accounts with an asset mix on file are
+  // in it, while liquidPortfolio sums every account bar real estate, business
+  // and life insurance. Any cash-dollar figure has to be taken against this.
+  const allocatedTotal = overview.allocation.reduce((s, a) => s + a.value, 0);
 
   const signalInput: SignalInput = {
     clientId,
@@ -178,7 +184,7 @@ export async function loadInsightsBattery(
     },
     portfolio: {
       cashPct,
-      liquidPortfolio: overview.kpi.liquidPortfolio,
+      allocatedTotal,
       cashReturn,
       equityReturn,
       largestPosition: largest,
