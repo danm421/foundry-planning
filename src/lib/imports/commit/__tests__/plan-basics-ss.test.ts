@@ -80,7 +80,15 @@ describe("commitPlanBasics — Social Security through the PIA path", () => {
     expect(incomeCalls).toHaveLength(1);
     // claimingAgeMonths rides along with the years value so a stale months
     // remainder from an earlier hand edit can't combine with the new age.
-    expect(incomeCalls[0].patch).toMatchObject({ claimingAge: 64, claimingAgeMonths: 0 });
+    // claimingAgeMode rides along for a harder reason: the seeded row arrives as
+    // "fra" (clients/create-client.ts), where `resolveClaimAgeMonths` derives the
+    // age from the DOB and never reads `claimingAge` — so the age alone would be
+    // a 200 that moves nothing.
+    expect(incomeCalls[0].patch).toMatchObject({
+      claimingAge: 64,
+      claimingAgeMonths: 0,
+      claimingAgeMode: "years",
+    });
   });
 
   it("leaves a blank PIA slot untouched", async () => {
@@ -157,6 +165,9 @@ describe("commitPlanBasics — Social Security through the PIA path", () => {
     });
     expect(incomeCalls[0].patch).not.toHaveProperty("claimingAge");
     expect(incomeCalls[0].patch).not.toHaveProperty("claimingAgeMonths");
+    // And the mode stays put with them — converting a row to "years" without an
+    // age to put in it is the same silent zeroing from the other direction.
+    expect(incomeCalls[0].patch).not.toHaveProperty("claimingAgeMode");
   });
 
   it("writes a claiming age on its own when only the PIA is blank", async () => {
@@ -175,7 +186,11 @@ describe("commitPlanBasics — Social Security through the PIA path", () => {
 
     const incomeCalls = calls.filter((c) => c.table === incomes);
     expect(incomeCalls).toHaveLength(1);
-    expect(incomeCalls[0].patch).toMatchObject({ claimingAge: 70, claimingAgeMonths: 0 });
+    expect(incomeCalls[0].patch).toMatchObject({
+      claimingAge: 70,
+      claimingAgeMonths: 0,
+      claimingAgeMode: "years",
+    });
     // No PIA means no mode switch — the row stays on whatever the engine
     // already reads it as, rather than claiming pia_at_fra with a null PIA.
     expect(incomeCalls[0].patch).not.toHaveProperty("ssBenefitMode");

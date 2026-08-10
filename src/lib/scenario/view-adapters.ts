@@ -40,6 +40,16 @@ export interface IncomeView {
   owner: EngineIncome["owner"];
   claimingAge: number | null;
   claimingAgeMonths?: number | null;
+  /**
+   * The THIRD claim-age column, and the one that decides whether the other two
+   * are read at all: `resolveClaimAgeMonths` derives the age from the DOB in
+   * "fra" mode and from the retirement age in "at_retirement", touching
+   * `claimingAge` only in "years". Dropping it here made every consumer of this
+   * view read a stored NULL — i.e. "years" — so an FRA row rendered as
+   * "67y 0mo" and `SocialSecurityDialog` opened it on "Specific Age" and then
+   * SAVED that back, converting the row off FRA. It travels with the pair.
+   */
+  claimingAgeMode?: EngineIncome["claimingAgeMode"] | null;
   growthRate: string;
   growthSource?: string | null;
   ownerEntityId?: string | null;
@@ -69,6 +79,7 @@ export function incomeEngineToView(income: EngineIncome): IncomeView {
     owner: income.owner,
     claimingAge: income.claimingAge ?? null,
     claimingAgeMonths: income.claimingAgeMonths ?? null,
+    claimingAgeMode: income.claimingAgeMode ?? null,
     growthRate: String(income.growthRate),
     growthSource: income.growthSource ?? null,
     ownerEntityId: income.ownerEntityId ?? null,

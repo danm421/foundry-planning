@@ -49,6 +49,9 @@ interface Income {
   owner: Owner;
   claimingAge: number | null;
   claimingAgeMonths?: number | null;
+  /** Rides along with the claim-age pair — `SocialSecurityCard` / the SS dialog
+   *  read it, and a row missing it renders as an explicit age it never chose. */
+  claimingAgeMode?: string | null;
   growthRate: string;
   growthSource?: string | null;
   ownerEntityId?: string | null;

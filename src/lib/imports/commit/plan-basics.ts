@@ -162,6 +162,15 @@ export async function commitPlanBasics(
     if (row.claimingAge.value != null) {
       patch.claimingAge = row.claimingAge.value;
       patch.claimingAgeMonths = 0;
+      //  `claimingAgeMode` RIDES ALONG or the age is dead data. The row being
+      //  updated is the seed from `clients/create-client.ts`, which stores
+      //  `claimingAgeMode: "fra"` — and `resolveClaimAgeMonths` derives the age
+      //  from the DOB in that mode, reading `claimingAge` in "years" mode only.
+      //  Writing the reviewed age without the mode would return 200 and move
+      //  nothing. The wizard shows this age in an editable field
+      //  (`components/import/plan-basics-step.tsx`), so an age that survives
+      //  review is an explicit choice — which is exactly what "years" means.
+      patch.claimingAgeMode = "years";
     }
     if (Object.keys(patch).length === 0) continue;
     patch.updatedAt = now;

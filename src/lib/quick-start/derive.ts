@@ -112,6 +112,7 @@ export interface IncomePostBody {
   piaMonthly?: number;
   claimingAge?: number;
   claimingAgeMonths?: number;
+  claimingAgeMode?: "years" | "fra";
 }
 
 export function incomePayload(draft: QsIncomeDraft, ctx: QsContext): IncomePostBody {
@@ -132,10 +133,9 @@ export function incomePayload(draft: QsIncomeDraft, ctx: QsContext): IncomePostB
       taxType: "ordinary_income",
       growthRate: "0.03",
       growthSource: "custom",
+      ...ssClaimFields(draft.claimingAge),
       ssBenefitMode: "pia_at_fra",
       piaMonthly: draft.monthlyBenefit ?? 0,
-      claimingAge: draft.claimingAge ?? 67,
-      claimingAgeMonths: 0,
     };
   }
 
@@ -161,13 +161,33 @@ export function incomePayload(draft: QsIncomeDraft, ctx: QsContext): IncomePostB
   };
 }
 
+/**
+ * The three claim-age columns for a Social Security write, from the wizard's one
+ * optional age field.
+ *
+ * A TYPED AGE MEANS "years"; A BLANK FIELD MEANS FRA. The columns behind
+ * `resolveClaimAgeMonths` only read `claimingAge` in "years" mode — in "fra" mode
+ * the age is derived from the DOB — so a typed age needs the mode beside it or
+ * the write moves nothing, and a blank field must leave the row on the product
+ * default (claim at full retirement age) rather than pinning it to a literal 67.
+ * The 67 still ships in both cases: `fra` ignores it, but it is what the SS
+ * dialog's "Specific Age" picker opens on and what keeps the Household Map's
+ * milestone card (which drops a row with a null `claimingAge`) rendering.
+ */
+function ssClaimFields(claimingAge: number | undefined) {
+  return {
+    claimingAge: claimingAge ?? 67,
+    claimingAgeMonths: 0,
+    claimingAgeMode: (claimingAge != null ? "years" : "fra") as "years" | "fra",
+  };
+}
+
 /** Maps a monthly-benefit + whole-year claiming age to the income route's SS fields. */
 export function ssPatch(input: { monthlyBenefit?: number; claimingAge?: number }) {
   return {
+    ...ssClaimFields(input.claimingAge),
     ssBenefitMode: "pia_at_fra" as const,
     piaMonthly: input.monthlyBenefit ?? 0,
-    claimingAge: input.claimingAge ?? 67,
-    claimingAgeMonths: 0,
   };
 }
 

@@ -260,9 +260,18 @@ async function reconcileSocialSecurity(
     const existingPia = slot?.ssBenefitMode === "pia_at_fra" ? slot.piaMonthly : null;
     const preservePia = existingPia != null;
 
+    // AN EXTRACTED CLAIM AGE CONVERTS THE ROW TO "years"; an absent one leaves
+    // the mode alone. The seed from `clients/create-client.ts` arrives as
+    // `claimingAgeMode: "fra"`, where `resolveClaimAgeMonths` derives the age
+    // from the DOB and never reads `claimingAge` — so preserving the slot's mode
+    // unconditionally would make `t.claimingAge` a 200 that moves nothing. The
+    // `?? "years"` on the other side is for a legacy slot with a NULL mode, which
+    // the engine already reads as "years"; naming it keeps that row where it is
+    // rather than silently re-anchoring it to FRA on an unrelated import.
     const fields: Record<string, unknown> = {
       claimingAge: t.claimingAge ?? slot?.claimingAge ?? 67,
-      claimingAgeMode: slot?.claimingAgeMode ?? "years",
+      claimingAgeMode:
+        t.claimingAge != null ? "years" : (slot?.claimingAgeMode ?? "years"),
       updatedAt: now,
     };
     if (preservePia) {
