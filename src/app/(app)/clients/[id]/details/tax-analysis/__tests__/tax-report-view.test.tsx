@@ -15,9 +15,18 @@ const detail: YearDetail = {
   warnings: [], analysis, documents: [], conflicts: [], provenance: {},
 };
 
+// The AI second-read panel is wired through TaxReportView but owned by
+// second-read-panel.test.tsx; these tests cover the report body, so the three
+// panel props are stubbed once here rather than restated at every render.
+const secondReadProps = {
+  secondReadBusy: false,
+  onRunSecondRead: vi.fn(),
+  onDismissSecondReadItem: vi.fn(),
+};
+
 describe("TaxReportView", () => {
   it("renders key figures, findings grouped by severity, and the bracket bars", () => {
-    render(<TaxReportView clientId="c1" detail={detail} onEditFacts={vi.fn()} />);
+    render(<TaxReportView clientId="c1" detail={detail} onEditFacts={vi.fn()} {...secondReadProps} />);
     expect(screen.getByText("$188,700")).toBeTruthy(); // AGI
     expect(screen.getByText(/opportunities/i)).toBeTruthy();
     // The headline now renders twice — the index jump link and the card — which
@@ -30,7 +39,7 @@ describe("TaxReportView", () => {
 
 describe("TaxReportView — income composition + deductions", () => {
   it("renders the income composition table with formatted amounts and percentages", () => {
-    render(<TaxReportView clientId="c1" detail={detail} onEditFacts={vi.fn()} />);
+    render(<TaxReportView clientId="c1" detail={detail} onEditFacts={vi.fn()} {...secondReadProps} />);
     expect(screen.getByText(/income composition/i)).toBeTruthy();
     expect(screen.getByText("IRA distributions")).toBeTruthy();
     // $90,000 twice: the as-filed 4b amount and its 4a gross (equal here).
@@ -45,7 +54,7 @@ describe("TaxReportView — income composition + deductions", () => {
       taxYear: 2025, status: "ready", facts, extractedFacts: facts, warnings: [], analysis: a,
       documents: [], conflicts: [], provenance: {},
     };
-    render(<TaxReportView clientId="c1" detail={d} onEditFacts={vi.fn()} />);
+    render(<TaxReportView clientId="c1" detail={d} onEditFacts={vi.fn()} {...secondReadProps} />);
     // Scoped to the heading: "Deductions" is now also a category chip (the
     // charitable-bunching finding), so a bare text query matches two nodes.
     expect(screen.getByRole("heading", { name: /^deductions$/i })).toBeTruthy();
@@ -68,7 +77,7 @@ describe("TaxReportView — business & rental detail", () => {
   }
 
   it("surfaces gross rent and the depreciation add-back that the net alone hides", () => {
-    render(<TaxReportView clientId="c1" detail={landlordDetail()} onEditFacts={vi.fn()} />);
+    render(<TaxReportView clientId="c1" detail={landlordDetail()} onEditFacts={vi.fn()} {...secondReadProps} />);
     expect(screen.getByText(/business & rental detail/i)).toBeTruthy();
     expect(screen.getByText("Rental real estate")).toBeTruthy();
     expect(screen.getByText("Rents received")).toBeTruthy();
@@ -82,14 +91,14 @@ describe("TaxReportView — business & rental detail", () => {
   });
 
   it("still renders the net in the income composition table — the section adds, never replaces", () => {
-    render(<TaxReportView clientId="c1" detail={landlordDetail()} onEditFacts={vi.fn()} />);
+    render(<TaxReportView clientId="c1" detail={landlordDetail()} onEditFacts={vi.fn()} {...secondReadProps} />);
     expect(screen.getByText("Rental / passthrough (Sch E)")).toBeTruthy();
     // -$6,141 appears twice: the composition row and the activity net row.
     expect(screen.getAllByText("-$6,141")).toHaveLength(2);
   });
 
   it("omits the section entirely for a return with no business or rental activity", () => {
-    render(<TaxReportView clientId="c1" detail={detail} onEditFacts={vi.fn()} />);
+    render(<TaxReportView clientId="c1" detail={detail} onEditFacts={vi.fn()} {...secondReadProps} />);
     expect(screen.queryByText(/business & rental detail/i)).toBeNull();
   });
 });
@@ -104,7 +113,7 @@ describe("TaxReportView — total income", () => {
       taxYear: 2025, status: "ready", facts, extractedFacts: facts, warnings: [], analysis: a,
       documents: [], conflicts: [], provenance: {},
     };
-    render(<TaxReportView clientId="c1" detail={d} onEditFacts={vi.fn()} />);
+    render(<TaxReportView clientId="c1" detail={d} onEditFacts={vi.fn()} {...secondReadProps} />);
     // "Total income" appears twice: the KPI label and the total-row label.
     expect(screen.getAllByText("Total income")).toHaveLength(2);
     // $195,700 appears twice: the KPI value and the total-row amount — proves
@@ -115,7 +124,7 @@ describe("TaxReportView — total income", () => {
   });
 
   it("omits the total row (and shows no 100% row) when line 9 was not extracted", () => {
-    render(<TaxReportView clientId="c1" detail={detail} onEditFacts={vi.fn()} />);
+    render(<TaxReportView clientId="c1" detail={detail} onEditFacts={vi.fn()} {...secondReadProps} />);
     expect(screen.getByText("Total income")).toBeTruthy(); // KPI label present (value —)
     expect(screen.queryByText("100%")).toBeNull();         // no total row
   });
@@ -131,7 +140,7 @@ describe("TaxReportView — gross income top line", () => {
   }
 
   it("shows a Gross income KPI of rents received rather than the netted line 9", () => {
-    render(<TaxReportView clientId="c1" detail={detailFor(landlordSingle(), 41)} onEditFacts={vi.fn()} />);
+    render(<TaxReportView clientId="c1" detail={detailFor(landlordSingle(), 41)} onEditFacts={vi.fn()} {...secondReadProps} />);
     expect(screen.getByText("Gross income")).toBeTruthy();
     // 118,546 (line 9) + 6,141 rental loss + 19,600 rents received. Twice: the
     // KPI tile and the composition table's Gross total — proving both read it.
@@ -141,7 +150,7 @@ describe("TaxReportView — gross income top line", () => {
   });
 
   it("widens the composition table to As filed / Gross and rebases the % on gross", () => {
-    render(<TaxReportView clientId="c1" detail={detailFor(landlordSingle(), 41)} onEditFacts={vi.fn()} />);
+    render(<TaxReportView clientId="c1" detail={detailFor(landlordSingle(), 41)} onEditFacts={vi.fn()} {...secondReadProps} />);
     expect(screen.getByText("As filed")).toBeTruthy();
     expect(screen.getByText("Gross")).toBeTruthy();
     expect(screen.getByText("% of gross")).toBeTruthy();
@@ -154,7 +163,7 @@ describe("TaxReportView — gross income top line", () => {
   it("keeps the three-column table and hides the tile when nothing grosses up", () => {
     const facts = highEarnerMfj();
     facts.income.totalIncome = 467000;
-    render(<TaxReportView clientId="c1" detail={detailFor(facts, 45)} onEditFacts={vi.fn()} />);
+    render(<TaxReportView clientId="c1" detail={detailFor(facts, 45)} onEditFacts={vi.fn()} {...secondReadProps} />);
     expect(screen.queryByText("Gross income")).toBeNull();
     expect(screen.queryByText("Gross")).toBeNull();
     expect(screen.getByText("Amount")).toBeTruthy();
@@ -173,7 +182,7 @@ describe("TaxReportView — findings", () => {
   }
 
   it("renders all four parts of a finding, its category chip and its line-ref footer", () => {
-    render(<TaxReportView clientId="c1" detail={landlordDetail()} onEditFacts={vi.fn()} />);
+    render(<TaxReportView clientId="c1" detail={landlordDetail()} onEditFacts={vi.fn()} {...secondReadProps} />);
     // landlordSingle produces three findings and every one carries all three
     // parts, so each label renders three times — getByText throws on that.
     expect(screen.getAllByText("What the return shows")).toHaveLength(3);
@@ -187,7 +196,7 @@ describe("TaxReportView — findings", () => {
 
   it("gives every finding an anchor and a matching jump link in the index", () => {
     const { container } = render(
-      <TaxReportView clientId="c1" detail={landlordDetail()} onEditFacts={vi.fn()} />,
+      <TaxReportView clientId="c1" detail={landlordDetail()} onEditFacts={vi.fn()} {...secondReadProps} />,
     );
     const links = [...container.querySelectorAll('nav a[href^="#finding-"]')];
     expect(links.length).toBeGreaterThan(0);
@@ -200,12 +209,12 @@ describe("TaxReportView — findings", () => {
   });
 
   it("shows the estimated impact figure on a finding that carries one", () => {
-    render(<TaxReportView clientId="c1" detail={landlordDetail()} onEditFacts={vi.fn()} />);
+    render(<TaxReportView clientId="c1" detail={landlordDetail()} onEditFacts={vi.fn()} {...secondReadProps} />);
     expect(screen.getAllByText("Est. impact").length).toBeGreaterThan(0);
   });
 
   it("lists every finding in the index, in sorted order — one link per card", () => {
-    const { container } = render(<TaxReportView clientId="c1" detail={detail} onEditFacts={vi.fn()} />);
+    const { container } = render(<TaxReportView clientId="c1" detail={detail} onEditFacts={vi.fn()} {...secondReadProps} />);
     const hrefs = [...container.querySelectorAll('nav a[href^="#finding-"]')].map((a) =>
       a.getAttribute("href"),
     );

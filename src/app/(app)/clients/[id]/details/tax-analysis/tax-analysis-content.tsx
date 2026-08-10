@@ -5,6 +5,7 @@ import type { TaxAnalysis } from "@/lib/tax-analysis/analysis";
 import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 import type { DocumentSummary } from "@/lib/tax-returns/assemble-analysis";
 import type { FieldConflict } from "@/lib/tax-returns/merge/types";
+import type { SecondRead } from "@/lib/tax-returns/second-read/types";
 import { FactsReviewForm } from "./facts-review-form";
 import { TaxReportView } from "./tax-report-view";
 import { DocumentsStrip } from "./documents-strip";
@@ -45,6 +46,13 @@ export interface YearDetail {
   provenance: Record<string, string>;
   /** True only in the deploy-before-migrate window — see `documents-strip.tsx`. */
   documentsUnavailable?: boolean;
+  /** Null when none was ever generated, or when the stored blob failed
+   *  re-validation — either way the panel offers to run one rather than
+   *  taking the tab down. */
+  secondRead?: SecondRead | null;
+  /** The documents (or the prompt) changed since the read was generated. A
+   *  stale read is still rendered — it is still information. */
+  secondReadStale?: boolean;
 }
 
 export function TaxAnalysisContent({ clientId }: { clientId: string }) {
@@ -53,6 +61,7 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
   const [detail, setDetail] = useState<YearDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [secondReadBusy, setSecondReadBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -190,6 +199,51 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
     }
     await loadList();
     void loadDetail(selectedYear);
+  }
+
+  // Both second-read handlers patch `detail` in place from the response rather
+  // than re-fetching the year: a second read changes nothing else on the page,
+  // and `loadDetail` would re-run the whole analysis for one panel.
+  async function runSecondRead() {
+    if (selectedYear == null) return;
+    setSecondReadBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/clients/${clientId}/tax-returns/${selectedYear}/second-read`,
+        { method: "POST" },
+      );
+      if (!res.ok) {
+        // The 403 entitlement body carries a machine code, not prose — every
+        // other failure body on this route is already a sentence.
+        const message = await errorMessage(res, "The second read couldn't run");
+        setError(
+          message === "ai_import_not_entitled"
+            ? "AI features aren't enabled for this firm."
+            : message,
+        );
+        return;
+      }
+      const body = (await res.json()) as { secondRead: SecondRead };
+      setDetail((d) => (d ? { ...d, secondRead: body.secondRead, secondReadStale: false } : d));
+    } finally {
+      setSecondReadBusy(false);
+    }
+  }
+
+  async function dismissSecondReadItem(itemId: string) {
+    if (selectedYear == null) return;
+    setError(null);
+    const res = await fetch(
+      `/api/clients/${clientId}/tax-returns/${selectedYear}/second-read/${itemId}`,
+      { method: "DELETE" },
+    );
+    if (!res.ok) {
+      setError(await errorMessage(res, "Couldn't dismiss that item"));
+      return;
+    }
+    const body = (await res.json()) as { secondRead: SecondRead };
+    setDetail((d) => (d ? { ...d, secondRead: body.secondRead } : d));
   }
 
   // L3: a corrupted facts row (stored JSON that failed to parse) leaves
@@ -341,6 +395,9 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
             <TaxReportView
               clientId={clientId}
               detail={detail}
+              secondReadBusy={secondReadBusy}
+              onRunSecondRead={() => void runSecondRead()}
+              onDismissSecondReadItem={(itemId) => void dismissSecondReadItem(itemId)}
               onEditFacts={async () => {
                 // C1: reopen the year (ready → needs_review) via the Task 12
                 // PUT endpoint, then re-fetch so the FactsReviewForm branch

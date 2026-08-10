@@ -30,6 +30,23 @@ function jsonResponse(body: unknown, status = 200) {
   return Promise.resolve(new Response(JSON.stringify(body), { status }));
 }
 
+const YEAR_URL = "/api/clients/c1/tax-returns/2025";
+
+function readyList() {
+  return {
+    returns: [
+      { taxYear: 2025, status: "ready", warningCount: 0, sourceFilename: "a.pdf", updatedAt: "2026-07-10T00:00:00Z" },
+    ],
+  };
+}
+
+function readyDetail(over: Record<string, unknown> = {}) {
+  return {
+    taxYear: 2025, status: "ready", facts: retireeMfj(), extractedFacts: retireeMfj(),
+    warnings: [], analysis, documents: [], conflicts: [], provenance: {}, ...over,
+  };
+}
+
 describe("TaxAnalysisContent", () => {
   it("shows the empty state when no returns exist", async () => {
     fetchMock.mockReturnValueOnce(jsonResponse({ returns: [] }));
@@ -250,6 +267,84 @@ describe("TaxAnalysisContent", () => {
     // test below for a test that actually discriminates the fix.
     await waitFor(() => expect(screen.getByText(/AGI \$130,000/)).toBeTruthy());
     expect(screen.queryByText(/AGI \$240,000/)).toBeNull();
+  });
+
+  it("wires the second-read panel to the year's generate route and patches the panel from the response", async () => {
+    const generated = {
+      generatedAt: "2026-08-10T12:00:00.000Z",
+      warnings: [],
+      items: [
+        {
+          id: "sr-1",
+          headline: "Form 8283 noncash gift may need a qualified appraisal",
+          detail: "The packet includes a Form 8283 Section B.",
+          form: "Form 8283", line: "Section B", quotedValue: "$28,500", dismissed: false,
+        },
+      ],
+    };
+    fetchMock
+      .mockReturnValueOnce(jsonResponse(readyList()))
+      .mockReturnValueOnce(jsonResponse(readyDetail({ secondRead: null, secondReadStale: false })))
+      .mockReturnValueOnce(jsonResponse({ secondRead: generated, secondReadStale: false }));
+
+    const user = userEvent.setup();
+    render(<TaxAnalysisContent clientId="c1" />);
+    await waitFor(() => expect(screen.getByText(/2025 tax analysis/i)).toBeTruthy());
+    const yearFetchesBefore = fetchMock.mock.calls.filter((c) => c[0] === YEAR_URL).length;
+
+    await user.click(screen.getByRole("button", { name: /run ai second read/i }));
+
+    await waitFor(() => expect(screen.getByText(/noncash gift/)).toBeTruthy());
+    expect(fetchMock).toHaveBeenCalledWith(`${YEAR_URL}/second-read`, { method: "POST" });
+    // The handler patches `detail` from the response body. Re-fetching the year
+    // would re-run the entire analysis to refresh one subordinate panel.
+    expect(fetchMock.mock.calls.filter((c) => c[0] === YEAR_URL)).toHaveLength(yearFetchesBefore);
+  });
+
+  it("shows readable copy for the entitlement refusal instead of the machine code, and re-arms the button", async () => {
+    fetchMock
+      .mockReturnValueOnce(jsonResponse(readyList()))
+      .mockReturnValueOnce(jsonResponse(readyDetail({ secondRead: null, secondReadStale: false })))
+      .mockReturnValueOnce(jsonResponse({ error: "ai_import_not_entitled" }, 403));
+
+    const user = userEvent.setup();
+    render(<TaxAnalysisContent clientId="c1" />);
+    await waitFor(() => expect(screen.getByText(/2025 tax analysis/i)).toBeTruthy());
+
+    await user.click(screen.getByRole("button", { name: /run ai second read/i }));
+
+    await waitFor(() => expect(screen.getByText(/ai features aren't enabled/i)).toBeTruthy());
+    // The raw code is advisor-facing jargon on a client-presentable screen.
+    expect(screen.queryByText(/ai_import_not_entitled/)).toBeNull();
+    // A failed run must not leave the panel wedged in its busy state.
+    expect(screen.getByRole("button", { name: /run ai second read/i })).not.toBeDisabled();
+  });
+
+  it("dismisses a second-read item by id and drops it from the panel", async () => {
+    const item = {
+      id: "sr-1",
+      headline: "Form 8283 noncash gift may need a qualified appraisal",
+      detail: "The packet includes a Form 8283 Section B.",
+      form: "Form 8283", line: "Section B", quotedValue: "$28,500", dismissed: false,
+    };
+    const generated = { generatedAt: "2026-08-10T12:00:00.000Z", warnings: [], items: [item] };
+    fetchMock
+      .mockReturnValueOnce(jsonResponse(readyList()))
+      .mockReturnValueOnce(
+        jsonResponse(readyDetail({ secondRead: generated, secondReadStale: false })),
+      )
+      .mockReturnValueOnce(
+        jsonResponse({ secondRead: { ...generated, items: [{ ...item, dismissed: true }] } }),
+      );
+
+    const user = userEvent.setup();
+    render(<TaxAnalysisContent clientId="c1" />);
+    await waitFor(() => expect(screen.getByText(/noncash gift/)).toBeTruthy());
+
+    await user.click(screen.getByRole("button", { name: /dismiss form 8283 noncash gift/i }));
+
+    await waitFor(() => expect(screen.queryByText(/noncash gift/)).toBeNull());
+    expect(fetchMock).toHaveBeenCalledWith(`${YEAR_URL}/second-read/sr-1`, { method: "DELETE" });
   });
 
   it("FactsReviewForm: a same-instance detail-prop change leaves stale facts in place unless keyed by taxYear (the mechanism tax-analysis-content.tsx's key={detail.taxYear} guards against)", () => {
