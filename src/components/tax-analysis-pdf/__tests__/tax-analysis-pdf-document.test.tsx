@@ -198,10 +198,12 @@ describe("TaxAnalysisPdfDocument", () => {
     // has no jump-link index, so display order is only observable through
     // the extracted text — pin the sequence against a HARD-CODED expected
     // order, never one derived by calling sortFindings inside this
-    // assertion. This also doubles as the wrap={false} page-overflow guard:
-    // sCorpOwnerMfj is the longest card set in the fixtures, and react-pdf
-    // silently drops an over-tall wrap={false} block rather than throwing,
-    // so a missing headline here means a dropped card.
+    // assertion. This also guards against a card vanishing outright: a
+    // dropped FindingCard would be missing its headline here. It does NOT
+    // guard an over-tall wrap={false} card that overflows a page — react-pdf
+    // does not drop that card; it starts a fresh page and CLIPS THE TAIL, so
+    // the headline (at the top of the card) survives every time. See the
+    // tail assertion below for that failure mode.
     const expectedOrder = [
       "No self-employed retirement plan against $60,000 of SE income",
       "QBI deduction capped $10,400 below the full 20%",
@@ -220,5 +222,47 @@ describe("TaxAnalysisPdfDocument", () => {
     for (let i = 1; i < indices.length; i++) {
       expect(indices[i]).toBeGreaterThan(indices[i - 1]);
     }
+
+    // The real wrap={false} overflow failure mode is a CLIPPED TAIL, not a
+    // dropped card — an over-tall card starts on a fresh page and whatever
+    // doesn't fit is truncated, so the headline above always survives even
+    // when the card's own ending does not (verified empirically: at 8,489+
+    // chars of padding the headline still renders while the tail is
+    // dropped). qbi-phaseout-position is the tallest card this fixture
+    // renders — headline + all four parts + refs footer, 1,291 chars, taller
+    // than any other card in any fixture — so pin its last part's tail
+    // immediately followed by its own refs footer. If either the tail or the
+    // footer were clipped, this single contiguous match would not be found.
+    expect(text).toContain(
+      "entity has the wages and another the income. Form 1040 line 13 · line 15 · Form 8995 qualified business income · Form 8995-A line 19",
+    );
+
+    // The label->body pairing is unpinned by a bare toContain on the three
+    // labels — swapping the "Why it matters" / "What to consider" labels in
+    // FINDING_PARTS leaves the suite green, because "the label exists
+    // somewhere" and "the body exists somewhere" are both still true. Assert
+    // each label immediately followed by the start of its OWN body, so a
+    // label sitting over the wrong prose reddens.
+    expect(text).toContain(
+      "WHAT THE RETURN SHOWS The return reports $60,000 of partnership guaranteed payments",
+    );
+    expect(text).toContain(
+      "WHY IT MATTERS Self-employment income supports a far larger deductible contribution",
+    );
+
+    // The impact chip is unpinned by "some finding has a non-null
+    // estimatedImpact" — every impact figure also appears inside the card's
+    // own prose, so a bare toContain(fmtUsd(impact)) can't tell the chip from
+    // the sentence quoting it. The chip sits in the text layer immediately
+    // between the headline and the category chip, so pin BOTH halves of the
+    // `estimatedImpact != null` conditional by adjacency: present between
+    // headline and chip when an impact exists, absent (headline runs
+    // straight into the category chip) when it doesn't.
+    expect(text).toContain(
+      "No self-employed retirement plan against $60,000 of SE income $12,821 RETIREMENT",
+    );
+    expect(text).toContain(
+      "No self-employed health insurance deduction against SE income BUSINESS",
+    );
   }, 30000);
 });
