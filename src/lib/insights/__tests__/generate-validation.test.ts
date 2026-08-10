@@ -5,10 +5,21 @@ import type { InsightsBattery } from "../battery";
 // The model is the only IO in this module. Mocking it here keeps the suite
 // runnable without Azure credentials — `chatModel` throws `ai_not_configured`
 // the moment the env vars are absent (src/domain/forge/llm.ts).
+// Spied rather than stubbed: the tier and the schema are the two arguments that
+// decide which deployment answers and whether the schema's caps are enforced at
+// all, and an `as GeneratedInsights` cast downstream means tsc checks neither.
 const invoke = vi.hoisted(() => vi.fn());
-vi.mock("@/domain/forge/llm", () => ({
-  chatModel: () => ({ withStructuredOutput: () => ({ invoke }) }),
-}));
+// Typed on the generic rather than via named parameters, so `mock.calls[0][0]`
+// is the schema and `toHaveBeenCalledWith` is the tier, with nothing unused.
+const withStructuredOutput = vi.hoisted(() =>
+  vi.fn<(schema: unknown, opts?: unknown) => { invoke: typeof invoke }>(() => ({ invoke })),
+);
+const chatModel = vi.hoisted(() =>
+  vi.fn<(tier: string) => { withStructuredOutput: typeof withStructuredOutput }>(() => ({
+    withStructuredOutput,
+  })),
+);
+vi.mock("@/domain/forge/llm", () => ({ chatModel }));
 
 import { dropUncitedActions, generateInsights } from "../generate";
 import { GeneratedInsightsSchema } from "../schemas";
@@ -43,6 +54,9 @@ const battery = (signals: Signal[]): InsightsBattery => ({
 
 beforeEach(() => {
   invoke.mockReset();
+  // mockClear, not mockReset — these two keep their factory implementations.
+  chatModel.mockClear();
+  withStructuredOutput.mockClear();
   // The guard warns on every drop; silence it so a passing run stays readable.
   vi.spyOn(console, "warn").mockImplementation(() => {});
 });
@@ -235,5 +249,23 @@ describe("generateInsights", () => {
 
     const [messages] = invoke.mock.calls[0] as [Array<{ content: string }>];
     expect(messages.map((m) => m.content).join("\n")).toContain("risk.tolerance_stale");
+  });
+
+  // The 360 is the flagship narrative and must run on the analysis deployment,
+  // not the cheap one meeting-prep next door uses — a copy-paste is the live
+  // vector and nothing else in the suite would notice the downgrade.
+  it("calls the full-tier model, not mini", async () => {
+    invoke.mockResolvedValue({ headline: "h", snapshot: "s", goals: "g", actions: [], talkingPoints: [] });
+    await generateInsights(battery([]));
+    expect(chatModel).toHaveBeenCalledWith("full");
+  });
+
+  // LangChain's runtime validation of THIS schema is the only thing enforcing
+  // the .max() caps below — the cap tests parse the schema in isolation, so they
+  // stay green even if the schema is no longer the one handed to the model.
+  it("binds the model to GeneratedInsightsSchema", async () => {
+    invoke.mockResolvedValue({ headline: "h", snapshot: "s", goals: "g", actions: [], talkingPoints: [] });
+    await generateInsights(battery([]));
+    expect(withStructuredOutput.mock.calls[0][0]).toBe(GeneratedInsightsSchema);
   });
 });

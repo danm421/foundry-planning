@@ -22,6 +22,7 @@ import { recordAudit } from "@/lib/audit";
 import { loadInsightsBattery } from "@/lib/insights/battery";
 import { generateInsights } from "@/lib/insights/generate";
 import { loadInsightProfile, saveInsightProfile } from "@/lib/insights/persist";
+import { hashBattery } from "@/lib/insights/hash";
 
 const req = () => new Request("http://x", { method: "POST", body: "{}" });
 const ctx = { params: Promise.resolve({ id: "c1" }) };
@@ -126,9 +127,50 @@ describe("GET /insights", () => {
     ]);
     expect(body.profile.talkingPoints).toEqual(["tp1"]);
     expect("needsAttention" in body).toBe(false);
+    // kpis and risk are worse than a missing marker: insights-tab reads
+    // view.kpis.netWorth and risk-alignment-scale indexes VERDICT_BADGE_CLASS by
+    // risk.verdict, so dropping either throws and the whole 360 renders nothing.
+    // `stale` drives the "plan data changed" nudge and the Refresh affordance.
+    expect(body.kpis).toEqual({ netWorth: 1 });
+    expect(body.risk).toEqual({ verdict: "aligned" });
+    expect(body.stale).toBe(false);
     // The tolerance rung is the ONLY source for the 360 scale's fourth marker.
     // Asserting the value (not just presence) also catches a transposed field —
     // wiring this to kpis.netWorth or risk would yield 1 or undefined, not 37.
     expect(body.toleranceScore).toBe(37);
+  });
+
+  // Paired with the `stale: false` case above so the flag has to TRACK the
+  // comparison. A single case would pass just as well against a hardcoded
+  // constant, which is what the whole staleness chain hangs on.
+  it("reports stale when the battery hash has moved away from the persisted one", async () => {
+    vi.mocked(requireOrgId).mockResolvedValue("org1");
+    vi.mocked(verifyClientAccess).mockResolvedValue({
+      ok: true,
+      permission: "view",
+      firmId: "f1",
+      access: "own",
+    } as never);
+    vi.mocked(loadInsightsBattery).mockResolvedValue({
+      kpis: { netWorth: 1 },
+      risk: { verdict: "aligned" },
+      toleranceScore: 37,
+      signals: [],
+    } as never);
+    // Once, not permanently: vi.clearAllMocks() clears calls but keeps
+    // implementations, so a persistent override would leak into later tests.
+    vi.mocked(hashBattery).mockReturnValueOnce("hash2");
+    vi.mocked(loadInsightProfile).mockResolvedValue({
+      headline: "h",
+      snapshot: "s",
+      goals: "g",
+      actions: [],
+      talkingPoints: [],
+      inputHash: "hash1",
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    } as never);
+
+    const res = await GET(new Request("http://x") as never, ctx as never);
+    expect((await res.json()).stale).toBe(true);
   });
 });

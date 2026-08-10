@@ -58,6 +58,62 @@ describe("hashBattery", () => {
     );
   });
 
+  // The whole point of the clock-derived carve-out: one more day elapsing is
+  // not a change to the household. Without this, every household past the
+  // 90-day contact mark reports `stale: true` every single day, forever.
+  it("does NOT change when only a clock-derived day count ticks", () => {
+    const staleContact = (days: number) => [
+      {
+        id: "relationship.stale_contact",
+        domain: "relationship",
+        severity: "watch",
+        title: `No contact in ${days} days`,
+        detail: `The last logged contact was ${days} days ago, past the 90-day mark.`,
+        numbers: { days },
+        href: "/crm/households/hh-1",
+        estimatedImpact: null,
+      },
+    ];
+    expect(hashBattery(sample({ signals: staleContact(221) as never }))).toBe(
+      hashBattery(sample({ signals: staleContact(222) as never })),
+    );
+  });
+
+  // ...but the signal APPEARING is a real change, and must still invalidate.
+  it("changes when a clock-derived signal appears at all", () => {
+    expect(hashBattery(sample())).not.toBe(
+      hashBattery(
+        sample({
+          signals: [
+            {
+              id: "relationship.stale_contact",
+              domain: "relationship",
+              severity: "watch",
+              title: "No contact in 91 days",
+              detail: "d",
+              numbers: { days: 91 },
+              href: null,
+              estimatedImpact: null,
+            },
+          ] as never,
+        }),
+      ),
+    );
+  });
+
+  // Every remaining material field, one mutator per field. Written as literal
+  // functions rather than derived from the material object — iterating the
+  // constant under test would go blind to a field being REMOVED from it.
+  it.each([
+    ["clientName", (b: InsightsBattery) => ({ ...b, clientName: "Other Household" })],
+    ["risk", (b: InsightsBattery) => ({ ...b, risk: { ...b.risk, currentPct: 79 } })],
+    ["goalsText", (b: InsightsBattery) => ({ ...b, grounding: { ...b.grounding, goalsText: "Retire at 62" } })],
+    ["notesText", (b: InsightsBattery) => ({ ...b, grounding: { ...b.grounding, notesText: "Wants to gift" } })],
+    ["allocation", (b: InsightsBattery) => ({ ...b, grounding: { ...b.grounding, allocation: [{ group: "cash", pct: 0.5 }] } })],
+  ])("changes when %s changes", (_label, mutate) => {
+    expect(hashBattery(sample())).not.toBe(hashBattery(mutate(sample())));
+  });
+
   // Editing a retirement age must invalidate the cached profile, or the AI prose
   // keeps quoting the old retirement year after the advisor corrects the plan.
   it("changes when a retirement age changes", () => {

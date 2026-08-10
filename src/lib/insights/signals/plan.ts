@@ -9,6 +9,27 @@ export function planSignals(input: SignalInput): Signal[] {
   const { plan, clientId } = input;
   const out: Signal[] = [];
 
+  // Every rule below reads a projected figure. When the projection did not run,
+  // getOverviewData still returns defaults — minNetWorth falls back to today's
+  // net worth and fundingScore to 1.0 — so the rules would assert "net worth is
+  // projected to reach zero" about years that were never projected, next to a
+  // KPI grid reading "Funding 1.00". Say what is actually true instead.
+  if (!plan.hasProjection) {
+    return [
+      {
+        id: "plan.no_projection",
+        domain: "plan",
+        severity: "info",
+        title: "The plan has not been projected yet",
+        detail:
+          "No projection could be run for this household, so plan confidence, funding and net-worth findings are unavailable. Adding accounts and income usually resolves it.",
+        numbers: {},
+        href: `/clients/${clientId}/cashflow`,
+        estimatedImpact: null,
+      },
+    ];
+  }
+
   if (plan.mcSuccessRate != null && plan.mcSuccessRate < MC_WARN_THRESHOLD) {
     const pct = Math.round(plan.mcSuccessRate * 100);
     out.push({

@@ -13,13 +13,16 @@ import type { Signal, SignalInput } from "./types";
  */
 const IMPACT_KEY: Record<string, string> = {
   "roth-headroom": "headroom",
-  "ltcg-zero-headroom": "zeroPctHeadroom",
+  "ltcg-zero-headroom": "headroom",
   "capital-loss-carryover": "carryover",
   "niit-exposure": "estTax",
   "additional-medicare": "estTax",
   "safe-harbor": "shortfall",
   "irmaa-cliff": "distanceToNextCliff",
-  "charitable-bunching": "shortfall",
+  // No `charitable-bunching` entry on purpose: its two branches emit
+  // {charitable, standardDeduction} and {gapOverStandard, standardDeduction},
+  // so it has no single headline figure. A mapped-but-unresolvable key reads as
+  // covered while always yielding null — this omission is the honest form.
   "qcd": "iraDistributions",
   "ctc-phaseout": "reduction",
 };

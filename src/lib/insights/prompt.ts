@@ -56,9 +56,14 @@ export function buildInsightsPrompt(b: InsightsBattery): { system: string; user:
 
   const signalLines = b.signals.length
     ? b.signals.map(
-        (s) =>
-          `- [${s.id}] (${s.severity}) ${s.title} — ${s.detail}` +
-          (s.estimatedImpact != null ? ` (est. impact ${usd(s.estimatedImpact)})` : ""),
+        // `estimatedImpact` is deliberately NOT printed. It is a heterogeneous
+        // ORDERING key — for qcd it is gross IRA distributions, for roth-headroom
+        // and irmaa-cliff it is headroom, for concentration it is exposure above a
+        // 10% line. Labelling any of those "est. impact" inside a block this
+        // prompt calls authoritative, to a model told not to do arithmetic, is how
+        // a $250k distribution total gets narrated to a client as a $250k benefit.
+        // Every signal already interpolates its own real figures into `detail`.
+        (s) => `- [${s.id}] (${s.severity}) ${s.title} — ${s.detail}`,
       )
     : ["- (no signals fired; say so plainly rather than inventing concerns)"];
 

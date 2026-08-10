@@ -42,6 +42,13 @@ describe("SignalsList", () => {
     expect(within(critical).queryByText("title risk.c")).not.toBeInTheDocument();
     expect(within(watch).getByText("title risk.c")).toBeInTheDocument();
     expect(within(critical).getByText("2")).toBeInTheDocument();
+
+    // Group ORDER, not just membership. The ordering test below uses one
+    // severity throughout, so nothing else here would notice SEVERITY_ORDER
+    // being reversed — which would put "Needs attention" at the bottom of the
+    // triage list the whole feature exists to lead with.
+    expect(screen.getAllByText(/^(Needs attention|Worth watching)$/).map((e) => e.textContent))
+      .toEqual(["Needs attention", "Worth watching"]);
   });
 
   /**

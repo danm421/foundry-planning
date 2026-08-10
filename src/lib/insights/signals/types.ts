@@ -56,6 +56,10 @@ export interface SignalInput {
     /** Smallest projected year-end net worth across the plan. */
     minNetWorth: number;
     fundingScore: number;
+    /** False when the projection failed or produced no years. `minNetWorth`
+     *  and `fundingScore` then hold fallbacks, not projected results, and no
+     *  plan rule may speak as if a projection had run. */
+    hasProjection: boolean;
   };
   portfolio: {
     /** 0..1 share of the allocation rollup sitting in cash. */
@@ -68,6 +72,10 @@ export interface SignalInput {
     largestPosition: { label: string; value: number } | null;
   };
   relationship: {
+    /** `crmHouseholds.id`, NOT the planning `clients.id`. The CRM deep links
+     *  resolve `/crm/households/[id]` against this table, and the two uuids are
+     *  never equal — passing the client id 404s every one of those links. */
+    crmHouseholdId: string;
     overdueTaskCount: number;
     lastContactAt: Date | null;
     portalInvitedAt: Date | null;

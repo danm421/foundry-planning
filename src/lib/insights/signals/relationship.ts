@@ -20,7 +20,7 @@ export function relationshipSignals(input: SignalInput): Signal[] {
       title: `${r.overdueTaskCount} overdue task${plural}`,
       detail: `${r.overdueTaskCount} task${plural} on this household ${r.overdueTaskCount === 1 ? "is" : "are"} past its due date.`,
       numbers: { overdueTaskCount: r.overdueTaskCount },
-      href: `/crm/households/${clientId}`,
+      href: `/crm/households/${r.crmHouseholdId}`,
       estimatedImpact: null,
     });
   }
@@ -34,7 +34,7 @@ export function relationshipSignals(input: SignalInput): Signal[] {
       title: "No contact has ever been logged",
       detail: "This household has no logged calls, meetings, or notes yet.",
       numbers: {},
-      href: `/crm/households/${clientId}`,
+      href: `/crm/households/${r.crmHouseholdId}`,
       estimatedImpact: null,
     });
   } else if (daysBetween(now, r.lastContactAt) > NO_CONTACT_DAYS) {
@@ -46,7 +46,7 @@ export function relationshipSignals(input: SignalInput): Signal[] {
       title: `No contact in ${days} days`,
       detail: `The last logged contact was ${days} days ago, past the ${NO_CONTACT_DAYS}-day mark.`,
       numbers: { days },
-      href: `/crm/households/${clientId}`,
+      href: `/crm/households/${r.crmHouseholdId}`,
       estimatedImpact: null,
     });
   }
@@ -59,7 +59,7 @@ export function relationshipSignals(input: SignalInput): Signal[] {
       title: "Client portal invitation never used",
       detail: "The household was invited to the portal but has never signed in.",
       numbers: {},
-      href: `/crm/households/${clientId}`,
+      href: `/crm/households/${r.crmHouseholdId}`,
       estimatedImpact: null,
     });
   }

@@ -174,6 +174,7 @@ export async function loadInsightsBattery(
       currentYearNetOutflow: overview.alertInputs.currentYearNetOutflow,
       minNetWorth: overview.alertInputs.minNetWorth,
       fundingScore: score,
+      hasProjection: projection.length > 0,
     },
     portfolio: {
       cashPct,
@@ -183,6 +184,7 @@ export async function loadInsightsBattery(
       largestPosition: largest,
     },
     relationship: {
+      crmHouseholdId: client.crmHouseholdId,
       overdueTaskCount,
       lastContactAt,
       portalInvitedAt: client.portalInvitedAt,

@@ -25,6 +25,7 @@ export function signalInputFixture(over: Partial<SignalInput> = {}): SignalInput
       currentYearNetOutflow: 0,
       minNetWorth: 1_000_000,
       fundingScore: 1.4,
+      hasProjection: true,
     },
     portfolio: {
       cashPct: 0.03,
@@ -34,6 +35,9 @@ export function signalInputFixture(over: Partial<SignalInput> = {}): SignalInput
       largestPosition: { label: "VTI", value: 100_000 },
     },
     relationship: {
+      // Deliberately unequal to the fixture's clientId — the CRM hrefs must key
+      // off the household, and an equal pair could not tell the two apart.
+      crmHouseholdId: "hh-9999",
       overdueTaskCount: 0,
       lastContactAt: new Date("2026-08-01T00:00:00Z"),
       portalInvitedAt: null,

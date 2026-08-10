@@ -20,6 +20,20 @@ describe("relationshipSignals", () => {
     expect(many!.title).toBe("3 overdue tasks");
   });
 
+  // `/crm/households/[id]` resolves against crmHouseholds.id. Keying these off
+  // the planning clientId compiles, reads fine, and 404s every link — no client
+  // row shares its id with its household. The fixture's two ids differ, so a
+  // regression to `${clientId}` fails here.
+  it("deep-links the CRM signals to the household, not the planning client", () => {
+    const i = signalInputFixture();
+    i.relationship.overdueTaskCount = 2;
+    i.relationship.lastContactAt = null;
+    i.relationship.portalInvitedAt = new Date("2026-01-01T00:00:00Z");
+    const crm = relationshipSignals(i).filter((s) => s.href?.startsWith("/crm/"));
+    expect(crm).toHaveLength(3);
+    for (const s of crm) expect(s.href).toBe("/crm/households/hh-9999");
+  });
+
   it("fires stale_contact past 90 days", () => {
     const i = signalInputFixture();
     i.relationship.lastContactAt = new Date("2026-01-01T00:00:00Z");

@@ -84,6 +84,30 @@ describe("taxSignals", () => {
     expect(taxSignals(i)[0].estimatedImpact).toBeNull();
   });
 
+  // These two are the failure mode a "does IMPACT_KEY have an entry?" check
+  // cannot see: the entry existed but named a key the builder never emits, so
+  // the lookup silently yielded undefined and both opportunities sorted last.
+  // The keys asserted here are the ones brackets.ts:57 actually writes.
+  it("pulls estimatedImpact from ltcg-zero-headroom's headroom", () => {
+    const i = signalInputFixture();
+    i.tax = {
+      observations: [obs({ id: "ltcg-zero-headroom", numbers: { headroom: 60_000 } })],
+      taxYear: 2025,
+    };
+    expect(taxSignals(i)[0].estimatedImpact).toBe(60_000);
+  });
+
+  it("leaves charitable-bunching's impact null — it has no single headline figure", () => {
+    const i = signalInputFixture();
+    i.tax = {
+      observations: [
+        obs({ id: "charitable-bunching", numbers: { charitable: 20_000, standardDeduction: 30_000 } }),
+      ],
+      taxYear: 2025,
+    };
+    expect(taxSignals(i)[0].estimatedImpact).toBeNull();
+  });
+
   it("deep-links to the tax analysis for the year the return covers", () => {
     const i = signalInputFixture();
     i.tax = { observations: [obs({})], taxYear: 2024 };

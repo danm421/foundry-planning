@@ -27,6 +27,20 @@ const initial = (over: Partial<Parameters<typeof GeneratePanel>[0]["initial"]> =
 });
 
 describe("GeneratePanel", () => {
+  // `stale` is passed to this component in three other tests and no assertion
+  // anywhere consumes it, so seeding the dirty state from `false` instead of the
+  // prop would keep the whole suite green while the advisor is served a profile
+  // built from superseded plan data with no indication anything moved.
+  it("tells the advisor the plan data moved under a stale profile", () => {
+    render(<GeneratePanel clientId="c1" stale signals={[]} initial={initial()} />);
+    expect(screen.getByRole("status")).toHaveTextContent(/plan data changed/i);
+  });
+
+  it("says nothing about stale data when the profile is current", () => {
+    render(<GeneratePanel clientId="c1" stale={false} signals={[]} initial={initial()} />);
+    expect(screen.getByRole("status")).not.toHaveTextContent(/plan data changed/i);
+  });
+
   /**
    * The signalId join is the whole anti-fabrication contract: an action is only
    * shown against the deterministic signal it cites. Asserting the title sits

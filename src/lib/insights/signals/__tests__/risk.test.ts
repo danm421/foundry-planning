@@ -70,9 +70,22 @@ describe("riskSignals", () => {
     expect(ids(input)).toContain("risk.capacity_binding");
   });
 
-  it("fires allocation_off for an over-risked verdict", () => {
+  // Both branches assert their TEXT, not just the id. The rule picks its title
+  // and detail by ternary, and `detail` is interpolated into the prompt block
+  // the model is told is authoritative — so a swapped ternary would have an
+  // over-risked household advised to take on more risk, with the id unchanged
+  // and every id-only assertion still green.
+  it("fires allocation_off for an over-risked verdict, and says so", () => {
     const input = signalInputFixture();
     input.risk.alignment = { ...input.risk.alignment, verdict: "over_risked" };
-    expect(ids(input)).toContain("risk.allocation_off");
+    const s = riskSignals(input).find((x) => x.id === "risk.allocation_off");
+    expect(s!.title).toMatch(/more risk/i);
+  });
+
+  it("fires allocation_off for an under-risked verdict, with the opposite advice", () => {
+    const input = signalInputFixture();
+    input.risk.alignment = { ...input.risk.alignment, verdict: "under_risked" };
+    const s = riskSignals(input).find((x) => x.id === "risk.allocation_off");
+    expect(s!.title).toMatch(/too conservative/i);
   });
 });

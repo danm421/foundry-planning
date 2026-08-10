@@ -9,6 +9,21 @@ describe("planSignals", () => {
     expect(planSignals(signalInputFixture())).toEqual([]);
   });
 
+  // A brand-new household whose projection cannot run gets minNetWorth = today's
+  // net worth (0) and fundingScore = 1 from the loaders' fallbacks. Those would
+  // otherwise produce a CRITICAL "net worth is projected to reach zero" beside a
+  // KPI grid reading "Funding 1.00" — two contradictory claims, both untrue, on
+  // the advisor's first view of the client.
+  it("says the plan was never projected instead of asserting projected figures", () => {
+    const i = signalInputFixture();
+    i.plan.hasProjection = false;
+    i.plan.minNetWorth = 0;
+    i.plan.fundingScore = 1;
+    i.plan.mcSuccessRate = 0.4;
+    expect(ids(i)).toEqual(["plan.no_projection"]);
+    expect(planSignals(i)[0].severity).toBe("info");
+  });
+
   it("fires confidence_low as watch below 75%", () => {
     const i = signalInputFixture();
     i.plan.mcSuccessRate = 0.7;

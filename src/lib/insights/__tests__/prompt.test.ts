@@ -101,16 +101,19 @@ describe("buildInsightsPrompt", () => {
     expect(user).toContain("[risk.tolerance_stale] (watch) RTQ is stale — Confirmed 3 years ago.");
   });
 
-  it("appends the estimated impact only when the signal carries one", () => {
+  // estimatedImpact ranks signals; it does not describe them. For tax.qcd it is
+  // gross IRA distributions, for irmaa-cliff it is MAGI headroom — none of which
+  // is a dollar benefit. The SIGNALS block is declared authoritative and the
+  // model is told not to do arithmetic, so anything printed here is restated
+  // verbatim to the advisor. It must never reach the prompt.
+  it("never puts estimatedImpact in the prompt, whatever it holds", () => {
     const { user } = buildInsightsPrompt({
       ...battery,
-      signals: [
-        signal({ estimatedImpact: 12_400 }),
-        signal({ id: "tax.no_return_on_file", estimatedImpact: null }),
-      ],
+      signals: [signal({ estimatedImpact: 12_400 })],
     });
-    expect(user).toContain("(est. impact $12,400)");
-    expect(user).not.toContain("[tax.no_return_on_file] (critical) Plan is underfunded — Projected assets fall short of planned spending. (est.");
+    expect(user).toContain("[plan.funding_shortfall] (critical) Plan is underfunded");
+    expect(user).not.toContain("12,400");
+    expect(user).not.toMatch(/est\.\s*impact/i);
   });
 
   it("tells the model to say so plainly when no signal fired", () => {
