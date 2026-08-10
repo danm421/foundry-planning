@@ -22,13 +22,22 @@ export function ctcPhaseout(ctx: FindingContext): Finding | null {
 
   if (agi > threshold) {
     const excess = agi - threshold;
-    const reduction = Math.ceil(excess / 1000) * 50;
+    // $50 per $1,000 is a RATE, not the amount at stake: the phase-out cannot
+    // remove more credit than exists. Uncapped, a one-child MFJ return at 500k
+    // AGI published a $5,000 loss against a credit worth a fraction of that.
+    // perChild is null only when the year's parameters are unseeded — no
+    // ceiling is knowable then, so the figure degrades to the raw estimate.
+    const perChild = ctx.params.ctc.perChild;
+    const ceiling = perChild != null ? kids * perChild : null;
+    const rawReduction = Math.ceil(excess / 1000) * 50;
+    const reduction = ceiling != null ? Math.min(rawReduction, ceiling) : rawReduction;
+    const fullyPhasedOut = ceiling != null && rawReduction >= ceiling;
     return {
       id: "ctc-phaseout",
       severity: "watch",
       category: "credits",
       headline: `Child tax credit reduced by about ${fmtUsd(reduction)} to income`,
-      whatTheReturnShows: `AGI of ${fmtUsd(agi)} (line 11) exceeds the ${fmtUsd(threshold)} child-tax-credit threshold by ${fmtUsd(excess)}, with ${kids} qualifying ${kids === 1 ? "child" : "children"} on the return. The credit phases out at $50 per $1,000 over, cutting roughly ${fmtUsd(reduction)}.`,
+      whatTheReturnShows: `AGI of ${fmtUsd(agi)} (line 11) exceeds the ${fmtUsd(threshold)} child-tax-credit threshold by ${fmtUsd(excess)}, with ${kids} qualifying ${kids === 1 ? "child" : "children"} on the return. The credit phases out at $50 per $1,000 over${fullyPhasedOut ? `, which at this income removes the entire ${fmtUsd(ceiling)} credit` : `, cutting roughly ${fmtUsd(reduction)}`}.`,
       whyItMatters: `Unlike a deduction, a credit comes off the tax itself, so a dollar of credit lost costs a full dollar. The phase-out is driven by AGI, not taxable income, which means deductions taken below the AGI line — the standard deduction, itemized deductions, the QBI deduction — do nothing to restore it.`,
       whatToConsider: `Only above-the-line moves reach this: a larger 401(k) or 403(b) deferral, an HSA contribution, a self-employed retirement plan, or harvesting capital losses against realized gains. Each dollar of AGI removed restores five cents of credit, which is on top of whatever the dollar saves at the marginal rate.`,
       lineRefs: [
