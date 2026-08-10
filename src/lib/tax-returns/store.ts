@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { taxReturns } from "@/db/schema";
-import { and, eq, lt, desc } from "drizzle-orm";
+import { and, eq, desc } from "drizzle-orm";
 import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 import type { TaxReturnRow } from "./db";
 
@@ -31,14 +31,14 @@ export async function getTaxReturn(clientId: string, taxYear: number): Promise<T
   return row ?? null;
 }
 
+/** The return for the year immediately before `taxYear`, or null when the
+ *  client skipped it. Deliberately NOT "the most recent earlier return": the
+ *  analysis uses this for a year-over-year comparison and for §6654's
+ *  prior-year safe-harbor test, and neither is meaningful against a return from
+ *  six years ago. `buildTaxAnalysis` re-checks adjacency for callers that
+ *  supply `prior` some other way. */
 export async function getPriorTaxReturn(clientId: string, taxYear: number): Promise<TaxReturnRow | null> {
-  const [row] = await db
-    .select()
-    .from(taxReturns)
-    .where(and(eq(taxReturns.clientId, clientId), lt(taxReturns.taxYear, taxYear)))
-    .orderBy(desc(taxReturns.taxYear))
-    .limit(1);
-  return row ?? null;
+  return getTaxReturn(clientId, taxYear - 1);
 }
 
 export async function upsertExtracted(args: {

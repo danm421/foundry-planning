@@ -47,14 +47,27 @@ export interface TaxAnalysis {
 
 export interface BuildTaxAnalysisArgs {
   facts: TaxReturnFacts;
+  /** Candidate prior return. Only accepted when it is `facts.taxYear - 1` —
+   *  see `adjacentPrior`. */
   prior: TaxReturnFacts | null;
   resolver: TaxResolver;
   primaryAge: number | null;
   spouseAge: number | null;
 }
 
+/** Both consumers of `prior` — the year-over-year table and the §6654
+ *  prior-year safe-harbor test — mean "last year", not "the most recent year on
+ *  file". A 2019 return against a 2025 one makes the YoY table a six-year drift
+ *  labelled as a year's change, and hands the harbor a prior-year tax that was
+ *  never the prior year's. Gated here, once, so the web report and the PDF —
+ *  which share this bundle and nothing else — cannot diverge on it. */
+function adjacentPrior(facts: TaxReturnFacts, prior: TaxReturnFacts | null): TaxReturnFacts | null {
+  return prior?.taxYear === facts.taxYear - 1 ? prior : null;
+}
+
 export function buildTaxAnalysis(args: BuildTaxAnalysisArgs): TaxAnalysis {
-  const { facts, prior, resolver, primaryAge, spouseAge } = args;
+  const { facts, resolver, primaryAge, spouseAge } = args;
+  const prior = adjacentPrior(facts, args.prior);
   const params = resolver.getYear(facts.taxYear).params;
   const irmaaParams = resolver.getYear(facts.taxYear + 2).params;
   const ctx: AdapterContext = { taxParams: params, primaryAge, spouseAge };

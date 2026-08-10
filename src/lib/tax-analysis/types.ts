@@ -60,6 +60,10 @@ export interface Finding {
 
 export interface FindingContext {
   facts: TaxReturnFacts;
+  /** Facts for `facts.taxYear - 1`, or null when that year is not on file.
+   *  Guaranteed adjacent — buildTaxAnalysis drops a non-adjacent return before
+   *  building this — so a finding may read it as "last year" without
+   *  re-checking. */
   prior: TaxReturnFacts | null;
   /** Params for facts.taxYear (exact seeded year for 2022+). */
   params: TaxYearParameters;
