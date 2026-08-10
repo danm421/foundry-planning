@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import type { RiskAlignment } from "@/lib/insights/risk-capacity";
-import type { LintFinding } from "@/lib/insights/lint";
+import type { Signal } from "@/lib/insights/signals";
+import type { InsightAction } from "@/lib/insights/schemas";
 import { Card, CardBody } from "@/components/card";
 import MoneyText from "@/components/money-text";
 import { RiskAlignmentScale } from "./risk-alignment-scale";
+import { SignalsList } from "./signals-list";
 import { GeneratePanel } from "./generate-panel";
 
 interface InsightsView {
@@ -17,12 +19,17 @@ interface InsightsView {
     fundingScore: number;
   };
   risk: RiskAlignment;
-  needsAttention: LintFinding[];
+  /** Recorded risk-tolerance rung on the same 0–100 growth-exposure axis as
+   *  `risk`, or null when the household has no risk profile on file. */
+  toleranceScore: number | null;
+  signals: Signal[];
   stale: boolean;
   profile: {
+    headline: string;
     snapshot: string;
     goals: string;
-    opportunities: string;
+    actions: InsightAction[];
+    talkingPoints: string[];
     generatedAt: string;
   } | null;
 }
@@ -76,16 +83,7 @@ export function InsightsTab({ clientId }: { clientId: string }) {
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-4">
-      {view.needsAttention.length > 0 && (
-        <div className="rounded-[var(--radius-sm)] border border-warn/30 bg-warn/10 p-4">
-          <h3 className="mb-2 text-sm font-semibold text-warn">Needs attention</h3>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-ink-2">
-            {view.needsAttention.map((f) => (
-              <li key={f.kind}>{f.message}</li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <SignalsList signals={view.signals} />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Card>
@@ -116,12 +114,13 @@ export function InsightsTab({ clientId }: { clientId: string }) {
         </Card>
       </div>
 
-      <RiskAlignmentScale risk={view.risk} />
+      <RiskAlignmentScale risk={view.risk} tolerancePct={view.toleranceScore} />
 
       <GeneratePanel
         clientId={clientId}
         stale={view.stale}
         initial={view.profile}
+        signals={view.signals}
       />
     </div>
   );

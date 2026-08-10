@@ -193,10 +193,9 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
   // `claimingAge`, `claimingAgeMonths`, `claimingAgeMode`, `piaMonthly` or
   // `ssBenefitMode`, so a view-hydrated dialog would open every scenario at
   // "claim at FRA" and save that back over the scenario's real choice.
+  const ssIncomes = effectiveTree.incomes.filter(isSocialSecurityIncome);
   const ssIncomeRows: Record<string, Income> = Object.fromEntries(
-    effectiveTree.incomes
-      .filter(isSocialSecurityIncome)
-      .map((i: Income) => [i.id, i] as const),
+    ssIncomes.map((i: Income) => [i.id, i] as const),
   );
   const expenseRows: Record<string, ExpenseView> = Object.fromEntries(
     effectiveTree.expenses
@@ -246,6 +245,16 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
       (s: SavingsRule) => [s.id, buildFlowScenarioFields(s)] as const,
     ),
   ]);
+
+  // The same pruned WRITE payload `flowScenarioFields` carries, for the SS rows
+  // that map deliberately omits (it is filtered by `isHydratableIncome`, which
+  // excludes them). Kept as its own map rather than folded into that one so the
+  // two stay legible as what they are: `flowScenarioFields` is the Cash Flow
+  // board's, this is the Goals board's Social Security card's. They are keyed by
+  // the same ids and built by the same function; nothing but the reader differs.
+  const ssScenarioFields: Record<string, Record<string, unknown>> = Object.fromEntries(
+    ssIncomes.map((i: Income) => [i.id, buildFlowScenarioFields(i)] as const),
+  );
 
   const accountOptions = effectiveTree.accounts.map(accountEngineToView);
 
@@ -347,6 +356,7 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
       savingsRuleRows={savingsRuleRows}
       savingsSchedules={savingsSchedules}
       flowScenarioFields={flowScenarioFields}
+      ssScenarioFields={ssScenarioFields}
       clientScenarioFields={clientScenarioFields}
       planSettingsScenarioFields={planSettingsScenarioFields}
       // The typed READ models for `SocialSecurityDialog`, distinct from the two

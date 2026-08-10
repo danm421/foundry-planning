@@ -13,7 +13,7 @@ import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href"
 import SavingsRuleDialog, { type SavingsRuleRow } from "@/components/forms/savings-rule-dialog";
 import { approximateMilestones } from "@/lib/household-map/approximate-milestones";
 import type { HouseholdMapProps, MapColumn, MapItem } from "@/lib/household-map/types";
-import type { LifeExpectancyOwner, MapGoal } from "@/lib/household-map/goals";
+import type { GoalSocialSecurity, LifeExpectancyOwner } from "@/lib/household-map/goals";
 import {
   buildLifeExpectancyClientFields,
   buildLifeExpectancyPlanSettingsFields,
@@ -31,6 +31,9 @@ import {
 import {
   buildFlowScenarioDesiredFields,
   flowAmountPatch,
+  ssBenefitPatch,
+  ssClaimAgePatch,
+  type FlowPatch,
 } from "@/lib/inline-edit/flow-write";
 
 const BOARDS = [
@@ -271,6 +274,74 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
     return res.ok;
   }
 
+  /**
+   * Persist ANY inline Social Security edit from the Goals board — the shared
+   * half of the two savers below, which differ only in the patch they build.
+   *
+   * Shaped like `handleSaveFlowAmount` — narrow base PUT, whole-row scenario
+   * payload. WHICH COLUMNS a patch targets is `lib/inline-edit/flow-write.ts`'s
+   * call, not this handler's: both SS write rules (which column holds the
+   * benefit, and what a typed age means for a derived-mode row) are domain rules
+   * that fail SILENTLY when wrong — the PUT returns 200 and the projection does
+   * not move — so they belong where a plain vitest test can reach them instead of
+   * only a jsdom one.
+   *
+   * THE FIELD SET comes from `ssScenarioFields`, not `flowScenarioFields` — SS
+   * rows are absent from the latter by construction. Refusing on a miss is the
+   * same rule as the flow saver: with no field set the scenario payload could
+   * only be the narrow write that deletes this scenario's other overrides on the
+   * row (a "claim at 70" edit, most obviously), and sending nothing beats
+   * sending that.
+   */
+  async function submitSsPatch(ss: GoalSocialSecurity, patch: FlowPatch): Promise<boolean> {
+    if (!canEdit) return false;
+    const fields = props.ssScenarioFields[ss.incomeId];
+    if (!fields) return false;
+
+    const res = await writer.submit(
+      {
+        op: "edit",
+        targetKind: "income",
+        targetId: ss.incomeId,
+        desiredFields: buildFlowScenarioDesiredFields(fields, patch),
+      },
+      {
+        url: `/api/clients/${clientId}/incomes/${ss.incomeId}`,
+        method: "PUT",
+        body: patch,
+      },
+    );
+    return res.ok;
+  }
+
+  /** The benefit figure, in whichever column `ss.mode` says the engine pays it
+   *  from. */
+  async function handleSaveSocialSecurity(
+    ss: GoalSocialSecurity,
+    next: number,
+  ): Promise<boolean> {
+    return submitSsPatch(ss, ssBenefitPatch(ss.mode, next));
+  }
+
+  /**
+   * The claim age — three columns, always written together, and always with
+   * `claimingAgeMode: "years"` so a `fra` / `at_retirement` row converts to the
+   * explicit age instead of ignoring the edit. See `ssClaimAgePatch`.
+   *
+   * This one MOVES the card. The claim age is what `ssClaim` derives
+   * `firstBenefitYear` from, and that is the goal's `year`, so a successful save
+   * re-places the card on the spine and `buildMapGoals` re-sorts around it. The
+   * refresh is the same one every other saver relies on — `writer.submit`
+   * revalidates the route, which rebuilds the boards server-side — so nothing
+   * here needs to know the new year.
+   */
+  async function handleSaveSocialSecurityClaimAge(
+    ss: GoalSocialSecurity,
+    ageYears: number,
+  ): Promise<boolean> {
+    return submitSsPatch(ss, ssClaimAgePatch(ageYears));
+  }
+
   // ── BoardCallbacks — card-click and add-button routing ──────────────────
   //
   // Every editor opened from here hydrates from `props`, which carry the
@@ -419,6 +490,8 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
           {...props}
           onEditGoalExpense={handleEditGoalExpense}
           onSaveLifeExpectancy={handleSaveLifeExpectancy}
+          onSaveSocialSecurity={handleSaveSocialSecurity}
+          onSaveSocialSecurityClaimAge={handleSaveSocialSecurityClaimAge}
           onAddGoal={handleAddGoal}
         />
       )}

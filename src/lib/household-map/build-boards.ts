@@ -146,6 +146,11 @@ export function buildMapBoards(input: MapBoardsInput): MapBoards {
       spouseBirthYear,
     },
     familyMemberNamesById: ctx.nameByFamilyMemberId,
+    // The SAME effective client the milestones and person nodes above read, so
+    // a solver "retire at 62" scenario resolves an `at_retirement` claim age to
+    // 62 on the Goals board's Social Security card exactly as `ssStartNote`
+    // already does on the Cash Flow board's timing cell.
+    socialSecurity: { incomes: effectiveTree.incomes, clientInfo: effectiveClient },
   });
 
   // Net worth = assets − debts, the same signs the item list carries.

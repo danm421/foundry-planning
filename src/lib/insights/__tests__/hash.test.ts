@@ -8,7 +8,8 @@ const sample = (over: Partial<InsightsBattery> = {}): InsightsBattery =>
     kpis: { netWorth: 2_000_000, liquidPortfolio: 1_200_000, yearsToRetirement: 5, mcSuccessRate: 0.9, fundingScore: 1.2 },
     retirementPeople: [{ label: "Cooper", currentAge: 60, retirementAge: 65, retirementYear: 2031 }],
     risk: { currentPct: 78, requiredPct: 45, capacityPct: 60, capacityScore: 60, verdict: "over_risked" },
-    needsAttention: [],
+    signals: [],
+    mcBands: null,
     grounding: { goalsText: "Retire at 65", notesText: "Conservative in downturns", allocation: [{ group: "equities", pct: 0.78 }] },
     ...over,
   }) as InsightsBattery;
@@ -22,6 +23,97 @@ describe("hashBattery", () => {
       hashBattery(sample({ kpis: { ...sample().kpis, netWorth: 2_100_000 } })),
     );
   });
+  // Signals ARE staleness: a new RTQ, a newly uploaded return, a reassigned
+  // portfolio or a closed task all change the ordered signal list, and the
+  // cached AI profile must be regenerated rather than served off the old hash.
+  it("changes when the signal list changes", () => {
+    expect(hashBattery(sample())).not.toBe(
+      hashBattery(
+        sample({
+          signals: [
+            {
+              id: "risk.review_due",
+              domain: "risk",
+              severity: "watch",
+              title: "Risk review is due",
+              detail: "The risk tolerance questionnaire is over two years old.",
+              numbers: { daysSinceConfirmed: 900 },
+              href: null,
+              estimatedImpact: null,
+            },
+          ],
+        }),
+      ),
+    );
+  });
+
+  // mcBands is interpolated into the AI prompt (the ending-portfolio percentile
+  // spread) but is not reflected in `successRate` alone: a Monte Carlo re-run
+  // can shift p5/p50/p95 without moving the pass/fail rate. Without mcBands in
+  // the hash material, that re-run would report `stale: false` while the
+  // cached profile keeps quoting the old percentiles.
+  it("changes when the MC ending-percentile bands change", () => {
+    expect(hashBattery(sample({ mcBands: { p5: 500_000, p50: 1_500_000, p95: 3_000_000 } }))).not.toBe(
+      hashBattery(sample({ mcBands: { p5: 600_000, p50: 1_500_000, p95: 3_000_000 } })),
+    );
+  });
+
+  // The whole point of the clock-derived carve-out: one more day elapsing is
+  // not a change to the household. Without this, every household past the
+  // 90-day contact mark reports `stale: true` every single day, forever.
+  it("does NOT change when only a clock-derived day count ticks", () => {
+    const staleContact = (days: number) => [
+      {
+        id: "relationship.stale_contact",
+        domain: "relationship",
+        severity: "watch",
+        title: `No contact in ${days} days`,
+        detail: `The last logged contact was ${days} days ago, past the 90-day mark.`,
+        numbers: { days },
+        href: "/crm/households/hh-1",
+        estimatedImpact: null,
+      },
+    ];
+    expect(hashBattery(sample({ signals: staleContact(221) as never }))).toBe(
+      hashBattery(sample({ signals: staleContact(222) as never })),
+    );
+  });
+
+  // ...but the signal APPEARING is a real change, and must still invalidate.
+  it("changes when a clock-derived signal appears at all", () => {
+    expect(hashBattery(sample())).not.toBe(
+      hashBattery(
+        sample({
+          signals: [
+            {
+              id: "relationship.stale_contact",
+              domain: "relationship",
+              severity: "watch",
+              title: "No contact in 91 days",
+              detail: "d",
+              numbers: { days: 91 },
+              href: null,
+              estimatedImpact: null,
+            },
+          ] as never,
+        }),
+      ),
+    );
+  });
+
+  // Every remaining material field, one mutator per field. Written as literal
+  // functions rather than derived from the material object — iterating the
+  // constant under test would go blind to a field being REMOVED from it.
+  it.each([
+    ["clientName", (b: InsightsBattery) => ({ ...b, clientName: "Other Household" })],
+    ["risk", (b: InsightsBattery) => ({ ...b, risk: { ...b.risk, currentPct: 79 } })],
+    ["goalsText", (b: InsightsBattery) => ({ ...b, grounding: { ...b.grounding, goalsText: "Retire at 62" } })],
+    ["notesText", (b: InsightsBattery) => ({ ...b, grounding: { ...b.grounding, notesText: "Wants to gift" } })],
+    ["allocation", (b: InsightsBattery) => ({ ...b, grounding: { ...b.grounding, allocation: [{ group: "cash", pct: 0.5 }] } })],
+  ])("changes when %s changes", (_label, mutate) => {
+    expect(hashBattery(sample())).not.toBe(hashBattery(mutate(sample())));
+  });
+
   // Editing a retirement age must invalidate the cached profile, or the AI prose
   // keeps quoting the old retirement year after the advisor corrects the plan.
   it("changes when a retirement age changes", () => {

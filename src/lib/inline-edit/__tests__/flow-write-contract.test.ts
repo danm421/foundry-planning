@@ -12,7 +12,12 @@
 // So these import the REAL validators and drive the REAL payloads through them.
 
 import { describe, it, expect } from "vitest";
-import { buildFlowScenarioDesiredFields, buildFlowScenarioFields, flowAmountPatch } from "../flow-write";
+import {
+  buildFlowScenarioDesiredFields,
+  buildFlowScenarioFields,
+  flowAmountPatch,
+  ssClaimAgePatch,
+} from "../flow-write";
 import { incomeUpdateSchema } from "@/lib/schemas/incomes";
 import { expenseUpdateSchema } from "@/lib/schemas/expenses";
 import { TARGET_KIND_TO_FIELD } from "@/engine/scenario/applyChanges";
@@ -43,6 +48,31 @@ describe("base-mode PUT body vs the real update schemas", () => {
     const parsed = expenseUpdateSchema.safeParse(flowAmountPatch(-14400));
     expect(parsed.success).toBe(true);
     expect(Number(parsed.success && parsed.data.annualAmount)).toBeGreaterThanOrEqual(0);
+  });
+
+  // The claim-age patch is the one inline payload whose three keys all go through
+  // per-field COERCERS rather than straight through: `claimingAgeOptional` maps
+  // anything falsy to null, `claimingAgeMonthsOptional` runs a Number(), and
+  // `claimingAgeMode` is a bare nullable string. Reading the schema says they are
+  // accepted; only parsing says they arrive intact. A `claimingAgeMonths` coerced
+  // to null or a dropped `claimingAgeMode` both return 200 and leave the claim age
+  // exactly where it was.
+  it("incomeUpdateSchema accepts the lone claim-age patch and preserves all three columns", () => {
+    const parsed = incomeUpdateSchema.safeParse(ssClaimAgePatch(67.5));
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.claimingAge).toBe(67);
+    expect(parsed.success && parsed.data.claimingAgeMonths).toBe(6);
+    expect(parsed.success && parsed.data.claimingAgeMode).toBe("years");
+  });
+
+  // The whole-year case is the one the coercers can eat: `claimingAgeMonths: 0` is
+  // falsy, and a `?? null`-style guard on it would strip the column that decides
+  // whether the claim is at 67y 0mo or keeps a stale 6mo.
+  it("preserves a ZERO month count rather than dropping it as falsy", () => {
+    const parsed = incomeUpdateSchema.safeParse(ssClaimAgePatch(67));
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.claimingAgeMonths).toBe(0);
+    expect(parsed.success && parsed.data.claimingAge).toBe(67);
   });
 });
 

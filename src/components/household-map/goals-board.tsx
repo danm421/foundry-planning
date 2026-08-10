@@ -3,12 +3,28 @@
 import { InlineAmount } from "@/components/forms/inline-amount";
 import { PlusIcon } from "@/components/icons";
 import { ageForYear } from "@/lib/age-year";
-import type { GoalKind, MapGoal } from "@/lib/household-map/goals";
+// The same whole-dollar formatter `buildMapGoals` writes its `detail` strings
+// with, so the editable line and the static one it replaces cannot render the
+// same figure two ways.
+import { formatCurrency } from "@/lib/cell-drill/format";
+import { claimAgeModeHint } from "@/lib/household-map/goals";
+import type {
+  GoalKind,
+  GoalLifeExpectancy,
+  GoalSocialSecurity,
+  MapGoal,
+} from "@/lib/household-map/goals";
 import type { BoardCallbacks, GoalsBoardProps } from "@/lib/household-map/types";
 
 /** Which side of the spine a card sits on. "left"/"right" mirror the accent
  *  border + text alignment; "joint" centres both. */
 type GoalCardSide = "left" | "right" | "joint";
+
+/** The read-mode trigger styling both inline editors on this board share — a
+ *  dotted underline at the card's 10px detail size, not the `InlineAmount`
+ *  default sized for a table's amount column. */
+const EDITOR_CLASS =
+  "rounded-sm px-1 tabular text-[10px] text-ink-2 underline decoration-dotted underline-offset-2 hover:bg-card-hover hover:text-ink";
 
 /** Border accent colour + section label per goal kind. Colours are raw CSS
  *  custom properties (not Tailwind class names) because they're applied via
@@ -22,6 +38,10 @@ const KIND_STYLE: Record<GoalKind, { border: string; label: string }> = {
   // the later of the two is the plan's end. Labelling both "Plan end" is what
   // made the single-card version read as correct for so long.
   life_expectancy: { border: "var(--color-cat-life)", label: "Life expectancy" },
+  // `cat-tax`, the one category hue this board had not spent. Not `cat-income`,
+  // which retirement already owns — the two milestones sit near each other on
+  // the spine and sharing a colour makes them read as one kind of event.
+  social_security: { border: "var(--color-cat-tax)", label: "Social Security" },
 };
 
 /** Accent-border side + text alignment per card side. Each value is a
@@ -122,6 +142,8 @@ export default function GoalsBoard({
   expenseRows,
   onEditGoalExpense,
   onSaveLifeExpectancy,
+  onSaveSocialSecurity,
+  onSaveSocialSecurityClaimAge,
   onAddGoal,
 }: GoalsBoardProps & BoardCallbacks) {
   /** Ages at a given year, derived from each person's `birthYear` — never
@@ -153,11 +175,14 @@ export default function GoalsBoard({
     return () => onEditGoalExpense?.(g.expenseId!, g.side);
   }
 
+  /** The first name behind a card's owner, for the editors' accessible names. */
+  function firstNameFor(owner: "client" | "spouse"): string | undefined {
+    return owner === "client" ? people.client.firstName : people.spouse?.firstName;
+  }
+
   /**
    * The life-expectancy card's detail line, with the age as a click-to-edit
-   * field. Returns undefined for every other card, and for a life-expectancy
-   * card the viewer may not write — `GoalCard` then falls back to the static
-   * `detail` string, so the age is still READ everywhere it used to be.
+   * field.
    *
    * Gated on the writer being present as well as on `canEdit`, matching the Cash
    * Flow board: a board rendered without `onSaveLifeExpectancy` must not show a
@@ -167,10 +192,12 @@ export default function GoalsBoard({
    * alignment (right of the spine for the client, left for the spouse) instead of
    * needing a per-side justify class.
    */
-  function detailSlotFor(g: MapGoal): React.ReactNode | undefined {
-    const le = g.lifeExpectancy;
-    if (!le || !canEdit || !onSaveLifeExpectancy) return undefined;
-    const firstName = le.owner === "client" ? people.client.firstName : people.spouse?.firstName;
+  function lifeExpectancySlot(
+    le: GoalLifeExpectancy,
+    onSave: NonNullable<BoardCallbacks["onSaveLifeExpectancy"]>,
+    fallbackLabel: string,
+  ): React.ReactNode {
+    const firstName = firstNameFor(le.owner);
     return (
       <div className="mt-0.5 text-[10px] text-ink-3">
         <span className="inline-flex items-center gap-1 align-middle">
@@ -179,10 +206,10 @@ export default function GoalsBoard({
             mode="plain"
             amount={le.age}
             noun="life expectancy"
-            label={firstName ?? g.title}
-            onSave={(next) => onSaveLifeExpectancy(le.owner, next)}
+            label={firstName ?? fallbackLabel}
+            onSave={(next) => onSave(le.owner, next)}
             wrapperClassName="relative w-[46px]"
-            className="rounded-sm px-1 tabular text-[10px] text-ink-2 underline decoration-dotted underline-offset-2 hover:bg-card-hover hover:text-ink"
+            className={EDITOR_CLASS}
           />
           {/* Says out loud that nobody chose this number — the projection is
               already running to it (the engine's `spouseLifeExpectancy ?? 95`),
@@ -191,6 +218,108 @@ export default function GoalsBoard({
         </span>
       </div>
     );
+  }
+
+  /**
+   * The Social Security card's detail line, with BOTH the claim age and the
+   * benefit as click-to-edit fields.
+   *
+   * WHICH benefit figure is editable follows `ss.mode`, and that is the whole
+   * design: a `manual_amount` row's benefit IS its `annualAmount`, while a
+   * `pia_at_fra` row's is DERIVED from the monthly PIA and the claim age. An
+   * annual field on a PIA row would either write a column the engine never reads
+   * or silently back-solve over an SSA-statement figure — so the PIA is what the
+   * field holds, and the annual it implies sits under it as an estimate.
+   *
+   * The AGE field holds `claimAgeYears`, not the label: it is the whole age in one
+   * number (67.5 = 67y 6mo), so committing it cannot drop a stored months value,
+   * while `format` keeps read mode showing the human "67y 6mo". Saving it moves
+   * the card to a different year — the claim age is what fixes
+   * `ssClaim.firstBenefitYear`.
+   *
+   * `(FRA)` / `(at retirement)` marks an age that is DERIVED and still tracking a
+   * DOB or a retirement age. Editing it converts the row to an explicit age and
+   * ends that tracking (see `ssClaimAgePatch`), so the card has to say which it
+   * is before the click, not after.
+   */
+  function socialSecuritySlot(
+    ss: GoalSocialSecurity,
+    onSave: NonNullable<BoardCallbacks["onSaveSocialSecurity"]>,
+    onSaveClaimAge: NonNullable<BoardCallbacks["onSaveSocialSecurityClaimAge"]>,
+  ): React.ReactNode {
+    const firstName = firstNameFor(ss.owner);
+    const pia = ss.mode === "pia_at_fra";
+    const modeHint = claimAgeModeHint(ss.claimAgeMode);
+    return (
+      <div className="mt-0.5 text-[10px] text-ink-3">
+        <span className="inline-flex items-center gap-1 align-middle">
+          age
+          <InlineAmount
+            mode="plain"
+            amount={ss.claimAgeYears}
+            // Read mode shows the label ("67", "67y 6mo"); the open input shows
+            // the raw 67.5. Without this a part-year age would render as "67.5"
+            // on the card, which is not how anyone says an age.
+            format={() => ss.claimAgeLabel}
+            noun="claim age"
+            label={firstName ?? ss.owner}
+            onSave={(next) => onSaveClaimAge(ss, next)}
+            wrapperClassName="relative w-[46px]"
+            className={EDITOR_CLASS}
+          />
+          {modeHint ? <span className="text-ink-4">({modeHint})</span> : null}
+          <span>·</span>
+          <InlineAmount
+            amount={ss.amount}
+            noun={pia ? "monthly PIA" : "annual benefit"}
+            label={firstName ?? ss.owner}
+            onSave={(next) => onSave(ss, next)}
+            wrapperClassName="relative w-[76px]"
+            className={EDITOR_CLASS}
+          />
+          {pia ? "/mo PIA" : "/yr"}
+        </span>
+        {/* Own retirement only — no spousal or survivor top-up — so it says
+            "est." wherever it renders. */}
+        {ss.estimatedAnnual != null ? (
+          <div className="text-ink-4">est. {formatCurrency(ss.estimatedAnnual)}/yr</div>
+        ) : null}
+      </div>
+    );
+  }
+
+  /**
+   * Replaces a milestone card's static `detail` line with its editor, or
+   * undefined for a card with neither payload — and for one whose viewer may not
+   * write, or whose board was handed no writer for that payload. `GoalCard` then
+   * falls back to `detail`, which carries the same figures as static text, so
+   * losing the editor never loses the number.
+   *
+   * Gated per payload rather than once, matching the Cash Flow board: a board
+   * given one writer and not the other must show exactly the one field it can
+   * actually save. The client portal's Organizer passes neither.
+   *
+   * No card carries both payloads, so the order of these two is arbitrary.
+   */
+  function detailSlotFor(g: MapGoal): React.ReactNode | undefined {
+    // BOTH SS writers required, not either. The two fields on an SS card are one
+    // editable unit, and the fallback is not a degraded card — `detail` carries
+    // the claim age, its mode and the benefit as static text, so a board handed
+    // only one writer loses no FACT by rendering that instead. Offering the one
+    // savable field would mean a second render path (and a second "PIA not set"
+    // rule) for a configuration nothing in the app has: `household-map-view`
+    // passes both, the portal Organizer passes neither.
+    if (g.socialSecurity && canEdit && onSaveSocialSecurity && onSaveSocialSecurityClaimAge) {
+      return socialSecuritySlot(
+        g.socialSecurity,
+        onSaveSocialSecurity,
+        onSaveSocialSecurityClaimAge,
+      );
+    }
+    if (g.lifeExpectancy && canEdit && onSaveLifeExpectancy) {
+      return lifeExpectancySlot(g.lifeExpectancy, onSaveLifeExpectancy, g.title);
+    }
+    return undefined;
   }
 
   return (
