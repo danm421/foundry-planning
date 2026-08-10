@@ -79,7 +79,13 @@ function findIncome(tree: ClientData, id: string): Record<string, unknown> | nul
     | undefined ?? null;
 }
 
-describe.skipIf(!HAS_DB)("preview fidelity", () => {
+// The one test in this block makes ~6 round trips to the shared dev Neon branch
+// (two effective-tree loads, a real write, a scenario insert/delete). Vitest's
+// 5 s default is not enough when that compute is cold, so the file failed the
+// full suite intermittently while passing in isolation — a false positive that
+// polluted the suite baseline. Green in ~6 s warm; 60 s leaves room for a cold
+// start without letting a genuine hang run away.
+describe.skipIf(!HAS_DB)("preview fidelity", { timeout: 60_000 }, () => {
   let scenarioId: string;
 
   beforeEach(async () => {
