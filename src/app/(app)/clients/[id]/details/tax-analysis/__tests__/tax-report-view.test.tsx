@@ -16,11 +16,13 @@ const detail: YearDetail = {
 };
 
 describe("TaxReportView", () => {
-  it("renders key figures, observations grouped by severity, and the bracket bars", () => {
+  it("renders key figures, findings grouped by severity, and the bracket bars", () => {
     render(<TaxReportView clientId="c1" detail={detail} onEditFacts={vi.fn()} />);
     expect(screen.getByText("$188,700")).toBeTruthy(); // AGI
     expect(screen.getByText(/opportunities/i)).toBeTruthy();
-    expect(screen.getByText(/roth conversion headroom/i)).toBeTruthy();
+    // The headline now renders twice — the index jump link and the card — which
+    // is precisely the invariant the index introduces.
+    expect(screen.getAllByText(/roth conversion room/i)).toHaveLength(2);
     expect(screen.getByTestId("bracket-map")).toBeTruthy();
     expect(screen.getByText(/not tax advice/i)).toBeTruthy();
   });
@@ -44,7 +46,9 @@ describe("TaxReportView — income composition + deductions", () => {
       documents: [], conflicts: [], provenance: {},
     };
     render(<TaxReportView clientId="c1" detail={d} onEditFacts={vi.fn()} />);
-    expect(screen.getByText(/^deductions$/i)).toBeTruthy();
+    // Scoped to the heading: "Deductions" is now also a category chip (the
+    // charitable-bunching finding), so a bare text query matches two nodes.
+    expect(screen.getByRole("heading", { name: /^deductions$/i })).toBeTruthy();
     expect(screen.getByText("Itemized")).toBeTruthy();
     expect(screen.getByText("SALT lost to the cap")).toBeTruthy();
     // Both "SALT lost to the cap" and "Mortgage interest" are $22,000 for
@@ -155,5 +159,69 @@ describe("TaxReportView — gross income top line", () => {
     expect(screen.queryByText("Gross")).toBeNull();
     expect(screen.getByText("Amount")).toBeTruthy();
     expect(screen.getByText("% of total")).toBeTruthy();
+  });
+});
+
+describe("TaxReportView — findings", () => {
+  function landlordDetail(): YearDetail {
+    const facts = landlordSingle();
+    return {
+      taxYear: 2025, status: "ready", facts, extractedFacts: facts, warnings: [],
+      analysis: buildTaxAnalysis({ facts, prior: null, resolver, primaryAge: 41, spouseAge: null }),
+      documents: [], conflicts: [], provenance: {},
+    };
+  }
+
+  it("renders all four parts of a finding, its category chip and its line-ref footer", () => {
+    render(<TaxReportView clientId="c1" detail={landlordDetail()} onEditFacts={vi.fn()} />);
+    // landlordSingle produces three findings and every one carries all three
+    // parts, so each label renders three times — getByText throws on that.
+    expect(screen.getAllByText("What the return shows")).toHaveLength(3);
+    expect(screen.getAllByText("Why it matters")).toHaveLength(3);
+    expect(screen.getAllByText("What to consider")).toHaveLength(3);
+    expect(screen.getByText("Real estate")).toBeTruthy(); // the category chip
+    expect(
+      screen.getByText("Schedule E line 3 · line 18 · line 20 · Schedule 1 line 5"),
+    ).toBeTruthy();
+  });
+
+  it("gives every finding an anchor and a matching jump link in the index", () => {
+    const { container } = render(
+      <TaxReportView clientId="c1" detail={landlordDetail()} onEditFacts={vi.fn()} />,
+    );
+    const links = [...container.querySelectorAll('nav a[href^="#finding-"]')];
+    expect(links.length).toBeGreaterThan(0);
+    // Every link resolves to a card that is actually on the page — a jump link
+    // to a missing anchor is silent in the browser and would never be noticed.
+    for (const a of links) {
+      const id = a.getAttribute("href")!.slice(1);
+      expect(container.querySelector(`#${CSS.escape(id)}`)).toBeTruthy();
+    }
+  });
+
+  it("shows the estimated impact figure on a finding that carries one", () => {
+    render(<TaxReportView clientId="c1" detail={landlordDetail()} onEditFacts={vi.fn()} />);
+    expect(screen.getAllByText("Est. impact").length).toBeGreaterThan(0);
+  });
+
+  it("lists every finding in the index, in sorted order — one link per card", () => {
+    const { container } = render(<TaxReportView clientId="c1" detail={detail} onEditFacts={vi.fn()} />);
+    const hrefs = [...container.querySelectorAll('nav a[href^="#finding-"]')].map((a) =>
+      a.getAttribute("href"),
+    );
+    // Hard-coded, not derived from sortFindings: a test that calls the function
+    // it guards cannot notice the view dropping the call. Severity groups first
+    // (opportunity, watch, info), then estimatedImpact descending within each.
+    expect(hrefs).toEqual([
+      "#finding-roth-headroom",
+      "#finding-qcd",
+      "#finding-safe-harbor",
+      "#finding-irmaa-cliff",
+      "#finding-bracket-position",
+      "#finding-state-notes",
+    ]);
+    // The converse of the anchor test above: one index entry per card, so a
+    // card can never go unlisted.
+    expect(container.querySelectorAll('[id^="finding-"]')).toHaveLength(hrefs.length);
   });
 });

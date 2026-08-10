@@ -243,7 +243,7 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
           <p className="max-w-md text-sm text-ink-3">
             Drop in a client&apos;s Form 1040 (PDF or photo). We&apos;ll extract the key figures,
             let you verify them, and generate a client-ready tax report with bracket
-            positioning and planning observations.
+            positioning and planning findings.
           </p>
           <div className="flex items-center gap-3">
             <button

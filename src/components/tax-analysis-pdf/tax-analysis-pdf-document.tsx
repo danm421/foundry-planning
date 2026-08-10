@@ -1,12 +1,17 @@
 // src/components/tax-analysis-pdf/tax-analysis-pdf-document.tsx
 import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
 import type { TaxAnalysis } from "@/lib/tax-analysis/analysis";
-import type { Observation } from "@/lib/tax-analysis/types";
+import type { Finding } from "@/lib/tax-analysis/types";
 import { computeBracketBarLayout } from "@/lib/tax-analysis/bracket-map";
 import { fmtUsd, fmtPct } from "@/lib/tax-analysis/format";
-import { deductionDetailRows, hasGrossColumn, incomeCompositionTotal } from "@/lib/tax-analysis/breakdowns";
+import {
+  deductionDetailRows, hasGrossColumn, incomeCompositionHeaders, incomeCompositionTotal, keyFigureTiles,
+} from "@/lib/tax-analysis/breakdowns";
 import { activityDetailRows } from "@/lib/tax-analysis/activity-detail";
+import { reconstructionNote } from "@/lib/tax-analysis/reconstruction";
 import { PDF_THEME } from "@/components/balance-sheet-report/tokens";
+import { SEVERITY_GROUPS, CATEGORY_LABEL, FINDING_PARTS, sortFindings } from "@/lib/tax-analysis/findings/order";
+import { formatLineRefs } from "@/lib/tax-analysis/findings/line-refs";
 
 export interface TaxAnalysisPdfProps {
   clientName: string;
@@ -16,12 +21,6 @@ export interface TaxAnalysisPdfProps {
   firmName?: string | null;
   logoDataUrl?: string | null; // from resolveBranding — base64 data URL or null
 }
-
-const GROUPS: Array<{ severity: Observation["severity"]; heading: string }> = [
-  { severity: "opportunity", heading: "Opportunities" },
-  { severity: "watch", heading: "Watch items" },
-  { severity: "info", heading: "Notes" },
-];
 
 // Muted-slate fill for "amount filled" bars — deliberately not the Foundry
 // verdigris accent. Client PDFs use the report's own light/print theme
@@ -41,10 +40,17 @@ const styles = StyleSheet.create({
   panelLabel: { fontSize: 7, textTransform: "uppercase", color: PDF_THEME.text.muted },
   panelValue: { fontSize: 13, fontWeight: "bold", marginTop: 2 },
   sectionHeading: { fontSize: 9, textTransform: "uppercase", color: PDF_THEME.text.muted, marginTop: 14, marginBottom: 6 },
-  obsCard: { borderWidth: 1, borderColor: PDF_THEME.surface.panelBorder, borderRadius: 4, padding: 8, marginBottom: 6 },
-  obsTitle: { fontSize: 10, fontWeight: "bold", marginBottom: 2 },
-  obsBody: { fontSize: 9, color: PDF_THEME.text.primary, lineHeight: 1.4 },
   footer: { marginTop: 18, fontSize: 8, color: PDF_THEME.text.muted, lineHeight: 1.4 },
+
+  // Findings
+  findingCard: { borderWidth: 1, borderColor: PDF_THEME.surface.panelBorder, borderRadius: 4, padding: 8, marginBottom: 6 },
+  findingHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
+  findingHeadline: { fontSize: 10, fontWeight: "bold", flex: 4 },
+  findingImpact: { flex: 1, fontSize: 9, fontWeight: "bold", textAlign: "right" },
+  findingCategory: { fontSize: 7, textTransform: "uppercase", color: PDF_THEME.text.muted, marginTop: 2, marginBottom: 4 },
+  findingPartLabel: { fontSize: 7, textTransform: "uppercase", color: PDF_THEME.text.muted, marginTop: 4 },
+  findingPartBody: { fontSize: 9, color: PDF_THEME.text.primary, lineHeight: 1.4 },
+  findingRefs: { fontSize: 8, color: PDF_THEME.text.muted, marginTop: 5, fontStyle: "italic" },
 
   // Bracket map
   bracketBlock: { marginBottom: 12 },
@@ -96,26 +102,7 @@ function KeyFigure({ label, value }: { label: string; value: string }) {
 const FIGURES_PER_ROW = 4;
 
 function KeyFiguresRow({ analysis }: { analysis: TaxAnalysis }) {
-  const k = analysis.keyFigures;
-  const refundLabel = k.refund != null && k.refund > 0 ? "Refund" : "Owed at filing";
-  const refundValue =
-    k.refund != null && k.refund > 0
-      ? fmtUsd(k.refund)
-      : k.amountOwed != null ? fmtUsd(k.amountOwed) : "—";
-
-  const figures: Array<{ label: string; value: string }> = [
-    // Only when it says something line 9 doesn't — otherwise the same number twice.
-    ...(k.grossIncome != null && k.grossIncome !== k.totalIncome
-      ? [{ label: "Gross income", value: fmtUsd(k.grossIncome) }]
-      : []),
-    { label: "Total income", value: k.totalIncome != null ? fmtUsd(k.totalIncome) : "—" },
-    { label: "AGI", value: k.agi != null ? fmtUsd(k.agi) : "—" },
-    { label: "Taxable income", value: k.taxableIncome != null ? fmtUsd(k.taxableIncome) : "—" },
-    { label: "Total tax", value: k.totalTax != null ? fmtUsd(k.totalTax) : "—" },
-    { label: "Effective rate", value: k.effectiveRate != null ? fmtPct(k.effectiveRate) : "—" },
-    { label: "Marginal rate", value: k.marginalRate != null ? fmtPct(k.marginalRate) : "—" },
-    { label: refundLabel, value: refundValue },
-  ];
+  const figures = keyFigureTiles(analysis.keyFigures);
 
   const rows: Array<typeof figures> = [];
   for (let i = 0; i < figures.length; i += FIGURES_PER_ROW) {
@@ -209,10 +196,11 @@ function IncomeCompositionSection({ analysis }: { analysis: TaxAnalysis }) {
       <Text style={styles.sectionHeading}>Income composition</Text>
       <View style={styles.table}>
         <View style={styles.tableHeaderRow}>
-          <Text style={styles.tableHeaderLabelCell}>Source</Text>
-          <Text style={styles.tableHeaderValueCell}>{showGross ? "As filed" : "Amount"}</Text>
-          {showGross && <Text style={styles.tableHeaderValueCell}>Gross</Text>}
-          <Text style={styles.tableHeaderValueCell}>{showGross ? "% of gross" : "% of total"}</Text>
+          {incomeCompositionHeaders(rows).map((h, i) => (
+            <Text key={h} style={i === 0 ? styles.tableHeaderLabelCell : styles.tableHeaderValueCell}>
+              {h}
+            </Text>
+          ))}
         </View>
         {rows.map((r) => (
           <View key={r.key} style={styles.tableRow}>
@@ -287,20 +275,42 @@ function DeductionsSection({ analysis }: { analysis: TaxAnalysis }) {
   );
 }
 
-function ObservationsSection({ analysis }: { analysis: TaxAnalysis }) {
+function FindingCard({ finding }: { finding: Finding }) {
+  const refs = formatLineRefs(finding.lineRefs);
+  return (
+    <View style={styles.findingCard} wrap={false}>
+      <View style={styles.findingHeaderRow}>
+        <Text style={styles.findingHeadline}>{finding.headline}</Text>
+        {finding.estimatedImpact != null && (
+          <Text style={styles.findingImpact}>{fmtUsd(finding.estimatedImpact)}</Text>
+        )}
+      </View>
+      <Text style={styles.findingCategory}>{CATEGORY_LABEL[finding.category]}</Text>
+      {FINDING_PARTS.map(({ key, label }) =>
+        finding[key] ? (
+          <View key={key}>
+            <Text style={styles.findingPartLabel}>{label}</Text>
+            <Text style={styles.findingPartBody}>{finding[key]}</Text>
+          </View>
+        ) : null,
+      )}
+      {refs !== "" && <Text style={styles.findingRefs}>{refs}</Text>}
+    </View>
+  );
+}
+
+function FindingsSection({ analysis }: { analysis: TaxAnalysis }) {
+  const findings = sortFindings(analysis.findings);
   return (
     <View>
-      {GROUPS.map(({ severity, heading }) => {
-        const items = analysis.observations.filter((o) => o.severity === severity);
+      {SEVERITY_GROUPS.map(({ severity, heading }) => {
+        const items = findings.filter((f) => f.severity === severity);
         if (items.length === 0) return null;
         return (
           <View key={severity}>
             <Text style={styles.sectionHeading}>{heading}</Text>
-            {items.map((o) => (
-              <View key={o.id} style={styles.obsCard}>
-                <Text style={styles.obsTitle}>{o.title}</Text>
-                <Text style={styles.obsBody}>{o.body}</Text>
-              </View>
+            {items.map((f) => (
+              <FindingCard key={f.id} finding={f} />
             ))}
           </View>
         );
@@ -360,19 +370,12 @@ export function TaxAnalysisPdfDocument(props: TaxAnalysisPdfProps) {
 
         <DeductionsSection analysis={a} />
 
-        <ObservationsSection analysis={a} />
+        <FindingsSection analysis={a} />
 
         <YoYSection analysis={a} taxYear={props.taxYear} />
 
         <View style={styles.footer}>
-          <Text>
-            {a.reconstruction.withinTolerance === true
-              ? "Cross-check: our independent computation of this return's pre-credit tax matches the filed amount. "
-              : a.reconstruction.withinTolerance === false
-                ? `Cross-check: our computed pre-credit tax (${fmtUsd(a.reconstruction.computedPreCreditTax ?? 0)}) differs from the filed amount — verify the extracted figures. `
-                : ""}
-            This analysis is informational, based on the return as provided, and is not tax advice.
-          </Text>
+          <Text>{reconstructionNote(a.reconstruction)}</Text>
         </View>
       </Page>
     </Document>

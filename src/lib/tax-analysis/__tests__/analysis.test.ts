@@ -34,7 +34,7 @@ describe("buildTaxAnalysis", () => {
     expect(a.keyFigures.effectiveRate).toBeCloseTo(21588 / 188700, 5);
     expect(a.keyFigures.marginalRate).toBeGreaterThan(0);
     expect(a.bracketMap).not.toBeNull();
-    expect(a.observations.length).toBeGreaterThan(3);
+    expect(a.findings.length).toBeGreaterThan(3);
     expect(a.yoy).toBeNull(); // no prior year
     expect(a.reconstruction.filedPreCreditTax).toBe(21588);
   });

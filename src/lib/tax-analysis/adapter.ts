@@ -4,7 +4,7 @@ import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 import type { USPSStateCode } from "@/lib/usps-states";
 
 /** Shared "null/undefined → 0" coercion — single copy for adapter.ts,
- *  bracket-map.ts, and the observation modules that need it. */
+ *  bracket-map.ts, and the finding modules that need it. */
 export const n = (v: number | null | undefined): number => v ?? 0;
 
 export interface AdapterContext {
@@ -27,7 +27,7 @@ export function hasScheduleDDetail(facts: TaxReturnFacts): boolean {
  *  LTCG falls back to line 7 (capitalGainOrLoss), which may itself be null.
  *
  *  Exported so callers needing "the LTCG figure for this return" (adapter,
- *  and later observation modules) share exactly one copy of this rule —
+ *  and the finding modules) share exactly one copy of this rule —
  *  the plan's original draft inlined `netLongTermGain ?? capitalGainOrLoss`
  *  in three separate files with subtly diverging trigger conditions. */
 export function resolveLtcg(facts: TaxReturnFacts): number | null {
