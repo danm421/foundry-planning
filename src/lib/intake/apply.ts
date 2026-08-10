@@ -60,9 +60,9 @@ import { sectionsForForm, type IntakeSectionKey } from "@/lib/intake/sections";
 import {
   childIndexFromRef,
   goalExpenseType,
-  goalTopicLabel,
   goalYearWindow,
 } from "@/lib/intake/goal-rows";
+import { intakeNoteBody } from "@/lib/intake/note-body";
 import { loadFormForFirm } from "@/lib/intake/queries";
 import { incomeYearWindow } from "@/lib/intake/income-years";
 import { buildClientMilestones } from "@/lib/milestones";
@@ -74,6 +74,7 @@ import {
 import { createClientForHousehold } from "@/lib/clients/create-client";
 import { recordAudit, recordCreate, recordUpdate } from "@/lib/audit";
 import { recordActivityNonFatal } from "@/lib/crm/activity";
+import { noteDateToOccurredAt } from "@/lib/crm/notes";
 import { syncHouseholdNameFromContacts } from "@/lib/crm/sync-household-name";
 import { deriveHouseholdNameFromContacts } from "@/lib/crm/household-name";
 import { upsertPrimaryAndSpouseContacts } from "@/lib/crm/upsert-household-contact";
@@ -673,44 +674,46 @@ async function applySectionsToClient(
 }
 
 /**
- * The "On your radar" answers as a CRM note body, or null when the client
- * checked nothing and wrote nothing.
+ * File the whole submitted form on the household timeline. See `note-body.ts`
+ * for why a note is the right home for it.
  *
- * These are deliberately NOT expense rows. A checked box carries no amount and
- * no date, so projecting one would mean inventing both; what the client has
- * given us is an agenda for the first conversation. The household timeline is
- * where that belongs — and unlike the staged form payload (which the advisor
- * only sees while the form sits in review), a note survives the apply and is
- * still there at the next meeting.
+ * Post-commit and best-effort, exactly like the audits beside it — the note
+ * narrates an apply that already succeeded, so a timeline failure must not
+ * report a false error for durable writes. Routed through `recordActivity`
+ * rather than a raw insert so the row gets the same actor-name snapshot every
+ * other CRM note has, which is what keeps the author's name on it after they
+ * leave the firm.
+ *
+ * Dated by the SUBMISSION through the shared `noteDateToOccurredAt`, so the
+ * advisor reads back the day the client filled the form rather than the day
+ * they happened to approve it — and pinned to noon UTC like every other note,
+ * because stamping the raw instant is how an evening write came to display
+ * tomorrow's date. Falls back to now only when `submittedAt` never landed.
+ *
+ * Takes a bare `householdId` rather than the whole `ApplyResult`: it is the only
+ * field the note needs, and keeping the seam narrow is what would let a
+ * submit-time trigger reuse this later.
  */
-function radarNoteBody(goals: IntakePayload["goals"]): string | null {
-  const topics = goals.topics.map((t) => `• ${goalTopicLabel(t)}`).join("\n");
-  const note = goals.topicsNote?.trim();
-  return [topics, note].filter(Boolean).join("\n\n") || null;
-}
-
-/**
- * File the "On your radar" answers on the household timeline. Post-commit and
- * best-effort, exactly like the audits beside it: the note narrates an apply
- * that already succeeded, so a timeline failure must not report a false error
- * for durable writes. Routed through `recordActivity` rather than a raw insert
- * so the row gets the same actor-name snapshot every other CRM note has — that
- * is what keeps the author's name on it after they leave the firm.
- */
-async function emitRadarNote(args: {
-  applied: ApplyResult;
+async function emitIntakeNote(args: {
+  householdId: string;
   payload: IntakePayload;
+  sections: readonly IntakeSectionKey[];
+  submittedAt: Date | null | undefined;
   actorId: string;
 }): Promise<void> {
-  const body = radarNoteBody(args.payload.goals);
+  const body = intakeNoteBody(args.payload, args.sections, {
+    currentYear: new Date().getFullYear(),
+  });
   if (!body) return;
   await recordActivityNonFatal(
     {
-      householdId: args.applied.crmHouseholdId,
+      householdId: args.householdId,
       kind: "note",
-      title: "Goals to discuss (from intake)",
+      title: "Client intake form",
       body,
-      occurredAt: new Date(),
+      occurredAt: noteDateToOccurredAt(
+        (args.submittedAt ?? new Date()).toISOString().slice(0, 10),
+      ),
     },
     { actorUserId: args.actorId },
     "intake-apply",
@@ -1133,7 +1136,13 @@ export async function applyIntake(args: {
     });
 
     await emitApplyAudits({ applied, clientId, firmId, actorId, formId, riskApplied });
-    await emitRadarNote({ applied, payload, actorId });
+    await emitIntakeNote({
+      householdId: applied.crmHouseholdId,
+      payload,
+      sections,
+      submittedAt: form.submittedAt,
+      actorId,
+    });
     return { clientId };
   }
 
@@ -1179,6 +1188,12 @@ export async function applyIntake(args: {
   });
 
   await emitApplyAudits({ applied, clientId, firmId, actorId, formId, riskApplied });
-  await emitRadarNote({ applied, payload, actorId });
+  await emitIntakeNote({
+    householdId: applied.crmHouseholdId,
+    payload,
+    sections,
+    submittedAt: form.submittedAt,
+    actorId,
+  });
   return { clientId };
 }

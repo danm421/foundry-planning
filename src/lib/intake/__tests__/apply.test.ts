@@ -496,12 +496,21 @@ describe("applyIntake (existing-client path)", () => {
       .from(crmActivity)
       .where(and(eq(crmActivity.householdId, householdId), eq(crmActivity.kind, "note")));
     expect(notes).toHaveLength(1);
-    expect(notes[0].title).toBe("Goals to discuss (from intake)");
+    expect(notes[0].title).toBe("Client intake form");
     expect(notes[0].body).toContain("Charitable giving");
     expect(notes[0].body).toContain("Leaving an inheritance");
     expect(notes[0].body).toContain("Thinking about a cabin.");
     // Only the two boxes that were checked.
     expect(notes[0].body).not.toContain("Paying off debt");
+    // The note now carries the WHOLE submitted form, not just the radar
+    // answers — the goal rows the client named and the family they gave us.
+    expect(notes[0].body).toContain("## Goals");
+    expect(notes[0].body).toContain("Anniversary trip");
+    expect(notes[0].body).toContain("## Family");
+    expect(notes[0].body).toContain("Pat Prospect");
+    // Dated by the SUBMISSION, pinned to noon UTC so the advisor always reads
+    // back the calendar date the client submitted.
+    expect(notes[0].occurredAt.toISOString()).toMatch(/T12:00:00\.000Z$/);
 
     // ── Assert: crmHouseholds.state === "NJ" ──────────────────────────────
     const [hhAfter] = await db

@@ -41,7 +41,13 @@ function toNoteRow(row: typeof crmActivity.$inferSelect): NoteRow {
 
 // A YYYY-MM-DD note date is stored at noon UTC so the displayed UTC date always
 // equals the entered calendar date in any US timezone.
-function noteDateToOccurredAt(noteDate: string): Date {
+//
+// Exported because it is a CONVENTION, not a detail: every writer that turns a
+// human calendar date into a `crm_activity.occurred_at` has to agree, or the
+// same note reads as a different day depending on which surface wrote it.
+// (System-instant rows — status changes, uploads — correctly stamp raw `new
+// Date()` instead; they have no calendar date to pin.)
+export function noteDateToOccurredAt(noteDate: string): Date {
   return new Date(`${noteDate}T12:00:00.000Z`);
 }
 
