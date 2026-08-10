@@ -306,10 +306,70 @@ describe("buildMapGoals", () => {
       mode: "manual_amount",
       amount: 48000,
       claimAgeLabel: "67",
+      claimAgeYears: 67,
+      claimAgeMode: "years",
       // Null in manual mode — `amount` IS the annual figure, and a second copy
       // of it is only somewhere for the two to drift.
       estimatedAnnual: null,
     });
+  });
+
+  // ── the claim-age editor's payload ──────────────────────────────────────
+  //
+  // `claimAgeYears` is what the inline age field HOLDS, and it must be the
+  // RESOLVED age rather than the `claimingAge` column: in `fra` and
+  // `at_retirement` modes that column is dead data the SS dialog carries forward
+  // (production holds an `fra` row with `claimingAge: 53`), so seeding the editor
+  // from it would open the field on a number the projection has never used.
+
+  it("holds the FRA-DERIVED age for an fra row, NOT its stale claimingAge column", () => {
+    // Dan born 1972 → FRA 67. The row's own `claimingAge: 53` is exactly the
+    // dead-data shape production carries, and 53 ≠ 67 so this discriminates.
+    const goals = buildMapGoals(
+      withSs([ssIncome({ claimingAgeMode: "fra", claimingAge: 53 })]),
+    );
+    const card = goals.find((g) => g.id === "milestone:client_social_security");
+    expect(card?.socialSecurity).toMatchObject({
+      claimAgeYears: 67,
+      claimAgeLabel: "67",
+      claimAgeMode: "fra",
+    });
+    // And the card sits at the resolved year, not 1972 + 53 = 2025.
+    expect(card?.year).toBe(2039);
+  });
+
+  it("holds the RETIREMENT age for an at_retirement row", () => {
+    // `CLIENT_INFO.retirementAge` is 65, and the row's own column says 67 — so a
+    // payload reading `claimingAge` would pass with 67 and be wrong.
+    const goals = buildMapGoals(
+      withSs([ssIncome({ claimingAgeMode: "at_retirement", claimingAge: 67 })]),
+    );
+    const card = goals.find((g) => g.id === "milestone:client_social_security");
+    expect(card?.socialSecurity).toMatchObject({
+      claimAgeYears: 65,
+      claimAgeLabel: "65",
+      claimAgeMode: "at_retirement",
+    });
+    expect(card?.year).toBe(2037);
+  });
+
+  // A stored NULL mode is "years" to `resolveClaimAgeMonths`, and the payload has
+  // to agree with it or the card would label a legacy row as derived.
+  it("reports an absent claim-age mode as years", () => {
+    const goals = buildMapGoals(withSs([ssIncome({ claimingAgeMode: undefined })]));
+    expect(
+      goals.find((g) => g.id === "milestone:client_social_security")?.socialSecurity,
+    ).toMatchObject({ claimAgeMode: "years", claimAgeYears: 67 });
+  });
+
+  // The one field carries the WHOLE age so the editor can round-trip a stored
+  // months value instead of zeroing it. 67y 6mo is 67.5 years; a payload of 67
+  // would make typing "67" a no-op that leaves the 6mo in place.
+  it("carries a part-year age as a FRACTION, so the editor cannot silently zero it", () => {
+    const goals = buildMapGoals(withSs([ssIncome({ claimingAge: 67, claimingAgeMonths: 6 })]));
+    expect(
+      goals.find((g) => g.id === "milestone:client_social_security")?.socialSecurity,
+    ).toMatchObject({ claimAgeYears: 67.5, claimAgeLabel: "67y 6mo" });
   });
 
   it("carries the MONTHLY pia as the editable figure in pia mode, with the annual it implies", () => {
@@ -395,6 +455,31 @@ describe("buildMapGoals", () => {
     );
     expect(pia.find((g) => g.id === "milestone:client_social_security")?.detail).toMatch(
       /^age 67 · \$2,800\/mo · est\. \$\d[\d,]*\/yr$/,
+    );
+  });
+
+  // An inline age edit CONVERTS a derived row to an explicit age, which stops it
+  // tracking future DOB / retirement-age changes. Naming the mode is what keeps
+  // that from being a blind choice — and the read-only Organizer, which renders
+  // this string instead of the editors, gains the same fact.
+  it("names a DERIVED claim-age mode in the detail line, and stays quiet for years", () => {
+    const fra = buildMapGoals(withSs([ssIncome({ claimingAgeMode: "fra" })]));
+    expect(fra.find((g) => g.id === "milestone:client_social_security")?.detail).toBe(
+      "age 67 (FRA) · $48,000/yr",
+    );
+
+    const atRetirement = buildMapGoals(
+      withSs([ssIncome({ claimingAgeMode: "at_retirement" })]),
+    );
+    expect(
+      atRetirement.find((g) => g.id === "milestone:client_social_security")?.detail,
+    ).toBe("age 65 (at retirement) · $48,000/yr");
+
+    // No hint in `years` mode — the age IS the stored choice, so a parenthetical
+    // would be noise on every card that has one.
+    const years = buildMapGoals(withSs([ssIncome({ claimingAgeMode: "years" })]));
+    expect(years.find((g) => g.id === "milestone:client_social_security")?.detail).toBe(
+      "age 67 · $48,000/yr",
     );
   });
 

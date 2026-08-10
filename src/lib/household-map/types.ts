@@ -482,4 +482,27 @@ export interface BoardCallbacks {
    * editor reverts. Absent = the board renders the benefit as plain text.
    */
   onSaveSocialSecurity?: (ss: GoalSocialSecurity, next: number) => Promise<boolean>;
+  /**
+   * Persist an inline Social Security CLAIM AGE edit from a Goals board milestone
+   * card.
+   *
+   * A SEPARATE callback from `onSaveSocialSecurity` rather than a discriminated
+   * one: the two write different columns and the card offers them as two fields,
+   * so a shared entry point would need a stringly-typed "which field" argument
+   * that every call site could get wrong silently. Gated independently too — a
+   * board handed one writer and not the other shows exactly the field it can save.
+   *
+   * `ageYears` is an age in YEARS and may be fractional — 67.5 is 67y 6mo, the
+   * whole age in one number so a stored months value cannot be zeroed by
+   * omission. `ssClaimAgePatch` owns the split into columns, the clamp to 62-70,
+   * and the conversion of a derived-mode row to an explicit age.
+   *
+   * Saving this MOVES the card: the claim age sets `ssClaim.firstBenefitYear`,
+   * which is the goal's `year`, so `buildMapGoals` re-sorts and the card lands
+   * somewhere else on the spine. Resolves false on failure so the editor reverts.
+   */
+  onSaveSocialSecurityClaimAge?: (
+    ss: GoalSocialSecurity,
+    ageYears: number,
+  ) => Promise<boolean>;
 }

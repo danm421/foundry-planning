@@ -32,6 +32,8 @@ import {
   buildFlowScenarioDesiredFields,
   flowAmountPatch,
   ssBenefitPatch,
+  ssClaimAgePatch,
+  type FlowPatch,
 } from "@/lib/inline-edit/flow-write";
 
 const BOARDS = [
@@ -273,13 +275,16 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
   }
 
   /**
-   * Persist an inline Social Security benefit edit from the Goals board.
+   * Persist ANY inline Social Security edit from the Goals board — the shared
+   * half of the two savers below, which differ only in the patch they build.
    *
    * Shaped like `handleSaveFlowAmount` — narrow base PUT, whole-row scenario
-   * payload. Which COLUMN the patch targets is `ssBenefitPatch`'s call, not
-   * this handler's: it is a domain rule about how the engine pays a benefit, it
-   * fails silently when wrong, and it belongs beside the other write payloads in
-   * `lib/inline-edit/flow-write.ts` where it can be tested without a browser.
+   * payload. WHICH COLUMNS a patch targets is `lib/inline-edit/flow-write.ts`'s
+   * call, not this handler's: both SS write rules (which column holds the
+   * benefit, and what a typed age means for a derived-mode row) are domain rules
+   * that fail SILENTLY when wrong — the PUT returns 200 and the projection does
+   * not move — so they belong where a plain vitest test can reach them instead of
+   * only a jsdom one.
    *
    * THE FIELD SET comes from `ssScenarioFields`, not `flowScenarioFields` — SS
    * rows are absent from the latter by construction. Refusing on a miss is the
@@ -288,15 +293,11 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
    * row (a "claim at 70" edit, most obviously), and sending nothing beats
    * sending that.
    */
-  async function handleSaveSocialSecurity(
-    ss: GoalSocialSecurity,
-    next: number,
-  ): Promise<boolean> {
+  async function submitSsPatch(ss: GoalSocialSecurity, patch: FlowPatch): Promise<boolean> {
     if (!canEdit) return false;
     const fields = props.ssScenarioFields[ss.incomeId];
     if (!fields) return false;
 
-    const patch = ssBenefitPatch(ss.mode, next);
     const res = await writer.submit(
       {
         op: "edit",
@@ -311,6 +312,34 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
       },
     );
     return res.ok;
+  }
+
+  /** The benefit figure, in whichever column `ss.mode` says the engine pays it
+   *  from. */
+  async function handleSaveSocialSecurity(
+    ss: GoalSocialSecurity,
+    next: number,
+  ): Promise<boolean> {
+    return submitSsPatch(ss, ssBenefitPatch(ss.mode, next));
+  }
+
+  /**
+   * The claim age — three columns, always written together, and always with
+   * `claimingAgeMode: "years"` so a `fra` / `at_retirement` row converts to the
+   * explicit age instead of ignoring the edit. See `ssClaimAgePatch`.
+   *
+   * This one MOVES the card. The claim age is what `ssClaim` derives
+   * `firstBenefitYear` from, and that is the goal's `year`, so a successful save
+   * re-places the card on the spine and `buildMapGoals` re-sorts around it. The
+   * refresh is the same one every other saver relies on — `writer.submit`
+   * revalidates the route, which rebuilds the boards server-side — so nothing
+   * here needs to know the new year.
+   */
+  async function handleSaveSocialSecurityClaimAge(
+    ss: GoalSocialSecurity,
+    ageYears: number,
+  ): Promise<boolean> {
+    return submitSsPatch(ss, ssClaimAgePatch(ageYears));
   }
 
   // ── BoardCallbacks — card-click and add-button routing ──────────────────
@@ -462,6 +491,7 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
           onEditGoalExpense={handleEditGoalExpense}
           onSaveLifeExpectancy={handleSaveLifeExpectancy}
           onSaveSocialSecurity={handleSaveSocialSecurity}
+          onSaveSocialSecurityClaimAge={handleSaveSocialSecurityClaimAge}
           onAddGoal={handleAddGoal}
         />
       )}

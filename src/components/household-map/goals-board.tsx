@@ -7,6 +7,7 @@ import { ageForYear } from "@/lib/age-year";
 // with, so the editable line and the static one it replaces cannot render the
 // same figure two ways.
 import { formatCurrency } from "@/lib/cell-drill/format";
+import { claimAgeModeHint } from "@/lib/household-map/goals";
 import type {
   GoalKind,
   GoalLifeExpectancy,
@@ -142,6 +143,7 @@ export default function GoalsBoard({
   onEditGoalExpense,
   onSaveLifeExpectancy,
   onSaveSocialSecurity,
+  onSaveSocialSecurityClaimAge,
   onAddGoal,
 }: GoalsBoardProps & BoardCallbacks) {
   /** Ages at a given year, derived from each person's `birthYear` — never
@@ -219,26 +221,54 @@ export default function GoalsBoard({
   }
 
   /**
-   * The Social Security card's detail line, with the benefit as a click-to-edit
-   * field.
+   * The Social Security card's detail line, with BOTH the claim age and the
+   * benefit as click-to-edit fields.
    *
-   * WHICH figure is editable follows `ss.mode`, and that is the whole design: a
-   * `manual_amount` row's benefit IS its `annualAmount`, while a `pia_at_fra`
-   * row's is DERIVED from the monthly PIA and the claim age. An annual field on a
-   * PIA row would either write a column the engine never reads or silently
-   * back-solve over an SSA-statement figure — so the PIA is what the field holds,
-   * and the annual it implies sits under it as an estimate.
+   * WHICH benefit figure is editable follows `ss.mode`, and that is the whole
+   * design: a `manual_amount` row's benefit IS its `annualAmount`, while a
+   * `pia_at_fra` row's is DERIVED from the monthly PIA and the claim age. An
+   * annual field on a PIA row would either write a column the engine never reads
+   * or silently back-solve over an SSA-statement figure — so the PIA is what the
+   * field holds, and the annual it implies sits under it as an estimate.
+   *
+   * The AGE field holds `claimAgeYears`, not the label: it is the whole age in one
+   * number (67.5 = 67y 6mo), so committing it cannot drop a stored months value,
+   * while `format` keeps read mode showing the human "67y 6mo". Saving it moves
+   * the card to a different year — the claim age is what fixes
+   * `ssClaim.firstBenefitYear`.
+   *
+   * `(FRA)` / `(at retirement)` marks an age that is DERIVED and still tracking a
+   * DOB or a retirement age. Editing it converts the row to an explicit age and
+   * ends that tracking (see `ssClaimAgePatch`), so the card has to say which it
+   * is before the click, not after.
    */
   function socialSecuritySlot(
     ss: GoalSocialSecurity,
     onSave: NonNullable<BoardCallbacks["onSaveSocialSecurity"]>,
+    onSaveClaimAge: NonNullable<BoardCallbacks["onSaveSocialSecurityClaimAge"]>,
   ): React.ReactNode {
     const firstName = firstNameFor(ss.owner);
     const pia = ss.mode === "pia_at_fra";
+    const modeHint = claimAgeModeHint(ss.claimAgeMode);
     return (
       <div className="mt-0.5 text-[10px] text-ink-3">
         <span className="inline-flex items-center gap-1 align-middle">
-          age {ss.claimAgeLabel} ·
+          age
+          <InlineAmount
+            mode="plain"
+            amount={ss.claimAgeYears}
+            // Read mode shows the label ("67", "67y 6mo"); the open input shows
+            // the raw 67.5. Without this a part-year age would render as "67.5"
+            // on the card, which is not how anyone says an age.
+            format={() => ss.claimAgeLabel}
+            noun="claim age"
+            label={firstName ?? ss.owner}
+            onSave={(next) => onSaveClaimAge(ss, next)}
+            wrapperClassName="relative w-[46px]"
+            className={EDITOR_CLASS}
+          />
+          {modeHint ? <span className="text-ink-4">({modeHint})</span> : null}
+          <span>·</span>
           <InlineAmount
             amount={ss.amount}
             noun={pia ? "monthly PIA" : "annual benefit"}
@@ -272,8 +302,19 @@ export default function GoalsBoard({
    * No card carries both payloads, so the order of these two is arbitrary.
    */
   function detailSlotFor(g: MapGoal): React.ReactNode | undefined {
-    if (g.socialSecurity && canEdit && onSaveSocialSecurity) {
-      return socialSecuritySlot(g.socialSecurity, onSaveSocialSecurity);
+    // BOTH SS writers required, not either. The two fields on an SS card are one
+    // editable unit, and the fallback is not a degraded card — `detail` carries
+    // the claim age, its mode and the benefit as static text, so a board handed
+    // only one writer loses no FACT by rendering that instead. Offering the one
+    // savable field would mean a second render path (and a second "PIA not set"
+    // rule) for a configuration nothing in the app has: `household-map-view`
+    // passes both, the portal Organizer passes neither.
+    if (g.socialSecurity && canEdit && onSaveSocialSecurity && onSaveSocialSecurityClaimAge) {
+      return socialSecuritySlot(
+        g.socialSecurity,
+        onSaveSocialSecurity,
+        onSaveSocialSecurityClaimAge,
+      );
     }
     if (g.lifeExpectancy && canEdit && onSaveLifeExpectancy) {
       return lifeExpectancySlot(g.lifeExpectancy, onSaveLifeExpectancy, g.title);

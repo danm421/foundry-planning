@@ -5,6 +5,7 @@ import {
   flowAmountPatch,
   flowYearPatch,
   ssBenefitPatch,
+  ssClaimAgePatch,
 } from "../flow-write";
 import type { FlowPatch } from "../flow-write";
 import type { Expense, Income, SavingsRule } from "@/engine/types";
@@ -241,5 +242,99 @@ describe("ssBenefitPatch", () => {
   it("keeps the magnitude and drops the sign, as both columns are unsigned", () => {
     expect(ssBenefitPatch("manual_amount", -52000)).toEqual({ annualAmount: "52000" });
     expect(ssBenefitPatch("pia_at_fra", -3200)).toEqual({ piaMonthly: "3200" });
+  });
+});
+
+// The claim age has THREE columns behind a resolver, and two of the three modes
+// never read the one a naive patch would write. Every assertion here is
+// `toEqual` on the whole object rather than `toMatchObject`, because the failure
+// this guards is a patch carrying an EXTRA key (or missing the mode) — which a
+// partial match would pass and a 200-OK PUT would then hide.
+describe("ssClaimAgePatch", () => {
+  it("writes all three claim-age columns together for a whole-year age", () => {
+    expect(ssClaimAgePatch(70)).toEqual({
+      claimingAge: 70,
+      claimingAgeMonths: 0,
+      claimingAgeMode: "years",
+    });
+  });
+
+  // THE PRODUCT DECISION, pinned. There is ONE emission path no matter what mode
+  // the row stored: a typed age always converts the row to "years". Writing
+  // `claimingAge` alone against an `fra` / `at_retirement` row returns 200 and
+  // moves nothing, because `resolveClaimAgeMonths` never reads that column in
+  // either mode — the same silent-failure class `ssBenefitPatch` exists for.
+  it("always carries claimingAgeMode:'years', so a derived-mode row converts", () => {
+    for (const typed of [62, 66, 67, 70]) {
+      expect(ssClaimAgePatch(typed).claimingAgeMode).toBe("years");
+    }
+  });
+
+  // DISCRIMINATING: the age patch and the benefit patch travel the same PUT and
+  // the same scenario payload, so an age edit that also carried an amount column
+  // would overwrite a benefit nobody touched. Asserted as an exact key set
+  // rather than by omission — `toHaveBeenCalledWith` drops undefined keys, so
+  // "did not send annualAmount" has to be a positive claim about the object.
+  it("carries NEITHER benefit column — an age edit must not touch the amount", () => {
+    const patch = ssClaimAgePatch(67);
+    expect(Object.keys(patch).sort()).toEqual([
+      "claimingAge",
+      "claimingAgeMode",
+      "claimingAgeMonths",
+    ]);
+    expect(patch).not.toHaveProperty("annualAmount");
+    expect(patch).not.toHaveProperty("piaMonthly");
+  });
+
+  // A single field holds the WHOLE age, fractional part included, so an inline
+  // edit cannot silently zero a stored 6mo. `claimingAgeMonths` is 0 on every
+  // Social Security row in production, which is why this is one field and not
+  // two — but "nobody uses it" is not "it may be destroyed".
+  it("splits a fractional age into years + months", () => {
+    expect(ssClaimAgePatch(67.5)).toEqual({
+      claimingAge: 67,
+      claimingAgeMonths: 6,
+      claimingAgeMode: "years",
+    });
+    expect(ssClaimAgePatch(62.25)).toEqual({
+      claimingAge: 62,
+      claimingAgeMonths: 3,
+      claimingAgeMode: "years",
+    });
+  });
+
+  // Clamped to the range `SocialSecurityDialog`'s own year picker offers (62-70),
+  // which is the range SSA actually permits. Same posture as `flowAmountPatch`'s
+  // `Math.abs`: coerce a typed value into the domain rather than persist an age
+  // the projection would happily pay a benefit at. Production already holds one
+  // row with `claimingAge: 53`, so out-of-range values are real, not theoretical.
+  it("clamps below 62 and above 70", () => {
+    expect(ssClaimAgePatch(45)).toEqual({
+      claimingAge: 62,
+      claimingAgeMonths: 0,
+      claimingAgeMode: "years",
+    });
+    expect(ssClaimAgePatch(0)).toEqual({
+      claimingAge: 62,
+      claimingAgeMonths: 0,
+      claimingAgeMode: "years",
+    });
+    expect(ssClaimAgePatch(-67)).toEqual({
+      claimingAge: 62,
+      claimingAgeMonths: 0,
+      claimingAgeMode: "years",
+    });
+    expect(ssClaimAgePatch(200)).toEqual({
+      claimingAge: 70,
+      claimingAgeMonths: 0,
+      claimingAgeMode: "years",
+    });
+    // The clamp is on the TOTAL months, not the year alone — 70y 6mo is over the
+    // ceiling even though its year part is in range.
+    expect(ssClaimAgePatch(70.5)).toEqual({
+      claimingAge: 70,
+      claimingAgeMonths: 0,
+      claimingAgeMode: "years",
+    });
   });
 });

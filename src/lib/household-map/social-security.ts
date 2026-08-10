@@ -31,12 +31,37 @@ function ageLabel(claimAgeMonths: number): string {
   return months === 0 ? `${years}` : `${years}y ${months}mo`;
 }
 
+/**
+ * Which of the three claim-age modes a row stores, with a stored NULL reported as
+ * `"years"` — the same reading `resolveClaimAgeMonths` gives it, and it has to
+ * stay that way or a legacy row would be labelled derived on one surface and
+ * explicit on the other.
+ */
+export type SsClaimAgeMode = NonNullable<Income["claimingAgeMode"]>;
+
 /** When an SS row's benefit starts, resolved once for every surface that says so. */
 export interface SsClaim {
   /** The effective claim age in total months, per `resolveClaimAgeMonths`. */
   claimAgeMonths: number;
   /** That age as a label — "70", "67y 6mo". */
   ageLabel: string;
+  /**
+   * The same age in YEARS, fractional when the claim carries months (67y 6mo =
+   * 67.5). What an inline age editor holds: one field for the whole age, so a
+   * years-only edit cannot silently zero a stored months value. Derived here
+   * beside `ageLabel` so the number a field opens on and the string it displays
+   * cannot describe two different claims.
+   */
+  ageYears: number;
+  /**
+   * The mode the age was resolved FROM. Carried because it is what an edit has to
+   * act on: `resolveClaimAgeMonths` reads `claimingAge` in `years` mode only, so
+   * a surface offering to change the age needs to know whether doing so means
+   * updating a column or converting the row off a derived mode. Also what lets a
+   * card say "age 67 (FRA)" rather than presenting a derived age as a choice
+   * someone made.
+   */
+  mode: SsClaimAgeMode;
   /**
    * The first calendar year the projection pays the benefit. The engine's own
    * rule, restated: `hasClaimed` is `(year - birthYear) * 12 >= claimAgeMonths`,
@@ -67,6 +92,11 @@ export function ssClaim(row: Income, client: ClientInfo): SsClaim | null {
   return {
     claimAgeMonths,
     ageLabel: ageLabel(claimAgeMonths),
+    ageYears: claimAgeMonths / 12,
+    // `?? "years"` mirrors `resolveClaimAgeMonths`'s own first line. Do not
+    // rewrite this as a lookup that leaves NULL unmapped: the two must agree
+    // about a legacy row or the age shown and the age paid diverge.
+    mode: row.claimingAgeMode ?? "years",
     firstBenefitYear: birthYear + Math.ceil(claimAgeMonths / 12),
   };
 }

@@ -2,7 +2,12 @@
 import { isGoalExpense } from "@/lib/goals";
 import { coerceYearRef, resolveMilestone, type ClientMilestones } from "@/lib/milestones";
 import { ASSUMED_LIFE_EXPECTANCY } from "@/lib/plan-horizon";
-import { isSocialSecurityIncome, ssClaim, ssEstimatedAnnual } from "./social-security";
+import {
+  isSocialSecurityIncome,
+  ssClaim,
+  ssEstimatedAnnual,
+  type SsClaimAgeMode,
+} from "./social-security";
 import type { ClientInfo, Income } from "@/engine/types";
 
 export type GoalKind =
@@ -65,6 +70,27 @@ export interface GoalSocialSecurity {
    *  `ssClaim` call that fixed the card's YEAR, so the age and the year on a card
    *  cannot describe two different claims. */
   claimAgeLabel: string;
+  /**
+   * The same claim age in YEARS, fractional when it carries months (67y 6mo =
+   * 67.5) — the figure the inline age editor holds.
+   *
+   * The RESOLVED age, never the `claimingAge` column. In `fra` and
+   * `at_retirement` modes that column is dead data the SS dialog carries forward
+   * (production holds an `fra` row whose column reads 53 against a derived 67),
+   * so seeding the editor from it would open the field on a number the projection
+   * has never used and make a no-op edit look like a change.
+   */
+  claimAgeYears: number;
+  /**
+   * Which mode the age came from, so the card can say "age 67 (FRA)" instead of
+   * presenting a derived age as somebody's decision — and so an edit is known to
+   * be a CONVERSION rather than a column update.
+   *
+   * An inline age edit always writes `claimingAgeMode: "years"` (see
+   * `ssClaimAgePatch`): `resolveClaimAgeMonths` never reads `claimingAge` in the
+   * other two modes, so writing the age alone returns 200 and moves nothing.
+   */
+  claimAgeMode: SsClaimAgeMode;
   /**
    * The first-year benefit the PIA implies at this claim age — `pia_at_fra` only,
    * and null when the PIA is unset. Null in `manual_amount` too, where `amount`
@@ -355,6 +381,25 @@ function benefitLabel(mode: GoalSocialSecurity["mode"], amount: number): string 
 }
 
 /**
+ * "age 67 (FRA)" / "age 65 (at retirement)" / "age 67".
+ *
+ * The parenthetical says the age was DERIVED and is therefore still moving: an
+ * `fra` age follows the DOB, an `at_retirement` age follows the retirement age.
+ * It matters because editing the age inline converts the row to an explicit one
+ * and stops that tracking — a choice nobody should make without seeing what they
+ * are choosing against. `years` gets no hint; there the age IS the stored choice
+ * and a parenthetical on every card would be noise.
+ *
+ * Shared by the static `detail` line and the board's editable slot so the
+ * read-only Organizer and the advisor's Map name the mode identically.
+ */
+export function claimAgeModeHint(mode: SsClaimAgeMode): string | null {
+  if (mode === "fra") return "FRA";
+  if (mode === "at_retirement") return "at retirement";
+  return null;
+}
+
+/**
  * One Social Security card per principal who has an SS income row, placed at the
  * first year the projection actually pays the benefit.
  *
@@ -405,8 +450,9 @@ function socialSecurityMilestones(input: BuildMapGoalsInput): MapGoal[] {
     // The read-only fallback line, for a board rendered without a writer (the
     // client portal's Organizer). It has to carry the same three facts the
     // editable slot does, or a viewer loses the number the card exists for.
+    const modeHint = claimAgeModeHint(claim.mode);
     const detail = [
-      `age ${claim.ageLabel}`,
+      modeHint ? `age ${claim.ageLabel} (${modeHint})` : `age ${claim.ageLabel}`,
       mode === "pia_at_fra" && amount <= 0 ? "PIA not set" : benefitLabel(mode, amount),
       mode === "pia_at_fra" && estimatedAnnual != null
         ? `est. ${currency.format(estimatedAnnual)}/yr`
@@ -431,6 +477,8 @@ function socialSecurityMilestones(input: BuildMapGoalsInput): MapGoal[] {
         mode,
         amount,
         claimAgeLabel: claim.ageLabel,
+        claimAgeYears: claim.ageYears,
+        claimAgeMode: claim.mode,
         estimatedAnnual,
       },
     };

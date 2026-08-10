@@ -1200,6 +1200,8 @@ describe("HouseholdMapView — inline Social Security writes", () => {
       mode: "manual_amount" as const,
       amount: 48000,
       claimAgeLabel: "70",
+      claimAgeYears: 70,
+      claimAgeMode: "years" as const,
       estimatedAnnual: null,
       ...over,
     };
@@ -1222,7 +1224,7 @@ describe("HouseholdMapView — inline Social Security writes", () => {
     });
   }
 
-  async function editBenefit(name: string, noun: string, next: string) {
+  async function editSsField(name: string, noun: string, next: string) {
     fireEvent.click(screen.getByText("Goals"));
     fireEvent.click(screen.getByRole("button", { name: `Edit ${noun} for ${name}` }));
     const input = screen.getByRole("textbox", {
@@ -1236,7 +1238,7 @@ describe("HouseholdMapView — inline Social Security writes", () => {
     const fetchSpy = mockFetchOk();
     render(<HouseholdMapView {...editableSsProps()} />);
 
-    await editBenefit("Alex", "annual benefit", "52000");
+    await editSsField("Alex", "annual benefit", "52000");
 
     await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
@@ -1258,7 +1260,7 @@ describe("HouseholdMapView — inline Social Security writes", () => {
       />,
     );
 
-    await editBenefit("Alex", "monthly PIA", "3200");
+    await editSsField("Alex", "monthly PIA", "3200");
 
     await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
     const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
@@ -1273,7 +1275,7 @@ describe("HouseholdMapView — inline Social Security writes", () => {
     const fetchSpy = mockFetchOk();
     render(<HouseholdMapView {...editableSsProps()} />);
 
-    await editBenefit("Alex", "annual benefit", "52000");
+    await editSsField("Alex", "annual benefit", "52000");
 
     await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
@@ -1294,7 +1296,7 @@ describe("HouseholdMapView — inline Social Security writes", () => {
     const fetchSpy = mockFetchOk();
     render(<HouseholdMapView {...editableSsProps({ ssScenarioFields: {} })} />);
 
-    await editBenefit("Alex", "annual benefit", "52000");
+    await editSsField("Alex", "annual benefit", "52000");
 
     await vi.waitFor(() =>
       expect(
@@ -1311,7 +1313,164 @@ describe("HouseholdMapView — inline Social Security writes", () => {
     fireEvent.click(screen.getByText("Goals"));
 
     expect(screen.queryByRole("button", { name: /Edit annual benefit/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Edit claim age/ })).not.toBeInTheDocument();
     expect(screen.getByText("age 70 · $48,000/yr")).toBeInTheDocument();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  // ── the claim age ────────────────────────────────────────────────────────
+  //
+  // One case per (row state → columns written) pair. The age's emission path is
+  // deliberately the SAME for all three claim-age modes — that is the product
+  // decision, not an oversight — so what these pin is that no row state diverts
+  // it, and that the age write never carries a benefit column. Every body is
+  // asserted with `toEqual` on the whole object: an EXTRA key is exactly the
+  // failure here, and it would return 200 while overwriting a figure nobody
+  // touched.
+
+  it("base mode PUTs all three claim-age columns and NEITHER benefit column", async () => {
+    const fetchSpy = mockFetchOk();
+    render(<HouseholdMapView {...editableSsProps()} />);
+
+    await editSsField("Alex", "claim age", "68");
+
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/clients/client-1/incomes/ss-client");
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body as string)).toEqual({
+      claimingAge: 68,
+      claimingAgeMonths: 0,
+      claimingAgeMode: "years",
+    });
+  });
+
+  // DISCRIMINATING against the benefit saver, which shares this handler's shape
+  // and its route. A `pia_at_fra` row's AGE write must look identical to a
+  // manual row's — the mode decides where the BENEFIT lives, not the age — so a
+  // handler that leaked `ss.mode` into the age patch would put `piaMonthly` here.
+  it("writes the same three columns for a pia_at_fra row, with no piaMonthly", async () => {
+    const fetchSpy = mockFetchOk();
+    render(
+      <HouseholdMapView
+        {...editableSsProps({
+          goals: [ssGoal("client", { mode: "pia_at_fra", amount: 2800, estimatedAnnual: 41664 })],
+        })}
+      />,
+    );
+
+    await editSsField("Alex", "claim age", "68");
+
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      claimingAge: 68,
+      claimingAgeMonths: 0,
+      claimingAgeMode: "years",
+    });
+  });
+
+  // THE PRODUCT DECISION at the write boundary. `resolveClaimAgeMonths` never
+  // reads `claimingAge` in `fra` mode — it derives the age from the DOB — so a
+  // payload without `claimingAgeMode: "years"` would return 200 and leave the
+  // claim age exactly where it was. A third of production's SS rows are in a
+  // derived mode, so this is the common case, not the edge.
+  it("converts a DERIVED-mode row to an explicit age rather than writing a dead column", async () => {
+    const fetchSpy = mockFetchOk();
+    render(
+      <HouseholdMapView
+        {...editableSsProps({
+          goals: [
+            ssGoal("client", { claimAgeMode: "fra", claimAgeLabel: "67", claimAgeYears: 67 }),
+          ],
+        })}
+      />,
+    );
+
+    await editSsField("Alex", "claim age", "70");
+
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body).toEqual({
+      claimingAge: 70,
+      claimingAgeMonths: 0,
+      claimingAgeMode: "years",
+    });
+    // Said positively, not by omission: the row must not stay on "fra".
+    expect(body.claimingAgeMode).not.toBe("fra");
+  });
+
+  // The whole age in one field, so a typed fraction lands in the months column
+  // instead of being rounded away.
+  it("splits a typed part-year age across the year and month columns", async () => {
+    const fetchSpy = mockFetchOk();
+    render(<HouseholdMapView {...editableSsProps()} />);
+
+    await editSsField("Alex", "claim age", "67.5");
+
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      claimingAge: 67,
+      claimingAgeMonths: 6,
+      claimingAgeMode: "years",
+    });
+  });
+
+  // Proves the handler routes through `ssClaimAgePatch` rather than forwarding the
+  // typed number: an unclamped 45 would be persisted, and the projection would
+  // pay a Social Security benefit at 45.
+  it("clamps a typed age into the range SSA permits", async () => {
+    const fetchSpy = mockFetchOk();
+    render(<HouseholdMapView {...editableSsProps()} />);
+
+    await editSsField("Alex", "claim age", "45");
+
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      claimingAge: 62,
+      claimingAgeMonths: 0,
+      claimingAgeMode: "years",
+    });
+  });
+
+  // Same wholesale-replace hazard as the benefit write: the payload has to carry
+  // every override this scenario already had. Here the one at risk is the
+  // BENEFIT — a narrow `{claimingAge}` diff would drop the scenario's
+  // `annualAmount` and revert it to base.
+  it("scenario mode POSTs the whole field set, preserving the benefit override", async () => {
+    nav.scenario = "sc-1";
+    const fetchSpy = mockFetchOk();
+    render(<HouseholdMapView {...editableSsProps()} />);
+
+    await editSsField("Alex", "claim age", "68");
+
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/clients/client-1/scenarios/sc-1/changes");
+    const body = JSON.parse(init.body as string);
+    expect(body).toMatchObject({ op: "edit", targetKind: "income", targetId: "ss-client" });
+    expect(body.desiredFields.claimingAge).toBe(68);
+    expect(body.desiredFields.claimingAgeMonths).toBe(0);
+    expect(body.desiredFields.claimingAgeMode).toBe("years");
+    // The override the age write must NOT delete.
+    expect(body.desiredFields.annualAmount).toBe(48000);
+  });
+
+  it("refuses an age write when the row's scenario field set is missing", async () => {
+    nav.scenario = "sc-1";
+    const fetchSpy = mockFetchOk();
+    render(<HouseholdMapView {...editableSsProps({ ssScenarioFields: {} })} />);
+
+    await editSsField("Alex", "claim age", "68");
+
+    await vi.waitFor(() =>
+      expect(screen.getByRole("button", { name: "Edit claim age for Alex" })).toHaveTextContent(
+        "70",
+      ),
+    );
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

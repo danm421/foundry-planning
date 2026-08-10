@@ -2,6 +2,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, within, fireEvent } from "@testing-library/react";
 import GoalsBoard from "../goals-board";
+import { claimAgeModeHint } from "@/lib/household-map/goals";
 import type { GoalKind, MapGoal } from "@/lib/household-map/goals";
 import { categoryDefaultRates as buildCategoryDefaultRates } from "@/lib/investments/category-default-rates";
 import type { HouseholdMapProps, MapPerson } from "@/lib/household-map/types";
@@ -471,9 +472,15 @@ describe("GoalsBoard — inline Social Security editing", () => {
       mode: "manual_amount" as const,
       amount: 48000,
       claimAgeLabel: "67",
+      claimAgeYears: 67,
+      claimAgeMode: "years" as const,
       estimatedAnnual: null,
       ...over,
     };
+    const ageHint = claimAgeModeHint(socialSecurity.claimAgeMode);
+    const agePart = ageHint
+      ? `age ${socialSecurity.claimAgeLabel} (${ageHint})`
+      : `age ${socialSecurity.claimAgeLabel}`;
     return goal({
       id: CARD_ID[owner],
       kind: "social_security",
@@ -483,8 +490,8 @@ describe("GoalsBoard — inline Social Security editing", () => {
       // fallbacks below assert against what production would render.
       detail:
         socialSecurity.mode === "pia_at_fra"
-          ? `age ${socialSecurity.claimAgeLabel} · $${socialSecurity.amount.toLocaleString()}/mo`
-          : `age ${socialSecurity.claimAgeLabel} · $${socialSecurity.amount.toLocaleString()}/yr`,
+          ? `${agePart} · $${socialSecurity.amount.toLocaleString()}/mo`
+          : `${agePart} · $${socialSecurity.amount.toLocaleString()}/yr`,
       year: 2047,
       socialSecurity,
     });
@@ -492,15 +499,131 @@ describe("GoalsBoard — inline Social Security editing", () => {
 
   const writer = () => vi.fn().mockResolvedValue(true);
 
+  /** Both SS writers, which the slot requires together — see `detailSlotFor`. */
+  const ssWriters = () => ({
+    onSaveSocialSecurity: writer(),
+    onSaveSocialSecurityClaimAge: writer(),
+  });
+
   it("renders the annual benefit as a click-to-edit field in manual mode", () => {
-    render(
-      <GoalsBoard {...baseProps({ goals: [ssGoal("client")] })} onSaveSocialSecurity={writer()} />,
-    );
+    render(<GoalsBoard {...baseProps({ goals: [ssGoal("client")] })} {...ssWriters()} />);
 
     const trigger = screen.getByRole("button", { name: "Edit annual benefit for Alex" });
     expect(trigger).toHaveTextContent("$48,000");
     fireEvent.click(trigger);
     expect(screen.getByRole("textbox", { name: "Annual benefit for Alex" })).toBeInTheDocument();
+  });
+
+  // ── the claim age ────────────────────────────────────────────────────────
+  //
+  // The second editable figure on the card, and the one that MOVES it: the claim
+  // age is what `ssClaim` derives `firstBenefitYear` from, so a saved age lands
+  // the card at a different year on the spine. What columns the save writes is
+  // `ssClaimAgePatch`'s job (see `lib/inline-edit/__tests__/flow-write.test.ts`);
+  // what this half owes is a field that reads back the resolved age and hands the
+  // typed one to the right writer.
+
+  it("renders the claim age as its own click-to-edit field", () => {
+    render(<GoalsBoard {...baseProps({ goals: [ssGoal("client")] })} {...ssWriters()} />);
+
+    const trigger = screen.getByRole("button", { name: "Edit claim age for Alex" });
+    expect(trigger).toHaveTextContent("67");
+    fireEvent.click(trigger);
+    expect(screen.getByRole("textbox", { name: "Claim age for Alex" })).toBeInTheDocument();
+  });
+
+  // DISCRIMINATING: the age and the benefit are two fields on ONE card writing two
+  // different column sets. If the age field were wired to the benefit writer the
+  // typed 68 would be persisted as a $68 annual benefit — a 200 OK that destroys
+  // the number. So this asserts the age writer got the call AND the benefit writer
+  // got none.
+  it("sends a typed age to the claim-age writer and NOT to the benefit writer", async () => {
+    const writers = ssWriters();
+    const clientGoal = ssGoal("client");
+    render(<GoalsBoard {...baseProps({ goals: [clientGoal] })} {...writers} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit claim age for Alex" }));
+    const input = screen.getByRole("textbox", { name: "Claim age for Alex" });
+    fireEvent.change(input, { target: { value: "68" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await vi.waitFor(() =>
+      expect(writers.onSaveSocialSecurityClaimAge).toHaveBeenCalledWith(
+        clientGoal.socialSecurity,
+        68,
+      ),
+    );
+    expect(writers.onSaveSocialSecurity).not.toHaveBeenCalled();
+  });
+
+  // Each card's OWN payload, same rule as the benefit editor: the write site
+  // resolves the income row from it, so a crossed payload edits the wrong spouse.
+  it("each card's age field saves its own payload", async () => {
+    const writers = ssWriters();
+    const spouseGoal = ssGoal("spouse", { claimAgeLabel: "70", claimAgeYears: 70 });
+    render(
+      <GoalsBoard {...baseProps({ goals: [ssGoal("client"), spouseGoal] })} {...writers} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit claim age for Jordan" }));
+    const input = screen.getByRole("textbox", { name: "Claim age for Jordan" });
+    fireEvent.change(input, { target: { value: "66" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await vi.waitFor(() =>
+      expect(writers.onSaveSocialSecurityClaimAge).toHaveBeenCalledWith(
+        spouseGoal.socialSecurity,
+        66,
+      ),
+    );
+    expect(writers.onSaveSocialSecurityClaimAge).toHaveBeenCalledTimes(1);
+  });
+
+  // The whole reason the field holds `claimAgeYears` (67.5) and not the label:
+  // read mode has to say "67y 6mo" like a human, while the OPEN input must hold
+  // the fractional age so committing it round-trips the months instead of
+  // dropping them. If the field opened on "67", typing 67 would be a no-op that
+  // silently left the 6mo in place.
+  it("shows a part-year age as a label but opens the field on the fraction", () => {
+    render(
+      <GoalsBoard
+        {...baseProps({
+          goals: [ssGoal("client", { claimAgeLabel: "67y 6mo", claimAgeYears: 67.5 })],
+        })}
+        {...ssWriters()}
+      />,
+    );
+
+    const trigger = screen.getByRole("button", { name: "Edit claim age for Alex" });
+    expect(trigger).toHaveTextContent("67y 6mo");
+    fireEvent.click(trigger);
+    expect(screen.getByRole("textbox", { name: "Claim age for Alex" })).toHaveValue("67.5");
+  });
+
+  // An `fra` / `at_retirement` age is DERIVED and still tracking a DOB or a
+  // retirement age; editing it converts the row to an explicit age and ends that
+  // tracking. The card has to say so before the click.
+  it("marks a derived claim age with its mode, and leaves an explicit one unmarked", () => {
+    const { unmount } = render(
+      <GoalsBoard
+        {...baseProps({ goals: [ssGoal("client", { claimAgeMode: "fra" })] })}
+        {...ssWriters()}
+      />,
+    );
+    expect(screen.getByText("(FRA)")).toBeInTheDocument();
+    unmount();
+
+    const atRetirement = render(
+      <GoalsBoard
+        {...baseProps({ goals: [ssGoal("client", { claimAgeMode: "at_retirement" })] })}
+        {...ssWriters()}
+      />,
+    );
+    expect(screen.getByText("(at retirement)")).toBeInTheDocument();
+    atRetirement.unmount();
+
+    render(<GoalsBoard {...baseProps({ goals: [ssGoal("client")] })} {...ssWriters()} />);
+    expect(screen.queryByText(/\(FRA\)|\(at retirement\)/)).not.toBeInTheDocument();
   });
 
   // DISCRIMINATING: the two modes edit two DIFFERENT columns, and the accessible
@@ -512,7 +635,7 @@ describe("GoalsBoard — inline Social Security editing", () => {
         {...baseProps({
           goals: [ssGoal("client", { mode: "pia_at_fra", amount: 2800, estimatedAnnual: 41664 })],
         })}
-        onSaveSocialSecurity={writer()}
+        {...ssWriters()}
       />,
     );
 
@@ -531,9 +654,13 @@ describe("GoalsBoard — inline Social Security editing", () => {
     render(
       <GoalsBoard
         {...baseProps({ goals: [ssGoal("client", { mode: "pia_at_fra", amount: 0 })] })}
-        onSaveSocialSecurity={writer()}
+        {...ssWriters()}
       />,
     );
+    // Both writers, so the EDITOR is what's on screen — with one writer the card
+    // would fall back to its static detail and this assertion would pass without
+    // ever reaching the estimate line.
+    expect(screen.getByRole("button", { name: "Edit monthly PIA for Alex" })).toBeInTheDocument();
     expect(screen.queryByText(/est\./)).not.toBeInTheDocument();
   });
 
@@ -541,14 +668,15 @@ describe("GoalsBoard — inline Social Security editing", () => {
   // another. SS milestones carry `expenseId: null`, so `clickHandlerFor` returns
   // undefined and the card renders as a div.
   it("renders the card as a div, so the editor's button can legally live inside it", () => {
-    render(
-      <GoalsBoard {...baseProps({ goals: [ssGoal("client")] })} onSaveSocialSecurity={writer()} />,
-    );
+    render(<GoalsBoard {...baseProps({ goals: [ssGoal("client")] })} {...ssWriters()} />);
 
     const card = screen.getByTestId(`goal-card-left-${CARD_ID.client}`);
     expect(card.tagName).toBe("DIV");
     expect(
       within(card).getByRole("button", { name: "Edit annual benefit for Alex" }),
+    ).toBeInTheDocument();
+    expect(
+      within(card).getByRole("button", { name: "Edit claim age for Alex" }),
     ).toBeInTheDocument();
   });
 
@@ -564,6 +692,7 @@ describe("GoalsBoard — inline Social Security editing", () => {
       <GoalsBoard
         {...baseProps({ goals: [clientGoal, spouseGoal] })}
         onSaveSocialSecurity={onSave}
+        onSaveSocialSecurityClaimAge={writer()}
       />,
     );
 
@@ -591,11 +720,12 @@ describe("GoalsBoard — inline Social Security editing", () => {
     render(
       <GoalsBoard
         {...baseProps({ goals: [ssGoal("client")], canEdit: false })}
-        onSaveSocialSecurity={writer()}
+        {...ssWriters()}
       />,
     );
 
     expect(screen.queryByRole("button", { name: /Edit annual benefit/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Edit claim age/ })).not.toBeInTheDocument();
     expect(screen.getByText("age 67 · $48,000/yr")).toBeInTheDocument();
   });
 
@@ -603,6 +733,33 @@ describe("GoalsBoard — inline Social Security editing", () => {
     render(<GoalsBoard {...baseProps({ goals: [ssGoal("client")] })} />);
 
     expect(screen.queryByRole("button", { name: /Edit annual benefit/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Edit claim age/ })).not.toBeInTheDocument();
+    expect(screen.getByText("age 67 · $48,000/yr")).toBeInTheDocument();
+  });
+
+  // The two SS fields are ONE editable unit: a board handed half the writers
+  // renders neither field. That loses no fact — `detail` carries the age, its
+  // mode and the benefit — and it is why there is no second render path here for
+  // a half-writable card. Asserted in both directions so neither writer can
+  // quietly become sufficient on its own.
+  it("renders neither SS field when only one of the two writers is present", () => {
+    const benefitOnly = render(
+      <GoalsBoard
+        {...baseProps({ goals: [ssGoal("client")] })}
+        onSaveSocialSecurity={writer()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /Edit annual benefit/ })).not.toBeInTheDocument();
+    expect(screen.getByText("age 67 · $48,000/yr")).toBeInTheDocument();
+    benefitOnly.unmount();
+
+    render(
+      <GoalsBoard
+        {...baseProps({ goals: [ssGoal("client")] })}
+        onSaveSocialSecurityClaimAge={writer()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /Edit claim age/ })).not.toBeInTheDocument();
     expect(screen.getByText("age 67 · $48,000/yr")).toBeInTheDocument();
   });
 
@@ -617,9 +774,10 @@ describe("GoalsBoard — inline Social Security editing", () => {
       title: "Alex retires",
       detail: "age 65",
     });
-    render(<GoalsBoard {...baseProps({ goals: [retirement] })} onSaveSocialSecurity={writer()} />);
+    render(<GoalsBoard {...baseProps({ goals: [retirement] })} {...ssWriters()} />);
 
     expect(screen.queryByRole("button", { name: /Edit annual benefit/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Edit claim age/ })).not.toBeInTheDocument();
     expect(screen.getByText("age 65")).toBeInTheDocument();
   });
 
@@ -635,12 +793,7 @@ describe("GoalsBoard — inline Social Security editing", () => {
       detail: "age 92",
       lifeExpectancy: { owner: "client", age: 92, assumed: false },
     });
-    render(
-      <GoalsBoard
-        {...baseProps({ goals: [le, ssGoal("client")] })}
-        onSaveSocialSecurity={writer()}
-      />,
-    );
+    render(<GoalsBoard {...baseProps({ goals: [le, ssGoal("client")] })} {...ssWriters()} />);
 
     expect(screen.queryByRole("button", { name: /Edit life expectancy/ })).not.toBeInTheDocument();
     expect(screen.getByText("age 92")).toBeInTheDocument();
