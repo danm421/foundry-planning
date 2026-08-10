@@ -66,6 +66,20 @@ const CORPUS: Array<{ name: string; facts: TaxReturnFacts; primaryAge: number | 
     facts: mutate(landlordSingle(), (f) => { f.income.scheduleE!.suspendedPassiveLoss = 12400; }),
     primaryAge: 41, spouseAge: null,
   },
+  {
+    // Reaches ctcPhaseout's NEAR-threshold arm (400k − 370k < the 50k window),
+    // which no other persona can: the other MFJ returns sit above the threshold.
+    name: "MFJ approaching the child-tax-credit threshold",
+    facts: mutate(highEarnerMfj(), (f) => { f.income.agi = 370000; }),
+    primaryAge: 45, spouseAge: 45,
+  },
+  {
+    // Reaches educationCredits' PARTIAL arm — inside the 160k–180k window
+    // rather than above it, which is the only arm the corpus had.
+    name: "MFJ inside the education-credit phase-out window",
+    facts: mutate(highEarnerMfj(), (f) => { f.income.agi = 170000; f.dependents17to23 = 1; }),
+    primaryAge: 45, spouseAge: 45,
+  },
 ];
 
 describe("finding completeness", () => {
