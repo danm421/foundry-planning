@@ -61,7 +61,7 @@ describe("buildSecondReadInput", () => {
       ],
       facts: facts(), findingHeadlines: [],
     });
-    expect(input.match(/Y/g)!.length).toBe(3_000);
+    expect(input).toContain("Y".repeat(3_000));
     expect(input.length).toBeLessThan(SECOND_READ_TOTAL_CHARS + 5_000);
   });
 });

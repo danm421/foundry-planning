@@ -43,20 +43,14 @@ export function buildSecondReadInput(args: {
       ? args.findingHeadlines.map((h) => `- ${h}`).join("\n")
       : "(no findings fired for this return)";
 
-  // `taxYear` is dropped from this summary, not withheld from the model — the
-  // documents themselves print their own tax year, and this field is the only
-  // reason the facts blob would need per-key surgery to stay legible.
-  const { taxYear: _taxYear, ...factsForPrompt } = args.facts;
-  void _taxYear;
-
   return [
     "=== DOCUMENTS ===",
     documents,
     "",
-    "=== FIGURES CAPTURED SO FAR ===",
-    JSON.stringify(factsForPrompt),
+    "=== FIGURES ALREADY CAPTURED ===",
+    JSON.stringify(args.facts),
     "",
-    "=== FINDINGS REPORTED SO FAR — do not repeat these ===",
+    "=== FINDINGS ALREADY REPORTED — do not repeat these ===",
     findings,
   ].join("\n");
 }
@@ -101,6 +95,11 @@ export async function generateSecondRead(args: {
   // model answered with junk" from "the model explicitly said {"items":[]}".
   const rawParsed = parseAIResponse(raw);
   const parsed = aiResponseSchema.safeParse(rawParsed);
+  // Order is load-bearing: `!parsed.success` must short-circuit FIRST.
+  // `parseAIResponse` can return a non-object (e.g. a bare primitive slipped
+  // through JSON.parse), and `"items" in 123` throws a TypeError — it's
+  // `z.object(...)` rejecting anything that isn't an object that makes the
+  // `in` check on the right safe to evaluate at all.
   if (!parsed.success || !("items" in rawParsed)) {
     return {
       generatedAt: args.generatedAt,
