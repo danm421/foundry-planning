@@ -33,12 +33,6 @@ export default function Footer(): ReactElement {
               foundryplanning.com
             </a>
             <a
-              href="https://app.foundryplanning.com"
-              className="transition-colors hover:text-ink"
-            >
-              app.foundryplanning.com
-            </a>
-            <a
               href="https://foundryplanning.com/legal/privacy"
               target="_blank"
               rel="noopener noreferrer"
