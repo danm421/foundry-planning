@@ -35,6 +35,7 @@ export async function loadPortalHousehold(clientId: string): Promise<PortalHouse
       crmHouseholdId: clients.crmHouseholdId,
       filingStatus: clients.filingStatus,
       lifeExpectancy: clients.lifeExpectancy,
+      portalEditEnabled: clients.portalEditEnabled,
     })
     .from(clients)
     .where(eq(clients.id, clientId))
@@ -62,6 +63,7 @@ export async function loadPortalHousehold(clientId: string): Promise<PortalHouse
   return {
     filingStatus: client.filingStatus,
     lifeExpectancy: client.lifeExpectancy,
+    portalEditEnabled: client.portalEditEnabled,
     primary: toContact(contacts.find((c) => c.role === "primary")),
     spouse: toContact(contacts.find((c) => c.role === "spouse")),
   };

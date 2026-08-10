@@ -43,9 +43,9 @@ export default function ProfileTrustsList({
 
   return (
     <div>
-      {error && <p className="mb-2 text-[12px] text-bad">{error}</p>}
+      {error && <p className="mb-2 text-[12px] text-crit">{error}</p>}
       <header className="flex items-center justify-between mb-3">
-        <h1 className="text-[18px] font-semibold text-ink">Trusts</h1>
+        <h2 className="text-[18px] font-semibold text-ink">Trusts</h2>
       </header>
 
       {rows.length === 0 ? (

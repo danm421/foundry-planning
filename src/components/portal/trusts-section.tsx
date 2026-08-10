@@ -31,7 +31,7 @@ export default async function TrustsSection({
   const editEnabled = client?.portalEditEnabled ?? false;
 
   return (
-    <div className="max-w-2xl p-5">
+    <div className="max-w-4xl p-5 sm:p-6">
       <ProfileTrustsList rows={rows} editEnabled={editEnabled} />
     </div>
   );

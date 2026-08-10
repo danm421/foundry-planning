@@ -8,16 +8,15 @@ import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordUpdate } from "@/lib/audit/record-helpers";
 import { loadPortalHousehold } from "@/lib/portal/load-profile-data";
+import type { HouseholdContactPatch } from "@/lib/portal/contracts";
 import { syncHouseholdNameFromContacts } from "@/lib/crm/sync-household-name";
 
 export const dynamic = "force-dynamic";
 
-type ContactPatch = {
-  firstName?: string;
-  lastName?: string;
-  email?: string;
-  phone?: string;
-};
+// Shared with the mobile client. email/phone are nullable columns and the
+// portal card lets a client clear them, so the patch carries `null` — not
+// `""` — for "no longer on file"; first/last name are NOT NULL and clear to "".
+type ContactPatch = HouseholdContactPatch;
 
 type Body = { primary?: ContactPatch; spouse?: ContactPatch };
 
@@ -41,6 +40,31 @@ export async function PUT(req: Request): Promise<Response> {
     await requireEditEnabled(clientId);
 
     const body = (await req.json().catch(() => ({}))) as Body;
+
+    // Name guards. `first_name`/`last_name` are NOT NULL and both feed
+    // `syncHouseholdNameFromContacts` below, so a blank first name would rename
+    // the household to nothing across the CRM, and a `null` from a client built
+    // against an older contract would reach Postgres as a constraint violation
+    // (a 500) instead of a clean 400.
+    for (const role of ["primary", "spouse"] as const) {
+      const patch = body[role];
+      if (!patch) continue;
+      // `null` has to be rejected before the emptiness check below, or
+      // `null.trim()` throws and the client gets exactly the 500 this guard
+      // exists to prevent.
+      if (patch.firstName === null || patch.lastName === null) {
+        return NextResponse.json(
+          { error: "Name cannot be cleared" },
+          { status: 400 },
+        );
+      }
+      if (patch.firstName !== undefined && patch.firstName.trim() === "") {
+        return NextResponse.json(
+          { error: "First name is required" },
+          { status: 400 },
+        );
+      }
+    }
 
     const [client] = await db
       .select({ firmId: clients.firmId, crmHouseholdId: clients.crmHouseholdId })
@@ -88,15 +112,27 @@ export async function PUT(req: Request): Promise<Response> {
         phone: c.phone,
       });
 
+      // Pick the writable fields rather than passing the parsed body through.
+      // `patch` is unvalidated JSON and `crm_household_contacts` also holds
+      // householdId, role, ssnLast4 and notes — handing it straight to `.set()`
+      // let a client write any column of their own contact row, including
+      // moving it into another firm's household.
+      const update: ContactPatch = {};
+      if (patch.firstName !== undefined) update.firstName = patch.firstName;
+      if (patch.lastName !== undefined) update.lastName = patch.lastName;
+      if (patch.email !== undefined) update.email = patch.email;
+      if (patch.phone !== undefined) update.phone = patch.phone;
+      if (Object.keys(update).length === 0) continue;
+
       const before = editable(existing);
-      const after = { ...before, ...patch };
+      const after = { ...before, ...update };
 
       await db
         .update(crmHouseholdContacts)
-        .set(patch)
+        .set(update)
         .where(eq(crmHouseholdContacts.id, existing.id));
 
-      if (patch.firstName !== undefined || patch.lastName !== undefined) {
+      if (update.firstName !== undefined || update.lastName !== undefined) {
         nameChanged = true;
       }
 

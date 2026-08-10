@@ -117,6 +117,70 @@ describe("PUT /api/portal/household", () => {
     expect(updateChain).toHaveBeenCalledWith(expect.objectContaining({ name: "Jonathan Smith" }));
   });
 
+  // first_name/last_name are NOT NULL and feed the derived household name, so a
+  // blank or null name has to be turned away before any write. `null` is the
+  // interesting case: it is off-contract, so only an older or hand-rolled client
+  // sends it, and it must still come back as a 400 rather than a thrown 500.
+  it.each([
+    ["a blank first name", { primary: { firstName: "   " } }],
+    ["a null first name", { primary: { firstName: null } }],
+    ["a null last name", { primary: { lastName: null } }],
+    ["a null spouse first name", { spouse: { firstName: null } }],
+  ])("400s on %s, without writing", async (_label, body) => {
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
+    requireEditEnabledMock.mockResolvedValue(undefined);
+
+    const res = await PUT(req(body));
+
+    expect(res.status).toBe(400);
+    expect(updateChain).not.toHaveBeenCalled();
+  });
+
+  // `crm_household_contacts` holds householdId/role/ssnLast4/notes alongside the
+  // four fields the portal card edits, and the body is unvalidated JSON, so the
+  // handler has to pick what it writes. Asserted with an exact object, not
+  // `objectContaining`: passing the patch through would still satisfy a partial
+  // match while smuggling every other column into the UPDATE.
+  it("writes only the four editable fields, ignoring other columns", async () => {
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
+    requireEditEnabledMock.mockResolvedValue(undefined);
+    selectChain
+      .mockResolvedValueOnce([{ firmId: "firm-1", crmHouseholdId: "h1" }])
+      .mockResolvedValueOnce([
+        { id: "contact-1", firstName: "John", lastName: "Smith", email: null, phone: null },
+      ]);
+
+    const res = await PUT(
+      req({
+        primary: {
+          phone: "555-0100",
+          householdId: "someone-elses-household",
+          role: "spouse",
+          ssnLast4: "1234",
+        },
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(updateChain).toHaveBeenCalledWith({ phone: "555-0100" });
+  });
+
+  it("writes nothing when the patch carries no editable field", async () => {
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
+    requireEditEnabledMock.mockResolvedValue(undefined);
+    selectChain
+      .mockResolvedValueOnce([{ firmId: "firm-1", crmHouseholdId: "h1" }])
+      .mockResolvedValueOnce([
+        { id: "contact-1", firstName: "John", lastName: "Smith", email: null, phone: null },
+      ]);
+
+    const res = await PUT(req({ primary: { ssnLast4: "1234" } }));
+
+    expect(res.status).toBe(200);
+    expect(updateChain).not.toHaveBeenCalled();
+    expect(recordUpdateMock).not.toHaveBeenCalled();
+  });
+
   it("does not touch the name when only contact details change", async () => {
     resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requireEditEnabledMock.mockResolvedValue(undefined);

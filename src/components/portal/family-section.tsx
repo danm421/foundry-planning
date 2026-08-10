@@ -2,7 +2,7 @@ import type { ReactElement } from "react";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, familyMembers } from "@/db/schema";
-import ProfileFamilyList from "@/components/portal/profile-family-list";
+import FamilyMemberCards from "@/components/portal/family-member-cards";
 
 interface Props {
   clientId: string;
@@ -31,8 +31,8 @@ export default async function FamilySection({
   const editEnabled = client?.portalEditEnabled ?? false;
 
   return (
-    <div className="max-w-2xl p-5">
-      <ProfileFamilyList rows={rows} editEnabled={editEnabled} />
+    <div className="max-w-4xl p-5 sm:p-6">
+      <FamilyMemberCards rows={rows} editEnabled={editEnabled} />
     </div>
   );
 }
