@@ -1,107 +1,106 @@
 import { describe, it, expect } from "vitest";
 import { taxSignals } from "../tax";
 import { signalInputFixture } from "./fixture";
-import type { Observation } from "@/lib/tax-analysis/types";
+import type { Finding } from "@/lib/tax-analysis/types";
 
-const obs = (o: Partial<Observation>): Observation => ({
-  id: "bracket-position", severity: "info", title: "T", body: "B", numbers: {}, ...o,
+// Every prose field is DELIBERATELY distinct so an assertion cannot pass by
+// matching the wrong part — "the string is on the signal somewhere" is exactly
+// the vacuity that let a label/body swap through on the tax branch.
+const finding = (f: Partial<Finding>): Finding => ({
+  id: "bracket-position",
+  severity: "info",
+  category: "brackets",
+  headline: "HEADLINE",
+  whatTheReturnShows: "SHOWS",
+  whyItMatters: "MATTERS",
+  whatToConsider: "CONSIDER",
+  lineRefs: [],
+  estimatedImpact: null,
+  numbers: {},
+  ...f,
 });
 
 describe("taxSignals", () => {
   it("emits no_return_on_file when there is no return", () => {
     const i = signalInputFixture();
-    i.tax = { observations: [], taxYear: null };
+    i.tax = { findings: [], taxYear: null };
     const out = taxSignals(i);
     expect(out.map((s) => s.id)).toEqual(["tax.no_return_on_file"]);
     expect(out[0].severity).toBe("info");
   });
 
-  it("emits nothing extra when a return exists but produced no observations", () => {
+  it("emits nothing extra when a return exists but produced no findings", () => {
     const i = signalInputFixture();
-    i.tax = { observations: [], taxYear: 2025 };
+    i.tax = { findings: [], taxYear: 2025 };
     expect(taxSignals(i)).toEqual([]);
   });
 
-  it("namespaces the observation id under tax.", () => {
+  it("namespaces the finding id under tax.", () => {
     const i = signalInputFixture();
-    i.tax = { observations: [obs({ id: "roth-headroom" })], taxYear: 2025 };
+    i.tax = { findings: [finding({ id: "roth-headroom" })], taxYear: 2025 };
     expect(taxSignals(i)[0].id).toBe("tax.roth-headroom");
   });
 
-  it("carries severity, title, body and numbers across unchanged", () => {
+  it("carries severity, headline, evidence and numbers across unchanged", () => {
     const i = signalInputFixture();
-    const o = obs({
-      id: "niit-exposure", severity: "watch", title: "NIIT applies",
-      body: "The 3.8% surtax applied.", numbers: { estTax: 1900, threshold: 250_000 },
+    const f = finding({
+      id: "niit-exposure",
+      severity: "watch",
+      category: "investments",
+      headline: "NIIT applies",
+      whatTheReturnShows: "The 3.8% surtax applied to $50,000 of net investment income.",
+      numbers: { estTax: 1900, threshold: 250_000 },
     });
-    i.tax = { observations: [o], taxYear: 2025 };
+    i.tax = { findings: [f], taxYear: 2025 };
     const s = taxSignals(i)[0];
     expect(s.severity).toBe("watch");
     expect(s.title).toBe("NIIT applies");
-    expect(s.detail).toBe("The 3.8% surtax applied.");
+    expect(s.detail).toBe("The 3.8% surtax applied to $50,000 of net investment income.");
     expect(s.numbers).toEqual({ estTax: 1900, threshold: 250_000 });
   });
 
-  it("pulls estimatedImpact from the observation's headline figure", () => {
+  // The four-part body means "detail" now has three candidate sources. Pin WHICH
+  // one, or swapping them stays green: the old single `body` field had no such
+  // ambiguity and no test guarded against it.
+  it("takes detail from whatTheReturnShows, not from whyItMatters or whatToConsider", () => {
+    const i = signalInputFixture();
+    i.tax = { findings: [finding({})], taxYear: 2025 };
+    const s = taxSignals(i)[0];
+    expect(s.detail).toBe("SHOWS");
+    expect(s.detail).not.toBe("MATTERS");
+    expect(s.detail).not.toBe("CONSIDER");
+    expect(s.title).toBe("HEADLINE");
+  });
+
+  // The adapter used to guess each observation's headline figure from a local
+  // IMPACT_KEY table, which silently yielded null whenever it named a key the
+  // builder did not emit. Findings publish their own impact, so the adapter
+  // passes it straight through — including the null.
+  it("passes the finding's own estimatedImpact straight through", () => {
     const i = signalInputFixture();
     i.tax = {
-      observations: [obs({ id: "roth-headroom", numbers: { headroom: 42_000, rate: 0.22 } })],
+      findings: [finding({ id: "roth-headroom", estimatedImpact: 42_000, numbers: { headroom: 42_000 } })],
       taxYear: 2025,
     };
     expect(taxSignals(i)[0].estimatedImpact).toBe(42_000);
   });
 
-  it("leaves estimatedImpact null when the observation has no headline figure", () => {
-    const i = signalInputFixture();
-    i.tax = { observations: [obs({ id: "state-notes", numbers: {} })], taxYear: 2025 };
-    expect(taxSignals(i)[0].estimatedImpact).toBeNull();
-  });
-
-  it("pulls estimatedImpact from qcd's iraDistributions", () => {
+  it("keeps estimatedImpact null when the finding does not support a figure", () => {
     const i = signalInputFixture();
     i.tax = {
-      observations: [obs({ id: "qcd", numbers: { iraDistributions: 12_000, charitableCash: 4_000 } })],
-      taxYear: 2025,
-    };
-    expect(taxSignals(i)[0].estimatedImpact).toBe(12_000);
-  });
-
-  it("pulls estimatedImpact from ctc-phaseout's reduction", () => {
-    const i = signalInputFixture();
-    i.tax = {
-      observations: [obs({ id: "ctc-phaseout", numbers: { excess: 10_000, reduction: 500 } })],
-      taxYear: 2025,
-    };
-    expect(taxSignals(i)[0].estimatedImpact).toBe(500);
-  });
-
-  it("leaves estimatedImpact null for the near-threshold ctc-phaseout shape (headroom only)", () => {
-    const i = signalInputFixture();
-    i.tax = {
-      observations: [obs({ id: "ctc-phaseout", numbers: { headroom: 8_000 } })],
+      findings: [finding({ id: "state-notes", estimatedImpact: null, numbers: { rate: 0.031 } })],
       taxYear: 2025,
     };
     expect(taxSignals(i)[0].estimatedImpact).toBeNull();
   });
 
-  // These two are the failure mode a "does IMPACT_KEY have an entry?" check
-  // cannot see: the entry existed but named a key the builder never emits, so
-  // the lookup silently yielded undefined and both opportunities sorted last.
-  // The keys asserted here are the ones brackets.ts:57 actually writes.
-  it("pulls estimatedImpact from ltcg-zero-headroom's headroom", () => {
+  // A non-null `numbers` entry must NOT be mistaken for an impact now that the
+  // lookup table is gone — the only source is estimatedImpact itself.
+  it("does not resurrect an impact from numbers when estimatedImpact is null", () => {
     const i = signalInputFixture();
     i.tax = {
-      observations: [obs({ id: "ltcg-zero-headroom", numbers: { headroom: 60_000 } })],
-      taxYear: 2025,
-    };
-    expect(taxSignals(i)[0].estimatedImpact).toBe(60_000);
-  });
-
-  it("leaves charitable-bunching's impact null — it has no single headline figure", () => {
-    const i = signalInputFixture();
-    i.tax = {
-      observations: [
-        obs({ id: "charitable-bunching", numbers: { charitable: 20_000, standardDeduction: 30_000 } }),
+      findings: [
+        finding({ id: "charitable-bunching", estimatedImpact: null, numbers: { charitable: 20_000 } }),
       ],
       taxYear: 2025,
     };
@@ -110,22 +109,22 @@ describe("taxSignals", () => {
 
   it("deep-links to the tax analysis for the year the return covers", () => {
     const i = signalInputFixture();
-    i.tax = { observations: [obs({})], taxYear: 2024 };
+    i.tax = { findings: [finding({})], taxYear: 2024 };
     expect(taxSignals(i)[0].href).toBe(`/clients/${i.clientId}/details/tax-analysis?year=2024`);
   });
 
   // Guards the adapter against an upstream builder being added and silently
-  // never reaching the 360. Asserted against buildObservations' OWN builder
-  // list, never against this adapter's map — a test driven by the constant
-  // under test cannot catch a removed entry.
-  it("maps every observation the tax layer can currently emit", async () => {
-    const mod = await import("@/lib/tax-analysis/observations/index");
+  // never reaching the 360. Asserted against buildFindings' OWN builder list,
+  // never against this adapter's map — a test driven by the constant under test
+  // cannot catch a removed entry. The count stays HARD-CODED on purpose.
+  it("maps every finding the tax layer can currently emit", async () => {
+    const mod = await import("@/lib/tax-analysis/findings/index");
     const src = await import("node:fs/promises").then((fs) =>
-      fs.readFile("src/lib/tax-analysis/observations/index.ts", "utf8"),
+      fs.readFile("src/lib/tax-analysis/findings/index.ts", "utf8"),
     );
     const builderCount = src.slice(src.indexOf("const BUILDERS"), src.indexOf("] as const"))
       .split("\n").filter((l) => /^\s{2}\w/.test(l)).length;
-    expect(builderCount).toBe(13);
-    expect(typeof mod.buildObservations).toBe("function");
+    expect(builderCount).toBe(22);
+    expect(typeof mod.buildFindings).toBe("function");
   });
 });

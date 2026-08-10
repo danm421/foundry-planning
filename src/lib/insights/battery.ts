@@ -149,7 +149,7 @@ export async function loadInsightsBattery(
       firmId,
       compositeLevel: riskProfile?.compositeLevel ?? null,
     }),
-    loadTaxObservations(clientId),
+    loadTaxFindings(clientId),
     largestPosition(clientId),
   ]);
 
@@ -229,21 +229,21 @@ export async function loadInsightsBattery(
   };
 }
 
-/** Latest filed return's observations, or an empty bundle when none is on file. */
-async function loadTaxObservations(
+/** Latest filed return's findings, or an empty bundle when none is on file. */
+async function loadTaxFindings(
   clientId: string,
 ): Promise<SignalInput["tax"]> {
   try {
     const latest = await getLatestTaxReturn(clientId);
-    if (!latest) return { observations: [], taxYear: null };
+    if (!latest) return { findings: [], taxYear: null };
     const assembled = await assembleTaxAnalysis(clientId, latest.taxYear);
     return {
-      observations: assembled?.analysis?.observations ?? [],
+      findings: assembled?.analysis?.findings ?? [],
       taxYear: latest.taxYear,
     };
   } catch (err) {
     // A household with no tax data must not break the whole 360.
     console.error("[insights] tax analysis failed (non-fatal):", err);
-    return { observations: [], taxYear: null };
+    return { findings: [], taxYear: null };
   }
 }

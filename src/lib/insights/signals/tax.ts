@@ -1,31 +1,11 @@
-// Adapter over the tax-analysis observation layer. It MAPS; it never
-// re-derives a figure. When the tax findings layer lands (see
-// plans/2026-08-08-tax-analysis-findings-layer), `Observation` becomes
-// `Finding` with a four-part body and its own estimatedImpact, and this file
-// is the ONLY consumer outside src/lib/tax-analysis/ that has to change.
-import type { Observation } from "@/lib/tax-analysis/types";
+// Adapter over the tax-analysis findings layer. It MAPS; it never re-derives a
+// figure. The findings layer landed (plans/2026-08-08-tax-analysis-findings-layer)
+// and this file was, as predicted, the only consumer outside src/lib/tax-analysis/
+// that had to change: `Observation` became `Finding` with a four-part body, and
+// the local IMPACT_KEY lookup that used to guess each observation's headline
+// figure is gone — every builder now publishes its own `estimatedImpact`.
+import type { Finding } from "@/lib/tax-analysis/types";
 import type { Signal, SignalInput } from "./types";
-
-/**
- * The one number that best represents each observation's size, used for
- * ordering. Absent from an observation's `numbers` → null → sorts last.
- * Superseded by the tax layer's own estimatedImpact after the rename.
- */
-const IMPACT_KEY: Record<string, string> = {
-  "roth-headroom": "headroom",
-  "ltcg-zero-headroom": "headroom",
-  "capital-loss-carryover": "carryover",
-  "niit-exposure": "estTax",
-  "additional-medicare": "estTax",
-  "safe-harbor": "shortfall",
-  "irmaa-cliff": "distanceToNextCliff",
-  // No `charitable-bunching` entry on purpose: its two branches emit
-  // {charitable, standardDeduction} and {gapOverStandard, standardDeduction},
-  // so it has no single headline figure. A mapped-but-unresolvable key reads as
-  // covered while always yielding null — this omission is the honest form.
-  "qcd": "iraDistributions",
-  "ctc-phaseout": "reduction",
-};
 
 export function taxSignals(input: SignalInput): Signal[] {
   const { tax, clientId } = input;
@@ -46,19 +26,18 @@ export function taxSignals(input: SignalInput): Signal[] {
     ];
   }
 
-  return tax.observations.map((o: Observation) => {
-    const key = IMPACT_KEY[o.id];
-    const impact = key != null ? o.numbers[key] : undefined;
-    return {
-      id: `tax.${o.id}`,
-      domain: "tax" as const,
-      // opportunity | watch | info map 1:1; the tax layer never emits critical.
-      severity: o.severity,
-      title: o.title,
-      detail: o.body,
-      numbers: o.numbers,
-      href: `/clients/${clientId}/details/tax-analysis?year=${tax.taxYear}`,
-      estimatedImpact: typeof impact === "number" ? impact : null,
-    };
-  });
+  return tax.findings.map((f: Finding) => ({
+    id: `tax.${f.id}`,
+    domain: "tax" as const,
+    // opportunity | watch | info map 1:1; the tax layer never emits critical.
+    severity: f.severity,
+    title: f.headline,
+    // The four-part body's first part is the evidence sentence — the figures,
+    // sourced — which is what a 360 card needs. `whyItMatters` is the mechanism
+    // and `whatToConsider` the action; both belong on the tax tab, not here.
+    detail: f.whatTheReturnShows,
+    numbers: f.numbers,
+    href: `/clients/${clientId}/details/tax-analysis?year=${tax.taxYear}`,
+    estimatedImpact: f.estimatedImpact,
+  }));
 }

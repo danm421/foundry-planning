@@ -48,7 +48,7 @@ export function signalInputFixture(over: Partial<SignalInput> = {}): SignalInput
       lifeEvents: [],
       planStartYear: 2026,
     },
-    tax: { observations: [], taxYear: 2025 },
+    tax: { findings: [], taxYear: 2025 },
   };
   return { ...base, ...over };
 }

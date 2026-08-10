@@ -1,7 +1,7 @@
 import type { RiskAlignment } from "@/lib/insights/risk-capacity";
 import type { MismatchState } from "@/lib/risk/portfolio-mismatch";
 import type { OverviewLifeEvent } from "@/lib/overview/derive-life-events";
-import type { Observation } from "@/lib/tax-analysis/types";
+import type { Finding } from "@/lib/tax-analysis/types";
 import type { RiskLevel } from "@/lib/risk-levels";
 import type { BindingConstraint } from "@/lib/risk/scoring";
 // Type-only, so it is erased at compile time and the signal rules keep no
@@ -97,8 +97,8 @@ export interface SignalInput {
     planStartYear: number;
   };
   tax: {
-    observations: Observation[];
-    /** Tax year of the return the observations came from; null = none on file. */
+    findings: Finding[];
+    /** Tax year of the return the findings came from; null = none on file. */
     taxYear: number | null;
   };
 }

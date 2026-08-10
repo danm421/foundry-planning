@@ -5,7 +5,7 @@ import { signalInputFixture } from "./fixture";
 describe("buildSignals", () => {
   it("returns an empty list for a household with nothing to say", () => {
     const i = signalInputFixture();
-    i.tax = { observations: [], taxYear: 2025 };
+    i.tax = { findings: [], taxYear: 2025 };
     expect(buildSignals(i)).toEqual([]);
   });
 
@@ -14,7 +14,7 @@ describe("buildSignals", () => {
     i.plan.fundingScore = 0.5;              // plan.funding_shortfall  → critical
     i.portfolio.cashPct = 0.3;              // portfolio.cash_drag     → opportunity
     i.relationship.overdueTaskCount = 2;    // relationship.overdue    → watch
-    i.tax = { observations: [], taxYear: null }; // tax.no_return      → info
+    i.tax = { findings: [], taxYear: null }; // tax.no_return      → info
 
     const out = buildSignals(i);
     expect(out.map((s) => s.severity)).toEqual([

@@ -62,7 +62,7 @@ describe("largestPosition (fail-soft)", () => {
   // ProjectionInputError into `projectionError`. That makes THIS the first
   // thing to throw in the battery's Promise.all, so an un-caught throw here
   // 500s the whole tab. Every other leg of that Promise.all already degrades —
-  // `resolveMismatchState` to `{ kind: "no_profile" }`, `loadTaxObservations`
+  // `resolveMismatchState` to `{ kind: "no_profile" }`, `loadTaxFindings`
   // to an empty bundle. This one must degrade to null.
   it("returns null instead of rejecting when the scenario cannot be resolved", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
