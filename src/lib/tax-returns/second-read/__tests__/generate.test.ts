@@ -156,4 +156,19 @@ describe("generateSecondRead", () => {
     expect(read.items).toEqual([]);
     expect(read.warnings).toEqual(["1040.pdf couldn't be read from the document vault."]);
   });
+
+  // A manually-entered year has a state row and no documents at all, so this is
+  // the ordinary path there — not an edge case. Without a warning the panel
+  // renders "didn't find anything", which is a false all-clear: nothing was
+  // read and the model was never called.
+  it("says nothing was attached when there are no documents and nothing failed", async () => {
+    const read = await generateSecondRead({
+      sources: [], facts: facts(), findingHeadlines: [], sourceWarnings: [], generatedAt: AT,
+    });
+    expect(callAIExtraction).not.toHaveBeenCalled();
+    expect(read.items).toEqual([]);
+    expect(read.warnings).toEqual([
+      "No documents are attached to this year, so there was nothing to read.",
+    ]);
+  });
 });

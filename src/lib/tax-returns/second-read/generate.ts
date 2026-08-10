@@ -12,6 +12,8 @@ import type { DocumentSource } from "./source-text";
 export const SECOND_READ_TOTAL_CHARS = 120_000;
 
 const UNUSABLE_WARNING = "The second read didn't return anything usable this time.";
+const NOTHING_ATTACHED_WARNING =
+  "No documents are attached to this year, so there was nothing to read.";
 
 /** Lowercase, strip punctuation and collapse whitespace. Only used to
  *  recognise an item that restates a finding verbatim-ish; anything fuzzier
@@ -76,8 +78,17 @@ export async function generateSecondRead(args: {
   // Nothing readable means nothing to read. Calling the model with an empty
   // document block invites it to answer from the facts summary alone, which is
   // exactly the deterministic layer's job.
+  //
+  // Empty sources arrive two ways, and the panel must not render them the same:
+  // every document failed to read (the warnings already say so), or the year
+  // has no documents at all — the ordinary state of a manually-entered year.
+  // Without a warning of its own the second case renders "didn't find
+  // anything", which claims a clean bill of health for a read that never
+  // happened.
   if (args.sources.length === 0) {
-    return { generatedAt: args.generatedAt, warnings: args.sourceWarnings, items: [] };
+    const warnings =
+      args.sourceWarnings.length > 0 ? args.sourceWarnings : [NOTHING_ATTACHED_WARNING];
+    return { generatedAt: args.generatedAt, warnings, items: [] };
   }
 
   const raw = await callAIExtraction(
