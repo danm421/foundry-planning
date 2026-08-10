@@ -37,14 +37,21 @@ describe("GET /api/portal/dashboard", () => {
     expect(res.status).toBe(200);
     expect((await res.json()).toReview.count).toBe(3);
     expect(loadPrivacyMock).not.toHaveBeenCalled();
-    expect(loadDashboardMock).toHaveBeenCalledWith("c1", expect.any(Date), ALL_ON);
+    expect(loadDashboardMock).toHaveBeenCalledWith("c1", expect.any(Date), ALL_ON, {
+      includeGoals: false,
+    });
   });
 
   it("advisor act-as mode: loads the client's sharing switches", async () => {
     resolveMock.mockResolvedValue({ clientId: "c1", mode: "advisor", clerkUserId: "adv" });
     await GET();
     expect(loadPrivacyMock).toHaveBeenCalledWith("c1");
-    expect(loadDashboardMock).toHaveBeenCalledWith("c1", expect.any(Date), { ...ALL_ON, shareBudgets: false });
+    expect(loadDashboardMock).toHaveBeenCalledWith(
+      "c1",
+      expect.any(Date),
+      { ...ALL_ON, shareBudgets: false },
+      { includeGoals: false },
+    );
   });
 
   it("propagates auth errors through authErrorResponse", async () => {

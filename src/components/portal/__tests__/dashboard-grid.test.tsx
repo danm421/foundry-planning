@@ -33,7 +33,18 @@ const DTO: PortalDashboardDTO = {
     assets: 90999, debt: 55022, netWorth: 35977, series: [], asOfDate: "2026-06-24",
     accounts: [{ id: "acct1", name: "Checking", value: 90999 }],
     debts: [{ id: "liab1", name: "Visa", value: 55022 }],
+    assetGroups: [{ category: "cash", label: "Cash", total: 90999 }],
   },
+  goals: [
+    {
+      id: "retirement", kind: "retirement", label: "Retirement", forName: null,
+      startYear: 2045, endYear: 2075, cost: 3_000_000, funded: 2_400_000, pctFunded: 0.8,
+    },
+    {
+      id: "edu1", kind: "education", label: "College", forName: "Ava",
+      startYear: 2036, endYear: 2039, cost: 200_000, funded: 200_000, pctFunded: 1,
+    },
+  ],
   toReview: {
     count: 1,
     sample: [
@@ -62,6 +73,7 @@ const DTO: PortalDashboardDTO = {
       metricsByYear: [{ year: 2026, total: 157, avg: 31.4, count: 5 }],
     },
   ],
+  goalsProjected: true,
   sharing: { shareTransactions: true, shareBudgets: true, shareRecurrings: true },
 };
 
@@ -91,6 +103,37 @@ describe("DashboardGrid chart tiles", () => {
     expect(screen.getByText("Net worth")).toBeInTheDocument();
     expect(screen.getByText("Net this month")).toBeInTheDocument();
     expect(screen.getByText(/under pace/)).toBeInTheDocument();
+  });
+
+  // The plan tiles lead the first column and the month-to-month money tiles
+  // the second — on a phone the columns stack, so this ordering is also what
+  // puts Net worth at the top of the mobile dashboard.
+  it("leads the first column with net worth, then goals funded", () => {
+    render(<LayoutLike />);
+    const grid = screen.getByTestId("dashboard-grid");
+    const firstColumn = grid.firstElementChild as HTMLElement;
+    const headings = within(firstColumn)
+      .getAllByRole("heading", { level: 2 })
+      .map((h) => h.textContent);
+    expect(headings.slice(0, 2)).toEqual(["Net worth", "Goals funded"]);
+    const secondColumn = grid.children[1] as HTMLElement;
+    expect(
+      within(secondColumn).getAllByRole("heading", { level: 2 })[0].textContent,
+    ).toBe("Monthly spending");
+  });
+
+  it("shows the asset-type breakdown on the net-worth tile", () => {
+    render(<LayoutLike />);
+    expect(screen.getByText("By type")).toBeInTheDocument();
+    expect(screen.getByText("Cash")).toBeInTheDocument();
+  });
+
+  it("shows percent funded per goal", () => {
+    render(<LayoutLike />);
+    expect(screen.getByText("80%")).toBeInTheDocument();
+    expect(screen.getByText("100%")).toBeInTheDocument();
+    expect(screen.getByText(/for Ava/)).toBeInTheDocument();
+    expect(screen.getByText(/\$600,000 short of \$3,000,000/)).toBeInTheDocument();
   });
 });
 

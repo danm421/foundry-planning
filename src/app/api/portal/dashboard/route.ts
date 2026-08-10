@@ -13,7 +13,12 @@ export async function GET(): Promise<Response> {
     // the client's sharing switches — mirrors <PortalDashboard>.
     const sharing =
       mode === "advisor" ? await loadPortalPrivacy(clientId) : DEFAULT_PORTAL_PRIVACY;
-    const dto = await loadPortalDashboard(clientId, new Date(), sharing);
+    // includeGoals: false — this route serves the mobile home screen, which has
+    // no goals tile and refetches on every open/pull-to-refresh. Flip it on in
+    // the same commit a mobile goals tile lands.
+    const dto = await loadPortalDashboard(clientId, new Date(), sharing, {
+      includeGoals: false,
+    });
     return NextResponse.json(dto);
   } catch (err) {
     const r = authErrorResponse(err);

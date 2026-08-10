@@ -5,6 +5,7 @@ import { usePortalFetch } from "@/components/portal/portal-mode-context";
 import { PortalDetailPortal } from "@/components/portal/portal-detail-rail";
 import { TileMonthlySpending } from "./dashboard-tiles/tile-monthly-spending";
 import { TileNetWorth } from "./dashboard-tiles/tile-net-worth";
+import { TileGoalsFunded } from "./dashboard-tiles/tile-goals-funded";
 import { TileNetThisMonth } from "./dashboard-tiles/tile-net-this-month";
 import { TileToReview } from "./dashboard-tiles/tile-to-review";
 import { TileTopCategories } from "./dashboard-tiles/tile-top-categories";
@@ -92,21 +93,16 @@ export function DashboardGrid({
         Two independent columns (not a synchronized grid) so a short tile like
         Monthly spending doesn't leave dead space beside the tall Net worth
         chart — the next tile in its column rises to fill it. Stacks to one
-        column below `lg`.
+        column below `lg`, which puts Net worth and Goals funded (the plan) at
+        the top of the phone view, ahead of the month-to-month money tiles.
       */}
       <div
         className="flex flex-col gap-5 lg:flex-row lg:items-start"
         data-testid="dashboard-grid"
       >
         <div className="flex min-w-0 flex-1 flex-col gap-5">
-          {sharing.shareBudgets ? (
-            <TileMonthlySpending
-              spending={dto.spending}
-              onOpen={() => setDetail({ kind: "spending" })}
-            />
-          ) : (
-            <NotSharedNotice area="budgets" variant="tile" />
-          )}
+          <TileNetWorth netWorth={dto.netWorth} onOpen={() => setDetail({ kind: "networth" })} />
+          <TileGoalsFunded goals={dto.goals} projected={dto.goalsProjected} />
           {sharing.shareTransactions ? (
             <TileToReview
               items={reviewItems}
@@ -127,7 +123,14 @@ export function DashboardGrid({
           )}
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-5">
-          <TileNetWorth netWorth={dto.netWorth} onOpen={() => setDetail({ kind: "networth" })} />
+          {sharing.shareBudgets ? (
+            <TileMonthlySpending
+              spending={dto.spending}
+              onOpen={() => setDetail({ kind: "spending" })}
+            />
+          ) : (
+            <NotSharedNotice area="budgets" variant="tile" />
+          )}
           {sharing.shareBudgets ? (
             <TileTopCategories
               topCategories={dto.topCategories}

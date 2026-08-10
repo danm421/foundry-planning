@@ -136,6 +136,29 @@ export function buildAccountRail({
   };
 }
 
+/**
+ * Asset-side category subtotals for the dashboard's net-worth tile.
+ *
+ * Lives here, beside `buildAccountRail`, so the "known categories in
+ * CATEGORY_ORDER, then anything unrecognised" rule and the `?? category` label
+ * fallback have exactly one definition. The dashboard tile is meant to read the
+ * same way as the Accounts rail; a second copy of the ordering rule is how the
+ * two would quietly stop agreeing.
+ *
+ * Takes bare category/value pairs rather than `PortalAccountRow[]` because the
+ * dashboard loader has only those two columns for its visible accounts.
+ */
+export function assetCategoryTotals(
+  rows: { category: string; value: number }[],
+): { category: string; label: string; total: number }[] {
+  const totals = sumBy(rows, (r) => r.category, (r) => r.value);
+  return orderedKeys([...totals.keys()], CATEGORY_ORDER).map((c) => ({
+    category: c,
+    label: CATEGORY_LABELS[c] ?? c,
+    total: totals.get(c) ?? 0,
+  }));
+}
+
 export function assetCardSubtitle(a: PortalAccountRow): string {
   return `${CATEGORY_LABELS[a.category] ?? a.category} · ${a.subType.replace(/_/g, " ")}`;
 }

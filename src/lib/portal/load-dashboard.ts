@@ -2,12 +2,19 @@
 //
 // Server-side aggregator for the portal Dashboard. Orchestrates the existing
 // portal loaders + two focused queries and threads them through the pure
-// dashboard-summary module. Scenario = base case (matches AccountsSection). No
-// API route: this is consumed by the <PortalDashboard> server component.
+// dashboard-summary module. Scenario = base case (matches AccountsSection).
+// Consumed by the <PortalDashboard> server component and by
+// GET /api/portal/dashboard (the mobile app's home screen).
+//
+// Goal funding is the one tile that reads the PLAN rather than Plaid: it runs
+// the base-case projection through `buildGoalFunding`. That is the most
+// expensive thing on this page, so it runs inside the same Promise.all as the
+// queries and fails soft — see `loadGoalFunding`.
 import { and, desc, eq, gte, isNull, lte, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   accounts,
+  clients,
   liabilities,
   plaidTransactions,
   scenarios,
@@ -23,19 +30,34 @@ import { DEFAULT_PORTAL_PRIVACY, type PortalPrivacy } from "@/lib/portal/privacy
 import { summarizeNetWorth } from "@/lib/portal/portal-networth";
 import { reconstructDailyNetWorth } from "@/lib/portal/networth-trend";
 import { isPortalVisibleAccount } from "@/lib/portal/account-visibility";
+import { assetCategoryTotals } from "@/lib/portal/account-rail";
+import { buildGoalFunding } from "@/lib/portal/goal-funding";
 import {
   spendingPaceCurve,
   netThisMonth,
   dueWithinDays,
   topCategories,
 } from "@/lib/portal/dashboard-summary";
+import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { ClientNotFoundError } from "@/lib/projection/load-client-data";
+import { retirementYearOf } from "@/lib/presentations/pages/retirement-summary/aggregate";
+import { runProjection } from "@/engine";
 import type {
   ReviewTxn,
   NetWorthLine,
+  NetWorthGroupLine,
+  PortalGoalFunding,
   SpendingGroupLine,
   PortalDashboardDTO,
 } from "@/lib/portal/contracts";
-export type { ReviewTxn, NetWorthLine, SpendingGroupLine, PortalDashboardDTO };
+export type {
+  ReviewTxn,
+  NetWorthLine,
+  NetWorthGroupLine,
+  PortalGoalFunding,
+  SpendingGroupLine,
+  PortalDashboardDTO,
+};
 
 function priorMonthRange(now: Date): { from: string; to: string } {
   const y = now.getUTCFullYear();
@@ -57,21 +79,84 @@ function emptyBudget(month: string): Awaited<ReturnType<typeof loadBudgetSummary
   };
 }
 
+/**
+ * Percent-funded per goal, from a base-case projection.
+ *
+ * Fail-soft, like the advisor Overview: a household that cannot be projected
+ * (no base scenario, no accounts, a loader fault) reports `projected: false`
+ * and the tile says so. It must never take the whole dashboard down — every
+ * other tile on this page reads Plaid data that has nothing to do with the
+ * projection.
+ *
+ * `projected` is what separates "this plan has no goals yet" from "the
+ * projection did not run". Collapsing both to an empty array is how the tile
+ * would tell a household with a perfectly good plan that it had never been
+ * projected. `ClientNotFoundError` is deliberately NOT swallowed — that is a
+ * real access/lookup fault, and `get-overview-data.ts` rethrows it too.
+ */
+async function loadGoalFunding(
+  clientId: string,
+  firmId: string,
+): Promise<{ goals: PortalGoalFunding[]; projected: boolean }> {
+  try {
+    const { effectiveTree } = await loadEffectiveTree(clientId, firmId, "base", {});
+    const years = runProjection(effectiveTree);
+    return {
+      goals: buildGoalFunding({
+        years,
+        accounts: effectiveTree.accounts,
+        expenses: effectiveTree.expenses,
+        familyMemberNamesById: new Map(
+          (effectiveTree.familyMembers ?? []).map((m) => [m.id, m.firstName]),
+        ),
+        retirementYear: retirementYearOf(effectiveTree),
+      }),
+      projected: true,
+    };
+  } catch (err) {
+    if (err instanceof ClientNotFoundError) throw err;
+    console.error(`[portal-dashboard] goal funding failed for clientId=${clientId}`, err);
+    return { goals: [], projected: false };
+  }
+}
+
+export interface LoadPortalDashboardOptions {
+  /**
+   * Run the base-case projection for the Goals-funded tile. Default true.
+   *
+   * Off for `GET /api/portal/dashboard`: the mobile home screen renders no
+   * goals tile, and it refetches on every app open and pull-to-refresh — it
+   * would pay for the most expensive thing on this page and throw the answer
+   * away. Turn it back on the same commit a mobile goals tile lands.
+   */
+  includeGoals?: boolean;
+}
+
 export async function loadPortalDashboard(
   clientId: string,
   now: Date,
   sharing: PortalPrivacy = DEFAULT_PORTAL_PRIVACY,
+  { includeGoals = true }: LoadPortalDashboardOptions = {},
 ): Promise<PortalDashboardDTO> {
   const today = now.toISOString().slice(0, 10);
   const { from, to } = currentMonthRange(now);
   const prior = priorMonthRange(now);
   const month = from.slice(0, 7);
 
-  const [scenario] = await db
-    .select({ id: scenarios.id })
-    .from(scenarios)
-    .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)))
-    .limit(1);
+  const [[scenario], [clientRow]] = await Promise.all([
+    db
+      .select({ id: scenarios.id })
+      .from(scenarios)
+      .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)))
+      .limit(1),
+    // The projection loader is firm-scoped; the portal gate hands us a client
+    // id only, so resolve the owning firm here rather than widening the gate.
+    db
+      .select({ firmId: clients.firmId })
+      .from(clients)
+      .where(eq(clients.id, clientId))
+      .limit(1),
+  ]);
 
   // Run the independent loaders/queries in parallel. Sections the client has
   // switched off for the advisor are never queried — the data must not reach
@@ -84,6 +169,7 @@ export async function loadPortalDashboard(
     priorAgg,
     uncategorized,
     accountRows,
+    goalFunding,
   ] = await Promise.all([
     sharing.shareBudgets
       ? loadBudgetSummary(clientId, now)
@@ -187,6 +273,12 @@ export async function loadPortalDashboard(
           .from(accounts)
           .where(and(eq(accounts.clientId, clientId), eq(accounts.scenarioId, scenario.id)))
       : Promise.resolve([]),
+    // Goal funding runs the base-case projection. Not gated by a sharing
+    // switch: the switches cover the client's Plaid data (transactions,
+    // budgets, recurrings), and goals come from the advisor's own plan.
+    includeGoals && clientRow?.firmId
+      ? loadGoalFunding(clientId, clientRow.firmId)
+      : Promise.resolve({ goals: [], projected: false }),
   ]);
 
   // ---- Net worth (mirror AccountsSection) ----
@@ -296,7 +388,12 @@ export async function loadPortalDashboard(
       debts: debtRows
         .map((d) => ({ id: d.id, name: d.name, value: d.balance }))
         .sort((a, b) => b.value - a.value),
+      assetGroups: assetCategoryTotals(
+        visible.map((r) => ({ category: r.category, value: Number(r.value || "0") })),
+      ),
     },
+    goals: goalFunding.goals,
+    goalsProjected: goalFunding.projected,
     toReview: {
       count: count ?? 0,
       sample: uncategorized.map((t) => ({

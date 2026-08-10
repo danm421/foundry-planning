@@ -91,6 +91,38 @@ export interface NetWorthLine {
   value: number;
 }
 
+/** One account-category subtotal of the asset side — "Cash", "Retirement", … */
+export interface NetWorthGroupLine {
+  /** Raw account category ("cash", "retirement"). */
+  category: string;
+  label: string;
+  total: number;
+}
+
+export type PortalGoalKind = "retirement" | "education" | "other";
+
+/**
+ * One goal's lifetime funding, derived from the cash-flow projection. `cost` is
+ * everything the plan spends on the goal across the projection; `funded` is the
+ * part the plan's inflows actually cover. See lib/portal/goal-funding.ts for
+ * the rule.
+ */
+export interface PortalGoalFunding {
+  /** "retirement", or the goal expense's id. */
+  id: string;
+  kind: PortalGoalKind;
+  label: string;
+  /** Beneficiary ("for Ava"), when the goal names one. */
+  forName: string | null;
+  /** First/last projected year the goal costs money. Null only when cost is 0. */
+  startYear: number | null;
+  endYear: number | null;
+  cost: number;
+  funded: number;
+  /** funded / cost, clamped to 0..1. */
+  pctFunded: number;
+}
+
 /** One budget group for the spending drill-down. */
 export interface SpendingGroupLine {
   id: string;
@@ -118,7 +150,20 @@ export interface PortalDashboardDTO {
     asOfDate: string;
     accounts: NetWorthLine[];
     debts: NetWorthLine[];
+    /** Asset-side subtotals by account category, in balance-sheet order. */
+    assetGroups: NetWorthGroupLine[];
   };
+  /** Percent-funded per goal. Empty when the plan has no goals — or when
+   *  `goalsProjected` is false, which is a different thing entirely. */
+  goals: PortalGoalFunding[];
+  /**
+   * True when the base-case projection ran. False means it could not (no base
+   * scenario, a loader fault) or the caller opted out — so an empty `goals` is
+   * "we don't know", not "you have no goals". The tile must say which; telling
+   * a household with a real plan that it "hasn't been projected yet" is a
+   * different lie from telling them they have no goals.
+   */
+  goalsProjected: boolean;
   toReview: { count: number; sample: ReviewTxn[] };
   topCategories: TopCategory[];
   netThisMonth: {
@@ -436,12 +481,17 @@ export interface PortalContactDTO {
 export interface PortalHouseholdDTO {
   filingStatus: string | null;
   lifeExpectancy: number | null;
+  /** Whether this client may edit their own household — drives whether the
+   *  Organizer renders its people cards as controls or as plain cards. */
+  portalEditEnabled: boolean;
   primary: PortalContactDTO | null;
   spouse: PortalContactDTO | null;
 }
 export interface HouseholdContactPatch {
   firstName?: string;
-  lastName?: string | null;
+  // NOT NULL in `crm_household_contacts`, unlike email/phone: clear it with ""
+  // rather than null, or the update fails the constraint.
+  lastName?: string;
   email?: string | null;
   phone?: string | null;
 }
