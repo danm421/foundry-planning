@@ -1,7 +1,9 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { taxReturnState } from "@/db/schema";
+import { getState, type TaxReturnStateRow } from "../documents-store";
 import { MissingTaxReturnStateError } from "../errors";
+import { secondReadDocHash } from "./doc-hash";
 import { secondReadSchema, SECOND_READ_VERSION, type SecondRead } from "./types";
 
 /** Re-validate on every read, exactly as `parseRowFacts` does for facts. A
@@ -11,6 +13,22 @@ export function parseStoredSecondRead(value: unknown): SecondRead | null {
   if (value == null) return null;
   const parsed = secondReadSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
+}
+
+/** A stored read is stale once the document set it was generated against has
+ *  changed, or the prompt/schema version has moved on. Either way the panel
+ *  still renders it — a stale read is still information — but offers to
+ *  regenerate. There is nothing to be stale about when no read exists yet. */
+export function isSecondReadStale(
+  secondRead: SecondRead | null,
+  state: Pick<TaxReturnStateRow, "aiSecondReadDocHash" | "aiSecondReadVersion"> | null,
+  documentIds: string[],
+): boolean {
+  if (secondRead == null) return false;
+  return (
+    state?.aiSecondReadDocHash !== secondReadDocHash(documentIds) ||
+    state?.aiSecondReadVersion !== SECOND_READ_VERSION
+  );
 }
 
 /**
@@ -53,11 +71,7 @@ export async function dismissSecondReadItem(
   taxReturnId: string,
   itemId: string,
 ): Promise<SecondRead | null> {
-  const [row] = await db
-    .select()
-    .from(taxReturnState)
-    .where(eq(taxReturnState.taxReturnId, taxReturnId))
-    .limit(1);
+  const row = await getState(taxReturnId);
   if (!row) return null;
 
   const read = parseStoredSecondRead(row.aiSecondRead);

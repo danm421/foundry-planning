@@ -14,9 +14,8 @@ import { assembleFacts } from "./recompute";
 import { isUndefinedTable } from "./pg-errors";
 import { parseSupportingPayload, type W2Pair } from "./supporting-payload";
 import type { DocumentRole, FieldConflict, MergeDocument, OverrideMap } from "./merge/types";
-import { parseStoredSecondRead } from "./second-read/store";
-import { secondReadDocHash } from "./second-read/doc-hash";
-import { SECOND_READ_VERSION, type SecondRead } from "./second-read/types";
+import { parseStoredSecondRead, isSecondReadStale } from "./second-read/store";
+import type { SecondRead } from "./second-read/types";
 
 /** What the documents strip renders. Deliberately separate from `MergeDocument`
  *  — the merge needs facts, the UI needs metadata, and sending both over the
@@ -77,10 +76,7 @@ export async function loadDocumentContext(taxReturnId: string): Promise<Document
       unavailable: false,
       summaries: docs.map(rowToSummary),
       secondRead,
-      secondReadStale:
-        secondRead != null &&
-        (state?.aiSecondReadDocHash !== secondReadDocHash(docs.map((d) => d.id)) ||
-          state?.aiSecondReadVersion !== SECOND_READ_VERSION),
+      secondReadStale: isSecondReadStale(secondRead, state ?? null, docs.map((d) => d.id)),
     };
   } catch (err) {
     if (isUndefinedTable(err)) {
