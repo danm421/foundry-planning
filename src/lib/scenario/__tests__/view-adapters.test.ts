@@ -49,6 +49,29 @@ describe("view-adapters", () => {
       expect(view.claimingAgeMonths).toBe(6);
     });
 
+    // REGRESSION GUARD. `claimingAgeMode` decides whether the other two claim-age
+    // columns are read at all, and dropping it here is invisible: the surfaces
+    // fed by this adapter (Details → Inflows & Outflows, the Guided Walkthrough's
+    // cash-flow step) rendered an FRA row as an explicit "67y 0mo" and opened
+    // `SocialSecurityDialog` on "Specific Age", which then saved that back —
+    // converting the row off FRA on a no-op Save.
+    it("carries claimingAgeMode with the rest of the claim age", () => {
+      const income: EngineIncome = {
+        id: "ss1",
+        type: "social_security",
+        name: "Social Security",
+        annualAmount: 0,
+        startYear: 2025,
+        endYear: 2099,
+        growthRate: 0.02,
+        owner: "client",
+        claimingAge: 67,
+        claimingAgeMode: "fra",
+        ssBenefitMode: "pia_at_fra",
+      };
+      expect(incomeEngineToView(income).claimingAgeMode).toBe("fra");
+    });
+
     it("nullifies absent optional fields", () => {
       const income: EngineIncome = {
         id: "i2",

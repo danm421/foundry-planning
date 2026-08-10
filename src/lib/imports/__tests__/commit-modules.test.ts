@@ -1051,6 +1051,44 @@ describe("commitIncomes — Social Security reconciliation", () => {
     expect(result.updated).toBe(1);
   });
 
+  // The seed from `clients/create-client.ts` arrives as claimingAgeMode "fra",
+  // where `resolveClaimAgeMonths` derives the age from the DOB and never reads
+  // `claimingAge`. Preserving the slot's mode unconditionally would make an
+  // extracted claim age dead data — a 200 that moves nothing in the projection.
+  it("converts an FRA-mode slot to a specific age when the import carries one", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("incomes", [ssSlot("client", { claimingAgeMode: "fra" })]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      incomes: [
+        { name: "Social Security", type: "social_security", owner: "client", annualAmount: 40000, claimingAge: 70, match: { kind: "new" } },
+      ],
+    };
+    await commitIncomes(tx, payload, ctx);
+
+    const v = values(callsForTable(calls, "incomes").filter((c) => c.op === "update")[0]);
+    expect(v.claimingAge).toBe(70);
+    expect(v.claimingAgeMode).toBe("years");
+  });
+
+  // The other half of the same rule: nothing extracted, nothing converted. An
+  // import that only carries an amount must leave the row claiming at FRA.
+  it("leaves an FRA-mode slot on FRA when the import carries no claiming age", async () => {
+    const { tx, calls, setSelectResult } = makeFakeTx();
+    setSelectResult("incomes", [ssSlot("client", { claimingAgeMode: "fra" })]);
+    const payload: ImportPayload = {
+      ...emptyPayload(),
+      incomes: [
+        { name: "Social Security", type: "social_security", owner: "client", annualAmount: 40000, match: { kind: "new" } },
+      ],
+    };
+    await commitIncomes(tx, payload, ctx);
+
+    const v = values(callsForTable(calls, "incomes").filter((c) => c.op === "update")[0]);
+    expect(v.claimingAgeMode).toBe("fra");
+    expect(v.annualAmount).toBe("40000");
+  });
+
   it("assigns a joint Social Security row entirely to the client when there is no spouse slot", async () => {
     const { tx, calls, setSelectResult } = makeFakeTx();
     setSelectResult("incomes", [ssSlot("client")]); // unmarried household — no spouse slot

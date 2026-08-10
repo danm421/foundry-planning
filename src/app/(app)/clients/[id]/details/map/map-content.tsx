@@ -189,10 +189,13 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
       .filter(isHydratableIncome)
       .map((i: Income) => [i.id, incomeEngineToView(i)] as const),
   );
-  // The FULL engine rows, not `IncomeView`s: the view type carries none of
-  // `claimingAge`, `claimingAgeMonths`, `claimingAgeMode`, `piaMonthly` or
-  // `ssBenefitMode`, so a view-hydrated dialog would open every scenario at
-  // "claim at FRA" and save that back over the scenario's real choice.
+  // The FULL engine rows, not `IncomeView`s. The view type is a display
+  // projection — it stringifies the numerics the dialog computes with
+  // (`piaMonthly`, `growthRate`) and is free to omit fields no card renders — so
+  // hydrating the dialog from it makes what the dialog saves depend on what the
+  // view happens to carry. That is not hypothetical: `claimingAgeMode` was
+  // missing from `IncomeView` until 2026-08-10, and every surface that DID
+  // hydrate from it opened an FRA row on "Specific Age" and saved that back.
   const ssIncomes = effectiveTree.incomes.filter(isSocialSecurityIncome);
   const ssIncomeRows: Record<string, Income> = Object.fromEntries(
     ssIncomes.map((i: Income) => [i.id, i] as const),

@@ -254,6 +254,21 @@ async function runCreate(
 
   // Seed Social Security income entries at $0 — one per person on the household —
   // so the advisor is prompted to enter benefit amounts and claiming ages.
+  //
+  // BOTH MODE COLUMNS ARE WRITTEN EXPLICITLY, and that is the whole point of the
+  // seed. Every reader falls back on a NULL: `ssBenefitMode` reads as
+  // "manual_amount" (`SocialSecurityCard`, `SocialSecurityDialog`,
+  // `household-map/goals.ts`) and `claimingAgeMode` reads as "years"
+  // (`engine/socialSecurity/claimAge.ts`), so a seed that leaves them null opens
+  // every new household on "Annual benefit amount · 67y 0mo" — the opposite of
+  // the product default, which is a PIA off the SSA statement claimed at full
+  // retirement age. Storing the choice rather than defaulting it in each reader
+  // keeps the engine and every surface reading the same row.
+  //
+  // `claimingAge: 67` still rides along even though `fra` mode never reads it:
+  // it is the age the dialog's "Specific Age" picker opens on, and
+  // `household-map/goals.ts` drops the milestone card for a row whose
+  // `claimingAge` is null.
   const ssSeeds: { name: string; owner: "client" | "spouse" }[] = [
     { name: `Social Security — ${firstName}`, owner: "client" },
   ];
@@ -272,6 +287,8 @@ async function runCreate(
       growthRate: "0.02",
       owner: seed.owner,
       claimingAge: 67,
+      claimingAgeMode: "fra" as const,
+      ssBenefitMode: "pia_at_fra" as const,
     })),
   );
 

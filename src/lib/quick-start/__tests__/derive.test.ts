@@ -71,6 +71,22 @@ describe("ssPatch", () => {
       piaMonthly: 3000,
       claimingAge: 70,
       claimingAgeMonths: 0,
+      // A typed age is a choice, and only "years" mode reads the column it lands
+      // in — without the mode the write would move nothing.
+      claimingAgeMode: "years",
+    });
+  });
+
+  it("claims at FRA when the wizard's age field is left blank", () => {
+    expect(ssPatch({ monthlyBenefit: 3000 })).toEqual({
+      ssBenefitMode: "pia_at_fra",
+      piaMonthly: 3000,
+      // The 67 is inert in "fra" mode — it is what the SS dialog's "Specific
+      // Age" picker opens on, and what keeps the Household Map's milestone card
+      // (which drops a row with a null claiming age) rendering.
+      claimingAge: 67,
+      claimingAgeMonths: 0,
+      claimingAgeMode: "fra",
     });
   });
 });

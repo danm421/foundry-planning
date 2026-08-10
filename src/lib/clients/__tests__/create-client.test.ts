@@ -6,6 +6,7 @@ import {
   planSettings,
   accounts,
   expenses,
+  incomes,
   crmHouseholds,
   crmHouseholdContacts,
 } from "@/db/schema";
@@ -111,6 +112,21 @@ describe("createClientForHousehold", () => {
     expect(retirement?.isDefault).toBe(true);
     // Default living expenses grow with inflation, not a fixed custom rate.
     expect(livingDefaults.every((e) => e.growthSource === "inflation")).toBe(true);
+
+    // The seeded Social Security row opens on the product default: a PIA off the
+    // SSA statement, claimed at full retirement age. Both mode columns are stored
+    // rather than left null, because every reader's NULL fallback says the
+    // opposite — "manual_amount" in the SS card/dialog and "years" in
+    // `engine/socialSecurity/claimAge.ts`.
+    const incomeRows = await db
+      .select()
+      .from(incomes)
+      .where(eq(incomes.clientId, result.clientId));
+    const ssRows = incomeRows.filter((i) => i.type === "social_security");
+    expect(ssRows).toHaveLength(1); // single filer → client slot only
+    expect(ssRows[0].ssBenefitMode).toBe("pia_at_fra");
+    expect(ssRows[0].claimingAgeMode).toBe("fra");
+    expect(ssRows[0].claimingAge).toBe(67);
 
     // Default "Household Cash" checking account.
     const [cash] = await db
