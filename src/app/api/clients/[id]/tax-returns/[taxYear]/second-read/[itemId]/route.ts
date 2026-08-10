@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { requireActiveSubscription } from "@/lib/authz";
 import { verifyClientAccess } from "@/lib/clients/authz";
+import { recordAudit } from "@/lib/audit";
 import { getTaxReturn } from "@/lib/tax-returns/store";
 import { parseYear } from "@/lib/tax-returns/assemble-analysis";
 import { dismissSecondReadItem } from "@/lib/tax-returns/second-read/store";
@@ -18,7 +19,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; taxYear: string; itemId: string }> },
 ) {
   try {
-    await requireOrgId();
+    const firmId = await requireOrgId();
     await requireActiveSubscription();
     const { id: clientId, taxYear: rawYear, itemId } = await params;
 
@@ -36,6 +37,15 @@ export async function DELETE(
 
     const secondRead = await dismissSecondReadItem(row.id, itemId);
     if (!secondRead) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    await recordAudit({
+      action: "tax_return.second_read_dismiss",
+      resourceType: "tax_return",
+      resourceId: `${clientId}:${taxYear}`,
+      clientId,
+      firmId,
+      metadata: { taxYear, itemId },
+    });
 
     return NextResponse.json({ secondRead });
   } catch (err) {

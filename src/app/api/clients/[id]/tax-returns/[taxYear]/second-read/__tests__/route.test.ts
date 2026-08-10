@@ -145,18 +145,30 @@ describe("POST second-read", () => {
   });
 
   it("502s and persists NOTHING when the AI call fails", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     h.generateSecondRead.mockRejectedValue(new Error("azure 500"));
     const res = await POST(req(), ctx());
     expect(res.status).toBe(502);
     expect(h.putSecondRead).not.toHaveBeenCalled();
+    expect(errSpy).toHaveBeenCalledWith("second read generation failed:", expect.any(Error));
+    errSpy.mockRestore();
   });
 
-  it("409s when the return has no state row instead of creating one", async () => {
+  it("409s with no readable figures when the year has no facts yet", async () => {
+    h.assembleTaxAnalysis.mockResolvedValue({ facts: null });
+    const res = await POST(req(), ctx());
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe("This year has no readable figures yet.");
+  });
+
+  it("409s with not_converted when the return has no state row instead of creating one", async () => {
     const { MissingTaxReturnStateError } = await vi.importActual<typeof import("@/lib/tax-returns/errors")>(
       "@/lib/tax-returns/errors",
     );
     h.putSecondRead.mockRejectedValue(new MissingTaxReturnStateError(RETURN_ID));
-    expect((await POST(req(), ctx())).status).toBe(409);
+    const res = await POST(req(), ctx());
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe("not_converted");
   });
 });
 
@@ -181,5 +193,22 @@ describe("DELETE second-read item", () => {
   it("does NOT require the ai_import entitlement — dismissing makes no AI call", async () => {
     h.auth.mockResolvedValue({ userId: "user-1", sessionClaims: { org_public_metadata: { entitlements: [] } } });
     expect((await DELETE(req(), ctx({ itemId: "sr-1" }))).status).toBe(200);
+  });
+
+  it("audits the dismissal", async () => {
+    await DELETE(req(), ctx({ itemId: "sr-1" }));
+    expect(h.recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "tax_return.second_read_dismiss",
+        clientId: CLIENT,
+        metadata: expect.objectContaining({ itemId: "sr-1" }),
+      }),
+    );
+  });
+
+  it("does NOT audit when there is nothing to dismiss", async () => {
+    h.dismissSecondReadItem.mockResolvedValue(null);
+    await DELETE(req(), ctx({ itemId: "sr-99" }));
+    expect(h.recordAudit).not.toHaveBeenCalled();
   });
 });
