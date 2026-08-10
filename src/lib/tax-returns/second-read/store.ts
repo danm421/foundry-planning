@@ -69,11 +69,16 @@ export async function dismissSecondReadItem(
     items: read.items.map((item) => (item.id === itemId ? { ...item, dismissed: true } : item)),
   };
 
-  await db
+  const updated = await db
     .update(taxReturnState)
     .set({ aiSecondRead: next, updatedAt: new Date() })
     .where(eq(taxReturnState.taxReturnId, taxReturnId))
     .returning({ taxReturnId: taxReturnState.taxReturnId });
+  // The row existed for the SELECT above but is gone by the time this UPDATE
+  // runs (e.g. the tax return was deleted mid-request) — same "nothing to
+  // dismiss" condition as the earlier exits, so it gets the same null, not a
+  // thrown error: the route maps null to a 404 either way.
+  if (updated.length === 0) return null;
 
   return next;
 }

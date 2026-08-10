@@ -101,6 +101,12 @@ describe("dismissSecondReadItem", () => {
     mockSelect([]);
     expect(await dismissSecondReadItem("r1", "sr-1")).toBeNull();
   });
+
+  it("returns null when the row is gone by the time the write runs — a stale SELECT", async () => {
+    mockSelect([{ aiSecondRead: read() }]);
+    mockUpdate([]); // the UPDATE's .returning() comes back empty
+    expect(await dismissSecondReadItem("r1", "sr-1")).toBeNull();
+  });
 });
 
 describe("parseStoredSecondRead", () => {
