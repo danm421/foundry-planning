@@ -25,7 +25,7 @@ const ROW_OFFSET_PX = 22;
 const BASE_AREA_PX = 44;
 
 interface MarkerSpec {
-  key: "required" | "capacity" | "current";
+  key: "required" | "capacity" | "current" | "tolerance";
   pct: number;
   label: string;
   textClass: string;
@@ -89,7 +89,14 @@ function Marker({
   );
 }
 
-export function RiskAlignmentScale({ risk }: { risk: RiskAlignment }) {
+export function RiskAlignmentScale({
+  risk,
+  tolerancePct = null,
+}: {
+  risk: RiskAlignment;
+  /** Recorded tolerance rung, or null when no risk profile is on file. */
+  tolerancePct?: number | null;
+}) {
   const markers: MarkerSpec[] = [
     {
       key: "required",
@@ -113,6 +120,18 @@ export function RiskAlignmentScale({ risk }: { risk: RiskAlignment }) {
       tickClass: "bg-data-yellow",
     },
   ];
+  // Only when a rung is actually recorded. A household with no RTQ must show
+  // three markers, not a fourth pinned at zero — which would read as "this
+  // client will accept no risk at all".
+  if (tolerancePct != null) {
+    markers.push({
+      key: "tolerance",
+      pct: tolerancePct,
+      label: "Tolerance",
+      textClass: "text-data-purple",
+      tickClass: "bg-data-purple",
+    });
+  }
   const rowByKey = assignRows(markers);
   const maxRow = Math.max(...Object.values(rowByKey));
   const areaHeight = BASE_AREA_PX + maxRow * ROW_OFFSET_PX;

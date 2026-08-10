@@ -25,7 +25,12 @@ export async function saveInsightProfile(args: {
     clientId: args.clientId,
     snapshot: args.sections.snapshot,
     goals: args.sections.goals,
-    opportunities: args.sections.opportunities,
+    // `opportunities` is deliberately absent: the model no longer emits it.
+    // Because `values` doubles as the onConflictDoUpdate SET, omitting it
+    // preserves an existing row's old text instead of blanking it.
+    headline: args.sections.headline,
+    actions: args.sections.actions,
+    talkingPoints: args.sections.talkingPoints,
     inputHash: args.inputHash,
     model: args.model,
     generatedByUserId: args.userId,

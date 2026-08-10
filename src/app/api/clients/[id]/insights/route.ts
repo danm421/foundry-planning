@@ -43,13 +43,16 @@ export async function GET(
     return NextResponse.json({
       kpis: battery.kpis,
       risk: battery.risk,
-      needsAttention: battery.needsAttention,
+      toleranceScore: battery.toleranceScore,
+      signals: battery.signals,
       stale,
       profile: profile
         ? {
+            headline: profile.headline,
             snapshot: profile.snapshot,
             goals: profile.goals,
-            opportunities: profile.opportunities,
+            actions: profile.actions ?? [],
+            talkingPoints: profile.talkingPoints ?? [],
             generatedAt: profile.updatedAt.toISOString(),
           }
         : null,
@@ -90,11 +93,7 @@ export async function POST(
     const battery = await loadInsightsBattery(id, access.firmId);
     const inputHash = hashBattery(battery);
     const { userId } = await auth();
-    const { sections, generatedAt, cached } = await generateInsights({
-      clientId: id,
-      battery,
-      force: parsed.data.force,
-    });
+    const { sections, generatedAt } = await generateInsights(battery);
     await saveInsightProfile({
       clientId: id,
       sections,
@@ -112,12 +111,12 @@ export async function POST(
       metadata: crossFirmAuditMeta({ access: access.access }, callerOrg, {
         surface: "insights.360",
         force: parsed.data.force,
-        cached,
         verdict: battery.risk.verdict,
+        signalCount: battery.signals.length,
       }),
     });
 
-    return NextResponse.json({ sections, generatedAt, cached, inputHash });
+    return NextResponse.json({ sections, generatedAt, inputHash });
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json(
