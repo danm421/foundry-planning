@@ -117,6 +117,28 @@ describe("guaranteedPaymentsSeTax", () => {
     facts.k1s[1].entityType = null;
     expect(guaranteedPaymentsSeTax(findingCtx(facts, { primaryAge: 51, spouseAge: 49 }))).toBeNull();
   });
+
+  it("RULING 3: cites each partnership K-1 separately rather than a computed sum", () => {
+    const facts = sCorpOwnerMfj();
+    facts.k1s = [
+      facts.k1s[0], // s-corp — no guaranteed payments, must not appear in the K-1 refs
+      { ...facts.k1s[1], entityName: "Harbor Street Partners LP", guaranteedPayments: 30000 },
+      { ...facts.k1s[1], entityName: "Second Street Holdings LP", ein: "41-9999999", guaranteedPayments: 30000 },
+    ];
+    const f = guaranteedPaymentsSeTax(findingCtx(facts, { primaryAge: 51, spouseAge: 49 }))!;
+    const k1Refs = f.lineRefs.filter((r) => r.line === "box 4");
+    expect(k1Refs).toHaveLength(2);
+    expect(k1Refs.map((r) => r.amount)).toEqual([30000, 30000]);
+    expect(k1Refs.some((r) => r.amount === 60000)).toBe(false); // never a computed sum
+    expect(k1Refs.map((r) => r.form)).toEqual([
+      "Schedule K-1 (Form 1065) — Harbor Street Partners LP",
+      "Schedule K-1 (Form 1065) — Second Street Holdings LP",
+    ]);
+    expect(f.numbers.guaranteedPayments).toBe(60000); // the aggregate still lives in numbers
+    expect(formatLineRefs(f.lineRefs)).toBe(
+      "Schedule K-1 (Form 1065) — Harbor Street Partners LP box 4 · Schedule K-1 (Form 1065) — Second Street Holdings LP box 4 · Schedule 2 line 4",
+    );
+  });
 });
 
 describe("businessLossMix", () => {

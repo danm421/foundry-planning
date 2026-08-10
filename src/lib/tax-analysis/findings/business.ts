@@ -160,7 +160,12 @@ export function guaranteedPaymentsSeTax(ctx: FindingContext): Finding | null {
     whyItMatters: `Guaranteed payments are compensation for services, so they are subject to self-employment tax in full — unlike an S-corp distribution, and unlike the passive share of partnership income for a limited partner. They are also excluded from qualified business income, so every dollar routed this way is a dollar that earns no §199A deduction either. Both effects push the same direction.`,
     whatToConsider: `Where the partnership agreement allows, a preferred profit allocation can sometimes achieve the same economics as a guaranteed payment while preserving QBI treatment — the trade-off is that an allocation depends on the partnership having profit and a guaranteed payment does not. This is a partnership-agreement amendment, not a filing position, so it changes future years only. Confirm the treatment with the entity's own CPA before restructuring.`,
     lineRefs: [
-      { form: "Schedule K-1 (Form 1065)", line: "box 4", label: "Guaranteed payments", amount: total },
+      ...partners.map((k) => ({
+        form: `Schedule K-1 (Form 1065) — ${k.entityName ?? "unnamed partnership"}`,
+        line: "box 4",
+        label: "Guaranteed payments",
+        amount: k.guaranteedPayments,
+      })),
       { form: "Schedule 2", line: "line 4", label: "Self-employment tax", amount: ctx.facts.tax.seTax },
     ],
     estimatedImpact: seTax,
