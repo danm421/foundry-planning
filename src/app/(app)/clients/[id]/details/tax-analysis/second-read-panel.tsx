@@ -36,18 +36,19 @@ export function SecondReadPanel({
   return (
     <section
       aria-labelledby="second-read-heading"
-      aria-busy={busy}
       className="rounded border border-dashed border-hair bg-card/50 p-4"
     >
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3
-            id="second-read-heading"
-            className="flex items-center gap-1.5 text-sm font-medium uppercase text-ink-3"
-          >
-            AI second read
+          {/* The tooltip trigger is a SIBLING of the heading, not a child: the
+              section is named by this h3, and a nested button would append its
+              "Show help" label to the region's accessible name. */}
+          <div className="flex items-center gap-1.5">
+            <h3 id="second-read-heading" className="text-sm font-medium uppercase text-ink-3">
+              AI second read
+            </h3>
             <FieldTooltip text="Runs only when you ask. It reads this year's attached files and reports at most six things it noticed that the rules above don't cover. It never calculates a figure — anything it quotes is copied straight off the form." />
-          </h3>
+          </div>
           <p className="mt-1 max-w-prose text-xs text-ink-3">
             Not calculated and not verified — check each item against the form before you
             act on it.
@@ -63,11 +64,13 @@ export function SecondReadPanel({
         </button>
       </div>
 
-      {busy && (
-        <p role="status" className="mt-3 text-xs text-ink-3">
-          Reading the documents — this can take a minute…
-        </p>
-      )}
+      {/* Mounted unconditionally and empty when idle. A live region that is
+          inserted into the DOM together with its text is announced
+          unreliably — the region has to already be there for the change to
+          register. `sr-only` keeps the idle node out of the layout. */}
+      <p role="status" className={busy ? "mt-3 text-xs text-ink-3" : "sr-only"}>
+        {busy ? "Reading the documents — this can take a minute…" : ""}
+      </p>
 
       {stale && (
         <p className="mt-3 rounded border border-warn/40 bg-warn/10 p-2 text-xs text-ink-2">
@@ -80,8 +83,11 @@ export function SecondReadPanel({
         <>
           {secondRead.warnings.length > 0 && (
             <ul className="mt-3 flex flex-col gap-1">
-              {secondRead.warnings.map((w) => (
-                <li key={w} className="text-xs text-warn">{w}</li>
+              {/* Index-keyed on purpose: two unreadable documents can produce
+                  byte-identical warning text, and keying on the string would
+                  drop one of the two lines. The list never reorders. */}
+              {secondRead.warnings.map((w, i) => (
+                <li key={i} className="text-xs text-warn">{w}</li>
               ))}
             </ul>
           )}

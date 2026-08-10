@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TaxAnalysisContent, type YearDetail } from "../tax-analysis-content";
 import { FactsReviewForm } from "../facts-review-form";
@@ -299,6 +299,82 @@ describe("TaxAnalysisContent", () => {
     // The handler patches `detail` from the response body. Re-fetching the year
     // would re-run the entire analysis to refresh one subordinate panel.
     expect(fetchMock.mock.calls.filter((c) => c[0] === YEAR_URL)).toHaveLength(yearFetchesBefore);
+  });
+
+  it("never generates on render — the AI fires only on the advisor's explicit click", async () => {
+    fetchMock
+      .mockReturnValueOnce(jsonResponse(readyList()))
+      .mockReturnValueOnce(jsonResponse(readyDetail({ secondRead: null, secondReadStale: false })));
+
+    render(<TaxAnalysisContent clientId="c1" />);
+    await waitFor(() => expect(screen.getByText(/2025 tax analysis/i)).toBeTruthy());
+
+    // Opening a year must never cost an AI call. Nothing has been clicked.
+    expect(
+      fetchMock.mock.calls.filter((c) => String(c[0]).includes("/second-read")),
+    ).toHaveLength(0);
+    expect(screen.getByRole("button", { name: /run ai second read/i })).toBeTruthy();
+  });
+
+  it("does not patch a year the advisor navigated away from while the read was in flight", async () => {
+    let resolvePost: (r: Response) => void = () => {};
+    const heldPost = new Promise<Response>((resolve) => {
+      resolvePost = resolve;
+    });
+    const generated = {
+      generatedAt: "2026-08-10T12:00:00.000Z",
+      warnings: [],
+      items: [
+        {
+          id: "sr-1",
+          headline: "Form 8283 noncash gift may need a qualified appraisal",
+          detail: "The packet includes a Form 8283 Section B.",
+          form: "Form 8283", line: "Section B", quotedValue: "$28,500", dismissed: false,
+        },
+      ],
+    };
+
+    fetchMock
+      .mockReturnValueOnce(
+        jsonResponse({
+          returns: [
+            { taxYear: 2025, status: "ready", warningCount: 0, sourceFilename: "a.pdf", updatedAt: "2026-07-10T00:00:00Z" },
+            { taxYear: 2024, status: "ready", warningCount: 0, sourceFilename: "b.pdf", updatedAt: "2026-07-10T00:00:00Z" },
+          ],
+        }),
+      )
+      .mockReturnValueOnce(jsonResponse(readyDetail({ secondRead: null, secondReadStale: false })))
+      // The generate call for 2025 — held open across the year switch below.
+      .mockReturnValueOnce(heldPost)
+      .mockReturnValueOnce(
+        jsonResponse(readyDetail({ taxYear: 2024, secondRead: null, secondReadStale: false })),
+      );
+
+    const user = userEvent.setup();
+    render(<TaxAnalysisContent clientId="c1" />);
+    await waitFor(() => expect(screen.getByText(/2025 tax analysis/i)).toBeTruthy());
+
+    await user.click(screen.getByRole("button", { name: /run ai second read/i }));
+    await user.click(screen.getByRole("tab", { name: /2024/ }));
+    await waitFor(() => expect(screen.getByText(/2024 tax analysis/i)).toBeTruthy());
+
+    // 2025's read comes back while 2024 is on screen.
+    await act(async () => {
+      resolvePost(
+        new Response(JSON.stringify({ secondRead: generated, secondReadStale: false }), {
+          status: 200,
+        }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /run ai second read/i })).not.toBeDisabled(),
+    );
+    // 2024 must not be wearing 2025's transcriptions — least of all flagged current.
+    expect(screen.queryByText(/noncash gift/)).toBeNull();
+    // Exact name, so "Run AI second read again" does NOT satisfy it: 2024 is
+    // still in its no-read-yet state, which a merged blob would have flipped.
+    expect(screen.getByRole("button", { name: "Run AI second read" })).toBeTruthy();
   });
 
   it("shows readable copy for the entitlement refusal instead of the machine code, and re-arms the button", async () => {

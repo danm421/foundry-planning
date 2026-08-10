@@ -204,13 +204,21 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
   // Both second-read handlers patch `detail` in place from the response rather
   // than re-fetching the year: a second read changes nothing else on the page,
   // and `loadDetail` would re-run the whole analysis for one panel.
+  //
+  // Both therefore pin the year they were started for and merge only if that
+  // year is still the one on screen. The generate call can take a minute, the
+  // year tabs stay live throughout, and merging 2025's transcriptions into
+  // 2024's panel — flagged `secondReadStale: false`, i.e. "current" — is the
+  // worst failure available to a lane whose whole premise is "check this
+  // against the form".
   async function runSecondRead() {
-    if (selectedYear == null) return;
+    const year = selectedYear;
+    if (year == null) return;
     setSecondReadBusy(true);
     setError(null);
     try {
       const res = await fetch(
-        `/api/clients/${clientId}/tax-returns/${selectedYear}/second-read`,
+        `/api/clients/${clientId}/tax-returns/${year}/second-read`,
         { method: "POST" },
       );
       if (!res.ok) {
@@ -225,17 +233,22 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
         return;
       }
       const body = (await res.json()) as { secondRead: SecondRead };
-      setDetail((d) => (d ? { ...d, secondRead: body.secondRead, secondReadStale: false } : d));
+      setDetail((d) =>
+        d && d.taxYear === year
+          ? { ...d, secondRead: body.secondRead, secondReadStale: false }
+          : d,
+      );
     } finally {
       setSecondReadBusy(false);
     }
   }
 
   async function dismissSecondReadItem(itemId: string) {
-    if (selectedYear == null) return;
+    const year = selectedYear;
+    if (year == null) return;
     setError(null);
     const res = await fetch(
-      `/api/clients/${clientId}/tax-returns/${selectedYear}/second-read/${itemId}`,
+      `/api/clients/${clientId}/tax-returns/${year}/second-read/${itemId}`,
       { method: "DELETE" },
     );
     if (!res.ok) {
@@ -243,7 +256,7 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
       return;
     }
     const body = (await res.json()) as { secondRead: SecondRead };
-    setDetail((d) => (d ? { ...d, secondRead: body.secondRead } : d));
+    setDetail((d) => (d && d.taxYear === year ? { ...d, secondRead: body.secondRead } : d));
   }
 
   // L3: a corrupted facts row (stored JSON that failed to parse) leaves
