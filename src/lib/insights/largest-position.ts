@@ -13,14 +13,6 @@ export interface PositionRow {
   price: number;
 }
 
-/**
- * Largest single position by aggregated market value. Pure.
- *
- * Aggregates across accounts: the same ticker held three times is ONE
- * concentration. Value comes from `holdingMarketValue`, never raw
- * shares x price — bonds and manual holdings carry an authoritative
- * marketValue because a bond's price quotes per $100 par.
- */
 export interface LargestPosition {
   label: string;
   value: number;
@@ -34,6 +26,17 @@ export interface LargestPosition {
   holdingsTotal: number;
 }
 
+/**
+ * Largest single position by aggregated market value, and the holdings total it
+ * should be measured against. Pure.
+ *
+ * Aggregates across accounts: the same ticker held three times is ONE
+ * concentration. Value comes from `holdingMarketValue`, never raw
+ * shares x price — bonds and manual holdings carry an authoritative
+ * marketValue because a bond's price quotes per $100 par. A holding too
+ * unnameable to be a position is excluded from the total as well as the pick,
+ * so it cannot deflate every share.
+ */
 export function pickLargestPosition(rows: readonly PositionRow[]): LargestPosition | null {
   const byLabel = new Map<string, number>();
   let holdingsTotal = 0;
