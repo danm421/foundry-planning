@@ -70,6 +70,7 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
     savingsRuleRows: {},
     savingsSchedules: {},
     flowScenarioFields: {},
+    ssScenarioFields: {},
     clientScenarioFields: {},
     planSettingsScenarioFields: {},
     clientInfo: TEST_CLIENT_INFO,

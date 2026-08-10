@@ -5,6 +5,7 @@
 // derived from the persisted columns alone: its start/end years are inert and
 // its editor is a different dialog from every other flow's.
 import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
+import { computeOwnMonthlyBenefit } from "@/engine/socialSecurity/ownRetirement";
 import { birthYearFromDob } from "@/lib/age-year";
 import type { ClientInfo, Income } from "@/engine/types";
 import type { FlowStartNote } from "./types";
@@ -28,6 +29,67 @@ function ageLabel(claimAgeMonths: number): string {
   const years = Math.floor(claimAgeMonths / 12);
   const months = claimAgeMonths % 12;
   return months === 0 ? `${years}` : `${years}y ${months}mo`;
+}
+
+/** When an SS row's benefit starts, resolved once for every surface that says so. */
+export interface SsClaim {
+  /** The effective claim age in total months, per `resolveClaimAgeMonths`. */
+  claimAgeMonths: number;
+  /** That age as a label — "70", "67y 6mo". */
+  ageLabel: string;
+  /**
+   * The first calendar year the projection pays the benefit. The engine's own
+   * rule, restated: `hasClaimed` is `(year - birthYear) * 12 >= claimAgeMonths`,
+   * so it is the birth year plus the claim age rounded UP to whole years. A 67y
+   * 6mo claim first pays at 68.
+   */
+  firstBenefitYear: number;
+}
+
+/**
+ * Resolve an SS row's claim age and the year it first pays, or null when either
+ * is underivable — an unresolvable mode (`fra` with no DOB, `at_retirement` with
+ * no retirement age) or an unparseable DOB. Null is also the case where the
+ * engine pays nothing.
+ *
+ * The ONE derivation of that year. Both surfaces that name it — the Cash Flow
+ * board's timing cell (`ssStartNote`) and the Goals board's Social Security
+ * milestone — read it from here, so a card cannot sit at one year while the cell
+ * beside it names another.
+ */
+export function ssClaim(row: Income, client: ClientInfo): SsClaim | null {
+  const claimAgeMonths = resolveClaimAgeMonths(row, client);
+  if (claimAgeMonths == null) return null;
+
+  const birthYear = birthYearFromDob(ownerDob(row, client));
+  if (birthYear == null) return null;
+
+  return {
+    claimAgeMonths,
+    ageLabel: ageLabel(claimAgeMonths),
+    firstBenefitYear: birthYear + Math.ceil(claimAgeMonths / 12),
+  };
+}
+
+/**
+ * The first-year annual benefit a `pia_at_fra` row implies at `claimAgeMonths`,
+ * or null when the PIA is unset/zero or the owner has no DOB.
+ *
+ * OWN retirement only — no spousal or survivor top-up, which
+ * `resolveAnnualBenefit` adds and which depend on the OTHER spouse's row. The
+ * same figure `SocialSecurityDialog` previews and `SocialSecurityCard` shows, so
+ * the three agree; label it as an estimate wherever it renders.
+ */
+export function ssEstimatedAnnual(
+  row: Income,
+  client: ClientInfo,
+  claimAgeMonths: number,
+): number | null {
+  const pia = row.piaMonthly == null ? null : Number(row.piaMonthly);
+  if (pia == null || !(pia > 0)) return null;
+  const dob = ownerDob(row, client);
+  if (!dob) return null;
+  return Math.round(computeOwnMonthlyBenefit({ piaMonthly: pia, claimAgeMonths, dob }) * 12);
 }
 
 /**
@@ -72,21 +134,12 @@ export function ssStartNote(
     };
   }
 
-  const claimAgeMonths = resolveClaimAgeMonths(row, client);
-  if (claimAgeMonths == null) return null;
+  const claim = ssClaim(row, client);
+  if (claim == null) return null;
+  if (claim.firstBenefitYear <= planStartYear) return null;
 
-  const birthYear = birthYearFromDob(ownerDob(row, client));
-  if (birthYear == null) return null;
-
-  // The engine's own rule, restated: `hasClaimed` is `(year - birthYear) * 12 >=
-  // claimAgeMonths`, so the first paying year is the birth year plus the claim
-  // age rounded UP to whole years. A 67y-6mo claim first pays at 68.
-  const firstBenefitYear = birthYear + Math.ceil(claimAgeMonths / 12);
-  if (firstBenefitYear <= planStartYear) return null;
-
-  const age = ageLabel(claimAgeMonths);
   return {
-    label: `at ${age}`,
-    title: `Benefit starts at age ${age} (${firstBenefitYear})`,
+    label: `at ${claim.ageLabel}`,
+    title: `Benefit starts at age ${claim.ageLabel} (${claim.firstBenefitYear})`,
   };
 }

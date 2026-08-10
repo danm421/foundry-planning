@@ -145,6 +145,7 @@ function goal(overrides: Partial<MapGoal> & Pick<MapGoal, "id">): MapGoal {
     expenseId: null,
     forFamilyMemberName: null,
     lifeExpectancy: null,
+    socialSecurity: null,
     ...overrides,
   };
 }
@@ -240,6 +241,7 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
     savingsRuleRows: {},
     savingsSchedules: {},
     flowScenarioFields: {},
+    ssScenarioFields: {},
     clientScenarioFields: {},
     planSettingsScenarioFields: {},
     clientInfo: TEST_CLIENT_INFO,
@@ -1160,6 +1162,156 @@ describe("HouseholdMapView — inline life-expectancy writes", () => {
 
     expect(screen.queryByRole("button", { name: /Edit life expectancy/ })).not.toBeInTheDocument();
     expect(screen.getByText("age 92")).toBeInTheDocument();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+// The Social Security benefit is the one inline edit on this page whose TARGET
+// COLUMN varies by row. `manual_amount` rows are paid off `annualAmount`;
+// `pia_at_fra` rows are paid off `piaMonthly` through `resolveAnnualBenefit`, and
+// `annualAmount` on such a row is dead data the dialog only carries forward. A
+// write to the wrong one returns 200 and moves nothing in the projection, which
+// is precisely the failure these tests exist to catch.
+describe("HouseholdMapView — inline Social Security writes", () => {
+  const SS_SCENARIO_FIELDS = {
+    type: "social_security",
+    name: "Social Security — Alex",
+    annualAmount: 48000,
+    startYear: 2026,
+    endYear: 2099,
+    growthRate: 0.02,
+    owner: "client",
+    claimingAgeMode: "years",
+    // The scenario's own override. A narrow write would delete it silently and
+    // the claim age would simply revert to base.
+    claimingAge: 70,
+    claimingAgeMonths: 0,
+    ssBenefitMode: "manual_amount",
+  };
+
+  function ssGoal(
+    owner: "client" | "spouse",
+    over: Partial<NonNullable<MapGoal["socialSecurity"]>> = {},
+  ): MapGoal {
+    const firstName = owner === "client" ? "Alex" : "Jordan";
+    const socialSecurity = {
+      incomeId: `ss-${owner}`,
+      owner,
+      mode: "manual_amount" as const,
+      amount: 48000,
+      claimAgeLabel: "70",
+      estimatedAnnual: null,
+      ...over,
+    };
+    return goal({
+      id: `milestone:${owner}_social_security`,
+      kind: "social_security",
+      side: owner,
+      title: `${firstName} claims Social Security`,
+      detail: "age 70 · $48,000/yr",
+      year: 2050,
+      socialSecurity,
+    });
+  }
+
+  function editableSsProps(overrides: Partial<HouseholdMapProps> = {}) {
+    return baseProps({
+      goals: [ssGoal("client")],
+      ssScenarioFields: { "ss-client": SS_SCENARIO_FIELDS },
+      ...overrides,
+    });
+  }
+
+  async function editBenefit(name: string, noun: string, next: string) {
+    fireEvent.click(screen.getByText("Goals"));
+    fireEvent.click(screen.getByRole("button", { name: `Edit ${noun} for ${name}` }));
+    const input = screen.getByRole("textbox", {
+      name: `${noun.charAt(0).toUpperCase()}${noun.slice(1)} for ${name}`,
+    });
+    fireEvent.change(input, { target: { value: next } });
+    fireEvent.keyDown(input, { key: "Enter" });
+  }
+
+  it("base mode PUTs only annualAmount to the income route for a manual row", async () => {
+    const fetchSpy = mockFetchOk();
+    render(<HouseholdMapView {...editableSsProps()} />);
+
+    await editBenefit("Alex", "annual benefit", "52000");
+
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/clients/client-1/incomes/ss-client");
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body as string)).toEqual({ annualAmount: "52000" });
+  });
+
+  // DISCRIMINATING: the only thing distinguishing this case from the one above
+  // is `mode`. A handler keyed off anything else — the value, the owner, the
+  // card — writes `annualAmount` here, and the engine never reads it.
+  it("writes piaMonthly, NOT annualAmount, for a pia_at_fra row", async () => {
+    const fetchSpy = mockFetchOk();
+    render(
+      <HouseholdMapView
+        {...editableSsProps({
+          goals: [ssGoal("client", { mode: "pia_at_fra", amount: 2800, estimatedAnnual: 41664 })],
+        })}
+      />,
+    );
+
+    await editBenefit("Alex", "monthly PIA", "3200");
+
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({ piaMonthly: "3200" });
+  });
+
+  // Same wholesale-replace hazard as every other scenario write on this page: a
+  // narrow `{annualAmount}` payload would make the new diff the ONLY entry,
+  // deleting this scenario's "claim at 70" override.
+  it("scenario mode POSTs the whole field set, preserving the claim-age override", async () => {
+    nav.scenario = "sc-1";
+    const fetchSpy = mockFetchOk();
+    render(<HouseholdMapView {...editableSsProps()} />);
+
+    await editBenefit("Alex", "annual benefit", "52000");
+
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/clients/client-1/scenarios/sc-1/changes");
+    const body = JSON.parse(init.body as string);
+    expect(body).toMatchObject({ op: "edit", targetKind: "income", targetId: "ss-client" });
+    expect(body.desiredFields.annualAmount).toBe("52000");
+    expect(body.desiredFields.claimingAge).toBe(70);
+    expect(body.desiredFields.claimingAgeMode).toBe("years");
+    expect(body.desiredFields.ssBenefitMode).toBe("manual_amount");
+  });
+
+  // Same rule as the flow saver, and the same reason: with no field set the only
+  // payload the writer could build is the narrow scenario write that deletes the
+  // row's other overrides. Sending nothing beats sending that.
+  it("refuses to write a row whose scenario field set is missing", async () => {
+    nav.scenario = "sc-1";
+    const fetchSpy = mockFetchOk();
+    render(<HouseholdMapView {...editableSsProps({ ssScenarioFields: {} })} />);
+
+    await editBenefit("Alex", "annual benefit", "52000");
+
+    await vi.waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Edit annual benefit for Alex" }),
+      ).toHaveTextContent("$48,000"),
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("writes nothing when the viewer may not edit — the benefit is not even a field", async () => {
+    const fetchSpy = mockFetchOk();
+    render(<HouseholdMapView {...editableSsProps({ canEdit: false })} />);
+
+    fireEvent.click(screen.getByText("Goals"));
+
+    expect(screen.queryByRole("button", { name: /Edit annual benefit/ })).not.toBeInTheDocument();
+    expect(screen.getByText("age 70 · $48,000/yr")).toBeInTheDocument();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

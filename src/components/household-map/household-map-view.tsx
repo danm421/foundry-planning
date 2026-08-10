@@ -13,7 +13,7 @@ import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href"
 import SavingsRuleDialog, { type SavingsRuleRow } from "@/components/forms/savings-rule-dialog";
 import { approximateMilestones } from "@/lib/household-map/approximate-milestones";
 import type { HouseholdMapProps, MapColumn, MapItem } from "@/lib/household-map/types";
-import type { LifeExpectancyOwner, MapGoal } from "@/lib/household-map/goals";
+import type { GoalSocialSecurity, LifeExpectancyOwner } from "@/lib/household-map/goals";
 import {
   buildLifeExpectancyClientFields,
   buildLifeExpectancyPlanSettingsFields,
@@ -31,6 +31,7 @@ import {
 import {
   buildFlowScenarioDesiredFields,
   flowAmountPatch,
+  ssBenefitPatch,
 } from "@/lib/inline-edit/flow-write";
 
 const BOARDS = [
@@ -271,6 +272,47 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
     return res.ok;
   }
 
+  /**
+   * Persist an inline Social Security benefit edit from the Goals board.
+   *
+   * Shaped like `handleSaveFlowAmount` — narrow base PUT, whole-row scenario
+   * payload. Which COLUMN the patch targets is `ssBenefitPatch`'s call, not
+   * this handler's: it is a domain rule about how the engine pays a benefit, it
+   * fails silently when wrong, and it belongs beside the other write payloads in
+   * `lib/inline-edit/flow-write.ts` where it can be tested without a browser.
+   *
+   * THE FIELD SET comes from `ssScenarioFields`, not `flowScenarioFields` — SS
+   * rows are absent from the latter by construction. Refusing on a miss is the
+   * same rule as the flow saver: with no field set the scenario payload could
+   * only be the narrow write that deletes this scenario's other overrides on the
+   * row (a "claim at 70" edit, most obviously), and sending nothing beats
+   * sending that.
+   */
+  async function handleSaveSocialSecurity(
+    ss: GoalSocialSecurity,
+    next: number,
+  ): Promise<boolean> {
+    if (!canEdit) return false;
+    const fields = props.ssScenarioFields[ss.incomeId];
+    if (!fields) return false;
+
+    const patch = ssBenefitPatch(ss.mode, next);
+    const res = await writer.submit(
+      {
+        op: "edit",
+        targetKind: "income",
+        targetId: ss.incomeId,
+        desiredFields: buildFlowScenarioDesiredFields(fields, patch),
+      },
+      {
+        url: `/api/clients/${clientId}/incomes/${ss.incomeId}`,
+        method: "PUT",
+        body: patch,
+      },
+    );
+    return res.ok;
+  }
+
   // ── BoardCallbacks — card-click and add-button routing ──────────────────
   //
   // Every editor opened from here hydrates from `props`, which carry the
@@ -419,6 +461,7 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
           {...props}
           onEditGoalExpense={handleEditGoalExpense}
           onSaveLifeExpectancy={handleSaveLifeExpectancy}
+          onSaveSocialSecurity={handleSaveSocialSecurity}
           onAddGoal={handleAddGoal}
         />
       )}

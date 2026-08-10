@@ -83,4 +83,5 @@ export const TEST_PURCHASE_GOAL: MapGoal = {
   expenseId: "e1",
   forFamilyMemberName: null,
   lifeExpectancy: null,
+  socialSecurity: null,
 };

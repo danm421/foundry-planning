@@ -62,6 +62,13 @@ export interface FlowPatch {
    * matching column to write it to.
    */
   growthSource?: "custom" | "inflation";
+  /**
+   * Social Security's OTHER amount column — the monthly PIA off an SSA
+   * statement, from which `resolveAnnualBenefit` derives the benefit. Incomes
+   * only; expenses and savings rules have no such column, and nothing outside
+   * `ssBenefitPatch` sets it.
+   */
+  piaMonthly?: string;
 }
 
 /** Retained so existing call sites keep compiling. */
@@ -102,6 +109,31 @@ export function buildFlowScenarioFields<T extends object>(row: T): Record<string
  */
 export function flowAmountPatch(next: number): FlowPatch {
   return { annualAmount: String(Math.abs(next)) };
+}
+
+/**
+ * The patch for an inline SOCIAL SECURITY benefit edit, keyed off the row's
+ * benefit mode.
+ *
+ * Which column an SS benefit lives in is the one write rule on the Household Map
+ * that varies by row, and getting it wrong fails silently: `manual_amount` rows
+ * are paid off `annualAmount`, while `pia_at_fra` rows are paid off `piaMonthly`
+ * through `resolveAnnualBenefit` and carry `annualAmount` only as dead data the
+ * SS dialog forwards. A write to the other column returns 200 and moves nothing
+ * in the projection.
+ *
+ * Same `Math.abs` rule as `flowAmountPatch`, for the same reason: both columns
+ * are unsigned, so a stray minus would otherwise be persisted.
+ *
+ * `no_benefit` is absent by construction — `buildMapGoals` gives those rows no
+ * card, so there is nothing to edit.
+ */
+export function ssBenefitPatch(
+  mode: "manual_amount" | "pia_at_fra",
+  next: number,
+): FlowPatch {
+  const value = String(Math.abs(next));
+  return mode === "pia_at_fra" ? { piaMonthly: value } : { annualAmount: value };
 }
 
 /**

@@ -2,13 +2,16 @@
 import { isGoalExpense } from "@/lib/goals";
 import { coerceYearRef, resolveMilestone, type ClientMilestones } from "@/lib/milestones";
 import { ASSUMED_LIFE_EXPECTANCY } from "@/lib/plan-horizon";
+import { isSocialSecurityIncome, ssClaim, ssEstimatedAnnual } from "./social-security";
+import type { ClientInfo, Income } from "@/engine/types";
 
 export type GoalKind =
   | "education"
   | "purchase"
   | "household"
   | "retirement"
-  | "life_expectancy";
+  | "life_expectancy"
+  | "social_security";
 export type GoalSide = "client" | "spouse" | "joint";
 
 /** Whose life expectancy a card edits. Mirrors the two `clients` columns —
@@ -30,6 +33,48 @@ export interface GoalLifeExpectancy {
   assumed: boolean;
 }
 
+/**
+ * The editable payload of a Social Security milestone card.
+ *
+ * Present on the two `social_security` milestones and null on every other card.
+ * Its presence is what makes the benefit click-to-edit, exactly as
+ * `lifeExpectancy` does for the age on a life-expectancy card.
+ */
+export interface GoalSocialSecurity {
+  /** The `incomes` row the inline editor writes. */
+  incomeId: string;
+  owner: LifeExpectancyOwner;
+  /**
+   * Which COLUMN the editable figure is, and therefore what an edit writes:
+   * `manual_amount` → `annualAmount`, `pia_at_fra` → `piaMonthly`.
+   *
+   * There is no third member. `no_benefit` rows get no card at all — the engine
+   * skips them (`engine/income.ts`), so there is no year to place one at.
+   *
+   * The PIA is deliberately NOT back-solved from a typed annual benefit. It is a
+   * figure off an SSA statement; letting an advisor overwrite it by typing the
+   * number the app derived from it would silently rewrite the source document.
+   */
+  mode: "manual_amount" | "pia_at_fra";
+  /** The figure the editor holds: ANNUAL dollars in `manual_amount`, MONTHLY
+   *  dollars in `pia_at_fra`. Zero on a freshly seeded row, which is the prompt
+   *  to fill it in that `create-client.ts` intends. */
+  amount: number;
+  /** The resolved claim age as a label — "70", "67y 6mo". Carried rather than
+   *  left for the card to parse back out of `detail`, and resolved from the same
+   *  `ssClaim` call that fixed the card's YEAR, so the age and the year on a card
+   *  cannot describe two different claims. */
+  claimAgeLabel: string;
+  /**
+   * The first-year benefit the PIA implies at this claim age — `pia_at_fra` only,
+   * and null when the PIA is unset. Null in `manual_amount` too, where `amount`
+   * IS the annual figure and a second copy of it would only invite drift.
+   *
+   * Own retirement only; see `ssEstimatedAnnual`. Always rendered as an estimate.
+   */
+  estimatedAnnual: number | null;
+}
+
 export interface MapGoal {
   /** Stable id: `expense:<uuid>` or `milestone:<slug>`. */
   id: string;
@@ -48,6 +93,9 @@ export interface MapGoal {
    * board). Its presence is what makes the card's age click-to-edit.
    */
   lifeExpectancy: GoalLifeExpectancy | null;
+  /** Set on the two Social Security milestones and null on every other card.
+   *  Its presence is what makes the card's benefit click-to-edit. */
+  socialSecurity: GoalSocialSecurity | null;
 }
 
 /**
@@ -96,6 +144,21 @@ export interface BuildMapGoalsInput {
     spouseBirthYear: number | null;
   };
   familyMemberNamesById: ReadonlyMap<string, string>;
+  /**
+   * Social Security's two milestones. `incomes` is the whole income list — the
+   * SS rows are picked out here, so callers don't each re-implement the
+   * type test.
+   *
+   * `clientInfo` is the scenario-effective `client` singleton, which claim-age
+   * resolution needs and `client` above cannot supply: `resolveClaimAgeMonths`
+   * reads DOB STRINGS (for `fra` mode) and both retirement ages, while `client`
+   * carries birth YEARS. Both are derived from the same effective client in
+   * `build-boards.ts`, so they cannot disagree about a retirement age.
+   */
+  socialSecurity: {
+    incomes: readonly Income[];
+    clientInfo: ClientInfo;
+  };
 }
 
 const currency = new Intl.NumberFormat("en-US", {
@@ -170,6 +233,7 @@ export function buildMapGoals(input: BuildMapGoalsInput): MapGoal[] {
         ? (input.familyMemberNamesById.get(e.forFamilyMemberId) ?? null)
         : null,
       lifeExpectancy: null,
+      socialSecurity: null,
     });
   }
 
@@ -184,6 +248,7 @@ export function buildMapGoals(input: BuildMapGoalsInput): MapGoal[] {
     expenseId: null,
     forFamilyMemberName: null,
     lifeExpectancy: null,
+    socialSecurity: null,
   });
 
   if (m.spouseRetirement != null && client.spouseFirstName && client.spouseRetirementAge != null) {
@@ -197,6 +262,7 @@ export function buildMapGoals(input: BuildMapGoalsInput): MapGoal[] {
       expenseId: null,
       forFamilyMemberName: null,
       lifeExpectancy: null,
+      socialSecurity: null,
     });
   }
 
@@ -219,6 +285,7 @@ export function buildMapGoals(input: BuildMapGoalsInput): MapGoal[] {
   // which is what the projection actually keys death events off. Do not route
   // these back through `milestones`.
   goals.push(...lifeExpectancyMilestones(input));
+  goals.push(...socialSecurityMilestones(input));
 
   return goals.sort((a, b) => a.year - b.year || a.id.localeCompare(b.id));
 }
@@ -261,6 +328,7 @@ function lifeExpectancyMilestones(input: BuildMapGoalsInput): MapGoal[] {
       expenseId: null,
       forFamilyMemberName: null,
       lifeExpectancy: { owner, age, assumed },
+      socialSecurity: null,
     };
   };
 
@@ -276,6 +344,104 @@ function lifeExpectancyMilestones(input: BuildMapGoalsInput): MapGoal[] {
     out.push(
       card("spouse", client.spouseFirstName, client.spouseBirthYear, client.spouseLifeExpectancy),
     );
+  }
+
+  return out;
+}
+
+/** `$2,800/mo` / `$48,000/yr` — the benefit figure, in the units its mode holds. */
+function benefitLabel(mode: GoalSocialSecurity["mode"], amount: number): string {
+  return mode === "pia_at_fra" ? `${currency.format(amount)}/mo` : `${currency.format(amount)}/yr`;
+}
+
+/**
+ * One Social Security card per principal who has an SS income row, placed at the
+ * first year the projection actually pays the benefit.
+ *
+ * Every household has these rows: `create-client.ts` seeds one per person at $0
+ * with `claimingAge: 67`, precisely so the advisor is prompted to fill the
+ * benefit in — which is what makes an editable card on the timeline worth having
+ * rather than an empty gesture.
+ *
+ * A person is skipped when:
+ *   • they have no SS row at all;
+ *   • the row is `no_benefit` — `engine/income.ts` skips it, so there is no year
+ *     at which anything starts;
+ *   • `claimingAge` is null. That column, not the mode, is what gates the
+ *     engine's claim-age branch (`inc.claimingAge != null` in `engine/income.ts`),
+ *     and a row without one is paid from its `startYear` like an ordinary income.
+ *     A "starts at 67" card would then name a year the projection never uses.
+ *     NOTE the Cash Flow board's timing cell does NOT apply this gate — `ssStartNote`
+ *     predates it and still labels such a row "at 67". Pre-existing; left alone
+ *     because changing it changes a shipped surface this feature does not touch;
+ *   • the claim age or the owner's birth year is underivable (`ssClaim` → null).
+ */
+function socialSecurityMilestones(input: BuildMapGoalsInput): MapGoal[] {
+  const { incomes, clientInfo } = input.socialSecurity;
+  const { client } = input;
+  const out: MapGoal[] = [];
+
+  const card = (owner: LifeExpectancyOwner, firstName: string): MapGoal | null => {
+    // First match wins, matching `SocialSecurityCard.findRow` — a household with
+    // two rows for one owner is a legacy edge case, and picking a different one
+    // here than the dialog does would let the two edit different rows.
+    const row = incomes.find((i) => isSocialSecurityIncome(i) && i.owner === owner);
+    if (!row || row.ssBenefitMode === "no_benefit" || row.claimingAge == null) return null;
+
+    const claim = ssClaim(row, clientInfo);
+    if (claim == null) return null;
+
+    // A stored NULL means the row predates the mode column; `SocialSecurityCard`
+    // and `SocialSecurityDialog` both read an existing row's null as
+    // "manual_amount", and this has to agree with them or the card would offer a
+    // PIA editor for a row the engine is paying off `annualAmount`.
+    const mode: GoalSocialSecurity["mode"] =
+      row.ssBenefitMode === "pia_at_fra" ? "pia_at_fra" : "manual_amount";
+    const amount =
+      mode === "pia_at_fra" ? Number(row.piaMonthly ?? 0) : Number(row.annualAmount ?? 0);
+    const estimatedAnnual =
+      mode === "pia_at_fra" ? ssEstimatedAnnual(row, clientInfo, claim.claimAgeMonths) : null;
+
+    // The read-only fallback line, for a board rendered without a writer (the
+    // client portal's Organizer). It has to carry the same three facts the
+    // editable slot does, or a viewer loses the number the card exists for.
+    const detail = [
+      `age ${claim.ageLabel}`,
+      mode === "pia_at_fra" && amount <= 0 ? "PIA not set" : benefitLabel(mode, amount),
+      mode === "pia_at_fra" && estimatedAnnual != null
+        ? `est. ${currency.format(estimatedAnnual)}/yr`
+        : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
+    return {
+      id: `milestone:${owner}_social_security`,
+      year: claim.firstBenefitYear,
+      kind: "social_security",
+      side: owner,
+      title: `${firstName} claims Social Security`,
+      detail,
+      expenseId: null,
+      forFamilyMemberName: null,
+      lifeExpectancy: null,
+      socialSecurity: {
+        incomeId: row.id,
+        owner,
+        mode,
+        amount,
+        claimAgeLabel: claim.ageLabel,
+        estimatedAnnual,
+      },
+    };
+  };
+
+  const clientCard = card("client", client.firstName);
+  if (clientCard) out.push(clientCard);
+
+  if (client.spouseFirstName) {
+    const spouseCard = card("spouse", client.spouseFirstName);
+    if (spouseCard) out.push(spouseCard);
   }
 
   return out;

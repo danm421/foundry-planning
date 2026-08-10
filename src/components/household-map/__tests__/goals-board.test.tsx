@@ -28,6 +28,7 @@ function goal(overrides: Partial<MapGoal> & Pick<MapGoal, "id">): MapGoal {
     expenseId: null,
     forFamilyMemberName: null,
     lifeExpectancy: null,
+    socialSecurity: null,
     ...overrides,
   };
 }
@@ -52,6 +53,7 @@ function baseProps(overrides: Partial<HouseholdMapProps> = {}): HouseholdMapProp
     savingsRuleRows: {},
     savingsSchedules: {},
     flowScenarioFields: {},
+    ssScenarioFields: {},
     clientScenarioFields: {},
     planSettingsScenarioFields: {},
     clientInfo: TEST_CLIENT_INFO,
@@ -247,6 +249,7 @@ describe("GoalsBoard", () => {
     { kind: "household", label: "Household", border: "var(--color-cat-transactions)" },
     { kind: "retirement", label: "Retirement", border: "var(--color-cat-income)" },
     { kind: "life_expectancy", label: "Life expectancy", border: "var(--color-cat-life)" },
+    { kind: "social_security", label: "Social Security", border: "var(--color-cat-tax)" },
   ];
 
   it.each(KIND_CASES)(
@@ -443,6 +446,205 @@ describe("GoalsBoard — inline life-expectancy editing", () => {
     fireEvent.keyDown(input, { key: "Enter" });
 
     await vi.waitFor(() => expect(onSave).toHaveBeenCalledWith("spouse", 87));
+  });
+});
+
+// The board half of the Social Security editor. What makes the benefit editable
+// is the `socialSecurity` PAYLOAD on the goal — not its kind, not its side — and
+// what makes it a PIA field rather than an annual one is `payload.mode`. The
+// payload's own construction (which column each mode reads, the claim-age year)
+// is covered in `lib/household-map/__tests__/goals.test.ts`.
+describe("GoalsBoard — inline Social Security editing", () => {
+  const CARD_ID = {
+    client: "milestone:client_social_security",
+    spouse: "milestone:spouse_social_security",
+  } as const;
+
+  function ssGoal(
+    owner: "client" | "spouse",
+    over: Partial<NonNullable<MapGoal["socialSecurity"]>> = {},
+  ): MapGoal {
+    const firstName = owner === "client" ? "Alex" : "Jordan";
+    const socialSecurity = {
+      incomeId: `ss-${owner}`,
+      owner,
+      mode: "manual_amount" as const,
+      amount: 48000,
+      claimAgeLabel: "67",
+      estimatedAnnual: null,
+      ...over,
+    };
+    return goal({
+      id: CARD_ID[owner],
+      kind: "social_security",
+      side: owner,
+      title: `${firstName} claims Social Security`,
+      // The string the builder emits for this payload, so the read-only
+      // fallbacks below assert against what production would render.
+      detail:
+        socialSecurity.mode === "pia_at_fra"
+          ? `age ${socialSecurity.claimAgeLabel} · $${socialSecurity.amount.toLocaleString()}/mo`
+          : `age ${socialSecurity.claimAgeLabel} · $${socialSecurity.amount.toLocaleString()}/yr`,
+      year: 2047,
+      socialSecurity,
+    });
+  }
+
+  const writer = () => vi.fn().mockResolvedValue(true);
+
+  it("renders the annual benefit as a click-to-edit field in manual mode", () => {
+    render(
+      <GoalsBoard {...baseProps({ goals: [ssGoal("client")] })} onSaveSocialSecurity={writer()} />,
+    );
+
+    const trigger = screen.getByRole("button", { name: "Edit annual benefit for Alex" });
+    expect(trigger).toHaveTextContent("$48,000");
+    fireEvent.click(trigger);
+    expect(screen.getByRole("textbox", { name: "Annual benefit for Alex" })).toBeInTheDocument();
+  });
+
+  // DISCRIMINATING: the two modes edit two DIFFERENT columns, and the accessible
+  // name is the only thing on screen that says which. A PIA row offering "annual
+  // benefit" would be an advisor typing 48000 into a monthly column.
+  it("renders the MONTHLY pia as the field in pia mode, named as such", () => {
+    render(
+      <GoalsBoard
+        {...baseProps({
+          goals: [ssGoal("client", { mode: "pia_at_fra", amount: 2800, estimatedAnnual: 41664 })],
+        })}
+        onSaveSocialSecurity={writer()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Edit monthly PIA for Alex" })).toHaveTextContent(
+      "$2,800",
+    );
+    expect(
+      screen.queryByRole("button", { name: /Edit annual benefit/ }),
+    ).not.toBeInTheDocument();
+    // The derived annual renders BESIDE the PIA, flagged as an estimate — it is
+    // own-retirement only, with no spousal or survivor top-up.
+    expect(screen.getByText("est. $41,664/yr")).toBeInTheDocument();
+  });
+
+  it("shows no estimate line when there is no estimate to show", () => {
+    render(
+      <GoalsBoard
+        {...baseProps({ goals: [ssGoal("client", { mode: "pia_at_fra", amount: 0 })] })}
+        onSaveSocialSecurity={writer()}
+      />,
+    );
+    expect(screen.queryByText(/est\./)).not.toBeInTheDocument();
+  });
+
+  // Same constraint as the life-expectancy card: a `<button>` may not contain
+  // another. SS milestones carry `expenseId: null`, so `clickHandlerFor` returns
+  // undefined and the card renders as a div.
+  it("renders the card as a div, so the editor's button can legally live inside it", () => {
+    render(
+      <GoalsBoard {...baseProps({ goals: [ssGoal("client")] })} onSaveSocialSecurity={writer()} />,
+    );
+
+    const card = screen.getByTestId(`goal-card-left-${CARD_ID.client}`);
+    expect(card.tagName).toBe("DIV");
+    expect(
+      within(card).getByRole("button", { name: "Edit annual benefit for Alex" }),
+    ).toBeInTheDocument();
+  });
+
+  // DISCRIMINATING: both cards render the same editor against the same handler,
+  // and the PAYLOAD is the only thing telling them apart. Passing the card's own
+  // payload — rather than an owner the write site would have to re-resolve to a
+  // row — is what keeps a spouse edit off the client's income row.
+  it("each card saves its OWN payload and the newly typed figure", async () => {
+    const onSave = writer();
+    const clientGoal = ssGoal("client");
+    const spouseGoal = ssGoal("spouse", { amount: 36000 });
+    render(
+      <GoalsBoard
+        {...baseProps({ goals: [clientGoal, spouseGoal] })}
+        onSaveSocialSecurity={onSave}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit annual benefit for Jordan" }));
+    const spouseInput = screen.getByRole("textbox", { name: "Annual benefit for Jordan" });
+    fireEvent.change(spouseInput, { target: { value: "40000" } });
+    fireEvent.keyDown(spouseInput, { key: "Enter" });
+
+    await vi.waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith(spouseGoal.socialSecurity, 40000),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit annual benefit for Alex" }));
+    const clientInput = screen.getByRole("textbox", { name: "Annual benefit for Alex" });
+    fireEvent.change(clientInput, { target: { value: "52000" } });
+    fireEvent.keyDown(clientInput, { key: "Enter" });
+
+    await vi.waitFor(() => expect(onSave).toHaveBeenCalledWith(clientGoal.socialSecurity, 52000));
+    expect(onSave).toHaveBeenCalledTimes(2);
+  });
+
+  // Both fallbacks still RENDER the benefit — losing the editor must not lose
+  // the number.
+  it("falls back to the static detail string when the viewer may not edit", () => {
+    render(
+      <GoalsBoard
+        {...baseProps({ goals: [ssGoal("client")], canEdit: false })}
+        onSaveSocialSecurity={writer()}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /Edit annual benefit/ })).not.toBeInTheDocument();
+    expect(screen.getByText("age 67 · $48,000/yr")).toBeInTheDocument();
+  });
+
+  it("falls back to the static detail string when the board has no writer", () => {
+    render(<GoalsBoard {...baseProps({ goals: [ssGoal("client")] })} />);
+
+    expect(screen.queryByRole("button", { name: /Edit annual benefit/ })).not.toBeInTheDocument();
+    expect(screen.getByText("age 67 · $48,000/yr")).toBeInTheDocument();
+  });
+
+  // The editor is gated on the goal's `socialSecurity` payload, not on its kind.
+  // A retirement milestone acquiring one would offer a benefit field that writes
+  // an income row.
+  it("a goal with no social-security payload gets no benefit editor", () => {
+    const retirement = goal({
+      id: "milestone:client_retirement",
+      kind: "retirement",
+      side: "client",
+      title: "Alex retires",
+      detail: "age 65",
+    });
+    render(<GoalsBoard {...baseProps({ goals: [retirement] })} onSaveSocialSecurity={writer()} />);
+
+    expect(screen.queryByRole("button", { name: /Edit annual benefit/ })).not.toBeInTheDocument();
+    expect(screen.getByText("age 65")).toBeInTheDocument();
+  });
+
+  // The two writers are independent. A board given only the SS one must still
+  // render the life-expectancy age as static text rather than an editor whose
+  // save has nowhere to go.
+  it("an SS writer alone does not make a life-expectancy age editable", () => {
+    const le = goal({
+      id: "milestone:client_life_expectancy",
+      kind: "life_expectancy",
+      side: "client",
+      title: "Alex's life expectancy",
+      detail: "age 92",
+      lifeExpectancy: { owner: "client", age: 92, assumed: false },
+    });
+    render(
+      <GoalsBoard
+        {...baseProps({ goals: [le, ssGoal("client")] })}
+        onSaveSocialSecurity={writer()}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /Edit life expectancy/ })).not.toBeInTheDocument();
+    expect(screen.getByText("age 92")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit annual benefit for Alex" })).toBeInTheDocument();
   });
 });
 

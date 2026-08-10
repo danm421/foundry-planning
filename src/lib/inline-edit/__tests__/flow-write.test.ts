@@ -4,6 +4,7 @@ import {
   buildFlowScenarioFields,
   flowAmountPatch,
   flowYearPatch,
+  ssBenefitPatch,
 } from "../flow-write";
 import type { FlowPatch } from "../flow-write";
 import type { Expense, Income, SavingsRule } from "@/engine/types";
@@ -217,5 +218,28 @@ describe("the null rule is per field, not global", () => {
     expect(out.startYearRef).toBe("plan_start");
     expect(out.endYearRef).toBe("client_retirement");
     expect(out.growthRate).toBe("0.03");
+  });
+});
+
+// Which column a Social Security benefit lives in is the one write rule on the
+// Household Map that varies by row, and it fails SILENTLY when wrong — the PUT
+// returns 200 and the projection does not move. That is why it lives here rather
+// than in the board's click handler, where only a jsdom test could reach it.
+describe("ssBenefitPatch", () => {
+  it("writes annualAmount for a manual_amount row", () => {
+    expect(ssBenefitPatch("manual_amount", 52000)).toEqual({ annualAmount: "52000" });
+  });
+
+  // DISCRIMINATING: `mode` is the ONLY input distinguishing this from the case
+  // above. A `pia_at_fra` row is paid off `piaMonthly` through
+  // `resolveAnnualBenefit`; its `annualAmount` is dead data the SS dialog only
+  // carries forward, so writing there edits a column the engine never reads.
+  it("writes piaMonthly — and NOT annualAmount — for a pia_at_fra row", () => {
+    expect(ssBenefitPatch("pia_at_fra", 3200)).toEqual({ piaMonthly: "3200" });
+  });
+
+  it("keeps the magnitude and drops the sign, as both columns are unsigned", () => {
+    expect(ssBenefitPatch("manual_amount", -52000)).toEqual({ annualAmount: "52000" });
+    expect(ssBenefitPatch("pia_at_fra", -3200)).toEqual({ piaMonthly: "3200" });
   });
 });

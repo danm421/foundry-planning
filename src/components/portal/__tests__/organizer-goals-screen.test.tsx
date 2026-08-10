@@ -41,6 +41,7 @@ const TEST_LIFE_EXPECTANCY_GOAL: MapGoal = {
   expenseId: null,
   forFamilyMemberName: null,
   lifeExpectancy: { owner: "client", age: 90, assumed: false },
+  socialSecurity: null,
 };
 
 const MILESTONES = {

@@ -2,6 +2,38 @@
 import { describe, it, expect } from "vitest";
 import { ASSUMED_LIFE_EXPECTANCY, buildMapGoals } from "../goals";
 import type { BuildMapGoalsInput } from "../goals";
+import type { ClientInfo, Income } from "@/engine/types";
+
+/** The scenario-effective client the SS cards resolve their claim ages against.
+ *  DOBs agree with `base.client`'s birth years — Dan 1972, Amy 1974. */
+const CLIENT_INFO: ClientInfo = {
+  firstName: "Dan",
+  lastName: "Reid",
+  dateOfBirth: "1972-05-10",
+  retirementAge: 65,
+  planEndAge: 95,
+  spouseName: "Amy",
+  spouseDob: "1974-08-22",
+  spouseRetirementAge: 65,
+  filingStatus: "married_joint",
+};
+
+const ssIncome = (over: Partial<Income> = {}): Income =>
+  ({
+    id: "ss-client",
+    type: "social_security",
+    name: "Social Security — Dan",
+    annualAmount: 48000,
+    startYear: 2026,
+    endYear: 2099,
+    growthRate: 0.02,
+    owner: "client",
+    ssBenefitMode: "manual_amount",
+    claimingAgeMode: "years",
+    claimingAge: 67,
+    claimingAgeMonths: 0,
+    ...over,
+  }) as Income;
 
 const milestones = {
   planStart: 2026,
@@ -29,6 +61,9 @@ const base: BuildMapGoalsInput = {
     spouseBirthYear: 1974,
   },
   familyMemberNamesById: new Map([["fm-kelly", "Kelly"]]),
+  // No SS rows by default — the milestone tests opt in, so every other
+  // assertion below keeps describing the card set it was written against.
+  socialSecurity: { incomes: [], clientInfo: CLIENT_INFO },
 };
 
 const expense = (over: Partial<BuildMapGoalsInput["expenses"][number]> = {}) => ({
@@ -224,6 +259,154 @@ describe("buildMapGoals", () => {
   // RETIREMENT AGE is set too. Keying the life-expectancy card off those hid it
   // for a spouse who has a DOB but has not retired on paper — two unrelated
   // facts.
+  // ── Social Security milestones ──────────────────────────────────────────
+  //
+  // A card per principal, placed at the first year the projection PAYS the
+  // benefit — not at the row's `startYear`, which is inert on an SS row.
+
+  const withSs = (incomes: Income[]): BuildMapGoalsInput => ({
+    ...base,
+    socialSecurity: { incomes, clientInfo: CLIENT_INFO },
+  });
+
+  it("places the card at the first PAYING year, not the row's inert startYear", () => {
+    // Dan born 1972, claims at 67 → 2039. `startYear` is 2026 and must not show.
+    const goals = buildMapGoals(withSs([ssIncome()]));
+    const card = goals.find((g) => g.id === "milestone:client_social_security");
+    expect(card).toMatchObject({
+      year: 2039,
+      side: "client",
+      kind: "social_security",
+      title: "Dan claims Social Security",
+    });
+  });
+
+  it("rounds a part-year claim age UP, matching the engine's whole-year comparison", () => {
+    // 67y 6mo first pays at 68 → 1972 + 68 = 2040. A card at 2039 would name a
+    // year the projection pays nothing in.
+    const goals = buildMapGoals(withSs([ssIncome({ claimingAge: 67, claimingAgeMonths: 6 })]));
+    expect(goals.find((g) => g.id === "milestone:client_social_security")?.year).toBe(2040);
+  });
+
+  it("reads the SPOUSE's dob and row for the spouse card", () => {
+    // Amy born 1974, claims at 70 → 2044. Reading Dan's 1972 would give 2042.
+    const goals = buildMapGoals(
+      withSs([ssIncome(), ssIncome({ id: "ss-spouse", owner: "spouse", claimingAge: 70 })]),
+    );
+    const card = goals.find((g) => g.id === "milestone:spouse_social_security");
+    expect(card).toMatchObject({ year: 2044, side: "spouse", title: "Amy claims Social Security" });
+    expect(card?.socialSecurity?.incomeId).toBe("ss-spouse");
+  });
+
+  it("carries the row's annual amount as the editable figure in manual mode", () => {
+    const goals = buildMapGoals(withSs([ssIncome({ annualAmount: 48000 })]));
+    expect(goals.find((g) => g.id === "milestone:client_social_security")?.socialSecurity).toEqual({
+      incomeId: "ss-client",
+      owner: "client",
+      mode: "manual_amount",
+      amount: 48000,
+      claimAgeLabel: "67",
+      // Null in manual mode — `amount` IS the annual figure, and a second copy
+      // of it is only somewhere for the two to drift.
+      estimatedAnnual: null,
+    });
+  });
+
+  it("carries the MONTHLY pia as the editable figure in pia mode, with the annual it implies", () => {
+    const goals = buildMapGoals(
+      withSs([ssIncome({ ssBenefitMode: "pia_at_fra", piaMonthly: 2800, claimingAge: 70 })]),
+    );
+    const ss = goals.find((g) => g.id === "milestone:client_social_security")?.socialSecurity;
+    // The editable figure is the PIA, not the derived benefit — editing the
+    // derived number would silently rewrite the SSA-statement figure.
+    expect(ss).toMatchObject({ mode: "pia_at_fra", amount: 2800 });
+    // Claiming at 70 against a 67 FRA is a delayed-credit bump, so the annual
+    // must EXCEED a flat 12 × PIA. An `estimatedAnnual` equal to 33_600 would
+    // mean the claim age never reached `computeOwnMonthlyBenefit`.
+    expect(ss?.estimatedAnnual).toBeGreaterThan(2800 * 12);
+  });
+
+  // The engine loader writes `?? undefined` for every absent optional column, so
+  // ABSENT is what a row predating the mode column looks like here.
+  it("treats an absent benefit mode as manual, as the SS card and dialog do", () => {
+    const goals = buildMapGoals(
+      withSs([ssIncome({ ssBenefitMode: undefined, annualAmount: 30000 })]),
+    );
+    expect(
+      goals.find((g) => g.id === "milestone:client_social_security")?.socialSecurity,
+    ).toMatchObject({ mode: "manual_amount", amount: 30000 });
+  });
+
+  it("omits the card for a no_benefit row — the engine pays it nothing", () => {
+    const goals = buildMapGoals(withSs([ssIncome({ ssBenefitMode: "no_benefit" })]));
+    expect(goals.map((g) => g.id)).not.toContain("milestone:client_social_security");
+  });
+
+  // `engine/income.ts` only enters its claim-age branch when `claimingAge` is
+  // set; without one the row is paid from `startYear` like ordinary income, so a
+  // "starts at 67" card would name a year the projection never uses.
+  it("omits the card when claimingAge is absent, however resolvable the mode is", () => {
+    const goals = buildMapGoals(
+      withSs([ssIncome({ claimingAge: undefined, claimingAgeMode: "fra" })]),
+    );
+    expect(goals.map((g) => g.id)).not.toContain("milestone:client_social_security");
+  });
+
+  it("omits the card when the claim age cannot be resolved", () => {
+    const noSpouseRetirement = { ...CLIENT_INFO, spouseRetirementAge: undefined };
+    const goals = buildMapGoals({
+      ...base,
+      socialSecurity: {
+        incomes: [ssIncome({ id: "ss-spouse", owner: "spouse", claimingAgeMode: "at_retirement" })],
+        clientInfo: noSpouseRetirement,
+      },
+    });
+    expect(goals.map((g) => g.id)).not.toContain("milestone:spouse_social_security");
+  });
+
+  it("omits a person's card when they have no SS row at all", () => {
+    const goals = buildMapGoals(withSs([ssIncome()]));
+    const ids = goals.map((g) => g.id);
+    expect(ids).toContain("milestone:client_social_security");
+    expect(ids).not.toContain("milestone:spouse_social_security");
+  });
+
+  it("ignores non-social-security incomes", () => {
+    const goals = buildMapGoals(withSs([ssIncome({ id: "salary", type: "salary" } as Partial<Income>)]));
+    expect(goals.map((g) => g.id)).not.toContain("milestone:client_social_security");
+  });
+
+  it("sorts the SS card into the spine by its paying year like any other", () => {
+    const goals = buildMapGoals(withSs([ssIncome()]));
+    expect(goals.map((g) => g.year)).toEqual([...goals.map((g) => g.year)].sort((a, b) => a - b));
+  });
+
+  // The read-only fallback the client portal renders. It must carry the same
+  // three facts the editable slot does, or a viewer loses the number the card
+  // exists for.
+  it("writes a detail line carrying the claim age and the benefit", () => {
+    const manual = buildMapGoals(withSs([ssIncome({ annualAmount: 48000 })]));
+    expect(manual.find((g) => g.id === "milestone:client_social_security")?.detail).toBe(
+      "age 67 · $48,000/yr",
+    );
+
+    const pia = buildMapGoals(
+      withSs([ssIncome({ ssBenefitMode: "pia_at_fra", piaMonthly: 2800, claimingAge: 67 })]),
+    );
+    expect(pia.find((g) => g.id === "milestone:client_social_security")?.detail).toMatch(
+      /^age 67 · \$2,800\/mo · est\. \$\d[\d,]*\/yr$/,
+    );
+  });
+
+  it("says the PIA is unset rather than showing $0 as a benefit", () => {
+    const goals = buildMapGoals(
+      withSs([ssIncome({ ssBenefitMode: "pia_at_fra", piaMonthly: undefined })]),
+    );
+    const card = goals.find((g) => g.id === "milestone:client_social_security");
+    expect(card?.detail).toBe("age 67 · PIA not set");
+    expect(card?.socialSecurity?.estimatedAnnual).toBeNull();
+  });
+
   it("shows the spouse's life expectancy even with no spouse retirement age", () => {
     const goals = buildMapGoals({
       ...base,

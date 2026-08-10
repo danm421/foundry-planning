@@ -1,6 +1,6 @@
 // src/lib/household-map/types.ts
 import type { ClientInfo, Income, PlanSettings } from "@/engine/types";
-import type { LifeExpectancyOwner, MapGoal } from "./goals";
+import type { GoalSocialSecurity, LifeExpectancyOwner, MapGoal } from "./goals";
 import type {
   AccountViewEngineFields,
   ExpenseView,
@@ -225,6 +225,19 @@ export interface HouseholdMapProps {
    * construction, and cannot drift when the engine type gains one.
    */
   flowScenarioFields: Record<string, Record<string, unknown>>;
+  /**
+   * The same field set for the SOCIAL SECURITY income rows, which
+   * `flowScenarioFields` deliberately excludes (it is filtered by
+   * `isHydratableIncome`, and SS is not hydratable there).
+   *
+   * A SEPARATE map rather than a widening of that one so each stays legible as
+   * one board's lookup — `flowScenarioFields` is the Cash Flow board's, this is
+   * the Goals board's Social Security card's. Neither is a capability grant: what
+   * decides whether a card offers an editor at all is `MapItem.editableAmount`
+   * (null for every SS row, `map-items.ts`) and the goal's `socialSecurity`
+   * payload. Both maps are built by `buildFlowScenarioFields` off the same tree.
+   */
+  ssScenarioFields: Record<string, Record<string, unknown>>;
   /** Every account, for `SavingsRuleDialog`'s target picker (it filters
    *  eligibility itself via `isSavingsEligibleAccount`). Engine fields only —
    *  a superset of the `{id, name, category, subType, ownerEntityId}` the
@@ -457,4 +470,16 @@ export interface BoardCallbacks {
    * way. Absent = the board renders the age as plain text.
    */
   onSaveLifeExpectancy?: (owner: LifeExpectancyOwner, age: number) => Promise<boolean>;
+  /**
+   * Persist an inline Social Security benefit edit from a Goals board milestone
+   * card. The board hands back the card's OWN payload rather than an id, because
+   * `ss.mode` is what decides which column the write targets — `annualAmount` or
+   * `piaMonthly` — and re-deriving that from an id at the write site would be a
+   * second place for the two to disagree.
+   *
+   * `next` is in the units `ss.mode` implies: ANNUAL dollars for
+   * `manual_amount`, MONTHLY for `pia_at_fra`. Resolves false on failure so the
+   * editor reverts. Absent = the board renders the benefit as plain text.
+   */
+  onSaveSocialSecurity?: (ss: GoalSocialSecurity, next: number) => Promise<boolean>;
 }
