@@ -64,6 +64,25 @@ describe("ctcPhaseout — RULING 1: capped at the credit that exists", () => {
     expect(f.numbers.reduction).toBe(3350);
     expect(f.estimatedImpact).toBe(3350);
   });
+
+  it("F3: fires the full-phaseout prose exactly when rawReduction equals the ceiling (boundary)", () => {
+    // highEarnerMfj()'s default kids = 2, so ceiling = 2 * PER_CHILD = 6,000.
+    // Landing rawReduction on that value exactly needs
+    // ceil(excess / 1000) * 50 = 6,000 => ceil(excess / 1000) = 120. Picking
+    // excess = 120,000 exactly removes any rounding ambiguity (120,000 / 1000
+    // is already an integer), so AGI = threshold (400,000) + 120,000 =
+    // 520,000 hits the boundary on the nose, not merely inside it.
+    const facts = mutate(highEarnerMfj(), (f) => { f.income.agi = 520000; });
+    const kids = facts.dependentsUnder17 as number;
+    const ceiling = kids * PER_CHILD;
+    const excess = (facts.income.agi as number) - 400000;
+    const rawReduction = Math.ceil(excess / 1000) * 50;
+    expect(rawReduction).toBe(ceiling); // sanity: the boundary case is exact, not >
+    const f = ctcPhaseout(withPerChild(facts, PER_CHILD))!;
+    expect(f.numbers.reduction).toBe(ceiling);
+    expect(f.estimatedImpact).toBe(ceiling);
+    expect(f.whatTheReturnShows).toContain("removes the entire");
+  });
 });
 
 describe("educationCredits", () => {

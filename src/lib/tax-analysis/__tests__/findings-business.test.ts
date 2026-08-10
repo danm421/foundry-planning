@@ -120,15 +120,18 @@ describe("guaranteedPaymentsSeTax", () => {
 
   it("RULING 3: cites each partnership K-1 separately rather than a computed sum", () => {
     const facts = sCorpOwnerMfj();
+    // Uneven split (40,000 / 20,000), not 30,000 / 30,000: an even split makes
+    // amount: total / partners.length indistinguishable from a straight field
+    // read. Uneven is the only shape that can catch that mutation.
     facts.k1s = [
       facts.k1s[0], // s-corp — no guaranteed payments, must not appear in the K-1 refs
-      { ...facts.k1s[1], entityName: "Harbor Street Partners LP", guaranteedPayments: 30000 },
-      { ...facts.k1s[1], entityName: "Second Street Holdings LP", ein: "41-9999999", guaranteedPayments: 30000 },
+      { ...facts.k1s[1], entityName: "Harbor Street Partners LP", guaranteedPayments: 40000 },
+      { ...facts.k1s[1], entityName: "Second Street Holdings LP", ein: "41-9999999", guaranteedPayments: 20000 },
     ];
     const f = guaranteedPaymentsSeTax(findingCtx(facts, { primaryAge: 51, spouseAge: 49 }))!;
     const k1Refs = f.lineRefs.filter((r) => r.line === "box 4");
     expect(k1Refs).toHaveLength(2);
-    expect(k1Refs.map((r) => r.amount)).toEqual([30000, 30000]);
+    expect(k1Refs.map((r) => r.amount)).toEqual([40000, 20000]); // each K-1's OWN figure, in K-1 order
     expect(k1Refs.some((r) => r.amount === 60000)).toBe(false); // never a computed sum
     expect(k1Refs.map((r) => r.form)).toEqual([
       "Schedule K-1 (Form 1065) — Harbor Street Partners LP",
