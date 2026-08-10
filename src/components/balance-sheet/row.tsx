@@ -22,8 +22,9 @@ function Row({
   onClick?: () => void;
   editMode: boolean;
   onDelete?: () => void;
-  /** Opens the full editor. Rendered as a pencil — the only way in once the
-   *  row carries inline controls, since a row-level click fights them. */
+  /** Opens the full editor. Rendered as a pencil, and as a click on the row's
+   *  name — a row-level click fights the inline controls, but the name is not
+   *  one of them. */
   onEdit?: () => void;
   deletable?: boolean;
   label: string;
@@ -39,6 +40,12 @@ function Row({
   // row that has any inline cell gives up its own click entirely.
   const hasInlineSlots = Boolean(ownerSlot || rateSlot || valueSlot);
   const rowClickable = !hasInlineSlots && onClick;
+  // ...which left the pencil as the only way into the full editor. The name
+  // takes the click too: it is text, not a control, so a click landing there
+  // was never meant for anything else. Suppressed when the whole row is
+  // already clickable — a nested button would fire `onEdit` AND bubble into
+  // `onClick`.
+  const nameOpensEditor = onEdit != null && !editMode && !rowClickable;
 
   return (
     <div
@@ -48,7 +55,25 @@ function Row({
     >
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-1.5 text-sm font-medium text-gray-100">
-          <span className="truncate">{label}</span>
+          {nameOpensEditor ? (
+            <button
+              type="button"
+              // Same pair as the pencil below: stopPropagation blocks an
+              // ancestor's React onClick, preventDefault cancels the anchor
+              // navigation when the row sits inside a link.
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onEdit!();
+              }}
+              title={label}
+              className="cursor-pointer truncate text-left hover:text-accent"
+            >
+              {label}
+            </button>
+          ) : (
+            <span className="truncate">{label}</span>
+          )}
           {labelBadge}
         </div>
         {subLabel && <div className="truncate text-xs text-gray-400">{subLabel}</div>}

@@ -649,3 +649,49 @@ describe("edit pencil", () => {
     expect(screen.getByRole("link", { name: /IRA/ })).toBeInTheDocument();
   });
 });
+
+describe("card name opens the editor", () => {
+  it("calls onEditAccount when the account name is clicked", async () => {
+    const onEditAccount = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          canEdit: true,
+          items: [item({ id: "acct-1", column: "client", name: "IRA", kind: "account" })],
+          accountRows: { "acct-1": accountRow({ id: "acct-1" }) },
+        })}
+        onEditAccount={onEditAccount}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "IRA" }));
+    expect(onEditAccount).toHaveBeenCalledWith("acct-1");
+  });
+
+  // A <button> may not nest inside an <a>. The cards that keep their link are
+  // exactly the ones that get no pencil, so the name has to stay a plain span
+  // there or the markup goes invalid and the click fights the navigation.
+  it("leaves the name a plain span on a card that keeps its link", () => {
+    render(
+      <NetWorthBoard
+        {...baseProps({
+          canEdit: true,
+          items: [
+            item({
+              id: "liab-1",
+              column: "joint",
+              name: "Mortgage",
+              kind: "liability",
+              category: "debt",
+            }),
+          ],
+          accountRows: {},
+        })}
+        onEditAccount={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Mortgage" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Mortgage/ })).toBeInTheDocument();
+  });
+});

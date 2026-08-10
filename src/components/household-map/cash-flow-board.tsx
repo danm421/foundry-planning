@@ -171,6 +171,9 @@ export default function CashFlowBoard({
         metaSlot={metaSlotFor(c)}
         valueSlot={valueSlotFor(c)}
         actionSlot={actionSlotFor(c)}
+        // The name opens the same editor the pencil does — same gate, so a row
+        // that must look inert stays inert.
+        onNameClick={onEditItem && isWritable(c) ? () => onEditItem(c) : undefined}
       />
     );
   }

@@ -25,6 +25,9 @@ interface MapCardProps {
   actionSlot?: ReactNode;
   /** Replaces the formatted value. Used for the inline editor. */
   valueSlot?: ReactNode;
+  /** When set, the name becomes a button that opens the same editor the pencil
+   *  does. Callers must gate it exactly as they gate `actionSlot`. */
+  onNameClick?: () => void;
 }
 
 /**
@@ -34,11 +37,13 @@ interface MapCardProps {
  * an uneven split needs to say why before it says anything else.
  *
  * The card itself is never interactive. Both boards now edit in place — an
- * inline value editor plus a pencil for the full dialog — and those are
- * `<button>`s, which cannot legally nest inside a card-level `<button>`. Callers
- * that still want the whole card to go somewhere wrap it in a `<Link>` (see
- * `NetWorthBoard.renderCard`, which does exactly that for the liability and
- * policy rows it cannot edit in place).
+ * inline value editor, a pencil for the full dialog, and (via `onNameClick`)
+ * the name — and those are `<button>`s, which cannot legally nest inside a
+ * card-level `<button>`. Callers that still want the whole card to go somewhere
+ * wrap it in a `<Link>` (see `NetWorthBoard.renderCard`, which does exactly
+ * that for the liability and policy rows it cannot edit in place — and which
+ * therefore passes no `onNameClick`, since a `<button>` may not nest in an
+ * `<a>` either).
  */
 export default function MapCard({
   item,
@@ -47,13 +52,25 @@ export default function MapCard({
   rateSlot,
   actionSlot,
   valueSlot,
+  onNameClick,
 }: MapCardProps) {
   const chip = item.trayOwnerLabel ?? item.splitChip ?? item.noteChip;
   const body = (
     <>
       {icon ? <span className="shrink-0 text-ink-3">{icon}</span> : null}
       <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="truncate text-xs font-medium text-ink">{item.name}</span>
+        {onNameClick ? (
+          <button
+            type="button"
+            onClick={onNameClick}
+            title={item.name}
+            className="cursor-pointer truncate text-left text-xs font-medium text-ink hover:text-accent"
+          >
+            {item.name}
+          </button>
+        ) : (
+          <span className="truncate text-xs font-medium text-ink">{item.name}</span>
+        )}
         {chip ? (
           <span className="truncate rounded bg-card px-1.5 py-px text-[10px] text-ink-3">
             {chip}

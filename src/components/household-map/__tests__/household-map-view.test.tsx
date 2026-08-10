@@ -405,8 +405,12 @@ describe("HouseholdMapView — Task 11 card-click and add-button routing", () =>
     expect(within(band).getByText("Term policy premium")).toBeInTheDocument();
     expect(band.querySelector("b")?.textContent).toBe("($25,200)");
 
-    // The writable sibling IS a button; the synthesized row is NOT.
-    expect(screen.getByRole("button", { name: /Mortgage payment/ })).toBeInTheDocument();
+    // The writable sibling IS a button; the synthesized row is NOT. Named
+    // exactly, because a writable row now offers two ways into the editor —
+    // the pencil and the name — and `/Mortgage payment/` matches both. The
+    // loose regex stays on the synthesized row: NEITHER may exist there.
+    expect(screen.getByRole("button", { name: "Edit Mortgage payment" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mortgage payment" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Term policy premium/ })).not.toBeInTheDocument();
 
     // And clicking it opens nothing.

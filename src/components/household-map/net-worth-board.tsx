@@ -127,12 +127,19 @@ export default function NetWorthBoard({
 
   /** One card, wrapped in a link only when it has nowhere better to go. */
   function renderCard(c: MapItem) {
+    // Gated on `isEditableAccountCard`, not just on `onEditAccount`: the cards
+    // it excludes are the ones still wrapped in a <Link> below, and a <button>
+    // may not nest inside an <a>.
+    const editable = isEditableAccountCard(c);
     const card = (
       <MapCard
         item={c}
         rateSlot={rateSlotFor(c)}
         valueSlot={valueSlotFor(c)}
         actionSlot={actionSlotFor(c)}
+        // The name opens the same editor the pencil does — a 12px glyph is a
+        // small target for the most common action on the board.
+        onNameClick={editable ? () => onEditAccount!(c.id) : undefined}
       />
     );
     // Account cards used to link to /details/net-worth because this board could
@@ -144,7 +151,7 @@ export default function NetWorthBoard({
     // Liabilities and synthesized policy rows get NO pencil (no hydrated row),
     // so they KEEP the link. Dropping it for every card would leave them inert:
     // no editor, no navigation, nothing.
-    if (isEditableAccountCard(c)) return <div key={c.id}>{card}</div>;
+    if (editable) return <div key={c.id}>{card}</div>;
     return (
       <Link key={c.id} href={detailHrefFor(c)} className="group">
         {card}

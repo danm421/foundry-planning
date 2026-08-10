@@ -103,4 +103,51 @@ describe("income-expenses Row with inline slots", () => {
     await user.click(screen.getByRole("button", { name: "Edit Salary" }));
     expect(onEdit).toHaveBeenCalledTimes(1);
   });
+
+  // The 12px pencil was the ONLY way into the editor once the row gave up its
+  // click. The name is the other non-control region of the row, so it takes the
+  // click too.
+  it("fires onEdit when the name is clicked", async () => {
+    const user = userEvent.setup();
+    const onEdit = vi.fn();
+    render(
+      <Row
+        editMode={false}
+        label="Salary"
+        value="$1"
+        onEdit={onEdit}
+        startSlot={<span data-testid="start">2026</span>}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Salary" }));
+    expect(onEdit).toHaveBeenCalledTimes(1);
+  });
+
+  // A nested button would fire onEdit AND bubble into the row's own onClick.
+  it("leaves the name inert when the whole row is already clickable", async () => {
+    const user = userEvent.setup();
+    const onClick = vi.fn();
+    const onEdit = vi.fn();
+    render(<Row editMode={false} label="Living" value="$1" onClick={onClick} onEdit={onEdit} />);
+    expect(screen.queryByRole("button", { name: "Living" })).not.toBeInTheDocument();
+    await user.click(screen.getByText("Living"));
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(onEdit).not.toHaveBeenCalled();
+  });
+
+  // In edit mode the trailing affordance is the trash can, not the pencil —
+  // the name must not smuggle the editor back in behind it.
+  it("leaves the name inert in edit mode", () => {
+    render(
+      <Row
+        editMode
+        label="Salary"
+        value="$1"
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        startSlot={<span data-testid="start">2026</span>}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Salary" })).not.toBeInTheDocument();
+  });
 });

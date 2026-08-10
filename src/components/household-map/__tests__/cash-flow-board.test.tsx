@@ -384,7 +384,12 @@ describe("CashFlowBoard", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: /Mortgage payment/ })).toBeInTheDocument();
+    // Named exactly, not by a loose regex: a writable row now offers TWO ways
+    // into the editor — the pencil and the name — and `/Mortgage payment/`
+    // matches both.
+    expect(screen.getByRole("button", { name: "Edit Mortgage payment" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mortgage payment" })).toBeInTheDocument();
+    // The loose regex stays here on purpose: NEITHER affordance may exist.
     expect(screen.queryByRole("button", { name: /Term policy premium/ })).not.toBeInTheDocument();
 
     screen.getByText("Term policy premium").click();
@@ -401,7 +406,8 @@ describe("CashFlowBoard", () => {
 
     render(<CashFlowBoard {...baseProps({ items, canEdit: true })} onEditItem={vi.fn()} />);
 
-    expect(screen.getByRole("button", { name: /Mortgage payment/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit Mortgage payment" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mortgage payment" })).toBeInTheDocument();
   });
 
   // ── Timing column ──────────────────────────────────────────────────────────
@@ -735,6 +741,49 @@ describe("CashFlowBoard", () => {
       expect(
         screen.queryByRole("button", { name: /Edit amount for Alex salary/ }),
       ).not.toBeInTheDocument();
+    });
+  });
+
+  describe("card name opens the editor", () => {
+    // The 12px pencil was the only way into the drawer. The name is the card's
+    // other non-control region, so it takes the click too.
+    it("calls onEditItem when the name is clicked", () => {
+      const onEditItem = vi.fn();
+      render(
+        <CashFlowBoard
+          {...baseProps({
+            items: [item({ id: "inc-1", kind: "income", column: "client", name: "Alex salary" })],
+          })}
+          onEditItem={onEditItem}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "Alex salary" }));
+      expect(onEditItem).toHaveBeenCalledTimes(1);
+      expect(onEditItem.mock.calls[0][0].id).toBe("inc-1");
+    });
+
+    it("leaves the name inert on a row the caller cannot write", () => {
+      render(
+        <CashFlowBoard
+          {...baseProps({
+            items: [
+              item({
+                id: "premium-abc",
+                kind: "expense",
+                column: "joint",
+                category: "insurance",
+                name: "Term policy premium",
+              }),
+            ],
+          })}
+          onEditItem={vi.fn()}
+          isItemEditable={(i) => !i.id.startsWith("premium-")}
+        />,
+      );
+
+      expect(screen.queryByRole("button", { name: "Term policy premium" })).not.toBeInTheDocument();
+      expect(screen.getByText("Term policy premium")).toBeInTheDocument();
     });
   });
 

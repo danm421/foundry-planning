@@ -23,7 +23,8 @@ function Row({
   onClick?: () => void;
   editMode: boolean;
   onDelete?: () => void;
-  /** When set, renders a pencil button that opens the full editor. */
+  /** When set, opens the full editor — from a pencil button, and from a click
+   *  on the row's name. */
   onEdit?: () => void;
   label: string;
   meta?: (string | null | undefined)[];
@@ -49,6 +50,11 @@ function Row({
   // the full editor through the pencil (`onEdit`) instead.
   const hasInlineSlots = Boolean(startSlot || endSlot || rateSlot);
   const rowClickable = !hasInlineSlots && onClick;
+  // The name takes the click as well as the pencil: it is text, not a control,
+  // so a click landing there was never meant for anything else. Suppressed when
+  // the whole row is already clickable — a nested button would fire `onEdit`
+  // AND bubble into `onClick`.
+  const nameOpensEditor = onEdit != null && !editMode && !rowClickable;
   return (
     <div
       onClick={hasInlineSlots ? undefined : onClick}
@@ -61,9 +67,27 @@ function Row({
         <div className="flex items-center gap-2">
           {/* `title` so a name that still doesn't fit at the narrowest pane
               width is readable on hover rather than lost to the ellipsis. */}
-          <span title={label} className="truncate text-sm font-medium text-gray-100">
-            {label}
-          </span>
+          {nameOpensEditor ? (
+            <button
+              type="button"
+              // Same pair as the pencil below: stopPropagation blocks an
+              // ancestor's React onClick, preventDefault cancels the anchor
+              // navigation when the row sits inside a link.
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onEdit!();
+              }}
+              title={label}
+              className="cursor-pointer truncate text-left text-sm font-medium text-gray-100 hover:text-accent"
+            >
+              {label}
+            </button>
+          ) : (
+            <span title={label} className="truncate text-sm font-medium text-gray-100">
+              {label}
+            </span>
+          )}
           {outOfEstate && (
             <span className="rounded-sm bg-amber-900/30 px-1.5 py-0.5 text-xs font-medium text-amber-300">
               OOE
