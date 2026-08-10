@@ -714,3 +714,78 @@ describe("AddAccountForm — counts toward AUM submit payload", () => {
     expect(body.countsTowardAum).toBe(true);
   });
 });
+
+// ── Real estate growth defaults ─────────────────────────────────────────────
+// Both real-estate rate pickers (value growth + property tax growth) default
+// to the plan inflation rate on a NEW account. Asserting only that the custom
+// % inputs are hidden would pass even if the payload still said "custom", so
+// each case also reads the outgoing body.
+
+const CATEGORY_DEFAULTS = {
+  taxable: "0.07",
+  cash: "0.02",
+  retirement: "0.07",
+  annuity: "0.04",
+  real_estate: "0.04",
+  business: "0.05",
+  life_insurance: "0.03",
+  notes_receivable: "0",
+};
+
+describe("AddAccountForm — real estate growth source defaults", () => {
+  it("defaults value growth and property tax growth to inflation on create", async () => {
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="real_estate"
+        mode="create"
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+        categoryDefaults={CATEGORY_DEFAULTS}
+      />,
+    );
+
+    // An inflation-sourced rate hides its custom % input.
+    expect(document.getElementById("growthRate")).toBeNull();
+    expect(document.getElementById("propertyTaxGrowthRate")).toBeNull();
+
+    fireEvent.submit(document.getElementById("add-account-form")!);
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/clients/client-123/accounts",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+
+    const call = fetchMock.mock.calls.find(
+      (args) => String(args[0]) === "/api/clients/client-123/accounts",
+    );
+    const body = JSON.parse(call![1].body as string);
+    expect(body.growthSource).toBe("inflation");
+    expect(body.propertyTaxGrowthSource).toBe("inflation");
+  });
+
+  it("keeps a stored custom source when editing an existing real estate account", () => {
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="real_estate"
+        mode="edit"
+        initial={{
+          ...BASE_INITIAL,
+          category: "real_estate",
+          subType: "primary_residence",
+          growthRate: "0.05",
+          growthSource: "custom",
+        }}
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+        categoryDefaults={CATEGORY_DEFAULTS}
+      />,
+    );
+
+    expect(document.getElementById("growthRate")).not.toBeNull();
+    expect(document.getElementById("propertyTaxGrowthRate")).not.toBeNull();
+  });
+});

@@ -420,8 +420,13 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const [propertyTaxGrowthRate, setPropertyTaxGrowthRate] = useState(
     initial?.propertyTaxGrowthRate != null ? (Number(initial.propertyTaxGrowthRate) * 100).toString() : "3"
   );
+  // New real estate defaults to the plan inflation rate; an existing account
+  // keeps whatever it stored (a missing source means it predates the toggle
+  // and was custom).
   const [propertyTaxGrowthSource, setPropertyTaxGrowthSource] = useState<"custom" | "inflation">(
-    initial?.propertyTaxGrowthSource === "inflation" ? "inflation" : "custom",
+    initial
+      ? initial.propertyTaxGrowthSource === "inflation" ? "inflation" : "custom"
+      : "inflation",
   );
   // Controlled custom rate for real estate value growth — preserved across
   // inflation/custom toggles so the typed value isn't lost.
@@ -498,7 +503,11 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   // Real estate uses its own source toggle (custom vs. plan inflation). Stored
   // in the same `growth_source` column on save.
   const [realEstateGrowthSource, setRealEstateGrowthSource] = useState<"custom" | "inflation">(
-    initial?.category === "real_estate" && initial?.growthSource === "inflation" ? "inflation" : "custom",
+    initial
+      ? initial.category === "real_estate" && initial.growthSource === "inflation"
+        ? "inflation"
+        : "custom"
+      : "inflation",
   );
   const [modelPortfolioId, setModelPortfolioId] = useState<string>(
     initial?.modelPortfolioId ?? ""
