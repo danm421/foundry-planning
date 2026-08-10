@@ -14,6 +14,8 @@ import { assembleFacts } from "./recompute";
 import { isUndefinedTable } from "./pg-errors";
 import { parseSupportingPayload, type W2Pair } from "./supporting-payload";
 import type { DocumentRole, FieldConflict, MergeDocument, OverrideMap } from "./merge/types";
+import { parseStoredSecondRead, isSecondReadStale } from "./second-read/store";
+import type { SecondRead } from "./second-read/types";
 
 /** What the documents strip renders. Deliberately separate from `MergeDocument`
  *  — the merge needs facts, the UI needs metadata, and sending both over the
@@ -48,6 +50,14 @@ export interface DocumentContext {
    *  `tax_returns.facts`; the documents panel reports itself unavailable. */
   unavailable: boolean;
   summaries: DocumentSummary[];
+  /** The persisted AI second read, or null when none has been generated.
+   *  Reading NEVER generates one — the AI lane fires only on the advisor's
+   *  explicit request (D13). */
+  secondRead: SecondRead | null;
+  /** The stored read no longer matches the current document set or the current
+   *  prompt version. Still rendered — a stale read is information — but the
+   *  panel says so and offers to regenerate. */
+  secondReadStale: boolean;
 }
 
 /**
@@ -59,16 +69,22 @@ export interface DocumentContext {
 export async function loadDocumentContext(taxReturnId: string): Promise<DocumentContext> {
   try {
     const [docs, state] = await Promise.all([listDocuments(taxReturnId), getState(taxReturnId)]);
+    const secondRead = parseStoredSecondRead(state?.aiSecondRead);
     return {
       documents: docs.map(rowToMergeDocument),
       overrides: state?.factsOverrides ?? {},
       unavailable: false,
       summaries: docs.map(rowToSummary),
+      secondRead,
+      secondReadStale: isSecondReadStale(secondRead, state ?? null, docs.map((d) => d.id)),
     };
   } catch (err) {
     if (isUndefinedTable(err)) {
       console.warn("tax_return document tables not migrated yet — documents panel unavailable");
-      return { documents: [], overrides: {}, unavailable: true, summaries: [] };
+      return {
+        documents: [], overrides: {}, unavailable: true, summaries: [],
+        secondRead: null, secondReadStale: false,
+      };
     }
     throw err;
   }
@@ -94,6 +110,8 @@ export interface AssembledTaxAnalysis {
   conflicts: FieldConflict[];
   provenance: Record<string, string>;
   documentsUnavailable: boolean;
+  secondRead: SecondRead | null;
+  secondReadStale: boolean;
 }
 
 export async function assembleTaxAnalysis(
@@ -120,6 +138,8 @@ export async function assembleTaxAnalysis(
     conflicts: assembled.conflicts,
     provenance: assembled.provenance,
     documentsUnavailable: docContext.unavailable,
+    secondRead: docContext.secondRead,
+    secondReadStale: docContext.secondReadStale,
   };
 }
 

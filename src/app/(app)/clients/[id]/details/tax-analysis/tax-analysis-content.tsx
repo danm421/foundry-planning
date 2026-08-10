@@ -5,6 +5,7 @@ import type { TaxAnalysis } from "@/lib/tax-analysis/analysis";
 import type { TaxReturnFacts } from "@/lib/schemas/tax-return-facts";
 import type { DocumentSummary } from "@/lib/tax-returns/assemble-analysis";
 import type { FieldConflict } from "@/lib/tax-returns/merge/types";
+import type { SecondRead } from "@/lib/tax-returns/second-read/types";
 import { FactsReviewForm } from "./facts-review-form";
 import { TaxReportView } from "./tax-report-view";
 import { DocumentsStrip } from "./documents-strip";
@@ -45,6 +46,13 @@ export interface YearDetail {
   provenance: Record<string, string>;
   /** True only in the deploy-before-migrate window — see `documents-strip.tsx`. */
   documentsUnavailable?: boolean;
+  /** Null when none was ever generated, or when the stored blob failed
+   *  re-validation — either way the panel offers to run one rather than
+   *  taking the tab down. */
+  secondRead?: SecondRead | null;
+  /** The documents (or the prompt) changed since the read was generated. A
+   *  stale read is still rendered — it is still information. */
+  secondReadStale?: boolean;
 }
 
 export function TaxAnalysisContent({ clientId }: { clientId: string }) {
@@ -53,7 +61,13 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
   const [detail, setDetail] = useState<YearDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [secondReadBusy, setSecondReadBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Kept separate from `error` so it can render INSIDE the panel. The shared
+  // banner is the first child of this container and the panel is its last
+  // element, so a second-read failure routed through `setError` lands
+  // thousands of pixels above the button the advisor just pressed.
+  const [secondReadError, setSecondReadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadList = useCallback(async (): Promise<Summary[]> => {
@@ -190,6 +204,75 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
     }
     await loadList();
     void loadDetail(selectedYear);
+  }
+
+  // Both second-read handlers patch `detail` in place from the response rather
+  // than re-fetching the year: a second read changes nothing else on the page,
+  // and `loadDetail` would re-run the whole analysis for one panel.
+  //
+  // Both therefore pin the year they were started for and merge only if that
+  // year is still the one on screen. The generate call can take a minute, the
+  // year tabs stay live throughout, and merging 2025's transcriptions into
+  // 2024's panel — flagged `secondReadStale: false`, i.e. "current" — is the
+  // worst failure available to a lane whose whole premise is "check this
+  // against the form".
+  //
+  // Both also catch a REJECTED fetch, not just a non-ok response. This route
+  // allows 300s and the panel says the read can take a minute, so a browser or
+  // proxy timeout is an ordinary outcome — and an unhandled rejection would
+  // return the panel to idle looking exactly like a successful empty read.
+  async function runSecondRead() {
+    const year = selectedYear;
+    if (year == null) return;
+    setSecondReadBusy(true);
+    setSecondReadError(null);
+    try {
+      const res = await fetch(
+        `/api/clients/${clientId}/tax-returns/${year}/second-read`,
+        { method: "POST" },
+      );
+      if (!res.ok) {
+        // The 403 entitlement body carries a machine code, not prose — every
+        // other failure body on this route is already a sentence.
+        const message = await errorMessage(res, "The second read couldn't run");
+        setSecondReadError(
+          message === "ai_import_not_entitled"
+            ? "AI features aren't enabled for this firm."
+            : message,
+        );
+        return;
+      }
+      const body = (await res.json()) as { secondRead: SecondRead };
+      setDetail((d) =>
+        d && d.taxYear === year
+          ? { ...d, secondRead: body.secondRead, secondReadStale: false }
+          : d,
+      );
+    } catch (e) {
+      setSecondReadError(e instanceof Error ? e.message : "The second read couldn't run");
+    } finally {
+      setSecondReadBusy(false);
+    }
+  }
+
+  async function dismissSecondReadItem(itemId: string) {
+    const year = selectedYear;
+    if (year == null) return;
+    setSecondReadError(null);
+    try {
+      const res = await fetch(
+        `/api/clients/${clientId}/tax-returns/${year}/second-read/${itemId}`,
+        { method: "DELETE" },
+      );
+      if (!res.ok) {
+        setSecondReadError(await errorMessage(res, "Couldn't dismiss that item"));
+        return;
+      }
+      const body = (await res.json()) as { secondRead: SecondRead };
+      setDetail((d) => (d && d.taxYear === year ? { ...d, secondRead: body.secondRead } : d));
+    } catch (e) {
+      setSecondReadError(e instanceof Error ? e.message : "Couldn't dismiss that item");
+    }
   }
 
   // L3: a corrupted facts row (stored JSON that failed to parse) leaves
@@ -341,6 +424,10 @@ export function TaxAnalysisContent({ clientId }: { clientId: string }) {
             <TaxReportView
               clientId={clientId}
               detail={detail}
+              secondReadBusy={secondReadBusy}
+              secondReadError={secondReadError}
+              onRunSecondRead={() => void runSecondRead()}
+              onDismissSecondReadItem={(itemId) => void dismissSecondReadItem(itemId)}
               onEditFacts={async () => {
                 // C1: reopen the year (ready → needs_review) via the Task 12
                 // PUT endpoint, then re-fetch so the FactsReviewForm branch

@@ -10,6 +10,7 @@ import { reconstructionNote } from "@/lib/tax-analysis/reconstruction";
 import { SEVERITY_GROUPS, CATEGORY_LABEL, FINDING_PARTS, sortFindings } from "@/lib/tax-analysis/findings/order";
 import { formatLineRefs } from "@/lib/tax-analysis/findings/line-refs";
 import { BracketMapBars } from "./bracket-map-bars";
+import { SecondReadPanel } from "./second-read-panel";
 import type { YearDetail } from "./tax-analysis-content";
 
 /** Per-variant row/label classes. `detail` rows are components of the line
@@ -91,10 +92,18 @@ export function TaxReportView({
   clientId,
   detail,
   onEditFacts,
+  secondReadBusy,
+  secondReadError,
+  onRunSecondRead,
+  onDismissSecondReadItem,
 }: {
   clientId: string;
   detail: YearDetail;
   onEditFacts: () => void | Promise<void>;
+  secondReadBusy: boolean;
+  secondReadError: string | null;
+  onRunSecondRead: () => void;
+  onDismissSecondReadItem: (itemId: string) => void;
 }) {
   const a = detail.analysis!;
   const k = a.keyFigures;
@@ -245,6 +254,15 @@ export function TaxReportView({
           </section>
         );
       })}
+
+      <SecondReadPanel
+        secondRead={detail.secondRead ?? null}
+        stale={detail.secondReadStale === true}
+        busy={secondReadBusy}
+        error={secondReadError}
+        onGenerate={onRunSecondRead}
+        onDismiss={onDismissSecondReadItem}
+      />
 
       {a.yoy && (
         <section>
