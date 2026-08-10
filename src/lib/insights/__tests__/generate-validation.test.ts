@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Signal } from "../signals";
 import type { InsightsBattery } from "../battery";
 
@@ -45,6 +45,12 @@ beforeEach(() => {
   invoke.mockReset();
   // The guard warns on every drop; silence it so a passing run stays readable.
   vi.spyOn(console, "warn").mockImplementation(() => {});
+});
+
+// Restore console.warn, or this file's silencing leaks into every suite that
+// runs after it in the same worker.
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe("dropUncitedActions", () => {
@@ -209,16 +215,11 @@ describe("generateInsights", () => {
       talkingPoints: ["tp"],
     });
 
-    const { sections, cached } = await generateInsights({
-      clientId: "c1",
-      battery: battery([sig("plan.funding_shortfall")]),
-      force: true,
-    });
+    const { sections } = await generateInsights(battery([sig("plan.funding_shortfall")]));
 
     expect(sections.actions.map((a) => a.signalId)).toEqual(["plan.funding_shortfall"]);
     expect(sections.headline).toBe("h");
     expect(sections.talkingPoints).toEqual(["tp"]);
-    expect(cached).toBe(false);
   });
 
   it("sends the signal ids to the model so it has something to cite", async () => {
@@ -230,11 +231,7 @@ describe("generateInsights", () => {
       talkingPoints: [],
     });
 
-    await generateInsights({
-      clientId: "c1",
-      battery: battery([sig("risk.tolerance_stale")]),
-      force: true,
-    });
+    await generateInsights(battery([sig("risk.tolerance_stale")]));
 
     const [messages] = invoke.mock.calls[0] as [Array<{ content: string }>];
     expect(messages.map((m) => m.content).join("\n")).toContain("risk.tolerance_stale");

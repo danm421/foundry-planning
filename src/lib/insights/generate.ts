@@ -54,12 +54,10 @@ export function dropUncitedActions(
   return kept;
 }
 
-export async function generateInsights(args: {
-  clientId: string;
-  battery: InsightsBattery;
-  force: boolean;
-}): Promise<{ sections: GeneratedInsights; generatedAt: string; cached: boolean }> {
-  const { system, user } = buildInsightsPrompt(args.battery);
+export async function generateInsights(
+  battery: InsightsBattery,
+): Promise<{ sections: GeneratedInsights; generatedAt: string }> {
+  const { system, user } = buildInsightsPrompt(battery);
 
   const model = chatModel("full").withStructuredOutput(GeneratedInsightsSchema, {
     name: "client_360_profile",
@@ -71,8 +69,8 @@ export async function generateInsights(args: {
 
   const sections: GeneratedInsights = {
     ...raw,
-    actions: dropUncitedActions(raw.actions, args.battery.signals),
+    actions: dropUncitedActions(raw.actions, battery.signals),
   };
 
-  return { sections, generatedAt: new Date().toISOString(), cached: false };
+  return { sections, generatedAt: new Date().toISOString() };
 }

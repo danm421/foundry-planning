@@ -77,7 +77,6 @@ describe("POST /insights", () => {
     vi.mocked(generateInsights).mockResolvedValue({
       sections: { headline: "h", snapshot: "s", goals: "g", actions: [], talkingPoints: [] },
       generatedAt: "2026-01-01T00:00:00.000Z",
-      cached: false,
     } as never);
 
     await POST(req() as never, ctx as never);
