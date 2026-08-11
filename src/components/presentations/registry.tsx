@@ -286,6 +286,32 @@ import {
 import { summarizeObservationsOptions } from "@/lib/presentations/pages/observations-next-steps/summarize-options";
 import { ObservationsOptionsControl } from "./pages/observations-next-steps/options-control";
 import { ObservationsNextStepsPagePdf } from "./pages/observations-next-steps/page-pdf";
+import {
+  buildMapCashFlowData,
+  buildMapGoalsData,
+  buildMapNetWorthData,
+} from "@/lib/presentations/pages/household-map/view-model";
+import { householdMapOptionsSchema } from "@/lib/presentations/pages/household-map/options-schema";
+import {
+  summarizeMapCashFlowOptions,
+  summarizeMapGoalsOptions,
+  summarizeMapNetWorthOptions,
+} from "@/lib/presentations/pages/household-map/summarize-options";
+import {
+  estimateMapCashFlowPageCount,
+  estimateMapGoalsPageCount,
+  estimateMapNetWorthPageCount,
+} from "@/lib/presentations/pages/household-map/estimate-page-count";
+import {
+  HOUSEHOLD_MAP_PAGE_OPTIONS_DEFAULT,
+  type HouseholdMapPageOptions,
+  type MapCashFlowPageData,
+  type MapGoalsPageData,
+  type MapNetWorthPageData,
+} from "@/lib/presentations/pages/household-map/types";
+import { MapNetWorthPagePdf } from "./pages/map-net-worth/page-pdf";
+import { MapCashFlowPagePdf } from "./pages/map-cash-flow/page-pdf";
+import { MapGoalsPagePdf } from "./pages/map-goals/page-pdf";
 
 export const CATEGORY_ORDER = [
   "Framing",
@@ -575,6 +601,86 @@ export const observationsNextStepsPage: PresentationPage<ObservationsPageData, O
       options,
     }),
   renderPdf: (input) => <ObservationsNextStepsPagePdf {...input} />,
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Household Map pages — the three boards from `/details/map`, in print.
+//
+// All three build off `buildMapBoards`, the same builder the on-screen Map and
+// the client portal's Organizer call, so a card cannot mean one thing on the
+// board an advisor edits and something else in the deck they hand the client.
+//
+// Filed under the category each board's SUBJECT already owns rather than a
+// "Household Map" section of their own. A new category has to be inserted
+// somewhere in CATEGORY_ORDER, and the launcher's search groups matches by that
+// order before it ranks them — so a new early category makes its
+// description-only matches outrank every title match below it (a Map section
+// placed second had "income" surfacing the Map's cash-flow board above
+// "Cash Flow — Income"). Sharing the existing categories also means each page
+// prints in its subject's section accent.
+//
+// `today` is the one input the boards need that `BuildDataContext` has no field
+// for — it fixes each person's displayed age and nothing else (no projection
+// figure moves with it). Read here rather than inside the view-models so those
+// stay pure and testable, matching how `map-content.tsx` and
+// `load-organizer-map.ts` pass their own clock read in.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const mapNetWorthPage: PresentationPage<MapNetWorthPageData, HouseholdMapPageOptions> = {
+  id: "mapNetWorth",
+  title: "Household Map — Net Worth",
+  description: "Who owns what: accounts and debts by owner, with per-owner subtotals and a trust/business tray.",
+  category: "Assets",
+  defaultOptions: HOUSEHOLD_MAP_PAGE_OPTIONS_DEFAULT,
+  optionsSchema: householdMapOptionsSchema,
+  summarizeOptions: summarizeMapNetWorthOptions,
+  estimatePageCount: estimateMapNetWorthPageCount,
+  supportsScenarioOverride: true,
+  buildData: (ctx) =>
+    buildMapNetWorthData({
+      clientData: ctx.clientData,
+      scenarioLabel: ctx.scenarioLabel,
+      today: new Date(),
+    }),
+  renderPdf: (input) => <MapNetWorthPagePdf {...input} />,
+};
+
+export const mapCashFlowPage: PresentationPage<MapCashFlowPageData, HouseholdMapPageOptions> = {
+  id: "mapCashFlow",
+  title: "Household Map — Cash Flow",
+  description: "Income, savings and expenses by owner, each with its start and end year and a band subtotal.",
+  category: "Cash Flow",
+  defaultOptions: HOUSEHOLD_MAP_PAGE_OPTIONS_DEFAULT,
+  optionsSchema: householdMapOptionsSchema,
+  summarizeOptions: summarizeMapCashFlowOptions,
+  estimatePageCount: estimateMapCashFlowPageCount,
+  supportsScenarioOverride: true,
+  buildData: (ctx) =>
+    buildMapCashFlowData({
+      clientData: ctx.clientData,
+      scenarioLabel: ctx.scenarioLabel,
+      today: new Date(),
+    }),
+  renderPdf: (input) => <MapCashFlowPagePdf {...input} />,
+};
+
+export const mapGoalsPage: PresentationPage<MapGoalsPageData, HouseholdMapPageOptions> = {
+  id: "mapGoals",
+  title: "Household Map — Goals",
+  description: "Goals and life milestones on a year timeline — retirement, Social Security, education, and life expectancy.",
+  category: "Framing",
+  defaultOptions: HOUSEHOLD_MAP_PAGE_OPTIONS_DEFAULT,
+  optionsSchema: householdMapOptionsSchema,
+  summarizeOptions: summarizeMapGoalsOptions,
+  estimatePageCount: estimateMapGoalsPageCount,
+  supportsScenarioOverride: true,
+  buildData: (ctx) =>
+    buildMapGoalsData({
+      clientData: ctx.clientData,
+      scenarioLabel: ctx.scenarioLabel,
+      today: new Date(),
+    }),
+  renderPdf: (input) => <MapGoalsPagePdf {...input} />,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1089,6 +1195,9 @@ export const PRESENTATION_PAGES = {
   assumptions: assumptionsPage,
   blank: blankPage,
   observationsNextSteps: observationsNextStepsPage,
+  mapNetWorth: mapNetWorthPage,
+  mapCashFlow: mapCashFlowPage,
+  mapGoals: mapGoalsPage,
   cashFlow: cashFlowPage,
   cashFlowIncome: cashFlowIncomePage,
   cashFlowExpenses: cashFlowExpensesPage,

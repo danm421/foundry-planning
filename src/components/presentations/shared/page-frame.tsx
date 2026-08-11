@@ -9,7 +9,11 @@ const styles = StyleSheet.create({
     color: PRESENTATION_THEME.ink,
     fontFamily: "Inter",
     paddingTop: 54,
-    paddingBottom: 42,
+    // 42pt of true bottom margin PLUS the ~30pt the footer band occupies. The
+    // footer is positioned absolutely (below), so it takes no space in the flow
+    // and this padding is the ONLY thing keeping flowing content out of it —
+    // see `footer`.
+    paddingBottom: 72,
     paddingLeft: 43,
     paddingRight: 43,
   },
@@ -26,6 +30,22 @@ const styles = StyleSheet.create({
     backgroundColor: PRESENTATION_THEME.accent,
   },
   body: { flex: 1, marginTop: 14 },
+  // Out of the flow, pinned 42pt off the paper's bottom edge — the same place
+  // it printed when it was a flow sibling of `body`.
+  //
+  // It has to leave the flow. A `fixed` element repeats on every page, but
+  // react-pdf breaks a page on the PAGE's content box, not on where that
+  // element's one measured slot happens to sit: a card that fits above the
+  // bottom padding but below the footer's top gets drawn straight through the
+  // disclaimer. That is not hypothetical — the Household Map's Net Worth page
+  // printed an account card over the disclaimer on any household with a long
+  // enough ownership column. Absolute + the matching `paddingBottom` above is
+  // the react-pdf recipe for a repeating footer, and the padding is what
+  // actually reserves the band.
+  //
+  // `left`/`right` are re-applied because an absolutely positioned child is
+  // placed against the page box, not inside its horizontal padding.
+  footer: { position: "absolute", bottom: 42, left: 43, right: 43 },
   footerHair: {
     height: 0.75,
     backgroundColor: PRESENTATION_THEME.hair2,
@@ -70,13 +90,13 @@ export function PageFrame({
       </View>
       <View style={styles.headerAccentRule} />
       <View style={styles.body}>{children}</View>
-      <View style={styles.footerHair} fixed />
-      <Text style={styles.footerDisclaimer} fixed>
-        {SHORT_DISCLAIMER}
-      </Text>
-      <View style={styles.footerRow} fixed>
-        <Text>Confidential · Personal</Text>
-        <Text render={({ pageNumber, totalPages: tp }) => `Page ${pageNumber} of ${tp}`} />
+      <View style={styles.footer} fixed>
+        <View style={styles.footerHair} />
+        <Text style={styles.footerDisclaimer}>{SHORT_DISCLAIMER}</Text>
+        <View style={styles.footerRow}>
+          <Text>Confidential · Personal</Text>
+          <Text render={({ pageNumber, totalPages: tp }) => `Page ${pageNumber} of ${tp}`} />
+        </View>
       </View>
     </Page>
   );

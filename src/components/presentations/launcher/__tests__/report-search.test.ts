@@ -91,4 +91,27 @@ describe("searchReports", () => {
     const result = searchReports("", {}, ["cashFlow", "cover"]);
     expect(new Set(result.order).size).toBe(result.order.length);
   });
+
+  // The three Household Map pages are filed under Framing / Cash Flow / Assets
+  // rather than a "Household Map" category of their own, precisely so search
+  // finds them. Sections are emitted in CATEGORY_ORDER and only THEN by match
+  // rank, so an early category of their own would have made these three
+  // outrank every better title match below them. These two guard that choice.
+  describe("Household Map pages", () => {
+    it("'map' finds all three and nothing else", () => {
+      expect(searchReports("map", {}, []).order).toEqual([
+        "mapGoals",
+        "mapCashFlow",
+        "mapNetWorth",
+      ]);
+    });
+
+    it("does not outrank a better title match in a later category", () => {
+      // "Cash Flow" (title starts with the query) beats "Household Map — Cash
+      // Flow" (title merely contains it) — both are in the Cash Flow category,
+      // so rank, not category order, decides.
+      const order = searchReports("cash flow", {}, []).order;
+      expect(order.indexOf("cashFlow")).toBeLessThan(order.indexOf("mapCashFlow"));
+    });
+  });
 });
