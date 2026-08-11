@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildChapterPrompt } from "../prompts";
 import { CHAPTERS } from "../registry";
 import { moneyFact, pctFact } from "../../facts";
+import { runGates } from "../../validate";
 import type { StoryContext } from "../../types";
 
 const CTX: StoryContext = {
@@ -65,6 +66,66 @@ describe("buildChapterPrompt", () => {
     const { system, user } = buildChapterPrompt("whatWeRecommend", ctx, [], []);
     expect(user).toContain("Sell the rental");
     expect(system).toContain("never repeat a label word for word");
+  });
+
+  // Gate 3's own list, `ACTION_VERBS` (validate/readability.ts). It is private
+  // to that module and this suite may not export it, so the copy is pinned
+  // instead: every word below is proved to be one the gate really rejects, and
+  // proved to be named in the prompt.
+  const GATE_3_VERBS = ["buy", "sell", "purchase", "liquidate", "move", "switch", "shift", "trim", "rebalance", "reallocate", "convert", "roll", "invest"];
+
+  it("names every action word Gate 3 rejects at the head of a clause", () => {
+    const { system } = buildChapterPrompt("whatWeRecommend", CTX, [], []);
+    const line = system.split("\n").find((l) => l.startsWith("Never open a sentence or a clause"));
+    expect(line).toBeDefined();
+    for (const verb of GATE_3_VERBS) {
+      const opener = `${verb[0].toUpperCase()}${verb.slice(1)} the position and the plan still holds.`;
+      expect(runGates(opener, CTX.facts).map((f) => f.gate)).toContain("advice");
+      expect(line).toContain(verb);
+    }
+    // …and the shape the prompt asks for instead survives the same gate.
+    expect(runGates("The plan sells the position, and your confidence holds.", CTX.facts)).toEqual([]);
+  });
+
+  it("names Gate 2's sentence-length limits, and the gate holds those numbers", () => {
+    const { system } = buildChapterPrompt("planInOnePage", CTX, [], []);
+    expect(system).toContain("under 20 words");
+    expect(system).toContain("past 40");
+    const readability = (text: string) => runGates(text, CTX.facts).filter((f) => f.gate === "readability");
+    // 41 words in one sentence — the per-sentence cap, not the average.
+    expect(readability(`${"word ".repeat(40)}end.`)).not.toEqual([]);
+    // Three sentences of 22 — each under the cap, the average over the limit.
+    expect(readability(`${"word ".repeat(21)}end. `.repeat(3))).not.toEqual([]);
+    // …and prose inside both numbers passes, so neither check above is vacuous.
+    expect(readability("Your plan holds. We modelled it against a rough decade and it still lands where you want it to.")).toEqual([]);
+  });
+
+  it("names each change's operation, and quotes only figures the fact pack supplied", () => {
+    const ctx: StoryContext = {
+      ...CTX,
+      strategies: [
+        {
+          name: "Sell the rental",
+          rows: [
+            { area: "Assets", what: "Rental property", op: "remove", before: "In plan", after: "—", detail: ["Sold in 2029 · $850k"] },
+            { area: "Taxes", what: "Roth conversion", op: "add", before: "—", after: "Added", detail: [] },
+            { area: "Assets", what: "Portfolio", op: "edit", before: "$2.0M", after: "$2.1M", detail: ["Ends at $2.1M"] },
+          ],
+        },
+      ],
+    };
+    const { user } = buildChapterPrompt("whatWeRecommend", ctx, [], []);
+    // The op word carries the change even when the row has nothing else.
+    expect(user).toContain("Rental property (removed)");
+    expect(user).toContain("Roth conversion (added)");
+    // A year and a foreign-formatted dollar are both figures under Gate 1.
+    expect(user).not.toContain("2029");
+    expect(user).not.toContain("$850k");
+    expect(user).not.toContain("$2.0M");
+    // …and a detail whose figure IS in the pack survives, so the filter is not
+    // just "drop anything with a number in it".
+    expect(user).toContain("Portfolio (changed) — Ends at $2.1M");
+    expect(runGates(user, ctx.facts).filter((f) => f.gate === "facts")).toEqual([]);
   });
 
   it("leaves no heading standing over an empty list", () => {
