@@ -30,10 +30,12 @@ describe("sentenceLengthStdDev", () => {
     expect(sentenceLengthStdDev(eightThenThirteen)).toBeCloseTo(2.5, 10);
   });
 
-  // The heading is TWO words against three-word sentences. A three-word heading
-  // would score zero whether it was dropped or counted, which is no test at all.
+  // The body sentences are FIVE words and the heading is three: nothing strips
+  // the "##", so a counted heading is ["##","Your","plan"]. Against three-word
+  // sentences that scores zero whether the heading is dropped or counted, which
+  // is no test at all — dropped [5,5,5] is 0 and counted [3,5,5,5] is 0.87.
   it("leaves a heading out of the measure — a heading is a label, not a sentence", () => {
-    expect(sentenceLengthStdDev("## Your plan\n\naa bb cc. dd ee ff. gg hh ii.")).toBe(0);
+    expect(sentenceLengthStdDev("## Your plan\n\naa bb cc dd ee. ff gg hh ii jj. kk ll mm nn oo.")).toBe(0);
   });
 
   // Three marked lines and one bare one, all three words long. A marker counted
