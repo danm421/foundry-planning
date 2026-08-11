@@ -465,9 +465,9 @@ export function DataCollectionIcon(props: IconProps) {
 export function RiskIcon(props: IconProps) {
   return (
     <svg {...baseSvgProps} {...props}>
-      <path d="M3 15a9 9 0 0 1 18 0" />
-      <path d="M12 15l4-4" />
-      <circle cx="12" cy="15" r="1.25" fill="currentColor" stroke="none" />
+      <path d="M6.71 19.28A9 9 0 1 1 17.29 19.28" />
+      <path d="M12 12l4-4" />
+      <circle cx="12" cy="12" r="1.25" fill="currentColor" stroke="none" />
     </svg>
   );
 }
