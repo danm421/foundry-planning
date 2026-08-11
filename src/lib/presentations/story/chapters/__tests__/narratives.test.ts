@@ -342,47 +342,51 @@ describe("what-you-have reads as a whole chapter", () => {
     return { ...CTX, facts: BALANCE_SHEET.filter((f) => ids.includes(f.id)) };
   }
 
-  it("states owned, owed and the difference, then caveats what it can spend", () => {
-    expect(narrateWhatYouHave(CTX).join(" ")).toBe(
-      `You own $2.4M and owe $300K. The difference — $2.1M — is what the plan works with. ${CAVEAT}`,
-    );
+  const A = "today.assets";
+  const D = "today.debts";
+  const N = "today.netWorth";
+  const DISPLAY: Record<string, string> = { [A]: "$2.4M", [D]: "$300K", [N]: "$2.1M" };
+
+  /**
+   * All eight combinations. The two sides and the net are separate facts, so a
+   * total can fail while its components succeed — a sequential `if` chain that
+   * checks `net` before the sides silently drops a figure the pack holds, which
+   * is what this table exists to stop happening again.
+   */
+  const COMBINATIONS: Array<[string[], string]> = [
+    [[A, D, N], `You own $2.4M and owe $300K. The difference — $2.1M — is what the plan works with. ${CAVEAT}`],
+    [[A, D], `You own $2.4M and owe $300K. ${CAVEAT}`],
+    [[A, N], `You own $2.4M, and your net worth today is $2.1M. ${CAVEAT}`],
+    [[D, N], `You owe $300K, and your net worth today is $2.1M. ${CAVEAT}`],
+    [[A], `You own $2.4M. ${CAVEAT}`],
+    // No figure for what they own, so the caveat has nothing to qualify.
+    [[D], "You owe $300K."],
+    [[N], `Your net worth today is $2.1M. ${CAVEAT}`],
+    [[], "Your plan starts from what you own, set against what you owe. We don't have those figures to show here."],
+  ];
+
+  it.each(COMBINATIONS)("reads correctly for the pack %j", (ids, expected) => {
+    expect(narrateWhatYouHave(balanceSheet(ids)).join(" ")).toBe(expected);
+  });
+
+  // The property behind the table: whatever the pack holds, the chapter says it.
+  it("never drops a figure the pack holds", () => {
+    for (const [ids] of COMBINATIONS) {
+      const joined = narrateWhatYouHave(balanceSheet(ids)).join(" ");
+      for (const id of ids) expect(joined).toContain(DISPLAY[id]);
+    }
   });
 
   // The pronoun no longer depends on which figure the opening happened to name.
   it("never leans on a bare 'it' for its antecedent", () => {
-    for (const ids of [["today.assets", "today.debts", "today.netWorth"], ["today.netWorth"], ["today.assets"]]) {
+    for (const [ids] of COMBINATIONS) {
       expect(narrateWhatYouHave(balanceSheet(ids)).join(" ")).not.toContain("Not all of it");
     }
   });
 
-  it("still says something when only the net-worth fact is present", () => {
-    expect(narrateWhatYouHave(balanceSheet(["today.netWorth"])).join(" ")).toBe(
-      `Your net worth today is $2.1M. ${CAVEAT}`,
-    );
-  });
-
-  // The two sides and the net are separate facts, so a total can fail while its
-  // components succeed. Both figures are known here and neither may be dropped.
-  it("states both sides when the net worth is missing", () => {
-    const joined = narrateWhatYouHave(balanceSheet(["today.assets", "today.debts"])).join(" ");
-    expect(joined).toBe(`You own $2.4M and owe $300K. ${CAVEAT}`);
-    expect(joined).toContain("$2.4M");
-    expect(joined).toContain("$300K");
-  });
-
-  it.each([
-    [["today.assets"], "You own $2.4M."],
-    [["today.debts"], "You owe $300K."],
-  ])("states the one side it has when only %j is present", (ids, expected) => {
-    expect(narrateWhatYouHave(balanceSheet(ids)).join(" ")).toBe(`${expected} ${CAVEAT}`);
-  });
-
-  // Nothing is known here, so the chapter may not assert a balance sheet either.
+  // Nothing is known in the last case, so the chapter may not assert a balance
+  // sheet, and it may not caveat a total it never printed.
   it("says plainly that there is nothing to total when the pack is empty", () => {
-    const joined = narrateWhatYouHave({ ...CTX, facts: [] }).join(" ");
-    expect(joined).toBe(
-      "Your plan starts from what you own, set against what you owe. We don't have those figures to show here.",
-    );
-    expect(joined).not.toContain("Not all of");
+    expect(narrateWhatYouHave({ ...CTX, facts: [] }).join(" ")).not.toContain("Not all of");
   });
 });

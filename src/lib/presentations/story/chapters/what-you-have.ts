@@ -17,25 +17,39 @@ const NOT_ALL_SPENDABLE =
   "Not all of what you own is available to spend. Your home and anything held for someone else sit outside the money the plan draws on.";
 
 /**
- * The balance sheet can arrive partial: the two sides and the net are separate
- * facts, and a total can fail while its components succeed. Every figure the
- * pack does hold gets stated — throwing one away silently is worse than a
- * shorter sentence.
+ * The balance sheet can arrive partial: the two sides and the net are three
+ * separate facts, and a total can fail while its components succeed. All eight
+ * combinations are handled, and every figure the pack holds is stated — an
+ * earlier version tested `net` before the single sides, so a pack holding
+ * assets AND net printed the net alone and dropped a figure it had.
+ *
+ * Branch on the SIDES first, and treat the net as an addition to whatever they
+ * produced; that ordering is what makes the coverage total rather than a chain
+ * of cases someone has to check by hand.
  */
 function opening(assets: string | null, debts: string | null, net: string | null): string | null {
-  if (assets && debts && net) return `You own ${assets} and owe ${debts}. The difference — ${net} — is what the plan works with.`;
-  if (assets && debts) return `You own ${assets} and owe ${debts}.`;
-  if (net) return `Your net worth today is ${net}.`;
-  if (assets) return `You own ${assets}.`;
-  if (debts) return `You owe ${debts}.`;
-  return null;
+  if (assets && debts) {
+    return net
+      ? `You own ${assets} and owe ${debts}. The difference — ${net} — is what the plan works with.`
+      : `You own ${assets} and owe ${debts}.`;
+  }
+
+  const side = assets ? `You own ${assets}` : debts ? `You owe ${debts}` : null;
+  if (side) return net ? `${side}, and your net worth today is ${net}.` : `${side}.`;
+
+  return net ? `Your net worth today is ${net}.` : null;
 }
 
 export function narrateWhatYouHave(ctx: StoryContext): string[] {
-  const line = opening(
-    factDisplay(ctx, "today.assets"),
-    factDisplay(ctx, "today.debts"),
-    factDisplay(ctx, "today.netWorth"),
-  );
-  return line ? [line, NOT_ALL_SPENDABLE] : [NOTHING_TOTALLED];
+  const assets = factDisplay(ctx, "today.assets");
+  const debts = factDisplay(ctx, "today.debts");
+  const net = factDisplay(ctx, "today.netWorth");
+
+  const line = opening(assets, debts, net);
+  if (!line) return [NOTHING_TOTALLED];
+
+  // The caveat qualifies what you OWN, so it can only follow a sentence that put
+  // a figure on it. A debts-only pack states a liability and nothing else, and
+  // "not all of what you own" would arrive with no ownership figure behind it.
+  return assets || net ? [line, NOT_ALL_SPENDABLE] : [line];
 }
