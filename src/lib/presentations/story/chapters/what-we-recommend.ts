@@ -59,19 +59,44 @@ const AREA_PHRASE: Record<ChangeArea, string> = {
  * punctuated — every `whyAdd`/`whyRemove`/`whyEdit` string in the describers'
  * spec table ends in a period, and a single-field edit puts `whyEdit` straight
  * into `detail[0]` — so appending one blind prints "Adjusts this gift.." to the
- * client. Every terminal mark comes off, not just the period: a detail ending in
- * "!", "?" or an ellipsis doubles up exactly the same way.
+ * client. Every terminal mark comes off, not just the period: "!", "?", an
+ * ellipsis and any of the three dashes double up exactly the same way.
  */
 function asClause(detail: string): string {
-  return detail.replace(/[\s.;:,!?…]+$/u, "");
+  return detail.replace(/[\s.;:,!?…—–-]+$/u, "");
+}
+
+/**
+ * The describers' "no value" marker. `fmtValue`, `label` and `recipients` all
+ * return "—" for a null field, so it reaches `detail` as a value rather than as
+ * punctuation. Two real paths produce it:
+ *
+ *   "All remaining assets → —"   describe/kinds/estate.ts, a will with no
+ *                                recipients resolved
+ *   "—"                          describe/registry.ts, an entity whose only
+ *                                segment is an unlabelled type
+ *
+ * A detail ending in one never names the thing it set out to name, so there is
+ * nothing worth quoting: stripping the dash leaves either an empty string or a
+ * dangling "All remaining assets →", and neither is an improvement on the
+ * generic clause. The leading `[\s→:]` keeps it off hyphenated words.
+ */
+const UNRESOLVED_TAIL = /(?:^|[\s→:])[—–-]+\s*$/u;
+
+/** The quotable clause inside a detail, or null when there is nothing to quote. */
+function usableDetail(detail: string | undefined): string | null {
+  if (!detail || UNRESOLVED_TAIL.test(detail)) return null;
+  const clause = asClause(detail);
+  return clause.length > 0 ? clause : null;
 }
 
 function describe(strategy: StoryStrategy, facts: Fact[]): string {
   const first = strategy.rows[0];
   if (!first) return `${strategy.name}.`;
 
-  const detail = first.detail[0];
-  if (detail && grounded(detail, facts)) return `${strategy.name} — ${asClause(detail)}.`;
+  // Ground what will actually be printed, not the raw detail it came from.
+  const clause = usableDetail(first.detail[0]);
+  if (clause && grounded(clause, facts)) return `${strategy.name} — ${clause}.`;
 
   // `before`/`after` are deliberately not a second chance here: for an add or a
   // remove they are the table's own shorthand ("—", "Added", "In plan"), which

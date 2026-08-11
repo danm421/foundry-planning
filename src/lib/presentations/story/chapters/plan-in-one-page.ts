@@ -19,9 +19,11 @@ const NOTHING_TO_REPORT =
  * and both print "73%" — and "down from 73%" next to "73%" reads as a bug.
  * `raw` is still what picks the direction once the two genuinely differ.
  */
-function movement(proposed: Fact, base: Fact): string {
-  if (proposed.display === base.display) return "no change from";
-  return proposed.raw > base.raw ? "up from" : "down from";
+type Movement = "up" | "down" | "none";
+
+function movement(proposed: Fact, base: Fact): Movement {
+  if (proposed.display === base.display) return "none";
+  return proposed.raw > base.raw ? "up" : "down";
 }
 
 /**
@@ -37,12 +39,17 @@ function movement(proposed: Fact, base: Fact): string {
 function confidenceLine(base: Fact | null, proposed: Fact | null): { line: string; comparison: boolean } | null {
   if (proposed && base) {
     const moved = movement(proposed, base);
-    // "no change from your current path" — repeating the identical percentage
-    // reads as a mistake, so the equal case names the path and not the number.
-    const from = moved === "no change from" ? "your current path" : `${base.display} on your current path`;
+    // Repeating the identical percentage reads as a mistake, so the equal case
+    // names the path and not the number.
+    const phrase =
+      moved === "none"
+        ? "no change from your current path"
+        : `${moved} from ${base.display} on your current path`;
     return {
-      line: `With the changes we're suggesting, the plan comes through in ${proposed.display} of the futures we tested — ${moved} ${from}.`,
-      comparison: true,
+      line: `With the changes we're suggesting, the plan comes through in ${proposed.display} of the futures we tested — ${phrase}.`,
+      // A stated non-movement is not something the changes can be credited with,
+      // so "That comes from…" may not follow it either.
+      comparison: moved !== "none",
     };
   }
   if (proposed) {

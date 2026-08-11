@@ -27,8 +27,8 @@ const PROPOSED = pctFact("outcome.confidence.proposed", "Confidence, proposed pl
 const BALANCE_SHEET = CTX.facts.filter((f) => !f.id.startsWith("outcome.confidence."));
 
 /** CTX with the confidence facts replaced, so each Monte Carlo outcome is a pack. */
-function withConfidence(facts: Fact[], strategies: StoryStrategy[] = CTX.strategies): StoryContext {
-  return { ...CTX, strategies, facts: [...facts, ...BALANCE_SHEET] };
+function withConfidence(facts: Fact[]): StoryContext {
+  return { ...CTX, facts: [...facts, ...BALANCE_SHEET] };
 }
 
 function strategy(name: string): StoryStrategy {
@@ -145,11 +145,18 @@ describe("plan-in-one-page confidence direction", () => {
     );
   });
 
-  it("does not claim a move when the two runs land in the same place", () => {
+  // A stated non-movement is still not something the changes can be credited
+  // with, so the attribution sentence may not follow it — the same class of
+  // defect as the base-only case, one branch further in.
+  it("does not attribute a non-movement to the changes", () => {
     const ctx = withConfidence([BASE, pctFact("outcome.confidence.proposed", "Confidence, proposed plan", 0.73)]);
-    expect(narratePlanInOnePage(ctx)[0]).toBe(
-      "With the changes we're suggesting, the plan comes through in 73% of the futures we tested — no change from your current path.",
+    const joined = narratePlanInOnePage(ctx).join(" ");
+    expect(joined).toBe(
+      "With the changes we're suggesting, the plan comes through in 73% of the futures we tested — no change from your current path. " +
+        "We're recommending one change: Delay Social Security. " +
+        "You're starting from $2.1M.",
     );
+    expect(joined).not.toContain("That comes from");
   });
 
   /**
@@ -162,8 +169,11 @@ describe("plan-in-one-page confidence direction", () => {
     const proposed = pctFact("outcome.confidence.proposed", "Confidence, proposed plan", 543 / 744);
     expect(proposed.display).toBe(BASE.display);
     expect(proposed.raw).not.toBe(BASE.raw);
-    expect(narratePlanInOnePage(withConfidence([BASE, proposed]))[0]).toBe(
-      "With the changes we're suggesting, the plan comes through in 73% of the futures we tested — no change from your current path.",
+    const joined = narratePlanInOnePage(withConfidence([BASE, proposed])).join(" ");
+    expect(joined).toBe(
+      "With the changes we're suggesting, the plan comes through in 73% of the futures we tested — no change from your current path. " +
+        "We're recommending one change: Delay Social Security. " +
+        "You're starting from $2.1M.",
     );
   });
 });
@@ -274,6 +284,35 @@ describe("what-we-recommend keeps ungrounded figures off the page", () => {
     expect(narrateWhatWeRecommend(ctx)).toEqual([expected]);
   });
 
+  /**
+   * "—" is the describers' null marker, not punctuation: `fmtValue`, `label` and
+   * `recipients` all return it for a null field, so it reaches `detail` as a
+   * VALUE. Both shapes below are figure-free, so the fact gate waves them
+   * through — nothing but this rule keeps them off the page.
+   */
+  it.each([
+    // describe/kinds/estate.ts bequestLine(), with no recipients resolved
+    ["All remaining assets → —", "Estate", "Update the will — this changes your estate plan."],
+    // describe/registry.ts simpleDescriber add path, unlabelled entity type
+    ["—", "Estate", "Update the will — this changes your estate plan."],
+  ] as const)("degrades the unresolved detail %j rather than quoting it", (detail, area, expected) => {
+    const ctx: StoryContext = {
+      ...CTX,
+      strategies: [{ name: "Update the will", rows: [{ area, what: "Will", op: "edit", before: "—", after: "Updated", detail: [detail] }] }],
+    };
+    const joined = narrateWhatWeRecommend(ctx).join(" ");
+    expect(joined).toBe(expected);
+    expect(joined).not.toMatch(/—\s*\.$/u);
+  });
+
+  it("keeps an em dash that is punctuation rather than a missing value", () => {
+    const ctx: StoryContext = {
+      ...CTX,
+      strategies: [{ name: "Update the will", rows: [{ area: "Estate", what: "Will", op: "edit", before: "—", after: "Updated", detail: ["All remaining assets — split evenly"] }] }],
+    };
+    expect(narrateWhatWeRecommend(ctx)).toEqual(["Update the will — All remaining assets — split evenly."]);
+  });
+
   it("calls the Assets area what you own — it covers property, not just accounts", () => {
     const ctx: StoryContext = {
       ...CTX,
@@ -295,26 +334,55 @@ describe("what-we-recommend keeps ungrounded figures off the page", () => {
 });
 
 describe("what-you-have reads as a whole chapter", () => {
+  const CAVEAT =
+    "Not all of what you own is available to spend. Your home and anything held for someone else sit outside the money the plan draws on.";
+
+  /** Just the balance-sheet facts named, so a partial pack is a real pack. */
+  function balanceSheet(ids: string[]): StoryContext {
+    return { ...CTX, facts: BALANCE_SHEET.filter((f) => ids.includes(f.id)) };
+  }
+
   it("states owned, owed and the difference, then caveats what it can spend", () => {
     expect(narrateWhatYouHave(CTX).join(" ")).toBe(
-      "You own $2.4M and owe $300K. The difference — $2.1M — is what the plan works with. " +
-        "Not all of it is available to spend. Your home and anything held for someone else sit outside the money the plan draws on.",
+      `You own $2.4M and owe $300K. The difference — $2.1M — is what the plan works with. ${CAVEAT}`,
     );
+  });
+
+  // The pronoun no longer depends on which figure the opening happened to name.
+  it("never leans on a bare 'it' for its antecedent", () => {
+    for (const ids of [["today.assets", "today.debts", "today.netWorth"], ["today.netWorth"], ["today.assets"]]) {
+      expect(narrateWhatYouHave(balanceSheet(ids)).join(" ")).not.toContain("Not all of it");
+    }
   });
 
   it("still says something when only the net-worth fact is present", () => {
-    const ctx: StoryContext = { ...CTX, facts: [moneyFact("today.netWorth", "Net worth today", 2_100_000)] };
-    expect(narrateWhatYouHave(ctx).join(" ")).toBe(
-      "Your net worth today is $2.1M. Not all of it is available to spend. " +
-        "Your home and anything held for someone else sit outside the money the plan draws on.",
+    expect(narrateWhatYouHave(balanceSheet(["today.netWorth"])).join(" ")).toBe(
+      `Your net worth today is $2.1M. ${CAVEAT}`,
     );
   });
 
-  // "Not all of it" needs an antecedent. With no balance sheet there is no figure
-  // for "it" to refer to, so the caveat cannot open the chapter on its own.
-  it("does not open on a pronoun when the fact pack is empty", () => {
+  // The two sides and the net are separate facts, so a total can fail while its
+  // components succeed. Both figures are known here and neither may be dropped.
+  it("states both sides when the net worth is missing", () => {
+    const joined = narrateWhatYouHave(balanceSheet(["today.assets", "today.debts"])).join(" ");
+    expect(joined).toBe(`You own $2.4M and owe $300K. ${CAVEAT}`);
+    expect(joined).toContain("$2.4M");
+    expect(joined).toContain("$300K");
+  });
+
+  it.each([
+    [["today.assets"], "You own $2.4M."],
+    [["today.debts"], "You owe $300K."],
+  ])("states the one side it has when only %j is present", (ids, expected) => {
+    expect(narrateWhatYouHave(balanceSheet(ids)).join(" ")).toBe(`${expected} ${CAVEAT}`);
+  });
+
+  // Nothing is known here, so the chapter may not assert a balance sheet either.
+  it("says plainly that there is nothing to total when the pack is empty", () => {
     const joined = narrateWhatYouHave({ ...CTX, facts: [] }).join(" ");
-    expect(joined).toBe("This is the balance sheet your plan works from — what you own, set against what you owe.");
-    expect(joined).not.toContain("Not all of it");
+    expect(joined).toBe(
+      "Your plan starts from what you own, set against what you owe. We don't have those figures to show here.",
+    );
+    expect(joined).not.toContain("Not all of");
   });
 });
