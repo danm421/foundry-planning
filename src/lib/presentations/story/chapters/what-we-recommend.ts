@@ -1,7 +1,7 @@
 import type { ChangeArea } from "@/lib/presentations/pages/scenario-changes/types";
 import type { StoryStrategy, StoryContext } from "../types";
-import type { Fact } from "../facts";
-import { validateFacts } from "../validate/facts";
+import { factDisplaySet, type Fact } from "../facts";
+import { extractFigures, validateFacts } from "../validate/facts";
 
 /**
  * A `ChangeRow` is built for the Scenario Changes TABLE, by a formatter this
@@ -30,7 +30,15 @@ import { validateFacts } from "../validate/facts";
  * the drift would show up as a number on a client's page.
  */
 function grounded(text: string, facts: Fact[]): boolean {
-  return validateFacts(text, facts).length === 0;
+  if (validateFacts(text, facts).length > 0) return false;
+  // …and the gate is not quite enough on its own. Its comparison key folds case,
+  // so the table's "$850k" satisfies an "$850K" fact: the VALUE is grounded, the
+  // SPELLING is the other module's. Printing it would put both spellings of the
+  // same dollar in one deck, which is the inconsistency this file exists to stop.
+  // Both checks reuse the gate's own extractor, so what counts as a figure here
+  // can never drift from what the LLM chapters are held to.
+  const spellings = factDisplaySet(facts);
+  return extractFigures(text).every((figure) => spellings.has(figure));
 }
 
 /** The part of the plan an area touches, in the words a client uses for it. */
@@ -39,7 +47,8 @@ const AREA_PHRASE: Record<ChangeArea, string> = {
   Income: "your income",
   Expenses: "your spending",
   Savings: "what you're saving",
-  Assets: "your accounts",
+  // Not "your accounts": the area covers real estate and businesses too.
+  Assets: "what you own",
   Liabilities: "what you owe",
   Estate: "your estate plan",
   Taxes: "your taxes",
@@ -50,10 +59,11 @@ const AREA_PHRASE: Record<ChangeArea, string> = {
  * punctuated — every `whyAdd`/`whyRemove`/`whyEdit` string in the describers'
  * spec table ends in a period, and a single-field edit puts `whyEdit` straight
  * into `detail[0]` — so appending one blind prints "Adjusts this gift.." to the
- * client. Trailing punctuation comes off, and this function adds the only stop.
+ * client. Every terminal mark comes off, not just the period: a detail ending in
+ * "!", "?" or an ellipsis doubles up exactly the same way.
  */
 function asClause(detail: string): string {
-  return detail.replace(/[\s.;:,]+$/u, "");
+  return detail.replace(/[\s.;:,!?…]+$/u, "");
 }
 
 function describe(strategy: StoryStrategy, facts: Fact[]): string {

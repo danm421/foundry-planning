@@ -42,9 +42,17 @@ export function findFact(ctx: StoryContext, id: string): Fact | null {
   return ctx.facts.find((f) => f.id === id) ?? null;
 }
 
-/** Look a fact up by id. Returns the pre-formatted display string, or null.
- *  Every narrative and prompt reads figures through this, so nothing can put
- *  an unformatted number on the page. */
+/**
+ * Look a fact up by id. Returns the pre-formatted display string, or null.
+ * Narratives and prompts read figures through this, so nothing can put an
+ * unformatted number on the page.
+ *
+ * One deliberate exception: `chapters/what-we-recommend.ts` quotes a
+ * `ChangeRow.detail` written by another module. That text never passes through
+ * here, so it is checked against the fact gate AND against the fact pack's
+ * spellings before it is printed, and dropped when it fails either. Any future
+ * chapter that quotes text it did not build owes the same check.
+ */
 export function factDisplay(ctx: StoryContext, id: string): string | null {
   return findFact(ctx, id)?.display ?? null;
 }

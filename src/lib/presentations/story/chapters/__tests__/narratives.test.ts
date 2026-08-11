@@ -3,7 +3,7 @@ import { narratePlanInOnePage } from "../plan-in-one-page";
 import { narrateWhatYouHave } from "../what-you-have";
 import { narrateWhatWeRecommend } from "../what-we-recommend";
 import { moneyFact, pctFact, type Fact } from "../../facts";
-import type { StoryContext } from "../../types";
+import type { StoryContext, StoryStrategy } from "../../types";
 
 const CTX: StoryContext = {
   household: { firstNames: "Alan and Teresa", householdName: "the Bradshaw household" },
@@ -22,13 +22,18 @@ const CTX: StoryContext = {
   ],
 };
 
-/** Same context, with the confidence facts swapped for `facts`. */
-function withConfidence(facts: Fact[]): StoryContext {
-  return { ...CTX, facts: [...facts, ...CTX.facts.filter((f) => !f.id.startsWith("outcome.confidence."))] };
-}
-
 const BASE = pctFact("outcome.confidence.base", "Confidence, current plan", 0.73);
 const PROPOSED = pctFact("outcome.confidence.proposed", "Confidence, proposed plan", 0.91);
+const BALANCE_SHEET = CTX.facts.filter((f) => !f.id.startsWith("outcome.confidence."));
+
+/** CTX with the confidence facts replaced, so each Monte Carlo outcome is a pack. */
+function withConfidence(facts: Fact[], strategies: StoryStrategy[] = CTX.strategies): StoryContext {
+  return { ...CTX, strategies, facts: [...facts, ...BALANCE_SHEET] };
+}
+
+function strategy(name: string): StoryStrategy {
+  return { name, rows: [{ area: "Income", what: name, op: "edit", before: "—", after: "Updated", detail: [] }] };
+}
 
 describe("deterministic chapter narratives", () => {
   it("plan-in-one-page leads with the confidence movement", () => {
@@ -63,15 +68,73 @@ describe("deterministic chapter narratives", () => {
   });
 });
 
-// Base and proposed Monte Carlo runs fail independently in production, so every
-// combination of the two confidence facts is a pack the fallback really receives.
-describe("plan-in-one-page confidence combinations", () => {
-  it("names the direction of the move when both runs are present", () => {
-    expect(narratePlanInOnePage(CTX)[0]).toBe(
-      "With the changes we're suggesting, the plan comes through in 91% of the futures we tested — up from 73% on your current path.",
+/**
+ * Base and proposed Monte Carlo runs fail independently, so all four combinations
+ * are real production packs. Every case asserts the JOINED CHAPTER, not `lines[0]`:
+ * a sentence that is correct alone can still misstate the plan once the two lines
+ * after it are appended, which is exactly how the "That comes from…" defect got in.
+ */
+describe("plan-in-one-page reads correctly as a whole chapter", () => {
+  it("both runs finished: attributes the movement to the changes", () => {
+    expect(narratePlanInOnePage(CTX).join(" ")).toBe(
+      "With the changes we're suggesting, the plan comes through in 91% of the futures we tested — up from 73% on your current path. " +
+        "That comes from one change: Delay Social Security. " +
+        "You're starting from $2.1M.",
     );
   });
 
+  // The current-path number must never be attributed to the recommended change.
+  it("base only: does not credit the current-path number to the change", () => {
+    const joined = narratePlanInOnePage(withConfidence([BASE])).join(" ");
+    expect(joined).toBe(
+      "On your current path, the plan comes through in 73% of the futures we tested. " +
+        "We're recommending one change: Delay Social Security. " +
+        "You're starting from $2.1M.",
+    );
+    expect(joined).not.toContain("That comes from");
+  });
+
+  it("proposed only: still states confidence, and does not echo itself", () => {
+    const joined = narratePlanInOnePage(withConfidence([PROPOSED])).join(" ");
+    expect(joined).toBe(
+      "With the changes we're suggesting, the plan comes through in 91% of the futures we tested. " +
+        "We're recommending one change: Delay Social Security. " +
+        "You're starting from $2.1M.",
+    );
+    expect(joined).toContain("91%");
+  });
+
+  // A pronoun with no antecedent is how the chapter used to open here.
+  it("neither run finished: opens on a subject, not a dangling pronoun", () => {
+    const joined = narratePlanInOnePage(withConfidence([])).join(" ");
+    expect(joined).toBe(
+      "We're recommending one change: Delay Social Security. You're starting from $2.1M.",
+    );
+    expect(joined).not.toMatch(/^That /);
+    expect(joined).not.toContain("%");
+  });
+
+  it("both runs, no strategies: no orphan attribution sentence", () => {
+    expect(narratePlanInOnePage({ ...CTX, strategies: [] }).join(" ")).toBe(
+      "With the changes we're suggesting, the plan comes through in 91% of the futures we tested — up from 73% on your current path. " +
+        "You're starting from $2.1M.",
+    );
+  });
+
+  it("no proposal: the proposed fact is ignored even when the pack carries it", () => {
+    expect(narratePlanInOnePage({ ...CTX, hasProposal: false, strategies: [] }).join(" ")).toBe(
+      "On your current path, the plan comes through in 73% of the futures we tested. You're starting from $2.1M.",
+    );
+  });
+
+  it("never returns an empty chapter, even with nothing in the fact pack", () => {
+    expect(narratePlanInOnePage({ ...CTX, facts: [], strategies: [], hasProposal: false })).toEqual([
+      "Here's where your plan stands today, and what it looks like from here.",
+    ]);
+  });
+});
+
+describe("plan-in-one-page confidence direction", () => {
   it("says so plainly when the proposal lowers confidence", () => {
     const ctx = withConfidence([
       pctFact("outcome.confidence.base", "Confidence, current plan", 0.91),
@@ -83,45 +146,41 @@ describe("plan-in-one-page confidence combinations", () => {
   });
 
   it("does not claim a move when the two runs land in the same place", () => {
-    const ctx = withConfidence([
-      pctFact("outcome.confidence.base", "Confidence, current plan", 0.73),
-      pctFact("outcome.confidence.proposed", "Confidence, proposed plan", 0.73),
-    ]);
+    const ctx = withConfidence([BASE, pctFact("outcome.confidence.proposed", "Confidence, proposed plan", 0.73)]);
     expect(narratePlanInOnePage(ctx)[0]).toBe(
       "With the changes we're suggesting, the plan comes through in 73% of the futures we tested — no change from your current path.",
     );
   });
 
-  // PLAN DEFECT #3: the brief's `if (hasProposal && base && proposed) … else if (base)`
-  // emits NO confidence line at all for a proposed-only pack.
-  it("still states confidence when only the proposed run finished", () => {
-    const ctx = withConfidence([PROPOSED]);
-    const joined = narratePlanInOnePage(ctx).join(" ");
-    expect(joined).toContain("91%");
-    expect(narratePlanInOnePage(ctx)[0]).toBe(
-      "With the changes we're suggesting, the plan comes through in 91% of the futures we tested.",
+  /**
+   * The page shows `display`, so the sentence has to agree with what the client
+   * can SEE. Two runs with different trial counts (543/744 against a flat 0.73)
+   * differ in `raw` and round to the same "73%" — reading direction off `raw`
+   * alone prints "down from 73%" beside "73%".
+   */
+  it("claims no move when the two runs print the same percentage", () => {
+    const proposed = pctFact("outcome.confidence.proposed", "Confidence, proposed plan", 543 / 744);
+    expect(proposed.display).toBe(BASE.display);
+    expect(proposed.raw).not.toBe(BASE.raw);
+    expect(narratePlanInOnePage(withConfidence([BASE, proposed]))[0]).toBe(
+      "With the changes we're suggesting, the plan comes through in 73% of the futures we tested — no change from your current path.",
+    );
+  });
+});
+
+describe("plan-in-one-page counts changes the way an advisor writes them", () => {
+  it("spells the count and joins two names with 'and'", () => {
+    const ctx = { ...CTX, strategies: [strategy("Delay Social Security"), strategy("Sell the rental")] };
+    expect(narratePlanInOnePage(ctx)[1]).toBe(
+      "That comes from two changes: Delay Social Security and Sell the rental.",
     );
   });
 
-  it("states the current path when only the base run finished", () => {
-    const ctx = withConfidence([BASE]);
-    expect(narratePlanInOnePage(ctx)[0]).toBe(
-      "On your current path, the plan comes through in 73% of the futures we tested.",
+  it("uses a serial comma for three or more", () => {
+    const ctx = { ...CTX, strategies: [strategy("Delay Social Security"), strategy("Sell the rental"), strategy("Boost the 401(k)")] };
+    expect(narratePlanInOnePage(ctx)[1]).toBe(
+      "That comes from three changes: Delay Social Security, Sell the rental, and Boost the 401(k).",
     );
-  });
-
-  it("drops the confidence line, but not the chapter, when neither run finished", () => {
-    const ctx = withConfidence([]);
-    const joined = narratePlanInOnePage(ctx).join(" ");
-    expect(joined).not.toContain("%");
-    expect(joined).toContain("$2.1M");
-  });
-
-  // The fallback is what the client reads when the AI is off. It may never be blank.
-  it("never returns an empty chapter, even with nothing in the fact pack", () => {
-    const lines = narratePlanInOnePage({ ...CTX, facts: [], strategies: [], hasProposal: false });
-    expect(lines.length).toBeGreaterThan(0);
-    expect(lines.join(" ").trim().length).toBeGreaterThan(0);
   });
 });
 
@@ -164,6 +223,33 @@ describe("what-we-recommend keeps ungrounded figures off the page", () => {
     expect(narrateWhatWeRecommend(ctx)).toEqual(["Spend the surplus — Net worth today is $2.1M."]);
   });
 
+  /**
+   * The fact gate folds case (validate/facts.ts figureKey uppercases), so the
+   * table's "$850k" satisfies a "$850K" fact. Both spellings would then appear in
+   * one deck — the inconsistency this module exists to prevent. The figure has to
+   * match the fact pack's SPELLING, not just its value.
+   */
+  it("rejects a figure whose value is grounded but whose spelling is not ours", () => {
+    const ctx: StoryContext = {
+      ...CTX,
+      facts: [...CTX.facts, moneyFact("proposal.saleProceeds", "Sale proceeds", 850_000)],
+      strategies: [{ name: "Sell the rental", rows: [{ area: "Assets", what: "Rental property", op: "add", before: "—", after: "Added", detail: ["Sale proceeds of $850k"] }] }],
+    };
+    expect(ctx.facts.at(-1)?.display).toBe("$850K");
+    const joined = narrateWhatWeRecommend(ctx).join(" ");
+    expect(joined).not.toContain("$850k");
+    expect(joined).toBe("Sell the rental — this changes what you own.");
+  });
+
+  it("keeps a figure spelled exactly as the fact pack spells it", () => {
+    const ctx: StoryContext = {
+      ...CTX,
+      facts: [...CTX.facts, moneyFact("proposal.saleProceeds", "Sale proceeds", 850_000)],
+      strategies: [{ name: "Sell the rental", rows: [{ area: "Assets", what: "Rental property", op: "add", before: "—", after: "Added", detail: ["Sale proceeds of $850K"] }] }],
+    };
+    expect(narrateWhatWeRecommend(ctx)).toEqual(["Sell the rental — Sale proceeds of $850K."]);
+  });
+
   // Every whyAdd/whyRemove/whyEdit string in scenario-changes/describe/specs.ts
   // already ends in a period, and `editRow` puts whyEdit straight into detail[0]
   // for every single-field edit — the most common change there is.
@@ -175,12 +261,30 @@ describe("what-we-recommend keeps ungrounded figures off the page", () => {
     expect(narrateWhatWeRecommend(ctx)).toEqual(["Trim the gift — Adjusts this gift."]);
   });
 
-  it("names the strategy when the row carries no detail at all", () => {
+  it.each([
+    ["Adjusts this gift!", "Trim the gift — Adjusts this gift."],
+    ["Adjusts this gift?", "Trim the gift — Adjusts this gift."],
+    ["Adjusts this gift…", "Trim the gift — Adjusts this gift."],
+    ["Adjusts this gift ", "Trim the gift — Adjusts this gift."],
+  ])("closes %j with exactly one full stop", (detail, expected) => {
+    const ctx: StoryContext = {
+      ...CTX,
+      strategies: [{ name: "Trim the gift", rows: [{ area: "Estate", what: "Annual gift", op: "edit", before: "—", after: "Updated", detail: [detail] }] }],
+    };
+    expect(narrateWhatWeRecommend(ctx)).toEqual([expected]);
+  });
+
+  it("calls the Assets area what you own — it covers property, not just accounts", () => {
     const ctx: StoryContext = {
       ...CTX,
       strategies: [{ name: "Sell the rental", rows: [{ area: "Assets", what: "Rental property", op: "remove", before: "In plan", after: "Removed", detail: [] }] }],
     };
-    expect(narrateWhatWeRecommend(ctx)).toEqual(["Sell the rental — this changes your accounts."]);
+    expect(narrateWhatWeRecommend(ctx)).toEqual(["Sell the rental — this changes what you own."]);
+  });
+
+  it("names the strategy on its own when it carries no rows at all", () => {
+    const ctx: StoryContext = { ...CTX, strategies: [{ name: "Delay Social Security", rows: [] }] };
+    expect(narrateWhatWeRecommend(ctx)).toEqual(["Delay Social Security."]);
   });
 
   it("says nothing is changing when there is no proposal", () => {
@@ -190,15 +294,27 @@ describe("what-we-recommend keeps ungrounded figures off the page", () => {
   });
 });
 
-describe("what-you-have degrades to net worth alone", () => {
-  it("still says something when only the net-worth fact is present", () => {
-    const ctx: StoryContext = { ...CTX, facts: [moneyFact("today.netWorth", "Net worth today", 2_100_000)] };
-    const joined = narrateWhatYouHave(ctx).join(" ");
-    expect(joined).toContain("$2.1M");
-    expect(joined).not.toContain("$2.4M");
+describe("what-you-have reads as a whole chapter", () => {
+  it("states owned, owed and the difference, then caveats what it can spend", () => {
+    expect(narrateWhatYouHave(CTX).join(" ")).toBe(
+      "You own $2.4M and owe $300K. The difference — $2.1M — is what the plan works with. " +
+        "Not all of it is available to spend. Your home and anything held for someone else sit outside the money the plan draws on.",
+    );
   });
 
-  it("never returns an empty chapter", () => {
-    expect(narrateWhatYouHave({ ...CTX, facts: [] }).join(" ").trim().length).toBeGreaterThan(0);
+  it("still says something when only the net-worth fact is present", () => {
+    const ctx: StoryContext = { ...CTX, facts: [moneyFact("today.netWorth", "Net worth today", 2_100_000)] };
+    expect(narrateWhatYouHave(ctx).join(" ")).toBe(
+      "Your net worth today is $2.1M. Not all of it is available to spend. " +
+        "Your home and anything held for someone else sit outside the money the plan draws on.",
+    );
+  });
+
+  // "Not all of it" needs an antecedent. With no balance sheet there is no figure
+  // for "it" to refer to, so the caveat cannot open the chapter on its own.
+  it("does not open on a pronoun when the fact pack is empty", () => {
+    const joined = narrateWhatYouHave({ ...CTX, facts: [] }).join(" ");
+    expect(joined).toBe("This is the balance sheet your plan works from — what you own, set against what you owe.");
+    expect(joined).not.toContain("Not all of it");
   });
 });
