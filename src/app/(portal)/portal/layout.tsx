@@ -1,5 +1,5 @@
 import type { ReactElement, ReactNode } from "react";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, crmHouseholdContacts } from "@/db/schema";
 import { requireClientPortalAccess } from "@/lib/authz";
@@ -11,6 +11,7 @@ import PortalReadOnlyBanner from "@/components/portal/portal-read-only-banner";
 import { PortalBrandingStrip } from "@/components/portal/portal-branding-mark";
 import { PortalModeProvider } from "@/components/portal/portal-mode-context";
 import { toPortalFeatures } from "@/lib/portal/features";
+import { portalGreetingName } from "@/lib/portal/greeting-name";
 import { portalFeatureColumns } from "@/lib/portal/load-features";
 
 export default async function PortalLayout({
@@ -35,30 +36,29 @@ export default async function PortalLayout({
   // crmHouseholdId is notNull in schema, but guard defensively per task spec.
   const householdId = row?.crmHouseholdId ?? null;
 
-  let displayName = "";
-  let email = "";
+  // Both halves of the household — the welcome line names the spouse too.
+  // Roles are unique per household (one primary, one spouse), so this is at
+  // most two rows. Email stays the primary's: it identifies the signed-in
+  // account, not the household.
+  const contacts = householdId
+    ? await db
+        .select({
+          role: crmHouseholdContacts.role,
+          firstName: crmHouseholdContacts.firstName,
+          preferredName: crmHouseholdContacts.preferredName,
+          email: crmHouseholdContacts.email,
+        })
+        .from(crmHouseholdContacts)
+        .where(
+          and(
+            eq(crmHouseholdContacts.householdId, householdId),
+            inArray(crmHouseholdContacts.role, ["primary", "spouse"]),
+          ),
+        )
+    : [];
 
-  if (householdId) {
-    const [primary] = await db
-      .select({
-        firstName: crmHouseholdContacts.firstName,
-        lastName: crmHouseholdContacts.lastName,
-        email: crmHouseholdContacts.email,
-      })
-      .from(crmHouseholdContacts)
-      .where(
-        and(
-          eq(crmHouseholdContacts.householdId, householdId),
-          eq(crmHouseholdContacts.role, "primary"),
-        ),
-      )
-      .limit(1);
-
-    if (primary) {
-      displayName = `${primary.firstName} ${primary.lastName}`.trim();
-      email = primary.email ?? "";
-    }
-  }
+  const displayName = portalGreetingName(contacts);
+  const email = contacts.find((c) => c.role === "primary")?.email ?? "";
 
   // Letterhead for the portal chrome, keyed by the client's advisor — an
   // advisor with branding enabled overlays their own logo/name/favicon over

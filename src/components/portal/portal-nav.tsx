@@ -26,6 +26,11 @@ import {
 const GROUP_ORDER: readonly PortalNavGroup[] = ["overview", "money", "settings"];
 
 interface Props {
+  /**
+   * Who the rail greets — both halves of the household when there are two
+   * ("John & Jane"), from `portalGreetingName`. Empty renders a nameless
+   * "Welcome".
+   */
   displayName: string;
   email: string;
   basePath?: string;
@@ -86,7 +91,12 @@ export default function PortalNav({
       className={`${className} flex-col gap-2 border-r border-hair bg-card-2 p-5`}
     >
       <header className="mb-4">
-        <div className="text-[14px] font-semibold text-ink">{displayName}</div>
+        {/* Names wrap rather than truncate — a two-person household ("Welcome,
+            John & Jane") needs the second line more than it needs one row. */}
+        {displayName && <div className="text-[12px] text-ink-3">Welcome,</div>}
+        <div className="text-[14px] font-semibold text-ink">
+          {displayName || "Welcome"}
+        </div>
         <div className="truncate text-[12px] text-ink-3">{email}</div>
       </header>
 

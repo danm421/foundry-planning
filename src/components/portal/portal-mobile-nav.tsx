@@ -17,6 +17,11 @@ import {
 } from "@/lib/portal/features";
 
 interface Props {
+  /**
+   * Who the top bar greets — both halves of the household when there are two
+   * ("John & Jane"), from `portalGreetingName`. Empty falls back to a generic
+   * title.
+   */
   displayName: string;
   /** Resolved firm branding; null → Foundry lockup (same fallback as intake). */
   branding?: PortalBranding | null;
@@ -74,7 +79,7 @@ export default function PortalMobileNav({
     >
       <div className="flex items-center justify-between gap-3 px-4 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <span className="truncate text-[15px] font-semibold text-ink">
-          {displayName || "Your portal"}
+          {displayName ? `Welcome, ${displayName}` : "Your portal"}
         </span>
         <div className="flex shrink-0 items-center gap-3">
           <PortalBrandingMark

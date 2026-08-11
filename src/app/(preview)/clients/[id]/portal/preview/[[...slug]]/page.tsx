@@ -26,6 +26,7 @@ import { PortalFeatureOffNotice } from "@/components/portal/feature-off-notice";
 import { PortalSettingsView } from "@/components/portal/portal-settings-view";
 import { loadPortalPrivacy } from "@/lib/portal/privacy";
 import { toPortalFeatures } from "@/lib/portal/features";
+import { portalGreetingName } from "@/lib/portal/greeting-name";
 import { portalFeatureForPath } from "@/components/portal/portal-nav-items";
 import { loadPortalConnectionAlert } from "@/lib/portal/load-plaid-items";
 import { resolveIntakeBrandingForClient } from "@/lib/branding/resolve-for-client";
@@ -74,6 +75,7 @@ export default async function PortalPreviewPage({
           .select({
             firstName: crmHouseholdContacts.firstName,
             lastName: crmHouseholdContacts.lastName,
+            preferredName: crmHouseholdContacts.preferredName,
             email: crmHouseholdContacts.email,
             role: crmHouseholdContacts.role,
           })
@@ -157,9 +159,12 @@ export default async function PortalPreviewPage({
   const inOrganizer = path === "organizer" || path.startsWith("organizer/");
 
   const primary = contacts.find((c) => c.role === "primary") ?? contacts[0];
-  const displayName = primary
+  // The banner names the client the advisor is previewing (full name, one
+  // person); the rail greets the household (first names, both spouses).
+  const clientName = primary
     ? `${primary.firstName} ${primary.lastName ?? ""}`.trim()
     : "";
+  const greetingName = portalGreetingName(contacts);
 
   const basePath = `/clients/${id}/portal/preview`;
 
@@ -169,7 +174,7 @@ export default async function PortalPreviewPage({
           above the scrolling columns. */}
       <PortalPreviewBanner
         clientId={id}
-        clientName={displayName}
+        clientName={clientName}
         editEnabled={access.client.portalEditEnabled}
       />
       {/*
@@ -180,7 +185,7 @@ export default async function PortalPreviewPage({
       */}
       <div className="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)_auto] grid-rows-1">
         <PortalNav
-          displayName={displayName}
+          displayName={greetingName}
           email={primary?.email ?? ""}
           basePath={basePath}
           className="flex min-h-0 overflow-y-auto"
