@@ -180,11 +180,20 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
   const { clientId, chapterId, ctx, voiceSamples } = args;
   const generate = args.deps?.generate ?? (async (s: string, u: string) => {
     const { content, finishReason } = await callAIExtractionWithMeta(s, u, MODEL);
-    // A truncated completion is an outage by definition: what came back is half
-    // a chapter, and half a chapter can clear all four gates. `finish_reason`
-    // is the only place that fact is stated, and the `callAIExtraction`
-    // convenience wrapper throws it away.
-    if (finishReason === "length") throw new Error("model output was truncated");
+    // A completion that did not finish is an outage by definition: what came
+    // back is half a chapter, and half a chapter clears all four gates and the
+    // substance floor alike. `finish_reason` is the only place that fact is
+    // stated, and the `callAIExtraction` convenience wrapper throws it away.
+    //
+    // Both non-`stop` reasons matter, and the second is the one that bites.
+    // `length` is a hard cut mid-sentence; `content_filter` returns real,
+    // well-formed prose that stops early, so nothing downstream can see that it
+    // is a fragment. This check carries the share of the work the substance
+    // floor cannot: the floor is 3 words because the app's own narrators go
+    // that low, which is far too low to recognise a truncated chapter.
+    if (finishReason === "length" || finishReason === "content_filter") {
+      throw new Error(`model completion did not finish (${finishReason})`);
+    }
     return content;
   });
   const getCached = args.deps?.getCached ?? getCachedAnalysis;
@@ -205,22 +214,27 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
   });
 
   if (!args.force) {
-    const hit = await getCached(clientId, sourceHash);
-    // A hit with no chapter in it is not a hit. The same floor as the write
-    // path, applied in both directions, so an entry left by an older deploy
-    // heals on the next render instead of serving a stub for its 30-day TTL.
-    // This is not re-validation: the gates are deliberately NOT re-run on a hit.
-    //
-    // `ai-cache.ts` casts whatever Redis returns to `AiCacheValue` with no shape
-    // check, and this read sits outside the `try` — so dereferencing a missing
-    // `markdown` would throw straight out of a function this file's header
-    // documents as never throwing.
-    const cachedMarkdown = hit?.markdown ?? "";
-    if (hit && hasSubstance(cachedMarkdown)) {
-      return {
-        chapterId, markdown: cachedMarkdown, sourceHash, aiSuppressed: false,
-        failures: [], error: null, generatedAt: hit.generatedAt, cached: true,
-      };
+    // `ai-cache.ts` casts whatever Redis returns to `AiCacheValue` without
+    // checking its shape, so nothing guarantees `markdown` is even a string —
+    // and a read that throws, from a rejecting dependency or from a `markdown`
+    // of the wrong type, would come straight out of a function this file's
+    // header documents as never throwing. A failed read is a miss: generation
+    // follows, which is what a miss does anyway.
+    try {
+      const hit = await getCached(clientId, sourceHash);
+      // A hit with no chapter in it is not a hit. The same floor as the write
+      // path, applied in both directions, so an entry left by an older deploy
+      // heals on the next render instead of serving a stub for its 30-day TTL.
+      // Not re-validation: the gates are deliberately NOT re-run on a hit.
+      const cachedMarkdown = typeof hit?.markdown === "string" ? hit.markdown : "";
+      if (hit && hasSubstance(cachedMarkdown)) {
+        return {
+          chapterId, markdown: cachedMarkdown, sourceHash, aiSuppressed: false,
+          failures: [], error: null, generatedAt: hit.generatedAt, cached: true,
+        };
+      }
+    } catch (err) {
+      console.warn("[plan-story] cache read failed (non-fatal)", chapterId, err);
     }
   }
 

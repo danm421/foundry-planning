@@ -249,21 +249,37 @@ describe("generateChapter", () => {
     expect(res.cached).toBe(false);
   });
 
-  it("regenerates rather than throwing when a cache entry has no markdown at all", async () => {
+  // `ai-cache.ts` casts whatever Redis hands back to `AiCacheValue` with no shape
+  // check, so nothing guarantees `markdown` is even a string. Every one of these
+  // dereferences into a `TypeError` out of a function documented as never
+  // throwing, and a failed read must simply be a miss.
+  type CachedValue = { markdown: string; generatedAt: string };
+  const malformed = (v: unknown) => async () => v as CachedValue | null;
+  // The third column separates the two guards. A malformed ENTRY is an ordinary
+  // miss — the shape check sees it and generation just follows, no noise. Only a
+  // read that genuinely fails is worth a line in the logs. Without the shape
+  // check every malformed entry would reach `hasSubstance`, throw, and be logged
+  // as a failure on every render of an otherwise healthy client.
+  it.each([
+    ["has no markdown key", malformed({ generatedAt: "2026-01-01T00:00:00Z" }), false],
+    ["has a numeric markdown", malformed({ markdown: 123, generatedAt: "2026-01-01T00:00:00Z" }), false],
+    ["has an object markdown", malformed({ markdown: {}, generatedAt: "2026-01-01T00:00:00Z" }), false],
+    ["throws outright", async (): Promise<CachedValue | null> => { throw new Error("redis down"); }, true],
+  ])("regenerates rather than throwing when the cache read %s", async (_label, getCached, logsFailure) => {
+    // Collected into a local array rather than counted off the spy: a spy
+    // outlives a test that fails before restoring it, and the next test's count
+    // then inherits it. The array cannot be inherited.
+    const warnings: unknown[][] = [];
+    const quiet = vi.spyOn(console, "warn").mockImplementation((...args) => void warnings.push(args));
     const gen = vi.fn().mockResolvedValue(GOOD);
     const res = await generateChapter({
       clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voiceSamples: [],
-      deps: {
-        generate: gen,
-        // `ai-cache.ts` casts whatever Redis hands back to `AiCacheValue` with no
-        // shape check, and the read sits outside the try — so dereferencing this
-        // would throw out of a function documented as never throwing.
-        getCached: async () => ({ generatedAt: "2026-01-01T00:00:00Z" }) as unknown as { markdown: string; generatedAt: string },
-        setCached: async () => {},
-      },
+      deps: { generate: gen, getCached, setCached: async () => {} },
     });
     expect(res.markdown).toBe(GOOD);
     expect(res.cached).toBe(false);
+    expect(warnings).toHaveLength(logsFailure ? 1 : 0);
+    quiet.mockRestore();
   });
 
   it("calls the pinned deployment when no model is injected", async () => {
@@ -276,11 +292,18 @@ describe("generateChapter", () => {
     expect(vi.mocked(callAIExtractionWithMeta).mock.calls[0][2]).toBe("gpt-5.4");
   });
 
-  it("treats a truncated completion as an outage", async () => {
+  // The floor is 3 words because the app's own narrators go that low, which is
+  // far too low to recognise a chapter that stopped early. `finish_reason` is
+  // where that is stated, and it has to carry the share the floor cannot.
+  // `content_filter` is the one that bites: unlike `length` it returns real,
+  // well-formed prose, so it clears every gate AND the floor with nothing
+  // downstream able to see it is a fragment.
+  it.each([
+    ["truncated", "length"],
+    ["cut short by the content filter", "content_filter"],
+  ])("treats a %s completion as an outage", async (_label, finishReason) => {
     const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
-    // Half a chapter can clear all four gates, and `finish_reason` is the only
-    // place the truncation is stated — which is why the default path reads it.
-    vi.mocked(callAIExtractionWithMeta).mockResolvedValue({ content: GOOD, finishReason: "length" });
+    vi.mocked(callAIExtractionWithMeta).mockResolvedValue({ content: GOOD, finishReason });
     const res = await generateChapter({
       clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voiceSamples: [],
       deps: { getCached: async () => null, setCached: async () => {} },
