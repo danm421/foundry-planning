@@ -243,6 +243,10 @@ const IMPERATIVE_RE = new RegExp(
  */
 const COMPOUND_NOUN_RE = /^(?:price|prices|power|side|order|orders|cost|costs|date|amount|amounts)\b/iu;
 
+/** Words that name a thing a client owns or holds money in. Both object tests
+ *  below read this one list, so they cannot drift apart. */
+const HOLDING_NOUNS = String.raw`(?:shares?|stocks?|bonds?|equit(?:y|ies)|options?|funds?|positions?|holdings?|securities|assets?|treasur(?:y|ies)|etfs?|reits?|cash|roth|iras?|401\(?k\)?s?|403\(?b\)?s?|hsas?|annuit(?:y|ies))`;
+
 /**
  * What an imperative's object opens with: a determiner, a possessive, a quantity,
  * a holding named without one ("sell options"), or a proper noun ("sell Apple
@@ -262,13 +266,48 @@ const OBJECT_HEAD_RE = new RegExp(
     String.raw`^(?:all|both|each|every|any|some|most|half|part|more|less|another|it|them|everything)\b`,
     String.raw`^(?:one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)\b`,
     String.raw`^\$?\d`,
-    String.raw`^(?:shares?|stocks?|bonds?|equities|options?|funds?|positions?|holdings?|securities|assets|treasur(?:y|ies)|etfs?|reits?)\b`,
+    String.raw`^${HOLDING_NOUNS}\b`,
   ].join("|"),
   "iu",
 );
 /** Case-sensitive by necessity: mid-clause capitalisation is the whole signal,
  *  and an `i` flag would make `\p{Lu}` match every lowercase noun as well. */
 const PROPER_NOUN_RE = /^\p{Lu}/u;
+
+/**
+ * An object is often a prepositional phrase — "move into bonds", "convert to a
+ * Roth", "roll into an IRA", "sell out of Apple". These are this app's signature
+ * transactions, and `OBJECT_HEAD_RE` is anchored to the head word, so a
+ * preposition sitting there reads as no object at all. The suite already pins
+ * every one of them as a rejection in sentence-initial position; moving one comma
+ * to the left must not clear the gate.
+ *
+ * The two lists are separated because they carry different evidence. A
+ * directional preposition or verb particle is a verb's complement — a fronted
+ * noun phrase rarely reaches for one. A flat preposition is what a fronted noun
+ * phrase does reach for ("and move TO Ohio is already modelled", "and shift TO
+ * part time work continues"), so after one of those the complement has to name a
+ * holding outright.
+ */
+const DIRECTIONAL_PREP_RE = /^(?:into|onto|out\s+of|away\s+from|back\s+into|down|up|back|over|off)\s+/iu;
+const FLAT_PREP_RE = /^(?:to|in|from|towards?)\s+/iu;
+/** The holding may sit behind an article or an adjective: "to a Roth", "away
+ *  from growth stocks", "out of the position". Three words, no further — the
+ *  window is what keeps "to part time work continues" clear. */
+const HOLDING_NEAR_RE = new RegExp(String.raw`^(?:[\w$'’-]+\s+){0,2}${HOLDING_NOUNS}\b`, "iu");
+
+function prepositionalObject(object: string): boolean {
+  const directional = DIRECTIONAL_PREP_RE.exec(object);
+  const prep = directional ?? FLAT_PREP_RE.exec(object);
+  if (!prep) return false;
+  const complement = object.slice(prep[0].length);
+  if (HOLDING_NEAR_RE.test(complement)) return true;
+  // A determiner or a capitalised name is object enough after a directional
+  // preposition. After a flat one it is not: `part` heads the quantity list
+  // above, and `Ohio` is capitalised, so both branches would re-open the
+  // fronted-noun-phrase over-fires this rule is built around.
+  return directional !== null && (OBJECT_HEAD_RE.test(complement) || PROPER_NOUN_RE.test(complement));
+}
 
 function commands(clause: string, initial: boolean): boolean {
   const match = IMPERATIVE_RE.exec(clause);
@@ -282,7 +321,7 @@ function commands(clause: string, initial: boolean): boolean {
   // this rule exists to stop — "so sell decisions on bonds cost more", "and
   // switch options for you are limited", "and trim helps". See the round-3 fix
   // report; the misses they would have closed are named there, deliberately.
-  return initial || OBJECT_HEAD_RE.test(object) || PROPER_NOUN_RE.test(object);
+  return initial || OBJECT_HEAD_RE.test(object) || PROPER_NOUN_RE.test(object) || prepositionalObject(object);
 }
 
 /**

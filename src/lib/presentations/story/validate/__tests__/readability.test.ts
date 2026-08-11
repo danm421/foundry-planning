@@ -301,6 +301,50 @@ describe("validateNoAdvice — evasions", () => {
     }
   });
 
+  it("G3m — a prepositional object is still an object", () => {
+    // The object test that stops the fronted noun phrases in G3l reads the head
+    // word, so a preposition sitting there looked like no object at all. These
+    // are the app's signature transactions, and the suite already pins every one
+    // of them in sentence-initial position (G3g) — moving one comma to the left
+    // must not clear the gate.
+    const instructions = [
+      "If you want to reduce risk, move into bonds.",
+      "If you want to cut tax, convert to a Roth this year.",
+      "When you retire, roll into an IRA.",
+      "Because you need income, shift to cash.",
+      "In 2030, invest in bonds instead.",
+      "Unless you want more tax, sell out of Apple.",
+      "When you can, switch away from growth stocks.",
+      "If you want to reduce risk, move from stocks to bonds.",
+      "When you retire, shift into treasuries.",
+      "Because you need income, convert to an annuity.",
+      "Unless you need the cash, invest in the fund instead.",
+      "Because tax is high, sell out of the position.",
+      // A verb particle leads the object the same way a preposition does.
+      "When you can, trim down your position.",
+    ];
+    for (const md of instructions) {
+      expect(validateNoAdvice(md, []), md).toHaveLength(1);
+    }
+    // …and the fronted noun phrases that reach for the same prepositions. A flat
+    // preposition is what those use, so after one the gate demands a named
+    // holding and nothing weaker — `part` heads the quantity list and `Ohio` is
+    // capitalised, so accepting either here would undo G3l.
+    const observations = [
+      "Your income is steady, and shift to part time work continues.",
+      "The plan is funded, and move to Ohio is already modelled.",
+      "Three levers matter, and invest in yourself is not one of them.",
+      "The plan works, and the shift to bonds happens at sixty five.",
+      "In 2030, your portfolio moves into bonds automatically.",
+      "The plan is on track, and roll over rules never apply.",
+      "Your costs are low, and trim down levels never bind.",
+      "Your taxes are low now, and moves into bonds are already modelled.",
+    ];
+    for (const md of observations) {
+      expect(validateNoAdvice(md, []), md).toEqual([]);
+    }
+  });
+
   it("G3k — an option is a holding, not a noun phrase", () => {
     // The compound-noun list may not name anything a client can own.
     const instructions = [
