@@ -5,7 +5,7 @@
 // Nothing here throws. A chapter that cannot be generated renders its
 // deterministic narrative and is flagged, because a failed model call must
 // never be able to blank a page or block an export.
-import { callAIExtraction } from "@/lib/extraction/azure-client";
+import { callAIExtractionWithMeta } from "@/lib/extraction/azure-client";
 import {
   hashAiRequest,
   getCachedAnalysis,
@@ -19,12 +19,39 @@ import type { ChapterId, StoryContext } from "./types";
 
 /** Pinned explicitly rather than through AZURE_ANALYSIS_MODEL, matching the
  *  shipped comparison generator (pages/retirement-comparison/generate-ai.ts).
- *  `callAIExtraction` passes an explicit deployment name straight through. */
+ *  `callAIExtractionWithMeta` passes an explicit deployment name straight
+ *  through. */
 const MODEL = "gpt-5.4";
 
 /** What the advisor is told when the call itself failed. The real error is
  *  logged, never surfaced: it is Azure's wording, not ours. */
 const UNAVAILABLE = "The writing assistant was unavailable.";
+
+/**
+ * The floor below which a draft is not a chapter.
+ *
+ * The gates cannot supply this. All four judge what prose SAYS, so a draft with
+ * nothing in it to bite on clears every one of them: `runGates` returns no
+ * failures for `"# Your plan"`, `"---"`, `"..."`, a bare code fence, or
+ * `"Hello."`. Without a floor, any of those renders as the client's chapter and
+ * is written to a 30-day cache that `ai-cache.ts` cannot delete.
+ *
+ * Twenty words is far below anything the prompt asks for — it demands two to
+ * four paragraphs — and far above every fragment above. Erring high is the safe
+ * direction: too high costs a deterministic chapter, too low prints a stub.
+ */
+const MIN_CHAPTER_WORDS = 20;
+
+/**
+ * Words that carry prose, counted by ignoring tokens made only of markdown
+ * decoration. `#`, `---`, `...`, `>` and a code fence contribute nothing, so a
+ * draft made entirely of them counts zero without needing a strip pass per
+ * syntax.
+ */
+function hasSubstance(markdown: string): boolean {
+  const words = markdown.split(/\s+/u).filter((token) => /[\p{L}\p{N}]/u.test(token));
+  return words.length >= MIN_CHAPTER_WORDS;
+}
 
 export interface GeneratedChapter {
   chapterId: ChapterId;
@@ -122,7 +149,15 @@ function retryNotes(failures: GateFailure[]): GateFailure[] {
 
 export async function generateChapter(args: GenerateChapterArgs): Promise<GeneratedChapter> {
   const { clientId, chapterId, ctx, voiceSamples } = args;
-  const generate = args.deps?.generate ?? ((s: string, u: string) => callAIExtraction(s, u, MODEL));
+  const generate = args.deps?.generate ?? (async (s: string, u: string) => {
+    const { content, finishReason } = await callAIExtractionWithMeta(s, u, MODEL);
+    // A truncated completion is an outage by definition: what came back is half
+    // a chapter, and half a chapter can clear all four gates. `finish_reason`
+    // is the only place that fact is stated, and the `callAIExtraction`
+    // convenience wrapper throws it away.
+    if (finishReason === "length") throw new Error("model output was truncated");
+    return content;
+  });
   const getCached = args.deps?.getCached ?? getCachedAnalysis;
   const setCached = args.deps?.setCached ?? setCachedAnalysis;
 
@@ -142,7 +177,11 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
 
   if (!args.force) {
     const hit = await getCached(clientId, sourceHash);
-    if (hit) {
+    // A hit with no chapter in it is not a hit. The same floor as the write
+    // path, applied in both directions, so an entry left by an older deploy
+    // heals on the next render instead of serving a stub for its 30-day TTL.
+    // This is not re-validation: the gates are deliberately NOT re-run on a hit.
+    if (hit && hasSubstance(hit.markdown)) {
       return {
         chapterId, markdown: hit.markdown, sourceHash, aiSuppressed: false,
         failures: [], error: null, generatedAt: hit.generatedAt, cached: true,
@@ -151,16 +190,14 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
   }
 
   /**
-   * A draft that is blank after trimming clears all four gates — there is
-   * nothing in it to reject — so without this it would be cached and rendered
-   * as an empty chapter. Thrown rather than returned so one handler covers both
-   * attempts, and treated as an outage rather than as a retry: a blank
-   * completion is a truncation or a content filter, and neither is something a
-   * retry prompt can name.
+   * The substance floor, applied to what the model returned. Thrown rather than
+   * returned so one handler covers both attempts, and treated as an outage
+   * rather than as a retry: a stub is a truncation or a content filter, and
+   * neither is something a retry prompt can name.
    */
   const draft = async (prompt: { system: string; user: string }): Promise<string> => {
     const text = (await generate(prompt.system, prompt.user)).trim();
-    if (!text) throw new Error("model returned an empty chapter");
+    if (!hasSubstance(text)) throw new Error("model returned no usable chapter");
     return text;
   };
 
@@ -179,10 +216,15 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
 
     const generatedAt = new Date().toISOString();
     // A cache write that fails must not cost the chapter we already hold: a miss
-    // on the next run is cheap, suppressing a clean chapter is not.
-    await setCached(clientId, sourceHash, { markdown, generatedAt }).catch((err: unknown) =>
-      console.warn("[plan-story] cache write failed (non-fatal)", chapterId, err),
-    );
+    // on the next run is cheap, suppressing a clean chapter is not. `try` rather
+    // than `.catch` — an injected dependency can throw before it ever returns a
+    // promise, and that shape walked straight into the outer handler, which
+    // discarded a gate-clean chapter AND reported it to the advisor as an outage.
+    try {
+      await setCached(clientId, sourceHash, { markdown, generatedAt });
+    } catch (err) {
+      console.warn("[plan-story] cache write failed (non-fatal)", chapterId, err);
+    }
     return {
       chapterId, markdown, sourceHash, aiSuppressed: false,
       failures: [], error: null, generatedAt, cached: false,

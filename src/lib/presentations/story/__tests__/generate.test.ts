@@ -1,4 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
+
+// Only the two tests that exercise the DEFAULT model path touch this; every
+// other test injects `deps.generate` and never reaches the module.
+vi.mock("@/lib/extraction/azure-client", () => ({ callAIExtractionWithMeta: vi.fn() }));
+
+import { callAIExtractionWithMeta } from "@/lib/extraction/azure-client";
 import { generateChapter } from "../generate";
 import { moneyFact, pctFact } from "../facts";
 import type { StoryContext } from "../types";
@@ -15,8 +21,12 @@ const CTX: StoryContext = {
 const GOOD =
   "Your plan holds. In 91% of the futures we tested the money lasts, which is about as good a place to stand as we see. You're starting from $2.1M.";
 
-/** One invented figure — a single Gate 1 failure and nothing else. */
-const ONE_FIGURE = "Your plan grows to $3.4M, which is great news for you.";
+/** One invented figure — a single Gate 1 failure and nothing else. Long enough
+ *  to be a chapter (37 words), so it exercises the retry rather than the
+ *  substance floor. */
+const ONE_FIGURE =
+  "Your plan grows to $3.4M by the time you stop working, which is a good deal more than you have today. " +
+  "The money lasts, and there is room left over for the things you told us matter.";
 
 /**
  * A draft that breaks all four gates at once, and repeats the ONE shape that can
@@ -140,16 +150,24 @@ describe("generateChapter", () => {
     expect(setCached).toHaveBeenCalledWith("c1", res.sourceHash, { markdown: GOOD, generatedAt: res.generatedAt });
   });
 
-  it("keeps the chapter when the cache write fails", async () => {
+  // Both shapes a failing dependency can take. The rejected promise is the one
+  // the real `setCachedAnalysis` would produce; the synchronous throw is what an
+  // injected dependency can do BEFORE it ever returns a promise, and it walked
+  // straight past a `.catch`.
+  it.each([
+    ["rejects", async () => { throw new Error("redis down"); }],
+    ["throws synchronously", (): Promise<void> => { throw new Error("redis down"); }],
+  ])("keeps the chapter when the cache write %s", async (_shape, setCached) => {
     const quiet = vi.spyOn(console, "warn").mockImplementation(() => {});
     const res = await generateChapter({
       clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voiceSamples: [],
-      deps: { generate: async () => GOOD, getCached: async () => null, setCached: async () => { throw new Error("redis down"); } },
+      deps: { generate: async () => GOOD, getCached: async () => null, setCached },
     });
     // A cache miss on the next run is cheap; suppressing a chapter we already
-    // hold is not.
+    // hold is not — and least of all reporting it to the advisor as an outage.
     expect(res.markdown).toBe(GOOD);
     expect(res.aiSuppressed).toBe(false);
+    expect(res.error).toBeNull();
     quiet.mockRestore();
   });
 
@@ -163,13 +181,69 @@ describe("generateChapter", () => {
     expect(res.markdown).toBe(GOOD);
   });
 
-  it("falls back rather than rendering a blank chapter when the model returns nothing", async () => {
+  // Every one of these returns ZERO failures from all four gates — measured
+  // against the shipped gates, not assumed. Without a substance floor each of
+  // them renders as the client's chapter AND is written to a 30-day cache that
+  // `ai-cache.ts` gives no way to delete. Emptiness was never the property that
+  // mattered: a truncation or a content filter yields a fragment far more often
+  // than pure whitespace.
+  it.each([
+    ["whitespace", "   \n  "],
+    ["a bare hash", "#"],
+    ["a lone heading", "# Your plan"],
+    ["a horizontal rule", "---"],
+    ["a bullet", "-"],
+    ["an ellipsis", "..."],
+    ["an empty code fence", "```\n```"],
+    ["one word", "Hello."],
+  ])("falls back rather than rendering %s as the chapter", async (_label, stub) => {
     const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
-    const gen = vi.fn().mockResolvedValue("   \n  ");
-    const res = await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voiceSamples: [], deps: deps(gen) });
-    // An empty draft clears all four gates — there is nothing in it to reject —
-    // so only this guard stands between a blank completion and a blank page.
+    const setCached = vi.fn().mockResolvedValue(undefined);
+    const gen = vi.fn().mockResolvedValue(stub);
+    const res = await generateChapter({
+      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voiceSamples: [],
+      deps: { generate: gen, getCached: async () => null, setCached },
+    });
     expect(res.markdown).toContain("91%");
+    expect(res.aiSuppressed).toBe(true);
+    expect(res.error).toBe("The writing assistant was unavailable.");
+    // …and nothing was written to a cache with no delete.
+    expect(setCached).not.toHaveBeenCalled();
+    quiet.mockRestore();
+  });
+
+  it("regenerates rather than serving a cache hit with no chapter in it", async () => {
+    const gen = vi.fn().mockResolvedValue(GOOD);
+    const res = await generateChapter({
+      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voiceSamples: [],
+      deps: { generate: gen, getCached: async () => ({ markdown: "   ", generatedAt: "2026-01-01T00:00:00Z" }), setCached: async () => {} },
+    });
+    // The same floor on the read side, so an entry left by an older deploy heals
+    // instead of serving a stub for its 30-day TTL.
+    expect(gen).toHaveBeenCalledTimes(1);
+    expect(res.markdown).toBe(GOOD);
+    expect(res.cached).toBe(false);
+  });
+
+  it("calls the pinned deployment when no model is injected", async () => {
+    vi.mocked(callAIExtractionWithMeta).mockResolvedValue({ content: GOOD, finishReason: "stop" });
+    const res = await generateChapter({
+      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voiceSamples: [],
+      deps: { getCached: async () => null, setCached: async () => {} },
+    });
+    expect(res.markdown).toBe(GOOD);
+    expect(vi.mocked(callAIExtractionWithMeta).mock.calls[0][2]).toBe("gpt-5.4");
+  });
+
+  it("treats a truncated completion as an outage", async () => {
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+    // Half a chapter can clear all four gates, and `finish_reason` is the only
+    // place the truncation is stated — which is why the default path reads it.
+    vi.mocked(callAIExtractionWithMeta).mockResolvedValue({ content: GOOD, finishReason: "length" });
+    const res = await generateChapter({
+      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voiceSamples: [],
+      deps: { getCached: async () => null, setCached: async () => {} },
+    });
     expect(res.aiSuppressed).toBe(true);
     expect(res.error).toBe("The writing assistant was unavailable.");
     quiet.mockRestore();
