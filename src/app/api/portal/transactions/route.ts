@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { plaidTransactions, transactionCategories, accounts, clients } from "@/db/schema";
 import { authErrorResponse } from "@/lib/authz";
 import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
+import { requirePortalFeature } from "@/lib/portal/load-features";
 import { requireAreaShared } from "@/lib/portal/privacy";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
@@ -24,6 +25,7 @@ export async function GET(req: Request): Promise<Response> {
   try {
     // Act-as aware so advisor "preview as client" reads the client's transactions.
     const { clientId, mode } = await resolvePortalClient();
+    await requirePortalFeature(clientId, "budget");
     await requireAreaShared(mode, clientId, "transactions");
     const url = new URL(req.url);
     const qp = url.searchParams;
@@ -64,6 +66,7 @@ type CreateBody = {
 export async function POST(req: Request): Promise<Response> {
   try {
     const { clientId, mode } = await resolvePortalClient();
+    await requirePortalFeature(clientId, "budget");
     await requireAreaShared(mode, clientId, "transactions");
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);

@@ -1,7 +1,7 @@
 import type { ReactElement, ReactNode } from "react";
-import { notFound } from "next/navigation";
 import { requireClientPortalAccess } from "@/lib/authz";
 import { isPortalFeatureEnabled } from "@/lib/portal/load-features";
+import { PortalFeatureOffNotice } from "@/components/portal/feature-off-notice";
 import BudgetTabs from "@/components/portal/budget-tabs";
 
 /**
@@ -9,9 +9,9 @@ import BudgetTabs from "@/components/portal/budget-tabs";
  * Transactions and Recurring — plus the one gate that covers all three tabs.
  *
  * The feature check lives here rather than in each page so a switched-off
- * Budget takes the tab strip down with it; a page-level `notFound()` would
- * leave the tabs framing the not-found screen. Each tab's page still does its
- * own `requireClientPortalAccess()` — this layout does not pass a clientId down.
+ * Budget takes the tab strip down with it; a page-level check would leave the
+ * tabs framing the section-off notice. Each tab's page still does its own
+ * `requireClientPortalAccess()` — this layout does not pass a clientId down.
  */
 export default async function BudgetLayout({
   children,
@@ -19,7 +19,9 @@ export default async function BudgetLayout({
   children: ReactNode;
 }): Promise<ReactElement> {
   const { clientId } = await requireClientPortalAccess();
-  if (!(await isPortalFeatureEnabled(clientId, "budget"))) notFound();
+  if (!(await isPortalFeatureEnabled(clientId, "budget"))) {
+    return <PortalFeatureOffNotice feature="budget" viewer="client" />;
+  }
 
   return (
     <>

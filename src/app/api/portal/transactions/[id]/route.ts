@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { plaidTransactions, transactionCategories, clients, recurringTransactions, accounts } from "@/db/schema";
 import { authErrorResponse } from "@/lib/authz";
 import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
+import { requirePortalFeature } from "@/lib/portal/load-features";
 import { requireAreaShared } from "@/lib/portal/privacy";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
@@ -43,6 +44,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   try {
     // Read-only: same gates as the list endpoint (no edit/subscription checks).
     const { clientId, mode } = await resolvePortalClient();
+    await requirePortalFeature(clientId, "budget");
     await requireAreaShared(mode, clientId, "transactions");
     const { id } = await ctx.params;
     const transaction = await loadPortalTransactionById(clientId, id);
@@ -60,6 +62,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
   try {
     const { clientId, mode, clerkUserId } = await resolvePortalClient();
+    await requirePortalFeature(clientId, "budget");
     await requireAreaShared(mode, clientId, "transactions");
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
@@ -258,6 +261,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
   try {
     const { clientId, mode } = await resolvePortalClient();
+    await requirePortalFeature(clientId, "budget");
     await requireAreaShared(mode, clientId, "transactions");
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);

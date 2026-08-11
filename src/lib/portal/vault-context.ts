@@ -4,6 +4,8 @@ import { clients, crmDocumentFolders } from "@/db/schema";
 import { collectFolderSubtreeIds } from "@/lib/crm/folder-tree";
 import { ensureSharedFolder } from "@/lib/crm/folders";
 import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
+import { assertPortalFeature, portalFeatureColumns } from "@/lib/portal/load-features";
+import { toPortalFeatures } from "@/lib/portal/features";
 import { authErrorResponse } from "@/lib/authz";
 
 /** Target folder/doc is outside the client's shared subtree (or missing).
@@ -47,14 +49,28 @@ export function assertInSubtree(
   }
 }
 
-/** Resolve the caller → household/firm → shared root → subtree id-set. */
+/**
+ * Resolve the caller → household/firm → shared root → subtree id-set.
+ *
+ * Every `/api/portal/documents` and `/api/portal/folders` handler reaches the
+ * vault through here (directly or via vault-documents/vault-folders), so the
+ * advisor's Documents switch is enforced once, at the section's front door,
+ * rather than a line per handler that a new route would forget.
+ */
 export async function resolvePortalVaultContext(): Promise<PortalVaultContext> {
   const { clientId, mode, clerkUserId } = await resolvePortalClient();
   const [row] = await db
-    .select({ householdId: clients.crmHouseholdId, firmId: clients.firmId })
+    .select({
+      householdId: clients.crmHouseholdId,
+      firmId: clients.firmId,
+      ...portalFeatureColumns,
+    })
     .from(clients)
     .where(eq(clients.id, clientId))
     .limit(1);
+  // Off the row this already had to read — `requirePortalFeature` would cost a
+  // second select on the same client.
+  assertPortalFeature(toPortalFeatures(row), "documents");
   if (!row?.householdId || !row.firmId) throw new PortalVaultNotFoundError();
   const sharedRootId = await ensureSharedFolder(row.householdId, row.firmId);
   const subtree = await loadSharedSubtreeFolderIds(row.householdId, sharedRootId);

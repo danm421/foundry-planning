@@ -22,6 +22,7 @@ import BudgetTabs from "@/components/portal/budget-tabs";
 import PortalPreviewBanner from "@/components/portal/portal-preview-banner";
 import { PortalModeProvider } from "@/components/portal/portal-mode-context";
 import { NotSharedNotice } from "@/components/portal/not-shared-notice";
+import { PortalFeatureOffNotice } from "@/components/portal/feature-off-notice";
 import { PortalSettingsView } from "@/components/portal/portal-settings-view";
 import { loadPortalPrivacy } from "@/lib/portal/privacy";
 import { toPortalFeatures } from "@/lib/portal/features";
@@ -95,9 +96,13 @@ export default async function PortalPreviewPage({
   // Which switch (if any) owns this path is the navs' own mapping, so one
   // check covers `/budget`, `/budget/transactions` and `/budget/recurring`.
   const gatedBy = portalFeatureForPath(path);
-  if (gatedBy !== undefined && !features[gatedBy]) notFound();
+  const switchedOff = gatedBy !== undefined && !features[gatedBy] ? gatedBy : undefined;
   let section: ReactElement;
-  if (path === "") {
+  if (switchedOff !== undefined) {
+    // Advisor's own switch: tell them which one, not 404 — this is the screen
+    // they land on after flipping it and clicking through to check.
+    section = <PortalFeatureOffNotice feature={switchedOff} viewer="advisor" />;
+  } else if (path === "") {
     section = <PortalDashboard clientId={id} sharing={privacy} />;
   } else if (path === "organizer") {
     // Same component the client portal's Organizer → Household renders, so the
@@ -145,7 +150,10 @@ export default async function PortalPreviewPage({
     notFound();
   }
 
-  const inBudget = path === "budget" || path.startsWith("budget/");
+  // A switched-off Budget takes its tab strip down with it, matching the
+  // client portal's layout-level gate.
+  const inBudget =
+    switchedOff === undefined && (path === "budget" || path.startsWith("budget/"));
   const inOrganizer = path === "organizer" || path.startsWith("organizer/");
 
   const primary = contacts.find((c) => c.role === "primary") ?? contacts[0];

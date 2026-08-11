@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { plaidTransactions, clients } from "@/db/schema";
 import { authErrorResponse } from "@/lib/authz";
 import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
+import { requirePortalFeature } from "@/lib/portal/load-features";
 import { requireAreaShared } from "@/lib/portal/privacy";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
@@ -19,6 +20,7 @@ export const dynamic = "force-dynamic";
 export async function POST(): Promise<Response> {
   try {
     const { clientId, mode, clerkUserId } = await resolvePortalClient();
+    await requirePortalFeature(clientId, "budget");
     await requireAreaShared(mode, clientId, "transactions");
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);

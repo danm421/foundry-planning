@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { transactionCategories, plaidTransactions, clients } from "@/db/schema";
 import { authErrorResponse } from "@/lib/authz";
 import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
+import { requirePortalFeature } from "@/lib/portal/load-features";
 import { requireAreaShared } from "@/lib/portal/privacy";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
@@ -30,6 +31,7 @@ async function getFirmId(clientId: string): Promise<string | null> {
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
   try {
     const { clientId, mode } = await resolvePortalClient();
+    await requirePortalFeature(clientId, "budget");
     await requireAreaShared(mode, clientId, "budgets");
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);
@@ -66,6 +68,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
   try {
     const { clientId, mode } = await resolvePortalClient();
+    await requirePortalFeature(clientId, "budget");
     await requireAreaShared(mode, clientId, "budgets");
     await requirePortalActiveSubscription(clientId);
     await requireEditEnabled(clientId);

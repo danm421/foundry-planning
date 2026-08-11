@@ -338,17 +338,34 @@ describe("PortalPreview feature switches", () => {
     clientFeatures.portalDocumentsEnabled = true;
   });
 
-  it("calls notFound() for a switched-off section", async () => {
+  // Not a 404: the advisor lands here by clicking through to check the switch
+  // they just flipped, and the screen has to name it.
+  it("shows the switched-off notice instead of not-found", async () => {
+    vi.mocked(notFound).mockClear();
     clientFeatures.portalInvestmentsEnabled = false;
-    await expect(renderPreview(["investments"])).rejects.toThrow("NEXT_NOT_FOUND");
-    expect(notFound).toHaveBeenCalled();
+    const { container } = await renderPreview(["investments"]);
+    expect(notFound).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Switched off");
+    expect(container.textContent).toContain("Investments");
+    // The section itself is gone, not merely captioned.
+    expect(container.querySelector("[data-testid='screen-investments']")).toBeNull();
   });
 
-  it("gates every Budget tab, not just the section root", async () => {
+  it("gates every Budget tab, and takes the tab strip with it", async () => {
     clientFeatures.portalBudgetEnabled = false;
-    await expect(renderPreview(["budget"])).rejects.toThrow("NEXT_NOT_FOUND");
-    await expect(renderPreview(["budget", "transactions"])).rejects.toThrow("NEXT_NOT_FOUND");
-    await expect(renderPreview(["budget", "recurring"])).rejects.toThrow("NEXT_NOT_FOUND");
+    for (const slug of [["budget"], ["budget", "transactions"], ["budget", "recurring"]]) {
+      const { container } = await renderPreview(slug);
+      expect(container.textContent).toContain("Switched off");
+      expect(container.querySelector("[data-testid='budget-tabs']")).toBeNull();
+      expect(container.querySelector("[data-testid='section-budget']")).toBeNull();
+      expect(container.querySelector("[data-testid='section-transactions']")).toBeNull();
+      expect(container.querySelector("[data-testid='section-recurring']")).toBeNull();
+    }
+  });
+
+  it("still 404s an unknown slug — the notice is for real sections only", async () => {
+    clientFeatures.portalBudgetEnabled = false;
+    await expect(renderPreview(["does-not-exist"])).rejects.toThrow("NEXT_NOT_FOUND");
   });
 
   it("leaves the core sections reachable when all three are off", async () => {

@@ -46,6 +46,15 @@ export const PORTAL_FEATURE_META: readonly PortalFeatureMeta[] = [
 ] as const;
 
 /**
+ * The section's name as the client and the advisor both see it — the rail
+ * entry, the Features card row, the 403 message and the section-off screen all
+ * read from the same string.
+ */
+export function portalFeatureLabel(feature: PortalFeatureKey): string {
+  return PORTAL_FEATURE_META.find((f) => f.key === feature)?.label ?? feature;
+}
+
+/**
  * The three `clients` columns the switches live on. Structural rather than
  * `typeof clients.$inferSelect` so this file stays free of `@/db` — any query
  * that selects the columns under their own names satisfies it, as does a full

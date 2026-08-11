@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
 import { authErrorResponse } from "@/lib/authz";
 import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
+import { requirePortalFeature } from "@/lib/portal/load-features";
 import { fetchEodQuotes, eodhdSymbol, type LiveQuote } from "@/lib/investments/quote";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    await resolvePortalClient(); // authenticate (client or advisor-preview)
+    // Authenticate (client or advisor-preview), then refuse quotes for a
+    // portal whose Investments section the advisor has switched off.
+    const { clientId } = await resolvePortalClient();
+    await requirePortalFeature(clientId, "investments");
     const url = new URL(req.url);
     const tickers = (url.searchParams.get("tickers") ?? "")
       .split(",").map((t) => t.trim().toUpperCase()).filter(Boolean).slice(0, 200);

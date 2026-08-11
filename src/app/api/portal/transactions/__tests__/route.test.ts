@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+// Section switches all on — they have their own tests (require-portal-feature,
+// feature-gate-403, feature-gate-coverage).
+vi.mock("@/lib/portal/load-features", () => import("@/lib/portal/__tests__/load-features-mock"));
 const { ForbiddenError } = vi.hoisted(() => ({ ForbiddenError: class extends Error {} }));
 const resolveMock = vi.fn();
 const authErrMock = vi.fn();

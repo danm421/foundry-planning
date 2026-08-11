@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { authErrorResponse } from "@/lib/authz";
 import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
+import { requirePortalFeature } from "@/lib/portal/load-features";
 import { requireAreaShared } from "@/lib/portal/privacy";
 import { countRuleMatches } from "@/lib/portal/recategorize";
 
@@ -10,6 +11,7 @@ export async function GET(req: Request): Promise<Response> {
   try {
     // Act-as aware so advisor "preview as client" sees the same match count.
     const { clientId, mode } = await resolvePortalClient();
+    await requirePortalFeature(clientId, "budget");
     await requireAreaShared(mode, clientId, "budgets");
     const qp = new URL(req.url).searchParams;
     const matchType = qp.get("matchType");

@@ -117,7 +117,7 @@ export default async function PortalManagePage({ params }: Props): Promise<React
               title="See exactly what the client sees — read-only, works before you send an invite."
             >
               <EyeIcon />
-              Preview as client ↗
+              Preview Client Portal
             </Link>
           )}
         </div>
