@@ -33,6 +33,16 @@ function netWorth(
 }
 
 describe("TileNetWorth", () => {
+  // `/portal/accounts` is a legacy redirect the advisor preview doesn't carry —
+  // there the old href 404'd. The Organizer tab is the real page.
+  it("links to the Organizer's Accounts tab, not the legacy path", () => {
+    render(<TileNetWorth netWorth={netWorth()} onOpen={vi.fn()} />);
+    expect(screen.getByRole("link", { name: /Accounts/ })).toHaveAttribute(
+      "href",
+      "/portal/organizer/accounts",
+    );
+  });
+
   it("lists asset-type subtotals in balance-sheet order", () => {
     render(<TileNetWorth netWorth={netWorth()} onOpen={vi.fn()} />);
     const labels = screen.getAllByText(/^(Taxable|Retirement|Cash)$/).map((n) => n.textContent);

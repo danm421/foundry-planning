@@ -3,18 +3,20 @@ import { useState, type ReactElement, type ReactNode } from "react";
 import { fmtUsd } from "@/lib/portal/format";
 import type { PortalDashboardDTO } from "@/lib/portal/load-dashboard";
 import { NetWorthTrendChart } from "@/components/portal/networth-trend-chart";
+import { AssetTypePie } from "@/components/portal/asset-type-pie";
 import { TileFrame } from "./tile-frame";
 
 /** How many accounts the list shows before "Show all". */
 const TOP_ACCOUNTS = 5;
 
-/** A hairline-separated block under the chart. Both lists below use it, so the
- *  breakdown and the account list can't drift apart on spacing. */
+/** A hairline-separated block under the chart. Both blocks below use it, so the
+ *  breakdown and the account list can't drift apart on their rule and heading.
+ *  The body is whatever the caller passes — the breakdown is a pie, not a list. */
 function Section({ heading, children }: { heading: string; children: ReactNode }): ReactElement {
   return (
     <div className="mt-4 border-t border-hair pt-3">
       <div className="mb-2 text-[11px] uppercase tracking-wide text-ink-3">{heading}</div>
-      <ul className="space-y-1.5">{children}</ul>
+      {children}
     </div>
   );
 }
@@ -31,7 +33,7 @@ export function TileNetWorth({
   const accounts = expanded ? netWorth.accounts : netWorth.accounts.slice(0, TOP_ACCOUNTS);
 
   return (
-    <TileFrame title="Net worth" href="/accounts" linkLabel="Accounts">
+    <TileFrame title="Net worth" href="/organizer/accounts" linkLabel="Accounts">
       <button
         type="button"
         onClick={onOpen}
@@ -54,32 +56,21 @@ export function TileNetWorth({
 
       {netWorth.assetGroups.length > 0 && (
         <Section heading="By type">
-          {netWorth.assetGroups.map((g) => {
-            const share = netWorth.assets > 0 ? (g.total / netWorth.assets) * 100 : 0;
-            return (
-              <li key={g.category}>
-                <div className="flex items-baseline justify-between gap-3 text-[13px]">
-                  <span className="text-ink-2">{g.label}</span>
-                  <span className="tabular text-ink">{fmtUsd(g.total)}</span>
-                </div>
-                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-card-2">
-                  <div className="h-full bg-ink-4" style={{ width: `${share}%` }} />
-                </div>
-              </li>
-            );
-          })}
+          <AssetTypePie groups={netWorth.assetGroups} />
         </Section>
       )}
 
       {netWorth.accounts.length > 0 && (
         <>
           <Section heading={hasMore && !expanded ? `Top ${TOP_ACCOUNTS} accounts` : "Accounts"}>
-            {accounts.map((a) => (
-              <li key={a.id} className="flex items-baseline justify-between gap-3 text-[13px]">
-                <span className="truncate text-ink-2">{a.name}</span>
-                <span className="tabular shrink-0 text-ink">{fmtUsd(a.value)}</span>
-              </li>
-            ))}
+            <ul className="space-y-1.5">
+              {accounts.map((a) => (
+                <li key={a.id} className="flex items-baseline justify-between gap-3 text-[13px]">
+                  <span className="truncate text-ink-2">{a.name}</span>
+                  <span className="tabular shrink-0 text-ink">{fmtUsd(a.value)}</span>
+                </li>
+              ))}
+            </ul>
           </Section>
           {hasMore && (
             <button

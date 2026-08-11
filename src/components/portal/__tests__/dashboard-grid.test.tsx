@@ -132,18 +132,24 @@ describe("DashboardGrid chart tiles", () => {
     ]);
   });
 
-  it("shows the asset-type breakdown on the net-worth tile", () => {
+  it("shows the asset-type breakdown as a pie with a legend", () => {
     render(<LayoutLike />);
-    expect(screen.getByText("By type")).toBeInTheDocument();
-    expect(screen.getByText("Cash")).toBeInTheDocument();
+    const tile = screen.getByText("Net worth").closest("section") as HTMLElement;
+    expect(within(tile).getByText("By type")).toBeInTheDocument();
+    expect(within(tile).getByText("Cash")).toBeInTheDocument();
+    // Cash is the DTO's only asset group, so the pie is one full-turn circle.
+    expect(tile.querySelector("svg circle")).not.toBeNull();
   });
 
+  // Scoped to the tile: the net-worth pie's legend prints shares as percentages
+  // too, so a bare getByText("100%") matches both tiles.
   it("shows percent funded per goal", () => {
     render(<LayoutLike />);
-    expect(screen.getByText("80%")).toBeInTheDocument();
-    expect(screen.getByText("100%")).toBeInTheDocument();
-    expect(screen.getByText(/for Ava/)).toBeInTheDocument();
-    expect(screen.getByText(/\$600,000 short of \$3,000,000/)).toBeInTheDocument();
+    const tile = within(screen.getByText("Goals funded").closest("section") as HTMLElement);
+    expect(tile.getByText("80%")).toBeInTheDocument();
+    expect(tile.getByText("100%")).toBeInTheDocument();
+    expect(tile.getByText(/for Ava/)).toBeInTheDocument();
+    expect(tile.getByText(/\$600,000 short of \$3,000,000/)).toBeInTheDocument();
   });
 });
 

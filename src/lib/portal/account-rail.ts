@@ -38,6 +38,26 @@ export const CATEGORY_ORDER = [
   "notes_receivable",
 ] as const;
 
+/**
+ * One Deep Jewel hue per asset category, keyed rather than positional so a
+ * category keeps its color when a sibling appears or drops out. Overlaps with
+ * `--color-alloc-*` deliberately (cash → yellow, real estate → orange) so the
+ * net-worth breakdown and the allocation donut don't disagree on a shared
+ * concept. Red goes to the smallest of these — on a money surface it reads as
+ * a loss, so it shouldn't land on a category clients see every day.
+ */
+export const CATEGORY_COLORS: Record<string, string> = {
+  cash: "var(--data-yellow)",
+  taxable: "var(--data-blue)",
+  retirement: "var(--data-green)",
+  annuity: "var(--data-teal)",
+  real_estate: "var(--data-orange)",
+  business: "var(--data-purple)",
+  stock_options: "var(--data-pink)",
+  life_insurance: "var(--data-red)",
+  notes_receivable: "var(--data-grey)",
+};
+
 export const TYPE_LABEL: Record<string, string> = {
   mortgage: "Mortgage",
   heloc: "HELOC",
