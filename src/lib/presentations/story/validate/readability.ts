@@ -224,25 +224,45 @@ function prescribes(sentence: string): boolean {
 
 /** Bullet and blockquote markers, so a bulleted instruction still reads as one. */
 const LIST_MARKER = String.raw`[\s>*_#+•-]*`;
+/** A clause can also open with the conjunction that joins it on: "…, so sell
+ *  your Apple shares." The verb still has to come straight after it. */
+const CLAUSE_LEAD = String.raw`(?:(?:so|and|then|also|next|therefore|instead)\s+)?`;
 /** `(?![-\w])` rather than `\b`: it also rejects the hyphen that turns the verb
  *  into a compound ("Buy-and-hold investing keeps your costs low"). */
 const IMPERATIVE_RE = new RegExp(
-  String.raw`^${LIST_MARKER}(?:${HEDGE}\s+${ACTION}|${ACTION_BASE})(?![-\w])`,
+  String.raw`^${LIST_MARKER}${CLAUSE_LEAD}(?:${HEDGE}\s+${ACTION}|${ACTION_BASE})(?![-\w])`,
   "iu",
 );
-/** …and these turn it into the head of a noun phrase: "Purchase price on the
- *  house was four hundred thousand dollars" opens a statement, not a command. */
-const COMPOUND_NOUN_RE = /^(?:price|prices|power|side|order|orders|option|options|cost|costs|date|amount|amounts)\b/iu;
+/**
+ * …and these turn it into the head of a noun phrase: "Purchase price on the
+ * house was four hundred thousand dollars" opens a statement, not a command.
+ *
+ * Deliberately excludes `option`/`options`: an option is a holding in this
+ * domain, so "Sell options in your account" is the instruction Gate 3 exists to
+ * stop, not a noun phrase. Nothing here may name something a client can own.
+ */
+const COMPOUND_NOUN_RE = /^(?:price|prices|power|side|order|orders|cost|costs|date|amount|amounts)\b/iu;
 
-function commands(sentence: string): boolean {
-  const match = IMPERATIVE_RE.exec(sentence);
+function commands(clause: string): boolean {
+  const match = IMPERATIVE_RE.exec(clause);
   if (!match) return false;
-  return !COMPOUND_NOUN_RE.test(sentence.slice(match[0].length).trim());
+  return !COMPOUND_NOUN_RE.test(clause.slice(match[0].length).trim());
+}
+
+/**
+ * An imperative is checked per clause, not per sentence. The conditional guard
+ * in `prescribes` exempts the frame, and `commands` is anchored to the start of
+ * what it is given — so a sentence-level check leaves the main clause of "If you
+ * want to reduce risk, sell your Apple shares." examined by neither half, and
+ * any conditional prefix becomes a way through the gate.
+ */
+function clauses(sentence: string): string[] {
+  return sentence.split(/[,;]/u).map((clause) => clause.trim()).filter(Boolean);
 }
 
 export const validateNoAdvice: Validator = (markdown) =>
   splitUnits(markdown)
-    .filter((sentence) => commands(sentence) || prescribes(sentence))
+    .filter((sentence) => clauses(sentence).some(commands) || prescribes(sentence))
     .map((sentence) => ({
       gate: "advice",
       // Name the sentence: this message is reused verbatim in the retry prompt,

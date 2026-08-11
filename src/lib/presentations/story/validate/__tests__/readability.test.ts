@@ -237,6 +237,49 @@ describe("validateNoAdvice — evasions", () => {
     expect(validateNoAdvice("Buy-and-hold investing keeps your costs low.", [])).toEqual([]);
   });
 
+  it("G3j — a conditional clause does not exempt the instruction after it", () => {
+    // The conditional guard exempts the FRAME; the main clause is still an
+    // instruction, and an imperative anchored to the start of the sentence
+    // never reaches it. Without per-clause checking, any conditional prefix is
+    // a way through the gate.
+    const instructions = [
+      "If you want to reduce risk, sell your Apple shares.",
+      "When you can, sell your Apple shares.",
+      "Unless you want to pay more tax, move the bond fund into cash.",
+      "Because you need to raise cash, sell your Apple shares.",
+      "You want to reduce risk, so sell your Apple shares.",
+    ];
+    for (const md of instructions) {
+      expect(validateNoAdvice(md, []), md).toHaveLength(1);
+    }
+    // …and the other side of the same constraint: a conditional whose main
+    // clause states an outcome rather than an instruction still passes.
+    const observations = [
+      "If you want to sell the house, the plan improves.",
+      "You could retire at sixty two, and the plan still moves money into bonds.",
+      "The proposed plan, converting your IRA to a Roth, raises your confidence.",
+      "Over the next ten years, moves in the market will not change the answer.",
+    ];
+    for (const md of observations) {
+      expect(validateNoAdvice(md, []), md).toEqual([]);
+    }
+  });
+
+  it("G3k — an option is a holding, not a noun phrase", () => {
+    // The compound-noun list may not name anything a client can own.
+    const instructions = [
+      "Sell options in your account.",
+      "Buy options on the position.",
+      "Liquidate options now.",
+      "Sell option contracts.",
+    ];
+    for (const md of instructions) {
+      expect(validateNoAdvice(md, []), md).toHaveLength(1);
+    }
+    // The words that are genuinely noun heads must keep passing.
+    expect(validateNoAdvice("Purchase price on the house was four hundred thousand dollars.", [])).toEqual([]);
+  });
+
   it("G3i — reports every offending sentence, not just the first", () => {
     // One retry, one message: a chapter with three instructions must not spend
     // it fixing a third of them.
