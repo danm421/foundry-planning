@@ -33,9 +33,16 @@ function normalizeFigures(text: string): string {
 const NUM = String.raw`\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?`;
 const MAG = String.raw`(?: ?(?:[MKB]|million|billion|thousand)\b)`;
 const UNIT = String.raw`(?: ?(?:dollars?|USD)\b)`;
-// A hyphen is a sign only where it cannot be a range: "5%-10%" and "2041-2045"
-// must not read as negatives, or valid prose burns the single retry.
-const SIGN = String.raw`(?<![\d%])[-+]?`;
+// A hyphen is a sign only where it cannot be a range: in "$2.1M-$3.4M",
+// "73%-91%" and "2041-2045" it separates two figures, and reading it as a
+// negative burns the single retry on prose that is entirely correct.
+//
+// The guard is scoped to the sign, not to the whole branch. Guarding the branch
+// would also block a figure that merely *follows* a letter, so "US$2.1M" would
+// lose its sigil and be reported as a truncated "2.1M" — the same phantom-quote
+// defect the messages were fixed to avoid. With no sign there is nothing to
+// disambiguate, so there is nothing to guard.
+const SIGN = String.raw`(?:(?<![\w%])[-+])?`;
 
 // Currency, percentage and year-shaped tokens, per the spec. Bare small
 // integers are deliberately NOT matched: ages and counts are not plan outputs

@@ -124,6 +124,38 @@ describe("validateFacts — evasions", () => {
     expect(failures[0].message).toContain("$3.4m");
   });
 
+  it("reads a hyphen between two supplied figures as a range, not a negative", () => {
+    // This app's money format ends in a letter ($2.1M), so a range written with
+    // a tight hyphen puts a "-" directly before the second figure. Reading that
+    // as a negative rejects correct prose and, when the second figure really is
+    // fabricated, quotes a minus sign the model never wrote.
+    const RANGE_FACTS = [
+      moneyFact("low", "Low", 2_100_000), // "$2.1M"
+      moneyFact("high", "High", 3_400_000), // "$3.4M"
+      pctFact("from", "From", 0.73), // "73%"
+      pctFact("to", "To", 0.91), // "91%"
+      yearFact("start", "Start", 2041),
+      yearFact("end", "End", 2065),
+    ];
+    expect(validateFacts("Assets range $2.1M-$3.4M.", RANGE_FACTS)).toEqual([]);
+    expect(validateFacts("Confidence moves 73%-91%.", RANGE_FACTS)).toEqual([]);
+    expect(validateFacts("The window is 2041-2065.", RANGE_FACTS)).toEqual([]);
+
+    // A fabricated second figure must still be caught, and quoted without a
+    // sign the model never wrote.
+    const failures = validateFacts("Assets range $2.1M-$9.9M.", RANGE_FACTS);
+    expect(failures).toHaveLength(1);
+    expect(failures[0].message).toContain("$9.9M");
+    expect(failures[0].message).not.toContain("-$9.9M");
+  });
+
+  it("keeps the sigil on a figure that follows a letter", () => {
+    // Why the range guard is scoped to the sign rather than the whole branch:
+    // a branch-level guard would drop the "$" here and quote a truncated "2.1M".
+    expect(extractFigures("US$2.1M")).toEqual(["$2.1M"]);
+    expect(validateFacts("Liquid assets are US$2.1M today.", FACTS)).toEqual([]);
+  });
+
   it("deliberately over-fires on year-shaped numbers that are not years", () => {
     // Documented and accepted. This rejects valid prose, costing a retry and at
     // worst the deterministic fallback — the safe direction. Do not "fix" it by
