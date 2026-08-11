@@ -6,8 +6,13 @@ vi.mock("@/lib/extraction/azure-client", () => ({ callAIExtractionWithMeta: vi.f
 
 import { callAIExtractionWithMeta } from "@/lib/extraction/azure-client";
 import { generateChapter } from "../generate";
+import { CHAPTERS } from "../chapters/registry";
 import { moneyFact, pctFact } from "../facts";
-import type { StoryContext } from "../types";
+import type { ChapterId, StoryContext, StoryStrategy } from "../types";
+import type { ChangeRow } from "@/lib/presentations/pages/scenario-changes/types";
+
+const UNAVAILABLE = "The writing assistant was unavailable.";
+const TOO_SHORT = "The writing assistant returned too little text to use.";
 
 const CTX: StoryContext = {
   household: { firstNames: "Alan and Teresa", householdName: "the Bradshaw household" },
@@ -117,7 +122,7 @@ describe("generateChapter", () => {
     // The advisor's review panel groups `failures` by gate. Filing an outage
     // under one tells them the model wrote a bad figure, which it never did.
     expect(res.failures).toEqual([]);
-    expect(res.error).toBe("The writing assistant was unavailable.");
+    expect(res.error).toBe(UNAVAILABLE);
     // …and the raw Azure wording never reaches the advisor.
     expect(res.error).not.toContain("azure exploded");
     quiet.mockRestore();
@@ -196,6 +201,9 @@ describe("generateChapter", () => {
     ["an ellipsis", "..."],
     ["an empty code fence", "```\n```"],
     ["one word", "Hello."],
+    // Three words, but every one of them inside a heading. A heading is a label,
+    // not prose, which is why the count drops heading lines first.
+    ["a heading with words in it", "# Your plan holds"],
   ])("falls back rather than rendering %s as the chapter", async (_label, stub) => {
     const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
     const setCached = vi.fn().mockResolvedValue(undefined);
@@ -206,9 +214,25 @@ describe("generateChapter", () => {
     });
     expect(res.markdown).toContain("91%");
     expect(res.aiSuppressed).toBe(true);
-    expect(res.error).toBe("The writing assistant was unavailable.");
+    // A stub is not an outage — the assistant answered. Saying "unavailable"
+    // here sends the advisor to Regenerate, which reproduces it.
+    expect(res.error).toBe(TOO_SHORT);
     // …and nothing was written to a cache with no delete.
     expect(setCached).not.toHaveBeenCalled();
+    quiet.mockRestore();
+  });
+
+  it("keeps the first attempt's findings when the retry comes back too short", async () => {
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+    const gen = vi.fn().mockResolvedValueOnce(ONE_FIGURE).mockResolvedValueOnce("Hello.");
+    const res = await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voiceSamples: [], deps: deps(gen) });
+    expect(res.aiSuppressed).toBe(true);
+    expect(res.error).toBe(TOO_SHORT);
+    // The first draft's invented figure is what explains the suppression. The
+    // throw on the second attempt must not unwind past it, or the advisor is
+    // left with nothing to act on.
+    expect(res.failures).toHaveLength(1);
+    expect(res.failures[0].message).toContain("$3.4M");
     quiet.mockRestore();
   });
 
@@ -221,6 +245,23 @@ describe("generateChapter", () => {
     // The same floor on the read side, so an entry left by an older deploy heals
     // instead of serving a stub for its 30-day TTL.
     expect(gen).toHaveBeenCalledTimes(1);
+    expect(res.markdown).toBe(GOOD);
+    expect(res.cached).toBe(false);
+  });
+
+  it("regenerates rather than throwing when a cache entry has no markdown at all", async () => {
+    const gen = vi.fn().mockResolvedValue(GOOD);
+    const res = await generateChapter({
+      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voiceSamples: [],
+      deps: {
+        generate: gen,
+        // `ai-cache.ts` casts whatever Redis hands back to `AiCacheValue` with no
+        // shape check, and the read sits outside the try — so dereferencing this
+        // would throw out of a function documented as never throwing.
+        getCached: async () => ({ generatedAt: "2026-01-01T00:00:00Z" }) as unknown as { markdown: string; generatedAt: string },
+        setCached: async () => {},
+      },
+    });
     expect(res.markdown).toBe(GOOD);
     expect(res.cached).toBe(false);
   });
@@ -245,7 +286,7 @@ describe("generateChapter", () => {
       deps: { getCached: async () => null, setCached: async () => {} },
     });
     expect(res.aiSuppressed).toBe(true);
-    expect(res.error).toBe("The writing assistant was unavailable.");
+    expect(res.error).toBe(UNAVAILABLE);
     quiet.mockRestore();
   });
 
@@ -278,6 +319,69 @@ describe("generateChapter", () => {
     const gen = vi.fn().mockResolvedValueOnce(ONE_FIGURE).mockResolvedValueOnce(GOOD);
     await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voiceSamples: [], deps: deps(gen) });
     expect(retryPrompt(gen)).not.toContain("do not open a sentence or a clause");
+  });
+
+  /**
+   * The floor's own guard rail, and the reason it is 3 rather than 20.
+   *
+   * A draft the module would itself PUBLISH must never be thrown away for being
+   * too short. The shortest thing the shipped narrators produce is three words —
+   * `whatYouHave` on a debts-only pack, "You owe $300K." — so a floor above that
+   * discards a chapter the app considers complete, tells the advisor the
+   * assistant was unavailable when it answered cleanly, hands them no finding to
+   * act on, and re-spends a model call on every render.
+   *
+   * Driven through the real generator with each narrative fed back as the
+   * model's answer, over every chapter and a representative spread of fact
+   * packs — including the degenerate ones Task 6 proved reach production. This
+   * is what stops the floor and the narrators drifting apart later.
+   */
+  describe("never rejects a chapter it would publish itself", () => {
+    const F = {
+      base: pctFact("outcome.confidence.base", "Confidence, current", 0.73),
+      proposed: pctFact("outcome.confidence.proposed", "Confidence, proposed", 0.91),
+      net: moneyFact("today.netWorth", "Net worth", 2_100_000),
+      assets: moneyFact("today.assets", "What you own", 2_400_000),
+      debts: moneyFact("today.debts", "What you owe", 300_000),
+    };
+    const ROW: ChangeRow = {
+      area: "Savings", what: "2019 Roth", op: "edit",
+      before: "$20k", after: "$25k", detail: ["Annual amount: $20k \u2192 $25k"],
+    };
+    const STRATEGIES: StoryStrategy[] = [{ name: "Convert to Roth", rows: [ROW] }];
+
+    function context(facts: Array<(typeof F)[keyof typeof F]>, hasProposal: boolean, strategies: StoryStrategy[]): StoryContext {
+      return { ...CTX, hasProposal, strategies, facts };
+    }
+
+    const PACKS: Array<[string, StoryContext]> = [
+      ["a full pack with strategies", context([F.base, F.proposed, F.net, F.assets, F.debts], true, STRATEGIES)],
+      ["a proposed-only pack", context([F.proposed, F.net], true, [])],
+      ["a base-only pack", context([F.base], true, [])],
+      // The shortest narrative any chapter produces: "You owe $300K.", 3 words.
+      ["a debts-only pack", context([F.debts], true, [])],
+      ["an assets-only pack", context([F.assets], true, [])],
+      ["no facts and no proposal", context([], false, [])],
+      ["facts but no proposal", context([F.base, F.net, F.assets, F.debts], false, [])],
+    ];
+
+    const CASES: Array<[ChapterId, string, StoryContext]> = Object.keys(CHAPTERS)
+      .flatMap((id) => PACKS.map(([label, ctx]) => [id as ChapterId, label, ctx] as [ChapterId, string, StoryContext]));
+
+    it.each(CASES)("%s, on %s", async (chapterId, _label, ctx) => {
+      const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+      const narrative = CHAPTERS[chapterId].narrate(ctx).join("\n\n");
+      const res = await generateChapter({
+        clientId: "c1", chapterId, ctx, voiceSamples: [],
+        deps: { generate: async () => narrative, getCached: async () => null, setCached: async () => {} },
+      });
+      // The floor never fires on it...
+      expect(res.error).not.toBe(TOO_SHORT);
+      // ...and whenever the chapter IS suppressed, the advisor gets a reason
+      // they can act on rather than a bare "unavailable".
+      if (res.aiSuppressed) expect(res.failures.length).toBeGreaterThan(0);
+      quiet.mockRestore();
+    });
   });
 
   it("shows the review panel each broken rule once", async () => {

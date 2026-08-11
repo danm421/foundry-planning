@@ -27,31 +27,60 @@ const MODEL = "gpt-5.4";
  *  logged, never surfaced: it is Azure's wording, not ours. */
 const UNAVAILABLE = "The writing assistant was unavailable.";
 
+/** …and when it answered with a stub. Deliberately NOT the outage wording: the
+ *  assistant was available and replied, and what it replied is the reason. */
+const TOO_SHORT = "The writing assistant returned too little text to use.";
+
+/** A heading is a label, not a sentence — the same call `validate/voice.ts`
+ *  makes when it measures rhythm. Load-bearing here rather than tidy: without
+ *  it `"# Your plan holds"` counts three words and clears the floor. */
+const HEADING_LINE_RE = /^ {0,3}#{1,6}\s/u;
+
 /**
  * The floor below which a draft is not a chapter.
  *
  * The gates cannot supply this. All four judge what prose SAYS, so a draft with
  * nothing in it to bite on clears every one of them: `runGates` returns no
- * failures for `"# Your plan"`, `"---"`, `"..."`, a bare code fence, or
- * `"Hello."`. Without a floor, any of those renders as the client's chapter and
- * is written to a 30-day cache that `ai-cache.ts` cannot delete.
+ * failures for `"#"`, `"---"`, `"..."`, a bare code fence, or `"Hello."`.
+ * Without a floor any of those renders as the client's chapter and is written to
+ * a 30-day cache that `ai-cache.ts` cannot delete.
  *
- * Twenty words is far below anything the prompt asks for — it demands two to
- * four paragraphs — and far above every fragment above. Erring high is the safe
- * direction: too high costs a deterministic chapter, too low prints a stub.
+ * It catches degenerate stubs and nothing else. Truncation — the other way half
+ * a chapter arrives — is caught at the source by `finish_reason`, so this number
+ * does not have to reach for it, and must not: it is pinned between two
+ * measurements with one word of room between them.
+ *
+ *   1  the largest stub above, once heading lines are dropped ("Hello.")
+ *   3  the SHORTEST narrative this module itself publishes — `whatYouHave` on a
+ *      debts-only pack, "You owe $300K." (pinned by `narratives.test.ts`)
+ *
+ * A floor above 3 rejects a chapter the app's own narrator considers complete:
+ * it tells the advisor the assistant was unavailable when it answered cleanly,
+ * hands them no finding to act on, and re-spends a model call on every render
+ * because nothing is cached. `generate.test.ts` runs all of `CHAPTERS` against
+ * this number so the floor and the narrators cannot drift apart.
  */
-const MIN_CHAPTER_WORDS = 20;
+const MIN_CHAPTER_WORDS = 3;
 
 /**
- * Words that carry prose, counted by ignoring tokens made only of markdown
- * decoration. `#`, `---`, `...`, `>` and a code fence contribute nothing, so a
- * draft made entirely of them counts zero without needing a strip pass per
- * syntax.
+ * Words that carry prose: heading lines dropped, then tokens made only of
+ * markdown decoration ignored. `---`, `...`, `>` and a code fence contribute
+ * nothing, so a draft made entirely of them counts zero without needing a strip
+ * pass per syntax.
  */
 function hasSubstance(markdown: string): boolean {
-  const words = markdown.split(/\s+/u).filter((token) => /[\p{L}\p{N}]/u.test(token));
+  const words = markdown
+    .split(/\r?\n/u)
+    .filter((line) => !HEADING_LINE_RE.test(line))
+    .join(" ")
+    .split(/\s+/u)
+    .filter((token) => /[\p{L}\p{N}]/u.test(token));
   return words.length >= MIN_CHAPTER_WORDS;
 }
+
+/** Thrown by the substance floor, so the handler can tell a stub from an outage
+ *  and keep the findings the first attempt already produced. */
+class ThinDraftError extends Error {}
 
 export interface GeneratedChapter {
   chapterId: ChapterId;
@@ -136,9 +165,9 @@ const ADVICE_NOTE: GateFailure = {
  * Deliberately NOT capped. A cap cannot make the retry more likely to pass —
  * every gate must clear for the draft to be used, so a rule left unnamed is a
  * rule free to survive into the attempt that decides whether the client reads
- * the model's chapter or the deterministic one. The worst case measured against
- * the shipped gates, a draft breaking all four at once, is 25 failures and about
- * 3k characters of prompt.
+ * the model's chapter or the deterministic one. That argument needs no number,
+ * which is just as well: the size figures once quoted here were not reproducible
+ * and are withdrawn.
  */
 function retryNotes(failures: GateFailure[]): GateFailure[] {
   const notes = dedupe(failures);
@@ -181,9 +210,15 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
     // path, applied in both directions, so an entry left by an older deploy
     // heals on the next render instead of serving a stub for its 30-day TTL.
     // This is not re-validation: the gates are deliberately NOT re-run on a hit.
-    if (hit && hasSubstance(hit.markdown)) {
+    //
+    // `ai-cache.ts` casts whatever Redis returns to `AiCacheValue` with no shape
+    // check, and this read sits outside the `try` — so dereferencing a missing
+    // `markdown` would throw straight out of a function this file's header
+    // documents as never throwing.
+    const cachedMarkdown = hit?.markdown ?? "";
+    if (hit && hasSubstance(cachedMarkdown)) {
       return {
-        chapterId, markdown: hit.markdown, sourceHash, aiSuppressed: false,
+        chapterId, markdown: cachedMarkdown, sourceHash, aiSuppressed: false,
         failures: [], error: null, generatedAt: hit.generatedAt, cached: true,
       };
     }
@@ -197,17 +232,23 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
    */
   const draft = async (prompt: { system: string; user: string }): Promise<string> => {
     const text = (await generate(prompt.system, prompt.user)).trim();
-    if (!hasSubstance(text)) throw new Error("model returned no usable chapter");
+    if (!hasSubstance(text)) throw new ThinDraftError("model returned no usable chapter");
     return text;
   };
+
+  // Held outside the `try` so a stub on the SECOND attempt does not unwind past
+  // the findings the first one produced: those findings are what explain the
+  // suppression to the advisor, and losing them leaves Regenerate as the only
+  // move.
+  let firstFailures: GateFailure[] = [];
 
   try {
     const attempt1 = await draft(first);
     let markdown = attempt1;
-    const failures = runGates(attempt1, ctx.facts);
+    firstFailures = runGates(attempt1, ctx.facts);
 
-    if (failures.length > 0) {
-      const retry = buildChapterPrompt(chapterId, ctx, voiceSamples, retryNotes(failures));
+    if (firstFailures.length > 0) {
+      const retry = buildChapterPrompt(chapterId, ctx, voiceSamples, retryNotes(firstFailures));
       const attempt2 = await draft(retry);
       const retryFailures = dedupe(runGates(attempt2, ctx.facts));
       if (retryFailures.length > 0) return fallback(retryFailures);
@@ -232,6 +273,9 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
   } catch (err) {
     // Non-fatal by design — mirrors ensure-ai-summaries.ts.
     console.error("[plan-story] generation failed (non-fatal)", chapterId, err);
+    // A stub is not an outage: the assistant answered. Say so, and carry
+    // whatever the first attempt was actually rejected for.
+    if (err instanceof ThinDraftError) return fallback(dedupe(firstFailures), TOO_SHORT);
     return fallback([], UNAVAILABLE);
   }
 }
