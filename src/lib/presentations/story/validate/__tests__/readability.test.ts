@@ -96,6 +96,43 @@ describe("validateReadability — evasions", () => {
     // One level, used repeatedly, is not nesting.
     expect(validateReadability("## Overview\n\nText.\n\n## Next\n\nMore text.", [])).toEqual([]);
   });
+
+  it("G2e — measures a bulleted chapter by line, not welded into one sentence", () => {
+    // A heading and a bullet carry no full stop, so splitting on `.!?` alone
+    // welds five short lines into one forty-word "sentence" and rejects plain,
+    // readable client prose.
+    const md = [
+      "## What your plan shows",
+      "",
+      "- Your money lasts through age ninety five with room to spare",
+      "- Your travel goal is fully funded in every year we tested",
+      "- Your taxes stay inside the twelve percent bracket until seventy",
+    ].join("\n");
+    expect(validateReadability(md, [])).toEqual([]);
+  });
+
+  it("G2f — a gloss on a later line does not cover a term on an earlier one", () => {
+    // Same welding bug, fail-open direction: the parenthesis belongs to the
+    // second bullet and explains nothing about the first.
+    const md = "- Your money sits in a tax-deferred account\n- Growth (the part that compounds) matters most";
+    const failures = validateReadability(md, []);
+    expect(failures).toHaveLength(1);
+    expect(failures[0].message).toContain("tax-deferred");
+  });
+
+  it("G2g — accepts the other ways a gloss is punctuated", () => {
+    // Rejecting a correctly glossed term burns the chapter's one retry on prose
+    // that is already right.
+    const glossed = [
+      "We looked at sequence-of-returns risk – the danger of a bad market right after you stop working.",
+      "We looked at decumulation: the years you spend the money you saved.",
+      "We looked at decumulation, meaning the years you spend what you saved.",
+      "We looked at a drawdown, i.e. a fall from the peak.",
+    ];
+    for (const md of glossed) {
+      expect(validateReadability(md, []), md).toEqual([]);
+    }
+  });
 });
 
 describe("validateNoAdvice — evasions", () => {
@@ -144,18 +181,68 @@ describe("validateNoAdvice — evasions", () => {
     }
   });
 
-  it("deliberately over-fires on a permissive 'you can' beside an action verb", () => {
-    // Documented and accepted. This rejects a sentence that instructs nobody,
-    // costing a retry and at worst the deterministic fallback — the safe
-    // direction. Do not "fix" it by dropping `can` from the frame list; that
-    // also lets "You can sell your Apple shares now" through.
-    expect(validateNoAdvice("You can see that the plan moves money into bonds.", [])).toHaveLength(1);
-  });
-
   it("G3d — judges each sentence on its own", () => {
     // Testing the whole document at once lets a "you should" in one sentence
     // pair with a "move" in the next and reject prose that advises nothing.
     const md = "You should feel confident about this. The plan will move money into bonds later.";
     expect(validateNoAdvice(md, [])).toEqual([]);
+  });
+
+  it("G3e — finds an instruction on a later line of the chapter", () => {
+    // A document-wide test anchors `^` to the first character, so only the
+    // opening line can ever read as an imperative.
+    const md = "## What changed\n\n- Your taxes fall in 2030\n- Sell your Apple shares this year";
+    expect(validateNoAdvice(md, [])).toHaveLength(1);
+  });
+
+  it("G3f — a frame only counts when it governs the verb", () => {
+    // Asking whether a frame and an action each appear *somewhere* in the
+    // sentence rejects ordinary prose: every sentence below has both halves and
+    // instructs nobody.
+    const observations = [
+      "If you want to sell the house, the plan improves.",
+      "You could retire at sixty two, and the plan still moves money into bonds.",
+      "You want to know whether the plan can move you to bonds safely.",
+      "You can see that the plan moves money into bonds.",
+    ];
+    for (const md of observations) {
+      expect(validateNoAdvice(md, []), md).toEqual([]);
+    }
+    // The same frames with the verb where the frame governs it.
+    for (const md of ["You can sell your Apple shares now.", "You may want to sell your Apple shares."]) {
+      expect(validateNoAdvice(md, []), md).toHaveLength(1);
+    }
+  });
+
+  it("G3g — catches the sibling forms of every instruction the suite pins", () => {
+    // Each is a one-token edit of a case already proven caught, and each one
+    // instructs the reader to trade a specific holding.
+    const cases = [
+      "+ Sell your Apple shares.",
+      "We would suggest selling your Apple shares.",
+      "Your next step is to sell the Apple position.",
+      "Consider trimming your Apple position.",
+      "Rebalance your portfolio into sixty forty this year.",
+      "Convert your IRA to a Roth this year.",
+      "Roll your 401k into an IRA before December.",
+      "You should shift twenty percent of your portfolio into bonds.",
+    ];
+    for (const md of cases) {
+      expect(validateNoAdvice(md, []), md).toHaveLength(1);
+    }
+  });
+
+  it("G3h — leaves noun phrases that open with an action word alone", () => {
+    expect(validateNoAdvice("Purchase price on the house was four hundred thousand dollars.", [])).toEqual([]);
+    expect(validateNoAdvice("Buy-and-hold investing keeps your costs low.", [])).toEqual([]);
+  });
+
+  it("G3i — reports every offending sentence, not just the first", () => {
+    // One retry, one message: a chapter with three instructions must not spend
+    // it fixing a third of them.
+    const md = "Sell your Apple shares.\nBuy bonds instead.\nYour money lasts.";
+    const failures = validateNoAdvice(md, []);
+    expect(failures).toHaveLength(2);
+    expect(failures[1].message).toContain("Buy bonds instead.");
   });
 });

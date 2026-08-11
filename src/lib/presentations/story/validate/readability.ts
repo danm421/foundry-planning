@@ -2,11 +2,11 @@
 // client-facing document must satisfy are unit-testable rather than a hope
 // pinned on a system prompt.
 //
-// Like Gate 1, both err toward matching MORE. A false positive costs one retry;
-// a false negative puts an unexplained term — or an instruction to sell a
-// holding — in front of a client, which is the thing these gates exist to stop.
-import type { Fact } from "../facts";
-import type { GateFailure } from "./types";
+// Like Gate 1, both err toward matching MORE — but only where the extra match
+// is still the thing being banned. A gate that rejects plain, correct prose
+// burns the chapter's single retry on a note the model cannot act on, so the
+// false-positive tests in the suite are as load-bearing as the rejections.
+import type { GateFailure, Validator } from "./types";
 
 /** Terms a lay reader does not know. Allowed only when glossed in the same
  *  sentence — signalled by an em-dash, a parenthetical, or "which means". */
@@ -31,7 +31,8 @@ const MAX_MEAN_SENTENCE_WORDS = 20;
  * prose no advisor would hand a client.
  */
 const MAX_SENTENCE_WORDS = MAX_MEAN_SENTENCE_WORDS * 2;
-const GLOSS_MARKERS = ["—", "(", "which means", "that is", "in other words"];
+/** Every punctuation a writer actually glosses with, not just the tidy two. */
+const GLOSS_MARKERS = ["—", "–", "(", ":", ", meaning", "i.e.", "which means", "that is", "in other words"];
 
 /** Markdown allows up to three spaces of indent before the hashes. */
 const HEADING_RE = /^ {0,3}(#{1,6})\s/gmu;
@@ -43,10 +44,23 @@ export function splitSentences(text: string): string[] {
     .filter((s) => s.length > 0);
 }
 
-/** Exported for the same reason as `splitSentences`: Gate 4b's sentence-rhythm
- *  check counts words the same way, and two spellings of it would drift. */
-export function wordCount(s: string): number {
-  return s.split(/\s+/).filter(Boolean).length;
+/**
+ * The unit both gates measure. A chapter is markdown, so a line break ends a
+ * unit as surely as a full stop does: headings and bullets carry no terminal
+ * punctuation, and welding them to their neighbours turns three short bullets
+ * into one forty-word "sentence" that fails the length rule and hands a later
+ * line's parenthesis to an earlier line's jargon.
+ */
+function splitUnits(markdown: string): string[] {
+  return markdown.split(/\r?\n/u).flatMap(splitSentences);
+}
+
+function words(s: string): string[] {
+  return s.split(/\s+/u).filter(Boolean);
+}
+
+function wordCount(s: string): number {
+  return words(s).length;
 }
 
 /** Emphasis is decoration, not spelling: `de**cumulation**` is one word. */
@@ -100,10 +114,9 @@ function jargonFailures(sentences: string[]): GateFailure[] {
   return failures;
 }
 
-export function validateReadability(markdown: string, _facts: Fact[]): GateFailure[] {
-  const sentences = splitSentences(markdown);
+export const validateReadability: Validator = (markdown) => {
+  const sentences = splitUnits(markdown);
   const failures: GateFailure[] = jargonFailures(sentences);
-
   const counts = sentences.map(wordCount);
 
   if (counts.length > 0) {
@@ -122,7 +135,7 @@ export function validateReadability(markdown: string, _facts: Fact[]): GateFailu
       gate: "readability",
       // Quote the opening so the retry prompt names the sentence to split; the
       // message is reused verbatim, and "one sentence is long" is unactionable.
-      message: `One sentence runs ${counts[runaway]} words, starting "${sentences[runaway].split(/\s+/).slice(0, 8).join(" ")}…". Split it — keep every sentence under ${MAX_SENTENCE_WORDS} words.`,
+      message: `One sentence runs ${counts[runaway]} words, starting "${words(sentences[runaway]).slice(0, 8).join(" ")}…". Split it — keep every sentence under ${MAX_SENTENCE_WORDS} words.`,
     });
   }
 
@@ -138,13 +151,19 @@ export function validateReadability(markdown: string, _facts: Fact[]): GateFailu
   }
 
   return failures;
-}
+};
 
-// Gate 3. The spec's rule is "observations and mechanisms, never individualized
-// recommendations — reject second-person imperatives about buying or selling".
-// An imperative has no subject and no modal, so a frame-only test ("you should")
-// cannot see the plainest form of the thing being banned: "Sell your Apple
-// shares." Both shapes are checked, per sentence.
+// Gate 3. The rule is that the document must never instruct the reader to buy,
+// sell, or move a specific holding. Two shapes carry that instruction, and a
+// test for either one alone is blind to the other:
+//
+//   a bare imperative  — "Sell your Apple shares."  (no subject, no modal)
+//   a prescriptive frame — "You should sell…", "We recommend selling…"
+//
+// The frame has to *govern* the verb. "You can see that the plan moves money
+// into bonds" contains both halves and instructs nobody, so a test that merely
+// asks whether each appears somewhere in the sentence rejects ordinary prose.
+
 /** One row per banned verb: the base form, then every form it is written in.
  *  Both patterns below derive from this, so a verb cannot be added to one and
  *  forgotten in the other. */
@@ -155,6 +174,13 @@ const ACTION_VERBS = [
   ["liquidate", String.raw`liquidat(?:e|es|ing)`],
   ["move", String.raw`mov(?:e|es|ing)`],
   ["switch", String.raw`switch(?:es|ing)?`],
+  ["shift", String.raw`shift(?:s|ing)?`],
+  ["trim", String.raw`trim(?:s|ming)?`],
+  ["rebalance", String.raw`rebalanc(?:e|es|ing)`],
+  ["reallocate", String.raw`reallocat(?:e|es|ing)`],
+  ["convert", String.raw`convert(?:s|ing)?`],
+  ["roll", String.raw`roll(?:s|ing)?`],
+  ["invest", String.raw`invest(?:s|ing)?`],
 ] as const;
 
 const ACTION = `(?:${ACTION_VERBS.map(([, forms]) => forms).join("|")})`;
@@ -168,30 +194,59 @@ const ACTION_RE = new RegExp(String.raw`\b${ACTION}\b`, "iu");
 const PRESCRIPTION_RE = new RegExp(
   [
     String.raw`\byou(?:['’](?:ll|d)| will| would)?\s+(?:should(?:n['’]?t| not)?|must|needs?\s+to|ought\s+to|have\s+to|may\s+want\s+to|might\s+want\s+to|want\s+to|could|can)\b`,
-    String.raw`\bwe\s+(?:recommend|suggest|advise)\b`,
+    String.raw`\bwe(?:['’]d| would| might| may| do)?\s+(?:recommend|suggest|advise)\b`,
     String.raw`\bit\s+(?:makes|would\s+make)\s+sense\s+to\b`,
+    String.raw`\b(?:your|the)\s+(?:next|first|best)\s+(?:step|move)\s+is\s+to\b`,
     String.raw`\bthe\s+(?:best|right)\s+move\s+(?:is|would\s+be)\b`,
   ].join("|"),
-  "iu",
+  "giu",
 );
 
-/** A bare imperative: the sentence opens with the action itself. */
-const IMPERATIVE_RE = new RegExp(
-  String.raw`^[\s>*_#-]*(?:${HEDGE}\s+${ACTION}|${ACTION_BASE})\b`,
-  "iu",
-);
+/**
+ * How far past the frame the verb may sit and still be governed by it.
+ * "you should | sell your shares" instructs; "you can | see that the plan moves
+ * money into bonds" is an observation with a verb four words downstream.
+ */
+const GOVERNED_WORDS = 3;
+/** A frame introduced by one of these describes a choice, not an instruction:
+ *  "If you want to sell the house, the plan improves." */
+const CONDITIONAL_RE = /^(?:if|when|whether|unless|though|although|because|while)$/iu;
 
-export function validateNoAdvice(markdown: string, _facts: Fact[]): GateFailure[] {
-  // Per sentence, and per line so a bulleted instruction is judged on its own.
-  // Testing the whole document lets a "you should" in one sentence pair with a
-  // "move" three sentences later and reject prose that instructs nobody.
-  const offender = markdown
-    .split(/\r?\n/u)
-    .flatMap(splitSentences)
-    .find((s) => IMPERATIVE_RE.test(s) || (PRESCRIPTION_RE.test(s) && ACTION_RE.test(s)));
-  if (!offender) return [];
-  return [{
-    gate: "advice",
-    message: `Do not instruct the reader to buy, sell, or move a specific holding. Describe what the plan shows instead. Rewrite: "${offender}"`,
-  }];
+function prescribes(sentence: string): boolean {
+  for (const match of sentence.matchAll(PRESCRIPTION_RE)) {
+    const preceding = words(sentence.slice(0, match.index)).pop() ?? "";
+    if (CONDITIONAL_RE.test(preceding.replace(/[^\p{L}]/gu, ""))) continue;
+    const governed = words(sentence.slice(match.index + match[0].length)).slice(0, GOVERNED_WORDS);
+    if (governed.some((word) => ACTION_RE.test(word))) return true;
+  }
+  return false;
 }
+
+/** Bullet and blockquote markers, so a bulleted instruction still reads as one. */
+const LIST_MARKER = String.raw`[\s>*_#+•-]*`;
+/** `(?![-\w])` rather than `\b`: it also rejects the hyphen that turns the verb
+ *  into a compound ("Buy-and-hold investing keeps your costs low"). */
+const IMPERATIVE_RE = new RegExp(
+  String.raw`^${LIST_MARKER}(?:${HEDGE}\s+${ACTION}|${ACTION_BASE})(?![-\w])`,
+  "iu",
+);
+/** …and these turn it into the head of a noun phrase: "Purchase price on the
+ *  house was four hundred thousand dollars" opens a statement, not a command. */
+const COMPOUND_NOUN_RE = /^(?:price|prices|power|side|order|orders|option|options|cost|costs|date|amount|amounts)\b/iu;
+
+function commands(sentence: string): boolean {
+  const match = IMPERATIVE_RE.exec(sentence);
+  if (!match) return false;
+  return !COMPOUND_NOUN_RE.test(sentence.slice(match[0].length).trim());
+}
+
+export const validateNoAdvice: Validator = (markdown) =>
+  splitUnits(markdown)
+    .filter((sentence) => commands(sentence) || prescribes(sentence))
+    .map((sentence) => ({
+      gate: "advice",
+      // Name the sentence: this message is reused verbatim in the retry prompt,
+      // and a chapter with three instructions must not spend its one retry
+      // fixing a third of them.
+      message: `Do not instruct the reader to buy, sell, or move a specific holding. Describe what the plan shows instead. Rewrite: "${sentence}"`,
+    }));
