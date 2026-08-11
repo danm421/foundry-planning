@@ -1,8 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import type { RebalanceComputeResult } from "@/lib/investments/rebalance/types";
-import { RebalanceSource } from "./rebalance-source";
+import type {
+  RebalanceComputeResult,
+  RebalanceSource as RebalanceSourceRequest,
+} from "@/lib/investments/rebalance/types";
+import { RebalanceSource, type RebalanceSourceValue } from "./rebalance-source";
 import { RebalanceTarget, type RebalanceTargetValue } from "./rebalance-target";
 import { RebalanceComparison } from "./rebalance-comparison";
 
@@ -20,14 +23,26 @@ export function RebalanceClient({
   const [result, setResult] = useState<RebalanceComputeResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [source, setSource] = useState<RebalanceSourceValue>({
+    kind: "accounts",
+    accountIds: [],
+  });
   const [target, setTarget] = useState<RebalanceTargetValue | null>(null);
   const [unresolvedTickers, setUnresolvedTickers] = useState<string[]>([]);
+
+  const sourceRequest: RebalanceSourceRequest | null =
+    source.kind === "accounts"
+      ? source.accountIds.length > 0
+        ? { accountIds: source.accountIds }
+        : null
+      : source.holdings.length > 0
+        ? { adHoc: { taxable: source.taxable, holdings: source.holdings } }
+        : null;
 
   // ── Compute ────────────────────────────────────────────────────────────────
 
   async function runCompute(overrideRate?: number) {
-    if (!target || selectedIds.length === 0) return;
+    if (!target || !sourceRequest) return;
     setLoading(true);
     setError(null);
     setUnresolvedTickers([]);
@@ -72,7 +87,7 @@ export function RebalanceClient({
       }
 
       const body = {
-        accountIds: selectedIds,
+        ...sourceRequest,
         target: computeTarget,
         ...(overrideRate != null ? { overrideLtcgRate: overrideRate } : {}),
       };
@@ -104,7 +119,7 @@ export function RebalanceClient({
   const weightsValid =
     target?.kind !== "new" ||
     (target.holdings.length > 0 && Math.abs(newTargetTotal - 1) < 0.001);
-  const canCompute = selectedIds.length > 0 && target !== null && weightsValid;
+  const canCompute = sourceRequest !== null && target !== null && weightsValid;
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -116,9 +131,11 @@ export function RebalanceClient({
 
       <div className="grid gap-6 lg:grid-cols-2">
         <RebalanceSource
+          clientId={clientId}
           accounts={accountsWithHoldings}
-          selectedIds={selectedIds}
-          onChange={setSelectedIds}
+          value={source}
+          onChange={setSource}
+          unresolvedTickers={result?.sourceUnresolvedTickers}
         />
 
         <RebalanceTarget

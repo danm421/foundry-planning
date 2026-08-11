@@ -19,8 +19,9 @@ import { upsertClassifiedSecurity, getSecurityByTicker } from "@/lib/investments
 import {
   resolveTargetAllocations,
   UnclassifiableTickerError,
-  type ResolvedSecurity,
+  type ResolveTargetDeps,
 } from "./resolve-target";
+import { buildAdHocHoldings } from "./ad-hoc-source";
 import type { AssetClassWeight } from "@/lib/investments/benchmarks";
 import type { RebalanceInputs, CurrentHolding, AssetClassFull } from "./assemble";
 import type { RebalanceRequest } from "./types";
@@ -125,6 +126,38 @@ async function classifyTickerForRebalance(
   return { securityId, slugWeights: classified.weights };
 }
 
+/**
+ * Cache-first ticker → look-through blend, shared by the target portfolio and
+ * the outside-portfolio source so both classify a symbol the same way.
+ */
+const resolverDeps: ResolveTargetDeps = {
+  lookupCached: async (ticker) => {
+    const found = await getSecurityByTicker(ticker);
+    if (!found || found.weights.length === 0) return null;
+    return {
+      securityId: found.security.id,
+      slugWeights: found.weights.map((w) => ({
+        slug: w.assetClassSlug,
+        weight: parseFloat(w.weight),
+      })),
+    };
+  },
+  classifyLive: async (ticker) => {
+    try {
+      const c = await classifyTickerForRebalance(ticker);
+      if (!c.securityId || c.slugWeights.length === 0) return null;
+      return { securityId: c.securityId, slugWeights: c.slugWeights };
+    } catch (err) {
+      // The deps contract is "null on any failure". Honoring it matters most on
+      // an uploaded statement: dozens of tickers resolve at once, and letting one
+      // classifier error escape would 500 the whole analysis instead of marking
+      // that single position unclassified.
+      console.error(`[rebalance] live classify failed for ${ticker}:`, err);
+      return null;
+    }
+  },
+};
+
 // ---------------------------------------------------------------------------
 // Tax context
 // ---------------------------------------------------------------------------
@@ -200,41 +233,51 @@ export async function loadRebalanceInputs(
 
   const slugToId = firmSlugToAssetClassId(acRows, firmId);
 
-  // Account rows and enriched holdings are independent reads — fetch them together.
-  const [acctRows, byAccount] = await Promise.all([
-    db
-      .select({ id: accountsTable.id, category: accountsTable.category })
-      .from(accountsTable)
-      .where(
-        and(
-          eq(accountsTable.clientId, clientId),
-          inArray(accountsTable.id, body.accountIds),
-        ),
-      ),
-    loadEnrichedHoldings(body.accountIds),
-  ]);
-  const taxableById = new Map(
-    acctRows.map((a) => [a.id, a.category === TAXABLE_CATEGORY]),
-  );
-
   const currentHoldings: CurrentHolding[] = [];
-  for (const [accountId, rows] of byAccount) {
-    const isTaxable = taxableById.get(accountId) ?? false;
-    for (const h of rows) {
-      const shares = Number(h.shares);
-      const price = Number(h.price);
-      currentHoldings.push({
-        id: h.id,
-        securityId: h.securityId,
-        ticker: h.displayTicker ?? h.securityId ?? h.id,
-        shares,
-        price,
-        marketValue: h.marketValue != null ? parseFloat(h.marketValue) : shares * price,
-        costBasis: Number(h.costBasis),
-        isTaxable,
-        securityWeights: h.securityWeights,
-        overrides: h.overrides,
-      });
+  let sourceUnresolvedTickers: string[] = [];
+
+  if ("adHoc" in body) {
+    // An outside portfolio never touches the accounts table — it is exactly the
+    // holdings in the request, classified through the same resolver the target uses.
+    const built = await buildAdHocHoldings(body.adHoc, resolverDeps);
+    currentHoldings.push(...built.currentHoldings);
+    sourceUnresolvedTickers = built.unresolved;
+  } else {
+    // Account rows and enriched holdings are independent reads — fetch them together.
+    const [acctRows, byAccount] = await Promise.all([
+      db
+        .select({ id: accountsTable.id, category: accountsTable.category })
+        .from(accountsTable)
+        .where(
+          and(
+            eq(accountsTable.clientId, clientId),
+            inArray(accountsTable.id, body.accountIds),
+          ),
+        ),
+      loadEnrichedHoldings(body.accountIds),
+    ]);
+    const taxableById = new Map(
+      acctRows.map((a) => [a.id, a.category === TAXABLE_CATEGORY]),
+    );
+
+    for (const [accountId, rows] of byAccount) {
+      const isTaxable = taxableById.get(accountId) ?? false;
+      for (const h of rows) {
+        const shares = Number(h.shares);
+        const price = Number(h.price);
+        currentHoldings.push({
+          id: h.id,
+          securityId: h.securityId,
+          ticker: h.displayTicker ?? h.securityId ?? h.id,
+          shares,
+          price,
+          marketValue: h.marketValue != null ? parseFloat(h.marketValue) : shares * price,
+          costBasis: Number(h.costBasis),
+          isTaxable,
+          securityWeights: h.securityWeights,
+          overrides: h.overrides,
+        });
+      }
     }
   }
 
@@ -271,24 +314,11 @@ export async function loadRebalanceInputs(
       .filter((a) => a.tickerPortfolioId === portfolioId)
       .map((a) => ({ assetClassId: a.assetClassId, weight: Number(a.weight) }));
   } else {
-    const lookupCached = async (ticker: string): Promise<ResolvedSecurity | null> => {
-      const found = await getSecurityByTicker(ticker);
-      if (!found || found.weights.length === 0) return null;
-      return {
-        securityId: found.security.id,
-        slugWeights: found.weights.map((w) => ({ slug: w.assetClassSlug, weight: parseFloat(w.weight) })),
-      };
-    };
-    const classifyLive = async (ticker: string): Promise<ResolvedSecurity | null> => {
-      const c = await classifyTickerForRebalance(ticker);
-      if (!c.securityId || c.slugWeights.length === 0) return null;
-      return { securityId: c.securityId, slugWeights: c.slugWeights };
-    };
-
-    const resolved = await resolveTargetAllocations(body.target.holdings, slugToId, {
-      lookupCached,
-      classifyLive,
-    });
+    const resolved = await resolveTargetAllocations(
+      body.target.holdings,
+      slugToId,
+      resolverDeps,
+    );
     if (resolved.unresolved.length > 0) {
       throw new UnclassifiableTickerError(resolved.unresolved);
     }
@@ -300,8 +330,15 @@ export async function loadRebalanceInputs(
     targetHoldings.map((h) => h.securityId),
   );
 
+  // A rate is only ever applied to a gain realized in a TAXABLE lot, so with no
+  // taxable holding the answer is $0 whatever the brackets say. Skipping the
+  // lookup also skips a full projection run — and stops a thin-plan prospect
+  // (common for an outside portfolio) from being blocked by a tax context that
+  // could not affect the result.
+  const noTaxableLots = !currentHoldings.some((h) => h.isTaxable);
+
   const taxContext =
-    body.overrideLtcgRate != null
+    body.overrideLtcgRate != null || noTaxableLots
       ? {
           ordinaryBase: 0,
           existingLtcg: 0,
@@ -325,5 +362,6 @@ export async function loadRebalanceInputs(
     targetAllocations,
     taxContext,
     overrideLtcgRate: body.overrideLtcgRate,
+    sourceUnresolvedTickers,
   };
 }

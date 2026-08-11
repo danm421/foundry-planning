@@ -8,26 +8,60 @@ import { UnclassifiableTickerError } from "@/lib/investments/rebalance/resolve-t
 
 export const dynamic = "force-dynamic";
 
-const bodySchema = z
+const money = z.number().finite().min(0).max(1e12);
+
+/** One position in an outside portfolio. Untickered rows (bonds, cash) carry a
+ *  name instead; at least one of the two must identify the row. */
+const adHocHoldingSchema = z
   .object({
-    accountIds: z.array(z.string().uuid()).min(1),
-    target: z.union([
-      z.object({ portfolioId: z.string().uuid() }).strict(),
-      z
+    ticker: z.string().trim().max(32).optional(),
+    name: z.string().trim().max(200).optional(),
+    shares: z.number().finite().min(0).max(1e12).optional(),
+    price: money.optional(),
+    marketValue: money.optional(),
+    costBasis: money.optional(),
+  })
+  .strict()
+  .refine((h) => Boolean(h.ticker) || Boolean(h.name), {
+    message: "Each holding needs a ticker or a name",
+  });
+
+// Shared across both source shapes. Spread rather than intersected: a `.strict()`
+// object rejects keys it doesn't declare, so `z.object(...).strict().and(source)`
+// would fail on `accountIds`/`adHoc` before the intersection ever resolved.
+const commonFields = {
+  target: z.union([
+    z.object({ portfolioId: z.string().uuid() }).strict(),
+    z
+      .object({
+        holdings: z
+          .array(
+            z
+              .object({ ticker: z.string().trim().min(1).max(32), weight: z.number().min(0).max(1) })
+              .strict(),
+          )
+          .min(1),
+      })
+      .strict(),
+  ]),
+  overrideLtcgRate: z.number().min(0).max(1).optional(),
+};
+
+/** Current holdings come from the client's accounts OR an outside portfolio, never both. */
+const bodySchema = z.union([
+  z.object({ ...commonFields, accountIds: z.array(z.string().uuid()).min(1) }).strict(),
+  z
+    .object({
+      ...commonFields,
+      adHoc: z
         .object({
-          holdings: z
-            .array(
-              z
-                .object({ ticker: z.string().trim().min(1).max(32), weight: z.number().min(0).max(1) })
-                .strict(),
-            )
-            .min(1),
+          taxable: z.boolean(),
+          holdings: z.array(adHocHoldingSchema).min(1).max(500),
         })
         .strict(),
-    ]),
-    overrideLtcgRate: z.number().min(0).max(1).optional(),
-  })
-  .strict();
+    })
+    .strict(),
+]);
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
