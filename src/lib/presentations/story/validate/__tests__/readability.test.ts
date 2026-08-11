@@ -141,6 +141,11 @@ describe("validateNoAdvice — evasions", () => {
       "Sell your Apple shares this year.",
       "Move your bond fund into cash.",
       "- Sell your Apple shares.",
+      // No object at all. Only its position marks these as commands, which is
+      // why a sentence-initial clause is exempt from the object test that a
+      // later clause has to pass.
+      "Sell now.",
+      "Rebalance aggressively.",
     ];
     for (const md of cases) {
       const failures = validateNoAdvice(md, []);
@@ -248,6 +253,7 @@ describe("validateNoAdvice — evasions", () => {
       "Unless you want to pay more tax, move the bond fund into cash.",
       "Because you need to raise cash, sell your Apple shares.",
       "You want to reduce risk, so sell your Apple shares.",
+      "In 2030, sell the position.",
     ];
     for (const md of instructions) {
       expect(validateNoAdvice(md, []), md).toHaveLength(1);
@@ -262,6 +268,36 @@ describe("validateNoAdvice — evasions", () => {
     ];
     for (const md of observations) {
       expect(validateNoAdvice(md, []), md).toEqual([]);
+    }
+  });
+
+  it("G3l — a fronted noun phrase headed by an action word is not an instruction", () => {
+    // Every one of the thirteen base lemmas is also a noun or a modifier in this
+    // domain. At the START of a unit a bare action verb is strong evidence of an
+    // imperative; mid-sentence it is not, because English fronts noun phrases
+    // there. A clause-level check with no object test rejects all of these.
+    const observations = [
+      "Your income is steady, and shift work continues until 2030.",
+      "The account is taxable, so sell decisions have a tax cost.",
+      "You keep the property, and roll forward losses offset the gain.",
+      "The plan is funded, and switch points are already built in.",
+      "Three levers matter here: save, invest, and wait.",
+      "Your surplus grows each year, so invest returns compound.",
+      "Your costs are low, and trim levels never bind.",
+      "The plan is on track, therefore rebalance rules never trigger.",
+    ];
+    for (const md of observations) {
+      expect(validateNoAdvice(md, []), md).toEqual([]);
+    }
+    // The same clause position, with a real object: still caught. One per
+    // branch of the object test — determiner, proper noun, bare holding.
+    const instructions = [
+      "In 2030, sell the position.",
+      "You want to reduce risk, so sell Apple shares.",
+      "In 2030, so sell options.",
+    ];
+    for (const md of instructions) {
+      expect(validateNoAdvice(md, []), md).toHaveLength(1);
     }
   });
 

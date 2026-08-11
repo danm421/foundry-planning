@@ -243,10 +243,46 @@ const IMPERATIVE_RE = new RegExp(
  */
 const COMPOUND_NOUN_RE = /^(?:price|prices|power|side|order|orders|cost|costs|date|amount|amounts)\b/iu;
 
-function commands(clause: string): boolean {
+/**
+ * What an imperative's object opens with: a determiner, a possessive, a quantity,
+ * a holding named without one ("sell options"), or a proper noun ("sell Apple
+ * shares" — mid-sentence capitalisation is a reliable signal in generated prose).
+ *
+ * Required of a NON-INITIAL clause only. Position is evidence: at the start of a
+ * unit a bare action verb is already a strong imperative signal, but mid-sentence
+ * English routinely fronts a noun phrase headed by one of these same words —
+ * "…, and shift work continues until 2030" — and every one of the thirteen base
+ * lemmas doubles as a noun or modifier in this domain. Without the object test a
+ * clause-level check cannot tell "so sell your Apple shares" from "so sell
+ * decisions have a tax cost".
+ */
+const OBJECT_HEAD_RE = new RegExp(
+  [
+    String.raw`^(?:your|the|a|an|my|our|its|their|his|her|this|that|these|those)\b`,
+    String.raw`^(?:all|both|each|every|any|some|most|half|part|more|less|another|it|them|everything)\b`,
+    String.raw`^(?:one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)\b`,
+    String.raw`^\$?\d`,
+    String.raw`^(?:shares?|stocks?|bonds?|equities|options?|funds?|positions?|holdings?|securities|assets|treasur(?:y|ies)|etfs?|reits?)\b`,
+  ].join("|"),
+  "iu",
+);
+/** Case-sensitive by necessity: mid-clause capitalisation is the whole signal,
+ *  and an `i` flag would make `\p{Lu}` match every lowercase noun as well. */
+const PROPER_NOUN_RE = /^\p{Lu}/u;
+
+function commands(clause: string, initial: boolean): boolean {
   const match = IMPERATIVE_RE.exec(clause);
   if (!match) return false;
-  return !COMPOUND_NOUN_RE.test(clause.slice(match[0].length).trim());
+  const object = clause.slice(match[0].length).trim();
+  if (COMPOUND_NOUN_RE.test(object)) return false;
+  // Every test here is anchored to the head of the object. Two looser variants
+  // were measured and rejected: scanning the first three words for a holding
+  // ("sell municipal bonds") and treating a one-word object as a command
+  // ("sell now"). Each closed a narrow miss and re-opened the common over-fire
+  // this rule exists to stop — "so sell decisions on bonds cost more", "and
+  // switch options for you are limited", "and trim helps". See the round-3 fix
+  // report; the misses they would have closed are named there, deliberately.
+  return initial || OBJECT_HEAD_RE.test(object) || PROPER_NOUN_RE.test(object);
 }
 
 /**
@@ -262,7 +298,10 @@ function clauses(sentence: string): string[] {
 
 export const validateNoAdvice: Validator = (markdown) =>
   splitUnits(markdown)
-    .filter((sentence) => clauses(sentence).some(commands) || prescribes(sentence))
+    .filter(
+      (sentence) =>
+        clauses(sentence).some((clause, index) => commands(clause, index === 0)) || prescribes(sentence),
+    )
     .map((sentence) => ({
       gate: "advice",
       // Name the sentence: this message is reused verbatim in the retry prompt,
