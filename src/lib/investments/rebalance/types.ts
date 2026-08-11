@@ -64,12 +64,33 @@ export interface RebalanceComputeResult {
   tradeSummary: TradeRow[];
   tax: TaxEstimate;
   realizedWindow: RealizedWindow;
+  /** Source-side tickers we couldn't classify. They still count toward the
+   *  portfolio total but sit outside the asset mix, so coveragePct drops. */
+  sourceUnresolvedTickers: string[];
 }
 
+/** One position in an outside portfolio — typed in or pulled off a statement. */
+export interface AdHocHoldingInput {
+  ticker?: string;
+  name?: string;
+  shares?: number;
+  price?: number;
+  marketValue?: number;
+  costBasis?: number;
+}
+
+/**
+ * Where the current holdings come from: the client's own accounts, or an
+ * "outside" portfolio that lives only in the request (a prospect's held-away
+ * statement, say). Exactly one form is accepted.
+ */
+export type RebalanceSource =
+  | { accountIds: string[] }
+  | { adHoc: { taxable: boolean; holdings: AdHocHoldingInput[] } };
+
 /** Request body for POST /api/clients/[id]/rebalance/compute. */
-export interface RebalanceRequest {
-  accountIds: string[];
+export type RebalanceRequest = RebalanceSource & {
   target: { portfolioId: string } | { holdings: { ticker: string; weight: number }[] };
   /** When set, skips the engine-derived rate (and the projection run). */
   overrideLtcgRate?: number;
-}
+};

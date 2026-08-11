@@ -55,6 +55,8 @@ export interface RebalanceInputs {
     niit: { magi: number; investmentIncome: number; threshold: number; rate: number };
   };
   overrideLtcgRate?: number;
+  /** Source-side tickers the loader couldn't classify (outside portfolios only). */
+  sourceUnresolvedTickers?: string[];
 }
 
 export function assembleRebalanceResult(input: RebalanceInputs): RebalanceComputeResult {
@@ -159,5 +161,6 @@ export function assembleRebalanceResult(input: RebalanceInputs): RebalanceComput
       insufficientHistory: insufficient,
       shortHistory: !insufficient && aligned.nMonths < WARN_MONTHS,
     },
+    sourceUnresolvedTickers: input.sourceUnresolvedTickers ?? [],
   };
 }
