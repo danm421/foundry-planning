@@ -71,6 +71,15 @@ const styles = StyleSheet.create({
     fontWeight: 700,
     color: PRESENTATION_THEME.ink,
   },
+  // The rule standing in for a subtotal. Same size and weight as `footValue` so
+  // it holds the slot, but Inter rather than the mono face — mono is this
+  // deck's tell for a figure, and "IRS max" set in it reads as one.
+  footRule: {
+    fontFamily: "Inter",
+    fontSize: 7.5,
+    fontWeight: 700,
+    color: PRESENTATION_THEME.ink,
+  },
   netRow: {
     flexDirection: "row",
     justifyContent: "flex-end",
@@ -164,7 +173,16 @@ export function MapCashFlowPagePdf({
           {band.tray && <MapTrayPdf label={band.tray.label} cards={band.tray.cards} showTiming />}
           <View style={styles.bandFoot}>
             <Text style={styles.footLabel}>{band.label}</Text>
-            <Text style={styles.footValue}>{band.subtotalLabel ?? WITHHELD}</Text>
+            {/* A rule where the dollars would be — "IRS max" — set in the same
+                slot and weight as a subtotal, because it answers the same
+                question. It is prose, not a figure, so it drops the mono face
+                the money uses; the em dash survives only as the impossible
+                case, where a band is withheld and names no rule. */}
+            {band.subtotalLabel !== null ? (
+              <Text style={styles.footValue}>{band.subtotalLabel}</Text>
+            ) : (
+              <Text style={styles.footRule}>{band.subtotalRuleLabel ?? WITHHELD}</Text>
+            )}
           </View>
           {/* Under the band that withholds its subtotal, not at the foot of the
               page: this is where a reader first meets the em dash, and it is

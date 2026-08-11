@@ -260,6 +260,42 @@ describe("Household Map — Cash Flow page", () => {
     expect(byKey.expense.subtotalLabel).toBe("($40,000)");
   });
 
+  // The withheld foot does not print a dash — it prints the rule, in the
+  // board's own words, so the foot and the card above it cannot drift apart.
+  it("names the rule where the withheld savings subtotal would be", () => {
+    const data = buildMapCashFlowData(
+      input({ clientData: tree({ savingsRules: [savingsRule({ contributeMax: true })] }) }),
+    );
+    const savings = data.bands.find((b) => b.key === "savings")!;
+    const ruleCard = savings.columns
+      .flatMap((c) => c.cards)
+      .find((c) => c.editableAmount === null)!;
+
+    expect(savings.subtotalRuleLabel).toBe(ruleCard.valueLabel);
+    // A band that CAN total names no rule — the two fields are exclusive.
+    expect(data.bands.find((b) => b.key === "income")!.subtotalRuleLabel).toBeNull();
+  });
+
+  it("lists each distinct rule once when a band mixes them", () => {
+    const data = buildMapCashFlowData(
+      input({
+        clientData: tree({
+          savingsRules: [
+            savingsRule({ contributeMax: true }),
+            savingsRule({ id: "sr-pct", annualPercent: 0.1 }),
+            // Same rule as the first — must NOT be listed twice.
+            savingsRule({ id: "sr-max-2", contributeMax: true }),
+          ],
+        }),
+      }),
+    );
+    const savings = data.bands.find((b) => b.key === "savings")!;
+    const parts = savings.subtotalRuleLabel!.split(" · ");
+
+    expect(new Set(parts).size).toBe(parts.length);
+    expect(parts).toHaveLength(2);
+  });
+
   it("keeps an entity-owned flow in its band's tray rather than dropping it", () => {
     const data = buildMapCashFlowData(
       input({
