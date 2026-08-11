@@ -243,9 +243,31 @@ const IMPERATIVE_RE = new RegExp(
  */
 const COMPOUND_NOUN_RE = /^(?:price|prices|power|side|order|orders|cost|costs|date|amount|amounts)\b/iu;
 
-/** Words that name a thing a client owns or holds money in. Both object tests
- *  below read this one list, so they cannot drift apart. */
-const HOLDING_NOUNS = String.raw`(?:shares?|stocks?|bonds?|equit(?:y|ies)|options?|funds?|positions?|holdings?|securities|assets?|treasur(?:y|ies)|etfs?|reits?|cash|roth|iras?|401\(?k\)?s?|403\(?b\)?s?|hsas?|annuit(?:y|ies))`;
+/**
+ * Holdings that read as an object standing BARE right after the verb — "so sell
+ * options". Deliberately narrow, and narrower than the list below it: this is
+ * the branch the fronted-noun-phrase over-fires run through, so every word here
+ * must also survive "…, and trim <word> levels never bind". `equity`, `cash`,
+ * `asset` and `annuity` all fail that test and are excluded on purpose; so is
+ * `portfolio`, which would fire on "and rebalance portfolio rules never trigger".
+ */
+const BARE_HOLDING_NOUNS = String.raw`(?:shares?|stocks?|bonds?|equities|options?|funds?|positions?|holdings?|securities|assets|treasur(?:y|ies)|etfs?|reits?)`;
+
+/**
+ * …and the accounts a client also holds money in. Only ever consulted BEHIND a
+ * preposition, where the preposition has already marked the phrase as an object,
+ * so a word that would over-fire bare is safe here.
+ *
+ * The two lists have OPPOSED jobs and must not be merged. Widening this one
+ * closes misses; widening the one above opens over-fires. Nesting is deliberate:
+ * a word added to the narrow list widens both, which is the direction that
+ * forces a reviewer to think.
+ */
+const HOLDING_NOUNS = String.raw`(?:${BARE_HOLDING_NOUNS}|cash|equity|asset|roth|iras?|401\(?k\)?s?|403\(?b\)?s?|hsas?|annuit(?:y|ies))`;
+
+/** A bare quantity, which is what an allocation is named with: "into sixty
+ *  forty", "$40,000". Shared with the prepositional test below. */
+const QUANTITY_HEAD = String.raw`(?:(?:one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)\b|\$?\d)`;
 
 /**
  * What an imperative's object opens with: a determiner, a possessive, a quantity,
@@ -264,9 +286,8 @@ const OBJECT_HEAD_RE = new RegExp(
   [
     String.raw`^(?:your|the|a|an|my|our|its|their|his|her|this|that|these|those)\b`,
     String.raw`^(?:all|both|each|every|any|some|most|half|part|more|less|another|it|them|everything)\b`,
-    String.raw`^(?:one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)\b`,
-    String.raw`^\$?\d`,
-    String.raw`^${HOLDING_NOUNS}\b`,
+    String.raw`^${QUANTITY_HEAD}`,
+    String.raw`^${BARE_HOLDING_NOUNS}\b`,
   ].join("|"),
   "iu",
 );
@@ -282,31 +303,39 @@ const PROPER_NOUN_RE = /^\p{Lu}/u;
  * every one of them as a rejection in sentence-initial position; moving one comma
  * to the left must not clear the gate.
  *
- * The two lists are separated because they carry different evidence. A
- * directional preposition or verb particle is a verb's complement — a fronted
- * noun phrase rarely reaches for one. A flat preposition is what a fronted noun
- * phrase does reach for ("and move TO Ohio is already modelled", "and shift TO
- * part time work continues"), so after one of those the complement has to name a
- * holding outright.
+ * What follows the preposition must NAME A HOLDING. Nothing weaker works: a
+ * determiner is not evidence, because a fronted noun phrase takes one just as
+ * readily — "and roll over THE BALANCE is automatic", "and move up THE DATE is
+ * not needed".
  */
-const DIRECTIONAL_PREP_RE = /^(?:into|onto|out\s+of|away\s+from|back\s+into|down|up|back|over|off)\s+/iu;
-const FLAT_PREP_RE = /^(?:to|in|from|towards?)\s+/iu;
+const DIRECTIONAL_PREP = String.raw`(?:into|onto|out\s+of|away\s+from|back\s+into)`;
+/** Flat prepositions and verb particles. Both introduce an object, and neither
+ *  is evidence of anything more on its own. */
+const WEAK_PREP = String.raw`(?:towards?|to|in|from|down|up|back|over|off)`;
+const OBJECT_PREP_RE = new RegExp(String.raw`^(?:${DIRECTIONAL_PREP}|${WEAK_PREP})\s+`, "iu");
+/** A directional preposition is the one kind strong enough to carry a bare
+ *  capitalised name: "sell out of Apple". A flat preposition is what a fronted
+ *  noun phrase reaches for ("and move to Ohio is already modelled"), and a
+ *  particle takes a name just as easily ("and move over Christmas is modelled"),
+ *  so neither may license the proper-noun branch. */
+const DIRECTIONAL_PREP_RE = new RegExp(String.raw`^${DIRECTIONAL_PREP}\s+`, "iu");
 /** The holding may sit behind an article or an adjective: "to a Roth", "away
  *  from growth stocks", "out of the position". Three words, no further — the
  *  window is what keeps "to part time work continues" clear. */
 const HOLDING_NEAR_RE = new RegExp(String.raw`^(?:[\w$'’-]+\s+){0,2}${HOLDING_NOUNS}\b`, "iu");
+const QUANTITY_HEAD_RE = new RegExp(String.raw`^${QUANTITY_HEAD}`, "iu");
 
 function prepositionalObject(object: string): boolean {
-  const directional = DIRECTIONAL_PREP_RE.exec(object);
-  const prep = directional ?? FLAT_PREP_RE.exec(object);
+  const prep = OBJECT_PREP_RE.exec(object);
   if (!prep) return false;
   const complement = object.slice(prep[0].length);
   if (HOLDING_NEAR_RE.test(complement)) return true;
-  // A determiner or a capitalised name is object enough after a directional
-  // preposition. After a flat one it is not: `part` heads the quantity list
-  // above, and `Ohio` is capitalised, so both branches would re-open the
-  // fronted-noun-phrase over-fires this rule is built around.
-  return directional !== null && (OBJECT_HEAD_RE.test(complement) || PROPER_NOUN_RE.test(complement));
+  // A directional preposition is strong enough to carry a bare name or a bare
+  // quantity — "sell out of Apple", "rebalance into sixty forty", which is how
+  // an allocation is written. A determiner is NOT enough even here: a fronted
+  // noun phrase takes one just as readily.
+  if (!DIRECTIONAL_PREP_RE.test(object)) return false;
+  return PROPER_NOUN_RE.test(complement) || QUANTITY_HEAD_RE.test(complement);
 }
 
 function commands(clause: string, initial: boolean): boolean {

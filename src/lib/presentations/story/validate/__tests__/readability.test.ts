@@ -345,6 +345,67 @@ describe("validateNoAdvice — evasions", () => {
     }
   });
 
+  it("G3n — the bare and behind-a-preposition holding lists have opposed jobs", () => {
+    // A word that names a holding is safe BEHIND a preposition, where the
+    // preposition has already marked the phrase as an object, and unsafe bare,
+    // where it is the whole signal. Sharing one list between the two silently
+    // widened the bare branch — the branch G3l's over-fires run through.
+    const observations = [
+      "Your costs are low, and trim equity levels never bind.",
+      "Your costs are low, and trim cash levels never bind.",
+      "Your costs are low, and trim asset levels never bind.",
+      "We looked at it, and buy annuity quotes were not needed.",
+      "The plan is funded, and shift cash targets are already met.",
+      "The plan is on track, and rebalance portfolio rules never trigger.",
+    ];
+    for (const md of observations) {
+      expect(validateNoAdvice(md, []), md).toEqual([]);
+    }
+    // The same words behind a preposition are still the instruction.
+    const instructions = [
+      "Because you need income, shift to cash.",
+      "Because you need income, convert to an annuity.",
+      "When you retire, roll into an IRA.",
+    ];
+    for (const md of instructions) {
+      expect(validateNoAdvice(md, []), md).toHaveLength(1);
+    }
+  });
+
+  it("G3o — a preposition needs a named holding, not just a determiner", () => {
+    // A determiner after the preposition is not evidence of an object: a
+    // fronted noun phrase takes one just as readily. Nor is a capitalised name,
+    // after a verb particle — particles take names freely.
+    const observations = [
+      "Your dates are set, and roll over the balance is automatic.",
+      "The timing is fixed, and move up the date is not needed.",
+      "Nothing is urgent, and shift down the risk is a 2035 question.",
+      "The plan is funded, and move over the summer is already modelled.",
+      "The plan is funded, and move over Christmas is already modelled.",
+      "Your dates are set, and roll over January is automatic.",
+      "The plan works, and the move into sixty forty is done.",
+      // A determiner is not enough after a DIRECTIONAL preposition either, and
+      // excluding it costs nothing: if the noun it introduces were a holding,
+      // the holding test would already have caught it.
+      "The plan is funded, and move into the new house is already modelled.",
+    ];
+    for (const md of observations) {
+      expect(validateNoAdvice(md, []), md).toEqual([]);
+    }
+    // What a directional preposition IS strong enough to carry: a bare name, and
+    // a bare quantity, which is how an allocation is written.
+    const instructions = [
+      "Unless you want more tax, sell out of Apple.",
+      "In 2030, rebalance into sixty forty.",
+      "If you want less risk, shift into sixty forty.",
+      // …and a particle still carries a named holding.
+      "When you can, trim down your position.",
+    ];
+    for (const md of instructions) {
+      expect(validateNoAdvice(md, []), md).toHaveLength(1);
+    }
+  });
+
   it("G3k — an option is a holding, not a noun phrase", () => {
     // The compound-noun list may not name anything a client can own.
     const instructions = [
