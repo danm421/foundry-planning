@@ -16,6 +16,13 @@ import { splitSentences } from "./readability";
  * document (see `normalize`) — a model writes `It’s important to note` with a
  * curly apostrophe and `It's **important to note**` with emphasis, and a plain
  * substring test sees neither.
+ *
+ * One item on the spec's Gate 4a list is deliberately ABSENT: "restating the
+ * question before answering". A `Validator` is handed only the markdown and the
+ * fact pack — it never sees the chapter prompt — so there is no question here
+ * to compare an opening against. The nearest lexical stand-in is the preamble
+ * ("Here is your analysis"), which the shipped comparison prompt already forbids
+ * by name. Recorded rather than approximated; see the Task 4 report.
  */
 export const AI_TELLS = [
   "it's important to note",
@@ -35,6 +42,12 @@ export const AI_TELLS = [
   "when it comes to",
 ] as const;
 
+/** What a SUBJECT opens with. Position alone cannot separate the two senses of
+ *  "overall": as a discourse marker it is followed by a comma or by the subject
+ *  of the clause it introduces, and as an adjective it is followed directly by
+ *  the noun it modifies ("Overall spending drops to $80K"). */
+const SUBJECT_HEAD = String.raw`(?:the|a|an|your|our|my|his|her|its|their|this|that|these|those|you|we|i|it|they|he|she|there|both|each|all|most|no|nothing|everything)`;
+
 /**
  * Two tells are not the phrase they are written as, and a literal match on the
  * phrase is wrong in opposite directions. Keyed by the `AI_TELLS` entry so a
@@ -44,23 +57,34 @@ const TELL_OVERRIDES: Partial<Record<(typeof AI_TELLS)[number], RegExp>> = {
   // The stem is not a word: a model writes "delving into the numbers".
   delve: /\bdelv(?:e|es|ed|ing)\b/iu,
   // ...and the reverse. Bare "overall" is ordinary financial English — "your
-  // overall confidence", "the overall picture". Only the discourse marker that
-  // OPENS a sentence, a line, or a bullet is the tell, with or without the
-  // comma the plan's list assumed.
-  overall: /(?:^|[.!?]\s+)[\s>#+-]*overall\b/imu,
+  // overall confidence", "the overall picture", "Overall spending drops to
+  // $80K". Only the discourse marker is the tell: it opens a sentence, a line
+  // or a bullet, and a comma or a subject follows it. The plan's trailing comma
+  // was half the rule — "Overall your plan holds up well" is the same tell.
+  overall: new RegExp(String.raw`(?:^|[.!?]\s+)[\s>#+-]*overall\b(?=,|\s+${SUBJECT_HEAD}\b)`, "imu"),
 };
 
-/** Curly apostrophes and quotes, which is how a model actually punctuates. */
+/** Curly apostrophes, which is how a model actually punctuates. */
 const CURLY_APOSTROPHE_RE = /[‘’‛ʼ]/gu;
-const CURLY_QUOTE_RE = /[“”]/gu;
+/** Double quotes, straight and curly, are REMOVED rather than straightened. A
+ *  quoted item breaks the triad matcher outright — `"clearer", "simpler", and
+ *  "more effective"` matched nothing, because an item may not open with a quote
+ *  — so a model that quotes its own list walks through the check. Apostrophes
+ *  are deliberately left alone: they spell "it's". */
+const QUOTE_RE = /[“”"]/gu;
 /** Markdown emphasis and code ticks are decoration, not spelling. Same call
  *  Gate 2 makes: `It's **important to note**` is the tell, written in bold. */
 const EMPHASIS_RE = /[*_`]/gu;
-/** Zero-width characters, which survive a copy-paste and hide a phrase. */
+/**
+ * Zero-width characters, which survive a copy-paste and split a word without
+ * showing anything: `imp<U+200B>ortant` reads as "important" on the page and
+ * matches nothing. These are the only invisibles worth a pass of their own —
+ * every exotic SPACE (non-breaking, narrow, ideographic) is already matched by
+ * `\s`, which is what the tell patterns and the word count are built on. A
+ * normalization step for those was written, and the mutation battery proved it
+ * had no observable effect.
+ */
 const INVISIBLE_RE = /[\u200B-\u200D\uFEFF]/gu;
-/** Every space that is not U+0020 — a non-breaking space inside a tell is a
- *  one-character evasion of a phrase match. */
-const ODD_SPACE_RE = /[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/gu;
 
 /**
  * The single form every check below reads. Line breaks are deliberately KEPT:
@@ -70,10 +94,23 @@ const ODD_SPACE_RE = /[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/gu;
 function normalize(markdown: string): string {
   return markdown
     .replace(CURLY_APOSTROPHE_RE, "'")
-    .replace(CURLY_QUOTE_RE, '"')
+    .replace(QUOTE_RE, "")
     .replace(INVISIBLE_RE, "")
-    .replace(ODD_SPACE_RE, " ")
     .replace(EMPHASIS_RE, "");
+}
+
+/**
+ * How a match is named back to the model. `GateFailure.message` is reused
+ * verbatim in the retry prompt, so it has to quote a string the model can find
+ * in its own draft: one space between words, and none of the sentence
+ * punctuation or list marker the match swept up on its way in — a leading
+ * ". " or "- " defeats the search it exists to enable.
+ */
+function quote(match: string): string {
+  return match
+    .replace(/\s+/gu, " ")
+    .replace(/^[^\p{L}\p{N}]+/u, "")
+    .trim();
 }
 
 function escapeRegExp(literal: string): string {
@@ -95,9 +132,16 @@ const TELLS: readonly RegExp[] = AI_TELLS.map(tellPattern);
  * A stacked hedge — "may potentially", "could possibly" — says less than either
  * word alone and is the register a model reaches for when it will not commit.
  * One hedge is ordinary ("the plan may not last"); two in a row is the tell.
+ *
+ * Only adverbs that add NOTHING to the modal belong here. `likely`, `typically`,
+ * `generally` and `probably` were tried and removed: each of them says something
+ * the modal does not, so "your taxes would likely rise in the year you convert"
+ * and "you can typically withdraw about 4% a year" are prose an advisor would
+ * sign — and the message ("say how likely it is") is self-refuting against text
+ * that already did. All four are pinned as must-pass cases.
  */
 const HEDGE_STACK_RE =
-  /\b(?:may|might|could|can|would)\s+(?:not\s+|also\s+)?(?:potentially|possibly|perhaps|conceivably|presumably|arguably|seemingly|likely|typically|generally|probably)\b/iu;
+  /\b(?:may|might|could|can|would)\s+(?:not\s+|also\s+)?(?:potentially|possibly|perhaps|conceivably|presumably|arguably|seemingly)\b/iu;
 
 /**
  * "clearer, simpler, and more effective" — the most reliable tell in financial
@@ -139,7 +183,7 @@ function firstTriad(text: string): string | null {
     if ([middle, last].some((item) => CAPITALISED_RE.test(item))) continue;
     const before = WORD_BEFORE_RE.exec(text.slice(0, match.index))?.[1] ?? "";
     if (ENUMERATING_PREP_RE.test(before)) continue;
-    return whole.trim();
+    return quote(whole);
   }
   return null;
 }
@@ -195,11 +239,20 @@ export function sentenceLengthStdDev(text: string): number {
  * or two either side of twenty score 1.1. Any absolute cutoff that catches the
  * second rejects the first.
  *
- * The number is measured, not chosen: across the suite's two corpora the
- * highest rejected text scores 0.111 and the lowest accepted one 0.141, and
- * both are pinned as tests. Moving it either way breaks one of them.
+ * The number is the midpoint of a measured gap, and the gap is NARROW. The two
+ * samples that bound it are both pinned as tests:
+ *
+ *   0.1333  accept  the app's own narrative prose        [13,17,13,17]
+ *   ------  0.122
+ *   0.1111  REJECT  four flat sentences (the brief's)    [5,5,4,4]
+ *
+ * Headroom above the accepted case is 0.011, which is roughly one word in one
+ * sentence of a four-sentence chapter: the same production string written
+ * [14,17,13,17] scores 0.117 and IS rejected. Alternating-length signal prose
+ * genuinely sits on this boundary, and this is the first number to revisit if
+ * real chapters land there — not a slack figure that can absorb a nudge.
  */
-const MIN_RELATIVE_SPREAD = 0.125;
+const MIN_RELATIVE_SPREAD = 0.122;
 /**
  * Two sentences of equal length is a coincidence — "The plan may not last if
  * you spend at last year's pace. We modelled that, and the gap shows up in your
@@ -219,11 +272,11 @@ export const validateVoice: Validator = (markdown) => {
   // is reused verbatim in the retry prompt, and "it's important to note" is not
   // a string the model can search its own draft for.
   for (const pattern of TELLS) {
-    const found = pattern.exec(text)?.[0].trim();
+    const found = pattern.exec(text)?.[0];
     if (!found) continue;
     failures.push({
       gate: "voice",
-      message: `"${found}" reads as machine-written. Say it the way you would to the client's face.`,
+      message: `"${quote(found)}" reads as machine-written. Say it the way you would to the client's face.`,
     });
   }
 
@@ -231,7 +284,7 @@ export const validateVoice: Validator = (markdown) => {
   if (hedges) {
     failures.push({
       gate: "voice",
-      message: `"${hedges}" stacks two hedges. Say how likely it is, or say it plainly.`,
+      message: `"${quote(hedges)}" stacks two hedges. Say how likely it is, or say it plainly.`,
     });
   }
 
