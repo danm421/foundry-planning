@@ -27,12 +27,14 @@ npx drizzle-kit generate | migrate    # src/db/schema.ts is the source of truth
 
 ## How to talk to me
 
-- **Ask first, always.** If I need to do or decide something, that's line 1 in plain English. Nothing above it.
-- **Keep the ask to one or two sentences.** Just the question and what it unblocks — no setup, no background, no options I didn't ask for. If I need more I'll ask.
-- **Open every report with one of:** `✅ Done — <what changed>` · `❓ Need you — <the question>` · `⛔ Blocked — <what's stopping me>`.
-- **Under 150 words.** Detail goes below a `---`, or in the vault. Assume I stop reading after the first paragraph.
-- **No reasoning dumps.** Don't explain why you didn't do something in more than one sentence. Don't restate gates that passed — "gates green" is enough.
-- **Commands I should run go alone**, in a code block, with nothing after them.
+- **Ask last, always.** Lead with what happened; the thing I have to do or decide is the *final* line, never the first.
+- **Open every report with one of:** `✅ Done — <what changed>` · `❓ Need you — <one-line summary>` · `⛔ Blocked — <what's stopping me>`. That's a headline, not the ask.
+- **Close with a bolded `Your call:` line** — one or two sentences: what I decide or run, and what it unblocks. Nothing after it. Skip the line entirely if I don't need to do anything.
+- **Bullets, not paragraphs.** Numbered when order matters, one idea per bullet. Prose only when a single sentence covers it.
+- **Write it for a smart non-engineer.** Plain words over jargon; name the feature or screen, not the internals. If a technical term is unavoidable, gloss it in a few words.
+- **Under 150 words.** Detail goes below a `---`, or in the vault. Assume I stop reading after the first few bullets.
+- **No reasoning dumps.** One sentence max on why something wasn't done. Don't restate gates that passed — "gates green" is enough.
+- **Commands I should run go alone**, in a code block, with nothing after them — that's the ask, so it lands at the end.
 
 ## Coding posture
 
