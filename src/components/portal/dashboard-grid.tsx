@@ -99,9 +99,10 @@ export function DashboardGrid({
       {/*
         Two independent columns (not a synchronized grid) so a short tile like
         Monthly spending doesn't leave dead space beside the tall Net worth
-        chart — the next tile in its column rises to fill it. Stacks to one
-        column below `lg`, which puts Net worth and Goals funded (the plan) at
-        the top of the phone view, ahead of the month-to-month money tiles.
+        chart — the next tile in its column rises to fill it. Left column is
+        the plan, right column is every budgeting tile. Stacks to one column
+        below `lg`, which puts Net worth and Goals funded at the top of the
+        phone view, ahead of the month-to-month money tiles.
       */}
       <div
         className="flex flex-col gap-5 lg:flex-row lg:items-start"
@@ -110,26 +111,6 @@ export function DashboardGrid({
         <div className="flex min-w-0 flex-1 flex-col gap-5">
           <TileNetWorth netWorth={dto.netWorth} onOpen={() => setDetail({ kind: "networth" })} />
           <TileGoalsFunded goals={dto.goals} projected={dto.goalsProjected} />
-          {budgetEnabled &&
-            (sharing.shareTransactions ? (
-              <TileToReview
-                items={reviewItems}
-                count={reviewCount}
-                error={reviewError}
-                editEnabled={editEnabled}
-                onMarkReviewed={(id) => void markReviewed(id)}
-                onMarkAll={() => void markAllReviewed()}
-                onOpen={(id) => setDetail({ kind: "transaction", id })}
-              />
-            ) : (
-              <NotSharedNotice area="transactions" variant="tile" />
-            ))}
-          {budgetEnabled &&
-            (sharing.shareTransactions ? (
-              <TileNetThisMonth netThisMonth={dto.netThisMonth} />
-            ) : (
-              <NotSharedNotice area="transactions" variant="tile" />
-            ))}
         </div>
         {/* Whole column, not just its tiles — an empty flex-1 sibling would
             leave the left column stranded at half width on desktop. */}
@@ -142,6 +123,24 @@ export function DashboardGrid({
               />
             ) : (
               <NotSharedNotice area="budgets" variant="tile" />
+            )}
+            {sharing.shareTransactions ? (
+              <TileToReview
+                items={reviewItems}
+                count={reviewCount}
+                error={reviewError}
+                editEnabled={editEnabled}
+                onMarkReviewed={(id) => void markReviewed(id)}
+                onMarkAll={() => void markAllReviewed()}
+                onOpen={(id) => setDetail({ kind: "transaction", id })}
+              />
+            ) : (
+              <NotSharedNotice area="transactions" variant="tile" />
+            )}
+            {sharing.shareTransactions ? (
+              <TileNetThisMonth netThisMonth={dto.netThisMonth} />
+            ) : (
+              <NotSharedNotice area="transactions" variant="tile" />
             )}
             {sharing.shareBudgets ? (
               <TileTopCategories

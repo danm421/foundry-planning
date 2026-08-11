@@ -106,21 +106,30 @@ describe("DashboardGrid chart tiles", () => {
     expect(screen.getByText(/under pace/)).toBeInTheDocument();
   });
 
-  // The plan tiles lead the first column and the month-to-month money tiles
-  // the second — on a phone the columns stack, so this ordering is also what
+  // The first column is the plan and nothing else; every budgeting tile lives
+  // in the second — on a phone the columns stack, so this split is also what
   // puts Net worth at the top of the mobile dashboard.
-  it("leads the first column with net worth, then goals funded", () => {
+  it("keeps the first column to the plan and the budgeting tiles in the second", () => {
     render(<LayoutLike />);
     const grid = screen.getByTestId("dashboard-grid");
     const firstColumn = grid.firstElementChild as HTMLElement;
-    const headings = within(firstColumn)
-      .getAllByRole("heading", { level: 2 })
-      .map((h) => h.textContent);
-    expect(headings.slice(0, 2)).toEqual(["Net worth", "Goals funded"]);
+    expect(
+      within(firstColumn)
+        .getAllByRole("heading", { level: 2 })
+        .map((h) => h.textContent),
+    ).toEqual(["Net worth", "Goals funded"]);
     const secondColumn = grid.children[1] as HTMLElement;
     expect(
-      within(secondColumn).getAllByRole("heading", { level: 2 })[0].textContent,
-    ).toBe("Monthly spending");
+      within(secondColumn)
+        .getAllByRole("heading", { level: 2 })
+        .map((h) => h.textContent),
+    ).toEqual([
+      "Monthly spending",
+      "Transactions to review",
+      "Net this month",
+      "Top categories",
+      "Next two weeks",
+    ]);
   });
 
   it("shows the asset-type breakdown on the net-worth tile", () => {
