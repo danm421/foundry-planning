@@ -35,21 +35,74 @@ function quotable(text: string, spellings: Set<string>): boolean {
 }
 
 /**
+ * The changes table's own shorthand for a value it is not printing, from
+ * `describe/generic.ts` (`addRow`, `removeRow`, and the multi-field `editRow`)
+ * and the estate and savings kinds. None of them names anything, so a pair
+ * built from one — "— → Updated" — says strictly nothing in prose.
+ */
+const PLACEHOLDER_VALUE = /^(?:[—–-]|added|removed|updated|in plan)$/iu;
+
+const MAGNITUDE: Record<string, number> = { k: 1_000, m: 1_000_000, b: 1_000_000_000 };
+/** Every shape `fmtValue` → `compactCurrency` produces, whole: `$1.5k`, `$25k`,
+ *  `$2.1M`, `($1.5k)` for a negative, `4.5%`, `2032`, `67`. Anchored on purpose
+ *  — a compound like "$300k · 4.50% · $1.8k/mo" must yield no direction at all
+ *  rather than a direction read off its first number. */
+const NUMERIC_VALUE_RE = /^\(?\$?-?([\d,]+(?:\.\d+)?)([kmb])?%?\)?$/iu;
+
+function numericValue(text: string): number | null {
+  const raw = text.trim().replace(/\s/gu, "");
+  const match = NUMERIC_VALUE_RE.exec(raw);
+  if (!match) return null;
+  const value = Number(match[1].replace(/,/gu, "")) * (match[2] ? MAGNITUDE[match[2].toLowerCase()] : 1);
+  if (!Number.isFinite(value)) return null;
+  // The regex is anchored, so a sign can only be at the head — and a negative
+  // is parenthesised, which is how `compactCurrency` writes one.
+  return raw.startsWith("(") || raw.includes("-") ? -value : value;
+}
+
+/** Two values are only comparable in the same unit: `$20k` against `25%` is not
+ *  a rise, it is a mistake. */
+function unitOf(text: string): string {
+  if (text.includes("$")) return "money";
+  if (text.includes("%")) return "percent";
+  return /^(?:19|20)\d{2}$/u.test(text.trim()) ? "year" : "plain";
+}
+
+/**
+ * What an edit did, in one word. The chapter is asked for the mechanism by
+ * which each change moves the numbers, and `$1.5k → $2.0k` is suppressed
+ * whenever the two values are in the table's spelling rather than the pack's —
+ * which is the single-field edit path, the app's most common one. Without this
+ * the model cannot tell up from down.
+ */
+function editWord(before: string, after: string): string {
+  const from = numericValue(before);
+  const to = numericValue(after);
+  if (from === null || to === null || from === to || unitOf(before) !== unitOf(after)) return "changed";
+  if (unitOf(before) === "year") return to > from ? "moved later" : "moved earlier";
+  return to > from ? "raised" : "lowered";
+}
+
+/**
  * `what-we-recommend.ts` refuses `before`/`after` for EVERY op, including an
  * edit — it prints to the client, and an edit's two values are exactly the
  * foreign-formatted figures it exists to keep off the page. This block is not
  * printed; it is background for the model, and the two values are the clearest
- * statement of what an edit did. So they are kept for an edit when the grounding
- * check clears them, and the op word carries the change on its own otherwise.
- * Deliberate divergence, not the same call.
+ * statement of what an edit did. Deliberate divergence, not the same call — and
+ * two rules keep it safe: the pair is shown only when both sides name something
+ * and every figure in them is the pack's, and the word before it says which way
+ * the change went either way.
  */
 function rowLine(row: ChangeRow, spellings: Set<string>): string {
+  const named = !PLACEHOLDER_VALUE.test(row.before.trim()) && !PLACEHOLDER_VALUE.test(row.after.trim());
+  const isEdit = row.op === "edit";
+  const word = isEdit && named ? editWord(row.before, row.after) : OP_WORD[row.op];
   const move =
-    row.op === "edit" && quotable(`${row.before} ${row.after}`, spellings)
+    isEdit && named && quotable(`${row.before} ${row.after}`, spellings)
       ? `: ${row.before} → ${row.after}`
       : "";
   const detail = row.detail[0] && quotable(row.detail[0], spellings) ? ` — ${row.detail[0]}` : "";
-  return `    - ${row.what} (${OP_WORD[row.op]})${move}${detail}`;
+  return `    - ${row.what} (${word})${move}${detail}`;
 }
 
 export function buildChapterPrompt(
@@ -103,9 +156,13 @@ export function buildChapterPrompt(
       ? ["The only figures you may use:", ctx.facts.map((f) => `- ${f.label}: ${f.display}`).join("\n")]
       : ["You have no figures for this chapter. Write it without any numbers at all."];
 
-  // Every figure that survives `rowLine` is one the fact pack supplied, so the
-  // block needs no instruction about figures — only about the labels, which are
-  // the advisor's own wording and the one thing here that must not be quoted.
+  // `rowLine` grounds the two fields that carry the describers' formatted
+  // figures: `before`/`after` and `detail[0]`. It does NOT ground `row.what` or
+  // `strategy.name` — those are advisor- and household-entered text ("2019
+  // Roth", a toggle-group label), the ruling requires the labels to reach the
+  // model, and the system prompt's "only use the figures listed" line is what
+  // covers anything they carry. So the block's own instruction is about the
+  // labels, which are the one thing here that must not be quoted.
   const spellings = factDisplaySet(ctx.facts);
   const strategyBlock =
     chapterId === "whatWeRecommend" && ctx.strategies.length > 0

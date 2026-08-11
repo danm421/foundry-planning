@@ -124,8 +124,52 @@ describe("buildChapterPrompt", () => {
     expect(user).not.toContain("$2.0M");
     // …and a detail whose figure IS in the pack survives, so the filter is not
     // just "drop anything with a number in it".
-    expect(user).toContain("Portfolio (changed) — Ends at $2.1M");
+    expect(user).toContain("Portfolio (raised) — Ends at $2.1M");
     expect(runGates(user, ctx.facts).filter((f) => f.gate === "facts")).toEqual([]);
+  });
+
+  it("keeps a grounded before → after, and says which way a suppressed one moved", () => {
+    const ctx: StoryContext = {
+      ...CTX,
+      facts: [...CTX.facts, pctFact("outcome.confidence.base", "Confidence, current plan", 0.73)],
+      strategies: [
+        {
+          name: "Delay Social Security",
+          rows: [
+            // Both sides are the pack's own spellings, so the values reach the model.
+            { area: "Plan & Assumptions", what: "Confidence", op: "edit", before: "73%", after: "91%", detail: [] },
+            // The single-field edit path: `fmtValue` spelling, never the pack's.
+            { area: "Savings", what: "Annual amount", op: "edit", before: "$1.5k", after: "$2.0k", detail: ["Changes what you're saving."] },
+            { area: "Income", what: "Salary end year", op: "edit", before: "2032", after: "2028", detail: [] },
+          ],
+        },
+      ],
+    };
+    const { user } = buildChapterPrompt("whatWeRecommend", ctx, [], []);
+    expect(user).toContain("Confidence (raised): 73% → 91%");
+    expect(user).toContain("Annual amount (raised) — Changes what you're saving.");
+    expect(user).toContain("Salary end year (moved earlier)");
+    // The direction survives; the foreign spellings do not.
+    expect(user).not.toContain("$1.5k");
+    expect(user).not.toContain("$2.0k");
+    expect(user).not.toContain("2032");
+  });
+
+  it("drops a before/after pair that names nothing", () => {
+    const ctx: StoryContext = {
+      ...CTX,
+      strategies: [
+        {
+          name: "Rework the savings plan",
+          // The multi-field edit path — `before`/`after` are "— → Updated".
+          rows: [{ area: "Expenses", what: "Living expenses", op: "edit", before: "—", after: "Updated", detail: ["Annual amount: $20k → $25k"] }],
+        },
+      ],
+    };
+    const { user } = buildChapterPrompt("whatWeRecommend", ctx, [], []);
+    expect(user).toContain("- Living expenses (changed)");
+    expect(user).not.toContain("Updated");
+    expect(user).not.toContain("$20k");
   });
 
   it("leaves no heading standing over an empty list", () => {
