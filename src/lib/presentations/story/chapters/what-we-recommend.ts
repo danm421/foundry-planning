@@ -97,13 +97,31 @@ function usableDetail(detail: string | undefined): string | null {
   return clause.length > 0 ? clause : null;
 }
 
+/**
+ * The clause a change may be described with, or null when there is nothing safe
+ * to quote — a detail that never resolved, an accounting-paren negative, or a
+ * figure this pack does not hold in this spelling.
+ *
+ * Exported because the prose above is no longer the only place a `ChangeRow`
+ * detail reaches a client. The Plan Story's strategy CARDS print the same field,
+ * and the pack's quoted half is admitted (`build-facts.ts#quoteStrategyFigures`)
+ * on the explicit understanding that "the same clause is refused again at the
+ * point of printing". A second printing point that skipped the refusal would put
+ * the changes table's own rounding and case straight onto a client's page — the
+ * exact leak this module exists to stop — so both call it.
+ */
+export function quotableDetail(detail: string | undefined, facts: Fact[]): string | null {
+  const clause = usableDetail(detail);
+  return clause && grounded(clause, facts) ? clause : null;
+}
+
 function describe(strategy: StoryStrategy, facts: Fact[]): string {
   const first = strategy.rows[0];
   if (!first) return `${strategy.name}.`;
 
   // Ground what will actually be printed, not the raw detail it came from.
-  const clause = usableDetail(first.detail[0]);
-  if (clause && grounded(clause, facts)) return `${strategy.name} — ${clause}.`;
+  const clause = quotableDetail(first.detail[0], facts);
+  if (clause) return `${strategy.name} — ${clause}.`;
 
   // `before`/`after` are deliberately not a second chance here: for an add or a
   // remove they are the table's own shorthand ("—", "Added", "In plan"), which

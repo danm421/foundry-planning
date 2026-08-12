@@ -227,6 +227,7 @@ import type {
   ScenarioChangesPageData,
   ScenarioChangesOptions,
 } from "@/lib/presentations/pages/scenario-changes/types";
+import type { PlanStoryContextInput } from "@/lib/presentations/pages/plan-story/view-model";
 import type { PageScenarioBundle } from "./document";
 import { scenarioChangesOptionsSchema, SCENARIO_CHANGES_OPTIONS_DEFAULT } from "@/lib/presentations/pages/scenario-changes/options-schema";
 import { summarizeScenarioChangesOptions } from "@/lib/presentations/pages/scenario-changes/summarize-options";
@@ -361,6 +362,9 @@ export interface BuildDataContext {
   /** Present only when the deck includes the Scenario Changes page and the
    *  active ref is a live scenario; absent for base/snapshot decks. */
   scenarioChanges?: ScenarioChangesContext;
+  /** Present only when the deck includes the Plan Story page; the export route
+   *  loads the story context and the advisor-reviewed chapter text. */
+  planStory?: PlanStoryContextInput;
   /** Present only for multi-scenario pages (those that define
    *  `requiredScenarioRefs`). Keyed by `keyForRef` — e.g. "base",
    *  "scenario:<id>". Each entry is the fully-built bundle for that ref. */
