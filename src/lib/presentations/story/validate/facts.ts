@@ -66,21 +66,30 @@ const WORD_NOUN = String.raw`(?:dollars?|USD|percent|per\s+cent)`;
 // and the model needs them to write naturally. Everything money-shaped is —
 // including the sigil-less forms, which are how a model evades a naive gate.
 //
-// Order matters where two branches can match at the same position: the year
-// branch sits ABOVE the bare-integer one so a year is still quoted as a year now
-// that the floor is four digits rather than five.
+// ORDER IS LOAD-BEARING where two branches can match at the same position, and
+// the year branch is the one to be careful with. It must sit BELOW the magnitude
+// and unit branches and ABOVE the bare-integer one:
+//
+//   above `\d{4,}`   so a year is still quoted as a year, now that the
+//                    bare-integer floor is four digits rather than five;
+//   below the money  so "2041 dollars" is read as a dollar amount rather than as
+//   branches         a year with a stray noun after it. Both `plan.retirementYear`
+//                    and `plan.endOfLifeYear` are in EVERY pack, so a year branch
+//                    that ran first would let a supplied year ground an invented
+//                    amount beside it — the exact class of miss this module
+//                    exists to close. Pinned by the ordering test in the suite.
 const FIGURE_RE = new RegExp(
   [
     String.raw`${SIGN}\$[-+]?(?:${NUM})${MAG}?${UNIT}?`, // $2.1M · $-2.1M · -$2.1M · $1,234 · $812
     String.raw`${SIGN}(?:${NUM}) ?%`, // 91% · 73.5% · 96 % · -12%
     String.raw`${SIGN}\d{1,3}(?:,\d{3})+(?:\.\d+)?${MAG}?${UNIT}?`, // 2,100,000 · 3,400,000 USD
+    String.raw`${SIGN}(?:${NUM})${MAG}${UNIT}?`, // 3.4M · 3.4 million dollars
+    String.raw`${SIGN}(?:${NUM})${UNIT}`, // 812 dollars · 2041 dollars
     String.raw`\b(?:19|20)\d{2}\b`, // 2041
     // 3400 · 2100000 — the same evasion, without commas. Four digits rather than
     // five: "3400" reads to a client as a hard figure, and every four-digit
     // number that is NOT a year was invisible to the branch above.
     String.raw`${SIGN}\d{4,}(?:\.\d+)?${MAG}?${UNIT}?`,
-    String.raw`${SIGN}(?:${NUM})${MAG}${UNIT}?`, // 3.4M · 3.4 million dollars
-    String.raw`${SIGN}(?:${NUM})${UNIT}`, // 812 dollars
     String.raw`\b${WORD_NUM}[\s-]+${WORD_NOUN}\b`, // three point four million dollars · ninety six percent
   ].join("|"),
   "giu",

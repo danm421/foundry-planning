@@ -532,11 +532,44 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
     quiet.mockRestore();
   });
 
+  /**
+   * Kills: generating a chapter that has nothing to recommend.
+   *
+   * `hasProposal` is derived from the REF alone (`load-context.ts`), so a
+   * scenario an advisor created but has not edited yet is a proposal with no
+   * changes in it. The recommendation chapter's only honest content is then the
+   * one sentence the deterministic narrator already writes — and asking a model
+   * for it hands `generate.ts` the single shape its substance floor cannot
+   * judge: a chapter with nothing supplied to name, where a refusal or an
+   * injected echo clears all four gates and is cached for 30 days.
+   */
+  it("does not generate a recommendation chapter for a proposal with no changes in it", async () => {
+    mocks.scenarioRows = [{ id: SCENARIO_ID }];
+    mocks.loadStoryContext.mockResolvedValue({ hasProposal: true, facts: [], strategies: [] });
+    const res = await post({ scenarioId: SCENARIO_ID });
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.chapters.map((c: { chapterId: string }) => c.chapterId)).toEqual([
+      "planInOnePage",
+      "whatYouHave",
+    ]);
+    expect(mocks.generateChapter).not.toHaveBeenCalledWith(
+      expect.objectContaining({ chapterId: "whatWeRecommend" }),
+    );
+    expect(mocks.upsertGeneratedChapter).toHaveBeenCalledTimes(2);
+  });
+
   // Kills: inverting that filter, and confirms the proposed ref reaches the
   // loader rather than being flattened to base.
   it("generates every chapter for a proposal, and stores each one", async () => {
     mocks.scenarioRows = [{ id: SCENARIO_ID }];
-    mocks.loadStoryContext.mockResolvedValue({ hasProposal: true, facts: [], strategies: [] });
+    // A proposal with a change in it — which is now what "a proposal" means to
+    // this route, per the test above.
+    mocks.loadStoryContext.mockResolvedValue({
+      hasProposal: true,
+      facts: [],
+      strategies: [{ name: "Convert to Roth", rows: [] }],
+    });
     const res = await post({ scenarioId: SCENARIO_ID });
     const body = await res.json();
     expect(res.status).toBe(200);

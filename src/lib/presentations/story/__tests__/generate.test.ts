@@ -265,6 +265,39 @@ describe("generateChapter", () => {
     quiet.mockRestore();
   });
 
+  /**
+   * The recommendation chapter, in the only state the generate route now asks
+   * for it: a proposal with a change in it.
+   *
+   * Measured, and it is why that route filter exists. With `hasProposal: true`
+   * and ZERO strategies the narrator says "We aren't suggesting changes to the
+   * plan this time" — it names nothing supplied, so the floor stands down, and a
+   * refusal on the chapter whose whole job is to say what you recommend is
+   * published, labelled "Generated", and cached for 30 days. The route no longer
+   * generates that chapter in that state; this pins the floor for the states that
+   * remain, so both halves are held.
+   */
+  it("rejects a refusal in the recommendation chapter, which is generated only when there are changes", async () => {
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+    const ctx: StoryContext = { ...CTX, strategies: [{ name: "Convert to Roth", rows: [] }] };
+    const setCached = vi.fn().mockResolvedValue(undefined);
+    const res = await generateChapter({
+      clientId: "c1", chapterId: "whatWeRecommend", ctx, voiceSamples: [],
+      deps: {
+        generate: async () =>
+          "I'm sorry, I can't help with that. As an AI language model, I don't have the ability to give personalised financial advice. Please consult a qualified professional.",
+        getCached: async () => null,
+        setCached,
+      },
+    });
+    expect(res.failures).toEqual([]);
+    expect(res.aiSuppressed).toBe(true);
+    expect(res.error).toBe(TOO_SHORT);
+    expect(res.markdown).toContain("Convert to Roth");
+    expect(setCached).not.toHaveBeenCalled();
+    quiet.mockRestore();
+  });
+
   it("heals a cache entry that holds a refusal instead of serving it for 30 days", async () => {
     // The compounding half. `force` is the only thing that bypasses the read and
     // no UI sends it, so without this the advisor's only escape from a poisoned

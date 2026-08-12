@@ -7,6 +7,10 @@ const FACTS = [
   pctFact("conf.base", "Confidence, today", 0.73),   // "73%"
   pctFact("conf.prop", "Confidence, proposed", 0.91),// "91%"
   yearFact("retire", "Retirement year", 2041),       // "2041"
+  // Both year facts, because `build-facts.ts#buildStoryFacts` always emits both
+  // (`plan.retirementYear`, `plan.endOfLifeYear`) — which is what makes the
+  // year-beside-a-money-noun case below reachable on every real client.
+  yearFact("end", "End of life year", 2071),         // "2071"
 ];
 
 describe("extractFigures", () => {
@@ -187,6 +191,26 @@ describe("validateFacts — evasions", () => {
     const failures = validateFacts("Your monthly benefit is 3400 a month.", FACTS);
     expect(failures).toHaveLength(1);
     expect(failures[0].message).toContain("3400");
+  });
+
+  it("I4 — a year standing beside a money noun is a money figure, not a year", () => {
+    // ORDERING REGRESSION. The year branch must sit BELOW the magnitude and unit
+    // branches: a year is in every real pack, so a year branch that runs first
+    // consumes the digits, the money noun beside them is never read, and an
+    // invented dollar amount is waved through by the fact that the YEAR was
+    // supplied. Both spellings, because both are what a model writes.
+    const cases: ReadonlyArray<readonly [string, string]> = [
+      ["You draw 2041 dollars a month.", "2041 dollars"],
+      ["The gift was 2071 USD.", "2071 USD"],
+      // …and the same ordering is what keeps a magnitude attached to its digits,
+      // so the retry message quotes the figure the model actually wrote.
+      ["Your plan grows to 2041 million dollars.", "2041 million dollars"],
+    ];
+    for (const [md, quoted] of cases) {
+      const failures = validateFacts(md, FACTS);
+      expect(failures, md).toHaveLength(1);
+      expect(failures[0].message, md).toContain(quoted);
+    }
   });
 
   it("I4 — leaves the year branch in charge of year-shaped numbers", () => {

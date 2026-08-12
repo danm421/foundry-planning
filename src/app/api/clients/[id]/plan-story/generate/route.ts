@@ -47,7 +47,24 @@ export async function POST(
       documentRole: parsed.data.documentRole ?? "standalone",
     });
 
-    const wanted = CHAPTER_IDS.filter((c) => ctx.hasProposal || !CHAPTERS[c].requiresProposal);
+    /**
+     * A chapter that requires a proposal needs something IN the proposal.
+     *
+     * `hasProposal` is derived from the REF alone (`load-context.ts`), so a
+     * scenario an advisor created but has not edited yet reads as a proposal
+     * carrying no changes. The recommendation chapter's only honest content is
+     * then the one sentence its deterministic narrator already writes, which the
+     * export renders for any chapter with no stored row — so generating it buys
+     * nothing and costs a model call.
+     *
+     * It also costs safety. `generate.ts`'s substance floor is exactly as
+     * demanding as the narrator, and the narrator for THIS state names nothing
+     * we supplied — so it is the one chapter state where a refusal or an echo of
+     * an injected instruction clears all four gates, publishes, and is cached for
+     * 30 days. Not generating it is what makes that state unreachable.
+     */
+    const hasSomethingToPropose = ctx.hasProposal && ctx.strategies.length > 0;
+    const wanted = CHAPTER_IDS.filter((c) => hasSomethingToPropose || !CHAPTERS[c].requiresProposal);
 
     // Chapters are independent — generate them concurrently. Each one already
     // swallows its own failure and falls back, so this never rejects.
