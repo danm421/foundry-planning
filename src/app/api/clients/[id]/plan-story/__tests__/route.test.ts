@@ -5,15 +5,22 @@ import type { NextRequest } from "next/server";
  * What these tests can and cannot see.
  *
  * The repo's WRITERS, the story loader and the generator are mocked — they are
- * IO or an LLM call, and Tasks 8/10/11 own their behaviour. What is real here
- * is everything the routes themselves decide: the access gates, the chapter
- * projection, `resolveChapterText`'s precedence, the `requiresProposal` filter
- * (read from the real registry), the scenario-id contract, and the audit
- * payload the route assembles (`crossFirmAuditMeta` is deliberately NOT mocked,
- * so the metadata is really built).
+ * IO or an LLM call, and Tasks 8/10/11 own their behaviour.
  *
- * `recordAudit` itself is a spy, so these tests prove the SHAPE the route
- * passes, never that a row lands.
+ * The four gates are spies too, so what is proved about them is that each route
+ * CALLS them, with what, and before which write — never that a gate itself
+ * decides correctly. `requireActiveSubscriptionForFirm` in particular returns
+ * void, so nothing but an explicit assertion can notice its removal.
+ *
+ * Real, and therefore actually exercised: the chapter projection,
+ * `resolveChapterText`'s precedence, the `requiresProposal` filter (off the
+ * real registry), the scenario-id contract, `authErrorResponse`, and
+ * `crossFirmAuditMeta` — though the last of those returns its base unchanged
+ * for `access: "own"`, which is every fixture bar one, so exactly one test
+ * below covers the stamp it exists to apply.
+ *
+ * `recordAudit` is a spy: these tests prove the SHAPE the routes pass to it,
+ * never that a row lands.
  */
 const mocks = vi.hoisted(() => ({
   requireOrgId: vi.fn(),
@@ -40,20 +47,29 @@ vi.mock("@/db", () => ({
   },
 }));
 
-vi.mock("@/lib/db-helpers", () => ({
-  requireOrgId: mocks.requireOrgId,
-  requireOrgAndUser: mocks.requireOrgAndUser,
-}));
+// Only the two session readers are replaced. `UnauthorizedError` stays real
+// because `authErrorResponse` below tests thrown errors with `instanceof`.
+vi.mock("@/lib/db-helpers", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/db-helpers")>("@/lib/db-helpers");
+  return {
+    ...actual,
+    requireOrgId: mocks.requireOrgId,
+    requireOrgAndUser: mocks.requireOrgAndUser,
+  };
+});
 
 vi.mock("@/lib/clients/authz", () => ({
   verifyClientAccess: mocks.verifyClientAccess,
   requireClientEditAccess: mocks.requireClientEditAccess,
 }));
 
-vi.mock("@/lib/authz", () => ({
-  requireActiveSubscriptionForFirm: mocks.requireActiveSubscriptionForFirm,
-  authErrorResponse: vi.fn(() => null),
-}));
+// `authErrorResponse` and `ForbiddenError` stay REAL. Stubbing the first to
+// `() => null` — as the brief's test did — turns every rejected gate into a 500
+// and makes the status a rejected caller sees untestable.
+vi.mock("@/lib/authz", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/authz")>("@/lib/authz");
+  return { ...actual, requireActiveSubscriptionForFirm: mocks.requireActiveSubscriptionForFirm };
+});
 
 vi.mock("@/lib/audit", () => ({ recordAudit: mocks.recordAudit }));
 
@@ -80,6 +96,7 @@ vi.mock("@/lib/presentations/story/generate", () => ({
   generateChapter: mocks.generateChapter,
 }));
 
+import { ForbiddenError } from "@/lib/authz";
 import { GET } from "../route";
 import { POST } from "../generate/route";
 import { PATCH } from "../[chapterId]/route";
@@ -285,6 +302,50 @@ describe("PATCH /api/clients/[id]/plan-story/[chapterId]", () => {
     expect(mocks.markChapterReviewed).not.toHaveBeenCalled();
   });
 
+  // Kills: deleting `requireActiveSubscriptionForFirm`, or moving it after the
+  // write. Its return is void and discarded, so tsc cannot see its removal and
+  // no other test in this file touches it.
+  it("clears the firm's subscription before it writes", async () => {
+    await patch({ scenarioId: "base", editedText: "hi" });
+    expect(mocks.requireActiveSubscriptionForFirm).toHaveBeenCalledWith("firm_1");
+    expect(mocks.requireActiveSubscriptionForFirm.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.updateChapterText.mock.invocationCallOrder[0],
+    );
+  });
+
+  // Kills: replacing `crossFirmAuditMeta({ access }, callerOrg, { scenarioId })`
+  // with a bare `{ scenarioId }`. Every other fixture is `access: "own"`, for
+  // which the real helper returns its base unchanged — so this is the only test
+  // in the file where it does anything at all.
+  it("stamps a cross-firm edit and review in the audit metadata", async () => {
+    mocks.requireClientEditAccess.mockResolvedValue({
+      client: { id: CLIENT_ID },
+      firmId: "firm_1",
+      access: "shared",
+    });
+    await patch({ scenarioId: "base", editedText: "hi", reviewed: true });
+    const stamped = { scenarioId: "base", crossFirmActor: true, actorFirmId: "org_1" };
+    // Both audit call sites, since each builds its metadata separately.
+    expect(mocks.recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "plan_story.chapter_edited", metadata: stamped }),
+    );
+    expect(mocks.recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "plan_story.chapter_reviewed", metadata: stamped }),
+    );
+  });
+
+  // Kills: writing ahead of the gate. Both writers are upserts, so a rejected
+  // caller that still reached one would CREATE a row rather than harmlessly
+  // matching none — the property carried requirement 4 calls the sole barrier.
+  it("writes nothing when the edit gate rejects", async () => {
+    mocks.requireClientEditAccess.mockRejectedValue(new ForbiddenError("Edit access required"));
+    const res = await patch({ scenarioId: "base", editedText: "hi", reviewed: true });
+    expect(res.status).toBe(403);
+    expect(mocks.updateChapterText).not.toHaveBeenCalled();
+    expect(mocks.markChapterReviewed).not.toHaveBeenCalled();
+    expect(mocks.recordAudit).not.toHaveBeenCalled();
+  });
+
   // Kills: hand-rolling `request.json()` instead of validating. An unknown key
   // is a caller sending a field this route does not implement — answering 200
   // tells them it landed. A null body would be a 500 (`null.editedText`).
@@ -386,6 +447,42 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
     expect((await res.json()).error).toMatch(/snapshot/i);
     expect(mocks.loadStoryContext).not.toHaveBeenCalled();
     expect(mocks.upsertGeneratedChapter).not.toHaveBeenCalled();
+  });
+
+  // Kills: deleting `requireActiveSubscriptionForFirm` from the one endpoint
+  // that spends model calls, or moving it after the run.
+  it("clears the firm's subscription before it generates", async () => {
+    await post({ scenarioId: "base" });
+    expect(mocks.requireActiveSubscriptionForFirm).toHaveBeenCalledWith("firm_1");
+    expect(mocks.requireActiveSubscriptionForFirm.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.generateChapter.mock.invocationCallOrder[0],
+    );
+  });
+
+  // Kills: the third `crossFirmAuditMeta` call site — this route builds its own
+  // metadata, so the PATCH cross-firm test cannot cover it.
+  it("stamps a cross-firm generation in the audit metadata", async () => {
+    mocks.requireClientEditAccess.mockResolvedValue({
+      client: { id: CLIENT_ID },
+      firmId: "firm_1",
+      access: "shared",
+    });
+    await post({ scenarioId: "base" });
+    expect(mocks.recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ crossFirmActor: true, actorFirmId: "org_1" }),
+      }),
+    );
+  });
+
+  // Kills: reaching the model, or the store, past a rejected gate.
+  it("generates nothing when the edit gate rejects", async () => {
+    mocks.requireClientEditAccess.mockRejectedValue(new ForbiddenError("Edit access required"));
+    const res = await post({ scenarioId: "base" });
+    expect(res.status).toBe(403);
+    expect(mocks.generateChapter).not.toHaveBeenCalled();
+    expect(mocks.upsertGeneratedChapter).not.toHaveBeenCalled();
+    expect(mocks.recordAudit).not.toHaveBeenCalled();
   });
 
   // Kills: coercing an unrecognised documentRole to "standalone". The two roles
