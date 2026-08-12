@@ -6,7 +6,7 @@
 // The gates are what actually hold — this only lowers the odds of spending the
 // chapter's single retry.
 import type { ChangeOp, ChangeRow } from "@/lib/presentations/pages/scenario-changes/types";
-import { factDisplaySet } from "../facts";
+import { factDisplaySet, hasAccountingNegative } from "../facts";
 import type { GateFailure } from "../validate";
 import { extractFigures } from "../validate/facts";
 import type { ChapterId, StoryContext } from "../types";
@@ -29,8 +29,18 @@ const OP_WORD: Record<ChangeOp, string> = { add: "added", remove: "removed", edi
  * copy it spends the chapter's single retry on a word we chose to show it.
  * `types.ts` states the rule: text this module did not build is quotable only
  * when every figure in it is one the pack supplied, spelled the pack's way.
+ *
+ * Membership is not the whole rule, because a figure can be grounded and still
+ * be written in a form this deck never uses. `compactCurrency` renders a
+ * negative as "($50k)", and `extractFigures` returns "$50k" from it with the
+ * parens stripped — so a "$50k" quoted legitimately from ANOTHER change grounds
+ * the parenthesised one, and the banned form reaches the model as background it
+ * is then permitted to copy. This block is not printed to the client, but what
+ * the model is shown is what the model writes, so it is held to the same rule as
+ * `what-we-recommend.ts`. Three consumers of this text, one shared predicate.
  */
 function quotable(text: string, spellings: Set<string>): boolean {
+  if (hasAccountingNegative(text)) return false;
   return extractFigures(text).every((figure) => spellings.has(figure));
 }
 

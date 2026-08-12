@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildChapterPrompt } from "../prompts";
 import { CHAPTERS } from "../registry";
-import { moneyFact, pctFact } from "../../facts";
+import { moneyFact, pctFact, quotedFact } from "../../facts";
 import { runGates } from "../../validate";
 import type { StoryContext } from "../../types";
 
@@ -170,6 +170,79 @@ describe("buildChapterPrompt", () => {
     expect(user).toContain("- Living expenses (changed)");
     expect(user).not.toContain("Updated");
     expect(user).not.toContain("$20k");
+  });
+
+  /**
+   * A figure can be GROUNDED and still be written in a form this deck never
+   * uses. `compactCurrency` renders a negative as "($50k)" and `extractFigures`
+   * returns "$50k" from it with the parens stripped, so a "$50k" quoted
+   * legitimately from another change grounds the parenthesised one — token
+   * membership alone cannot see the difference.
+   *
+   * This block is background for the model rather than client-facing text, but
+   * what the model is shown is what the model writes, so it is held to the same
+   * rule as `what-we-recommend.ts`. Both places the parens can land are covered:
+   * inside `detail[0]` (a multi-field edit) and in the `before`/`after` pair (a
+   * single-field one).
+   */
+  describe("refuses an accounting-paren negative in the strategy block", () => {
+    /** Both rows are the verbatim output of an `expense` edit with
+     *  `annualAmount: { from: -50_000, to: -20_000 }` — multi-field (parens in
+     *  the detail) and single-field (parens in the pair). */
+    const ctx: StoryContext = {
+      ...CTX,
+      // The tokens really are in the pack, quoted from other changes.
+      facts: [
+        ...CTX.facts,
+        quotedFact("quoted.$50k", 'Roth ladder — from "$50k/yr …"', "$50k", ["whatWeRecommend"]),
+        quotedFact("quoted.$20k", 'Boost the 401(k) — from "… $20k → $25k"', "$20k", ["whatWeRecommend"]),
+      ],
+      strategies: [
+        {
+          name: "Trim the negative expense",
+          rows: [{ area: "Expenses", what: "Travel", op: "edit", before: "—", after: "Updated", detail: ["Annual amount: ($50k) → ($20k)"] }],
+        },
+        {
+          name: "Halve the negative expense",
+          rows: [{ area: "Expenses", what: "Travel · Annual amount", op: "edit", before: "($50k)", after: "($20k)", detail: ["Adjusts this expense."] }],
+        },
+      ],
+    };
+
+    it("keeps the banned form out of the prompt from either field", () => {
+      const { user } = buildChapterPrompt("whatWeRecommend", ctx, [], []);
+      expect(user).not.toContain("($50k)");
+      expect(user).not.toContain("($20k)");
+    });
+
+    it("keeps the operation word, so no row is left a bare noun", () => {
+      const { user } = buildChapterPrompt("whatWeRecommend", ctx, [], []);
+      // The pair is suppressed; the direction read off it is not — `editWord`
+      // runs before the quotability check for exactly this reason.
+      expect(user).toContain("- Travel · Annual amount (raised) — Adjusts this expense.");
+      // The multi-field row keeps its noun and its operation. It carries nothing
+      // else, which is the state it was in before any of this was quotable.
+      expect(user).toContain("- Travel (changed)");
+    });
+
+    it("still shows a pair written the way the deck writes one", () => {
+      const clean: StoryContext = {
+        ...ctx,
+        facts: [
+          ...CTX.facts,
+          quotedFact("quoted.$100k", 'Spend more on travel — from "$100k → $150k"', "$100k", ["whatWeRecommend"]),
+          quotedFact("quoted.$150k", 'Spend more on travel — from "$100k → $150k"', "$150k", ["whatWeRecommend"]),
+        ],
+        strategies: [
+          {
+            name: "Spend more on travel",
+            rows: [{ area: "Expenses", what: "Travel · Annual amount", op: "edit", before: "$100k", after: "$150k", detail: ["Adjusts this expense."] }],
+          },
+        ],
+      };
+      const { user } = buildChapterPrompt("whatWeRecommend", clean, [], []);
+      expect(user).toContain("- Travel · Annual amount (raised): $100k → $150k — Adjusts this expense.");
+    });
   });
 
   it("leaves no heading standing over an empty list", () => {
