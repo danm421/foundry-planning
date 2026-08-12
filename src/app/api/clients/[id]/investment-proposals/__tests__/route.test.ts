@@ -6,7 +6,12 @@ vi.mock("@/lib/db-helpers", () => ({
   UnauthorizedError: class UnauthorizedError extends Error {},
 }));
 vi.mock("@/lib/clients/authz", () => ({
-  verifyClientAccess: vi.fn(async () => ({ ok: true, firmId: "firm_1", access: "own" })),
+  verifyClientAccess: vi.fn(async () => ({
+    ok: true,
+    permission: "edit",
+    firmId: "firm_1",
+    access: "own",
+  })),
 }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn(async () => {}) }));
 vi.mock("@/lib/clients/cross-firm-audit", () => ({ crossFirmAuditMeta: () => ({}) }));
@@ -14,10 +19,16 @@ vi.mock("@/lib/investments/proposals/compute", () => ({
   computeProposalSnapshot: vi.fn(async () => ({ version: 1, computedAt: "2026-08-12T00:00:00.000Z" })),
 }));
 
+const insertValues: Record<string, unknown>[] = [];
 const insertReturning = vi.fn(async () => [{ id: "p1" }]);
 vi.mock("@/db", () => ({
   db: {
-    insert: () => ({ values: () => ({ returning: insertReturning }) }),
+    insert: () => ({
+      values: (values: Record<string, unknown>) => {
+        insertValues.push(values);
+        return { returning: insertReturning };
+      },
+    }),
   },
 }));
 
@@ -31,6 +42,8 @@ vi.mock("@/lib/investments/proposals/queries", () => ({
 import { GET, POST } from "../route";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
+import { computeProposalSnapshot } from "@/lib/investments/proposals/compute";
+import { UnclassifiableTickerError } from "@/lib/investments/rebalance/resolve-target";
 
 const params = Promise.resolve({ id: "client_1" });
 const req = (body: unknown) =>
@@ -46,13 +59,36 @@ const validBody = {
   targetLabel: "Core Moderate",
 };
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  insertValues.length = 0;
+});
 
 describe("POST /investment-proposals", () => {
   it("creates a proposal and returns its id", async () => {
     const res = await POST(req(validBody), { params });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ id: "p1" });
+  });
+
+  it("writes the scoped ids, the real author, and decimal strings", async () => {
+    await POST(
+      req({ ...validBody, advisoryFeeCurrent: 0.009, advisoryFeeProposed: 0.0075 }),
+      { params },
+    );
+    expect(insertValues[0]).toMatchObject({
+      firmId: "firm_1",
+      clientId: "client_1",
+      // The Clerk user id, not the org — otherwise every proposal in a firm
+      // would look like it had the same author.
+      createdBy: "user_1",
+      // Drizzle decimal columns take strings; a raw number silently rounds.
+      advisoryFeeCurrent: "0.009",
+      advisoryFeeProposed: "0.0075",
+      // Omitted optional inputs settle to null, not undefined.
+      overrideLtcgRate: null,
+      notes: null,
+    });
   });
 
   it("audits the creation", async () => {
@@ -70,6 +106,41 @@ describe("POST /investment-proposals", () => {
     const res = await POST(req({ ...validBody, name: "" }), { params });
     expect(res.status).toBe(400);
     expect(await res.json()).toHaveProperty("issues");
+    expect(insertValues).toHaveLength(0);
+  });
+
+  it("400s on a body that isn't JSON", async () => {
+    const res = await POST(
+      new Request("http://t/api", { method: "POST", body: "not json" }) as never,
+      { params },
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: "Invalid JSON body" });
+    expect(insertValues).toHaveLength(0);
+  });
+
+  it("422s with the ticker list when the target can't be classified", async () => {
+    vi.mocked(computeProposalSnapshot).mockRejectedValueOnce(
+      new UnclassifiableTickerError(["ZZZZ", "QQQQ"]),
+    );
+    const res = await POST(req(validBody), { params });
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({ unresolvedTickers: ["ZZZZ", "QQQQ"] });
+  });
+
+  it("404s a view-only share recipient and writes nothing", async () => {
+    // A cross-firm share can be read-only. Creating is a mutation, so a
+    // recipient without edit is turned away exactly like a missing client.
+    vi.mocked(verifyClientAccess).mockResolvedValueOnce({
+      ok: true,
+      permission: "view",
+      firmId: "firm_1",
+      access: "shared",
+    });
+    const res = await POST(req(validBody), { params });
+    expect(res.status).toBe(404);
+    expect(insertValues).toHaveLength(0);
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 
   it("returns 404 when the caller cannot reach the client", async () => {
@@ -84,6 +155,17 @@ describe("GET /investment-proposals", () => {
   it("scopes the list to the requested client", async () => {
     await GET(new Request("http://t/api") as never, { params });
     expect(listProposals).toHaveBeenCalledWith("client_1");
+  });
+
+  it("lets a view-only share recipient read", async () => {
+    vi.mocked(verifyClientAccess).mockResolvedValueOnce({
+      ok: true,
+      permission: "view",
+      firmId: "firm_1",
+      access: "shared",
+    });
+    const res = await GET(new Request("http://t/api") as never, { params });
+    expect(res.status).toBe(200);
   });
 
   it("returns 404 when the caller cannot reach the client", async () => {

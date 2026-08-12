@@ -19,17 +19,21 @@ export const proposalTargetSchema = z.union([
   z.object({ holdings: z.array(z.object({ ticker: z.string().min(1), weight: z.number() })).min(1) }),
 ]);
 
-// Zod 4: declare a default with .default() ALONE. `.optional().default()`
-// wraps the default and hands the handler `undefined`.
+// The optional fields are `.nullable().optional()`, never `.default(null)`:
+// measured on zod 4.3.6, a `.default()` SURVIVES `.partial()`, so
+// `proposalUpdateSchema` could not tell "the caller omitted this" from "the
+// caller cleared this" and a rename would silently wipe a stored advisory fee.
+// Without the default, `.partial()` behaves as expected and the create route
+// applies `?? null` at the insert.
 export const proposalCreateSchema = z.object({
   name: z.string().min(1).max(200),
   source: proposalSourceSchema,
   target: proposalTargetSchema,
   targetLabel: z.string().min(1).max(200),
-  advisoryFeeCurrent: z.number().min(0).max(0.1).nullable().default(null),
-  advisoryFeeProposed: z.number().min(0).max(0.1).nullable().default(null),
-  overrideLtcgRate: z.number().min(0).max(1).nullable().default(null),
-  notes: z.string().max(4000).nullable().default(null),
+  advisoryFeeCurrent: z.number().min(0).max(0.1).nullable().optional(),
+  advisoryFeeProposed: z.number().min(0).max(0.1).nullable().optional(),
+  overrideLtcgRate: z.number().min(0).max(1).nullable().optional(),
+  notes: z.string().max(4000).nullable().optional(),
 });
 
 export const proposalUpdateSchema = proposalCreateSchema.partial().extend({

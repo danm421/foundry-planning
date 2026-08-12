@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { investmentProposals } from "@/db/schema";
-import { formatZodIssues } from "@/lib/schemas/common";
+import { parseBody } from "@/lib/schemas/common";
 import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
@@ -12,6 +11,7 @@ import { recordAudit } from "@/lib/audit";
 import { proposalUpdateSchema, type ProposalCreateInput } from "@/lib/investments/proposals/schemas";
 import { computeProposalSnapshot } from "@/lib/investments/proposals/compute";
 import { getProposal } from "@/lib/investments/proposals/queries";
+import { UnclassifiableTickerError } from "@/lib/investments/rebalance/resolve-target";
 
 export const dynamic = "force-dynamic";
 // A PUT with `recompute: true` runs the same rebalance compute — and the same
@@ -23,11 +23,19 @@ type Params = { params: Promise<{ id: string; pid: string }> };
 /** Drizzle decimal columns take strings; a raw number silently rounds. */
 const dec = (v: number | null) => (v == null ? null : String(v));
 
+/** Inputs the frozen snapshot was computed from. Changing any of them without
+ *  recomputing would leave `result` describing a portfolio the row no longer
+ *  names — a proposal that presents Core Moderate's numbers under Core
+ *  Aggressive's label, with nothing marking it stale. */
+const SNAPSHOT_INPUT_KEYS = ["source", "target", "overrideLtcgRate"] as const;
+
 export async function GET(_request: NextRequest, { params }: Params) {
   try {
     await requireOrgId();
     const { id, pid } = await params;
 
+    // Reading is legitimate for a view-only share recipient, so this gates on
+    // `ok` alone — unlike PUT and DELETE below.
     const access = await verifyClientAccess(id);
     if (!access.ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -50,40 +58,38 @@ export async function PUT(request: NextRequest, { params }: Params) {
     const callerOrg = await requireOrgId();
     const { id, pid } = await params;
 
+    // A cross-firm share can be granted read-only; editing needs edit.
     const access = await verifyClientAccess(id);
-    if (!access.ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!access.ok || access.permission !== "edit") {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
-    const raw: unknown = await request.json();
-    const parsed = proposalUpdateSchema.safeParse(raw);
-    if (!parsed.success) {
+    const parsed = await parseBody(proposalUpdateSchema, request);
+    if (!parsed.ok) return parsed.response;
+    const body = parsed.data;
+
+    const changedInputs = SNAPSHOT_INPUT_KEYS.filter((k) => body[k] !== undefined);
+    if (changedInputs.length > 0 && !body.recompute) {
       return NextResponse.json(
-        { error: "Validation failed", issues: formatZodIssues(parsed.error) },
+        {
+          error: `Changing ${changedInputs.join(", ")} requires recompute: true — the stored result would no longer describe these inputs.`,
+        },
         { status: 400 },
       );
     }
-    const body = parsed.data;
 
     const existing = await getProposal(id, pid);
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    // Zod 4 keeps a `.default()` alive through `.partial()`, so the four
-    // defaulted fields arrive as `null` whether the caller cleared them or
-    // never mentioned them. Only the raw body separates the two, and a rename
-    // that silently nulled a stored advisory fee wouldn't surface until the
-    // next proposal was presented. Fields with no default (name, source,
-    // target, targetLabel, status) do come through as `undefined`.
-    const sent = (key: string) => typeof raw === "object" && raw !== null && key in raw;
-
-    const advisoryFeeCurrent = sent("advisoryFeeCurrent")
-      ? (body.advisoryFeeCurrent ?? null)
-      : existing.advisoryFeeCurrent;
-    const advisoryFeeProposed = sent("advisoryFeeProposed")
-      ? (body.advisoryFeeProposed ?? null)
-      : existing.advisoryFeeProposed;
-    const overrideLtcgRate = sent("overrideLtcgRate")
-      ? (body.overrideLtcgRate ?? null)
-      : existing.overrideLtcgRate;
-    const notes = sent("notes") ? (body.notes ?? null) : existing.notes;
+    // `undefined` means "not supplied"; an explicit null clears the column, so
+    // these cannot collapse to `??`. (They are `.nullable().optional()` rather
+    // than `.default(null)` precisely so this distinction survives `.partial()`.)
+    const advisoryFeeCurrent =
+      body.advisoryFeeCurrent !== undefined ? body.advisoryFeeCurrent : existing.advisoryFeeCurrent;
+    const advisoryFeeProposed =
+      body.advisoryFeeProposed !== undefined ? body.advisoryFeeProposed : existing.advisoryFeeProposed;
+    const overrideLtcgRate =
+      body.overrideLtcgRate !== undefined ? body.overrideLtcgRate : existing.overrideLtcgRate;
 
     // `updated_at` carries no `$onUpdate` and `investment_proposals_client_idx`
     // sorts the advisor's list on it, so an edit that doesn't stamp it leaves
@@ -93,13 +99,13 @@ export async function PUT(request: NextRequest, { params }: Params) {
       advisoryFeeCurrent: dec(advisoryFeeCurrent),
       advisoryFeeProposed: dec(advisoryFeeProposed),
       overrideLtcgRate: dec(overrideLtcgRate),
-      notes,
     };
     if (body.name !== undefined) patch.name = body.name;
     if (body.status !== undefined) patch.status = body.status;
     if (body.source !== undefined) patch.source = body.source;
     if (body.target !== undefined) patch.target = body.target;
     if (body.targetLabel !== undefined) patch.targetLabel = body.targetLabel;
+    if (body.notes !== undefined) patch.notes = body.notes;
 
     let result = existing.result;
     let computedAt = existing.computedAt;
@@ -143,10 +149,12 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     return NextResponse.json({ id: pid, result, computedAt });
   } catch (err) {
-    if (err instanceof z.ZodError) {
+    // Same status and body shape as the rebalance/compute route: the advisor
+    // needs the ticker list back to fix it, not "Internal server error".
+    if (err instanceof UnclassifiableTickerError) {
       return NextResponse.json(
-        { error: "Validation failed", issues: formatZodIssues(err) },
-        { status: 400 },
+        { error: err.message, unresolvedTickers: err.tickers },
+        { status: 422 },
       );
     }
     const authResp = authErrorResponse(err);
@@ -161,8 +169,11 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
     const callerOrg = await requireOrgId();
     const { id, pid } = await params;
 
+    // A cross-firm share can be granted read-only; deleting needs edit.
     const access = await verifyClientAccess(id);
-    if (!access.ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!access.ok || access.permission !== "edit") {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
     const existing = await getProposal(id, pid);
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });

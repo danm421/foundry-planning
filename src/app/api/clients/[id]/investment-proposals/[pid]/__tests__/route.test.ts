@@ -6,7 +6,12 @@ vi.mock("@/lib/db-helpers", () => ({
   UnauthorizedError: class UnauthorizedError extends Error {},
 }));
 vi.mock("@/lib/clients/authz", () => ({
-  verifyClientAccess: vi.fn(async () => ({ ok: true, firmId: "firm_1", access: "own" })),
+  verifyClientAccess: vi.fn(async () => ({
+    ok: true,
+    permission: "edit",
+    firmId: "firm_1",
+    access: "own",
+  })),
 }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn(async () => {}) }));
 vi.mock("@/lib/clients/cross-firm-audit", () => ({ crossFirmAuditMeta: () => ({}) }));
@@ -43,10 +48,12 @@ import { verifyClientAccess } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
 import { getProposal } from "@/lib/investments/proposals/queries";
 import { computeProposalSnapshot } from "@/lib/investments/proposals/compute";
+import { UnclassifiableTickerError } from "@/lib/investments/rebalance/resolve-target";
 
 // RFC 9562-valid: Zod 4's `.uuid()` checks the version and variant nibbles.
 const ACCOUNT_ID = "11111111-1111-4111-8111-111111111111";
 const PORTFOLIO_ID = "22222222-2222-4222-8222-222222222222";
+const OTHER_PORTFOLIO_ID = "33333333-3333-4333-8333-333333333333";
 
 /** The stored row every handler reads before it writes. */
 const existing = {
@@ -65,6 +72,13 @@ const existing = {
   updatedAt: new Date("2026-01-01T00:00:00.000Z"),
 } as unknown as NonNullable<Awaited<ReturnType<typeof getProposal>>>;
 
+const VIEW_ONLY = {
+  ok: true,
+  permission: "view",
+  firmId: "firm_1",
+  access: "shared",
+} as const;
+
 const params = Promise.resolve({ id: "client_1", pid: "p1" });
 const put = (body: unknown) =>
   new Request("http://t/api", { method: "PUT", body: JSON.stringify(body) }) as never;
@@ -82,6 +96,12 @@ describe("GET /investment-proposals/[pid]", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ proposal: { id: "p1", name: "Move to Core Moderate" } });
     expect(getProposal).toHaveBeenCalledWith("client_1", "p1");
+  });
+
+  it("lets a view-only share recipient read", async () => {
+    vi.mocked(verifyClientAccess).mockResolvedValueOnce(VIEW_ONLY);
+    const res = await GET(bare(), { params });
+    expect(res.status).toBe(200);
   });
 
   it("404s when the proposal is not this client's", async () => {
@@ -135,6 +155,35 @@ describe("PUT /investment-proposals/[pid]", () => {
     );
   });
 
+  it("400s when a snapshot input changes without recompute", async () => {
+    // Otherwise the row would be labelled Core Aggressive while `result` still
+    // held Core Moderate's numbers, with nothing marking it stale.
+    const res = await PUT(put({ target: { portfolioId: OTHER_PORTFOLIO_ID } }), { params });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain("target");
+    expect(setCalls).toHaveLength(0);
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("400s when overrideLtcgRate changes without recompute", async () => {
+    const res = await PUT(put({ overrideLtcgRate: 0.15 }), { params });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain("overrideLtcgRate");
+    expect(setCalls).toHaveLength(0);
+  });
+
+  it("accepts the same input change when recompute is true", async () => {
+    const target = { portfolioId: OTHER_PORTFOLIO_ID };
+    const res = await PUT(put({ target, recompute: true }), { params });
+
+    expect(res.status).toBe(200);
+    expect(setCalls[0]).toMatchObject({ target });
+    // The new target, not the stored one, is what gets recomputed.
+    expect(vi.mocked(computeProposalSnapshot).mock.calls[0][0]).toMatchObject({
+      request: { target },
+    });
+  });
+
   it("stamps updatedAt so an edited proposal sorts to the top of the list", async () => {
     // investment_proposals.updatedAt has no $onUpdate and the client index
     // sorts on it, so the handler has to set it explicitly.
@@ -148,14 +197,12 @@ describe("PUT /investment-proposals/[pid]", () => {
   });
 
   it("keeps stored fees and notes a partial edit never mentioned", async () => {
-    // Zod 4 applies `.default(null)` through `.partial()`, so an omitted fee
-    // parses as null. Writing that straight through would wipe the fee.
     await PUT(put({ name: "Renamed" }), { params });
     expect(setCalls[0]).toMatchObject({
       advisoryFeeCurrent: "0.009",
       advisoryFeeProposed: "0.0075",
-      notes: "Presented at the March review",
     });
+    expect(setCalls[0]).not.toHaveProperty("notes");
   });
 
   it("clears a fee the caller explicitly nulled", async () => {
@@ -179,6 +226,33 @@ describe("PUT /investment-proposals/[pid]", () => {
     expect(res.status).toBe(400);
     expect(await res.json()).toHaveProperty("issues");
     expect(setCalls).toHaveLength(0);
+  });
+
+  it("400s on a body that isn't JSON", async () => {
+    const res = await PUT(
+      new Request("http://t/api", { method: "PUT", body: "not json" }) as never,
+      { params },
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: "Invalid JSON body" });
+    expect(setCalls).toHaveLength(0);
+  });
+
+  it("422s with the ticker list when a recompute can't classify the target", async () => {
+    vi.mocked(computeProposalSnapshot).mockRejectedValueOnce(
+      new UnclassifiableTickerError(["ZZZZ"]),
+    );
+    const res = await PUT(put({ recompute: true }), { params });
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({ unresolvedTickers: ["ZZZZ"] });
+  });
+
+  it("404s a view-only share recipient and writes nothing", async () => {
+    vi.mocked(verifyClientAccess).mockResolvedValueOnce(VIEW_ONLY);
+    const res = await PUT(put({ name: "Renamed" }), { params });
+    expect(res.status).toBe(404);
+    expect(setCalls).toHaveLength(0);
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 
   it("404s and writes nothing when the proposal is not this client's", async () => {
@@ -210,6 +284,15 @@ describe("DELETE /investment-proposals/[pid]", () => {
         firmId: "firm_1",
       }),
     );
+  });
+
+  it("404s a view-only share recipient and deletes nothing", async () => {
+    // Destructive and unrecoverable — a recipient denied edit must not reach it.
+    vi.mocked(verifyClientAccess).mockResolvedValueOnce(VIEW_ONLY);
+    const res = await DELETE(bare(), { params });
+    expect(res.status).toBe(404);
+    expect(deleteCalls).toHaveLength(0);
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 
   it("404s and deletes nothing when the proposal is not this client's", async () => {
