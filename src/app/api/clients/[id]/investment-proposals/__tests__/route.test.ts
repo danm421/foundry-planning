@@ -120,6 +120,53 @@ describe("POST /investment-proposals", () => {
     expect(insertValues).toHaveLength(0);
   });
 
+  /** An outside-portfolio source, the shape the ad-hoc holding rules apply to. */
+  const adHocBody = (holdings: unknown[]) => ({
+    ...validBody,
+    source: { adHoc: { taxable: true, holdings } },
+  });
+
+  it("rejects a negative market value on an ad-hoc holding", async () => {
+    // A negative value makes `totalValue` — and every dollar figure in the frozen
+    // snapshot — nonsense, with nothing to signal it.
+    const res = await POST(req(adHocBody([{ ticker: "SPY", marketValue: -5000 }])), { params });
+    expect(res.status).toBe(400);
+    expect(insertValues).toHaveLength(0);
+  });
+
+  it("rejects an ad-hoc holding that names nothing", async () => {
+    const res = await POST(req(adHocBody([{ shares: 100, price: 50 }])), { params });
+    expect(res.status).toBe(400);
+    expect(insertValues).toHaveLength(0);
+  });
+
+  it("rejects an unknown key on an ad-hoc holding", async () => {
+    const res = await POST(req(adHocBody([{ ticker: "SPY", quantity: 100 }])), { params });
+    expect(res.status).toBe(400);
+    expect(insertValues).toHaveLength(0);
+  });
+
+  it("caps an ad-hoc portfolio at 500 holdings", async () => {
+    // `maxDuration = 300` on an authenticated route: an unbounded array is a
+    // compute-exhaustion surface, not just an odd request.
+    const holdings = Array.from({ length: 501 }, (_, i) => ({
+      ticker: `T${i}`,
+      marketValue: 100,
+    }));
+    const res = await POST(req(adHocBody(holdings)), { params });
+    expect(res.status).toBe(400);
+    expect(insertValues).toHaveLength(0);
+  });
+
+  it("accepts a well-formed ad-hoc portfolio", async () => {
+    const res = await POST(
+      req(adHocBody([{ ticker: "SPY", shares: 100, price: 50 }, { name: "Cash", marketValue: 5000 }])),
+      { params },
+    );
+    expect(res.status).toBe(200);
+    expect(insertValues).toHaveLength(1);
+  });
+
   it("400s on a body that isn't JSON", async () => {
     const res = await POST(
       new Request("http://t/api", { method: "POST", body: "not json" }) as never,

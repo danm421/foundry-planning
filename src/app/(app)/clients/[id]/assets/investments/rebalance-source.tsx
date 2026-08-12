@@ -54,6 +54,32 @@ const blankRow = (key: number): OutsideRow => ({
   costBasis: "",
 });
 
+/** A position off the wire as the editor holds it: every numeric field a string. */
+const toRow = (h: AdHocHoldingInput, key: number): OutsideRow => ({
+  _key: key,
+  ticker: h.ticker ?? "",
+  name: h.name ?? "",
+  shares: h.shares != null ? String(h.shares) : "",
+  price: h.price != null ? String(h.price) : "",
+  marketValue: h.marketValue != null ? String(h.marketValue) : "",
+  costBasis: h.costBasis != null ? String(h.costBasis) : "",
+});
+
+/**
+ * Seed the editor from the value it was mounted with — the same job
+ * `rebalance-target.tsx`'s `seedRows` does for the other side.
+ *
+ * A reopened proposal arrives with its stored positions already in `value`. Left
+ * to a blank literal, the editor renders one empty row at a $0 total — over a
+ * proposal holding real positions — and the first keystroke makes `emitOutside`
+ * hand the parent that one row, so a Compute or a fee-triggered Save then writes
+ * the truncated portfolio over the stored one.
+ */
+function seedOutsideRows(value: RebalanceSourceValue): OutsideRow[] {
+  if (value.kind === "outside" && value.holdings.length > 0) return value.holdings.map(toRow);
+  return [blankRow(0)];
+}
+
 const num = (s: string): number | undefined => {
   const n = Number(s.trim());
   return s.trim() === "" || !Number.isFinite(n) ? undefined : n;
@@ -92,9 +118,10 @@ export function RebalanceSource({
   const mode = value.kind;
 
   // ── Client-accounts state lives in the parent; outside-portfolio state here ──
-  const nextKey = useRef(1);
-  const [rows, setRows] = useState<OutsideRow[]>([blankRow(0)]);
-  const [taxable, setTaxable] = useState(true);
+  const [rows, setRows] = useState<OutsideRow[]>(() => seedOutsideRows(value));
+  // The seed took _keys 0..n-1, so the next added row starts after them.
+  const nextKey = useRef(rows.length);
+  const [taxable, setTaxable] = useState(() => (value.kind === "outside" ? value.taxable : true));
 
   const fileInput = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -128,15 +155,7 @@ export function RebalanceSource({
   // ── Upload ────────────────────────────────────────────────────────────────
 
   function loadPortfolio(p: ExtractedPortfolio) {
-    const loaded = p.holdings.map<OutsideRow>((h) => ({
-      _key: nextKey.current++,
-      ticker: h.ticker ?? "",
-      name: h.name ?? "",
-      shares: h.shares != null ? String(h.shares) : "",
-      price: h.price != null ? String(h.price) : "",
-      marketValue: h.marketValue != null ? String(h.marketValue) : "",
-      costBasis: h.costBasis != null ? String(h.costBasis) : "",
-    }));
+    const loaded = p.holdings.map((h) => toRow(h, nextKey.current++));
     setChoices([]);
     emitOutside(loaded.length > 0 ? loaded : [blankRow(nextKey.current++)], p.taxable);
   }

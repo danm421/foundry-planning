@@ -26,8 +26,20 @@ const dec = (v: number | null) => (v == null ? null : String(v));
 /** Inputs the frozen snapshot was computed from. Changing any of them without
  *  recomputing would leave `result` describing a portfolio the row no longer
  *  names — a proposal that presents Core Moderate's numbers under Core
- *  Aggressive's label, with nothing marking it stale. */
-const SNAPSHOT_INPUT_KEYS = ["source", "target", "overrideLtcgRate"] as const;
+ *  Aggressive's label, with nothing marking it stale.
+ *
+ *  The advisory fees belong here as much as the portfolios do: both feed
+ *  `buildFeeComparison` and, through `feeSavingRate`, the break-even. A fee
+ *  changed without a recompute leaves the row's fee columns contradicting the
+ *  frozen `fees` and `breakEven` they were supposed to produce — the list would
+ *  print one rate and the proposal PDF another. */
+const SNAPSHOT_INPUT_KEYS = [
+  "source",
+  "target",
+  "overrideLtcgRate",
+  "advisoryFeeCurrent",
+  "advisoryFeeProposed",
+] as const;
 
 export async function GET(_request: NextRequest, { params }: Params) {
   try {

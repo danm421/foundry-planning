@@ -10,16 +10,32 @@ export const MAX_ADVISORY_FEE_PCT = 10;
 const ADVISORY_FEE_TOOLTIP =
   "Only the advisory fee you charge on top of the funds. The funds' own expense ratios come from fund data automatically and are already in the fee comparison — don't add them here.";
 
+/**
+ * Decimals of percent the fee is carried at, everywhere.
+ *
+ * `advisory_fee_current` / `advisory_fee_proposed` are `numeric(6,5)`: five
+ * decimals of fraction, so three of percent. A fourth would round in the column
+ * while the frozen jsonb snapshot kept what was sent — and the screen seeds its
+ * input from the column but tests it against the snapshot, so the two would
+ * disagree, report "the advisory fee changed" on a screen nobody touched, and
+ * advance the as-of date on a save that changed nothing. A thousandth of a
+ * percent is a tenth of a basis point; no advisory fee is quoted that finely.
+ */
+const FEE_PCT_DECIMALS = 3;
+
 /** Percent text as the decimal fraction the API stores. Blank means "no fee on
- *  file", which the API takes as an explicit null. Call `feePctError` first. */
+ *  file", which the API takes as an explicit null. Rounded to what the column
+ *  holds exactly, so the stored fee and the stored snapshot can never differ.
+ *  Call `feePctError` first. */
 export function feePctToFraction(text: string): number | null {
   const trimmed = text.trim();
-  return trimmed === "" ? null : Number(trimmed) / 100;
+  if (trimmed === "") return null;
+  return Number((Number(trimmed) / 100).toFixed(FEE_PCT_DECIMALS + 2));
 }
 
 /** Decimal fraction back to percent text for the input. */
 export function feeFractionToPct(value: number | null): string {
-  return value == null ? "" : String(Number((value * 100).toFixed(4)));
+  return value == null ? "" : String(Number((value * 100).toFixed(FEE_PCT_DECIMALS)));
 }
 
 /** The message to show under the field, or null when the value is usable. */

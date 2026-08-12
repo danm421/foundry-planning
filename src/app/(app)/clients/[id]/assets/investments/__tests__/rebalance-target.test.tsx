@@ -61,3 +61,39 @@ describe("RebalanceTarget, reopened with a stored ad-hoc target", () => {
     expect(screen.getByText("Total: 0.00%")).toBeInTheDocument();
   });
 });
+
+describe("RebalanceTarget, first run with nothing picked yet", () => {
+  it("shows a placeholder rather than a portfolio it has not emitted", () => {
+    render(<RebalanceTarget fundPortfolios={PORTFOLIOS} value={null} onChange={vi.fn()} />);
+
+    // Displaying `fundPortfolios[0]` here would claim a target the parent does
+    // not hold, leaving Compute disabled under a filled-in-looking select.
+    expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("");
+    expect(screen.getByRole("option", { name: /Select a fund portfolio/ })).toBeInTheDocument();
+  });
+
+  it("emits the firm's only portfolio when it is picked", async () => {
+    // A firm with exactly one portfolio has no second option to switch to, so if
+    // the select already displayed that portfolio there would be no change event
+    // left to fire and the builder would dead-end.
+    const onChange = vi.fn();
+    render(<RebalanceTarget fundPortfolios={PORTFOLIOS} value={null} onChange={onChange} />);
+
+    await userEvent.selectOptions(screen.getByRole("combobox"), "tp-1");
+
+    expect(onChange).toHaveBeenCalledWith({ kind: "existing", portfolioId: "tp-1" });
+  });
+
+  it("drops the placeholder once a portfolio is picked", () => {
+    render(
+      <RebalanceTarget
+        fundPortfolios={PORTFOLIOS}
+        value={{ kind: "existing", portfolioId: "tp-1" }}
+        onChange={vi.fn()}
+      />,
+    );
+    expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("tp-1");
+    expect(screen.queryByRole("option", { name: /Select a fund portfolio/ })).toBeNull();
+  });
+});
+

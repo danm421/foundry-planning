@@ -172,6 +172,34 @@ describe("PUT /investment-proposals/[pid]", () => {
     expect(setCalls).toHaveLength(0);
   });
 
+  it("400s when an advisory fee changes without recompute", async () => {
+    // Both fees feed buildFeeComparison and the break-even, so accepting one
+    // without a recompute leaves the row's fee column contradicting its own
+    // frozen `fees` block — the list and the PDF would print different fees.
+    const res = await PUT(put({ advisoryFeeCurrent: 0.005 }), { params });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain("advisoryFeeCurrent");
+    expect(setCalls).toHaveLength(0);
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("400s when a fee is cleared without recompute", async () => {
+    const res = await PUT(put({ advisoryFeeProposed: null }), { params });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain("advisoryFeeProposed");
+    expect(setCalls).toHaveLength(0);
+  });
+
+  it("accepts a fee-only change when recompute is true", async () => {
+    // What the builder's Save & close sends for a pending fee edit.
+    const res = await PUT(put({ advisoryFeeCurrent: 0.005, recompute: true }), { params });
+    expect(res.status).toBe(200);
+    expect(setCalls[0]).toMatchObject({ advisoryFeeCurrent: "0.005" });
+    expect(vi.mocked(computeProposalSnapshot).mock.calls[0][0]).toMatchObject({
+      advisoryFeeCurrent: 0.005,
+    });
+  });
+
   it("accepts the same input change when recompute is true", async () => {
     const target = { portfolioId: OTHER_PORTFOLIO_ID };
     const res = await PUT(put({ target, recompute: true }), { params });
@@ -206,7 +234,9 @@ describe("PUT /investment-proposals/[pid]", () => {
   });
 
   it("clears a fee the caller explicitly nulled", async () => {
-    await PUT(put({ advisoryFeeProposed: null }), { params });
+    // A cleared fee changes the snapshot, so it travels with `recompute` — but
+    // the null still has to reach the column rather than being read as "absent".
+    await PUT(put({ advisoryFeeProposed: null, recompute: true }), { params });
     expect(setCalls[0]).toMatchObject({ advisoryFeeCurrent: "0.009", advisoryFeeProposed: null });
   });
 

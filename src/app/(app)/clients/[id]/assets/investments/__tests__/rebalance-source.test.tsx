@@ -262,3 +262,82 @@ describe("RebalanceSource", () => {
     ).toBeInTheDocument();
   });
 });
+
+// ── Reopened with a stored outside portfolio ─────────────────────────────────
+
+/** What a reopened proposal hands the editor: the stored outside portfolio. */
+const reopened: RebalanceSourceValue = {
+  kind: "outside",
+  taxable: false,
+  holdings: [
+    { ticker: "AGG", shares: 400, price: 50, marketValue: 20_000, costBasis: 18_000 },
+    { name: "Cash", marketValue: 5_000 },
+  ],
+};
+
+const tickerValues = () =>
+  (screen.getAllByLabelText("Ticker symbol") as HTMLInputElement[]).map((i) => i.value);
+
+describe("RebalanceSource, reopened with a stored outside portfolio", () => {
+  it("shows the stored positions instead of one blank row", () => {
+    render(
+      <RebalanceSource clientId="c1" accounts={ACCOUNTS} value={reopened} onChange={vi.fn()} />,
+    );
+    expect(tickerValues()).toEqual(["AGG", ""]);
+    // The untickered row carries its description, and the total is the stored
+    // one — a blank seed would read "$0" over a proposal holding $25,000.
+    expect(screen.getByText("Cash")).toBeInTheDocument();
+    expect(screen.getByText("$25,000")).toBeInTheDocument();
+  });
+
+  it("keeps the other positions and the tax treatment when one field is edited", async () => {
+    const onChange = vi.fn();
+    render(
+      <RebalanceSource clientId="c1" accounts={ACCOUNTS} value={reopened} onChange={onChange} />,
+    );
+
+    await userEvent.type(screen.getAllByLabelText("Ticker symbol")[0], "X");
+
+    // Every stored position survives the keystroke, and the stored tax character
+    // rides along — resetting it to taxable would silently move the tax estimate
+    // and with it the break-even.
+    expect(lastEmit(onChange)).toEqual({
+      kind: "outside",
+      taxable: false,
+      holdings: [
+        { ticker: "AGGX", shares: 400, price: 50, marketValue: 20_000, costBasis: 18_000 },
+        { name: "Cash", marketValue: 5_000 },
+      ],
+    });
+  });
+
+  it("gives an added row a key the seed did not already take", async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <RebalanceSource clientId="c1" accounts={ACCOUNTS} value={reopened} onChange={onChange} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "+ Add holding" }));
+    await user.type(screen.getAllByLabelText("Ticker symbol")[2], "VTI");
+
+    // A colliding `_key` would route the keystroke into a seeded row instead.
+    expect(lastEmit(onChange)).toMatchObject({
+      holdings: [{ ticker: "AGG" }, { name: "Cash" }, { ticker: "VTI" }],
+    });
+  });
+
+  it("still opens a fresh outside portfolio on one blank row", () => {
+    // What the "Outside portfolio" toggle emits before anything is typed: no
+    // holdings. The seed must not read that as a stored portfolio to restore.
+    render(
+      <RebalanceSource
+        clientId="c1"
+        accounts={ACCOUNTS}
+        value={{ kind: "outside", taxable: true, holdings: [] }}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(tickerValues()).toEqual([""]);
+  });
+});

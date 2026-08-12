@@ -175,10 +175,17 @@ export function RebalanceTarget({ fundPortfolios, value, onChange, unresolvedTic
             </p>
           ) : (
             <select
-              value={value?.kind === "existing" ? value.portfolioId : (fundPortfolios[0]?.id ?? "")}
+              // Until something is picked the parent's target is still null, so
+              // the select must not display a portfolio it never emitted. A firm
+              // with one portfolio would then have no change event left to fire
+              // and Compute would stay dead — the placeholder gives it one.
+              value={value?.kind === "existing" ? value.portfolioId : ""}
               onChange={(e) => onChange({ kind: "existing", portfolioId: e.target.value })}
               className="w-full rounded border border-hair bg-transparent px-2 py-1 text-sm text-ink focus:border-accent focus:outline-none"
             >
+              {value?.kind !== "existing" && (
+                <option value="">Select a fund portfolio…</option>
+              )}
               {fundPortfolios.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}

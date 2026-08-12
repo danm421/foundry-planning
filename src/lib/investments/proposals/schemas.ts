@@ -1,30 +1,57 @@
 import { z } from "zod";
 
-const adHocHolding = z.object({
-  ticker: z.string().optional(),
-  name: z.string().optional(),
-  shares: z.number().optional(),
-  price: z.number().optional(),
-  marketValue: z.number().optional(),
-  costBasis: z.number().optional(),
-});
+// These mirror the sibling `clients/[id]/rebalance/compute` route's body schema,
+// which computes the same numbers from the same shapes. The bounds are not
+// cosmetic: a negative `marketValue` makes `totalValue` — and so every dollar
+// figure in the frozen, persisted snapshot — nonsense with no error raised, and
+// an unbounded holdings array on a `maxDuration = 300` route is an authenticated
+// compute-exhaustion surface.
+const money = z.number().finite().min(0).max(1e12);
+
+/** One position in an outside portfolio. Untickered rows (bonds, cash) carry a
+ *  name instead; at least one of the two must identify the row. */
+const adHocHolding = z
+  .object({
+    ticker: z.string().trim().max(32).optional(),
+    name: z.string().trim().max(200).optional(),
+    shares: z.number().finite().min(0).max(1e12).optional(),
+    price: money.optional(),
+    marketValue: money.optional(),
+    costBasis: money.optional(),
+  })
+  .strict()
+  .refine((h) => Boolean(h.ticker) || Boolean(h.name), {
+    message: "Each holding needs a ticker or a name",
+  });
 
 export const proposalSourceSchema = z.union([
-  z.object({ accountIds: z.array(z.string().uuid()).min(1) }),
-  z.object({ adHoc: z.object({ taxable: z.boolean(), holdings: z.array(adHocHolding).min(1) }) }),
+  z.object({ accountIds: z.array(z.string().uuid()).min(1) }).strict(),
+  z
+    .object({
+      adHoc: z
+        .object({ taxable: z.boolean(), holdings: z.array(adHocHolding).min(1).max(500) })
+        .strict(),
+    })
+    .strict(),
 ]);
 
 export const proposalTargetSchema = z.union([
-  z.object({ portfolioId: z.string().uuid() }),
+  z.object({ portfolioId: z.string().uuid() }).strict(),
   // The builder sends decimal fractions (`rebalance-target.tsx` divides the
   // typed percent by 100), so the bounds match the sibling rebalance route
   // exactly. Unbounded, a percent typed straight through — 60 instead of 0.6 —
   // would compute a 6000%-weight portfolio without complaint.
-  z.object({
-    holdings: z
-      .array(z.object({ ticker: z.string().trim().min(1).max(32), weight: z.number().min(0).max(1) }))
-      .min(1),
-  }),
+  z
+    .object({
+      holdings: z
+        .array(
+          z
+            .object({ ticker: z.string().trim().min(1).max(32), weight: z.number().min(0).max(1) })
+            .strict(),
+        )
+        .min(1),
+    })
+    .strict(),
 ]);
 
 // The optional fields are `.nullable().optional()`, never `.default(null)`:

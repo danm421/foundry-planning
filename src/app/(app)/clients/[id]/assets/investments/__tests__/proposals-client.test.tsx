@@ -14,17 +14,22 @@ vi.mock("../rebalance-risk-return-scatter", () => ({
 }));
 
 const ACCOUNTS = [{ id: "acc-1", name: "Joint Brokerage", category: "taxable", value: 500_000 }];
-const PORTFOLIOS = [{ id: "tp-1", name: "Core Moderate" }];
+const PORTFOLIOS = [
+  { id: "tp-1", name: "Core Moderate" },
+  { id: "tp-2", name: "Core Aggressive" },
+];
 
-/** A stored fee with more precision than the percent input can show. It seeds the
- *  input as "1.2346", a 4e-8 drift from what is stored — and the smallest edit
- *  the input can express, "1.2345", differs from the stored value by only
- *  5.999999999999062e-7. Both sit inside the 1e-6 tolerance this screen used to
- *  carry, which is why one read as an edit and the other did not. */
-const AWKWARD_FEE = 0.0123456;
+/** A fee carrying more precision than `advisory_fee_current` can hold. The column
+ *  is `numeric(6,5)`, so it keeps `COLUMN_FEE`; the frozen jsonb snapshot keeps
+ *  the number the API was handed. The screen seeds its input from the column and
+ *  compares against the snapshot, so the two must render as the same fee — else
+ *  a screen nobody touched reports an edit, and saving advances the as-of date. */
+const SENT_FEE = 0.012346;
+const COLUMN_FEE = 0.01235;
 
-/** One unit down on the last digit the input displays: the smallest real edit. */
-const MINIMAL_EDIT = "1.2345";
+/** One unit down on the last digit the input can display, which is also the last
+ *  the column can hold: the smallest real edit. */
+const MINIMAL_EDIT = "1.234";
 
 /** The frozen v1 artifact with only the two fee fields overridden, so the shape
  *  under test is the genuine snapshot rather than a hand-written stand-in. */
@@ -32,7 +37,7 @@ const snapshot = {
   ...(frozenSnapshot as unknown as ProposalSnapshot),
   fees: {
     ...(frozenSnapshot as unknown as ProposalSnapshot).fees,
-    advisoryFeeCurrent: AWKWARD_FEE,
+    advisoryFeeCurrent: SENT_FEE,
     advisoryFeeProposed: 0.005,
   },
 } satisfies ProposalSnapshot;
@@ -44,7 +49,7 @@ const storedRow = {
   source: { accountIds: ["acc-1"] },
   target: { portfolioId: "tp-1" },
   targetLabel: "Core Moderate",
-  advisoryFeeCurrent: AWKWARD_FEE,
+  advisoryFeeCurrent: COLUMN_FEE,
   advisoryFeeProposed: 0.005,
   overrideLtcgRate: null,
   result: snapshot,
@@ -91,12 +96,14 @@ beforeEach(() => vi.clearAllMocks());
 afterEach(() => vi.unstubAllGlobals());
 
 describe("ProposalsClient", () => {
-  it("does not report an untouched fee as edited when the stored value is awkward", async () => {
+  it("does not report a fee only the fee column rounded as edited", async () => {
     mockApi(() => json({ proposals: [storedRow] }));
     await openTheSavedProposal();
 
     // The seeded input is what the advisor sees; it must not be read as an edit.
-    expect((screen.getByLabelText("Current advisory fee") as HTMLInputElement).value).toBe("1.2346");
+    // Displaying a decimal the column cannot hold makes the seeded input and the
+    // frozen snapshot disagree, which is the whole defect.
+    expect((screen.getByLabelText("Current advisory fee") as HTMLInputElement).value).toBe("1.235");
     expect(screen.queryByText(/The advisory fee changed/)).not.toBeInTheDocument();
   });
 
@@ -115,7 +122,7 @@ describe("ProposalsClient", () => {
     await openTheSavedProposal();
 
     const field = screen.getByLabelText("Current advisory fee");
-    expect((field as HTMLInputElement).value).toBe("1.2346");
+    expect((field as HTMLInputElement).value).toBe("1.235");
     await userEvent.clear(field);
     await userEvent.type(field, MINIMAL_EDIT);
 
@@ -131,8 +138,51 @@ describe("ProposalsClient", () => {
     expect(puts).toHaveLength(1);
     const body = puts[0].body as { advisoryFeeCurrent: number; recompute: boolean };
     expect(body.recompute).toBe(true);
-    // Precision 9 discriminates the edit (0.012345) from the stored 0.0123456.
-    expect(body.advisoryFeeCurrent).toBeCloseTo(0.012345, 9);
+    // Precision 9 discriminates the edit (0.01234) from the stored 0.01235, and
+    // the sent value must be one the fee column can hold exactly.
+    expect(body.advisoryFeeCurrent).toBeCloseTo(0.01234, 9);
+    expect(body.advisoryFeeCurrent).toBe(Number(body.advisoryFeeCurrent.toFixed(5)));
+  });
+
+  it("will not save a target the stored proposal was never computed from", async () => {
+    const calls = mockApi(() => json({ proposals: [storedRow] }));
+    await openTheSavedProposal();
+
+    // Switch the target portfolio without recomputing. `save()` only ever sends
+    // name and fees, so a plain Save would recompute from the STORED target and
+    // stamp a fresh as-of date on numbers the new one never produced.
+    await userEvent.selectOptions(screen.getByRole("combobox"), "tp-2");
+
+    expect(screen.getByText(/Recompute to apply/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save & close" })).toBeDisabled();
+    expect(calls.filter((c) => c.method === "PUT")).toEqual([]);
+  });
+
+  it("saves the switched target once Recompute has applied it", async () => {
+    const calls = mockApi(() => json({ proposals: [storedRow] }));
+    await openTheSavedProposal();
+    await userEvent.selectOptions(screen.getByRole("combobox"), "tp-2");
+
+    await userEvent.click(screen.getByRole("button", { name: "Recompute" }));
+    await waitFor(() =>
+      expect(screen.queryByText(/Recompute to apply/)).not.toBeInTheDocument(),
+    );
+
+    // The recompute carries the new target AND the label the list will show.
+    const puts = calls.filter((c) => c.method === "PUT");
+    expect(puts).toHaveLength(1);
+    expect(puts[0].body).toMatchObject({
+      target: { portfolioId: "tp-2" },
+      targetLabel: "Core Aggressive",
+      recompute: true,
+    });
+
+    // …and Save & close is live again, with nothing left to send.
+    const save = screen.getByRole("button", { name: "Save & close" });
+    await waitFor(() => expect(save).toBeEnabled());
+    await userEvent.click(save);
+    await screen.findByText(/Saved proposals for this client/);
+    expect(calls.filter((c) => c.method === "PUT")).toHaveLength(1);
   });
 
   it("blocks Save & close on a fee the API would reject", async () => {
@@ -146,6 +196,32 @@ describe("ProposalsClient", () => {
     await userEvent.type(screen.getByLabelText("Current advisory fee"), "20");
     expect(screen.getByText(/Enter a fee between 0 and 10%/)).toBeInTheDocument();
     expect(save).toBeDisabled();
+  });
+
+  it("does not open the builder on a target Compute cannot use", async () => {
+    // First run for a firm with exactly ONE fund portfolio: no saved proposals,
+    // so the empty state drops straight into the builder. A select displaying
+    // that portfolio while the parent still holds no target leaves Compute dead
+    // with no change event left to fire.
+    mockApi(() => json({ proposals: [] }));
+    render(
+      <ProposalsClient
+        clientId="client-1"
+        accountsWithHoldings={ACCOUNTS}
+        fundPortfolios={[PORTFOLIOS[0]]}
+      />,
+    );
+    await screen.findByRole("button", { name: "Compute" });
+
+    const select = screen.getByRole("combobox") as HTMLSelectElement;
+    expect(select.value).toBe("");
+
+    await userEvent.click(screen.getByRole("checkbox", { name: /Joint Brokerage/ }));
+    expect(screen.getByRole("button", { name: "Compute" })).toBeDisabled();
+
+    // Picking the firm's only portfolio is what enables it.
+    await userEvent.selectOptions(select, "tp-1");
+    expect(screen.getByRole("button", { name: "Compute" })).toBeEnabled();
   });
 
   it("reports a failed list load as a failure, not as an empty client", async () => {

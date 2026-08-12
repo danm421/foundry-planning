@@ -62,6 +62,23 @@ function toTargetValue(target: unknown): RebalanceTargetValue {
   return { kind: "new", holdings: t.holdings, saveToCma: false };
 }
 
+/** The editors' value shapes back into the compute request the API takes. Null
+ *  means "names nothing yet", which is what disables Compute. */
+function toSourceRequest(source: RebalanceSourceValue) {
+  if (source.kind === "accounts") {
+    return source.accountIds.length > 0 ? { accountIds: source.accountIds } : null;
+  }
+  return source.holdings.length > 0
+    ? { adHoc: { taxable: source.taxable, holdings: source.holdings } }
+    : null;
+}
+
+function toTargetRequest(target: RebalanceTargetValue) {
+  return target.kind === "existing"
+    ? { portfolioId: target.portfolioId }
+    : { holdings: target.holdings };
+}
+
 function toListRow(p: StoredProposal): ProposalListRow {
   return {
     id: p.id,
@@ -80,12 +97,12 @@ function toListRow(p: StoredProposal): ProposalListRow {
  * input — so the question asked is "could the advisor have typed anything
  * different?". A blank input and a stored null both render "", so they match.
  *
- * Deliberately no numeric tolerance. The input displays four decimals of
- * percent, which makes the smallest edit it can express exactly the same size as
- * the rounding error of its own display: any epsilon therefore sits precisely on
- * the boundary of a real one-digit edit, and float subtraction lands on the
- * wrong side of it about half the time — swallowing the edit silently. Comparing
- * the rendered text removes the boundary rather than moving it.
+ * Deliberately no numeric tolerance. The smallest edit the input can express is
+ * exactly the same size as the rounding error of its own display, so any epsilon
+ * sits precisely on the boundary of a real one-digit edit, and float subtraction
+ * lands on the wrong side of it about half the time — swallowing the edit
+ * silently. Comparing the rendered text removes the boundary rather than moving
+ * it.
  */
 function sameFeeAsDisplayed(typed: string, stored: number | null): boolean {
   return feeFractionToPct(feePctToFraction(typed)) === feeFractionToPct(stored);
@@ -134,6 +151,9 @@ export function ProposalsClient({
     accountIds: [],
   });
   const [target, setTarget] = useState<RebalanceTargetValue | null>(null);
+  /** The inputs the stored snapshot was computed from, as a comparable string.
+   *  Null until a proposal exists to compare against. */
+  const [savedInputs, setSavedInputs] = useState<string | null>(null);
 
   const refreshList = useCallback(async (): Promise<StoredProposal[]> => {
     const res = await fetch(`/api/clients/${clientId}/investment-proposals`);
@@ -164,22 +184,23 @@ export function ProposalsClient({
 
   // ── Source request derivation (ported from the rebalance builder) ──────────
 
-  const sourceRequest =
-    source.kind === "accounts"
-      ? source.accountIds.length > 0
-        ? { accountIds: source.accountIds }
-        : null
-      : source.holdings.length > 0
-        ? { adHoc: { taxable: source.taxable, holdings: source.holdings } }
-        : null;
+  const sourceRequest = toSourceRequest(source);
 
-  const targetLabel =
-    target === null
+  /** What the list will show for a target. Derived, so it is also what tells a
+   *  renamed custom mix apart from the one the proposal was computed from. */
+  const labelFor = (t: RebalanceTargetValue | null) =>
+    t === null
       ? ""
-      : target.kind === "existing"
-        ? (fundPortfolios.find((p) => p.id === target.portfolioId)?.name ?? "Fund portfolio")
-        : target.name?.trim() || "Custom ticker mix";
+      : t.kind === "existing"
+        ? (fundPortfolios.find((p) => p.id === t.portfolioId)?.name ?? "Fund portfolio")
+        : t.name?.trim() || "Custom ticker mix";
+
+  const targetLabel = labelFor(target);
   const defaultName = targetLabel ? `Move to ${targetLabel}` : "New proposal";
+
+  /** Every snapshot input the two editors own, as one comparable string. */
+  const inputsKey = (s: RebalanceSourceValue, t: RebalanceTargetValue | null) =>
+    JSON.stringify([toSourceRequest(s), t && toTargetRequest(t), labelFor(t)]);
 
   const feeError = feePctError(feeCurrent) ?? feePctError(feeProposed);
 
@@ -191,13 +212,12 @@ export function ProposalsClient({
     setError(null);
     setUnresolvedTickers([]);
     try {
-      let computeTarget:
-        | { portfolioId: string }
-        | { holdings: { ticker: string; weight: number }[] };
+      // The target as the screen will hold it once this compute lands: the
+      // "save to CMAs" branch swaps an ad-hoc mix for the portfolio it just
+      // created, and the pending-edit baseline has to match what stays on screen.
+      let nextTarget: RebalanceTargetValue = target;
 
-      if (target.kind === "existing") {
-        computeTarget = { portfolioId: target.portfolioId };
-      } else if (target.saveToCma) {
+      if (target.kind === "new" && target.saveToCma) {
         // 1) create the portfolio, 2) save holdings (weights 0..1, sum 1.0), 3) compute against it
         const cmaName = target.name?.trim();
         if (!cmaName) throw new Error("Enter a name to save the fund portfolio.");
@@ -224,17 +244,15 @@ export function ProposalsClient({
           throw new Error((await putRes.json()).error ?? "Could not save holdings");
 
         // Switch to "existing" so a re-run doesn't re-create the portfolio
-        setTarget({ kind: "existing", portfolioId: created.id });
-        computeTarget = { portfolioId: created.id };
-      } else {
-        computeTarget = { holdings: target.holdings };
+        nextTarget = { kind: "existing", portfolioId: created.id };
+        setTarget(nextTarget);
       }
 
       const rate = overrideRateArg ?? overrideRate;
       const inputs = {
         name: name.trim() || defaultName,
         source: sourceRequest,
-        target: computeTarget,
+        target: toTargetRequest(nextTarget),
         targetLabel,
         advisoryFeeCurrent: feePctToFraction(feeCurrent),
         advisoryFeeProposed: feePctToFraction(feeProposed),
@@ -270,6 +288,9 @@ export function ProposalsClient({
       setName(inputs.name);
       setSavedName(inputs.name);
       setOverrideRate(rate);
+      // The snapshot now describes these inputs, so they become the baseline a
+      // later edit is measured against.
+      setSavedInputs(inputsKey(source, nextTarget));
       // Keep the list current so "Back to proposals" doesn't show a stale table.
       // A failure here must not read as a failed compute — the snapshot landed.
       await refreshList().catch(() => {});
@@ -296,6 +317,13 @@ export function ProposalsClient({
     snapshot !== null &&
     (!sameFeeAsDisplayed(feeCurrent, snapshot.fees.advisoryFeeCurrent) ||
       !sameFeeAsDisplayed(feeProposed, snapshot.fees.advisoryFeeProposed));
+
+  // Source, target and the label the list shows are only ever written by a
+  // compute — `save()` cannot send them without repeating the portfolio-creating
+  // branch above. So an edit to them blocks the save rather than being dropped
+  // into a PUT that would recompute from the stored inputs and stamp a fresh
+  // as-of date on a portfolio the numbers never came from.
+  const inputsPending = savedInputs !== null && inputsKey(source, target) !== savedInputs;
 
   // ── Save ───────────────────────────────────────────────────────────────────
 
@@ -349,6 +377,7 @@ export function ProposalsClient({
     setOverrideRate(null);
     setSource({ kind: "accounts", accountIds: [] });
     setTarget(null);
+    setSavedInputs(null);
     setError(null);
     setUnresolvedTickers([]);
     setMode("builder");
@@ -365,8 +394,13 @@ export function ProposalsClient({
     setFeeCurrent(feeFractionToPct(row.advisoryFeeCurrent));
     setFeeProposed(feeFractionToPct(row.advisoryFeeProposed));
     setOverrideRate(row.overrideLtcgRate);
-    setSource(toSourceValue(row.source));
-    setTarget(toTargetValue(row.target));
+    const openedSource = toSourceValue(row.source);
+    const openedTarget = toTargetValue(row.target);
+    setSource(openedSource);
+    setTarget(openedTarget);
+    // Both editors seed themselves from these without emitting, so the inputs on
+    // screen start out exactly the ones the stored snapshot was computed from.
+    setSavedInputs(inputsKey(openedSource, openedTarget));
     setError(null);
     setUnresolvedTickers([]);
     setMode("builder");
@@ -529,7 +563,8 @@ export function ProposalsClient({
             // Saving a fee the schema will reject (`.max(0.1)`) comes back as a
             // Zod `issues` body with no `error` key, which surfaces as a generic
             // "Could not save" — so gate on the same validation Compute uses.
-            disabled={loading || saving || feeError !== null}
+            // A pending source/target edit blocks it too: see `inputsPending`.
+            disabled={loading || saving || feeError !== null || inputsPending}
             className="rounded-md border border-hair-2 px-4 py-2 text-sm text-ink-2 hover:bg-card-hover disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save & close"}
@@ -545,6 +580,13 @@ export function ProposalsClient({
         <p className="text-xs text-warn">
           The advisory fee changed. Recompute to update the fee comparison and the break-even —
           saving will recompute for you.
+        </p>
+      )}
+
+      {inputsPending && (
+        <p className="text-xs text-warn">
+          The portfolios being compared changed. Recompute to apply them — until then this proposal
+          still holds the ones its numbers came from, so it can&rsquo;t be saved.
         </p>
       )}
 
