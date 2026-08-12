@@ -1,0 +1,277 @@
+// The loader's own IO is exercised by the route tests; what matters here is
+// that it assembles a context the PURE layers accept — and that a missing Monte
+// Carlo degrades to "no confidence fact" rather than a zero.
+//
+// Only the IO edges are mocked (tree load, projection, Monte Carlo cache, the
+// scenario-changes queries, the balance-sheet builders). `buildStoryFacts`,
+// `groupStrategies`, `describeChange`, `buildTargetNames` and
+// `buildBaseResolveData` all run for real, so an assertion about a fact id or a
+// row's text is an assertion about what the loader actually handed them —
+// not about a mock echoed back.
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+const fx = vi.hoisted(() => ({
+  client: {} as Record<string, unknown>,
+  accounts: [] as Array<Record<string, unknown>>,
+  /** scenarioId → the projection years that ref should produce. */
+  years: {} as Record<string, Array<Record<string, unknown>>>,
+  /** scenarioId → success rate. A missing entry makes the cache throw. */
+  mc: {} as Record<string, number>,
+  changes: [] as Array<Record<string, unknown>>,
+  toggleGroups: [] as Array<Record<string, unknown>>,
+  /** Every argument object `getOrComputeMonteCarlo` was called with. */
+  mcCalls: [] as Array<Record<string, unknown>>,
+  changeQueries: [] as string[],
+}));
+
+vi.mock("@/lib/scenario/loader", () => ({
+  // The fake tree carries the ref's id so the projection mock can hand back a
+  // different set of years per scenario.
+  loadEffectiveTreeForRef: vi.fn(
+    async (_clientId: string, _firmId: string, ref: { id: string }) => ({
+      effectiveTree: { client: fx.client, accounts: fx.accounts, scenarioId: ref.id },
+    }),
+  ),
+}));
+
+vi.mock("@/engine/projection", () => ({
+  runProjectionWithEvents: vi.fn((tree: { scenarioId: string }) => ({
+    years: fx.years[tree.scenarioId] ?? [],
+  })),
+}));
+
+vi.mock("@/lib/compute-cache/monte-carlo", () => ({
+  getOrComputeMonteCarlo: vi.fn(async (args: { scenarioId: string }) => {
+    fx.mcCalls.push(args);
+    const successRate = fx.mc[args.scenarioId];
+    if (successRate == null) throw new Error("mc unavailable");
+    return { payload: { summary: { successRate } } };
+  }),
+}));
+
+vi.mock("@/lib/scenario/changes", () => ({
+  loadScenarioChanges: vi.fn(async (scenarioId: string) => {
+    fx.changeQueries.push(scenarioId);
+    return fx.changes;
+  }),
+  loadScenarioToggleGroups: vi.fn(async () => fx.toggleGroups),
+}));
+
+// The balance-sheet builders are covered by their own suites; here they only
+// have to hand back stable household totals.
+vi.mock("@/lib/balance-sheet/merge-synthetic-accounts", () => ({
+  mergeSyntheticAccounts: vi.fn((tree: unknown) => tree),
+}));
+vi.mock("@/lib/balance-sheet/build-view-model-inputs", () => ({
+  buildViewModelInputs: vi.fn(() => ({
+    accounts: [], liabilities: [], entities: [], familyMembers: [], notesReceivable: [],
+  })),
+}));
+vi.mock("@/components/balance-sheet-report/view-model", () => ({
+  buildViewModel: vi.fn(() => ({
+    totalAssets: 2_400_000,
+    totalLiabilities: 300_000,
+    netWorth: 2_100_000,
+  })),
+}));
+
+import { loadStoryContext } from "../load-context";
+
+const CLIENT = {
+  firstName: "Alan",
+  lastName: "Bradshaw",
+  spouseName: "Teresa",
+  dateOfBirth: "1979-04-02",
+  retirementAge: 62,
+  lifeExpectancy: 90,
+};
+
+const year = (y: number, taxable: number, cash: number, retirement: number) => ({
+  year: y,
+  portfolioAssets: { taxableTotal: taxable, cashTotal: cash, retirementTotal: retirement },
+});
+
+/** 2026 → $1.2M liquid, 2065 → $2.0M liquid. */
+const BASE_YEARS = [year(2026, 400_000, 100_000, 700_000), year(2065, 900_000, 100_000, 1_000_000)];
+/** Same start, $2.6M left at the end — distinct from every base figure. */
+const PROPOSED_YEARS = [year(2026, 400_000, 100_000, 700_000), year(2065, 1_200_000, 100_000, 1_300_000)];
+
+const display = (ctx: { facts: Array<{ id: string; display: string }> }, id: string) =>
+  ctx.facts.find((f) => f.id === id)?.display ?? null;
+
+let errorSpy: ReturnType<typeof vi.spyOn>;
+
+beforeEach(() => {
+  fx.client = { ...CLIENT };
+  fx.accounts = [];
+  fx.years = { base: BASE_YEARS };
+  fx.mc = {};
+  fx.changes = [];
+  fx.toggleGroups = [];
+  fx.mcCalls = [];
+  fx.changeQueries = [];
+  // The Monte-Carlo-failure path logs; keep the suite's output clean while
+  // still asserting the failure was recorded rather than silently swallowed.
+  errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+});
+
+afterEach(() => {
+  errorSpy.mockRestore();
+});
+
+describe("loadStoryContext", () => {
+  it("omits the confidence facts when Monte Carlo fails, and never throws", async () => {
+    const ctx = await loadStoryContext({
+      clientId: "c1",
+      firmId: "f1",
+      proposedRef: null,
+      scenarioLabel: "Base Case",
+      documentRole: "standalone",
+    });
+
+    // Absent, never zeroed — a 0% confidence figure in a client document is a lie.
+    expect(ctx.facts.some((f) => f.id === "outcome.confidence.base")).toBe(false);
+    expect(ctx.facts.some((f) => f.id === "outcome.confidence.proposed")).toBe(false);
+    expect(errorSpy).toHaveBeenCalled();
+
+    expect(ctx.hasProposal).toBe(false);
+    expect(ctx.strategies).toEqual([]);
+    expect(ctx.household.firstNames).toBe("Alan and Teresa");
+    expect(ctx.household.householdName).toBe("the Bradshaw household");
+    expect(ctx.scenarioLabel).toBe("Base Case");
+    expect(ctx.documentRole).toBe("standalone");
+  });
+
+  it("maps the balance sheet, the projection ends and the retirement year into the pack", async () => {
+    const ctx = await loadStoryContext({
+      clientId: "c1",
+      firmId: "f1",
+      proposedRef: null,
+      scenarioLabel: "Base Case",
+      documentRole: "standalone",
+    });
+
+    expect(display(ctx, "today.assets")).toBe("$2.4M");
+    expect(display(ctx, "today.debts")).toBe("$300K");
+    expect(display(ctx, "today.netWorth")).toBe("$2.1M");
+    // First projection year's liquid buckets, not the last.
+    expect(display(ctx, "today.liquid")).toBe("$1.2M");
+    // Last projection year's, not the first.
+    expect(display(ctx, "outcome.legacy.base")).toBe("$2.0M");
+    // Birth year + retirementAge — not life expectancy, not the plan end.
+    expect(display(ctx, "plan.retirementYear")).toBe("2041");
+    expect(display(ctx, "plan.endOfLifeYear")).toBe("2065");
+    // Base-only: there is no proposed plan to leave anything behind.
+    expect(ctx.facts.some((f) => f.id === "outcome.legacy.proposed")).toBe(false);
+  });
+
+  it("names a household with no spouse without a dangling 'and'", async () => {
+    fx.client = { ...CLIENT, spouseName: undefined };
+
+    const ctx = await loadStoryContext({
+      clientId: "c1",
+      firmId: "f1",
+      proposedRef: null,
+      scenarioLabel: "Base Case",
+      documentRole: "standalone",
+    });
+
+    expect(ctx.household.firstNames).toBe("Alan");
+  });
+
+  describe("with a proposed scenario", () => {
+    beforeEach(() => {
+      fx.years = { base: BASE_YEARS, "sc-1": PROPOSED_YEARS };
+      fx.mc = { base: 0.72, "sc-1": 0.91 };
+      fx.accounts = [{ id: "acct-1", name: "Joint Brokerage", category: "taxable" }];
+      fx.toggleGroups = [
+        { id: "grp-1", scenarioId: "sc-1", name: "Save more, spend less", defaultOn: true, requiresGroupId: null, orderIndex: 0 },
+      ];
+      fx.changes = [
+        {
+          id: "ch-1", scenarioId: "sc-1", opType: "add", targetKind: "savings_rule", targetId: "sr-1",
+          payload: { accountId: "acct-1", annualAmount: 30_000 }, toggleGroupId: "grp-1", orderIndex: 0,
+        },
+        {
+          id: "ch-2", scenarioId: "sc-1", opType: "edit", targetKind: "expense", targetId: "exp-1",
+          payload: { amount: { from: 60_000, to: 48_000 } }, toggleGroupId: "grp-1", orderIndex: 1,
+        },
+        {
+          id: "ch-3", scenarioId: "sc-1", opType: "edit", targetKind: "client", targetId: "c1",
+          payload: { retirementAge: { from: 65, to: 62 } }, toggleGroupId: null, orderIndex: 2,
+        },
+      ];
+    });
+
+    const load = () =>
+      loadStoryContext({
+        clientId: "c1",
+        firmId: "f1",
+        proposedRef: "sc-1",
+        scenarioLabel: "Retire at 62",
+        documentRole: "frontMatter",
+      });
+
+    it("groups the scenario's changes into named strategies", async () => {
+      const ctx = await load();
+
+      expect(ctx.hasProposal).toBe(true);
+      expect(ctx.documentRole).toBe("frontMatter");
+      // Toggle-group members collapse under the group's own name; the loose
+      // change keeps the row's name. Order follows the changes table.
+      expect(ctx.strategies.map((s) => s.name)).toEqual(["Save more, spend less", "Retirement age"]);
+      expect(ctx.strategies[0].rows).toHaveLength(2);
+      expect(ctx.strategies[1].rows).toHaveLength(1);
+      expect(fx.changeQueries).toEqual(["sc-1"]);
+    });
+
+    it("resolves account names in the change text rather than 'an account'", async () => {
+      const ctx = await load();
+
+      expect(ctx.strategies[0].rows[0].detail[0]).toBe("Joint Brokerage · $30k/yr");
+    });
+
+    it("puts the strategies' own figures in the fact pack", async () => {
+      const ctx = await load();
+
+      // The recommendation chapter may only print a change's text when every
+      // figure in it is grounded. These entries exist only if the loader handed
+      // the SAME strategies to buildStoryFacts that it put on the context —
+      // passing [] would compile and silently gut the chapter.
+      expect(display(ctx, "quoted.$30k")).toBe("$30k");
+      expect(display(ctx, "quoted.$60k")).toBe("$60k");
+      expect(display(ctx, "quoted.$48k")).toBe("$48k");
+      expect(ctx.facts.find((f) => f.id === "quoted.$30k")?.label).toContain("Save more, spend less");
+    });
+
+    it("reads each plan's confidence from the compute cache under its own scenario id", async () => {
+      const ctx = await load();
+
+      expect(display(ctx, "outcome.confidence.base")).toBe("72%");
+      expect(display(ctx, "outcome.confidence.proposed")).toBe("91%");
+      expect(display(ctx, "outcome.legacy.proposed")).toBe("$2.6M");
+      // Both plans read through the cache, each under its own key, so the PDF
+      // render step reuses these runs instead of simulating twice. Order is
+      // incidental — the two loads race.
+      expect(fx.mcCalls).toHaveLength(2);
+      expect(fx.mcCalls).toEqual(
+        expect.arrayContaining([
+          { clientId: "c1", firmId: "f1", scenarioId: "base" },
+          { clientId: "c1", firmId: "f1", scenarioId: "sc-1" },
+        ]),
+      );
+      expect(errorSpy).not.toHaveBeenCalled();
+    });
+
+    it("keeps the proposed plan's figures when only its Monte Carlo fails", async () => {
+      fx.mc = { base: 0.72 };
+
+      const ctx = await load();
+
+      expect(display(ctx, "outcome.confidence.base")).toBe("72%");
+      expect(ctx.facts.some((f) => f.id === "outcome.confidence.proposed")).toBe(false);
+      expect(display(ctx, "outcome.legacy.proposed")).toBe("$2.6M");
+      expect(ctx.strategies).toHaveLength(2);
+    });
+  });
+});
