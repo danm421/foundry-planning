@@ -5,7 +5,7 @@ import type { AssetClassWeight } from "@/lib/investments/benchmarks";
 import type { MonthlyReturn } from "@/lib/cma-stats";
 import type { CorrelationRow } from "@/engine/monteCarlo/correlation-matrix";
 import { buildHoldingSeries } from "./panel-from-holdings";
-import { alignToCommonWindow } from "./common-window";
+import { alignToCommonWindow, type AlignedWindows } from "./common-window";
 import { toNamedWeights, buildAssetMixDelta, buildTradeSummary } from "./comparison";
 import { estimateRealizedGain, deriveEffectiveLtcgRate, estimateRebalanceTax } from "./tax-estimate";
 import type { CapGainsTier } from "@/lib/tax/types";
@@ -57,6 +57,30 @@ export interface RebalanceInputs {
   overrideLtcgRate?: number;
   /** Source-side tickers the loader couldn't classify (outside portfolios only). */
   sourceUnresolvedTickers?: string[];
+}
+
+/** The two portfolios' monthly return series, restricted to the months both
+ *  sides share. Exported because the proposals layer needs the aligned series
+ *  themselves — the backtest chart and the stress windows are drawn from them,
+ *  and `assembleRebalanceResult` keeps only the summary stats. */
+export function alignRebalanceSeries(input: RebalanceInputs): AlignedWindows {
+  const curBuilt = buildHoldingSeries(
+    input.currentHoldings.map((h) => ({
+      securityId: h.securityId,
+      ticker: h.ticker,
+      marketValue: h.marketValue,
+    })),
+    input.currentReturnsBySecurity,
+  );
+  const tgtBuilt = buildHoldingSeries(
+    input.targetHoldings.map((h) => ({
+      securityId: h.securityId,
+      ticker: h.ticker,
+      marketValue: h.weight,
+    })),
+    input.targetReturnsBySecurity,
+  );
+  return alignToCommonWindow(curBuilt.series, tgtBuilt.series);
 }
 
 export function assembleRebalanceResult(input: RebalanceInputs): RebalanceComputeResult {
