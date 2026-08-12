@@ -57,4 +57,39 @@ describe("computeBreakEven", () => {
     expect(r.verdict).toBe("beyond_horizon");
     expect(r.years).toBeGreaterThan(25);
   });
+
+  it("prioritizes the tax guard when both tax and benefit are zero or negative", () => {
+    // estimatedTax = 0, annualBenefit = 1M * (-0.002 + 0) = -2_000
+    const r = computeBreakEven({
+      estimatedTax: 0,
+      totalValue: 1_000_000,
+      returnDelta: -0.002,
+      feeSavingRate: null,
+    });
+    expect(r.verdict).toBe("no_tax_cost");
+    expect(r.years).toBeNull();
+  });
+
+  it("returns recovered at exactly 25 years", () => {
+    // annualBenefit = 1M * 0.008 = 8_000, years = 200_000 / 8_000 = 25 exactly
+    const r = computeBreakEven({
+      estimatedTax: 200_000,
+      totalValue: 1_000_000,
+      returnDelta: 0.008,
+      feeSavingRate: null,
+    });
+    expect(r.years).toBe(25);
+    expect(r.verdict).toBe("recovered");
+  });
+
+  it("returns beyond_horizon just past 25 years", () => {
+    // annualBenefit = 1M * 0.008 = 8_000, years = 200_001 / 8_000 = 25.000125
+    const r = computeBreakEven({
+      estimatedTax: 200_001,
+      totalValue: 1_000_000,
+      returnDelta: 0.008,
+      feeSavingRate: null,
+    });
+    expect(r.verdict).toBe("beyond_horizon");
+  });
 });
