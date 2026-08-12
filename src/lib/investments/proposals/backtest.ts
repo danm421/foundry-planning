@@ -9,12 +9,21 @@ const DEFAULT_START_VALUE = 100_000;
 /** `MonthlyReturn.date` is `YYYY-MM-01`; windows are compared on `YYYY-MM`. */
 const ym = (date: string): string => date.slice(0, 7);
 
+/** The `YYYY-MM` one month before `ym`, handling the January year boundary. */
+function prevMonth(ym: string): string {
+  const [y, m] = ym.split("-").map(Number);
+  const py = m === 1 ? y - 1 : y;
+  const pm = m === 1 ? 12 : m - 1;
+  return `${py}-${String(pm).padStart(2, "0")}`;
+}
+
 function compound(returns: readonly MonthlyReturn[], startValue: number): BacktestPoint[] {
   const points: BacktestPoint[] = [];
   let value = startValue;
   // The opening point anchors both lines at the same place so the chart reads
-  // as "same dollar in, different dollar out".
-  if (returns.length > 0) points.push({ date: ym(returns[0].date), value });
+  // as "same dollar in, different dollar out". It's dated one month before the
+  // first return so it doesn't collide with that return's own point.
+  if (returns.length > 0) points.push({ date: prevMonth(ym(returns[0].date)), value });
   for (const r of returns) {
     value *= 1 + r.r;
     points.push({ date: ym(r.date), value });
@@ -89,13 +98,19 @@ export function buildStressWindows(
     const available = c.length === expected && p.length === expected;
 
     if (!available) {
+      // The aligned series share an identical date set by construction, so
+      // `c`'s coverage count speaks for both sides.
+      const unavailableReason =
+        c.length === 0
+          ? "One or more holdings launched after this period."
+          : "Full-period data isn't available for one or more holdings in this window, so the loss shown would understate what actually happened.";
       return {
         key: w.key,
         label: w.label,
         start: w.start,
         end: w.end,
         available: false,
-        unavailableReason: "One or more holdings launched after this period.",
+        unavailableReason,
         currentReturn: null,
         proposedReturn: null,
         currentDrawdown: null,

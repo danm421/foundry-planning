@@ -45,6 +45,16 @@ describe("buildBacktestSeries", () => {
   it("returns null below the minimum window rather than drawing a short line", () => {
     expect(buildBacktestSeries(aligned("2020-01", "2021-06", 0.01, 0.005), 100_000)).toBeNull();
   });
+
+  it("anchors the opening point one month before the first return, with all dates unique and increasing", () => {
+    const r = buildBacktestSeries(aligned("2015-01", "2020-12", 0.01, 0.005), 100_000)!;
+    const dates = r.current.map((p) => p.date);
+    expect(new Set(dates).size).toBe(dates.length);
+    for (let i = 1; i < dates.length; i++) {
+      expect(dates[i] > dates[i - 1]).toBe(true);
+    }
+    expect(dates[0]).toBe("2014-12"); // one month before the window's first month, crossing the year boundary
+  });
 });
 
 describe("buildStressWindows", () => {
@@ -76,5 +86,16 @@ describe("buildStressWindows", () => {
     // decline than actually occurred.
     const r = buildStressWindows(aligned("2008-06", "2023-12", -0.01, -0.005), 1_000_000);
     expect(r.find((w) => w.key === "gfc")!.available).toBe(false);
+  });
+
+  it("gives a different reason for partial coverage than for no coverage at all", () => {
+    const noCoverage = buildStressWindows(aligned("2015-01", "2023-12", -0.01, -0.005), 1_000_000).find(
+      (w) => w.key === "gfc",
+    )!;
+    const partialCoverage = buildStressWindows(aligned("2008-06", "2023-12", -0.01, -0.005), 1_000_000).find(
+      (w) => w.key === "gfc",
+    )!;
+    expect(noCoverage.unavailableReason).toMatch(/launched after/i);
+    expect(partialCoverage.unavailableReason).not.toMatch(/launched after/i);
   });
 });
