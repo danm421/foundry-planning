@@ -18,6 +18,7 @@ export async function upsertClassifiedSecurity(c: ClassifiedSecurity): Promise<s
         classifierSource: c.classifierSource,
         classifierVersion: c.classifierVersion,
         rawPayload: c.rawPayload ?? null,
+        expenseRatio: c.expenseRatio == null ? null : String(c.expenseRatio),
       })
       .onConflictDoUpdate({
         target: [securities.identifierType, securities.identifier],
@@ -27,6 +28,7 @@ export async function upsertClassifiedSecurity(c: ClassifiedSecurity): Promise<s
           classifierSource: c.classifierSource,
           classifierVersion: c.classifierVersion,
           rawPayload: c.rawPayload ?? null,
+          expenseRatio: c.expenseRatio == null ? null : String(c.expenseRatio),
           classifiedAt: new Date(),
           updatedAt: new Date(),
         },
