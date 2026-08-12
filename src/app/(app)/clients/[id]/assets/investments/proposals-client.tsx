@@ -73,11 +73,22 @@ function toListRow(p: StoredProposal): ProposalListRow {
   };
 }
 
-/** A blank input and a stored null are both "no fee"; two numbers match within
- *  the rounding the percent round-trip introduces. */
+/**
+ * Half a unit of the last digit `feeFractionToPct` keeps — it rounds to four
+ * decimals OF PERCENT, which is 1e-6 as a fraction. Any tighter and a stored
+ * fee like 0.0123456 reads as edited the moment the proposal opens, so a
+ * "Save & close" that changed nothing recomputes and advances the as-of date —
+ * destroying the one staleness signal this screen sells. Any looser and a real
+ * edit could be missed: the input's step is 0.01%, i.e. 1e-4, a hundred times
+ * this bound.
+ */
+const FEE_EPSILON = 1e-6;
+
+/** A blank input and a stored null are both "no fee"; two numbers match when
+ *  they agree to the precision the percent input can carry. */
 function sameFee(a: number | null, b: number | null): boolean {
   if (a === null || b === null) return a === b;
-  return Math.abs(a - b) < 1e-9;
+  return Math.abs(a - b) <= FEE_EPSILON;
 }
 
 async function errorFrom(res: Response, fallback: string): Promise<{
@@ -428,7 +439,10 @@ export function ProposalsClient({
         {listError && <p className="text-sm text-crit">{listError}</p>}
         {busyId && <p className="text-sm text-ink-3">Working…</p>}
 
-        {listLoading ? (
+        {/* A failed load leaves `stored` empty, and an empty state under the
+            error would tell the advisor this client has no proposals — reporting
+            lost data as absent data. Show the error alone. */}
+        {listError ? null : listLoading ? (
           <p className="text-sm text-ink-3">Loading proposals…</p>
         ) : (
           <ProposalList
@@ -513,7 +527,10 @@ export function ProposalsClient({
           <button
             type="button"
             onClick={() => void save()}
-            disabled={loading || saving}
+            // Saving a fee the schema will reject (`.max(0.1)`) comes back as a
+            // Zod `issues` body with no `error` key, which surfaces as a generic
+            // "Could not save" — so gate on the same validation Compute uses.
+            disabled={loading || saving || feeError !== null}
             className="rounded-md border border-hair-2 px-4 py-2 text-sm text-ink-2 hover:bg-card-hover disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save & close"}
