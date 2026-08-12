@@ -67,13 +67,15 @@ export async function computeProposalSnapshot(
   // stats context rather than opening a second one.
   const rungs: RungPortfolio[] = await loadRungVolatilities(rungRows, inputs);
 
-  // Hoisted out of the ternary: TypeScript drops an `in` narrowing on a property
-  // path once it is read again inside a callback, so `target` has to be a local.
-  const target = args.request.target;
-  const proposedLevel: RiskLevel | null =
-    "portfolioId" in target
-      ? (rungRows.find((r) => r.id === target.portfolioId)?.riskLevel ?? null)
-      : null;
+  // Always null, deliberately. A proposal's `target.portfolioId` addresses
+  // `ticker_portfolios`, and that table carries no risk rung — only
+  // `model_portfolios` is taggable. The lookup that used to sit here searched
+  // `rungRows` (model portfolios) for a ticker-portfolio id, so it could never
+  // match; it read as a resolution but was really a hard-coded null wearing a
+  // query. Until fund portfolios become taggable, the nearest-volatility
+  // estimate IS the honest answer and `buildSuitability` labels it as one.
+  // Resolve the rung here if that tagging feature ever ships.
+  const proposedLevel: RiskLevel | null = null;
 
   return buildProposalSnapshot({
     compute,
