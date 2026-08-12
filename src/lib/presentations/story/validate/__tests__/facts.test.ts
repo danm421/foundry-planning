@@ -156,6 +156,48 @@ describe("validateFacts — evasions", () => {
     expect(validateFacts("Liquid assets are US$2.1M today.", FACTS)).toEqual([]);
   });
 
+  it("I3 — catches a figure spelled out in words", () => {
+    // The most natural evasion there is: the system prompt asks for warm,
+    // conversational prose, and a model writing that way reaches for "about two
+    // and a half million" without meaning to invent anything.
+    const cases: ReadonlyArray<readonly [string, string]> = [
+      ["Your plan grows to three point four million dollars.", "three point four million dollars"],
+      ["Confidence climbs to ninety six percent.", "ninety six percent"],
+      ["The gift is two hundred thousand dollars.", "two hundred thousand dollars"],
+      ["You draw eight hundred dollars a month.", "eight hundred dollars"],
+    ];
+    for (const [md, quoted] of cases) {
+      const failures = validateFacts(md, FACTS);
+      expect(failures, md).toHaveLength(1);
+      expect(failures[0].message, md).toContain(quoted);
+    }
+  });
+
+  it("I3 — leaves number words that name no money alone", () => {
+    // The other side of the same branch. Ages, counts and durations are not plan
+    // outputs, and the model needs them to write naturally — so a number word is
+    // only a figure when a money or percent noun follows it.
+    expect(extractFigures("Both of you turn sixty two next year.")).toEqual([]);
+    expect(extractFigures("We looked at three changes and two accounts.")).toEqual([]);
+    expect(extractFigures("You retire in about ten years.")).toEqual([]);
+    expect(extractFigures("The plan holds for one more decade.")).toEqual([]);
+  });
+
+  it("I4 — catches a bare four-digit number, which reads as a hard figure", () => {
+    const failures = validateFacts("Your monthly benefit is 3400 a month.", FACTS);
+    expect(failures).toHaveLength(1);
+    expect(failures[0].message).toContain("3400");
+  });
+
+  it("I4 — leaves the year branch in charge of year-shaped numbers", () => {
+    // Lowering the bare-integer floor to four digits puts it in reach of every
+    // year, so the year branch has to keep precedence: a supplied year must
+    // still be quoted as itself and must still be allowed.
+    expect(extractFigures("You retire in 2041.")).toEqual(["2041"]);
+    expect(validateFacts("You retire in 2041.", FACTS)).toEqual([]);
+    expect(validateFacts("You retire in 2038.", FACTS)[0].message).toContain("2038");
+  });
+
   it("deliberately over-fires on year-shaped numbers that are not years", () => {
     // Documented and accepted. This rejects valid prose, costing a retry and at
     // worst the deterministic fallback — the safe direction. Do not "fix" it by

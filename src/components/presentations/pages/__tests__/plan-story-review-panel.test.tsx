@@ -77,18 +77,18 @@ afterEach(() => {
 
 describe("PlanStoryReviewPanel", () => {
   it("lists every chapter with its text", async () => {
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" />);
+    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
     expect(await screen.findByText("Your plan, in one page")).toBeTruthy();
     expect(await screen.findByDisplayValue("Your plan holds.")).toBeTruthy();
   });
 
   it("shows a not-generated chapter as awaiting generation", async () => {
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" />);
+    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
     expect(await screen.findByText(/not generated/i)).toBeTruthy();
   });
 
   it("saves an edit back to the chapter route", async () => {
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" />);
+    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
     const box = await screen.findByDisplayValue("Your plan holds.");
     fireEvent.change(box, { target: { value: "My own words." } });
     fireEvent.blur(box);
@@ -103,7 +103,7 @@ describe("PlanStoryReviewPanel", () => {
   });
 
   it("does not re-save a chapter the advisor only clicked into", async () => {
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" />);
+    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
     const box = await screen.findByDisplayValue("Your plan holds.");
     fireEvent.blur(box);
     await waitFor(() => expect(calls().length).toBeGreaterThan(0));
@@ -128,7 +128,7 @@ describe("PlanStoryReviewPanel", () => {
     });
     vi.stubGlobal("fetch", fn);
 
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" />);
+    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
     const box = await screen.findByDisplayValue("The model's words.");
     fireEvent.change(box, { target: { value: "" } });
     fireEvent.blur(box);
@@ -151,7 +151,7 @@ describe("PlanStoryReviewPanel", () => {
     });
     vi.stubGlobal("fetch", fn);
 
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" />);
+    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
     const box = await screen.findByDisplayValue("Your plan holds.");
     fireEvent.change(box, { target: { value: "My own words." } });
     fireEvent.blur(box);
@@ -166,7 +166,7 @@ describe("PlanStoryReviewPanel", () => {
   });
 
   it("marks a chapter reviewed", async () => {
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" />);
+    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
     const buttons = await screen.findAllByRole("button", { name: /mark reviewed/i });
     fireEvent.click(buttons[0]);
     await waitFor(() => {
@@ -179,25 +179,27 @@ describe("PlanStoryReviewPanel", () => {
   });
 
   it("shows the unreviewed count so the export gate has something to read", async () => {
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" />);
+    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
     expect(await screen.findByText(/2 chapters not yet reviewed/i)).toBeTruthy();
   });
 
   it("never claims every chapter is reviewed when the chapters could not be loaded", async () => {
     stubFetch(CHAPTERS, 500);
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" />);
+    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
     await waitFor(() => expect(calls().length).toBeGreaterThan(0));
     expect(screen.queryByText(/all chapters reviewed/i)).toBeNull();
   });
 
   it("asks the routes for the base story rather than an empty scenario", async () => {
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="" />);
+    render(<PlanStoryReviewPanel clientId="c1" scenarioId="" documentRole="standalone" />);
     await waitFor(() => expect(calls().length).toBeGreaterThan(0));
     expect(String(calls()[0][0])).toContain("scenarioId=base");
   });
 
-  it("generates only when asked, and sends the scenario it is showing", async () => {
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="scenario-7" />);
+  it("generates only when asked, and sends the scenario and register it is showing", async () => {
+    render(
+      <PlanStoryReviewPanel clientId="c1" scenarioId="scenario-7" documentRole="frontMatter" />,
+    );
     await screen.findByText("Your plan, in one page");
     expect(calls().some((c) => (c[1] as RequestInit | undefined)?.method === "POST")).toBe(
       false,
@@ -210,13 +212,24 @@ describe("PlanStoryReviewPanel", () => {
       expect(post).toBeTruthy();
       expect(String(post![0])).toContain("/plan-story/generate");
       expect(String((post![1] as RequestInit).body)).toContain('"scenarioId":"scenario-7"');
+      // The Executive brief preset's whole behaviour. This panel is the generate
+      // route's only production caller, so a body without it leaves the model
+      // writing self-contained chapters for the front of a longer deck — and the
+      // route's own default is the value that hides it.
+      expect(String((post![1] as RequestInit).body)).toContain('"documentRole":"frontMatter"');
     });
+  });
+
+  it("speaks the unreviewed count, which changes under the advisor", async () => {
+    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    const summary = await screen.findByText(/2 chapters not yet reviewed/i);
+    expect(summary.getAttribute("aria-live")).toBe("polite");
   });
 
   describe("a request that did not do what it said", () => {
     it("tells the advisor when the chapters could not be loaded", async () => {
       stubFetch(CHAPTERS, 500);
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" />);
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
       expect((await screen.findByRole("alert")).textContent).toMatch(
         /couldn't load this report's chapters/i,
       );
@@ -229,7 +242,7 @@ describe("PlanStoryReviewPanel", () => {
           throw new TypeError("Failed to fetch");
         }),
       );
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" />);
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
       expect((await screen.findByRole("alert")).textContent).toMatch(/couldn't load/i);
     });
 
@@ -244,7 +257,7 @@ describe("PlanStoryReviewPanel", () => {
               }),
         ),
       );
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" />);
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
       const box = await screen.findByDisplayValue("Your plan holds.");
       fireEvent.change(box, { target: { value: "My own words." } });
       fireEvent.blur(box);
@@ -264,7 +277,7 @@ describe("PlanStoryReviewPanel", () => {
               }),
         ),
       );
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" />);
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
       fireEvent.click(await screen.findByRole("button", { name: /generate all/i }));
       expect((await screen.findByRole("alert")).textContent).toMatch(
         /nothing was generated/i,
@@ -288,7 +301,7 @@ describe("PlanStoryReviewPanel", () => {
           });
         }),
       );
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" />);
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
       const box = await screen.findByDisplayValue("Your plan holds.");
       fireEvent.change(box, { target: { value: "My own words." } });
       fireEvent.blur(box);
@@ -299,7 +312,7 @@ describe("PlanStoryReviewPanel", () => {
   });
 
   it("will not write a chapter twice when Mark reviewed is double-clicked", async () => {
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" />);
+    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
     const button = (await screen.findAllByRole("button", { name: /mark reviewed/i }))[0];
     fireEvent.click(button);
     // Marking reviewed cannot be undone from any surface and files an audit row
@@ -313,7 +326,7 @@ describe("PlanStoryReviewPanel", () => {
   describe("why a chapter is missing", () => {
     function renderWith(overrides: Partial<Row>) {
       stubFetch([{ ...CHAPTERS[0], ...overrides }]);
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" />);
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
     }
 
     it("says the assistant did not answer when the call failed", async () => {

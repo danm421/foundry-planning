@@ -7,10 +7,17 @@ import type { NextRequest } from "next/server";
  * The repo's WRITERS, the story loader and the generator are mocked — they are
  * IO or an LLM call, and Tasks 8/10/11 own their behaviour.
  *
- * The four gates are spies too, so what is proved about them is that each route
- * CALLS them, with what, and before which write — never that a gate itself
- * decides correctly. `requireActiveSubscriptionForFirm` in particular returns
- * void, so nothing but an explicit assertion can notice its removal.
+ * The gates are spies too, so what is proved about them is that each route CALLS
+ * them, WITH WHICH CLIENT ID, and before which write — never that a gate itself
+ * decides correctly.
+ *
+ * The client-id half is load-bearing rather than tidy. Both write paths are
+ * upserts, so an authorized-but-different client id does not harmlessly match
+ * zero rows — it CREATES one. "The gate rejects" tests cannot see that: a
+ * rejected gate rejects for everybody, and says nothing about who was checked.
+ * So every route below asserts the argument as well as the call, and
+ * `requireActiveSubscriptionForFirm` — whose return is void and discarded, so
+ * tsc cannot see its removal — is pinned by order as well.
  *
  * Real, and therefore actually exercised: the chapter projection,
  * `resolveChapterText`'s precedence, the `requiresProposal` filter (off the
@@ -147,7 +154,15 @@ beforeEach(() => {
   mocks.updateChapterText.mockResolvedValue(undefined);
   mocks.markChapterReviewed.mockResolvedValue(undefined);
   mocks.upsertGeneratedChapter.mockResolvedValue(undefined);
-  mocks.loadStoryContext.mockResolvedValue({ hasProposal: false, facts: [], strategies: [] });
+  // Identity-preserving: the loader echoes the document role it was handed, so
+  // the value the ROUTE derived is observable at `generateChapter`, which is the
+  // only place the model's register is decided.
+  mocks.loadStoryContext.mockImplementation(async ({ documentRole }: { documentRole: string }) => ({
+    hasProposal: false,
+    facts: [],
+    strategies: [],
+    documentRole,
+  }));
   mocks.generateChapter.mockImplementation(async ({ chapterId }: { chapterId: string }) => ({
     chapterId,
     markdown: "Words.",
@@ -224,6 +239,19 @@ describe("GET /api/clients/[id]/plan-story", () => {
     });
   });
 
+  // Kills: `verifyClientAccess("OTHER-CLIENT")` — a gate that authorizes one
+  // client while the read runs against another. Every other test in this
+  // describe passes whatever id the route hands the gate.
+  it("authorizes the same client whose chapters it reads", async () => {
+    await GET(req("http://x/?scenarioId=base"), {
+      params: Promise.resolve({ id: CLIENT_ID }),
+    });
+    expect(mocks.verifyClientAccess).toHaveBeenCalledWith(CLIENT_ID);
+    expect(mocks.verifyClientAccess.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.listStoryChapters.mock.invocationCallOrder[0],
+    );
+  });
+
   // Kills: hardcoding "base" instead of reading the query string.
   it("scopes the listing to the requested scenario", async () => {
     await GET(req(`http://x/?scenarioId=${SCENARIO_ID}`), {
@@ -274,6 +302,32 @@ describe("PATCH /api/clients/[id]/plan-story/[chapterId]", () => {
     expect(res.status).toBe(200);
     expect(mocks.updateChapterText).toHaveBeenCalledWith(
       expect.objectContaining({ editedText: "" }),
+    );
+  });
+
+  // Kills: `requireClientEditAccess("OTHER-CLIENT")` — the gate that stands in
+  // front of two upserts, checked against a client the write will not touch.
+  it("authorizes the same client it writes under", async () => {
+    await patch({ scenarioId: "base", editedText: "hi", reviewed: true });
+    expect(mocks.requireClientEditAccess).toHaveBeenCalledWith(CLIENT_ID);
+    expect(mocks.requireClientEditAccess.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.updateChapterText.mock.invocationCallOrder[0],
+    );
+    expect(mocks.requireClientEditAccess.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.markChapterReviewed.mock.invocationCallOrder[0],
+    );
+  });
+
+  // Kills: `markChapterReviewed({… scenarioId: "base" …})`. Every other
+  // reviewed:true fixture in this file is on the base story, where a hardcoded
+  // "base" is indistinguishable from the resolved one — so an advisor reviewing
+  // a proposal's chapter would stamp the base story's row instead.
+  it("marks the chapter reviewed on the scenario the advisor is looking at", async () => {
+    mocks.scenarioRows = [{ id: SCENARIO_ID }];
+    const res = await patch({ scenarioId: SCENARIO_ID, reviewed: true });
+    expect(res.status).toBe(200);
+    expect(mocks.markChapterReviewed).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: CLIENT_ID, scenarioId: SCENARIO_ID }),
     );
   });
 
@@ -411,6 +465,71 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
     expect(mocks.loadStoryContext).toHaveBeenCalledWith(
       expect.objectContaining({ clientId: CLIENT_ID, firmId: "firm_1", proposedRef: null }),
     );
+    // Kills: storing the base path's chapters under "" — the empty scope the
+    // panel and the export loader both translate AWAY from, so the rows would be
+    // written where nothing ever reads them. A call count cannot see it.
+    expect(mocks.upsertGeneratedChapter).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: CLIENT_ID, scenarioId: "base" }),
+    );
+  });
+
+  // Kills: `requireClientEditAccess("OTHER-CLIENT")` on the one endpoint that
+  // spends money, and `generateChapter({ clientId: "OTHER-CLIENT" })` — which
+  // would generate against one client's plan and store under another's.
+  it("authorizes the same client it generates and stores for", async () => {
+    await post({ scenarioId: "base" });
+    expect(mocks.requireClientEditAccess).toHaveBeenCalledWith(CLIENT_ID);
+    expect(mocks.requireClientEditAccess.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.generateChapter.mock.invocationCallOrder[0],
+    );
+    expect(mocks.generateChapter).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: CLIENT_ID }),
+    );
+  });
+
+  // Kills: hardcoding `documentRole` or `force`. The first is the Executive
+  // brief preset's entire behaviour — it is the only thing that switches the
+  // prose between standing alone and pointing at the pages after it — and the
+  // second is the only way past a 30-day cache entry that cannot be deleted.
+  it("carries the caller's document role and force flag into the generator", async () => {
+    await post({ scenarioId: "base", documentRole: "frontMatter", force: true });
+    expect(mocks.loadStoryContext).toHaveBeenCalledWith(
+      expect.objectContaining({ documentRole: "frontMatter" }),
+    );
+    expect(mocks.generateChapter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientId: CLIENT_ID,
+        force: true,
+        ctx: expect.objectContaining({ documentRole: "frontMatter" }),
+      }),
+    );
+  });
+
+  it("defaults a caller who names neither to a standalone, cache-reading run", async () => {
+    await post({ scenarioId: "base" });
+    expect(mocks.loadStoryContext).toHaveBeenCalledWith(
+      expect.objectContaining({ documentRole: "standalone" }),
+    );
+    expect(mocks.generateChapter).toHaveBeenCalledWith(
+      expect.objectContaining({ force: false, ctx: expect.objectContaining({ documentRole: "standalone" }) }),
+    );
+  });
+
+  /**
+   * Kills: auditing AFTER the writes. `Promise.all` rejects on the first failing
+   * upsert while the ones that already resolved stay committed, so the client
+   * keeps some new chapter text, the model calls are paid for, and the only
+   * record that anyone regenerated this story never lands.
+   */
+  it("records the run in the audit log even when a chapter fails to store", async () => {
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.upsertGeneratedChapter.mockRejectedValueOnce(new Error("write conflict"));
+    const res = await post({ scenarioId: "base" });
+    expect(res.status).toBe(500);
+    expect(mocks.recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "plan_story.generated", clientId: CLIENT_ID }),
+    );
+    quiet.mockRestore();
   });
 
   // Kills: inverting that filter, and confirms the proposed ref reaches the

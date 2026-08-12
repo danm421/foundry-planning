@@ -66,13 +66,32 @@ function statusLabel(row: ChapterRow): string {
   return row.edited ? "Edited" : "Generated";
 }
 
+/** "" until a GET has answered — an empty list is "not loaded yet", never "all
+ *  clear" (rule 1 above). Separated out so the live region below can be rendered
+ *  whether or not it has anything to say yet. */
+function reviewSummary(loaded: boolean, unreviewed: number): string {
+  if (!loaded) return "";
+  if (unreviewed === 0) return "All chapters reviewed";
+  return `${unreviewed} chapter${unreviewed === 1 ? "" : "s"} not yet reviewed`;
+}
+
 export function PlanStoryReviewPanel({
   clientId,
   scenarioId,
+  documentRole,
 }: {
   clientId: string;
   /** The options' scenario. Empty means a base-only story. */
   scenarioId: string;
+  /**
+   * The register the chapters are written in, straight off the report's options.
+   * This is the ONLY route into `StoryContext.documentRole` — the generate route
+   * has no other production caller — so the Executive brief preset's entire
+   * behaviour ("point at the pages that follow" rather than "close the thought")
+   * lives or dies on it being sent. Required, not defaulted: a default here is
+   * indistinguishable from the bug it replaced.
+   */
+  documentRole: "standalone" | "frontMatter";
 }) {
   // The routes want the literal "base" for a base-only story: their schema
   // requires a non-empty id (`schemas/plan-story.ts`) and
@@ -173,7 +192,7 @@ export function PlanStoryReviewPanel({
       const res = await fetch(`/api/clients/${clientId}/plan-story/generate`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ scenarioId: scenario }),
+        body: JSON.stringify({ scenarioId: scenario, documentRole }),
       });
       if (!res.ok) {
         setProblem(COULD_NOT_GENERATE);
@@ -200,13 +219,13 @@ export function PlanStoryReviewPanel({
       )}
 
       <div className="flex items-center gap-3">
-        {loaded && (
-          <p className="text-sm text-ink-3">
-            {unreviewed === 0
-              ? "All chapters reviewed"
-              : `${unreviewed} chapter${unreviewed === 1 ? "" : "s"} not yet reviewed`}
-          </p>
-        )}
+        {/* Rendered whether or not it has anything to say yet: a screen reader
+            announces a change INSIDE a live region it already knows about, not
+            the arrival of the region itself. The count changes under the
+            advisor — a Generate run rewrites every row — so it has to speak. */}
+        <p className="text-sm text-ink-3" aria-live="polite">
+          {reviewSummary(loaded, unreviewed)}
+        </p>
         <button
           type="button"
           className="ml-auto rounded border border-hair px-3 py-1.5 text-sm text-ink-2 hover:text-ink disabled:opacity-50"

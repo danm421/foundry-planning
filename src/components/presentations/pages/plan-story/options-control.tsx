@@ -3,6 +3,7 @@
 // options" — the review panel below the toggles is the same story the toggles
 // describe, on the same scenario.
 "use client";
+import { useId } from "react";
 import {
   applyPreset,
   type PlanStoryOptions,
@@ -31,6 +32,9 @@ export function PlanStoryOptionsControl({
 }) {
   const clientId = useClientId();
   const scenarios = useScenarioOptions();
+  /** A real `<label for>` needs a real id, and this control can render twice on
+   *  one page (two Plan Story entries in the same deck). */
+  const scenarioFieldId = useId();
 
   // Live scenarios only — the same set `ScenarioPickerDropdown` calls live, and
   // load-bearing rather than tidy here. Everything this drops writes a
@@ -90,11 +94,13 @@ export function PlanStoryOptionsControl({
 
         <OptionsGroup>
           <div className={`flex items-center gap-1.5 ${caption}`}>
-            <span>Proposed plan</span>
+            {/* A real label rather than an `aria-label`: it names the control to
+                a screen reader AND gives the caption a click target. */}
+            <label htmlFor={scenarioFieldId}>Proposed plan</label>
             <FieldTooltip text="The scenario this report recommends. Leave it at no proposed plan for a base-only story — the report then skips 'What we're recommending, and why'. This is the story's subject, not the deck's scenario." />
           </div>
           <select
-            aria-label="Proposed plan"
+            id={scenarioFieldId}
             className="w-56 rounded border border-hair bg-card-2 px-2 py-1 text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40"
             value={value.scenarioId}
             onChange={(e) => onChange({ ...value, scenarioId: e.target.value })}
@@ -114,7 +120,14 @@ export function PlanStoryOptionsControl({
       {clientId !== "" && (
         <div className="space-y-2 border-t border-hair pt-4">
           <div className={caption}>Review</div>
-          <PlanStoryReviewPanel clientId={clientId} scenarioId={value.scenarioId} />
+          {/* `documentRole` travels with the scenario: the panel is the only
+              caller of the generate route, so this is where the preset stops
+              being a page-layout choice and becomes what the model is told. */}
+          <PlanStoryReviewPanel
+            clientId={clientId}
+            scenarioId={value.scenarioId}
+            documentRole={value.documentRole}
+          />
         </div>
       )}
     </div>

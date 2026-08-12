@@ -131,6 +131,31 @@ describe("PlanStoryOptionsControl", () => {
     );
   });
 
+  // Kills: hardcoding the panel's `documentRole`. The preset sets it correctly
+  // in options and the export reads it correctly, but this handoff is the only
+  // path from either to the MODEL — the panel is the generate route's sole
+  // production caller — so a hardcoded value here makes the Executive brief
+  // preset inert end to end.
+  it("hands the review panel the preset's register rather than a fixed one", async () => {
+    renderControl({ scenarioId: LIVE_ID, documentRole: "frontMatter" });
+    fireEvent.click(await screen.findByRole("button", { name: /generate all/i }));
+    await waitFor(() => {
+      const post = fetchMock().mock.calls.find(
+        (c: unknown[]) => (c[1] as RequestInit | undefined)?.method === "POST",
+      );
+      expect(post).toBeTruthy();
+      expect(String((post![1] as RequestInit).body)).toContain('"documentRole":"frontMatter"');
+    });
+  });
+
+  it("names the scenario select with a real label rather than an aria-label", () => {
+    renderControl();
+    const select = screen.getByLabelText("Proposed plan");
+    expect(select.tagName).toBe("SELECT");
+    expect(select.getAttribute("aria-label")).toBeNull();
+    expect(document.querySelector(`label[for="${select.id}"]`)?.textContent).toBe("Proposed plan");
+  });
+
   it("renders no review panel and fetches nothing without a client in context", async () => {
     renderControl({}, { clientId: null });
     expect(screen.getByText("Preset")).toBeInTheDocument();

@@ -198,6 +198,20 @@ const PRESCRIPTION_RE = new RegExp(
     String.raw`\bit\s+(?:makes|would\s+make)\s+sense\s+to\b`,
     String.raw`\b(?:your|the)\s+(?:next|first|best)\s+(?:step|move)\s+is\s+to\b`,
     String.raw`\bthe\s+(?:best|right)\s+move\s+(?:is|would\s+be)\b`,
+    // The four registers the system prompt itself asks for — warm, direct,
+    // second person, contractions — and therefore the four an obedient model
+    // writes. The collective, the hedged first person, the interrogative, and
+    // the plan speaking on the advisor's behalf all instruct the reader as
+    // plainly as "you should" does.
+    //
+    // The apostrophe is REQUIRED in both contractions, and it is what keeps them
+    // from over-firing: this pattern is case-insensitive, so a bare `let'?s`
+    // would also match "lets" and reject "the plan lets you move money into
+    // bonds", and a bare `I'?d` would match every "id".
+    String.raw`\blet['’]s\b`,
+    String.raw`\bI['’]d\b`,
+    String.raw`\bwhy\s+not\b`,
+    String.raw`\bcalls\s+for\s+you\s+to\b`,
   ].join("|"),
   "giu",
 );

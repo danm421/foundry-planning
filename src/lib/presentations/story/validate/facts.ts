@@ -44,19 +44,44 @@ const UNIT = String.raw`(?: ?(?:dollars?|USD)\b)`;
 // disambiguate, so there is nothing to guard.
 const SIGN = String.raw`(?:(?<![\w%])[-+])?`;
 
+// A figure spelled in words. Every branch above needs a digit, so a model told
+// to write "the way you would talk to them across a table" evades all of them
+// simply by writing the number out — "about two and a half million" is what that
+// register reaches for, and it reads to a client as a hard figure.
+//
+// A number word alone is NOT a figure: ages, counts and durations ("you turn
+// sixty two", "three changes", "ten years") are not plan outputs, and the model
+// needs them to write naturally. The money or percent noun is what separates the
+// two, so it is required rather than optional.
+const WORD_UNIT = String.raw`(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion)`;
+/** How the words of one figure are joined: plain space, hyphen, or the two
+ *  words that carry a decimal and a remainder ("three point four", "one hundred
+ *  and twenty"). */
+const WORD_JOIN = String.raw`(?:[\s-]+(?:point|and)[\s-]+|[\s-]+)`;
+const WORD_NUM = String.raw`${WORD_UNIT}(?:${WORD_JOIN}${WORD_UNIT})*`;
+const WORD_NOUN = String.raw`(?:dollars?|USD|percent|per\s+cent)`;
+
 // Currency, percentage and year-shaped tokens, per the spec. Bare small
 // integers are deliberately NOT matched: ages and counts are not plan outputs
 // and the model needs them to write naturally. Everything money-shaped is —
 // including the sigil-less forms, which are how a model evades a naive gate.
+//
+// Order matters where two branches can match at the same position: the year
+// branch sits ABOVE the bare-integer one so a year is still quoted as a year now
+// that the floor is four digits rather than five.
 const FIGURE_RE = new RegExp(
   [
     String.raw`${SIGN}\$[-+]?(?:${NUM})${MAG}?${UNIT}?`, // $2.1M · $-2.1M · -$2.1M · $1,234 · $812
     String.raw`${SIGN}(?:${NUM}) ?%`, // 91% · 73.5% · 96 % · -12%
     String.raw`${SIGN}\d{1,3}(?:,\d{3})+(?:\.\d+)?${MAG}?${UNIT}?`, // 2,100,000 · 3,400,000 USD
-    String.raw`${SIGN}\d{5,}(?:\.\d+)?${MAG}?${UNIT}?`, // 2100000 — the same evasion, without commas
+    String.raw`\b(?:19|20)\d{2}\b`, // 2041
+    // 3400 · 2100000 — the same evasion, without commas. Four digits rather than
+    // five: "3400" reads to a client as a hard figure, and every four-digit
+    // number that is NOT a year was invisible to the branch above.
+    String.raw`${SIGN}\d{4,}(?:\.\d+)?${MAG}?${UNIT}?`,
     String.raw`${SIGN}(?:${NUM})${MAG}${UNIT}?`, // 3.4M · 3.4 million dollars
     String.raw`${SIGN}(?:${NUM})${UNIT}`, // 812 dollars
-    String.raw`\b(?:19|20)\d{2}\b`, // 2041
+    String.raw`\b${WORD_NUM}[\s-]+${WORD_NOUN}\b`, // three point four million dollars · ninety six percent
   ].join("|"),
   "giu",
 );

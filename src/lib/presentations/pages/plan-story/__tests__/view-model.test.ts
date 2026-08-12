@@ -202,6 +202,48 @@ describe("buildPlanStoryData — where the prose comes from", () => {
     expect(paragraphsOf(data, "planInOnePage")).toEqual(["One line.\nStill the same paragraph."]);
   });
 
+  /**
+   * The system prompt asks for "clean Markdown" and the renderer draws raw
+   * `<Text>`, so `##`, `**` and a table's pipes print literally on a client's
+   * page. No gate catches it — Gate 2 rejects only a NESTED heading — and the
+   * advisor's own `editedText` is never gated at all. Stripping here covers both,
+   * because both arrive as this same resolved string.
+   */
+  it("strips heading and emphasis syntax the PDF would otherwise print literally", () => {
+    const stored = "## What your plan shows\n\nYou hold **$2.1M** today, and _that_ is the whole story.";
+    const data = buildPlanStoryData(
+      deckCtx(input({}, { planInOnePage: stored })),
+      PLAN_STORY_OPTIONS_DEFAULT,
+    );
+    expect(paragraphsOf(data, "planInOnePage")).toEqual([
+      "What your plan shows",
+      "You hold $2.1M today, and that is the whole story.",
+    ]);
+  });
+
+  it("flattens a markdown table rather than printing its pipes", () => {
+    const stored = "Here is the shape of it.\n\n| Figure | Value |\n| --- | --- |\n| Liquid | $2.1M |";
+    const data = buildPlanStoryData(
+      deckCtx(input({}, { planInOnePage: stored })),
+      PLAN_STORY_OPTIONS_DEFAULT,
+    );
+    expect(paragraphsOf(data, "planInOnePage")).toEqual([
+      "Here is the shape of it.",
+      "Figure · Value\nLiquid · $2.1M",
+    ]);
+  });
+
+  it("leaves ordinary prose, dashes and figures exactly as the advisor wrote them", () => {
+    // The other side of the same rule: an em-dash, a hyphenated word and a
+    // figure are what this document is made of, and none of them is syntax.
+    const stored = "You own $2.1M — 73% of the futures work.\nA dash-joined word survives.";
+    const data = buildPlanStoryData(
+      deckCtx(input({}, { planInOnePage: stored })),
+      PLAN_STORY_OPTIONS_DEFAULT,
+    );
+    expect(paragraphsOf(data, "planInOnePage")).toEqual([stored]);
+  });
+
   it("shows each chapter only the figures scoped to it", () => {
     // `today.netWorth` belongs to "What you have" alone. Unscoped, the punchline
     // chapter's narrator would print "You're starting from $1.2M." — a figure

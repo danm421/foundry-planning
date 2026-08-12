@@ -78,8 +78,42 @@ function hasSubstance(markdown: string): boolean {
   return words.length >= MIN_CHAPTER_WORDS;
 }
 
-/** Thrown by the substance floor, so the handler can tell a stub from an outage
- *  and keep the findings the first attempt already produced. */
+/** A name has to match as a WORD. "Alan" is a substring of "balance", and a
+ *  floor that counts that is no floor at all. */
+function mentionsName(text: string, name: string): boolean {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`);
+  return new RegExp(String.raw`(?<![\p{L}\p{N}])${escaped}(?![\p{L}\p{N}])`, "iu").test(text);
+}
+
+/**
+ * Does this text name anything the request actually supplied — a figure from the
+ * pack, one of the advisor's strategy labels, or one of the household's first
+ * names?
+ *
+ * The cheapest available answer to the one question none of the four gates asks:
+ * is this draft about the plan AT ALL. All four judge what prose says, so a
+ * refusal ("I'm sorry, I can't help with that. As an AI language model…") and an
+ * echo of an injected instruction clear every one of them — no figures, short
+ * plain sentences, no advice verbs, none of the AI tells — and are then stored as
+ * the client's chapter and written to a 30-day cache that cannot be deleted.
+ *
+ * Deliberately NOT a fifth gate and not a phrase blacklist. It asks nothing
+ * about the words a draft uses, only whether any of the material we handed the
+ * model survived into it.
+ */
+function namesSomethingSupplied(text: string, ctx: StoryContext): boolean {
+  const hay = text.toLowerCase();
+  if (ctx.facts.some((f) => hay.includes(f.display.toLowerCase()))) return true;
+  if (ctx.strategies.some((s) => s.name.length > 0 && hay.includes(s.name.toLowerCase()))) return true;
+  return ctx.household.firstNames
+    .split(/\s+and\s+|[,&]/u)
+    .map((name) => name.trim())
+    .some((name) => name.length > 0 && mentionsName(text, name));
+}
+
+/** Thrown by the two floors — too little text, or text that is not about this
+ *  plan — so the handler can tell either from an outage and keep the findings
+ *  the first attempt already produced. */
 class ThinDraftError extends Error {}
 
 export interface GeneratedChapter {
@@ -215,9 +249,26 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
   const first = buildChapterPrompt(chapterId, ctx, voiceSamples, []);
   const sourceHash = hashAiRequest(first);
 
+  const narrative = CHAPTERS[chapterId].narrate(ctx).join("\n\n");
+  /**
+   * Whether the "about this plan" floor applies at all — and it applies only
+   * where this module's OWN narrator clears it.
+   *
+   * The same rule that pins `MIN_CHAPTER_WORDS`: a draft the app would publish
+   * itself must never be thrown away. Three of the shipped narratives name
+   * nothing supplied, because there is nothing to name — an empty pack ("Here's
+   * where your plan stands today…"), no balance sheet, no proposal — and for
+   * those chapters the prompt asks for prose "without any numbers at all". So the
+   * floor is exactly as demanding as the fallback and no more, which is what
+   * makes it impossible for the two to drift apart. `generate.test.ts` runs every
+   * chapter × pack through it, as it does for the word floor.
+   */
+  const floorApplies = namesSomethingSupplied(narrative, ctx);
+  const aboutThePlan = (text: string): boolean => !floorApplies || namesSomethingSupplied(text, ctx);
+
   const fallback = (failures: GateFailure[], error: string | null = null): GeneratedChapter => ({
     chapterId,
-    markdown: CHAPTERS[chapterId].narrate(ctx).join("\n\n"),
+    markdown: narrative,
     sourceHash,
     aiSuppressed: true,
     failures,
@@ -240,7 +291,11 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
       // heals on the next render instead of serving a stub for its 30-day TTL.
       // Not re-validation: the gates are deliberately NOT re-run on a hit.
       const cachedMarkdown = typeof hit?.markdown === "string" ? hit.markdown : "";
-      if (hit && hasSubstance(cachedMarkdown)) {
+      // Both floors, applied in both directions. A refusal that was cached before
+      // this rule existed heals on the next render instead of being served for
+      // its 30-day TTL — which matters more here than for a stub, because `force`
+      // is the only other escape and no UI sends it.
+      if (hit && hasSubstance(cachedMarkdown) && aboutThePlan(cachedMarkdown)) {
         return {
           chapterId, markdown: cachedMarkdown, sourceHash, aiSuppressed: false,
           failures: [], error: null, generatedAt: hit.generatedAt, cached: true,
@@ -280,6 +335,15 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
       const retryFailures = dedupe(runGates(attempt2, ctx.facts));
       if (retryFailures.length > 0) return fallback(retryFailures);
       markdown = attempt2;
+    }
+
+    // Judged on the draft that is about to be PUBLISHED, not on each attempt, so
+    // it can never pre-empt a gate finding: a draft that invents a figure and
+    // quotes none of ours is a Gate 1 rejection with a retry the model can act
+    // on, not a stub. Thrown for the same reason the word floor is — one handler
+    // for both attempts, and a stub is not something a retry prompt can name.
+    if (!aboutThePlan(markdown)) {
+      throw new ThinDraftError("model returned a draft that is not about this plan");
     }
 
     const generatedAt = new Date().toISOString();

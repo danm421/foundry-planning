@@ -421,6 +421,37 @@ describe("validateNoAdvice — evasions", () => {
     expect(validateNoAdvice("Purchase price on the house was four hundred thousand dollars.", [])).toEqual([]);
   });
 
+  it("G3p — catches the everyday frames a warm register reaches for", () => {
+    // Each one instructs the reader to trade a named holding, which is the rule
+    // Gate 3's own message states. The hedged first person, the collective
+    // "let's" and the interrogative are exactly the registers the system prompt
+    // asks for, so these are the shapes a well-behaved model actually writes.
+    const instructions = [
+      "Let's sell your Apple shares this year.",
+      "I'd sell your Apple shares this year.",
+      "Why not sell your Apple shares this year?",
+      "The plan calls for you to sell your Apple shares this year.",
+    ];
+    for (const md of instructions) {
+      expect(validateNoAdvice(md, []), md).toHaveLength(1);
+    }
+    // …and the over-fire corpus for the same four frames. Each is one token away
+    // from a rejection above, and each instructs nobody: the apostrophe is what
+    // separates "let's" from "lets", a comma breaks the interrogative, "calls
+    // for" without a reader is ordinary planning English, and the frame still
+    // has to GOVERN the verb.
+    const observations = [
+      "The plan lets you move money into bonds without a tax bill.",
+      "That is why, not how, the plan moves money into bonds.",
+      "Your plan calls for a review each year.",
+      "I'd like to know how the plan moves money into bonds.",
+      "Let's look at what the plan does with your bonds.",
+    ];
+    for (const md of observations) {
+      expect(validateNoAdvice(md, []), md).toEqual([]);
+    }
+  });
+
   it("G3i — reports every offending sentence, not just the first", () => {
     // One retry, one message: a chapter with three instructions must not spend
     // it fixing a third of them.

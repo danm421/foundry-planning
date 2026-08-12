@@ -63,10 +63,17 @@ export async function POST(
       ),
     );
 
-    await Promise.all(
-      generated.map((chapter) => upsertGeneratedChapter({ clientId: id, scenarioId, chapter })),
-    );
-
+    // Audited BEFORE the writes, deliberately. This row records the RUN — the
+    // model calls happened, they were paid for, and someone regenerated this
+    // client's story — not the persistence that follows. `Promise.all` rejects on
+    // the first failing upsert while every chapter that already resolved stays
+    // committed, so auditing after it means a 500 that silently commits half a
+    // run and leaves no trace of the spend at all.
+    //
+    // Chosen over a `try/finally` with a partial flag: the flag buys a more
+    // precise row at the cost of a second control flow around the writes and an
+    // audit call inside `finally` that can replace the write's own error on the
+    // way out. Everything this row asserts is already true at this line.
     await recordAudit({
       action: "plan_story.generated",
       resourceType: "client",
@@ -79,6 +86,10 @@ export async function POST(
         suppressed: generated.filter((g) => g.aiSuppressed).map((g) => g.chapterId),
       }),
     });
+
+    await Promise.all(
+      generated.map((chapter) => upsertGeneratedChapter({ clientId: id, scenarioId, chapter })),
+    );
 
     return NextResponse.json({
       chapters: generated.map((g) => ({

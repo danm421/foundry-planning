@@ -167,6 +167,21 @@ describe("loadPlanStoryInput", () => {
   });
 
   /**
+   * The export's half of the same seam the generate route owns. Every other
+   * fixture in this file is `"standalone"`, which is also the field's default
+   * everywhere it is read — so without a non-default case, hardcoding the role in
+   * the loader is invisible here, and the Executive brief's front-of-deck prose
+   * is the thing that quietly stops existing.
+   */
+  it("carries the deck's document role into the story it narrates", async () => {
+    await loadPlanStoryInput(CLIENT, FIRM, { ...OPTIONS, documentRole: "frontMatter" });
+
+    expect(m.loadStoryContext).toHaveBeenCalledWith(
+      expect.objectContaining({ documentRole: "frontMatter" }),
+    );
+  });
+
+  /**
    * The two values are derived by different rules and must not be collapsed
    * into one: "" and "base" both mean "no proposed plan" to the story, and both
    * mean the literal "base" to storage — the scope the review panel translates
