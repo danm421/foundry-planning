@@ -99,4 +99,32 @@ describe("buildSuitability", () => {
     });
     expect(r.bindingConstraint).toBe("capacity");
   });
+
+  it("does not flag a current portfolio that exactly matches the profile", () => {
+    // currentLevel "moderate" with profile.compositeLevel "moderate" should be equal,
+    // not exceed. Pins the `>` operator against a `>=` mutation.
+    const r = buildSuitability({
+      profile,
+      currentLevel: "moderate",
+      currentVolatility: 0.11,
+      proposedLevel: "moderate",
+      proposedVolatility: 0.11,
+      rungs: RUNGS,
+    });
+    expect(r.currentExceedsProfile).toBe(false);
+  });
+
+  it("does not flag a proposed portfolio that does not match the profile", () => {
+    // proposedLevel "moderately_aggressive" differs from profile.compositeLevel "moderate".
+    // Pins the `===` operator against a `>=` mutation.
+    const r = buildSuitability({
+      profile,
+      currentLevel: "moderate",
+      currentVolatility: 0.11,
+      proposedLevel: "moderately_aggressive",
+      proposedVolatility: 0.14,
+      rungs: RUNGS,
+    });
+    expect(r.proposedMatchesProfile).toBe(false);
+  });
 });
