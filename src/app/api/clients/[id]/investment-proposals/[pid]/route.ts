@@ -155,7 +155,10 @@ export async function PUT(request: NextRequest, { params }: Params) {
       firmId: access.firmId,
       metadata: crossFirmAuditMeta({ access: access.access }, callerOrg, {
         proposalId: pid,
-        recomputed: body.recompute,
+        // `recompute` is now `.optional()` (not `.default(false)`) so `.partial()`
+        // can't resurrect it — but the audit log still wants a real boolean, not
+        // `undefined`, for an omitted key.
+        recomputed: body.recompute ?? false,
       }),
     });
 

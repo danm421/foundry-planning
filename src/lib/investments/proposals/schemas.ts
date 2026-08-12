@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { strictPartial } from "@/lib/schemas/strict-partial";
 
 // These mirror the sibling `clients/[id]/rebalance/compute` route's body schema,
 // which computes the same numbers from the same shapes. The bounds are not
@@ -71,10 +72,16 @@ export const proposalCreateSchema = z.object({
   notes: z.string().max(4000).nullable().optional(),
 });
 
-export const proposalUpdateSchema = proposalCreateSchema.partial().extend({
+// `strictPartial`, not `.partial()` — Zod 4 keeps a `.default()` alive under
+// `.optional()`, so `.partial()` would inject `recompute: false` into every
+// parsed body and make an omitted key indistinguishable from an explicit
+// `false`. `recompute` genuinely defaults to `false` when the caller omits
+// it, but that fallback is applied at the PUT route, not the schema — see
+// `src/app/api/clients/[id]/investment-proposals/[pid]/route.ts`.
+export const proposalUpdateSchema = strictPartial(proposalCreateSchema).extend({
   status: z.enum(["draft", "presented", "accepted"]).optional(),
   /** When true the snapshot is rebuilt from the (possibly updated) inputs. */
-  recompute: z.boolean().default(false),
+  recompute: z.boolean().optional(),
 });
 
 export type ProposalCreateInput = z.infer<typeof proposalCreateSchema>;
