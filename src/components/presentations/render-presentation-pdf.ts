@@ -442,38 +442,52 @@ export async function renderPresentationPdf(
       }))
     : undefined;
 
-  // Conditionally load the Plan Story — only when the deck includes that page.
-  // The chapter prose comes out of storage, never from the model: generation
-  // runs in the review panel ahead of the meeting, so an export is never slower
-  // or more expensive because a chapter happened to be missing.
+  // Load the Plan Story — one payload PER ENTRY, index-aligned with
+  // `body.pages`. The chapter prose comes out of storage, never from the model:
+  // generation runs in the review panel ahead of the meeting, so an export is
+  // never slower or more expensive because a chapter happened to be missing.
+  //
+  // Per entry rather than per page id, unlike the `observations` load above.
+  // Observations are options-independent, so one payload serves every copy of
+  // that page; a Plan Story is defined by its options. Two of them in one deck
+  // is a deck an advisor is actively invited to build — the `brief` preset is
+  // "the short front-of-deck version … written to point at the pages after"
+  // (`options-schema.ts`) and the palette permits duplicates — and the second
+  // one carries a different scenario, a different `documentRole`, and a
+  // different storage scope. Sharing the first one's payload would print the
+  // wrong subtitle, narrate the wrong role, and read chapter text from the
+  // wrong scope, all at the right page count. Silent, which is the failure mode
+  // that matters.
   //
   // 🚨 Keyed on the PAGE being in the deck, not on the load succeeding, and
-  // deliberately without a catch. `document.tsx` reserves this page's sheets
-  // from `estimatePageCount`, which reads the options alone and cannot see
-  // whether the story loaded — up to three. An undefined `planStory` renders
-  // ONE, and the deck's table of contents takes every start page from that same
-  // estimate, so a silently-absent story prints a contents page pointing at the
-  // wrong sheet for everything after it. A failed export is recoverable; a
-  // quietly mis-numbered one is handed to a client, so a load failure fails the
-  // export. (`plan-story/__tests__/view-model.test.ts` pins the 1-vs-3 gap.)
-  const planStoryEntry = body.pages.find((p) => p.pageId === "planStory");
-  // Already parsed and defaulted against `planStoryOptionsSchema` by
-  // `pageDescriptorSchema` above — read through, never re-defaulted.
-  const planStoryOptions = planStoryEntry
-    ? (planStoryEntry.options as PlanStoryOptions)
-    : null;
-  const planStory = planStoryOptions
-    ? await loadPlanStoryInput(clientId, firmId, {
-        scenarioId: planStoryOptions.scenarioId,
-        documentRole: planStoryOptions.documentRole,
+  // deliberately without a catch — `Promise.all` rejects if ANY entry's load
+  // does, so no entry can quietly end up undefined. `document.tsx` reserves
+  // each Plan Story page's sheets from `estimatePageCount`, which reads the
+  // options alone and cannot see whether the story loaded — up to three. An
+  // undefined `planStory` renders ONE, and the deck's table of contents takes
+  // every start page from that same estimate, so a silently-absent story prints
+  // a contents page pointing at the wrong sheet for everything after it. A
+  // failed export is recoverable; a quietly mis-numbered one is handed to a
+  // client, so a load failure fails the export.
+  // (`plan-story/__tests__/view-model.test.ts` pins the 1-vs-3 gap.)
+  const planStoryByPage = await Promise.all(
+    body.pages.map(async (p) => {
+      if (p.pageId !== "planStory") return undefined;
+      // Already parsed and defaulted against `planStoryOptionsSchema` by
+      // `pageDescriptorSchema` above — read through, never re-defaulted.
+      const opts = p.options as PlanStoryOptions;
+      return loadPlanStoryInput(clientId, firmId, {
+        scenarioId: opts.scenarioId,
+        documentRole: opts.documentRole,
         // The scenario's display NAME — a name a client can read under "Your
         // Plan". Resolved here rather than in the loader so the loader cannot
         // invent one, and NOT from `scenarioNames` above, which is built from
         // the deck's refs and never holds the story's own scenario. See
         // `story/scenario-label.ts`.
-        scenarioLabel: await loadStoryScenarioLabel(clientId, planStoryOptions.scenarioId),
-      })
-    : undefined;
+        scenarioLabel: await loadStoryScenarioLabel(clientId, opts.scenarioId),
+      });
+    }),
+  );
 
   // Life Insurance Summary: solve server-side from the compute cache, mirroring
   // the (now-removed) client-side pre-solve. For each LI page on a *live*
@@ -570,6 +584,7 @@ export async function renderPresentationPdf(
       pageId: p.pageId,
       options: p.options as unknown as Record<string, unknown>,
       scenarioKey: plan.pageKeys[idx],
+      planStory: planStoryByPage[idx],
     })),
     firmName,
     firmTagline: null,
@@ -585,7 +600,6 @@ export async function renderPresentationPdf(
     investments,
     lifeInsurance,
     observations,
-    planStory,
   }) as unknown as React.ReactElement<DocumentProps>;
 
   const buffer = await Promise.race<Buffer>([

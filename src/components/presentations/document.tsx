@@ -30,6 +30,15 @@ interface PresentationDocumentProps {
     options?: Record<string, unknown> | undefined;
     /** Key into `bundles` — which scenario this page renders. */
     scenarioKey: string;
+    /** THIS entry's story context and advisor-reviewed chapter text, read from
+     *  storage by the export. Per entry, not per page id: two Plan Story pages
+     *  in one deck (an executive brief up front, the full story later) carry
+     *  different options, so a shared payload would print the first one's story
+     *  under the second one's page count. Absent, the page renders one sheet
+     *  where `estimatePageCount` reserved up to three, which shifts every start
+     *  page `documentSections` below hands the TOC — so the caller supplies one
+     *  for every Plan Story entry, and a load that fails fails the export. */
+    planStory?: PlanStoryContextInput;
   }>;
   firmName: string;
   firmTagline: string | null;
@@ -56,13 +65,6 @@ interface PresentationDocumentProps {
   lifeInsurance?: LifeInsuranceInventory;
   /** Present only when the deck includes the Observations page. */
   observations?: ObservationsRowInput[];
-  /** Present whenever the deck includes the Plan Story page — the story context
-   *  and the advisor-reviewed chapter text, both read from storage by the
-   *  export. Absent, the page renders one sheet where `estimatePageCount`
-   *  reserved up to three, which shifts every start page `documentSections`
-   *  below hands the TOC. The caller therefore loads it on the page's presence,
-   *  never on the load succeeding. */
-  planStory?: PlanStoryContextInput;
 }
 
 export function PresentationDocument(props: PresentationDocumentProps) {
@@ -125,7 +127,7 @@ export function PresentationDocument(props: PresentationDocumentProps) {
             investments: props.investments,
             lifeInsurance: props.lifeInsurance,
             observations: props.observations,
-            planStory: props.planStory,
+            planStory: p.planStory,
             scenarioChanges: bundle.scenarioChanges,
             bundlesByRef,
           },
