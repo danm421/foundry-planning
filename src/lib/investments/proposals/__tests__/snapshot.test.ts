@@ -88,9 +88,16 @@ describe("buildProposalSnapshot", () => {
 
 describe("ProposalSnapshot v1 durability", () => {
   it("still type-checks and reads after the builders change", () => {
-    // A proposal presented to a client months ago must still render. This test
-    // fails the moment a field is renamed or removed without a migration, which
-    // is exactly when someone is about to break a document a client is holding.
+    // A proposal presented to a client months ago must still render. This is a
+    // real v1 snapshot (see fixtures/snapshot-v1.json), and this test fails if
+    // a field is renamed or removed from any branch asserted on below — it is
+    // not an unqualified guarantee over every field of ProposalSnapshot.
+    //
+    // The `as unknown as ProposalSnapshot` cast stays: a JSON import widens the
+    // literal `version: 1` to `number` and loses the null-union narrowing on
+    // nullable fields, so a direct typed assignment does not compile. The
+    // runtime assertions below — not the cast — are what guard against schema
+    // drift.
     const s = fixture as unknown as ProposalSnapshot;
     expect(s.version).toBe(1);
     expect(s.compute.current.totalValue).toBeGreaterThan(0);
@@ -99,5 +106,48 @@ describe("ProposalSnapshot v1 durability", () => {
     expect(s.breakEven).toHaveProperty("verdict");
     expect(Array.isArray(s.stress)).toBe(true);
     expect(s.outcomes.current.length).toBeGreaterThan(0);
+
+    // compute: the remaining fields of `current`, plus every other top-level
+    // branch of RebalanceComputeResult.
+    expect(s.compute.current).toHaveProperty("assetMix");
+    expect(s.compute.current).toHaveProperty("realized");
+    expect(s.compute.current).toHaveProperty("cma");
+    expect(s.compute.current).toHaveProperty("coveragePct");
+    expect(s.compute).toHaveProperty("proposed");
+    expect(s.compute).toHaveProperty("tax");
+    expect(s.compute).toHaveProperty("realizedWindow");
+    expect(s.compute).toHaveProperty("assetMixDelta");
+    expect(s.compute).toHaveProperty("tradeSummary");
+
+    // outcomes: pin the row shape on both sides, not just its length.
+    expect(s.outcomes.current[0]).toHaveProperty("years");
+    expect(s.outcomes.current[0]).toHaveProperty("p10");
+    expect(s.outcomes.current[0]).toHaveProperty("p50");
+    expect(s.outcomes.current[0]).toHaveProperty("p90");
+    expect(s.outcomes.proposed[0]).toHaveProperty("years");
+    expect(s.outcomes.proposed[0]).toHaveProperty("p10");
+    expect(s.outcomes.proposed[0]).toHaveProperty("p50");
+    expect(s.outcomes.proposed[0]).toHaveProperty("p90");
+
+    // stress: three windows, each carrying its full field set.
+    expect(s.stress).toHaveLength(3);
+    expect(s.stress[0]).toHaveProperty("key");
+    expect(s.stress[0]).toHaveProperty("label");
+    expect(s.stress[0]).toHaveProperty("start");
+    expect(s.stress[0]).toHaveProperty("end");
+    expect(s.stress[0]).toHaveProperty("available");
+    expect(s.stress[0]).toHaveProperty("unavailableReason");
+    expect(s.stress[0]).toHaveProperty("currentReturn");
+    expect(s.stress[0]).toHaveProperty("proposedReturn");
+    expect(s.stress[0]).toHaveProperty("currentDrawdown");
+    expect(s.stress[0]).toHaveProperty("proposedDrawdown");
+    expect(s.stress[0]).toHaveProperty("currentDollars");
+    expect(s.stress[0]).toHaveProperty("proposedDollars");
+
+    // targetHoldings: the one holding carries its full field set.
+    expect(s.targetHoldings[0]).toHaveProperty("ticker");
+    expect(s.targetHoldings[0]).toHaveProperty("name");
+    expect(s.targetHoldings[0]).toHaveProperty("weight");
+    expect(s.targetHoldings[0]).toHaveProperty("expenseRatio");
   });
 });
