@@ -16,10 +16,15 @@ vi.mock("../rebalance-risk-return-scatter", () => ({
 const ACCOUNTS = [{ id: "acc-1", name: "Joint Brokerage", category: "taxable", value: 500_000 }];
 const PORTFOLIOS = [{ id: "tp-1", name: "Core Moderate" }];
 
-/** A stored fee with more precision than the percent input can show. The
- *  round-trip through `feeFractionToPct` lands on 1.2346%, i.e. 0.012346 — a
- *  3.2e-7 drift from what is stored. */
+/** A stored fee with more precision than the percent input can show. It seeds the
+ *  input as "1.2346", a 4e-8 drift from what is stored — and the smallest edit
+ *  the input can express, "1.2345", differs from the stored value by only
+ *  5.999999999999062e-7. Both sit inside the 1e-6 tolerance this screen used to
+ *  carry, which is why one read as an edit and the other did not. */
 const AWKWARD_FEE = 0.0123456;
+
+/** One unit down on the last digit the input displays: the smallest real edit. */
+const MINIMAL_EDIT = "1.2345";
 
 /** The frozen v1 artifact with only the two fee fields overridden, so the shape
  *  under test is the genuine snapshot rather than a hand-written stand-in. */
@@ -103,6 +108,31 @@ describe("ProposalsClient", () => {
 
     // A no-op save must not advance the as-of date, so nothing may recompute.
     expect(calls.filter((c) => c.method === "PUT")).toEqual([]);
+  });
+
+  it("saves the smallest edit the fee input can express", async () => {
+    const calls = mockApi(() => json({ proposals: [storedRow] }));
+    await openTheSavedProposal();
+
+    const field = screen.getByLabelText("Current advisory fee");
+    expect((field as HTMLInputElement).value).toBe("1.2346");
+    await userEvent.clear(field);
+    await userEvent.type(field, MINIMAL_EDIT);
+
+    // The advisor changed the fee, so the screen must offer to apply it…
+    expect(screen.getByText(/The advisory fee changed/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Save & close" }));
+    await screen.findByText(/Saved proposals for this client/);
+
+    // …and saving must carry it, recomputing so the fee section and break-even
+    // stop describing the old rate.
+    const puts = calls.filter((c) => c.method === "PUT");
+    expect(puts).toHaveLength(1);
+    const body = puts[0].body as { advisoryFeeCurrent: number; recompute: boolean };
+    expect(body.recompute).toBe(true);
+    // Precision 9 discriminates the edit (0.012345) from the stored 0.0123456.
+    expect(body.advisoryFeeCurrent).toBeCloseTo(0.012345, 9);
   });
 
   it("blocks Save & close on a fee the API would reject", async () => {

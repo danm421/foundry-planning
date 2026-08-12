@@ -74,21 +74,21 @@ function toListRow(p: StoredProposal): ProposalListRow {
 }
 
 /**
- * Half a unit of the last digit `feeFractionToPct` keeps — it rounds to four
- * decimals OF PERCENT, which is 1e-6 as a fraction. Any tighter and a stored
- * fee like 0.0123456 reads as edited the moment the proposal opens, so a
- * "Save & close" that changed nothing recomputes and advances the as-of date —
- * destroying the one staleness signal this screen sells. Any looser and a real
- * edit could be missed: the input's step is 0.01%, i.e. 1e-4, a hundred times
- * this bound.
+ * Whether a typed fee still shows what the stored one shows.
+ *
+ * Both sides go through `feeFractionToPct` — the same function that seeds the
+ * input — so the question asked is "could the advisor have typed anything
+ * different?". A blank input and a stored null both render "", so they match.
+ *
+ * Deliberately no numeric tolerance. The input displays four decimals of
+ * percent, which makes the smallest edit it can express exactly the same size as
+ * the rounding error of its own display: any epsilon therefore sits precisely on
+ * the boundary of a real one-digit edit, and float subtraction lands on the
+ * wrong side of it about half the time — swallowing the edit silently. Comparing
+ * the rendered text removes the boundary rather than moving it.
  */
-const FEE_EPSILON = 1e-6;
-
-/** A blank input and a stored null are both "no fee"; two numbers match when
- *  they agree to the precision the percent input can carry. */
-function sameFee(a: number | null, b: number | null): boolean {
-  if (a === null || b === null) return a === b;
-  return Math.abs(a - b) <= FEE_EPSILON;
+function sameFeeAsDisplayed(typed: string, stored: number | null): boolean {
+  return feeFractionToPct(feePctToFraction(typed)) === feeFractionToPct(stored);
 }
 
 async function errorFrom(res: Response, fallback: string): Promise<{
@@ -291,12 +291,11 @@ export function ProposalsClient({
     sourceRequest !== null && target !== null && weightsValid && feeError === null;
 
   // A fee the advisor typed but hasn't computed yet would leave the fee section
-  // and the break-even describing the old rate, so saving applies it. Compared
-  // with a tolerance: the percent round-trip is decimal, the stored value binary.
+  // and the break-even describing the old rate, so saving applies it.
   const feesPending =
     snapshot !== null &&
-    (!sameFee(feePctToFraction(feeCurrent), snapshot.fees.advisoryFeeCurrent) ||
-      !sameFee(feePctToFraction(feeProposed), snapshot.fees.advisoryFeeProposed));
+    (!sameFeeAsDisplayed(feeCurrent, snapshot.fees.advisoryFeeCurrent) ||
+      !sameFeeAsDisplayed(feeProposed, snapshot.fees.advisoryFeeProposed));
 
   // ── Save ───────────────────────────────────────────────────────────────────
 
