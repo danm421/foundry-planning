@@ -16,7 +16,15 @@ export const proposalSourceSchema = z.union([
 
 export const proposalTargetSchema = z.union([
   z.object({ portfolioId: z.string().uuid() }),
-  z.object({ holdings: z.array(z.object({ ticker: z.string().min(1), weight: z.number() })).min(1) }),
+  // The builder sends decimal fractions (`rebalance-target.tsx` divides the
+  // typed percent by 100), so the bounds match the sibling rebalance route
+  // exactly. Unbounded, a percent typed straight through — 60 instead of 0.6 —
+  // would compute a 6000%-weight portfolio without complaint.
+  z.object({
+    holdings: z
+      .array(z.object({ ticker: z.string().trim().min(1).max(32), weight: z.number().min(0).max(1) }))
+      .min(1),
+  }),
 ]);
 
 // The optional fields are `.nullable().optional()`, never `.default(null)`:

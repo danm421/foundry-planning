@@ -109,6 +109,17 @@ describe("POST /investment-proposals", () => {
     expect(insertValues).toHaveLength(0);
   });
 
+  it("rejects an ad-hoc target weight outside 0..1", async () => {
+    // The builder sends decimal fractions, so a percent typed straight through
+    // (60 rather than 0.6) must be refused, not computed as a 6000% weight.
+    const res = await POST(
+      req({ ...validBody, target: { holdings: [{ ticker: "VTI", weight: 60 }] } }),
+      { params },
+    );
+    expect(res.status).toBe(400);
+    expect(insertValues).toHaveLength(0);
+  });
+
   it("400s on a body that isn't JSON", async () => {
     const res = await POST(
       new Request("http://t/api", { method: "POST", body: "not json" }) as never,

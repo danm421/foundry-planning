@@ -357,7 +357,7 @@ export async function InvestmentsContent({ clientId, firmId, groupKey, view, sce
       fundPortfolios={fundPortfolios}
       holdingsGroups={holdingsGroups}
       initialView={
-        view === "analysis" || view === "rebalance" || view === "holdings" ? view : "allocation"
+        view === "analysis" || view === "proposals" || view === "holdings" ? view : "allocation"
       }
     />
   );
