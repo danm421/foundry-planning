@@ -82,6 +82,10 @@ export type AuditAction =
   | "reinvestment.create"
   | "reinvestment.update"
   | "reinvestment.delete"
+  // Investment proposals (current-vs-proposed portfolio comparisons)
+  | "investment_proposal.create"
+  | "investment_proposal.update"
+  | "investment_proposal.delete"
   | "relocation.create"
   | "relocation.update"
   | "relocation.delete"
