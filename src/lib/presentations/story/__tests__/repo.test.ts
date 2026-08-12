@@ -8,6 +8,9 @@ import type { GeneratedChapter } from "../generate";
 const m = vi.hoisted(() => ({
   select: vi.fn(),
   upsert: vi.fn(),
+  // Nothing here issues a bare UPDATE. The stub exists so that a regression to
+  // one fails as an assertion naming what went wrong, rather than as a
+  // TypeError from a missing mock.
   update: vi.fn(),
 }));
 
@@ -54,6 +57,23 @@ beforeEach(() => {
   m.update.mockResolvedValue(undefined);
 });
 
+/**
+ * What the repository actually handed drizzle for the write under test — and
+ * proof that the write is an upsert. A bare UPDATE cannot create the row, so it
+ * discards the advisor's writing whenever the chapter has none yet.
+ */
+const lastUpsert = () => {
+  expect(m.update).not.toHaveBeenCalled();
+  expect(m.upsert).toHaveBeenCalledTimes(1);
+  const [values, config] = m.upsert.mock.calls[0] as [
+    Record<string, unknown>,
+    { target: { name: string }[]; set: Record<string, unknown> },
+  ];
+  return { values, target: config.target, set: config.set };
+};
+
+const KEY = ["client_id", "scenario_id", "chapter_id"];
+
 describe("resolveChapterText", () => {
   it("prefers the advisor's edit over the generated text", () => {
     expect(resolveChapterText({ editedText: "Mine.", generatedText: "Model's." }, FALLBACK)).toBe("Mine.");
@@ -99,11 +119,7 @@ describe("listStoryChapters", () => {
 describe("upsertGeneratedChapter", () => {
   const upsertArgs = async (over: Partial<GeneratedChapter> = {}) => {
     await upsertGeneratedChapter({ clientId: "client-1", scenarioId: "base", chapter: chapter(over) });
-    const [values, config] = m.upsert.mock.calls[0] as [
-      Record<string, unknown>,
-      { target: { name: string }[]; set: Record<string, unknown> },
-    ];
-    return { values, target: config.target, set: config.set };
+    return lastUpsert();
   };
 
   it("stores the chapter's words, its hash and its scope", async () => {
@@ -116,6 +132,18 @@ describe("upsertGeneratedChapter", () => {
       sourceHash: "hash-1",
       aiSuppressed: false,
     });
+  });
+
+  // The insert path above only runs once per chapter. Everything after the
+  // first generation goes through the conflict branch, so a column missing
+  // there is a column that never changes again: the stored chapter would freeze
+  // at the first run's words, and `isChapterStale` would compare every future
+  // plan against a hash that can no longer move.
+  it("overwrites the stored words, hash and timestamp on a regeneration", async () => {
+    const { set } = await upsertArgs({ markdown: "Rewritten.", sourceHash: "hash-2" });
+    expect(set.generatedText).toBe("Rewritten.");
+    expect(set.sourceHash).toBe("hash-2");
+    expect(set.updatedAt).toBeInstanceOf(Date);
   });
 
   // An outage and a clean run are otherwise identical once stored — both leave
@@ -144,7 +172,7 @@ describe("upsertGeneratedChapter", () => {
 
   it("conflicts on the client/scenario/chapter triple", async () => {
     const { target } = await upsertArgs();
-    expect(target.map((c) => c.name)).toEqual(["client_id", "scenario_id", "chapter_id"]);
+    expect(target.map((c) => c.name)).toEqual(KEY);
   });
 
   // Review says "an advisor read THESE words and approved them". New words must
@@ -172,21 +200,32 @@ describe("updateChapterText", () => {
       chapterId: "whatYouHave",
       editedText: "My words.",
     });
-    const [set, where] = m.update.mock.calls[0] as [Record<string, unknown>, unknown];
-    return { set, where };
+    return lastUpsert();
   };
 
-  it("stores the advisor's text and stamps the row", async () => {
+  // The panel offers every chapter, generated or not, so an advisor can write
+  // one from scratch. A bare UPDATE matches no row there and reports nothing:
+  // the route returns 200, audits the edit, and the writing is gone.
+  it("creates the row when the chapter has never been generated", async () => {
+    const { values } = await editArgs();
+    expect(values).toMatchObject({
+      clientId: "client-1",
+      scenarioId: "scenario-9",
+      chapterId: "whatYouHave",
+      editedText: "My words.",
+    });
+  });
+
+  it("stores the advisor's text on an existing row, leaving the model's alone", async () => {
     const { set } = await editArgs();
     expect(set.editedText).toBe("My words.");
     expect(set.updatedAt).toBeInstanceOf(Date);
+    expect(set).not.toHaveProperty("generatedText");
   });
 
-  it("scopes the write to the client, scenario and chapter", async () => {
-    const { where } = await editArgs();
-    const { sql, params } = render(where);
-    expect(sql).toContain("client_id");
-    expect(params).toEqual(["client-1", "scenario-9", "whatYouHave"]);
+  it("conflicts on the client/scenario/chapter triple", async () => {
+    const { target } = await editArgs();
+    expect(target.map((c) => c.name)).toEqual(KEY);
   });
 });
 
@@ -198,9 +237,23 @@ describe("markChapterReviewed", () => {
       chapterId: "whatWeRecommend",
       userId: "user_42",
     });
-    const [set, where] = m.update.mock.calls[0] as [Record<string, unknown>, unknown];
-    return { set, where };
+    return lastUpsert();
   };
+
+  // With nothing generated the deterministic narrative is what the client
+  // reads, so approving it is legitimate — and if this cannot create a row, that
+  // chapter stays in the unreviewed count forever and an export gate reading
+  // that count can never be cleared.
+  it("creates the row so a never-generated chapter can still be approved", async () => {
+    const { values } = await reviewArgs();
+    expect(values).toMatchObject({
+      clientId: "client-1",
+      scenarioId: "scenario-9",
+      chapterId: "whatWeRecommend",
+      reviewedByUserId: "user_42",
+    });
+    expect(values.reviewedAt).toBeInstanceOf(Date);
+  });
 
   it("records who reviewed it and when", async () => {
     const { set } = await reviewArgs();
@@ -208,10 +261,8 @@ describe("markChapterReviewed", () => {
     expect(set.reviewedByUserId).toBe("user_42");
   });
 
-  it("scopes the write to the client, scenario and chapter", async () => {
-    const { where } = await reviewArgs();
-    const { sql, params } = render(where);
-    expect(sql).toContain("client_id");
-    expect(params).toEqual(["client-1", "scenario-9", "whatWeRecommend"]);
+  it("conflicts on the client/scenario/chapter triple", async () => {
+    const { target } = await reviewArgs();
+    expect(target.map((c) => c.name)).toEqual(KEY);
   });
 });

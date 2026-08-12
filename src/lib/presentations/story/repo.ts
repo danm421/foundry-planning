@@ -26,14 +26,15 @@ export function isChapterStale(row: { sourceHash: string | null }, currentHash: 
   return row.sourceHash != null && row.sourceHash !== currentHash;
 }
 
-/** One chapter, scoped. The three predicates every statement below shares. */
-function chapterScope(clientId: string, scenarioId: string, chapterId: ChapterId) {
-  return and(
-    eq(planStoryChapters.clientId, clientId),
-    eq(planStoryChapters.scenarioId, scenarioId),
-    eq(planStoryChapters.chapterId, chapterId),
-  );
-}
+/**
+ * The one row a chapter has. Shared by all three writers so the key they
+ * conflict on cannot drift from the unique index, or from each other.
+ */
+const CHAPTER_KEY = [
+  planStoryChapters.clientId,
+  planStoryChapters.scenarioId,
+  planStoryChapters.chapterId,
+];
 
 /**
  * True in SQL when the incoming write actually changes the chapter's words.
@@ -99,7 +100,7 @@ export async function upsertGeneratedChapter(args: {
       error: chapter.error,
     })
     .onConflictDoUpdate({
-      target: [planStoryChapters.clientId, planStoryChapters.scenarioId, planStoryChapters.chapterId],
+      target: CHAPTER_KEY,
       set: {
         generatedText: chapter.markdown,
         sourceHash: chapter.sourceHash,
@@ -114,6 +115,21 @@ export async function upsertGeneratedChapter(args: {
     });
 }
 
+/**
+ * Save the advisor's version — creating the row if the chapter has never been
+ * generated.
+ *
+ * An upsert rather than a bare UPDATE because a chapter with no row is a state
+ * the panel actively offers: the story lists every chapter whether one has been
+ * generated or not, so "write this one yourself" is a first-class path, not an
+ * edge case. An UPDATE there matches nothing, reports nothing, and the advisor's
+ * writing is gone — the failure the comment above calls the worst this feature
+ * has. Making the operation total also means a route can never audit a write
+ * that did not land: this either stores the text or throws.
+ *
+ * `generatedText` is untouched, so the model's version stays available to
+ * revert to, and a row created here simply has none yet.
+ */
 export async function updateChapterText(args: {
   clientId: string;
   scenarioId: string;
@@ -121,19 +137,53 @@ export async function updateChapterText(args: {
   editedText: string;
 }): Promise<void> {
   await db
-    .update(planStoryChapters)
-    .set({ editedText: args.editedText, updatedAt: new Date() })
-    .where(chapterScope(args.clientId, args.scenarioId, args.chapterId));
+    .insert(planStoryChapters)
+    .values({
+      clientId: args.clientId,
+      scenarioId: args.scenarioId,
+      chapterId: args.chapterId,
+      editedText: args.editedText,
+    })
+    .onConflictDoUpdate({
+      target: CHAPTER_KEY,
+      set: { editedText: args.editedText, updatedAt: new Date() },
+    });
 }
 
+/**
+ * Record that an advisor has read this chapter and stands behind it — creating
+ * the row if there isn't one.
+ *
+ * A row created here carries no `generatedText`, and that is meaningful rather
+ * than empty: with nothing generated, `resolveChapterText` renders the
+ * deterministic narrative, so the advisor is approving the words the client will
+ * actually read. `isChapterStale` already reports such a row fresh. Without the
+ * insert this call is a silent no-op, and a chapter nobody ever generated stays
+ * in the unreviewed count permanently — an export gate reading that count could
+ * never be cleared.
+ *
+ * A later generation un-reviews it: the stored null is `distinct from` the
+ * model's text, which is the right answer, because the approved words were the
+ * deterministic ones.
+ */
 export async function markChapterReviewed(args: {
   clientId: string;
   scenarioId: string;
   chapterId: ChapterId;
   userId: string;
 }): Promise<void> {
+  const now = new Date();
   await db
-    .update(planStoryChapters)
-    .set({ reviewedAt: new Date(), reviewedByUserId: args.userId, updatedAt: new Date() })
-    .where(chapterScope(args.clientId, args.scenarioId, args.chapterId));
+    .insert(planStoryChapters)
+    .values({
+      clientId: args.clientId,
+      scenarioId: args.scenarioId,
+      chapterId: args.chapterId,
+      reviewedAt: now,
+      reviewedByUserId: args.userId,
+    })
+    .onConflictDoUpdate({
+      target: CHAPTER_KEY,
+      set: { reviewedAt: now, reviewedByUserId: args.userId, updatedAt: now },
+    });
 }
