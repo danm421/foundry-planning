@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { PlanStoryReviewPanel } from "@/components/presentations/pages/plan-story/review-panel";
 
@@ -60,8 +60,19 @@ function calls() {
   return (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls;
 }
 
+function patchCalls() {
+  return calls().filter((c) => (c[1] as RequestInit | undefined)?.method === "PATCH");
+}
+
 beforeEach(() => {
   stubFetch(CHAPTERS);
+  // The panel logs every failed request. Silenced so a deliberate failure in a
+  // test does not read as a real one in the run output.
+  vi.spyOn(console, "error").mockImplementation(() => {});
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe("PlanStoryReviewPanel", () => {
@@ -200,6 +211,103 @@ describe("PlanStoryReviewPanel", () => {
       expect(String(post![0])).toContain("/plan-story/generate");
       expect(String((post![1] as RequestInit).body)).toContain('"scenarioId":"scenario-7"');
     });
+  });
+
+  describe("a request that did not do what it said", () => {
+    it("tells the advisor when the chapters could not be loaded", async () => {
+      stubFetch(CHAPTERS, 500);
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" />);
+      expect((await screen.findByRole("alert")).textContent).toMatch(
+        /couldn't load this report's chapters/i,
+      );
+    });
+
+    it("tells the advisor when a dropped connection killed the request", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => {
+          throw new TypeError("Failed to fetch");
+        }),
+      );
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" />);
+      expect((await screen.findByRole("alert")).textContent).toMatch(/couldn't load/i);
+    });
+
+    it("tells the advisor when a save was refused, instead of looking saved", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (_url: string, init?: RequestInit) =>
+          init?.method === "PATCH"
+            ? new Response(JSON.stringify({ error: "Nope" }), { status: 500 })
+            : new Response(JSON.stringify({ scenarioId: "base", chapters: CHAPTERS }), {
+                status: 200,
+              }),
+        ),
+      );
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" />);
+      const box = await screen.findByDisplayValue("Your plan holds.");
+      fireEvent.change(box, { target: { value: "My own words." } });
+      fireEvent.blur(box);
+      expect((await screen.findByRole("alert")).textContent).toMatch(
+        /couldn't save your edit/i,
+      );
+    });
+
+    it("tells the advisor when nothing was generated, rather than resetting the button", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (_url: string, init?: RequestInit) =>
+          init?.method === "POST"
+            ? new Response(JSON.stringify({ error: "Nope" }), { status: 500 })
+            : new Response(JSON.stringify({ scenarioId: "base", chapters: CHAPTERS }), {
+                status: 200,
+              }),
+        ),
+      );
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" />);
+      fireEvent.click(await screen.findByRole("button", { name: /generate all/i }));
+      expect((await screen.findByRole("alert")).textContent).toMatch(
+        /nothing was generated/i,
+      );
+    });
+
+    it("takes the message back down once a retry works", async () => {
+      let refuse = true;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (_url: string, init?: RequestInit) => {
+          if (init?.method === "PATCH") {
+            const res = new Response(JSON.stringify({ ok: !refuse }), {
+              status: refuse ? 500 : 200,
+            });
+            refuse = false;
+            return res;
+          }
+          return new Response(JSON.stringify({ scenarioId: "base", chapters: CHAPTERS }), {
+            status: 200,
+          });
+        }),
+      );
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" />);
+      const box = await screen.findByDisplayValue("Your plan holds.");
+      fireEvent.change(box, { target: { value: "My own words." } });
+      fireEvent.blur(box);
+      await screen.findByRole("alert");
+      fireEvent.blur(box);
+      await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    });
+  });
+
+  it("will not write a chapter twice when Mark reviewed is double-clicked", async () => {
+    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" />);
+    const button = (await screen.findAllByRole("button", { name: /mark reviewed/i }))[0];
+    fireEvent.click(button);
+    // Marking reviewed cannot be undone from any surface and files an audit row
+    // per call, so the second click must land on a disabled control.
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(button);
+    await waitFor(() => expect(patchCalls().length).toBeGreaterThan(0));
+    expect(patchCalls().length).toBe(1);
   });
 
   describe("why a chapter is missing", () => {

@@ -46,6 +46,20 @@ const REASONS: Record<string, string> = {
     "The writing assistant sent back too little to use, so this chapter is written from the plan's own figures. Generate again to retry.",
 };
 
+/**
+ * What the advisor is told when the request itself failed — as opposed to when
+ * the assistant did. No status codes and no "error": the number is in the
+ * console for whoever debugs it, and none of them changes what the advisor
+ * does next. Each one says what did NOT happen, so a failure can never read
+ * like a save that landed.
+ */
+const COULD_NOT_LOAD =
+  "Couldn't load this report's chapters. Check your connection and try again.";
+const COULD_NOT_SAVE = "Couldn't save your edit. Your words are still in the box — try again.";
+const COULD_NOT_REVIEW = "Couldn't mark that chapter reviewed. Try again.";
+const COULD_NOT_GENERATE =
+  "Couldn't write the chapters. Nothing was generated — try again in a moment.";
+
 function statusLabel(row: ChapterRow): string {
   if (!row.generated) return "Not generated yet";
   if (row.aiSuppressed) return "Written from plan figures";
@@ -74,15 +88,35 @@ export function PlanStoryReviewPanel({
   // would overwrite the words being written.
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  /** The chapter with a write in flight, so a second click cannot double-write
+   *  it. Marking reviewed is not reversible from any surface, and every PATCH
+   *  files its own audit row. */
+  const [saving, setSaving] = useState<string | null>(null);
+  /** The last request that did not do what it said. This panel is what
+   *  certifies a human read every word, so a request that failed silently is
+   *  that promise failing quietly. */
+  const [problem, setProblem] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const res = await fetch(
-      `/api/clients/${clientId}/plan-story?scenarioId=${encodeURIComponent(scenario)}`,
-    );
-    if (!res.ok) return;
-    const body = (await res.json()) as { chapters: ChapterRow[] };
-    setRows(body.chapters);
-    setLoaded(true);
+    try {
+      const res = await fetch(
+        `/api/clients/${clientId}/plan-story?scenarioId=${encodeURIComponent(scenario)}`,
+      );
+      if (!res.ok) throw new Error(`GET plan-story ${res.status}`);
+      const body = (await res.json()) as { chapters: ChapterRow[] };
+      setRows(body.chapters);
+      setLoaded(true);
+      // The one place the message clears. Every write ends either in its own
+      // failure message or in this reload, so a stale message cannot outlive
+      // the request that succeeded after it.
+      setProblem(null);
+    } catch (err) {
+      // Caught rather than left to reject: a dropped connection here would
+      // otherwise be an unhandled rejection over a panel showing nothing, no
+      // reason, and a live Generate button.
+      console.error("[plan-story] could not load chapters", err);
+      setProblem(COULD_NOT_LOAD);
+    }
   }, [clientId, scenario]);
 
   // Runs on mount and whenever the client or scenario changes — the drafts
@@ -92,40 +126,64 @@ export function PlanStoryReviewPanel({
     void load();
   }, [load]);
 
-  async function patch(chapterId: string, payload: Record<string, unknown>) {
-    const res = await fetch(`/api/clients/${clientId}/plan-story/${chapterId}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ scenarioId: scenario, ...payload }),
-    });
-    await load();
-    // The stored row, not the keystrokes, is what prints — and the two are not
-    // always the same string. Clearing the box is a real instruction ("drop my
-    // version, print the model's words" — schemas/plan-story.ts), and the row
-    // then resolves back to the generated text. Hand the box back to the server
-    // once the write lands; keep the typed words when it didn't, so a failed
-    // save leaves something to retry rather than a silent revert.
-    if (res.ok) {
+  async function patch(
+    chapterId: string,
+    payload: Record<string, unknown>,
+    failure: string,
+  ) {
+    setSaving(chapterId);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/plan-story/${chapterId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ scenarioId: scenario, ...payload }),
+      });
+      // Refused: say so and stop. Reloading here would replace the advisor's
+      // words with the stored text and make a failed save look like a saved one.
+      if (!res.ok) {
+        setProblem(failure);
+        return;
+      }
+      await load();
+      // The stored row, not the keystrokes, is what prints — and the two are not
+      // always the same string. Clearing the box is a real instruction ("drop my
+      // version, print the model's words" — schemas/plan-story.ts), and the row
+      // then resolves back to the generated text. Hand the box back to the
+      // server once the write lands; keep the typed words when it didn't.
       setDrafts((d) => {
         const next = { ...d };
         delete next[chapterId];
         return next;
       });
+    } catch (err) {
+      console.error("[plan-story] chapter write failed", chapterId, err);
+      setProblem(failure);
+    } finally {
+      setSaving(null);
     }
   }
 
   // Deliberately behind an explicit click: this is the only path in the app
-  // that spends model calls, and it has no rate limit of its own.
+  // that spends model calls, and it has no rate limit of its own — which is
+  // also why a failed run has to say so rather than reset the button and
+  // invite another click.
   async function generateAll() {
     setBusy(true);
     try {
-      await fetch(`/api/clients/${clientId}/plan-story/generate`, {
+      const res = await fetch(`/api/clients/${clientId}/plan-story/generate`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ scenarioId: scenario }),
       });
+      if (!res.ok) {
+        setProblem(COULD_NOT_GENERATE);
+        return;
+      }
       setDrafts({});
       await load();
+    } catch (err) {
+      console.error("[plan-story] generation request failed", err);
+      setProblem(COULD_NOT_GENERATE);
     } finally {
       setBusy(false);
     }
@@ -135,6 +193,12 @@ export function PlanStoryReviewPanel({
 
   return (
     <div className="flex flex-col gap-3">
+      {problem != null && (
+        <p role="alert" className="text-sm text-crit">
+          {problem}
+        </p>
+      )}
+
       <div className="flex items-center gap-3">
         {loaded && (
           <p className="text-sm text-ink-3">
@@ -175,15 +239,16 @@ export function PlanStoryReviewPanel({
             }
             onBlur={(e) => {
               if (e.target.value === row.text) return;
-              void patch(row.chapterId, { editedText: e.target.value });
+              void patch(row.chapterId, { editedText: e.target.value }, COULD_NOT_SAVE);
             }}
           />
 
           <div className="mt-2 flex items-center gap-3">
             <button
               type="button"
-              className="text-xs text-ink-3 underline hover:text-ink"
-              onClick={() => void patch(row.chapterId, { reviewed: true })}
+              className="text-xs text-ink-3 underline hover:text-ink disabled:no-underline disabled:opacity-50"
+              disabled={saving === row.chapterId}
+              onClick={() => void patch(row.chapterId, { reviewed: true }, COULD_NOT_REVIEW)}
             >
               Mark reviewed
             </button>
