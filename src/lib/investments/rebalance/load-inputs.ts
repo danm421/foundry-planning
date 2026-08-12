@@ -9,7 +9,6 @@ import {
 } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { loadEnrichedHoldings } from "@/lib/investments/load-enriched-holdings";
-import { loadTickerPortfolioAllocations } from "@/lib/investments/load-ticker-portfolio-allocations";
 import { firmSlugToAssetClassId } from "@/lib/investments/holdings-rollup";
 import { monthlyReturns, type MonthlyReturn } from "@/lib/cma-stats";
 import { loadClientData } from "@/lib/projection/load-client-data";
@@ -22,7 +21,6 @@ import {
   type ResolveTargetDeps,
 } from "./resolve-target";
 import { buildAdHocHoldings } from "./ad-hoc-source";
-import type { AssetClassWeight } from "@/lib/investments/benchmarks";
 import type { RebalanceInputs, CurrentHolding, AssetClassFull } from "./assemble";
 import type { RebalanceRequest } from "./types";
 
@@ -78,6 +76,17 @@ async function loadReturns(securityIds: string[]): Promise<Map<string, MonthlyRe
       adjClose: parseFloat(r.adjustedClose),
     })),
   );
+}
+
+/** A saved fund portfolio, read back as the same ticker+weight list a typed target is. */
+async function loadStoredPortfolioSpec(
+  portfolioId: string,
+): Promise<{ ticker: string; weight: number }[]> {
+  const rows = await db
+    .select()
+    .from(tickerPortfolioHoldings)
+    .where(eq(tickerPortfolioHoldings.tickerPortfolioId, portfolioId));
+  return rows.map((h) => ({ ticker: h.displayTicker, weight: Number(h.weight) }));
 }
 
 async function classifyTickerForRebalance(
@@ -291,40 +300,22 @@ export async function loadRebalanceInputs(
     ],
   );
 
-  let targetHoldings: { securityId: string; ticker: string; weight: number }[] = [];
-  let targetAllocations: AssetClassWeight[] = [];
+  // Both target shapes are just a list of tickers and weights, and both resolve
+  // the same way: by TICKER, cache-first. A saved fund portfolio always stores
+  // `display_ticker` but only sometimes stores `security_id` (the builder's
+  // write path never fills it in), so resolving off the stored id would drop
+  // every such row and emit an empty proposed portfolio — a confident
+  // sell-everything-to-cash recommendation — instead of failing loud.
+  const targetSpec =
+    "portfolioId" in body.target
+      ? await loadStoredPortfolioSpec(body.target.portfolioId)
+      : body.target.holdings;
 
-  if ("portfolioId" in body.target) {
-    const { portfolioId } = body.target;
-    const holdings = await db
-      .select()
-      .from(tickerPortfolioHoldings)
-      .where(eq(tickerPortfolioHoldings.tickerPortfolioId, portfolioId));
-    targetHoldings = holdings
-      .filter((h) => h.securityId)
-      .map((h) => ({
-        securityId: h.securityId!,
-        ticker: h.displayTicker,
-        weight: Number(h.weight),
-      }));
-    // loadTickerPortfolioAllocations returns every fund portfolio for the firm;
-    // we keep only the requested one. (A targeted query is future-work — see plan.)
-    const all = await loadTickerPortfolioAllocations(firmId, slugToId);
-    targetAllocations = all
-      .filter((a) => a.tickerPortfolioId === portfolioId)
-      .map((a) => ({ assetClassId: a.assetClassId, weight: Number(a.weight) }));
-  } else {
-    const resolved = await resolveTargetAllocations(
-      body.target.holdings,
-      slugToId,
-      resolverDeps,
-    );
-    if (resolved.unresolved.length > 0) {
-      throw new UnclassifiableTickerError(resolved.unresolved);
-    }
-    targetHoldings = resolved.targetHoldings;
-    targetAllocations = resolved.targetAllocations;
+  const resolved = await resolveTargetAllocations(targetSpec, slugToId, resolverDeps);
+  if (resolved.unresolved.length > 0) {
+    throw new UnclassifiableTickerError(resolved.unresolved);
   }
+  const { targetHoldings, targetAllocations } = resolved;
 
   const targetReturnsBySecurity = await loadReturns(
     targetHoldings.map((h) => h.securityId),
