@@ -9,6 +9,7 @@ import type { MonteCarloReportPayload } from "@/lib/presentations/pages/monte-ca
 import type { InvestmentsBundle } from "@/lib/presentations/investments-bundle";
 import type { LifeInsuranceInventory } from "@/lib/insurance-policies/load-li-inventory";
 import type { ObservationsRowInput } from "@/lib/presentations/pages/observations-next-steps/view-model";
+import type { PlanStoryContextInput } from "@/lib/presentations/pages/plan-story/view-model";
 import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
 import { SECTION_ACCENTS, DEFAULT_ACCENT } from "@/lib/presentations/theme";
 import { resolveScenarioRef, keyForRef } from "@/lib/scenario/presentation-refs";
@@ -55,6 +56,13 @@ interface PresentationDocumentProps {
   lifeInsurance?: LifeInsuranceInventory;
   /** Present only when the deck includes the Observations page. */
   observations?: ObservationsRowInput[];
+  /** Present whenever the deck includes the Plan Story page — the story context
+   *  and the advisor-reviewed chapter text, both read from storage by the
+   *  export. Absent, the page renders one sheet where `estimatePageCount`
+   *  reserved up to three, which shifts every start page `documentSections`
+   *  below hands the TOC. The caller therefore loads it on the page's presence,
+   *  never on the load succeeding. */
+  planStory?: PlanStoryContextInput;
 }
 
 export function PresentationDocument(props: PresentationDocumentProps) {
@@ -117,6 +125,7 @@ export function PresentationDocument(props: PresentationDocumentProps) {
             investments: props.investments,
             lifeInsurance: props.lifeInsurance,
             observations: props.observations,
+            planStory: props.planStory,
             scenarioChanges: bundle.scenarioChanges,
             bundlesByRef,
           },
