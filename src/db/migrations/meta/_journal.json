@@ -1667,6 +1667,13 @@
       "when": 1786398062538,
       "tag": "0237_stormy_scrambler",
       "breakpoints": true
+    },
+    {
+      "idx": 238,
+      "version": "7",
+      "when": 1786546601146,
+      "tag": "0238_plan_story_chapters",
+      "breakpoints": true
     }
   ]
 }

@@ -3123,6 +3123,59 @@ export const planObservations = pgTable(
 export type PlanObservationRow = InferSelectModel<typeof planObservations>;
 export type NewPlanObservationRow = InferInsertModel<typeof planObservations>;
 
+/**
+ * Advisor-reviewed narrative for the Plan Story report.
+ *
+ * Scoped on (client, scenario, chapter) — NOT client-only like
+ * plan_observations. An observation is about the household and survives any
+ * what-if; a story chapter's sentences are about one specific comparison
+ * ("confidence rises from 73% to 91%") and are wrong under any other.
+ */
+export const planStoryChapters = pgTable(
+  "plan_story_chapters",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    /** Literal "base" or a scenario UUID. Text, not a FK, so a base-only story
+     *  needs no synthetic scenario row. */
+    scenarioId: text("scenario_id").notNull(),
+    chapterId: text("chapter_id").notNull(),
+    /** Last model output, kept untouched so an advisor can revert to it. */
+    generatedText: text("generated_text"),
+    /** The advisor's version. Null until edited; wins at render time. */
+    editedText: text("edited_text"),
+    /** Prompt hash at generation — the staleness key. */
+    sourceHash: text("source_hash"),
+    /** True when the gates rejected the model and the fallback was stored. */
+    aiSuppressed: boolean("ai_suppressed").notNull().default(false),
+    /**
+     * Why the model produced nothing — an outage or a stub. Advisor-facing
+     * prose, whatever `GeneratedChapter.error` carried; null on a clean run.
+     * Load-bearing rather than tidy: an outage sets no gate findings, so
+     * without this column a chapter suppressed because the assistant was down
+     * is stored exactly like a healthy one, and the review panel can only
+     * offer the advisor a blank reason.
+     */
+    error: text("error"),
+    reviewedAt: timestamp("reviewed_at"),
+    reviewedByUserId: text("reviewed_by_user_id"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("plan_story_chapters_client_scenario_chapter_idx").on(
+      t.clientId,
+      t.scenarioId,
+      t.chapterId,
+    ),
+  ],
+);
+
+export type PlanStoryChapterRow = InferSelectModel<typeof planStoryChapters>;
+export type NewPlanStoryChapterRow = InferInsertModel<typeof planStoryChapters>;
+
 export const withdrawalStrategies = pgTable("withdrawal_strategies", {
   id: uuid("id").defaultRandom().primaryKey(),
   clientId: uuid("client_id")
