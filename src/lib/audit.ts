@@ -435,7 +435,14 @@ export type AuditAction =
   | "advisor_onboarding.dismiss"
   // Intake document uploads (public client-facing path, no Clerk session)
   | "intake.document.uploaded"
-  | "intake.document.deleted";
+  | "intake.document.deleted"
+  // Plan Story (AI-narrated chapters for the client-facing plan PDF).
+  // `generated` is one run over every chapter of one scenario; the other two
+  // are per chapter. Generation is advisor-triggered from the review panel and
+  // makes model calls, so it is audited like the other LLM actions above.
+  | "plan_story.generated"
+  | "plan_story.chapter_edited"
+  | "plan_story.chapter_reviewed";
 
 type Args = {
   action: AuditAction;
