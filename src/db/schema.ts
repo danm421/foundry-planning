@@ -82,6 +82,12 @@ export const riskLevelEnum = pgEnum("risk_level", [
   "aggressive",
 ]);
 
+export const investmentProposalStatusEnum = pgEnum("investment_proposal_status", [
+  "draft",
+  "presented",
+  "accepted",
+]);
+
 export const riskToleranceSourceEnum = pgEnum("risk_tolerance_source", [
   "rtq_client",
   "rtq_advisor",
@@ -1904,6 +1910,12 @@ export const securities = pgTable(
     classifierSource: varchar("classifier_source", { length: 16 }).notNull().default("eodhd"), // eodhd|seed|manual
     classifierVersion: integer("classifier_version").notNull().default(1),
     rawPayload: jsonb("raw_payload"),
+    // Always a decimal fraction: 0.000300 = 3 bps. NEVER a percent — EODHD
+    // reports ETFs as decimals and mutual funds as percents, and the
+    // normalization happens once, on write, in expenseRatioFromPayload.
+    // A 0 here means an individual stock or bond, where zero is the true
+    // answer. A fund with no usable data is null, never 0.
+    expenseRatio: decimal("expense_ratio", { precision: 7, scale: 6 }),
     classifiedAt: timestamp("classified_at").defaultNow().notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -5840,6 +5852,46 @@ export const clientRiskProfileEvents = pgTable(
   (t) => [
     index("client_risk_profile_events_client_idx").on(t.clientId, t.occurredAt),
     index("client_risk_profile_events_firm_idx").on(t.firmId),
+  ],
+);
+
+/** A saved comparison of a client's current portfolio against a proposed one.
+ *  `result` is FROZEN: a proposal presented on a date must still print what the
+ *  client saw on that date, after prices move and after the firm edits the model
+ *  portfolio. Recompute is an explicit advisor action, never a read-time effect. */
+export const investmentProposals = pgTable(
+  "investment_proposals",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id")
+      .notNull()
+      .references(() => firms.firmId, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    status: investmentProposalStatusEnum("status").notNull().default("draft"),
+
+    // Inputs — enough to re-run the comparison from scratch.
+    source: jsonb("source").notNull(),
+    target: jsonb("target").notNull(),
+    targetLabel: text("target_label").notNull(),
+    advisoryFeeCurrent: decimal("advisory_fee_current", { precision: 6, scale: 5 }),
+    advisoryFeeProposed: decimal("advisory_fee_proposed", { precision: 6, scale: 5 }),
+    overrideLtcgRate: decimal("override_ltcg_rate", { precision: 6, scale: 5 }),
+    notes: text("notes"),
+
+    // Frozen output.
+    result: jsonb("result").notNull(),
+    computedAt: timestamp("computed_at", { withTimezone: true }).notNull(),
+
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("investment_proposals_client_idx").on(t.clientId, t.updatedAt),
+    index("investment_proposals_firm_idx").on(t.firmId),
   ],
 );
 
