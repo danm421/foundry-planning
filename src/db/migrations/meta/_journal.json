@@ -1674,6 +1674,13 @@
       "when": 1786545604341,
       "tag": "0238_grey_betty_brant",
       "breakpoints": true
+    },
+    {
+      "idx": 239,
+      "version": "7",
+      "when": 1786577566928,
+      "tag": "0239_plan_story_chapters",
+      "breakpoints": true
     }
   ]
 }
