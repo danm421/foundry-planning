@@ -240,6 +240,7 @@ import {
 import { summarizePlanStoryOptions } from "@/lib/presentations/pages/plan-story/summarize-options";
 import { estimatePlanStoryPageCount } from "@/lib/presentations/pages/plan-story/estimate-page-count";
 import { PlanStoryPagePdf } from "./pages/plan-story/page-pdf";
+import { PlanStoryOptionsControl } from "./pages/plan-story/options-control";
 import type { PageScenarioBundle } from "./document";
 import { scenarioChangesOptionsSchema, SCENARIO_CHANGES_OPTIONS_DEFAULT } from "@/lib/presentations/pages/scenario-changes/options-schema";
 import { summarizeScenarioChangesOptions } from "@/lib/presentations/pages/scenario-changes/summarize-options";
@@ -641,6 +642,9 @@ export const planStoryPage: PresentationPage<PlanStoryPageData, PlanStoryOptions
   optionsSchema: planStoryOptionsSchema,
   summarizeOptions: summarizePlanStoryOptions,
   estimatePageCount: estimatePlanStoryPageCount,
+  // Also the only way to reach the review panel: it renders inside this
+  // control, on the same scenario the control picks.
+  OptionsControl: PlanStoryOptionsControl,
   supportsScenarioOverride: true,
   buildData: (ctx, options) => buildPlanStoryData(ctx, options),
   renderPdf: (input) => <PlanStoryPagePdf {...input} />,

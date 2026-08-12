@@ -77,3 +77,14 @@ describe("registry — Cash Flow page", () => {
     );
   });
 });
+
+describe("registry — Plan Story page", () => {
+  // The report's ONLY advisor-facing surface. Without this field the launcher
+  // renders no options dialog for the page, so the chapter toggles, the
+  // proposed-plan picker and the review panel — where every AI-written word is
+  // read and approved — are all unreachable, and the deck prints whatever the
+  // defaults say.
+  it("registers an OptionsControl, the only route to the review panel", () => {
+    expect(typeof PRESENTATION_PAGES.planStory.OptionsControl).toBe("function");
+  });
+});
