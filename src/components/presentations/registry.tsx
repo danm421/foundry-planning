@@ -227,7 +227,19 @@ import type {
   ScenarioChangesPageData,
   ScenarioChangesOptions,
 } from "@/lib/presentations/pages/scenario-changes/types";
-import type { PlanStoryContextInput } from "@/lib/presentations/pages/plan-story/view-model";
+import {
+  buildPlanStoryData,
+  type PlanStoryContextInput,
+  type PlanStoryPageData,
+} from "@/lib/presentations/pages/plan-story/view-model";
+import {
+  planStoryOptionsSchema,
+  PLAN_STORY_OPTIONS_DEFAULT,
+  type PlanStoryOptions,
+} from "@/lib/presentations/pages/plan-story/options-schema";
+import { summarizePlanStoryOptions } from "@/lib/presentations/pages/plan-story/summarize-options";
+import { estimatePlanStoryPageCount } from "@/lib/presentations/pages/plan-story/estimate-page-count";
+import { PlanStoryPagePdf } from "./pages/plan-story/page-pdf";
 import type { PageScenarioBundle } from "./document";
 import { scenarioChangesOptionsSchema, SCENARIO_CHANGES_OPTIONS_DEFAULT } from "@/lib/presentations/pages/scenario-changes/options-schema";
 import { summarizeScenarioChangesOptions } from "@/lib/presentations/pages/scenario-changes/summarize-options";
@@ -605,6 +617,33 @@ export const observationsNextStepsPage: PresentationPage<ObservationsPageData, O
       options,
     }),
   renderPdf: (input) => <ObservationsNextStepsPagePdf {...input} />,
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Plan Story — the client-readable narrative report.
+//
+// Filed under Framing, not a category of its own: the launcher's search groups
+// matches by CATEGORY_ORDER *before* it ranks them, so a new early category
+// makes its description-only matches outrank every title match below it (the
+// regression already documented on the Household Map pages).
+//
+// One registry page, not one per chapter: the advisor's mental model is "this
+// report, with options", and one page means one options control, one review
+// panel, and one place the page count is computed.
+// ─────────────────────────────────────────────────────────────────────────────
+export const planStoryPage: PresentationPage<PlanStoryPageData, PlanStoryOptions> = {
+  id: "planStory",
+  title: "Plan Story",
+  description:
+    "A client-readable walkthrough: where they stand, what we're recommending and why, and what it changes — in plain language.",
+  category: "Framing",
+  defaultOptions: PLAN_STORY_OPTIONS_DEFAULT,
+  optionsSchema: planStoryOptionsSchema,
+  summarizeOptions: summarizePlanStoryOptions,
+  estimatePageCount: estimatePlanStoryPageCount,
+  supportsScenarioOverride: true,
+  buildData: (ctx, options) => buildPlanStoryData(ctx, options),
+  renderPdf: (input) => <PlanStoryPagePdf {...input} />,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1199,6 +1238,7 @@ export const PRESENTATION_PAGES = {
   assumptions: assumptionsPage,
   blank: blankPage,
   observationsNextSteps: observationsNextStepsPage,
+  planStory: planStoryPage,
   mapNetWorth: mapNetWorthPage,
   mapCashFlow: mapCashFlowPage,
   mapGoals: mapGoalsPage,
