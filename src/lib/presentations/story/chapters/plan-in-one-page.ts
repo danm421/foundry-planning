@@ -19,10 +19,14 @@ const NOTHING_TO_REPORT =
  * and both print "73%" — and "down from 73%" next to "73%" reads as a bug.
  * `raw` is still what picks the direction once the two genuinely differ.
  */
-type Movement = "up" | "down" | "none";
+type Movement = "up" | "down" | "none" | "unknown";
 
 function movement(proposed: Fact, base: Fact): Movement {
   if (proposed.display === base.display) return "none";
+  // A quoted fact carries no `raw` (facts.ts#quotedFact), so two figures that
+  // differ can still be unorderable. "none" would be a lie next to two
+  // different percentages, so say the pair and skip the direction word.
+  if (proposed.raw == null || base.raw == null) return "unknown";
   return proposed.raw > base.raw ? "up" : "down";
 }
 
@@ -44,12 +48,15 @@ function confidenceLine(base: Fact | null, proposed: Fact | null): { line: strin
     const phrase =
       moved === "none"
         ? "no change from your current path"
-        : `${moved} from ${base.display} on your current path`;
+        : moved === "unknown"
+          ? `against ${base.display} on your current path`
+          : `${moved} from ${base.display} on your current path`;
     return {
       line: `With the changes we're suggesting, the plan comes through in ${proposed.display} of the futures we tested — ${phrase}.`,
       // A stated non-movement is not something the changes can be credited with,
-      // so "That comes from…" may not follow it either.
-      comparison: moved !== "none",
+      // so "That comes from…" may not follow it either — and neither can a
+      // movement we could not name a direction for.
+      comparison: moved === "up" || moved === "down",
     };
   }
   if (proposed) {

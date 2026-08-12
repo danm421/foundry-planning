@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { moneyFact, pctFact, yearFact, factDisplaySet } from "../facts";
+import { moneyFact, pctFact, yearFact, quotedFact, factDisplaySet } from "../facts";
 
 describe("story facts", () => {
   it("formats money compactly and never shows cents", () => {
@@ -20,6 +20,21 @@ describe("story facts", () => {
   it("keeps the raw value alongside the display string", () => {
     const f = moneyFact("g", "Liquid assets", 2_100_000);
     expect(f).toEqual({ id: "g", label: "Liquid assets", display: "$2.1M", raw: 2_100_000 });
+  });
+
+  /**
+   * A quoted figure keeps the spelling it arrived in and carries no number.
+   * `compactCurrency(1500)` is "$1.5k" where `fmtUsdCompact(1500)` is "$2K", so
+   * parsing the token back to 1500 to fill `raw` would let a later formatter
+   * print a different number than the one the client was shown.
+   */
+  it("quotes a foreign figure verbatim and refuses to guess the number behind it", () => {
+    expect(quotedFact("quoted.$1.5k", "Boost the 401(k) — quoted", "$1.5k")).toEqual({
+      id: "quoted.$1.5k",
+      label: "Boost the 401(k) — quoted",
+      display: "$1.5k",
+      raw: null,
+    });
   });
 
   it("collects every display string into a lookup set", () => {

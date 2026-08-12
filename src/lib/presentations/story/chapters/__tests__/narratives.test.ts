@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { narratePlanInOnePage } from "../plan-in-one-page";
 import { narrateWhatYouHave } from "../what-you-have";
 import { narrateWhatWeRecommend } from "../what-we-recommend";
-import { moneyFact, pctFact, type Fact } from "../../facts";
+import { moneyFact, pctFact, quotedFact, type Fact } from "../../facts";
 import type { StoryContext, StoryStrategy } from "../../types";
 
 const CTX: StoryContext = {
@@ -175,6 +175,26 @@ describe("plan-in-one-page confidence direction", () => {
         "We're recommending one change: Delay Social Security. " +
         "You're starting from $2.1M.",
     );
+  });
+
+  /**
+   * A `quotedFact` carries no `raw` — the pack quotes figures another module
+   * formatted, and parsing one back to a number is the forbidden round trip. So
+   * two confidence figures can differ and still be unorderable. Saying "no
+   * change" beside 73% and 91% would be false, and picking a direction would be
+   * a guess: state the pair and drop the direction word. The attribution
+   * sentence may not follow it either — there is no named movement to credit.
+   */
+  it("states both figures without a direction when one carries no number", () => {
+    const proposed = quotedFact("outcome.confidence.proposed", "Confidence, proposed plan", "91%");
+    const joined = narratePlanInOnePage(withConfidence([BASE, proposed])).join(" ");
+    expect(joined).toBe(
+      "With the changes we're suggesting, the plan comes through in 91% of the futures we tested — against 73% on your current path. " +
+        "We're recommending one change: Delay Social Security. " +
+        "You're starting from $2.1M.",
+    );
+    expect(joined).not.toContain("That comes from");
+    expect(joined).not.toContain("no change");
   });
 });
 
