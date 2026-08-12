@@ -2,8 +2,8 @@
 // described scenario changes into named strategies. No IO, no clock — the
 // caller (load-context.ts) owns both.
 import type { ChangeRow } from "@/lib/presentations/pages/scenario-changes/types";
-import { moneyFact, pctFact, quotedFact, yearFact, type Fact } from "./facts";
-import type { StoryStrategy } from "./types";
+import { hasAccountingNegative, moneyFact, pctFact, quotedFact, yearFact, type Fact } from "./facts";
+import type { ChapterId, StoryStrategy } from "./types";
 import { extractFigures } from "./validate/facts";
 
 export interface StoryFactsInput {
@@ -27,6 +27,54 @@ export interface StoryFactsInput {
   strategies: StoryStrategy[];
 }
 
+/** A quoted figure describes one proposed change, so it is meaningful in the
+ *  recommendation chapter and nowhere else. A chapter about today's balance
+ *  sheet has no business being licensed to print a future sale price. */
+const QUOTED_CHAPTERS: readonly ChapterId[] = ["whatWeRecommend"];
+
+/**
+ * The shapes a quoted token may take.
+ *
+ * The report's formatting rules — at most one decimal, no cents, none of the
+ * accounting conventions a table uses — were written for figures the deck
+ * formats itself (`facts.ts` is their single source of truth). A figure quoted
+ * from another module is a category those rules did not anticipate, so they are
+ * applied here by SHAPE instead: a token that could not have come out of this
+ * document's own formatter is not admitted, and the detail carrying it degrades
+ * to the generic clause exactly as it did before any of this existed.
+ *
+ * Case is the one thing deliberately not checked. "$300k" against the pack's
+ * "$300K" is the accepted cost of quoting — closing it would mean re-formatting
+ * the token, which prints a DIFFERENT number ($1.5k → $2K), which is the whole
+ * reason these figures are quoted rather than rebuilt.
+ */
+const QUOTABLE_SHAPES: readonly RegExp[] = [
+  /^\$\d{1,3}(?:,\d{3})*$/u, // $812 · $1,234 — whole dollars, no cents
+  /^\$\d+(?:\.\d)?[KMB]$/iu, // $25k · $1.8k · $2.1M — one decimal at most
+  /^\d+(?:\.\d)?%$/u, // 50% · 6.2% — one decimal at most, so "4.50%" is out
+  /^(?:19|20)\d{2}$/u, // 2041
+];
+
+/**
+ * The figures in one source clause, or null when the clause is not quotable at
+ * all.
+ *
+ * All-or-nothing per clause, not per token, because grounding is all-or-nothing
+ * per clause: a detail prints only when EVERY figure in it is in the pack. So a
+ * clause holding one non-compliant figure will never print, and admitting its
+ * other figures would license the model to use numbers from a sentence the
+ * client is never shown. The pack's quoted half is exactly the figures of the
+ * clauses we are prepared to print.
+ */
+function quotableFigures(source: string): string[] | null {
+  // Not sufficient on its own — the same clause is refused again at the point of
+  // printing, because another change can put the identical token in the pack
+  // legitimately. See `facts.ts#hasAccountingNegative`.
+  if (hasAccountingNegative(source)) return null;
+  const tokens = extractFigures(source);
+  return tokens.every((t) => QUOTABLE_SHAPES.some((re) => re.test(t))) ? tokens : null;
+}
+
 /**
  * Every figure the strategy rows carry, admitted to the pack in the CHANGES
  * TABLE's spelling rather than this document's.
@@ -46,6 +94,12 @@ export interface StoryFactsInput {
  * parens excluded. Feeding the gate's own output back to it makes the
  * exact-spelling match true by construction.
  *
+ * Only `detail[0]` and the before/after pair are read, because those are the
+ * only fields anything prints or shows the model (`what-we-recommend.ts`
+ * quotes `detail[0]`; `prompts.ts#rowLine` shows `detail[0]` and the pair).
+ * Quoting the later detail lines licensed figures no chapter can reach — pure
+ * widening, so it is gone until a chapter actually reads them.
+ *
  * Deduplicated on `display`, which is the only thing anything compares here, so
  * ids stay unique by construction. The dedupe is case-SENSITIVE deliberately:
  * "$25k" and "$25K" are one value in two spellings, and the gate accepts only
@@ -55,14 +109,23 @@ function quoteStrategyFigures(strategies: StoryStrategy[], taken: Set<string>): 
   const facts: Fact[] = [];
   for (const strategy of strategies) {
     for (const row of strategy.rows) {
-      for (const text of [...row.detail, row.before, row.after]) {
-        for (const token of extractFigures(text)) {
+      // The pair, joined the way `prompts.ts#rowLine` shows it, so the label
+      // states a direction rather than leaving two bare amounts side by side.
+      for (const source of [row.detail[0], `${row.before} → ${row.after}`]) {
+        if (!source) continue;
+        const tokens = quotableFigures(source);
+        if (!tokens) continue;
+        for (const token of tokens) {
           if (taken.has(token)) continue;
           taken.add(token);
-          // The label names the strategy the token was FIRST seen in — a figure
-          // shared by two changes is one entry, under the earlier one.
+          // The label quotes the clause the figure came from. Without it the
+          // model sees two identical labels over "$20k" and "$25k" with nothing
+          // saying which is the before — and an inverted recommendation clears
+          // every gate, because Gate 1 checks spelling and never meaning. The
+          // strategy named is where the token was FIRST seen; a figure shared by
+          // two changes is one entry, under the earlier one.
           facts.push(
-            quotedFact(`quoted.${token}`, `${strategy.name} — figure quoted from the change list`, token),
+            quotedFact(`quoted.${token}`, `${strategy.name} — from "${source}"`, token, QUOTED_CHAPTERS),
           );
         }
       }

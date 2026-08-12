@@ -1,6 +1,6 @@
 import type { ChangeArea } from "@/lib/presentations/pages/scenario-changes/types";
-import type { StoryStrategy, StoryContext } from "../types";
-import { factDisplaySet, type Fact } from "../facts";
+import { factsForChapter, type StoryStrategy, type StoryContext } from "../types";
+import { factDisplaySet, hasAccountingNegative, type Fact } from "../facts";
 import { extractFigures, validateFacts } from "../validate/facts";
 
 /**
@@ -86,6 +86,13 @@ const UNRESOLVED_TAIL = /(?:^|[\s→:])[—–-]+\s*$/u;
 /** The quotable clause inside a detail, or null when there is nothing to quote. */
 function usableDetail(detail: string | undefined): string | null {
   if (!detail || UNRESOLVED_TAIL.test(detail)) return null;
+  // An accounting-paren negative — "Annual amount: ($50k) → ($20k)" — is a form
+  // this document does not write, and grounding cannot catch it: the parens are
+  // not part of the token, so a "$50k" quoted legitimately from ANOTHER change
+  // grounds this one. Measured, not theorised: with a Roth conversion of $50k/yr
+  // and a savings edit of $20k → $25k in the same deck, both tokens are in the
+  // pack on their own merits and this clause printed verbatim.
+  if (hasAccountingNegative(detail)) return null;
   const clause = asClause(detail);
   return clause.length > 0 ? clause : null;
 }
@@ -109,5 +116,11 @@ export function narrateWhatWeRecommend(ctx: StoryContext): string[] {
   if (!ctx.hasProposal || ctx.strategies.length === 0) {
     return ["We aren't suggesting changes to the plan this time."];
   }
-  return ctx.strategies.map((s) => describe(s, ctx.facts));
+  // Ground against this chapter's figures, not the whole pack. `generate.ts`
+  // already hands over a scoped context, so this is a no-op on that path — but
+  // the narrator is also what renders when generation is off, called straight
+  // off `CHAPTERS[id].narrate`, and `grounded()` is the check standing between a
+  // borrowed figure and a client's page. It may not depend on its caller.
+  const facts = factsForChapter(ctx.facts, "whatWeRecommend");
+  return ctx.strategies.map((s) => describe(s, facts));
 }

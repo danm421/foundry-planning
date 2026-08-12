@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { moneyFact, pctFact, yearFact, quotedFact, factDisplaySet } from "../facts";
+import {
+  moneyFact,
+  pctFact,
+  yearFact,
+  quotedFact,
+  factDisplaySet,
+  hasAccountingNegative,
+} from "../facts";
 
 describe("story facts", () => {
   it("formats money compactly and never shows cents", () => {
@@ -29,12 +36,33 @@ describe("story facts", () => {
    * print a different number than the one the client was shown.
    */
   it("quotes a foreign figure verbatim and refuses to guess the number behind it", () => {
-    expect(quotedFact("quoted.$1.5k", "Boost the 401(k) — quoted", "$1.5k")).toEqual({
+    expect(
+      quotedFact("quoted.$1.5k", 'Boost the 401(k) — from "Annual amount: $1.5k → $2k"', "$1.5k", [
+        "whatWeRecommend",
+      ]),
+    ).toEqual({
       id: "quoted.$1.5k",
-      label: "Boost the 401(k) — quoted",
+      label: 'Boost the 401(k) — from "Annual amount: $1.5k → $2k"',
       display: "$1.5k",
       raw: null,
+      chapters: ["whatWeRecommend"],
     });
+  });
+
+  /**
+   * The parens are not part of the token — `extractFigures("($50k)")` returns
+   * "$50k" — so a figure lifted out of an accounting negative is
+   * indistinguishable from an ordinary positive, and the check has to see the
+   * text it came from.
+   */
+  it.each([
+    ["Annual amount: ($50k) → ($20k)", true],
+    ["( $50k )", true],
+    ["Annual amount: $50k → $20k", false],
+    ["New growth 6.2%/yr (custom mix)", false], // parens that are not a negative
+    ["2030 (Retirement)", false],
+  ])("reads %j as an accounting negative: %s", (text, expected) => {
+    expect(hasAccountingNegative(text)).toBe(expected);
   });
 
   it("collects every display string into a lookup set", () => {

@@ -15,7 +15,7 @@ import {
 import { buildChapterPrompt } from "./chapters/prompts";
 import { CHAPTERS } from "./chapters/registry";
 import { runGates, type GateFailure } from "./validate";
-import type { ChapterId, StoryContext } from "./types";
+import { factsForChapter, type ChapterId, type StoryContext } from "./types";
 
 /** Pinned explicitly rather than through AZURE_ANALYSIS_MODEL, matching the
  *  shipped comparison generator (pages/retirement-comparison/generate-ai.ts).
@@ -177,7 +177,20 @@ function retryNotes(failures: GateFailure[]): GateFailure[] {
 }
 
 export async function generateChapter(args: GenerateChapterArgs): Promise<GeneratedChapter> {
-  const { clientId, chapterId, ctx, voiceSamples } = args;
+  const { clientId, chapterId, voiceSamples } = args;
+  /**
+   * Scope the pack to this chapter ONCE, here, and let everything below read the
+   * result: the prompt the model is shown, the gate that judges what it wrote,
+   * and the deterministic narrative that runs when the model is off all take
+   * their figures from this one object.
+   *
+   * Deliberately one derived context rather than a filter at each of those three
+   * call sites. Gate 1 checks a figure's spelling and never its meaning, so the
+   * shown set and the allowed set have to be the same set — show a figure the
+   * gate will reject and the chapter spends its single retry on a word we handed
+   * it. Three filters that agree today can be edited apart; one array cannot.
+   */
+  const ctx: StoryContext = { ...args.ctx, facts: factsForChapter(args.ctx.facts, chapterId) };
   const generate = args.deps?.generate ?? (async (s: string, u: string) => {
     const { content, finishReason } = await callAIExtractionWithMeta(s, u, MODEL);
     // A completion that did not finish is an outage by definition: what came

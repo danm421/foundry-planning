@@ -7,7 +7,7 @@ vi.mock("@/lib/extraction/azure-client", () => ({ callAIExtractionWithMeta: vi.f
 import { callAIExtractionWithMeta } from "@/lib/extraction/azure-client";
 import { generateChapter } from "../generate";
 import { CHAPTERS } from "../chapters/registry";
-import { moneyFact, pctFact } from "../facts";
+import { moneyFact, pctFact, quotedFact } from "../facts";
 import type { ChapterId, StoryContext, StoryStrategy } from "../types";
 import type { ChangeRow } from "@/lib/presentations/pages/scenario-changes/types";
 
@@ -404,6 +404,61 @@ describe("generateChapter", () => {
       // they can act on rather than a bare "unavailable".
       if (res.aiSuppressed) expect(res.failures.length).toBeGreaterThan(0);
       quiet.mockRestore();
+    });
+  });
+
+  /**
+   * The pack is one array shared by every chapter, but a quoted figure is about
+   * one proposed change. Gate 1 checks a figure's SPELLING and never its
+   * meaning, so an unscoped pack lets the chapter about today's balance sheet
+   * print a future rental sale price — grammatical, grounded, and wrong.
+   *
+   * The property that has to hold is not just "scoped" but "scoped the same way
+   * twice": what the model is SHOWN and what the gate ALLOWS must be one set.
+   * Both halves are asserted per chapter, which is what makes a drift between
+   * them a failure rather than a silent retry.
+   */
+  describe("scopes the fact pack to the chapter", () => {
+    const SALE = quotedFact("quoted.$850k", 'Sell the rental — from "…$850k sale"', "$850k", [
+      "whatWeRecommend",
+    ]);
+    const ctx: StoryContext = { ...CTX, facts: [...CTX.facts, SALE] };
+    /** One figure — the quoted sale price — and nothing else for a gate to bite
+     *  on, so whether it survives is decided by Gate 1 alone. */
+    const USES_SALE =
+      "The rental comes off the books for $850k. That money goes to work in the plan. " +
+      "It is the biggest change of the year, and the one that buys the most room later.";
+
+    it("hides a proposed change's figure from the chapter about today, and rejects it", async () => {
+      const gen = vi.fn().mockResolvedValue(USES_SALE);
+      const res = await generateChapter({
+        clientId: "c1", chapterId: "whatYouHave", ctx, voiceSamples: [], deps: deps(gen),
+      });
+      // SHOWN: the fact block never lists it…
+      expect(gen.mock.calls[0][1] as string).not.toContain("$850k");
+      // …and ALLOWED agrees — Gate 1 rejects both attempts, so it never prints.
+      expect(res.aiSuppressed).toBe(true);
+      expect(res.markdown).not.toContain("$850k");
+      expect(res.failures.some((f) => f.gate === "facts" && f.message.includes("$850k"))).toBe(true);
+    });
+
+    it("shows the same figure to the recommendation chapter, and accepts it", async () => {
+      const gen = vi.fn().mockResolvedValue(USES_SALE);
+      const res = await generateChapter({
+        clientId: "c1", chapterId: "whatWeRecommend", ctx, voiceSamples: [], deps: deps(gen),
+      });
+      expect(gen.mock.calls[0][1] as string).toContain("$850k");
+      expect(res.aiSuppressed).toBe(false);
+      expect(res.markdown).toBe(USES_SALE);
+      expect(gen).toHaveBeenCalledTimes(1);
+    });
+
+    it("leaves plan-level totals visible to every chapter", async () => {
+      for (const chapterId of ["planInOnePage", "whatYouHave", "whatWeRecommend"] as const) {
+        const gen = vi.fn().mockResolvedValue(GOOD);
+        await generateChapter({ clientId: "c1", chapterId, ctx, voiceSamples: [], deps: deps(gen) });
+        expect(gen.mock.calls[0][1] as string).toContain("$2.1M");
+      }
     });
   });
 

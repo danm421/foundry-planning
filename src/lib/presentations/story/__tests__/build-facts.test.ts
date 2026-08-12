@@ -10,7 +10,7 @@ import { buildStoryFacts, groupStrategies, type StoryFactsInput } from "../build
 import { factDisplaySet } from "../facts";
 import { extractFigures, validateFacts } from "../validate/facts";
 import { narrateWhatWeRecommend } from "../chapters/what-we-recommend";
-import type { StoryContext, StoryStrategy } from "../types";
+import { factsForChapter, type StoryContext, type StoryStrategy } from "../types";
 
 const input: StoryFactsInput = {
   todayAssets: 2_400_000,
@@ -199,15 +199,45 @@ describe("the fact pack carries the strategies' own figures", () => {
     );
     expect(quoted).toHaveLength(1);
     expect(quoted[0].raw).toBeNull();
-    expect(quoted[0].label).toContain("Raise the contribution");
   });
 
-  it("takes the extractor's own token, so a parenthesised negative loses its parens", () => {
-    const row = REAL_ROWS[15][1];
-    expect(row.detail[0]).toBe("Annual amount: ($50k) → ($20k)");
-    const displays = factDisplaySet(buildStoryFacts({ ...input, strategies: [STRATEGIES[15]] }));
-    expect(displays.has("$50k")).toBe(true);
-    expect(displays.has("($50k)")).toBe(false);
+  /**
+   * The model is shown the pack as "- <label>: <display>". Two entries labelled
+   * only "Raise the contribution", one reading $20k and one $25k, say nothing
+   * about which is the before — and "we're bringing it down from $25k to $20k"
+   * clears all four gates, because Gate 1 checks spelling and never meaning.
+   */
+  it("labels a quoted figure with the clause it came from, direction included", () => {
+    const facts = buildStoryFacts({ ...input, strategies: [STRATEGIES[1]] });
+    const labels = facts.filter((f) => f.raw === null).map((f) => f.label);
+    expect(labels).toEqual([
+      'Raise the contribution — from "Annual amount: $20k → $25k"',
+      'Raise the contribution — from "Annual amount: $20k → $25k"',
+    ]);
+    expect(new Set(labels).size).toBe(1);
+    // …and the clause states the direction the two bare amounts cannot.
+    expect(labels[0]).toContain("$20k → $25k");
+  });
+
+  it("scopes every quoted figure to the recommendation chapter", () => {
+    const facts = buildStoryFacts({ ...input, strategies: STRATEGIES });
+    for (const f of facts.filter((x) => x.raw === null)) {
+      expect(f.chapters).toEqual(["whatWeRecommend"]);
+    }
+    // …and leaves the plan-level totals unscoped, so they stay true everywhere.
+    for (const f of facts.filter((x) => x.raw !== null)) {
+      expect(f.chapters).toBeUndefined();
+    }
+  });
+
+  it("keeps a proposed change's figures out of the chapter about today", () => {
+    const facts = buildStoryFacts({ ...input, strategies: STRATEGIES });
+    const forBalanceSheet = factsForChapter(facts, "whatYouHave").map((f) => f.display);
+    expect(forBalanceSheet).toContain("$2.4M"); // a household total: true everywhere
+    expect(forBalanceSheet).not.toContain("$850k"); // a future rental sale price
+    expect(forBalanceSheet).not.toContain("$50k"); // a proposed Roth conversion
+    expect(factsForChapter(facts, "whatYouHave")).toHaveLength(10);
+    expect(factsForChapter(facts, "whatWeRecommend").length).toBeGreaterThan(10);
   });
 
   it("does not re-quote a figure the plan facts already spell that way", () => {
@@ -219,31 +249,38 @@ describe("the fact pack carries the strategies' own figures", () => {
   });
 
   /**
-   * The measured COST of admitting the table's spellings, pinned so it is a
-   * known trade and not a later surprise. `todayDebts` is 300000, which this
-   * document writes "$300K"; the mortgage row writes the same dollars "$300k".
-   * Both are now in the pack, so one deck can print "you owe $300K" beside
-   * "$300k · 4.50% · $1.8k/mo".
+   * The one residual COST of quoting, pinned so it is a known trade and not a
+   * later surprise: case. With debts of 20000 this document writes "$20K" and
+   * the savings row writes the same dollars "$20k", so both spellings sit in one
+   * pack.
    *
-   * Accepted because the alternative is worse: without the quoted spelling the
-   * whole detail is suppressed and the chapter says nothing. Narrowing it is a
-   * change to `compactCurrency` or to the describers, not to this module.
+   * Accepted deliberately. Closing it means re-formatting the quoted token, and
+   * `compactCurrency(1500)` is "$1.5k" where `fmtUsdCompact(1500)` is "$2K" — the
+   * round trip would print a different NUMBER to the client, which is worse than
+   * a different letter. Flagged for Dan; not fixable inside this module.
    */
-  it("admits both spellings of one dollar amount — the known cost of quoting", () => {
-    const facts = buildStoryFacts({ ...input, strategies: [STRATEGIES[6]] });
+  it("admits both spellings of one dollar amount — the accepted cost of quoting", () => {
+    const facts = buildStoryFacts({ ...input, todayDebts: 20_000, strategies: [STRATEGIES[1]] });
     const displays = facts.map((f) => f.display);
-    expect(displays).toContain("$300K"); // fmtUsdCompact — this document
-    expect(displays).toContain("$300k"); // compactCurrency — the changes table
-    expect(facts.find((f) => f.display === "$300K")?.id).toBe("today.debts");
+    expect(displays).toContain("$20K"); // fmtUsdCompact — this document
+    expect(displays).toContain("$20k"); // compactCurrency — the changes table
+    expect(facts.find((f) => f.display === "$20K")?.id).toBe("today.debts");
   });
 
-  it("quotes every figure in every detail line, not only the first", () => {
-    // The reinvestment describer writes three detail lines; the rate is on the
-    // second. Plan 2's chapters read past detail[0].
+  /**
+   * Nothing reads past `detail[0]`: `what-we-recommend.ts` quotes it and
+   * `prompts.ts#rowLine` shows it. Quoting the later lines licensed figures no
+   * chapter can print — the removable part of the widening, and the part that
+   * put bare percentages in the pack with no clause to explain them.
+   */
+  it("does not quote figures from a detail line nothing reads", () => {
     const row = REAL_ROWS[13][1];
+    expect(row.detail[0]).toBe("Year 2030 · Traditional IRA");
     expect(row.detail[1]).toBe("New growth 6.2%/yr (custom mix)");
+
     const displays = factDisplaySet(buildStoryFacts({ ...input, strategies: [STRATEGIES[13]] }));
-    expect(displays.has("6.2%")).toBe(true);
+    expect(displays.has("2030")).toBe(true); // detail[0], and the chapter prints it
+    expect(displays.has("6.2%")).toBe(false); // detail[1], which nothing reads
   });
 
   it("quotes the before/after pair an edit row carries", () => {
@@ -252,6 +289,42 @@ describe("the fact pack carries the strategies' own figures", () => {
     const displays = factDisplaySet(buildStoryFacts({ ...input, strategies: [STRATEGIES[8]] }));
     expect(displays.has("$100k")).toBe(true);
     expect(displays.has("$150k")).toBe(true);
+  });
+
+  /**
+   * The report's formatting rules are Task 1's, written for figures the deck
+   * formats itself. A quoted token is held to them by SHAPE: anything this
+   * document's own formatter could not have produced is not admitted, and its
+   * clause degrades exactly as it did before quoting existed.
+   *
+   * All-or-nothing per clause, because grounding is: a detail prints only when
+   * every figure in it is in the pack, so a clause holding one bad figure will
+   * never print, and admitting its other figures would license the model to use
+   * numbers from a sentence the client never sees.
+   */
+  it.each([
+    // two decimals — the plan allows at most one. `describe/kinds/cashflow.ts`
+    // writes an interest rate as `(r * 100).toFixed(2)`.
+    ["$300k · 4.50% · $1.8k/mo", []],
+    // accounting parens. `extractFigures` strips them, so the TOKEN looks
+    // compliant ("$50k") while the text around it is not — the check has to see
+    // the source, and it rejects the whole clause.
+    ["Annual amount: ($50k) → ($20k)", []],
+    // cents
+    ["Annual amount: $1,234.56 → $2,000.00", []],
+    // …and the compliant shapes still come through whole.
+    ["Traditional IRA · $25k/yr · 50% Roth · 2026 → 2035", ["$25k", "50%", "2026", "2035"]],
+    ["$50k/yr from Traditional IRA → Roth IRA · 2028–2033", ["$50k", "2028", "2033"]],
+    ["Sale of $812 · 6.2% · $3.4M · $1,234", ["$812", "6.2%", "$3.4M", "$1,234"]],
+  ] as const)("admits only deck-shaped figures from %j", (detail, expected) => {
+    const strategy: StoryStrategy = {
+      name: "S",
+      rows: [{ area: "Savings", what: "S", op: "edit", before: "—", after: "Updated", detail: [detail] }],
+    };
+    const quoted = buildStoryFacts({ ...input, strategies: [strategy] })
+      .filter((f) => f.raw === null)
+      .map((f) => f.display);
+    expect(quoted).toEqual(expected);
   });
 
   // The guard that survives a refactor: whatever the chapter prints, for
@@ -274,15 +347,32 @@ describe("the fact pack carries the strategies' own figures", () => {
  * half was having the figures in the pack.
  */
 describe("regrounding measurement: strategy details survive instead of degrading", () => {
-  const genericCount = (packStrategies: StoryStrategy[]) =>
+  const degraded = (packStrategies: StoryStrategy[]) =>
     STRATEGIES.filter((s) =>
       GENERIC_CLAUSE.test(narrateWhatWeRecommend(contextFor([s], packStrategies)).join(" ")),
-    ).length;
+    ).map((s) => s.name);
 
-  it("degraded 11 of 16 real change shapes before, and 0 after", () => {
+  /**
+   * Both sides of the change, in one run, so neither number can rot.
+   *
+   * The two shapes that still degrade are the two the shape filter deliberately
+   * refuses — they are the COST of the narrowing, not a failure of the
+   * regrounding, and both were also degraded before. Nothing regressed: the
+   * "after" set is a strict subset of the "before" set.
+   */
+  it("degraded 11 of 16 real change shapes before, and 2 after", () => {
     expect(STRATEGIES).toHaveLength(16);
-    expect(genericCount([])).toBe(11);
-    expect(genericCount(STRATEGIES)).toBe(0);
+
+    const before = degraded([]);
+    const after = degraded(STRATEGIES);
+
+    expect(before).toHaveLength(11);
+    expect(after).toEqual([
+      "Take the mortgage", // "4.50%" — two decimals
+      "Trim the negative expense", // "($50k)" — accounting parens
+    ]);
+    // Every shape that still degrades already degraded before the change.
+    expect(before).toEqual(expect.arrayContaining(after));
   });
 
   it("prints the change's own words once its figures are in the pack", () => {
@@ -290,6 +380,30 @@ describe("regrounding measurement: strategy details survive instead of degrading
     expect(narrateWhatWeRecommend(ctx)).toEqual([
       "Roth ladder — $50k/yr from Traditional IRA → Roth IRA · 2028–2033.",
     ]);
+  });
+
+  /**
+   * The leak the shape filter could NOT close on its own, found by running the
+   * 16-shape harness rather than by reading the code.
+   *
+   * `extractFigures("($50k)")` returns "$50k", so refusing to QUOTE from a
+   * parenthesised clause does not keep that clause off the page: a Roth
+   * conversion of "$50k/yr" and a savings edit of "$20k → $25k" put both tokens
+   * in the pack on their own merits, and the negative clause is then perfectly
+   * grounded. Closed at the point of printing, where the text is still visible.
+   */
+  it("refuses an accounting-paren negative even when another change grounds its figures", () => {
+    const pack = buildStoryFacts({ ...input, strategies: STRATEGIES });
+    const displays = factDisplaySet(pack);
+    // Both tokens really are in the pack, quoted from other changes.
+    expect(displays.has("$50k")).toBe(true);
+    expect(displays.has("$20k")).toBe(true);
+
+    const ctx: StoryContext = { ...contextFor([STRATEGIES[15]], STRATEGIES) };
+    expect(STRATEGIES[15].rows[0].detail[0]).toBe("Annual amount: ($50k) → ($20k)");
+    const line = narrateWhatWeRecommend(ctx).join(" ");
+    expect(line).toBe("Trim the negative expense — this changes your spending.");
+    expect(line).not.toContain("($50k)");
   });
 
   it("still degrades a detail whose figures the pack does not hold", () => {

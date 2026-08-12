@@ -2,6 +2,9 @@
 // handed `display` values and is forbidden from formatting anything itself,
 // so rounding rules cannot drift between two chapters of the same report.
 import { fmtUsdCompact } from "@/lib/presentations/pages/retirement-comparison/format";
+// Type-only, so the cycle with `types.ts` (which imports `Fact` from here) is
+// erased at compile time and never exists at runtime.
+import type { ChapterId } from "./types";
 
 export interface Fact {
   /** Stable dotted id, e.g. "outcome.confidence.proposed". */
@@ -17,6 +20,19 @@ export interface Fact {
    * available" and "compare on `display` only" are the same statement.
    */
   raw: number | null;
+  /**
+   * The chapters this figure belongs to. Absent — the case for every plan-level
+   * total — means every chapter, which is the right default for a household
+   * number that is true wherever it is printed.
+   *
+   * Set it when a figure is only meaningful in one place. Gate 1 checks a
+   * figure's SPELLING, never its meaning, so an unscoped pack licenses every
+   * chapter to print every figure in it: a proposed rental sale price is
+   * grammatical inside a chapter about today's balance sheet, and nothing
+   * downstream can tell that it is wrong. Read it through
+   * `types.ts#factsForChapter`, never by hand.
+   */
+  chapters?: readonly ChapterId[];
 }
 
 export function moneyFact(id: string, label: string, raw: number): Fact {
@@ -49,9 +65,36 @@ export function yearFact(id: string, label: string, raw: number): Fact {
  * `display` must be a token `validate/facts.ts#extractFigures` actually returns
  * from the source text, not a substring chosen by hand: that is what makes the
  * gate's exact-spelling check true by construction.
+ *
+ * `chapters` is required rather than optional here. A quoted figure is about one
+ * specific change, so the chapter it belongs to is part of knowing what it
+ * means — and defaulting it to "everywhere" is exactly the mistake the field
+ * exists to prevent.
  */
-export function quotedFact(id: string, label: string, display: string): Fact {
-  return { id, label, display, raw: null };
+export function quotedFact(
+  id: string,
+  label: string,
+  display: string,
+  chapters: readonly ChapterId[],
+): Fact {
+  return { id, label, display, raw: null, chapters };
+}
+
+/**
+ * Does this text write a negative the way an accounting table does?
+ * `compactCurrency` renders -50000 as "($50k)"; this document has no such form,
+ * so a clause containing one is never printed and its figures are never quoted.
+ *
+ * Tested against the TEXT and not against the figure, which is the whole point:
+ * `extractFigures("($50k)")` returns "$50k", parens excluded, so a token lifted
+ * out of one is indistinguishable from an ordinary positive amount. Grounding
+ * alone therefore cannot catch it — a "$50k" quoted legitimately from one change
+ * will happily ground a "($50k)" in another. Every module that quotes text it
+ * did not format owes this check, so it lives here with the formatters rather
+ * than in one of them.
+ */
+export function hasAccountingNegative(text: string): boolean {
+  return /\(\s*\$/u.test(text);
 }
 
 export function factDisplaySet(facts: Fact[]): Set<string> {

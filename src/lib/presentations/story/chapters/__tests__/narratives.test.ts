@@ -178,15 +178,24 @@ describe("plan-in-one-page confidence direction", () => {
   });
 
   /**
-   * A `quotedFact` carries no `raw` — the pack quotes figures another module
-   * formatted, and parsing one back to a number is the forbidden round trip. So
-   * two confidence figures can differ and still be unorderable. Saying "no
-   * change" beside 73% and 91% would be false, and picking a direction would be
-   * a guess: state the pair and drop the direction word. The attribution
-   * sentence may not follow it either — there is no named movement to credit.
+   * A `quotedFact` carries no `raw`, so two figures can differ and still be
+   * unorderable. Saying "no change" beside 73% and 91% would be false, and
+   * picking a direction would be a guess: state the pair, drop the direction
+   * word, and withhold the attribution sentence — there is no named movement to
+   * credit.
+   *
+   * The app cannot currently BUILD this state, and the test says so honestly:
+   * `buildStoryFacts` only ever makes the confidence facts with `pctFact`, which
+   * always carries a number, and every `quotedFact` id begins "quoted.". The
+   * branch exists because widening `raw` to `number | null` makes the null case
+   * reachable to the type system, and the alternative — letting it fall into
+   * "no change" — would print a falsehood the day anything does produce it. The
+   * fact below is therefore constructed by hand, deliberately.
    */
   it("states both figures without a direction when one carries no number", () => {
-    const proposed = quotedFact("outcome.confidence.proposed", "Confidence, proposed plan", "91%");
+    const proposed = quotedFact("outcome.confidence.proposed", "Confidence, proposed plan", "91%", [
+      "planInOnePage",
+    ]);
     const joined = narratePlanInOnePage(withConfidence([BASE, proposed])).join(" ");
     expect(joined).toBe(
       "With the changes we're suggesting, the plan comes through in 91% of the futures we tested — against 73% on your current path. " +
