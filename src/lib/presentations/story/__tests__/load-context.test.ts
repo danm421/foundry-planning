@@ -72,6 +72,18 @@ vi.mock("@/components/balance-sheet-report/view-model", () => ({
     totalAssets: 2_400_000,
     totalLiabilities: 300_000,
     netWorth: 2_100_000,
+    // Deliberately raw: the liquid buckets ($1.4M — cash + taxable +
+    // retirement + annuity) alongside two the plan cannot draw on. The loader
+    // has to apply the Balance Sheet page's own filter, not sum the column.
+    // The six sum to totalAssets, so a mis-filter shows up as $2.4M.
+    assetCategories: [
+      { key: "cash", total: 100_000 },
+      { key: "taxable", total: 400_000 },
+      { key: "retirement", total: 700_000 },
+      { key: "annuity", total: 200_000 },
+      { key: "realEstate", total: 850_000 },
+      { key: "business", total: 150_000 },
+    ],
   })),
 }));
 
@@ -154,9 +166,11 @@ describe("loadStoryContext", () => {
     expect(display(ctx, "today.assets")).toBe("$2.4M");
     expect(display(ctx, "today.debts")).toBe("$300K");
     expect(display(ctx, "today.netWorth")).toBe("$2.1M");
-    // First projection year's liquid buckets, not the last.
-    expect(display(ctx, "today.liquid")).toBe("$1.2M");
-    // Last projection year's, not the first.
+    // Off the same balance sheet as the two figures above, filtered to the
+    // buckets the plan can draw on: $1.4M, not the whole $2.4M column and not
+    // the projection year's end-of-year, taxable+cash+retirement-only $1.2M.
+    expect(display(ctx, "today.liquid")).toBe("$1.4M");
+    // Last projection year's liquid, on the engine's Monte-Carlo definition.
     expect(display(ctx, "outcome.legacy.base")).toBe("$2.0M");
     // Birth year + retirementAge — not life expectancy, not the plan end.
     expect(display(ctx, "plan.retirementYear")).toBe("2041");
@@ -261,6 +275,34 @@ describe("loadStoryContext", () => {
         ]),
       );
       expect(errorSpy).not.toHaveBeenCalled();
+    });
+
+    it("never lends the base plan's confidence to a snapshot proposal", async () => {
+      // `resolveScenarioRef` turns a "snap:" ref into a SNAPSHOT — a frozen
+      // tree with no scenario row, so nothing can be keyed to it. The snapshot
+      // is still projected; only the figures that would have to borrow an id
+      // are withheld.
+      fx.years = { base: BASE_YEARS, "snap-1": PROPOSED_YEARS };
+      fx.mc = { base: 0.72 };
+
+      const ctx = await loadStoryContext({
+        clientId: "c1",
+        firmId: "f1",
+        proposedRef: "snap:snap-1",
+        scenarioLabel: "Last year's plan",
+        documentRole: "frontMatter",
+      });
+
+      expect(display(ctx, "outcome.confidence.base")).toBe("72%");
+      // The base rate must NOT reappear as the proposal's.
+      expect(ctx.facts.some((f) => f.id === "outcome.confidence.proposed")).toBe(false);
+      // Nothing was keyed to a scenario id the snapshot does not have.
+      expect(fx.mcCalls).toEqual([{ clientId: "c1", firmId: "f1", scenarioId: "base" }]);
+      expect(fx.changeQueries).toEqual([]);
+      expect(ctx.strategies).toEqual([]);
+      // What the snapshot's own tree does say is still reported.
+      expect(display(ctx, "outcome.legacy.proposed")).toBe("$2.6M");
+      expect(ctx.hasProposal).toBe(true);
     });
 
     it("keeps the proposed plan's figures when only its Monte Carlo fails", async () => {

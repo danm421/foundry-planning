@@ -16,6 +16,7 @@ import { buildBaseResolveData, buildAssetTxResolveData } from "@/lib/scenario/sc
 import { describeChange } from "@/lib/presentations/pages/scenario-changes/describe";
 import { buildResolveContext } from "@/lib/presentations/pages/scenario-changes/describe/resolve";
 import { liquidPortfolioTotal } from "@/engine/monteCarlo/trial";
+import { liquidPortfolioTotal as balanceSheetLiquidTotal } from "@/lib/presentations/pages/balance-sheet/view-model";
 import { buildViewModel } from "@/components/balance-sheet-report/view-model";
 import { buildViewModelInputs } from "@/lib/balance-sheet/build-view-model-inputs";
 import { mergeSyntheticAccounts } from "@/lib/balance-sheet/merge-synthetic-accounts";
@@ -37,18 +38,28 @@ export interface LoadStoryContextArgs {
  * `getOrComputeMonteCarlo` (rather than a raw, uncached `runMonteCarlo`) means
  * the PDF render step reuses this result instead of recomputing the identical
  * 1000-trial simulation. Mirrors `retirement-comparison/generate-ai.ts`.
+ *
+ * `scenarioId` is null for a SNAPSHOT ref — a frozen tree with no scenario row
+ * behind it, so there is no id that would key its Monte Carlo or its change
+ * rows. Everything keyed on it is then skipped rather than falling back to
+ * "base": borrowing the base plan's success rate would print it under
+ * "Confidence, proposed plan", and a mislabelled figure is worse than an absent
+ * one. The tree is still projected, so the snapshot's own legacy figure stays
+ * true.
  */
 async function projectAndMc(clientId: string, firmId: string, raw: string) {
   const ref = resolveScenarioRef(raw);
-  const scenarioId = ref.kind === "scenario" ? ref.id : "base";
+  const scenarioId = ref.kind === "scenario" ? ref.id : null;
   const { effectiveTree } = await loadEffectiveTreeForRef(clientId, firmId, ref);
   const projection = runProjectionWithEvents(effectiveTree);
   let successRate: number | null = null;
-  try {
-    const cached = await getOrComputeMonteCarlo({ clientId, firmId, scenarioId });
-    successRate = cached.payload.summary.successRate;
-  } catch (err) {
-    console.error("[plan-story] Monte Carlo unavailable (non-fatal)", err);
+  if (scenarioId != null) {
+    try {
+      const cached = await getOrComputeMonteCarlo({ clientId, firmId, scenarioId });
+      successRate = cached.payload.summary.successRate;
+    } catch (err) {
+      console.error("[plan-story] Monte Carlo unavailable (non-fatal)", err);
+    }
   }
   return { scenarioId, effectiveTree, projection, successRate };
 }
@@ -66,9 +77,14 @@ type Projected = Awaited<ReturnType<typeof projectAndMc>>;
  * without it.
  */
 async function loadStrategies(clientId: string, proposed: Projected): Promise<StoryStrategy[]> {
+  const { scenarioId } = proposed;
+  // A snapshot is a frozen tree; no scenario row holds change rows for it, and
+  // querying "base" instead would recommend changes the proposal doesn't make.
+  if (scenarioId == null) return [];
+
   const [changes, toggleGroups] = await Promise.all([
-    loadScenarioChanges(proposed.scenarioId),
-    loadScenarioToggleGroups(proposed.scenarioId),
+    loadScenarioChanges(scenarioId),
+    loadScenarioToggleGroups(scenarioId),
   ]);
 
   const ctx = {
@@ -133,9 +149,20 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
   const facts = buildStoryFacts({
     todayAssets: balanceSheet.totalAssets,
     todayDebts: balanceSheet.totalLiabilities,
-    todayLiquid: firstYear ? liquidPortfolioTotal(firstYear) : 0,
+    // Off the SAME balance sheet as the two figures above, not off the
+    // projection year. `portfolioAssets` is snapshotted at the END of the year
+    // loop (projection.ts — "after the surplus allocation") while
+    // `asOfMode: "today"` reads beginning-of-year balances, and the engine's
+    // helper sums taxable + cash + retirement where the deck's own Balance
+    // Sheet page also counts annuity and life insurance. Under
+    // `documentRole: "frontMatter"` that page is a few leaves later in the same
+    // PDF, so the two have to be one number.
+    todayLiquid: balanceSheetLiquidTotal(balanceSheet.assetCategories),
     baseSuccess: base.successRate,
     proposedSuccess: proposed?.successRate ?? null,
+    // The legacy figures stay on the ENGINE helper: they are the end-of-plan
+    // balance the Monte Carlo judged success against, so matching its
+    // definition is the whole point of them.
     baseEndLiquid: lastYear ? liquidPortfolioTotal(lastYear) : 0,
     proposedEndLiquid: proposedLast ? liquidPortfolioTotal(proposedLast) : null,
     retirementYear: new Date(client.dateOfBirth).getUTCFullYear() + client.retirementAge,
