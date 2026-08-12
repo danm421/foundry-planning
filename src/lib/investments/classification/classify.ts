@@ -2,6 +2,7 @@
 import { CLASSIFIER_VERSION, type ClassifiedSecurity } from "./types";
 import { mapEodhdToInput, fetchEodhdFundamentals } from "./eodhd-adapter";
 import { deriveAssetClassBlend } from "./derive";
+import { expenseRatioFromPayload } from "@/lib/investments/expense-ratio";
 
 export interface ClassifyDeps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -29,6 +30,7 @@ export async function classifySecurity(
       classifierSource: "eodhd",
       classifierVersion: CLASSIFIER_VERSION,
       rawPayload: raw,
+      expenseRatio: expenseRatioFromPayload(raw, input.securityType),
       weights,
     };
   } catch {

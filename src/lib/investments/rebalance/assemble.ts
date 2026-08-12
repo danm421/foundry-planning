@@ -5,7 +5,7 @@ import type { AssetClassWeight } from "@/lib/investments/benchmarks";
 import type { MonthlyReturn } from "@/lib/cma-stats";
 import type { CorrelationRow } from "@/engine/monteCarlo/correlation-matrix";
 import { buildHoldingSeries } from "./panel-from-holdings";
-import { alignToCommonWindow } from "./common-window";
+import { alignToCommonWindow, type AlignedWindows } from "./common-window";
 import { toNamedWeights, buildAssetMixDelta, buildTradeSummary } from "./comparison";
 import { estimateRealizedGain, deriveEffectiveLtcgRate, estimateRebalanceTax } from "./tax-estimate";
 import type { CapGainsTier } from "@/lib/tax/types";
@@ -55,6 +55,43 @@ export interface RebalanceInputs {
     niit: { magi: number; investmentIncome: number; threshold: number; rate: number };
   };
   overrideLtcgRate?: number;
+  /** Source-side tickers the loader couldn't classify (outside portfolios only). */
+  sourceUnresolvedTickers?: string[];
+}
+
+/** The two portfolios' monthly return series, restricted to the months both
+ *  sides share. Exported because the proposals layer needs the aligned series
+ *  themselves — the backtest chart and the stress windows are drawn from them,
+ *  and `assembleRebalanceResult` keeps only the summary stats.
+ *
+ *  ⚠️ DELIBERATE DUPLICATE of the two `buildHoldingSeries` calls and the
+ *  `alignToCommonWindow` call inside `assembleRebalanceResult` (see the marker
+ *  comment there). Kept separate on purpose: widening `RebalanceComputeResult`
+ *  to carry the arrays would make every existing rebalance response ship them.
+ *  **The two copies must stay behaviourally identical** (they already differ in
+ *  line wrapping, so compare what they compute, not their text) — if they drift,
+ *  the aligned
+ *  window behind the proposal's chart stops matching the one behind its summary
+ *  stats, and the same proposal quietly reports two different histories. Change
+ *  one, change the other, in the same commit. */
+export function alignRebalanceSeries(input: RebalanceInputs): AlignedWindows {
+  const curBuilt = buildHoldingSeries(
+    input.currentHoldings.map((h) => ({
+      securityId: h.securityId,
+      ticker: h.ticker,
+      marketValue: h.marketValue,
+    })),
+    input.currentReturnsBySecurity,
+  );
+  const tgtBuilt = buildHoldingSeries(
+    input.targetHoldings.map((h) => ({
+      securityId: h.securityId,
+      ticker: h.ticker,
+      marketValue: h.weight,
+    })),
+    input.targetReturnsBySecurity,
+  );
+  return alignToCommonWindow(curBuilt.series, tgtBuilt.series);
 }
 
 export function assembleRebalanceResult(input: RebalanceInputs): RebalanceComputeResult {
@@ -102,6 +139,10 @@ export function assembleRebalanceResult(input: RebalanceInputs): RebalanceComput
   const targetCma = computeStats(input.targetAllocations, ctx);
 
   // --- realized stats over the common window ---
+  // ⚠️ These three calls are DUPLICATED VERBATIM in `alignRebalanceSeries`
+  // above, by design — see the reasoning in its docblock. Keep the two copies
+  // identical; a drift here silently desynchronizes a proposal's backtest chart
+  // from its own summary stats.
   const curBuilt = buildHoldingSeries(
     input.currentHoldings.map((h) => ({ securityId: h.securityId, ticker: h.ticker, marketValue: h.marketValue })),
     input.currentReturnsBySecurity,
@@ -159,5 +200,6 @@ export function assembleRebalanceResult(input: RebalanceInputs): RebalanceComput
       insufficientHistory: insufficient,
       shortHistory: !insufficient && aligned.nMonths < WARN_MONTHS,
     },
+    sourceUnresolvedTickers: input.sourceUnresolvedTickers ?? [],
   };
 }

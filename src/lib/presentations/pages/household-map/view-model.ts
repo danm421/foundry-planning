@@ -149,8 +149,18 @@ function isSavingsSetByRule(item: MapItem): boolean {
   return item.kind === "savings" && item.editableAmount === null;
 }
 
+/** The rules driving a band, verbatim off the cards and de-duplicated, in the
+ *  order they appear: "IRS max", or "IRS max · 10% of pay" when they differ.
+ *  Echoing `valueLabel` rather than re-wording it keeps the band foot and the
+ *  card above it saying the same thing. */
+function savingsRuleLabel(cards: MapItem[]): string {
+  return [...new Set(cards.map((c) => c.valueLabel))].join(" · ");
+}
+
+// Names no rules of its own — the band foot now prints them, and repeating them
+// here read as two different lists.
 const SAVINGS_BY_RULE_NOTE =
-  "Savings set by rule — IRS max, a percent of pay, or a custom schedule — resolve in the projection, so no dollar total on this page includes them.";
+  "These contributions resolve in the projection, so no dollar total on this page includes them.";
 
 export function buildMapCashFlowData(input: HouseholdMapBuildInput): MapCashFlowPageData {
   const { people, items } = boardsFor(input);
@@ -159,6 +169,11 @@ export function buildMapCashFlowData(input: HouseholdMapBuildInput): MapCashFlow
 
   const bands: MapCashFlowBand[] = BANDS.map((band) => {
     const bandItems = items.filter((i) => i.kind === band.kind);
+    // Column order, then tray — the order a reader meets the cards, so the
+    // foot lists the rules in the order the page already showed them.
+    const ruleCards = [...keys, "tray" as const].flatMap((key) =>
+      bandItems.filter((i) => i.column === key && isSavingsSetByRule(i)),
+    );
     return {
       key: band.key,
       label: band.label,
@@ -174,10 +189,11 @@ export function buildMapCashFlowData(input: HouseholdMapBuildInput): MapCashFlow
       // Across columns AND tray. `MapItem.value` is signed — inflows positive,
       // expenses and savings contributions negative — so this sum needs no
       // kind-specific special-casing. It is withheld only when the band holds a
-      // rule-based card, whose 0 would make the total read as a fact.
-      subtotalLabel: bandItems.some(isSavingsSetByRule)
-        ? null
-        : moneyLabel(bandItems.reduce((s, i) => s + i.value, 0)),
+      // rule-based card, whose 0 would make the total read as a fact — and the
+      // foot then names the rule instead of printing a dash.
+      subtotalLabel:
+        ruleCards.length > 0 ? null : moneyLabel(bandItems.reduce((s, i) => s + i.value, 0)),
+      subtotalRuleLabel: ruleCards.length > 0 ? savingsRuleLabel(ruleCards) : null,
     };
   });
 

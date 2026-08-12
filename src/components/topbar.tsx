@@ -42,7 +42,7 @@ const SECONDARY_TABS: ReadonlyArray<Tab> = [
         views: [
           { label: "Allocation", path: "/investments?view=allocation" },
           { label: "Portfolio Analysis", path: "/investments?view=analysis" },
-          { label: "Rebalance", path: "/investments?view=rebalance" },
+          { label: "Proposals", path: "/investments?view=proposals" },
           { label: "Holdings", path: "/investments?view=holdings" },
         ],
       },

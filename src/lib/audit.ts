@@ -82,6 +82,10 @@ export type AuditAction =
   | "reinvestment.create"
   | "reinvestment.update"
   | "reinvestment.delete"
+  // Investment proposals (current-vs-proposed portfolio comparisons)
+  | "investment_proposal.create"
+  | "investment_proposal.update"
+  | "investment_proposal.delete"
   | "relocation.create"
   | "relocation.update"
   | "relocation.delete"
@@ -224,6 +228,9 @@ export type AuditAction =
   | "import.assemble.run"
   | "import.assemble.answered"
   | "import.commit.tab"
+  // Rebalance — reading holdings off a statement for an outside portfolio.
+  // Nothing is persisted, so this audit row is the only record the read happened.
+  | "rebalance.holdings.extracted"
   // Billing (Phase 1+ — written by webhook handlers and admin endpoints)
   | "billing.checkout_started"
   | "billing.portal_opened"

@@ -63,6 +63,19 @@ export interface MapCashFlowBand {
    * something false, and print has no hover to correct it.
    */
   subtotalLabel: string | null;
+  /**
+   * What to print where the dollar subtotal would have gone, when there isn't
+   * one: the rules themselves, verbatim off the cards above — "IRS max",
+   * "IRS max · 10% of pay". Set exactly when `subtotalLabel` is null, and null
+   * whenever it isn't.
+   *
+   * The band foot is the one place a reader looks for "so what IS the savings
+   * number", and a bare em dash answers that with a shrug. Naming the rule
+   * answers it: the number is not missing, it is a rule the projection prices.
+   * Verbatim off `MapItem.valueLabel` — the board's own wording, so the foot
+   * and the card beside it cannot drift apart.
+   */
+  subtotalRuleLabel: string | null;
 }
 
 export interface MapCashFlowPageData {

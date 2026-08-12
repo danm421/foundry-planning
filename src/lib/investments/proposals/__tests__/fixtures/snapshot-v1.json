@@ -1,0 +1,175 @@
+{
+  "version": 1,
+  "computedAt": "2026-08-12T00:00:00.000Z",
+  "compute": {
+    "current": {
+      "totalValue": 1000000,
+      "assetMix": [
+        {
+          "assetClassId": "a",
+          "name": "US Large Cap",
+          "weight": 1
+        }
+      ],
+      "realized": null,
+      "cma": {
+        "arithmeticMean": 0.065,
+        "geometricReturn": 0.058,
+        "stdDev": 0.14,
+        "sharpe": 0.3
+      },
+      "coveragePct": 1
+    },
+    "proposed": {
+      "totalValue": 1000000,
+      "assetMix": [
+        {
+          "assetClassId": "a",
+          "name": "US Large Cap",
+          "weight": 1
+        }
+      ],
+      "realized": null,
+      "cma": {
+        "arithmeticMean": 0.07,
+        "geometricReturn": 0.064,
+        "stdDev": 0.115,
+        "sharpe": 0.42
+      },
+      "coveragePct": 1
+    },
+    "assetMixDelta": [],
+    "tradeSummary": [],
+    "tax": {
+      "taxableMarketValue": 500000,
+      "taxableCostBasis": 400000,
+      "realizedGain": 100000,
+      "effectiveRate": 0.18,
+      "rateSource": "engine",
+      "estimatedTax": 18000,
+      "notes": []
+    },
+    "realizedWindow": {
+      "windowStart": null,
+      "windowEnd": null,
+      "nMonths": 0,
+      "insufficientHistory": true,
+      "shortHistory": false
+    },
+    "sourceUnresolvedTickers": []
+  },
+  "fees": {
+    "currentBlendedEr": 0.008,
+    "proposedBlendedEr": 0.0015,
+    "currentCoveragePct": 1,
+    "proposedCoveragePct": 1,
+    "advisoryFeeCurrent": null,
+    "advisoryFeeProposed": null,
+    "annualDollarsCurrent": 8000,
+    "annualDollarsProposed": 1500,
+    "annualDollarsSaved": 6500
+  },
+  "suitability": {
+    "clientLevel": null,
+    "clientScore": null,
+    "bindingConstraint": "none",
+    "confirmedAt": null,
+    "currentPlacement": null,
+    "proposedPlacement": {
+      "level": "moderate",
+      "estimated": false
+    },
+    "currentExceedsProfile": false,
+    "proposedMatchesProfile": false
+  },
+  "backtest": null,
+  "stress": [
+    {
+      "key": "gfc",
+      "label": "Global financial crisis",
+      "start": "2007-11",
+      "end": "2009-02",
+      "available": false,
+      "unavailableReason": "One or more holdings launched after this period.",
+      "currentReturn": null,
+      "proposedReturn": null,
+      "currentDrawdown": null,
+      "proposedDrawdown": null,
+      "currentDollars": null,
+      "proposedDollars": null
+    },
+    {
+      "key": "covid",
+      "label": "COVID crash",
+      "start": "2020-01",
+      "end": "2020-03",
+      "available": false,
+      "unavailableReason": "One or more holdings launched after this period.",
+      "currentReturn": null,
+      "proposedReturn": null,
+      "currentDrawdown": null,
+      "proposedDrawdown": null,
+      "currentDollars": null,
+      "proposedDollars": null
+    },
+    {
+      "key": "rates2022",
+      "label": "2022 rate shock",
+      "start": "2022-01",
+      "end": "2022-09",
+      "available": false,
+      "unavailableReason": "One or more holdings launched after this period.",
+      "currentReturn": null,
+      "proposedReturn": null,
+      "currentDrawdown": null,
+      "proposedDrawdown": null,
+      "currentDollars": null,
+      "proposedDollars": null
+    }
+  ],
+  "outcomes": {
+    "startValue": 1000000,
+    "current": [
+      {
+        "years": 10,
+        "p10": 984750.4067811571,
+        "p50": 1736722.992721326,
+        "p90": 3062914.9606609056
+      },
+      {
+        "years": 20,
+        "p10": 1352049.7890672535,
+        "p50": 3016206.7534469184,
+        "p90": 6728674.67833041
+      }
+    ],
+    "proposed": [
+      {
+        "years": 10,
+        "p10": 1182727.8207739738,
+        "p50": 1884900.4352331227,
+        "p90": 3003945.27662082
+      },
+      {
+        "years": 20,
+        "p10": 1837955.153537974,
+        "p50": 3552849.650742015,
+        "p90": 6867817.539769401
+      }
+    ]
+  },
+  "breakEven": {
+    "estimatedTax": 18000,
+    "annualBenefit": 12499.999999999998,
+    "years": 1.4400000000000002,
+    "verdict": "recovered"
+  },
+  "targetHoldings": [
+    {
+      "ticker": "VTI",
+      "name": "Vanguard Total Stock",
+      "weight": 1,
+      "expenseRatio": 0.0003
+    }
+  ]
+}

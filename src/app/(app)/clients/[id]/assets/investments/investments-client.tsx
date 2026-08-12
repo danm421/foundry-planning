@@ -21,7 +21,7 @@ import "@/lib/report-artifacts/index";
 import AccountGroupPillBar from "@/components/account-groups/account-group-pill-bar";
 import PortfolioAnalysisClient from "./portfolio-analysis-client";
 import type { AnalysisRow } from "@/lib/investments/portfolio-analysis";
-import { RebalanceClient } from "./rebalance-client";
+import { ProposalsClient } from "./proposals-client";
 import HoldingsTab from "./holdings-tab";
 
 interface Props {
@@ -45,7 +45,7 @@ interface Props {
   accountsWithHoldings: { id: string; name: string; category: string; value: number }[];
   fundPortfolios: { id: string; name: string }[];
   holdingsGroups: AccountHoldingsGroup[];
-  initialView?: "allocation" | "analysis" | "rebalance" | "holdings";
+  initialView?: "allocation" | "analysis" | "proposals" | "holdings";
 }
 
 type AllocationView = "high_level" | "detailed" | "combined";
@@ -77,7 +77,7 @@ export default function InvestmentsClient({
   holdingsGroups,
   initialView = "allocation",
 }: Props) {
-  const [pageView, setPageView] = useState<"allocation" | "analysis" | "rebalance" | "holdings">(initialView);
+  const [pageView, setPageView] = useState<"allocation" | "analysis" | "proposals" | "holdings">(initialView);
   const [commentOpen, setCommentOpen] = useState(false);
   const [drilledRowId, setDrilledRowId] = useState<string | null>(null);
   const [view, setView] = useState<AllocationView>("detailed");
@@ -160,10 +160,10 @@ export default function InvestmentsClient({
         </button>
         <button
           type="button"
-          onClick={() => setPageView("rebalance")}
-          className={pageView === "rebalance" ? "rounded bg-card-2 px-3 py-1 text-ink" : "px-3 py-1 text-ink-3"}
+          onClick={() => setPageView("proposals")}
+          className={pageView === "proposals" ? "rounded bg-card-2 px-3 py-1 text-ink" : "px-3 py-1 text-ink-3"}
         >
-          Rebalance
+          Proposals
         </button>
         <button
           type="button"
@@ -180,8 +180,8 @@ export default function InvestmentsClient({
         <PortfolioAnalysisClient clientId={clientId} scenarioId={scenarioId} analysisRows={analysisRows} />
       )}
 
-      {pageView === "rebalance" && (
-        <RebalanceClient
+      {pageView === "proposals" && (
+        <ProposalsClient
           clientId={clientId}
           accountsWithHoldings={accountsWithHoldings}
           fundPortfolios={fundPortfolios}

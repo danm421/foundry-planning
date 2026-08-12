@@ -55,6 +55,8 @@ export interface ClassifiedSecurity {
   classifierSource: "eodhd" | "seed" | "manual";
   classifierVersion: number;
   rawPayload?: unknown;
+  /** Decimal fraction (0.0003 = 3 bps); null when unknown. See expense-ratio.ts. */
+  expenseRatio?: number | null;
   weights: AssetClassWeightBySlug[];
 }
 

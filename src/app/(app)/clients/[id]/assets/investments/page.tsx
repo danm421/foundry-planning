@@ -17,6 +17,9 @@ export default async function InvestmentsPage({ params, searchParams }: PageProp
   const firmId = await getOrgId();
   const { id: clientId } = await params;
   const { group, scenario, view } = await searchParams;
+  // The Rebalance tab became Proposals; keep old links and bookmarks landing on
+  // the tab that replaced it rather than silently falling back to Allocation.
+  const resolvedView = view === "rebalance" ? "proposals" : view;
 
   const [client] = await db
     .select()
@@ -31,7 +34,7 @@ export default async function InvestmentsPage({ params, searchParams }: PageProp
           clientId={clientId}
           firmId={firmId}
           groupKey={group ?? "all-liquid"}
-          view={view}
+          view={resolvedView}
           scenarioId={scenario}
         />
       </Suspense>

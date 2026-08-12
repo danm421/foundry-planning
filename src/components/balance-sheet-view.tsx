@@ -33,6 +33,7 @@ import CategoryGroup from "@/components/balance-sheet/category-group";
 import BusinessRowGroup from "@/components/balance-sheet/business-row-group";
 import { ChevronDown, ChevronRight, LinkedSourceBadge } from "@/components/balance-sheet/icons";
 import InlineOwnerCell from "@/components/forms/inline-owner-cell";
+import { FieldTooltip } from "@/components/forms/field-tooltip";
 import GrowthRateCell from "@/components/forms/growth-rate-cell";
 import { InlineAmount } from "@/components/forms/inline-amount";
 import { usePendingEdits } from "@/hooks/use-pending-edits";
@@ -1021,16 +1022,6 @@ export default function BalanceSheetView({
               {canEdit && (nonNoteAccounts.length > 0 || noteRows.length > 0) && (
                 <EditToggle on={assetsEdit} onToggle={() => setAssetsEdit((v) => !v)} />
               )}
-              {canEdit && nonNoteAccounts.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleRefreshPrices}
-                  disabled={refreshingPrices}
-                  className="rounded-md border border-hair bg-card px-3 py-1.5 text-sm font-medium text-ink hover:bg-card-hover disabled:opacity-50"
-                >
-                  {refreshingPrices ? "Refreshing…" : "Refresh prices"}
-                </button>
-              )}
               {canEdit && <AddAssetMenu onPick={(cat) => cat === "business" ? openAddBusiness() : setAddCategory(cat)} />}
             </div>
           }
@@ -1445,6 +1436,27 @@ export default function BalanceSheetView({
               );
             })()}
           </div>
+        </div>
+      )}
+
+      {/* Price refresh — a page-level utility, not an Assets-panel action, so it
+       *  sits at the foot of the page below every balance-sheet section. Hidden
+       *  in the guided walkthrough: the wizard is for entering accounts, and a
+       *  market-data pull there is a distraction from the step's one job. */}
+      {!isWizard && canEdit && nonNoteAccounts.length > 0 && (
+        // The tooltip is a SIBLING of the button, never a child: a nested button
+        // would append its "Show help" label to this one's accessible name and
+        // break `getByRole("button", /refresh prices/)`.
+        <div className="flex items-center gap-1.5 border-t border-hair pt-4">
+          <button
+            type="button"
+            onClick={handleRefreshPrices}
+            disabled={refreshingPrices}
+            className="rounded-md border border-hair bg-card px-3 py-1.5 text-sm font-medium text-ink hover:bg-card-hover disabled:opacity-50"
+          >
+            {refreshingPrices ? "Refreshing…" : "Refresh prices"}
+          </button>
+          <FieldTooltip text="Looks up the latest closing price for every holding with a ticker symbol on this client's accounts, then re-values any account that tracks its holdings. Prices also refresh on their own each night — use this to pull them in now." />
         </div>
       )}
 

@@ -284,6 +284,19 @@ describe("BalanceSheetView read-only gating", () => {
     expect(brokerageRowContainer?.className).not.toContain("cursor-pointer");
     expect(screen.queryByRole("button", { name: "Edit Brokerage Account" })).not.toBeNull();
   });
+
+  it("hides Refresh prices in the guided walkthrough even under permission='edit'", () => {
+    render(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <BalanceSheetView {...BS_BASE_PROPS} embed="wizard" section="accounts" />
+      </ClientAccessProvider>,
+    );
+
+    // The wizard's accounts step is for entering accounts; a market-data pull
+    // there is off-task. Editing affordances stay, so this is not a canEdit gate.
+    expect(screen.queryByRole("button", { name: /refresh prices/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /add asset/i })).not.toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------

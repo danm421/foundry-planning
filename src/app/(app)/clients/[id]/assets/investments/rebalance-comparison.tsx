@@ -4,13 +4,22 @@ import { useState } from "react";
 import MoneyText from "@/components/money-text";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import type { RebalanceComputeResult } from "@/lib/investments/rebalance/types";
+import type { ProposalSnapshot } from "@/lib/investments/proposals/types";
 import type { PortfolioStats } from "@/lib/portfolio-stats";
 import type { RiskReturnStats } from "@/lib/investments/portfolio-stats";
 import { RebalanceMixBars } from "./rebalance-mix-bars";
 import { RebalanceRiskReturnScatter } from "./rebalance-risk-return-scatter";
+import { SectionCard, SectionHeading } from "./proposal-section";
+import { ProposalSuitabilitySection } from "./proposal-suitability-section";
+import { ProposalFeesSection } from "./proposal-fees-section";
+import { ProposalStressSection } from "./proposal-stress-section";
+import { ProposalBreakEvenSection } from "./proposal-breakeven-section";
 
 export interface RebalanceComparisonProps {
-  result: RebalanceComputeResult;
+  /** The frozen proposal artifact. Every section reads from it, so the whole
+   *  comparison describes one moment — never a mix of a fresh compute and a
+   *  stale analytic. */
+  snapshot: ProposalSnapshot;
   onOverrideRate: (rate: number) => void;
 }
 
@@ -24,33 +33,6 @@ function deltaColor(delta: number | null | undefined, higherIsBetter: boolean): 
   return delta < 0 ? "text-good" : "text-crit";
 }
 
-// ── Section card wrapper ───────────────────────────────────────────────────────
-
-function Card({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={`rounded-lg border border-hair-2 bg-card p-4 ${className ?? ""}`}>
-      {children}
-    </div>
-  );
-}
-
-// ── Section heading ────────────────────────────────────────────────────────────
-
-function SectionHeading({
-  children,
-  tooltip,
-}: {
-  children: React.ReactNode;
-  tooltip?: string;
-}) {
-  return (
-    <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-ink">
-      {children}
-      {tooltip && <FieldTooltip text={tooltip} />}
-    </h3>
-  );
-}
-
 // ── 1. Coverage banner ─────────────────────────────────────────────────────────
 
 function CoverageBanner({ result }: { result: RebalanceComputeResult }) {
@@ -58,7 +40,7 @@ function CoverageBanner({ result }: { result: RebalanceComputeResult }) {
   const coveragePct = result.current.coveragePct;
 
   return (
-    <Card className="p-5">
+    <SectionCard className="p-5">
       <div className="flex flex-wrap items-baseline gap-x-6 gap-y-0.5">
         <span className="text-sm text-ink-2">
           <span className="font-semibold text-ink">
@@ -85,7 +67,7 @@ function CoverageBanner({ result }: { result: RebalanceComputeResult }) {
           Short shared history (under 60 months); realized stats are less reliable.
         </p>
       )}
-    </Card>
+    </SectionCard>
   );
 }
 
@@ -314,7 +296,7 @@ function KpiPanel({ result }: { result: RebalanceComputeResult }) {
   const hasRealized = result.current.realized !== null || result.proposed.realized !== null;
 
   return (
-    <Card>
+    <SectionCard>
       <SectionHeading>Portfolio statistics</SectionHeading>
 
       {/* Realized sub-block */}
@@ -357,7 +339,7 @@ function KpiPanel({ result }: { result: RebalanceComputeResult }) {
           </tbody>
         </table>
       </div>
-    </Card>
+    </SectionCard>
   );
 }
 
@@ -409,7 +391,7 @@ function TradesAndTaxPanel({
   }
 
   return (
-    <Card>
+    <SectionCard>
       <SectionHeading>Trades and tax impact</SectionHeading>
 
       {/* Trade summary table */}
@@ -533,16 +515,24 @@ function TradesAndTaxPanel({
           </div>
         </div>
       </div>
-    </Card>
+    </SectionCard>
   );
 }
 
 // ── Root export ────────────────────────────────────────────────────────────────
 
-export function RebalanceComparison({ result, onOverrideRate }: RebalanceComparisonProps) {
+export function RebalanceComparison({ snapshot, onOverrideRate }: RebalanceComparisonProps) {
+  const result = snapshot.compute;
+
   return (
     <div className="space-y-4">
       <HeadlineTiles result={result} />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <ProposalSuitabilitySection suitability={snapshot.suitability} />
+        <ProposalFeesSection fees={snapshot.fees} />
+      </div>
+      <ProposalStressSection stress={snapshot.stress} />
+      <ProposalBreakEvenSection breakEven={snapshot.breakEven} />
       <div className="grid gap-4 lg:grid-cols-2">
         <RebalanceMixBars result={result} />
         <RebalanceRiskReturnScatter current={result.current.cma} proposed={result.proposed.cma} />

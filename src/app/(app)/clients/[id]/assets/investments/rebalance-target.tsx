@@ -24,17 +24,37 @@ interface HoldingRow {
   weight: string; // display % string e.g. "60.00"
 }
 
+/**
+ * Seed the editor from the value it was mounted with.
+ *
+ * A reopened proposal arrives with its ad-hoc holdings already in `value`. Left
+ * to a blank literal, the editor renders one empty row at a 0% total — over a
+ * proposal whose stored target has real tickers — and the first keystroke makes
+ * `emitNew` filter the blank ticker out and hand the parent `holdings: []`,
+ * discarding the stored target until it is retyped.
+ */
+function seedRows(value: RebalanceTargetValue | null): HoldingRow[] {
+  if (value?.kind === "new" && value.holdings.length > 0) {
+    return value.holdings.map((h, i) => ({
+      _key: i,
+      displayTicker: h.ticker,
+      // Weights are decimal fractions on the wire and percent text in the
+      // editor; the round-trip trims 0.6 * 100's binary tail.
+      weight: String(Number((h.weight * 100).toFixed(4))),
+    }));
+  }
+  return [{ _key: 0, displayTicker: "", weight: "0" }];
+}
+
 // ── RebalanceTarget ────────────────────────────────────────────────────────────
 
 export function RebalanceTarget({ fundPortfolios, value, onChange, unresolvedTickers = [] }: RebalanceTargetProps) {
   const mode: "existing" | "new" = value?.kind === "new" ? "new" : "existing";
 
   // ── "Build new" local state ────────────────────────────────────────────────
-  // nextKey starts at 1 because _key 0 is used by the initial row literal below
-  const nextKey = useRef(1);
-  const [rows, setRows] = useState<HoldingRow[]>([
-    { _key: 0, displayTicker: "", weight: "0" },
-  ]);
+  const [rows, setRows] = useState<HoldingRow[]>(() => seedRows(value));
+  // The seed took _keys 0..n-1, so the next new row starts after them.
+  const nextKey = useRef(rows.length);
   const [saveToCma, setSaveToCma] = useState(false);
   const [cmaName, setCmaName] = useState("");
 
@@ -155,10 +175,17 @@ export function RebalanceTarget({ fundPortfolios, value, onChange, unresolvedTic
             </p>
           ) : (
             <select
-              value={value?.kind === "existing" ? value.portfolioId : (fundPortfolios[0]?.id ?? "")}
+              // Until something is picked the parent's target is still null, so
+              // the select must not display a portfolio it never emitted. A firm
+              // with one portfolio would then have no change event left to fire
+              // and Compute would stay dead — the placeholder gives it one.
+              value={value?.kind === "existing" ? value.portfolioId : ""}
               onChange={(e) => onChange({ kind: "existing", portfolioId: e.target.value })}
               className="w-full rounded border border-hair bg-transparent px-2 py-1 text-sm text-ink focus:border-accent focus:outline-none"
             >
+              {value?.kind !== "existing" && (
+                <option value="">Select a fund portfolio…</option>
+              )}
               {fundPortfolios.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
