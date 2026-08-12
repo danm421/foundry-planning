@@ -16,8 +16,13 @@ interface Props {
 
 type Dialog = null | "soft" | "permanent";
 
+/** Hover is `hair-2`, not `card-hover`: on a `card-2` menu surface only `hair-2`
+ *  moves AWAY from the background in both themes (lighter on dark, darker on cream). */
 const menuItem =
-  "block w-full px-3 py-2 text-left text-[13px] text-ink-2 hover:bg-card-2";
+  "block w-full rounded-[var(--radius-sm)] px-3 py-2 text-left text-[13px] font-medium text-ink-2 transition-colors hover:bg-hair-2/40 hover:text-ink";
+/** Destructive items use the `crit` token (not raw Tailwind red) so they track the theme. */
+const menuItemDestructive =
+  "block w-full rounded-[var(--radius-sm)] px-3 py-2 text-left text-[13px] font-medium text-crit transition-colors hover:bg-crit/15";
 
 export function HouseholdTrashActions({ householdId, householdName, deleted }: Props) {
   const router = useRouter();
@@ -71,7 +76,8 @@ export function HouseholdTrashActions({ householdId, householdName, deleted }: P
     if (rect) {
       const gap = 6;
       // Estimated height only picks the open direction; the anchor (top/bottom) is exact.
-      const estHeight = (deleted ? 2 : 1) * 38 + 8;
+      // 8px of p-1 + 4px of the 2px border.
+      const estHeight = (deleted ? 2 : 1) * 38 + 12;
       const right = window.innerWidth - rect.right;
       const openUp = rect.bottom + gap + estHeight > window.innerHeight;
       setMenuPos(
@@ -158,7 +164,7 @@ export function HouseholdTrashActions({ householdId, householdName, deleted }: P
             ref={menuRef}
             role="menu"
             style={{ position: "fixed", ...menuPos }}
-            className="z-50 min-w-[180px] overflow-hidden rounded-xl border border-hair bg-paper py-1 shadow-lg"
+            className="z-50 min-w-[180px] overflow-hidden rounded-xl border-2 border-hair-2 bg-card-2 p-1 shadow-2xl"
           >
             {deleted ? (
               <>
@@ -174,7 +180,7 @@ export function HouseholdTrashActions({ householdId, householdName, deleted }: P
                 </button>
                 <button
                   type="button"
-                  className={`${menuItem} text-red-400`}
+                  className={menuItemDestructive}
                   onClick={() => {
                     setMenuOpen(false);
                     setDialog("permanent");
@@ -186,7 +192,7 @@ export function HouseholdTrashActions({ householdId, householdName, deleted }: P
             ) : (
               <button
                 type="button"
-                className={`${menuItem} text-red-400`}
+                className={menuItemDestructive}
                 onClick={() => {
                   setMenuOpen(false);
                   setDialog("soft");
