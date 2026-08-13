@@ -22,6 +22,7 @@ const input: StoryFactsInput = {
   proposedEndLiquid: 2_600_000,
   retirementYear: 2041,
   endOfLifeYear: 2065,
+  planStartYear: 2026,
   strategies: [],
 };
 
@@ -224,19 +225,22 @@ describe("the fact pack carries the strategies' own figures", () => {
     for (const f of facts.filter((x) => x.raw === null)) {
       expect(f.chapters).toEqual(["whatWeRecommend"]);
     }
-    // …and leaves the plan-level totals unscoped, so they stay true everywhere.
-    for (const f of facts.filter((x) => x.raw !== null)) {
-      expect(f.chapters).toBeUndefined();
-    }
+    // …and leaves only the plan's own YEARS unscoped, so a horizon stays
+    // available to any chapter that mentions time. Every other total names the
+    // chapter it is about — before 2026-08-12 they were all unscoped, which is
+    // how the balance-sheet chapter came to re-narrate the headline's figures.
+    const unscoped = facts.filter((f) => !f.chapters).map((f) => f.id);
+    expect(unscoped).toEqual(["plan.endOfLifeYear", "plan.retirementYear"]);
   });
 
   it("keeps a proposed change's figures out of the chapter about today", () => {
     const facts = buildStoryFacts({ ...input, strategies: STRATEGIES });
     const forBalanceSheet = factsForChapter(facts, "whatYouHave").map((f) => f.display);
-    expect(forBalanceSheet).toContain("$2.4M"); // a household total: true everywhere
+    expect(forBalanceSheet).toContain("$2.4M"); // what they own — this chapter's own figure
     expect(forBalanceSheet).not.toContain("$850k"); // a future rental sale price
     expect(forBalanceSheet).not.toContain("$50k"); // a proposed Roth conversion
-    expect(factsForChapter(facts, "whatYouHave")).toHaveLength(10);
+    // Four balance-sheet figures plus the plan's two years, and nothing else.
+    expect(factsForChapter(facts, "whatYouHave")).toHaveLength(6);
     expect(factsForChapter(facts, "whatWeRecommend").length).toBeGreaterThan(10);
   });
 
@@ -492,5 +496,69 @@ describe("groupStrategies", () => {
   it("leaves a leading plus alone on a row that is not an add", () => {
     const out = groupStrategies([{ change: { toggleGroupId: null }, row: row("+Growth Fund") }], []);
     expect(out[0].name).toBe("+Growth Fund");
+  });
+});
+
+describe("fact scoping", () => {
+  const facts = buildStoryFacts({
+    todayAssets: 4_700_000,
+    todayDebts: 610_000,
+    todayLiquid: 1_700_000,
+    baseSuccess: 0.737,
+    proposedSuccess: 0.963,
+    baseEndLiquid: 4_500_000,
+    proposedEndLiquid: 27_200_000,
+    retirementYear: 2035,
+    endOfLifeYear: 2070,
+    planStartYear: 2026,
+    strategies: [],
+  });
+
+  it("keeps the balance sheet out of the headline chapter", () => {
+    const ids = factsForChapter(facts, "planInOnePage").map((f) => f.id);
+    expect(ids).toContain("outcome.confidence.proposed");
+    expect(ids).not.toContain("today.debts");
+  });
+
+  it("keeps confidence and legacy out of the balance-sheet chapter", () => {
+    const ids = factsForChapter(facts, "whatYouHave").map((f) => f.id);
+    expect(ids).toContain("today.assets");
+    expect(ids).toContain("today.debts");
+    expect(ids).toContain("today.netWorth");
+    expect(ids).toContain("today.liquid");
+    // The defect this closes: both households narrated these twice.
+    expect(ids).not.toContain("outcome.confidence.base");
+    expect(ids).not.toContain("outcome.legacy.proposed");
+  });
+
+  it("gives the plan's own years to every chapter", () => {
+    for (const id of ["planInOnePage", "whatYouHave", "whatWeRecommend"] as const) {
+      expect(factsForChapter(facts, id).map((f) => f.id)).toContain("plan.endOfLifeYear");
+    }
+  });
+});
+
+describe("a retirement year already in the past", () => {
+  const past = buildStoryFacts({
+    todayAssets: 6_700_000, todayDebts: 0, todayLiquid: 5_800_000,
+    baseSuccess: 1, proposedSuccess: 1,
+    baseEndLiquid: 9_200_000, proposedEndLiquid: 9_200_000,
+    retirementYear: 2013, endOfLifeYear: 2051, planStartYear: 2026,
+    strategies: [],
+  });
+
+  it("is omitted rather than narrated as something still to come", () => {
+    expect(past.map((f) => f.id)).not.toContain("plan.retirementYear");
+  });
+
+  it("is kept when it is still ahead", () => {
+    const ahead = buildStoryFacts({
+      todayAssets: 1, todayDebts: 0, todayLiquid: 1,
+      baseSuccess: null, proposedSuccess: null,
+      baseEndLiquid: 0, proposedEndLiquid: null,
+      retirementYear: 2035, endOfLifeYear: 2070, planStartYear: 2026,
+      strategies: [],
+    });
+    expect(ahead.map((f) => f.id)).toContain("plan.retirementYear");
   });
 });

@@ -17,6 +17,10 @@ export interface StoryFactsInput {
   proposedEndLiquid: number | null;
   retirementYear: number;
   endOfLifeYear: number;
+  /** The first projection year. Only used to decide whether the retirement year
+   *  is still ahead — a household that retired years ago must not be told when
+   *  they will stop working. */
+  planStartYear: number;
   /**
    * The grouped changes, from `groupStrategies`. Required rather than optional
    * on purpose: the recommendation chapter prints these rows' own text, and it
@@ -134,25 +138,87 @@ function quoteStrategyFigures(strategies: StoryStrategy[], taken: Set<string>): 
   return facts;
 }
 
+/**
+ * Which chapters may print which figure.
+ *
+ * The mechanism (`Fact.chapters`, `factsForChapter`) shipped in Plan 1 and was
+ * used for the quoted strategy figures alone, so every plan-level total was
+ * visible to every chapter. The 2026-08-12 read is what that costs: "What you
+ * have" is a balance-sheet chapter, it was handed confidence and legacy, and it
+ * re-narrated all four of the headline chapter's figures on the sheet
+ * immediately after them — on both households.
+ *
+ * The rule is one line: a chapter may print the figures it is ABOUT. The plan's
+ * own years are the deliberate exception — a horizon is context for any chapter
+ * that mentions time, and no chapter's subject is "2070".
+ *
+ * Undefined rather than "every chapter" for the shared entries: `factsForChapter`
+ * treats a fact with no `chapters` as plan-level, so listing all fourteen here
+ * would be a second list to keep in step with `CHAPTER_IDS`.
+ */
+const BALANCE_SHEET_CHAPTERS: readonly ChapterId[] = ["whatYouHave"];
+const OUTCOME_CHAPTERS: readonly ChapterId[] = ["planInOnePage"];
+
 export function buildStoryFacts(input: StoryFactsInput): Fact[] {
   const facts: Fact[] = [
-    moneyFact("today.assets", "What you own", input.todayAssets),
-    moneyFact("today.debts", "What you owe", input.todayDebts),
-    moneyFact("today.netWorth", "Net worth today", input.todayAssets - input.todayDebts),
-    moneyFact("today.liquid", "Money the plan can draw on", input.todayLiquid),
-    moneyFact("outcome.legacy.base", "Left at the end, current plan", input.baseEndLiquid),
-    yearFact("plan.retirementYear", "The year you stop working", input.retirementYear),
+    moneyFact("today.assets", "What you own", input.todayAssets, BALANCE_SHEET_CHAPTERS),
+    moneyFact("today.debts", "What you owe", input.todayDebts, BALANCE_SHEET_CHAPTERS),
+    moneyFact(
+      "today.netWorth",
+      "Net worth today",
+      input.todayAssets - input.todayDebts,
+      BALANCE_SHEET_CHAPTERS,
+    ),
+    moneyFact("today.liquid", "Money the plan can draw on", input.todayLiquid, BALANCE_SHEET_CHAPTERS),
+    moneyFact(
+      "outcome.legacy.base",
+      "Left at the end, current plan",
+      input.baseEndLiquid,
+      OUTCOME_CHAPTERS,
+    ),
     yearFact("plan.endOfLifeYear", "The last year we plan to", input.endOfLifeYear),
   ];
 
+  /**
+   * The retirement year, only while it is still ahead.
+   *
+   * `retirementYear` is `DOB year + retirementAge` with no clamp, so an
+   * already-retired household carries a year in the past — 2013 on the Warner
+   * fixture. Every consumer treats the label at face value ("the year you stop
+   * working"), so the narrator wrote "From the year you stop working, 2013,
+   * through 2051", which is simply false for someone who retired thirteen years
+   * ago. Omitted rather than relabelled: a second label ("the year you retired")
+   * is a second sentence shape in every narrator and every prompt, and none of
+   * the chapters in this report has anything to say about it.
+   */
+  if (input.retirementYear >= input.planStartYear) {
+    facts.push(yearFact("plan.retirementYear", "The year you stop working", input.retirementYear));
+  }
+
   if (input.baseSuccess != null) {
-    facts.push(pctFact("outcome.confidence.base", "Confidence, current plan", input.baseSuccess));
+    facts.push(
+      pctFact("outcome.confidence.base", "Confidence, current plan", input.baseSuccess, OUTCOME_CHAPTERS),
+    );
   }
   if (input.proposedSuccess != null) {
-    facts.push(pctFact("outcome.confidence.proposed", "Confidence, proposed plan", input.proposedSuccess));
+    facts.push(
+      pctFact(
+        "outcome.confidence.proposed",
+        "Confidence, proposed plan",
+        input.proposedSuccess,
+        OUTCOME_CHAPTERS,
+      ),
+    );
   }
   if (input.proposedEndLiquid != null) {
-    facts.push(moneyFact("outcome.legacy.proposed", "Left at the end, proposed plan", input.proposedEndLiquid));
+    facts.push(
+      moneyFact(
+        "outcome.legacy.proposed",
+        "Left at the end, proposed plan",
+        input.proposedEndLiquid,
+        OUTCOME_CHAPTERS,
+      ),
+    );
   }
 
   // Last, and seeded with the plan figures' own spellings: a strategy that

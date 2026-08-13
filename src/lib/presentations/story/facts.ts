@@ -35,19 +35,40 @@ export interface Fact {
   chapters?: readonly ChapterId[];
 }
 
-export function moneyFact(id: string, label: string, raw: number): Fact {
-  return { id, label, display: fmtUsdCompact(raw), raw };
+/**
+ * `chapters` is optional on these three and required on `quotedFact`, which is
+ * the difference between the two kinds of figure: a plan total is true wherever
+ * it is printed, and a quoted one is about one specific change. Omit it and the
+ * fact is plan-level — see `Fact.chapters`.
+ */
+export function moneyFact(
+  id: string,
+  label: string,
+  raw: number,
+  chapters?: readonly ChapterId[],
+): Fact {
+  return { id, label, display: fmtUsdCompact(raw), raw, ...(chapters ? { chapters } : {}) };
 }
 
 /** `raw` is a fraction: 0.91 → "91%". At most one decimal, no trailing ".0". */
-export function pctFact(id: string, label: string, raw: number): Fact {
+export function pctFact(
+  id: string,
+  label: string,
+  raw: number,
+  chapters?: readonly ChapterId[],
+): Fact {
   const pct = raw * 100;
   const display = `${Number.isInteger(pct) ? pct : Number(pct.toFixed(1))}%`;
-  return { id, label, display, raw };
+  return { id, label, display, raw, ...(chapters ? { chapters } : {}) };
 }
 
-export function yearFact(id: string, label: string, raw: number): Fact {
-  return { id, label, display: String(Math.round(raw)), raw };
+export function yearFact(
+  id: string,
+  label: string,
+  raw: number,
+  chapters?: readonly ChapterId[],
+): Fact {
+  return { id, label, display: String(Math.round(raw)), raw, ...(chapters ? { chapters } : {}) };
 }
 
 /**

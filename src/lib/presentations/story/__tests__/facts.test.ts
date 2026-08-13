@@ -66,6 +66,15 @@ describe("story facts", () => {
     expect(hasAccountingNegative(text)).toBe(expected);
   });
 
+  /** Scoping is only worth having if it survives the constructor. Each of the
+   *  three takes the same optional argument `quotedFact` takes as required. */
+  it("carries a chapter scope through every constructor, and omits it when unscoped", () => {
+    expect(moneyFact("a", "A", 100, ["whatYouHave"]).chapters).toEqual(["whatYouHave"]);
+    expect(pctFact("b", "B", 0.5, ["planInOnePage"]).chapters).toEqual(["planInOnePage"]);
+    expect(yearFact("c", "C", 2041, ["whatWeRecommend"]).chapters).toEqual(["whatWeRecommend"]);
+    expect(moneyFact("d", "D", 100).chapters).toBeUndefined();
+  });
+
   it("collects every display string into a lookup set", () => {
     const set = factDisplaySet([moneyFact("a", "A", 1_234_567), pctFact("b", "B", 0.91)]);
     expect(set.has("$1.2M")).toBe(true);

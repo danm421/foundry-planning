@@ -43,5 +43,25 @@ export function fmtValue(v: unknown): string {
     if (Math.abs(v) >= 1000) return compactCurrency(v);
     return String(v);
   }
+  /**
+   * A payload field that is not a scalar.
+   *
+   * `String(v)` on an `owners` array yields "[object Object],[object Object]",
+   * and that string reached a CLIENT PAGE — seen on the Warner household
+   * 2026-08-12, on six of seven Plan Story strategy cards, and equally on this
+   * page's own Scenario Changes table, which is where it has always been. There
+   * is no rendering of an owner slice that belongs in a diff cell, so the honest
+   * answer is the same em dash every other unprintable value gets: the change is
+   * still listed, its name is still right, and only the before/after pair is
+   * withheld.
+   *
+   * An array of strings is a real case (a list of names) and keeps working.
+   */
+  if (Array.isArray(v)) {
+    return v.every((item) => typeof item === "string" || typeof item === "number")
+      ? v.join(", ")
+      : "—";
+  }
+  if (typeof v === "object") return "—";
   return String(v);
 }

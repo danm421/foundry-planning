@@ -167,6 +167,10 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
     proposedEndLiquid: proposedLast ? liquidPortfolioTotal(proposedLast) : null,
     retirementYear: new Date(client.dateOfBirth).getUTCFullYear() + client.retirementAge,
     endOfLifeYear: lastYear?.year ?? 0,
+    // The projection's own first year, not the wall clock: the whole report is
+    // written against the plan's horizon, and `firstYear` is what every other
+    // figure here is as-of.
+    planStartYear: firstYear?.year ?? new Date().getUTCFullYear(),
     strategies,
   });
 
