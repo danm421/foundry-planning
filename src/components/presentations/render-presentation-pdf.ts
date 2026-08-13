@@ -48,7 +48,7 @@ import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-
 import type { PlanStoryOptions } from "@/lib/presentations/pages/plan-story/options-schema";
 import { loadPlanStoryInput } from "@/lib/presentations/story/load-for-export";
 import { loadInvestmentProposalBundle } from "@/lib/presentations/investment-proposal-bundle";
-import { investmentProposalOptionsSchema } from "@/lib/presentations/pages/investment-proposal/options-schema";
+import type { InvestmentProposalOptions } from "@/lib/presentations/pages/investment-proposal/options-schema";
 import { loadStoryScenarioLabel } from "@/lib/presentations/story/scenario-label";
 import {
   planScenarioBundles,
@@ -502,8 +502,10 @@ export async function renderPresentationPdf(
   const proposalByPage = await Promise.all(
     body.pages.map(async (p) => {
       if (p.pageId !== "investmentProposal") return undefined;
-      const options = investmentProposalOptionsSchema.parse(p.options ?? {});
-      return (await loadInvestmentProposalBundle(clientId, options.proposalId)) ?? undefined;
+      // Already parsed and defaulted against `investmentProposalOptionsSchema`
+      // by `pageDescriptorSchema` above — read through, never re-defaulted.
+      const opts = p.options as InvestmentProposalOptions;
+      return (await loadInvestmentProposalBundle(clientId, opts.proposalId)) ?? undefined;
     }),
   );
 
