@@ -91,6 +91,19 @@ describe("the chapter registry", () => {
     const tax = CHAPTERS.whatYoullPayInTax.available;
     expect(tax?.(CTX)).toBe(false);
     expect(tax?.({ ...CTX, facts: [moneyFact("tax.lifetime.base", "Total income tax over the plan, current plan", 1_400_000)] })).toBe(true);
+
+    const cover = CHAPTERS.protectingYourFamily.available;
+    expect(cover?.(CTX)).toBe(false);
+    expect(cover?.({ ...CTX, facts: [moneyFact("cover.have", "Cover in force on Cooper's life", 500_000)] })).toBe(true);
+    // The two Task 17 chapters are the neighbours most easily confused: both are
+    // about a risk rather than about the plan's own arithmetic, and both landed
+    // in one task off one loader change.
+    expect(cover?.({ ...CTX, facts: [moneyFact("medicare.lifetime", "What Medicare costs, current plan", 420_000)] })).toBe(false);
+
+    const medicare = CHAPTERS.healthCareCosts.available;
+    expect(medicare?.(CTX)).toBe(false);
+    expect(medicare?.({ ...CTX, facts: [moneyFact("medicare.lifetime", "What Medicare costs, current plan", 420_000)] })).toBe(true);
+    expect(medicare?.({ ...CTX, facts: [moneyFact("cover.have", "Cover in force on Cooper's life", 500_000)] })).toBe(false);
   });
 
   it("gives every chapter a client-facing title and a model brief", () => {

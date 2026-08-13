@@ -201,6 +201,27 @@ describe("buildPlanStoryData — where the prose comes from", () => {
     expect(paragraphsOf(data, "whatYouHave")).toEqual(["You owe $300K."]);
   });
 
+  /**
+   * The RENDER half of the page-count contract, whose other half lives in
+   * `options.test.ts` ("keeps a coverage chapter's sheet even when it has
+   * nothing in it").
+   *
+   * That test proves the sheet is still reserved for a household with no
+   * policies on file. This one proves what lands on it: a chapter reserved and
+   * then rendered blank is the same defect as one that mis-numbers the deck, and
+   * only the narrator can tell the client why the page is short. `available` is
+   * a GENERATE-time filter — it saves a model call, never a page.
+   */
+  it("prints a coverage chapter's honest empty state on its reserved sheet", () => {
+    const data = buildPlanStoryData(
+      deckCtx(input({ facts: [money("today.assets", "$2M", 2_000_000)] })),
+      PLAN_STORY_OPTIONS_DEFAULT,
+    );
+    const paragraphs = paragraphsOf(data, "protectingYourFamily");
+    expect(paragraphs.length).toBeGreaterThan(0);
+    expect(paragraphs.join(" ")).toMatch(/don't have|no policies|nothing recorded/iu);
+  });
+
   it("splits stored text into paragraphs on blank lines, trimming each", () => {
     const stored = "First para.\n\n\n  Second para.  \n\nThird para.\n\n";
     const data = buildPlanStoryData(

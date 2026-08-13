@@ -124,6 +124,21 @@ vi.mock("@/lib/estate/transfer-report", () => ({
   ),
 }));
 
+// The life-cover solve's inventory. Same call as the estate report above — the
+// fake tree here carries no policies — but this one is a real DB read rather
+// than a pure builder, so without the mock `lifeCover`'s own try/catch logs a
+// failed query on EVERY test in this file, including the ones asserting that
+// nothing was logged.
+//
+// An empty inventory is also the loader's deliberate short-circuit: no policies,
+// no solve, because that solve is by far the most expensive thing this loader
+// can run and it is on the PDF export path. So the cover facts are absent here
+// by construction, and the chapter's own suite owns what the narrator does with
+// them.
+vi.mock("@/lib/insurance-policies/load-li-inventory", () => ({
+  loadLifeInsuranceInventory: vi.fn(async () => ({ policies: [] })),
+}));
+
 // Same call as the balance-sheet builders above: the Goals board has its own
 // suite, and the fake tree here carries no `planSettings` for it to read. What
 // this file is for is what the LOADER does with the result — which cards become

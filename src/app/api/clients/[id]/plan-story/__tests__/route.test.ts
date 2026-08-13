@@ -109,10 +109,34 @@ import { POST } from "../generate/route";
 import { PATCH } from "../[chapterId]/route";
 
 import { CHAPTERS, NARRATED_CHAPTERS } from "@/lib/presentations/story/chapters/registry";
+import type { StoryContext } from "@/lib/presentations/story/types";
+
+/**
+ * The context this suite's `loadStoryContext` mock hands the route: no facts at
+ * all. Stated once, here, because `BASE_ONLY` below is only right while it
+ * matches what the mock in `beforeEach` returns.
+ *
+ * An empty pack is what makes every COVERAGE chapter's `available` predicate
+ * false — no policies on file, nobody reaching 65 — so those chapters are not
+ * generated for any household in this file except the one case that supplies
+ * the data.
+ */
+const NO_FACTS: StoryContext = {
+  household: { firstNames: "Cooper and Susan", householdName: "the Cooper household" },
+  scenarioLabel: "Base",
+  documentRole: "standalone",
+  hasProposal: false,
+  strategies: [],
+  goals: [],
+  facts: [],
+};
 
 /** The chapters a BASE-ONLY story generates: every landed one, less the ones
- *  with nothing to recommend. Derived so a Wave D task touches one list. */
-const BASE_ONLY = NARRATED_CHAPTERS.filter((id) => !CHAPTERS[id].requiresProposal);
+ *  with nothing to recommend, less the coverage chapters with no data behind
+ *  them. Derived so a Wave D task touches one list. */
+const BASE_ONLY = NARRATED_CHAPTERS.filter(
+  (id) => !CHAPTERS[id].requiresProposal && (CHAPTERS[id].available?.(NO_FACTS) ?? true),
+);
 
 const CLIENT_ID = "c1a11111-2222-4333-8444-555555555555";
 const SCENARIO_ID = "5ce11111-2222-4333-8444-666666666666";
@@ -512,6 +536,42 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
     );
   });
 
+  /**
+   * Kills: an `available` clause that is always false — a coverage chapter that
+   * can never be generated, whatever the household has.
+   *
+   * Every other case in this file runs on an empty fact pack, so they only ever
+   * see these two chapters SKIPPED. That direction is already pinned (drop the
+   * clause and `BASE_ONLY` no longer matches), but it is one-sided: skipping is
+   * also what a permanently-off predicate does, and the advisor would simply
+   * never get the chapter. This is the case that fails for that.
+   */
+  it("generates a coverage chapter once the household has the data for it", async () => {
+    mocks.loadStoryContext.mockResolvedValue({
+      hasProposal: false,
+      strategies: [],
+      facts: [
+        {
+          id: "cover.have",
+          label: "Cover in force on Cooper's life",
+          display: "$500K",
+          raw: 500_000,
+        },
+      ],
+    });
+
+    const res = await post({ scenarioId: "base", documentRole: "standalone" });
+    const body = await res.json();
+    const ids = body.chapters.map((c: { chapterId: string }) => c.chapterId);
+
+    expect(res.status).toBe(200);
+    expect(ids).toContain("protectingYourFamily");
+    // …and only the chapter whose data arrived. The Medicare pack is still
+    // absent, so a predicate that answered for its neighbour would show up here
+    // rather than in a count that both chapters satisfy.
+    expect(ids).not.toContain("healthCareCosts");
+  });
+
   // Kills: `requireClientEditAccess("OTHER-CLIENT")` on the one endpoint that
   // spends money, and `generateChapter({ clientId: "OTHER-CLIENT" })` — which
   // would generate against one client's plan and store under another's.
@@ -624,7 +684,17 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
     // this route, per the test above.
     mocks.loadStoryContext.mockResolvedValue({
       hasProposal: true,
-      facts: [],
+      // One fact per data-gated chapter, so "every chapter" still means every
+      // chapter. `available` filters this route as of Task 17, and the four
+      // coverage chapters read their own prefix off the pack — on the empty pack
+      // the rest of this file uses, a test named for the whole arc would quietly
+      // assert two thirds of it.
+      facts: [
+        { id: "estate.net.base", label: "What reaches your heirs, current plan", display: "$9.2M", raw: 9_200_000 },
+        { id: "tax.lifetime.base", label: "Total income tax over the plan, current plan", display: "$1.4M", raw: 1_400_000 },
+        { id: "cover.have", label: "Cover in force on Cooper's life", display: "$500K", raw: 500_000 },
+        { id: "medicare.lifetime", label: "What Medicare costs, current plan", display: "$420K", raw: 420_000 },
+      ],
       strategies: [{ name: "Convert to Roth", rows: [] }],
     });
     const res = await post({ scenarioId: SCENARIO_ID, documentRole: "standalone" });

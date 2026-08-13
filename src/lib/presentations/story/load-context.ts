@@ -27,10 +27,19 @@ import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
 import { summarizeHousehold } from "@/lib/presentations/pages/estate-summary/aggregate";
 import { ESTATE_SUMMARY_OPTIONS_DEFAULT } from "@/lib/presentations/pages/estate-summary/options-schema";
 import { computeLifetimeTotals } from "@/lib/presentations/pages/tax-summary/aggregate";
+import { buildMedicareBars, computeKpis } from "@/lib/presentations/pages/medicare-summary/aggregate";
+import { coverageForDecedent } from "@/lib/presentations/pages/life-insurance-summary/aggregate";
+import { getOrComputeLifeInsuranceSolve } from "@/lib/compute-cache/life-insurance";
+import { loadLifeInsuranceInventory } from "@/lib/insurance-policies/load-li-inventory";
+import { loadLifeInsuranceSettings } from "@/lib/life-insurance/settings";
+import { listInvestmentOptionCatalog } from "@/lib/presentations/investment-option-catalog";
+import { roundUpTo50k } from "@/lib/life-insurance/round";
 import { ASSUMED_LIFE_EXPECTANCY } from "@/lib/plan-horizon";
 import type { GoalKind, MapGoal } from "@/lib/household-map/goals";
+import type { LiSolved } from "@/lib/presentations/pages/life-insurance-summary/options-schema";
+import type { LiPolicyRow } from "@/lib/insurance-policies/load-li-inventory";
 import type { ClientData, ProjectionYear } from "@/engine/types";
-import { buildStoryFacts, groupStrategies, type StoryEstateTotals } from "./build-facts";
+import { buildStoryFacts, groupStrategies, type StoryCover, type StoryEstateTotals } from "./build-facts";
 import type { StoryContext, StoryGoal, StoryStrategy } from "./types";
 
 export interface LoadStoryContextArgs {
@@ -259,6 +268,137 @@ function lifetimeTax(years: ProjectionYear[]): number | null {
   return computeLifetimeTotals(years).lifetimeTotal;
 }
 
+/**
+ * What Medicare costs across the plan, off the SAME builder the deck's Medicare
+ * Summary page draws its KPI strip from.
+ *
+ * `buildMedicareBars` gates on a member who is actually ENROLLED, not on the
+ * presence of a `medicare` block — the engine emits one for pre-65 years too,
+ * carrying `enrolled: false` and zero premiums, and reading those starts the
+ * horizon decades early and inflates the total. That exact defect was found and
+ * fixed on the Medicare Summary page by two independent reviewers; calling its
+ * builder rather than summing the years here is what stops it arriving again.
+ *
+ * Null when nobody enrols inside the horizon — a household still ten years off
+ * 65 has no Medicare figure, which is not the same as one that costs nothing.
+ */
+function medicareTotals(years: ProjectionYear[]): { lifetime: number; irmaa: number } | null {
+  const bars = buildMedicareBars(years);
+  if (bars.length === 0) return null;
+  const kpis = computeKpis(bars);
+  return { lifetime: kpis.lifetimeMedicareCost, irmaa: kpis.lifetimeIrmaa };
+}
+
+/** The solver's display cap. `exceeds-cap` means the search saturated against
+ *  it rather than finding a face value, so the number is a bound, not an
+ *  answer. */
+const NO_ANSWER = "exceeds-cap";
+
+/**
+ * One life's cover, need and shortfall, or null when the solve did not answer
+ * for that life.
+ *
+ * `exceeds-cap` is treated as no answer, exactly as `unreachable` is on the
+ * max-spend solve and for the same reason: a figure carried out of that state is
+ * not the one its label promises.
+ */
+function coverSide(
+  on: string,
+  policies: LiPolicyRow[],
+  decedent: "client" | "spouse",
+  mc: LiSolved["mcSpouse"],
+  deathYear: number,
+): StoryCover | null {
+  if (!mc || mc.status === NO_ANSWER) return null;
+  // As of the solved death year, so expired term is dropped — the engine
+  // excludes it from the need, and counting it inverts the shortfall.
+  const have = coverageForDecedent(policies, decedent, deathYear).total;
+  // The Life Insurance Summary page's own arithmetic (`view-model.ts#gapFromMc`):
+  // the solve returns the ADDITIONAL face value, so what the plan points to is
+  // that plus what is already in force. Comparing cover against the additional
+  // need alone reported a surplus whenever cover exceeded it.
+  const gap = roundUpTo50k(mc.faceValue);
+  return { on, have, need: have + gap, gap };
+}
+
+/**
+ * The label the Life Insurance Summary page would attach to this solve.
+ *
+ * Resolved rather than stubbed even though this chapter never reads it. The
+ * label is NOT part of the solve's cache key, that page DOES print it in its
+ * subtitle, and on an export carrying both pages the story loads first — so a
+ * placeholder here would become the label that page shows. The catalog is
+ * loaded only when there is a portfolio id to name, which the default settings
+ * do not carry.
+ */
+async function modelPortfolioLabel(
+  clientId: string,
+  firmId: string,
+  modelPortfolioId: string | null,
+): Promise<string> {
+  const FALLBACK = "Plan default rate";
+  if (!modelPortfolioId) return FALLBACK;
+  const catalog = await listInvestmentOptionCatalog(clientId, firmId);
+  return catalog.portfolios.find((p) => p.id === modelPortfolioId)?.name ?? FALLBACK;
+}
+
+/**
+ * Life cover for the life the household is furthest short on.
+ *
+ * The solve is the SAME call `render-presentation-pdf.ts` makes for the Life
+ * Insurance Summary page, through the same compute cache and under the advisor's
+ * own saved solver settings — so a deck carrying both pages pays for one solve,
+ * and the two cannot disagree about what is missing.
+ *
+ * ⚠️ It is also by far the most expensive thing this loader can run: a
+ * deterministic need curve for every plan year plus a Monte Carlo search per
+ * life. An empty inventory short-circuits it, which is exactly the household
+ * whose chapter prints the honest empty state anyway — so a household with no
+ * policies on file never pays for it. Failure is non-fatal, and the facts are
+ * then absent, the same as Monte Carlo and max spend.
+ */
+async function lifeCover(args: {
+  clientId: string;
+  firmId: string;
+  tree: ClientData;
+  clientName: string;
+  spouseName: string | null;
+}): Promise<StoryCover | null> {
+  const { clientId, firmId, tree, clientName, spouseName } = args;
+  try {
+    const { policies } = await loadLifeInsuranceInventory(clientId, firmId, clientName, spouseName);
+    if (policies.length === 0) return null;
+
+    // The advisor's own saved assumptions for this client — the same row the
+    // Life Insurance page's options control seeds itself from, so the two solves
+    // share a cache entry rather than each paying for their own.
+    const assumptions = await loadLifeInsuranceSettings(clientId, tree);
+    const solved = await getOrComputeLifeInsuranceSolve({
+      clientId,
+      firmId,
+      // Base, not the proposal: this chapter needs no proposal, and cover is
+      // about the household as it stands.
+      scenarioId: "base",
+      assumptions,
+      modelPortfolioLabel: await modelPortfolioLabel(clientId, firmId, assumptions.modelPortfolioId),
+    });
+
+    const { deathYear } = solved.assumptions;
+    const sides = [
+      coverSide(clientName, policies, "client", solved.mcClient, deathYear),
+      spouseName ? coverSide(spouseName, policies, "spouse", solved.mcSpouse, deathYear) : null,
+    ].flatMap((side) => (side ? [side] : []));
+    if (sides.length === 0) return null;
+    // The life they are furthest short on — the one an advisor has to raise.
+    // A tie keeps the earlier side, which is the client, because a coin toss
+    // between two identical shortfalls should at least be a stable one.
+    return sides.reduce((worst, side) => (side.gap > worst.gap ? side : worst));
+  } catch (err) {
+    console.error("[plan-story] life cover unavailable (non-fatal)", err);
+    return null;
+  }
+}
+
 export async function loadStoryContext(args: LoadStoryContextArgs): Promise<StoryContext> {
   const { clientId, firmId, proposedRef } = args;
 
@@ -313,9 +453,18 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
   // does not — `projectAndMc` already left `successRate` null for the same
   // reason, and borrowing the base plan's spend would print it under the
   // proposed plan's label.
-  const [baseSpend, proposedSpend] = await Promise.all([
+  const [baseSpend, proposedSpend, cover] = await Promise.all([
     maxSpendFor(clientId, firmId, "base"),
     proposed?.scenarioId != null ? maxSpendFor(clientId, firmId, proposed.scenarioId) : null,
+    // Alongside the two solves rather than after them — it is the slowest call
+    // in this loader and nothing below depends on the other two.
+    lifeCover({
+      clientId,
+      firmId,
+      tree: base.effectiveTree,
+      clientName: firstName,
+      spouseName: client.spouseName ?? null,
+    }),
   ]);
 
   const facts = buildStoryFacts({
@@ -376,6 +525,11 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
     // No proposal means no proposed years, which is already null by the rule
     // above rather than by a second check here.
     lifetimeTax: { base: lifetimeTax(baseYears), proposed: lifetimeTax(proposedYears) },
+    cover,
+    // The CURRENT plan's, and the fact's label says so. The chapter needs no
+    // proposal and the arc makes no Medicare comparison; what a proposal does to
+    // the surcharge lands in the tax chapter, which states both plans.
+    medicare: medicareTotals(baseYears),
     flow: firstYear
       ? {
           income: firstYear.totalIncome,

@@ -44,6 +44,8 @@ const LANDED: ChapterId[] = [
   "whatYouCanSpend",
   "whatsLeftForPeople",
   "whatYoullPayInTax",
+  "protectingYourFamily",
+  "healthCareCosts",
 ];
 
 /** What the shipped default actually PRINTS: every landed chapter, less the ones

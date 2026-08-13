@@ -72,9 +72,24 @@ export async function POST(
     // not landed has no narrative for the substance floor to measure against, so
     // generating it spends a model call to store the placeholder's own sentence.
     // Each one joins this list as its task lands.
-    const wanted = NARRATED_CHAPTERS.filter(
-      (c) => hasSomethingToPropose || !CHAPTERS[c].requiresProposal,
-    );
+    //
+    // …and `available` on top of that: a coverage chapter with nothing behind it
+    // — no policies on file, nobody reaching 65 inside the horizon — has only
+    // its narrator's empty state to say, and a model call cannot improve on a
+    // sentence whose whole job is to admit we have no data. The chapter still
+    // PRINTS: `printedChapters` reserves its sheet from the options alone and
+    // deliberately cannot see this predicate (see `registry.ts`), so hiding it
+    // here costs the spend and nothing else.
+    //
+    // Evaluated on the FULL pack rather than the chapter-scoped one. The scoping
+    // in `factsForChapter` would change no answer today — every fact these
+    // predicates look for is scoped to the chapter asking — but the predicate is
+    // a question about the HOUSEHOLD, and `registry.test.ts` pins it that way.
+    const wanted = NARRATED_CHAPTERS.filter((c) => {
+      const def = CHAPTERS[c];
+      if (def.requiresProposal && !hasSomethingToPropose) return false;
+      return def.available?.(ctx) ?? true;
+    });
 
     // Chapters are independent — generate them concurrently. Each one already
     // swallows its own failure and falls back, so this never rejects.

@@ -87,6 +87,55 @@ export interface StoryFactsInput {
    * on the page as a household that owes no tax for the rest of its life.
    */
   lifetimeTax: { base: number | null; proposed: number | null };
+  /**
+   * Life cover on ONE life — see `StoryCover` — or null when there are no
+   * policies on file and no usable solve.
+   *
+   * Null rather than zeroes for the third time: "$0 of cover in place" and "we
+   * have no policies on file for you" are different statements, and only the
+   * second is honest about a household we simply have not asked yet.
+   */
+  cover: StoryCover | null;
+  /**
+   * What Medicare costs over the plan, or null when nobody enrols inside the
+   * horizon.
+   *
+   * The CURRENT plan's, even on a deck that carries a proposal — the label says
+   * so. This chapter needs no proposal (an advisor runs it on a base-only annual
+   * review) and the arc has no Medicare comparison to make; a Roth conversion
+   * does move the surcharge, and that belongs to the tax chapter, which already
+   * states both plans.
+   */
+  medicare: { lifetime: number; irmaa: number } | null;
+}
+
+/**
+ * Life cover, stated for ONE of the two lives.
+ *
+ * A household has two answers here — the plan needs a different amount on each
+ * life — and this chapter has one prose column and five figure cards. So it
+ * reports the life the household is FURTHEST SHORT on, which is the one an
+ * advisor has to raise, and the labels name whose life it is because the cards
+ * beside the prose are where a client reads it.
+ *
+ * Every figure comes off the same aggregate the deck's Life Insurance Summary
+ * page builds its own gap from, at that page's solved death year.
+ */
+export interface StoryCover {
+  /** The first name whose life these three figures are about. */
+  on: string;
+  /** In-force cover on that life at the solved death year. Expired term is
+   *  already dropped — the engine excludes it from the need, so counting it
+   *  would invert the shortfall. */
+  have: number;
+  /** What the plan points to IN TOTAL on that life: what is in force plus what
+   *  the solve says is missing. The Life Insurance Summary page's own
+   *  definition — comparing cover against the ADDITIONAL need alone reported a
+   *  surplus whenever cover exceeded it. */
+  need: number;
+  /** …and the difference. Zero when the cover is enough, and the fact is then
+   *  absent rather than "$0 short". */
+  gap: number;
 }
 
 /**
@@ -253,6 +302,10 @@ const FLOW_CHAPTERS: readonly ChapterId[] = ["whereTheMoneyGoes"];
 const ESTATE_CHAPTERS: readonly ChapterId[] = ["whatsLeftForPeople"];
 /** …and what the household pays in income tax over the life of the plan. */
 const TAX_CHAPTERS: readonly ChapterId[] = ["whatYoullPayInTax"];
+/** What their life cover would do for the survivor. */
+const COVER_CHAPTERS: readonly ChapterId[] = ["protectingYourFamily"];
+/** …and what health care costs once work stops. */
+const MEDICARE_CHAPTERS: readonly ChapterId[] = ["healthCareCosts"];
 
 /**
  * The estate pair, both plans, in COMPARISON order — both nets, then both costs.
@@ -297,6 +350,51 @@ function lifetimeTaxFacts(tax: StoryFactsInput["lifetimeTax"]): Fact[] {
   if (tax.proposed != null) {
     facts.push(
       moneyFact("tax.lifetime.proposed", "Total income tax over the plan, proposed plan", tax.proposed, TAX_CHAPTERS),
+    );
+  }
+  return facts;
+}
+
+/**
+ * The three cover figures, labelled with the life they are about.
+ *
+ * The name is in the LABEL rather than in the prose, and that is deliberate:
+ * Gate 6 rejects a first name used as anything but direct address, so a narrator
+ * that wrote "on Alan's cover" would be judged for the one thing the label does
+ * best — captioning its own figure on the card beside the paragraph.
+ *
+ * `cover.gap` is absent when there is nothing missing. A "$0 short" card is a
+ * figure where a plain "that's enough" is the whole answer.
+ */
+function coverFacts(cover: StoryCover | null): Fact[] {
+  if (!cover) return [];
+  const facts = [
+    moneyFact("cover.have", `Cover in force on ${cover.on}'s life`, cover.have, COVER_CHAPTERS),
+    moneyFact("cover.need", `What the plan points to on ${cover.on}'s life`, cover.need, COVER_CHAPTERS),
+  ];
+  if (cover.gap > 0) {
+    facts.push(moneyFact("cover.gap", `What's missing on ${cover.on}'s life`, cover.gap, COVER_CHAPTERS));
+  }
+  return facts;
+}
+
+/**
+ * Medicare over the plan, and the higher-earner surcharge inside it.
+ *
+ * The surcharge is a SHARE of the total rather than a figure beside it, and the
+ * narrator says so — printed as two independent amounts a client adds them
+ * together. It is omitted entirely at zero: a household that never crosses a
+ * surcharge threshold has no surcharge to caption, and "$0" on a card invites
+ * the question the chapter exists to answer plainly.
+ */
+function medicareFacts(medicare: StoryFactsInput["medicare"]): Fact[] {
+  if (!medicare) return [];
+  const facts = [
+    moneyFact("medicare.lifetime", "What Medicare costs, current plan", medicare.lifetime, MEDICARE_CHAPTERS),
+  ];
+  if (medicare.irmaa > 0) {
+    facts.push(
+      moneyFact("medicare.irmaa", "The higher-earner surcharge in that", medicare.irmaa, MEDICARE_CHAPTERS),
     );
   }
   return facts;
@@ -355,17 +453,22 @@ export function buildStoryFacts(input: StoryFactsInput): Fact[] {
       OUTCOME_CHAPTERS,
     ),
     /**
-     * The estate and lifetime-tax pairs sit AHEAD of the plan's own years, and
-     * that is a layout decision as much as a data one: `figuresFor` prints a
-     * `twoUp` chapter's first FIVE facts as the cards beside its prose, and the
-     * estate chapter's scoped pack is six — four of its own plus the two plan
-     * years every chapter can see. Behind the years, the card that falls off the
-     * bottom is "Tax and costs on the estate, proposed plan", leaving half a
-     * comparison on a page whose prose makes the whole one. Ahead of them, what
-     * drops is the retirement year, which that chapter is not about.
+     * The estate, tax, cover and Medicare figures sit AHEAD of the plan's own
+     * years, and that is a layout decision as much as a data one: `figuresFor`
+     * prints a `twoUp` chapter's first FIVE facts as the cards beside its prose,
+     * and the estate chapter's scoped pack is six — four of its own plus the two
+     * plan years every chapter can see. Behind the years, the card that falls
+     * off the bottom is "Tax and costs on the estate, proposed plan", leaving
+     * half a comparison on a page whose prose makes the whole one. Ahead of
+     * them, what drops is the retirement year, which that chapter is not about.
+     *
+     * The cover chapter's pack is exactly five with a shortfall in it, so it has
+     * no room to spare either.
      */
     ...estateFacts(input.estate),
     ...lifetimeTaxFacts(input.lifetimeTax),
+    ...coverFacts(input.cover),
+    ...medicareFacts(input.medicare),
     yearFact("plan.endOfLifeYear", "The last year we plan to", input.endOfLifeYear),
   ];
 

@@ -30,6 +30,8 @@ const input: StoryFactsInput = {
   maxSpend: { base: null, proposed: null },
   estate: { base: null, proposed: null },
   lifetimeTax: { base: null, proposed: null },
+  cover: null,
+  medicare: null,
 };
 
 describe("buildStoryFacts", () => {
@@ -598,6 +600,8 @@ describe("fact scoping", () => {
     maxSpend: { base: null, proposed: null },
     estate: { base: null, proposed: null },
     lifetimeTax: { base: null, proposed: null },
+    cover: null,
+    medicare: null,
   });
 
   it("keeps the balance sheet out of the headline chapter", () => {
@@ -632,6 +636,7 @@ describe("a retirement year already in the past", () => {
     retirementYear: 2013, endOfLifeYear: 2051, planStartYear: 2026,
     strategies: [], goals: [], flow: null, shortfallYear: null, maxSpend: { base: null, proposed: null },
     estate: { base: null, proposed: null }, lifetimeTax: { base: null, proposed: null },
+    cover: null, medicare: null,
   });
 
   it("is omitted rather than narrated as something still to come", () => {
@@ -646,6 +651,7 @@ describe("a retirement year already in the past", () => {
       retirementYear: 2035, endOfLifeYear: 2070, planStartYear: 2026,
       strategies: [], goals: [], flow: null, shortfallYear: null, maxSpend: { base: null, proposed: null },
     estate: { base: null, proposed: null }, lifetimeTax: { base: null, proposed: null },
+    cover: null, medicare: null,
     });
     expect(ahead.map((f) => f.id)).toContain("plan.retirementYear");
   });
