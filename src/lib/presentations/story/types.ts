@@ -11,6 +11,23 @@ export const CHAPTER_IDS: readonly ChapterId[] = [
   "whatWeRecommend",
 ] as const;
 
+/**
+ * Is this string one of the chapters this build knows about?
+ *
+ * Storage holds `chapter_id` as free text, so a row outlives the chapter it
+ * names — and Plan 2 renames and reorders this union, which is what makes the
+ * case reachable rather than theoretical. Without the check, the export loader's
+ * cast puts an unknown key into a `Partial<Record<ChapterId, string>>` where
+ * nothing reads it and nothing reports it: the chapter prints its deterministic
+ * narrative while the advisor's own edited text sits in a row that no longer has
+ * a home.
+ *
+ * Reads `CHAPTER_IDS`, so it cannot drift from the union.
+ */
+export function isChapterId(value: string): value is ChapterId {
+  return (CHAPTER_IDS as readonly string[]).includes(value);
+}
+
 export interface StoryHousehold {
   /** "Alan and Teresa" — used sparingly in the prose. */
   firstNames: string;

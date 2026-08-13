@@ -4,7 +4,7 @@
 // predictable because a chapter happened to be missing.
 import { loadStoryContext } from "./load-context";
 import { listStoryChapters, resolveChapterText } from "./repo";
-import type { ChapterId } from "./types";
+import { isChapterId, type ChapterId } from "./types";
 import { planStoryProposedRef } from "@/lib/presentations/pages/plan-story/options-schema";
 import type { PlanStoryContextInput } from "@/lib/presentations/pages/plan-story/view-model";
 
@@ -46,11 +46,20 @@ export async function loadPlanStoryInput(
 
   const text: Partial<Record<ChapterId, string>> = {};
   for (const row of rows) {
+    // A stored row for a chapter this build no longer has. Logged rather than
+    // dropped in silence: it means either a rename that needs a data migration
+    // or a chapter retired with rows still under it, and both are things
+    // somebody has to know about. Never fatal — an export must not fail because
+    // storage remembers more than the code does.
+    if (!isChapterId(row.chapterId)) {
+      console.warn("[plan-story] stored row for an unknown chapter, ignored:", row.chapterId);
+      continue;
+    }
     // "" means "nothing stored" — the view-model then narrates deterministically
     // rather than printing an empty chapter. A row can hold no words at all:
     // marking a chapter reviewed creates one.
     const resolved = resolveChapterText(row, "");
-    if (resolved.length > 0) text[row.chapterId as ChapterId] = resolved;
+    if (resolved.length > 0) text[row.chapterId] = resolved;
   }
 
   return { story, text };
