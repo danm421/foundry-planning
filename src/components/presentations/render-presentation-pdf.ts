@@ -47,6 +47,8 @@ import {
 import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
 import type { PlanStoryOptions } from "@/lib/presentations/pages/plan-story/options-schema";
 import { loadPlanStoryInput } from "@/lib/presentations/story/load-for-export";
+import { loadInvestmentProposalBundle } from "@/lib/presentations/investment-proposal-bundle";
+import type { InvestmentProposalOptions } from "@/lib/presentations/pages/investment-proposal/options-schema";
 import { loadStoryScenarioLabel } from "@/lib/presentations/story/scenario-label";
 import {
   planScenarioBundles,
@@ -489,6 +491,24 @@ export async function renderPresentationPdf(
     }),
   );
 
+  // One proposal per PAGE entry, not per deck: two Investment Proposal pages in
+  // one deck may print different proposals. A deleted proposal resolves to
+  // undefined and the page prints its empty state rather than taking the deck
+  // down — a saved deck outlives the proposals it points at. Safe to resolve to
+  // undefined here (unlike Plan Story above, where a failed load fails the
+  // export) because the renderer prints one empty-state sheet PER RESERVED
+  // SECTION when a picked proposal is gone, so the sheet count still equals
+  // `estimateInvestmentProposalPageCount` and no start page shifts.
+  const proposalByPage = await Promise.all(
+    body.pages.map(async (p) => {
+      if (p.pageId !== "investmentProposal") return undefined;
+      // Already parsed and defaulted against `investmentProposalOptionsSchema`
+      // by `pageDescriptorSchema` above — read through, never re-defaulted.
+      const opts = p.options as InvestmentProposalOptions;
+      return (await loadInvestmentProposalBundle(clientId, opts.proposalId)) ?? undefined;
+    }),
+  );
+
   // Life Insurance Summary: solve server-side from the compute cache, mirroring
   // the (now-removed) client-side pre-solve. For each LI page on a *live*
   // scenario we build the LiAssumptions from the page options + scenario and
@@ -585,6 +605,7 @@ export async function renderPresentationPdf(
       options: p.options as unknown as Record<string, unknown>,
       scenarioKey: plan.pageKeys[idx],
       planStory: planStoryByPage[idx],
+      proposal: proposalByPage[idx],
     })),
     firmName,
     firmTagline: null,
