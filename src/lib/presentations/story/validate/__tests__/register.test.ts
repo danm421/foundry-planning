@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateLabels } from "../register";
+import { validateLabels, registerGate } from "../register";
 import { moneyFact, pctFact, yearFact } from "../../facts";
 
 const FACTS = [
@@ -52,5 +52,70 @@ describe("Gate 5 — fact-label leakage", () => {
 
   it("returns nothing for an empty pack", () => {
     expect(validateLabels("Anything at all goes here.", [])).toEqual([]);
+  });
+});
+
+const NAMES = ["Cooper", "Susan"];
+const gate = registerGate(NAMES);
+
+describe("Gate 6a — meta-narration", () => {
+  // THE RED — every one verbatim from the 2026-08-12 audit.
+  it("rejects a sentence that describes the page", () => {
+    const failures = gate("This page is the punchline. You own $4.7M.", FACTS);
+    expect(failures.some((f) => f.gate === "register")).toBe(true);
+  });
+
+  it("rejects a sentence that describes the chapter's own job", () => {
+    expect(gate("This part of the plan starts with your balance sheet.", FACTS)).not.toEqual([]);
+  });
+
+  it("rejects a closing that explains why the page exists", () => {
+    expect(gate("That's why this one-page view matters to you.", FACTS)).not.toEqual([]);
+  });
+
+  it("rejects 'this summary shows'", () => {
+    expect(gate("This one-page summary says the plan holds up.", FACTS)).not.toEqual([]);
+  });
+
+  // THE GREEN — "this" and "page" are ordinary words in a financial chapter.
+  it("accepts 'this' pointing at something in the plan", () => {
+    expect(gate("This change moves your confidence up. That's the one that matters.", FACTS)).toEqual(
+      [],
+    );
+  });
+
+  it("accepts a reference to a page of the report that is NOT self-reference", () => {
+    // frontMatter chapters legitimately point forward.
+    expect(gate("The detail behind that sits on the pages that follow.", FACTS)).toEqual([]);
+  });
+});
+
+describe("Gate 6b — third person about the reader", () => {
+  // THE RED.
+  it("rejects the reader described as 'a household'", () => {
+    expect(gate("It shows a household with $4.7M of assets.", FACTS)).not.toEqual([]);
+  });
+
+  it("rejects 'the household' as the subject", () => {
+    expect(gate("The household keeps the same finish across the plan.", FACTS)).not.toEqual([]);
+  });
+
+  it("rejects a first name used as a third party", () => {
+    expect(gate("For Cooper and Susan, that means a wider margin.", FACTS)).not.toEqual([]);
+  });
+
+  // THE GREEN — the prompt explicitly allows the names ONCE, in direct address.
+  it("accepts a name in direct address at the head of a sentence", () => {
+    expect(gate("Cooper and Susan, your plan holds up. You own $6.7M.", FACTS)).toEqual([]);
+  });
+
+  it("accepts second-person prose with no names at all", () => {
+    expect(gate("You own $4.7M and owe $610K. The difference is yours to work with.", FACTS)).toEqual(
+      [],
+    );
+  });
+
+  it("accepts 'your household' — the possessive is second person", () => {
+    expect(gate("Your household spends about that much a year.", FACTS)).toEqual([]);
   });
 });
