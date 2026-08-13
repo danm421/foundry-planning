@@ -86,6 +86,20 @@ function mentionsName(text: string, name: string): boolean {
 }
 
 /**
+ * The household's given names, as separate words. "Alan and Teresa" →
+ * ["Alan","Teresa"].
+ *
+ * One spelling, read by the substance floor AND by Gate 6 — two splits that
+ * agree today is how a rule ends up applying to one and not the other.
+ */
+function firstNamesOf(ctx: StoryContext): string[] {
+  return ctx.household.firstNames
+    .split(/\s+and\s+|[,&]/u)
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+}
+
+/**
  * Does this text name anything the request actually supplied — a figure from the
  * pack, one of the advisor's strategy labels, or one of the household's first
  * names?
@@ -105,10 +119,7 @@ function namesSomethingSupplied(text: string, ctx: StoryContext): boolean {
   const hay = text.toLowerCase();
   if (ctx.facts.some((f) => hay.includes(f.display.toLowerCase()))) return true;
   if (ctx.strategies.some((s) => s.name.length > 0 && hay.includes(s.name.toLowerCase()))) return true;
-  return ctx.household.firstNames
-    .split(/\s+and\s+|[,&]/u)
-    .map((name) => name.trim())
-    .some((name) => name.length > 0 && mentionsName(text, name));
+  return firstNamesOf(ctx).some((name) => mentionsName(text, name));
 }
 
 /** Thrown by the two floors — too little text, or text that is not about this
@@ -327,12 +338,12 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
   try {
     const attempt1 = await draft(first);
     let markdown = attempt1;
-    firstFailures = runGates(attempt1, ctx.facts);
+    firstFailures = runGates(attempt1, ctx.facts, firstNamesOf(ctx));
 
     if (firstFailures.length > 0) {
       const retry = buildChapterPrompt(chapterId, ctx, voiceSamples, retryNotes(firstFailures));
       const attempt2 = await draft(retry);
-      const retryFailures = dedupe(runGates(attempt2, ctx.facts));
+      const retryFailures = dedupe(runGates(attempt2, ctx.facts, firstNamesOf(ctx)));
       if (retryFailures.length > 0) return fallback(retryFailures);
       markdown = attempt2;
     }

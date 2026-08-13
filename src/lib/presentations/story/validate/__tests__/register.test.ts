@@ -53,6 +53,22 @@ describe("Gate 5 — fact-label leakage", () => {
   it("returns nothing for an empty pack", () => {
     expect(validateLabels("Anything at all goes here.", [])).toEqual([]);
   });
+
+  /**
+   * The other half of two-sidedness, and the case that broke a SHIPPED test the
+   * first time this gate ran: a pack may hold a label that is just two ordinary
+   * words. "Your net worth is $3.4M today" is prose an advisor writes, and a
+   * gate that rejects it burns the chapter's only retry.
+   */
+  const SHORT = [moneyFact("today.netWorth", "Net worth", 2_100_000)];
+
+  it("accepts an ordinary short label used as English", () => {
+    expect(validateLabels("Your net worth is $3.4M today.", SHORT)).toEqual([]);
+  });
+
+  it("still rejects a short label printed as the pack line itself", () => {
+    expect(validateLabels("Net worth: $2.1M, and it grows from there.", SHORT)).toHaveLength(1);
+  });
 });
 
 const NAMES = ["Cooper", "Susan"];

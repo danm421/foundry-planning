@@ -19,15 +19,46 @@ import type { GateFailure, Validator } from "./types";
  * Whitespace is the one thing loosened — a line break can fall anywhere inside a
  * phrase the model wrapped.
  */
-function labelPattern(label: string): RegExp {
-  const body = label
+function labelBody(label: string): string {
+  return label
     .trim()
     .split(/\s+/u)
     .map((word) => word.replace(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`))
     .join(String.raw`\s+`);
-  // Bounded on both sides so "the year you stop working" does not match inside a
-  // longer coined phrase, and so a possessive or plural does not slip past.
-  return new RegExp(String.raw`(?<![\p{L}\p{N}])${body}(?![\p{L}\p{N}])`, "iu");
+}
+
+// Bounded on both sides so "the year you stop working" does not match inside a
+// longer coined phrase, and so a possessive or plural does not slip past.
+function labelPattern(label: string): RegExp {
+  return new RegExp(String.raw`(?<![\p{L}\p{N}])${labelBody(label)}(?![\p{L}\p{N}])`, "iu");
+}
+
+/**
+ * The pack line printed as it was handed over — "Net worth today: $6.7M".
+ *
+ * A label glued to a figure by a colon or a dash is the two-column table being
+ * recited, whatever the label says, so this shape is checked for EVERY label
+ * including the short ordinary-sounding ones.
+ */
+function recitedPattern(label: string): RegExp {
+  return new RegExp(
+    String.raw`(?<![\p{L}\p{N}])${labelBody(label)}\s*[:—–-]\s*[$\p{N}]`,
+    "iu",
+  );
+}
+
+/**
+ * Is seeing this label verbatim, on its own, necessarily a copy?
+ *
+ * Only for labels no advisor would write by accident. "Left at the end, current
+ * plan" and "the year you stop working" are coined phrases; "Net worth" is two
+ * ordinary words, and a gate that rejects "your net worth is $3.4M today" would
+ * spend the chapter's single retry on prose that is already correct — which is
+ * not hypothetical, it is the shipped `generate.test.ts` pack. A comma, or four
+ * words or more, is what separates our phrasing from English.
+ */
+function isDistinctive(label: string): boolean {
+  return label.includes(",") || label.trim().split(/\s+/u).length >= 4;
 }
 
 export const validateLabels: Validator = (markdown, facts) => {
@@ -36,7 +67,10 @@ export const validateLabels: Validator = (markdown, facts) => {
   // Deduplicated by label, not by match: two facts can share a label only by
   // mistake, and one message per leaked phrase is what the retry prompt needs.
   for (const label of factLabelSet(facts)) {
-    if (!labelPattern(label).test(markdown)) continue;
+    const leaked = isDistinctive(label)
+      ? labelPattern(label).test(markdown)
+      : recitedPattern(label).test(markdown);
+    if (!leaked) continue;
     failures.push({
       gate: "labels",
       message:
