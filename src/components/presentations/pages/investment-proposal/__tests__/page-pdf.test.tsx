@@ -68,13 +68,10 @@ describe("InvestmentProposalPagePdf", () => {
   // from `estimatePageCount(undefined, options)` and numbers every LATER page
   // from that total. Rendering a different number of `PageFrame`s than were
   // reserved is what mis-numbers the table of contents.
-  // TODO(task 7/8): widen the picked case to OPTIONS once every section renders.
+  // TODO(task 8): drop this and use OPTIONS once `commentary` renders too.
   const IMPLEMENTED = {
     ...OPTIONS,
-    sections: {
-      ...Object.fromEntries(SECTION_IDS.map((k) => [k, false])),
-      verdict: true, allocation: true, riskReturn: true, suitability: true,
-    } as typeof OPTIONS.sections,
+    sections: { ...OPTIONS.sections, commentary: false },
   };
 
   it.each([
@@ -111,6 +108,58 @@ describe("InvestmentProposalPagePdf", () => {
   it("says outright when the proposal does not sit on the documented rung", () => {
     expect(textOf(render()).join(" ")).toContain(
       "The proposed portfolio does not sit on the client's documented rung.",
+    );
+  });
+});
+
+describe("InvestmentProposalPagePdf — detail sections", () => {
+  it("prints the fee comparison with both blended expense ratios", () => {
+    const text = textOf(render()).join(" ");
+    expect(text).toContain("0.23%");
+    expect(text).toContain("0.10%");
+    expect(text).toContain("$243");
+  });
+
+  it("names an unavailable stress window and why, rather than dropping it", () => {
+    const text = textOf(render()).join(" ");
+    expect(text).toContain("Global financial crisis");
+    expect(text).toContain("One or more holdings launched after this period.");
+  });
+
+  it("prints the realized loss for an available stress window", () => {
+    const text = textOf(render()).join(" ");
+    expect(text).toContain("COVID crash");
+    expect(text).toContain("-20.5%");
+    expect(text).toContain("-15.9%");
+  });
+
+  it("puts a negative dollar's minus sign before the currency symbol", () => {
+    const text = textOf(render()).join(" ");
+    expect(text).toContain("-$37,973");
+    expect(text).not.toContain("$-37,973");
+  });
+
+  it("prints the tax cost and the break-even together, never the benefit alone", () => {
+    const text = textOf(render()).join(" ");
+    expect(text).toContain("$36,911");
+    expect(text).toContain("5.7");
+  });
+
+  it("lists every proposed holding with its weight and expense ratio", () => {
+    const text = textOf(render()).join(" ");
+    for (const t of ["VTI", "GLD", "VOO"]) expect(text).toContain(t);
+    expect(text).toContain("0.03%");
+  });
+
+  it("shows the growth-of-$100,000 endpoints from the frozen backtest", () => {
+    const text = textOf(render()).join(" ");
+    expect(text).toContain("$137,000");
+    expect(text).toContain("$189,000");
+  });
+
+  it("labels the outcome cone as portfolio-only, never as plan confidence", () => {
+    expect(textOf(render()).join(" ")).toContain(
+      "Portfolio growth only — this is not the plan's probability of success.",
     );
   });
 });

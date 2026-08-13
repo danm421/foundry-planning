@@ -31,6 +31,14 @@ import {
   type SectionProps,
   type PageFrameProps,
 } from "./sections-overview-pdf";
+import {
+  GrowthSection,
+  StressSection,
+  OutcomesSection,
+  FeesSection,
+  TransitionSection,
+  HoldingsSection,
+} from "./sections-detail-pdf";
 
 const styles = StyleSheet.create({
   emptyWrap: { paddingTop: 40 },
@@ -39,12 +47,18 @@ const styles = StyleSheet.create({
 
 type SectionComponent = (props: SectionProps) => ReactElement;
 
-// Tightened to a total Record once Tasks 7 and 8 land their sections.
+// Total by design — see the header note. `commentary` lands in Task 8.
 const SECTION_RENDERERS: Partial<Record<ProposalSectionId, SectionComponent>> = {
   verdict: VerdictSection,
   allocation: AllocationSection,
   riskReturn: RiskReturnSection,
   suitability: SuitabilitySection,
+  growth: GrowthSection,
+  stress: StressSection,
+  outcomes: OutcomesSection,
+  fees: FeesSection,
+  transition: TransitionSection,
+  holdings: HoldingsSection,
 };
 
 function EmptySheet({

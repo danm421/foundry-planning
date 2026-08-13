@@ -30,7 +30,13 @@ export interface SectionProps {
 
 export const pct1 = (v: number) => `${(v * 100).toFixed(1)}%`;
 const signedPct1 = (v: number) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%`;
-const usd = (v: number | null) => (v === null ? "—" : `$${Math.round(v).toLocaleString("en-US")}`);
+/** Sign OUTSIDE the currency symbol — react-pdf will happily print "$-37,973",
+ *  which reads as a typo on a page a client is handed. */
+export const usd = (v: number | null) => {
+  if (v === null) return "—";
+  const n = Math.round(v);
+  return `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString("en-US")}`;
+};
 
 const RUNG_LABEL: Record<RiskLevel, string> = {
   conservative: "Conservative",
