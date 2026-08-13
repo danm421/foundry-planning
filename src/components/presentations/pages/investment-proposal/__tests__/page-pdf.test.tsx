@@ -80,6 +80,22 @@ describe("InvestmentProposalPagePdf", () => {
     expect(sheetsOf(el)).toHaveLength(estimateInvestmentProposalPageCount(undefined, options));
   });
 
+  // Same invariant, one section at a time. The cases above only pin the two
+  // ends — every section on and none picked — but what an advisor actually
+  // does is switch a single section off, and each one is its own renderer
+  // branch.
+  it.each(SECTION_IDS)("renders exactly the sheets the deck reserved — without %s", (off) => {
+    const options = {
+      ...OPTIONS,
+      sections: { ...OPTIONS.sections, [off]: false } as typeof OPTIONS.sections,
+    };
+    const el = InvestmentProposalPagePdf({
+      ...INPUT,
+      data: buildInvestmentProposalData(BUNDLE, options),
+    });
+    expect(sheetsOf(el)).toHaveLength(estimateInvestmentProposalPageCount(undefined, options));
+  });
+
   it("says on every reserved sheet when the picked proposal is gone", () => {
     const el = InvestmentProposalPagePdf({
       ...INPUT,
