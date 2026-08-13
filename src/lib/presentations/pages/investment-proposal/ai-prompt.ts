@@ -7,6 +7,7 @@
 // rather than stylistic: it may not promise an outcome, and it must name the
 // tax cost and the break-even. A commentary that lists only the benefits is the
 // one that gets an advisor in trouble.
+import { exactCurrency } from "@/lib/presentations/format";
 import type { ProposalSnapshot } from "@/lib/investments/proposals/types";
 
 export interface InvestmentProposalAiArgs {
@@ -31,11 +32,7 @@ const LENGTH: Record<InvestmentProposalAiArgs["length"], string> = {
   long: "Five to six short paragraphs.",
 };
 
-const usd = (v: number | null) => {
-  if (v === null) return "unknown";
-  const n = Math.round(v);
-  return `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString("en-US")}`;
-};
+const usd = (v: number | null) => (v === null ? "unknown" : exactCurrency(v));
 const pct2 = (v: number | null) => (v === null ? "unknown" : `${(v * 100).toFixed(2)}%`);
 const pct1 = (v: number | null) => (v === null ? "unknown" : `${(v * 100).toFixed(1)}%`);
 

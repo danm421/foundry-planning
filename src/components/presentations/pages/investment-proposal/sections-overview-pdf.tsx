@@ -9,6 +9,7 @@ import { PageFrame } from "@/components/presentations/shared/page-frame";
 import { SectionHead } from "@/components/presentations/shared/section-head";
 import { Callout } from "@/components/presentations/shared/callout";
 import { PRESENTATION_THEME as T, type SectionAccent } from "@/lib/presentations/theme";
+import { exactCurrency } from "@/lib/presentations/format";
 import { DonutPdf } from "../asset-allocation/donut-pdf";
 import { ScatterPdf } from "../portfolio-analysis/scatter-pdf";
 import type { InvestmentProposalPageData } from "@/lib/presentations/pages/investment-proposal/view-model";
@@ -28,15 +29,16 @@ export interface SectionProps {
   accent: SectionAccent;
 }
 
-export const pct1 = (v: number) => `${(v * 100).toFixed(1)}%`;
+// Shared by both section files. Every one takes `null` and prints an em-dash:
+// a figure the snapshot does not carry must never print as a zero, which reads
+// as "no drawdown" / "free" rather than "unknown".
+export const pct1 = (v: number | null) => (v === null ? "—" : `${(v * 100).toFixed(1)}%`);
+export const pct2 = (v: number | null) => (v === null ? "—" : `${(v * 100).toFixed(2)}%`);
 const signedPct1 = (v: number) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%`;
-/** Sign OUTSIDE the currency symbol — react-pdf will happily print "$-37,973",
- *  which reads as a typo on a page a client is handed. */
-export const usd = (v: number | null) => {
-  if (v === null) return "—";
-  const n = Math.round(v);
-  return `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString("en-US")}`;
-};
+/** Whole dollars, em-dash when the snapshot has no number. `exactCurrency`
+ *  rather than a local template: it already puts a negative's sign OUTSIDE the
+ *  currency symbol ("-$37,973"), which a naive `$${n}` gets wrong. */
+export const usd = (v: number | null) => (v === null ? "—" : exactCurrency(v));
 
 const RUNG_LABEL: Record<RiskLevel, string> = {
   conservative: "Conservative",

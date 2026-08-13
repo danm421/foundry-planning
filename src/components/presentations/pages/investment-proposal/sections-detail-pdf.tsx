@@ -7,10 +7,7 @@
 import { View, Text } from "@react-pdf/renderer";
 import { SectionHead } from "@/components/presentations/shared/section-head";
 import { Callout } from "@/components/presentations/shared/callout";
-import { Frame, S, usd, type SectionProps } from "./sections-overview-pdf";
-
-const pct1 = (v: number | null) => (v === null ? "—" : `${(v * 100).toFixed(1)}%`);
-const pct2 = (v: number | null) => (v === null ? "—" : `${(v * 100).toFixed(2)}%`);
+import { Frame, S, usd, pct1, pct2, type SectionProps } from "./sections-overview-pdf";
 
 export function GrowthSection({ data, frame, accent }: SectionProps) {
   const b = data.snapshot?.backtest ?? null;
