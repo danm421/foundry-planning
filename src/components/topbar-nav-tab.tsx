@@ -77,9 +77,13 @@ export function NavTab({
     return <div>{tabLink}</div>;
   }
 
+  // Open/close timing lives in `.nav-flyout` (globals.css) — see the comment
+  // there for why hover alone is not enough. Dismissal drops the class so the
+  // menu closes at once instead of lingering over the page just navigated to.
+  const menuPosition = "absolute left-1/2 top-full z-30 -translate-x-1/2 pt-1";
   const menuClassName = dismissed
-    ? "invisible absolute left-1/2 top-full z-30 -translate-x-1/2 pt-1 opacity-0"
-    : "invisible absolute left-1/2 top-full z-30 -translate-x-1/2 pt-1 opacity-0 transition-opacity duration-100 group-hover/tab:visible group-hover/tab:opacity-100 group-focus-within/tab:visible group-focus-within/tab:opacity-100";
+    ? `invisible opacity-0 ${menuPosition}`
+    : `nav-flyout ${menuPosition}`;
 
   return (
     // Focus clears the dismissal alongside mouseleave: a keyboard-only user
@@ -87,7 +91,7 @@ export function NavTab({
     // Safe because every click path blurs first — a focus event here means the
     // user deliberately came back.
     <div
-      className="group/tab relative"
+      className="nav-flyout-host relative"
       onMouseLeave={() => setDismissed(false)}
       onFocus={() => setDismissed(false)}
     >
@@ -107,7 +111,7 @@ export function NavTab({
                 ? "flex items-center justify-between gap-3 px-3 py-1.5 text-[12px] font-medium text-accent bg-card-2"
                 : "flex items-center justify-between gap-3 px-3 py-1.5 text-[12px] text-ink-2 hover:bg-card-2 hover:text-ink";
               return (
-                <div key={subHref} className="group/view relative">
+                <div key={subHref} className="nav-flyout-host relative">
                   <Link
                     href={withScenario(subHref)}
                     role="menuitem"
@@ -124,7 +128,7 @@ export function NavTab({
                   <div
                     role="menu"
                     aria-label={`${sub.label} views`}
-                    className="invisible absolute left-full top-0 z-30 pl-1 opacity-0 transition-opacity duration-100 group-hover/view:visible group-hover/view:opacity-100 group-focus-within/view:visible group-focus-within/view:opacity-100"
+                    className="nav-flyout nav-flyout-lingers absolute left-full top-0 z-30 pl-1"
                   >
                     <div className="min-w-[150px] rounded-md border border-hair bg-paper py-1 shadow-lg">
                       {sub.views.map((view) => {

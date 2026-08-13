@@ -431,6 +431,40 @@ html {
 }
 
 /* ------------------------------------------------------------------ */
+/* Planning nav flyouts (Topbar → Assets / Cash Flow / Estate)         */
+/* ------------------------------------------------------------------ */
+
+/* A second-level panel opens beside its row, so reaching anything below
+   its first item means moving diagonally — across the rows underneath,
+   which are siblings. On a pure :hover menu that closes the panel being
+   aimed at and opens the one being crossed, and a slightly long stroke
+   leaves the menu entirely. Both delays below fix that, and CSS puts each
+   one on the state being entered: the resting rule times the close, the
+   hover rule times the open.
+
+   Opening is delayed for both tiers (hover intent) — a row skimmed on the
+   way somewhere else never opens. Only the nested panels linger on close:
+   they are the ones the pointer has to travel to, and top-level panels
+   overlap each other, so a lingering one would sit over its neighbour. */
+.nav-flyout {
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 100ms ease, visibility 0s linear 100ms;
+}
+
+.nav-flyout-host:hover > .nav-flyout,
+.nav-flyout-host:focus-within > .nav-flyout {
+  visibility: visible;
+  opacity: 1;
+  transition: opacity 90ms ease 90ms, visibility 0s linear 90ms;
+}
+
+/* Stays put — and stays clickable — while the pointer crosses to it. */
+.nav-flyout-lingers {
+  transition: opacity 120ms ease 220ms, visibility 0s linear 340ms;
+}
+
+/* ------------------------------------------------------------------ */
 /* Scenario mode — verdigris-muted left border on editable inputs      */
 /* Applied via <ScenarioInputStyling> context when a non-base scenario */
 /* is active. Subtle visual cue that edits target a scenario overlay,  */
