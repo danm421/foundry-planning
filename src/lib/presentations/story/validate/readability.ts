@@ -23,14 +23,40 @@ export const BANNED_JARGON = [
   "glidepath",
 ] as const;
 
-const MAX_MEAN_SENTENCE_WORDS = 20;
+/**
+ * The three sentence-length numbers, EXPORTED — `chapters/prompts.ts` says them
+ * out loud to the model, and a prompt that names a different number than the
+ * gate enforces is the one failure this module cannot recover from: the retry
+ * note and the system prompt contradict each other inside a single request.
+ */
+export const MAX_MEAN_SENTENCE_WORDS = 20;
+/**
+ * …and what a chapter whose job is to LIST things gets instead.
+ *
+ * One chapter has to name every strategy in a proposal, or every account a
+ * household owns, and naming a thing costs words before it says anything about
+ * it. Both audit households' first drafts were rejected here — and both read
+ * well; what published instead was the deterministic fallback, a bare list of
+ * the advisor's own labels including their typos.
+ *
+ * The number is the top of a measured range, not a slack figure. The four real
+ * first drafts averaged 21, 21, 24 and 26 words a sentence, so 25 clears the
+ * first three with ONE word of headroom on the tightest of them and still
+ * rejects the fourth. Like `voice.ts#MIN_RELATIVE_SPREAD`, the gap is narrow on
+ * purpose: this is the first number to revisit if real chapters land on it.
+ */
+export const MAX_MEAN_SENTENCE_WORDS_ENUMERATING = 25;
 /**
  * A mean alone cannot see a monster: nine four-word sentences pull the average
  * of a ninety-word one back under the limit, and that sentence is exactly what
- * this gate exists to stop. The cap is twice the mean limit, so it only fires on
- * prose no advisor would hand a client.
+ * this gate exists to stop. The cap is twice the ORDINARY mean limit, so it only
+ * fires on prose no advisor would hand a client.
+ *
+ * It deliberately does not move with the mean the gate was built for: a chapter
+ * that enumerates gets a looser average, not permission to write one
+ * fifty-word sentence. A cap that follows its parameter is not a cap.
  */
-const MAX_SENTENCE_WORDS = MAX_MEAN_SENTENCE_WORDS * 2;
+export const MAX_SENTENCE_WORDS = MAX_MEAN_SENTENCE_WORDS * 2;
 /** Every punctuation a writer actually glosses with, not just the tidy two. */
 const GLOSS_MARKERS = ["—", "–", "(", ":", ", meaning", "i.e.", "which means", "that is", "in other words"];
 
@@ -114,44 +140,56 @@ function jargonFailures(sentences: string[]): GateFailure[] {
   return failures;
 }
 
-export const validateReadability: Validator = (markdown) => {
-  const sentences = splitUnits(markdown);
-  const failures: GateFailure[] = jargonFailures(sentences);
-  const counts = sentences.map(wordCount);
+/**
+ * The gate, with its mean sentence length left open. Only that one number
+ * varies: the jargon list, the per-sentence cap and the heading rule are the
+ * same rules for every chapter, and a factory that took all four would be an
+ * invitation to relax the ones nobody measured.
+ */
+export function readabilityGate(maxMeanWords: number): Validator {
+  return (markdown) => {
+    const sentences = splitUnits(markdown);
+    const failures: GateFailure[] = jargonFailures(sentences);
+    const counts = sentences.map(wordCount);
 
-  if (counts.length > 0) {
-    const mean = counts.reduce((sum, n) => sum + n, 0) / counts.length;
-    if (mean > MAX_MEAN_SENTENCE_WORDS) {
+    if (counts.length > 0) {
+      const mean = counts.reduce((sum, n) => sum + n, 0) / counts.length;
+      if (mean > maxMeanWords) {
+        failures.push({
+          gate: "readability",
+          message: `The sentences are too long (averaging ${Math.round(mean)} words). Aim under ${maxMeanWords}.`,
+        });
+      }
+    }
+
+    const runaway = counts.findIndex((n) => n > MAX_SENTENCE_WORDS);
+    if (runaway >= 0) {
       failures.push({
         gate: "readability",
-        message: `The sentences are too long (averaging ${Math.round(mean)} words). Aim under ${MAX_MEAN_SENTENCE_WORDS}.`,
+        // Quote the opening so the retry prompt names the sentence to split; the
+        // message is reused verbatim, and "one sentence is long" is unactionable.
+        message: `One sentence runs ${counts[runaway]} words, starting "${words(sentences[runaway]).slice(0, 8).join(" ")}…". Split it — keep every sentence under ${MAX_SENTENCE_WORDS} words.`,
       });
     }
-  }
 
-  const runaway = counts.findIndex((n) => n > MAX_SENTENCE_WORDS);
-  if (runaway >= 0) {
-    failures.push({
-      gate: "readability",
-      // Quote the opening so the retry prompt names the sentence to split; the
-      // message is reused verbatim, and "one sentence is long" is unactionable.
-      message: `One sentence runs ${counts[runaway]} words, starting "${words(sentences[runaway]).slice(0, 8).join(" ")}…". Split it — keep every sentence under ${MAX_SENTENCE_WORDS} words.`,
-    });
-  }
+    // Two heading depths anywhere in the chapter is a nested heading, whether or
+    // not either of them is an `###` — `# Title` over `## Section` is the shape a
+    // model actually produces.
+    const levels = new Set([...markdown.matchAll(HEADING_RE)].map((m) => m[1].length));
+    if (levels.size > 1) {
+      failures.push({
+        gate: "readability",
+        message: "Remove the nested heading — this page allows at most one level of heading.",
+      });
+    }
 
-  // Two heading depths anywhere in the chapter is a nested heading, whether or
-  // not either of them is an `###` — `# Title` over `## Section` is the shape a
-  // model actually produces.
-  const levels = new Set([...markdown.matchAll(HEADING_RE)].map((m) => m[1].length));
-  if (levels.size > 1) {
-    failures.push({
-      gate: "readability",
-      message: "Remove the nested heading — this page allows at most one level of heading.",
-    });
-  }
+    return failures;
+  };
+}
 
-  return failures;
-};
+export const validateReadability = readabilityGate(MAX_MEAN_SENTENCE_WORDS);
+/** Gate 2 for the one chapter that has to list things. See the constant. */
+export const validateReadabilityEnumerating = readabilityGate(MAX_MEAN_SENTENCE_WORDS_ENUMERATING);
 
 // Gate 3. The rule is that the document must never instruct the reader to buy,
 // sell, or move a specific holding. Two shapes carry that instruction, and a

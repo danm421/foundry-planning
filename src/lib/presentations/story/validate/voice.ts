@@ -261,50 +261,71 @@ const MIN_RELATIVE_SPREAD = 0.122;
  */
 const MIN_UNITS_FOR_RHYTHM = 3;
 
+/**
+ * The gate, with the triad rule left switchable.
+ *
+ * It is turned OFF for the one chapter that has to enumerate a household's
+ * accounts. `firstTriad`'s three exemptions all miss "the Exchange Traded Fund,
+ * your residence, and autos" — no figure in an item, no capital past the first,
+ * no enumerating preposition in front — and both audit households were rejected
+ * on it. A fourth exemption was the obvious alternative and was not taken: the
+ * matcher's item boundaries are demonstrably unreliable on real lists (one live
+ * match ended with the item "the"), so a noun-list exemption built on them would
+ * be fragile in a way this switch is not.
+ *
+ * The cost is real and pinned by a test of its own: that chapter also stops
+ * rejecting a genuine "clearer, simpler, and more effective".
+ */
+export function voiceGate(opts: { rhetoricalTriad: boolean }): Validator {
+  return (markdown) => {
+    const failures: GateFailure[] = [];
+    const text = normalize(markdown);
+
+    // Quote what the DOCUMENT says, not the list entry that found it: the message
+    // is reused verbatim in the retry prompt, and "it's important to note" is not
+    // a string the model can search its own draft for.
+    for (const pattern of TELLS) {
+      const found = pattern.exec(text)?.[0];
+      if (!found) continue;
+      failures.push({
+        gate: "voice",
+        message: `"${quote(found)}" reads as machine-written. Say it the way you would to the client's face.`,
+      });
+    }
+
+    const hedges = HEDGE_STACK_RE.exec(text)?.[0];
+    if (hedges) {
+      failures.push({
+        gate: "voice",
+        message: `"${quote(hedges)}" stacks two hedges. Say how likely it is, or say it plainly.`,
+      });
+    }
+
+    const triad = opts.rhetoricalTriad ? firstTriad(text) : null;
+    if (triad) {
+      failures.push({
+        gate: "voice",
+        message: `Drop the three-item parallel list ("${triad}") — it is the clearest sign a machine wrote this.`,
+      });
+    }
+
+    // A unit always holds at least one word, so the mean is never zero — and were
+    // that ever to change, NaN fails this comparison, which is the safe direction.
+    const lengths = unitLengths(markdown);
+    if (lengths.length >= MIN_UNITS_FOR_RHYTHM && stdDev(lengths) / mean(lengths) < MIN_RELATIVE_SPREAD) {
+      failures.push({
+        gate: "voice",
+        message: "Every sentence is about the same length. Vary them — a short one, then a longer one.",
+      });
+    }
+
+    return failures;
+  };
+}
+
 /** Typed as `Validator` like Gates 2 and 3, so the gate runner's two-argument
  *  call stays type-checked while the unused fact pack stays unnamed — this
  *  repo's lint has no ignore pattern for a leading underscore. */
-export const validateVoice: Validator = (markdown) => {
-  const failures: GateFailure[] = [];
-  const text = normalize(markdown);
-
-  // Quote what the DOCUMENT says, not the list entry that found it: the message
-  // is reused verbatim in the retry prompt, and "it's important to note" is not
-  // a string the model can search its own draft for.
-  for (const pattern of TELLS) {
-    const found = pattern.exec(text)?.[0];
-    if (!found) continue;
-    failures.push({
-      gate: "voice",
-      message: `"${quote(found)}" reads as machine-written. Say it the way you would to the client's face.`,
-    });
-  }
-
-  const hedges = HEDGE_STACK_RE.exec(text)?.[0];
-  if (hedges) {
-    failures.push({
-      gate: "voice",
-      message: `"${quote(hedges)}" stacks two hedges. Say how likely it is, or say it plainly.`,
-    });
-  }
-
-  const triad = firstTriad(text);
-  if (triad) {
-    failures.push({
-      gate: "voice",
-      message: `Drop the three-item parallel list ("${triad}") — it is the clearest sign a machine wrote this.`,
-    });
-  }
-
-  // A unit always holds at least one word, so the mean is never zero — and were
-  // that ever to change, NaN fails this comparison, which is the safe direction.
-  const lengths = unitLengths(markdown);
-  if (lengths.length >= MIN_UNITS_FOR_RHYTHM && stdDev(lengths) / mean(lengths) < MIN_RELATIVE_SPREAD) {
-    failures.push({
-      gate: "voice",
-      message: "Every sentence is about the same length. Vary them — a short one, then a longer one.",
-    });
-  }
-
-  return failures;
-};
+export const validateVoice = voiceGate({ rhetoricalTriad: true });
+/** Gate 4 for the one chapter that has to list things. See `voiceGate`. */
+export const validateVoiceEnumerating = voiceGate({ rhetoricalTriad: false });

@@ -574,6 +574,48 @@ describe("generateChapter", () => {
     });
   });
 
+  /**
+   * The two relaxed rules reach the model through the CHAPTER, not through a
+   * flag a caller sets, so the thing worth pinning is that `generate.ts` derives
+   * `enumerates` from the layout — and derives it the same way on both attempts.
+   *
+   * One draft, two chapters, opposite outcomes. Asserting on the published
+   * chapter rather than on a spy is what makes this a test of the behaviour Dan
+   * approved: a household's strategies get printed in the model's words instead
+   * of as a bare list of the advisor's own labels.
+   */
+  describe("the chapter that has to name things", () => {
+    /** Averages 22 words a sentence — over the ordinary 20-word limit, under the
+     *  25 a strategy chapter gets. Clean on every other gate: both figures are
+     *  from the pack, the rhythm varies, nothing is instructed. */
+    const LONG_SENTENCES =
+      "You are starting from $2.1M, and the changes we're making this year work on different parts of that number rather than all pulling on the same lever. " +
+      "In 91% of the futures we tested, the money still lasts. " +
+      "The first change moves money you were already saving into an account that gets taxed later, which is worth more to you than it sounds on paper here.";
+
+    it("publishes it on the strategy chapter", async () => {
+      const gen = vi.fn().mockResolvedValue(LONG_SENTENCES);
+      const res = await generateChapter({
+        clientId: "c1", chapterId: "whatWeRecommend", ctx: CTX, voiceSamples: [], deps: deps(gen),
+      });
+      expect(res.aiSuppressed).toBe(false);
+      expect(res.markdown).toBe(LONG_SENTENCES);
+      // Cleared on the FIRST attempt — a retry here would mean the gate fired
+      // and the model happened to fix it, which proves nothing about the rule.
+      expect(gen).toHaveBeenCalledTimes(1);
+    });
+
+    it("suppresses the same draft on a prose chapter", async () => {
+      const gen = vi.fn().mockResolvedValue(LONG_SENTENCES);
+      const res = await generateChapter({
+        clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voiceSamples: [], deps: deps(gen),
+      });
+      expect(res.aiSuppressed).toBe(true);
+      // …and for the sentence length, not for something else the fixture broke.
+      expect(res.failures.map((f) => f.gate)).toEqual(["readability"]);
+    });
+  });
+
   it("shows the review panel each broken rule once", async () => {
     const gen = vi.fn().mockResolvedValue(BAD_EVERY_GATE);
     const res = await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voiceSamples: [], deps: deps(gen) });

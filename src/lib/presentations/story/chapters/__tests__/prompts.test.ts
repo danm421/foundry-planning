@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { buildChapterPrompt } from "../prompts";
-import { CHAPTERS } from "../registry";
+import { CHAPTERS, chapterEnumerates } from "../registry";
 import { moneyFact, pctFact, quotedFact } from "../../facts";
 import { runGates } from "../../validate";
-import type { StoryContext } from "../../types";
+import { CHAPTER_IDS, type StoryContext } from "../../types";
 
 const CTX: StoryContext = {
   household: { firstNames: "Alan and Teresa", householdName: "the Bradshaw household" },
@@ -98,6 +98,53 @@ describe("buildChapterPrompt", () => {
     expect(readability(`${"word ".repeat(21)}end. `.repeat(3))).not.toEqual([]);
     // …and prose inside both numbers passes, so neither check above is vacuous.
     expect(readability("Your plan holds. We modelled it against a rough decade and it still lands where you want it to.")).toEqual([]);
+  });
+
+  /**
+   * The prompt names ONE mean to every chapter — the tight one — and the
+   * enumerating chapter's gate sits looser than it. That direction is safe and
+   * deliberate (see the comment on the sentence in `prompts.ts`); the OPPOSITE
+   * direction is the failure that matters, because a gate tighter than the
+   * prompt rejects a chapter for a rule the model was never given.
+   *
+   * So the invariant, asserted against the gate's BEHAVIOUR rather than against
+   * a constant: prose that does exactly what the prompt asks for clears the
+   * gate — on every chapter, whichever way either number is next edited.
+   */
+  it("asks for a mean no chapter's gate will then reject it for", () => {
+    const asked = `${"word ".repeat(19)}end. `.repeat(3); // 20 words a sentence
+    for (const chapterId of CHAPTER_IDS) {
+      const { system } = buildChapterPrompt(chapterId, CTX, [], []);
+      expect(system).toContain("under 20 words");
+      expect(system).toContain("past 40");
+      const opts = { enumerates: chapterEnumerates(chapterId) };
+      expect(runGates(asked, CTX.facts, opts).filter((f) => f.gate === "readability")).toEqual([]);
+    }
+  });
+
+  it("gives the enumerating chapter the looser gate as headroom, not as a target", () => {
+    const readability = (text: string, enumerates: boolean) =>
+      runGates(text, CTX.facts, { enumerates }).filter((f) => f.gate === "readability");
+    const mean24 = `${"word ".repeat(23)}end. `.repeat(3);
+    // Four words past what it was asked for, and still published rather than
+    // thrown away for the deterministic list of the advisor's own labels.
+    expect(readability(mean24, true)).toEqual([]);
+    expect(readability(mean24, false)).not.toEqual([]);
+    // The headroom is finite, and the per-sentence cap never moved.
+    expect(readability(`${"word ".repeat(25)}end. `.repeat(3), true)).not.toEqual([]);
+    expect(readability(`${"word ".repeat(40)}end.`, true)).not.toEqual([]);
+  });
+
+  // The other half of the same trade. The chapter that has to name every account
+  // a household owns was being told never to write a three-item list.
+  it("lets the enumerating chapter list things, and still bans the flourish", () => {
+    const { system } = buildChapterPrompt("whatWeRecommend", CTX, [], []);
+    expect(system).toContain("three-item parallel list of qualities");
+    expect(system).toContain("listing what they own");
+    // The prose chapters keep the flat rule.
+    expect(buildChapterPrompt("planInOnePage", CTX, [], []).system).toContain(
+      "Never write a three-item parallel list.",
+    );
   });
 
   it("names each change's operation, and quotes only figures the fact pack supplied", () => {

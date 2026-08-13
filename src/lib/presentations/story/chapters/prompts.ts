@@ -9,8 +9,9 @@ import type { ChangeOp, ChangeRow } from "@/lib/presentations/pages/scenario-cha
 import { factDisplaySet, hasAccountingNegative } from "../facts";
 import type { GateFailure } from "../validate";
 import { extractFigures } from "../validate/facts";
+import { MAX_MEAN_SENTENCE_WORDS, MAX_SENTENCE_WORDS } from "../validate/readability";
 import type { ChapterId, StoryContext } from "../types";
-import { CHAPTERS } from "./registry";
+import { CHAPTERS, chapterEnumerates } from "./registry";
 
 /** Gate 3's banned openers, in full. Copied rather than imported: `ACTION_VERBS`
  *  is private to `validate/readability.ts`, and this module may not reach into
@@ -122,15 +123,39 @@ export function buildChapterPrompt(
   retryFailures: GateFailure[],
 ): { system: string; user: string } {
   const def = CHAPTERS[chapterId];
+  // Whether this chapter's job is to name things. One predicate, shared with the
+  // gate runner, so the model is never told a rule it will not be judged under.
+  const enumerates = chapterEnumerates(chapterId);
 
   const systemParts = [
     "You are a financial advisor writing one short chapter of a plan you are handing to your own client.",
     "Write the way you would talk to them across a table: warm, direct, second person, contractions, no corporate voice.",
     `Use their first names (${ctx.household.firstNames}) once at most — more sounds like a mail merge.`,
-    // The last sentence is Gate 2's two numeric limits, said out loud. Without
-    // them the chapter can be rejected for a rule it was never given.
-    "Vary your sentence length. A short one, then a longer one. Writing where every sentence is the same length reads as machine-written. Keep the average under 20 words, and never write one past 40.",
-    "Never write a three-item parallel list. Never open with a throat-clear like \"It's important to note\".",
+    // The last sentence is Gate 2's two numeric limits, said out loud and READ
+    // FROM the gate rather than retyped. Without them the chapter can be
+    // rejected for a rule it was never given.
+    //
+    // The TIGHT mean is named to every chapter, including the one whose gate
+    // allows 25. That is deliberate and it is MEASURED, not assumed: the number
+    // in this sentence acts as an anchor the model writes past by roughly five
+    // words. Six runs on the eleven-strategy audit household, 2026-08-12 —
+    // with "20" here the drafts came back at 25-27 words and two of them cleared
+    // the mean rule outright; changed to read "25", every first draft came back
+    // at 29-30 and none did. Naming the looser number made the prose worse.
+    //
+    // So the prompt is the AIM and the gate is the BACKSTOP, and they may differ
+    // in this direction only. The reverse — a gate tighter than what the model
+    // was asked for — rejects a chapter for a rule it was never given, which is
+    // the failure this sentence exists to prevent.
+    `Vary your sentence length. A short one, then a longer one. Writing where every sentence is the same length reads as machine-written. Keep the average under ${MAX_MEAN_SENTENCE_WORDS} words, and never write one past ${MAX_SENTENCE_WORDS}.`,
+    // …and the triad rule's half. A chapter that has to name every account a
+    // household owns is asked for the same thing in a form it can obey: the
+    // flourish is still out, the list of what they own is not. Saying "never
+    // write a three-item list" to THAT chapter forbids the one thing it exists
+    // to do, which is how the prose came out contorted before the gate even ran.
+    enumerates
+      ? 'Never write a three-item parallel list of qualities ("clearer, simpler, and more effective") — listing what they own or what is changing is fine. Never open with a throat-clear like "It\'s important to note".'
+      : "Never write a three-item parallel list. Never open with a throat-clear like \"It's important to note\".",
     "Output: clean Markdown, 2 to 4 short paragraphs, no headings, no preamble.",
     "Only use the figures listed below, copied exactly as they are written. Never invent a figure, never reformat one, never compute a new one.",
     // Gate 5's model-facing half. The pack is presented to the model as

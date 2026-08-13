@@ -50,3 +50,25 @@ export const CHAPTERS: Record<ChapterId, ChapterDef> = {
       "Each strategy in turn: what we'd do, why it fits this household, and the mechanism by which it moves the numbers.",
   },
 };
+
+/**
+ * Does this chapter's job require NAMING things — every strategy in a proposal,
+ * every account a household owns?
+ *
+ * Two rules move for one that does: a looser mean sentence length, and the
+ * rhetorical-triad rule off. Both are documented where they are defined, in
+ * `validate/readability.ts` and `validate/voice.ts`.
+ *
+ * Derived from the layout rather than stored as a `ChapterDef` field, because a
+ * chapter enumerates because of how it is PRINTED — and it lives here, beside
+ * the layout it reads, because three callers need the answer: the gate runner,
+ * the prompt that tells the model those same two rules, and the local draft
+ * harness. Three copies of `layout === "strategyCards"` is how a chapter ends up
+ * judged under rules it was never given.
+ *
+ * ⚠️ Task 9's `checklist` layout (chapter 12) enumerates too, and belongs in
+ * this predicate when it lands.
+ */
+export function chapterEnumerates(chapterId: ChapterId): boolean {
+  return CHAPTERS[chapterId].layout === "strategyCards";
+}

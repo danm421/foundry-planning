@@ -13,7 +13,7 @@ import {
   type AiCacheValue,
 } from "@/lib/presentations/ai-cache";
 import { buildChapterPrompt } from "./chapters/prompts";
-import { CHAPTERS } from "./chapters/registry";
+import { CHAPTERS, chapterEnumerates } from "./chapters/registry";
 import { runGates, type GateFailure } from "./validate";
 import { factsForChapter, type ChapterId, type StoryContext } from "./types";
 
@@ -335,15 +335,23 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
   // move.
   let firstFailures: GateFailure[] = [];
 
+  /**
+   * Two gate rules move for a chapter that has to name every strategy or every
+   * account — see `validate/index.ts#GateOptions.enumerates`. The SAME predicate
+   * `buildChapterPrompt` reads, so what the model is told and what it is judged
+   * against cannot come apart.
+   */
+  const gateOpts = { firstNames: firstNamesOf(ctx), enumerates: chapterEnumerates(chapterId) };
+
   try {
     const attempt1 = await draft(first);
     let markdown = attempt1;
-    firstFailures = runGates(attempt1, ctx.facts, firstNamesOf(ctx));
+    firstFailures = runGates(attempt1, ctx.facts, gateOpts);
 
     if (firstFailures.length > 0) {
       const retry = buildChapterPrompt(chapterId, ctx, voiceSamples, retryNotes(firstFailures));
       const attempt2 = await draft(retry);
-      const retryFailures = dedupe(runGates(attempt2, ctx.facts, firstNamesOf(ctx)));
+      const retryFailures = dedupe(runGates(attempt2, ctx.facts, gateOpts));
       if (retryFailures.length > 0) return fallback(retryFailures);
       markdown = attempt2;
     }
