@@ -252,6 +252,41 @@ describe("buildChapterPrompt", () => {
   });
 });
 
+describe("the register rules", () => {
+  it("tells the model the fact labels are not English", () => {
+    const { system } = buildChapterPrompt("whatYouHave", CTX, [], []);
+    expect(system).toMatch(/heading|label/i);
+    expect(system).toContain("never copy");
+  });
+
+  it("forbids describing the page", () => {
+    const { system } = buildChapterPrompt("whatYouHave", CTX, [], []);
+    expect(system).toMatch(/never mention the page/i);
+  });
+
+  it("pins the names to direct address", () => {
+    const { system } = buildChapterPrompt("whatYouHave", CTX, [], []);
+    expect(system).toMatch(/address them directly/i);
+  });
+
+  it("labels the fact table as internal notes rather than as figures to quote", () => {
+    const { user } = buildChapterPrompt("whatYouHave", CTX, [], []);
+    // The heading before the list is what invited the transcription.
+    expect(user).toContain("The left of each line is our own note");
+  });
+
+  /**
+   * The brief is written FOR the model ("This is the page that gets read when
+   * nothing else does") and the 2026-08-12 read found it paraphrased onto the
+   * client's page as "This page is the punchline." Saying whose words they are,
+   * where they are handed over, is the cheapest half of that fix.
+   */
+  it("marks the chapter brief as instructions the client never sees", () => {
+    const { user } = buildChapterPrompt("planInOnePage", CTX, [], []);
+    expect(user).toMatch(/never sees/i);
+  });
+});
+
 describe("CHAPTERS", () => {
   it("gives every chapter a title, a layout, and a fallback narrator", () => {
     for (const def of Object.values(CHAPTERS)) {

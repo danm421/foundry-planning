@@ -133,6 +133,16 @@ export function buildChapterPrompt(
     "Never write a three-item parallel list. Never open with a throat-clear like \"It's important to note\".",
     "Output: clean Markdown, 2 to 4 short paragraphs, no headings, no preamble.",
     "Only use the figures listed below, copied exactly as they are written. Never invent a figure, never reformat one, never compute a new one.",
+    // Gate 5's model-facing half. The pack is presented to the model as
+    // `label: display`, and the 2026-08-12 read found it transcribing the pair
+    // ("Left at the end, current plan: $9.2M") on both households and in both
+    // AI chapters. The label is a key, not a phrase.
+    "The words to the LEFT of each figure are our internal column headings. They tell you what a figure means. They are not English and the client has never seen them — never copy one into your writing.",
+    // Gate 6a's half.
+    "Never mention the page, the chapter, the report or the summary. Do not say what this page is for or why it matters. Write about their money, not about the document.",
+    // Gate 6b's half. The existing "use their first names once at most" line
+    // says how OFTEN; this says WHERE, which is the part that went wrong.
+    `Use their first names only to address them directly at the start of a sentence ("${ctx.household.firstNames}, your plan holds up"). Never write about them in the third person, and never call them "the household", "the client" or "the couple" — they are reading this.`,
     "Describe what the plan shows and why it moves. Do not tell them to buy, sell, or move anything.",
     // Gate 3 reads a clause that OPENS with one of these as an instruction
     // whatever follows it, so this is a real constraint on ordinary prose and
@@ -161,9 +171,17 @@ export function buildChapterPrompt(
 
   // No fact pack is not "no rule": say so, rather than leaving a bare heading
   // over an empty list for the model to read as permission.
+  //
+  // The heading carries Gate 5's rule a second time, at the point of temptation.
+  // "The only figures you may use:" over a `label: display` list reads as a
+  // two-column table to be recited; naming the left column as ours, once, at
+  // the list itself, is what stops the recitation.
   const factBlock =
     ctx.facts.length > 0
-      ? ["The only figures you may use:", ctx.facts.map((f) => `- ${f.label}: ${f.display}`).join("\n")]
+      ? [
+          "The only figures you may use, copied exactly. The left of each line is our own note about what the figure means — never print it:",
+          ctx.facts.map((f) => `- ${f.label}: ${f.display}`).join("\n"),
+        ]
       : ["You have no figures for this chapter. Write it without any numbers at all."];
 
   // `rowLine` grounds the two fields that carry the describers' formatted
@@ -192,7 +210,12 @@ export function buildChapterPrompt(
     `Household: ${ctx.household.householdName} — ${ctx.household.firstNames}.`,
     `Plan being presented: "${ctx.scenarioLabel}".`,
     "",
-    `This chapter — "${def.title}": ${def.brief}`,
+    // The brief is written FOR the model — "This is the page that gets read when
+    // nothing else does" — and the 2026-08-12 read found it paraphrased straight
+    // onto the client's page as "This page is the punchline." Gate 6a rejects
+    // that, but a rejection costs the chapter's single retry; saying whose words
+    // these are, at the point they are handed over, costs nothing.
+    `This chapter — "${def.title}". Your brief for it, which the client never sees: ${def.brief}`,
     "",
     ...factBlock,
     ...strategyBlock,
