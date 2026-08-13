@@ -64,6 +64,7 @@ const row = (over: Partial<PlanStoryChapterRow>): PlanStoryChapterRow => ({
   id: "row-1",
   clientId: CLIENT,
   scenarioId: SCENARIO,
+  documentRole: "standalone",
   chapterId: "planInOnePage",
   generatedText: null,
   editedText: null,
@@ -163,7 +164,7 @@ describe("loadPlanStoryInput", () => {
       scenarioLabel: "Retire at 62",
       documentRole: "standalone",
     });
-    expect(m.listStoryChapters).toHaveBeenCalledWith(CLIENT, SCENARIO);
+    expect(m.listStoryChapters).toHaveBeenCalledWith(CLIENT, SCENARIO, "standalone");
   });
 
   /**
@@ -179,6 +180,10 @@ describe("loadPlanStoryInput", () => {
     expect(m.loadStoryContext).toHaveBeenCalledWith(
       expect.objectContaining({ documentRole: "frontMatter" }),
     );
+    // …and, since 0240, into the ROWS it reads. Without this a deck holding the
+    // brief up front and the full story later resolves one set of rows twice and
+    // prints the same chapters on both.
+    expect(m.listStoryChapters).toHaveBeenCalledWith(CLIENT, SCENARIO, "frontMatter");
   });
 
   /**
@@ -197,7 +202,7 @@ describe("loadPlanStoryInput", () => {
       expect(m.loadStoryContext).toHaveBeenCalledWith(
         expect.objectContaining({ proposedRef: null }),
       );
-      expect(m.listStoryChapters).toHaveBeenCalledWith(CLIENT, "base");
+      expect(m.listStoryChapters).toHaveBeenCalledWith(CLIENT, "base", "standalone");
     },
   );
 });

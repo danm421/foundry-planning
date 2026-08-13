@@ -1681,6 +1681,13 @@
       "when": 1786577566928,
       "tag": "0239_plan_story_chapters",
       "breakpoints": true
+    },
+    {
+      "idx": 240,
+      "version": "7",
+      "when": 1786584622833,
+      "tag": "0240_hesitant_frightful_four",
+      "breakpoints": true
     }
   ]
 }

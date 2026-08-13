@@ -38,13 +38,17 @@ export async function POST(
     }
     const { scenarioId } = scope;
     const proposedRef = scenarioId === "base" ? null : scenarioId;
+    // One value, read once: it changes the PROSE (via the prompt) and, since
+    // 0240, which row that prose is stored on. Two reads is how those two
+    // could ever disagree.
+    const { documentRole } = parsed.data;
 
     const ctx = await loadStoryContext({
       clientId: id,
       firmId,
       proposedRef,
       scenarioLabel: proposedRef ? "the proposed plan" : "Base Case",
-      documentRole: parsed.data.documentRole ?? "standalone",
+      documentRole,
     });
 
     /**
@@ -99,13 +103,14 @@ export async function POST(
       firmId,
       metadata: crossFirmAuditMeta({ access }, callerOrg, {
         scenarioId,
+        documentRole,
         chapters: generated.length,
         suppressed: generated.filter((g) => g.aiSuppressed).map((g) => g.chapterId),
       }),
     });
 
     await Promise.all(
-      generated.map((chapter) => upsertGeneratedChapter({ clientId: id, scenarioId, chapter })),
+      generated.map((chapter) => upsertGeneratedChapter({ clientId: id, scenarioId, documentRole, chapter })),
     );
 
     return NextResponse.json({

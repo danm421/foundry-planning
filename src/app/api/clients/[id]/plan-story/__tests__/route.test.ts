@@ -194,7 +194,7 @@ describe("GET /api/clients/[id]/plan-story", () => {
     });
     const body = await res.json();
     expect(res.status).toBe(200);
-    expect(mocks.listStoryChapters).toHaveBeenCalledWith(CLIENT_ID, "base");
+    expect(mocks.listStoryChapters).toHaveBeenCalledWith(CLIENT_ID, "base", "standalone");
     expect(body.chapters).toHaveLength(3);
     expect(body.chapters.map((c: { chapterId: string }) => c.chapterId)).toEqual([
       "planInOnePage",
@@ -257,7 +257,38 @@ describe("GET /api/clients/[id]/plan-story", () => {
     await GET(req(`http://x/?scenarioId=${SCENARIO_ID}`), {
       params: Promise.resolve({ id: CLIENT_ID }),
     });
-    expect(mocks.listStoryChapters).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID);
+    expect(mocks.listStoryChapters).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID, "standalone");
+  });
+
+  // Kills: reading the scenario from the query string but not the role. The two
+  // presets store separate rows since 0240, so a listing that ignores the role
+  // shows the advisor the full story's text under the brief's heading — and
+  // every edit they make from there lands on the wrong row.
+  it("lists the role it was asked for", async () => {
+    await GET(req("http://x/?scenarioId=base&documentRole=frontMatter"), {
+      params: Promise.resolve({ id: CLIENT_ID }),
+    });
+    expect(mocks.listStoryChapters).toHaveBeenCalledWith(CLIENT_ID, "base", "frontMatter");
+  });
+
+  // Kills: `roleParam ?? "standalone"` with no validation. A typo would quietly
+  // list the other preset's rows, which is indistinguishable from the bug the
+  // column was added to fix.
+  it("refuses an unrecognised role rather than defaulting", async () => {
+    const res = await GET(req("http://x/?scenarioId=base&documentRole=whatever"), {
+      params: Promise.resolve({ id: CLIENT_ID }),
+    });
+    expect(res.status).toBe(400);
+    expect(mocks.listStoryChapters).not.toHaveBeenCalled();
+  });
+
+  // …and the one case where absence is NOT a caller bug. An old client sending
+  // no parameter reads exactly the rows the column's own default says are its,
+  // so this is not in tension with the rejection above: an ABSENT parameter is a
+  // pre-0240 caller, a PRESENT wrong one is a bug.
+  it("defaults a missing role to standalone", async () => {
+    await GET(req("http://x/?scenarioId=base"), { params: Promise.resolve({ id: CLIENT_ID }) });
+    expect(mocks.listStoryChapters).toHaveBeenCalledWith(CLIENT_ID, "base", "standalone");
   });
 });
 
@@ -268,7 +299,7 @@ describe("PATCH /api/clients/[id]/plan-story/[chapterId]", () => {
   // Kills: removing `isChapterId`. Both writers are upserts, so an unguarded
   // chapterId persists a junk row rather than harmlessly matching nothing.
   it("rejects an unknown chapter id without writing", async () => {
-    const res = await patch({ scenarioId: "base", editedText: "hi" }, "nope");
+    const res = await patch({ scenarioId: "base", documentRole: "standalone", editedText: "hi" }, "nope");
     expect(res.status).toBe(400);
     expect(mocks.updateChapterText).not.toHaveBeenCalled();
   });
@@ -276,11 +307,12 @@ describe("PATCH /api/clients/[id]/plan-story/[chapterId]", () => {
   // Kills: dropping any of the four write args, or any required audit field
   // (`firmId` is required by recordAudit and easy to omit).
   it("saves an edit and records audit", async () => {
-    const res = await patch({ scenarioId: "base", editedText: "My words." });
+    const res = await patch({ scenarioId: "base", documentRole: "standalone", editedText: "My words." });
     expect(res.status).toBe(200);
     expect(mocks.updateChapterText).toHaveBeenCalledWith({
       clientId: CLIENT_ID,
       scenarioId: "base",
+      documentRole: "standalone",
       chapterId: "planInOnePage",
       editedText: "My words.",
     });
@@ -290,7 +322,7 @@ describe("PATCH /api/clients/[id]/plan-story/[chapterId]", () => {
       resourceId: "planInOnePage",
       clientId: CLIENT_ID,
       firmId: "firm_1",
-      metadata: { scenarioId: "base" },
+      metadata: { scenarioId: "base", documentRole: "standalone" },
     });
   });
 
@@ -298,7 +330,7 @@ describe("PATCH /api/clients/[id]/plan-story/[chapterId]", () => {
   // advisor drops their version and lets the model's words render again; read
   // as absent, it is answered 400 and the advisor's version stays put.
   it("treats an empty edit as clearing the advisor's version", async () => {
-    const res = await patch({ scenarioId: "base", editedText: "" });
+    const res = await patch({ scenarioId: "base", documentRole: "standalone", editedText: "" });
     expect(res.status).toBe(200);
     expect(mocks.updateChapterText).toHaveBeenCalledWith(
       expect.objectContaining({ editedText: "" }),
@@ -308,7 +340,7 @@ describe("PATCH /api/clients/[id]/plan-story/[chapterId]", () => {
   // Kills: `requireClientEditAccess("OTHER-CLIENT")` — the gate that stands in
   // front of two upserts, checked against a client the write will not touch.
   it("authorizes the same client it writes under", async () => {
-    await patch({ scenarioId: "base", editedText: "hi", reviewed: true });
+    await patch({ scenarioId: "base", documentRole: "standalone", editedText: "hi", reviewed: true });
     expect(mocks.requireClientEditAccess).toHaveBeenCalledWith(CLIENT_ID);
     expect(mocks.requireClientEditAccess.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.updateChapterText.mock.invocationCallOrder[0],
@@ -324,7 +356,7 @@ describe("PATCH /api/clients/[id]/plan-story/[chapterId]", () => {
   // a proposal's chapter would stamp the base story's row instead.
   it("marks the chapter reviewed on the scenario the advisor is looking at", async () => {
     mocks.scenarioRows = [{ id: SCENARIO_ID }];
-    const res = await patch({ scenarioId: SCENARIO_ID, reviewed: true });
+    const res = await patch({ scenarioId: SCENARIO_ID, documentRole: "standalone", reviewed: true });
     expect(res.status).toBe(200);
     expect(mocks.markChapterReviewed).toHaveBeenCalledWith(
       expect.objectContaining({ clientId: CLIENT_ID, scenarioId: SCENARIO_ID }),
@@ -334,11 +366,12 @@ describe("PATCH /api/clients/[id]/plan-story/[chapterId]", () => {
   // Kills: stamping the org id (or nothing) as the reviewer instead of the
   // acting user — the flag's whole point is who stands behind the words.
   it("marks a chapter reviewed as the acting user", async () => {
-    const res = await patch({ scenarioId: "base", reviewed: true });
+    const res = await patch({ scenarioId: "base", documentRole: "standalone", reviewed: true });
     expect(res.status).toBe(200);
     expect(mocks.markChapterReviewed).toHaveBeenCalledWith({
       clientId: CLIENT_ID,
       scenarioId: "base",
+      documentRole: "standalone",
       chapterId: "planInOnePage",
       userId: "user_1",
     });
@@ -350,7 +383,7 @@ describe("PATCH /api/clients/[id]/plan-story/[chapterId]", () => {
   // Kills: reporting success for a body that changes nothing, which reads to
   // the panel exactly like a saved edit.
   it("rejects a body with nothing to change", async () => {
-    const res = await patch({ scenarioId: "base" });
+    const res = await patch({ scenarioId: "base", documentRole: "standalone" });
     expect(res.status).toBe(400);
     expect(mocks.updateChapterText).not.toHaveBeenCalled();
     expect(mocks.markChapterReviewed).not.toHaveBeenCalled();
@@ -360,7 +393,7 @@ describe("PATCH /api/clients/[id]/plan-story/[chapterId]", () => {
   // write. Its return is void and discarded, so tsc cannot see its removal and
   // no other test in this file touches it.
   it("clears the firm's subscription before it writes", async () => {
-    await patch({ scenarioId: "base", editedText: "hi" });
+    await patch({ scenarioId: "base", documentRole: "standalone", editedText: "hi" });
     expect(mocks.requireActiveSubscriptionForFirm).toHaveBeenCalledWith("firm_1");
     expect(mocks.requireActiveSubscriptionForFirm.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.updateChapterText.mock.invocationCallOrder[0],
@@ -377,8 +410,8 @@ describe("PATCH /api/clients/[id]/plan-story/[chapterId]", () => {
       firmId: "firm_1",
       access: "shared",
     });
-    await patch({ scenarioId: "base", editedText: "hi", reviewed: true });
-    const stamped = { scenarioId: "base", crossFirmActor: true, actorFirmId: "org_1" };
+    await patch({ scenarioId: "base", documentRole: "standalone", editedText: "hi", reviewed: true });
+    const stamped = { scenarioId: "base", documentRole: "standalone", crossFirmActor: true, actorFirmId: "org_1" };
     // Both audit call sites, since each builds its metadata separately.
     expect(mocks.recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: "plan_story.chapter_edited", metadata: stamped }),
@@ -393,7 +426,7 @@ describe("PATCH /api/clients/[id]/plan-story/[chapterId]", () => {
   // matching none — the property carried requirement 4 calls the sole barrier.
   it("writes nothing when the edit gate rejects", async () => {
     mocks.requireClientEditAccess.mockRejectedValue(new ForbiddenError("Edit access required"));
-    const res = await patch({ scenarioId: "base", editedText: "hi", reviewed: true });
+    const res = await patch({ scenarioId: "base", documentRole: "standalone", editedText: "hi", reviewed: true });
     expect(res.status).toBe(403);
     expect(mocks.updateChapterText).not.toHaveBeenCalled();
     expect(mocks.markChapterReviewed).not.toHaveBeenCalled();
@@ -404,7 +437,7 @@ describe("PATCH /api/clients/[id]/plan-story/[chapterId]", () => {
   // is a caller sending a field this route does not implement — answering 200
   // tells them it landed. A null body would be a 500 (`null.editedText`).
   it("rejects a body the schema does not accept", async () => {
-    const unknownKey = await patch({ scenarioId: "base", editedText: "hi", bogus: 1 });
+    const unknownKey = await patch({ scenarioId: "base", documentRole: "standalone", editedText: "hi", bogus: 1 });
     expect(unknownKey.status).toBe(400);
     const nullBody = await patch(null);
     expect(nullBody.status).toBe(400);
@@ -415,7 +448,7 @@ describe("PATCH /api/clients/[id]/plan-story/[chapterId]", () => {
   // otherwise create its own row, invisible to GET and never cleaned up.
   it("refuses a scenario the client does not own", async () => {
     mocks.scenarioRows = [];
-    const res = await patch({ scenarioId: SCENARIO_ID, editedText: "hi" });
+    const res = await patch({ scenarioId: SCENARIO_ID, documentRole: "standalone", editedText: "hi" });
     expect(res.status).toBe(404);
     expect(mocks.updateChapterText).not.toHaveBeenCalled();
   });
@@ -424,7 +457,7 @@ describe("PATCH /api/clients/[id]/plan-story/[chapterId]", () => {
   // per-scenario story unwritable.
   it("accepts a scenario the client owns", async () => {
     mocks.scenarioRows = [{ id: SCENARIO_ID }];
-    const res = await patch({ scenarioId: SCENARIO_ID, editedText: "hi" });
+    const res = await patch({ scenarioId: SCENARIO_ID, documentRole: "standalone", editedText: "hi" });
     expect(res.status).toBe(200);
     expect(mocks.updateChapterText).toHaveBeenCalledWith(
       expect.objectContaining({ scenarioId: SCENARIO_ID }),
@@ -434,7 +467,7 @@ describe("PATCH /api/clients/[id]/plan-story/[chapterId]", () => {
   // Kills: letting a non-uuid reach Postgres, where `scenarios.id` is a uuid
   // column and the cast raises 22P02 — a 500 instead of a rejection.
   it("rejects a malformed scenarioId before it reaches the database", async () => {
-    const res = await patch({ scenarioId: "not-a-uuid", editedText: "hi" });
+    const res = await patch({ scenarioId: "not-a-uuid", documentRole: "standalone", editedText: "hi" });
     expect(res.status).toBe(400);
     expect(mocks.updateChapterText).not.toHaveBeenCalled();
   });
@@ -454,7 +487,7 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
   // Kills: removing the `requiresProposal` filter — a base-only story would
   // publish a recommendation chapter with nothing to recommend.
   it("skips proposal-only chapters for a base-only story", async () => {
-    const res = await post({ scenarioId: "base" });
+    const res = await post({ scenarioId: "base", documentRole: "standalone" });
     const body = await res.json();
     expect(res.status).toBe(200);
     expect(body.chapters.map((c: { chapterId: string }) => c.chapterId)).toEqual([
@@ -477,7 +510,7 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
   // spends money, and `generateChapter({ clientId: "OTHER-CLIENT" })` — which
   // would generate against one client's plan and store under another's.
   it("authorizes the same client it generates and stores for", async () => {
-    await post({ scenarioId: "base" });
+    await post({ scenarioId: "base", documentRole: "standalone" });
     expect(mocks.requireClientEditAccess).toHaveBeenCalledWith(CLIENT_ID);
     expect(mocks.requireClientEditAccess.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.generateChapter.mock.invocationCallOrder[0],
@@ -505,14 +538,35 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
     );
   });
 
-  it("defaults a caller who names neither to a standalone, cache-reading run", async () => {
-    await post({ scenarioId: "base" });
+  it("defaults a caller who names no force flag to a cache-reading run", async () => {
+    await post({ scenarioId: "base", documentRole: "standalone" });
     expect(mocks.loadStoryContext).toHaveBeenCalledWith(
       expect.objectContaining({ documentRole: "standalone" }),
     );
     expect(mocks.generateChapter).toHaveBeenCalledWith(
       expect.objectContaining({ force: false, ctx: expect.objectContaining({ documentRole: "standalone" }) }),
     );
+  });
+
+  // Kills: defaulting an ABSENT role to "standalone" on a WRITE. Since 0240 the
+  // role picks which row the words are stored on, so guessing it is the bug the
+  // column was added to fix — the brief's chapters landing on the full story's
+  // rows. A caller that does not know its own role is a caller bug.
+  it("refuses a generation that names no document role", async () => {
+    const res = await post({ scenarioId: "base" });
+    expect(res.status).toBe(400);
+    expect(mocks.loadStoryContext).not.toHaveBeenCalled();
+    expect(mocks.upsertGeneratedChapter).not.toHaveBeenCalled();
+  });
+
+  // …and the same on the edit path, where it would overwrite the other preset's
+  // words rather than merely reading them.
+  it("refuses an edit that names no document role", async () => {
+    const res = await PATCH(jsonReq({ scenarioId: "base", editedText: "hi" }), {
+      params: Promise.resolve({ id: CLIENT_ID, chapterId: "planInOnePage" }),
+    });
+    expect(res.status).toBe(400);
+    expect(mocks.updateChapterText).not.toHaveBeenCalled();
   });
 
   /**
@@ -524,7 +578,7 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
   it("records the run in the audit log even when a chapter fails to store", async () => {
     const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
     mocks.upsertGeneratedChapter.mockRejectedValueOnce(new Error("write conflict"));
-    const res = await post({ scenarioId: "base" });
+    const res = await post({ scenarioId: "base", documentRole: "standalone" });
     expect(res.status).toBe(500);
     expect(mocks.recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: "plan_story.generated", clientId: CLIENT_ID }),
@@ -546,7 +600,7 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
   it("does not generate a recommendation chapter for a proposal with no changes in it", async () => {
     mocks.scenarioRows = [{ id: SCENARIO_ID }];
     mocks.loadStoryContext.mockResolvedValue({ hasProposal: true, facts: [], strategies: [] });
-    const res = await post({ scenarioId: SCENARIO_ID });
+    const res = await post({ scenarioId: SCENARIO_ID, documentRole: "standalone" });
     const body = await res.json();
     expect(res.status).toBe(200);
     expect(body.chapters.map((c: { chapterId: string }) => c.chapterId)).toEqual([
@@ -570,7 +624,7 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
       facts: [],
       strategies: [{ name: "Convert to Roth", rows: [] }],
     });
-    const res = await post({ scenarioId: SCENARIO_ID });
+    const res = await post({ scenarioId: SCENARIO_ID, documentRole: "standalone" });
     const body = await res.json();
     expect(res.status).toBe(200);
     expect(body.chapters).toHaveLength(3);
@@ -592,7 +646,7 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
   // Kills: letting a `snap:` ref through to the loader, which degrades it to a
   // proposal with zero strategies and no proposed confidence.
   it("refuses a snapshot ref, and says so", async () => {
-    const res = await post({ scenarioId: "snap:abc" });
+    const res = await post({ scenarioId: "snap:abc", documentRole: "standalone" });
     expect(res.status).toBe(400);
     // Named, not lumped in with "invalid id": a snapshot is a well-formed ref
     // the feature declines, and the advisor picked it from a real picker.
@@ -604,7 +658,7 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
   // Kills: deleting `requireActiveSubscriptionForFirm` from the one endpoint
   // that spends model calls, or moving it after the run.
   it("clears the firm's subscription before it generates", async () => {
-    await post({ scenarioId: "base" });
+    await post({ scenarioId: "base", documentRole: "standalone" });
     expect(mocks.requireActiveSubscriptionForFirm).toHaveBeenCalledWith("firm_1");
     expect(mocks.requireActiveSubscriptionForFirm.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.generateChapter.mock.invocationCallOrder[0],
@@ -619,7 +673,7 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
       firmId: "firm_1",
       access: "shared",
     });
-    await post({ scenarioId: "base" });
+    await post({ scenarioId: "base", documentRole: "standalone" });
     expect(mocks.recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         metadata: expect.objectContaining({ crossFirmActor: true, actorFirmId: "org_1" }),
@@ -630,7 +684,7 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
   // Kills: reaching the model, or the store, past a rejected gate.
   it("generates nothing when the edit gate rejects", async () => {
     mocks.requireClientEditAccess.mockRejectedValue(new ForbiddenError("Edit access required"));
-    const res = await post({ scenarioId: "base" });
+    const res = await post({ scenarioId: "base", documentRole: "standalone" });
     expect(res.status).toBe(403);
     expect(mocks.generateChapter).not.toHaveBeenCalled();
     expect(mocks.upsertGeneratedChapter).not.toHaveBeenCalled();
@@ -659,7 +713,7 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
       generatedAt: "2026-01-01T00:00:00.000Z",
       cached: false,
     }));
-    const res = await post({ scenarioId: "base" });
+    const res = await post({ scenarioId: "base", documentRole: "standalone" });
     const body = await res.json();
     expect(body.chapters[0]).toMatchObject({
       aiSuppressed: true,

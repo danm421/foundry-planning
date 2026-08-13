@@ -37,7 +37,11 @@ export async function loadPlanStoryInput(
     // translates to and both write routes reach through `resolveStoryScenarioId`.
     // Reading "" here would find no rows and quietly print deterministic prose
     // over the advisor's own writing.
-    listStoryChapters(clientId, options.scenarioId || "base"),
+    //
+    // Since 0240 the scope also carries the ROLE, so a deck holding the brief up
+    // front AND the full story later reads two different sets of rows rather
+    // than printing one set twice.
+    listStoryChapters(clientId, options.scenarioId || "base", options.documentRole),
   ]);
 
   const text: Partial<Record<ChapterId, string>> = {};

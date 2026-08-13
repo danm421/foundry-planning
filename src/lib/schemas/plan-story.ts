@@ -6,6 +6,22 @@ import { z } from "zod";
 const scenarioId = z.string().min(1).max(64).optional();
 
 /**
+ * Which register the words being written belong to. REQUIRED on both write
+ * bodies, and deliberately not defaulted.
+ *
+ * Since 0240 the role is part of the row's key, so a default here would pick a
+ * row to write on behalf of a caller that never said which one it meant — which
+ * is indistinguishable from the bug the column was added to fix: the brief's
+ * edits landing on the full story. A caller that does not know its own role is a
+ * caller bug, and a 400 says so.
+ *
+ * The read path is the one place absence is allowed to mean "standalone": an
+ * absent query parameter is an old client reading the pre-0240 rows, which is
+ * exactly what the column default already says those rows are.
+ */
+const documentRole = z.enum(["standalone", "frontMatter"]);
+
+/**
  * One chapter's two advisor actions. Both fields are optional so a single PATCH
  * can save an edit, mark it reviewed, or do both — but a body carrying neither
  * is rejected by the route, since it would otherwise answer a no-op exactly
@@ -17,6 +33,7 @@ const scenarioId = z.string().min(1).max(64).optional();
 export const planStoryChapterPatchSchema = z
   .object({
     scenarioId,
+    documentRole,
     // A chapter is a page of prose. The ceiling is roughly ten times the
     // longest one the narrators produce — headroom for an advisor who writes
     // long, and a bound on an otherwise unlimited write to a text column.
@@ -29,8 +46,7 @@ export const planStoryChapterPatchSchema = z
 export const planStoryGenerateSchema = z
   .object({
     scenarioId,
-    /** Whether the story stands alone or introduces the pages after it. */
-    documentRole: z.enum(["standalone", "frontMatter"]).optional(),
+    documentRole,
     /** The panel's Regenerate action — bypass the 30-day AI cache. */
     force: z.boolean().optional(),
   })

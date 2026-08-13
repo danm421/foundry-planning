@@ -43,7 +43,7 @@ export async function PATCH(
     // `undefined` = the field was absent. An empty string is a real instruction
     // — "drop my edit and let the model's words render again" — so the two
     // cannot be collapsed into a truthiness test.
-    const { editedText, reviewed } = parsed.data;
+    const { editedText, reviewed, documentRole } = parsed.data;
     // Reported rather than answered with a cheerful `{ ok: true }`: a panel bug
     // that sends neither field would otherwise look exactly like a saved edit.
     if (editedText === undefined && reviewed !== true) {
@@ -60,29 +60,29 @@ export async function PATCH(
     const { scenarioId } = scope;
 
     if (editedText !== undefined) {
-      await updateChapterText({ clientId: id, scenarioId, chapterId, editedText });
+      await updateChapterText({ clientId: id, scenarioId, documentRole, chapterId, editedText });
       await recordAudit({
         action: "plan_story.chapter_edited",
         resourceType: "plan_story_chapter",
         // The chapter row has no id of its own worth quoting; the row is
-        // identified by (clientId, scenarioId, chapterId), and the audit row
-        // already carries the first of those in its own column.
+        // identified by (clientId, scenarioId, documentRole, chapterId), and
+        // the audit row already carries the first of those in its own column.
         resourceId: chapterId,
         clientId: id,
         firmId,
-        metadata: crossFirmAuditMeta({ access }, callerOrg, { scenarioId }),
+        metadata: crossFirmAuditMeta({ access }, callerOrg, { scenarioId, documentRole }),
       });
     }
 
     if (reviewed === true) {
-      await markChapterReviewed({ clientId: id, scenarioId, chapterId, userId });
+      await markChapterReviewed({ clientId: id, scenarioId, documentRole, chapterId, userId });
       await recordAudit({
         action: "plan_story.chapter_reviewed",
         resourceType: "plan_story_chapter",
         resourceId: chapterId,
         clientId: id,
         firmId,
-        metadata: crossFirmAuditMeta({ access }, callerOrg, { scenarioId }),
+        metadata: crossFirmAuditMeta({ access }, callerOrg, { scenarioId, documentRole }),
       });
     }
 

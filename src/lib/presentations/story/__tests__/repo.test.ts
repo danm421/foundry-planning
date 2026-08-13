@@ -72,7 +72,14 @@ const lastUpsert = () => {
   return { values, target: config.target, set: config.set };
 };
 
-const KEY = ["client_id", "scenario_id", "chapter_id"];
+/**
+ * The unique index, as the three writers must name it. `document_role` is part
+ * of the KEY rather than a payload column: the Executive brief and the Full
+ * story are two presets over one report, and without the role here a deck
+ * holding both resolves the same rows twice — so editing the brief's copy edits
+ * the full story's, with no advisor workaround.
+ */
+const KEY = ["client_id", "scenario_id", "document_role", "chapter_id"];
 
 describe("resolveChapterText", () => {
   it("prefers the advisor's edit over the generated text", () => {
@@ -107,18 +114,28 @@ describe("isChapterStale", () => {
 });
 
 describe("listStoryChapters", () => {
-  it("reads one client's chapters for one scenario", async () => {
-    await listStoryChapters("client-1", "base");
+  it("reads one client's chapters for one scenario in one role", async () => {
+    await listStoryChapters("client-1", "base", "standalone");
     const { sql, params } = render(m.select.mock.calls[0][0]);
     expect(sql).toContain("client_id");
     expect(sql).toContain("scenario_id");
-    expect(params).toEqual(["client-1", "base"]);
+    expect(sql).toContain("document_role");
+    expect(params).toEqual(["client-1", "base", "standalone"]);
+  });
+
+  // The whole point of the column. Without this filter a deck holding the brief
+  // AND the full story reads one set of rows twice and prints it twice.
+  it("reads the other role's rows for the other role", async () => {
+    await listStoryChapters("client-1", "base", "frontMatter");
+    expect(render(m.select.mock.calls[0][0]).params).toEqual(["client-1", "base", "frontMatter"]);
   });
 });
 
 describe("upsertGeneratedChapter", () => {
   const upsertArgs = async (over: Partial<GeneratedChapter> = {}) => {
-    await upsertGeneratedChapter({ clientId: "client-1", scenarioId: "base", chapter: chapter(over) });
+    await upsertGeneratedChapter({
+      clientId: "client-1", scenarioId: "base", documentRole: "standalone", chapter: chapter(over),
+    });
     return lastUpsert();
   };
 
@@ -127,6 +144,7 @@ describe("upsertGeneratedChapter", () => {
     expect(values).toMatchObject({
       clientId: "client-1",
       scenarioId: "base",
+      documentRole: "standalone",
       chapterId: "planInOnePage",
       generatedText: "Your plan holds.",
       sourceHash: "hash-1",
@@ -170,7 +188,7 @@ describe("upsertGeneratedChapter", () => {
     expect(set).not.toHaveProperty("editedText");
   });
 
-  it("conflicts on the client/scenario/chapter triple", async () => {
+  it("conflicts on the client/scenario/role/chapter key", async () => {
     const { target } = await upsertArgs();
     expect(target.map((c) => c.name)).toEqual(KEY);
   });
@@ -197,6 +215,7 @@ describe("updateChapterText", () => {
     await updateChapterText({
       clientId: "client-1",
       scenarioId: "scenario-9",
+      documentRole: "frontMatter",
       chapterId: "whatYouHave",
       editedText: "My words.",
     });
@@ -211,6 +230,7 @@ describe("updateChapterText", () => {
     expect(values).toMatchObject({
       clientId: "client-1",
       scenarioId: "scenario-9",
+      documentRole: "frontMatter",
       chapterId: "whatYouHave",
       editedText: "My words.",
     });
@@ -223,7 +243,7 @@ describe("updateChapterText", () => {
     expect(set).not.toHaveProperty("generatedText");
   });
 
-  it("conflicts on the client/scenario/chapter triple", async () => {
+  it("conflicts on the client/scenario/role/chapter key", async () => {
     const { target } = await editArgs();
     expect(target.map((c) => c.name)).toEqual(KEY);
   });
@@ -234,6 +254,7 @@ describe("markChapterReviewed", () => {
     await markChapterReviewed({
       clientId: "client-1",
       scenarioId: "scenario-9",
+      documentRole: "frontMatter",
       chapterId: "whatWeRecommend",
       userId: "user_42",
     });
@@ -249,6 +270,7 @@ describe("markChapterReviewed", () => {
     expect(values).toMatchObject({
       clientId: "client-1",
       scenarioId: "scenario-9",
+      documentRole: "frontMatter",
       chapterId: "whatWeRecommend",
       reviewedByUserId: "user_42",
     });
@@ -261,7 +283,7 @@ describe("markChapterReviewed", () => {
     expect(set.reviewedByUserId).toBe("user_42");
   });
 
-  it("conflicts on the client/scenario/chapter triple", async () => {
+  it("conflicts on the client/scenario/role/chapter key", async () => {
     const { target } = await reviewArgs();
     expect(target.map((c) => c.name)).toEqual(KEY);
   });

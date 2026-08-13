@@ -2,11 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { authErrorResponse } from "@/lib/authz";
-import { listStoryChapters, resolveChapterText } from "@/lib/presentations/story/repo";
+import { listStoryChapters, resolveChapterText, type DocumentRole } from "@/lib/presentations/story/repo";
 import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
 import { CHAPTER_IDS } from "@/lib/presentations/story/types";
 
 export const dynamic = "force-dynamic";
+
+function isDocumentRole(v: string): v is DocumentRole {
+  return v === "standalone" || v === "frontMatter";
+}
 
 export async function GET(
   request: NextRequest,
@@ -24,7 +28,18 @@ export async function GET(
     // rows simply lists every chapter as never generated. The write paths pay
     // for that lookup because they can CREATE a row keyed on it.
     const scenarioId = new URL(request.url).searchParams.get("scenarioId") ?? "base";
-    const rows = await listStoryChapters(id, scenarioId);
+    /**
+     * ABSENT means "standalone" — an old client, reading exactly the rows the
+     * column's own default says are its. PRESENT but unrecognised is a caller
+     * bug and a 400: guessing there is how a brief's rows get read under the
+     * full story's heading, which is the failure `document_role` exists to stop.
+     */
+    const roleParam = new URL(request.url).searchParams.get("documentRole");
+    if (roleParam !== null && !isDocumentRole(roleParam)) {
+      return NextResponse.json({ error: "Unknown documentRole" }, { status: 400 });
+    }
+    const documentRole: DocumentRole = roleParam ?? "standalone";
+    const rows = await listStoryChapters(id, scenarioId, documentRole);
     const byId = new Map(rows.map((r) => [r.chapterId, r]));
 
     // Every chapter appears, generated or not — the panel needs a row to show
@@ -48,7 +63,7 @@ export async function GET(
       };
     });
 
-    return NextResponse.json({ scenarioId, chapters });
+    return NextResponse.json({ scenarioId, documentRole, chapters });
   } catch (err) {
     const r = authErrorResponse(err);
     if (r) return NextResponse.json(r.body, { status: r.status });

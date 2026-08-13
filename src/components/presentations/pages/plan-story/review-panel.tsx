@@ -119,7 +119,8 @@ export function PlanStoryReviewPanel({
   const load = useCallback(async () => {
     try {
       const res = await fetch(
-        `/api/clients/${clientId}/plan-story?scenarioId=${encodeURIComponent(scenario)}`,
+        `/api/clients/${clientId}/plan-story?scenarioId=${encodeURIComponent(scenario)}` +
+          `&documentRole=${encodeURIComponent(documentRole)}`,
       );
       if (!res.ok) throw new Error(`GET plan-story ${res.status}`);
       const body = (await res.json()) as { chapters: ChapterRow[] };
@@ -136,10 +137,14 @@ export function PlanStoryReviewPanel({
       console.error("[plan-story] could not load chapters", err);
       setProblem(COULD_NOT_LOAD);
     }
-  }, [clientId, scenario]);
+    // `documentRole` belongs here as much as the scenario does: since 0240 the
+    // two presets store separate rows, so an advisor switching preset with the
+    // panel open must re-read. Without it they would keep reading the previous
+    // role's text under the new preset's heading.
+  }, [clientId, scenario, documentRole]);
 
-  // Runs on mount and whenever the client or scenario changes — the drafts
-  // belong to the story being left behind, not to the one arriving.
+  // Runs on mount and whenever the client, scenario or preset changes — the
+  // drafts belong to the story being left behind, not to the one arriving.
   useEffect(() => {
     setDrafts({});
     void load();
@@ -155,7 +160,7 @@ export function PlanStoryReviewPanel({
       const res = await fetch(`/api/clients/${clientId}/plan-story/${chapterId}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ scenarioId: scenario, ...payload }),
+        body: JSON.stringify({ scenarioId: scenario, documentRole, ...payload }),
       });
       // Refused: say so and stop. Reloading here would replace the advisor's
       // words with the stored text and make a failed save look like a saved one.

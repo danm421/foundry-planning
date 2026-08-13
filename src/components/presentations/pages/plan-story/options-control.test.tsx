@@ -127,7 +127,7 @@ describe("PlanStoryOptionsControl", () => {
     expect(await screen.findByRole("button", { name: /generate all/i })).toBeInTheDocument();
     await waitFor(() => expect(fetchMock()).toHaveBeenCalled());
     expect(String(fetchMock().mock.calls[0][0])).toBe(
-      `/api/clients/c1/plan-story?scenarioId=${LIVE_ID}`,
+      `/api/clients/c1/plan-story?scenarioId=${LIVE_ID}&documentRole=standalone`,
     );
   });
 

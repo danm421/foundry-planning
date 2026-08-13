@@ -3153,6 +3153,19 @@ export const planStoryChapters = pgTable(
     /** Literal "base" or a scenario UUID. Text, not a FK, so a base-only story
      *  needs no synthetic scenario row. */
     scenarioId: text("scenario_id").notNull(),
+    /**
+     * Which register these words were written in — the same value the report's
+     * options carry. Part of the KEY, not a payload column.
+     *
+     * The Executive brief and the Full story are two presets over one report,
+     * and `documentRole` switches the prose between self-contained and pointing
+     * forward. Without it in the key, a deck holding both resolves the same rows
+     * twice and prints them twice, and the review panel writes one text for both
+     * — so editing the brief's copy edits the full story's, with no advisor
+     * workaround. Defaulted so every row written before 0240 reads as what it
+     * actually was.
+     */
+    documentRole: text("document_role").notNull().default("standalone"),
     chapterId: text("chapter_id").notNull(),
     /** Last model output, kept untouched so an advisor can revert to it. */
     generatedText: text("generated_text"),
@@ -3177,9 +3190,10 @@ export const planStoryChapters = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
-    uniqueIndex("plan_story_chapters_client_scenario_chapter_idx").on(
+    uniqueIndex("plan_story_chapters_client_scenario_role_chapter_idx").on(
       t.clientId,
       t.scenarioId,
+      t.documentRole,
       t.chapterId,
     ),
   ],

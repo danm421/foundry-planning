@@ -9,6 +9,13 @@ import { planStoryChapters, type PlanStoryChapterRow } from "@/db/schema";
 import type { ChapterId } from "./types";
 import type { GeneratedChapter } from "./generate";
 
+/**
+ * Which register a chapter's words were written in. The same two values the
+ * report's options carry, and since 0240 part of the storage key rather than a
+ * property of the prose alone.
+ */
+export type DocumentRole = "standalone" | "frontMatter";
+
 /** Render precedence: the advisor's edit, then the model, then the
  *  deterministic narrative. A whitespace-only edit is not an edit. */
 export function resolveChapterText(
@@ -27,12 +34,13 @@ export function isChapterStale(row: { sourceHash: string | null }, currentHash: 
 }
 
 /**
- * The one row a chapter has. Shared by all three writers so the key they
- * conflict on cannot drift from the unique index, or from each other.
+ * The one row a chapter has, PER ROLE. Shared by all three writers so the key
+ * they conflict on cannot drift from the unique index, or from each other.
  */
 const CHAPTER_KEY = [
   planStoryChapters.clientId,
   planStoryChapters.scenarioId,
+  planStoryChapters.documentRole,
   planStoryChapters.chapterId,
 ];
 
@@ -64,6 +72,7 @@ function clearedWhenTextChanges(column: AnyPgColumn): SQL {
 export async function listStoryChapters(
   clientId: string,
   scenarioId: string,
+  documentRole: DocumentRole,
 ): Promise<PlanStoryChapterRow[]> {
   return db
     .select()
@@ -72,6 +81,7 @@ export async function listStoryChapters(
       and(
         eq(planStoryChapters.clientId, clientId),
         eq(planStoryChapters.scenarioId, scenarioId),
+        eq(planStoryChapters.documentRole, documentRole),
       ),
     );
 }
@@ -85,14 +95,18 @@ export async function listStoryChapters(
 export async function upsertGeneratedChapter(args: {
   clientId: string;
   scenarioId: string;
+  /** Required on all three writers, never defaulted — a default here is
+   *  indistinguishable from the bug the column was added to fix. */
+  documentRole: DocumentRole;
   chapter: GeneratedChapter;
 }): Promise<void> {
-  const { clientId, scenarioId, chapter } = args;
+  const { clientId, scenarioId, documentRole, chapter } = args;
   await db
     .insert(planStoryChapters)
     .values({
       clientId,
       scenarioId,
+      documentRole,
       chapterId: chapter.chapterId,
       generatedText: chapter.markdown,
       sourceHash: chapter.sourceHash,
@@ -133,6 +147,7 @@ export async function upsertGeneratedChapter(args: {
 export async function updateChapterText(args: {
   clientId: string;
   scenarioId: string;
+  documentRole: DocumentRole;
   chapterId: ChapterId;
   editedText: string;
 }): Promise<void> {
@@ -141,6 +156,7 @@ export async function updateChapterText(args: {
     .values({
       clientId: args.clientId,
       scenarioId: args.scenarioId,
+      documentRole: args.documentRole,
       chapterId: args.chapterId,
       editedText: args.editedText,
     })
@@ -169,6 +185,7 @@ export async function updateChapterText(args: {
 export async function markChapterReviewed(args: {
   clientId: string;
   scenarioId: string;
+  documentRole: DocumentRole;
   chapterId: ChapterId;
   userId: string;
 }): Promise<void> {
@@ -178,6 +195,7 @@ export async function markChapterReviewed(args: {
     .values({
       clientId: args.clientId,
       scenarioId: args.scenarioId,
+      documentRole: args.documentRole,
       chapterId: args.chapterId,
       reviewedAt: now,
       reviewedByUserId: args.userId,
