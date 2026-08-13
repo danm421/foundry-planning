@@ -23,6 +23,24 @@ const PRESET_CHOICES: Array<{ id: PresetId; label: string }> = [
 
 const caption = "text-[11px] uppercase tracking-[0.1em] text-ink-3";
 
+/**
+ * The spec's own caveat about the Executive brief, shown only while that preset
+ * is picked.
+ *
+ * Not a permanent line under the buttons, and not a tooltip: the canvas stays
+ * quiet for the advisor who is not using this preset, and the one who IS gets
+ * told rather than left to discover it in a client meeting.
+ */
+const BRIEF_CAVEAT =
+  "Best in front of a curated deck — three pages of plain English ahead of forty-five pages of tables reads as a cliff.";
+
+/** The story's spine and the per-area chapters, split exactly as the registry
+ *  marks them. Two groups rather than fourteen checkboxes in one column: the
+ *  four an advisor switches off because someone else handles that area are a
+ *  different decision from the ten that carry the story. */
+const STRUCTURAL = CHAPTER_IDS.filter((id) => !CHAPTERS[id].coverage);
+const COVERAGE = CHAPTER_IDS.filter((id) => CHAPTERS[id].coverage);
+
 export function PlanStoryOptionsControl({
   value,
   onChange,
@@ -51,6 +69,29 @@ export function PlanStoryOptionsControl({
     (s) => !s.isBaseCase && !s.name.startsWith("writer-test-") && !s.id.startsWith("snap:"),
   );
 
+  /** Any manual toggle drops the report out of a named preset — otherwise the
+   *  launcher row would keep claiming "Full story" for a deck that no longer is
+   *  one. */
+  function chapterBox(id: (typeof CHAPTER_IDS)[number]) {
+    return (
+      <label key={id} className="flex items-center gap-2 hover:text-ink">
+        <input
+          type="checkbox"
+          className="accent-accent"
+          checked={value.sections[id]}
+          onChange={(e) =>
+            onChange({
+              ...value,
+              preset: "custom",
+              sections: { ...value.sections, [id]: e.target.checked },
+            })
+          }
+        />
+        <span>{CHAPTERS[id].title}</span>
+      </label>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <OptionsRow>
@@ -67,30 +108,17 @@ export function PlanStoryOptionsControl({
               <span>{p.label}</span>
             </label>
           ))}
+          {value.preset === "brief" && (
+            <p className="max-w-56 text-[11px] leading-snug text-ink-3">{BRIEF_CAVEAT}</p>
+          )}
         </OptionsGroup>
 
-        <OptionsGroup label="Chapters">
-          {CHAPTER_IDS.map((id) => (
-            <label key={id} className="flex items-center gap-2 hover:text-ink">
-              <input
-                type="checkbox"
-                className="accent-accent"
-                checked={value.sections[id]}
-                onChange={(e) =>
-                  // Any manual toggle drops the report out of a named preset —
-                  // otherwise the launcher row would keep claiming "Full story"
-                  // for a deck that no longer is one.
-                  onChange({
-                    ...value,
-                    preset: "custom",
-                    sections: { ...value.sections, [id]: e.target.checked },
-                  })
-                }
-              />
-              <span>{CHAPTERS[id].title}</span>
-            </label>
-          ))}
+        <OptionsGroup label="The story">
+          {/* Ten chapters read better as two short columns than one tall one. */}
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1">{STRUCTURAL.map(chapterBox)}</div>
         </OptionsGroup>
+
+        <OptionsGroup label="Areas you cover">{COVERAGE.map(chapterBox)}</OptionsGroup>
 
         <OptionsGroup>
           <div className={`flex items-center gap-1.5 ${caption}`}>

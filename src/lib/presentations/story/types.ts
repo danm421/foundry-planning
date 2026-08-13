@@ -1,14 +1,40 @@
 import type { ChangeRow } from "@/lib/presentations/pages/scenario-changes/types";
 import type { Fact } from "./facts";
 
-/** Plan 1 ships three of the spec's fourteen chapters. Extend this union — and
- *  CHAPTER_IDS below — as Plan 2 lands the rest. */
-export type ChapterId = "planInOnePage" | "whatYouHave" | "whatWeRecommend";
+/** The spec's fourteen-chapter arc, in DOCUMENT ORDER. `CHAPTER_IDS` is the
+ *  order the report prints in, the order the review panel lists in, and the
+ *  order the options control renders in — one list, read by all three. */
+export type ChapterId =
+  | "planInOnePage"
+  | "whatWerePlanningFor"
+  | "whatYouHave"
+  | "whereTheMoneyGoes"
+  | "thePathYoureOn"
+  | "whatWeRecommend"
+  | "willTheMoneyLast"
+  | "whatYouCanSpend"
+  | "whatsLeftForPeople"
+  | "whatYoullPayInTax"
+  | "protectingYourFamily"
+  | "healthCareCosts"
+  | "whatHappensNext"
+  | "thingsToKnow";
 
 export const CHAPTER_IDS: readonly ChapterId[] = [
   "planInOnePage",
+  "whatWerePlanningFor",
   "whatYouHave",
+  "whereTheMoneyGoes",
+  "thePathYoureOn",
   "whatWeRecommend",
+  "willTheMoneyLast",
+  "whatYouCanSpend",
+  "whatsLeftForPeople",
+  "whatYoullPayInTax",
+  "protectingYourFamily",
+  "healthCareCosts",
+  "whatHappensNext",
+  "thingsToKnow",
 ] as const;
 
 /**

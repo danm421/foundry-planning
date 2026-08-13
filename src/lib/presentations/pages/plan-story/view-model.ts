@@ -3,7 +3,7 @@
 // decides what renders and supplies the deterministic fallback for anything that
 // was never generated.
 import type { BuildDataContext } from "@/components/presentations/registry";
-import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
+import { CHAPTERS, type ChapterLayout } from "@/lib/presentations/story/chapters/registry";
 import { quotableDetail } from "@/lib/presentations/story/chapters/what-we-recommend";
 import { factsForChapter, type ChapterId, type StoryContext } from "@/lib/presentations/story/types";
 import { printedChapters, type PlanStoryOptions } from "./options-schema";
@@ -11,7 +11,9 @@ import { printedChapters, type PlanStoryOptions } from "./options-schema";
 export interface PlanStoryChapterView {
   chapterId: ChapterId;
   title: string;
-  layout: "heroProse" | "strategyCards";
+  /** Read straight off the registry, never re-derived — `chapter-pdf.tsx`
+   *  branches on it and a fifth spelling here would print the wrong page. */
+  layout: ChapterLayout;
   /** Paragraphs, already resolved: advisor edit → generated → fallback. */
   paragraphs: string[];
   /** Strategy cards; empty for every layout except strategyCards. */

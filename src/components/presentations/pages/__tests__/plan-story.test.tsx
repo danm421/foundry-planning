@@ -14,6 +14,14 @@ import {
   type PlanStoryContextInput,
   type PlanStoryPageData,
 } from "@/lib/presentations/pages/plan-story/view-model";
+import { CHAPTER_IDS } from "@/lib/presentations/story/types";
+
+/** Every chapter of the arc switched off — the advisor-turned-it-all-off case. */
+function allSectionsOff(): PlanStoryOptions["sections"] {
+  return Object.fromEntries(
+    CHAPTER_IDS.map((id) => [id, false]),
+  ) as PlanStoryOptions["sections"];
+}
 
 const FRAME = {
   firmName: "Foundry",
@@ -100,7 +108,7 @@ function storyInput(over: Partial<PlanStoryContextInput["story"]> = {}): PlanSto
 
 const ALL_OFF: PlanStoryOptions = {
   ...PLAN_STORY_OPTIONS_DEFAULT,
-  sections: { planInOnePage: false, whatYouHave: false, whatWeRecommend: false },
+  sections: allSectionsOff(),
 };
 
 describe("planStoryPage registry entry", () => {

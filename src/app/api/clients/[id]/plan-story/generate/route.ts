@@ -13,8 +13,7 @@ import { loadStoryContext } from "@/lib/presentations/story/load-context";
 import { generateChapter } from "@/lib/presentations/story/generate";
 import { upsertGeneratedChapter } from "@/lib/presentations/story/repo";
 import { resolveStoryScenarioId } from "@/lib/presentations/story/scenario-scope";
-import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
-import { CHAPTER_IDS } from "@/lib/presentations/story/types";
+import { CHAPTERS, NARRATED_CHAPTERS } from "@/lib/presentations/story/chapters/registry";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 800;
@@ -68,7 +67,14 @@ export async function POST(
      * 30 days. Not generating it is what makes that state unreachable.
      */
     const hasSomethingToPropose = ctx.hasProposal && ctx.strategies.length > 0;
-    const wanted = CHAPTER_IDS.filter((c) => hasSomethingToPropose || !CHAPTERS[c].requiresProposal);
+    //
+    // `NARRATED_CHAPTERS` rather than the whole arc: a chapter whose narrator has
+    // not landed has no narrative for the substance floor to measure against, so
+    // generating it spends a model call to store the placeholder's own sentence.
+    // Each one joins this list as its task lands.
+    const wanted = NARRATED_CHAPTERS.filter(
+      (c) => hasSomethingToPropose || !CHAPTERS[c].requiresProposal,
+    );
 
     // Chapters are independent — generate them concurrently. Each one already
     // swallows its own failure and falls back, so this never rejects.

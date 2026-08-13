@@ -3,8 +3,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { authErrorResponse } from "@/lib/authz";
 import { listStoryChapters, resolveChapterText, type DocumentRole } from "@/lib/presentations/story/repo";
-import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
-import { CHAPTER_IDS } from "@/lib/presentations/story/types";
+import { CHAPTERS, NARRATED_CHAPTERS } from "@/lib/presentations/story/chapters/registry";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +43,12 @@ export async function GET(
 
     // Every chapter appears, generated or not — the panel needs a row to show
     // "not generated yet" against, not a gap.
-    const chapters = CHAPTER_IDS.map((chapterId) => {
+    //
+    // `NARRATED_CHAPTERS`, not the full arc: the eleven slots whose narrator has
+    // not landed would list as rows the advisor can press Generate on, and the
+    // generate route would spend a model call per chapter to store the
+    // placeholder's own sentence. They join this list as their task lands.
+    const chapters = NARRATED_CHAPTERS.map((chapterId) => {
       const row = byId.get(chapterId);
       const def = CHAPTERS[chapterId];
       return {

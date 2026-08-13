@@ -19,7 +19,10 @@
 // conditional branch unreached, and a Plan Story page reaches one.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { z } from "zod";
-import { planStoryOptionsSchema } from "@/lib/presentations/pages/plan-story/options-schema";
+import {
+  planStoryOptionsSchema,
+  PLAN_STORY_OPTIONS_DEFAULT,
+} from "@/lib/presentations/pages/plan-story/options-schema";
 import type { PlanStoryOptions } from "@/lib/presentations/pages/plan-story/options-schema";
 import type { ExportPdfBody } from "../render-presentation-pdf";
 
@@ -96,7 +99,7 @@ const storyOptions = (over: Partial<PlanStoryOptions> = {}): PlanStoryOptions =>
   preset: "full",
   documentRole: "standalone",
   scenarioId: "",
-  sections: { planInOnePage: true, whatYouHave: true, whatWeRecommend: true },
+  sections: PLAN_STORY_OPTIONS_DEFAULT.sections,
   ...over,
 });
 

@@ -6,7 +6,7 @@ vi.mock("@/lib/extraction/azure-client", () => ({ callAIExtractionWithMeta: vi.f
 
 import { callAIExtractionWithMeta } from "@/lib/extraction/azure-client";
 import { generateChapter } from "../generate";
-import { CHAPTERS } from "../chapters/registry";
+import { CHAPTERS, NARRATED_CHAPTERS } from "../chapters/registry";
 import { moneyFact, pctFact, quotedFact } from "../facts";
 import type { ChapterId, StoryContext, StoryStrategy } from "../types";
 import type { ChangeRow } from "@/lib/presentations/pages/scenario-changes/types";
@@ -500,8 +500,11 @@ describe("generateChapter", () => {
       ["facts but no proposal", context([F.base, F.net, F.assets, F.debts], false, [])],
     ];
 
-    const CASES: Array<[ChapterId, string, StoryContext]> = Object.keys(CHAPTERS)
-      .flatMap((id) => PACKS.map(([label, ctx]) => [id as ChapterId, label, ctx] as [ChapterId, string, StoryContext]));
+    // The chapters that HAVE a narrator, from the registry's own list — the
+    // eleven still standing on `notYetWritten` have no narrative to publish or
+    // reject, and their placeholder throws by design.
+    const CASES: Array<[ChapterId, string, StoryContext]> = NARRATED_CHAPTERS
+      .flatMap((id) => PACKS.map(([label, ctx]) => [id, label, ctx] as [ChapterId, string, StoryContext]));
 
     it.each(CASES)("%s, on %s", async (chapterId, _label, ctx) => {
       const quiet = vi.spyOn(console, "error").mockImplementation(() => {});

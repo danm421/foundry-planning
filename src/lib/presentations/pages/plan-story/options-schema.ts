@@ -25,21 +25,56 @@
 // Zod 4: declare defaults with `.default(...)` ALONE. `.optional().default(...)`
 // wraps the default in an optional and the field stops defaulting.
 import { z } from "zod";
-import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
-import { CHAPTER_IDS, type ChapterId } from "@/lib/presentations/story/types";
+import { CHAPTERS, NARRATED_CHAPTERS } from "@/lib/presentations/story/chapters/registry";
+import { CHAPTER_IDS, type ChapterId, type StoryContext } from "@/lib/presentations/story/types";
+
+/** Every chapter, switched on or off by one rule — so a new chapter joins the
+ *  presets by joining `CHAPTER_IDS`, and cannot be silently left out of one. */
+function sectionsWhere(on: (id: ChapterId) => boolean): Record<ChapterId, boolean> {
+  return Object.fromEntries(CHAPTER_IDS.map((id) => [id, on(id)])) as Record<ChapterId, boolean>;
+}
+
+/** The spec's Executive brief: the punchline, the recommendations, and whether
+ *  the money lasts. */
+const BRIEF_CHAPTERS: readonly ChapterId[] = [
+  "planInOnePage",
+  "whatWeRecommend",
+  "willTheMoneyLast",
+];
+
+/** What a stored deck and a freshly added page start as: the chapters that have
+ *  a narrator, and nothing else. The `full` preset below is the spec's shape
+ *  rather than today's, so switching to it is what turns the rest on. */
+const DEFAULT_SECTIONS = sectionsWhere((id) => NARRATED_CHAPTERS.includes(id));
 
 export const planStoryOptionsSchema = z.object({
   preset: z.enum(["full", "brief", "custom"]).default("full"),
   documentRole: z.enum(["standalone", "frontMatter"]).default("standalone"),
   /** The scenario whose changes the story presents. Empty = base-only story. */
   scenarioId: z.string().default(""),
+  // One key per chapter of the arc, in document order. The eleven whose
+  // narrators have not landed default to FALSE — a deck stored today, and a page
+  // freshly added to one, both render exactly the three-chapter report the app
+  // renders now. The `full` preset below is the spec's shape rather than
+  // today's, so switching to it is what turns the rest on.
   sections: z
     .object({
       planInOnePage: z.boolean().default(true),
+      whatWerePlanningFor: z.boolean().default(false),
       whatYouHave: z.boolean().default(true),
+      whereTheMoneyGoes: z.boolean().default(false),
+      thePathYoureOn: z.boolean().default(false),
       whatWeRecommend: z.boolean().default(true),
+      willTheMoneyLast: z.boolean().default(false),
+      whatYouCanSpend: z.boolean().default(false),
+      whatsLeftForPeople: z.boolean().default(false),
+      whatYoullPayInTax: z.boolean().default(false),
+      protectingYourFamily: z.boolean().default(false),
+      healthCareCosts: z.boolean().default(false),
+      whatHappensNext: z.boolean().default(false),
+      thingsToKnow: z.boolean().default(false),
     })
-    .default({ planInOnePage: true, whatYouHave: true, whatWeRecommend: true }),
+    .default(DEFAULT_SECTIONS),
 });
 
 export type PlanStoryOptions = z.infer<typeof planStoryOptionsSchema>;
@@ -48,7 +83,7 @@ export const PLAN_STORY_OPTIONS_DEFAULT: PlanStoryOptions = {
   preset: "full",
   documentRole: "standalone",
   scenarioId: "",
-  sections: { planInOnePage: true, whatYouHave: true, whatWeRecommend: true },
+  sections: DEFAULT_SECTIONS,
 };
 
 export type PresetId = "full" | "brief";
@@ -56,13 +91,20 @@ export type PresetId = "full" | "brief";
 /** The short front-of-deck version is a PRESET, not a second report: the
  *  punchline and the recommendations, written to point at the pages after. */
 export const PRESETS: Record<PresetId, Pick<PlanStoryOptions, "documentRole" | "sections">> = {
+  /** The standalone client document — everything applicable, ~12-16 pages. */
   full: {
     documentRole: "standalone",
-    sections: { planInOnePage: true, whatYouHave: true, whatWeRecommend: true },
+    sections: sectionsWhere(() => true),
   },
+  /**
+   * Three pages of front matter ahead of an existing deck — the spec's chapters
+   * 0, 5 and 6. Not a second product: the same sections model, the same storage,
+   * and `documentRole` switching the prose from self-contained to pointing at
+   * the pages that follow.
+   */
   brief: {
     documentRole: "frontMatter",
-    sections: { planInOnePage: true, whatYouHave: false, whatWeRecommend: true },
+    sections: sectionsWhere((id) => BRIEF_CHAPTERS.includes(id)),
   },
 };
 
@@ -97,18 +139,35 @@ export function planStoryHasProposal(options: PlanStoryOptions): boolean {
 /**
  * The chapters this report will PRINT, in document order.
  *
- * Two rules, not one: the advisor switched it on, AND it has something to say.
- * A chapter marked `requiresProposal` has nothing to recommend on a base-only
- * story — `plan-story/generate/route.ts` never even generates it, and a shipped
- * test pins that — so counting it would reserve a page the render never fills.
+ * Three rules now, not two: the advisor switched it on, it has a plan to
+ * recommend, AND it has something in it. A chapter marked `requiresProposal` has
+ * nothing to recommend on a base-only story — `plan-story/generate/route.ts`
+ * never even generates it, and a shipped test pins that — so counting it would
+ * reserve a page the render never fills. The third is the coverage rule (no
+ * policies, no insurance chapter) and it lives here for the same reason:
+ * `estimatePlanStoryPageCount` reserves sheets from this function and
+ * `documentSections` numbers the contents from that reservation, so a chapter
+ * that self-hides at render time and not at count time drifts the whole deck.
+ *
+ * `ctx` is optional and the availability rule is SKIPPED when it is absent —
+ * `document.tsx` calls the estimate with no data at all. That asymmetry is
+ * deliberate, and it is why `available` may only depend on things the OPTIONS
+ * also imply: a coverage chapter that hides on data the estimate cannot see
+ * would reserve a sheet the render never fills, which is the page-count defect
+ * arriving a third time. A chapter that genuinely needs data the options cannot
+ * imply must print an honest short empty state on its reserved sheet instead.
  *
  * Deliberately not two functions. "Switched on" is `options.sections[id]` and
  * anything that genuinely wants it can read it; a second exported helper is how
  * the count and the render came apart in the first place.
  */
-export function printedChapters(options: PlanStoryOptions): ChapterId[] {
+export function printedChapters(options: PlanStoryOptions, ctx?: StoryContext): ChapterId[] {
   const hasProposal = planStoryHasProposal(options);
-  return CHAPTER_IDS.filter(
-    (id) => options.sections[id] && (hasProposal || !CHAPTERS[id].requiresProposal),
-  );
+  return CHAPTER_IDS.filter((id) => {
+    const def = CHAPTERS[id];
+    if (!options.sections[id]) return false;
+    if (def.requiresProposal && !hasProposal) return false;
+    if (ctx && def.available && !def.available(ctx)) return false;
+    return true;
+  });
 }

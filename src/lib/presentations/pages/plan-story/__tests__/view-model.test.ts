@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { BuildDataContext } from "@/components/presentations/registry";
 import type { ChangeRow } from "@/lib/presentations/pages/scenario-changes/types";
 import type { Fact } from "@/lib/presentations/story/facts";
-import type { ChapterId, StoryContext } from "@/lib/presentations/story/types";
+import { CHAPTER_IDS, type ChapterId, type StoryContext } from "@/lib/presentations/story/types";
 import {
   buildPlanStoryData,
   MAX_STRATEGY_CARDS,
@@ -69,6 +69,13 @@ function row(over: Partial<ChangeRow> = {}): ChangeRow {
 
 const PROPOSED: PlanStoryOptions = { ...PLAN_STORY_OPTIONS_DEFAULT, scenarioId: "scn-1" };
 
+/** Every chapter of the arc switched off — the advisor-turned-it-all-off case. */
+function allSectionsOff(): PlanStoryOptions["sections"] {
+  return Object.fromEntries(
+    CHAPTER_IDS.map((id) => [id, false]),
+  ) as PlanStoryOptions["sections"];
+}
+
 function chapterIds(data: PlanStoryPageData): ChapterId[] {
   return data.chapters.map((c) => c.chapterId);
 }
@@ -98,7 +105,7 @@ describe("buildPlanStoryData — nothing to print", () => {
   it("says the chapters are switched off when that is what happened", () => {
     const allOff: PlanStoryOptions = {
       ...PROPOSED,
-      sections: { planInOnePage: false, whatYouHave: false, whatWeRecommend: false },
+      sections: allSectionsOff(),
     };
     const data = buildPlanStoryData(deckCtx(input()), allOff);
     expect(data.isEmpty).toBe(true);
@@ -412,9 +419,17 @@ describe("buildPlanStoryData — the subtitle names the plan the prose is about"
 });
 
 describe("the estimate and the render agree", () => {
+  // The three chapters that have a narrator, in every combination. The other
+  // eleven stay at their shipped default (off) — a chapter whose task has not
+  // landed cannot be part of a render check, because its narrator throws.
   const SECTION_SETS = [false, true].flatMap((planInOnePage) =>
     [false, true].flatMap((whatYouHave) =>
-      [false, true].map((whatWeRecommend) => ({ planInOnePage, whatYouHave, whatWeRecommend })),
+      [false, true].map((whatWeRecommend) => ({
+        ...PLAN_STORY_OPTIONS_DEFAULT.sections,
+        planInOnePage,
+        whatYouHave,
+        whatWeRecommend,
+      })),
     ),
   );
   const PRESET_IDS = ["full", "brief", "custom"] as const;
@@ -447,10 +462,16 @@ describe("the estimate and the render agree", () => {
   });
 
   it("matches for both presets as the options control applies them", () => {
+    // Every chapter of the arc, with stored text — which is what the export
+    // loader supplies for a generated deck, and the only way the eleven chapters
+    // whose narrators have not landed can take part in a render check at all.
+    const stored = Object.fromEntries(
+      CHAPTER_IDS.map((id) => [id, "One stored paragraph, as the export loader supplies it."]),
+    );
     for (const preset of ["full", "brief"] as const) {
       for (const scenarioId of SCENARIO_IDS) {
         const options = applyPreset({ ...PLAN_STORY_OPTIONS_DEFAULT, scenarioId }, preset);
-        const ctx = deckCtx(input({ hasProposal: planStoryHasProposal(options) }));
+        const ctx = deckCtx(input({ hasProposal: planStoryHasProposal(options) }, stored));
         expect(physicalPages(buildPlanStoryData(ctx, options))).toBe(
           estimatePlanStoryPageCount(undefined as never, options),
         );

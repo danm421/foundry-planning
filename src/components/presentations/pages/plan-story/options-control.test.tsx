@@ -6,6 +6,7 @@ import { PresentationOptionsProvider } from "@/components/presentations/options-
 import { EMPTY_INVESTMENT_OPTION_CATALOG } from "@/lib/presentations/investment-option-catalog";
 import {
   PLAN_STORY_OPTIONS_DEFAULT,
+  PRESETS,
   type PlanStoryOptions,
 } from "@/lib/presentations/pages/plan-story/options-schema";
 import type { ScenarioOption } from "@/components/scenario/scenario-picker-dropdown";
@@ -71,9 +72,34 @@ describe("PlanStoryOptionsControl", () => {
   it("renders the preset, chapter and proposed-plan groups", () => {
     renderControl();
     expect(screen.getByText("Preset")).toBeInTheDocument();
-    expect(screen.getByText("Chapters")).toBeInTheDocument();
+    expect(screen.getByText("The story")).toBeInTheDocument();
+    expect(screen.getByText("Areas you cover")).toBeInTheDocument();
     expect(screen.getByLabelText("Proposed plan")).toBeInTheDocument();
     expect(screen.getByText("What we're recommending, and why")).toBeInTheDocument();
+  });
+
+  it("offers one checkbox per chapter of the arc, split by kind", () => {
+    renderControl();
+    expect(screen.getAllByRole("checkbox")).toHaveLength(14);
+    // The four an advisor switches off because someone else handles that area.
+    for (const title of [
+      "What's left for the people you care about",
+      "What you'll pay in tax",
+      "Protecting your family",
+      "Health care costs in retirement",
+    ]) {
+      expect(screen.getByRole("checkbox", { name: title })).toBeInTheDocument();
+    }
+  });
+
+  it("tells the advisor what the Executive brief is good in front of", () => {
+    renderControl({ preset: "brief" });
+    expect(screen.getByText(/reads as a cliff/i)).toBeInTheDocument();
+  });
+
+  it("keeps that caveat off the canvas for every other preset", () => {
+    renderControl();
+    expect(screen.queryByText(/reads as a cliff/i)).toBeNull();
   });
 
   it("applies a preset's document role and chapter set, keeping the proposed plan", () => {
@@ -83,7 +109,7 @@ describe("PlanStoryOptionsControl", () => {
       preset: "brief",
       documentRole: "frontMatter",
       scenarioId: LIVE_ID,
-      sections: { planInOnePage: true, whatYouHave: false, whatWeRecommend: true },
+      sections: PRESETS.brief.sections,
     });
   });
 
@@ -93,7 +119,7 @@ describe("PlanStoryOptionsControl", () => {
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
         preset: "custom",
-        sections: { planInOnePage: true, whatYouHave: false, whatWeRecommend: true },
+        sections: { ...PLAN_STORY_OPTIONS_DEFAULT.sections, whatYouHave: false },
       }),
     );
   });

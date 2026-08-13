@@ -188,6 +188,11 @@ describe("GET /api/clients/[id]/plan-story", () => {
 
   // Kills: projecting the stored rows instead of the chapter list (a
   // never-generated chapter would vanish from the panel).
+  // Three, not fourteen. The arc's other eleven slots exist so the page count,
+  // the render and storage agree from the start, but they have no narrator yet —
+  // listing them would offer the advisor a Generate button that can only store
+  // the placeholder's own sentence. Spelled out rather than read from
+  // `NARRATED_CHAPTERS`, so a route that went back to the whole arc fails here.
   it("returns one entry per chapter, including never-generated ones", async () => {
     const res = await GET(req("http://x/?scenarioId=base"), {
       params: Promise.resolve({ id: CLIENT_ID }),

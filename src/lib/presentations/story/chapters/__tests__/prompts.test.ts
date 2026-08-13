@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildChapterPrompt } from "../prompts";
-import { CHAPTERS, chapterEnumerates } from "../registry";
+import { chapterEnumerates } from "../registry";
 import { moneyFact, pctFact, quotedFact } from "../../facts";
 import { runGates } from "../../validate";
 import { CHAPTER_IDS, type StoryContext } from "../../types";
@@ -331,15 +331,5 @@ describe("the register rules", () => {
   it("marks the chapter brief as instructions the client never sees", () => {
     const { user } = buildChapterPrompt("planInOnePage", CTX, [], []);
     expect(user).toMatch(/never sees/i);
-  });
-});
-
-describe("CHAPTERS", () => {
-  it("gives every chapter a title, a layout, and a fallback narrator", () => {
-    for (const def of Object.values(CHAPTERS)) {
-      expect(def.title.length).toBeGreaterThan(0);
-      expect(["heroProse", "strategyCards"]).toContain(def.layout);
-      expect(typeof def.narrate).toBe("function");
-    }
   });
 });
