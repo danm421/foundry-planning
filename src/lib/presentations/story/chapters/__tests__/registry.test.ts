@@ -4,6 +4,7 @@
 // — is a runtime hole none of those five would agree about.
 import { describe, it, expect } from "vitest";
 import { CHAPTERS, NARRATED_CHAPTERS, chapterEnumerates } from "../registry";
+import { moneyFact } from "../../facts";
 import { CHAPTER_IDS, type StoryContext } from "../../types";
 
 const CTX: StoryContext = {
@@ -64,6 +65,32 @@ describe("the chapter registry", () => {
       "protectingYourFamily",
       "healthCareCosts",
     ]);
+  });
+
+  /**
+   * `available` answers "has this household anything for this chapter", and it
+   * is a COVERAGE-chapter question only — a structural chapter carries the story
+   * whatever the pack holds, so an absent predicate means "always".
+   *
+   * ⚠️ It is deliberately NOT a print filter. `printedChapters` reserves the
+   * sheet from the options alone, so a chapter that hid on data the page count
+   * could not see would mis-number every page after it. See `options-schema.ts`.
+   */
+  it("declares `available` only on coverage chapters, and answers on the pack", () => {
+    for (const id of CHAPTER_IDS) {
+      if (CHAPTERS[id].available) expect(CHAPTERS[id].coverage, id).toBe(true);
+    }
+
+    const estate = CHAPTERS.whatsLeftForPeople.available;
+    expect(estate?.(CTX)).toBe(false);
+    expect(estate?.({ ...CTX, facts: [moneyFact("estate.net.base", "What reaches your heirs, current plan", 3_100_000)] })).toBe(true);
+    // …and it does not answer for its neighbour: a household with tax figures
+    // and no estate must not be charged a model call for the estate chapter.
+    expect(estate?.({ ...CTX, facts: [moneyFact("tax.lifetime.base", "Total income tax over the plan, current plan", 1_400_000)] })).toBe(false);
+
+    const tax = CHAPTERS.whatYoullPayInTax.available;
+    expect(tax?.(CTX)).toBe(false);
+    expect(tax?.({ ...CTX, facts: [moneyFact("tax.lifetime.base", "Total income tax over the plan, current plan", 1_400_000)] })).toBe(true);
   });
 
   it("gives every chapter a client-facing title and a model brief", () => {

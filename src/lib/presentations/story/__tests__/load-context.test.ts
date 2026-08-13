@@ -24,6 +24,11 @@ const fx = vi.hoisted(() => ({
   changeQueries: [] as string[],
   /** scenarioId → solved annual spend. A missing entry makes the solve throw. */
   maxSpend: {} as Record<string, number>,
+  /** scenarioId → the estate report that ref should produce. A missing entry
+   *  comes back EMPTY, which is a household with nothing on file. */
+  estate: {} as Record<string, unknown>,
+  /** Every argument object `buildEstateTransferReportData` was called with. */
+  estateCalls: [] as Array<{ asOf: { kind: string }; ordering: string }>,
 }));
 
 vi.mock("@/lib/scenario/loader", () => ({
@@ -99,6 +104,26 @@ vi.mock("@/components/balance-sheet-report/view-model", () => ({
   })),
 }));
 
+// The estate report has its own suites, and the fake tree here carries none of
+// what it reads. `summarizeHousehold` is deliberately NOT mocked with it: the
+// totalling is the half this loader depends on, and it is what proves debts stay
+// out of "tax and costs".
+vi.mock("@/lib/estate/transfer-report", () => ({
+  buildEstateTransferReportData: vi.fn(
+    (args: { asOf: { kind: string }; ordering: string; clientData: { scenarioId: string } }) => {
+      fx.estateCalls.push({ asOf: args.asOf, ordering: args.ordering });
+      return (
+        fx.estate[args.clientData.scenarioId] ?? {
+          isEmpty: true,
+          firstDeath: null,
+          secondDeath: null,
+          aggregateRecipientTotals: [],
+        }
+      );
+    },
+  ),
+}));
+
 // Same call as the balance-sheet builders above: the Goals board has its own
 // suite, and the fake tree here carries no `planSettings` for it to read. What
 // this file is for is what the LOADER does with the result — which cards become
@@ -151,6 +176,37 @@ const year = (y: number, taxable: number, cash: number, retirement: number, sala
   withdrawals: { total: 0 },
 });
 
+/**
+ * A year the tax engine actually produced a result for. The default `year`
+ * above carries NO `taxResult`, which is what a plan run with the tax engine
+ * off looks like — and what makes the "0 is not an answer" rule testable.
+ */
+const taxedYear = (y: number, totalTax: number) => ({
+  ...year(y, 0, 0, 0),
+  taxResult: {
+    flow: { totalFederalTax: totalTax, stateTax: 0, capitalGainsTax: 0, totalTax },
+    income: { grossTotalIncome: totalTax * 4 },
+  },
+});
+
+/**
+ * Just enough of an estate report for the REAL `summarizeHousehold` to total.
+ * The debts line is deliberately present and deliberately large: it is money
+ * owed, not a cost of dying, and it must not reach `estate.cost.*`.
+ */
+const estateReport = (netToHeirs: number, federal: number, probate: number) => ({
+  isEmpty: false,
+  firstDeath: {
+    reductions: [
+      { kind: "federal_estate_tax", amount: federal },
+      { kind: "probate", amount: probate },
+      { kind: "debts_paid", amount: 250_000 },
+    ],
+  },
+  secondDeath: null,
+  aggregateRecipientTotals: [{ total: netToHeirs }],
+});
+
 /** 2026 → $1.2M liquid, 2065 → $2.0M liquid. */
 const BASE_YEARS = [year(2026, 400_000, 100_000, 700_000), year(2065, 900_000, 100_000, 1_000_000)];
 /** Same start, $2.6M left at the end — distinct from every base figure. */
@@ -171,6 +227,8 @@ beforeEach(() => {
   fx.mcCalls = [];
   fx.changeQueries = [];
   fx.maxSpend = {};
+  fx.estate = {};
+  fx.estateCalls = [];
   // The Monte-Carlo-failure path logs; keep the suite's output clean while
   // still asserting the failure was recorded rather than silently swallowed.
   errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -406,6 +464,49 @@ describe("loadStoryContext", () => {
       expect(display(partial, "spend.base")).toBe("$150K");
       expect(partial.facts.some((f) => f.id === "spend.proposed")).toBe(false);
       expect(errorSpy).toHaveBeenCalled();
+    });
+
+    it("takes both plans' estate figures off the Estate Summary page's own report", async () => {
+      fx.estate = {
+        base: estateReport(3_100_000, 500_000, 200_000),
+        "sc-1": estateReport(3_900_000, 300_000, 100_000),
+      };
+      const ctx = await load();
+
+      expect(display(ctx, "estate.net.base")).toBe("$3.1M");
+      expect(display(ctx, "estate.net.proposed")).toBe("$3.9M");
+      // Estate tax plus probate. The $250K of debts paid is money OWED, not a
+      // cost of dying, and `summarizeHousehold` keeps it out of `taxAndCosts` —
+      // a chapter that included it would overstate what dying costs by a third.
+      expect(display(ctx, "estate.cost.base")).toBe("$700K");
+      expect(display(ctx, "estate.cost.proposed")).toBe("$400K");
+      // End of Life, which is the column that page's KPI strip reads and the
+      // horizon `outcome.legacy.*` is already stated at.
+      expect(fx.estateCalls).toHaveLength(2);
+      expect(fx.estateCalls.every((c) => c.asOf.kind === "split")).toBe(true);
+      expect(fx.estateCalls.every((c) => c.ordering === "primaryFirst")).toBe(true);
+    });
+
+    it("omits the estate figures for a household with nothing on file", async () => {
+      // Every report comes back `isEmpty`. Absent, never $0 — "nothing reaches
+      // your heirs" is a different statement from "we have no estate on file".
+      const ctx = await load();
+      expect(ctx.facts.some((f) => f.id.startsWith("estate."))).toBe(false);
+    });
+
+    it("sums lifetime income tax per plan, and omits it when no year carries one", async () => {
+      fx.years = { base: [taxedYear(2026, 40_000), taxedYear(2027, 60_000)], "sc-1": [taxedYear(2026, 30_000)] };
+      const ctx = await load();
+
+      expect(display(ctx, "tax.lifetime.base")).toBe("$100K");
+      expect(display(ctx, "tax.lifetime.proposed")).toBe("$30K");
+
+      // …and the ordinary fixture's years carry no `taxResult` at all, which
+      // sums to exactly 0 — a figure that would print as "$0 in income tax over
+      // the whole plan" for a household whose tax engine simply did not run.
+      fx.years = { base: BASE_YEARS, "sc-1": PROPOSED_YEARS };
+      const none = await load();
+      expect(none.facts.some((f) => f.id.startsWith("tax."))).toBe(false);
     });
 
     it("reads each plan's confidence from the compute cache under its own scenario id", async () => {

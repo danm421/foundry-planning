@@ -23,10 +23,14 @@ import { buildViewModel } from "@/components/balance-sheet-report/view-model";
 import { buildViewModelInputs } from "@/lib/balance-sheet/build-view-model-inputs";
 import { mergeSyntheticAccounts } from "@/lib/balance-sheet/merge-synthetic-accounts";
 import { buildMapBoards } from "@/lib/household-map/build-boards";
+import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
+import { summarizeHousehold } from "@/lib/presentations/pages/estate-summary/aggregate";
+import { ESTATE_SUMMARY_OPTIONS_DEFAULT } from "@/lib/presentations/pages/estate-summary/options-schema";
+import { computeLifetimeTotals } from "@/lib/presentations/pages/tax-summary/aggregate";
 import { ASSUMED_LIFE_EXPECTANCY } from "@/lib/plan-horizon";
 import type { GoalKind, MapGoal } from "@/lib/household-map/goals";
 import type { ClientData, ProjectionYear } from "@/engine/types";
-import { buildStoryFacts, groupStrategies } from "./build-facts";
+import { buildStoryFacts, groupStrategies, type StoryEstateTotals } from "./build-facts";
 import type { StoryContext, StoryGoal, StoryStrategy } from "./types";
 
 export interface LoadStoryContextArgs {
@@ -205,6 +209,56 @@ async function maxSpendFor(clientId: string, firmId: string, ref: string): Promi
   }
 }
 
+/**
+ * What one plan's estate leaves behind, off the SAME report the deck's Estate
+ * Summary page builds its KPI strip from: `summarizeHousehold` over
+ * `buildEstateTransferReportData` at `asOf: { kind: "split" }`, which is that
+ * page's End of Life column. Under `documentRole: "frontMatter"` the two pages
+ * are a few leaves apart in one PDF, and "what reaches your heirs" meaning two
+ * different numbers inside one document is the single failure this fact pack
+ * exists to prevent.
+ *
+ * End of life rather than today, because that is the horizon this chapter's
+ * neighbours are stated at — `outcome.legacy.*` is already "left at the end".
+ *
+ * `ordering` is that page's own default. Which death is reported first is an
+ * option the advisor sets on the Estate Summary page, which this one cannot
+ * see; the two figures below are the sum across both deaths either way.
+ *
+ * Null for an empty report, never zeroes: no estate on file and an estate worth
+ * nothing are different statements, and only the first is honest to print.
+ */
+function estateTotals(
+  projected: Projected,
+  ownerNames: { clientName: string; spouseName: string | null },
+): StoryEstateTotals | null {
+  const report = buildEstateTransferReportData({
+    projection: projected.projection,
+    asOf: { kind: "split" },
+    ordering: ESTATE_SUMMARY_OPTIONS_DEFAULT.ordering,
+    clientData: projected.effectiveTree,
+    ownerNames,
+  });
+  if (report.isEmpty) return null;
+  const household = summarizeHousehold(report);
+  return { net: household.netToHeirs, cost: household.taxAndCosts };
+}
+
+/**
+ * Income tax over the whole plan, off the SAME totals the deck's Tax Comparison
+ * page puts in its "Lifetime Total Tax" KPI.
+ *
+ * Null when NO year carries a tax result. `computeLifetimeTotals` sums whatever
+ * `taxResult` each year holds and returns 0 when none of them does, which is
+ * indistinguishable from a household that genuinely owes nothing — and "$0 in
+ * income tax over the whole plan" printed because the tax engine did not run is
+ * exactly what the null-rather-than-zero rule exists to stop.
+ */
+function lifetimeTax(years: ProjectionYear[]): number | null {
+  if (!years.some((y) => y.taxResult?.flow)) return null;
+  return computeLifetimeTotals(years).lifetimeTotal;
+}
+
 export async function loadStoryContext(args: LoadStoryContextArgs): Promise<StoryContext> {
   const { clientId, firmId, proposedRef } = args;
 
@@ -311,6 +365,17 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
      */
     shortfallYear: firstShortfallYear(baseYears),
     maxSpend: { base: baseSpend, proposed: proposedSpend },
+    // The names only label the report's own death sections, which nothing here
+    // reads — the two figures taken off it are household totals.
+    estate: {
+      base: estateTotals(base, { clientName: firstName, spouseName: client.spouseName ?? null }),
+      proposed: proposed
+        ? estateTotals(proposed, { clientName: firstName, spouseName: client.spouseName ?? null })
+        : null,
+    },
+    // No proposal means no proposed years, which is already null by the rule
+    // above rather than by a second check here.
+    lifetimeTax: { base: lifetimeTax(baseYears), proposed: lifetimeTax(proposedYears) },
     flow: firstYear
       ? {
           income: firstYear.totalIncome,

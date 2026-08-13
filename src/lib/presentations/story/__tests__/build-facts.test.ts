@@ -28,6 +28,8 @@ const input: StoryFactsInput = {
   flow: null,
   shortfallYear: null,
   maxSpend: { base: null, proposed: null },
+  estate: { base: null, proposed: null },
+  lifetimeTax: { base: null, proposed: null },
 };
 
 describe("buildStoryFacts", () => {
@@ -73,6 +75,79 @@ describe("buildStoryFacts", () => {
   it("never emits duplicate ids", () => {
     const ids = buildStoryFacts({ ...input, strategies: STRATEGIES }).map((f) => f.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe("the estate and lifetime-tax facts", () => {
+  const BOTH: StoryFactsInput = {
+    ...input,
+    estate: { base: { net: 3_100_000, cost: 700_000 }, proposed: { net: 3_900_000, cost: 400_000 } },
+    lifetimeTax: { base: 1_400_000, proposed: 1_100_000 },
+  };
+
+  it("emits both sides of both pairs, formatted by this document", () => {
+    const byId = new Map(buildStoryFacts(BOTH).map((f) => [f.id, f]));
+    expect(byId.get("estate.net.base")?.display).toBe("$3.1M");
+    expect(byId.get("estate.net.proposed")?.display).toBe("$3.9M");
+    expect(byId.get("estate.cost.base")?.display).toBe("$700K");
+    expect(byId.get("estate.cost.proposed")?.display).toBe("$400K");
+    expect(byId.get("tax.lifetime.base")?.display).toBe("$1.4M");
+    expect(byId.get("tax.lifetime.proposed")?.display).toBe("$1.1M");
+  });
+
+  it("scopes each pair to the one chapter it is about", () => {
+    const facts = buildStoryFacts(BOTH);
+    const idsFor = (chapter: Parameters<typeof factsForChapter>[1]) =>
+      factsForChapter(facts, chapter).map((f) => f.id);
+
+    // The estate figures never reach the tax chapter, or any other. Gate 1
+    // checks a figure's spelling and never its meaning, so an unscoped pack
+    // licenses the tax page to print what reaches the heirs.
+    expect(idsFor("whatsLeftForPeople")).toEqual(
+      expect.arrayContaining(["estate.net.base", "estate.cost.proposed"]),
+    );
+    expect(idsFor("whatsLeftForPeople")).not.toContain("tax.lifetime.base");
+    expect(idsFor("whatYoullPayInTax")).toEqual(
+      expect.arrayContaining(["tax.lifetime.base", "tax.lifetime.proposed"]),
+    );
+    expect(idsFor("whatYoullPayInTax")).not.toContain("estate.net.base");
+    expect(idsFor("whatYouHave")).not.toContain("estate.net.base");
+  });
+
+  /**
+   * The estate chapter's scoped pack is SIX facts and the figure column holds
+   * five, so pack order decides which card is cut. Ahead of the plan's own
+   * years, all four estate figures survive; behind them, the proposed cost is
+   * the one that drops — half a comparison beside prose that makes the whole
+   * one. See `view-model.ts#figuresFor`.
+   */
+  it("puts all four estate figures inside the five the figure column prints", () => {
+    const scoped = factsForChapter(buildStoryFacts(BOTH), "whatsLeftForPeople");
+    expect(scoped.slice(0, 5).map((f) => f.id)).toEqual([
+      "estate.net.base",
+      "estate.net.proposed",
+      "estate.cost.base",
+      "estate.cost.proposed",
+      "plan.endOfLifeYear",
+    ]);
+  });
+
+  it("omits a side entirely rather than zeroing it", () => {
+    const ids = buildStoryFacts({
+      ...BOTH,
+      estate: { base: BOTH.estate.base, proposed: null },
+      lifetimeTax: { base: 1_400_000, proposed: null },
+    }).map((f) => f.id);
+    expect(ids).toContain("estate.net.base");
+    expect(ids).not.toContain("estate.net.proposed");
+    expect(ids).not.toContain("estate.cost.proposed");
+    expect(ids).not.toContain("tax.lifetime.proposed");
+  });
+
+  it("emits nothing at all when neither is available", () => {
+    const ids = buildStoryFacts(input).map((f) => f.id);
+    expect(ids.some((id) => id.startsWith("estate."))).toBe(false);
+    expect(ids.some((id) => id.startsWith("tax."))).toBe(false);
   });
 });
 
@@ -521,6 +596,8 @@ describe("fact scoping", () => {
     flow: null,
     shortfallYear: null,
     maxSpend: { base: null, proposed: null },
+    estate: { base: null, proposed: null },
+    lifetimeTax: { base: null, proposed: null },
   });
 
   it("keeps the balance sheet out of the headline chapter", () => {
@@ -554,6 +631,7 @@ describe("a retirement year already in the past", () => {
     baseEndLiquid: 9_200_000, proposedEndLiquid: 9_200_000,
     retirementYear: 2013, endOfLifeYear: 2051, planStartYear: 2026,
     strategies: [], goals: [], flow: null, shortfallYear: null, maxSpend: { base: null, proposed: null },
+    estate: { base: null, proposed: null }, lifetimeTax: { base: null, proposed: null },
   });
 
   it("is omitted rather than narrated as something still to come", () => {
@@ -567,6 +645,7 @@ describe("a retirement year already in the past", () => {
       baseEndLiquid: 0, proposedEndLiquid: null,
       retirementYear: 2035, endOfLifeYear: 2070, planStartYear: 2026,
       strategies: [], goals: [], flow: null, shortfallYear: null, maxSpend: { base: null, proposed: null },
+    estate: { base: null, proposed: null }, lifetimeTax: { base: null, proposed: null },
     });
     expect(ahead.map((f) => f.id)).toContain("plan.retirementYear");
   });

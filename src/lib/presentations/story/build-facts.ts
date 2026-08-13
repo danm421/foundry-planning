@@ -69,6 +69,40 @@ export interface StoryFactsInput {
    * out is the worst lie this report could tell.
    */
   maxSpend: { base: number | null; proposed: number | null };
+  /**
+   * What the estate leaves behind at the end of the plan, per plan — or null
+   * when there is no estate to report.
+   *
+   * Null rather than zeroes for the same reason Monte Carlo is: an empty estate
+   * report and an estate worth nothing are different statements, and "$0 reaches
+   * your heirs" printed because nothing loaded is the worse of the two.
+   */
+  estate: { base: StoryEstateTotals | null; proposed: StoryEstateTotals | null };
+  /**
+   * Income tax over the whole plan, per plan, or null when the tax engine
+   * produced nothing.
+   *
+   * Null rather than zero again, and here the distinction is not theoretical: a
+   * projection whose years carry no `taxResult` sums to exactly 0, which reads
+   * on the page as a household that owes no tax for the rest of its life.
+   */
+  lifetimeTax: { base: number | null; proposed: number | null };
+}
+
+/**
+ * One plan's estate outcome, in the two figures a client asks about.
+ *
+ * Both come off the SAME report the deck's Estate Summary page builds
+ * (`summarizeHousehold`), so the chapter and that page cannot disagree about
+ * what reaches the heirs — which under `documentRole: "frontMatter"` are a few
+ * leaves apart in one PDF.
+ */
+export interface StoryEstateTotals {
+  /** What reaches the heirs, after estate tax, settlement costs and debts. */
+  net: number;
+  /** Estate tax, probate and administration, and tax on income in respect of a
+   *  decedent. Debts are NOT in it — they are money owed, not a cost of dying. */
+  cost: number;
 }
 
 /** A quoted figure describes one proposed change, so it is meaningful in the
@@ -215,6 +249,58 @@ const SPEND_CHAPTERS: readonly ChapterId[] = ["whatYouCanSpend"];
 const GOAL_CHAPTERS: readonly ChapterId[] = ["whatWerePlanningFor"];
 /** This year's cash flow belongs to the chapter about this year's cash flow. */
 const FLOW_CHAPTERS: readonly ChapterId[] = ["whereTheMoneyGoes"];
+/** What reaches the heirs, and what settling the estate costs on the way. */
+const ESTATE_CHAPTERS: readonly ChapterId[] = ["whatsLeftForPeople"];
+/** …and what the household pays in income tax over the life of the plan. */
+const TAX_CHAPTERS: readonly ChapterId[] = ["whatYoullPayInTax"];
+
+/**
+ * The estate pair, both plans, in COMPARISON order — both nets, then both costs.
+ *
+ * The labels are written as captions rather than as notes to the model, because
+ * on a `twoUp` chapter they are both: `view-model.ts#figuresFor` prints a
+ * chapter's own facts as the figure cards beside its prose, using each fact's
+ * `label` as the caption. This chapter is the one that fills that column.
+ */
+function estateFacts(estate: StoryFactsInput["estate"]): Fact[] {
+  const facts: Fact[] = [];
+  if (estate.base) {
+    facts.push(
+      moneyFact("estate.net.base", "What reaches your heirs, current plan", estate.base.net, ESTATE_CHAPTERS),
+    );
+  }
+  if (estate.proposed) {
+    facts.push(
+      moneyFact("estate.net.proposed", "What reaches your heirs, proposed plan", estate.proposed.net, ESTATE_CHAPTERS),
+    );
+  }
+  if (estate.base) {
+    facts.push(
+      moneyFact("estate.cost.base", "Tax and costs on the estate, current plan", estate.base.cost, ESTATE_CHAPTERS),
+    );
+  }
+  if (estate.proposed) {
+    facts.push(
+      moneyFact("estate.cost.proposed", "Tax and costs on the estate, proposed plan", estate.proposed.cost, ESTATE_CHAPTERS),
+    );
+  }
+  return facts;
+}
+
+function lifetimeTaxFacts(tax: StoryFactsInput["lifetimeTax"]): Fact[] {
+  const facts: Fact[] = [];
+  if (tax.base != null) {
+    facts.push(
+      moneyFact("tax.lifetime.base", "Total income tax over the plan, current plan", tax.base, TAX_CHAPTERS),
+    );
+  }
+  if (tax.proposed != null) {
+    facts.push(
+      moneyFact("tax.lifetime.proposed", "Total income tax over the plan, proposed plan", tax.proposed, TAX_CHAPTERS),
+    );
+  }
+  return facts;
+}
 
 /**
  * The pack id holding the year of `goals[index]`.
@@ -268,6 +354,18 @@ export function buildStoryFacts(input: StoryFactsInput): Fact[] {
       input.baseEndLiquid,
       OUTCOME_CHAPTERS,
     ),
+    /**
+     * The estate and lifetime-tax pairs sit AHEAD of the plan's own years, and
+     * that is a layout decision as much as a data one: `figuresFor` prints a
+     * `twoUp` chapter's first FIVE facts as the cards beside its prose, and the
+     * estate chapter's scoped pack is six — four of its own plus the two plan
+     * years every chapter can see. Behind the years, the card that falls off the
+     * bottom is "Tax and costs on the estate, proposed plan", leaving half a
+     * comparison on a page whose prose makes the whole one. Ahead of them, what
+     * drops is the retirement year, which that chapter is not about.
+     */
+    ...estateFacts(input.estate),
+    ...lifetimeTaxFacts(input.lifetimeTax),
     yearFact("plan.endOfLifeYear", "The last year we plan to", input.endOfLifeYear),
   ];
 

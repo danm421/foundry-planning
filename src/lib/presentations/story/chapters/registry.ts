@@ -10,6 +10,8 @@ import { narrateWillTheMoneyLast } from "./will-the-money-last";
 import { narrateWhatYouCanSpend } from "./what-you-can-spend";
 import { narrateWhatYouHave } from "./what-you-have";
 import { narrateWhatWeRecommend } from "./what-we-recommend";
+import { narrateWhatsLeftForPeople } from "./whats-left-for-people";
+import { narrateWhatYoullPayInTax } from "./what-youll-pay-in-tax";
 
 export type ChapterLayout = "heroProse" | "twoUp" | "strategyCards" | "checklist";
 
@@ -82,6 +84,8 @@ export const NARRATED_CHAPTERS: readonly ChapterId[] = [
   "whatWeRecommend",
   "willTheMoneyLast",
   "whatYouCanSpend",
+  "whatsLeftForPeople",
+  "whatYoullPayInTax",
 ];
 
 function notYetWritten(id: ChapterId): (ctx: StoryContext) => string[] {
@@ -183,9 +187,13 @@ export const CHAPTERS: Record<ChapterId, ChapterDef> = {
     id: "whatsLeftForPeople",
     title: "What's left for the people you care about",
     layout: "twoUp",
-    narrate: notYetWritten("whatsLeftForPeople"),
+    narrate: narrateWhatsLeftForPeople,
     requiresProposal: true,
     coverage: true,
+    // A coverage chapter with nothing to cover. Read by the GENERATE route to
+    // skip a model call, never by `printedChapters` — the sheet stays reserved
+    // and prints the narrator's empty state.
+    available: (ctx) => ctx.facts.some((f) => f.id.startsWith("estate.")),
     brief:
       "What reaches the people and causes they name, after tax and costs, and what the changes do to it.",
   },
@@ -193,9 +201,10 @@ export const CHAPTERS: Record<ChapterId, ChapterDef> = {
     id: "whatYoullPayInTax",
     title: "What you'll pay in tax",
     layout: "twoUp",
-    narrate: notYetWritten("whatYoullPayInTax"),
+    narrate: narrateWhatYoullPayInTax,
     requiresProposal: true,
     coverage: true,
+    available: (ctx) => ctx.facts.some((f) => f.id.startsWith("tax.")),
     brief: "What they pay in tax over the life of the plan, and where the changes save it.",
   },
   protectingYourFamily: {
