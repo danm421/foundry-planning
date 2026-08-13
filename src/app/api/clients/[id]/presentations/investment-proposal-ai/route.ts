@@ -9,7 +9,7 @@ import { formatZodIssues } from "@/lib/schemas/common";
 import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
-import { authErrorResponse } from "@/lib/authz";
+import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { checkExtractRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import {
@@ -41,6 +41,11 @@ export async function POST(
 
     const access = await verifyClientAccess(id);
     if (!access.ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    // Same gate presentations/runs puts in front of this same Azure call.
+    // After the access check so a cross-firm probe still 404s instead of
+    // leaking a billing state; before the rate limit so a lapsed firm never
+    // burns budget. Throws — the catch below returns it as a 403.
+    await requireActiveSubscriptionForFirm(access.firmId);
 
     const parsed = Body.safeParse(await request.json());
     if (!parsed.success) {
