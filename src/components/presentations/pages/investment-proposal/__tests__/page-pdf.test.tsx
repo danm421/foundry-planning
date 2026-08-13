@@ -68,14 +68,8 @@ describe("InvestmentProposalPagePdf", () => {
   // from `estimatePageCount(undefined, options)` and numbers every LATER page
   // from that total. Rendering a different number of `PageFrame`s than were
   // reserved is what mis-numbers the table of contents.
-  // TODO(task 8): drop this and use OPTIONS once `commentary` renders too.
-  const IMPLEMENTED = {
-    ...OPTIONS,
-    sections: { ...OPTIONS.sections, commentary: false },
-  };
-
   it.each([
-    ["a picked proposal", IMPLEMENTED, BUNDLE],
+    ["a picked proposal", OPTIONS, BUNDLE],
     ["no proposal picked", INVESTMENT_PROPOSAL_OPTIONS_DEFAULT, undefined],
     ["a proposal that was deleted", OPTIONS, undefined],
   ] as const)("renders exactly the sheets the deck reserved — %s", (_label, options, bundle) => {

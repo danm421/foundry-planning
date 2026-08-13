@@ -39,6 +39,7 @@ import {
   TransitionSection,
   HoldingsSection,
 } from "./sections-detail-pdf";
+import { CommentarySection } from "./commentary-pdf";
 
 const styles = StyleSheet.create({
   emptyWrap: { paddingTop: 40 },
@@ -47,8 +48,9 @@ const styles = StyleSheet.create({
 
 type SectionComponent = (props: SectionProps) => ReactElement;
 
-// Total by design — see the header note. `commentary` lands in Task 8.
-const SECTION_RENDERERS: Partial<Record<ProposalSectionId, SectionComponent>> = {
+// TOTAL, not Partial — see the header note. A missing entry would render nothing
+// and silently swallow a reserved sheet; this way the compiler catches it.
+const SECTION_RENDERERS: Record<ProposalSectionId, SectionComponent> = {
   verdict: VerdictSection,
   allocation: AllocationSection,
   riskReturn: RiskReturnSection,
@@ -58,6 +60,7 @@ const SECTION_RENDERERS: Partial<Record<ProposalSectionId, SectionComponent>> = 
   outcomes: OutcomesSection,
   fees: FeesSection,
   transition: TransitionSection,
+  commentary: CommentarySection,
   holdings: HoldingsSection,
 };
 
@@ -115,7 +118,6 @@ export function InvestmentProposalPagePdf({
     <Fragment>
       {data.sections.map((id, i) => {
         const Section = SECTION_RENDERERS[id];
-        if (!Section) return null;
         return (
           <Section
             key={id}

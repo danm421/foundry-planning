@@ -16,6 +16,11 @@ import {
   type GeneratedRetirementComparisonAi,
 } from "./pages/retirement-comparison/generate-ai";
 import type { RetirementComparisonOptions } from "./pages/retirement-comparison/types";
+import {
+  generateInvestmentProposalAi,
+  type GeneratedInvestmentProposalAi,
+} from "./pages/investment-proposal/generate-ai";
+import type { InvestmentProposalOptions } from "./pages/investment-proposal/options-schema";
 
 /** Minimal page shape — matches both the export BodySchema pages and previews. */
 interface PageLike {
@@ -80,6 +85,72 @@ export async function ensureRetirementComparisonAiSummaries<T extends PageLike>(
         // still renders (mirrors the client helper's surfaced-but-never-thrown
         // failure mode).
         console.error("[ensure-ai-summaries] generation failed (non-fatal)", err);
+        return page;
+      }
+    }),
+  );
+}
+
+interface ProposalDeps {
+  /** Injectable for tests; defaults to the real Redis-cached Azure generator. */
+  generate?: (args: {
+    clientId: string;
+    firmId: string;
+    proposalId: string;
+    firstNames: string;
+    tone: InvestmentProposalOptions["tone"];
+    length: InvestmentProposalOptions["length"];
+    customInstructions: string;
+    force: boolean;
+  }) => Promise<GeneratedInvestmentProposalAi>;
+  firstNames?: string;
+}
+
+/**
+ * Same contract as its retirement-comparison sibling: generate before render so
+ * a preview and the deck it previews say the same thing, preserve a hand-edited
+ * text whose prompt hash still matches, and never throw — a generator failure
+ * leaves the page's existing text alone and the deck still renders.
+ */
+export async function ensureInvestmentProposalAiSummaries<T extends PageLike>(
+  clientId: string,
+  firmId: string,
+  pages: T[],
+  deps: ProposalDeps = {},
+): Promise<T[]> {
+  const generate = deps.generate ?? generateInvestmentProposalAi;
+
+  return Promise.all(
+    pages.map(async (page) => {
+      if (page.pageId !== "investmentProposal") return page;
+      const o = page.options as InvestmentProposalOptions;
+      if (!o.sections.commentary || !o.proposalId) return page;
+
+      try {
+        const res = await generate({
+          clientId,
+          firmId,
+          proposalId: o.proposalId,
+          firstNames: deps.firstNames ?? "",
+          tone: o.tone,
+          length: o.length,
+          customInstructions: o.ai.customInstructions,
+          force: false,
+        });
+        const stale = res.hash !== o.ai.sourceHash || o.ai.generatedText === "";
+        if (!stale) return page;
+        const nextOptions: InvestmentProposalOptions = {
+          ...o,
+          ai: {
+            ...o.ai,
+            generatedText: res.markdown,
+            generatedAt: res.generatedAt,
+            sourceHash: res.hash,
+          },
+        };
+        return { ...page, options: nextOptions } as T;
+      } catch (err) {
+        console.error("[ensure-ai-summaries] proposal generation failed (non-fatal)", err);
         return page;
       }
     }),

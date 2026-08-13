@@ -57,6 +57,7 @@ describe("registry — Cash Flow page", () => {
         "incomeTaxFederal",
         "incomeTaxIncome",
         "incomeTaxOtherTaxes",
+        "investmentProposal",
         "incomeTaxState",
         "lifeInsuranceSummary",
         "mapCashFlow",
