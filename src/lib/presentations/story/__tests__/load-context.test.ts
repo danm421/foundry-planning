@@ -22,6 +22,8 @@ const fx = vi.hoisted(() => ({
   /** Every argument object `getOrComputeMonteCarlo` was called with. */
   mcCalls: [] as Array<Record<string, unknown>>,
   changeQueries: [] as string[],
+  /** scenarioId → solved annual spend. A missing entry makes the solve throw. */
+  maxSpend: {} as Record<string, number>,
 }));
 
 vi.mock("@/lib/scenario/loader", () => ({
@@ -46,6 +48,16 @@ vi.mock("@/lib/compute-cache/monte-carlo", () => ({
     const successRate = fx.mc[args.scenarioId];
     if (successRate == null) throw new Error("mc unavailable");
     return { payload: { summary: { successRate } } };
+  }),
+}));
+
+// The solver has its own suites; here it only has to hand back a stable figure
+// per ref — and to be able to FAIL, which is the branch that matters.
+vi.mock("@/lib/compute-cache/max-spending", () => ({
+  getOrComputeMaxSpending: vi.fn(async (args: { scenarioId: string }) => {
+    const spend = fx.maxSpend[args.scenarioId];
+    if (spend == null) throw new Error("max spend unavailable");
+    return { realAnnualSpend: spend, scaleFactor: 1, achievedPoS: 0.85, status: "converged" };
   }),
 }));
 
@@ -158,6 +170,7 @@ beforeEach(() => {
   fx.toggleGroups = [];
   fx.mcCalls = [];
   fx.changeQueries = [];
+  fx.maxSpend = {};
   // The Monte-Carlo-failure path logs; keep the suite's output clean while
   // still asserting the failure was recorded rather than silently swallowed.
   errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -380,7 +393,25 @@ describe("loadStoryContext", () => {
       expect(ctx.facts.find((f) => f.id === "quoted.$30k")?.label).toContain("Save more, spend less");
     });
 
+    it("solves each plan's max spend under its own ref, and never zeroes a failure", async () => {
+      fx.maxSpend = { base: 150_000, "sc-1": 185_000 };
+      const ctx = await load();
+      expect(display(ctx, "spend.base")).toBe("$150K");
+      expect(display(ctx, "spend.proposed")).toBe("$185K");
+
+      // …and when a solve does not come back the fact is ABSENT, not $0. This
+      // is the figure a client is most likely to act on.
+      fx.maxSpend = { base: 150_000 };
+      const partial = await load();
+      expect(display(partial, "spend.base")).toBe("$150K");
+      expect(partial.facts.some((f) => f.id === "spend.proposed")).toBe(false);
+      expect(errorSpy).toHaveBeenCalled();
+    });
+
     it("reads each plan's confidence from the compute cache under its own scenario id", async () => {
+      // Both solves supplied, so the only thing that could log here is a real
+      // Monte Carlo failure — which is what the last assertion is checking.
+      fx.maxSpend = { base: 150_000, "sc-1": 185_000 };
       const ctx = await load();
 
       expect(display(ctx, "outcome.confidence.base")).toBe("72%");

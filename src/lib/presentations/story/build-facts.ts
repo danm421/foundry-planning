@@ -60,6 +60,15 @@ export interface StoryFactsInput {
    * end — rather than reading anything into this being absent.
    */
   shortfallYear: number | null;
+  /**
+   * The most the household could spend a year in retirement, in today's money —
+   * one figure per plan, or null when the solve did not come back.
+   *
+   * Null rather than zero for the same reason Monte Carlo is: this is the figure
+   * a client is most likely to ACT on, and a $0 printed because a solver timed
+   * out is the worst lie this report could tell.
+   */
+  maxSpend: { base: number | null; proposed: number | null };
 }
 
 /** A quoted figure describes one proposed change, so it is meaningful in the
@@ -194,12 +203,14 @@ const BALANCE_SHEET_CHAPTERS: readonly ChapterId[] = ["whatYouHave"];
  * describe. Nowhere else — the 2026-08-12 read found the balance-sheet chapter
  * re-narrating all four of the headline's figures on the very next sheet.
  */
-const OUTCOME_CHAPTERS: readonly ChapterId[] = ["planInOnePage", "thePathYoureOn"];
+const OUTCOME_CHAPTERS: readonly ChapterId[] = ["planInOnePage", "thePathYoureOn", "willTheMoneyLast"];
 /** …and the PROPOSED plan's, which chapter 4 has nothing to say about: it is the
  *  path taken with nothing changed. */
-const PROPOSED_OUTCOME_CHAPTERS: readonly ChapterId[] = ["planInOnePage"];
+const PROPOSED_OUTCOME_CHAPTERS: readonly ChapterId[] = ["planInOnePage", "willTheMoneyLast"];
 /** Where today's plan ends up if nothing changes. */
 const BASE_PATH_CHAPTERS: readonly ChapterId[] = ["thePathYoureOn"];
+/** The most the household can spend a year — one chapter's whole subject. */
+const SPEND_CHAPTERS: readonly ChapterId[] = ["whatYouCanSpend"];
 /** A goal's date is only meaningful beside the goal it belongs to. */
 const GOAL_CHAPTERS: readonly ChapterId[] = ["whatWerePlanningFor"];
 /** This year's cash flow belongs to the chapter about this year's cash flow. */
@@ -313,6 +324,27 @@ export function buildStoryFacts(input: StoryFactsInput): Fact[] {
    * invites a subtraction that comes out wrong. The narrator states the
    * DIRECTION instead, compared on `raw`, which is what `raw` is for.
    */
+  if (input.maxSpend.base != null) {
+    facts.push(
+      moneyFact(
+        "spend.base",
+        "What you could spend a year, current plan",
+        input.maxSpend.base,
+        SPEND_CHAPTERS,
+      ),
+    );
+  }
+  if (input.maxSpend.proposed != null) {
+    facts.push(
+      moneyFact(
+        "spend.proposed",
+        "What you could spend a year, proposed plan",
+        input.maxSpend.proposed,
+        SPEND_CHAPTERS,
+      ),
+    );
+  }
+
   if (input.shortfallYear != null) {
     facts.push(
       yearFact(

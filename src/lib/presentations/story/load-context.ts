@@ -10,6 +10,7 @@ import { loadEffectiveTreeForRef } from "@/lib/scenario/loader";
 import { resolveScenarioRef } from "@/lib/scenario/presentation-refs";
 import { runProjectionWithEvents } from "@/engine/projection";
 import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
+import { getOrComputeMaxSpending } from "@/lib/compute-cache/max-spending";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/changes";
 import { buildTargetNames } from "@/lib/scenario/load-panel-data";
 import { buildBaseResolveData, buildAssetTxResolveData } from "@/lib/scenario/scenario-changes-resolve";
@@ -176,6 +177,34 @@ function firstShortfallYear(years: ProjectionYear[]): number | null {
   return years.find((y) => retirementInflows(y).shortfall > 0)?.year ?? null;
 }
 
+/**
+ * The most this plan can spend a year, THROUGH the compute cache so the render
+ * step reuses the solve rather than paying for a second identical one.
+ *
+ * Fails exactly the way Monte Carlo does: non-fatal, logged with the
+ * `[plan-story]` prefix, and the fact is then simply absent. Never zeroed — this
+ * is the figure a client is most likely to act on, and a $0 printed because a
+ * solver timed out is the worst lie this report could tell.
+ *
+ * `unreachable` is treated as no answer for the same reason: the solver reports
+ * it when there is no spend that clears the target, and a figure carried out of
+ * that state is not the one the label promises.
+ */
+async function maxSpendFor(clientId: string, firmId: string, ref: string): Promise<number | null> {
+  try {
+    // Returns the solve directly, unlike `getOrComputeMonteCarlo`'s `{ payload }`.
+    const { realAnnualSpend, status } = await getOrComputeMaxSpending({
+      clientId,
+      firmId,
+      scenarioId: ref,
+    });
+    return status === "unreachable" || realAnnualSpend <= 0 ? null : realAnnualSpend;
+  } catch (err) {
+    console.error("[plan-story] max spending unavailable (non-fatal)", err);
+    return null;
+  }
+}
+
 export async function loadStoryContext(args: LoadStoryContextArgs): Promise<StoryContext> {
   const { clientId, firmId, proposedRef } = args;
 
@@ -225,6 +254,16 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
   // it are for.
   const goals = storyGoals(base.effectiveTree, new Date());
 
+  // Both refs at once, so the two solves overlap rather than queue. A snapshot
+  // proposal has no scenario id to solve against, exactly as its Monte Carlo
+  // does not — `projectAndMc` already left `successRate` null for the same
+  // reason, and borrowing the base plan's spend would print it under the
+  // proposed plan's label.
+  const [baseSpend, proposedSpend] = await Promise.all([
+    maxSpendFor(clientId, firmId, "base"),
+    proposed?.scenarioId != null ? maxSpendFor(clientId, firmId, proposed.scenarioId) : null,
+  ]);
+
   const facts = buildStoryFacts({
     todayAssets: balanceSheet.totalAssets,
     todayDebts: balanceSheet.totalLiabilities,
@@ -271,6 +310,7 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
      * headroom it does not have.
      */
     shortfallYear: firstShortfallYear(baseYears),
+    maxSpend: { base: baseSpend, proposed: proposedSpend },
     flow: firstYear
       ? {
           income: firstYear.totalIncome,

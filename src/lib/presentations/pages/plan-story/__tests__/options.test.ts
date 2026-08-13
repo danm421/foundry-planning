@@ -40,6 +40,8 @@ const LANDED: ChapterId[] = [
   "whereTheMoneyGoes",
   "thePathYoureOn",
   "whatWeRecommend",
+  "willTheMoneyLast",
+  "whatYouCanSpend",
 ];
 
 /** What the shipped default actually PRINTS: every landed chapter, less the ones
@@ -244,12 +246,11 @@ describe("estimatePlanStoryPageCount", () => {
   });
 
   it("counts the brief preset against the story it is actually telling", () => {
-    // One page with no plan to compare — the recommendation needs a proposal —
-    // and both once one is picked. TASK 19 makes the second number 3, when
-    // `willTheMoneyLast` rejoins the preset.
+    // One page with no plan to compare — two of the brief's three chapters need
+    // a proposal — and all three once one is picked.
     const brief = applyPreset(PLAN_STORY_OPTIONS_DEFAULT, "brief");
     expect(estimatePlanStoryPageCount(undefined as never, brief)).toBe(1);
-    expect(estimatePlanStoryPageCount(undefined as never, applyPreset(WITH_PROPOSAL, "brief"))).toBe(2);
+    expect(estimatePlanStoryPageCount(undefined as never, applyPreset(WITH_PROPOSAL, "brief"))).toBe(3);
   });
 
   it("never reports zero, so an all-off report still occupies a page", () => {
@@ -323,12 +324,13 @@ describe("the two presets", () => {
     expect(printedChapters(o)).toEqual(LANDED); // Task 19: all fourteen.
   });
 
-  it("Executive brief is the spec's 0, 5 and 6, less the narrators still to land", () => {
-    // Task 15 writes `willTheMoneyLast`; until then the brief is two chapters,
-    // the punchline and the recommendations. `BRIEF_CHAPTERS` itself still holds
-    // all three — it is what Task 19 restores the preset to.
+  it("Executive brief is exactly the spec's 0, 5 and 6", () => {
+    // Whole again as of Task 15: `willTheMoneyLast` has a narrator, so the
+    // `NARRATED_CHAPTERS` clause no longer trims anything off this preset. The
+    // clause stays until Task 19 all the same — it is what stops a FUTURE
+    // chapter joining `BRIEF_CHAPTERS` before it can say anything.
     const o = applyPreset(WITH_PROPOSAL, "brief");
-    expect(printedChapters(o)).toEqual(["planInOnePage", "whatWeRecommend"]);
+    expect(printedChapters(o)).toEqual(["planInOnePage", "whatWeRecommend", "willTheMoneyLast"]);
   });
 
   it("Executive brief writes in the front-matter register", () => {

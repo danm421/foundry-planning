@@ -6,6 +6,8 @@ import { narratePlanInOnePage } from "./plan-in-one-page";
 import { narrateWhatWerePlanningFor } from "./what-were-planning-for";
 import { narrateWhereTheMoneyGoes } from "./where-the-money-goes";
 import { narrateThePathYoureOn } from "./the-path-youre-on";
+import { narrateWillTheMoneyLast } from "./will-the-money-last";
+import { narrateWhatYouCanSpend } from "./what-you-can-spend";
 import { narrateWhatYouHave } from "./what-you-have";
 import { narrateWhatWeRecommend } from "./what-we-recommend";
 
@@ -78,6 +80,8 @@ export const NARRATED_CHAPTERS: readonly ChapterId[] = [
   "whereTheMoneyGoes",
   "thePathYoureOn",
   "whatWeRecommend",
+  "willTheMoneyLast",
+  "whatYouCanSpend",
 ];
 
 function notYetWritten(id: ChapterId): (ctx: StoryContext) => string[] {
@@ -159,7 +163,7 @@ export const CHAPTERS: Record<ChapterId, ChapterDef> = {
     id: "willTheMoneyLast",
     title: "Will the money last?",
     layout: "twoUp",
-    narrate: notYetWritten("willTheMoneyLast"),
+    narrate: narrateWillTheMoneyLast,
     requiresProposal: true,
     coverage: false,
     brief:
@@ -169,7 +173,7 @@ export const CHAPTERS: Record<ChapterId, ChapterDef> = {
     id: "whatYouCanSpend",
     title: "What you can spend",
     layout: "twoUp",
-    narrate: notYetWritten("whatYouCanSpend"),
+    narrate: narrateWhatYouCanSpend,
     requiresProposal: true,
     coverage: false,
     brief:
