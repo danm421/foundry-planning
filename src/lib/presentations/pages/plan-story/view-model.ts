@@ -237,27 +237,6 @@ function strikeFirst(text: string, phrase: string): string {
 const WORDLIKE = /[\p{L}\p{N}]/u;
 
 /**
- * Does this paragraph say anything the card doesn't already say?
- *
- * On the AI-off path `narrateWhatWeRecommend` writes one sentence per strategy —
- * `"Delay Social Security — Claim age: 67 → 70."` — and `generateChapter` STORES
- * that sentence as the chapter's text, so by export time it arrives here as
- * prose, indistinguishable from an advisor's own. The card then repeats the same
- * name and the same clause, out of the same `quotableDetail` call on the same
- * facts. Printing both puts the identical sentence on a client's page twice.
- *
- * The card is the richer of the two — it also carries WHAT WE'D DO — so the
- * PARAGRAPH is what goes, and only when it is a pure restatement: strike the
- * strategy's name and its quoted clause out of the sentence and drop it only if
- * nothing but punctuation is left. A lead-in that opens with the strategy's name
- * and then says something of its own keeps every word.
- *
- * Lives HERE rather than in `chapter-pdf.tsx`, where it used to, because the
- * sheet budget is spent on what actually prints: a paragraph the renderer was
- * always going to discard must not be charged for, or a chapter with a full set
- * of cards announces dropped prose that nobody ever lost.
- */
-/**
  * The figure cards beside a `twoUp` chapter's prose.
  *
  * Built from the chapter's OWN scoped facts, using each fact's own `label` and
@@ -281,6 +260,28 @@ function figuresFor(facts: Fact[]): PlanStoryChapterView["figures"] {
     .slice(0, MAX_FIGURE_CARDS)
     .map((f) => ({ label: f.label, value: f.display }));
 }
+
+/**
+ * Does this paragraph say anything the card doesn't already say?
+ *
+ * On the AI-off path `narrateWhatWeRecommend` writes one sentence per strategy —
+ * `"Delay Social Security — Claim age: 67 → 70."` — and `generateChapter` STORES
+ * that sentence as the chapter's text, so by export time it arrives here as
+ * prose, indistinguishable from an advisor's own. The card then repeats the same
+ * name and the same clause, out of the same `quotableDetail` call on the same
+ * facts. Printing both puts the identical sentence on a client's page twice.
+ *
+ * The card is the richer of the two — it also carries WHAT WE'D DO — so the
+ * PARAGRAPH is what goes, and only when it is a pure restatement: strike the
+ * strategy's name and its quoted clause out of the sentence and drop it only if
+ * nothing but punctuation is left. A lead-in that opens with the strategy's name
+ * and then says something of its own keeps every word.
+ *
+ * Lives HERE rather than in `chapter-pdf.tsx`, where it used to, because the
+ * sheet budget is spent on what actually prints: a paragraph the renderer was
+ * always going to discard must not be charged for, or a chapter with a full set
+ * of cards announces dropped prose that nobody ever lost.
+ */
 
 function restatesCard(paragraph: string, strategy: PlanStoryChapterView["strategies"][number]): boolean {
   if (strategy.name.length === 0) return false;
