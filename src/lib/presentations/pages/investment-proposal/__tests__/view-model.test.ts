@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildInvestmentProposalData } from "../view-model";
 import { INVESTMENT_PROPOSAL_OPTIONS_DEFAULT } from "../options-schema";
+import { estimateInvestmentProposalPageCount } from "../estimate-page-count";
 import { BUNDLE } from "./fixtures/snapshot";
 
 const OPTIONS = INVESTMENT_PROPOSAL_OPTIONS_DEFAULT;
@@ -18,6 +19,14 @@ describe("buildInvestmentProposalData", () => {
     expect(data.isEmpty).toBe(true);
     expect(data.emptyMessage).toBe(
       "The proposal this page pointed at is no longer available. Pick another in the builder.",
+    );
+  });
+
+  it("still lists the reserved sheets when the proposal was deleted, so the deck stays numbered", () => {
+    const options = { ...OPTIONS, proposalId: "gone" };
+    const data = buildInvestmentProposalData(undefined, options);
+    expect(data.sections).toHaveLength(
+      estimateInvestmentProposalPageCount(undefined, options),
     );
   });
 

@@ -220,6 +220,20 @@ import {
   type PortfolioAnalysisData,
 } from "@/lib/presentations/pages/portfolio-analysis/view-model";
 import { buildScatterSpec } from "@/lib/presentations/charts/scatter-chart-spec";
+import { InvestmentProposalPagePdf } from "./pages/investment-proposal/page-pdf";
+import { InvestmentProposalOptionsControl } from "./pages/investment-proposal/options-control";
+import {
+  investmentProposalOptionsSchema,
+  INVESTMENT_PROPOSAL_OPTIONS_DEFAULT,
+  type InvestmentProposalOptions,
+} from "@/lib/presentations/pages/investment-proposal/options-schema";
+import { summarizeInvestmentProposalOptions } from "@/lib/presentations/pages/investment-proposal/summarize-options";
+import { estimateInvestmentProposalPageCount } from "@/lib/presentations/pages/investment-proposal/estimate-page-count";
+import {
+  buildInvestmentProposalData,
+  type InvestmentProposalPageData,
+} from "@/lib/presentations/pages/investment-proposal/view-model";
+import type { InvestmentProposalBundle } from "@/lib/presentations/investment-proposal-bundle";
 import type { InvestmentsBundle } from "@/lib/presentations/investments-bundle";
 import type { LifeInsuranceInventory } from "@/lib/insurance-policies/load-li-inventory";
 import type {
@@ -378,6 +392,10 @@ export interface BuildDataContext {
   /** Present only when the deck includes the Plan Story page; the export route
    *  loads the story context and the advisor-reviewed chapter text. */
   planStory?: PlanStoryContextInput;
+  /** Present only when THIS page entry names a proposal that still exists.
+   *  Loaded per page, not per deck: two proposal pages in one deck may print
+   *  different proposals. Absent → the page prints its empty state. */
+  proposal?: InvestmentProposalBundle;
   /** Present only for multi-scenario pages (those that define
    *  `requiredScenarioRefs`). Keyed by `keyForRef` — e.g. "base",
    *  "scenario:<id>". Each entry is the fully-built bundle for that ref. */
@@ -1088,6 +1106,31 @@ export const portfolioAnalysisPage: PresentationPage<PortfolioAnalysisData, Port
   renderPdf: (input) => <PortfolioAnalysisPagePdf {...input} />,
 };
 
+export const investmentProposalPage: PresentationPage<
+  InvestmentProposalPageData,
+  InvestmentProposalOptions
+> = {
+  id: "investmentProposal",
+  title: "Investment Proposal",
+  description:
+    "A saved proposal in print: allocation, risk, suitability, fees, and the tax cost of switching.",
+  // Assets, alongside assetAllocation / portfolioAnalysis / holdings. NOT a new
+  // category — CATEGORY_ORDER is scanned before search rank, so a new early
+  // category makes its description-only matches outrank title matches below it.
+  category: "Assets",
+  defaultOptions: INVESTMENT_PROPOSAL_OPTIONS_DEFAULT,
+  optionsSchema: investmentProposalOptionsSchema,
+  summarizeOptions: summarizeInvestmentProposalOptions,
+  estimatePageCount: estimateInvestmentProposalPageCount,
+  OptionsControl: InvestmentProposalOptionsControl,
+  // A proposal has no scenario dimension at all, and `inlineScenarioOption` is
+  // scenario-specific by contract — overloading it to carry a proposal id would
+  // break the launcher's scenario picker.
+  supportsScenarioOverride: false,
+  buildData: (ctx, options) => buildInvestmentProposalData(ctx.proposal, options),
+  renderPdf: (input) => <InvestmentProposalPagePdf {...input} />,
+};
+
 export const balanceSheetPage: PresentationPage<BalanceSheetPageData, BalanceSheetOptions> = {
   id: "balanceSheet",
   title: "Balance Sheet",
@@ -1276,6 +1319,7 @@ export const PRESENTATION_PAGES = {
   monteCarlo: monteCarloPage,
   assetAllocation: assetAllocationPage,
   portfolioAnalysis: portfolioAnalysisPage,
+  investmentProposal: investmentProposalPage,
   holdings: holdingsPage,
   balanceSheet: balanceSheetPage,
   entitiesBalanceSheet: entitiesBalanceSheetPage,

@@ -38,19 +38,25 @@ describe("printedSections", () => {
 });
 
 describe("estimateInvestmentProposalPageCount", () => {
-  it("is one sheet per enabled section", () => {
-    expect(estimateInvestmentProposalPageCount(undefined, INVESTMENT_PROPOSAL_OPTIONS_DEFAULT)).toBe(11);
+  const PICKED = { ...INVESTMENT_PROPOSAL_OPTIONS_DEFAULT, proposalId: "p1" };
+
+  it("is one sheet per enabled section once a proposal is picked", () => {
+    expect(estimateInvestmentProposalPageCount(undefined, PICKED)).toBe(11);
+  });
+
+  it("reserves ONE sheet when no proposal is picked — the renderer prints one", () => {
+    expect(estimateInvestmentProposalPageCount(undefined, INVESTMENT_PROPOSAL_OPTIONS_DEFAULT)).toBe(1);
   });
 
   it("floors at one so an all-off report still numbers the empty-state sheet", () => {
     const off = Object.fromEntries(SECTION_IDS.map((id) => [id, false]));
-    const options = { ...INVESTMENT_PROPOSAL_OPTIONS_DEFAULT, sections: off } as typeof INVESTMENT_PROPOSAL_OPTIONS_DEFAULT;
+    const options = { ...PICKED, sections: off } as typeof INVESTMENT_PROPOSAL_OPTIONS_DEFAULT;
     expect(estimateInvestmentProposalPageCount(undefined, options)).toBe(1);
   });
 
   it("reads options only — identical for any data argument", () => {
-    const a = estimateInvestmentProposalPageCount(undefined, INVESTMENT_PROPOSAL_OPTIONS_DEFAULT);
-    const b = estimateInvestmentProposalPageCount({ anything: true }, INVESTMENT_PROPOSAL_OPTIONS_DEFAULT);
+    const a = estimateInvestmentProposalPageCount(undefined, PICKED);
+    const b = estimateInvestmentProposalPageCount({ anything: true }, PICKED);
     expect(a).toBe(b);
   });
 });

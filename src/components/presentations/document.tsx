@@ -10,6 +10,7 @@ import type { InvestmentsBundle } from "@/lib/presentations/investments-bundle";
 import type { LifeInsuranceInventory } from "@/lib/insurance-policies/load-li-inventory";
 import type { ObservationsRowInput } from "@/lib/presentations/pages/observations-next-steps/view-model";
 import type { PlanStoryContextInput } from "@/lib/presentations/pages/plan-story/view-model";
+import type { InvestmentProposalBundle } from "@/lib/presentations/investment-proposal-bundle";
 import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
 import { SECTION_ACCENTS, DEFAULT_ACCENT } from "@/lib/presentations/theme";
 import { resolveScenarioRef, keyForRef } from "@/lib/scenario/presentation-refs";
@@ -39,6 +40,11 @@ interface PresentationDocumentProps {
      *  page `documentSections` below hands the TOC — so the caller supplies one
      *  for every Plan Story entry, and a load that fails fails the export. */
     planStory?: PlanStoryContextInput;
+    /** THIS entry's frozen proposal snapshot, read by the export. Per entry,
+     *  not per page id: two Investment Proposal pages in one deck may print
+     *  different proposals. Absent → the page prints its empty state, which
+     *  still occupies every sheet `estimatePageCount` reserved. */
+    proposal?: InvestmentProposalBundle;
   }>;
   firmName: string;
   firmTagline: string | null;
@@ -128,6 +134,7 @@ export function PresentationDocument(props: PresentationDocumentProps) {
             lifeInsurance: props.lifeInsurance,
             observations: props.observations,
             planStory: p.planStory,
+            proposal: p.proposal,
             scenarioChanges: bundle.scenarioChanges,
             bundlesByRef,
           },

@@ -90,12 +90,21 @@ export function buildInvestmentProposalData(
     // step the advisor hasn't taken; "no longer available" is a proposal that
     // was deleted after the deck was saved, and saying so is what stops an
     // advisor re-exporting the same blank page twice looking for the bug.
+    //
+    // `sections` is what the renderer counts sheets from, and it has to agree
+    // with `estimateInvestmentProposalPageCount`, which sees the options alone:
+    // an unpicked page reserves one sheet, so it emits none and the renderer
+    // floors at one; a page whose proposal was DELETED still reserved one sheet
+    // per printed section, so it lists them and each prints the message under
+    // its own section title. Collapsing the deleted case to a single sheet is
+    // what would mis-number every page after this one.
+    const unpicked = options.proposalId === "";
     return {
       ...EMPTY,
-      emptyMessage:
-        options.proposalId === ""
-          ? "No proposal selected for this page."
-          : "The proposal this page pointed at is no longer available. Pick another in the builder.",
+      sections: unpicked ? [] : printedSections(options),
+      emptyMessage: unpicked
+        ? "No proposal selected for this page."
+        : "The proposal this page pointed at is no longer available. Pick another in the builder.",
     };
   }
 
