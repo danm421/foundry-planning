@@ -200,9 +200,10 @@ describe("GET /api/clients/[id]/plan-story", () => {
     const body = await res.json();
     expect(res.status).toBe(200);
     expect(mocks.listStoryChapters).toHaveBeenCalledWith(CLIENT_ID, "base", "standalone");
-    expect(body.chapters).toHaveLength(3);
+    expect(body.chapters).toHaveLength(4);
     expect(body.chapters.map((c: { chapterId: string }) => c.chapterId)).toEqual([
       "planInOnePage",
+      "whatWerePlanningFor",
       "whatYouHave",
       "whatWeRecommend",
     ]);
@@ -497,9 +498,10 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
     expect(res.status).toBe(200);
     expect(body.chapters.map((c: { chapterId: string }) => c.chapterId)).toEqual([
       "planInOnePage",
+      "whatWerePlanningFor",
       "whatYouHave",
     ]);
-    expect(mocks.upsertGeneratedChapter).toHaveBeenCalledTimes(2);
+    expect(mocks.upsertGeneratedChapter).toHaveBeenCalledTimes(3);
     expect(mocks.loadStoryContext).toHaveBeenCalledWith(
       expect.objectContaining({ clientId: CLIENT_ID, firmId: "firm_1", proposedRef: null }),
     );
@@ -610,12 +612,13 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
     expect(res.status).toBe(200);
     expect(body.chapters.map((c: { chapterId: string }) => c.chapterId)).toEqual([
       "planInOnePage",
+      "whatWerePlanningFor",
       "whatYouHave",
     ]);
     expect(mocks.generateChapter).not.toHaveBeenCalledWith(
       expect.objectContaining({ chapterId: "whatWeRecommend" }),
     );
-    expect(mocks.upsertGeneratedChapter).toHaveBeenCalledTimes(2);
+    expect(mocks.upsertGeneratedChapter).toHaveBeenCalledTimes(3);
   });
 
   // Kills: inverting that filter, and confirms the proposed ref reaches the
@@ -632,7 +635,7 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
     const res = await post({ scenarioId: SCENARIO_ID, documentRole: "standalone" });
     const body = await res.json();
     expect(res.status).toBe(200);
-    expect(body.chapters).toHaveLength(3);
+    expect(body.chapters).toHaveLength(4);
     expect(mocks.loadStoryContext).toHaveBeenCalledWith(
       expect.objectContaining({ proposedRef: SCENARIO_ID }),
     );
@@ -643,7 +646,7 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
       expect.objectContaining({
         action: "plan_story.generated",
         firmId: "firm_1",
-        metadata: expect.objectContaining({ scenarioId: SCENARIO_ID, chapters: 3 }),
+        metadata: expect.objectContaining({ scenarioId: SCENARIO_ID, chapters: 4 }),
       }),
     );
   });
@@ -727,7 +730,7 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
     expect(mocks.recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         metadata: expect.objectContaining({
-          suppressed: ["planInOnePage", "whatYouHave"],
+          suppressed: ["planInOnePage", "whatWerePlanningFor", "whatYouHave"],
         }),
       }),
     );

@@ -67,6 +67,27 @@ export interface StoryStrategy {
   rows: ChangeRow[];
 }
 
+/**
+ * One thing the household wants the money to do, in the client's own words.
+ *
+ * Deliberately three fields and no amount. A goal's cost is a figure and belongs
+ * in the fact pack under Gate 1's rules; the goal itself is a NAME the household
+ * typed, which is the one thing on chapter 1 that must reach the client
+ * unaltered. `year` is null for an open-ended goal ("leave something for the
+ * grandchildren") — those are real and must not be forced onto a timeline.
+ *
+ * The YEAR is a figure like any other, so it is in the pack too and the narrator
+ * reads it back through `factDisplay` rather than printing this field. Keeping
+ * the number here as well is what lets `build-facts.ts` put it in the pack; see
+ * `goalYearFactId`.
+ */
+export interface StoryGoal {
+  name: string;
+  year: number | null;
+  /** "Education", "Purchase" — the goal's kind, for grouping. "" when untyped. */
+  kind: string;
+}
+
 export interface StoryContext {
   household: StoryHousehold;
   scenarioLabel: string;
@@ -75,6 +96,17 @@ export interface StoryContext {
   /** False for a no-changes annual review — the recommendation chapters hide. */
   hasProposal: boolean;
   strategies: StoryStrategy[];
+  /**
+   * What they want the money to do, for the chapter that opens on them rather
+   * than on a balance sheet. Empty is an ordinary answer — a household whose
+   * goals have not been recorded yet — and chapter 1 says so plainly.
+   *
+   * Required rather than optional, unlike `nextSteps`: every context is built by
+   * `load-context.ts`, which always has the effective tree these come off, so an
+   * absent array would only ever mean a caller forgot. The compiler asking is
+   * the point.
+   */
+  goals: StoryGoal[];
   facts: Fact[];
   /**
    * What each of them does next, for the one chapter that prints a list rather

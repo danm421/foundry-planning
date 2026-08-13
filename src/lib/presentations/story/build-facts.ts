@@ -3,7 +3,7 @@
 // caller (load-context.ts) owns both.
 import type { ChangeRow } from "@/lib/presentations/pages/scenario-changes/types";
 import { hasAccountingNegative, moneyFact, pctFact, quotedFact, yearFact, type Fact } from "./facts";
-import type { ChapterId, StoryStrategy } from "./types";
+import type { ChapterId, StoryGoal, StoryStrategy } from "./types";
 import { extractFigures } from "./validate/facts";
 
 export interface StoryFactsInput {
@@ -29,6 +29,15 @@ export interface StoryFactsInput {
    * argument exists to close, so the compiler asks for them.
    */
   strategies: StoryStrategy[];
+  /**
+   * The household's own goals, in the SAME order the context carries them.
+   *
+   * Required for the same reason `strategies` is: chapter 1 dates a goal by
+   * reading its year back out of the pack, so a caller that forgot these would
+   * publish every goal undated and nothing would say why. The order is
+   * load-bearing — see `goalYearFactId`.
+   */
+  goals: StoryGoal[];
 }
 
 /** A quoted figure describes one proposed change, so it is meaningful in the
@@ -158,6 +167,43 @@ function quoteStrategyFigures(strategies: StoryStrategy[], taken: Set<string>): 
  */
 const BALANCE_SHEET_CHAPTERS: readonly ChapterId[] = ["whatYouHave"];
 const OUTCOME_CHAPTERS: readonly ChapterId[] = ["planInOnePage"];
+/** A goal's date is only meaningful beside the goal it belongs to. */
+const GOAL_CHAPTERS: readonly ChapterId[] = ["whatWerePlanningFor"];
+
+/**
+ * The pack id holding the year of `goals[index]`.
+ *
+ * A goal's year is a four-digit number, and Gate 1 reads every four-digit number
+ * on the page as a figure — so printing `StoryGoal.year` straight out of the
+ * context would put an ungrounded figure in front of a client and make chapter
+ * 1's narrator fail its own gate. It goes in the pack instead, and the narrator
+ * reads it back through `factDisplay` like every other figure.
+ *
+ * Keyed by POSITION rather than by the goal's name, because a name is household
+ * text that can repeat, be blank, or contain anything at all. The context and
+ * this pack are built from one array in one function (`load-context.ts`), so the
+ * positions cannot disagree — and `build-facts.test.ts` pins that pairing.
+ */
+export function goalYearFactId(index: number): string {
+  return `goal.${index}.year`;
+}
+
+/**
+ * One year fact per DATED goal, and nothing for an open-ended one.
+ *
+ * The label names the goal so the advisor reading the review panel can tell two
+ * dates apart, and so the model knows which goal a year belongs to. It carries
+ * the household's own text, exactly as a quoted strategy fact does — and like
+ * those, it is long enough that Gate 5 treats it as distinctive, so a model that
+ * recites it verbatim is caught.
+ */
+function goalYearFacts(goals: StoryGoal[]): Fact[] {
+  return goals.flatMap((goal, index) =>
+    goal.year == null
+      ? []
+      : [yearFact(goalYearFactId(index), `Goal date — ${goal.name}`, goal.year, GOAL_CHAPTERS)],
+  );
+}
 
 export function buildStoryFacts(input: StoryFactsInput): Fact[] {
   const facts: Fact[] = [
@@ -220,6 +266,8 @@ export function buildStoryFacts(input: StoryFactsInput): Fact[] {
       ),
     );
   }
+
+  facts.push(...goalYearFacts(input.goals));
 
   // Last, and seeded with the plan figures' own spellings: a strategy that
   // quotes "$2.1M" needs no second entry, and the one it would have got would

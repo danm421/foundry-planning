@@ -12,17 +12,7 @@ import {
 import { estimatePlanStoryPageCount } from "../estimate-page-count";
 import { summarizePlanStoryOptions } from "../summarize-options";
 import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
-import { CHAPTER_IDS, type StoryContext } from "@/lib/presentations/story/types";
-
-/** Enough of a story for the availability rule to be handed something real. */
-const CTX: StoryContext = {
-  household: { firstNames: "Cooper and Susan", householdName: "the Cooper household" },
-  scenarioLabel: "New Plan",
-  documentRole: "standalone",
-  hasProposal: true,
-  strategies: [],
-  facts: [],
-};
+import { CHAPTER_IDS } from "@/lib/presentations/story/types";
 
 /** The same options with a live scenario picked — the only thing that makes the
  *  recommendation chapter printable. */
@@ -35,7 +25,7 @@ function withSections(over: Partial<PlanStoryOptions["sections"]>): PlanStoryOpt
   };
 }
 
-/** The chapters that have a narrator. The other eleven slots exist so the page
+/** The chapters that have a narrator. The remaining slots exist so the page
  *  count, the render and storage agree from the start — and are off in the
  *  shipped default until their task lands.
  *
@@ -43,7 +33,7 @@ function withSections(over: Partial<PlanStoryOptions["sections"]>): PlanStoryOpt
  *  from that list, so a test that also read it could not fail. Wave D updates
  *  this line as each narrator lands, which is the point — the shipped default
  *  changing is a decision, not a side effect. */
-const LANDED = ["planInOnePage", "whatYouHave", "whatWeRecommend"];
+const LANDED = ["planInOnePage", "whatWerePlanningFor", "whatYouHave", "whatWeRecommend"];
 
 /** What every stored deck and every freshly added page starts as. */
 function defaultSections(over: Partial<Record<string, boolean>> = {}): Record<string, boolean> {
@@ -75,9 +65,9 @@ describe("planStoryOptionsSchema", () => {
     expect(parsed.sections).toEqual(defaultSections());
   });
 
-  it("switches the eleven chapters that have no narrator off by default", () => {
+  it("switches the chapters that have no narrator off by default", () => {
     // The point of the default: a page added to a deck today renders exactly the
-    // three-chapter report the app renders today, not eleven placeholder sheets.
+    // report the app renders today, never a placeholder sheet.
     const parsed = planStoryOptionsSchema.parse({});
     const on = CHAPTER_IDS.filter((id) => parsed.sections[id]);
     expect(on).toEqual(LANDED);
@@ -165,6 +155,7 @@ describe("printedChapters", () => {
     expect(PLAN_STORY_OPTIONS_DEFAULT.sections.whatWeRecommend).toBe(true);
     expect(printedChapters(PLAN_STORY_OPTIONS_DEFAULT)).toEqual([
       "planInOnePage",
+      "whatWerePlanningFor",
       "whatYouHave",
     ]);
   });
@@ -172,6 +163,7 @@ describe("printedChapters", () => {
   it("returns every chapter in document order once a scenario is picked", () => {
     expect(printedChapters(WITH_PROPOSAL)).toEqual([
       "planInOnePage",
+      "whatWerePlanningFor",
       "whatYouHave",
       "whatWeRecommend",
     ]);
@@ -180,6 +172,7 @@ describe("printedChapters", () => {
   it("treats an explicit 'base' exactly as no scenario at all", () => {
     expect(printedChapters({ ...PLAN_STORY_OPTIONS_DEFAULT, scenarioId: "base" })).toEqual([
       "planInOnePage",
+      "whatWerePlanningFor",
       "whatYouHave",
     ]);
   });
@@ -187,6 +180,7 @@ describe("printedChapters", () => {
   it("drops a chapter that is switched off", () => {
     expect(printedChapters({ ...WITH_PROPOSAL, sections: { ...WITH_PROPOSAL.sections, whatYouHave: false } })).toEqual([
       "planInOnePage",
+      "whatWerePlanningFor",
       "whatWeRecommend",
     ]);
   });
@@ -204,28 +198,19 @@ describe("printedChapters", () => {
     }
   });
 
-  it("hides a coverage chapter with nothing in it for this household", () => {
-    // The third rule. No chapter defines `available` yet — Wave D's coverage
-    // chapters do — so it is proved on a real registry entry, patched and put
-    // back, rather than on a fabricated def that could not drift with the code.
-    const def = CHAPTERS.protectingYourFamily;
-    const original = def.available;
-    try {
-      def.available = () => false;
-      expect(printedChapters(ALL_ON, CTX)).not.toContain("protectingYourFamily");
-      // …and the same chapter, available, still prints — a rule that hid it
-      // either way would pass the assertion above and be worthless.
-      def.available = () => true;
-      expect(printedChapters(ALL_ON, CTX)).toContain("protectingYourFamily");
-    } finally {
-      def.available = original;
-    }
-  });
-
-  it("skips the availability rule when it is handed no context at all", () => {
-    // `document.tsx` calls the estimate with no data. The count and the render
-    // therefore agree by construction, and the cost is that `available` may only
-    // depend on what the options already imply.
+  it("keeps a coverage chapter's sheet even when it has nothing in it", () => {
+    // THE PAGE-COUNT CONTRACT, guarded structurally.
+    //
+    // `estimatePlanStoryPageCount` reserves sheets from the OPTIONS alone —
+    // `document.tsx` calls it with no data — and `documentSections` numbers the
+    // table of contents from that reservation. A chapter that hid at render time
+    // on data the count never saw would mis-number every page after it and
+    // overstate the total on all of them: the defect Plan 1 fixed twice.
+    //
+    // So `available` is NOT read here, and a chapter with nothing to say prints
+    // an honest empty state on its reserved sheet instead. Proved on a real
+    // registry entry, patched and put back, rather than on a fabricated def that
+    // could not drift with the code.
     const def = CHAPTERS.protectingYourFamily;
     const original = def.available;
     try {
@@ -235,15 +220,22 @@ describe("printedChapters", () => {
       def.available = original;
     }
   });
+
+  it("takes no context, so the count and the render cannot be handed different data", () => {
+    // The rule above, stated as a type-level fact rather than a behaviour: the
+    // signature is what makes a third filter impossible to add by accident.
+    expect(printedChapters).toHaveLength(1);
+  });
 });
 
 describe("estimatePlanStoryPageCount", () => {
   // document.tsx calls this with NO data — it must work from options alone.
   it("counts one page per chapter that will actually print", () => {
-    // Two, not three: the default picks no scenario, so the recommendation
-    // chapter cannot render and must not be numbered.
-    expect(estimatePlanStoryPageCount(undefined as never, PLAN_STORY_OPTIONS_DEFAULT)).toBe(2);
-    expect(estimatePlanStoryPageCount(undefined as never, WITH_PROPOSAL)).toBe(3);
+    // One fewer than the default has switched on: the default picks no
+    // scenario, so the recommendation chapter cannot render and must not be
+    // numbered.
+    expect(estimatePlanStoryPageCount(undefined as never, PLAN_STORY_OPTIONS_DEFAULT)).toBe(3);
+    expect(estimatePlanStoryPageCount(undefined as never, WITH_PROPOSAL)).toBe(4);
   });
 
   it("counts the brief preset against the story it is actually telling", () => {
@@ -264,14 +256,14 @@ describe("estimatePlanStoryPageCount", () => {
 
   it("ignores whatever is handed to it as data", () => {
     const junk = { chapters: [1, 2, 3, 4, 5] } as never;
-    expect(estimatePlanStoryPageCount(junk, PLAN_STORY_OPTIONS_DEFAULT)).toBe(2);
+    expect(estimatePlanStoryPageCount(junk, PLAN_STORY_OPTIONS_DEFAULT)).toBe(3);
   });
 });
 
 describe("summarizePlanStoryOptions", () => {
   it("names the preset and the number of chapters that will print", () => {
-    expect(summarizePlanStoryOptions(PLAN_STORY_OPTIONS_DEFAULT)).toBe("Full story · 2 chapters");
-    expect(summarizePlanStoryOptions(WITH_PROPOSAL)).toBe("Full story · 3 chapters");
+    expect(summarizePlanStoryOptions(PLAN_STORY_OPTIONS_DEFAULT)).toBe("Full story · 3 chapters");
+    expect(summarizePlanStoryOptions(WITH_PROPOSAL)).toBe("Full story · 4 chapters");
   });
 
   it("says one chapter in the singular", () => {
@@ -282,7 +274,7 @@ describe("summarizePlanStoryOptions", () => {
 
   it("names a hand-tuned report Custom", () => {
     const custom: PlanStoryOptions = {
-      ...withSections({ whatYouHave: false, whatWeRecommend: false }),
+      ...withSections({ whatWerePlanningFor: false, whatYouHave: false, whatWeRecommend: false }),
       scenarioId: "scn-1",
       preset: "custom",
     };
@@ -294,7 +286,7 @@ describe("summarizePlanStoryOptions", () => {
     // clause. Until then the launcher row must not promise sheets that would
     // print "We'll cover this together." and nothing else.
     expect(summarizePlanStoryOptions(applyPreset(WITH_PROPOSAL, "full"))).toBe(
-      "Full story · 3 chapters",
+      "Full story · 4 chapters",
     );
   });
 
@@ -337,7 +329,7 @@ describe("the two presets", () => {
     // is where an advisor meets it: one of the full preset's landed three needs
     // a proposal, and so does one of the brief's two.
     const full = applyPreset({ ...PLAN_STORY_OPTIONS_DEFAULT, scenarioId: "" }, "full");
-    expect(printedChapters(full)).toEqual(["planInOnePage", "whatYouHave"]);
+    expect(printedChapters(full)).toEqual(["planInOnePage", "whatWerePlanningFor", "whatYouHave"]);
     const brief = applyPreset({ ...PLAN_STORY_OPTIONS_DEFAULT, scenarioId: "" }, "brief");
     expect(printedChapters(brief)).toEqual(["planInOnePage"]);
   });

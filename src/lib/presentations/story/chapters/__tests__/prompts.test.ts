@@ -11,6 +11,7 @@ const CTX: StoryContext = {
   documentRole: "standalone",
   hasProposal: true,
   strategies: [{ name: "Delay Social Security", rows: [{ area: "Income", what: "Alan's Social Security", op: "edit", before: "67", after: "70", detail: ["Claiming age moves from 67 to 70"] }] }],
+  goals: [],
   facts: [pctFact("outcome.confidence.proposed", "Confidence, proposed", 0.91), moneyFact("today.netWorth", "Net worth", 2_100_000)],
 };
 

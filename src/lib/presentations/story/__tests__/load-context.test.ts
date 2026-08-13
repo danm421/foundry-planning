@@ -87,7 +87,27 @@ vi.mock("@/components/balance-sheet-report/view-model", () => ({
   })),
 }));
 
+// Same call as the balance-sheet builders above: the Goals board has its own
+// suite, and the fake tree here carries no `planSettings` for it to read. What
+// this file is for is what the LOADER does with the result — which cards become
+// goals, and which are dropped as horizon rather than intent.
+vi.mock("@/lib/household-map/build-boards", () => ({
+  buildMapBoards: vi.fn(() => ({
+    people: {},
+    items: [],
+    netWorth: 0,
+    goals: [
+      { year: 2032, kind: "education", title: "Maggie · State University" },
+      { year: 2036, kind: "purchase", title: "A place at the lake" },
+      { year: 2041, kind: "retirement", title: "Alan retires" },
+      { year: 2069, kind: "life_expectancy", title: "Teresa turns 90" },
+      { year: 2046, kind: "social_security", title: "Alan claims Social Security" },
+    ],
+  })),
+}));
+
 import { loadStoryContext } from "../load-context";
+import { goalYearFactId } from "../build-facts";
 
 const CLIENT = {
   firstName: "Alan",
@@ -177,6 +197,43 @@ describe("loadStoryContext", () => {
     expect(display(ctx, "plan.endOfLifeYear")).toBe("2065");
     // Base-only: there is no proposed plan to leave anything behind.
     expect(ctx.facts.some((f) => f.id === "outcome.legacy.proposed")).toBe(false);
+  });
+
+  it("carries the household's goals and drops the life milestones", async () => {
+    const ctx = await loadStoryContext({
+      clientId: "c1",
+      firmId: "f1",
+      proposedRef: null,
+      scenarioLabel: "Base Case",
+      documentRole: "standalone",
+    });
+
+    // Retirement, life expectancy and the Social Security claim are the
+    // HORIZON, not things the household wants the money to do — and the first
+    // of them is already `plan.retirementYear` in the pack above. Chapter 1
+    // would otherwise open by telling the reader their retirement is a goal.
+    expect(ctx.goals).toEqual([
+      { name: "Maggie · State University", year: 2032, kind: "Education" },
+      { name: "A place at the lake", year: 2036, kind: "Purchase" },
+    ]);
+  });
+
+  it("puts each goal's date in the pack, keyed to its position", async () => {
+    // A four-digit year is a figure to Gate 1, so chapter 1 can only print a
+    // goal's date if the pack holds it. The narrator looks it up by INDEX, so
+    // the pack and `ctx.goals` have to be built from one array — this is that
+    // pairing, asserted from the outside.
+    const ctx = await loadStoryContext({
+      clientId: "c1",
+      firmId: "f1",
+      proposedRef: null,
+      scenarioLabel: "Base Case",
+      documentRole: "standalone",
+    });
+
+    for (const [index, goal] of ctx.goals.entries()) {
+      expect(display(ctx, goalYearFactId(index))).toBe(String(goal.year));
+    }
   });
 
   it("names a household with no spouse without a dangling 'and'", async () => {

@@ -26,7 +26,7 @@
 // wraps the default in an optional and the field stops defaulting.
 import { z } from "zod";
 import { CHAPTERS, NARRATED_CHAPTERS } from "@/lib/presentations/story/chapters/registry";
-import { CHAPTER_IDS, type ChapterId, type StoryContext } from "@/lib/presentations/story/types";
+import { CHAPTER_IDS, type ChapterId } from "@/lib/presentations/story/types";
 
 /** Every chapter, switched on or off by one rule — so a new chapter joins the
  *  presets by joining `CHAPTER_IDS`, and cannot be silently left out of one. */
@@ -46,33 +46,27 @@ const BRIEF_CHAPTERS: readonly ChapterId[] = [
  *  a narrator, and nothing else. */
 const DEFAULT_SECTIONS = sectionsWhere((id) => NARRATED_CHAPTERS.includes(id));
 
+/**
+ * One key per chapter of the arc, each defaulting to whether it has a narrator.
+ *
+ * Built from `NARRATED_CHAPTERS` rather than hand-written, and that is the whole
+ * point: the object-level `.default(DEFAULT_SECTIONS)` covers a deck that stored
+ * no `sections` at all, but Zod applies these PER-KEY defaults to a deck that
+ * stored a partial one — every deck saved before a chapter existed. Two lists
+ * meant a chapter could land in `NARRATED_CHAPTERS` and still parse as `false`
+ * out of storage, which is a chapter that is on in a fresh page and off in a
+ * saved one. It drifted exactly that way once; now it cannot.
+ */
+const sectionShape = Object.fromEntries(
+  CHAPTER_IDS.map((id) => [id, z.boolean().default(NARRATED_CHAPTERS.includes(id))]),
+) as Record<ChapterId, z.ZodDefault<z.ZodBoolean>>;
+
 export const planStoryOptionsSchema = z.object({
   preset: z.enum(["full", "brief", "custom"]).default("full"),
   documentRole: z.enum(["standalone", "frontMatter"]).default("standalone"),
   /** The scenario whose changes the story presents. Empty = base-only story. */
   scenarioId: z.string().default(""),
-  // One key per chapter of the arc, in document order. The eleven whose
-  // narrators have not landed default to FALSE — a deck stored today, and a page
-  // freshly added to one, both render exactly the three-chapter report the app
-  // renders now.
-  sections: z
-    .object({
-      planInOnePage: z.boolean().default(true),
-      whatWerePlanningFor: z.boolean().default(false),
-      whatYouHave: z.boolean().default(true),
-      whereTheMoneyGoes: z.boolean().default(false),
-      thePathYoureOn: z.boolean().default(false),
-      whatWeRecommend: z.boolean().default(true),
-      willTheMoneyLast: z.boolean().default(false),
-      whatYouCanSpend: z.boolean().default(false),
-      whatsLeftForPeople: z.boolean().default(false),
-      whatYoullPayInTax: z.boolean().default(false),
-      protectingYourFamily: z.boolean().default(false),
-      healthCareCosts: z.boolean().default(false),
-      whatHappensNext: z.boolean().default(false),
-      thingsToKnow: z.boolean().default(false),
-    })
-    .default(DEFAULT_SECTIONS),
+  sections: z.object(sectionShape).default(DEFAULT_SECTIONS),
 });
 
 export type PlanStoryOptions = z.infer<typeof planStoryOptionsSchema>;
@@ -154,35 +148,34 @@ export function planStoryHasProposal(options: PlanStoryOptions): boolean {
 /**
  * The chapters this report will PRINT, in document order.
  *
- * Three rules now, not two: the advisor switched it on, it has a plan to
- * recommend, AND it has something in it. A chapter marked `requiresProposal` has
- * nothing to recommend on a base-only story — `plan-story/generate/route.ts`
- * never even generates it, and a shipped test pins that — so counting it would
- * reserve a page the render never fills. The third is the coverage rule (no
- * policies, no insurance chapter) and it lives here for the same reason:
- * `estimatePlanStoryPageCount` reserves sheets from this function and
- * `documentSections` numbers the contents from that reservation, so a chapter
- * that self-hides at render time and not at count time drifts the whole deck.
+ * Two rules, and both are answerable from the OPTIONS ALONE: the advisor
+ * switched it on, and it has a plan to recommend. A chapter marked
+ * `requiresProposal` has nothing to recommend on a base-only story —
+ * `plan-story/generate/route.ts` never even generates it, and a shipped test
+ * pins that — so counting it would reserve a page the render never fills.
  *
- * `ctx` is optional and the availability rule is SKIPPED when it is absent —
- * `document.tsx` calls the estimate with no data at all. That asymmetry is
- * deliberate, and it is why `available` may only depend on things the OPTIONS
- * also imply: a coverage chapter that hides on data the estimate cannot see
- * would reserve a sheet the render never fills, which is the page-count defect
- * arriving a third time. A chapter that genuinely needs data the options cannot
- * imply must print an honest short empty state on its reserved sheet instead.
+ * IT TAKES NO CONTEXT, AND THAT IS THE CONTRACT. `estimatePlanStoryPageCount`
+ * reserves sheets from this function with no data at all (`document.tsx` calls
+ * it as `estimatePageCount(undefined as never, options)`), and
+ * `documentSections` numbers the table of contents from that reservation. A
+ * third rule that could see the story data would hide a chapter at render time
+ * that the count had already reserved a sheet for — which mis-numbers every page
+ * after it and overstates the total on all of them. That is the page-count
+ * defect Plan 1 fixed twice, and a `ctx` parameter here is the third way in.
+ *
+ * So a coverage chapter with nothing in it for this household KEEPS its sheet
+ * and prints a short honest empty state. `ChapterDef.available` exists for the
+ * generate route — don't spend a model call on a chapter with nothing to say —
+ * and never for the print list. A future change that wants real self-hiding has
+ * to move its predicate into something answerable from options alone.
  *
  * Deliberately not two functions. "Switched on" is `options.sections[id]` and
  * anything that genuinely wants it can read it; a second exported helper is how
  * the count and the render came apart in the first place.
  */
-export function printedChapters(options: PlanStoryOptions, ctx?: StoryContext): ChapterId[] {
+export function printedChapters(options: PlanStoryOptions): ChapterId[] {
   const hasProposal = planStoryHasProposal(options);
-  return CHAPTER_IDS.filter((id) => {
-    const def = CHAPTERS[id];
-    if (!options.sections[id]) return false;
-    if (def.requiresProposal && !hasProposal) return false;
-    if (ctx && def.available && !def.available(ctx)) return false;
-    return true;
-  });
+  return CHAPTER_IDS.filter(
+    (id) => options.sections[id] && !(CHAPTERS[id].requiresProposal && !hasProposal),
+  );
 }

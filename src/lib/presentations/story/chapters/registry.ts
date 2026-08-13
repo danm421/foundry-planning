@@ -3,6 +3,7 @@
 // AI-off narrator, and the one line that tells the model what it is for.
 import type { ChapterId, StoryContext } from "../types";
 import { narratePlanInOnePage } from "./plan-in-one-page";
+import { narrateWhatWerePlanningFor } from "./what-were-planning-for";
 import { narrateWhatYouHave } from "./what-you-have";
 import { narrateWhatWeRecommend } from "./what-we-recommend";
 
@@ -29,9 +30,14 @@ export interface ChapterDef {
    * Does this chapter have anything to say for this household?
    *
    * Only coverage chapters define it — no policies, no chapter 10. Absent means
-   * "always", which is what a structural chapter is. Read alongside
-   * `requiresProposal` by `printedChapters`, so the page count and the render
-   * agree on emptiness exactly as they already agree on proposals.
+   * "always", which is what a structural chapter is.
+   *
+   * ⚠️ NOT a print-list filter, and `printedChapters` deliberately cannot see
+   * it. The page count is reserved from the options alone, so a chapter that
+   * hid on data the count could not see would mis-number every page after it.
+   * A coverage chapter with nothing in it KEEPS its sheet and prints a short
+   * honest empty state. This predicate is read by the generate route instead —
+   * don't spend a model call on a chapter with nothing to say.
    */
   available?: (ctx: StoryContext) => boolean;
   /** One line telling the model what this chapter is for. */
@@ -65,6 +71,7 @@ export interface ChapterDef {
  */
 export const NARRATED_CHAPTERS: readonly ChapterId[] = [
   "planInOnePage",
+  "whatWerePlanningFor",
   "whatYouHave",
   "whatWeRecommend",
 ];
@@ -98,7 +105,7 @@ export const CHAPTERS: Record<ChapterId, ChapterDef> = {
     id: "whatWerePlanningFor",
     title: "What we're planning for",
     layout: "twoUp",
-    narrate: notYetWritten("whatWerePlanningFor"),
+    narrate: narrateWhatWerePlanningFor,
     requiresProposal: false,
     coverage: false,
     brief:

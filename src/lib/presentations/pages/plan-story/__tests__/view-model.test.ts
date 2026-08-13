@@ -40,6 +40,7 @@ function story(over: Partial<StoryContext> = {}): StoryContext {
     documentRole: "standalone",
     hasProposal: false,
     strategies: [],
+    goals: [],
     facts: [],
     ...over,
   };
@@ -126,12 +127,17 @@ describe("buildPlanStoryData — nothing to print", () => {
 describe("buildPlanStoryData — which chapters render", () => {
   it("drops the recommendation chapter on a base-only story", () => {
     const data = buildPlanStoryData(deckCtx(input()), PLAN_STORY_OPTIONS_DEFAULT);
-    expect(chapterIds(data)).toEqual(["planInOnePage", "whatYouHave"]);
+    expect(chapterIds(data)).toEqual(["planInOnePage", "whatWerePlanningFor", "whatYouHave"]);
   });
 
   it("keeps it once a scenario is picked", () => {
     const data = buildPlanStoryData(deckCtx(input({ hasProposal: true })), PROPOSED);
-    expect(chapterIds(data)).toEqual(["planInOnePage", "whatYouHave", "whatWeRecommend"]);
+    expect(chapterIds(data)).toEqual([
+      "planInOnePage",
+      "whatWerePlanningFor",
+      "whatYouHave",
+      "whatWeRecommend",
+    ]);
   });
 
   it("decides from the options alone, not from the loaded story's own flag", () => {
@@ -141,7 +147,12 @@ describe("buildPlanStoryData — which chapters render", () => {
     // moment the builder consults one they can disagree about how many pages
     // this page occupies — which is the defect this whole rule exists to close.
     const optimistic = buildPlanStoryData(deckCtx(input({ hasProposal: false })), PROPOSED);
-    expect(chapterIds(optimistic)).toEqual(["planInOnePage", "whatYouHave", "whatWeRecommend"]);
+    expect(chapterIds(optimistic)).toEqual([
+      "planInOnePage",
+      "whatWerePlanningFor",
+      "whatYouHave",
+      "whatWeRecommend",
+    ]);
     expect(paragraphsOf(optimistic, "whatWeRecommend")).toEqual([
       "We aren't suggesting changes to the plan this time.",
     ]);
@@ -150,18 +161,24 @@ describe("buildPlanStoryData — which chapters render", () => {
       deckCtx(input({ hasProposal: true })),
       PLAN_STORY_OPTIONS_DEFAULT,
     );
-    expect(chapterIds(pessimistic)).toEqual(["planInOnePage", "whatYouHave"]);
+    expect(chapterIds(pessimistic)).toEqual([
+      "planInOnePage",
+      "whatWerePlanningFor",
+      "whatYouHave",
+    ]);
   });
 
   it("carries the registry's title and layout onto each chapter", () => {
     const data = buildPlanStoryData(deckCtx(input({ hasProposal: true })), PROPOSED);
     expect(data.chapters.map((c) => c.title)).toEqual([
       "Your plan, in one page",
+      "What we're planning for",
       "What you have",
       "What we're recommending, and why",
     ]);
     expect(data.chapters.map((c) => c.layout)).toEqual([
       "heroProse",
+      "twoUp",
       "heroProse",
       "strategyCards",
     ]);
@@ -489,7 +506,7 @@ describe("the estimate and the render agree", () => {
     // defensive; it is pinned so the gap stays named rather than discovered.
     const data = buildPlanStoryData(deckCtx(undefined), PROPOSED);
     expect(physicalPages(data)).toBe(1);
-    expect(estimatePlanStoryPageCount(undefined as never, PROPOSED)).toBe(3);
+    expect(estimatePlanStoryPageCount(undefined as never, PROPOSED)).toBe(4);
   });
 });
 

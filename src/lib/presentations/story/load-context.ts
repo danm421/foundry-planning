@@ -20,8 +20,12 @@ import { liquidPortfolioTotal as balanceSheetLiquidTotal } from "@/lib/presentat
 import { buildViewModel } from "@/components/balance-sheet-report/view-model";
 import { buildViewModelInputs } from "@/lib/balance-sheet/build-view-model-inputs";
 import { mergeSyntheticAccounts } from "@/lib/balance-sheet/merge-synthetic-accounts";
+import { buildMapBoards } from "@/lib/household-map/build-boards";
+import { ASSUMED_LIFE_EXPECTANCY } from "@/lib/plan-horizon";
+import type { GoalKind, MapGoal } from "@/lib/household-map/goals";
+import type { ClientData } from "@/engine/types";
 import { buildStoryFacts, groupStrategies } from "./build-facts";
-import type { StoryContext, StoryStrategy } from "./types";
+import type { StoryContext, StoryGoal, StoryStrategy } from "./types";
 
 export interface LoadStoryContextArgs {
   clientId: string;
@@ -103,6 +107,58 @@ async function loadStrategies(clientId: string, proposed: Projected): Promise<St
   );
 }
 
+/**
+ * The goal KINDS chapter 1 is about, in the words a client would use.
+ *
+ * The Goals board also carries the three life milestones — both retirements,
+ * the end of the plan — and those are deliberately absent. They are not things
+ * the household wants the money to DO; they are the horizon, and the horizon is
+ * already two facts in the pack, printed by this chapter's own first sentence.
+ * Listing them again would open the report by telling the reader that their
+ * retirement is a goal of theirs.
+ */
+const STORY_GOAL_KINDS: Partial<Record<GoalKind, string>> = {
+  education: "Education",
+  purchase: "Purchase",
+  household: "Household",
+};
+
+/**
+ * The household's own goals, off the SAME builder the Household Map's Goals
+ * board draws.
+ *
+ * `buildMapBoards` rather than a private read of the expense rows: a goal
+ * anchored to a milestone ("at retirement") has its year RESOLVED there, so a
+ * scenario that moves the retirement age moves the goal with it. A second
+ * implementation here would drift from the board a client sees on the next page
+ * of the same deck. `buildMapGoalsData` is still avoided, as the plan asks —
+ * that one returns a laid-out board with columns and cards, which is a page's
+ * shape rather than a fact's.
+ *
+ * `year` is therefore never null on this path; `StoryGoal` allows it because an
+ * open-ended goal is a real thing the data model does not carry yet, and the
+ * narrator already handles it.
+ */
+function storyGoals(effectiveTree: ClientData, today: Date): StoryGoal[] {
+  const client = effectiveTree.client;
+  const { goals } = buildMapBoards({
+    effectiveTree,
+    identity: {
+      dateOfBirth: client.dateOfBirth,
+      spouseDob: client.spouseDob ?? null,
+      lifeExpectancy: client.lifeExpectancy ?? ASSUMED_LIFE_EXPECTANCY,
+    },
+    familyMemberRows: effectiveTree.familyMembers ?? [],
+    entityRows: (effectiveTree.entities ?? []).map((e) => ({ id: e.id, name: e.name ?? "Entity" })),
+    today,
+  });
+
+  return goals.flatMap((goal: MapGoal) => {
+    const kind = STORY_GOAL_KINDS[goal.kind];
+    return kind ? [{ name: goal.title, year: goal.year, kind }] : [];
+  });
+}
+
 export async function loadStoryContext(args: LoadStoryContextArgs): Promise<StoryContext> {
   const { clientId, firmId, proposedRef } = args;
 
@@ -146,6 +202,12 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
   // without them leaves that chapter with nothing but a generic clause.
   const strategies = proposed ? await loadStrategies(clientId, proposed) : [];
 
+  // BASE, not the proposal. Chapter 1 opens on what the household is planning
+  // for — that is theirs, and it does not change because we recommended a Roth
+  // conversion. The proposal's effect on those goals is what the chapters after
+  // it are for.
+  const goals = storyGoals(base.effectiveTree, new Date());
+
   const facts = buildStoryFacts({
     todayAssets: balanceSheet.totalAssets,
     todayDebts: balanceSheet.totalLiabilities,
@@ -172,6 +234,9 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
     // figure here is as-of.
     planStartYear: firstYear?.year ?? new Date().getUTCFullYear(),
     strategies,
+    // The SAME array the context carries below. `goalYearFactId` keys a goal's
+    // date by its position, so these two must be one array, not two reads.
+    goals,
   });
 
   return {
@@ -180,6 +245,7 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
     documentRole: args.documentRole,
     hasProposal: proposedRef != null,
     strategies,
+    goals,
     facts,
   };
 }

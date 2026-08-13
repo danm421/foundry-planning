@@ -24,6 +24,7 @@ const input: StoryFactsInput = {
   endOfLifeYear: 2065,
   planStartYear: 2026,
   strategies: [],
+  goals: [],
 };
 
 describe("buildStoryFacts", () => {
@@ -163,6 +164,7 @@ function contextFor(strategies: StoryStrategy[], packStrategies: StoryStrategy[]
     documentRole: "standalone",
     hasProposal: true,
     strategies,
+    goals: [],
     facts: buildStoryFacts({ ...input, strategies: packStrategies }),
   };
 }
@@ -512,6 +514,7 @@ describe("fact scoping", () => {
     endOfLifeYear: 2070,
     planStartYear: 2026,
     strategies: [],
+    goals: [],
   });
 
   it("keeps the balance sheet out of the headline chapter", () => {
@@ -544,7 +547,7 @@ describe("a retirement year already in the past", () => {
     baseSuccess: 1, proposedSuccess: 1,
     baseEndLiquid: 9_200_000, proposedEndLiquid: 9_200_000,
     retirementYear: 2013, endOfLifeYear: 2051, planStartYear: 2026,
-    strategies: [],
+    strategies: [], goals: [],
   });
 
   it("is omitted rather than narrated as something still to come", () => {
@@ -557,7 +560,7 @@ describe("a retirement year already in the past", () => {
       baseSuccess: null, proposedSuccess: null,
       baseEndLiquid: 0, proposedEndLiquid: null,
       retirementYear: 2035, endOfLifeYear: 2070, planStartYear: 2026,
-      strategies: [],
+      strategies: [], goals: [],
     });
     expect(ahead.map((f) => f.id)).toContain("plan.retirementYear");
   });

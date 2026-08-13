@@ -57,6 +57,7 @@ const STORY: StoryContext = {
   documentRole: "standalone",
   hasProposal: true,
   strategies: [],
+  goals: [],
   facts: [],
 };
 

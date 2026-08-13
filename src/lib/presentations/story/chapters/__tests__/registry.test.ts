@@ -12,6 +12,7 @@ const CTX: StoryContext = {
   documentRole: "standalone",
   hasProposal: false,
   strategies: [],
+  goals: [],
   facts: [],
 };
 

@@ -20,6 +20,7 @@ const CTX: StoryContext = {
   documentRole: "standalone",
   hasProposal: true,
   strategies: [],
+  goals: [],
   facts: [pctFact("outcome.confidence.proposed", "Confidence, proposed", 0.91), moneyFact("today.netWorth", "Net worth", 2_100_000)],
 };
 

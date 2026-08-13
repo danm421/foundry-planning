@@ -27,6 +27,7 @@ const STORY: StoryContext = {
   documentRole: "standalone",
   hasProposal: false,
   strategies: [],
+  goals: [],
   facts: [],
 };
 

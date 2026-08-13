@@ -102,6 +102,7 @@ function storyInput(over: Partial<PlanStoryContextInput["story"]> = {}): PlanSto
       documentRole: "standalone",
       hasProposal: false,
       strategies: [],
+      goals: [],
       facts: [],
       ...over,
     },
@@ -120,8 +121,9 @@ describe("planStoryPage registry entry", () => {
   });
 
   it("estimates its page count from options alone", () => {
-    // 2, not 3: the default has no scenario, so `whatWeRecommend` does not print.
-    expect(planStoryPage.estimatePageCount(undefined as never, PLAN_STORY_OPTIONS_DEFAULT)).toBe(2);
+    // One fewer than the default switches on: no scenario is picked, so
+    // `whatWeRecommend` does not print.
+    expect(planStoryPage.estimatePageCount(undefined as never, PLAN_STORY_OPTIONS_DEFAULT)).toBe(3);
   });
 
   it("summarizes the brief preset for the launcher row", () => {
@@ -242,7 +244,7 @@ describe("PlanStoryPagePdf — sheets rendered vs. sheets reserved", () => {
       ),
       options,
     );
-    expect(data.chapters).toHaveLength(3);
+    expect(data.chapters).toHaveLength(4);
     expect(pageFrames(render(data))).toHaveLength(
       planStoryPage.estimatePageCount(undefined as never, options),
     );

@@ -15,6 +15,7 @@ import { ensureFontsRegistered } from "@/components/presentations/shared/fonts";
 import { DEFAULT_ACCENT } from "@/lib/presentations/theme";
 import { estimatePlanStoryPageCount } from "@/lib/presentations/pages/plan-story/estimate-page-count";
 import { PLAN_STORY_OPTIONS_DEFAULT, type PlanStoryOptions } from "@/lib/presentations/pages/plan-story/options-schema";
+import { CHAPTER_IDS, type ChapterId } from "@/lib/presentations/story/types";
 import {
   buildPlanStoryData,
   MAX_FIGURE_CARDS,
@@ -74,6 +75,26 @@ const REALISTIC: PlanStoryPageData = {
       ],
       strategies: [],
       figures: [],
+      steps: [],
+      overflowNote: "",
+    },
+    {
+      chapterId: "whatWerePlanningFor",
+      title: "What we're planning for",
+      layout: "twoUp",
+      // What `narrateWhatWerePlanningFor` actually writes: the horizon, a
+      // lead-in, then one short sentence per goal with the date in front.
+      paragraphs: [
+        "The plan runs from now to 2065, with work ending in 2041.",
+        "Here's what you told us the money is for.",
+        "In 2032, Maggie · State University.",
+        "In 2036, A place at the lake.",
+      ],
+      strategies: [],
+      figures: [
+        { label: "The year you stop working", value: "2041" },
+        { label: "The last year we plan to", value: "2065" },
+      ],
       steps: [],
       overflowNote: "",
     },
@@ -158,6 +179,7 @@ function atTheBound(cards: number): PlanStoryPageData {
           scenarioLabel: "Proposed",
           documentRole: "standalone",
           hasProposal: true,
+          goals: [],
           strategies: Array.from({ length: cards }, (_, i) => ({
             name: `Convert to Roth through the 22% bracket ${i + 1}`,
             rows: [
@@ -185,6 +207,26 @@ function atTheBound(cards: number): PlanStoryPageData {
     } as never,
     { ...PLAN_STORY_OPTIONS_DEFAULT, scenarioId: "scn-1" },
   );
+}
+
+/**
+ * Options that print exactly ONE chapter, so a layout can be measured on its
+ * own sheet.
+ *
+ * Built by switching every chapter OFF and the one under test on. The earlier
+ * version named the three chapters that happened to be on by default, which
+ * meant every task in Wave D silently added a second sheet to four layout
+ * measurements and turned them red for a reason that had nothing to do with
+ * layout.
+ */
+function onlyChapter(id: ChapterId): PlanStoryOptions {
+  return {
+    ...PLAN_STORY_OPTIONS_DEFAULT,
+    scenarioId: "scn-1",
+    sections: Object.fromEntries(
+      CHAPTER_IDS.map((c) => [c, c === id]),
+    ) as PlanStoryOptions["sections"],
+  };
 }
 
 describe("Plan Story — real PDF render", () => {
@@ -237,6 +279,7 @@ describe("Plan Story — real PDF render", () => {
             scenarioLabel: "Proposed",
             documentRole: "standalone",
             hasProposal: true,
+            goals: [],
             strategies: [],
             facts: [],
           },
@@ -299,6 +342,7 @@ function twoUpAtTheBound(figures: number): PlanStoryPageData {
           scenarioLabel: "Proposed",
           documentRole: "standalone",
           hasProposal: true,
+          goals: [],
           strategies: [],
           facts: Array.from({ length: figures }, (_, i) => ({
             id: `outcome.n${i}`,
@@ -312,17 +356,7 @@ function twoUpAtTheBound(figures: number): PlanStoryPageData {
       },
       scenarioLabel: "Proposed",
     } as never,
-    {
-      ...PLAN_STORY_OPTIONS_DEFAULT,
-      scenarioId: "scn-1",
-      sections: {
-        ...PLAN_STORY_OPTIONS_DEFAULT.sections,
-        planInOnePage: false,
-        whatYouHave: false,
-        whatWeRecommend: false,
-        willTheMoneyLast: true,
-      },
-    },
+    onlyChapter("willTheMoneyLast"),
   );
 }
 
@@ -352,6 +386,7 @@ describe("Plan Story — the twoUp layout, really rendered", () => {
             scenarioLabel: "Proposed",
             documentRole: "standalone",
             hasProposal: true,
+            goals: [],
             strategies: [],
             facts: [],
           },
@@ -359,17 +394,7 @@ describe("Plan Story — the twoUp layout, really rendered", () => {
         },
         scenarioLabel: "Proposed",
       } as never,
-      {
-        ...PLAN_STORY_OPTIONS_DEFAULT,
-        scenarioId: "scn-1",
-        sections: {
-          ...PLAN_STORY_OPTIONS_DEFAULT.sections,
-          planInOnePage: false,
-          whatYouHave: false,
-          whatWeRecommend: false,
-          willTheMoneyLast: true,
-        },
-      },
+      onlyChapter("willTheMoneyLast"),
     );
     expect(data.chapters[0].overflowNote).toBe("");
     expect(data.chapters[0].paragraphs).toHaveLength(3);
@@ -400,6 +425,7 @@ function checklistAtTheBound(steps: number): PlanStoryPageData {
           scenarioLabel: "Proposed",
           documentRole: "standalone",
           hasProposal: true,
+          goals: [],
           strategies: [],
           facts: [],
           nextSteps: Array.from({ length: steps }, () => WORST_STEP),
@@ -408,17 +434,7 @@ function checklistAtTheBound(steps: number): PlanStoryPageData {
       },
       scenarioLabel: "Proposed",
     } as never,
-    {
-      ...PLAN_STORY_OPTIONS_DEFAULT,
-      scenarioId: "scn-1",
-      sections: {
-        ...PLAN_STORY_OPTIONS_DEFAULT.sections,
-        planInOnePage: false,
-        whatYouHave: false,
-        whatWeRecommend: false,
-        whatHappensNext: true,
-      },
-    },
+    onlyChapter("whatHappensNext"),
   );
 }
 
