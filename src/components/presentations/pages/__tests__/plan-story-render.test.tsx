@@ -17,6 +17,7 @@ import { estimatePlanStoryPageCount } from "@/lib/presentations/pages/plan-story
 import { PLAN_STORY_OPTIONS_DEFAULT, type PlanStoryOptions } from "@/lib/presentations/pages/plan-story/options-schema";
 import {
   buildPlanStoryData,
+  MAX_FIGURE_CARDS,
   MAX_STRATEGY_CARDS,
   type PlanStoryPageData,
 } from "@/lib/presentations/pages/plan-story/view-model";
@@ -71,6 +72,7 @@ const REALISTIC: PlanStoryPageData = {
         "You're starting from $2.4M.",
       ],
       strategies: [],
+      figures: [],
       overflowNote: "",
     },
     {
@@ -82,6 +84,7 @@ const REALISTIC: PlanStoryPageData = {
         "Not all of it is spendable: $1.6M sits in retirement accounts you can't reach without tax, and $620K is the house you live in.",
       ],
       strategies: [],
+      figures: [],
       overflowNote: "",
     },
     {
@@ -97,6 +100,7 @@ const REALISTIC: PlanStoryPageData = {
           detail: "$50K/yr from Traditional IRA → Roth IRA · 2028–2033",
         },
       ],
+      figures: [],
       overflowNote: "",
     },
   ],
@@ -127,6 +131,7 @@ function worstCase(cards: number, words: number, overflowNote = ""): PlanStoryPa
           what: "Traditional IRA → Roth IRA, Teresa's Traditional IRA → Roth IRA",
           detail: "$50K/yr from Traditional IRA → Roth IRA · 2028–2033",
         })),
+        figures: [],
         overflowNote,
       },
     ],
@@ -267,5 +272,102 @@ describe("Plan Story — real PDF render", () => {
       chapters: [],
     };
     expect(await pagesOf(empty)).toBe(1);
+  }, 30_000);
+});
+
+/**
+ * The twoUp layout's own bound, run rather than restated.
+ *
+ * Its prose column is ~two thirds the width a heroProse chapter's is, so the
+ * heroProse budget would overflow it while every page-count check still read 1.
+ * Measured on a bare `<Page>` — WITHOUT `PageFrame`'s `flex: 1` body, which
+ * makes overflow clip instead of paginate — 210 words lay out and 220 spill;
+ * `BUDGET_WORDS_TWO_UP` sits inside that. What is pinned here is the shipping
+ * path: whatever the view model hands the renderer fits one sheet.
+ */
+function twoUpAtTheBound(figures: number): PlanStoryPageData {
+  return buildPlanStoryData(
+    {
+      planStory: {
+        story: {
+          household: { firstNames: "Alan and Teresa", householdName: "the Bradshaw household" },
+          scenarioLabel: "Proposed",
+          documentRole: "standalone",
+          hasProposal: true,
+          strategies: [],
+          facts: Array.from({ length: figures }, (_, i) => ({
+            id: `outcome.n${i}`,
+            label: `Confidence, proposed plan ${i + 1}`,
+            display: "96.3%",
+            raw: 0.963,
+            chapters: ["willTheMoneyLast" as const],
+          })),
+        },
+        text: { willTheMoneyLast: LONG_PROSE },
+      },
+      scenarioLabel: "Proposed",
+    } as never,
+    {
+      ...PLAN_STORY_OPTIONS_DEFAULT,
+      scenarioId: "scn-1",
+      sections: {
+        ...PLAN_STORY_OPTIONS_DEFAULT.sections,
+        planInOnePage: false,
+        whatYouHave: false,
+        whatWeRecommend: false,
+        willTheMoneyLast: true,
+      },
+    },
+  );
+}
+
+describe("Plan Story — the twoUp layout, really rendered", () => {
+  it.each([0, 1, MAX_FIGURE_CARDS, MAX_FIGURE_CARDS + 3])(
+    "lays out one sheet with %i figures and eight sheets of prose",
+    async (figures) => {
+      const data = twoUpAtTheBound(figures);
+      expect(data.chapters).toHaveLength(1);
+      expect(data.chapters[0].layout).toBe("twoUp");
+      expect(data.chapters[0].figures.length).toBeLessThanOrEqual(MAX_FIGURE_CARDS);
+      expect(await pagesOf(data)).toBe(1);
+    },
+    60_000,
+  );
+
+  // …and the cap is not conservative to the point of being useless: a chapter of
+  // the length a narrator actually writes passes through with nothing dropped.
+  it("does not trim a twoUp chapter of the length the narrators write", async () => {
+    const REAL =
+      "Your plan holds up in almost every run we tested — 96.3% of them, against 84% on the path you're on today.\n\nThat comes from the two changes we walked through: waiting on Social Security, and moving money into the Roth while your bracket is low.\n\nThe years that go wrong are the ones where the market falls early. Even then, you don't run out — you spend a little less in your eighties.";
+    const data = buildPlanStoryData(
+      {
+        planStory: {
+          story: {
+            household: { firstNames: "Alan and Teresa", householdName: "the Bradshaw household" },
+            scenarioLabel: "Proposed",
+            documentRole: "standalone",
+            hasProposal: true,
+            strategies: [],
+            facts: [],
+          },
+          text: { willTheMoneyLast: REAL },
+        },
+        scenarioLabel: "Proposed",
+      } as never,
+      {
+        ...PLAN_STORY_OPTIONS_DEFAULT,
+        scenarioId: "scn-1",
+        sections: {
+          ...PLAN_STORY_OPTIONS_DEFAULT.sections,
+          planInOnePage: false,
+          whatYouHave: false,
+          whatWeRecommend: false,
+          willTheMoneyLast: true,
+        },
+      },
+    );
+    expect(data.chapters[0].overflowNote).toBe("");
+    expect(data.chapters[0].paragraphs).toHaveLength(3);
+    expect(await pagesOf(data)).toBe(1);
   }, 30_000);
 });

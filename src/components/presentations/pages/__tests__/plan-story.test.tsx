@@ -3,6 +3,7 @@ import { isValidElement, type ReactElement } from "react";
 import { planStoryPage, type BuildDataContext } from "@/components/presentations/registry";
 import { PageFrame } from "@/components/presentations/shared/page-frame";
 import { PlanStoryPagePdf } from "@/components/presentations/pages/plan-story/page-pdf";
+import { PlanStoryChapterPdf } from "@/components/presentations/pages/plan-story/chapter-pdf";
 import {
   PLAN_STORY_OPTIONS_DEFAULT,
   applyPreset,
@@ -75,6 +76,7 @@ function chapter(over: Partial<PlanStoryChapterView> = {}): PlanStoryChapterView
     layout: "heroProse",
     paragraphs: ["Your plan holds."],
     strategies: [],
+    figures: [],
     overflowNote: "",
     ...over,
   };
@@ -243,5 +245,65 @@ describe("PlanStoryPagePdf — sheets rendered vs. sheets reserved", () => {
     expect(pageFrames(render(data))).toHaveLength(
       planStoryPage.estimatePageCount(undefined as never, options),
     );
+  });
+});
+
+describe("PlanStoryChapterPdf — the twoUp layout", () => {
+  const TWO_UP = chapter({
+    chapterId: "willTheMoneyLast",
+    title: "Will the money last?",
+    layout: "twoUp",
+    paragraphs: ["Your plan holds up in almost every run we tested."],
+    figures: [{ label: "Confidence, proposed plan", value: "96.3%" }],
+  });
+
+  /** Every string one chapter prints, in document order. */
+  function printed(over: Partial<PlanStoryChapterView> = {}): string[] {
+    return textOf(
+      PlanStoryChapterPdf({
+        chapter: { ...TWO_UP, ...over },
+        accent: FRAME.accent,
+        eyebrow: "Your Plan · Proposed",
+      }),
+    );
+  }
+
+  it("prints the prose and the figure cards beside it", () => {
+    const out = printed();
+    expect(out).toContain("Your plan holds up in almost every run we tested.");
+    expect(out).toContain("96.3%");
+    // The one place a `Fact.label` is client-facing: a caption over its own
+    // figure. Gate 5 forbids the model from writing one into a sentence.
+    expect(out).toContain("CONFIDENCE, PROPOSED PLAN");
+  });
+
+  it("prints no strategy cards, whatever the chapter is carrying", () => {
+    // The layout reads its OWN collection. A twoUp chapter that somehow arrived
+    // with strategies on it must not print a card the sheet was never budgeted
+    // for — the cap that keeps one chapter on one sheet is spent per layout.
+    expect(printed({ strategies: [{ name: "Leaked", what: "x", detail: "y" }] })).not.toContain(
+      "Leaked",
+    );
+  });
+
+  it("prints the overflow note inside the prose column", () => {
+    expect(printed({ overflowNote: "…there's more here than fits this page." })).toContain(
+      "…there's more here than fits this page.",
+    );
+  });
+
+  it("prints no figure cards on any other layout", () => {
+    // The view model empties `figures` off a twoUp chapter, and the renderer
+    // reads only its own layout's collection — either one alone would let a
+    // figure card reach a heroProse sheet.
+    const hero = textOf(
+      PlanStoryChapterPdf({
+        chapter: { ...TWO_UP, layout: "heroProse" },
+        accent: FRAME.accent,
+        eyebrow: "",
+      }),
+    );
+    expect(hero).toContain("Your plan holds up in almost every run we tested.");
+    expect(hero).not.toContain("96.3%");
   });
 });

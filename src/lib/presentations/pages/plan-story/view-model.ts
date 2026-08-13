@@ -5,6 +5,7 @@
 import type { BuildDataContext } from "@/components/presentations/registry";
 import { CHAPTERS, type ChapterLayout } from "@/lib/presentations/story/chapters/registry";
 import { quotableDetail } from "@/lib/presentations/story/chapters/what-we-recommend";
+import type { Fact } from "@/lib/presentations/story/facts";
 import { factsForChapter, type ChapterId, type StoryContext } from "@/lib/presentations/story/types";
 import { printedChapters, type PlanStoryOptions } from "./options-schema";
 
@@ -18,6 +19,9 @@ export interface PlanStoryChapterView {
   paragraphs: string[];
   /** Strategy cards; empty for every layout except strategyCards. */
   strategies: Array<{ name: string; what: string; detail: string }>;
+  /** The figure cards beside a `twoUp` chapter's prose; empty for every other
+   *  layout. */
+  figures: Array<{ label: string; value: string }>;
   /** The client-facing sentence that replaces what a sheet could not hold.
    *  "" means nothing was dropped. */
   overflowNote: string;
@@ -133,6 +137,37 @@ export const SHEET_BUDGET_WORDS = 300;
 const BUDGET_WORDS_WITH_CARDS = 80;
 
 /**
+ * What the figure column beside a `twoUp` chapter's prose holds.
+ *
+ * Eight cards lay out and nine spill, so the sheet is not what decides this —
+ * five is an editorial ceiling. A page whose job is one idea stops being one at
+ * a stack of eight numbers, and the prose column beside it is the taller of the
+ * two long before the cards run out.
+ */
+export const MAX_FIGURE_CARDS = 5;
+
+/**
+ * …and what the prose in a `twoUp` chapter may spend.
+ *
+ * A little over half what a heroProse chapter gets, and not because the sheet is
+ * fuller: the figure column takes 170pt plus its gap out of the text measure, so
+ * the prose runs at roughly two thirds the width and the same words cost half
+ * again as many LINES. A budget shared with `heroProse` would overflow every
+ * twoUp chapter while measuring as if it fit.
+ *
+ * Measured on the SHIPPING path, with the trim note printed and a full figure
+ * column beside it, across three paragraph shapes: 140 words lay out in all of
+ * them and 150 spills at 21 words a paragraph. Line count is what actually runs
+ * out — eight paragraphs of 21 words wrap to four lines each and waste most of
+ * the fourth — so this sits inside the shortest observed fit rather than at it.
+ *
+ * ⚠️ It is genuinely short: about two paragraphs. A twoUp chapter's prompt has
+ * to ask for less prose than a heroProse chapter's, or the trim note becomes the
+ * normal ending rather than the exception.
+ */
+const BUDGET_WORDS_TWO_UP = 130;
+
+/**
  * A ceiling on paragraph COUNT as well, because the word ceiling alone cannot
  * see the shape that actually costs the most: 300 words split into sixty
  * four-word paragraphs pays sixty bottom margins. Eleven paragraphs were
@@ -140,7 +175,8 @@ const BUDGET_WORDS_WITH_CARDS = 80;
  */
 const MAX_PARAGRAPHS = 8;
 
-function proseBudgetWords(cards: number): number {
+function proseBudgetWords(layout: ChapterLayout, cards: number): number {
+  if (layout === "twoUp") return BUDGET_WORDS_TWO_UP;
   return cards > 0 ? BUDGET_WORDS_WITH_CARDS : SHEET_BUDGET_WORDS;
 }
 
@@ -192,6 +228,31 @@ const WORDLIKE = /[\p{L}\p{N}]/u;
  * always going to discard must not be charged for, or a chapter with a full set
  * of cards announces dropped prose that nobody ever lost.
  */
+/**
+ * The figure cards beside a `twoUp` chapter's prose.
+ *
+ * Built from the chapter's OWN scoped facts, using each fact's own `label` and
+ * `display` — the same two strings the prompt showed the model. That is what
+ * makes the card and the paragraph beside it structurally incapable of
+ * disagreeing about a number, and it is why the fact pack had to be scoped per
+ * chapter first: an unscoped pack would put the headline figures on every
+ * chapter's card stack as well as in every chapter's prose.
+ *
+ * The label prints as the card's caption — the one place a `Fact.label` IS
+ * client-facing. Gate 5 forbids the model from writing one into a sentence;
+ * printing it over its own figure is what the label was written for.
+ *
+ * A quoted fact is left out. Its label names one change and quotes the sentence
+ * it came from ('Sell the rental — from "…$850k sale"'), which is background
+ * for the model, not a caption a client should read.
+ */
+function figuresFor(facts: Fact[]): PlanStoryChapterView["figures"] {
+  return facts
+    .filter((f) => !f.id.startsWith("quoted."))
+    .slice(0, MAX_FIGURE_CARDS)
+    .map((f) => ({ label: f.label, value: f.display }));
+}
+
 function restatesCard(paragraph: string, strategy: PlanStoryChapterView["strategies"][number]): boolean {
   if (strategy.name.length === 0) return false;
   const withoutName = strikeFirst(paragraph, strategy.name);
@@ -297,13 +358,17 @@ export function buildPlanStoryData(
           }))
         : [];
     const strategies = allStrategies.slice(0, MAX_STRATEGY_CARDS);
+    const figures = def.layout === "twoUp" ? figuresFor(facts) : [];
     // Discard what the cards already say BEFORE counting, so the budget is spent
     // on what a client will actually read.
     const printable = paragraphs.filter((p) => !strategies.some((s) => restatesCard(p, s)));
     // The cards are charged against the sheet first — on the one chapter that
     // has them they ARE the content, and the prose is a lead-in. What is left
     // is what the prose may spend.
-    const { kept, trimmed } = capParagraphs(printable, proseBudgetWords(strategies.length));
+    const { kept, trimmed } = capParagraphs(
+      printable,
+      proseBudgetWords(def.layout, strategies.length),
+    );
 
     return {
       chapterId,
@@ -311,6 +376,7 @@ export function buildPlanStoryData(
       layout: def.layout,
       paragraphs: kept,
       strategies,
+      figures,
       // ONE note, whichever bound bit. Both mean the same thing to the reader —
       // there is more, and the advisor will cover it — and two notes on one
       // sheet would be the overflow this cap exists to prevent. The card count

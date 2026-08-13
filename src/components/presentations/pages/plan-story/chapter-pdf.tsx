@@ -37,6 +37,37 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 9,
   },
+  // Two fixed columns that do NOT wrap: react-pdf cannot split a `flexWrap` row
+  // across sheets, and both columns are capped upstream (BUDGET_WORDS_TWO_UP,
+  // MAX_FIGURE_CARDS), which is what keeps one chapter on one sheet here too.
+  twoUp: { flexDirection: "row", gap: 22 },
+  proseCol: { flexGrow: 1, flexShrink: 1, flexBasis: 0 },
+  figureCol: { width: 170, flexGrow: 0, flexShrink: 0 },
+  figureCard: {
+    borderWidth: 0.75,
+    borderColor: PRESENTATION_THEME.hair2,
+    backgroundColor: PRESENTATION_THEME.card,
+    borderRadius: 3,
+    padding: 10,
+    marginBottom: 8,
+  },
+  figureLabel: {
+    fontSize: 7.5,
+    letterSpacing: 0.6,
+    color: PRESENTATION_THEME.ink3,
+    marginBottom: 3,
+  },
+  // Fraunces, the same display face as the chapter title, rather than the deck's
+  // mono. This page is one idea at half the ink density of a data page, and its
+  // figures are display type, not a table. (The brand's numeral mono is B612
+  // Mono, which this repo does not vendor; the monos it does register mark the
+  // zero, which the brand forbids.)
+  figureValue: {
+    fontFamily: "Fraunces",
+    fontSize: 18,
+    fontWeight: 600,
+    color: PRESENTATION_THEME.ink,
+  },
   cardName: { fontSize: 12, fontWeight: 700, color: PRESENTATION_THEME.ink, marginBottom: 3 },
   cardLabel: { fontSize: 7.5, letterSpacing: 0.6, color: PRESENTATION_THEME.ink3, marginBottom: 2 },
   cardText: { fontSize: 10, lineHeight: 1.5, color: PRESENTATION_THEME.ink2 },
@@ -51,6 +82,36 @@ const styles = StyleSheet.create({
   },
 });
 
+/** The eyebrow, the chapter heading and its accent rule — identical on every
+ *  layout, so a new layout cannot quietly restyle the page's head. */
+function ChapterHead({ title, accent, eyebrow }: { title: string; accent: SectionAccent; eyebrow: string }) {
+  return (
+    <>
+      {eyebrow.length > 0 && (
+        <Text style={[styles.eyebrow, { color: accent.accent }]}>{eyebrow}</Text>
+      )}
+      <Text style={styles.title}>{title}</Text>
+      <View style={[styles.rule, { backgroundColor: accent.accent }]} />
+    </>
+  );
+}
+
+function Paragraphs({ paragraphs }: { paragraphs: string[] }) {
+  return (
+    <>
+      {paragraphs.map((p, i) => (
+        <Text key={i} style={styles.body}>
+          {p}
+        </Text>
+      ))}
+    </>
+  );
+}
+
+function OverflowNote({ note }: { note: string }) {
+  return note.length > 0 ? <Text style={styles.overflow}>{note}</Text> : null;
+}
+
 export function PlanStoryChapterPdf({
   chapter,
   accent,
@@ -61,26 +122,40 @@ export function PlanStoryChapterPdf({
   /** The report's own name and the plan it narrates — "Your Plan · Proposed". */
   eyebrow: string;
 }) {
-  // Both already decided by `buildPlanStoryData`, which is where the sheet
-  // budget is spent — a paragraph dropped here rather than there would be
-  // charged against a sheet it never reached. This component renders; it does
-  // not choose.
+  // Everything below is already decided by `buildPlanStoryData`, which is where
+  // the sheet budget is spent — a paragraph dropped here rather than there would
+  // be charged against a sheet it never reached. This component renders; it does
+  // not choose. The layout still reads its OWN collection only, so a chapter
+  // carrying stale strategies from another layout prints none of them.
   const cards = chapter.layout === "strategyCards" ? chapter.strategies : [];
-  const paragraphs = chapter.paragraphs;
+
+  if (chapter.layout === "twoUp") {
+    return (
+      <View style={styles.wrap}>
+        <ChapterHead title={chapter.title} accent={accent} eyebrow={eyebrow} />
+        <View style={styles.twoUp}>
+          <View style={styles.proseCol}>
+            <Paragraphs paragraphs={chapter.paragraphs} />
+            <OverflowNote note={chapter.overflowNote} />
+          </View>
+          <View style={styles.figureCol}>
+            {chapter.figures.map((f, i) => (
+              <View key={i} style={styles.figureCard}>
+                <Text style={styles.figureLabel}>{f.label.toUpperCase()}</Text>
+                <Text style={styles.figureValue}>{f.value}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.wrap}>
-      {eyebrow.length > 0 && (
-        <Text style={[styles.eyebrow, { color: accent.accent }]}>{eyebrow}</Text>
-      )}
-      <Text style={styles.title}>{chapter.title}</Text>
-      <View style={[styles.rule, { backgroundColor: accent.accent }]} />
+      <ChapterHead title={chapter.title} accent={accent} eyebrow={eyebrow} />
 
-      {paragraphs.map((p, i) => (
-        <Text key={i} style={styles.body}>
-          {p}
-        </Text>
-      ))}
+      <Paragraphs paragraphs={chapter.paragraphs} />
 
       {cards.map((s, i) => (
         <View key={i} style={styles.card}>
@@ -96,9 +171,7 @@ export function PlanStoryChapterPdf({
         </View>
       ))}
 
-      {chapter.overflowNote.length > 0 && (
-        <Text style={styles.overflow}>{chapter.overflowNote}</Text>
-      )}
+      <OverflowNote note={chapter.overflowNote} />
     </View>
   );
 }

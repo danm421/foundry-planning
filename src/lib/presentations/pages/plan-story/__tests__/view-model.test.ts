@@ -5,8 +5,10 @@ import type { Fact } from "@/lib/presentations/story/facts";
 import { CHAPTER_IDS, type ChapterId, type StoryContext } from "@/lib/presentations/story/types";
 import {
   buildPlanStoryData,
+  MAX_FIGURE_CARDS,
   MAX_STRATEGY_CARDS,
   SHEET_BUDGET_WORDS,
+  type PlanStoryChapterView,
   type PlanStoryContextInput,
   type PlanStoryPageData,
 } from "../view-model";
@@ -661,5 +663,95 @@ describe("a strategy the prose already spelled out", () => {
   // the report is incomplete when the card says the very same thing.
   it("prints no overflow note for a paragraph the card already carries", () => {
     expect(recommend(`Delay Social Security — ${DETAIL}.`).overflowNote).toBe("");
+  });
+});
+
+describe("twoUp figures", () => {
+  /** The one twoUp chapter reachable today: it needs a proposal, and its
+   *  narrator has not landed, so the prose comes from storage exactly as the
+   *  export loader supplies it. */
+  const WITH_LAST: PlanStoryOptions = {
+    ...PROPOSED,
+    sections: { ...PROPOSED.sections, willTheMoneyLast: true },
+  };
+  const STORED = { willTheMoneyLast: "Your plan holds up in almost every run we tested." };
+
+  function fact(id: string, label: string, display: string, chapters?: ChapterId[]): Fact {
+    return { id, label, display, raw: null, ...(chapters ? { chapters } : {}) };
+  }
+
+  const CONFIDENCE = fact("outcome.confidence.proposed", "Confidence, proposed plan", "96.3%", [
+    "willTheMoneyLast",
+  ]);
+
+  function chapterWith(facts: Fact[], id: ChapterId = "willTheMoneyLast"): PlanStoryChapterView {
+    const data = buildPlanStoryData(deckCtx(input({ hasProposal: true, facts }, STORED)), WITH_LAST);
+    return data.chapters.find((c) => c.chapterId === id)!;
+  }
+
+  it("carries the chapter's own facts as labelled figures", () => {
+    const chapter = chapterWith([CONFIDENCE]);
+    expect(chapter.layout).toBe("twoUp");
+    expect(chapter.figures.map((f) => f.value)).toContain("96.3%");
+  });
+
+  it("uses the fact's own label, so a figure card and the prose cannot disagree", () => {
+    // The same two strings the prompt showed the model. A card built from a
+    // second formatting of the same number is how a page ends up printing
+    // "96.3%" beside prose that says "96%".
+    const card = chapterWith([CONFIDENCE]).figures.find((f) => f.value === "96.3%")!;
+    expect(card.label).toBe("Confidence, proposed plan");
+  });
+
+  it("prints only the figures scoped to this chapter", () => {
+    // Task 5's scoping is what makes the column readable: unscoped, every
+    // chapter's card stack would carry the whole pack's headline figures.
+    const elsewhere = fact("today.assets", "What you own", "$2M", ["whatYouHave"]);
+    const chapter = chapterWith([CONFIDENCE, elsewhere]);
+    expect(chapter.figures.map((f) => f.value)).toEqual(["96.3%"]);
+  });
+
+  it("leaves out a quoted figure — it is one change's wording, not a headline", () => {
+    const quoted = fact("quoted.$850k", 'Sell the rental — from "…$850k sale"', "$850k", [
+      "willTheMoneyLast",
+    ]);
+    const chapter = chapterWith([CONFIDENCE, quoted]);
+    expect(chapter.figures.map((f) => f.value)).toEqual(["96.3%"]);
+  });
+
+  it("caps the figures so the column cannot overflow the sheet", () => {
+    const many = Array.from({ length: MAX_FIGURE_CARDS + 3 }, (_, i) =>
+      fact(`outcome.n${i}`, `Figure ${i}`, `${i}%`, ["willTheMoneyLast"]),
+    );
+    expect(chapterWith(many).figures).toHaveLength(MAX_FIGURE_CARDS);
+  });
+
+  it("spends a smaller prose budget than a full-width chapter", () => {
+    // The figure column takes 170pt plus its gap out of the text measure, so the
+    // same words cost half again as many lines. Five paragraphs of forty words
+    // pass through a heroProse chapter whole and are trimmed on a twoUp one —
+    // a shared budget would overflow every twoUp sheet while measuring as if it
+    // fit, because a page count of 1 cannot see clipping.
+    const FORTY = Array.from({ length: 40 }, (_, i) => `word${i}`).join(" ");
+    const long = Array.from({ length: 5 }, () => FORTY).join("\n\n");
+    const data = buildPlanStoryData(
+      deckCtx(input({ hasProposal: true }, { willTheMoneyLast: long, whatYouHave: long })),
+      WITH_LAST,
+    );
+    const twoUp = data.chapters.find((c) => c.chapterId === "willTheMoneyLast")!;
+    const hero = data.chapters.find((c) => c.chapterId === "whatYouHave")!;
+    expect(hero.paragraphs).toHaveLength(5);
+    expect(hero.overflowNote).toBe("");
+    expect(twoUp.paragraphs.length).toBeLessThan(5);
+    expect(twoUp.overflowNote).not.toBe("");
+  });
+
+  it("is empty for every other layout", () => {
+    const data = buildPlanStoryData(
+      deckCtx(input({ hasProposal: true, facts: [CONFIDENCE] }, STORED)),
+      WITH_LAST,
+    );
+    expect(data.chapters.find((c) => c.chapterId === "whatYouHave")!.figures).toEqual([]);
+    expect(data.chapters.find((c) => c.chapterId === "whatWeRecommend")!.figures).toEqual([]);
   });
 });
