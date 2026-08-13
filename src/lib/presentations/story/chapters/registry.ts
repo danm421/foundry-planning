@@ -4,6 +4,7 @@
 import type { ChapterId, StoryContext } from "../types";
 import { narratePlanInOnePage } from "./plan-in-one-page";
 import { narrateWhatWerePlanningFor } from "./what-were-planning-for";
+import { narrateWhereTheMoneyGoes } from "./where-the-money-goes";
 import { narrateWhatYouHave } from "./what-you-have";
 import { narrateWhatWeRecommend } from "./what-we-recommend";
 
@@ -73,6 +74,7 @@ export const NARRATED_CHAPTERS: readonly ChapterId[] = [
   "planInOnePage",
   "whatWerePlanningFor",
   "whatYouHave",
+  "whereTheMoneyGoes",
   "whatWeRecommend",
 ];
 
@@ -125,7 +127,7 @@ export const CHAPTERS: Record<ChapterId, ChapterDef> = {
     id: "whereTheMoneyGoes",
     title: "Where the money goes",
     layout: "heroProse",
-    narrate: notYetWritten("whereTheMoneyGoes"),
+    narrate: narrateWhereTheMoneyGoes,
     requiresProposal: false,
     coverage: false,
     brief:

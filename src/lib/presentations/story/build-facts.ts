@@ -38,6 +38,19 @@ export interface StoryFactsInput {
    * load-bearing — see `goalYearFactId`.
    */
   goals: StoryGoal[];
+  /**
+   * This year's cash flow, or null when the projection produced no years.
+   *
+   * Null rather than zeroes, exactly as the Monte Carlo facts are: a $0 income
+   * printed because nothing loaded is a lie, and the narrator already handles an
+   * absent figure.
+   *
+   * The three tie out to the deck's own Cash Flow page BY CONSTRUCTION —
+   * `income - spending - saving` is the engine's `netCashFlow` — which is what
+   * lets the narrator state the direction without printing a fourth total. See
+   * `load-context.ts` for where each one comes from.
+   */
+  flow: { income: number; spending: number; saving: number } | null;
 }
 
 /** A quoted figure describes one proposed change, so it is meaningful in the
@@ -169,6 +182,8 @@ const BALANCE_SHEET_CHAPTERS: readonly ChapterId[] = ["whatYouHave"];
 const OUTCOME_CHAPTERS: readonly ChapterId[] = ["planInOnePage"];
 /** A goal's date is only meaningful beside the goal it belongs to. */
 const GOAL_CHAPTERS: readonly ChapterId[] = ["whatWerePlanningFor"];
+/** This year's cash flow belongs to the chapter about this year's cash flow. */
+const FLOW_CHAPTERS: readonly ChapterId[] = ["whereTheMoneyGoes"];
 
 /**
  * The pack id holding the year of `goals[index]`.
@@ -268,6 +283,23 @@ export function buildStoryFacts(input: StoryFactsInput): Fact[] {
   }
 
   facts.push(...goalYearFacts(input.goals));
+
+  /**
+   * This year's flow. Three figures and deliberately NOT a fourth.
+   *
+   * What is left over is income minus the other two, and a rounded fourth total
+   * that does not visibly subtract from three rounded ones is worse on a client
+   * page than no total at all — "$2.4M in, $1.9M out, $300K saved, $235K left"
+   * invites a subtraction that comes out wrong. The narrator states the
+   * DIRECTION instead, compared on `raw`, which is what `raw` is for.
+   */
+  if (input.flow) {
+    facts.push(
+      moneyFact("flow.income", "Money coming in this year", input.flow.income, FLOW_CHAPTERS),
+      moneyFact("flow.spending", "Money going out this year", input.flow.spending, FLOW_CHAPTERS),
+      moneyFact("flow.saving", "What you're putting away", input.flow.saving, FLOW_CHAPTERS),
+    );
+  }
 
   // Last, and seeded with the plan figures' own spellings: a strategy that
   // quotes "$2.1M" needs no second entry, and the one it would have got would

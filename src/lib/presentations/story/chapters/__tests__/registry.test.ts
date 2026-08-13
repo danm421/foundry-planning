@@ -79,11 +79,19 @@ describe("the chapter registry", () => {
     }
   });
 
-  it("throws rather than narrating a chapter whose task has not landed", () => {
+  it("throws with a message naming the gap, rather than narrating", () => {
     // The placeholder is the whole reason all fourteen slots can exist before
-    // eleven of the narrators do. A silent empty array here would let a
-    // half-finished chapter ship as a blank client page.
-    expect(() => CHAPTERS.whereTheMoneyGoes.narrate(CTX)).toThrow(/no narrator yet/u);
+    // every narrator does. A silent empty array here would let a half-finished
+    // chapter ship as a blank client page.
+    //
+    // Read off the list rather than naming one chapter: each Wave D task lands
+    // a narrator, and a hard-coded name would have to be re-chosen every time.
+    // The MESSAGE is what this case adds — the total check below proves which
+    // chapters throw, not what they say. Task 19 empties the list, and then
+    // there is no placeholder left to assert on.
+    const pending = CHAPTER_IDS.find((id) => !NARRATED_CHAPTERS.includes(id));
+    if (!pending) return;
+    expect(() => CHAPTERS[pending].narrate(CTX)).toThrow(/no narrator yet/u);
   });
 
   it("narrates exactly the chapters NARRATED_CHAPTERS names, and no others", () => {

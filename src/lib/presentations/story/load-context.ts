@@ -237,6 +237,29 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
     // The SAME array the context carries below. `goalYearFactId` keys a goal's
     // date by its position, so these two must be one array, not two reads.
     goals,
+    /**
+     * This year's cash flow, off the SAME projection year the deck's Cash Flow
+     * page charts. A client checks this chapter against their own bank
+     * statement, so a figure that differs from the page a few leaves later is a
+     * figure that costs the advisor the meeting.
+     *
+     * `saving` is `totalExpenses - expenses.total`, not `savings.total`. The
+     * engine's Total Expenses line is `expenses.total + savings.total +
+     * hypoContribution` — that third term is the self-funding contribution a
+     * savings rule with `fundFromExpenseReduction` makes, which is real money
+     * put away and is absent from `savings.total`. Taking the difference means
+     * the two outflow figures always sum to the Cash Flow page's own Total
+     * Expenses, and income minus both is exactly its Net Cash Flow. Reading
+     * `savings.total` directly would have told a self-funding household it had
+     * headroom it does not have.
+     */
+    flow: firstYear
+      ? {
+          income: firstYear.totalIncome,
+          spending: firstYear.expenses.total,
+          saving: firstYear.totalExpenses - firstYear.expenses.total,
+        }
+      : null,
   });
 
   return {

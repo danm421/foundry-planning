@@ -209,6 +209,18 @@ function atTheBound(cards: number): PlanStoryPageData {
   );
 }
 
+/** Options that print exactly the chapters a fixture holds. */
+function optionsPrinting(data: PlanStoryPageData): PlanStoryOptions {
+  const held = new Set(data.chapters.map((c) => c.chapterId));
+  return {
+    ...PLAN_STORY_OPTIONS_DEFAULT,
+    scenarioId: "scn-1",
+    sections: Object.fromEntries(
+      CHAPTER_IDS.map((c) => [c, held.has(c)]),
+    ) as PlanStoryOptions["sections"],
+  };
+}
+
 /**
  * Options that print exactly ONE chapter, so a layout can be measured on its
  * own sheet.
@@ -231,8 +243,13 @@ function onlyChapter(id: ChapterId): PlanStoryOptions {
 
 describe("Plan Story — real PDF render", () => {
   it("lays out one sheet per chapter, and no more", async () => {
-    const proposed: PlanStoryOptions = { ...PLAN_STORY_OPTIONS_DEFAULT, scenarioId: "scn-1" };
-    expect(await pagesOf(REALISTIC)).toBe(estimatePlanStoryPageCount(undefined, proposed));
+    // Counted against the chapters this fixture actually holds, not against the
+    // shipped default: the two agreed until a Wave D task switched a fifth
+    // chapter on, and then this measurement went red for a reason that had
+    // nothing to do with how anything lays out.
+    expect(await pagesOf(REALISTIC)).toBe(
+      estimatePlanStoryPageCount(undefined, optionsPrinting(REALISTIC)),
+    );
   }, 30_000);
 
   /**

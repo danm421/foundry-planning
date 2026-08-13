@@ -108,6 +108,12 @@ import { GET } from "../route";
 import { POST } from "../generate/route";
 import { PATCH } from "../[chapterId]/route";
 
+import { CHAPTERS, NARRATED_CHAPTERS } from "@/lib/presentations/story/chapters/registry";
+
+/** The chapters a BASE-ONLY story generates: every landed one, less the ones
+ *  with nothing to recommend. Derived so a Wave D task touches one list. */
+const BASE_ONLY = NARRATED_CHAPTERS.filter((id) => !CHAPTERS[id].requiresProposal);
+
 const CLIENT_ID = "c1a11111-2222-4333-8444-555555555555";
 const SCENARIO_ID = "5ce11111-2222-4333-8444-666666666666";
 
@@ -200,12 +206,9 @@ describe("GET /api/clients/[id]/plan-story", () => {
     const body = await res.json();
     expect(res.status).toBe(200);
     expect(mocks.listStoryChapters).toHaveBeenCalledWith(CLIENT_ID, "base", "standalone");
-    expect(body.chapters).toHaveLength(4);
+    expect(body.chapters).toHaveLength(NARRATED_CHAPTERS.length);
     expect(body.chapters.map((c: { chapterId: string }) => c.chapterId)).toEqual([
-      "planInOnePage",
-      "whatWerePlanningFor",
-      "whatYouHave",
-      "whatWeRecommend",
+      ...NARRATED_CHAPTERS,
     ]);
     expect(body.chapters[0]).toMatchObject({
       title: "Your plan, in one page",
@@ -496,12 +499,8 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
     const res = await post({ scenarioId: "base", documentRole: "standalone" });
     const body = await res.json();
     expect(res.status).toBe(200);
-    expect(body.chapters.map((c: { chapterId: string }) => c.chapterId)).toEqual([
-      "planInOnePage",
-      "whatWerePlanningFor",
-      "whatYouHave",
-    ]);
-    expect(mocks.upsertGeneratedChapter).toHaveBeenCalledTimes(3);
+    expect(body.chapters.map((c: { chapterId: string }) => c.chapterId)).toEqual(BASE_ONLY);
+    expect(mocks.upsertGeneratedChapter).toHaveBeenCalledTimes(BASE_ONLY.length);
     expect(mocks.loadStoryContext).toHaveBeenCalledWith(
       expect.objectContaining({ clientId: CLIENT_ID, firmId: "firm_1", proposedRef: null }),
     );
@@ -610,15 +609,11 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
     const res = await post({ scenarioId: SCENARIO_ID, documentRole: "standalone" });
     const body = await res.json();
     expect(res.status).toBe(200);
-    expect(body.chapters.map((c: { chapterId: string }) => c.chapterId)).toEqual([
-      "planInOnePage",
-      "whatWerePlanningFor",
-      "whatYouHave",
-    ]);
+    expect(body.chapters.map((c: { chapterId: string }) => c.chapterId)).toEqual(BASE_ONLY);
     expect(mocks.generateChapter).not.toHaveBeenCalledWith(
       expect.objectContaining({ chapterId: "whatWeRecommend" }),
     );
-    expect(mocks.upsertGeneratedChapter).toHaveBeenCalledTimes(3);
+    expect(mocks.upsertGeneratedChapter).toHaveBeenCalledTimes(BASE_ONLY.length);
   });
 
   // Kills: inverting that filter, and confirms the proposed ref reaches the
@@ -635,7 +630,7 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
     const res = await post({ scenarioId: SCENARIO_ID, documentRole: "standalone" });
     const body = await res.json();
     expect(res.status).toBe(200);
-    expect(body.chapters).toHaveLength(4);
+    expect(body.chapters).toHaveLength(NARRATED_CHAPTERS.length);
     expect(mocks.loadStoryContext).toHaveBeenCalledWith(
       expect.objectContaining({ proposedRef: SCENARIO_ID }),
     );
@@ -646,7 +641,10 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
       expect.objectContaining({
         action: "plan_story.generated",
         firmId: "firm_1",
-        metadata: expect.objectContaining({ scenarioId: SCENARIO_ID, chapters: 4 }),
+        metadata: expect.objectContaining({
+          scenarioId: SCENARIO_ID,
+          chapters: NARRATED_CHAPTERS.length,
+        }),
       }),
     );
   });
@@ -730,7 +728,7 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
     expect(mocks.recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         metadata: expect.objectContaining({
-          suppressed: ["planInOnePage", "whatWerePlanningFor", "whatYouHave"],
+          suppressed: BASE_ONLY,
         }),
       }),
     );

@@ -3,6 +3,14 @@ import type { BuildDataContext } from "@/components/presentations/registry";
 import type { ChangeRow } from "@/lib/presentations/pages/scenario-changes/types";
 import type { Fact } from "@/lib/presentations/story/facts";
 import { CHAPTER_IDS, type ChapterId, type StoryContext } from "@/lib/presentations/story/types";
+import { CHAPTERS, NARRATED_CHAPTERS } from "@/lib/presentations/story/chapters/registry";
+
+/** What the shipped default prints with no scenario picked: every landed
+ *  chapter, less the ones with nothing to recommend. Derived from the registry
+ *  so a Wave D task adds a chapter in ONE place; the hand-written copy of the
+ *  landed list — the one that has to change deliberately — lives in
+ *  `options.test.ts`, which is where the shipped default is actually pinned. */
+const DEFAULT_PRINTED = NARRATED_CHAPTERS.filter((id) => !CHAPTERS[id].requiresProposal);
 import {
   buildPlanStoryData,
   MAX_FIGURE_CARDS,
@@ -127,17 +135,12 @@ describe("buildPlanStoryData — nothing to print", () => {
 describe("buildPlanStoryData — which chapters render", () => {
   it("drops the recommendation chapter on a base-only story", () => {
     const data = buildPlanStoryData(deckCtx(input()), PLAN_STORY_OPTIONS_DEFAULT);
-    expect(chapterIds(data)).toEqual(["planInOnePage", "whatWerePlanningFor", "whatYouHave"]);
+    expect(chapterIds(data)).toEqual(DEFAULT_PRINTED);
   });
 
   it("keeps it once a scenario is picked", () => {
     const data = buildPlanStoryData(deckCtx(input({ hasProposal: true })), PROPOSED);
-    expect(chapterIds(data)).toEqual([
-      "planInOnePage",
-      "whatWerePlanningFor",
-      "whatYouHave",
-      "whatWeRecommend",
-    ]);
+    expect(chapterIds(data)).toEqual(NARRATED_CHAPTERS);
   });
 
   it("decides from the options alone, not from the loaded story's own flag", () => {
@@ -147,12 +150,7 @@ describe("buildPlanStoryData — which chapters render", () => {
     // moment the builder consults one they can disagree about how many pages
     // this page occupies — which is the defect this whole rule exists to close.
     const optimistic = buildPlanStoryData(deckCtx(input({ hasProposal: false })), PROPOSED);
-    expect(chapterIds(optimistic)).toEqual([
-      "planInOnePage",
-      "whatWerePlanningFor",
-      "whatYouHave",
-      "whatWeRecommend",
-    ]);
+    expect(chapterIds(optimistic)).toEqual(NARRATED_CHAPTERS);
     expect(paragraphsOf(optimistic, "whatWeRecommend")).toEqual([
       "We aren't suggesting changes to the plan this time.",
     ]);
@@ -161,27 +159,20 @@ describe("buildPlanStoryData — which chapters render", () => {
       deckCtx(input({ hasProposal: true })),
       PLAN_STORY_OPTIONS_DEFAULT,
     );
-    expect(chapterIds(pessimistic)).toEqual([
-      "planInOnePage",
-      "whatWerePlanningFor",
-      "whatYouHave",
-    ]);
+    expect(chapterIds(pessimistic)).toEqual(DEFAULT_PRINTED);
   });
 
   it("carries the registry's title and layout onto each chapter", () => {
     const data = buildPlanStoryData(deckCtx(input({ hasProposal: true })), PROPOSED);
-    expect(data.chapters.map((c) => c.title)).toEqual([
-      "Your plan, in one page",
-      "What we're planning for",
-      "What you have",
-      "What we're recommending, and why",
-    ]);
-    expect(data.chapters.map((c) => c.layout)).toEqual([
-      "heroProse",
-      "twoUp",
-      "heroProse",
-      "strategyCards",
-    ]);
+    // Read off the registry: what this pins is that the builder CARRIES them,
+    // not what any one chapter happens to be titled this week.
+    expect(data.chapters.map((c) => c.title)).toEqual(
+      NARRATED_CHAPTERS.map((id) => CHAPTERS[id].title),
+    );
+    expect(data.chapters.map((c) => c.layout)).toEqual(
+      NARRATED_CHAPTERS.map((id) => CHAPTERS[id].layout),
+    );
+    expect(new Set(data.chapters.map((c) => c.layout)).size).toBeGreaterThan(1);
   });
 });
 
@@ -506,7 +497,7 @@ describe("the estimate and the render agree", () => {
     // defensive; it is pinned so the gap stays named rather than discovered.
     const data = buildPlanStoryData(deckCtx(undefined), PROPOSED);
     expect(physicalPages(data)).toBe(1);
-    expect(estimatePlanStoryPageCount(undefined as never, PROPOSED)).toBe(4);
+    expect(estimatePlanStoryPageCount(undefined as never, PROPOSED)).toBe(NARRATED_CHAPTERS.length);
   });
 });
 

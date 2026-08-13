@@ -121,6 +121,13 @@ const CLIENT = {
 const year = (y: number, taxable: number, cash: number, retirement: number) => ({
   year: y,
   portfolioAssets: { taxableTotal: taxable, cashTotal: cash, retirementTotal: retirement },
+  // This year's flow, as the engine writes it. `totalExpenses` is deliberately
+  // MORE than `expenses.total` here: the difference is what the household puts
+  // away, and the loader takes it as a difference rather than reading
+  // `savings.total`, so a self-funding savings rule cannot go missing.
+  totalIncome: 320_000,
+  expenses: { total: 210_000 },
+  totalExpenses: 270_000,
 });
 
 /** 2026 → $1.2M liquid, 2065 → $2.0M liquid. */
@@ -197,6 +204,26 @@ describe("loadStoryContext", () => {
     expect(display(ctx, "plan.endOfLifeYear")).toBe("2065");
     // Base-only: there is no proposed plan to leave anything behind.
     expect(ctx.facts.some((f) => f.id === "outcome.legacy.proposed")).toBe(false);
+  });
+
+  it("takes this year's flow off the first projection year, tying out to Cash Flow", async () => {
+    const ctx = await loadStoryContext({
+      clientId: "c1",
+      firmId: "f1",
+      proposedRef: null,
+      scenarioLabel: "Base Case",
+      documentRole: "standalone",
+    });
+
+    expect(display(ctx, "flow.income")).toBe("$320K");
+    // `expenses.total`, not `totalExpenses` — the Cash Flow page's Expenses row.
+    expect(display(ctx, "flow.spending")).toBe("$210K");
+    // Total Expenses MINUS Expenses. Reading `savings.total` instead would drop
+    // a self-funding rule's contribution and overstate the household's headroom.
+    expect(display(ctx, "flow.saving")).toBe("$60K");
+    // No fourth total: three rounded figures that do not visibly subtract to it
+    // are worse on a client page than none.
+    expect(ctx.facts.some((f) => f.id.startsWith("flow.") && !["flow.income", "flow.spending", "flow.saving"].includes(f.id))).toBe(false);
   });
 
   it("carries the household's goals and drops the life milestones", async () => {

@@ -12,7 +12,7 @@ import {
 import { estimatePlanStoryPageCount } from "../estimate-page-count";
 import { summarizePlanStoryOptions } from "../summarize-options";
 import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
-import { CHAPTER_IDS } from "@/lib/presentations/story/types";
+import { CHAPTER_IDS, type ChapterId } from "@/lib/presentations/story/types";
 
 /** The same options with a live scenario picked — the only thing that makes the
  *  recommendation chapter printable. */
@@ -33,7 +33,22 @@ function withSections(over: Partial<PlanStoryOptions["sections"]>): PlanStoryOpt
  *  from that list, so a test that also read it could not fail. Wave D updates
  *  this line as each narrator lands, which is the point — the shipped default
  *  changing is a decision, not a side effect. */
-const LANDED = ["planInOnePage", "whatWerePlanningFor", "whatYouHave", "whatWeRecommend"];
+const LANDED: ChapterId[] = [
+  "planInOnePage",
+  "whatWerePlanningFor",
+  "whatYouHave",
+  "whereTheMoneyGoes",
+  "whatWeRecommend",
+];
+
+/** What the shipped default actually PRINTS: every landed chapter, less the ones
+ *  with nothing to recommend on a base-only story.
+ *
+ *  Derived rather than spelled out a second time. Each Wave D task adds one line
+ *  to `LANDED` above, and every count and list below follows — the alternative
+ *  was nine literal expectations that all restate the same fact and all have to
+ *  be edited together, which is how one of them ends up saying something else. */
+const LANDED_BASE_ONLY = LANDED.filter((id) => !CHAPTERS[id].requiresProposal);
 
 /** What every stored deck and every freshly added page starts as. */
 function defaultSections(over: Partial<Record<string, boolean>> = {}): Record<string, boolean> {
@@ -153,36 +168,23 @@ describe("planStoryProposedRef", () => {
 describe("printedChapters", () => {
   it("drops the recommendation on a base-only story, even though it is switched on", () => {
     expect(PLAN_STORY_OPTIONS_DEFAULT.sections.whatWeRecommend).toBe(true);
-    expect(printedChapters(PLAN_STORY_OPTIONS_DEFAULT)).toEqual([
-      "planInOnePage",
-      "whatWerePlanningFor",
-      "whatYouHave",
-    ]);
+    expect(printedChapters(PLAN_STORY_OPTIONS_DEFAULT)).toEqual(LANDED_BASE_ONLY);
   });
 
   it("returns every chapter in document order once a scenario is picked", () => {
-    expect(printedChapters(WITH_PROPOSAL)).toEqual([
-      "planInOnePage",
-      "whatWerePlanningFor",
-      "whatYouHave",
-      "whatWeRecommend",
-    ]);
+    expect(printedChapters(WITH_PROPOSAL)).toEqual(LANDED);
   });
 
   it("treats an explicit 'base' exactly as no scenario at all", () => {
-    expect(printedChapters({ ...PLAN_STORY_OPTIONS_DEFAULT, scenarioId: "base" })).toEqual([
-      "planInOnePage",
-      "whatWerePlanningFor",
-      "whatYouHave",
-    ]);
+    expect(printedChapters({ ...PLAN_STORY_OPTIONS_DEFAULT, scenarioId: "base" })).toEqual(
+      LANDED_BASE_ONLY,
+    );
   });
 
   it("drops a chapter that is switched off", () => {
-    expect(printedChapters({ ...WITH_PROPOSAL, sections: { ...WITH_PROPOSAL.sections, whatYouHave: false } })).toEqual([
-      "planInOnePage",
-      "whatWerePlanningFor",
-      "whatWeRecommend",
-    ]);
+    expect(printedChapters({ ...WITH_PROPOSAL, sections: { ...WITH_PROPOSAL.sections, whatYouHave: false } })).toEqual(
+      LANDED.filter((id) => id !== "whatYouHave"),
+    );
   });
 
   it("hides exactly the chapters the registry marks as needing a proposal", () => {
@@ -234,8 +236,10 @@ describe("estimatePlanStoryPageCount", () => {
     // One fewer than the default has switched on: the default picks no
     // scenario, so the recommendation chapter cannot render and must not be
     // numbered.
-    expect(estimatePlanStoryPageCount(undefined as never, PLAN_STORY_OPTIONS_DEFAULT)).toBe(3);
-    expect(estimatePlanStoryPageCount(undefined as never, WITH_PROPOSAL)).toBe(4);
+    expect(estimatePlanStoryPageCount(undefined as never, PLAN_STORY_OPTIONS_DEFAULT)).toBe(
+      LANDED_BASE_ONLY.length,
+    );
+    expect(estimatePlanStoryPageCount(undefined as never, WITH_PROPOSAL)).toBe(LANDED.length);
   });
 
   it("counts the brief preset against the story it is actually telling", () => {
@@ -256,14 +260,18 @@ describe("estimatePlanStoryPageCount", () => {
 
   it("ignores whatever is handed to it as data", () => {
     const junk = { chapters: [1, 2, 3, 4, 5] } as never;
-    expect(estimatePlanStoryPageCount(junk, PLAN_STORY_OPTIONS_DEFAULT)).toBe(3);
+    expect(estimatePlanStoryPageCount(junk, PLAN_STORY_OPTIONS_DEFAULT)).toBe(
+      LANDED_BASE_ONLY.length,
+    );
   });
 });
 
 describe("summarizePlanStoryOptions", () => {
   it("names the preset and the number of chapters that will print", () => {
-    expect(summarizePlanStoryOptions(PLAN_STORY_OPTIONS_DEFAULT)).toBe("Full story · 3 chapters");
-    expect(summarizePlanStoryOptions(WITH_PROPOSAL)).toBe("Full story · 4 chapters");
+    expect(summarizePlanStoryOptions(PLAN_STORY_OPTIONS_DEFAULT)).toBe(
+      `Full story · ${LANDED_BASE_ONLY.length} chapters`,
+    );
+    expect(summarizePlanStoryOptions(WITH_PROPOSAL)).toBe(`Full story · ${LANDED.length} chapters`);
   });
 
   it("says one chapter in the singular", () => {
@@ -274,7 +282,10 @@ describe("summarizePlanStoryOptions", () => {
 
   it("names a hand-tuned report Custom", () => {
     const custom: PlanStoryOptions = {
-      ...withSections({ whatWerePlanningFor: false, whatYouHave: false, whatWeRecommend: false }),
+      // Everything the default switches on, off again, save the punchline.
+      ...withSections(
+        Object.fromEntries(LANDED.filter((id) => id !== "planInOnePage").map((id) => [id, false])),
+      ),
       scenarioId: "scn-1",
       preset: "custom",
     };
@@ -286,7 +297,7 @@ describe("summarizePlanStoryOptions", () => {
     // clause. Until then the launcher row must not promise sheets that would
     // print "We'll cover this together." and nothing else.
     expect(summarizePlanStoryOptions(applyPreset(WITH_PROPOSAL, "full"))).toBe(
-      "Full story · 4 chapters",
+      `Full story · ${LANDED.length} chapters`,
     );
   });
 
@@ -329,7 +340,7 @@ describe("the two presets", () => {
     // is where an advisor meets it: one of the full preset's landed three needs
     // a proposal, and so does one of the brief's two.
     const full = applyPreset({ ...PLAN_STORY_OPTIONS_DEFAULT, scenarioId: "" }, "full");
-    expect(printedChapters(full)).toEqual(["planInOnePage", "whatWerePlanningFor", "whatYouHave"]);
+    expect(printedChapters(full)).toEqual(LANDED_BASE_ONLY);
     const brief = applyPreset({ ...PLAN_STORY_OPTIONS_DEFAULT, scenarioId: "" }, "brief");
     expect(printedChapters(brief)).toEqual(["planInOnePage"]);
   });
