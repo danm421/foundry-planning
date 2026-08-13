@@ -5,6 +5,8 @@ import type { Fact } from "@/lib/presentations/story/facts";
 import type { ChapterId, StoryContext } from "@/lib/presentations/story/types";
 import {
   buildPlanStoryData,
+  MAX_STRATEGY_CARDS,
+  SHEET_BUDGET_WORDS,
   type PlanStoryContextInput,
   type PlanStoryPageData,
 } from "../view-model";
@@ -464,5 +466,179 @@ describe("the estimate and the render agree", () => {
     const data = buildPlanStoryData(deckCtx(undefined), PROPOSED);
     expect(physicalPages(data)).toBe(1);
     expect(estimatePlanStoryPageCount(undefined as never, PROPOSED)).toBe(3);
+  });
+});
+
+/**
+ * `physicalPages` above counts one sheet per chapter, and `estimatePlanStoryPageCount`
+ * reserves on the same rule from the options ALONE — `document.tsx` calls it with
+ * no data. So the invariant those tests assert is only true if a chapter cannot
+ * render onto a second sheet. Nothing made that true; these do.
+ */
+describe("one sheet per chapter, by construction", () => {
+  function withStrategies(n: number, text: Partial<Record<ChapterId, string>> = {}): PlanStoryPageData {
+    return buildPlanStoryData(
+      deckCtx(
+        input(
+          {
+            hasProposal: true,
+            strategies: Array.from({ length: n }, (_, i) => ({
+              name: `Strategy ${i + 1}`,
+              rows: [row({ what: `Change ${i + 1}`, detail: [] })],
+            })),
+          },
+          text,
+        ),
+      ),
+      PROPOSED,
+    );
+  }
+
+  const recommend = (data: PlanStoryPageData) =>
+    data.chapters.find((c) => c.chapterId === "whatWeRecommend")!;
+
+  it("prints every card when they fit", () => {
+    const chapter = recommend(withStrategies(MAX_STRATEGY_CARDS));
+    expect(chapter.strategies).toHaveLength(MAX_STRATEGY_CARDS);
+    expect(chapter.overflowNote).toBe("");
+  });
+
+  it("caps the cards at the sheet's capacity", () => {
+    expect(recommend(withStrategies(11)).strategies).toHaveLength(MAX_STRATEGY_CARDS);
+  });
+
+  it("says how many it did not print, in the client's language", () => {
+    expect(recommend(withStrategies(11)).overflowNote).toBe(
+      `…and ${11 - MAX_STRATEGY_CARDS} more changes we'll walk through together.`,
+    );
+  });
+
+  it("says 'one more change' rather than '1 more changes'", () => {
+    expect(recommend(withStrategies(MAX_STRATEGY_CARDS + 1)).overflowNote).toBe(
+      "…and one more change we'll walk through together.",
+    );
+  });
+
+  // `editedText` accepts 20,000 characters — roughly 3,000 words, or eight
+  // sheets — and no gate ever sees an advisor's own writing. Without this bound
+  // one pasted note drifts the contents exactly as eleven cards do.
+  it("bounds the paragraphs too, so a 20,000-character edit cannot overflow", () => {
+    const long = Array.from({ length: 40 }, () => "word ".repeat(50).trim()).join("\n\n");
+    const chapter = buildPlanStoryData(
+      deckCtx(input({}, { whatYouHave: long })),
+      PLAN_STORY_OPTIONS_DEFAULT,
+    ).chapters.find((c) => c.chapterId === "whatYouHave")!;
+    const words = chapter.paragraphs.join(" ").split(/\s+/u).filter(Boolean).length;
+    expect(words).toBeLessThanOrEqual(SHEET_BUDGET_WORDS);
+    expect(chapter.overflowNote).not.toBe("");
+  });
+
+  // A chapter with nothing on it is the one outcome the renderer is built to
+  // make impossible. A lone over-budget paragraph is therefore CUT rather than
+  // dropped — keeping it whole, which is the obvious alternative, would break
+  // the very invariant this cap exists to establish.
+  it("cuts a lone over-long paragraph rather than blanking the chapter or spilling", () => {
+    const chapter = buildPlanStoryData(
+      deckCtx(input({}, { whatYouHave: "word ".repeat(SHEET_BUDGET_WORDS * 2).trim() })),
+      PLAN_STORY_OPTIONS_DEFAULT,
+    ).chapters.find((c) => c.chapterId === "whatYouHave")!;
+    expect(chapter.paragraphs).toHaveLength(1);
+    expect(chapter.paragraphs[0].split(/\s+/u).filter(Boolean).length).toBeLessThanOrEqual(
+      SHEET_BUDGET_WORDS,
+    );
+    expect(chapter.overflowNote).not.toBe("");
+  });
+
+  // …and it cuts at a sentence end, not mid-thought, whenever one fits.
+  it("cuts a long paragraph at a sentence boundary", () => {
+    const sentence = "Your plan holds through every year we modelled and leaves room to spare. ";
+    const chapter = buildPlanStoryData(
+      deckCtx(input({}, { whatYouHave: sentence.repeat(60).trim() })),
+      PLAN_STORY_OPTIONS_DEFAULT,
+    ).chapters.find((c) => c.chapterId === "whatYouHave")!;
+    expect(chapter.paragraphs[0].endsWith(".")).toBe(true);
+  });
+
+  // The cards are charged against the same sheet the prose is, so a chapter
+  // carrying both gets LESS prose room than one carrying none. Independent caps
+  // satisfy both limits and still spill — the measured grid says so.
+  it("charges the cards against the prose budget", () => {
+    const lead = "word ".repeat(SHEET_BUDGET_WORDS).trim();
+    const chapter = recommend(withStrategies(MAX_STRATEGY_CARDS, { whatWeRecommend: lead }));
+    const words = chapter.paragraphs.join(" ").split(/\s+/u).filter(Boolean).length;
+    expect(chapter.strategies).toHaveLength(MAX_STRATEGY_CARDS);
+    // A chapter with no cards may spend the whole sheet; one carrying the full
+    // set of cards may not, and independent caps could never see the difference.
+    // A chapter with no cards may spend the whole sheet; one carrying the full
+    // set may not, and independent caps could never see the difference.
+    expect(words).toBeLessThan(SHEET_BUDGET_WORDS);
+  });
+
+  // Both bounds can bite at once, and two notes on one sheet is the overflow
+  // this whole task exists to prevent.
+  it("prints one note even when both bounds bite", () => {
+    const long = Array.from({ length: 40 }, () => "word ".repeat(50).trim()).join("\n\n");
+    const note = recommend(withStrategies(11, { whatWeRecommend: long })).overflowNote;
+    expect(note).toBe(`…and ${11 - MAX_STRATEGY_CARDS} more changes we'll walk through together.`);
+    expect(note.split("…and")).toHaveLength(2);
+  });
+});
+
+/**
+ * Moved here from `plan-story.test.tsx` when the rule moved. It used to live in
+ * `chapter-pdf.tsx`, which renders — but the sheet budget is spent HERE, and a
+ * paragraph the renderer was always going to discard must not be charged for, or
+ * a chapter carrying a full set of cards announces dropped prose nobody lost.
+ */
+describe("a strategy the prose already spelled out", () => {
+  const STRATEGY = {
+    name: "Delay Social Security",
+    rows: [row({ what: "Alan's Social Security", detail: ["Claim age: 67 to 70"] })],
+  };
+  const DETAIL = "Claim age: 67 to 70";
+
+  const recommend = (text: string) =>
+    buildPlanStoryData(
+      deckCtx(input({ hasProposal: true, strategies: [STRATEGY] }, { whatWeRecommend: text })),
+      PROPOSED,
+    ).chapters.find((c) => c.chapterId === "whatWeRecommend")!;
+
+  it("drops the narrator's own one-line restatement", () => {
+    const chapter = recommend(`Delay Social Security — ${DETAIL}.`);
+    expect(chapter.paragraphs).toEqual([]);
+    // The card keeps every field — it is the one that also says WHAT WE'D DO.
+    expect(chapter.strategies[0].name).toBe("Delay Social Security");
+    expect(chapter.strategies[0].detail).toBe(DETAIL);
+  });
+
+  it("drops the no-quotable-clause restatement too", () => {
+    // `describe()`'s other shape, taken when the changes table's figure fails
+    // the fact gate: the sentence is name-only.
+    expect(recommend("Delay Social Security.").paragraphs).toEqual([]);
+  });
+
+  it("keeps prose that opens with the strategy's name and then says something", () => {
+    const lead = "Delay Social Security — it is the single biggest lever in your plan.";
+    expect(recommend(lead).paragraphs).toEqual([lead]);
+  });
+
+  it("keeps prose that never names the strategy at all", () => {
+    const lead = "We're recommending two changes, and both are about timing.";
+    expect(recommend(lead).paragraphs).toEqual([lead]);
+  });
+
+  it("keeps every paragraph when the chapter has no cards to duplicate", () => {
+    const line = "Delay Social Security — Claim age: 67 to 70.";
+    const chapter = buildPlanStoryData(
+      deckCtx(input({ hasProposal: true, strategies: [] }, { whatWeRecommend: line })),
+      PROPOSED,
+    ).chapters.find((c) => c.chapterId === "whatWeRecommend")!;
+    expect(chapter.paragraphs).toEqual([line]);
+  });
+
+  // Dropping a restatement is not "nothing fits" — the note would tell a client
+  // the report is incomplete when the card says the very same thing.
+  it("prints no overflow note for a paragraph the card already carries", () => {
+    expect(recommend(`Delay Social Security — ${DETAIL}.`).overflowNote).toBe("");
   });
 });

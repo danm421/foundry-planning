@@ -40,43 +40,16 @@ const styles = StyleSheet.create({
   cardName: { fontSize: 12, fontWeight: 700, color: PRESENTATION_THEME.ink, marginBottom: 3 },
   cardLabel: { fontSize: 7.5, letterSpacing: 0.6, color: PRESENTATION_THEME.ink3, marginBottom: 2 },
   cardText: { fontSize: 10, lineHeight: 1.5, color: PRESENTATION_THEME.ink2 },
+  /** The note that stands in for what the sheet could not hold. Italic and in
+   *  the quietest ink: it is an aside to the reader, not another card. */
+  overflow: {
+    fontSize: 10,
+    lineHeight: 1.5,
+    color: PRESENTATION_THEME.ink3,
+    marginTop: 4,
+    fontStyle: "italic",
+  },
 });
-
-type Strategy = PlanStoryChapterView["strategies"][number];
-
-/** Everything before the first occurrence of `phrase`, plus everything after it. */
-function strikeFirst(text: string, phrase: string): string {
-  if (phrase.length === 0) return text;
-  const at = text.toLowerCase().indexOf(phrase.toLowerCase());
-  return at < 0 ? text : text.slice(0, at) + text.slice(at + phrase.length);
-}
-
-const WORDLIKE = /[\p{L}\p{N}]/u;
-
-/**
- * Does this paragraph say anything the card doesn't already say?
- *
- * On the AI-off path `narrateWhatWeRecommend` writes one sentence per strategy —
- * `"Delay Social Security — Claim age: 67 → 70."` — and `generateChapter` STORES
- * that sentence as the chapter's text, so by export time it arrives here as
- * prose, indistinguishable from an advisor's own. The card below then repeats
- * the same name and the same clause, out of the same `quotableDetail` call on
- * the same facts. Printing both puts the identical sentence on a client's page
- * twice, ten points apart.
- *
- * The card is the richer of the two — it also carries WHAT WE'D DO — so the
- * PARAGRAPH is what goes, and only when it is a pure restatement: strike the
- * strategy's name and its quoted clause out of the sentence and drop it only if
- * nothing but punctuation is left. A lead-in that opens with the strategy's name
- * and then says something of its own is exactly what a good generated (or
- * hand-written) chapter looks like, and it keeps every word.
- */
-function restatesCard(paragraph: string, strategy: Strategy): boolean {
-  if (strategy.name.length === 0) return false;
-  const withoutName = strikeFirst(paragraph, strategy.name);
-  if (withoutName === paragraph) return false;
-  return !WORDLIKE.test(strikeFirst(withoutName, strategy.detail));
-}
 
 export function PlanStoryChapterPdf({
   chapter,
@@ -88,10 +61,12 @@ export function PlanStoryChapterPdf({
   /** The report's own name and the plan it narrates — "Your Plan · Proposed". */
   eyebrow: string;
 }) {
+  // Both already decided by `buildPlanStoryData`, which is where the sheet
+  // budget is spent — a paragraph dropped here rather than there would be
+  // charged against a sheet it never reached. This component renders; it does
+  // not choose.
   const cards = chapter.layout === "strategyCards" ? chapter.strategies : [];
-  const paragraphs = chapter.paragraphs.filter(
-    (p) => !cards.some((strategy) => restatesCard(p, strategy)),
-  );
+  const paragraphs = chapter.paragraphs;
 
   return (
     <View style={styles.wrap}>
@@ -120,6 +95,10 @@ export function PlanStoryChapterPdf({
           )}
         </View>
       ))}
+
+      {chapter.overflowNote.length > 0 && (
+        <Text style={styles.overflow}>{chapter.overflowNote}</Text>
+      )}
     </View>
   );
 }

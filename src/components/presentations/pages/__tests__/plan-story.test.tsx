@@ -67,6 +67,7 @@ function chapter(over: Partial<PlanStoryChapterView> = {}): PlanStoryChapterView
     layout: "heroProse",
     paragraphs: ["Your plan holds."],
     strategies: [],
+    overflowNote: "",
     ...over,
   };
 }
@@ -191,66 +192,6 @@ describe("PlanStoryPagePdf — the empty page", () => {
 // is what goes — but only when striking the strategy's name and clause out of it
 // leaves nothing but punctuation.
 // ─────────────────────────────────────────────────────────────────────────────
-describe("PlanStoryPagePdf — a strategy the prose already spelled out", () => {
-  const STRATEGY = {
-    name: "Delay Social Security",
-    what: "Alan's Social Security claim age",
-    detail: "Claim age: 67 → 70",
-  };
-  const recommend = (paragraphs: string[]): PlanStoryChapterView =>
-    chapter({
-      chapterId: "whatWeRecommend",
-      title: "What we're recommending, and why",
-      layout: "strategyCards",
-      paragraphs,
-      strategies: [STRATEGY],
-    });
-
-  it("drops the narrator's own one-line restatement", () => {
-    const restatement = "Delay Social Security — Claim age: 67 → 70.";
-    const printed = textOf(render(pageData([recommend([restatement])])));
-
-    expect(printed).not.toContain(restatement);
-    // The card keeps every field — it is the one that also says WHAT WE'D DO.
-    expect(printed).toContain(STRATEGY.name);
-    expect(printed).toContain(STRATEGY.what);
-    expect(printed).toContain(STRATEGY.detail);
-    // …and the clause reaches the client exactly once.
-    expect(printed.filter((t) => t.includes(STRATEGY.detail))).toHaveLength(1);
-  });
-
-  it("drops the no-quotable-clause restatement too", () => {
-    // `describe()`'s other shape, taken when the changes table's figure fails the
-    // fact gate: the card's `detail` is "" and the sentence is name-only.
-    const printed = textOf(
-      render(pageData([recommend(["Delay Social Security."])])),
-    );
-    expect(printed).not.toContain("Delay Social Security.");
-    expect(printed).toContain(STRATEGY.name);
-  });
-
-  it("keeps prose that opens with the strategy's name and then says something", () => {
-    const lead = "Delay Social Security — it is the single biggest lever in your plan.";
-    const printed = textOf(render(pageData([recommend([lead])])));
-    expect(printed).toContain(lead);
-    expect(printed).toContain(STRATEGY.detail);
-  });
-
-  it("keeps prose that never names the strategy at all", () => {
-    const lead = "We're recommending two changes, and both are about timing.";
-    const printed = textOf(render(pageData([recommend([lead])])));
-    expect(printed).toContain(lead);
-  });
-
-  it("keeps every paragraph when the chapter has no cards to duplicate", () => {
-    // The no-proposal shape of the same chapter: one sentence, no strategies.
-    const line = "We aren't suggesting changes to the plan this time.";
-    const printed = textOf(
-      render(pageData([{ ...recommend([line]), strategies: [] }])),
-    );
-    expect(printed).toContain(line);
-  });
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The page-count agreement. `document.tsx` numbers every page after this one —
