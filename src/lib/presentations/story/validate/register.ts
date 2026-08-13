@@ -126,16 +126,26 @@ function escapeName(name: string): string {
  *
  * The prompt allows the names once, and the natural place is the vocative —
  * sentence-initial, followed by a comma ("Cooper and Susan, your plan holds
- * up"). Anywhere else — "For Cooper and Susan, that means…", "Cooper's plan
- * holds" — the advisor is talking ABOUT them to somebody who is not there, and
- * the sentence-boundary lookbehind is what tells the two apart.
+ * up"). Anywhere else — "For Cooper and Susan, that means…" — the advisor is
+ * talking ABOUT them to somebody who is not there, and the sentence-boundary
+ * lookbehind is what tells the two apart.
+ *
+ * The POSSESSIVE is the one exception, and it was measured rather than assumed:
+ * a two-person household has two sets of accounts, and "Susan's 401(k)" is the
+ * only way to say which one. On Cooper & Susan 2026-08-12 that sentence was
+ * rejected on both attempts and the chapter fell back to boilerplate. A
+ * possessive attaches the name to a thing; third person attaches it to the
+ * reader, and only the second is the defect this gate was written for.
  */
+const POSSESSIVE_RE = /^['’]s(?![\p{L}\p{N}])/u;
+
 function thirdPersonName(text: string, names: string[]): string | null {
   for (const name of names) {
     const n = escapeName(name);
     // Every occurrence of the name as a whole word…
     const re = new RegExp(String.raw`(?<![\p{L}\p{N}])${n}(?![\p{L}\p{N}])`, "giu");
     for (const match of text.matchAll(re)) {
+      if (POSSESSIVE_RE.test(text.slice(match.index + match[0].length))) continue;
       const before = text.slice(0, match.index);
       // …that is NOT preceded only by sentence start + other names/joiners.
       const runStart = /(?:^|[.!?]\s+|\n)\s*(?:[\p{Lu}][\p{L}'-]*(?:\s+and\s+|,\s*)?)*$/u.test(before);

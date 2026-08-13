@@ -134,4 +134,21 @@ describe("Gate 6b — third person about the reader", () => {
   it("accepts 'your household' — the possessive is second person", () => {
     expect(gate("Your household spends about that much a year.", FACTS)).toEqual([]);
   });
+
+  /**
+   * A two-person household has two sets of accounts, and the only way to say
+   * which is which is to name the owner. Measured on Cooper & Susan 2026-08-12:
+   * the recommendation chapter was rejected twice for "Susan's 401(k)
+   * contributions are set to 100% Roth" — prose with no alternative phrasing,
+   * and a note the model could not act on. The possessive attaches the name to a
+   * THING; third person attaches it to the reader.
+   */
+  it("accepts a possessive name — it says whose account it is", () => {
+    expect(gate("Susan's 401(k) goes in as 100% Roth, so the tax is paid now.", FACTS)).toEqual([]);
+    expect(gate("You fund Cooper’s Roth IRA at the limit through 2034.", FACTS)).toEqual([]);
+  });
+
+  it("still rejects the same name in the nominative", () => {
+    expect(gate("Susan keeps the same finish across the plan.", FACTS)).not.toEqual([]);
+  });
 });
