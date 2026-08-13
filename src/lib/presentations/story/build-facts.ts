@@ -51,6 +51,15 @@ export interface StoryFactsInput {
    * `load-context.ts` for where each one comes from.
    */
   flow: { income: number; spending: number; saving: number } | null;
+  /**
+   * The first year the CURRENT plan cannot cover its own spending, or null when
+   * it never does.
+   *
+   * Null is also what a projection with no years looks like, which is why the
+   * narrator states the good case from a figure it HAS — the legacy left at the
+   * end — rather than reading anything into this being absent.
+   */
+  shortfallYear: number | null;
 }
 
 /** A quoted figure describes one proposed change, so it is meaningful in the
@@ -179,7 +188,18 @@ function quoteStrategyFigures(strategies: StoryStrategy[], taken: Set<string>): 
  * would be a second list to keep in step with `CHAPTER_IDS`.
  */
 const BALANCE_SHEET_CHAPTERS: readonly ChapterId[] = ["whatYouHave"];
-const OUTCOME_CHAPTERS: readonly ChapterId[] = ["planInOnePage"];
+/**
+ * The base plan's own outcome figures belong to two chapters, not one: the
+ * headline states them as the punchline, and chapter 4 is ABOUT the path they
+ * describe. Nowhere else — the 2026-08-12 read found the balance-sheet chapter
+ * re-narrating all four of the headline's figures on the very next sheet.
+ */
+const OUTCOME_CHAPTERS: readonly ChapterId[] = ["planInOnePage", "thePathYoureOn"];
+/** …and the PROPOSED plan's, which chapter 4 has nothing to say about: it is the
+ *  path taken with nothing changed. */
+const PROPOSED_OUTCOME_CHAPTERS: readonly ChapterId[] = ["planInOnePage"];
+/** Where today's plan ends up if nothing changes. */
+const BASE_PATH_CHAPTERS: readonly ChapterId[] = ["thePathYoureOn"];
 /** A goal's date is only meaningful beside the goal it belongs to. */
 const GOAL_CHAPTERS: readonly ChapterId[] = ["whatWerePlanningFor"];
 /** This year's cash flow belongs to the chapter about this year's cash flow. */
@@ -267,7 +287,7 @@ export function buildStoryFacts(input: StoryFactsInput): Fact[] {
         "outcome.confidence.proposed",
         "Confidence, proposed plan",
         input.proposedSuccess,
-        OUTCOME_CHAPTERS,
+        PROPOSED_OUTCOME_CHAPTERS,
       ),
     );
   }
@@ -277,7 +297,7 @@ export function buildStoryFacts(input: StoryFactsInput): Fact[] {
         "outcome.legacy.proposed",
         "Left at the end, proposed plan",
         input.proposedEndLiquid,
-        OUTCOME_CHAPTERS,
+        PROPOSED_OUTCOME_CHAPTERS,
       ),
     );
   }
@@ -293,6 +313,17 @@ export function buildStoryFacts(input: StoryFactsInput): Fact[] {
    * invites a subtraction that comes out wrong. The narrator states the
    * DIRECTION instead, compared on `raw`, which is what `raw` is for.
    */
+  if (input.shortfallYear != null) {
+    facts.push(
+      yearFact(
+        "base.shortfallYear",
+        "The year the current plan runs short",
+        input.shortfallYear,
+        BASE_PATH_CHAPTERS,
+      ),
+    );
+  }
+
   if (input.flow) {
     facts.push(
       moneyFact("flow.income", "Money coming in this year", input.flow.income, FLOW_CHAPTERS),

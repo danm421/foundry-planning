@@ -118,7 +118,12 @@ const CLIENT = {
   lifeExpectancy: 90,
 };
 
-const year = (y: number, taxable: number, cash: number, retirement: number) => ({
+/**
+ * `salaries` covers the year's Total Expenses unless a test lowers it — which is
+ * what makes a shortfall year something a test has to ASK for rather than
+ * something the fixture produces by accident.
+ */
+const year = (y: number, taxable: number, cash: number, retirement: number, salaries = 320_000) => ({
   year: y,
   portfolioAssets: { taxableTotal: taxable, cashTotal: cash, retirementTotal: retirement },
   // This year's flow, as the engine writes it. `totalExpenses` is deliberately
@@ -128,6 +133,10 @@ const year = (y: number, taxable: number, cash: number, retirement: number) => (
   totalIncome: 320_000,
   expenses: { total: 210_000 },
   totalExpenses: 270_000,
+  // What `retirementInflows` reads to decide whether the year funds itself.
+  income: { socialSecurity: 0, salaries, business: 0, deferred: 0, capitalGains: 0, trust: 0, other: 0 },
+  accountLedgers: {},
+  withdrawals: { total: 0 },
 });
 
 /** 2026 → $1.2M liquid, 2065 → $2.0M liquid. */
@@ -224,6 +233,35 @@ describe("loadStoryContext", () => {
     // No fourth total: three rounded figures that do not visibly subtract to it
     // are worse on a client page than none.
     expect(ctx.facts.some((f) => f.id.startsWith("flow.") && !["flow.income", "flow.spending", "flow.saving"].includes(f.id))).toBe(false);
+  });
+
+  it("names no shortfall year for a plan that funds itself", async () => {
+    const ctx = await loadStoryContext({
+      clientId: "c1",
+      firmId: "f1",
+      proposedRef: null,
+      scenarioLabel: "Base Case",
+      documentRole: "standalone",
+    });
+    expect(ctx.facts.some((f) => f.id === "base.shortfallYear")).toBe(false);
+  });
+
+  it("names the FIRST year the current plan cannot cover its own spending", async () => {
+    // The app's existing definition, off `retirementInflows` — the same one the
+    // Retirement Analysis hero chart and year table draw. A second definition
+    // here would put a different year on the client's page than the one the
+    // advisor is looking at on screen.
+    fx.years = {
+      base: [year(2026, 400_000, 100_000, 700_000), year(2050, 100_000, 0, 0, 10_000), year(2065, 0, 0, 0, 5_000)],
+    };
+    const ctx = await loadStoryContext({
+      clientId: "c1",
+      firmId: "f1",
+      proposedRef: null,
+      scenarioLabel: "Base Case",
+      documentRole: "standalone",
+    });
+    expect(display(ctx, "base.shortfallYear")).toBe("2050");
   });
 
   it("carries the household's goals and drops the life milestones", async () => {

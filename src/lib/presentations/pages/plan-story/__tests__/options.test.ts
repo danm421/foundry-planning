@@ -38,6 +38,7 @@ const LANDED: ChapterId[] = [
   "whatWerePlanningFor",
   "whatYouHave",
   "whereTheMoneyGoes",
+  "thePathYoureOn",
   "whatWeRecommend",
 ];
 

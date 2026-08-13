@@ -16,6 +16,7 @@ import { buildBaseResolveData, buildAssetTxResolveData } from "@/lib/scenario/sc
 import { describeChange } from "@/lib/presentations/pages/scenario-changes/describe";
 import { buildResolveContext } from "@/lib/presentations/pages/scenario-changes/describe/resolve";
 import { liquidPortfolioTotal } from "@/engine/monteCarlo/trial";
+import { retirementInflows } from "@/lib/retirement/retirement-inflows";
 import { liquidPortfolioTotal as balanceSheetLiquidTotal } from "@/lib/presentations/pages/balance-sheet/view-model";
 import { buildViewModel } from "@/components/balance-sheet-report/view-model";
 import { buildViewModelInputs } from "@/lib/balance-sheet/build-view-model-inputs";
@@ -23,7 +24,7 @@ import { mergeSyntheticAccounts } from "@/lib/balance-sheet/merge-synthetic-acco
 import { buildMapBoards } from "@/lib/household-map/build-boards";
 import { ASSUMED_LIFE_EXPECTANCY } from "@/lib/plan-horizon";
 import type { GoalKind, MapGoal } from "@/lib/household-map/goals";
-import type { ClientData } from "@/engine/types";
+import type { ClientData, ProjectionYear } from "@/engine/types";
 import { buildStoryFacts, groupStrategies } from "./build-facts";
 import type { StoryContext, StoryGoal, StoryStrategy } from "./types";
 
@@ -159,6 +160,22 @@ function storyGoals(effectiveTree: ClientData, today: Date): StoryGoal[] {
   });
 }
 
+/**
+ * The first year the plan cannot cover its own spending, or null when it never
+ * does.
+ *
+ * `retirementInflows` rather than a definition of our own: it is the app's
+ * existing answer to "does this year fund itself", mirroring the Cash Flow
+ * report's inflow stack (Social Security, salaries, other, RMDs, withdrawals)
+ * and already driving the Retirement Analysis hero chart and year table. A
+ * second definition here would put a different year on the client's page than
+ * the one the advisor sees on screen — and the advisor would be the one asked
+ * about it.
+ */
+function firstShortfallYear(years: ProjectionYear[]): number | null {
+  return years.find((y) => retirementInflows(y).shortfall > 0)?.year ?? null;
+}
+
 export async function loadStoryContext(args: LoadStoryContextArgs): Promise<StoryContext> {
   const { clientId, firmId, proposedRef } = args;
 
@@ -253,6 +270,7 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
      * `savings.total` directly would have told a self-funding household it had
      * headroom it does not have.
      */
+    shortfallYear: firstShortfallYear(baseYears),
     flow: firstYear
       ? {
           income: firstYear.totalIncome,
