@@ -50,6 +50,22 @@ function defaultSections(over: Partial<Record<string, boolean>> = {}): Record<st
   return Object.fromEntries(CHAPTER_IDS.map((id) => [id, over[id] ?? LANDED.includes(id)]));
 }
 
+/** Every chapter switched on, with a plan to recommend.
+ *
+ *  The `printedChapters` rules below are about the REGISTRY — which chapters need
+ *  a proposal, which self-hide when empty — so they need an options object with
+ *  all fourteen on. The `full` preset used to be that object and is not one
+ *  while it carries the `NARRATED_CHAPTERS` clause, so it is built here instead.
+ *  Deliberately NOT switched back to the preset when Task 19 restores it: a rule
+ *  about the registry should not be read through a preset that can change. */
+const ALL_ON: PlanStoryOptions = {
+  ...PLAN_STORY_OPTIONS_DEFAULT,
+  scenarioId: "scn-1",
+  sections: Object.fromEntries(
+    CHAPTER_IDS.map((id) => [id, true]),
+  ) as PlanStoryOptions["sections"],
+};
+
 describe("planStoryOptionsSchema", () => {
   it("defaults to the full story, standalone, with no scenario picked", () => {
     const parsed = planStoryOptionsSchema.parse({});
@@ -103,10 +119,12 @@ describe("applyPreset", () => {
     expect(o.documentRole).toBe("frontMatter");
   });
 
-  it("full enables everything and stands alone", () => {
+  it("full enables every landed chapter and stands alone", () => {
+    // TASK 19 restores this to `every(Boolean)` — all fourteen — in the same
+    // commit that drops the `NARRATED_CHAPTERS` clause from both presets.
     const o = applyPreset(PLAN_STORY_OPTIONS_DEFAULT, "full");
     expect(o.preset).toBe("full");
-    expect(Object.values(o.sections).every(Boolean)).toBe(true);
+    expect(CHAPTER_IDS.filter((id) => o.sections[id])).toEqual(LANDED);
     expect(o.documentRole).toBe("standalone");
   });
 
@@ -175,11 +193,11 @@ describe("printedChapters", () => {
 
   it("hides exactly the chapters the registry marks as needing a proposal", () => {
     // Driven off CHAPTERS rather than a hard-coded list, so a fifteenth chapter
-    // cannot be added without this rule being applied to it. Read on the full
-    // preset, which is the only options object with every chapter switched on.
-    const full = applyPreset({ ...PLAN_STORY_OPTIONS_DEFAULT, scenarioId: "scn-1" }, "full");
-    const proposed = printedChapters(full);
-    const baseOnly = printedChapters({ ...full, scenarioId: "" });
+    // cannot be added without this rule being applied to it. Read on ALL_ON —
+    // the rule is the registry's, and the full preset is only all-on again once
+    // Task 19 lands.
+    const proposed = printedChapters(ALL_ON);
+    const baseOnly = printedChapters({ ...ALL_ON, scenarioId: "" });
     for (const id of CHAPTER_IDS) {
       expect(proposed).toContain(id);
       expect(baseOnly.includes(id)).toBe(!CHAPTERS[id].requiresProposal);
@@ -190,16 +208,15 @@ describe("printedChapters", () => {
     // The third rule. No chapter defines `available` yet — Wave D's coverage
     // chapters do — so it is proved on a real registry entry, patched and put
     // back, rather than on a fabricated def that could not drift with the code.
-    const full = applyPreset({ ...PLAN_STORY_OPTIONS_DEFAULT, scenarioId: "scn-1" }, "full");
     const def = CHAPTERS.protectingYourFamily;
     const original = def.available;
     try {
       def.available = () => false;
-      expect(printedChapters(full, CTX)).not.toContain("protectingYourFamily");
+      expect(printedChapters(ALL_ON, CTX)).not.toContain("protectingYourFamily");
       // …and the same chapter, available, still prints — a rule that hid it
       // either way would pass the assertion above and be worthless.
       def.available = () => true;
-      expect(printedChapters(full, CTX)).toContain("protectingYourFamily");
+      expect(printedChapters(ALL_ON, CTX)).toContain("protectingYourFamily");
     } finally {
       def.available = original;
     }
@@ -209,12 +226,11 @@ describe("printedChapters", () => {
     // `document.tsx` calls the estimate with no data. The count and the render
     // therefore agree by construction, and the cost is that `available` may only
     // depend on what the options already imply.
-    const full = applyPreset({ ...PLAN_STORY_OPTIONS_DEFAULT, scenarioId: "scn-1" }, "full");
     const def = CHAPTERS.protectingYourFamily;
     const original = def.available;
     try {
       def.available = () => false;
-      expect(printedChapters(full)).toContain("protectingYourFamily");
+      expect(printedChapters(ALL_ON)).toContain("protectingYourFamily");
     } finally {
       def.available = original;
     }
@@ -231,11 +247,12 @@ describe("estimatePlanStoryPageCount", () => {
   });
 
   it("counts the brief preset against the story it is actually telling", () => {
-    // One page with no plan to compare — two of the brief's three chapters need
-    // a proposal — and all three once one is picked.
+    // One page with no plan to compare — the recommendation needs a proposal —
+    // and both once one is picked. TASK 19 makes the second number 3, when
+    // `willTheMoneyLast` rejoins the preset.
     const brief = applyPreset(PLAN_STORY_OPTIONS_DEFAULT, "brief");
     expect(estimatePlanStoryPageCount(undefined as never, brief)).toBe(1);
-    expect(estimatePlanStoryPageCount(undefined as never, applyPreset(WITH_PROPOSAL, "brief"))).toBe(3);
+    expect(estimatePlanStoryPageCount(undefined as never, applyPreset(WITH_PROPOSAL, "brief"))).toBe(2);
   });
 
   it("never reports zero, so an all-off report still occupies a page", () => {
@@ -272,9 +289,12 @@ describe("summarizePlanStoryOptions", () => {
     expect(summarizePlanStoryOptions(custom)).toBe("Custom · 1 chapter");
   });
 
-  it("counts the full preset's fourteen chapters", () => {
+  it("counts the full preset's landed chapters", () => {
+    // TASK 19 makes this 14, when both presets drop the `NARRATED_CHAPTERS`
+    // clause. Until then the launcher row must not promise sheets that would
+    // print "We'll cover this together." and nothing else.
     expect(summarizePlanStoryOptions(applyPreset(WITH_PROPOSAL, "full"))).toBe(
-      "Full story · 14 chapters",
+      "Full story · 3 chapters",
     );
   });
 
@@ -287,29 +307,39 @@ describe("summarizePlanStoryOptions", () => {
 });
 
 describe("the two presets", () => {
-  // The presets are the SPEC's shape, not today's: `full` turns on all fourteen
-  // even though eleven narrators land in Wave D. `PLAN_STORY_OPTIONS_DEFAULT` is
-  // the conservative one, and the pair of tests above pins that difference.
-  it("Full story turns on every chapter", () => {
+  // Both presets are trimmed to the chapters that HAVE a narrator, by the same
+  // rule the shipped default uses. A preset is one click, and an untrimmed
+  // `full` would print eleven sheets reading only "We'll cover this together."
+  //
+  // TASK 19 restores both to the spec's shape by deleting the
+  // `NARRATED_CHAPTERS` clause from each, in the same commit that flips the
+  // per-key defaults on. Every expectation in this block moves with it.
+  it("Full story turns on every landed chapter", () => {
     const o = applyPreset(WITH_PROPOSAL, "full");
-    expect(printedChapters(o)).toHaveLength(14);
+    expect(printedChapters(o)).toEqual(LANDED); // Task 19: all fourteen.
   });
 
-  it("Executive brief is exactly the spec's 0, 5 and 6", () => {
+  it("Executive brief is the spec's 0, 5 and 6, less the narrators still to land", () => {
+    // Task 15 writes `willTheMoneyLast`; until then the brief is two chapters,
+    // the punchline and the recommendations. `BRIEF_CHAPTERS` itself still holds
+    // all three — it is what Task 19 restores the preset to.
     const o = applyPreset(WITH_PROPOSAL, "brief");
-    expect(printedChapters(o)).toEqual(["planInOnePage", "whatWeRecommend", "willTheMoneyLast"]);
+    expect(printedChapters(o)).toEqual(["planInOnePage", "whatWeRecommend"]);
   });
 
   it("Executive brief writes in the front-matter register", () => {
     expect(applyPreset(PLAN_STORY_OPTIONS_DEFAULT, "brief").documentRole).toBe("frontMatter");
   });
 
-  it("drops the five comparison chapters on a base-only story", () => {
-    const o = applyPreset({ ...PLAN_STORY_OPTIONS_DEFAULT, scenarioId: "" }, "full");
-    const printed = printedChapters(o);
-    expect(printed).not.toContain("whatWeRecommend");
-    expect(printed).not.toContain("willTheMoneyLast");
-    expect(printed).toHaveLength(9);
+  it("drops the comparison chapters from either preset on a base-only story", () => {
+    // The five-chapter version of this rule is pinned against the registry in
+    // `printedChapters` above, on ALL_ON. Here it is read on the presets, which
+    // is where an advisor meets it: one of the full preset's landed three needs
+    // a proposal, and so does one of the brief's two.
+    const full = applyPreset({ ...PLAN_STORY_OPTIONS_DEFAULT, scenarioId: "" }, "full");
+    expect(printedChapters(full)).toEqual(["planInOnePage", "whatYouHave"]);
+    const brief = applyPreset({ ...PLAN_STORY_OPTIONS_DEFAULT, scenarioId: "" }, "brief");
+    expect(printedChapters(brief)).toEqual(["planInOnePage"]);
   });
 
   it("keeps the estimate and the print list the same call", () => {

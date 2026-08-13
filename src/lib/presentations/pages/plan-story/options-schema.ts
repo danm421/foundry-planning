@@ -43,8 +43,7 @@ const BRIEF_CHAPTERS: readonly ChapterId[] = [
 ];
 
 /** What a stored deck and a freshly added page start as: the chapters that have
- *  a narrator, and nothing else. The `full` preset below is the spec's shape
- *  rather than today's, so switching to it is what turns the rest on. */
+ *  a narrator, and nothing else. */
 const DEFAULT_SECTIONS = sectionsWhere((id) => NARRATED_CHAPTERS.includes(id));
 
 export const planStoryOptionsSchema = z.object({
@@ -55,8 +54,7 @@ export const planStoryOptionsSchema = z.object({
   // One key per chapter of the arc, in document order. The eleven whose
   // narrators have not landed default to FALSE — a deck stored today, and a page
   // freshly added to one, both render exactly the three-chapter report the app
-  // renders now. The `full` preset below is the spec's shape rather than
-  // today's, so switching to it is what turns the rest on.
+  // renders now.
   sections: z
     .object({
       planInOnePage: z.boolean().default(true),
@@ -88,23 +86,40 @@ export const PLAN_STORY_OPTIONS_DEFAULT: PlanStoryOptions = {
 
 export type PresetId = "full" | "brief";
 
-/** The short front-of-deck version is a PRESET, not a second report: the
- *  punchline and the recommendations, written to point at the pages after. */
+/**
+ * The short front-of-deck version is a PRESET, not a second report: the
+ * punchline and the recommendations, written to point at the pages after.
+ *
+ * 🚧 BOTH presets carry the `NARRATED_CHAPTERS` clause, exactly as
+ * `DEFAULT_SECTIONS` does, and both are therefore SMALLER than the spec until
+ * Wave D lands. Without it, one click on either button prints a run of sheets
+ * saying only "We'll cover this together." — a placeholder narrator is a page,
+ * not a no-op, and nothing else in the app would warn the advisor.
+ *
+ * TASK 19 RESTORES BOTH by deleting the clause from each, in the same commit
+ * that flips `sections`' per-key defaults on. It is one edit in three places,
+ * not two, and the tests below each name it.
+ */
 export const PRESETS: Record<PresetId, Pick<PlanStoryOptions, "documentRole" | "sections">> = {
-  /** The standalone client document — everything applicable, ~12-16 pages. */
+  /** The standalone client document — everything applicable, ~12-16 pages once
+   *  Task 19 drops the `NARRATED_CHAPTERS` clause. Three chapters until then. */
   full: {
     documentRole: "standalone",
-    sections: sectionsWhere(() => true),
+    sections: sectionsWhere((id) => NARRATED_CHAPTERS.includes(id)),
   },
   /**
    * Three pages of front matter ahead of an existing deck — the spec's chapters
    * 0, 5 and 6. Not a second product: the same sections model, the same storage,
    * and `documentRole` switching the prose from self-contained to pointing at
    * the pages that follow.
+   *
+   * Two of those three until Task 15 writes `willTheMoneyLast`'s narrator.
+   * `BRIEF_CHAPTERS` above stays the spec's list — it is what Task 19 restores
+   * the preset TO.
    */
   brief: {
     documentRole: "frontMatter",
-    sections: sectionsWhere((id) => BRIEF_CHAPTERS.includes(id)),
+    sections: sectionsWhere((id) => BRIEF_CHAPTERS.includes(id) && NARRATED_CHAPTERS.includes(id)),
   },
 };
 
