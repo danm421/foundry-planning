@@ -18,6 +18,7 @@ import { PLAN_STORY_OPTIONS_DEFAULT, type PlanStoryOptions } from "@/lib/present
 import {
   buildPlanStoryData,
   MAX_FIGURE_CARDS,
+  MAX_STEPS,
   MAX_STRATEGY_CARDS,
   type PlanStoryPageData,
 } from "@/lib/presentations/pages/plan-story/view-model";
@@ -73,6 +74,7 @@ const REALISTIC: PlanStoryPageData = {
       ],
       strategies: [],
       figures: [],
+      steps: [],
       overflowNote: "",
     },
     {
@@ -85,6 +87,7 @@ const REALISTIC: PlanStoryPageData = {
       ],
       strategies: [],
       figures: [],
+      steps: [],
       overflowNote: "",
     },
     {
@@ -101,6 +104,7 @@ const REALISTIC: PlanStoryPageData = {
         },
       ],
       figures: [],
+      steps: [],
       overflowNote: "",
     },
   ],
@@ -132,6 +136,7 @@ function worstCase(cards: number, words: number, overflowNote = ""): PlanStoryPa
           detail: "$50K/yr from Traditional IRA → Roth IRA · 2028–2033",
         })),
         figures: [],
+        steps: [],
         overflowNote,
       },
     ],
@@ -370,4 +375,63 @@ describe("Plan Story — the twoUp layout, really rendered", () => {
     expect(data.chapters[0].paragraphs).toHaveLength(3);
     expect(await pagesOf(data)).toBe(1);
   }, 30_000);
+});
+
+/**
+ * The checklist layout's bound, run rather than restated.
+ *
+ * The worst step a household can produce: text that wraps to two lines, with an
+ * owner and a date under it. Measured on this path — eight such steps lay out
+ * and ten do not; beside eight of them, 40 words of lead-in lay out and 45
+ * spill. `MAX_STEPS` and `BUDGET_WORDS_CHECKLIST` sit inside both.
+ */
+const WORST_STEP = {
+  text: "Open the Roth account with the custodian we discussed and fund it for this year before the filing deadline.",
+  owner: "Cooper and Susan",
+  when: "Before 15 April 2027",
+};
+
+function checklistAtTheBound(steps: number): PlanStoryPageData {
+  return buildPlanStoryData(
+    {
+      planStory: {
+        story: {
+          household: { firstNames: "Alan and Teresa", householdName: "the Bradshaw household" },
+          scenarioLabel: "Proposed",
+          documentRole: "standalone",
+          hasProposal: true,
+          strategies: [],
+          facts: [],
+          nextSteps: Array.from({ length: steps }, () => WORST_STEP),
+        },
+        text: { whatHappensNext: LONG_PROSE },
+      },
+      scenarioLabel: "Proposed",
+    } as never,
+    {
+      ...PLAN_STORY_OPTIONS_DEFAULT,
+      scenarioId: "scn-1",
+      sections: {
+        ...PLAN_STORY_OPTIONS_DEFAULT.sections,
+        planInOnePage: false,
+        whatYouHave: false,
+        whatWeRecommend: false,
+        whatHappensNext: true,
+      },
+    },
+  );
+}
+
+describe("Plan Story — the checklist layout, really rendered", () => {
+  it.each([0, 1, MAX_STEPS, MAX_STEPS + 4])(
+    "lays out one sheet with %i next steps and eight sheets of prose",
+    async (steps) => {
+      const data = checklistAtTheBound(steps);
+      expect(data.chapters).toHaveLength(1);
+      expect(data.chapters[0].layout).toBe("checklist");
+      expect(data.chapters[0].steps.length).toBeLessThanOrEqual(MAX_STEPS);
+      expect(await pagesOf(data)).toBe(1);
+    },
+    60_000,
+  );
 });

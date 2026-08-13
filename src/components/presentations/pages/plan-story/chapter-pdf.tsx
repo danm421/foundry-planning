@@ -68,6 +68,18 @@ const styles = StyleSheet.create({
     fontWeight: 600,
     color: PRESENTATION_THEME.ink,
   },
+  step: { flexDirection: "row", gap: 10, marginBottom: 10, alignItems: "flex-start" },
+  // The one number on this page that IS a label rather than a figure, so it
+  // takes the deck's mono — the same face the eyebrow uses.
+  stepNum: { fontFamily: "JetBrains Mono", fontSize: 10, width: 18, paddingTop: 1 },
+  stepBody: { flexGrow: 1, flexShrink: 1, flexBasis: 0 },
+  stepText: { fontSize: 10.5, lineHeight: 1.5, color: PRESENTATION_THEME.ink },
+  stepMeta: {
+    fontSize: 8,
+    letterSpacing: 0.4,
+    color: PRESENTATION_THEME.ink3,
+    marginTop: 2,
+  },
   cardName: { fontSize: 12, fontWeight: 700, color: PRESENTATION_THEME.ink, marginBottom: 3 },
   cardLabel: { fontSize: 7.5, letterSpacing: 0.6, color: PRESENTATION_THEME.ink3, marginBottom: 2 },
   cardText: { fontSize: 10, lineHeight: 1.5, color: PRESENTATION_THEME.ink2 },
@@ -112,6 +124,13 @@ function OverflowNote({ note }: { note: string }) {
   return note.length > 0 ? <Text style={styles.overflow}>{note}</Text> : null;
 }
 
+/** "Cooper · Before 15 April", or whichever half exists. A separator with
+ *  nothing on one side of it reads as a missing value rather than as an absent
+ *  one. */
+function stepMeta(step: { owner: string; when: string }): string {
+  return [step.owner, step.when].map((s) => s.trim()).filter(Boolean).join(" · ");
+}
+
 export function PlanStoryChapterPdf({
   chapter,
   accent,
@@ -147,6 +166,28 @@ export function PlanStoryChapterPdf({
             ))}
           </View>
         </View>
+      </View>
+    );
+  }
+
+  if (chapter.layout === "checklist") {
+    return (
+      <View style={styles.wrap}>
+        <ChapterHead title={chapter.title} accent={accent} eyebrow={eyebrow} />
+        <Paragraphs paragraphs={chapter.paragraphs} />
+        {chapter.steps.map((s, i) => {
+          const meta = stepMeta(s);
+          return (
+            <View key={i} style={styles.step}>
+              <Text style={[styles.stepNum, { color: accent.accent }]}>{i + 1}</Text>
+              <View style={styles.stepBody}>
+                <Text style={styles.stepText}>{s.text}</Text>
+                {meta.length > 0 && <Text style={styles.stepMeta}>{meta}</Text>}
+              </View>
+            </View>
+          );
+        })}
+        <OverflowNote note={chapter.overflowNote} />
       </View>
     );
   }

@@ -22,6 +22,9 @@ export interface PlanStoryChapterView {
   /** The figure cards beside a `twoUp` chapter's prose; empty for every other
    *  layout. */
   figures: Array<{ label: string; value: string }>;
+  /** The numbered next steps of a `checklist` chapter; empty for every other
+   *  layout. */
+  steps: Array<{ text: string; owner: string; when: string }>;
   /** The client-facing sentence that replaces what a sheet could not hold.
    *  "" means nothing was dropped. */
   overflowNote: string;
@@ -168,6 +171,30 @@ export const MAX_FIGURE_CARDS = 5;
 const BUDGET_WORDS_TWO_UP = 130;
 
 /**
+ * The next steps a `checklist` chapter prints before the sheet runs out.
+ *
+ * Measured on the shipping path against the worst step a household can produce —
+ * text that wraps to two lines, with an owner and a date under it: eight lay out
+ * and ten do not. Eight is also about as many as a client will act on.
+ *
+ * What is dropped is said, not hidden — the same `overflowNote` the strategy
+ * cards use, and for the same reason: a list that silently stops reads as the
+ * whole list.
+ */
+export const MAX_STEPS = 8;
+
+/**
+ * …and what the lead paragraph above that list may spend.
+ *
+ * The steps ARE the chapter; the prose is a sentence of lead-in. Measured beside
+ * a full set of eight worst-case steps and the trim note: 40 words lay out and
+ * 45 spill, so this sits inside that. With six or seven steps the same sheet
+ * takes 55 and more — the two bounds are not independent, and this one is set
+ * for the case where both are at their limit.
+ */
+const BUDGET_WORDS_CHECKLIST = 35;
+
+/**
  * A ceiling on paragraph COUNT as well, because the word ceiling alone cannot
  * see the shape that actually costs the most: 300 words split into sixty
  * four-word paragraphs pays sixty bottom margins. Eleven paragraphs were
@@ -177,18 +204,20 @@ const MAX_PARAGRAPHS = 8;
 
 function proseBudgetWords(layout: ChapterLayout, cards: number): number {
   if (layout === "twoUp") return BUDGET_WORDS_TWO_UP;
+  if (layout === "checklist") return BUDGET_WORDS_CHECKLIST;
   return cards > 0 ? BUDGET_WORDS_WITH_CARDS : SHEET_BUDGET_WORDS;
 }
 
 /** "…and four more changes we'll walk through together." — the sentence that
  *  replaces what a sheet cannot hold. Client-facing, and true: it says the
  *  changes exist and that the advisor will cover them, rather than implying the
- *  report is complete. */
-function overflowNoteFor(dropped: number): string {
+ *  report is complete. One sentence for both capped lists, because a list that
+ *  silently stops reads as the whole list either way. */
+function overflowNoteFor(dropped: number, thing: "change" | "step"): string {
   if (dropped <= 0) return "";
   return dropped === 1
-    ? "…and one more change we'll walk through together."
-    : `…and ${dropped} more changes we'll walk through together.`;
+    ? `…and one more ${thing} we'll walk through together.`
+    : `…and ${dropped} more ${thing}s we'll walk through together.`;
 }
 
 const PROSE_TRIMMED_NOTE =
@@ -359,6 +388,8 @@ export function buildPlanStoryData(
         : [];
     const strategies = allStrategies.slice(0, MAX_STRATEGY_CARDS);
     const figures = def.layout === "twoUp" ? figuresFor(facts) : [];
+    const allSteps = def.layout === "checklist" ? (input.story.nextSteps ?? []) : [];
+    const steps = allSteps.slice(0, MAX_STEPS);
     // Discard what the cards already say BEFORE counting, so the budget is spent
     // on what a client will actually read.
     const printable = paragraphs.filter((p) => !strategies.some((s) => restatesCard(p, s)));
@@ -377,12 +408,14 @@ export function buildPlanStoryData(
       paragraphs: kept,
       strategies,
       figures,
+      steps,
       // ONE note, whichever bound bit. Both mean the same thing to the reader —
       // there is more, and the advisor will cover it — and two notes on one
       // sheet would be the overflow this cap exists to prevent. The card count
       // leads because it is the specific one: it can say how many.
       overflowNote:
-        overflowNoteFor(allStrategies.length - strategies.length) ||
+        overflowNoteFor(allStrategies.length - strategies.length, "change") ||
+        overflowNoteFor(allSteps.length - steps.length, "step") ||
         (trimmed ? PROSE_TRIMMED_NOTE : ""),
     };
   });

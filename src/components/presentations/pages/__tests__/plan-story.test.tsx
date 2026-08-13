@@ -77,6 +77,7 @@ function chapter(over: Partial<PlanStoryChapterView> = {}): PlanStoryChapterView
     paragraphs: ["Your plan holds."],
     strategies: [],
     figures: [],
+    steps: [],
     overflowNote: "",
     ...over,
   };
@@ -305,5 +306,71 @@ describe("PlanStoryChapterPdf — the twoUp layout", () => {
     );
     expect(hero).toContain("Your plan holds up in almost every run we tested.");
     expect(hero).not.toContain("96.3%");
+  });
+});
+
+describe("PlanStoryChapterPdf — the checklist layout", () => {
+  const STEPS = [
+    { text: "Open the Roth account and fund it for this year.", owner: "Cooper", when: "Before 15 April" },
+    { text: "Send us the rental's 2025 closing statement.", owner: "You both", when: "This month" },
+  ];
+
+  const CHECKLIST = chapter({
+    chapterId: "whatHappensNext",
+    title: "What happens next",
+    layout: "checklist",
+    paragraphs: ["Here's what we each take away from today."],
+  });
+
+  function printed(over: Partial<PlanStoryChapterView> = {}): string[] {
+    return textOf(
+      PlanStoryChapterPdf({
+        chapter: { ...CHECKLIST, ...over },
+        accent: FRAME.accent,
+        eyebrow: "Your Plan",
+      }),
+    );
+  }
+
+  it("numbers each step and prints its owner and timing", () => {
+    const out = printed({ steps: STEPS });
+    expect(out).toContain("1");
+    expect(out).toContain("2");
+    expect(out).toContain("Open the Roth account and fund it for this year.");
+    expect(out).toContain("Cooper · Before 15 April");
+  });
+
+  it("prints the lead paragraph above the list", () => {
+    const out = printed({ steps: STEPS });
+    expect(out.indexOf("Here's what we each take away from today.")).toBeLessThan(
+      out.indexOf("Open the Roth account and fund it for this year."),
+    );
+  });
+
+  it("prints the lead paragraph alone when there are no steps", () => {
+    const out = printed({ steps: [] });
+    expect(out).toContain("Here's what we each take away from today.");
+    expect(out).not.toContain("1");
+  });
+
+  it("omits an empty owner or timing rather than printing a stray separator", () => {
+    // A separator with nothing on one side of it reads as a missing value rather
+    // than as an absent one.
+    const out = printed({ steps: [{ text: "Review this again next year.", owner: "", when: "" }] });
+    expect(out).toContain("Review this again next year.");
+    expect(out.some((line) => line.includes("·"))).toBe(false);
+  });
+
+  it("prints whichever half of the meta line exists", () => {
+    expect(printed({ steps: [{ text: "Do this.", owner: "Cooper", when: "" }] })).toContain("Cooper");
+    expect(printed({ steps: [{ text: "Do this.", owner: "", when: "This month" }] })).toContain(
+      "This month",
+    );
+  });
+
+  it("prints no steps on any other layout", () => {
+    expect(printed({ layout: "heroProse", steps: STEPS })).not.toContain(
+      "Open the Roth account and fund it for this year.",
+    );
   });
 });

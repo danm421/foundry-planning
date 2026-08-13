@@ -76,6 +76,16 @@ export interface StoryContext {
   hasProposal: boolean;
   strategies: StoryStrategy[];
   facts: Fact[];
+  /**
+   * What each of them does next, for the one chapter that prints a list rather
+   * than prose. Absent means none — a household with no agreed next steps gets
+   * the chapter's lead paragraph and nothing under it.
+   *
+   * Not facts: a step is a sentence with an owner and a date, and the fact pack
+   * is figures the model may quote. Task 18 fills this from the observations
+   * layer's next steps.
+   */
+  nextSteps?: Array<{ text: string; owner: string; when: string }>;
 }
 
 /**

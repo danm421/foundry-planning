@@ -6,6 +6,7 @@ import { CHAPTER_IDS, type ChapterId, type StoryContext } from "@/lib/presentati
 import {
   buildPlanStoryData,
   MAX_FIGURE_CARDS,
+  MAX_STEPS,
   MAX_STRATEGY_CARDS,
   SHEET_BUDGET_WORDS,
   type PlanStoryChapterView,
@@ -753,5 +754,75 @@ describe("twoUp figures", () => {
     );
     expect(data.chapters.find((c) => c.chapterId === "whatYouHave")!.figures).toEqual([]);
     expect(data.chapters.find((c) => c.chapterId === "whatWeRecommend")!.figures).toEqual([]);
+  });
+});
+
+describe("checklist steps", () => {
+  const WITH_NEXT: PlanStoryOptions = {
+    ...PROPOSED,
+    sections: { ...PROPOSED.sections, whatHappensNext: true },
+  };
+  const STORED = { whatHappensNext: "Here's what we each take away from today." };
+
+  function step(i: number) {
+    return { text: `Do the ${i}th thing.`, owner: "Cooper", when: "This month" };
+  }
+
+  function chapterWith(nextSteps: StoryContext["nextSteps"]): PlanStoryChapterView {
+    const data = buildPlanStoryData(
+      deckCtx(input({ hasProposal: true, nextSteps }, STORED)),
+      WITH_NEXT,
+    );
+    return data.chapters.find((c) => c.chapterId === "whatHappensNext")!;
+  }
+
+  it("carries the household's next steps onto the chapter that lists them", () => {
+    const chapter = chapterWith([step(1), step(2)]);
+    expect(chapter.layout).toBe("checklist");
+    expect(chapter.steps.map((s) => s.text)).toEqual(["Do the 1th thing.", "Do the 2th thing."]);
+  });
+
+  it("prints the lead paragraph with no steps rather than nothing", () => {
+    const chapter = chapterWith(undefined);
+    expect(chapter.steps).toEqual([]);
+    expect(chapter.paragraphs).toEqual(["Here's what we each take away from today."]);
+    expect(chapter.overflowNote).toBe("");
+  });
+
+  it("caps the list at what one sheet holds, and says what it dropped", () => {
+    const chapter = chapterWith(Array.from({ length: MAX_STEPS + 2 }, (_, i) => step(i)));
+    expect(chapter.steps).toHaveLength(MAX_STEPS);
+    expect(chapter.overflowNote).toBe("…and 2 more steps we'll walk through together.");
+  });
+
+  it("says one step in the singular", () => {
+    const chapter = chapterWith(Array.from({ length: MAX_STEPS + 1 }, (_, i) => step(i)));
+    expect(chapter.overflowNote).toBe("…and one more step we'll walk through together.");
+  });
+
+  it("is empty for every other layout", () => {
+    const data = buildPlanStoryData(
+      deckCtx(input({ hasProposal: true, nextSteps: [step(1)] }, STORED)),
+      WITH_NEXT,
+    );
+    expect(data.chapters.find((c) => c.chapterId === "whatYouHave")!.steps).toEqual([]);
+    expect(data.chapters.find((c) => c.chapterId === "whatWeRecommend")!.steps).toEqual([]);
+  });
+
+  it("spends a smaller prose budget than a full-width chapter", () => {
+    // The steps ARE the chapter; the prose above them is a lead-in.
+    const FORTY = Array.from({ length: 40 }, (_, i) => `word${i}`).join(" ");
+    const long = Array.from({ length: 3 }, () => FORTY).join("\n\n");
+    const data = buildPlanStoryData(
+      deckCtx(input({ hasProposal: true }, { whatHappensNext: long, whatYouHave: long })),
+      WITH_NEXT,
+    );
+    const list = data.chapters.find((c) => c.chapterId === "whatHappensNext")!;
+    const hero = data.chapters.find((c) => c.chapterId === "whatYouHave")!;
+    expect(hero.paragraphs).toHaveLength(3);
+    expect(list.paragraphs.length).toBeLessThan(3);
+    expect(list.overflowNote).toBe(
+      "…there's more here than fits this page — we'll walk through the rest together.",
+    );
   });
 });
