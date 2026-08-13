@@ -17,6 +17,10 @@ vi.mock("@/lib/presentations/story/repo", async (importOriginal) => ({
 }));
 
 import { loadPlanStoryInput } from "../load-for-export";
+import {
+  PLAN_STORY_OPTIONS_DEFAULT,
+  printedChapters,
+} from "@/lib/presentations/pages/plan-story/options-schema";
 
 const CLIENT = "c1a11111-2222-4333-8444-555555555555";
 const FIRM = "f1a11111-2222-4333-8444-555555555555";
@@ -31,7 +35,13 @@ const STORY: StoryContext = {
   facts: [],
 };
 
-const OPTIONS = { scenarioId: "base", documentRole: "standalone" as const, scenarioLabel: "Base Case" };
+// The page's REAL parsed options — the loader reads `sections` off them to
+// decide which chapters' facts it has to load.
+const OPTIONS = {
+  ...PLAN_STORY_OPTIONS_DEFAULT,
+  scenarioId: "base",
+  scenarioLabel: "Base Case",
+};
 
 const row = (over: Partial<PlanStoryChapterRow>): PlanStoryChapterRow => ({
   id: "row-1",
@@ -95,5 +105,42 @@ describe("loadPlanStoryInput — a row for a chapter this build no longer has", 
     // An export must not fail because storage remembers more than the code does.
     await expect(loadPlanStoryInput(CLIENT, FIRM, OPTIONS)).resolves.toMatchObject({ text: {} });
     warn.mockRestore();
+  });
+});
+
+/**
+ * What this deck PRINTS reaches the loader, so it can skip the facts nothing on
+ * this deck will read — the life-cover solve, mainly, which is by far the most
+ * expensive thing that loader can run and used to run on every export.
+ *
+ * ⚠️⚠️ The direction that matters is one-way. Loading too much costs seconds;
+ * loading too little makes a chapter print its honest empty state on a document
+ * handed to a client, and no gate, no page count and no type can see it. Which
+ * is why the list is computed HERE from `printedChapters` — the same call the
+ * render makes — rather than handed in by the caller.
+ */
+describe("loadPlanStoryInput — the printed chapter list", () => {
+  it("hands the loader exactly the chapters this deck prints", async () => {
+    await loadPlanStoryInput(CLIENT, FIRM, OPTIONS);
+
+    expect(m.loadStoryContext).toHaveBeenCalledWith(
+      expect.objectContaining({ chapters: printedChapters(OPTIONS) }),
+    );
+  });
+
+  /**
+   * …and it is DERIVED, not hardcoded. Kills a loader that passes the whole arc
+   * (which would keep the old cost) and one that passes a second, hand-written
+   * list that drifts from what the render prints.
+   */
+  it("drops a chapter the advisor switched off, and keeps the rest", async () => {
+    await loadPlanStoryInput(CLIENT, FIRM, {
+      ...OPTIONS,
+      sections: { ...OPTIONS.sections, protectingYourFamily: false },
+    });
+
+    const { chapters } = m.loadStoryContext.mock.calls[0][0];
+    expect(chapters).not.toContain("protectingYourFamily");
+    expect(chapters).toContain("planInOnePage");
   });
 });

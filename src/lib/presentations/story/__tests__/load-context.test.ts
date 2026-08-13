@@ -24,6 +24,10 @@ const fx = vi.hoisted(() => ({
   changeQueries: [] as string[],
   /** scenarioId → solved annual spend. A missing entry makes the solve throw. */
   maxSpend: {} as Record<string, number>,
+  /** Every ref the max-spend solve was ASKED for, in order — the observation
+   *  point for the chapter gate, since a skipped solve leaves no fact either
+   *  way when the fixture holds no figure for it. */
+  maxSpendCalls: [] as string[],
   /** scenarioId → the estate report that ref should produce. A missing entry
    *  comes back EMPTY, which is a household with nothing on file. */
   estate: {} as Record<string, unknown>,
@@ -60,6 +64,7 @@ vi.mock("@/lib/compute-cache/monte-carlo", () => ({
 // per ref — and to be able to FAIL, which is the branch that matters.
 vi.mock("@/lib/compute-cache/max-spending", () => ({
   getOrComputeMaxSpending: vi.fn(async (args: { scenarioId: string }) => {
+    fx.maxSpendCalls.push(args.scenarioId);
     const spend = fx.maxSpend[args.scenarioId];
     if (spend == null) throw new Error("max spend unavailable");
     return { realAnnualSpend: spend, scaleFactor: 1, achievedPoS: 0.85, status: "converged" };
@@ -135,9 +140,14 @@ vi.mock("@/lib/estate/transfer-report", () => ({
 // can run and it is on the PDF export path. So the cover facts are absent here
 // by construction, and the chapter's own suite owns what the narrator does with
 // them.
-vi.mock("@/lib/insurance-policies/load-li-inventory", () => ({
+//
+// Held on a handle because this read is also the OBSERVATION POINT for the
+// chapter gate below: it is the first thing `lifeCover` does, so "was it
+// called" is exactly "did the loader start the solve".
+const li = vi.hoisted(() => ({
   loadLifeInsuranceInventory: vi.fn(async () => ({ policies: [] })),
 }));
+vi.mock("@/lib/insurance-policies/load-li-inventory", () => li);
 
 // Same call as the balance-sheet builders above: the Goals board has its own
 // suite, and the fake tree here carries no `planSettings` for it to read. What
@@ -160,6 +170,7 @@ vi.mock("@/lib/household-map/build-boards", () => ({
 
 import { loadStoryContext } from "../load-context";
 import { goalYearFactId } from "../build-facts";
+import type { ChapterId } from "../types";
 
 const CLIENT = {
   firstName: "Alan",
@@ -242,8 +253,10 @@ beforeEach(() => {
   fx.mcCalls = [];
   fx.changeQueries = [];
   fx.maxSpend = {};
+  fx.maxSpendCalls = [];
   fx.estate = {};
   fx.estateCalls = [];
+  li.loadLifeInsuranceInventory.mockClear();
   // The Monte-Carlo-failure path logs; keep the suite's output clean while
   // still asserting the failure was recorded rather than silently swallowed.
   errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -399,6 +412,95 @@ describe("loadStoryContext", () => {
     });
 
     expect(ctx.household.firstNames).toBe("Alan");
+  });
+
+  /**
+   * The `chapters` gate. It buys SPEND and nothing else — the sheet is still
+   * reserved by `printedChapters` and the chapter still prints — so the only
+   * thing to prove is which expensive call runs.
+   *
+   * Two calls read it, and they are the loader's only real solves. `lifeCover`
+   * is a per-year deterministic need curve plus a Monte Carlo search per life,
+   * observable through the inventory read it starts with. `maxSpendFor` is a
+   * bisection over 250-trial simulations, observable through the cache call
+   * `fx.maxSpend` drives.
+   */
+  describe("the chapter gate on the solves", () => {
+    const load = (chapters: readonly ChapterId[]) =>
+      loadStoryContext({
+        clientId: "c1",
+        firmId: "f1",
+        proposedRef: null,
+        scenarioLabel: "Base Case",
+        documentRole: "standalone",
+        chapters,
+      });
+
+    /**
+     * ⭐ The common case, not an edge one: `whatYouCanSpend` requires a
+     * proposal, so `printedChapters` can never return it for a base-only story
+     * — the default deck included — and every one of those was paying for the
+     * bisection to produce a figure it could not print.
+     */
+    it("skips both max-spend solves for a report that cannot print the figure", async () => {
+      fx.maxSpend = { base: 180_000 };
+
+      const ctx = await load(["planInOnePage", "protectingYourFamily"]);
+
+      expect(fx.maxSpendCalls).toEqual([]);
+      expect(ctx.facts.some((f) => f.id.startsWith("spend."))).toBe(false);
+    });
+
+    it("runs it when the spending chapter is on the list", async () => {
+      fx.maxSpend = { base: 180_000 };
+
+      const ctx = await load(["planInOnePage", "whatYouCanSpend"]);
+
+      expect(fx.maxSpendCalls).toEqual(["base"]);
+      expect(display(ctx, "spend.base")).toBe("$180K");
+    });
+
+    it("skips the solve for a report that does not print the cover chapter", async () => {
+      await load(["planInOnePage", "whatYouHave"]);
+
+      expect(li.loadLifeInsuranceInventory).not.toHaveBeenCalled();
+    });
+
+    it("runs it when the cover chapter is on the list", async () => {
+      await load(["planInOnePage", "protectingYourFamily"]);
+
+      expect(li.loadLifeInsuranceInventory).toHaveBeenCalled();
+    });
+
+    /**
+     * ⚠️⚠️ ABSENT MEANS ALL, and this is the test that keeps it that way. The
+     * safe default is loading too much: a caller that named no chapters and
+     * silently lost its cover facts would print the chapter's empty state
+     * instead — a wrong page no gate, no page count and no type can see.
+     *
+     * Written without the helper above, with the key genuinely absent, because
+     * that is the caller this is about.
+     */
+    it("runs it for a caller that names no chapters at all", async () => {
+      await loadStoryContext({
+        clientId: "c1",
+        firmId: "f1",
+        proposedRef: null,
+        scenarioLabel: "Base Case",
+        documentRole: "standalone",
+      });
+
+      expect(li.loadLifeInsuranceInventory).toHaveBeenCalled();
+    });
+
+    // …and an EMPTY list is a real list, not a missing one. `?? true` on
+    // `args.chapters?.includes(...)` gets this right; `args.chapters?.length ?
+    // … : true` does not.
+    it("treats a report that prints nothing as printing nothing", async () => {
+      await load([]);
+
+      expect(li.loadLifeInsuranceInventory).not.toHaveBeenCalled();
+    });
   });
 
   describe("with a proposed scenario", () => {

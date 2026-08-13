@@ -138,6 +138,23 @@ const BASE_ONLY = NARRATED_CHAPTERS.filter(
   (id) => !CHAPTERS[id].requiresProposal && (CHAPTERS[id].available?.(NO_FACTS) ?? true),
 );
 
+/**
+ * One fact per `available`-gated prefix, so a test named for the whole arc
+ * still means the whole arc. `available` filters this route as of Task 17 and
+ * the four coverage chapters each read their own prefix off the pack — on the
+ * empty pack above they would quietly drop out, and a test asserting "every
+ * chapter" would be asserting two thirds of one.
+ *
+ * ONE copy, deliberately: a second gated chapter added to one list and not the
+ * other is exactly how "every chapter" stops meaning it.
+ */
+const GATED_FACTS = [
+  { id: "estate.net.base", label: "What reaches your heirs, current plan", display: "$9.2M", raw: 9_200_000 },
+  { id: "tax.lifetime.base", label: "Total income tax over the plan, current plan", display: "$1.4M", raw: 1_400_000 },
+  { id: "cover.have", label: "Cover in force on Cooper's life", display: "$500K", raw: 500_000 },
+  { id: "medicare.lifetime", label: "What Medicare costs, current plan", display: "$420K", raw: 420_000 },
+];
+
 const CLIENT_ID = "c1a11111-2222-4333-8444-555555555555";
 const SCENARIO_ID = "5ce11111-2222-4333-8444-666666666666";
 
@@ -684,17 +701,7 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
     // this route, per the test above.
     mocks.loadStoryContext.mockResolvedValue({
       hasProposal: true,
-      // One fact per data-gated chapter, so "every chapter" still means every
-      // chapter. `available` filters this route as of Task 17, and the four
-      // coverage chapters read their own prefix off the pack — on the empty pack
-      // the rest of this file uses, a test named for the whole arc would quietly
-      // assert two thirds of it.
-      facts: [
-        { id: "estate.net.base", label: "What reaches your heirs, current plan", display: "$9.2M", raw: 9_200_000 },
-        { id: "tax.lifetime.base", label: "Total income tax over the plan, current plan", display: "$1.4M", raw: 1_400_000 },
-        { id: "cover.have", label: "Cover in force on Cooper's life", display: "$500K", raw: 500_000 },
-        { id: "medicare.lifetime", label: "What Medicare costs, current plan", display: "$420K", raw: 420_000 },
-      ],
+      facts: GATED_FACTS,
       strategies: [{ name: "Convert to Roth", rows: [] }],
     });
     const res = await post({ scenarioId: SCENARIO_ID, documentRole: "standalone" });
@@ -717,6 +724,79 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
         }),
       }),
     );
+  });
+
+  /**
+   * ⭐⭐ THE INVARIANT. The chapter list handed to the loader must be a SUPERSET
+   * of what the route actually narrates.
+   *
+   * The list exists to skip facts nothing will read — the life-cover solve,
+   * mainly. Go one chapter too narrow and that chapter is written from a pack
+   * missing its own facts, so its narrator prints its honest empty state: a
+   * wrong page on a document handed to a client, invisible to every gate, to the
+   * page count and to the type system.
+   *
+   * It holds by construction — `wanted` is a filter OF the candidate set, not a
+   * second filter over `NARRATED_CHAPTERS` that happens to agree — and this is
+   * what goes red if those two ever come apart again.
+   */
+  describe("the chapter list handed to the loader", () => {
+    const chaptersLoaded = (): string[] => mocks.loadStoryContext.mock.calls[0][0].chapters;
+
+    it("names no proposal chapter for a base-only story", async () => {
+      await post({ scenarioId: "base", documentRole: "standalone" });
+
+      expect(chaptersLoaded()).toEqual(
+        NARRATED_CHAPTERS.filter((c) => !CHAPTERS[c].requiresProposal),
+      );
+    });
+
+    /**
+     * ⚠️ Derived from the REF ALONE, and deliberately looser than what gets
+     * narrated. `available` and `hasSomethingToPropose` are both read off the
+     * context the loader RETURNS, so a list that consulted them would be
+     * circular. A proposal carrying no changes therefore still loads the
+     * recommendation chapter's facts — the correct direction to be wrong in.
+     */
+    it("still names the recommendation chapter for a proposal carrying no changes", async () => {
+      mocks.scenarioRows = [{ id: SCENARIO_ID }];
+      mocks.loadStoryContext.mockResolvedValue({ hasProposal: true, facts: [], strategies: [] });
+
+      const res = await post({ scenarioId: SCENARIO_ID, documentRole: "standalone" });
+      const body = await res.json();
+
+      expect(body.chapters.map((c: { chapterId: string }) => c.chapterId)).not.toContain(
+        "whatWeRecommend",
+      );
+      expect(chaptersLoaded()).toContain("whatWeRecommend");
+    });
+
+    // The property itself, over both shapes of run this file exercises: an empty
+    // fact pack on base, and a proposal with changes and one fact per gated
+    // prefix. Every chapter narrated was one the loader was told to load facts
+    // for.
+    it.each([
+      ["a base-only story", "base", { hasProposal: false, facts: [], strategies: [] }],
+      [
+        "a proposal with changes",
+        SCENARIO_ID,
+        {
+          hasProposal: true,
+          facts: GATED_FACTS,
+          strategies: [{ name: "Convert to Roth", rows: [] }],
+        },
+      ],
+    ])("covers every chapter it narrates — %s", async (_name, scenarioId, ctx) => {
+      mocks.scenarioRows = [{ id: SCENARIO_ID }];
+      mocks.loadStoryContext.mockResolvedValue(ctx);
+
+      const res = await post({ scenarioId, documentRole: "standalone" });
+      const body = await res.json();
+
+      const narrated = body.chapters.map((c: { chapterId: string }) => c.chapterId);
+      expect(narrated.length).toBeGreaterThan(0);
+      expect(chaptersLoaded()).toEqual(expect.arrayContaining(narrated));
+    });
   });
 
   // Kills: letting a `snap:` ref through to the loader, which degrades it to a

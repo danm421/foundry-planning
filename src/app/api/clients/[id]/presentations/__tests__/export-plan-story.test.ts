@@ -46,6 +46,10 @@ const azure = vi.hoisted(() => {
 vi.mock("@/lib/extraction/azure-client", () => azure);
 
 import { loadPlanStoryInput } from "@/lib/presentations/story/load-for-export";
+import {
+  PLAN_STORY_OPTIONS_DEFAULT,
+  printedChapters,
+} from "@/lib/presentations/pages/plan-story/options-schema";
 
 const CLIENT = "c1a11111-2222-4333-8444-555555555555";
 const FIRM = "f1a11111-2222-4333-8444-555555555555";
@@ -80,8 +84,8 @@ const row = (over: Partial<PlanStoryChapterRow>): PlanStoryChapterRow => ({
 });
 
 const OPTIONS = {
+  ...PLAN_STORY_OPTIONS_DEFAULT,
   scenarioId: SCENARIO,
-  documentRole: "standalone" as const,
   scenarioLabel: "Retire at 62",
 };
 
@@ -164,6 +168,12 @@ describe("loadPlanStoryInput", () => {
       proposedRef: SCENARIO,
       scenarioLabel: "Retire at 62",
       documentRole: "standalone",
+      // What this deck prints, so the loader can skip the solves behind facts
+      // nothing on it will read. Asserted as part of the WHOLE args object
+      // rather than on its own — a loader called without it silently pays for
+      // the life-cover search and the max-spend bisection on every export.
+      // `load-for-export.test.ts` owns how the list is derived.
+      chapters: printedChapters(OPTIONS),
     });
     expect(m.listStoryChapters).toHaveBeenCalledWith(CLIENT, SCENARIO, "standalone");
   });

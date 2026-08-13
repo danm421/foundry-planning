@@ -164,9 +164,12 @@ describe("renderPresentationPdf — Plan Story wiring", () => {
     );
 
     expect(storyMocks.loadStoryScenarioLabel).toHaveBeenCalledWith(CLIENT_ID, SCENARIO);
+    // The WHOLE options object, not a hand-picked subset. The loader reads
+    // `sections` to decide which chapters' facts it has to load, so an entry
+    // that arrived without them would skip the life-cover solve for a deck that
+    // prints the chapter — which prints an empty state, silently.
     expect(storyMocks.loadPlanStoryInput).toHaveBeenCalledWith(CLIENT_ID, FIRM_ID, {
-      scenarioId: SCENARIO,
-      documentRole: "standalone",
+      ...storyOptions({ scenarioId: SCENARIO }),
       scenarioLabel: `Name of ${SCENARIO}`,
     });
 

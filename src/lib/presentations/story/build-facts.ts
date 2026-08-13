@@ -292,8 +292,10 @@ const OUTCOME_CHAPTERS: readonly ChapterId[] = ["planInOnePage", "thePathYoureOn
 const PROPOSED_OUTCOME_CHAPTERS: readonly ChapterId[] = ["planInOnePage", "willTheMoneyLast"];
 /** Where today's plan ends up if nothing changes. */
 const BASE_PATH_CHAPTERS: readonly ChapterId[] = ["thePathYoureOn"];
-/** The most the household can spend a year — one chapter's whole subject. */
-const SPEND_CHAPTERS: readonly ChapterId[] = ["whatYouCanSpend"];
+/** The most the household can spend a year — one chapter's whole subject.
+ *  EXPORTED: `load-context.ts` gates the solve that produces it on this list,
+ *  so widening the scope widens the load rather than quietly under-loading. */
+export const SPEND_CHAPTERS: readonly ChapterId[] = ["whatYouCanSpend"];
 /** A goal's date is only meaningful beside the goal it belongs to. */
 const GOAL_CHAPTERS: readonly ChapterId[] = ["whatWerePlanningFor"];
 /** This year's cash flow belongs to the chapter about this year's cash flow. */
@@ -302,8 +304,9 @@ const FLOW_CHAPTERS: readonly ChapterId[] = ["whereTheMoneyGoes"];
 const ESTATE_CHAPTERS: readonly ChapterId[] = ["whatsLeftForPeople"];
 /** …and what the household pays in income tax over the life of the plan. */
 const TAX_CHAPTERS: readonly ChapterId[] = ["whatYoullPayInTax"];
-/** What their life cover would do for the survivor. */
-const COVER_CHAPTERS: readonly ChapterId[] = ["protectingYourFamily"];
+/** What their life cover would do for the survivor. Exported for the same
+ *  reason as `SPEND_CHAPTERS` above — the loader's gate reads it. */
+export const COVER_CHAPTERS: readonly ChapterId[] = ["protectingYourFamily"];
 /** …and what health care costs once work stops. */
 const MEDICARE_CHAPTERS: readonly ChapterId[] = ["healthCareCosts"];
 

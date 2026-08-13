@@ -39,8 +39,15 @@ import type { GoalKind, MapGoal } from "@/lib/household-map/goals";
 import type { LiSolved } from "@/lib/presentations/pages/life-insurance-summary/options-schema";
 import type { LiPolicyRow } from "@/lib/insurance-policies/load-li-inventory";
 import type { ClientData, ProjectionYear } from "@/engine/types";
-import { buildStoryFacts, groupStrategies, type StoryCover, type StoryEstateTotals } from "./build-facts";
-import type { StoryContext, StoryGoal, StoryStrategy } from "./types";
+import {
+  buildStoryFacts,
+  groupStrategies,
+  COVER_CHAPTERS,
+  SPEND_CHAPTERS,
+  type StoryCover,
+  type StoryEstateTotals,
+} from "./build-facts";
+import type { ChapterId, StoryContext, StoryGoal, StoryStrategy } from "./types";
 
 export interface LoadStoryContextArgs {
   clientId: string;
@@ -49,6 +56,27 @@ export interface LoadStoryContextArgs {
   proposedRef: string | null;
   scenarioLabel: string;
   documentRole: "standalone" | "frontMatter";
+  /**
+   * The chapters that COULD print, so the loader can skip the facts nothing
+   * will read. ABSENT MEANS ALL — every caller that does not care, and every
+   * fixture, keeps loading everything.
+   *
+   * ⚠️⚠️ IT MUST BE A SUPERSET OF WHAT ACTUALLY GETS NARRATED. Withhold a
+   * chapter's facts and its narrator prints its honest empty state instead —
+   * a wrong page in a document handed to a client, and one no gate, no page
+   * count and no type can see. Both callers derive it from something known
+   * BEFORE the facts exist (`printedChapters` on the export, the ref alone in
+   * the generate route) precisely so it cannot be narrower than what follows.
+   *
+   * It buys SPEND, nothing else: the sheet is still reserved and the chapter
+   * still prints. So the two SOLVES read it — the life-cover search and the
+   * max-spend bisection, the only calls here worth skipping — and each gates on
+   * the very list `build-facts.ts` scopes its facts to, so widening a scope
+   * widens the load rather than quietly under-loading it. `medicareTotals` and
+   * the estate and tax totals are pure sums over years already in memory; a
+   * predicate for a free call is a second thing to get wrong.
+   */
+  chapters?: readonly ChapterId[];
 }
 
 /**
@@ -401,6 +429,8 @@ async function lifeCover(args: {
 
 export async function loadStoryContext(args: LoadStoryContextArgs): Promise<StoryContext> {
   const { clientId, firmId, proposedRef } = args;
+  /** Absent means all — an unlisted caller loses nothing. */
+  const prints = (id: ChapterId) => args.chapters?.includes(id) ?? true;
 
   const [base, proposed] = await Promise.all([
     projectAndMc(clientId, firmId, "base"),
@@ -453,18 +483,32 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
   // does not — `projectAndMc` already left `successRate` null for the same
   // reason, and borrowing the base plan's spend would print it under the
   // proposed plan's label.
+  //
+  // Each solve is skipped outright when this report prints no chapter that
+  // reads it — gated on the SAME list `build-facts.ts` scopes the resulting
+  // facts to, so the gate cannot drift from what actually needs the answer.
+  // See `chapters` on the args for why absent means all.
+  //
+  // The spend pair is the common one: `whatYouCanSpend` requires a proposal, so
+  // EVERY base-only story — the default deck included — was paying for a
+  // 250-trial bisection whose figure it could never print.
+  const wantsSpend = SPEND_CHAPTERS.some(prints);
   const [baseSpend, proposedSpend, cover] = await Promise.all([
-    maxSpendFor(clientId, firmId, "base"),
-    proposed?.scenarioId != null ? maxSpendFor(clientId, firmId, proposed.scenarioId) : null,
+    wantsSpend ? maxSpendFor(clientId, firmId, "base") : null,
+    wantsSpend && proposed?.scenarioId != null
+      ? maxSpendFor(clientId, firmId, proposed.scenarioId)
+      : null,
     // Alongside the two solves rather than after them — it is the slowest call
     // in this loader and nothing below depends on the other two.
-    lifeCover({
-      clientId,
-      firmId,
-      tree: base.effectiveTree,
-      clientName: firstName,
-      spouseName: client.spouseName ?? null,
-    }),
+    COVER_CHAPTERS.some(prints)
+      ? lifeCover({
+          clientId,
+          firmId,
+          tree: base.effectiveTree,
+          clientName: firstName,
+          spouseName: client.spouseName ?? null,
+        })
+      : null,
   ]);
 
   const facts = buildStoryFacts({

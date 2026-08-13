@@ -42,12 +42,33 @@ export async function POST(
     // could ever disagree.
     const { documentRole } = parsed.data;
 
+    /**
+     * The chapters this run COULD narrate, so the loader can skip the solves
+     * behind facts nothing will read. On a base-only run that is both max-spend
+     * solves, since the chapter reading them requires a proposal.
+     *
+     * ⚠️ It is NOT `wanted` below, and it cannot be: that list reads
+     * `available` and `hasSomethingToPropose`, both derived from `ctx`, which is
+     * what this call RETURNS. So the list going in is derived from the REF
+     * alone, which is everything known before the facts exist.
+     *
+     * Deliberately looser as a result — a proposal carrying no changes still
+     * solves its max spend. That is the correct direction to be wrong in: the
+     * list must be a SUPERSET of what gets narrated, or a chapter is written
+     * from a pack missing its own facts and prints an honest empty state on a
+     * document handed to a client.
+     */
+    const candidates = NARRATED_CHAPTERS.filter(
+      (c) => proposedRef != null || !CHAPTERS[c].requiresProposal,
+    );
+
     const ctx = await loadStoryContext({
       clientId: id,
       firmId,
       proposedRef,
       scenarioLabel: proposedRef ? "the proposed plan" : "Base Case",
       documentRole,
+      chapters: candidates,
     });
 
     /**
@@ -68,10 +89,12 @@ export async function POST(
      */
     const hasSomethingToPropose = ctx.hasProposal && ctx.strategies.length > 0;
     //
-    // `NARRATED_CHAPTERS` rather than the whole arc: a chapter whose narrator has
-    // not landed has no narrative for the substance floor to measure against, so
-    // generating it spends a model call to store the placeholder's own sentence.
-    // Each one joins this list as its task lands.
+    // Narrowed from `candidates` rather than from `NARRATED_CHAPTERS`, so the
+    // superset invariant above holds BY CONSTRUCTION instead of by two filters
+    // that happen to agree. `candidates` is already the arc's landed chapters
+    // only — one whose narrator has not shipped has no narrative for the
+    // substance floor to measure against, so generating it would spend a model
+    // call to store the placeholder's own sentence.
     //
     // …and `available` on top of that: a coverage chapter with nothing behind it
     // — no policies on file, nobody reaching 65 inside the horizon — has only
@@ -85,7 +108,7 @@ export async function POST(
     // in `factsForChapter` would change no answer today — every fact these
     // predicates look for is scoped to the chapter asking — but the predicate is
     // a question about the HOUSEHOLD, and `registry.test.ts` pins it that way.
-    const wanted = NARRATED_CHAPTERS.filter((c) => {
+    const wanted = candidates.filter((c) => {
       const def = CHAPTERS[c];
       if (def.requiresProposal && !hasSomethingToPropose) return false;
       return def.available?.(ctx) ?? true;

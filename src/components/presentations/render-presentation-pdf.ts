@@ -477,8 +477,9 @@ export async function renderPresentationPdf(
       // `pageDescriptorSchema` above — read through, never re-defaulted.
       const opts = p.options as PlanStoryOptions;
       return loadPlanStoryInput(clientId, firmId, {
-        scenarioId: opts.scenarioId,
-        documentRole: opts.documentRole,
+        // The WHOLE options object, not a hand-picked subset: the loader reads
+        // `sections` too, to skip the facts this deck's chapters will not print.
+        ...opts,
         // The scenario's display NAME — a name a client can read under "Your
         // Plan". Resolved here rather than in the loader so the loader cannot
         // invent one, and NOT from `scenarioNames` above, which is built from
