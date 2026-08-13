@@ -5,6 +5,7 @@ import {
   yearFact,
   quotedFact,
   factDisplaySet,
+  factLabelSet,
   hasAccountingNegative,
 } from "../facts";
 
@@ -70,5 +71,17 @@ describe("story facts", () => {
     expect(set.has("$1.2M")).toBe(true);
     expect(set.has("91%")).toBe(true);
     expect(set.has("$9.9M")).toBe(false);
+  });
+});
+
+describe("factLabelSet", () => {
+  it("collects every label, lowercased, so a gate can match case-insensitively", () => {
+    const set = factLabelSet([
+      moneyFact("a", "Left at the end, current plan", 4_500_000),
+      pctFact("b", "Confidence, current plan", 0.737),
+    ]);
+    expect(set.has("left at the end, current plan")).toBe(true);
+    expect(set.has("confidence, current plan")).toBe(true);
+    expect(set.has("net worth today")).toBe(false);
   });
 });

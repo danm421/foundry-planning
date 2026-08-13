@@ -100,3 +100,16 @@ export function hasAccountingNegative(text: string): boolean {
 export function factDisplaySet(facts: Fact[]): Set<string> {
   return new Set(facts.map((f) => f.display));
 }
+
+/**
+ * Every label in the pack, lowercased.
+ *
+ * The sibling of `factDisplaySet`, and the input to Gate 5. A label is a
+ * machine-readable key we hand the model so it knows what a figure MEANS; the
+ * model reliably reads it back as English ("Left at the end, current plan:
+ * $9.2M"). Lowercased here rather than at each comparison so the gate does one
+ * `has` per candidate rather than a scan.
+ */
+export function factLabelSet(facts: Fact[]): Set<string> {
+  return new Set(facts.map((f) => f.label.toLowerCase()));
+}
