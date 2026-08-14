@@ -32,6 +32,7 @@ const input: StoryFactsInput = {
   lifetimeTax: { base: null, proposed: null },
   cover: null,
   medicare: null,
+  inflationRate: 0.025,
 };
 
 describe("buildStoryFacts", () => {
@@ -602,6 +603,7 @@ describe("fact scoping", () => {
     lifetimeTax: { base: null, proposed: null },
     cover: null,
     medicare: null,
+    inflationRate: 0.025,
   });
 
   it("keeps the balance sheet out of the headline chapter", () => {
@@ -636,7 +638,7 @@ describe("a retirement year already in the past", () => {
     retirementYear: 2013, endOfLifeYear: 2051, planStartYear: 2026,
     strategies: [], goals: [], flow: null, shortfallYear: null, maxSpend: { base: null, proposed: null },
     estate: { base: null, proposed: null }, lifetimeTax: { base: null, proposed: null },
-    cover: null, medicare: null,
+    cover: null, medicare: null, inflationRate: 0.025,
   });
 
   it("is omitted rather than narrated as something still to come", () => {
@@ -651,8 +653,42 @@ describe("a retirement year already in the past", () => {
       retirementYear: 2035, endOfLifeYear: 2070, planStartYear: 2026,
       strategies: [], goals: [], flow: null, shortfallYear: null, maxSpend: { base: null, proposed: null },
     estate: { base: null, proposed: null }, lifetimeTax: { base: null, proposed: null },
-    cover: null, medicare: null,
+    cover: null, medicare: null, inflationRate: 0.025,
     });
     expect(ahead.map((f) => f.id)).toContain("plan.retirementYear");
+  });
+});
+
+describe("the inflation assumption", () => {
+  it("is a percentage, formatted by this document", () => {
+    const fact = buildStoryFacts({ ...input, inflationRate: 0.025 }).find(
+      (f) => f.id === "plan.inflationRate",
+    );
+    expect(fact?.display).toBe("2.5%");
+    expect(fact?.raw).toBe(0.025);
+  });
+
+  /**
+   * Scoped, unlike the plan's two YEARS beside it. A percentage loose in every
+   * chapter's pack grounds any "2.5%" the model writes anywhere in the report,
+   * and Gate 1 checks a figure's spelling and never its meaning — so an
+   * unscoped inflation rate licenses a made-up return, a made-up tax rate and a
+   * made-up confidence figure that happen to round to the same string.
+   */
+  it("reaches the chapter that states the assumptions and no other", () => {
+    const facts = buildStoryFacts({ ...input, inflationRate: 0.025 });
+    expect(factsForChapter(facts, "thingsToKnow").map((f) => f.id)).toContain("plan.inflationRate");
+    for (const id of ["planInOnePage", "willTheMoneyLast", "whatYoullPayInTax"] as const) {
+      expect(factsForChapter(facts, id).map((f) => f.id)).not.toContain("plan.inflationRate");
+    }
+  });
+
+  /** Zero is a real setting — an advisor modelling in today's money — so the
+   *  fact is emitted and the narrator says what it means. */
+  it("is emitted at zero rather than dropped", () => {
+    const fact = buildStoryFacts({ ...input, inflationRate: 0 }).find(
+      (f) => f.id === "plan.inflationRate",
+    );
+    expect(fact?.raw).toBe(0);
   });
 });

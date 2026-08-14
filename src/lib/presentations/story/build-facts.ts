@@ -107,6 +107,18 @@ export interface StoryFactsInput {
    * states both plans.
    */
   medicare: { lifetime: number; irmaa: number } | null;
+  /**
+   * General price inflation, as a decimal — the plan's own `inflationRate`, the
+   * same number the deck's Planning Assumptions page prints under "General
+   * inflation".
+   *
+   * Not nullable, unlike every figure above it. The other inputs are OUTPUTS
+   * that can fail to compute; this is a SETTING that always has a value, and
+   * zero is a real one — an advisor modelling in today's money. So it is
+   * emitted at zero too, and the chapter says what zero means rather than
+   * printing "prices rise about 0% a year".
+   */
+  inflationRate: number;
 }
 
 /**
@@ -309,6 +321,17 @@ const TAX_CHAPTERS: readonly ChapterId[] = ["whatYoullPayInTax"];
 export const COVER_CHAPTERS: readonly ChapterId[] = ["protectingYourFamily"];
 /** …and what health care costs once work stops. */
 const MEDICARE_CHAPTERS: readonly ChapterId[] = ["healthCareCosts"];
+/**
+ * The assumptions the plan ran on, for the chapter that states them.
+ *
+ * Scoped, unlike the two plan YEARS, which are unscoped because a year is
+ * unambiguous wherever it lands. A bare percentage is the opposite: Gate 1
+ * checks a figure's SPELLING and never its meaning, so an unscoped "2.5%" in
+ * the pack would ground an invented return in the recommendation chapter, an
+ * invented tax rate in the tax chapter and an invented confidence figure in the
+ * headline — any of which can round to the same three characters.
+ */
+const ASSUMPTION_CHAPTERS: readonly ChapterId[] = ["thingsToKnow"];
 
 /**
  * The estate pair, both plans, in COMPARISON order — both nets, then both costs.
@@ -473,6 +496,9 @@ export function buildStoryFacts(input: StoryFactsInput): Fact[] {
     ...coverFacts(input.cover),
     ...medicareFacts(input.medicare),
     yearFact("plan.endOfLifeYear", "The last year we plan to", input.endOfLifeYear),
+    // A SETTING, not an outcome, so it is always here — see the input's own
+    // note on why zero is emitted rather than dropped.
+    pctFact("plan.inflationRate", "Prices rise each year by", input.inflationRate, ASSUMPTION_CHAPTERS),
   ];
 
   /**

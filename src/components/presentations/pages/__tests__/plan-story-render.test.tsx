@@ -23,6 +23,8 @@ import {
   MAX_STRATEGY_CARDS,
   type PlanStoryPageData,
 } from "@/lib/presentations/pages/plan-story/view-model";
+import { narrateThingsToKnow } from "@/lib/presentations/story/chapters/things-to-know";
+import { pctFact, yearFact } from "@/lib/presentations/story/facts";
 
 /** Eight sheets' worth — what a 20,000-character `editedText` buys. */
 const LONG_PROSE = Array.from(
@@ -467,4 +469,90 @@ describe("Plan Story — the checklist layout, really rendered", () => {
     },
     60_000,
   );
+});
+
+/**
+ * The glossary sheet, rendered from the REAL narrator rather than from a fixture.
+ *
+ * Chapter 13 is the one chapter whose length is not a household's — it is ours,
+ * and it grows by roughly fifteen words every time a term joins `glossary.ts`.
+ * So this runs the narrator itself: a fixture would go on passing after an edit
+ * that overflowed the sheet, which is the whole thing worth watching here.
+ */
+const STORY_13 = {
+  household: { firstNames: "Alan and Teresa", householdName: "the Bradshaw household" },
+  scenarioLabel: "Proposed",
+  documentRole: "standalone",
+  hasProposal: true,
+  goals: [],
+  strategies: [],
+  facts: [
+    yearFact("plan.endOfLifeYear", "The last year we plan to", 2051),
+    pctFact("plan.inflationRate", "Prices rise each year by", 0.025, ["thingsToKnow"]),
+  ],
+};
+
+/** Straight to the renderer, NO view-model in between.
+ *
+ *  ⚠️ Going through `buildPlanStoryData` cannot answer the layout question at
+ *  all: `capParagraphs` drops whatever exceeds `SHEET_BUDGET_WORDS` before the
+ *  renderer ever sees it, so an overgrown glossary comes back as one sheet plus
+ *  a trim note — indistinguishable from one that fit. The BUDGET is tested
+ *  above; this is the SHEET. */
+function sheetOf(paragraphs: string[]): PlanStoryPageData {
+  return {
+    title: "Your Plan",
+    subtitle: "Proposed",
+    isEmpty: false,
+    emptyMessage: "",
+    chapters: [
+      {
+        chapterId: "thingsToKnow",
+        title: "Things to know",
+        layout: "heroProse",
+        paragraphs,
+        strategies: [],
+        figures: [],
+        steps: [],
+        overflowNote: "",
+      },
+    ],
+  };
+}
+
+describe("Plan Story — the glossary sheet, really rendered", () => {
+  it("prints all four paragraphs through the view-model, with nothing trimmed", () => {
+    const data = buildPlanStoryData(
+      { planStory: { story: STORY_13, text: {} }, scenarioLabel: "Proposed" } as never,
+      onlyChapter("thingsToKnow"),
+    );
+    expect(data.chapters[0].overflowNote).toBe("");
+    expect(data.chapters[0].paragraphs).toHaveLength(4);
+  });
+
+  it("lays the whole glossary and the assumptions out on one sheet", async () => {
+    expect(await pagesOf(sheetOf(narrateThingsToKnow(STORY_13 as never)))).toBe(1);
+  }, 30_000);
+
+  /**
+   * THE RED for the case above. Without it a count of 1 could mean the layout
+   * is incapable of paginating rather than that the content fits — `PageFrame`
+   * gives its body `flex: 1`, and react-pdf clips past the available height on
+   * some layouts instead of breaking.
+   *
+   * MEASURED: six spare entries still lay out and eight do not, so today's
+   * eleven have room for about six more. That is the number to watch when a
+   * term is added — this case is the instrument, and the one above is the
+   * reading.
+   */
+  it("spills once the glossary is grown past what the sheet holds", async () => {
+    const paragraphs = narrateThingsToKnow(STORY_13 as never);
+    const spare = Array.from(
+      { length: 8 },
+      (_, i) => `Spare term ${i} — a definition about as long as the longest one the glossary carries.`,
+    );
+    const grown = [...paragraphs];
+    grown[2] = [grown[2], ...spare].join("\n");
+    expect(await pagesOf(sheetOf(grown))).toBeGreaterThan(1);
+  }, 30_000);
 });

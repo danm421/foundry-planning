@@ -3,9 +3,9 @@
 // in the union but not in `CHAPTERS` — or in `CHAPTERS` under someone else's key
 // — is a runtime hole none of those five would agree about.
 import { describe, it, expect } from "vitest";
-import { CHAPTERS, NARRATED_CHAPTERS, chapterEnumerates } from "../registry";
+import { CHAPTERS, chapterEnumerates } from "../registry";
 import { moneyFact } from "../../facts";
-import { CHAPTER_IDS, type StoryContext } from "../../types";
+import { CHAPTER_IDS, type ChapterId, type StoryContext } from "../../types";
 
 const CTX: StoryContext = {
   household: { firstNames: "Alan and Teresa", householdName: "the Bradshaw household" },
@@ -119,35 +119,54 @@ describe("the chapter registry", () => {
     }
   });
 
-  it("throws with a message naming the gap, rather than narrating", () => {
-    // The placeholder is the whole reason all fourteen slots can exist before
-    // every narrator does. A silent empty array here would let a half-finished
-    // chapter ship as a blank client page.
-    //
-    // Read off the list rather than naming one chapter: each Wave D task lands
-    // a narrator, and a hard-coded name would have to be re-chosen every time.
-    // The MESSAGE is what this case adds — the total check below proves which
-    // chapters throw, not what they say. Task 19 empties the list, and then
-    // there is no placeholder left to assert on.
-    const pending = CHAPTER_IDS.find((id) => !NARRATED_CHAPTERS.includes(id));
-    if (!pending) return;
-    expect(() => CHAPTERS[pending].narrate(CTX)).toThrow(/no narrator yet/u);
+  /**
+   * The successor to the placeholder rule this file used to carry.
+   *
+   * While the arc landed a chapter at a time, an unwritten slot's `narrate`
+   * THREW in test and the suite asserted which ones did — that is what stopped
+   * a half-finished chapter shipping as a blank client page. Every slot has a
+   * narrator now, so the same contract is stated positively: all fourteen say
+   * something, on a context with nothing in it. A fifteenth chapter added
+   * without a narrator fails here rather than printing an empty sheet.
+   */
+  it("gives every chapter a narrator that says something on an empty pack", () => {
+    for (const id of CHAPTER_IDS) {
+      const out = CHAPTERS[id].narrate(CTX);
+      expect(out.length, id).toBeGreaterThan(0);
+      expect(out.join(" ").trim().length, id).toBeGreaterThan(0);
+      expect(out.join(" "), id).not.toMatch(/undefined|null|\[object/u);
+    }
   });
 
-  it("narrates exactly the chapters NARRATED_CHAPTERS names, and no others", () => {
-    // The list is what the options default and every enumerating suite read, so
-    // it is proved against the registry rather than trusted: a narrator that
-    // lands without joining the list, or a name in the list with no narrator
-    // behind it, fails here.
+  /**
+   * …and that no two of them say the SAME thing.
+   *
+   * ⚠️ What this does and does not cover, measured rather than assumed. It
+   * catches a placeholder used TWICE and a chapter wired to its neighbour's
+   * narrator — both proved by mutation. It does NOT catch a single bespoke
+   * stub: `() => ["We'll cover this together."]` on one chapter is distinct
+   * from the other thirteen and survives this case. That one is caught by the
+   * chapter's OWN suite, which is where the real guarantee lives — and a
+   * fifteenth chapter landing with a stub AND no suite of its own is caught by
+   * nothing here. Worth knowing before trusting this line.
+   *
+   * It is worth keeping on its own terms all the same: two chapters printing
+   * the same paragraph is a live defect class in this report — the 2026-08-12
+   * read found the balance-sheet chapter re-narrating the headline's figures on
+   * the very next sheet, which is what the per-chapter fact scoping now stops.
+   *
+   * Checked on the EMPTY pack, which is the hardest case: it is where every
+   * narrator is closest to boilerplate, so two that differ only once there are
+   * figures to print would still fail here.
+   */
+  it("gives every chapter a narrative no other chapter also writes", () => {
+    const byText = new Map<string, ChapterId>();
     for (const id of CHAPTER_IDS) {
-      let threw = false;
-      try {
-        CHAPTERS[id].narrate(CTX);
-      } catch {
-        threw = true;
-      }
-      expect(threw, id).toBe(!NARRATED_CHAPTERS.includes(id));
+      const text = CHAPTERS[id].narrate(CTX).join(" ");
+      expect(byText.get(text) ?? id, `${id} narrates exactly like ${byText.get(text)}`).toBe(id);
+      byText.set(text, id);
     }
+    expect(byText.size).toBe(CHAPTER_IDS.length);
   });
 });
 

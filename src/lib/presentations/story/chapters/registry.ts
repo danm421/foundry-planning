@@ -15,6 +15,7 @@ import { narrateWhatYoullPayInTax } from "./what-youll-pay-in-tax";
 import { narrateProtectingYourFamily } from "./protecting-your-family";
 import { narrateHealthCareCosts } from "./health-care-costs";
 import { narrateWhatHappensNext } from "./what-happens-next";
+import { narrateThingsToKnow } from "./things-to-know";
 
 export type ChapterLayout = "heroProse" | "twoUp" | "strategyCards" | "checklist";
 
@@ -51,56 +52,6 @@ export interface ChapterDef {
   available?: (ctx: StoryContext) => boolean;
   /** One line telling the model what this chapter is for. */
   brief: string;
-}
-
-/**
- * A chapter whose narrator has not landed yet.
- *
- * All fourteen slots exist from this task on, so the page count, the launcher
- * summary, the render and storage agree from the start rather than being
- * reconciled at the end. The chapters themselves arrive one task at a time, and
- * until then this stands in — switched OFF in `PLAN_STORY_OPTIONS_DEFAULT`, so a
- * freshly added page renders exactly the report it renders today.
- *
- * It THROWS in test and returns a neutral sentence in production. A silent empty
- * array would let a half-finished chapter ship as a blank page, which is the one
- * outcome the whole render path is built to make impossible.
- */
-/**
- * The chapters whose narrator has actually landed.
- *
- * ONE list, and everything that has to know reads it: the shipped options
- * default switches exactly these on, and every suite that enumerates the arc
- * runs its narrator cases over exactly these. `registry.test.ts` proves the list
- * against the registry itself — every chapter outside it throws — so it cannot
- * drift from the `notYetWritten` calls below.
- *
- * Wave D empties it by filling in narrators; when it holds all fourteen, the
- * placeholder and this constant both go.
- */
-export const NARRATED_CHAPTERS: readonly ChapterId[] = [
-  "planInOnePage",
-  "whatWerePlanningFor",
-  "whatYouHave",
-  "whereTheMoneyGoes",
-  "thePathYoureOn",
-  "whatWeRecommend",
-  "willTheMoneyLast",
-  "whatYouCanSpend",
-  "whatsLeftForPeople",
-  "whatYoullPayInTax",
-  "protectingYourFamily",
-  "healthCareCosts",
-  "whatHappensNext",
-];
-
-function notYetWritten(id: ChapterId): (ctx: StoryContext) => string[] {
-  return () => {
-    if (process.env.NODE_ENV === "test") {
-      throw new Error(`chapter "${id}" has no narrator yet — its task has not landed`);
-    }
-    return ["We'll cover this together."];
-  };
 }
 
 // Every `brief` is written FOR THE MODEL and the client never sees it, so each
@@ -250,7 +201,7 @@ export const CHAPTERS: Record<ChapterId, ChapterDef> = {
     id: "thingsToKnow",
     title: "Things to know",
     layout: "heroProse",
-    narrate: notYetWritten("thingsToKnow"),
+    narrate: narrateThingsToKnow,
     requiresProposal: false,
     coverage: false,
     brief:

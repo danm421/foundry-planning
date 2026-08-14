@@ -108,7 +108,8 @@ import { GET } from "../route";
 import { POST } from "../generate/route";
 import { PATCH } from "../[chapterId]/route";
 
-import { CHAPTERS, NARRATED_CHAPTERS } from "@/lib/presentations/story/chapters/registry";
+import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
+import { CHAPTER_IDS } from "@/lib/presentations/story/types";
 import type { StoryContext } from "@/lib/presentations/story/types";
 
 /**
@@ -131,10 +132,10 @@ const NO_FACTS: StoryContext = {
   facts: [],
 };
 
-/** The chapters a BASE-ONLY story generates: every landed one, less the ones
- *  with nothing to recommend, less the coverage chapters with no data behind
- *  them. Derived so a Wave D task touches one list. */
-const BASE_ONLY = NARRATED_CHAPTERS.filter(
+/** The chapters a BASE-ONLY story generates: the whole arc, less the ones with
+ *  nothing to recommend, less the coverage chapters with no data behind them.
+ *  Derived from the registry so a fifteenth chapter joins it by existing. */
+const BASE_ONLY = CHAPTER_IDS.filter(
   (id) => !CHAPTERS[id].requiresProposal && (CHAPTERS[id].available?.(NO_FACTS) ?? true),
 );
 
@@ -235,11 +236,9 @@ describe("GET /api/clients/[id]/plan-story", () => {
 
   // Kills: projecting the stored rows instead of the chapter list (a
   // never-generated chapter would vanish from the panel).
-  // Three, not fourteen. The arc's other eleven slots exist so the page count,
-  // the render and storage agree from the start, but they have no narrator yet —
-  // listing them would offer the advisor a Generate button that can only store
-  // the placeholder's own sentence. Spelled out rather than read from
-  // `NARRATED_CHAPTERS`, so a route that went back to the whole arc fails here.
+  // All fourteen, in DOCUMENT ORDER — the panel lists the chapters in the order
+  // the report prints them, and the order is what makes an advisor working down
+  // the list see the same sequence the client will read.
   it("returns one entry per chapter, including never-generated ones", async () => {
     const res = await GET(req("http://x/?scenarioId=base"), {
       params: Promise.resolve({ id: CLIENT_ID }),
@@ -247,9 +246,9 @@ describe("GET /api/clients/[id]/plan-story", () => {
     const body = await res.json();
     expect(res.status).toBe(200);
     expect(mocks.listStoryChapters).toHaveBeenCalledWith(CLIENT_ID, "base", "standalone");
-    expect(body.chapters).toHaveLength(NARRATED_CHAPTERS.length);
+    expect(body.chapters).toHaveLength(CHAPTER_IDS.length);
     expect(body.chapters.map((c: { chapterId: string }) => c.chapterId)).toEqual([
-      ...NARRATED_CHAPTERS,
+      ...CHAPTER_IDS,
     ]);
     expect(body.chapters[0]).toMatchObject({
       title: "Your plan, in one page",
@@ -707,7 +706,7 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
     const res = await post({ scenarioId: SCENARIO_ID, documentRole: "standalone" });
     const body = await res.json();
     expect(res.status).toBe(200);
-    expect(body.chapters).toHaveLength(NARRATED_CHAPTERS.length);
+    expect(body.chapters).toHaveLength(CHAPTER_IDS.length);
     expect(mocks.loadStoryContext).toHaveBeenCalledWith(
       expect.objectContaining({ proposedRef: SCENARIO_ID }),
     );
@@ -720,7 +719,7 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
         firmId: "firm_1",
         metadata: expect.objectContaining({
           scenarioId: SCENARIO_ID,
-          chapters: NARRATED_CHAPTERS.length,
+          chapters: CHAPTER_IDS.length,
         }),
       }),
     );
@@ -737,7 +736,7 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
    * page count and to the type system.
    *
    * It holds by construction — `wanted` is a filter OF the candidate set, not a
-   * second filter over `NARRATED_CHAPTERS` that happens to agree — and this is
+   * second filter over `CHAPTER_IDS` that happens to agree — and this is
    * what goes red if those two ever come apart again.
    */
   describe("the chapter list handed to the loader", () => {
@@ -747,7 +746,7 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
       await post({ scenarioId: "base", documentRole: "standalone" });
 
       expect(chaptersLoaded()).toEqual(
-        NARRATED_CHAPTERS.filter((c) => !CHAPTERS[c].requiresProposal),
+        CHAPTER_IDS.filter((c) => !CHAPTERS[c].requiresProposal),
       );
     });
 

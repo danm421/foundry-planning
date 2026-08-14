@@ -13,7 +13,8 @@ import { loadStoryContext } from "@/lib/presentations/story/load-context";
 import { generateChapter } from "@/lib/presentations/story/generate";
 import { upsertGeneratedChapter } from "@/lib/presentations/story/repo";
 import { resolveStoryScenarioId } from "@/lib/presentations/story/scenario-scope";
-import { CHAPTERS, NARRATED_CHAPTERS } from "@/lib/presentations/story/chapters/registry";
+import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
+import { CHAPTER_IDS } from "@/lib/presentations/story/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 800;
@@ -58,7 +59,7 @@ export async function POST(
      * from a pack missing its own facts and prints an honest empty state on a
      * document handed to a client.
      */
-    const candidates = NARRATED_CHAPTERS.filter(
+    const candidates = CHAPTER_IDS.filter(
       (c) => proposedRef != null || !CHAPTERS[c].requiresProposal,
     );
 
@@ -89,12 +90,9 @@ export async function POST(
      */
     const hasSomethingToPropose = ctx.hasProposal && ctx.strategies.length > 0;
     //
-    // Narrowed from `candidates` rather than from `NARRATED_CHAPTERS`, so the
+    // Narrowed from `candidates` rather than from `CHAPTER_IDS`, so the
     // superset invariant above holds BY CONSTRUCTION instead of by two filters
-    // that happen to agree. `candidates` is already the arc's landed chapters
-    // only — one whose narrator has not shipped has no narrative for the
-    // substance floor to measure against, so generating it would spend a model
-    // call to store the placeholder's own sentence.
+    // that happen to agree.
     //
     // …and `available` on top of that: a coverage chapter with nothing behind it
     // — no policies on file, nobody reaching 65 inside the horizon — has only

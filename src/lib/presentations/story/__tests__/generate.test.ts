@@ -6,9 +6,9 @@ vi.mock("@/lib/extraction/azure-client", () => ({ callAIExtractionWithMeta: vi.f
 
 import { callAIExtractionWithMeta } from "@/lib/extraction/azure-client";
 import { generateChapter } from "../generate";
-import { CHAPTERS, NARRATED_CHAPTERS } from "../chapters/registry";
+import { CHAPTERS } from "../chapters/registry";
 import { moneyFact, pctFact, quotedFact } from "../facts";
-import type { ChapterId, StoryContext, StoryStrategy } from "../types";
+import { CHAPTER_IDS, type ChapterId, type StoryContext, type StoryStrategy } from "../types";
 import type { ChangeRow } from "@/lib/presentations/pages/scenario-changes/types";
 
 const UNAVAILABLE = "The writing assistant was unavailable.";
@@ -501,10 +501,10 @@ describe("generateChapter", () => {
       ["facts but no proposal", context([F.base, F.net, F.assets, F.debts], false, [])],
     ];
 
-    // The chapters that HAVE a narrator, from the registry's own list — the
-    // eleven still standing on `notYetWritten` have no narrative to publish or
-    // reject, and their placeholder throws by design.
-    const CASES: Array<[ChapterId, string, StoryContext]> = NARRATED_CHAPTERS
+    // Every chapter, on every pack. This is what holds `MIN_CHAPTER_WORDS`
+    // against the narrators: a floor above the SHORTEST narrative this module
+    // publishes would report an outage on a chapter that answered cleanly.
+    const CASES: Array<[ChapterId, string, StoryContext]> = CHAPTER_IDS
       .flatMap((id) => PACKS.map(([label, ctx]) => [id, label, ctx] as [ChapterId, string, StoryContext]));
 
     it.each(CASES)("%s, on %s", async (chapterId, _label, ctx) => {

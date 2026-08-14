@@ -13,6 +13,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const fx = vi.hoisted(() => ({
   client: {} as Record<string, unknown>,
   accounts: [] as Array<Record<string, unknown>>,
+  /** The one `planSettings` field the loader reads. Per-ref, so a test can
+   *  prove the BASE plan's rate is the one that reaches the pack even when a
+   *  scenario overrides it. */
+  inflationRate: {} as Record<string, number>,
   /** scenarioId → the projection years that ref should produce. */
   years: {} as Record<string, Array<Record<string, unknown>>>,
   /** scenarioId → success rate. A missing entry makes the cache throw. */
@@ -40,7 +44,12 @@ vi.mock("@/lib/scenario/loader", () => ({
   // different set of years per scenario.
   loadEffectiveTreeForRef: vi.fn(
     async (_clientId: string, _firmId: string, ref: { id: string }) => ({
-      effectiveTree: { client: fx.client, accounts: fx.accounts, scenarioId: ref.id },
+      effectiveTree: {
+        client: fx.client,
+        accounts: fx.accounts,
+        scenarioId: ref.id,
+        planSettings: { inflationRate: fx.inflationRate[ref.id] ?? 0.025 },
+      },
     }),
   ),
 }));
@@ -264,6 +273,7 @@ beforeEach(() => {
   fx.maxSpendCalls = [];
   fx.estate = {};
   fx.estateCalls = [];
+  fx.inflationRate = {};
   li.loadLifeInsuranceInventory.mockClear();
   steps.loadStoryNextSteps.mockClear();
   // The Monte-Carlo-failure path logs; keep the suite's output clean while
@@ -621,6 +631,20 @@ describe("loadStoryContext", () => {
         scenarioLabel: "Retire at 62",
         documentRole: "frontMatter",
       });
+
+    /**
+     * A scenario can override the inflation rate, and the chapter that states
+     * the assumptions is not a comparison — it has one column. Taking the
+     * proposal's rate would tell the client what we assume about prices under a
+     * plan they have not agreed to, while every figure around it still states
+     * both plans.
+     */
+    it("states the BASE plan's inflation rate, not the proposal's", async () => {
+      fx.inflationRate = { base: 0.025, "sc-1": 0.04 };
+      const ctx = await load();
+      const rate = ctx.facts.find((f) => f.id === "plan.inflationRate");
+      expect(rate?.display).toBe("2.5%");
+    });
 
     it("groups the scenario's changes into named strategies", async () => {
       const ctx = await load();

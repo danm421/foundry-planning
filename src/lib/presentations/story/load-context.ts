@@ -599,6 +599,12 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
     // proposal and the arc makes no Medicare comparison; what a proposal does to
     // the surcharge lands in the tax chapter, which states both plans.
     medicare: medicareTotals(baseYears),
+    // The BASE plan's setting, even on a deck carrying a proposal. A scenario
+    // can override it, and a chapter that stated the proposal's rate would be
+    // telling the client what we assume about prices in a plan they have not
+    // agreed to — while every other figure in the report is still built on
+    // both. The same call chapter 11 makes about Medicare, for the same reason.
+    inflationRate: base.effectiveTree.planSettings.inflationRate,
     flow: firstYear
       ? {
           income: firstYear.totalIncome,

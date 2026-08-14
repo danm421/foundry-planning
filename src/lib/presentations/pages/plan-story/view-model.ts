@@ -206,7 +206,7 @@ const BUDGET_WORDS_CHECKLIST = 35;
  * four-word paragraphs pays sixty bottom margins. Eleven paragraphs were
  * measured to lay out; this sits comfortably inside that.
  */
-const MAX_PARAGRAPHS = 8;
+export const MAX_PARAGRAPHS = 8;
 
 function proseBudgetWords(layout: ChapterLayout, cards: number): number {
   if (layout === "twoUp") return BUDGET_WORDS_TWO_UP;

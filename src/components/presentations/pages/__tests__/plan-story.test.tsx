@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { isValidElement, type ReactElement } from "react";
 import { planStoryPage, type BuildDataContext } from "@/components/presentations/registry";
-import { CHAPTERS, NARRATED_CHAPTERS } from "@/lib/presentations/story/chapters/registry";
+import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
 import { PageFrame } from "@/components/presentations/shared/page-frame";
 import { PlanStoryPagePdf } from "@/components/presentations/pages/plan-story/page-pdf";
 import { PlanStoryChapterPdf } from "@/components/presentations/pages/plan-story/chapter-pdf";
@@ -125,7 +125,7 @@ describe("planStoryPage registry entry", () => {
     // One page per chapter the default switches on, less the ones with nothing
     // to recommend — no scenario is picked here.
     expect(planStoryPage.estimatePageCount(undefined as never, PLAN_STORY_OPTIONS_DEFAULT)).toBe(
-      NARRATED_CHAPTERS.filter((id) => !CHAPTERS[id].requiresProposal).length,
+      CHAPTER_IDS.filter((id) => !CHAPTERS[id].requiresProposal).length,
     );
   });
 
@@ -247,7 +247,7 @@ describe("PlanStoryPagePdf — sheets rendered vs. sheets reserved", () => {
       ),
       options,
     );
-    expect(data.chapters).toHaveLength(NARRATED_CHAPTERS.length);
+    expect(data.chapters).toHaveLength(CHAPTER_IDS.length);
     expect(pageFrames(render(data))).toHaveLength(
       planStoryPage.estimatePageCount(undefined as never, options),
     );

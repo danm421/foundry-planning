@@ -3,14 +3,14 @@ import type { BuildDataContext } from "@/components/presentations/registry";
 import type { ChangeRow } from "@/lib/presentations/pages/scenario-changes/types";
 import type { Fact } from "@/lib/presentations/story/facts";
 import { CHAPTER_IDS, type ChapterId, type StoryContext } from "@/lib/presentations/story/types";
-import { CHAPTERS, NARRATED_CHAPTERS } from "@/lib/presentations/story/chapters/registry";
+import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
 
-/** What the shipped default prints with no scenario picked: every landed
- *  chapter, less the ones with nothing to recommend. Derived from the registry
- *  so a Wave D task adds a chapter in ONE place; the hand-written copy of the
- *  landed list — the one that has to change deliberately — lives in
- *  `options.test.ts`, which is where the shipped default is actually pinned. */
-const DEFAULT_PRINTED = NARRATED_CHAPTERS.filter((id) => !CHAPTERS[id].requiresProposal);
+/** What the shipped default prints with no scenario picked: every chapter, less
+ *  the ones with nothing to recommend. Derived from the registry, so a fifteenth
+ *  chapter joins it by existing; the hand-written copy of the default's own list
+ *  — the one that has to change deliberately — lives in `options.test.ts`, which
+ *  is where the shipped default is actually pinned. */
+const DEFAULT_PRINTED = CHAPTER_IDS.filter((id) => !CHAPTERS[id].requiresProposal);
 import {
   buildPlanStoryData,
   MAX_FIGURE_CARDS,
@@ -140,7 +140,7 @@ describe("buildPlanStoryData — which chapters render", () => {
 
   it("keeps it once a scenario is picked", () => {
     const data = buildPlanStoryData(deckCtx(input({ hasProposal: true })), PROPOSED);
-    expect(chapterIds(data)).toEqual(NARRATED_CHAPTERS);
+    expect(chapterIds(data)).toEqual(CHAPTER_IDS);
   });
 
   it("decides from the options alone, not from the loaded story's own flag", () => {
@@ -150,7 +150,7 @@ describe("buildPlanStoryData — which chapters render", () => {
     // moment the builder consults one they can disagree about how many pages
     // this page occupies — which is the defect this whole rule exists to close.
     const optimistic = buildPlanStoryData(deckCtx(input({ hasProposal: false })), PROPOSED);
-    expect(chapterIds(optimistic)).toEqual(NARRATED_CHAPTERS);
+    expect(chapterIds(optimistic)).toEqual(CHAPTER_IDS);
     expect(paragraphsOf(optimistic, "whatWeRecommend")).toEqual([
       "We aren't suggesting changes to the plan this time.",
     ]);
@@ -167,10 +167,10 @@ describe("buildPlanStoryData — which chapters render", () => {
     // Read off the registry: what this pins is that the builder CARRIES them,
     // not what any one chapter happens to be titled this week.
     expect(data.chapters.map((c) => c.title)).toEqual(
-      NARRATED_CHAPTERS.map((id) => CHAPTERS[id].title),
+      CHAPTER_IDS.map((id) => CHAPTERS[id].title),
     );
     expect(data.chapters.map((c) => c.layout)).toEqual(
-      NARRATED_CHAPTERS.map((id) => CHAPTERS[id].layout),
+      CHAPTER_IDS.map((id) => CHAPTERS[id].layout),
     );
     expect(new Set(data.chapters.map((c) => c.layout)).size).toBeGreaterThan(1);
   });
@@ -451,9 +451,11 @@ describe("buildPlanStoryData — the subtitle names the plan the prose is about"
 });
 
 describe("the estimate and the render agree", () => {
-  // The three chapters that have a narrator, in every combination. The other
-  // eleven stay at their shipped default (off) — a chapter whose task has not
-  // landed cannot be part of a render check, because its narrator throws.
+  // Three chapters toggled through every combination, over a deck that is
+  // otherwise at its shipped default — which is now all fourteen ON, so each
+  // case is the full arc with three keys moved rather than three chapters over
+  // an empty deck. That is the harder case for the estimate, not the easier one:
+  // every chapter it does not toggle still has to be counted and rendered.
   const SECTION_SETS = [false, true].flatMap((planInOnePage) =>
     [false, true].flatMap((whatYouHave) =>
       [false, true].map((whatWeRecommend) => ({
@@ -495,8 +497,8 @@ describe("the estimate and the render agree", () => {
 
   it("matches for both presets as the options control applies them", () => {
     // Every chapter of the arc, with stored text — which is what the export
-    // loader supplies for a generated deck, and the only way the eleven chapters
-    // whose narrators have not landed can take part in a render check at all.
+    // loader supplies for a generated deck, and what keeps this case about the
+    // ESTIMATE rather than about what any one narrator happens to write.
     const stored = Object.fromEntries(
       CHAPTER_IDS.map((id) => [id, "One stored paragraph, as the export loader supplies it."]),
     );
@@ -518,7 +520,7 @@ describe("the estimate and the render agree", () => {
     // defensive; it is pinned so the gap stays named rather than discovered.
     const data = buildPlanStoryData(deckCtx(undefined), PROPOSED);
     expect(physicalPages(data)).toBe(1);
-    expect(estimatePlanStoryPageCount(undefined as never, PROPOSED)).toBe(NARRATED_CHAPTERS.length);
+    expect(estimatePlanStoryPageCount(undefined as never, PROPOSED)).toBe(CHAPTER_IDS.length);
   });
 });
 
@@ -697,9 +699,9 @@ describe("a strategy the prose already spelled out", () => {
 });
 
 describe("twoUp figures", () => {
-  /** The one twoUp chapter reachable today: it needs a proposal, and its
-   *  narrator has not landed, so the prose comes from storage exactly as the
-   *  export loader supplies it. */
+  /** A twoUp chapter that needs a proposal, with its prose coming from storage
+   *  exactly as the export loader supplies it — so the case is about the FIGURE
+   *  COLUMN and not about the paragraph beside it. */
   const WITH_LAST: PlanStoryOptions = {
     ...PROPOSED,
     sections: { ...PROPOSED.sections, willTheMoneyLast: true },

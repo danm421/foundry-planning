@@ -25,7 +25,7 @@
 // Zod 4: declare defaults with `.default(...)` ALONE. `.optional().default(...)`
 // wraps the default in an optional and the field stops defaulting.
 import { z } from "zod";
-import { CHAPTERS, NARRATED_CHAPTERS } from "@/lib/presentations/story/chapters/registry";
+import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
 import { CHAPTER_IDS, type ChapterId } from "@/lib/presentations/story/types";
 
 /** Every chapter, switched on or off by one rule — so a new chapter joins the
@@ -42,23 +42,23 @@ const BRIEF_CHAPTERS: readonly ChapterId[] = [
   "willTheMoneyLast",
 ];
 
-/** What a stored deck and a freshly added page start as: the chapters that have
- *  a narrator, and nothing else. */
-const DEFAULT_SECTIONS = sectionsWhere((id) => NARRATED_CHAPTERS.includes(id));
+/** What a stored deck and a freshly added page start as: the whole arc. Every
+ *  chapter has a narrator, so every one has something true to print. */
+const DEFAULT_SECTIONS = sectionsWhere(() => true);
 
 /**
- * One key per chapter of the arc, each defaulting to whether it has a narrator.
+ * One key per chapter of the arc, each defaulting ON.
  *
- * Built from `NARRATED_CHAPTERS` rather than hand-written, and that is the whole
- * point: the object-level `.default(DEFAULT_SECTIONS)` covers a deck that stored
- * no `sections` at all, but Zod applies these PER-KEY defaults to a deck that
- * stored a partial one — every deck saved before a chapter existed. Two lists
- * meant a chapter could land in `NARRATED_CHAPTERS` and still parse as `false`
- * out of storage, which is a chapter that is on in a fresh page and off in a
- * saved one. It drifted exactly that way once; now it cannot.
+ * The PER-KEY defaults matter separately from the object-level
+ * `.default(DEFAULT_SECTIONS)`: that one covers a deck that stored no
+ * `sections` at all, while these are what Zod applies to a deck that stored a
+ * PARTIAL one — every deck saved before a chapter existed. While the arc was
+ * landing a chapter at a time these were built from the narrated list, and the
+ * two lists drifted once: a chapter was on in a fresh page and off in a saved
+ * one. One rule now, and it is the same rule `DEFAULT_SECTIONS` reads.
  */
 const sectionShape = Object.fromEntries(
-  CHAPTER_IDS.map((id) => [id, z.boolean().default(NARRATED_CHAPTERS.includes(id))]),
+  CHAPTER_IDS.map((id) => [id, z.boolean().default(DEFAULT_SECTIONS[id])]),
 ) as Record<ChapterId, z.ZodDefault<z.ZodBoolean>>;
 
 export const planStoryOptionsSchema = z.object({
@@ -83,23 +83,16 @@ export type PresetId = "full" | "brief";
 /**
  * The short front-of-deck version is a PRESET, not a second report: the
  * punchline and the recommendations, written to point at the pages after.
- *
- * 🚧 BOTH presets carry the `NARRATED_CHAPTERS` clause, exactly as
- * `DEFAULT_SECTIONS` does, and both are therefore SMALLER than the spec until
- * Wave D lands. Without it, one click on either button prints a run of sheets
- * saying only "We'll cover this together." — a placeholder narrator is a page,
- * not a no-op, and nothing else in the app would warn the advisor.
- *
- * TASK 19 RESTORES BOTH by deleting the clause from each, in the same commit
- * that flips `sections`' per-key defaults on. It is one edit in three places,
- * not two, and the tests below each name it.
  */
 export const PRESETS: Record<PresetId, Pick<PlanStoryOptions, "documentRole" | "sections">> = {
-  /** The standalone client document — everything applicable, ~12-16 pages once
-   *  Task 19 drops the `NARRATED_CHAPTERS` clause. Three chapters until then. */
+  /** The standalone client document — everything applicable, ~12-16 pages.
+   *  The DEFAULT's own object, copied: applying this preset to a fresh page has
+   *  to be a no-op, and two independent `sectionsWhere` calls that agree today
+   *  are how that stops being true. Copied rather than shared so the exported
+   *  default and the preset cannot alias one mutable object. */
   full: {
     documentRole: "standalone",
-    sections: sectionsWhere((id) => NARRATED_CHAPTERS.includes(id)),
+    sections: { ...DEFAULT_SECTIONS },
   },
   /**
    * Three pages of front matter ahead of an existing deck — the spec's chapters
@@ -107,13 +100,10 @@ export const PRESETS: Record<PresetId, Pick<PlanStoryOptions, "documentRole" | "
    * and `documentRole` switching the prose from self-contained to pointing at
    * the pages that follow.
    *
-   * Two of those three until Task 15 writes `willTheMoneyLast`'s narrator.
-   * `BRIEF_CHAPTERS` above stays the spec's list — it is what Task 19 restores
-   * the preset TO.
    */
   brief: {
     documentRole: "frontMatter",
-    sections: sectionsWhere((id) => BRIEF_CHAPTERS.includes(id) && NARRATED_CHAPTERS.includes(id)),
+    sections: sectionsWhere((id) => BRIEF_CHAPTERS.includes(id)),
   },
 };
 

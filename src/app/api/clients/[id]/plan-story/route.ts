@@ -3,7 +3,8 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { authErrorResponse } from "@/lib/authz";
 import { listStoryChapters, resolveChapterText, type DocumentRole } from "@/lib/presentations/story/repo";
-import { CHAPTERS, NARRATED_CHAPTERS } from "@/lib/presentations/story/chapters/registry";
+import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
+import { CHAPTER_IDS } from "@/lib/presentations/story/types";
 
 export const dynamic = "force-dynamic";
 
@@ -44,11 +45,12 @@ export async function GET(
     // Every chapter appears, generated or not — the panel needs a row to show
     // "not generated yet" against, not a gap.
     //
-    // `NARRATED_CHAPTERS`, not the full arc: the eleven slots whose narrator has
-    // not landed would list as rows the advisor can press Generate on, and the
-    // generate route would spend a model call per chapter to store the
-    // placeholder's own sentence. They join this list as their task lands.
-    const chapters = NARRATED_CHAPTERS.map((chapterId) => {
+    // `CHAPTER_IDS`, the whole arc, in DOCUMENT ORDER — the panel lists the
+    // chapters in the order the report prints them. It was the narrated subset
+    // while the arc was landing a chapter at a time, so that a slot with no
+    // narrator could not list as a row an advisor presses Generate on; every
+    // slot has one now.
+    const chapters = CHAPTER_IDS.map((chapterId) => {
       const row = byId.get(chapterId);
       const def = CHAPTERS[chapterId];
       return {
