@@ -137,5 +137,56 @@ describe("AddLiabilityForm — submit payload", () => {
   });
 });
 
+// ── Test 4: Interest-only checkbox solves and locks the payment field ─────────
+
+describe("AddLiabilityForm — interest-only payment", () => {
+  it("solves, locks, and re-solves the payment while Interest only is checked", () => {
+    render(
+      <AddLiabilityForm
+        clientId="client-123"
+        mode="edit"
+        initial={BASE_INITIAL}
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+      />,
+    );
+
+    const payment = screen.getByLabelText(/monthly payment/i) as HTMLInputElement;
+    expect(payment).toHaveValue("3,000");
+    expect(payment.readOnly).toBe(false);
+
+    const checkbox = screen.getByLabelText(/interest only/i);
+    fireEvent.click(checkbox);
+
+    // $500,000 at 6.5% accrues 2,708.33/mo
+    expect(payment).toHaveValue("2,708.33");
+    expect(payment.readOnly).toBe(true);
+
+    // Moving another term re-solves the locked payment
+    fireEvent.change(screen.getByLabelText(/interest rate/i), {
+      target: { value: "8" },
+    });
+    expect(payment).toHaveValue("3,333.33");
+
+    // Unchecking hands the field back
+    fireEvent.click(checkbox);
+    expect(payment.readOnly).toBe(false);
+  });
+
+  it("checks itself when editing a liability already paying interest only", () => {
+    render(
+      <AddLiabilityForm
+        clientId="client-123"
+        mode="edit"
+        initial={{ ...BASE_INITIAL, monthlyPayment: "2708.33" }}
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+      />,
+    );
+
+    expect(screen.getByLabelText(/interest only/i)).toBeChecked();
+  });
+});
+
 // TODO: more form tests once useScenarioWriter is easier to mock
 // (e.g. scenario-mode routing, mortgage-linked-property validation)

@@ -7,7 +7,13 @@ import type { SaveResult } from "@/lib/use-tab-auto-save";
 import MilestoneYearPicker from "../milestone-year-picker";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { resolveMilestone } from "@/lib/milestones";
-import { calcPayment, calcTerm, calcRate } from "@/lib/loan-math";
+import {
+  calcPayment,
+  calcTerm,
+  calcRate,
+  calcInterestOnlyPayment,
+  isInterestOnlyPayment,
+} from "@/lib/loan-math";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import { inputClassName, inputBaseClassName, selectClassName, selectBaseClassName, fieldLabelClassName } from "./input-styles";
@@ -160,6 +166,27 @@ const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFor
   const [balance, setBalance] = useState<string>(initial?.balance ?? "0");
   const [interestRatePct, setInterestRatePct] = useState<string>(String(initialInterestPct));
   const [monthlyPayment, setMonthlyPayment] = useState<string>(initial?.monthlyPayment ?? "0");
+
+  // Interest-only loans pay the accrued interest and nothing else. There's no
+  // stored flag for it — a payment that equals one month's interest *is* the
+  // definition — so an existing liability re-derives its own checkbox state.
+  const [interestOnly, setInterestOnly] = useState<boolean>(() =>
+    isInterestOnlyPayment(
+      parseFloat(initial?.balance ?? "") || 0,
+      Number(initial?.interestRate ?? "") || 0,
+      parseFloat(initial?.monthlyPayment ?? "") || 0,
+    ),
+  );
+
+  // While it's on, balance and rate own the payment — re-solve on every move.
+  useEffect(() => {
+    if (!interestOnly) return;
+    const solved = calcInterestOnlyPayment(
+      parseFloat(balance) || 0,
+      (parseFloat(interestRatePct) || 0) / 100,
+    );
+    setMonthlyPayment(solved.toFixed(2));
+  }, [interestOnly, balance, interestRatePct]);
 
   const [startYearRef, setStartYearRef] = useState<YearRef | null>(
     (initial?.startYearRef as YearRef) ?? (!isEdit ? "plan_start" as YearRef : null)
@@ -601,15 +628,30 @@ const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFor
             <label className={fieldLabelClassName} htmlFor="monthlyPayment">
               Monthly Payment ($)
             </label>
-            <CalcButton onClick={handleCalcPayment} title="Calculate from balance, rate, and term" />
+            {!interestOnly && (
+              <CalcButton onClick={handleCalcPayment} title="Calculate from balance, rate, and term" />
+            )}
           </div>
           <CurrencyInput
             id="monthlyPayment"
             name="monthlyPayment"
             value={monthlyPayment}
             onChange={(raw) => setMonthlyPayment(raw)}
-            className={inputClassName}
+            readOnly={interestOnly}
+            title={interestOnly ? "Solved from balance × rate. Uncheck Interest only to edit." : undefined}
+            className={
+              interestOnly ? `${inputClassName} text-ink-3 cursor-not-allowed` : inputClassName
+            }
           />
+          <label className="mt-1.5 flex items-center gap-2 text-[13px] text-ink-2">
+            <input
+              type="checkbox"
+              checked={interestOnly}
+              onChange={(e) => setInterestOnly(e.target.checked)}
+              className="h-4 w-4 rounded border-hair bg-card-2 text-accent focus:ring-accent"
+            />
+            Interest only
+          </label>
         </div>
       </div>
 

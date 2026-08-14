@@ -71,6 +71,35 @@ export function calcRate(
 }
 
 /**
+ * Monthly payment on an interest-only loan: one month of accrued interest and
+ * nothing more, so the balance never amortizes and the principal comes due as a
+ * balloon at the end of term.
+ */
+export function calcInterestOnlyPayment(
+  balance: number,
+  annualRate: number
+): number {
+  if (balance <= 0 || annualRate <= 0) return 0;
+  return balance * annualRate / 12;
+}
+
+/**
+ * True when `monthlyPayment` covers the accrued interest and nothing more.
+ * Tolerant to a cent so a payment persisted at 2dp still reads as interest-only.
+ * A loan with no balance or no rate is never interest-only — its accrued
+ * interest is $0, which would otherwise match every $0 payment.
+ */
+export function isInterestOnlyPayment(
+  balance: number,
+  annualRate: number,
+  monthlyPayment: number
+): boolean {
+  const interestOnly = calcInterestOnlyPayment(balance, annualRate);
+  if (interestOnly <= 0) return false;
+  return Math.abs(monthlyPayment - interestOnly) < 0.01;
+}
+
+/**
  * Back-calculate the original loan balance at origination given the current
  * balance, annual interest rate, monthly payment, and elapsed months.
  *
