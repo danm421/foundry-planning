@@ -42,6 +42,7 @@ const mocks = vi.hoisted(() => ({
   upsertGeneratedChapter: vi.fn(),
   loadStoryContext: vi.fn(),
   generateChapter: vi.fn(),
+  checkPlanStoryRateLimit: vi.fn(),
   /** What `select ... from scenarios where id = ? and client_id = ?` returns. */
   scenarioRows: [] as { id: string }[],
 }));
@@ -102,6 +103,15 @@ vi.mock("@/lib/presentations/story/load-context", () => ({
 vi.mock("@/lib/presentations/story/generate", () => ({
   generateChapter: mocks.generateChapter,
 }));
+
+// Only the check is replaced. `rateLimitErrorResponse` stays REAL, so what a
+// refused caller actually receives — 429 for a firm over its ceiling, 503 for a
+// limiter that could not answer, and the Retry-After header on both — is tested
+// rather than restated.
+vi.mock("@/lib/rate-limit", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/rate-limit")>("@/lib/rate-limit");
+  return { ...actual, checkPlanStoryRateLimit: mocks.checkPlanStoryRateLimit };
+});
 
 import { ForbiddenError } from "@/lib/authz";
 import { GET } from "../route";
@@ -199,6 +209,11 @@ beforeEach(() => {
     access: "own",
   });
   mocks.requireActiveSubscriptionForFirm.mockResolvedValue(undefined);
+  mocks.checkPlanStoryRateLimit.mockResolvedValue({
+    allowed: true,
+    remaining: 3,
+    reset: Date.now() + 60_000,
+  });
   mocks.recordAudit.mockResolvedValue(undefined);
   mocks.listStoryChapters.mockResolvedValue([]);
   mocks.updateChapterText.mockResolvedValue(undefined);
@@ -949,6 +964,10 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
     expect(mocks.generateChapter).not.toHaveBeenCalled();
     expect(mocks.upsertGeneratedChapter).not.toHaveBeenCalled();
     expect(mocks.recordAudit).not.toHaveBeenCalled();
+    // …and no token off the firm's budget either. The ceiling is a shared
+    // resource, so a caller who may not touch this client must not be able to
+    // spend the budget of the firm that can.
+    expect(mocks.checkPlanStoryRateLimit).not.toHaveBeenCalled();
   });
 
   // Kills: coercing an unrecognised documentRole to "standalone". The two roles
@@ -986,5 +1005,168 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
         }),
       }),
     );
+  });
+
+  /**
+   * ⭐ One chapter, and the ceiling — deliberately the same change.
+   *
+   * `force: true` was in the schema and reachable from nothing, and the route
+   * had no ceiling at all: fourteen chapters, up to two model calls each, behind
+   * one click any advisor can make. A button without the limit hands a firm an
+   * uncapped spend; a limit without the button caps a spend nobody could make.
+   */
+  describe("one chapter, and the ceiling that bounds the spend", () => {
+    it("writes only the chapter it was asked for", async () => {
+      const res = await post({
+        scenarioId: "base",
+        documentRole: "standalone",
+        chapterId: "whatYouHave",
+        force: true,
+      });
+      const body = await res.json();
+      expect(res.status).toBe(200);
+      expect(mocks.generateChapter).toHaveBeenCalledTimes(1);
+      expect(mocks.generateChapter).toHaveBeenCalledWith(
+        expect.objectContaining({ chapterId: "whatYouHave", force: true }),
+      );
+      // Stored, and answered, as the one chapter it is — the panel takes that
+      // row's out-of-date badge down from this list.
+      expect(mocks.upsertGeneratedChapter).toHaveBeenCalledTimes(1);
+      expect(body.chapters.map((c: { chapterId: string }) => c.chapterId)).toEqual([
+        "whatYouHave",
+      ]);
+    });
+
+    // Kills: `z.string()` in place of the enum. Storage holds `chapter_id` as
+    // free text, so an id this build does not know is a row nothing will ever
+    // read again — written from a model call someone paid for.
+    it("refuses an id that is not a chapter, before it rebuilds the plan", async () => {
+      const res = await post({
+        scenarioId: "base",
+        documentRole: "standalone",
+        chapterId: "nope",
+      });
+      expect(res.status).toBe(400);
+      expect(mocks.loadStoryContext).not.toHaveBeenCalled();
+      expect(mocks.generateChapter).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Kills: treating a named chapter as a BYPASS of the filter rather than a
+     * filter over it. `whatWeRecommend` needs something in a proposal, and this
+     * is a base-only story — the exact refusal the all-chapters path already
+     * makes, and the hole a new parameter re-opens by default.
+     *
+     * Refused off the REF, so it costs nothing: no plan rebuilt, and no token
+     * off a budget the firm will want for a request that can succeed.
+     */
+    it("refuses a chapter this story cannot supply, rather than spending a call on it", async () => {
+      const res = await post({
+        scenarioId: "base",
+        documentRole: "standalone",
+        chapterId: "whatWeRecommend",
+      });
+      expect(res.status).toBe(400);
+      expect(mocks.loadStoryContext).not.toHaveBeenCalled();
+      expect(mocks.checkPlanStoryRateLimit).not.toHaveBeenCalled();
+      expect(mocks.generateChapter).not.toHaveBeenCalled();
+      expect(mocks.upsertGeneratedChapter).not.toHaveBeenCalled();
+      expect(mocks.recordAudit).not.toHaveBeenCalled();
+    });
+
+    /**
+     * …and the half of that refusal the ref CANNOT answer. A coverage chapter
+     * with no policies behind it is a chapter this household's facts cannot
+     * supply, which is only knowable once the facts exist — so this one is
+     * refused after the load rather than before it, and still without a model
+     * call.
+     */
+    it("refuses a chapter the household has no data for, once the facts say so", async () => {
+      const res = await post({
+        scenarioId: "base",
+        documentRole: "standalone",
+        chapterId: "protectingYourFamily",
+      });
+      expect(res.status).toBe(400);
+      expect(mocks.loadStoryContext).toHaveBeenCalled();
+      expect(mocks.generateChapter).not.toHaveBeenCalled();
+      expect(mocks.upsertGeneratedChapter).not.toHaveBeenCalled();
+    });
+
+    // Kills: an audit row that says "a story was generated" for a run that wrote
+    // one paragraph. The row is the record of the spend; the two shapes of this
+    // route differ by a factor of fourteen.
+    it("names the single chapter in the audit row", async () => {
+      await post({
+        scenarioId: "base",
+        documentRole: "standalone",
+        chapterId: "whatYouHave",
+        force: true,
+      });
+      expect(mocks.recordAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ chapterId: "whatYouHave", chapters: 1 }),
+        }),
+      );
+    });
+
+    /**
+     * Kills: checking the ceiling AFTER the load. The story context runs two
+     * projections and a Monte Carlo read — 23.2s cold — and a request that is
+     * going to be refused must not pay for them.
+     */
+    it("refuses a firm over its ceiling before it rebuilds the plan", async () => {
+      mocks.checkPlanStoryRateLimit.mockResolvedValue({
+        allowed: false,
+        reason: "exceeded",
+        remaining: 0,
+        reset: Date.now() + 45_000,
+      });
+      const res = await post({ scenarioId: "base", documentRole: "standalone" });
+      expect(res.status).toBe(429);
+      expect(res.headers.get("retry-after")).toBe("45");
+      expect(mocks.loadStoryContext).not.toHaveBeenCalled();
+      expect(mocks.generateChapter).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Kills: any "if the limiter cannot answer, let it through" reading. The
+     * standing rule for this repo is that rate limiting FAILS CLOSED — a missing
+     * Upstash variable must not be the cheapest way to spend model budget.
+     */
+    it("refuses rather than running uncapped when the limiter cannot answer", async () => {
+      mocks.checkPlanStoryRateLimit.mockResolvedValue({ allowed: false, reason: "unconfigured" });
+      const res = await post({ scenarioId: "base", documentRole: "standalone" });
+      expect(res.status).toBe(503);
+      expect(mocks.generateChapter).not.toHaveBeenCalled();
+    });
+
+    // Kills: keying on the client. One advisor cycling ten households is the
+    // shape this exists to stop, and a per-client key lets every bit of it
+    // through.
+    it("keys the ceiling on the firm, not the client", async () => {
+      await post({ scenarioId: "base", documentRole: "standalone" });
+      expect(mocks.checkPlanStoryRateLimit).toHaveBeenCalledWith("firm_1", "run");
+    });
+
+    // Kills: one bucket for both. A budget wide enough for an advisor rewriting
+    // paragraphs one at a time is fourteen whole runs a minute; one tight enough
+    // for whole runs stops the third fix of a sentence.
+    it("draws one chapter from a different bucket than a whole run", async () => {
+      await post({
+        scenarioId: "base",
+        documentRole: "standalone",
+        chapterId: "whatYouHave",
+        force: true,
+      });
+      expect(mocks.checkPlanStoryRateLimit).toHaveBeenCalledWith("firm_1", "chapter");
+    });
+
+    // Kills: exempting the forced path — which is the only path the panel's own
+    // buttons take past the cache, and so the only one that always spends.
+    it("counts a forced whole run against the ceiling", async () => {
+      await post({ scenarioId: "base", documentRole: "standalone", force: true });
+      expect(mocks.checkPlanStoryRateLimit).toHaveBeenCalledWith("firm_1", "run");
+    });
   });
 });

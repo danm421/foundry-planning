@@ -52,17 +52,20 @@ const TOO_SHORT = "The writing assistant returned too little text to use.";
  */
 const isStaleUrl = (url: unknown) => String(url).includes("/plan-story/stale");
 
+/** The two READ legs every stub in this file has to answer — the chapter list,
+ *  and the staleness check that is deliberately a second request. One copy, so
+ *  a third read leg is added once rather than in every stub below. */
+function answerRead(url: string, chapters: Row[] = CHAPTERS, stale: string[] = [], status = 200) {
+  if (isStaleUrl(url)) return new Response(JSON.stringify({ stale }), { status: 200 });
+  return new Response(JSON.stringify({ scenarioId: "base", chapters }), { status });
+}
+
 function stubFetch(chapters: Row[], getStatus = 200, stale: string[] = []) {
   const fn = vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method === "PATCH" || init?.method === "POST") {
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     }
-    if (isStaleUrl(url)) {
-      return new Response(JSON.stringify({ stale }), { status: 200 });
-    }
-    return new Response(JSON.stringify({ scenarioId: "base", chapters }), {
-      status: getStatus,
-    });
+    return answerRead(url, chapters, stale, getStatus);
   });
   vi.stubGlobal("fetch", fn);
   return fn;
@@ -98,10 +101,7 @@ function generatingOnly(written: string[], stale: string[]) {
           status: 200,
         });
       }
-      if (isStaleUrl(url)) return new Response(JSON.stringify({ stale }), { status: 200 });
-      return new Response(JSON.stringify({ scenarioId: "base", chapters: CHAPTERS }), {
-        status: 200,
-      });
+      return answerRead(url, CHAPTERS, stale);
     }),
   );
 }
@@ -246,7 +246,9 @@ describe("PlanStoryReviewPanel", () => {
     expect(calls().some((c) => (c[1] as RequestInit | undefined)?.method === "POST")).toBe(
       false,
     );
-    fireEvent.click(screen.getByRole("button", { name: /generate/i }));
+    // Named exactly: every row now carries a Regenerate button too, and a loose
+    // /generate/i matches those as well.
+    fireEvent.click(screen.getByRole("button", { name: /generate all/i }));
     await waitFor(() => {
       const post = calls().find(
         (c) => (c[1] as RequestInit | undefined)?.method === "POST",
@@ -539,6 +541,172 @@ describe("PlanStoryReviewPanel", () => {
 
       expect(screen.queryByRole("alert")).toBeNull();
       expect(screen.queryByText(/plan has changed since/i)).toBeNull();
+    });
+  });
+
+  /**
+   * ⭐ Regenerate — the only control in the app that spends model calls on ONE
+   * chapter, and the reason `force` is reachable at all. Every case here is
+   * about a click that costs money: what it asks for, what it does when the
+   * firm's ceiling refuses it, and what a second click cannot do.
+   */
+  describe("rewriting one chapter", () => {
+    const A = "Your plan, in one page";
+    const B = "What we're recommending, and why";
+
+    function postCalls() {
+      return calls().filter((c) => (c[1] as RequestInit | undefined)?.method === "POST");
+    }
+
+    function postBody() {
+      return JSON.parse(String((postCalls()[0][1] as RequestInit).body)) as Record<
+        string,
+        unknown
+      >;
+    }
+
+    /** The generate route, refusing with `status` and (for a ceiling) the wait
+     *  its `Retry-After` header names. */
+    function refuseGeneration(status: number, retryAfter?: string) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string, init?: RequestInit) =>
+          init?.method === "POST"
+            ? new Response(JSON.stringify({ error: "no" }), {
+                status,
+                headers: retryAfter ? { "retry-after": retryAfter } : {},
+              })
+            : answerRead(url),
+        ),
+      );
+    }
+
+    async function clickRegenerate(title: string) {
+      const button = within(await screen.findByRole("region", { name: title })).getByRole(
+        "button",
+        { name: /^regenerate$/i },
+      );
+      fireEvent.click(button);
+      return button as HTMLButtonElement;
+    }
+
+    // Kills: sending the row's id without `force`. The 30-day AI cache cannot be
+    // deleted from any surface, so a Regenerate that reads it returns the very
+    // words the advisor pressed the button to replace.
+    it("asks for that chapter alone, past the cache", async () => {
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="" documentRole="frontMatter" />);
+      await clickRegenerate(A);
+      await waitFor(() => expect(postCalls().length).toBe(1));
+      expect(String(postCalls()[0][0])).toContain("/plan-story/generate");
+      expect(postBody()).toEqual({
+        scenarioId: "base",
+        documentRole: "frontMatter",
+        chapterId: "planInOnePage",
+        force: true,
+      });
+    });
+
+    // Kills: a Regenerate that quietly runs the whole story. The button sits on
+    // one row, and fourteen chapters is twenty-eight model calls.
+    it("leaves every other chapter alone", async () => {
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      await clickRegenerate(B);
+      await waitFor(() => expect(postCalls().length).toBe(1));
+      expect(postBody().chapterId).toBe("whatWeRecommend");
+    });
+
+    /**
+     * ⭐ The ceiling, in the advisor's words. A firm over its budget is not a
+     * broken button: nothing is wrong, the answer is to wait — and a message
+     * that cannot say that gets pressed again immediately.
+     */
+    it("names the wait against that row when the firm is over its ceiling", async () => {
+      refuseGeneration(429, "45");
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      await clickRegenerate(A);
+      const alert = await within(row(A)).findByRole("alert");
+      expect(alert.textContent).toMatch(/45 seconds/i);
+      // …and against THAT row, not the panel and not its neighbour.
+      expect(within(row(B)).queryByRole("alert")).toBeNull();
+    });
+
+    // Kills: showing the wait for every failure. A 500 is not something waiting
+    // fixes, and an advisor told to wait for it waits forever.
+    it("does not blame the ceiling for a failure that is not one", async () => {
+      refuseGeneration(500);
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      await clickRegenerate(A);
+      const alert = await within(row(A)).findByRole("alert");
+      expect(alert.textContent).toMatch(/couldn't rewrite/i);
+      expect(alert.textContent).not.toMatch(/seconds/i);
+    });
+
+    // Kills: leaving the button live while the request is in flight. Each click
+    // is a model call the firm pays for, and the wait is measured in tens of
+    // seconds — long enough that a second click is the natural thing to do.
+    it("cannot be pressed twice into the same chapter", async () => {
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      const button = await clickRegenerate(A);
+      expect(button.disabled).toBe(true);
+      fireEvent.click(button);
+      await waitFor(() => expect(postCalls().length).toBe(1));
+    });
+
+    // Kills: clearing every row's badge, or none. The run rewrote this chapter
+    // from the plan as it stands now — and touched nothing else.
+    it("takes the out-of-date badge down for the chapter it rewrote, and only that one", async () => {
+      stubFetch(CHAPTERS, 200, ["planInOnePage", "whatWeRecommend"]);
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      await screen.findAllByText(/plan has changed since/i);
+      await clickRegenerate(A);
+
+      await waitFor(() => expect(within(row(A)).queryByText(/plan has changed/i)).toBeNull());
+      expect(within(row(B)).getByText(/plan has changed/i)).toBeTruthy();
+      // Kills: re-asking the staleness route afterwards, which rebuilds the very
+      // plan this run just read — 4s warm, 23s cold, on the end of a wait the
+      // advisor has already sat through.
+      expect(staleCalls().length).toBe(1);
+    });
+
+    /**
+     * The same ceiling, from the other button — and the one more likely to trip
+     * it, since a whole run is the more expensive of the two. Kills: leaving
+     * "Generate all" with the generic message, which reads as a glitch and gets
+     * pressed again straight away.
+     */
+    it("names the wait for a whole story too, without blaming a chapter", async () => {
+      refuseGeneration(429, "30");
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      fireEvent.click(await screen.findByRole("button", { name: /generate all/i }));
+      expect((await screen.findByRole("alert")).textContent).toMatch(/30 seconds/i);
+      // …and against the panel, not a row: no single chapter failed.
+      expect(within(row(A)).queryByRole("alert")).toBeNull();
+    });
+
+    // Kills: leaving the advisor's unsaved words shadowing the prose that just
+    // replaced them — a box that looks like the new chapter is not the one that
+    // prints.
+    it("shows the new words rather than the ones it replaced", async () => {
+      const model = { ...CHAPTERS[0], text: "Your plan holds." };
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string, init?: RequestInit) => {
+          if (init?.method === "POST") {
+            model.text = "Rewritten from the plan as it stands.";
+            return new Response(JSON.stringify({ chapters: [{ chapterId: "planInOnePage" }] }), {
+              status: 200,
+            });
+          }
+          return answerRead(url, [model]);
+        }),
+      );
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      const box = await screen.findByDisplayValue("Your plan holds.");
+      fireEvent.change(box, { target: { value: "words I typed but never saved" } });
+      await clickRegenerate(A);
+      expect(
+        await screen.findByDisplayValue("Rewritten from the plan as it stands."),
+      ).toBeTruthy();
     });
   });
 

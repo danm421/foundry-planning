@@ -43,9 +43,9 @@ interface ChapterRow {
  * the list payload, every post-save reload would replace them, and the badges
  * would blink off the moment an advisor edited anything.
  *
- * Asked for ONCE, on mount. The only other moment the answer moves is a
- * generation run, and that one is answered from the run's own response rather
- * than by asking again — see `generateAll`.
+ * Asked for ONCE, on mount. The answer moves again only when something is
+ * rewritten — a whole run or one chapter — and both of those are answered
+ * without asking it a second time; see `clearOutOfDate`.
  */
 const CHAPTER_OUT_OF_DATE =
   "The plan has changed since this chapter was written. Generate again to bring it up to date.";
@@ -79,6 +79,31 @@ const COULD_NOT_SAVE = "Couldn't save your edit. Your words are still in the box
 const COULD_NOT_REVIEW = "Couldn't mark that chapter reviewed. Try again.";
 const COULD_NOT_GENERATE =
   "Couldn't write the chapters. Nothing was generated — try again in a moment.";
+const COULD_NOT_REGENERATE =
+  "Couldn't rewrite this chapter. The words on screen are unchanged — try again.";
+
+/**
+ * What a refused generation says — the firm's ceiling, or `generic`.
+ *
+ * The ceiling gets its own sentence: nothing is broken, and the answer is to
+ * wait, which is exactly what a message the advisor reads as a glitch gets
+ * pressed again through. The route sends the wait in seconds on `Retry-After`
+ * (`rate-limit.ts`); when that header is missing or unreadable the reason still
+ * stands, just without the number.
+ *
+ * Only 429. A 503 is the limiter itself failing closed — waiting a minute does
+ * not fix a missing configuration, so it takes the generic message and the
+ * advisor stops rather than counting down.
+ */
+function generationFailure(res: Response, generic: string): string {
+  if (res.status !== 429) return generic;
+  const seconds = Number(res.headers.get("retry-after"));
+  const wait =
+    Number.isFinite(seconds) && seconds > 0
+      ? `Try again in about ${Math.ceil(seconds)} seconds.`
+      : "Try again shortly.";
+  return `Your firm has generated a lot of chapters in the last minute. ${wait}`;
+}
 
 /** One key gone, as a new object — the shape React state updates need. Both of
  *  this panel's per-chapter maps drop a key on the same event. */
@@ -139,6 +164,10 @@ export function PlanStoryReviewPanel({
    *  it. Marking reviewed is not reversible from any surface, and every PATCH
    *  files its own audit row. */
   const [saving, setSaving] = useState<string | null>(null);
+  /** The chapter being rewritten, if any. Its own state rather than `saving`'s:
+   *  a rewrite is a wait measured in tens of seconds, so the row it is happening
+   *  to has to say so — and one at a time, since each is a model call. */
+  const [regenerating, setRegenerating] = useState<string | null>(null);
   /**
    * A request that did not do what it said, AGAINST THE CHAPTER IT WAS ABOUT.
    * This panel is what certifies a human read every word, so a request that
@@ -250,10 +279,25 @@ export function PlanStoryReviewPanel({
     }
   }
 
+  /**
+   * A chapter just written from the plan as it stands is fresh BY DEFINITION —
+   * the run stored the hash of the plan it had in hand. So its badge comes down
+   * WITHOUT asking the staleness route again, which would rebuild that identical
+   * plan a second time (4s warm, 23s cold) on the end of a wait the advisor is
+   * already sitting through.
+   */
+  function clearOutOfDate(chapterIds: string[]) {
+    setOutOfDate((prev) => {
+      const next = new Set(prev);
+      for (const id of chapterIds) next.delete(id);
+      return next;
+    });
+  }
+
   // Deliberately behind an explicit click: this is the only path in the app
-  // that spends model calls, and it has no rate limit of its own — which is
-  // also why a failed run has to say so rather than reset the button and
-  // invite another click.
+  // that spends model calls, and the firm's ceiling is the only thing bounding
+  // it — which is also why a failed run has to say so rather than reset the
+  // button and invite another click.
   async function generateAll() {
     setBusy(true);
     try {
@@ -263,7 +307,7 @@ export function PlanStoryReviewPanel({
         body: JSON.stringify({ scenarioId: scenario, documentRole }),
       });
       if (!res.ok) {
-        setPanelProblem(COULD_NOT_GENERATE);
+        setPanelProblem(generationFailure(res, COULD_NOT_GENERATE));
         return;
       }
       setDrafts({});
@@ -272,29 +316,57 @@ export function PlanStoryReviewPanel({
       // them. A message left standing there would point at a box the advisor
       // can no longer act on.
       setProblems({});
-      /**
-       * The chapters the run wrote are fresh BY DEFINITION: it stored the hash
-       * of the plan it had just read. So their badges come down from the
-       * response, WITHOUT asking the staleness route again — that answer costs
-       * a second full rebuild of a plan the generate route had in hand.
-       *
-       * Only the ones it names. A chapter the run skipped (nothing to
-       * recommend, no data behind it) was not rewritten, so if it was out of
-       * date it still is.
-       */
+      // Only the chapters the run NAMES. One it skipped — nothing to recommend,
+      // no data behind it — was not rewritten, so if it was out of date it
+      // still is.
       const body = (await res.json().catch(() => null)) as { chapters?: { chapterId: string }[] } | null;
-      const rewritten = body?.chapters ?? [];
-      setOutOfDate((prev) => {
-        const next = new Set(prev);
-        for (const c of rewritten) next.delete(c.chapterId);
-        return next;
-      });
+      clearOutOfDate((body?.chapters ?? []).map((c) => c.chapterId));
       await load();
     } catch (err) {
       console.error("[plan-story] generation request failed", err);
       setPanelProblem(COULD_NOT_GENERATE);
     } finally {
       setBusy(false);
+    }
+  }
+
+  /**
+   * One chapter, rewritten past the cache.
+   *
+   * `force` is what makes the button mean anything: the assistant's answers are
+   * cached for 30 days and that entry cannot be deleted from any surface, so a
+   * Regenerate that read the cache would return the very words the advisor
+   * pressed it to replace.
+   *
+   * A failure is written against THIS row (Task 20's `problems`), never the
+   * panel — the other thirteen chapters are untouched and still saveable, and a
+   * panel-level alarm here reads as "your chapters did not load".
+   */
+  async function regenerate(chapterId: string) {
+    setRegenerating(chapterId);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/plan-story/generate`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ scenarioId: scenario, documentRole, chapterId, force: true }),
+      });
+      if (!res.ok) {
+        const message = generationFailure(res, COULD_NOT_REGENERATE);
+        setProblems((p) => ({ ...p, [chapterId]: message }));
+        return;
+      }
+      setProblems((p) => without(p, chapterId));
+      // The words this chapter was being rewritten FROM are gone, so an unsaved
+      // draft left in the box would shadow the new prose with the old — and the
+      // box would stop showing what prints.
+      setDrafts((d) => without(d, chapterId));
+      clearOutOfDate([chapterId]);
+      await load();
+    } catch (err) {
+      console.error("[plan-story] chapter rewrite failed", chapterId, err);
+      setProblems((p) => ({ ...p, [chapterId]: COULD_NOT_REGENERATE }));
+    } finally {
+      setRegenerating(null);
     }
   }
 
@@ -320,7 +392,9 @@ export function PlanStoryReviewPanel({
           type="button"
           className="ml-auto rounded border border-hair px-3 py-1.5 text-sm text-ink-2 hover:text-ink disabled:opacity-50"
           onClick={() => void generateAll()}
-          disabled={busy}
+          // …and not while one chapter is being rewritten: the run would write
+          // over that chapter mid-rewrite, and both clicks are spend.
+          disabled={busy || regenerating != null}
         >
           {busy ? "Writing…" : "Generate all"}
         </button>
@@ -373,10 +447,22 @@ export function PlanStoryReviewPanel({
             <button
               type="button"
               className="text-xs text-ink-3 underline hover:text-ink disabled:no-underline disabled:opacity-50"
-              disabled={saving === row.chapterId}
+              disabled={saving === row.chapterId || regenerating === row.chapterId}
               onClick={() => void patch(row.chapterId, { reviewed: true }, COULD_NOT_REVIEW)}
             >
               Mark reviewed
+            </button>
+            {/* One row's rewrite, past the 30-day cache. Disabled while ANY
+                chapter is being rewritten, and while a whole run is going: each
+                click is a model call the firm pays for, and the wait is long
+                enough that a second click is the natural thing to do. */}
+            <button
+              type="button"
+              className="text-xs text-ink-3 underline hover:text-ink disabled:no-underline disabled:opacity-50"
+              disabled={busy || regenerating != null || saving === row.chapterId}
+              onClick={() => void regenerate(row.chapterId)}
+            >
+              {regenerating === row.chapterId ? "Rewriting…" : "Regenerate"}
             </button>
             {row.reviewed && <span className="text-xs text-good">Reviewed</span>}
           </div>

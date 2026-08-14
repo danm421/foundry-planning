@@ -50,6 +50,19 @@ export interface StoryRun {
 }
 
 /**
+ * `StoryRun.candidates`, derived from the ref ALONE — so it costs nothing and
+ * can be asked before the load. Read that field's invariant before using it: it
+ * is a SUPERSET of what finally gets narrated, never the list itself.
+ *
+ * Exported so a caller can refuse an impossible request without paying for the
+ * context first, and still be reading the same derivation the load uses.
+ */
+export function storyCandidates(scenarioId: string): ChapterId[] {
+  const hasProposedRef = scenarioId !== "base";
+  return CHAPTER_IDS.filter((c) => hasProposedRef || !CHAPTERS[c].requiresProposal);
+}
+
+/**
  * ⚠️ EXPENSIVE. Two projections, a Monte Carlo read, a balance sheet and (on a
  * proposal) two solves. MEASURED 2026-08-14 on a 21-account household with no
  * proposal: 23.2s cold, 4.0s warm. Nothing on a per-keystroke path may call it —
@@ -64,9 +77,7 @@ export async function loadStoryRun(args: {
   documentRole: DocumentRole;
 }): Promise<StoryRun> {
   const proposedRef = args.scenarioId === "base" ? null : args.scenarioId;
-  const candidates = CHAPTER_IDS.filter(
-    (c) => proposedRef != null || !CHAPTERS[c].requiresProposal,
-  );
+  const candidates = storyCandidates(args.scenarioId);
   const ctx = await loadStoryContext({
     clientId: args.clientId,
     firmId: args.firmId,

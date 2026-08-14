@@ -5,11 +5,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
+import { checkPlanStoryRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { parseBody } from "@/lib/schemas/common";
 import { planStoryGenerateSchema } from "@/lib/schemas/plan-story";
-import { loadStoryRun } from "@/lib/presentations/story/run-context";
+import { loadStoryRun, storyCandidates } from "@/lib/presentations/story/run-context";
 import { generateChapter } from "@/lib/presentations/story/generate";
 import { upsertGeneratedChapter } from "@/lib/presentations/story/repo";
 import { resolveStoryScenarioId } from "@/lib/presentations/story/scenario-scope";
@@ -17,6 +18,10 @@ import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 800;
+
+/** Refused twice — cheaply from the ref, and again once the facts are in — so
+ *  the advisor reads one sentence either way. */
+const NOTHING_TO_SAY = "That chapter has nothing to say for this plan.";
 
 export async function POST(
   request: NextRequest,
@@ -40,6 +45,40 @@ export async function POST(
     // 0240, which row that prose is stored on. Two reads is how those two
     // could ever disagree.
     const { documentRole } = parsed.data;
+    /** One chapter, from the panel's Regenerate. Absent means the whole story. */
+    const requested = parsed.data.chapterId;
+
+    // A chapter this story could never narrate — a recommendation on a base-only
+    // report — is refused here, before anything is spent. `storyCandidates` is
+    // derived from the ref alone, so asking costs nothing, while the refusal
+    // below it costs a full context. A pre-check, not THE check: the full answer
+    // also reads `available` and `hasSomethingToPropose`, which need the facts.
+    if (requested && !storyCandidates(scenarioId).includes(requested)) {
+      return NextResponse.json({ error: NOTHING_TO_SAY }, { status: 400 });
+    }
+
+    /**
+     * The per-firm ceiling on model spend (budgets and their reasoning live with
+     * the limiter, in `rate-limit.ts`).
+     *
+     * Checked BEFORE the story context loads: that load runs two projections, a
+     * Monte Carlo read and (on a proposal) two solves — 23.2s cold — and a
+     * request that is going to be refused must not pay for them. After the
+     * access gates, though, so a caller who may not touch this client cannot
+     * spend the budget of the firm that can.
+     *
+     * ⚠️ The limiter FAILS CLOSED (the standing rule for this repo): with no
+     * Upstash configuration the route refuses rather than running uncapped. A
+     * misconfigured environment must not be the cheapest way to spend model
+     * budget.
+     */
+    const rl = await checkPlanStoryRateLimit(firmId, requested ? "chapter" : "run");
+    if (!rl.allowed) {
+      return rateLimitErrorResponse(
+        rl,
+        "This firm has generated a lot of story chapters just now. Try again in a moment.",
+      );
+    }
 
     // The load, and the `candidates` list it is scoped to, live in
     // `run-context.ts` — the staleness route has to rebuild the IDENTICAL
@@ -47,6 +86,16 @@ export async function POST(
     // that drift by so much as a scenario label would report every chapter on
     // the report out of date. Read the invariant on `StoryRun.candidates`
     // before changing either.
+    //
+    // ⚠️ NOT narrowed to `requested`, deliberately, even though a one-chapter
+    // rewrite then pays for the whole story's facts and both solves. The
+    // staleness route always loads the FULL candidate set, and the fact pack it
+    // builds is not simply per-chapter: `build-facts.ts` seeds its
+    // quoted-figure dedup from every fact built so far, so a narrower load can
+    // ADMIT a figure the full load suppresses — a different prompt, a different
+    // stored hash, and a chapter that reads permanently out of date with
+    // nothing able to clear it. Scoping this is a real saving and its own
+    // change; it is not free.
     const { ctx, candidates, voiceSamples } = await loadStoryRun({
       clientId: id,
       firmId,
@@ -94,10 +143,22 @@ export async function POST(
       return def.available?.(ctx) ?? true;
     });
 
+    // A named chapter is a FILTER over that list, never a way around it — so it
+    // is written as one, and cannot be edited into a superset of `wanted` by
+    // accident. Asking for a chapter this story cannot supply is a refusal, not
+    // a model call: that is the hole Plan 1 closed at this exact line — a
+    // chapter with nothing supplied to name is the one state `generate.ts`'s
+    // substance floor cannot judge — and a new parameter is the obvious way to
+    // re-open it.
+    const chapters = requested ? wanted.filter((c) => c === requested) : wanted;
+    if (requested && chapters.length === 0) {
+      return NextResponse.json({ error: NOTHING_TO_SAY }, { status: 400 });
+    }
+
     // Chapters are independent — generate them concurrently. Each one already
     // swallows its own failure and falls back, so this never rejects.
     const generated = await Promise.all(
-      wanted.map((chapterId) =>
+      chapters.map((chapterId) =>
         generateChapter({
           clientId: id,
           chapterId,
@@ -131,6 +192,10 @@ export async function POST(
       metadata: crossFirmAuditMeta({ access }, callerOrg, {
         scenarioId,
         documentRole,
+        // Which purchase this row records. A whole run and a one-chapter rewrite
+        // differ by a factor of fourteen in spend, and a count alone cannot tell
+        // "the story was regenerated" from "one paragraph was".
+        chapterId: requested ?? null,
         chapters: generated.length,
         suppressed: generated.filter((g) => g.aiSuppressed).map((g) => g.chapterId),
       }),

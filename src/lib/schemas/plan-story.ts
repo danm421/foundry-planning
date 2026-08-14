@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CHAPTER_IDS } from "@/lib/presentations/story/types";
 
 /** Literal "base" or a scenario id. Whether the caller may actually key a story
  *  row on it is a per-client question, so it is answered by
@@ -42,11 +43,23 @@ export const planStoryChapterPatchSchema = z
   })
   .strict();
 
-/** One generation run over every chapter of one scenario. */
+/** One generation run over one scenario: every chapter it can supply, or the
+ *  single one named. */
 export const planStoryGenerateSchema = z
   .object({
     scenarioId,
     documentRole,
+    /**
+     * One chapter, from the panel's per-row Regenerate. Absent means the whole
+     * story.
+     *
+     * `z.enum` over the real id list rather than a plain string: storage holds
+     * `chapter_id` as free text, so an id this build does not know would be a
+     * model call someone paid for written to a row nothing ever reads again. A
+     * chapter retired from the arc is a 400 by construction here, rather than by
+     * a second list that has to be remembered.
+     */
+    chapterId: z.enum(CHAPTER_IDS).optional(),
     /** The panel's Regenerate action — bypass the 30-day AI cache. */
     force: z.boolean().optional(),
   })

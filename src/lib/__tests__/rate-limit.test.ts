@@ -135,6 +135,63 @@ describe("checkObservationsAiRateLimit", () => {
   });
 });
 
+/**
+ * Two buckets over one route: "Generate all" is up to 28 model calls behind one
+ * click, one Regenerate is up to two. The budgets are therefore different, and
+ * the keys must not share — so the op reaches BOTH the bucket and the key.
+ */
+describe("checkPlanStoryRateLimit", () => {
+  it("returns allowed when limiter succeeds", async () => {
+    mockLimit.mockResolvedValue({ success: true, remaining: 3, reset: 7777 });
+    const { checkPlanStoryRateLimit } = await import("../rate-limit");
+    const result = await checkPlanStoryRateLimit("firm-1", "run");
+    expect(result).toEqual({ allowed: true, remaining: 3, reset: 7777 });
+  });
+
+  // Kills: dropping the `:${op}` suffix, which would let a firm's fourteen
+  // single-chapter rewrites eat the budget for its whole-story runs.
+  it("spends a whole run and one chapter from separate buckets", async () => {
+    mockLimit.mockResolvedValue({ success: true, remaining: 3, reset: 1 });
+    const { checkPlanStoryRateLimit } = await import("../rate-limit");
+    await checkPlanStoryRateLimit("firm-1", "run");
+    await checkPlanStoryRateLimit("firm-1", "chapter");
+    expect(mockLimit).toHaveBeenNthCalledWith(1, "firm-1:run");
+    expect(mockLimit).toHaveBeenNthCalledWith(2, "firm-1:chapter");
+    // …and from limiters with their own prefixes and their own budgets, so the
+    // two are separate in Redis as well as in the key. (The mocks above are
+    // declared with no parameters, so their recorded arguments need naming.)
+    const built = RatelimitMock.mock.calls as unknown as [{ prefix: string }][];
+    expect(built.map((c) => c[0].prefix)).toEqual([
+      "rl:plan-story:run",
+      "rl:plan-story:chapter",
+    ]);
+    const windows = RatelimitMock.slidingWindow.mock.calls as unknown as [number][];
+    expect(windows[0][0]).toBeLessThan(windows[1][0]);
+  });
+
+  it("returns exceeded when limiter denies", async () => {
+    mockLimit.mockResolvedValue({ success: false, remaining: 0, reset: 8888 });
+    const { checkPlanStoryRateLimit } = await import("../rate-limit");
+    const result = await checkPlanStoryRateLimit("firm-1", "chapter");
+    expect(result).toEqual({
+      allowed: false,
+      reason: "exceeded",
+      remaining: 0,
+      reset: 8888,
+    });
+  });
+
+  it("returns unconfigured when env vars missing", async () => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { checkPlanStoryRateLimit } = await import("../rate-limit");
+    const result = await checkPlanStoryRateLimit("firm-1", "run");
+    expect(result).toEqual({ allowed: false, reason: "unconfigured" });
+    errorSpy.mockRestore();
+  });
+});
+
 describe("rateLimitErrorResponse", () => {
   it("uses 429 with Retry-After when exceeded", async () => {
     const { rateLimitErrorResponse } = await import("../rate-limit");

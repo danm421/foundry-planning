@@ -216,6 +216,44 @@ export async function checkObservationsAiRateLimit(
   return safeLimit(limiter, key);
 }
 
+// Plan Story prose. TWO buckets over ONE route, because its two shapes differ
+// by a factor of fourteen: "Generate all" is up to 28 model calls behind a
+// single click, one Regenerate is up to two. A budget wide enough for an
+// advisor rewriting paragraphs one at a time would be fourteen whole stories a
+// minute; one tight enough for whole stories would stop the third fix of a
+// sentence. `checkImportRateLimit` is the precedent for the shape.
+const getPlanStoryRunLimiter = buildLimiter(4, "1 m", "rl:plan-story:run");
+const getPlanStoryChapterLimiter = buildLimiter(20, "1 m", "rl:plan-story:chapter");
+
+export type PlanStoryRateLimitOp = "run" | "chapter";
+
+/**
+ * Check whether `key` (firm id) may spend model calls writing Plan Story prose.
+ * Budgets: 4 whole-story runs/min/firm, 20 single chapters/min/firm. `key` is
+ * suffixed with `:${op}` so the two never draw on each other.
+ *
+ * Keyed on the FIRM rather than the client: the spend is the firm's, and one
+ * advisor cycling ten households is the shape this exists to stop.
+ *
+ * Returns `{ allowed: false, reason: ... }` for any failure mode —
+ * see the file-level comment for the full discriminant.
+ */
+export async function checkPlanStoryRateLimit(
+  key: string,
+  op: PlanStoryRateLimitOp,
+): Promise<RateLimitResult> {
+  // A record rather than a ternary, like `checkImportRateLimit`: a third op
+  // added without a bucket is then a compile error, not a silent third caller
+  // on the chapter budget.
+  const factories = {
+    run: getPlanStoryRunLimiter,
+    chapter: getPlanStoryChapterLimiter,
+  } as const;
+  const limiter = factories[op]();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, `${key}:${op}`);
+}
+
 // PDF preview (in-builder, interactive). Looser than export (advisors iterate
 // on options/scenarios), but still bounded — each preview is a real projection
 // render. Separate bucket so preview bursts never drain the export budget and
