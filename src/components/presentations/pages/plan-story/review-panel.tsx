@@ -18,6 +18,7 @@
 //    surfaces would start disagreeing about what the advisor approved.
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { sampleRefusal } from "@/lib/presentations/story/voice/refusal";
 
 interface ChapterRow {
   chapterId: string;
@@ -93,6 +94,18 @@ const COULD_NOT_GENERATE =
   "Couldn't write the chapters. Nothing was generated — try again in a moment.";
 const COULD_NOT_REGENERATE =
   "Couldn't rewrite this chapter. The words on screen are unchanged — try again.";
+const COULD_NOT_HARVEST = "Couldn't save that as a voice sample. Nothing was stored — try again.";
+
+/**
+ * What a harvested sample is, and — the load-bearing half — what it is NOT yet.
+ *
+ * The words on this row were written for one household and are being kept to
+ * shape the prose of another's report. Nothing is sent to the model until the
+ * advisor goes and switches it on, and that sentence is the entire consent
+ * story of edits-as-exemplars: an advisor who presses this button and reads
+ * nothing about what happens next has not been asked.
+ */
+const HARVESTED = "Saved to your voice samples. It's off until you turn it on in Settings → Voice.";
 
 /**
  * What a refused generation says — the firm's ceiling, or `generic`.
@@ -194,6 +207,16 @@ export function PlanStoryReviewPanel({
   /** …and the two failures that really are about the whole panel. Kept apart so
    *  a row's failure and a failed load cannot overwrite each other. */
   const [panelProblem, setPanelProblem] = useState<string | null>(null);
+  /**
+   * A harvest that LANDED, against the chapter it was about. Its own map rather
+   * than a value in `problems`: that map is read as a failure everywhere it is
+   * rendered, and a success sharing it would inherit the alert styling, the
+   * `role="alert"`, and every rule that clears it.
+   */
+  const [confirmations, setConfirmations] = useState<Record<string, string>>({});
+  /** The chapter being harvested, so a second click cannot store the passage
+   *  twice. Each press writes a row and files an audit entry. */
+  const [harvesting, setHarvesting] = useState<string | null>(null);
   /** Chapter ids the plan has moved underneath. See `CHAPTER_OUT_OF_DATE`. */
   const [outOfDate, setOutOfDate] = useState<Set<string>>(new Set());
 
@@ -328,6 +351,10 @@ export function PlanStoryReviewPanel({
       // them. A message left standing there would point at a box the advisor
       // can no longer act on.
       setProblems({});
+      // Same argument, one step further: "Saved to your voice samples" names the
+      // words that WERE in these boxes. The run replaced them, so the sentence
+      // now sits over prose it is not about.
+      setConfirmations({});
       // Only the chapters the run NAMES. One it skipped — nothing to recommend,
       // no data behind it — was not rewritten, so if it was out of date it
       // still is.
@@ -372,6 +399,8 @@ export function PlanStoryReviewPanel({
       // draft left in the box would shadow the new prose with the old — and the
       // box would stop showing what prints.
       setDrafts((d) => without(d, chapterId));
+      // …and the harvest confirmation was about those same replaced words.
+      setConfirmations((c) => without(c, chapterId));
       clearOutOfDate([chapterId]);
       await load();
     } catch (err) {
@@ -379,6 +408,52 @@ export function PlanStoryReviewPanel({
       setProblems((p) => ({ ...p, [chapterId]: COULD_NOT_REGENERATE }));
     } finally {
       setRegenerating(null);
+    }
+  }
+
+  /**
+   * Keep this chapter's prose as an exemplar of how this advisor writes.
+   *
+   * Sends what is ON SCREEN — the unsaved draft when there is one — because
+   * that is the text the advisor is looking at when they press it, and a button
+   * that silently harvested the older stored version would store words they did
+   * not choose.
+   *
+   * The route scrubs the household's names and every figure out on the way in
+   * (`api/story-voice/samples/route.ts`), which is why `clientId` goes with it:
+   * it names the household whose words have to come out.
+   *
+   * ⚠️ A refusal here is ORDINARY, not exceptional. A stored sample stops at
+   * 2,000 characters and a chapter may hold 20,000, so the first long chapter
+   * anyone presses this on comes back a 400 — `sampleRefusal` reads the server's
+   * own issue list and names which bound was missed and by how much. A bare
+   * failure would be a failure with no visible cause on the very first try.
+   */
+  async function harvest(chapterId: string, text: string) {
+    setHarvesting(chapterId);
+    try {
+      const res = await fetch(`/api/story-voice/samples`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text, sourceChapterId: chapterId, sourceClientId: clientId }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        setProblems((p) => ({ ...p, [chapterId]: sampleRefusal(body, text, COULD_NOT_HARVEST) }));
+        return;
+      }
+      setProblems((p) => without(p, chapterId));
+      setConfirmations((c) => ({ ...c, [chapterId]: HARVESTED }));
+      // No `load()`, unlike every other write in this panel: this one changed
+      // nothing the chapter list reports. The row landed in `story_voice_samples`
+      // and the chapter's own stored text, edit flag and reviewed flag are all
+      // untouched. A reload here would also clear `panelProblem` (see `load`),
+      // and a failed chapter load is not something a harvest fixed.
+    } catch (err) {
+      console.error("[plan-story] voice-sample harvest failed", chapterId, err);
+      setProblems((p) => ({ ...p, [chapterId]: COULD_NOT_HARVEST }));
+    } finally {
+      setHarvesting(null);
     }
   }
 
@@ -446,9 +521,13 @@ export function PlanStoryReviewPanel({
             className="min-h-28 w-full rounded border border-hair bg-card-2 p-2 text-sm leading-relaxed text-ink focus:border-accent focus:outline-none"
             aria-label={`${row.title} text`}
             value={drafts[row.chapterId] ?? row.text}
-            onChange={(e) =>
-              setDrafts((d) => ({ ...d, [row.chapterId]: e.target.value }))
-            }
+            onChange={(e) => {
+              setDrafts((d) => ({ ...d, [row.chapterId]: e.target.value }));
+              // "Saved to your voice samples" named the words as they stood when
+              // it was pressed. Once they change, the sentence is about a
+              // passage that is no longer in the box.
+              setConfirmations((c) => without(c, row.chapterId));
+            }}
             onBlur={(e) => {
               if (e.target.value === row.text) return;
               void patch(row.chapterId, { editedText: e.target.value }, COULD_NOT_SAVE);
@@ -484,8 +563,28 @@ export function PlanStoryReviewPanel({
                 {regenerating === row.chapterId ? "Rewriting…" : "Regenerate"}
               </button>
             )}
+            {/* Only on a row the advisor has actually rewritten. A generated
+                chapter is the model's own prose, and keeping it as an exemplar
+                of how this advisor writes would teach the model to copy itself.
+                An EDITED one is the advisor's words, which is the whole point. */}
+            {row.edited && (
+              <button
+                type="button"
+                className="text-xs text-ink-3 underline hover:text-ink disabled:no-underline disabled:opacity-50"
+                disabled={saving === row.chapterId || harvesting === row.chapterId}
+                onClick={() => void harvest(row.chapterId, drafts[row.chapterId] ?? row.text)}
+              >
+                {harvesting === row.chapterId ? "Saving…" : "Save as a voice sample"}
+              </button>
+            )}
             {row.reviewed && <span className="text-xs text-good">Reviewed</span>}
           </div>
+
+          {confirmations[row.chapterId] != null && (
+            <p role="status" className="mt-2 text-xs text-good">
+              {confirmations[row.chapterId]}
+            </p>
+          )}
         </section>
       ))}
     </div>

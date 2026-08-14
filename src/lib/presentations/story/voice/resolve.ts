@@ -28,8 +28,28 @@ export const EMPTY_VOICE: StoryVoice = Object.freeze({ styleNote: "", samples: N
  * At most four. Every sample is a system-prompt line on every one of fourteen
  * chapters, so the cost is linear in this number and the return is not: past
  * three or four exemplars a model is matching an average rather than a voice.
+ *
+ * Exported because the Settings → Voice panel marks which rows actually reach a
+ * prompt, and a second `4` written over there would eventually disagree with
+ * this one — a panel showing six live toggles over a resolver that sends four
+ * reports a state the model never sees.
+ *
+ * ⚠️ Safe to import from a client component: every import in this file is
+ * `import type`, so the emitted JS has no imports at all and nothing from
+ * `@/db` or `./repo` follows it into a bundle.
  */
-const MAX_SAMPLES = 4;
+export const MAX_SAMPLES = 4;
+
+/**
+ * Is this sample eligible to be sent at all? Switched on, and with words in it.
+ *
+ * Exported alongside the cap and for the same reason: the panel has to apply the
+ * IDENTICAL test before it takes the first four, or the rows it labels as "in
+ * every chapter" are not the rows that are.
+ */
+export function isSendable(sample: { enabled: boolean; text: string }): boolean {
+  return sample.enabled && sample.text.trim().length > 0;
+}
 
 export function resolveVoice(
   profile: VoiceProfile | null,
@@ -38,7 +58,7 @@ export function resolveVoice(
   return {
     styleNote: profile?.styleNote ?? "",
     samples: samples
-      .filter((s) => s.enabled && s.text.trim().length > 0)
+      .filter(isSendable)
       .slice(0, MAX_SAMPLES)
       // The SAME string the filter judged. Emitting the raw text instead would
       // let a sample stored with leading or trailing blank lines through the

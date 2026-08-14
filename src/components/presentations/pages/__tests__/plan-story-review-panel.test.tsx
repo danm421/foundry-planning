@@ -823,3 +823,155 @@ describe("PlanStoryReviewPanel", () => {
     });
   });
 });
+
+/**
+ * Keeping an advisor's own edit as an exemplar of how they write.
+ *
+ * Two things carry the weight here. The CONSENT sentence: a harvested sample is
+ * one household's prose kept to shape another household's report, and it is
+ * stored switched off — an advisor who presses the button and reads nothing
+ * about what happens next has not been asked. And the REFUSAL: a chapter may
+ * hold 20,000 characters, a stored sample 2,000, so the first long chapter
+ * anyone presses this on comes back a 400 and the panel has to say why.
+ */
+describe("saving a chapter as a voice sample", () => {
+  const EDITED: Row = {
+    ...CHAPTERS[0],
+    edited: true,
+    text: "The plan holds, and here is the part I always say out loud.",
+  };
+  const HARVEST = "Save as a voice sample";
+  const isHarvestUrl = (url: unknown) => String(url).includes("/api/story-voice/samples");
+
+  /** The chapter list plus an answer for the harvest POST. */
+  function stubHarvest(rows: Row[], harvestResponse: () => Response) {
+    const fn = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST" && isHarvestUrl(url)) return harvestResponse();
+      if (init?.method) return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      return answerRead(url, rows);
+    });
+    vi.stubGlobal("fetch", fn);
+    return fn;
+  }
+
+  const ok = () => new Response(JSON.stringify({ id: "s1", text: "scrubbed" }), { status: 200 });
+  const refusesLength = () =>
+    new Response(
+      JSON.stringify({ error: "Validation failed", issues: [{ path: "text", message: "Too big" }] }),
+      { status: 400 },
+    );
+
+  it("is offered only on a chapter the advisor has rewritten", async () => {
+    stubHarvest([EDITED, CHAPTERS[1]], ok);
+    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    await screen.findByText(EDITED.title);
+    // The generated chapter's own words are the model's. Keeping those as an
+    // exemplar of how this advisor writes would teach it to copy itself.
+    expect(within(row(EDITED.title)).getByRole("button", { name: HARVEST })).toBeTruthy();
+    expect(within(row(CHAPTERS[1].title)).queryByRole("button", { name: HARVEST })).toBeNull();
+  });
+
+  it("sends the words on screen, the chapter, and the household they came from", async () => {
+    stubHarvest([EDITED], ok);
+    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    const box = await screen.findByDisplayValue(EDITED.text);
+    // An unsaved draft is what the advisor is looking at, so it is what a button
+    // beside it has to store.
+    fireEvent.change(box, { target: { value: "Words I have not saved yet." } });
+    fireEvent.click(within(row(EDITED.title)).getByRole("button", { name: HARVEST }));
+
+    await waitFor(() => {
+      const post = calls().find(
+        (c) => (c[1] as RequestInit | undefined)?.method === "POST" && isHarvestUrl(c[0]),
+      );
+      expect(post).toBeTruthy();
+      const body = String((post![1] as RequestInit).body);
+      expect(body).toContain("Words I have not saved yet.");
+      expect(body).toContain('"sourceChapterId":"planInOnePage"');
+      expect(body).toContain('"sourceClientId":"c1"');
+    });
+  });
+
+  it("says it is saved and off until the advisor turns it on", async () => {
+    stubHarvest([EDITED], ok);
+    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    await screen.findByText(EDITED.title);
+    fireEvent.click(within(row(EDITED.title)).getByRole("button", { name: HARVEST }));
+    const status = await within(row(EDITED.title)).findByRole("status");
+    expect(status.textContent).toBe(
+      "Saved to your voice samples. It's off until you turn it on in Settings → Voice.",
+    );
+  });
+
+  it("names the limit and the length when the chapter is too long to keep", async () => {
+    const long = { ...EDITED, text: "x".repeat(2500) };
+    stubHarvest([long], refusesLength);
+    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    await screen.findByText(long.title);
+    fireEvent.click(within(row(long.title)).getByRole("button", { name: HARVEST }));
+
+    const alert = await within(row(long.title)).findByRole("alert");
+    expect(alert.textContent).toContain("2,500 characters");
+    expect(alert.textContent).toContain("at most 2,000");
+    // A refusal is not a lost chapter: the panel-level alarm means "your
+    // chapters did not load", and the other thirteen are untouched.
+    expect(screen.queryByText(/Couldn't load this report/)).toBeNull();
+  });
+
+  it("reports the refusal against that chapter and leaves the others clean", async () => {
+    stubHarvest([EDITED, CHAPTERS[1]], () => new Response("no", { status: 500 }));
+    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    await screen.findByText(EDITED.title);
+    fireEvent.click(within(row(EDITED.title)).getByRole("button", { name: HARVEST }));
+    await waitFor(() => {
+      expect(within(row(EDITED.title)).getByRole("alert").textContent).toContain(
+        "Nothing was stored",
+      );
+    });
+    expect(within(row(CHAPTERS[1].title)).queryByRole("alert")).toBeNull();
+  });
+
+  it("drops the confirmation once the words it named have changed", async () => {
+    stubHarvest([EDITED], ok);
+    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    const box = await screen.findByDisplayValue(EDITED.text);
+    fireEvent.click(within(row(EDITED.title)).getByRole("button", { name: HARVEST }));
+    await within(row(EDITED.title)).findByRole("status");
+    // "Saved to your voice samples" was about the passage as it stood. Once the
+    // box holds something else, the sentence is about words that are not there.
+    fireEvent.change(box, { target: { value: "Different words entirely." } });
+    expect(within(row(EDITED.title)).queryByRole("status")).toBeNull();
+  });
+
+  // Found by mutation: swapping the CATCH branch's `setProblems` for a
+  // panel-level message left every test green, because every other case here
+  // fails with an HTTP status rather than by throwing. A dropped connection is
+  // the commonest of the two in the field.
+  it("reports a dropped connection against that chapter too", async () => {
+    stubHarvest([EDITED], () => {
+      throw new Error("network down");
+    });
+    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    await screen.findByText(EDITED.title);
+    fireEvent.click(within(row(EDITED.title)).getByRole("button", { name: HARVEST }));
+    await waitFor(() => {
+      expect(within(row(EDITED.title)).getByRole("alert").textContent).toContain(
+        "Nothing was stored",
+      );
+    });
+    expect(screen.queryByText(/Couldn't load this report/)).toBeNull();
+  });
+
+  it("will not store the same passage twice on a double click", async () => {
+    stubHarvest([EDITED], ok);
+    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    await screen.findByText(EDITED.title);
+    const button = within(row(EDITED.title)).getByRole("button", { name: HARVEST });
+    fireEvent.click(button);
+    // Each press writes a row and files an audit entry.
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(button);
+    await within(row(EDITED.title)).findByRole("status");
+    expect(calls().filter((c) => isHarvestUrl(c[0])).length).toBe(1);
+  });
+});

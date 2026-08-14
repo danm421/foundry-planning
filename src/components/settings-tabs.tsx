@@ -23,6 +23,10 @@ const TABS: {
   { label: "Sharing", href: "/settings/sharing" },
   { label: "Firm", href: "/settings/firm", adminOnly: true },
   { label: "Branding", href: "/settings/branding" },
+  // No `adminOnly`: a voice profile is per advisor, so every member of the firm
+  // has one of their own. The admin-only part is the "save it for the whole
+  // firm" checkbox inside the panel, gated there and re-checked by both routes.
+  { label: "Voice", href: "/settings/voice" },
   { label: "Integrations", href: "/settings/integrations", adminOnly: true },
   { label: "Billing", href: "/settings/billing", billingContact: true },
 ];

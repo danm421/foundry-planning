@@ -11,15 +11,27 @@ import { CHAPTER_IDS } from "@/lib/presentations/story/types";
  *
  * 2,000 characters is roughly three paragraphs of guidance, and — at the
  * 6.3-6.9 characters per word this document's own prose runs to — about 290-315
- * words of sample. That covers the longest chapter the narrators write (a
- * `heroProse` chapter is budgeted 300 words, `chapters/registry.ts:304`) with a
- * little headroom.
+ * words of sample. The longest chapter the narrators write is budgeted 300 words
+ * (`chapters/registry.ts:304`), which is 1,890-2,070 characters at that rate: so
+ * 2,000 sits INSIDE a full-length chapter's own range rather than above it. A
+ * 300-word chapter of short words fits; one of long words runs about seventy
+ * characters over and is refused. Room for a typical chapter, not a promise
+ * about every one — `db/schema.ts` hedges it as "about one long chapter", and
+ * that is the accurate reading.
  *
  * ⚠️ It is FAR below the 20,000 an advisor may write into a chapter
  * (`planStoryChapterPatchSchema.editedText`), so a harvest of a long edited
  * chapter is refused rather than truncated — the panel has to say so.
  */
-const VOICE_TEXT_MAX = 2000;
+export const VOICE_TEXT_MAX = 2000;
+
+/**
+ * The floor a sample has to clear, exported for the same reason as the ceiling:
+ * a refusal that does not name the actual bound is a refusal with no visible
+ * cause, and BOTH bounds are reachable from the harvest button — a long chapter
+ * trips the ceiling, a chapter an advisor cut down to a line trips this.
+ */
+export const VOICE_TEXT_MIN = 20;
 
 export const storyVoiceProfilePutSchema = z
   .object({
@@ -34,7 +46,7 @@ export const storyVoiceSamplePostSchema = z
   .object({
     /** The floor is there so a stray click cannot store "ok" as an exemplar of
      *  how someone writes. */
-    text: z.string().min(20).max(VOICE_TEXT_MAX),
+    text: z.string().min(VOICE_TEXT_MIN).max(VOICE_TEXT_MAX),
     /**
      * Checked against the live arc rather than stored blind. The column is free
      * text, so an unrecognised id would sit in a row the panel then labels with
