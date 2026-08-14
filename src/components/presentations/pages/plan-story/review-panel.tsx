@@ -571,7 +571,16 @@ export function PlanStoryReviewPanel({
               <button
                 type="button"
                 className="text-xs text-ink-3 underline hover:text-ink disabled:no-underline disabled:opacity-50"
-                disabled={saving === row.chapterId || harvesting === row.chapterId}
+                // …and dead while a whole run or any rewrite is going, exactly as
+                // Regenerate above is. A harvest mid-"Generate all" stores the
+                // words the run is about to overwrite, and `generateAll` then
+                // clears the very confirmation that would have named them.
+                disabled={
+                  busy ||
+                  regenerating != null ||
+                  saving === row.chapterId ||
+                  harvesting === row.chapterId
+                }
                 onClick={() => void harvest(row.chapterId, drafts[row.chapterId] ?? row.text)}
               >
                 {harvesting === row.chapterId ? "Saving…" : "Save as a voice sample"}

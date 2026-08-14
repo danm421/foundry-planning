@@ -8,6 +8,15 @@ import { render, screen, waitFor, fireEvent, within } from "@testing-library/rea
 import { VoiceProfilePanel } from "../voice-profile-panel";
 import { MAX_SAMPLES } from "@/lib/presentations/story/voice/resolve";
 import { VOICE_TEXT_MAX } from "@/lib/schemas/story-voice";
+import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
+import { CHAPTER_IDS } from "@/lib/presentations/story/types";
+
+/** What `page.tsx` builds and passes down. Built here from the same registry, so
+ *  the title assertion below still binds to a real chapter heading rather than to
+ *  a fixture string this file invented. */
+const CHAPTER_TITLES: Record<string, string> = Object.fromEntries(
+  CHAPTER_IDS.map((id) => [id, CHAPTERS[id].title]),
+);
 
 const ME = "user_me";
 
@@ -61,10 +70,16 @@ function writes(method: string) {
   return calls().filter((c) => (c[1] as RequestInit | undefined)?.method === method);
 }
 
-/** A sample row by its position in the list, which is the order the route
- *  returns and the order the resolver's cap applies to. */
+/**
+ * A sample row by its position in the list — the order the route returns and the
+ * order the resolver's cap applies to.
+ *
+ * By POSITION rather than by accessible name: the row is named by where its
+ * passage came from (`aria-labelledby` → the source label), which is what a
+ * screen reader should announce and is deliberately not unique across rows.
+ */
 function row(n: number): HTMLElement {
-  return screen.getByRole("listitem", { name: `Voice sample ${n}` });
+  return screen.getAllByRole("listitem")[n - 1];
 }
 
 beforeEach(() => {
@@ -83,14 +98,14 @@ describe("before a GET has answered", () => {
   it("says nothing about how many samples reach a prompt", () => {
     // Neither GET ever resolves.
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     expect(screen.queryByText(/into every chapter/)).toBeNull();
     expect(screen.queryByText(/No samples yet/)).toBeNull();
   });
 
   it("leaves the style-note box disabled, so a firm note cannot be cleared unread", () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     expect((screen.getByLabelText(/Style note/) as HTMLTextAreaElement).disabled).toBe(true);
   });
 
@@ -101,14 +116,14 @@ describe("before a GET has answered", () => {
         isSamplesUrl(url) ? json({ error: "nope" }, 500) : json({ profile: null }),
       ),
     );
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     expect(await screen.findByText(/Couldn't load your samples/)).toBeTruthy();
     expect(screen.queryByText(/No samples yet/)).toBeNull();
   });
 
   it("says the list is empty once a GET has actually answered with nothing", async () => {
     stub({ samples: [] });
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     expect(await screen.findByText(/No samples yet/)).toBeTruthy();
   });
 });
@@ -126,7 +141,7 @@ describe("the cap on how many samples reach the prompt", () => {
 
   it("marks the rows past the cap apart from the rows in every chapter", async () => {
     stub({ samples: overflowing });
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     await screen.findByText(/into every chapter/);
 
     for (let n = 1; n <= MAX_SAMPLES; n++) {
@@ -140,7 +155,7 @@ describe("the cap on how many samples reach the prompt", () => {
 
   it("counts only the samples that are sent, and names the cap", async () => {
     stub({ samples: overflowing });
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     const summary = await screen.findByText(/into every chapter/);
     expect(summary.textContent).toContain("4 of your 5 samples go into every chapter");
     expect(summary.textContent).toContain("at most 4");
@@ -148,7 +163,7 @@ describe("the cap on how many samples reach the prompt", () => {
 
   it("does not mark a switched-off sample as reaching a prompt", async () => {
     stub({ samples: [sample("a", false), sample("b", true)] });
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     await screen.findByText(/into every chapter/);
     expect(within(row(1)).getByText("Off")).toBeTruthy();
     expect(within(row(2)).getByText("In every chapter")).toBeTruthy();
@@ -160,7 +175,7 @@ describe("the cap on how many samples reach the prompt", () => {
 describe("switching a sample on and off", () => {
   it("PATCHes the row it was clicked on", async () => {
     stub({ samples: [sample("a", false), sample("b", false)] });
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     await screen.findByText(/into every chapter|No samples yet/);
     fireEvent.click(within(row(2)).getByRole("checkbox"));
     await waitFor(() => {
@@ -172,7 +187,7 @@ describe("switching a sample on and off", () => {
 
   it("reports a refused switch against that row, and leaves the others clean", async () => {
     stub({ samples: [sample("a", false), sample("b", false)] }, () => json({ error: "no" }, 404));
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     await screen.findByText(/into every chapter|No samples yet/);
     fireEvent.click(within(row(2)).getByRole("checkbox"));
 
@@ -189,7 +204,7 @@ describe("switching a sample on and off", () => {
     stub({ samples: [sample("a", false), sample("b", false)] }, () => {
       throw new Error("network down");
     });
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     await screen.findByText(/into every chapter|No samples yet/);
     fireEvent.click(within(row(2)).getByRole("checkbox"));
     await waitFor(() => {
@@ -200,7 +215,7 @@ describe("switching a sample on and off", () => {
 
   it("leaves the checkbox where it was when the switch was refused", async () => {
     stub({ samples: [sample("a", false)] }, () => json({ error: "no" }, 404));
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     await screen.findByText(/into every chapter|No samples yet/);
     const box = within(row(1)).getByRole("checkbox") as HTMLInputElement;
     fireEvent.click(box);
@@ -215,7 +230,7 @@ describe("switching a sample on and off", () => {
 describe("deleting a sample", () => {
   it("does not delete on the first click", async () => {
     stub({ samples: [sample("a", true)] });
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     await screen.findByText(/into every chapter/);
     fireEvent.click(within(row(1)).getByRole("button", { name: "Delete" }));
     expect(within(row(1)).getByText(/can't be undone/)).toBeTruthy();
@@ -224,7 +239,7 @@ describe("deleting a sample", () => {
 
   it("deletes once the advisor confirms", async () => {
     stub({ samples: [sample("a", true)] });
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     await screen.findByText(/into every chapter/);
     fireEvent.click(within(row(1)).getByRole("button", { name: "Delete" }));
     fireEvent.click(within(row(1)).getByRole("button", { name: "Delete permanently" }));
@@ -235,7 +250,7 @@ describe("deleting a sample", () => {
 
   it("backs out without deleting", async () => {
     stub({ samples: [sample("a", true)] });
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     await screen.findByText(/into every chapter/);
     fireEvent.click(within(row(1)).getByRole("button", { name: "Delete" }));
     fireEvent.click(within(row(1)).getByRole("button", { name: "Keep it" }));
@@ -247,7 +262,7 @@ describe("deleting a sample", () => {
     stub({ samples: [sample("a", true)] }, (_url, init) =>
       init.method === "DELETE" ? json({ error: "no" }, 404) : json({ ok: true }),
     );
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     await screen.findByText(/into every chapter/);
     fireEvent.click(within(row(1)).getByRole("button", { name: "Delete" }));
     fireEvent.click(within(row(1)).getByRole("button", { name: "Delete permanently" }));
@@ -268,7 +283,7 @@ describe("writing a sample by hand", () => {
 
   it("names the actual cause and the actual limit when the text is too long", async () => {
     stub({ samples: [] }, refusesText);
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     await screen.findByText(/No samples yet/);
     fireEvent.change(screen.getByLabelText(/Write a sample/), { target: { value: TOO_LONG } });
     fireEvent.click(screen.getByRole("button", { name: "Save sample" }));
@@ -280,7 +295,7 @@ describe("writing a sample by hand", () => {
 
   it("leaves the typed words in the box when the save was refused", async () => {
     stub({ samples: [] }, refusesText);
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     await screen.findByText(/No samples yet/);
     const box = screen.getByLabelText(/Write a sample/) as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: TOO_LONG } });
@@ -291,7 +306,7 @@ describe("writing a sample by hand", () => {
 
   it("clears the box and says the sample is off until it is switched on", async () => {
     stub({ samples: [] });
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     await screen.findByText(/No samples yet/);
     const box = screen.getByLabelText(/Write a sample/) as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: "A passage in my own words, long enough." } });
@@ -302,7 +317,7 @@ describe("writing a sample by hand", () => {
 
   it("POSTs the words without a source client — nothing to scrub against", async () => {
     stub({ samples: [] });
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     await screen.findByText(/No samples yet/);
     fireEvent.change(screen.getByLabelText(/Write a sample/), {
       target: { value: "A passage in my own words, long enough." },
@@ -321,20 +336,20 @@ describe("writing a sample by hand", () => {
 describe("the style note", () => {
   it("warns an advisor reading the firm's note that they have none of their own", async () => {
     stub({ profile: { advisorUserId: "", styleNote: "House style." }, samples: [] });
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     expect(await screen.findByText(/reading your firm's default note/)).toBeTruthy();
   });
 
   it("says nothing about the firm when the note is the advisor's own", async () => {
     stub({ profile: { advisorUserId: ME, styleNote: "Mine." }, samples: [] });
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     await screen.findByDisplayValue("Mine.");
     expect(screen.queryByText(/reading your firm's default note/)).toBeNull();
   });
 
   it("PUTs the note against the advisor's own row by default", async () => {
     stub({ profile: null, samples: [] });
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     await screen.findByText(/haven't written a style note/);
     fireEvent.change(screen.getByLabelText(/Style note/), { target: { value: "Short sentences." } });
     fireEvent.click(screen.getByRole("button", { name: "Save style note" }));
@@ -347,7 +362,7 @@ describe("the style note", () => {
 
   it("keeps the typed note in the box when the save was refused", async () => {
     stub({ profile: null, samples: [] }, () => json({ error: "no" }, 403));
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     await screen.findByText(/haven't written a style note/);
     const box = screen.getByLabelText(/Style note/) as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: "Short sentences." } });
@@ -362,7 +377,7 @@ describe("the style note", () => {
 describe("the firm-default checkboxes", () => {
   it("are absent for a member", async () => {
     stub({ samples: [] });
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     await screen.findByText(/No samples yet/);
     expect(screen.queryByLabelText(/firm default/i)).toBeNull();
     expect(screen.queryByLabelText(/whole firm/i)).toBeNull();
@@ -370,7 +385,7 @@ describe("the firm-default checkboxes", () => {
 
   it("send firmDefault true for an admin who ticks one", async () => {
     stub({ profile: null, samples: [] });
-    render(<VoiceProfilePanel isAdmin userId={ME} />);
+    render(<VoiceProfilePanel isAdmin userId={ME} chapterTitles={CHAPTER_TITLES} />);
     await screen.findByText(/No samples yet/);
     fireEvent.click(screen.getByLabelText(/Save as the firm default/));
     fireEvent.change(screen.getByLabelText(/Style note/), { target: { value: "House style." } });
@@ -388,7 +403,7 @@ describe("what a row shows", () => {
     stub({
       samples: [sample("a", true, { sourceChapterId: "planInOnePage", text: "Their plan holds." })],
     });
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     await screen.findByText(/into every chapter/);
     expect(within(row(1)).getByText("Their plan holds.")).toBeTruthy();
     // The heading comes off the live chapter registry, not a second list here.
@@ -397,8 +412,156 @@ describe("what a row shows", () => {
 
   it("names a sample the whole firm sends", async () => {
     stub({ samples: [sample("a", true, { firmDefault: true })] });
-    render(<VoiceProfilePanel isAdmin={false} userId={ME} />);
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     await screen.findByText(/into every chapter/);
     expect(within(row(1)).getByText(/Shared with your firm/)).toBeTruthy();
+  });
+});
+
+// ── The counter must not state a bound the server does not enforce ────────────
+
+describe("the character counters", () => {
+  it("does not tell the style note it is too short — that schema has no floor", async () => {
+    stub({ profile: null, samples: [] });
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
+    await screen.findByText(/haven't written a style note/);
+    // Sixteen characters, and `storyVoiceProfilePutSchema.styleNote` is `.max()`
+    // with no `.min()` — this saves fine and must not be warned about.
+    fireEvent.change(screen.getByLabelText(/Style note/), { target: { value: "Short sentences." } });
+    expect(screen.queryByText(/at least/)).toBeNull();
+  });
+
+  it("does tell a sample it is too short — that schema has one", async () => {
+    stub({ profile: null, samples: [] });
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
+    await screen.findByText(/No samples yet/);
+    fireEvent.change(screen.getByLabelText(/Write a sample/), { target: { value: "too short" } });
+    expect(screen.getByText(/at least/).textContent).toContain("20");
+  });
+});
+
+// ── A success line must not outlive the words it named ───────────────────────
+
+describe("the saved confirmations", () => {
+  it("drops the style note's once the words change", async () => {
+    stub({ profile: null, samples: [] });
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
+    await screen.findByText(/haven't written a style note/);
+    const box = screen.getByLabelText(/Style note/);
+    fireEvent.change(box, { target: { value: "Short sentences." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save style note" }));
+    await waitFor(() => expect(screen.getByRole("status")).toBeTruthy());
+    // "Saved. It goes into every chapter…" in `text-good` over unsaved words is
+    // the same lie the review panel's harvest confirmation would have told.
+    fireEvent.change(box, { target: { value: "Short sentences. And plain words." } });
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("drops the sample box's once the words change", async () => {
+    stub({ profile: null, samples: [] });
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
+    await screen.findByText(/No samples yet/);
+    const box = screen.getByLabelText(/Write a sample/);
+    fireEvent.change(box, { target: { value: "A passage in my own words, long enough." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save sample" }));
+    await waitFor(() => expect(screen.getByRole("status")).toBeTruthy());
+    fireEvent.change(box, { target: { value: "Something else entirely, also long." } });
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+});
+
+// ── An over-length style note is a permanent 400, not a "try again" ───────────
+
+describe("refusing a style note", () => {
+  it("names the ceiling rather than telling the advisor to try again", async () => {
+    stub({ profile: null, samples: [] }, () =>
+      json({ error: "Validation failed", issues: [{ path: "styleNote", message: "Too big" }] }, 400),
+    );
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
+    await screen.findByText(/haven't written a style note/);
+    fireEvent.change(screen.getByLabelText(/Style note/), {
+      target: { value: "x".repeat(VOICE_TEXT_MAX + 500) },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save style note" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("A style note can be at most 2,000");
+    expect(alert.textContent).toContain("2,500 characters");
+    // …and never the sample's floor, which this field does not have.
+    expect(alert.textContent).not.toContain("at least");
+  });
+});
+
+// ── Firm-shared rows: whose reports the controls actually change ─────────────
+
+describe("a sample shared with the whole firm", () => {
+  const shared = [sample("f", true, { firmDefault: true })];
+
+  it("says the controls change every colleague's reports, not just this one's", async () => {
+    stub({ samples: shared });
+    render(<VoiceProfilePanel isAdmin userId={ME} chapterTitles={CHAPTER_TITLES} />);
+    await screen.findByText(/into every chapter/);
+    expect(within(row(1)).getByLabelText(/everyone's reports/)).toBeTruthy();
+    expect(within(row(1)).queryByLabelText("Send this to the writing assistant")).toBeNull();
+  });
+
+  it("warns that deleting it deletes it for the whole firm", async () => {
+    stub({ samples: shared });
+    render(<VoiceProfilePanel isAdmin userId={ME} chapterTitles={CHAPTER_TITLES} />);
+    await screen.findByText(/into every chapter/);
+    fireEvent.click(within(row(1)).getByRole("button", { name: "Delete" }));
+    expect(within(row(1)).getByText(/for everyone at your firm/)).toBeTruthy();
+  });
+
+  // The route is the real gate (`samples/[id]/route.ts#mayMutate` 404s a member
+  // acting on the firm's row). These two pin the affordance that matches it.
+  it("is not actionable by a member, and says why", async () => {
+    stub({ samples: shared });
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
+    await screen.findByText(/into every chapter/);
+    expect((within(row(1)).getByRole("checkbox") as HTMLInputElement).disabled).toBe(true);
+    expect(
+      (within(row(1)).getByRole("button", { name: "Delete" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(within(row(1)).getByText(/Only a firm admin/)).toBeTruthy();
+  });
+
+  it("stays actionable for an admin", async () => {
+    stub({ samples: shared });
+    render(<VoiceProfilePanel isAdmin userId={ME} chapterTitles={CHAPTER_TITLES} />);
+    await screen.findByText(/into every chapter/);
+    expect((within(row(1)).getByRole("checkbox") as HTMLInputElement).disabled).toBe(false);
+    expect(within(row(1)).queryByText(/Only a firm admin/)).toBeNull();
+  });
+
+  // The path that creates a row every colleague sends. Untested, the clause that
+  // carries it is an opinion.
+  it("POSTs firmDefault true when an admin ticks the sample box", async () => {
+    stub({ samples: [] });
+    render(<VoiceProfilePanel isAdmin userId={ME} chapterTitles={CHAPTER_TITLES} />);
+    await screen.findByText(/No samples yet/);
+    fireEvent.click(screen.getByLabelText(/Save for the whole firm/));
+    fireEvent.change(screen.getByLabelText(/Write a sample/), {
+      target: { value: "House style, in a passage long enough to keep." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save sample" }));
+    await waitFor(() => {
+      expect(String((writes("POST")[0][1] as RequestInit).body)).toContain('"firmDefault":true');
+    });
+  });
+});
+
+// ── An enabled sample with nothing in it is not "over the limit" ─────────────
+
+describe("a switched-on sample with no words in it", () => {
+  it("says it is empty rather than blaming the cap", async () => {
+    // `resolveVoice` drops a blank sample before the cap applies
+    // (`resolve.ts#isSendable`), so it is not queued behind anything.
+    stub({ samples: [sample("blank", true, { text: "   " })] });
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
+    await screen.findByText(/into every chapter/);
+    expect(within(row(1)).getByText("Empty")).toBeTruthy();
+    expect(within(row(1)).queryByText("Over the limit")).toBeNull();
+    expect(within(row(1)).queryByText(/newest switched-on samples/)).toBeNull();
   });
 });

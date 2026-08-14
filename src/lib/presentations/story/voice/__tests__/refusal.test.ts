@@ -2,7 +2,7 @@
 // standing between the harvest button and a failure with no visible cause: the
 // first long chapter anyone presses it on comes back a 400.
 import { describe, it, expect } from "vitest";
-import { sampleRefusal } from "../refusal";
+import { sampleRefusal, styleNoteRefusal } from "../refusal";
 import { VOICE_TEXT_MAX, VOICE_TEXT_MIN } from "@/lib/schemas/story-voice";
 
 const GENERIC = "Couldn't save that. Try again.";
@@ -59,5 +59,30 @@ describe("sampleRefusal", () => {
   it("does not describe a text of exactly the limit as out of bounds", () => {
     expect(sampleRefusal(refused("text"), "x".repeat(VOICE_TEXT_MAX), GENERIC)).toBe(GENERIC);
     expect(sampleRefusal(refused("text"), "x".repeat(VOICE_TEXT_MIN), GENERIC)).toBe(GENERIC);
+  });
+});
+
+/**
+ * The style note is `.max()` with NO `.min()` (`schemas/story-voice.ts`), so its
+ * refusal carries a ceiling and no floor. A shared floor would tell an advisor
+ * that a sixteen-character style note — which saves fine — was refused for being
+ * short.
+ */
+describe("styleNoteRefusal", () => {
+  it("names the ceiling, and names the field as a style note", () => {
+    const out = styleNoteRefusal(refused("styleNote"), "x".repeat(VOICE_TEXT_MAX + 500), GENERIC);
+    expect(out).toContain("A style note can be at most 2,000");
+    expect(out).toContain("2,500 characters");
+  });
+
+  it("never describes a short style note as too short", () => {
+    expect(styleNoteRefusal(refused("styleNote"), "Short sentences.", GENERIC)).toBe(GENERIC);
+  });
+
+  it("reads its own field's path, not the sample's", () => {
+    const long = "x".repeat(VOICE_TEXT_MAX + 500);
+    // A 400 reported against `text` is not this field's refusal.
+    expect(styleNoteRefusal(refused("text"), long, GENERIC)).toBe(GENERIC);
+    expect(sampleRefusal(refused("styleNote"), long, GENERIC)).toBe(GENERIC);
   });
 });

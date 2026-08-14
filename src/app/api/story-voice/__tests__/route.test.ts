@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => ({
   listVoiceSamples: vi.fn(),
   setVoiceSampleEnabled: vi.fn(),
   deleteVoiceSample: vi.fn(),
+  loadVoiceSampleOwner: vi.fn(),
 }));
 
 // Only the session reader is replaced. `UnauthorizedError` stays real because
@@ -77,6 +78,7 @@ vi.mock("@/lib/presentations/story/voice/repo", async () => {
     listVoiceSamples: mocks.listVoiceSamples,
     setVoiceSampleEnabled: mocks.setVoiceSampleEnabled,
     deleteVoiceSample: mocks.deleteVoiceSample,
+    loadVoiceSampleOwner: mocks.loadVoiceSampleOwner,
   };
 });
 
@@ -125,6 +127,8 @@ beforeEach(() => {
   mocks.listVoiceSamples.mockResolvedValue([]);
   mocks.setVoiceSampleEnabled.mockResolvedValue(true);
   mocks.deleteVoiceSample.mockResolvedValue(true);
+  // The common case: the caller owns the row they are naming.
+  mocks.loadVoiceSampleOwner.mockResolvedValue(USER);
   mocks.loadVoiceProfile.mockResolvedValue(null);
 });
 
@@ -389,6 +393,88 @@ describe("DELETE /api/story-voice/samples/[id]", () => {
     expect(mocks.recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: "story_voice.sample_deleted", resourceId: SAMPLE }),
     );
+  });
+});
+
+/**
+ * Who may change a sample that already exists.
+ *
+ * ⚠️ `firmId` alone is NOT the rule, and this is the gap these tests were written
+ * for. Creating a firm-wide sample is admin-only — `POST` calls
+ * `requireOrgAdminOrOwner` when `firmDefault` is set — while the two mutators
+ * scope on `firmId + id` and nothing else, so the exemplar only an admin could
+ * create, any member could permanently delete. The rule is: your own row, or the
+ * firm's row if you are an admin; anything else is a 404.
+ *
+ * 404 and not 403, on purpose. A 403 would separate "this id exists and you may
+ * not touch it" from "no such id", which is exactly the distinction every other
+ * refusal in that file is built to hide.
+ */
+describe("who may change a sample", () => {
+  const COLLEAGUE = "user_colleague";
+
+  /** A member, not an admin — the gate is the real one, so this is how a
+   *  non-admin session is expressed. */
+  function asMember() {
+    mocks.requireOrgAdminOrOwner.mockRejectedValue(new ForbiddenError("nope"));
+  }
+
+  it.each([
+    ["PATCH", () => PATCH(req({ enabled: true }), { params: params(SAMPLE) })],
+    ["DELETE", () => DELETE(req({}), { params: params(SAMPLE) })],
+  ])("%s 404s a member acting on the firm's shared row", async (_m, call) => {
+    mocks.loadVoiceSampleOwner.mockResolvedValue(""); // FIRM_DEFAULT_ADVISOR
+    asMember();
+    const res = await call();
+    expect(res.status).toBe(404);
+    expect(mocks.setVoiceSampleEnabled).not.toHaveBeenCalled();
+    expect(mocks.deleteVoiceSample).not.toHaveBeenCalled();
+    expect(mocks.recordAudit).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["PATCH", () => PATCH(req({ enabled: true }), { params: params(SAMPLE) })],
+    ["DELETE", () => DELETE(req({}), { params: params(SAMPLE) })],
+  ])("%s lets an ADMIN act on the firm's shared row", async (_m, call) => {
+    mocks.loadVoiceSampleOwner.mockResolvedValue("");
+    const res = await call();
+    expect(res.status).toBe(200);
+    expect(mocks.recordAudit).toHaveBeenCalled();
+  });
+
+  it.each([
+    ["PATCH", () => PATCH(req({ enabled: true }), { params: params(SAMPLE) })],
+    ["DELETE", () => DELETE(req({}), { params: params(SAMPLE) })],
+  ])("%s 404s a colleague's personal row, admin or not", async (_m, call) => {
+    // The narrower half of the same hole: naming another member's own sample by
+    // its id. Admin does NOT open this — the rule grants the firm's row, not
+    // everyone's.
+    mocks.loadVoiceSampleOwner.mockResolvedValue(COLLEAGUE);
+    const res = await call();
+    expect(res.status).toBe(404);
+    expect(mocks.setVoiceSampleEnabled).not.toHaveBeenCalled();
+    expect(mocks.deleteVoiceSample).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["PATCH", () => PATCH(req({ enabled: true }), { params: params(SAMPLE) })],
+    ["DELETE", () => DELETE(req({}), { params: params(SAMPLE) })],
+  ])("%s 404s an id this firm does not have, without a write", async (_m, call) => {
+    mocks.loadVoiceSampleOwner.mockResolvedValue(null);
+    const res = await call();
+    expect(res.status).toBe(404);
+    expect(mocks.setVoiceSampleEnabled).not.toHaveBeenCalled();
+    expect(mocks.deleteVoiceSample).not.toHaveBeenCalled();
+  });
+
+  it("scopes the ownership read to the CALLER's firm", async () => {
+    await DELETE(req({}), { params: params(SAMPLE) });
+    expect(mocks.loadVoiceSampleOwner).toHaveBeenCalledWith({ firmId: FIRM, id: SAMPLE });
+  });
+
+  it("does not read ownership for a malformed id", async () => {
+    await DELETE(req({}), { params: params("not-a-uuid") });
+    expect(mocks.loadVoiceSampleOwner).not.toHaveBeenCalled();
   });
 });
 

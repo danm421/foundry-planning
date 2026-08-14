@@ -943,6 +943,29 @@ describe("saving a chapter as a voice sample", () => {
     expect(within(row(EDITED.title)).queryByRole("status")).toBeNull();
   });
 
+  it("is dead while a whole run is going", async () => {
+    // A harvest mid-"Generate all" stores the words the run is about to
+    // overwrite — and `generateAll` then clears the confirmation that would have
+    // named them, so the advisor is left with a stored passage and no record of
+    // it. Regenerate and Mark reviewed are gated on the same states.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        // The generate run never answers, so the panel stays busy.
+        if (init?.method === "POST" && !isHarvestUrl(url)) return new Promise<Response>(() => {});
+        if (init?.method) return new Response(JSON.stringify({ ok: true }), { status: 200 });
+        return answerRead(url, [EDITED]);
+      }),
+    );
+    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    await screen.findByText(EDITED.title);
+    const harvestButton = within(row(EDITED.title)).getByRole("button", { name: HARVEST });
+    expect((harvestButton as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate all" }));
+    await waitFor(() => expect((harvestButton as HTMLButtonElement).disabled).toBe(true));
+  });
+
   // Found by mutation: swapping the CATCH branch's `setProblems` for a
   // panel-level message left every test green, because every other case here
   // fails with an HTTP status rather than by throwing. A dropped connection is

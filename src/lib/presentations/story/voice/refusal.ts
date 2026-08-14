@@ -24,12 +24,11 @@ interface ValidationIssue {
 }
 
 /**
- * Did the server refuse this request because of the sample TEXT — as opposed to
- * a bad chapter id, an unparseable body, or anything else that also lands as a
- * 400? Read off the issue list, because the status code alone cannot tell those
- * apart.
+ * Did the server refuse this request because of THIS field — as opposed to a bad
+ * chapter id, an unparseable body, or anything else that also lands as a 400?
+ * Read off the issue list, because the status code alone cannot tell those apart.
  */
-function textWasRefused(body: unknown): boolean {
+function fieldWasRefused(body: unknown, path: string): boolean {
   if (typeof body !== "object" || body === null) return false;
   const { issues } = body as { issues?: unknown };
   if (!Array.isArray(issues)) return false;
@@ -37,7 +36,7 @@ function textWasRefused(body: unknown): boolean {
     (i) =>
       typeof i === "object" &&
       i !== null &&
-      (i as Partial<ValidationIssue>).path === "text",
+      (i as Partial<ValidationIssue>).path === path,
   );
 }
 
@@ -47,8 +46,43 @@ function commas(n: number): string {
   return n.toLocaleString("en-US");
 }
 
+/** One of the two prose fields an advisor writes, and everything that differs
+ *  between their refusals. */
+interface VoiceTextField {
+  /** The `issues[].path` the route reports this field under. */
+  path: string;
+  /** How the sentence names it: "A voice sample can be at most…". */
+  noun: string;
+  /** What to do about it being too long. */
+  tooLongRemedy: string;
+  /**
+   * The floor, and what to do about missing it — or NULL when the schema has
+   * none. `storyVoiceProfilePutSchema.styleNote` is `.max()` with no `.min()`
+   * (`schemas/story-voice.ts`), so a short style note saves fine and must never
+   * be told otherwise.
+   */
+  floor: { min: number; remedy: string } | null;
+}
+
+const SAMPLE: VoiceTextField = {
+  path: "text",
+  noun: "A voice sample",
+  tooLongRemedy: "Save a shorter passage — the part that sounds most like you.",
+  floor: {
+    min: VOICE_TEXT_MIN,
+    remedy: "A sentence or two is enough to show how you write.",
+  },
+};
+
+const STYLE_NOTE: VoiceTextField = {
+  path: "styleNote",
+  noun: "A style note",
+  tooLongRemedy: "Trim it — about three paragraphs of guidance is the limit.",
+  floor: null,
+};
+
 /**
- * The sentence to show when `POST /api/story-voice/samples` refused.
+ * The sentence to show when a voice route refused what was written.
  *
  * WHICH FIELD comes from the response's `issues`; WHICH BOUND it missed comes
  * from the text the caller submitted. Both halves are needed, and the split is
@@ -58,28 +92,37 @@ function commas(n: number): string {
  * reword between versions. The length of the string the caller just sent is the
  * one fact about the direction that cannot go stale.
  *
- * Both bounds are live. A long edited chapter trips the ceiling; a chapter cut
- * down to a line trips the floor. Describing the second as the first would send
- * an advisor to shorten something already too short.
+ * Both bounds are live on a SAMPLE: a long edited chapter trips the ceiling, a
+ * chapter cut down to a line trips the floor. Describing the second as the first
+ * would send an advisor to shorten something already too short. A STYLE NOTE has
+ * no floor at all, which is why `floor` is nullable rather than a shared 20.
  *
  * Anything else — a 403, a 500, a dropped connection, a 400 about some other
  * field — falls through to `generic`, which each surface words for itself.
  */
-export function sampleRefusal(body: unknown, text: string, generic: string): string {
-  if (!textWasRefused(body)) return generic;
-  if (text.length > VOICE_TEXT_MAX) {
+function refusal(field: VoiceTextField, body: unknown, value: string, generic: string): string {
+  if (!fieldWasRefused(body, field.path)) return generic;
+  if (value.length > VOICE_TEXT_MAX) {
     return (
-      `That's ${commas(text.length)} characters. A voice sample can be at most ` +
-      `${commas(VOICE_TEXT_MAX)}, so nothing was saved. Save a shorter passage — ` +
-      `the part that sounds most like you.`
+      `That's ${commas(value.length)} characters. ${field.noun} can be at most ` +
+      `${commas(VOICE_TEXT_MAX)}, so nothing was saved. ${field.tooLongRemedy}`
     );
   }
-  if (text.length < VOICE_TEXT_MIN) {
+  if (field.floor != null && value.length < field.floor.min) {
     return (
-      `That's ${commas(text.length)} characters. A voice sample needs at least ` +
-      `${commas(VOICE_TEXT_MIN)}, so nothing was saved. A sentence or two is enough ` +
-      `to show how you write.`
+      `That's ${commas(value.length)} characters. ${field.noun} needs at least ` +
+      `${commas(field.floor.min)}, so nothing was saved. ${field.floor.remedy}`
     );
   }
   return generic;
+}
+
+/** `POST /api/story-voice/samples` — both bounds live. */
+export function sampleRefusal(body: unknown, text: string, generic: string): string {
+  return refusal(SAMPLE, body, text, generic);
+}
+
+/** `PUT /api/story-voice` — a ceiling only. */
+export function styleNoteRefusal(body: unknown, styleNote: string, generic: string): string {
+  return refusal(STYLE_NOTE, body, styleNote, generic);
 }

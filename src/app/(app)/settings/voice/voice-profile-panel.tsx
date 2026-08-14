@@ -31,10 +31,8 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
-import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
-import { CHAPTER_IDS } from "@/lib/presentations/story/types";
 import { MAX_SAMPLES, isSendable } from "@/lib/presentations/story/voice/resolve";
-import { sampleRefusal } from "@/lib/presentations/story/voice/refusal";
+import { sampleRefusal, styleNoteRefusal } from "@/lib/presentations/story/voice/refusal";
 import { VOICE_TEXT_MAX, VOICE_TEXT_MIN } from "@/lib/schemas/story-voice";
 
 interface VoiceProfile {
@@ -80,25 +78,46 @@ const SAVING_WRITES_YOUR_OWN_MEMBER =
   " Saving writes your own note and leaves the firm's alone.";
 const NO_NOTE_ANYWHERE = "You haven't written a style note, and your firm hasn't set a default.";
 
-/** Deleting drops the row. There is no undo anywhere in this feature — the
- *  words are gone from the table, which is exactly what an advisor who spotted a
- *  client's name in a stored sample is asking for. Say so before they confirm. */
+/**
+ * Deleting drops the row. There is no undo anywhere in this feature — the words
+ * are gone from the table, which is exactly what an advisor who spotted a
+ * client's name in a stored sample is asking for. Say so before they confirm.
+ *
+ * A firm-shared row gets its own sentence, because the act is a different act:
+ * the row goes out of every colleague's reports, not only this advisor's. First
+ * person over a firm-wide, unrecoverable action is how someone deletes for
+ * eleven people believing they deleted for one.
+ */
 const DELETE_IS_FOREVER = "Delete these words for good? This can't be undone.";
+const DELETE_IS_FOREVER_FOR_EVERYONE =
+  "Delete this for everyone at your firm, for good? This can't be undone.";
+
+/** Same argument, one step milder: switching a shared row off stops it in every
+ *  colleague's reports too. */
+const SEND_THIS = "Send this to the writing assistant";
+const SEND_THIS_FIRM = "Send this on everyone's reports";
+
+/** Why a member's controls on a shared row are dead. Shown rather than hiding
+ *  them: a member who cannot find the control learns nothing, and an admin
+ *  reading over their shoulder needs to see the same row. */
+const FIRM_ROW_IS_ADMIN_ONLY =
+  "Shared with your firm — everyone here sends this one. Only a firm admin can switch it off or delete it.";
+const FIRM_ROW_IS_SHARED =
+  "Shared with your firm — everyone here sends this one. Changing it changes every colleague's reports.";
 
 /** The cap read off `resolveVoice`, not spelled again. See `sentIds` below. */
 const PAST_THE_CAP =
   `Switched on, but only the ${MAX_SAMPLES} newest switched-on samples are sent. This one isn't.`;
 
-/** The chapter headings, read off the live arc rather than spelled again here.
- *  Flattened to a plain string map so a `sourceChapterId` stored by an older
- *  build — the column is free text — is a miss rather than a crash. */
-const CHAPTER_TITLES: Record<string, string> = Object.fromEntries(
-  CHAPTER_IDS.map((id) => [id, CHAPTERS[id].title]),
-);
+/** Switched on with nothing in it. `resolveVoice` drops a blank sample before it
+ *  counts toward the cap (`resolve.ts#isSendable`), so this row is neither sent
+ *  nor waiting behind the four that are — a different fact from `PAST_THE_CAP`,
+ *  and it gets its own sentence rather than that one's. */
+const NOTHING_TO_SEND = "Switched on, but there are no words in it to send.";
 
-function sourceLabel(chapterId: string | null): string {
+function sourceLabel(chapterId: string | null, chapterTitles: Record<string, string>): string {
   if (chapterId == null) return "Written here";
-  const title = CHAPTER_TITLES[chapterId];
+  const title = chapterTitles[chapterId];
   return title ? `From “${title}”` : "From a chapter this version of the report doesn't have";
 }
 
@@ -114,17 +133,26 @@ function without(map: Record<string, string>, key: string): Record<string, strin
   return next;
 }
 
-/** A live character count beside a box. Advisory only: the routes are the
- *  authority on what fits, and a refusal from them names the same bound. */
-function CharacterCount({ length }: { length: number }) {
+/**
+ * A live character count beside a box. Advisory only: the routes are the
+ * authority on what fits, and a refusal from them names the same bound.
+ *
+ * ⚠️ `min` is per FIELD and must be omitted where the schema has no floor.
+ * `storyVoiceSamplePostSchema.text` is `.min(20)`; `storyVoiceProfilePutSchema.styleNote`
+ * is `.max()` alone (`schemas/story-voice.ts`). A shared floor here told an
+ * advisor that "Short sentences." — sixteen characters, and a perfectly good
+ * style note — was too short to save, which is the panel stating a limit the
+ * server does not enforce.
+ */
+function CharacterCount({ length, min }: { length: number; min?: number }) {
   // An empty box is not "too short" — it is a box nobody has typed in yet.
-  const tooShort = length > 0 && length < VOICE_TEXT_MIN;
+  const tooShort = min != null && length > 0 && length < min;
   return (
     <p className={`text-xs ${tooShort || length > VOICE_TEXT_MAX ? "text-warn" : "text-ink-3"}`}>
       <span className="tabular">{commas(length)}</span> /{" "}
       <span className="tabular">{commas(VOICE_TEXT_MAX)}</span> characters
       {tooShort && (
-        <> — at least <span className="tabular">{VOICE_TEXT_MIN}</span> to save</>
+        <> — at least <span className="tabular">{min}</span> to save</>
       )}
     </p>
   );
@@ -133,6 +161,7 @@ function CharacterCount({ length }: { length: number }) {
 export function VoiceProfilePanel({
   isAdmin,
   userId,
+  chapterTitles,
 }: {
   /**
    * Does this advisor get the "save it for the whole firm" checkboxes? An
@@ -144,6 +173,17 @@ export function VoiceProfilePanel({
   /** The caller's own Clerk id, so a note that came back under a different one
    *  can be named as the firm's. See `page.tsx`. */
   userId: string;
+  /**
+   * `chapterId` → heading, built in the SERVER page from `chapters/registry.ts`.
+   *
+   * A prop rather than an import, and the reason is bundle weight: `CHAPTERS`
+   * holds every chapter's `narrate` FUNCTION as a value, so nothing can tree-shake
+   * the narrator modules away and importing it here lands its whole 43-file
+   * closure in this route's browser bundle to render fourteen strings. The
+   * registry stays the single spelling of the titles; it just does the spelling
+   * on the server.
+   */
+  chapterTitles: Record<string, string>;
 }) {
   const [profile, setProfile] = useState<VoiceProfile | null>(null);
   const [noteLoaded, setNoteLoaded] = useState(false);
@@ -220,7 +260,12 @@ export function VoiceProfilePanel({
         body: JSON.stringify({ styleNote: note, firmDefault: noteForFirm }),
       });
       if (!res.ok) {
-        setNoteProblem(COULD_NOT_SAVE_NOTE);
+        // A note over the ceiling is a PERMANENT 400, and "try again" is the one
+        // instruction that cannot work on it. Same argument as the sample box —
+        // `styleNoteRefusal` reads the server's own issue list and names the
+        // bound. It carries no floor, because this field has none.
+        const body = await res.json().catch(() => null);
+        setNoteProblem(styleNoteRefusal(body, note, COULD_NOT_SAVE_NOTE));
         return;
       }
       setNoteProblem(null);
@@ -370,13 +415,21 @@ export function VoiceProfilePanel({
           <textarea
             className="min-h-28 w-full rounded border border-hair bg-card-2 p-2 text-sm leading-relaxed text-ink focus:border-accent focus:outline-none"
             value={note}
-            onChange={(e) => setNote(e.target.value)}
+            onChange={(e) => {
+              setNote(e.target.value);
+              // "Saved." named the words as they stood when it was pressed. Left
+              // standing, it sits in `text-good` over words that have not been
+              // saved at all. The review panel clears its harvest confirmation
+              // on the same event and for the same reason.
+              setNoteStatus(null);
+            }}
             // Until the GET answers, this box is empty because nothing has been
             // read — not because nothing is there. Saving from it is how an
             // advisor clears a firm note they never saw.
             disabled={!noteLoaded}
           />
         </label>
+        {/* No `min`: `styleNote` has a ceiling and no floor. */}
         <CharacterCount length={note.length} />
 
         {isAdmin && (
@@ -452,33 +505,53 @@ export function VoiceProfilePanel({
 
         {samples.length > 0 && (
           <ul className="flex flex-col gap-3">
-            {samples.map((sample, i) => {
+            {samples.map((sample) => {
               const sent = sentIds.has(sample.id);
-              const pastTheCap = sample.enabled && !sent;
+              // Both derived from the resolver's OWN predicate, so each message
+              // states the reason that actually applies: a sendable row that
+              // missed the cap is waiting behind four others; a row switched on
+              // with no words in it is not waiting for anything.
+              const pastTheCap = isSendable(sample) && !sent;
+              const nothingToSend = sample.enabled && !isSendable(sample);
+              // The route's rule, mirrored: a member may act on their own rows,
+              // and on the firm's shared row only as an admin
+              // (`samples/[id]/route.ts#mayMutate`). An affordance only — the
+              // route refuses either way, with a 404.
+              const locked = sample.firmDefault && !isAdmin;
+              const labelId = `voice-sample-source-${sample.id}`;
               return (
                 <li
                   key={sample.id}
-                  // Named, so a message inside it is announced against the sample
-                  // it is about rather than floating in the panel.
-                  aria-label={`Voice sample ${i + 1}`}
+                  // Named by WHAT IT IS — the source label below — rather than by
+                  // its position in the list, so the row's accessible name
+                  // describes the passage instead of reading "Voice sample 1".
+                  // Every message for this row is rendered INSIDE this element,
+                  // which is what keeps it attached to the row it is about.
+                  aria-labelledby={labelId}
                   className="flex flex-col gap-2 rounded border border-hair p-3"
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-[11px] uppercase tracking-[0.1em] text-ink-3">
-                      {sourceLabel(sample.sourceChapterId)}
+                    <span id={labelId} className="text-[11px] uppercase tracking-[0.1em] text-ink-3">
+                      {sourceLabel(sample.sourceChapterId, chapterTitles)}
                     </span>
                     <span
                       className={`text-[11px] uppercase tracking-[0.1em] ${
-                        sent ? "text-good" : pastTheCap ? "text-warn" : "text-ink-3"
+                        sent ? "text-good" : pastTheCap || nothingToSend ? "text-warn" : "text-ink-3"
                       }`}
                     >
-                      {sent ? "In every chapter" : pastTheCap ? "Over the limit" : "Off"}
+                      {sent
+                        ? "In every chapter"
+                        : pastTheCap
+                          ? "Over the limit"
+                          : nothingToSend
+                            ? "Empty"
+                            : "Off"}
                     </span>
                   </div>
 
                   {sample.firmDefault && (
-                    <p className="text-xs text-ink-3">
-                      Shared with your firm — everyone here sends this one.
+                    <p className="text-xs text-warn">
+                      {locked ? FIRM_ROW_IS_ADMIN_ONLY : FIRM_ROW_IS_SHARED}
                     </p>
                   )}
 
@@ -488,9 +561,8 @@ export function VoiceProfilePanel({
                     </p>
                   )}
 
-                  {pastTheCap && (
-                    <p className="text-xs text-warn">{PAST_THE_CAP}</p>
-                  )}
+                  {pastTheCap && <p className="text-xs text-warn">{PAST_THE_CAP}</p>}
+                  {nothingToSend && <p className="text-xs text-warn">{NOTHING_TO_SEND}</p>}
 
                   <p className="whitespace-pre-wrap rounded border border-hair bg-card-2 p-2 text-sm leading-relaxed text-ink-2">
                     {sample.text}
@@ -501,15 +573,17 @@ export function VoiceProfilePanel({
                       <input
                         type="checkbox"
                         checked={sample.enabled}
-                        disabled={busyRow === sample.id}
+                        disabled={busyRow === sample.id || locked}
                         onChange={(e) => void switchSample(sample.id, e.target.checked)}
                       />
-                      Send this to the writing assistant
+                      {sample.firmDefault ? SEND_THIS_FIRM : SEND_THIS}
                     </label>
 
                     {confirmingDelete === sample.id ? (
                       <span className="ml-auto flex flex-wrap items-center gap-3">
-                        <span className="text-xs text-warn">{DELETE_IS_FOREVER}</span>
+                        <span className="text-xs text-warn">
+                          {sample.firmDefault ? DELETE_IS_FOREVER_FOR_EVERYONE : DELETE_IS_FOREVER}
+                        </span>
                         <button
                           type="button"
                           className="text-xs text-crit underline disabled:no-underline disabled:opacity-50"
@@ -530,7 +604,7 @@ export function VoiceProfilePanel({
                       <button
                         type="button"
                         className="ml-auto text-xs text-ink-3 underline hover:text-crit disabled:no-underline disabled:opacity-50"
-                        disabled={busyRow === sample.id}
+                        disabled={busyRow === sample.id || locked}
                         onClick={() => setConfirmingDelete(sample.id)}
                       >
                         Delete
@@ -549,11 +623,18 @@ export function VoiceProfilePanel({
             <textarea
               className="min-h-24 w-full rounded border border-hair bg-card-2 p-2 text-sm leading-relaxed text-ink focus:border-accent focus:outline-none"
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                // Same reason as the style note's: "Saved." was about the words
+                // that have just been replaced.
+                setDraftStatus(null);
+              }}
               placeholder="A paragraph or two in your own words — a passage from a letter or a review you were happy with."
             />
           </label>
-          <CharacterCount length={draft.length} />
+          {/* `storyVoiceSamplePostSchema.text` carries a floor, so this counter
+              names it. The style note's does not. */}
+          <CharacterCount length={draft.length} min={VOICE_TEXT_MIN} />
 
           {isAdmin && (
             <label className="flex items-center gap-2 text-sm text-ink-2">

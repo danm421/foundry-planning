@@ -99,6 +99,29 @@ export async function insertVoiceSample(args: {
   return row.id;
 }
 
+/**
+ * Who owns one sample — the advisor's id, `FIRM_DEFAULT_ADVISOR` for a row the
+ * whole firm sends, or null when this firm has no such row.
+ *
+ * Its own read, and deliberately the SMALLEST one: `setVoiceSampleEnabled` and
+ * `deleteVoiceSample` scope on `firmId + id` alone, which is a cross-firm floor
+ * and says nothing about who inside the firm may act. Creating a firm-wide row
+ * is admin-only (`POST /api/story-voice/samples` calls `requireOrgAdminOrOwner`),
+ * so destroying one has to be too — and the route cannot decide that without
+ * knowing whose row it is. One column, so a caller who may not act on the row
+ * never has its text read on their behalf.
+ */
+export async function loadVoiceSampleOwner(args: {
+  firmId: string;
+  id: string;
+}): Promise<string | null> {
+  const [row] = await db
+    .select({ advisorUserId: storyVoiceSamples.advisorUserId })
+    .from(storyVoiceSamples)
+    .where(and(eq(storyVoiceSamples.id, args.id), eq(storyVoiceSamples.firmId, args.firmId)));
+  return row?.advisorUserId ?? null;
+}
+
 /** False when no row matched — which is how a route tells "another firm's id"
  *  from "done", without ever reading the row first. */
 export async function setVoiceSampleEnabled(args: {
