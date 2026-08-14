@@ -5,12 +5,13 @@
 // Every instruction here is the model-facing half of a gate in `../validate`.
 // The gates are what actually hold — this only lowers the odds of spending the
 // chapter's single retry.
+import { hashAiRequest } from "@/lib/presentations/ai-cache";
 import type { ChangeOp, ChangeRow } from "@/lib/presentations/pages/scenario-changes/types";
 import { factDisplaySet, hasAccountingNegative } from "../facts";
 import type { GateFailure } from "../validate";
 import { extractFigures } from "../validate/facts";
 import { MAX_MEAN_SENTENCE_WORDS, MAX_SENTENCE_WORDS } from "../validate/readability";
-import type { ChapterId, StoryContext } from "../types";
+import { factsForChapter, type ChapterId, type StoryContext } from "../types";
 import { CHAPTERS, chapterEnumerates, chapterOutputAsk } from "./registry";
 
 /** Gate 3's banned openers, in full. Copied rather than imported: `ACTION_VERBS`
@@ -258,4 +259,33 @@ export function buildChapterPrompt(
   // but it has no sub-blocks; here two multi-sentence voice samples run into
   // each other and into the rule above them when they share a paragraph.
   return { system: systemParts.join("\n"), user };
+}
+
+/**
+ * The staleness key: SHA-256 of the prompt a chapter's FIRST attempt is written
+ * from.
+ *
+ * ⭐ ONE spelling, read by both sides of the comparison. `generate.ts` stores
+ * what this returns; the staleness route rebuilds it. A second copy of the
+ * expression — even one that agrees today — is how the two come apart, and they
+ * come apart LOUDLY: a hash differing by a character reports every chapter of
+ * every report out of date, permanently, with nothing to clear it.
+ *
+ * ⚠️ `voiceSamples` is a parameter rather than a hardcoded `[]` for exactly that
+ * reason. They change the system prompt (see above), so the side rebuilding the
+ * hash has to supply the same samples the generating side had — which is why
+ * `run-context.ts` carries them as part of one run's inputs instead of each
+ * caller spelling them out.
+ */
+export function chapterSourceHash(
+  chapterId: ChapterId,
+  ctx: StoryContext,
+  voiceSamples: string[],
+): string {
+  // Scoped here as well as in `generateChapter`, which hands this an
+  // already-scoped context: `factsForChapter` is a filter, so applying it twice
+  // is the same array, and requiring callers to remember makes the hash depend
+  // on a convention rather than on its arguments.
+  const scoped: StoryContext = { ...ctx, facts: factsForChapter(ctx.facts, chapterId) };
+  return hashAiRequest(buildChapterPrompt(chapterId, scoped, voiceSamples, []));
 }

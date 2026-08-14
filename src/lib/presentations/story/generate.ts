@@ -7,12 +7,11 @@
 // never be able to blank a page or block an export.
 import { callAIExtractionWithMeta } from "@/lib/extraction/azure-client";
 import {
-  hashAiRequest,
   getCachedAnalysis,
   setCachedAnalysis,
   type AiCacheValue,
 } from "@/lib/presentations/ai-cache";
-import { buildChapterPrompt } from "./chapters/prompts";
+import { buildChapterPrompt, chapterSourceHash } from "./chapters/prompts";
 import { CHAPTERS, chapterEnumerates } from "./chapters/registry";
 import { runGates, type GateFailure } from "./validate";
 import { factsForChapter, type ChapterId, type StoryContext } from "./types";
@@ -258,7 +257,10 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
   const setCached = args.deps?.setCached ?? setCachedAnalysis;
 
   const first = buildChapterPrompt(chapterId, ctx, voiceSamples, []);
-  const sourceHash = hashAiRequest(first);
+  // Not `hashAiRequest(first)`, though it is the same value: the staleness route
+  // has to rebuild this hash from a context it loads itself, so the expression
+  // lives in ONE place both sides call (`chapters/prompts.ts`).
+  const sourceHash = chapterSourceHash(chapterId, ctx, voiceSamples);
 
   const narrative = CHAPTERS[chapterId].narrate(ctx).join("\n\n");
   /**

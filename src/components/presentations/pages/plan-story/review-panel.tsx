@@ -31,6 +31,26 @@ interface ChapterRow {
 }
 
 /**
+ * Which chapters were written from a plan that has since moved.
+ *
+ * ⚠️⚠️ ITS OWN REQUEST, and its own state, for two separate reasons.
+ *
+ * Its own REQUEST because answering costs a whole story context — measured at
+ * 23.2s cold and 4.0s warm — and the chapter list is reloaded after every save.
+ * A `stale` field on that list would put four seconds behind every blur.
+ *
+ * Its own STATE for the same reason from the other end: if the flags arrived on
+ * the list payload, every post-save reload would replace them, and the badges
+ * would blink off the moment an advisor edited anything.
+ *
+ * Asked for ONCE, on mount. The only other moment the answer moves is a
+ * generation run, and that one is answered from the run's own response rather
+ * than by asking again — see `generateAll`.
+ */
+const CHAPTER_OUT_OF_DATE =
+  "The plan has changed since this chapter was written. Generate again to bring it up to date.";
+
+/**
  * What `story/generate.ts` stores in `error`, and what the advisor is told it
  * means. The keys are that module's two frozen constants (generate.ts:28, :32).
  *
@@ -59,6 +79,14 @@ const COULD_NOT_SAVE = "Couldn't save your edit. Your words are still in the box
 const COULD_NOT_REVIEW = "Couldn't mark that chapter reviewed. Try again.";
 const COULD_NOT_GENERATE =
   "Couldn't write the chapters. Nothing was generated — try again in a moment.";
+
+/** One key gone, as a new object — the shape React state updates need. Both of
+ *  this panel's per-chapter maps drop a key on the same event. */
+function without(map: Record<string, string>, key: string): Record<string, string> {
+  const next = { ...map };
+  delete next[key];
+  return next;
+}
 
 function statusLabel(row: ChapterRow): string {
   if (!row.generated) return "Not generated yet";
@@ -111,10 +139,22 @@ export function PlanStoryReviewPanel({
    *  it. Marking reviewed is not reversible from any surface, and every PATCH
    *  files its own audit row. */
   const [saving, setSaving] = useState<string | null>(null);
-  /** The last request that did not do what it said. This panel is what
-   *  certifies a human read every word, so a request that failed silently is
-   *  that promise failing quietly. */
-  const [problem, setProblem] = useState<string | null>(null);
+  /**
+   * A request that did not do what it said, AGAINST THE CHAPTER IT WAS ABOUT.
+   * This panel is what certifies a human read every word, so a request that
+   * failed silently is that promise failing quietly.
+   *
+   * Per chapter rather than one message for the panel: with fourteen rows an
+   * advisor saves down the list, and a single message is cleared by the next
+   * row's success — so "chapter 3's edit was never saved" disappears while
+   * chapter 3's unsaved words sit in its box looking exactly like saved ones.
+   */
+  const [problems, setProblems] = useState<Record<string, string>>({});
+  /** …and the two failures that really are about the whole panel. Kept apart so
+   *  a row's failure and a failed load cannot overwrite each other. */
+  const [panelProblem, setPanelProblem] = useState<string | null>(null);
+  /** Chapter ids the plan has moved underneath. See `CHAPTER_OUT_OF_DATE`. */
+  const [outOfDate, setOutOfDate] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     try {
@@ -126,16 +166,17 @@ export function PlanStoryReviewPanel({
       const body = (await res.json()) as { chapters: ChapterRow[] };
       setRows(body.chapters);
       setLoaded(true);
-      // The one place the message clears. Every write ends either in its own
-      // failure message or in this reload, so a stale message cannot outlive
-      // the request that succeeded after it.
-      setProblem(null);
+      // Clears the PANEL's message only. A row's own failure is cleared by that
+      // row's next success — this reload runs after every one of them, and
+      // clearing here is exactly how a failed save used to vanish behind a
+      // different chapter's success.
+      setPanelProblem(null);
     } catch (err) {
       // Caught rather than left to reject: a dropped connection here would
       // otherwise be an unhandled rejection over a panel showing nothing, no
       // reason, and a live Generate button.
       console.error("[plan-story] could not load chapters", err);
-      setProblem(COULD_NOT_LOAD);
+      setPanelProblem(COULD_NOT_LOAD);
     }
     // `documentRole` belongs here as much as the scenario does: since 0240 the
     // two presets store separate rows, so an advisor switching preset with the
@@ -143,12 +184,36 @@ export function PlanStoryReviewPanel({
     // role's text under the new preset's heading.
   }, [clientId, scenario, documentRole]);
 
+  /**
+   * The expensive half, asked ONCE per story. A failure is logged and shows
+   * nothing: the badge is advice about freshness, and a panel-level error about
+   * a check the advisor never asked for would sit over a report whose chapters
+   * are all readable and all saveable. It must not raise the alarm that means
+   * "your chapters did not load".
+   */
+  const loadOutOfDate = useCallback(async () => {
+    try {
+      const res = await fetch(
+        `/api/clients/${clientId}/plan-story/stale?scenarioId=${encodeURIComponent(scenario)}` +
+          `&documentRole=${encodeURIComponent(documentRole)}`,
+      );
+      if (!res.ok) throw new Error(`GET plan-story/stale ${res.status}`);
+      const body = (await res.json()) as { stale: string[] };
+      setOutOfDate(new Set(body.stale));
+    } catch (err) {
+      console.error("[plan-story] could not check which chapters are out of date", err);
+    }
+  }, [clientId, scenario, documentRole]);
+
   // Runs on mount and whenever the client, scenario or preset changes — the
-  // drafts belong to the story being left behind, not to the one arriving.
+  // drafts, and which chapters are out of date, belong to the story being left
+  // behind, not to the one arriving.
   useEffect(() => {
     setDrafts({});
+    setOutOfDate(new Set());
     void load();
-  }, [load]);
+    void loadOutOfDate();
+  }, [load, loadOutOfDate]);
 
   async function patch(
     chapterId: string,
@@ -162,26 +227,24 @@ export function PlanStoryReviewPanel({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ scenarioId: scenario, documentRole, ...payload }),
       });
-      // Refused: say so and stop. Reloading here would replace the advisor's
-      // words with the stored text and make a failed save look like a saved one.
+      // Refused: say so, against THIS chapter, and stop. Reloading here would
+      // replace the advisor's words with the stored text and make a failed save
+      // look like a saved one.
       if (!res.ok) {
-        setProblem(failure);
+        setProblems((p) => ({ ...p, [chapterId]: failure }));
         return;
       }
+      setProblems((p) => without(p, chapterId));
       await load();
       // The stored row, not the keystrokes, is what prints — and the two are not
       // always the same string. Clearing the box is a real instruction ("drop my
       // version, print the model's words" — schemas/plan-story.ts), and the row
       // then resolves back to the generated text. Hand the box back to the
       // server once the write lands; keep the typed words when it didn't.
-      setDrafts((d) => {
-        const next = { ...d };
-        delete next[chapterId];
-        return next;
-      });
+      setDrafts((d) => without(d, chapterId));
     } catch (err) {
       console.error("[plan-story] chapter write failed", chapterId, err);
-      setProblem(failure);
+      setProblems((p) => ({ ...p, [chapterId]: failure }));
     } finally {
       setSaving(null);
     }
@@ -200,14 +263,36 @@ export function PlanStoryReviewPanel({
         body: JSON.stringify({ scenarioId: scenario, documentRole }),
       });
       if (!res.ok) {
-        setProblem(COULD_NOT_GENERATE);
+        setPanelProblem(COULD_NOT_GENERATE);
         return;
       }
       setDrafts({});
+      // Every row was just rewritten, so a save that failed before this run is
+      // about words that no longer exist — the run discarded the drafts behind
+      // them. A message left standing there would point at a box the advisor
+      // can no longer act on.
+      setProblems({});
+      /**
+       * The chapters the run wrote are fresh BY DEFINITION: it stored the hash
+       * of the plan it had just read. So their badges come down from the
+       * response, WITHOUT asking the staleness route again — that answer costs
+       * a second full rebuild of a plan the generate route had in hand.
+       *
+       * Only the ones it names. A chapter the run skipped (nothing to
+       * recommend, no data behind it) was not rewritten, so if it was out of
+       * date it still is.
+       */
+      const body = (await res.json().catch(() => null)) as { chapters?: { chapterId: string }[] } | null;
+      const rewritten = body?.chapters ?? [];
+      setOutOfDate((prev) => {
+        const next = new Set(prev);
+        for (const c of rewritten) next.delete(c.chapterId);
+        return next;
+      });
       await load();
     } catch (err) {
       console.error("[plan-story] generation request failed", err);
-      setProblem(COULD_NOT_GENERATE);
+      setPanelProblem(COULD_NOT_GENERATE);
     } finally {
       setBusy(false);
     }
@@ -217,9 +302,9 @@ export function PlanStoryReviewPanel({
 
   return (
     <div className="flex flex-col gap-3">
-      {problem != null && (
+      {panelProblem != null && (
         <p role="alert" className="text-sm text-crit">
-          {problem}
+          {panelProblem}
         </p>
       )}
 
@@ -242,13 +327,30 @@ export function PlanStoryReviewPanel({
       </div>
 
       {rows.map((row) => (
-        <section key={row.chapterId} className="rounded border border-hair p-3">
+        // Named, so a message inside it is announced against the chapter it is
+        // about rather than floating in the panel.
+        <section
+          key={row.chapterId}
+          role="region"
+          aria-label={row.title}
+          className="rounded border border-hair p-3"
+        >
           <header className="mb-2 flex items-center justify-between gap-3">
             <h3 className="text-sm font-semibold text-ink">{row.title}</h3>
             <span className="text-[11px] uppercase tracking-[0.1em] text-ink-3">
               {statusLabel(row)}
             </span>
           </header>
+
+          {problems[row.chapterId] != null && (
+            <p role="alert" className="mb-2 text-sm text-crit">
+              {problems[row.chapterId]}
+            </p>
+          )}
+
+          {outOfDate.has(row.chapterId) && (
+            <p className="mb-2 text-xs text-warn">{CHAPTER_OUT_OF_DATE}</p>
+          )}
 
           {row.error != null && (
             <p className="mb-2 text-xs text-warn">{REASONS[row.error] ?? row.error}</p>

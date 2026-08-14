@@ -2,15 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireOrgId } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { authErrorResponse } from "@/lib/authz";
-import { listStoryChapters, resolveChapterText, type DocumentRole } from "@/lib/presentations/story/repo";
+import {
+  listStoryChapters,
+  resolveChapterText,
+  isDocumentRole,
+  type DocumentRole,
+} from "@/lib/presentations/story/repo";
 import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
 import { CHAPTER_IDS } from "@/lib/presentations/story/types";
 
 export const dynamic = "force-dynamic";
-
-function isDocumentRole(v: string): v is DocumentRole {
-  return v === "standalone" || v === "frontMatter";
-}
 
 export async function GET(
   request: NextRequest,

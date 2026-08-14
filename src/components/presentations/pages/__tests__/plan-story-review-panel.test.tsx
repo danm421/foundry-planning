@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
 import { PlanStoryReviewPanel } from "@/components/presentations/pages/plan-story/review-panel";
 
 interface Row {
@@ -43,10 +43,22 @@ const CHAPTERS: Row[] = [
 const UNAVAILABLE = "The writing assistant was unavailable.";
 const TOO_SHORT = "The writing assistant returned too little text to use.";
 
-function stubFetch(chapters: Row[], getStatus = 200) {
-  const fn = vi.fn(async (_url: string, init?: RequestInit) => {
+/**
+ * The staleness endpoint is a SECOND request, deliberately — see the panel's own
+ * comment. Any stub that asserts on a badge has to answer it; the stubs that do
+ * not fall through to the chapter-list payload, whose missing `stale` key reads
+ * as "nothing is out of date". So a badge assertion added to one of THOSE would
+ * prove nothing — answer this endpoint explicitly there too.
+ */
+const isStaleUrl = (url: unknown) => String(url).includes("/plan-story/stale");
+
+function stubFetch(chapters: Row[], getStatus = 200, stale: string[] = []) {
+  const fn = vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method === "PATCH" || init?.method === "POST") {
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }
+    if (isStaleUrl(url)) {
+      return new Response(JSON.stringify({ stale }), { status: 200 });
     }
     return new Response(JSON.stringify({ scenarioId: "base", chapters }), {
       status: getStatus,
@@ -62,6 +74,36 @@ function calls() {
 
 function patchCalls() {
   return calls().filter((c) => (c[1] as RequestInit | undefined)?.method === "PATCH");
+}
+
+function staleCalls() {
+  return calls().filter((c) => isStaleUrl(c[0]));
+}
+
+function row(title: string): HTMLElement {
+  return screen.getByRole("region", { name: title });
+}
+
+/**
+ * A story where `stale` chapters are out of date and a Generate run rewrites
+ * only `written` — the shape that separates "the run cleared this badge" from
+ * "the panel cleared them all".
+ */
+function generatingOnly(written: string[], stale: string[]) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        return new Response(JSON.stringify({ chapters: written.map((chapterId) => ({ chapterId })) }), {
+          status: 200,
+        });
+      }
+      if (isStaleUrl(url)) return new Response(JSON.stringify({ stale }), { status: 200 });
+      return new Response(JSON.stringify({ scenarioId: "base", chapters: CHAPTERS }), {
+        status: 200,
+      });
+    }),
+  );
 }
 
 beforeEach(() => {
@@ -308,6 +350,195 @@ describe("PlanStoryReviewPanel", () => {
       await screen.findByRole("alert");
       fireEvent.blur(box);
       await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    });
+  });
+
+  /**
+   * ⭐ Fourteen rows, one message. An advisor saves down the list, so a failure
+   * that any later success wipes out is a failure they never see — while the
+   * unsaved words sit in the box looking exactly like saved ones.
+   */
+  describe("a failure belongs to the chapter it happened to", () => {
+    const A = "Your plan, in one page";
+    const B = "What we're recommending, and why";
+
+    /** A's saves are refused; B's land. `stillRefusing` lets one case relent on
+     *  the retry. */
+    function refuseA(stillRefusing = () => true) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string, init?: RequestInit) => {
+          if (init?.method === "PATCH") {
+            const refused = String(url).includes("planInOnePage") && stillRefusing();
+            return new Response(JSON.stringify({ ok: !refused }), { status: refused ? 500 : 200 });
+          }
+          if (isStaleUrl(url)) return new Response(JSON.stringify({ stale: [] }), { status: 200 });
+          return new Response(JSON.stringify({ scenarioId: "base", chapters: CHAPTERS }), {
+            status: 200,
+          });
+        }),
+      );
+    }
+
+    async function saveInto(title: string, text: string) {
+      const box = await screen.findByLabelText(`${title} text`);
+      fireEvent.change(box, { target: { value: text } });
+      fireEvent.blur(box);
+    }
+
+    it("keeps a failed save visible when another chapter then succeeds", async () => {
+      refuseA();
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      await saveInto(A, "my words for A");
+      await screen.findByRole("alert");
+      await saveInto(B, "my words for B");
+      await waitFor(() => expect(patchCalls().length).toBe(2));
+
+      expect(within(row(A)).getByRole("alert").textContent).toMatch(/couldn't save your edit/i);
+      // …and the words it is about are still there to retry with.
+      expect(within(row(A)).getByRole("textbox")).toHaveProperty("value", "my words for A");
+    });
+
+    it("never shows one chapter's failure against another", async () => {
+      refuseA();
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      await saveInto(A, "my words for A");
+      await screen.findByRole("alert");
+
+      expect(within(row(B)).queryByRole("alert")).toBeNull();
+    });
+
+    it("takes a chapter's own message down once that chapter saves", async () => {
+      let refuse = true;
+      refuseA(() => {
+        const refused = refuse;
+        refuse = false;
+        return refused;
+      });
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      await saveInto(A, "first try");
+      await screen.findByRole("alert");
+      await saveInto(A, "second try");
+
+      await waitFor(() => expect(within(row(A)).queryByRole("alert")).toBeNull());
+    });
+  });
+
+  /**
+   * ⭐ The badge, and the cost that shapes it. Answering "which chapters were
+   * written from a plan that has since moved" rebuilds the whole story context —
+   * MEASURED at 23.2s cold, 4.0s warm — so it is a separate request asked once,
+   * and its answer is held in the panel's own state.
+   */
+  describe("chapters the plan has moved underneath", () => {
+    it("says so on the chapter the check named", async () => {
+      stubFetch(CHAPTERS, 200, ["planInOnePage"]);
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      expect(
+        within(await screen.findByRole("region", { name: "Your plan, in one page" })).getByText(
+          /plan has changed since/i,
+        ),
+      ).toBeTruthy();
+      // Kills: rendering the note on every row. The advisor has to be able to
+      // tell which chapter needs regenerating.
+      expect(within(row("What we're recommending, and why")).queryByText(/plan has changed/i)).toBeNull();
+    });
+
+    it("says nothing when no chapter is out of date", async () => {
+      stubFetch(CHAPTERS, 200, []);
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      await screen.findByText("Your plan, in one page");
+      expect(screen.queryByText(/plan has changed since/i)).toBeNull();
+    });
+
+    /**
+     * ⚠️⚠️ Kills: moving the flag onto the chapter list. The panel reloads that
+     * list after EVERY save, so the badge would blink off the moment an advisor
+     * edited anything — and each blur would wait on a plan rebuild.
+     */
+    it("survives a save, and does not run again on one", async () => {
+      stubFetch(CHAPTERS, 200, ["planInOnePage"]);
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      const box = await screen.findByDisplayValue("Your plan holds.");
+      fireEvent.change(box, { target: { value: "my words" } });
+      fireEvent.blur(box);
+      await waitFor(() => expect(patchCalls().length).toBe(1));
+
+      expect(screen.getByText(/plan has changed since/i)).toBeTruthy();
+      expect(staleCalls().length).toBe(1);
+    });
+
+    /**
+     * ⭐ The one other moment the answer moves — and it is answered from the
+     * run's own response, not by asking again. The generate route already
+     * rebuilt the plan and stored the hash it read; asking the staleness route
+     * afterwards would rebuild the very same plan a second time, 4s warm and
+     * 23s cold, on the end of a wait the advisor is already sitting through.
+     */
+    it("takes the badge down for a chapter the run rewrote, without a second rebuild", async () => {
+      generatingOnly(["planInOnePage"], ["planInOnePage", "whatWeRecommend"]);
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      await screen.findAllByText(/plan has changed since/i);
+      fireEvent.click(screen.getByRole("button", { name: /generate all/i }));
+
+      await waitFor(() =>
+        expect(within(row("Your plan, in one page")).queryByText(/plan has changed/i)).toBeNull(),
+      );
+      expect(staleCalls().length).toBe(1);
+    });
+
+    // …and only those. A chapter the run skipped — nothing to recommend, no data
+    // behind it — was not rewritten, so if it was out of date it still is.
+    it("leaves the badge on a chapter the run did not write", async () => {
+      generatingOnly(["planInOnePage"], ["planInOnePage", "whatWeRecommend"]);
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      await screen.findAllByText(/plan has changed since/i);
+      fireEvent.click(screen.getByRole("button", { name: /generate all/i }));
+
+      await waitFor(() =>
+        expect(within(row("Your plan, in one page")).queryByText(/plan has changed/i)).toBeNull(),
+      );
+      expect(
+        within(row("What we're recommending, and why")).getByText(/plan has changed/i),
+      ).toBeTruthy();
+    });
+
+    /**
+     * A check that fails leaves the panel exactly as it was: the badge is advice
+     * about freshness, and every chapter is still readable, editable and
+     * saveable without it. It must not raise the alarm that means "your chapters
+     * did not load".
+     *
+     * ⚠️ The stale answer is deliberately settled on a TIMER, one macrotask
+     * behind the chapter list. Both requests go out together on mount, and the
+     * list's own success clears the panel message on its way in — so without the
+     * delay a panel that DID raise the alarm has it wiped before this can look,
+     * and the test passes on a bug. The console line is the synchronisation
+     * point: it only runs once the failure has actually been handled.
+     */
+    it("stays quiet when the check itself fails", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string) => {
+          if (isStaleUrl(url)) {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            return new Response(JSON.stringify({ error: "nope" }), { status: 500 });
+          }
+          return new Response(JSON.stringify({ scenarioId: "base", chapters: CHAPTERS }), {
+            status: 200,
+          });
+        }),
+      );
+      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      await waitFor(() =>
+        expect(console.error).toHaveBeenCalledWith(
+          expect.stringContaining("out of date"),
+          expect.anything(),
+        ),
+      );
+
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.queryByText(/plan has changed since/i)).toBeNull();
     });
   });
 

@@ -9,12 +9,11 @@ import { recordAudit } from "@/lib/audit";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { parseBody } from "@/lib/schemas/common";
 import { planStoryGenerateSchema } from "@/lib/schemas/plan-story";
-import { loadStoryContext } from "@/lib/presentations/story/load-context";
+import { loadStoryRun } from "@/lib/presentations/story/run-context";
 import { generateChapter } from "@/lib/presentations/story/generate";
 import { upsertGeneratedChapter } from "@/lib/presentations/story/repo";
 import { resolveStoryScenarioId } from "@/lib/presentations/story/scenario-scope";
 import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
-import { CHAPTER_IDS } from "@/lib/presentations/story/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 800;
@@ -37,39 +36,22 @@ export async function POST(
       return NextResponse.json({ error: scope.error }, { status: scope.status });
     }
     const { scenarioId } = scope;
-    const proposedRef = scenarioId === "base" ? null : scenarioId;
     // One value, read once: it changes the PROSE (via the prompt) and, since
     // 0240, which row that prose is stored on. Two reads is how those two
     // could ever disagree.
     const { documentRole } = parsed.data;
 
-    /**
-     * The chapters this run COULD narrate, so the loader can skip the solves
-     * behind facts nothing will read. On a base-only run that is both max-spend
-     * solves, since the chapter reading them requires a proposal.
-     *
-     * ⚠️ It is NOT `wanted` below, and it cannot be: that list reads
-     * `available` and `hasSomethingToPropose`, both derived from `ctx`, which is
-     * what this call RETURNS. So the list going in is derived from the REF
-     * alone, which is everything known before the facts exist.
-     *
-     * Deliberately looser as a result — a proposal carrying no changes still
-     * solves its max spend. That is the correct direction to be wrong in: the
-     * list must be a SUPERSET of what gets narrated, or a chapter is written
-     * from a pack missing its own facts and prints an honest empty state on a
-     * document handed to a client.
-     */
-    const candidates = CHAPTER_IDS.filter(
-      (c) => proposedRef != null || !CHAPTERS[c].requiresProposal,
-    );
-
-    const ctx = await loadStoryContext({
+    // The load, and the `candidates` list it is scoped to, live in
+    // `run-context.ts` — the staleness route has to rebuild the IDENTICAL
+    // context to compare a stored hash against, and two copies of these lines
+    // that drift by so much as a scenario label would report every chapter on
+    // the report out of date. Read the invariant on `StoryRun.candidates`
+    // before changing either.
+    const { ctx, candidates, voiceSamples } = await loadStoryRun({
       clientId: id,
       firmId,
-      proposedRef,
-      scenarioLabel: proposedRef ? "the proposed plan" : "Base Case",
+      scenarioId,
       documentRole,
-      chapters: candidates,
     });
 
     /**
@@ -120,7 +102,10 @@ export async function POST(
           clientId: id,
           chapterId,
           ctx,
-          voiceSamples: [],
+          // From the run, not a literal: they are an input to the stored
+          // `sourceHash`, and the staleness route rebuilds that hash from the
+          // same object (`run-context.ts`).
+          voiceSamples,
           force: parsed.data.force ?? false,
         }),
       ),

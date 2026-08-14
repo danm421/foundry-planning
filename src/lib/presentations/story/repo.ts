@@ -16,6 +16,17 @@ import type { GeneratedChapter } from "./generate";
  */
 export type DocumentRole = "standalone" | "frontMatter";
 
+/**
+ * Is this string one of them? Beside the type rather than in either route,
+ * because BOTH plan-story GETs parse the same query parameter — and a third
+ * register added to the type would otherwise have to be remembered in two
+ * predicates. Miss one and the chapter list refuses a role the staleness check
+ * accepts, so the panel lists rows it can never badge.
+ */
+export function isDocumentRole(value: string): value is DocumentRole {
+  return value === "standalone" || value === "frontMatter";
+}
+
 /** Render precedence: the advisor's edit, then the model, then the
  *  deterministic narrative. A whitespace-only edit is not an edit. */
 export function resolveChapterText(

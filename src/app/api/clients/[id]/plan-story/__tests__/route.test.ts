@@ -105,8 +105,10 @@ vi.mock("@/lib/presentations/story/generate", () => ({
 
 import { ForbiddenError } from "@/lib/authz";
 import { GET } from "../route";
+import { GET as GET_STALE } from "../stale/route";
 import { POST } from "../generate/route";
 import { PATCH } from "../[chapterId]/route";
+import { chapterSourceHash } from "@/lib/presentations/story/chapters/prompts";
 
 import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
 import { CHAPTER_IDS } from "@/lib/presentations/story/types";
@@ -338,6 +340,109 @@ describe("GET /api/clients/[id]/plan-story", () => {
   it("defaults a missing role to standalone", async () => {
     await GET(req("http://x/?scenarioId=base"), { params: Promise.resolve({ id: CLIENT_ID }) });
     expect(mocks.listStoryChapters).toHaveBeenCalledWith(CLIENT_ID, "base", "standalone");
+  });
+});
+
+/**
+ * The staleness endpoint. It exists SEPARATELY from the chapter list because
+ * answering it costs a whole story context — 23.2s cold, 4.0s warm, measured —
+ * and the panel reloads that list after every save.
+ *
+ * `loadStoryContext` is the mock every other test in this file uses, so the
+ * hashes below are real: `chapterSourceHash` runs for real over the same context
+ * the route is handed. What is NOT proved here is that the recomputed hash
+ * equals what a generation stores — that pin is `story/__tests__/run-context.test.ts`,
+ * against a real `generateChapter` result.
+ */
+describe("GET /api/clients/[id]/plan-story/stale", () => {
+  const stale = (query: string) =>
+    GET_STALE(req(`http://x/${query}`), { params: Promise.resolve({ id: CLIENT_ID }) });
+
+  /** The hash a generation run against `NO_FACTS` would have stored. */
+  const FRESH = chapterSourceHash("planInOnePage", NO_FACTS, []);
+
+  beforeEach(() => {
+    mocks.loadStoryContext.mockResolvedValue(NO_FACTS);
+  });
+
+  // Kills: dropping the `!access.ok` early return from the one read that then
+  // goes on to project another firm's household.
+  it("404s when the caller cannot see the client", async () => {
+    mocks.verifyClientAccess.mockResolvedValue({ ok: false });
+    const res = await stale("?scenarioId=base");
+    expect(res.status).toBe(404);
+    expect(mocks.listStoryChapters).not.toHaveBeenCalled();
+    expect(mocks.loadStoryContext).not.toHaveBeenCalled();
+  });
+
+  /**
+   * ⭐ Kills: loading the context unconditionally.
+   *
+   * A report nobody has generated has nothing that CAN be stale, and this is the
+   * common case — the panel asks on mount, which is usually the first time the
+   * advisor has opened it. Without the short circuit that mount costs twenty
+   * seconds of projections to answer with an empty list.
+   */
+  it("answers a never-generated report without rebuilding the plan", async () => {
+    mocks.listStoryChapters.mockResolvedValue([chapterRow({ sourceHash: null })]);
+    const res = await stale("?scenarioId=base");
+    expect(res.status).toBe(200);
+    expect((await res.json()).stale).toEqual([]);
+    expect(mocks.loadStoryContext).not.toHaveBeenCalled();
+  });
+
+  // Kills: comparing the wrong way round, or returning every stored chapter.
+  it("names the chapter whose stored hash no longer matches the plan", async () => {
+    mocks.listStoryChapters.mockResolvedValue([
+      chapterRow({ chapterId: "planInOnePage", sourceHash: "written-against-an-older-plan" }),
+      chapterRow({ chapterId: "whatYouHave", sourceHash: chapterSourceHash("whatYouHave", NO_FACTS, []) }),
+    ]);
+    const res = await stale("?scenarioId=base");
+    expect(await res.json()).toMatchObject({ stale: ["planInOnePage"] });
+  });
+
+  // Kills: flagging everything — a badge that is always on is one the advisor
+  // learns to ignore, which is worse than no badge at all.
+  it("flags nothing when the stored hashes still match", async () => {
+    mocks.listStoryChapters.mockResolvedValue([
+      chapterRow({ chapterId: "planInOnePage", sourceHash: FRESH }),
+    ]);
+    expect((await (await stale("?scenarioId=base")).json()).stale).toEqual([]);
+  });
+
+  // Kills: rebuilding the context from a different scenario than the rows were
+  // listed under. The two would then never agree and every chapter reads stale.
+  it("lists and rebuilds under the same scenario and register", async () => {
+    mocks.scenarioRows = [{ id: SCENARIO_ID }];
+    mocks.listStoryChapters.mockResolvedValue([chapterRow({ sourceHash: "old" })]);
+    await stale(`?scenarioId=${SCENARIO_ID}&documentRole=frontMatter`);
+    expect(mocks.listStoryChapters).toHaveBeenCalledWith(CLIENT_ID, SCENARIO_ID, "frontMatter");
+    expect(mocks.loadStoryContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientId: CLIENT_ID,
+        firmId: "firm_1",
+        proposedRef: SCENARIO_ID,
+        documentRole: "frontMatter",
+      }),
+    );
+  });
+
+  // Kills: taking the scenario on trust, as the chapter list does. That route
+  // only reads rows; this one goes on to LOAD the ref, and `loadStoryContext`
+  // degrades a snapshot to a proposal with no strategies — a context nothing
+  // was ever generated from, so every chapter would read stale.
+  it("refuses a snapshot ref rather than hashing against a degraded plan", async () => {
+    const res = await stale("?scenarioId=snap:abc");
+    expect(res.status).toBe(400);
+    expect(mocks.loadStoryContext).not.toHaveBeenCalled();
+  });
+
+  // Kills: guessing the preset. The two store separate rows, so the wrong guess
+  // compares one preset's hashes against the other's.
+  it("refuses an unrecognised role rather than defaulting", async () => {
+    const res = await stale("?scenarioId=base&documentRole=whatever");
+    expect(res.status).toBe(400);
+    expect(mocks.listStoryChapters).not.toHaveBeenCalled();
   });
 });
 
