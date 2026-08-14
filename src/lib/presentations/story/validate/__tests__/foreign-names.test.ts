@@ -77,6 +77,13 @@ describe("Gate 7 — a name from another household", () => {
     "Oliver Wyman ran the numbers before we did.",
     "Arthur Andersen is why the audit rules read the way they do.",
     "Hurricane Harvey is the reason that premium moved.",
+    // The last of them. Each of these four entries was dropped on a stated
+    // collision and had no line here until now — which made the drop an opinion
+    // rather than a curation, and left the dictionary mutation unable to see it.
+    "Ross Stores sits in the retail sleeve.",
+    "Milton Friedman said inflation is always and everywhere monetary.",
+    "Benjamin Graham would call that a margin of safety.",
+    "You will not be living the life of Riley on that.",
   ])("does not read an ordinary capitalised word as a person: %s", (prose) => {
     expect(GATE(prose, [])).toHaveLength(0);
   });
@@ -84,17 +91,37 @@ describe("Gate 7 — a name from another household", () => {
   /**
    * A capital INSIDE a word is not the start of a name.
    *
-   * Unbounded, `\p{Lu}\p{Ll}+` read "McDonald's" as "Mc" + "Donald" and
-   * "MacArthur" as "Mac" + "Arthur", so a household holding McDonald's had its
-   * chapter rejected — the exact over-fire this gate's design forbids.
+   * Unbounded, `\p{Lu}\p{Ll}+` read "McDonald's" as "Mc" + "Donald", so a
+   * household holding McDonald's had its chapter rejected — the exact over-fire
+   * this gate's design forbids.
+   *
+   * ⚠️ EVERY TAIL BELOW MUST BE A NAME STILL IN THE DICTIONARY, or the line
+   * passes for the wrong reason and pins nothing. The first version of this
+   * block used "MacArthur", and `arthur` left the dictionary in the same commit
+   * — the line went on passing while testing nothing at all. Tails here:
+   * Donald, Neil, Andrea, Maria.
    */
   it.each([
     "McDonald's stock is part of it.",
-    "The MacArthur grant is not income.",
+    "The MacNeil grant is not income.",
     "The DeAndrea position is small.",
+    "The DeMaria trust pays out first.",
   ])("does not read an interior capital as a name: %s", (prose) => {
     expect(GATE(prose, [])).toHaveLength(0);
   });
+
+  /**
+   * …and the same defect at the OTHER end of the word, which is the only thing
+   * the trailing lookahead catches. `\p{Ll}+`'s greed already handles a longer
+   * lowercase word ("Cooperative" is one token, never "Cooper"); what it cannot
+   * see is a capital butting straight up against the run.
+   */
+  it.each(["AmyCorp holds the lease.", "The AdaWorks position is small."])(
+    "does not read a name glued to a following capital: %s",
+    (prose) => {
+      expect(GATE(prose, [])).toHaveLength(0);
+    },
+  );
 
   // The boundary must not cost the gate the two REDs it exists for: a name at
   // the very start of the text, and a name mid-sentence after a space.

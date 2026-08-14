@@ -136,11 +136,19 @@ const FIGURE = String.raw`\$?\d+(?:,\d+)*(?:\.\d+)?(?:\s*(?:[KMB]\b|%))?\p{L}*`;
  * structure the model is being asked to copy. Scrubbed, every ordered list in
  * every sample turned into "That amount."
  *
- * Narrow on purpose. It requires the line start, a following space, and a digit
- * run ending in the marker punctuation, so "2035 was the year" and "1.5M" at the
- * head of a line are still figures.
+ * Narrow on purpose, and the DIGIT CAP is the load-bearing part of that. It
+ * requires the line start, a following space, and a run of at most two digits
+ * ending in the marker punctuation — so "2035 was the year" and "1.5M" at the
+ * head of a line are still figures, and so is a timeline written as a list:
+ *
+ *     2035. Work ends.
+ *     2040. Social Security starts.
+ *
+ * Uncapped, that reads as an ordered list and every year in it leaves the
+ * household intact. Two digits covers every real ordered list; a four-digit
+ * "item number" is a year.
  */
-const MARKDOWN_LIST_MARKER = String.raw`(?<![^\n])[ \t]*\d+[.)](?=[ \t])`;
+const MARKDOWN_LIST_MARKER = String.raw`(?<![^\n])[ \t]*\d{1,2}[.)](?=[ \t])`;
 
 /** What must SURVIVE first, so the figure branch never sees it. The capture is
  *  how the replacer tells "keep this" from "swap this". */
@@ -215,7 +223,11 @@ export function scrubSample(
       // "Susan's 401(k)" is a shape Gate 6 deliberately permits, so a harvested
       // chapter contains it and the swap above leaves "they's".
       .replace(/\bthey['’]s\b/giu, "their")
-      .replace(/[ \t]{2,}/gu, " ")
+      // Close the gap a removal leaves — but only INSIDE a line. Leading
+      // whitespace is indentation, and in CommonMark indentation is what nests a
+      // list; flattened, "- a" / "  - b" / "    - c" become three siblings, and
+      // the sample teaches the model a structure the advisor did not write.
+      .replace(/(?<=\S)[ \t]{2,}/gu, " ")
       .trim()
       .replace(STAND_IN_AT_SENTENCE_START, (_m, before: string, word: string) => (
         `${before}${word[0].toUpperCase()}${word.slice(1)}`

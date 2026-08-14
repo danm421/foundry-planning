@@ -141,11 +141,31 @@ describe("scrubSample", () => {
   // MARKER, so every numbered list came out as "That amount." A marker is
   // structure the model copies, and says nothing about a household.
   it("keeps an ordered-list marker, but not a figure that opens a line", () => {
-    expect(scrubSample("1. You own the boat\n2. You owe nothing", HOUSEHOLD)).toBe(
-      "1. You own the boat\n2. You owe nothing",
+    expect(scrubSample("1. You own the boat\n10. You owe nothing", HOUSEHOLD)).toBe(
+      "1. You own the boat\n10. You owe nothing",
     );
     expect(scrubSample("2035 was the year.", HOUSEHOLD)).toBe("That amount was the year.");
     expect(scrubSample("1.5M is the total.", HOUSEHOLD)).toBe("That amount is the total.");
+  });
+
+  // The marker exemption is what a leaked timeline hides behind. Uncapped, a
+  // model writing "2035. Work ends." got every year through the figure pass
+  // untouched — a figure surviving the one pass that exists to remove figures.
+  it.each([
+    ["2035. Work ends then.", "That amount. Work ends then."],
+    ["2035) Work ends then.", "That amount) Work ends then."],
+    ["  2035. Work ends then.", "That amount. Work ends then."],
+  ])("scrubs a year that is dressed as a list marker: %s", (input, expected) => {
+    expect(scrubSample(input, HOUSEHOLD)).toBe(expected);
+  });
+
+  // Indentation is what nests a list in CommonMark. Flattened, these three are
+  // siblings, and the sample teaches a structure the advisor never wrote.
+  it("keeps the indentation that nests a list", () => {
+    const nested = "- Cooper owns the boat\n  - Susan owns the house\n    - and the barn";
+    expect(scrubSample(nested, HOUSEHOLD)).toBe(
+      "- They owns the boat\n  - They owns the house\n    - and the barn",
+    );
   });
 
   /**

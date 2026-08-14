@@ -71,14 +71,16 @@ export function foreignNamesGate(firstNames: string[], householdText: string[] =
     //
     // ⚠️ BOUNDED ON BOTH SIDES, the same rule `scrub.ts#wordPattern` and
     // `generate.ts#mentionsName` keep. Unbounded, an interior capital reads as a
-    // token of its own: "McDonald's" yielded "Donald" and "MacArthur" yielded
-    // "Arthur", so a household holding McDonald's had its chapter rejected. The
-    // LOOKBEHIND is what fixes those two.
+    // token of its own: "McDonald's" yields "Donald" and "DeAndrea" yields
+    // "Andrea", so a household holding McDonald's had its chapter rejected. The
+    // LOOKBEHIND is what fixes those two, and both are pinned in the suite.
     //
     // The lookahead is the smaller half, because `\p{Ll}+` is greedy and already
     // runs to the end of a lowercase word — "Cooperative" is one token and never
     // "Cooper". What greed cannot see is a capital or a digit butting straight up
-    // against the run, so "AmyCorp" would otherwise report Amy.
+    // against the run, so "AmyCorp" would otherwise report Amy. That case is the
+    // only thing holding the lookahead up, so it is pinned too — without a test
+    // naming it, half this rule could be deleted and nothing would notice.
     //
     // Built per call: a `g` regex carries its own cursor, and one shared across
     // chapters would start reading the next one from wherever the last stopped.

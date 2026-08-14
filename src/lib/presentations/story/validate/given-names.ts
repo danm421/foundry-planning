@@ -279,6 +279,11 @@ const COMMON_US_GIVEN_NAMES = [
   "bryan",
   "calvin",
   "carl",
+  // Dropped in an earlier round on "hanging chad", then RESTORED: that phrase is
+  // lower case, and this gate only ever sees a capital. No collision line could
+  // be written for it, and by the rule above an entry whose exclusion cannot be
+  // demonstrated is an opinion rather than a curation.
+  "chad",
   "christopher",
   "clarence",
   "clifford",
