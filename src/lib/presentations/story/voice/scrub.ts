@@ -22,11 +22,32 @@
 // prompt an empty sample list. This is the pass that path is required to go
 // through, written before it, not after.
 
+function escapeLiteral(word: string): string {
+  return word.replace(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`);
+}
+
 /** A name has to match as a WORD. Same rule, same reason, as
  *  `generate.ts#mentionsName`: "Alan" is a substring of "balance". */
 function wordPattern(word: string): RegExp {
-  const escaped = word.replace(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`);
-  return new RegExp(String.raw`(?<![\p{L}\p{N}])${escaped}(?![\p{L}\p{N}])`, "giu");
+  return new RegExp(String.raw`(?<![\p{L}\p{N}])${escapeLiteral(word)}(?![\p{L}\p{N}])`, "giu");
+}
+
+/**
+ * The surname, in the shapes a chapter actually writes it: bare ("Sample"),
+ * possessive ("Sample's"), plural ("the Samples"), and wrapped in the framing
+ * `load-context.ts` builds EVERY household name with — `the ${lastName}
+ * household`.
+ *
+ * Absorbing the framing is the point. Swapping the surname alone turns "the
+ * Sample household" into "the <stand-in> household", a stand-in wedged inside a
+ * phrase that no longer parses. Taking the whole phrase leaves "the household",
+ * which is what the sentence meant.
+ */
+function surnamePattern(surname: string): RegExp {
+  return new RegExp(
+    String.raw`(?<![\p{L}\p{N}])(?:the\s+)?${escapeLiteral(surname)}s?(?:\s+(?:household|family))?(?![\p{L}\p{N}])`,
+    "giu",
+  );
 }
 
 /** "Cooper and Susan" → ["Cooper","Susan"]. The SAME split
@@ -40,11 +61,28 @@ function namesIn(firstNames: string): string[] {
 }
 
 /**
- * "the Sample household" → "Sample". The framing words are ordinary English and
- * must survive in the prose; only the proper noun in the middle is the
- * household's, so only that is worth searching the sample for.
+ * "the Sample household" → "Sample". Strips the framing off the stored household
+ * name to leave the proper noun, which is what `surnamePattern` is then built
+ * from — the framing is ordinary English and has to be matched loosely in the
+ * prose rather than looked for literally.
  */
 const HOUSEHOLD_FRAMING = /^(?:the\s+)?|(?:\s+(?:household|family|s))$/giu;
+
+/**
+ * Numbers that name a form or an account type rather than a household: `401(k)`,
+ * `403(b)`, `457(b)`, `529`, `1031`, `1040`, `1099`. They are the tax code —
+ * identical for every client, carrying nothing about this one — and they are
+ * among the commonest numerals in the corpus, so scrubbing them buys no safety
+ * and costs the vocabulary the sample was harvested for. The plan types are
+ * listed with and without their parentheses, because an advisor writes both.
+ *
+ * ⚠️ Guarded on BOTH sides, because a real figure can contain the same digits.
+ * The leading guard rejects a preceding `$`, digit, comma or point, so `$529K`
+ * and `$1,099` are not read as forms; the trailing guard rejects a following
+ * digit, comma, point, percent or magnitude letter, so `529,000` and `529K` are
+ * not either. Only the bare form survives.
+ */
+const TERM_OF_ART = String.raw`(?<![$\p{N},.])(?:(?:529|1031|1040|1099)(?![\p{N},.%KMB])|401\(k\)|401k|403\(b\)|403b|457\(b\)|457b)`;
 
 /**
  * A figure, in every shape this document writes and several it doesn't: `$2.4M`,
@@ -52,13 +90,28 @@ const HOUSEHOLD_FRAMING = /^(?:the\s+)?|(?:\s+(?:household|family|s))$/giu;
  * `validate/facts.ts#extractFigures` on purpose — that one decides what a MODEL
  * may quote from a pack we control, this one decides what leaves a household.
  *
- * The whitespace sits INSIDE the magnitude group ("96 %") rather than before it.
- * Outside, it is consumed even when no magnitude follows, so "in 2035 and" loses
- * the space and the stand-in welds itself to the next word. A sample exists to be
- * copied for its rhythm; prose full of run-together words teaches the model
- * damage, and no "the digits are gone" assertion can see it.
+ * Both ends are closed against welding the stand-in to a neighbouring word, and
+ * both were found by reading output rather than by an assertion:
+ *
+ *   LEADING   the whitespace sits INSIDE the magnitude group ("96 %"). Outside,
+ *             it is eaten even when no magnitude follows, so "in 2035 and" came
+ *             out as "in that amountand".
+ *   TRAILING  `\p{L}*` takes any letters glued to the digits, so an ordinal or a
+ *             decade goes whole — "January 1st" and "the mid-2030s" came out as
+ *             "that amountst" and "that amounts". It also guarantees the
+ *             character after a match is never a letter, which is what makes the
+ *             weld impossible rather than merely unobserved.
+ *
+ * A comma only counts as a thousands separator when digits follow it. Written
+ * `[\d,]*`, it also swallows the comma ENDING a clause — "Work ends in 2035, and
+ * we plan…" came out as one long unpunctuated run. Comma placement is rhythm,
+ * which is the one thing a sample is kept for.
  */
-const FIGURE_RE = /\$?\d[\d,]*(?:\.\d+)?(?:\s*(?:[KMB]\b|%))?/giu;
+const FIGURE = String.raw`\$?\d+(?:,\d+)*(?:\.\d+)?(?:\s*(?:[KMB]\b|%))?\p{L}*`;
+
+/** Terms of art first, so the figure branch never sees them. The capture is how
+ *  the replacer tells "keep this" from "swap this". */
+const SCRUBBABLE = new RegExp(String.raw`(${TERM_OF_ART})|${FIGURE}`, "giu");
 
 /** What replaces a removed token. A word, not a blank: the sentence has to keep
  *  its SHAPE, or the model is asked to copy the rhythm of prose full of holes.
@@ -66,6 +119,20 @@ const FIGURE_RE = /\$?\d[\d,]*(?:\.\d+)?(?:\s*(?:[KMB]\b|%))?/giu;
  *  length and cadence, and both survive the swap. */
 const NAME_STAND_IN = "they";
 const FIGURE_STAND_IN = "that amount";
+/** The household gets its own stand-in rather than the people's. Reusing "they"
+ *  produced "the they household", which is not a sentence in any register. */
+const HOUSEHOLD_STAND_IN = "the household";
+
+/**
+ * A stand-in that lands where a sentence begins has to look like one.
+ *
+ * Grammar is excused above — "they owns" still carries its cadence — but
+ * capitalisation is not: a lowercase sentence opener is a register defect, and
+ * register is the only thing this text is kept for. Only the four stand-ins this
+ * module itself inserts are touched, so the advisor's own prose is never
+ * "corrected".
+ */
+const STAND_IN_AT_SENTENCE_START = /(^|[.!?]\s+|\n\s*)(that amount|the household|their|they)\b/gu;
 
 export function scrubSample(
   text: string,
@@ -76,10 +143,10 @@ export function scrubSample(
     out = out.replace(wordPattern(name), NAME_STAND_IN);
   }
   const surname = household.householdName.replace(HOUSEHOLD_FRAMING, "").trim();
-  if (surname.length > 0) out = out.replace(wordPattern(surname), NAME_STAND_IN);
-  out = out.replace(FIGURE_RE, FIGURE_STAND_IN);
+  if (surname.length > 0) out = out.replace(surnamePattern(surname), HOUSEHOLD_STAND_IN);
+  out = out.replace(SCRUBBABLE, (_match, termOfArt: string | undefined) => termOfArt ?? FIGURE_STAND_IN);
   // A stand-in run together with its neighbour ("they, they") reads as damage
-  // rather than as prose; collapse the runs the two passes leave behind.
+  // rather than as prose; collapse what the name and figure passes leave behind.
   return (
     out
       // "Cooper and Susan, your plan…" is the one shape `prompts.ts` permits a
@@ -94,5 +161,8 @@ export function scrubSample(
       .replace(/\bthey['’]s\b/giu, "their")
       .replace(/[ \t]{2,}/gu, " ")
       .trim()
+      .replace(STAND_IN_AT_SENTENCE_START, (_m, before: string, word: string) => (
+        `${before}${word[0].toUpperCase()}${word.slice(1)}`
+      ))
   );
 }

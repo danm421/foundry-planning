@@ -14,8 +14,8 @@ export type { GateFailure, GateId, Validator } from "./types";
 export interface GateOptions {
   /**
    * The household's given names, split — Gates 6 and 7 are the gates that have
-   * to know who the reader is, and `Validator` has no room for it. Passed per
-   * call rather than by widening the four shipped signatures.
+   * to know who the reader is, and the `Validator` signature every gate shares
+   * has no room for it. Passed per call rather than widened into that signature.
    *
    * Defaulted to empty, and the two gates degrade differently on that default.
    * Gate 6 skips its name half and still runs the self-reference and
@@ -25,6 +25,17 @@ export interface GateOptions {
    * reason a caller that has one must pass it.
    */
   firstNames?: string[];
+  /**
+   * Text this household's own record supplied — goal names and strategy labels,
+   * both typed by hand and both reaching the prose. Gate 7 treats every word of
+   * it as a name it may not report.
+   *
+   * SEPARATE from `firstNames` on purpose, and not a widening of it: Gate 6
+   * reads that same field and means something far narrower by it — the people
+   * the chapter may address directly. A goal called "College for Emma" must not
+   * teach Gate 6 that "Emma" is a person this chapter can speak to.
+   */
+  householdText?: string[];
   /**
    * True for a chapter whose job is to NAME things — every strategy in a
    * proposal, every account a household owns. Two rules move for it, both
@@ -55,6 +66,10 @@ function gatesFor(enumerates: boolean): Validator[] {
 
 export function runGates(markdown: string, facts: Fact[], opts: GateOptions = {}): GateFailure[] {
   const names = opts.firstNames ?? [];
-  const gates = [...gatesFor(opts.enumerates ?? false), registerGate(names), foreignNamesGate(names)];
+  const gates = [
+    ...gatesFor(opts.enumerates ?? false),
+    registerGate(names),
+    foreignNamesGate(names, opts.householdText ?? []),
+  ];
   return gates.flatMap((gate) => gate(markdown, facts));
 }

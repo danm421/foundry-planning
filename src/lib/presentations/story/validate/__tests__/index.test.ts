@@ -51,6 +51,22 @@ describe("runGates — the two register gates", () => {
     expect(out).toEqual([]);
   });
 
+  // Gate 7 is only useful if it is in the ARRAY. Every other test of it calls
+  // the gate directly, so deleting `foreignNamesGate(...)` from `runGates` left
+  // the whole suite green.
+  it("reports a name from another household", () => {
+    const out = runGates("Cooper asked whether it holds.", facts, { firstNames: ["Alan"] });
+    expect(out.some((f) => f.gate === "foreignName")).toBe(true);
+  });
+
+  it("does not report a name the household's own goals supplied", () => {
+    const out = runGates("Cooper asked whether it holds.", facts, {
+      firstNames: ["Alan"],
+      householdText: ["A wedding for Cooper"],
+    });
+    expect(out.some((f) => f.gate === "foreignName")).toBe(false);
+  });
+
   it("still runs the four original gates", () => {
     const out = runGates("You have $3.4M saved.", facts, { firstNames: ["Cooper"] });
     expect(out.some((f) => f.gate === "facts")).toBe(true);

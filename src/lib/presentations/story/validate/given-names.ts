@@ -23,13 +23,14 @@
 // So this list under-fires by construction, and when an entry is arguable it is
 // left out.
 //
-// THE TEST APPLIED TO EVERY ENTRY: could an advisor write this word, capitalised,
-// in a chapter about a family's money? Anything that could is out —
+// THE TEST, APPLIED TO EVERY ENTRY IN EVERY GROUP BELOW: could an advisor write
+// this word, capitalised, in a chapter about a family's money? Anything that
+// could is out —
 //
 //   ordinary words     Will · Mark · Bill · Rich · Frank · Art · Grace · Hope ·
 //                      Faith · Rose · Guy · Don · Jack · Sue · Miles · Chance
 //   money words        Penny · Sterling · Cash · Bond · Buck · Grant · Max ·
-//                      Cliff · Trust · Rich
+//                      Cliff · Trust
 //   calendar           May · June · April · August · Dawn · Summer · Autumn
 //   objects & nature   Hazel · Ivy · Violet · Ruby · Amber · Olive · Lily ·
 //                      Iris · Holly · Willow · Pearl · Wren · Reed · Stone
@@ -37,21 +38,34 @@
 //   places             Austin · Madison · Charlotte · Savannah · Virginia ·
 //                      Georgia · Carolina · Phoenix · Aurora · Brooklyn
 //   firms, funds,      Charles (Schwab) · Edward (Jones) · Raymond / James
-//   people we quote    (Raymond James) · Morgan · Stanley · Merrill · Dean ·
-//                      Franklin · Russell (2000) · Lincoln · Jackson ·
-//                      Monte / Carlo (Carlo — Monte Carlo runs in every plan) ·
-//                      Warren (Buffett) · Jerome (Powell) · Edgar (the SEC's
-//                      filing system) · Troy (ounce)
+//   forms, and people  (Raymond James) · Morgan · Stanley · Merrill · Dean ·
+//   a report quotes    Franklin · Russell (2000) · Lincoln · Jackson · Lloyd's ·
+//                      John (Hancock) · Monte / Carlo (Monte Carlo runs in every
+//                      plan) · Warren (Buffett) · Jerome (Powell) · Milton
+//                      (Friedman) · Adam (Smith) · Benjamin (Graham, and the
+//                      Benjamins) · Gordon (growth model) · Kelly (criterion) ·
+//                      Taylor (rule) · Edgar (the SEC's filing system) ·
+//                      Troy (ounce)
+//   idioms             Sam (Uncle Sam) · Peter / Paul (robbing one to pay the
+//                      other) · Riley (the life of)
 //
-// ONE entry knowingly breaks that test: `cooper`. A cooper makes barrels, and
-// the word is dead in modern American prose — no chapter reaches for it. It is
-// here because Cooper is this app's own audit household and the leak Gate 7 was
-// written against. It is the exception that marks the line, not a licence.
+// ⚠️ That list is the second pass, not the first. The first version of this file
+// applied the test to the common-names groups and NOT to the app-fixture group,
+// and shipped `john` and `sam` — "The John Hancock policy pays out first" and
+// "Uncle Sam takes his cut" both rejected a correct chapter. If you add an entry,
+// say the sentence out loud.
 //
-// GIVEN names only. A surname that leaks — "the Bradshaws" — is not in here and
-// Gate 7 will not see it. `voice/scrub.ts` takes the household name out of a
-// sample, and that is the pass surnames are covered by, once the harvest path
-// calls it.
+// TWO entries knowingly fail the test, both of them this app's own audit
+// households — the likeliest real leak, and the reason to accept the collision:
+//
+//   cooper  a cooper makes barrels; the noun is dead in modern American prose.
+//   alan    Alan Greenspan, a Fed chair a client chapter has no reason to name
+//           (unlike Powell, who is current — `jerome` is out).
+//
+// GIVEN names only. A surname that leaks is not in here and Gate 7 will not see
+// it; `voice/scrub.ts` takes the household name out of a sample — bare,
+// possessive and plural — and that is the pass surnames are covered by, once the
+// harvest path calls it.
 
 /** Names this app has actually seen — its dev fixtures and its audit
  *  households. These are the ones a real leak is most likely to be made of,
@@ -64,8 +78,8 @@ const SEEN_IN_THIS_APP = [
   "ann",
   "anna",
   "avery",
-  "caroline",
   "carol",
+  "caroline",
   "casey",
   "cooper",
   "dan",
@@ -73,15 +87,12 @@ const SEEN_IN_THIS_APP = [
   "emma",
   "jane",
   "jim",
-  "john",
   "jonathan",
   "jordan",
   "kevin",
   "linda",
   "michael",
   "noah",
-  "riley",
-  "sam",
   "sarah",
   "susan",
   "teresa",
@@ -117,8 +128,8 @@ const COMMON_US_GIVEN_NAMES = [
   "chloe",
   "christina",
   "christine",
-  "clara",
   "claire",
+  "clara",
   "colleen",
   "cora",
   "courtney",
@@ -171,7 +182,6 @@ const COMMON_US_GIVEN_NAMES = [
   "kathleen",
   "kathryn",
   "kayla",
-  "kelly",
   "kimberly",
   "kristen",
   "laura",
@@ -233,7 +243,6 @@ const COMMON_US_GIVEN_NAMES = [
   "stella",
   "stephanie",
   "tara",
-  "taylor",
   "terri",
   "theresa",
   "tiffany",
@@ -247,7 +256,6 @@ const COMMON_US_GIVEN_NAMES = [
   "yvonne",
   // men
   "aaron",
-  "adam",
   "albert",
   "alexander",
   "alfred",
@@ -257,7 +265,6 @@ const COMMON_US_GIVEN_NAMES = [
   "arnold",
   "arthur",
   "barry",
-  "benjamin",
   "bradley",
   "brandon",
   "brian",
@@ -265,7 +272,6 @@ const COMMON_US_GIVEN_NAMES = [
   "bryan",
   "calvin",
   "carl",
-  "chad",
   "christopher",
   "clarence",
   "clifford",
@@ -303,7 +309,6 @@ const COMMON_US_GIVEN_NAMES = [
   "gerald",
   "gilbert",
   "glenn",
-  "gordon",
   "gregory",
   "harold",
   "harry",
@@ -339,7 +344,6 @@ const COMMON_US_GIVEN_NAMES = [
   "leo",
   "leonard",
   "lewis",
-  "lloyd",
   "logan",
   "louis",
   "lucas",
@@ -355,7 +359,6 @@ const COMMON_US_GIVEN_NAMES = [
   "maurice",
   "melvin",
   "miguel",
-  "milton",
   "mitchell",
   "nathan",
   "nathaniel",
@@ -368,10 +371,8 @@ const COMMON_US_GIVEN_NAMES = [
   "oscar",
   "owen",
   "patrick",
-  "paul",
   "pedro",
   "perry",
-  "peter",
   "philip",
   "phillip",
   "rafael",
@@ -387,7 +388,6 @@ const COMMON_US_GIVEN_NAMES = [
   "roger",
   "roland",
   "ronald",
-  "ross",
   "roy",
   "ruben",
   "rudy",
@@ -415,8 +415,8 @@ const COMMON_US_GIVEN_NAMES = [
   "travis",
   "tyler",
   "vincent",
-  "walter",
   "wallace",
+  "walter",
   "wayne",
   "wesley",
   "william",
@@ -424,8 +424,87 @@ const COMMON_US_GIVEN_NAMES = [
   "zachary",
 ];
 
+/**
+ * Names the two groups above miss for a reason worth naming: they are drawn from
+ * the common US lists, which are overwhelmingly Anglo. Left there, Gate 7 would
+ * protect a household called Sarah and Michael and do NOTHING AT ALL for one
+ * called Priya and Raj — under-firing everywhere is the accepted cost, but
+ * under-firing along one demographic line is a different thing and not one to
+ * ship.
+ *
+ * Not exhaustive, and cannot be: it closes the systematic half of the gap, and
+ * the accented spellings are listed beside the unaccented ones because a
+ * household writes its own name either way. Every entry went through the same
+ * test as the rest — `alma` ("alma mater"), `jun` (a month abbreviated) and `ye`
+ * ("ye olde") were dropped by it.
+ */
+const GIVEN_NAMES_BEYOND_THE_ANGLO_SET = [
+  // South Asian
+  "aditya",
+  "ananya",
+  "arjun",
+  "kavita",
+  "meera",
+  "priya",
+  "raj",
+  "ravi",
+  "sanjay",
+  "vikram",
+  // East Asian
+  "akira",
+  "chen",
+  "hana",
+  "jing",
+  "kenji",
+  "mei",
+  "ming",
+  "sakura",
+  "wei",
+  "yuki",
+  // Middle Eastern
+  "ahmed",
+  "aisha",
+  "ali",
+  "fatima",
+  "hassan",
+  "ibrahim",
+  "khalid",
+  "nadia",
+  "tariq",
+  "yasmin",
+  // Hispanic, beyond the names the US lists already carry
+  "alejandro",
+  "carmen",
+  "guadalupe",
+  "josé",
+  "maría",
+  "mateo",
+  "rosa",
+  "sebastian",
+  "sofía",
+  "valentina",
+  // African and African-American
+  "aaliyah",
+  "amara",
+  "imani",
+  "jamal",
+  "kwame",
+  "malik",
+  "tyrone",
+  "zuri",
+  // Slavic
+  "dmitri",
+  "mikhail",
+  "natasha",
+  "olga",
+  "svetlana",
+  "tatiana",
+];
+
 /** Lowercased on the way in, so an entry typed with a capital cannot become a
  *  name the gate looks up and can never find. */
 export const GIVEN_NAMES: ReadonlySet<string> = new Set(
-  [...SEEN_IN_THIS_APP, ...COMMON_US_GIVEN_NAMES].map((name) => name.toLowerCase()),
+  [...SEEN_IN_THIS_APP, ...COMMON_US_GIVEN_NAMES, ...GIVEN_NAMES_BEYOND_THE_ANGLO_SET].map((name) =>
+    name.toLowerCase(),
+  ),
 );

@@ -8,8 +8,21 @@ describe("scrubSample", () => {
     expect(scrubSample("Cooper, your plan holds up.", HOUSEHOLD)).not.toContain("Cooper");
   });
 
+  // `not.toContain` is blind to WHAT replaced it: "the they household" satisfies
+  // it. `load-context.ts` builds every household name as "the <lastName>
+  // household", so this phrase is the common case and the output text is the
+  // assertion.
   it("removes the household name", () => {
-    expect(scrubSample("This is what the Sample household owns.", HOUSEHOLD)).not.toContain("Sample");
+    expect(scrubSample("This is what the Sample household owns.", HOUSEHOLD)).toBe(
+      "This is what the household owns.",
+    );
+  });
+
+  it("removes the surname on its own, and in the plural", () => {
+    expect(scrubSample("Sample's plan holds.", HOUSEHOLD)).toBe("The household's plan holds.");
+    expect(scrubSample("The Samples are ahead of it.", HOUSEHOLD)).toBe(
+      "The household are ahead of it.",
+    );
   });
 
   it("removes every figure, because a figure is about one plan and no other", () => {
@@ -48,19 +61,69 @@ describe("scrubSample", () => {
   // Every one of them satisfies the assertions above and every one of them
   // teaches the model damage, which is what a sample is copied for.
 
-  // "in that amountand we plan" — a stand-in welded to the next word.
-  it("leaves a space where a figure had one", () => {
-    const out = scrubSample("Work ends in 2035 and we plan through 2070.", HOUSEHOLD);
-    expect(out).toContain("and we plan through");
+  // "in that amountand we plan" — a stand-in welded to the next word. The
+  // ordinal and the decade are the same defect on the other end of the figure,
+  // and the `amount\p{L}` guard below always could have caught them: the
+  // original input simply never contained one.
+  it.each([
+    ["Work ends in 2035 and we plan through 2070.", "and we plan through"],
+    ["The window opens January 1st and closes in June.", "and closes in June"],
+    ["Most of the growth lands in the mid-2030s, not before.", "not before"],
+  ])("leaves no letter welded to a stand-in: %s", (input, survives) => {
+    const out = scrubSample(input, HOUSEHOLD);
+    expect(out).toContain(survives);
     expect(out).not.toMatch(/amount\p{L}/u);
+    expect(out).not.toMatch(/\d/u);
   });
+
+  // A number that names a form is not a figure about anybody. Scrubbing it buys
+  // no safety and costs the most common vocabulary in the corpus.
+  it.each([
+    ["Susan's 401(k) does most of the lifting.", "Their 401(k) does most of the lifting."],
+    ["You opened a 529 for the kids.", "You opened a 529 for the kids."],
+    ["The 1099 arrives before the 1040 is due.", "The 1099 arrives before the 1040 is due."],
+  ])("keeps a term of art: %s", (input, expected) => {
+    expect(scrubSample(input, HOUSEHOLD)).toBe(expected);
+  });
+
+  // Found the same way: `[\d,]*` ate the comma CLOSING a clause, so the sample
+  // lost the punctuation that carries its rhythm.
+  it("keeps the comma that ends a clause after a figure", () => {
+    expect(scrubSample("Work ends in 2035, and we plan through 2070.", HOUSEHOLD)).toBe(
+      "Work ends in that amount, and we plan through that amount.",
+    );
+  });
+
+  // …and the other direction, which is what makes the exclusion safe: a real
+  // figure that merely contains those digits must still go.
+  it.each(["You hold $529K there.", "It costs $1,099 a year.", "You owe 401,000 on it."])(
+    "still scrubs a figure that only looks like a form: %s",
+    (input) => {
+      expect(scrubSample(input, HOUSEHOLD)).not.toMatch(/\d/u);
+    },
+  );
 
   // "they and they, your plan holds." — and this is a COMMON case: addressing
   // both names is the one shape `prompts.ts` permits a name in at all.
   it("collapses a two-person address to one stand-in", () => {
     expect(scrubSample("Cooper and Susan, your plan holds.", HOUSEHOLD)).toBe(
-      "they, your plan holds.",
+      "They, your plan holds.",
     );
+  });
+
+  // Grammar is excused; capitalisation is not. This text's only job is to model
+  // register, and a lowercase sentence opener is a register defect.
+  it("capitalises a stand-in that opens a sentence", () => {
+    expect(scrubSample("Cooper, here's the short version.", HOUSEHOLD)).toBe(
+      "They, here's the short version.",
+    );
+    expect(scrubSample("It holds. Cooper asked us to check.", HOUSEHOLD)).toBe(
+      "It holds. They asked us to check.",
+    );
+  });
+
+  it("leaves a stand-in mid-sentence alone", () => {
+    expect(scrubSample("We told Cooper it holds.", HOUSEHOLD)).toBe("We told they it holds.");
   });
 
   // …but two figures are two figures. Collapsing them would eat half a sentence.
@@ -74,6 +137,6 @@ describe("scrubSample", () => {
   // chapter contains it.
   it("writes a possessive as a possessive", () => {
     const out = scrubSample("Susan's account does the lifting.", HOUSEHOLD);
-    expect(out).toBe("their account does the lifting.");
+    expect(out).toBe("Their account does the lifting.");
   });
 });

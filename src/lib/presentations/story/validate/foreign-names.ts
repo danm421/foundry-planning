@@ -29,8 +29,38 @@
 import { GIVEN_NAMES } from "./given-names";
 import type { GateFailure, Validator } from "./types";
 
-export function foreignNamesGate(firstNames: string[]): Validator {
-  const ours = new Set(firstNames.map((n) => n.toLowerCase()));
+/** Every word of the household's own text, lowercased. A WORD, not a substring:
+ *  the same boundary rule the rest of this module keeps, reached by splitting
+ *  rather than by scanning because the lookup runs once per token. */
+function wordsIn(text: string[]): string[] {
+  return text.join(" ").toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+}
+
+/** "A" · "A and B" · "A, B and C". The message is reused verbatim in the retry
+ *  prompt, so the model reads it and it has to be a sentence. */
+function joinNames(names: string[]): string {
+  if (names.length < 2) return names.join("");
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/**
+ * @param firstNames the household's given names, split.
+ * @param householdText text the household's own record supplied — goal names and
+ * strategy labels. Optional, and empty is the safe default in the sense that it
+ * only ever makes the gate stricter.
+ */
+export function foreignNamesGate(firstNames: string[], householdText: string[] = []): Validator {
+  // ONE allowlist from two sources. The second is the load-bearing one: a goal
+  // called "College for Emma" is a NAME THE HOUSEHOLD TYPED, and `types.ts`
+  // calls that "the one thing on chapter 1 that must reach the client
+  // unaltered". Without it this gate rejects the chapter for quoting the
+  // client's own words, the retry tells the model to use no other person's
+  // name, and the client's daughter is edited out of their own plan.
+  //
+  // Every WORD of that text, not just the names in it: which words are people is
+  // exactly what cannot be known here, and a word that is not in the dictionary
+  // was never going to be reported anyway.
+  const allowed = new Set([...firstNames.map((n) => n.toLowerCase()), ...wordsIn(householdText)]);
   return (markdown: string): GateFailure[] => {
     // Deduplicated, and ONE failure for all of them: each message is reused
     // verbatim in the single retry prompt, and a name repeated four times is
@@ -44,17 +74,19 @@ export function foreignNamesGate(firstNames: string[]): Validator {
     for (let m = word.exec(markdown); m !== null; m = word.exec(markdown)) {
       const token = m[0];
       const lower = token.toLowerCase();
-      if (ours.has(lower)) continue;
+      if (allowed.has(lower)) continue;
       if (!GIVEN_NAMES.has(lower)) continue;
       found.add(token);
     }
     if (found.size === 0) return [];
+    const names = [...found];
     return [
       {
         gate: "foreignName",
         message:
-          `You named ${[...found].join(", ")}, who is not part of this household. ` +
-          "Write only about the people this plan is for, and use no other person's name.",
+          `You named ${joinNames(names)}, who ${names.length === 1 ? "is" : "are"} not part of ` +
+          "this household. Write only about the people this plan is for, and use no other " +
+          "person's name.",
       },
     ];
   };

@@ -343,7 +343,16 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
    * `buildChapterPrompt` reads, so what the model is told and what it is judged
    * against cannot come apart.
    */
-  const gateOpts = { firstNames: firstNamesOf(ctx), enumerates: chapterEnumerates(chapterId) };
+  const gateOpts = {
+    firstNames: firstNamesOf(ctx),
+    enumerates: chapterEnumerates(chapterId),
+    // Gate 7 reports a name that is not this household's, and a goal or a
+    // strategy label is where a household names somebody who is not one of the
+    // two adults — a child, a parent, a beneficiary. Both are typed by hand and
+    // both reach the prose, so without this the gate rejects a chapter for
+    // quoting the client's own words.
+    householdText: [...ctx.goals.map((g) => g.name), ...ctx.strategies.map((s) => s.name)],
+  };
 
   try {
     const attempt1 = await draft(first);
