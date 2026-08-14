@@ -71,8 +71,36 @@ describe("Gate 7 — a name from another household", () => {
     // …and the same class, caught by reading the list rather than by a report:
     "Robbing Peter to pay Paul is not a plan, and Adam Smith knew it.",
     "Lloyd's will not write it, and the Gordon growth model says why.",
+    // The last four of that class. Each one is here because the entry it names
+    // was dropped, and a drop with no covering line is an opinion, not curation.
+    "You hold shares in Rio Tinto and Marks and Spencer.",
+    "Oliver Wyman ran the numbers before we did.",
+    "Arthur Andersen is why the audit rules read the way they do.",
+    "Hurricane Harvey is the reason that premium moved.",
   ])("does not read an ordinary capitalised word as a person: %s", (prose) => {
     expect(GATE(prose, [])).toHaveLength(0);
+  });
+
+  /**
+   * A capital INSIDE a word is not the start of a name.
+   *
+   * Unbounded, `\p{Lu}\p{Ll}+` read "McDonald's" as "Mc" + "Donald" and
+   * "MacArthur" as "Mac" + "Arthur", so a household holding McDonald's had its
+   * chapter rejected — the exact over-fire this gate's design forbids.
+   */
+  it.each([
+    "McDonald's stock is part of it.",
+    "The MacArthur grant is not income.",
+    "The DeAndrea position is small.",
+  ])("does not read an interior capital as a name: %s", (prose) => {
+    expect(GATE(prose, [])).toHaveLength(0);
+  });
+
+  // The boundary must not cost the gate the two REDs it exists for: a name at
+  // the very start of the text, and a name mid-sentence after a space.
+  it("still fires at the start of the text and after a space", () => {
+    expect(GATE("Cooper, your plan holds up well.", [])).toHaveLength(1);
+    expect(GATE("The change works the way it did for Susan.", [])).toHaveLength(1);
   });
 
   it("reports every foreign name once, in a single failure", () => {

@@ -67,10 +67,22 @@ export function foreignNamesGate(firstNames: string[], householdText: string[] =
     // still one thing to fix.
     const found = new Set<string>();
     // Capitalised, then lower case — "Cooper", "Susan". A word in caps ("IRA")
-    // is an initialism, not a name, and never reaches the dictionary. Built per
-    // call: a `g` regex carries its own cursor, and one shared across chapters
-    // would start reading the next one from wherever the last one stopped.
-    const word = /\p{Lu}\p{Ll}+/gu;
+    // is an initialism, not a name, and never reaches the dictionary.
+    //
+    // ⚠️ BOUNDED ON BOTH SIDES, the same rule `scrub.ts#wordPattern` and
+    // `generate.ts#mentionsName` keep. Unbounded, an interior capital reads as a
+    // token of its own: "McDonald's" yielded "Donald" and "MacArthur" yielded
+    // "Arthur", so a household holding McDonald's had its chapter rejected. The
+    // LOOKBEHIND is what fixes those two.
+    //
+    // The lookahead is the smaller half, because `\p{Ll}+` is greedy and already
+    // runs to the end of a lowercase word — "Cooperative" is one token and never
+    // "Cooper". What greed cannot see is a capital or a digit butting straight up
+    // against the run, so "AmyCorp" would otherwise report Amy.
+    //
+    // Built per call: a `g` regex carries its own cursor, and one shared across
+    // chapters would start reading the next one from wherever the last stopped.
+    const word = /(?<![\p{L}\p{N}])\p{Lu}\p{Ll}+(?![\p{L}\p{N}])/gu;
     for (let m = word.exec(markdown); m !== null; m = word.exec(markdown)) {
       const token = m[0];
       const lower = token.toLowerCase();

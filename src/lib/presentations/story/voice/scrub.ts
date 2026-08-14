@@ -33,19 +33,40 @@ function wordPattern(word: string): RegExp {
 }
 
 /**
- * The surname, in the shapes a chapter actually writes it: bare ("Sample"),
- * possessive ("Sample's"), plural ("the Samples"), and wrapped in the framing
- * `load-context.ts` builds EVERY household name with — `the ${lastName}
- * household`.
+ * The household name as `load-context.ts` composes every one of them — `the
+ * ${lastName} household`, give or take a plural.
  *
  * Absorbing the framing is the point. Swapping the surname alone turns "the
  * Sample household" into "the <stand-in> household", a stand-in wedged inside a
  * phrase that no longer parses. Taking the whole phrase leaves "the household",
  * which is what the sentence meant.
+ *
+ * ⚠️ The framing is REQUIRED here, and this pass runs FIRST — before the given
+ * names — because the two can be the same word. `lastName` is nullable
+ * (`engine/types.ts`), and `load-context.ts` falls back to the FIRST name, so a
+ * client with no surname on file has a household called "the Cooper household".
+ * Let the names pass reach it first and it becomes "the they household".
+ */
+function framedHouseholdPattern(surname: string): RegExp {
+  return new RegExp(
+    String.raw`(?<![\p{L}\p{N}])(?:the\s+)?${escapeLiteral(surname)}s?\s+(?:household|family)(?![\p{L}\p{N}])`,
+    "giu",
+  );
+}
+
+/**
+ * The surname loose in the prose — bare ("Sample"), possessive ("Sample's"),
+ * plural ("the Samples").
+ *
+ * Runs LAST, after the given names, for the other half of the same reason: when
+ * the two are the same word, "Cooper, your plan holds" is the person being
+ * addressed and wants "they", not "the household". By the time this pass runs,
+ * the framed phrase is already gone and every given name is spent, so what is
+ * left really is the surname used on its own.
  */
 function surnamePattern(surname: string): RegExp {
   return new RegExp(
-    String.raw`(?<![\p{L}\p{N}])(?:the\s+)?${escapeLiteral(surname)}s?(?:\s+(?:household|family))?(?![\p{L}\p{N}])`,
+    String.raw`(?<![\p{L}\p{N}])(?:the\s+)?${escapeLiteral(surname)}s?(?![\p{L}\p{N}])`,
     "giu",
   );
 }
@@ -109,9 +130,24 @@ const TERM_OF_ART = String.raw`(?<![$\p{N},.])(?:(?:529|1031|1040|1099)(?![\p{N}
  */
 const FIGURE = String.raw`\$?\d+(?:,\d+)*(?:\.\d+)?(?:\s*(?:[KMB]\b|%))?\p{L}*`;
 
-/** Terms of art first, so the figure branch never sees them. The capture is how
- *  the replacer tells "keep this" from "swap this". */
-const SCRUBBABLE = new RegExp(String.raw`(${TERM_OF_ART})|${FIGURE}`, "giu");
+/**
+ * `1.` opening a line is a list marker, not a figure — the same argument as the
+ * terms of art, one level up: it carries nothing about a household, and it is
+ * structure the model is being asked to copy. Scrubbed, every ordered list in
+ * every sample turned into "That amount."
+ *
+ * Narrow on purpose. It requires the line start, a following space, and a digit
+ * run ending in the marker punctuation, so "2035 was the year" and "1.5M" at the
+ * head of a line are still figures.
+ */
+const MARKDOWN_LIST_MARKER = String.raw`(?<![^\n])[ \t]*\d+[.)](?=[ \t])`;
+
+/** What must SURVIVE first, so the figure branch never sees it. The capture is
+ *  how the replacer tells "keep this" from "swap this". */
+const SCRUBBABLE = new RegExp(
+  String.raw`((?:${TERM_OF_ART})|(?:${MARKDOWN_LIST_MARKER}))|${FIGURE}`,
+  "giu",
+);
 
 /** What replaces a removed token. A word, not a blank: the sentence has to keep
  *  its SHAPE, or the model is asked to copy the rhythm of prose full of holes.
@@ -124,25 +160,45 @@ const FIGURE_STAND_IN = "that amount";
 const HOUSEHOLD_STAND_IN = "the household";
 
 /**
+ * Where a sentence can begin in MARKDOWN, which is what a chapter is: after a
+ * full stop, on a new line, and after the marker that opens a heading, a bullet,
+ * a numbered item or a quote. Headings and bullets are most of a chapter's
+ * structure, so a rule that only knew about full stops left "## their Plan" and
+ * "- they owns the boat" exactly as they were.
+ */
+const SENTENCE_OPENER = String.raw`(?:^|[.!?]["'’)\]]?\s+|\n)[ \t]*(?:#{1,6}[ \t]+|[-*+][ \t]+|\d+\.[ \t]+|>[ \t]*)*`;
+
+/**
  * A stand-in that lands where a sentence begins has to look like one.
  *
  * Grammar is excused above — "they owns" still carries its cadence — but
  * capitalisation is not: a lowercase sentence opener is a register defect, and
- * register is the only thing this text is kept for. Only the four stand-ins this
- * module itself inserts are touched, so the advisor's own prose is never
- * "corrected".
+ * register is the only thing this text is kept for.
+ *
+ * It matches the four stand-ins by their WORDS, and cannot tell one this module
+ * inserted from the same word the advisor typed: a stray lowercase "they" that
+ * opened one of their sentences is capitalised too. That is a typo being fixed
+ * rather than a voice being altered, and it is the price of not tracking the
+ * provenance of every token — worth paying, but it is not "never touches their
+ * prose".
  */
-const STAND_IN_AT_SENTENCE_START = /(^|[.!?]\s+|\n\s*)(that amount|the household|their|they)\b/gu;
+const STAND_IN_AT_SENTENCE_START = new RegExp(
+  String.raw`(${SENTENCE_OPENER})(that amount|the household|their|they)\b`,
+  "gu",
+);
 
 export function scrubSample(
   text: string,
   household: { firstNames: string; householdName: string },
 ): string {
-  let out = text;
+  const surname = household.householdName.replace(HOUSEHOLD_FRAMING, "").trim();
+  // ORDER IS LOAD-BEARING, and only when the surname and a given name are the
+  // same word — which `load-context.ts` produces whenever `lastName` is null.
+  // Framed household first, then the people, then whatever surname is left.
+  let out = surname.length > 0 ? text.replace(framedHouseholdPattern(surname), HOUSEHOLD_STAND_IN) : text;
   for (const name of namesIn(household.firstNames)) {
     out = out.replace(wordPattern(name), NAME_STAND_IN);
   }
-  const surname = household.householdName.replace(HOUSEHOLD_FRAMING, "").trim();
   if (surname.length > 0) out = out.replace(surnamePattern(surname), HOUSEHOLD_STAND_IN);
   out = out.replace(SCRUBBABLE, (_match, termOfArt: string | undefined) => termOfArt ?? FIGURE_STAND_IN);
   // A stand-in run together with its neighbour ("they, they") reads as damage

@@ -126,6 +126,50 @@ describe("scrubSample", () => {
     expect(scrubSample("We told Cooper it holds.", HOUSEHOLD)).toBe("We told they it holds.");
   });
 
+  // A chapter is MARKDOWN, and a heading or a bullet is where most of its
+  // sentences start. A rule that only knew about full stops left these two.
+  it.each([
+    ["## Cooper and Susan's Plan", "## Their Plan"],
+    ["- Cooper owns the boat", "- They owns the boat"],
+    ["1. Cooper owns the boat", "1. They owns the boat"],
+    ["> Cooper owns the boat", "> They owns the boat"],
+  ])("capitalises a stand-in after a markdown opener: %s", (input, expected) => {
+    expect(scrubSample(input, HOUSEHOLD)).toBe(expected);
+  });
+
+  // Found by the ordered-list case above: the figure pass was eating the list
+  // MARKER, so every numbered list came out as "That amount." A marker is
+  // structure the model copies, and says nothing about a household.
+  it("keeps an ordered-list marker, but not a figure that opens a line", () => {
+    expect(scrubSample("1. You own the boat\n2. You owe nothing", HOUSEHOLD)).toBe(
+      "1. You own the boat\n2. You owe nothing",
+    );
+    expect(scrubSample("2035 was the year.", HOUSEHOLD)).toBe("That amount was the year.");
+    expect(scrubSample("1.5M is the total.", HOUSEHOLD)).toBe("That amount is the total.");
+  });
+
+  /**
+   * `lastName` is nullable (`engine/types.ts`) and `load-context.ts` falls back
+   * to the FIRST name, so a real client with no surname on file has a household
+   * called "the Cooper household" — the household name and a given name are then
+   * the SAME WORD, and whichever pass runs first consumes it.
+   */
+  describe("when the household name is built from the first name", () => {
+    const NO_SURNAME = { firstNames: "Cooper", householdName: "the Cooper household" };
+
+    it("still reads as a household, not as a person", () => {
+      expect(scrubSample("This is what the Cooper household owns.", NO_SURNAME)).toBe(
+        "This is what the household owns.",
+      );
+    });
+
+    // …and the other half: the same word addressing the PERSON still gets the
+    // person's stand-in, which is why the framed pass requires its framing.
+    it("still reads as a person when it is used as one", () => {
+      expect(scrubSample("Cooper, your plan holds.", NO_SURNAME)).toBe("They, your plan holds.");
+    });
+  });
+
   // …but two figures are two figures. Collapsing them would eat half a sentence.
   it("keeps both halves of a range", () => {
     expect(scrubSample("You land between $2M and $3M.", HOUSEHOLD)).toBe(

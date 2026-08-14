@@ -40,14 +40,22 @@
 //   firms, funds,      Charles (Schwab) · Edward (Jones) · Raymond / James
 //   forms, and people  (Raymond James) · Morgan · Stanley · Merrill · Dean ·
 //   a report quotes    Franklin · Russell (2000) · Lincoln · Jackson · Lloyd's ·
-//                      John (Hancock) · Monte / Carlo (Monte Carlo runs in every
-//                      plan) · Warren (Buffett) · Jerome (Powell) · Milton
+//                      John (Hancock) · Spencer (Marks &) · Oliver (Wyman) ·
+//                      Arthur (Andersen) · Monte / Carlo (Monte Carlo runs in
+//                      every plan) · Warren (Buffett) · Jerome (Powell) · Milton
 //                      (Friedman) · Adam (Smith) · Benjamin (Graham, and the
 //                      Benjamins) · Gordon (growth model) · Kelly (criterion) ·
 //                      Taylor (rule) · Edgar (the SEC's filing system) ·
-//                      Troy (ounce)
+//                      Troy (ounce) · Harvey (a named hurricane, which lands in
+//                      the insurance chapter of all places)
 //   idioms             Sam (Uncle Sam) · Peter / Paul (robbing one to pay the
 //                      other) · Riley (the life of)
+//
+// Two entries sit inside classes this list names and are IN anyway, because the
+// test is about the word as a money chapter would write it, not about the
+// category: `heather` (the plant is never capitalised in one) and `jordan` (the
+// country, which a US household's plan has no occasion to name — unlike Virginia
+// or Georgia, which state-tax prose names constantly, and which are out).
 //
 // ⚠️ That list is the second pass, not the first. The first version of this file
 // applied the test to the common-names groups and NOT to the app-fixture group,
@@ -263,7 +271,6 @@ const COMMON_US_GIVEN_NAMES = [
   "andrew",
   "anthony",
   "arnold",
-  "arthur",
   "barry",
   "bradley",
   "brandon",
@@ -312,7 +319,6 @@ const COMMON_US_GIVEN_NAMES = [
   "gregory",
   "harold",
   "harry",
-  "harvey",
   "hector",
   "henry",
   "herbert",
@@ -366,7 +372,6 @@ const COMMON_US_GIVEN_NAMES = [
   "nelson",
   "nicholas",
   "norman",
-  "oliver",
   "omar",
   "oscar",
   "owen",
@@ -403,7 +408,6 @@ const COMMON_US_GIVEN_NAMES = [
   "shawn",
   "sidney",
   "simon",
-  "spencer",
   "stephen",
   "steven",
   "stuart",
