@@ -27,3 +27,70 @@ describe("remainingGrantValue", () => {
     expect(remainingGrantValue(plan(g), 2026, PSY)).toBeCloseTo(100 * (100 - 60)); // intrinsic 40/sh
   });
 });
+
+/** A vesting row is a QUANTITY of shares, not a single state. Each of these
+ *  rows is partly one thing and partly another; the old per-row boolean
+ *  collapsed them and either double-counted or lost the remainder. */
+describe("remainingGrantValue — rows that are partly acquired", () => {
+  const tranche = (id: string, vestYear: number, shares: number, ex = 0, sold = 0) =>
+    ({ id, vestYear, shares, sharesExercised: ex, sharesSold: sold, strategy: null });
+
+  it("counts an 83(b) grant once — the timeline acquires the WHOLE grant on row 0", () => {
+    // 40,000 shares at $25 across four rows, granted before the plan starts, so
+    // the whole position is seeded into the destination account at plan start.
+    // The timeline emits actions for tranches[0] only, so rows 1..3 used to be
+    // valued a second time on top of that account: $750,000 of phantom equity.
+    const g: EquityGrant = {
+      id: "g83", grantNumber: "RS-83b", grantType: "rsu", grantYear: 2024, sharesGranted: 40_000,
+      has83bElection: true, fmvAtGrant: 25, strikePrice: null, strikeDiscountPct: null,
+      expirationYear: null, strategy: null, plannedEvents: [],
+      tranches: [2025, 2026, 2027, 2028].map((y, i) => tranche(`t${i}`, y, 10_000)),
+    };
+    const p = plan(g);
+    p.pricePerShare = 25;
+    expect(remainingGrantValue(p, 2026, PSY)).toBeCloseTo(0);
+    expect(remainingGrantValue(p, 2040, PSY)).toBeCloseTo(0);
+  });
+
+  it("drops a fully-sold RSU row instead of carrying it at FMV forever", () => {
+    // Vested in 2025 and every share sold before the plan. The remainder is 0,
+    // so the timeline emits nothing at all for the row — which the boolean read
+    // as "not yet acquired" and valued at full FMV, permanently.
+    const g: EquityGrant = {
+      id: "gsold", grantNumber: "RS-2", grantType: "rsu", grantYear: 2024, sharesGranted: 1000,
+      has83bElection: false, fmvAtGrant: null, strikePrice: null, strikeDiscountPct: null,
+      expirationYear: null, strategy: null, plannedEvents: [],
+      tranches: [tranche("t1", 2025, 1000, 0, 1000)],
+    };
+    expect(remainingGrantValue(plan(g), 2026, PSY)).toBeCloseTo(0);
+    expect(remainingGrantValue(plan(g), 2040, PSY)).toBeCloseTo(0);
+  });
+
+  it("keeps the unexercised remainder of a partly-exercised option row", () => {
+    // 1,000 options at a $10 strike, 400 already exercised and held. Seeding
+    // those 400 flipped the row's boolean, zeroing the 600 shares still under
+    // option — $54,000 of intrinsic value missing until the exercise year.
+    const g: EquityGrant = {
+      id: "gpart", grantNumber: "NQ-1", grantType: "nqso", grantYear: 2024, sharesGranted: 1000,
+      has83bElection: false, fmvAtGrant: null, strikePrice: 10, strikeDiscountPct: null,
+      expirationYear: 2034, strategy: { exerciseTiming: "year_before_expiration" }, plannedEvents: [],
+      tranches: [tranche("t1", 2025, 1000, 400, 0)],
+    };
+    const p = plan(g);
+    expect(remainingGrantValue(p, 2026, PSY)).toBeCloseTo(600 * (100 - 10)); // 54,000
+    expect(remainingGrantValue(p, 2033, PSY)).toBeCloseTo(0);                // exercised → out
+  });
+
+  it("prices the remainder at the requested year, so a balance can be stamped at year-end", () => {
+    const g: EquityGrant = {
+      id: "gfut", grantNumber: "RS-3", grantType: "rsu", grantYear: 2024, sharesGranted: 1000,
+      has83bElection: false, fmvAtGrant: null, strikePrice: null, strikeDiscountPct: null,
+      expirationYear: null, strategy: null, plannedEvents: [],
+      tranches: [tranche("t1", 2030, 1000)],
+    };
+    const p = plan(g);
+    p.growthRate = 0.07;
+    expect(remainingGrantValue(p, 2026, PSY)).toBeCloseTo(1000 * 100);        // start-of-year default
+    expect(remainingGrantValue(p, 2026, PSY, 2027)).toBeCloseTo(1000 * 107);  // grown through year-end
+  });
+});

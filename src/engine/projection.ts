@@ -1883,8 +1883,20 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // module already moved acquired shares into the destination taxable account).
     // Overwrite AFTER the growth loop so the value isn't double-grown — the
     // valuation projects FMV/intrinsic from the start-year price itself.
+    //
+    // Shares are COUNTED as of `year` (a tranche vesting next year is still in
+    // the grant) but PRICED at `year + 1`, the year-end share price, so this
+    // balance is stamped grown-through-year-end like every other account above.
+    // Pricing it at the year-start price made shares pick up a full year of
+    // growth the moment they moved into the destination account — a step in net
+    // worth with no economic event behind it.
     for (const plan of equityPlans) {
-      accountBalances[plan.accountId] = remainingGrantValue(plan, year, planSettings.planStartYear);
+      accountBalances[plan.accountId] = remainingGrantValue(
+        plan,
+        year,
+        planSettings.planStartYear,
+        year + 1,
+      );
     }
 
     // ── Stress test — one-time market crash ─────────────────────────────────

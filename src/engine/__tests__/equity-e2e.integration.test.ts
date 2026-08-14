@@ -282,9 +282,16 @@ describe("equity compensation — end-to-end projection", () => {
 
     // Year 2026 (pre-vest): all 6,000 shares are still unacquired. RSU at FMV,
     // ISO at intrinsic (FMV − strike). Destination is empty.
+    //
+    // Priced at the year-END share price — fmv(2027), not fmv(2026) — because
+    // this is a BALANCE, and the growth loop above stamps every other account
+    // grown through year-end. Pricing it at the year-start FMV made the shares
+    // pick up a full year of growth the moment they moved into the destination
+    // account (which the growth loop does grow), stepping net worth up with no
+    // economic event.
     const y2026 = byYear.get(2026)!;
     const expectedUnacquired2026 =
-      RSU_SHARES * fmv(2026) + ISO_SHARES * Math.max(0, fmv(2026) - ISO_STRIKE);
+      RSU_SHARES * fmv(2027) + ISO_SHARES * Math.max(0, fmv(2027) - ISO_STRIKE);
     expect(y2026.portfolioAssets.stockOptions[SO_ACCOUNT_ID]).toBeCloseTo(
       expectedUnacquired2026,
       0,
