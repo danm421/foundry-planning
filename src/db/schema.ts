@@ -3224,9 +3224,9 @@ export const storyVoiceProfiles = pgTable(
      * the model as an instruction, so it is meant to stay short — around 2,000
      * characters, about three paragraphs, is already more guidance than a
      * system prompt can absorb. That bound is NOT enforced here: this is a
-     * plain `text` column with no length limit and no CHECK. Holding the line
-     * is meant to be the writing route's job, in its Zod schema — that route
-     * does not exist yet.
+     * plain `text` column with no length limit and no CHECK. The bound is held
+     * by the writing route's Zod schema instead — `storyVoiceProfilePutSchema`
+     * in `lib/schemas/story-voice.ts`, behind `PUT /api/story-voice`.
      */
     styleNote: text("style_note").notNull().default(""),
     updatedBy: text("updated_by"),
@@ -3247,11 +3247,12 @@ export const storyVoiceProfiles = pgTable(
  * nothing rejected a leaked NAME until Gate 7 (`validate/foreign-names.ts`).
  *
  * This table and its repo do NOT validate `text` — that is a contract on the
- * CALLER, not an invariant this schema enforces today. The only intended
- * writer is the samples route (not yet built), and only after it runs the
- * scrubber (`voice/scrub.ts`, also not yet built) on the way in. Storing the
- * advisor's raw writing and scrubbing on read was considered and rejected: a
- * row would then sit in this table, readable into another household's
+ * CALLER, not an invariant this schema enforces today. The only writer is
+ * `POST /api/story-voice/samples`, which runs the scrubber (`voice/scrub.ts`)
+ * on the way in; `insertVoiceSample` is called from that handler and nowhere
+ * else, and the samples PATCH route deliberately has no `text` field. Storing
+ * the advisor's raw writing and scrubbing on read was considered and rejected:
+ * a row would then sit in this table, readable into another household's
  * prompt, for however long it took to get around to scrubbing it — with the
  * Cooper name in it the whole time.
  *

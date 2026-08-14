@@ -449,7 +449,17 @@ export type AuditAction =
   // makes model calls, so it is audited like the other LLM actions above.
   | "plan_story.generated"
   | "plan_story.chapter_edited"
-  | "plan_story.chapter_reviewed";
+  | "plan_story.chapter_reviewed"
+  // Plan Story voice — the advisor's style note and the writing samples the
+  // model is shown. Audited because every ENABLED sample is sent to the model
+  // while writing OTHER households' reports, so who added one, and who switched
+  // it on, is the evidence trail for how a client's report came to read the way
+  // it does. `sample_enabled` covers switching a sample OFF as well and carries
+  // the new state in metadata, the same shape as `scenario_change.set_enabled`.
+  | "story_voice.profile_updated"
+  | "story_voice.sample_added"
+  | "story_voice.sample_enabled"
+  | "story_voice.sample_deleted";
 
 type Args = {
   action: AuditAction;

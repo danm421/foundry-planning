@@ -17,10 +17,10 @@
 // which is exactly what `prompts.ts` asks the model to copy: "Copy their rhythm
 // and register, not their content."
 //
-// Nothing calls this yet. The harvest path that stores a scrubbed chapter as an
-// exemplar arrives with the rest of Wave B; `run-context.ts` still hands the
-// prompt an empty sample list. This is the pass that path is required to go
-// through, written before it, not after.
+// ONE caller, and that is the guarantee: `POST /api/story-voice/samples` runs
+// this on the way in, and it is the only handler that calls
+// `insertVoiceSample`. Nothing scrubs on read, because a row that reached the
+// table unscrubbed would already be readable into another household's prompt.
 
 function escapeLiteral(word: string): string {
   return word.replace(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`);
