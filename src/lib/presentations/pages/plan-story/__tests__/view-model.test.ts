@@ -647,11 +647,16 @@ describe("one sheet per chapter, by construction", () => {
   });
 
   it("caps the AI-off recommendation narrative at the paragraph ceiling", () => {
-    // Eleven strategies, the Cooper shape. The narrator writes one short
-    // paragraph each; four are dropped as restatements of their cards.
+    // Eleven strategies, the Cooper shape. `detail` is a real, groundable clause
+    // — "Claim age: 67 → 70" carries no dollar/percent/year figure (an age is
+    // deliberately not one, per `validate/facts.ts`'s FIGURE_RE), so it grounds
+    // with no `facts` needed, and `describe()` writes it onto both the card and
+    // the paragraph. That is what lets `restatesCard` genuinely drop the four
+    // paragraphs that restate their own card, leaving seven — which the
+    // paragraph ceiling then caps to three.
     const strategies = Array.from({ length: 11 }, (_, i) => ({
       name: `Strategy ${i + 1}`,
-      rows: [row({ what: "Annual amount", area: "Savings", detail: [] })],
+      rows: [row({ what: "Annual amount", area: "Savings", detail: ["Claim age: 67 → 70"] })],
     }));
     const chapter = recommend(
       buildPlanStoryData(
@@ -660,6 +665,12 @@ describe("one sheet per chapter, by construction", () => {
       ),
     );
     expect(chapter.paragraphs.length).toBeLessThanOrEqual(MAX_PARAGRAPHS_WITH_CARDS);
+    // None of the surviving paragraphs belong to a strategy that has a card —
+    // proof the drop is `restatesCard` finding a restatement, not just the
+    // paragraph cap taking the first three off the raw eleven.
+    for (const paragraph of chapter.paragraphs) {
+      expect(chapter.strategies.some((s) => paragraph.startsWith(s.name))).toBe(false);
+    }
     // What was dropped is SAID. The card overflow leads, since it can say how many.
     expect(chapter.overflowNote).not.toBe("");
   });
