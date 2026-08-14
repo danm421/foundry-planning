@@ -277,12 +277,13 @@ describe("Topbar", () => {
     const menu = container.querySelector("[role='menu'][aria-label='Assets sections']")!;
 
     // Visibility is CSS-driven, so the class list is what the component controls:
-    // focus-within is what opens the flyout for a keyboard user.
-    expect(menu.className).toContain("group-focus-within/tab:visible");
+    // `.nav-flyout` is the rule that opens on hover and on focus-within, the
+    // latter being how a keyboard user gets in.
+    expect(menu.className).toContain("nav-flyout");
 
     // Activating the tab dismisses its own flyout so it doesn't linger after nav.
     fireEvent.click(assets);
-    expect(menu.className).not.toContain("group-focus-within/tab:visible");
+    expect(menu.className).not.toContain("nav-flyout");
 
     // Returning to the tab must restore it. onMouseLeave is the only other reset
     // and never fires for a keyboard-only user, which would strand it closed.
@@ -290,7 +291,24 @@ describe("Topbar", () => {
     // act() because, unlike fireEvent, a raw .focus() is not auto-wrapped, so
     // the resulting state update would not flush before the assertion.
     act(() => assets.focus());
-    expect(menu.className).toContain("group-focus-within/tab:visible");
+    expect(menu.className).toContain("nav-flyout");
+  });
+
+  it("keeps a nested view flyout inside its trigger's hover host, and lets it linger", () => {
+    vi.mocked(usePathname).mockReturnValue("/clients/c1/details");
+    const { container } = renderTopbar();
+    const nested = container.querySelector("[role='menu'][aria-label='Income Tax views']")!;
+
+    // Hover follows the DOM, not the layout box. The panel opens beside its row,
+    // so being a descendant of the hovered host is the only thing keeping it open
+    // while the pointer travels across to it.
+    const host = nested.closest(".nav-flyout-host");
+    expect(host).not.toBeNull();
+    expect(host!.querySelector("a[aria-haspopup='menu']")?.textContent?.trim()).toBe("Income Tax");
+
+    // Reaching anything below its first item means crossing the sibling rows
+    // underneath, so the panel has to outlive the crossing.
+    expect(nested.className).toContain("nav-flyout-lingers");
   });
 
   it("renders Portal tab linking to /clients/:id/portal", () => {

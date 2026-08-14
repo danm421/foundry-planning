@@ -6,12 +6,14 @@ import {
 } from "@/lib/presentations/investment-option-catalog";
 import type { ScenarioOption } from "@/components/scenario/scenario-picker-dropdown";
 import type { EntityPickerOption } from "@/lib/presentations/entity-picker-options";
+import type { ProposalOption } from "@/lib/presentations/investment-proposal-bundle";
 
 interface PresentationOptionsValue {
   investmentCatalog: InvestmentOptionCatalog;
   scenarios: ScenarioOption[];
   clientId: string;
   entities?: EntityPickerOption[];
+  proposals?: ProposalOption[];
 }
 
 const Ctx = createContext<PresentationOptionsValue | null>(null);
@@ -40,4 +42,8 @@ export function useClientId(): string {
 
 export function useEntityOptions(): EntityPickerOption[] {
   return useContext(Ctx)?.entities ?? [];
+}
+
+export function useProposalOptions(): ProposalOption[] {
+  return useContext(Ctx)?.proposals ?? [];
 }

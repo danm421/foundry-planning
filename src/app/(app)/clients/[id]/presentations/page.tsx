@@ -14,6 +14,7 @@ import { listDismissedSlugs } from "@/lib/presentations/builtin-templates-repo";
 import { partitionBuiltInRows } from "@/lib/presentations/builtin-templates";
 import { listInvestmentOptionCatalog } from "@/lib/presentations/investment-option-catalog";
 import { loadEntityPickerOptions } from "@/lib/presentations/entity-picker-options";
+import { loadProposalPickerOptions } from "@/lib/presentations/investment-proposal-bundle";
 import { PresentationsLauncher } from "./launcher";
 import ScenarioDrawerShell from "@/components/scenario/scenario-drawer-shell";
 
@@ -39,7 +40,7 @@ export default async function PresentationsPage({
     .limit(1);
   if (!clientRow) notFound();
 
-  const [scenarioRows, snapshotRows, templates, investmentCatalog, primaryContactRows, entityPickerOptions, dismissedSlugs] = await Promise.all([
+  const [scenarioRows, snapshotRows, templates, investmentCatalog, primaryContactRows, entityPickerOptions, dismissedSlugs, proposalOptions] = await Promise.all([
     db
       .select({
         id: scenariosTable.id,
@@ -70,6 +71,7 @@ export default async function PresentationsPage({
       .limit(1),
     loadEntityPickerOptions(clientId, firmId),
     listDismissedSlugs(firmId, userId),
+    loadProposalPickerOptions(clientId),
   ]);
 
   const clientLastName = primaryContactRows[0]?.lastName ?? "";
@@ -87,6 +89,7 @@ export default async function PresentationsPage({
         initialTemplates={{ ...templates, builtIn, builtInHidden }}
         investmentCatalog={investmentCatalog}
         entities={entityPickerOptions}
+        proposals={proposalOptions}
       />
     </ScenarioDrawerShell>
   );
