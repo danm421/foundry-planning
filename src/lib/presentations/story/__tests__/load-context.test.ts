@@ -149,6 +149,14 @@ const li = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/insurance-policies/load-li-inventory", () => li);
 
+// The advisor's next steps. Mocked at the module rather than at `@/db` because
+// the query and its mapping have their own suite (`load-next-steps.test.ts`);
+// what this file is for is WHEN the loader calls it and where the answer lands.
+const steps = vi.hoisted(() => ({
+  loadStoryNextSteps: vi.fn(async () => [{ text: "Send us last year's return", owner: "Client", when: "" }]),
+}));
+vi.mock("../load-next-steps", () => steps);
+
 // Same call as the balance-sheet builders above: the Goals board has its own
 // suite, and the fake tree here carries no `planSettings` for it to read. What
 // this file is for is what the LOADER does with the result — which cards become
@@ -257,6 +265,7 @@ beforeEach(() => {
   fx.estate = {};
   fx.estateCalls = [];
   li.loadLifeInsuranceInventory.mockClear();
+  steps.loadStoryNextSteps.mockClear();
   // The Monte-Carlo-failure path logs; keep the suite's output clean while
   // still asserting the failure was recorded rather than silently swallowed.
   errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -500,6 +509,83 @@ describe("loadStoryContext", () => {
       await load([]);
 
       expect(li.loadLifeInsuranceInventory).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * The one chapter whose content the advisor writes. Not facts and not prose:
+   * the steps reach the client unaltered, so all this loader owes them is the
+   * read, the base plan to resolve their tokens against, and a place on the
+   * context for the checklist layout to find them.
+   */
+  describe("the advisor's next steps", () => {
+    const load = (chapters?: readonly ChapterId[]) =>
+      loadStoryContext({
+        clientId: "c1",
+        firmId: "f1",
+        proposedRef: null,
+        scenarioLabel: "Base Case",
+        documentRole: "standalone",
+        chapters,
+      });
+
+    it("carries them onto the context", async () => {
+      const ctx = await load();
+      expect(ctx.nextSteps).toEqual([{ text: "Send us last year's return", owner: "Client", when: "" }]);
+    });
+
+    /**
+     * The BASE plan, and this client. A step's merge tokens are facts about the
+     * household — "the year you stop working" — so resolving them against
+     * whichever proposal happened to be in the deck would make one action item
+     * read differently on every export.
+     */
+    it("resolves their tokens against the base plan", async () => {
+      fx.years = { base: BASE_YEARS, "sc-1": PROPOSED_YEARS };
+      fx.mc = { base: 0.72 };
+
+      await loadStoryContext({
+        clientId: "c1",
+        firmId: "f1",
+        proposedRef: "sc-1",
+        scenarioLabel: "Retire at 62",
+        documentRole: "standalone",
+      });
+
+      expect(steps.loadStoryNextSteps).toHaveBeenCalledWith("c1", {
+        clientData: expect.objectContaining({ scenarioId: "base" }),
+        projection: { years: BASE_YEARS },
+        monteCarlo: { successRate: 0.72 },
+      });
+    });
+
+    /** Absent, never 0%. The confidence tokens resolve to nothing when Monte
+     *  Carlo did not run, exactly as the confidence FACTS are withheld. */
+    it("hands the tokens no confidence rather than a zero when Monte Carlo fails", async () => {
+      await load();
+      expect(steps.loadStoryNextSteps).toHaveBeenCalledWith("c1", expect.objectContaining({ monteCarlo: null }));
+    });
+
+    it("skips the read for a report that does not print the chapter", async () => {
+      const ctx = await load(["planInOnePage", "whatYouHave"]);
+
+      expect(steps.loadStoryNextSteps).not.toHaveBeenCalled();
+      expect(ctx.nextSteps).toEqual([]);
+    });
+
+    it("runs it when the chapter is on the list", async () => {
+      await load(["planInOnePage", "whatHappensNext"]);
+      expect(steps.loadStoryNextSteps).toHaveBeenCalled();
+    });
+
+    /**
+     * ⚠️⚠️ Absent means all, the same rule the solves follow — and the stakes
+     * are higher here. A skipped solve leaves a figure out; skipped steps print
+     * "nothing's been written down yet" over a list the advisor did write.
+     */
+    it("runs it for a caller that names no chapters at all", async () => {
+      await load();
+      expect(steps.loadStoryNextSteps).toHaveBeenCalled();
     });
   });
 

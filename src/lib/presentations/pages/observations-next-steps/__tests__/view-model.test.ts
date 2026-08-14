@@ -3,7 +3,7 @@ import type { ClientData } from "@/engine/types";
 import type { ProjectionResult } from "@/engine/projection";
 import type { TokenContext } from "@/lib/plan-text/tokens";
 import { OBSERVATION_TOPICS } from "@/lib/schemas/observations";
-import type { Block, Run } from "../../blank/markdown-blocks";
+import { blocksToPlainText } from "../../blank/markdown-blocks";
 import { buildObservationsPageData, type ObservationsRowInput } from "../view-model";
 import { OBSERVATIONS_PAGE_OPTIONS_DEFAULT } from "../options-schema";
 
@@ -39,14 +39,9 @@ const projection = { years: [firstYear] } as unknown as ProjectionResult;
 
 const ctx: TokenContext = { clientData, projection };
 
-function flattenText(blocks: Block[]): string {
-  return blocks
-    .map((b) => {
-      const runs: Run[] = b.type === "list" ? b.items.flat() : b.runs;
-      return runs.map((r) => r.text).join("");
-    })
-    .join(" ");
-}
+/** The block model's own flattener — the same one the Plan Story's checklist
+ *  reads a next step's text through. */
+const flattenText = blocksToPlainText;
 
 // 2 observations across 2 topics (one body carries a {{net_worth}} token) +
 // 1 done next step. `estate` intentionally sorts before `cash-flow` in

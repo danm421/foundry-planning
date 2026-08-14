@@ -39,6 +39,25 @@ export function parseMarkdownToBlocks(md: string): Block[] {
   return blocks;
 }
 
+/**
+ * The words, without the markdown — for the surfaces that print a block model as
+ * plain text rather than as styled runs.
+ *
+ * Lives here, with the model it flattens: `markdown-pdf.tsx` renders runs as
+ * styled `<Text>` and cannot answer this, so every caller that needs a string
+ * was writing its own three-line version. A list's items are joined with a space
+ * so two of them do not run together into one word.
+ */
+export function blocksToPlainText(blocks: Block[]): string {
+  return blocks
+    .map((block) => {
+      const runs = block.type === "list" ? block.items : [block.runs];
+      return runs.map((r) => r.map((run) => run.text).join("")).join(" ");
+    })
+    .join(" ")
+    .trim();
+}
+
 function nodeToBlock(node: MdNode): Block | null {
   switch (node.type) {
     case "heading": {

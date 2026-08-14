@@ -1,7 +1,7 @@
 // The chapter list, and everything the rest of the report needs to know about a
 // chapter without importing it: its heading, the layout that prints it, the
 // AI-off narrator, and the one line that tells the model what it is for.
-import type { ChapterId, StoryContext } from "../types";
+import { CHAPTER_IDS, type ChapterId, type StoryContext } from "../types";
 import { narratePlanInOnePage } from "./plan-in-one-page";
 import { narrateWhatWerePlanningFor } from "./what-were-planning-for";
 import { narrateWhereTheMoneyGoes } from "./where-the-money-goes";
@@ -14,6 +14,7 @@ import { narrateWhatsLeftForPeople } from "./whats-left-for-people";
 import { narrateWhatYoullPayInTax } from "./what-youll-pay-in-tax";
 import { narrateProtectingYourFamily } from "./protecting-your-family";
 import { narrateHealthCareCosts } from "./health-care-costs";
+import { narrateWhatHappensNext } from "./what-happens-next";
 
 export type ChapterLayout = "heroProse" | "twoUp" | "strategyCards" | "checklist";
 
@@ -90,6 +91,7 @@ export const NARRATED_CHAPTERS: readonly ChapterId[] = [
   "whatYoullPayInTax",
   "protectingYourFamily",
   "healthCareCosts",
+  "whatHappensNext",
 ];
 
 function notYetWritten(id: ChapterId): (ctx: StoryContext) => string[] {
@@ -239,7 +241,7 @@ export const CHAPTERS: Record<ChapterId, ChapterDef> = {
     id: "whatHappensNext",
     title: "What happens next",
     layout: "checklist",
-    narrate: notYetWritten("whatHappensNext"),
+    narrate: narrateWhatHappensNext,
     requiresProposal: false,
     coverage: false,
     brief: "What each of us does next, and by when. One line of lead-in, then the steps.",
@@ -275,4 +277,56 @@ const ENUMERATING_LAYOUTS: readonly ChapterLayout[] = ["strategyCards", "checkli
 
 export function chapterEnumerates(chapterId: ChapterId): boolean {
   return ENUMERATING_LAYOUTS.includes(CHAPTERS[chapterId].layout);
+}
+
+/**
+ * The chapters printed as a list of the advisor's own next steps.
+ *
+ * Exported for `load-context.ts`, which skips the `plan_observations` read when
+ * no chapter on the report can print it — the same shape as `COVER_CHAPTERS` and
+ * `SPEND_CHAPTERS`, and derived here for the same reason. The consumers are
+ * `pages/plan-story/view-model.ts` and `chapter-pdf.tsx`, and BOTH branch on
+ * `layout === "checklist"`. Gating on a chapter-id literal instead would survive
+ * a rename (the union checks that) but not a layout reassignment: a second
+ * checklist chapter would render `story.nextSteps` while the loader, handed an
+ * explicit chapter list, had skipped the read — printing "nothing's been written
+ * down yet" over a list the advisor did write.
+ */
+export const CHECKLIST_CHAPTERS: readonly ChapterId[] = CHAPTER_IDS.filter(
+  (id) => CHAPTERS[id].layout === "checklist",
+);
+
+/**
+ * What to ask the model for, by LAYOUT — the one instruction in `prompts.ts`
+ * that cannot be the same sentence for every chapter.
+ *
+ * `pages/plan-story/view-model.ts` gives a checklist chapter 35 words against a
+ * full sheet's 300 and prints "there's more here than fits this page" over
+ * whatever it drops. Ask that chapter for four paragraphs and the trim note
+ * becomes its normal ending rather than its exception, on the one sheet whose
+ * real content is the list underneath it.
+ *
+ * A `Record`, not a branch in `prompts.ts`: it lives beside the layouts it keys
+ * on, and a fifth layout has to answer this question rather than inheriting an
+ * ask that was written for a different sheet.
+ *
+ * ⚠️ The WORDS, never a number read from the budget. `prompts.ts` records the
+ * measured finding that a number in this prompt acts as an anchor the model
+ * writes past, so the two are tuned independently and deliberately.
+ *
+ * ⚠️ `twoUp` is 130 words against the same "2 to 4 short paragraphs" — eight of
+ * the fourteen chapters, and still owed. Left as it shipped rather than fixed
+ * blind: changing it re-prosecutes eight landed chapters and needs a model run
+ * to judge, which this task is not.
+ */
+const OUTPUT_ASK: Record<ChapterLayout, string> = {
+  heroProse: "Output: clean Markdown, 2 to 4 short paragraphs, no headings, no preamble.",
+  twoUp: "Output: clean Markdown, 2 to 4 short paragraphs, no headings, no preamble.",
+  strategyCards: "Output: clean Markdown, 2 to 4 short paragraphs, no headings, no preamble.",
+  checklist:
+    "Output: clean Markdown, ONE short paragraph of at most two sentences, no headings, no preamble. Do not list the steps themselves — they are printed under your text by the page layout.",
+};
+
+export function chapterOutputAsk(chapterId: ChapterId): string {
+  return OUTPUT_ASK[CHAPTERS[chapterId].layout];
 }

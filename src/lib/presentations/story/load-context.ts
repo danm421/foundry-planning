@@ -1,7 +1,11 @@
-// The single IO boundary of the story core. Loads base (and optionally
-// proposed), reads Monte Carlo THROUGH THE COMPUTE CACHE so the render step
-// reuses it rather than paying for a second identical simulation, describes the
-// scenario's changes, and hands everything to the pure builders.
+// Where the story context is ASSEMBLED, and most of its IO. Loads base (and
+// optionally proposed), reads Monte Carlo THROUGH THE COMPUTE CACHE so the
+// render step reuses it rather than paying for a second identical simulation,
+// describes the scenario's changes, and hands everything to the pure builders.
+//
+// Not the story core's ONLY query: `scenario-label.ts`, `repo.ts`,
+// `scenario-scope.ts` and `load-next-steps.ts` each own one of their own — a
+// single scoped read with a mapping and a suite beside it.
 //
 // Monte Carlo failure is non-fatal: the confidence facts are simply absent,
 // which the narratives and prompts already handle. It is never zeroed — a 0%
@@ -47,6 +51,8 @@ import {
   type StoryCover,
   type StoryEstateTotals,
 } from "./build-facts";
+import { loadStoryNextSteps } from "./load-next-steps";
+import { CHECKLIST_CHAPTERS } from "./chapters/registry";
 import type { ChapterId, StoryContext, StoryGoal, StoryStrategy } from "./types";
 
 export interface LoadStoryContextArgs {
@@ -493,7 +499,7 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
   // EVERY base-only story — the default deck included — was paying for a
   // 250-trial bisection whose figure it could never print.
   const wantsSpend = SPEND_CHAPTERS.some(prints);
-  const [baseSpend, proposedSpend, cover] = await Promise.all([
+  const [baseSpend, proposedSpend, cover, nextSteps] = await Promise.all([
     wantsSpend ? maxSpendFor(clientId, firmId, "base") : null,
     wantsSpend && proposed?.scenarioId != null
       ? maxSpendFor(clientId, firmId, proposed.scenarioId)
@@ -509,6 +515,25 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
           spouseName: client.spouseName ?? null,
         })
       : null,
+    // The advisor's own next steps — gated like the two solves, on the list the
+    // CONSUMERS are keyed to. These are not facts, so `build-facts.ts` has no
+    // scope to read; what reads them is the checklist LAYOUT, in
+    // `pages/plan-story/view-model.ts` and `chapter-pdf.tsx`, so the gate reads
+    // the registry's own answer to which chapters that is.
+    //
+    // ⚠️ Absent means all, as everywhere else here — a caller that names no
+    // chapters loads the steps. Withholding them would print the chapter's
+    // "nothing's been written down yet" state over a list the advisor wrote.
+    CHECKLIST_CHAPTERS.some(prints)
+      ? loadStoryNextSteps(clientId, {
+          clientData: base.effectiveTree,
+          projection: base.projection,
+          // The base plan's, and null when it did not run. Only the confidence
+          // tokens read it, and they resolve to nothing rather than to 0% — the
+          // same rule the confidence FACTS are built under.
+          monteCarlo: base.successRate == null ? null : { successRate: base.successRate },
+        })
+      : [],
   ]);
 
   const facts = buildStoryFacts({
@@ -591,5 +616,6 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
     strategies,
     goals,
     facts,
+    nextSteps,
   };
 }

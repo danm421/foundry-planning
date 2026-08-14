@@ -6,7 +6,12 @@ import type { BuildDataContext } from "@/components/presentations/registry";
 import { CHAPTERS, type ChapterLayout } from "@/lib/presentations/story/chapters/registry";
 import { quotableDetail } from "@/lib/presentations/story/chapters/what-we-recommend";
 import type { Fact } from "@/lib/presentations/story/facts";
-import { factsForChapter, type ChapterId, type StoryContext } from "@/lib/presentations/story/types";
+import {
+  factsForChapter,
+  type ChapterId,
+  type StoryContext,
+  type StoryStep,
+} from "@/lib/presentations/story/types";
 import { printedChapters, type PlanStoryOptions } from "./options-schema";
 
 export interface PlanStoryChapterView {
@@ -23,8 +28,9 @@ export interface PlanStoryChapterView {
    *  layout. */
   figures: Array<{ label: string; value: string }>;
   /** The numbered next steps of a `checklist` chapter; empty for every other
-   *  layout. */
-  steps: Array<{ text: string; owner: string; when: string }>;
+   *  layout. The story's own shape, not a second copy of it — these print the
+   *  advisor's words unaltered and this page is where that promise is kept. */
+  steps: StoryStep[];
   /** The client-facing sentence that replaces what a sheet could not hold.
    *  "" means nothing was dropped. */
   overflowNote: string;

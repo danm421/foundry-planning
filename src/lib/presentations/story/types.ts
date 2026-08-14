@@ -88,6 +88,25 @@ export interface StoryGoal {
   kind: string;
 }
 
+/**
+ * One advisor-authored next step, merge tokens already resolved.
+ *
+ * The only chapter whose BODY is not ours. `text` is the advisor's own sentence
+ * and reaches the client unaltered — no gate runs over it, exactly as no gate
+ * runs over an advisor's `editedText`: a rule that rewrote an action item would
+ * be rewriting an instruction they gave their own client.
+ *
+ * `owner` and `when` print as one caption beneath the step and are "" when the
+ * advisor left the column alone, which is the ordinary case. The chapter's lead
+ * paragraph reads them: it may only promise a caption the page will actually
+ * print.
+ */
+export interface StoryStep {
+  text: string;
+  owner: string;
+  when: string;
+}
+
 export interface StoryContext {
   household: StoryHousehold;
   scenarioLabel: string;
@@ -114,10 +133,10 @@ export interface StoryContext {
    * the chapter's lead paragraph and nothing under it.
    *
    * Not facts: a step is a sentence with an owner and a date, and the fact pack
-   * is figures the model may quote. Task 18 fills this from the observations
-   * layer's next steps.
+   * is figures the model may quote. `load-next-steps.ts` fills it from the
+   * observations layer's own next-step rows.
    */
-  nextSteps?: Array<{ text: string; owner: string; when: string }>;
+  nextSteps?: StoryStep[];
 }
 
 /**

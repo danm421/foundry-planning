@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildChapterPrompt } from "../prompts";
-import { chapterEnumerates } from "../registry";
+import { CHAPTERS, chapterEnumerates } from "../registry";
 import { moneyFact, pctFact, quotedFact } from "../../facts";
 import { runGates } from "../../validate";
 import { CHAPTER_IDS, type StoryContext } from "../../types";
@@ -134,6 +134,26 @@ describe("buildChapterPrompt", () => {
     // The headroom is finite, and the per-sentence cap never moved.
     expect(readability(`${"word ".repeat(25)}end. `.repeat(3), true)).not.toEqual([]);
     expect(readability(`${"word ".repeat(40)}end.`, true)).not.toEqual([]);
+  });
+
+  /**
+   * The checklist chapter's sheet holds 35 words of prose above the advisor's
+   * own numbered steps. Asked for "2 to 4 short paragraphs" it would be trimmed
+   * on almost every run, and the note that replaces what was cut would become
+   * that chapter's normal ending — on the one page whose real content is the
+   * list underneath.
+   */
+  it("asks the list chapter for one paragraph, and everyone else for a chapter", () => {
+    const list = buildChapterPrompt("whatHappensNext", CTX, [], []).system;
+    expect(list).toContain("ONE short paragraph");
+    expect(list).not.toContain("2 to 4 short paragraphs");
+    // …and it must not write the steps out: they print underneath, and a model
+    // that restates them prints the household's list twice.
+    expect(list).toContain("Do not list the steps themselves");
+
+    for (const chapterId of CHAPTER_IDS.filter((id) => CHAPTERS[id].layout !== "checklist")) {
+      expect(buildChapterPrompt(chapterId, CTX, [], []).system).toContain("2 to 4 short paragraphs");
+    }
   });
 
   // The other half of the same trade. The chapter that has to name every account

@@ -2,6 +2,7 @@
 // retirement-summary/narrative.ts: pure, figure-safe, a handful of lines.
 import type { Fact } from "../facts";
 import { factDisplay, findFact, type StoryContext } from "../types";
+import { spelledCount } from "./prose";
 
 /** Last resort. This chapter is what the client reads when generation is off or
  *  the model's draft was rejected, so it may not come back blank — a fact pack
@@ -74,13 +75,6 @@ function confidenceLine(base: Fact | null, proposed: Fact | null): { line: strin
   return null;
 }
 
-/** Advisor prose spells small numbers. Beyond nine, a digit is what anyone writes. */
-const COUNT_WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
-
-function countOfChanges(n: number): string {
-  return `${COUNT_WORDS[n] ?? String(n)} ${n === 1 ? "change" : "changes"}`;
-}
-
 /** "A" · "A and B" · "A, B, and C" — the serial comma the house style uses. */
 function joinNames(names: string[]): string {
   if (names.length <= 2) return names.join(" and ");
@@ -98,7 +92,7 @@ export function narratePlanInOnePage(ctx: StoryContext): string[] {
 
   if (ctx.hasProposal && ctx.strategies.length > 0) {
     const names = joinNames(ctx.strategies.map((s) => s.name));
-    const count = countOfChanges(ctx.strategies.length);
+    const count = spelledCount(ctx.strategies.length, "change", "changes");
     // "That comes from…" credits the movement to the changes, so it may only
     // follow a sentence that stated one. After a current-path-only number it
     // would attribute today's confidence to a change not yet made, and with no

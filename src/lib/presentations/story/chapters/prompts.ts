@@ -11,7 +11,7 @@ import type { GateFailure } from "../validate";
 import { extractFigures } from "../validate/facts";
 import { MAX_MEAN_SENTENCE_WORDS, MAX_SENTENCE_WORDS } from "../validate/readability";
 import type { ChapterId, StoryContext } from "../types";
-import { CHAPTERS, chapterEnumerates } from "./registry";
+import { CHAPTERS, chapterEnumerates, chapterOutputAsk } from "./registry";
 
 /** Gate 3's banned openers, in full. Copied rather than imported: `ACTION_VERBS`
  *  is private to `validate/readability.ts`, and this module may not reach into
@@ -156,7 +156,12 @@ export function buildChapterPrompt(
     enumerates
       ? 'Never write a three-item parallel list of qualities ("clearer, simpler, and more effective") — listing what they own or what is changing is fine. Never open with a throat-clear like "It\'s important to note".'
       : "Never write a three-item parallel list. Never open with a throat-clear like \"It's important to note\".",
-    "Output: clean Markdown, 2 to 4 short paragraphs, no headings, no preamble.",
+    // How much prose to ask for — the one instruction here that cannot be the
+    // same sentence for every chapter, because the SHEET is not. Keyed by layout
+    // in the registry, beside the layouts themselves and beside
+    // `chapterEnumerates`, which is the same idea: a chapter must never be asked
+    // for something the page it prints on cannot hold.
+    chapterOutputAsk(chapterId),
     "Only use the figures listed below, copied exactly as they are written. Never invent a figure, never reformat one, never compute a new one.",
     // Gate 5's model-facing half. The pack is presented to the model as
     // `label: display`, and the 2026-08-12 read found it transcribing the pair
