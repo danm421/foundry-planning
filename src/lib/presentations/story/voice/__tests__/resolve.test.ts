@@ -37,7 +37,7 @@ describe("resolveVoice", () => {
   // …and it emits the string it judged, not the raw one. Kills: a filter that
   // trims and a `map` that does not — "\n\nreal\n\n" clears the blank check and
   // then reaches the prompt wrapped in empty quoted lines.
-  // `prompts.ts#quoteSample` keeps those from being bare lines; it does not make
+  // `prompts.ts#quoteAdvisorText` keeps those from being bare lines; it does not make
   // them worth sending.
   it("emits the trimmed text, the same string the filter judged", () => {
     const out = resolveVoice(null, [{ text: "\n\n  real  \n\n", enabled: true } as never]);

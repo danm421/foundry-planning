@@ -66,7 +66,7 @@ export function resolveVoice(
       // A sample stored as "\n\n  real  \n\n" reaches the prompt wrapped in empty
       // quoted lines top and bottom — noise in the one text kept for its shape.
       //
-      // The ENDS are all this covers. The interior is `prompts.ts#quoteSample`,
+      // The ENDS are all this covers. The interior is `prompts.ts#quoteAdvisorText`,
       // which marks every line of a sample; before it existed, a sample's second
       // paragraph landed at instruction level in the system prompt.
       .map((s) => s.text.trim()),

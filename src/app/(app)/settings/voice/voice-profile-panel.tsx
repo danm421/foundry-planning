@@ -470,7 +470,7 @@ export function VoiceProfilePanel({
           </h2>
           <FieldTooltip text="Switching a sample off stops it being sent, and the words stay here. Deleting removes them from Foundry for good — use that if a client's name or a figure survived the scrub." />
         </div>
-        {/* Word-level, not byte-level. `prompts.ts#quoteSample` marks every line of a
+        {/* Word-level, not byte-level. `prompts.ts#quoteAdvisorText` marks every line of a
             sample so that none of it can be read as an instruction, so the assistant
             sees these words inside a quote. The words themselves are what this
             sentence promises, and nothing is added to them or taken from them. */}

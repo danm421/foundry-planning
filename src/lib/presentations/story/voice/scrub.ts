@@ -215,9 +215,13 @@ function figureStandIn(figure: string): string {
   if (figure.includes("%")) return RATE_STAND_IN;
   // A magnitude letter is money in this corpus ("$4.7M", "480K"), and it is what
   // keeps a quantity that happens to be four digits — "2035K" — off the year
-  // branch below. Case-insensitive because the two cases arrive here differently:
-  // `FIGURE` takes an UPPERCASE magnitude into its own group, and a lowercase one
-  // comes glued on by its trailing `\p{L}*`.
+  // branch below.
+  //
+  // ⚠️ Case-insensitive because the FIGURE STRING can carry a lowercase magnitude
+  // two ways, and `SCRUBBABLE` is compiled `giu`, so `[KMB]` there already
+  // matches either case: "2035 k" comes through inside the magnitude group, and
+  // "2035k" comes through glued on by the trailing `\p{L}*`. A case-SENSITIVE
+  // test here missed both, and read "2035k" as a year.
   if (figure.includes("$") || /\d\s*[KMB]/iu.test(figure)) return AMOUNT_STAND_IN;
   // `FIGURE` takes any letters glued to the digits, so "the mid-2030s" arrives
   // as "2030s" and "January 1st" as "1st". The digits are what carries the kind.
@@ -251,15 +255,35 @@ const STAND_IN_AT_SENTENCE_START = new RegExp(
   // Built from the constants, so a kind added above cannot be left uncapitalised
   // here. No entry is a prefix of another, so the alternation's order carries
   // nothing — it is the order they are declared in, and nothing more.
-  String.raw`(${SENTENCE_OPENER})(${[...FIGURE_STAND_INS, HOUSEHOLD_STAND_IN, "their", NAME_STAND_IN].join("|")})\b`,
+  //
+  // Escaped for the same reason the name patterns are: none of the six holds a
+  // metacharacter today, so this changes no behaviour — it is what keeps a stand-in
+  // that one day holds a "." or a "(" from silently widening the rule instead of
+  // matching itself.
+  String.raw`(${SENTENCE_OPENER})(${[...FIGURE_STAND_INS, HOUSEHOLD_STAND_IN, "their", NAME_STAND_IN].map(escapeLiteral).join("|")})\b`,
   "gu",
 );
 
-/** A run of the SAME stand-in, which is what two adjacent figures leave behind.
- *  The backreference is what keeps it to one kind — "that amount that year" is
- *  two different figures and reads as two. */
+/**
+ * A run of the SAME stand-in, which is what two adjacent figures leave behind.
+ * The backreference is what keeps it to one kind — "that amount that year" is two
+ * different figures and reads as two.
+ *
+ * ⚠️ It cannot tell a stand-in this module inserted from the same words the
+ * advisor typed — the same blind spot `STAND_IN_AT_SENTENCE_START` documents, and
+ * the kind stand-ins widened it: "that year" and "that rate" are ordinary English
+ * an advisor writes, where "that amount" mostly is not. So an appositive loses
+ * its middle:
+ *
+ *     "In that year, 2035, work ends."           → "In that year, work ends."
+ *     "It grows at that rate, 6.5%, every year." → "It grows at that rate, every year."
+ *
+ * Both still read as English, and what is dropped is the figure the advisor was
+ * glossing — which had to go regardless. So this is prose risk, not damage, and
+ * the suite pins the shape so it stays a decision rather than a surprise.
+ */
 const REPEATED_FIGURE_STAND_IN = new RegExp(
-  String.raw`\b(${FIGURE_STAND_INS.join("|")})(?:[\s,]+\1\b)+`,
+  String.raw`\b(${FIGURE_STAND_INS.map(escapeLiteral).join("|")})(?:[\s,]+\1\b)+`,
   "giu",
 );
 

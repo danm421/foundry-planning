@@ -71,12 +71,13 @@ describe("scrubSample", () => {
     ["It costs $2035 a month.", "It costs that amount a month."],
     ["It costs 2,035 a month.", "It costs that amount a month."],
     ["It grew to 2035.40 by then.", "It grew to that amount by then."],
-    // A magnitude letter says money whichever case an advisor writes it in — and
-    // the two cases arrive here differently, because `FIGURE` only takes an
-    // UPPERCASE one into its own group and a lowercase one comes glued on by the
-    // trailing `\p{L}*`.
+    // A magnitude letter says money whichever case an advisor writes it in. Both
+    // cases reach the kind test as part of the figure STRING — `SCRUBBABLE` is
+    // compiled `giu`, so its own `[KMB]` matches either — and a case-sensitive
+    // kind test read the lowercase one as a year.
     ["It holds 2035K of them.", "It holds that amount of them."],
     ["It holds 2035k of them.", "It holds that amount of them."],
+    ["It holds 2035 k of them.", "It holds that amount of them."],
     ["Work ends in 2035.", "Work ends in that year."],
   ])("reads four bare digits as a year and anything else as an amount: %s", (input, expected) => {
     expect(scrubSample(input, HOUSEHOLD)).toBe(expected);
@@ -246,6 +247,31 @@ describe("scrubSample", () => {
     it("still reads as a person when it is used as one", () => {
       expect(scrubSample("Cooper, your plan holds.", NO_SURNAME)).toBe("They, your plan holds.");
     });
+  });
+
+  /**
+   * ⚠️ The collapse cannot tell a stand-in this module inserted from the same
+   * words the advisor typed, and the kind stand-ins widened that: "that year" and
+   * "that rate" are ordinary English an advisor writes, where "that amount" mostly
+   * is not. An appositive therefore loses its middle. Every output below still
+   * reads as English, and what goes is the figure being glossed — which had to go
+   * anyway — so this pins the shape as a decision rather than leaving it a
+   * surprise for the next reader.
+   */
+  it.each([
+    ["In that year, 2035, work ends.", "In that year, work ends."],
+    ["It grows at that rate, 6.5%, every year.", "It grows at that rate, every year."],
+    ["You owe that amount, $610K, on the house.", "You owe that amount, on the house."],
+  ])("collapses an advisor's own stand-in words into the figure beside them: %s", (input, expected) => {
+    expect(scrubSample(input, HOUSEHOLD)).toBe(expected);
+  });
+
+  // …and the control that stops the case above being read as the figure pass
+  // eating a clause: put a word between the two and both halves survive.
+  it("keeps an advisor's stand-in words when something separates them from the figure", () => {
+    expect(scrubSample("In that year, and in 2035, work ends.", HOUSEHOLD)).toBe(
+      "In that year, and in that year, work ends.",
+    );
   });
 
   // …but two figures are two figures. Collapsing them would eat half a sentence.
