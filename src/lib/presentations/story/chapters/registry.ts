@@ -295,15 +295,27 @@ export const CHECKLIST_CHAPTERS: readonly ChapterId[] = CHAPTER_IDS.filter(
  * ⚠️ The WORDS, never a number read from the budget. `prompts.ts` records the
  * measured finding that a number in this prompt acts as an anchor the model
  * writes past, so the two are tuned independently and deliberately.
- *
- * ⚠️ `twoUp` is 130 words against the same "2 to 4 short paragraphs" — eight of
- * the fourteen chapters, and still owed. Left as it shipped rather than fixed
- * blind: changing it re-prosecutes eight landed chapters and needs a model run
- * to judge, which this task is not.
  */
 const OUTPUT_ASK: Record<ChapterLayout, string> = {
   heroProse: "Output: clean Markdown, 2 to 4 short paragraphs, no headings, no preamble.",
-  twoUp: "Output: clean Markdown, 2 to 4 short paragraphs, no headings, no preamble.",
+  /**
+   * ⭐ NOT the same sentence as `heroProse`, though it was until 2026-08-14.
+   *
+   * A twoUp sheet gives its prose 130 words against heroProse's 300 — not
+   * because the sheet is fuller, but because the figure column takes 170pt plus
+   * its gap out of the text measure, so the same words cost half again as many
+   * LINES (`pages/plan-story/view-model.ts#BUDGET_WORDS_TWO_UP`). Seven of the
+   * fourteen chapters print here, and asking all seven for a heroProse chapter's
+   * prose made the trim note their normal ending rather than their exception.
+   *
+   * ⚠️ The SHAPE, not the number. `prompts.ts` records the measured finding that
+   * a word count in this prompt acts as an anchor the model writes past by about
+   * five words — so "TWO short paragraphs" is the instruction and 130 stays in
+   * the view-model as the backstop. The two are tuned independently and
+   * deliberately, exactly as the sentence-length aim and its gate are.
+   */
+  twoUp:
+    "Output: clean Markdown, TWO short paragraphs, no headings, no preamble. There is a column of figures printed beside your text — do not list those figures again in prose.",
   strategyCards: "Output: clean Markdown, 2 to 4 short paragraphs, no headings, no preamble.",
   checklist:
     "Output: clean Markdown, ONE short paragraph of at most two sentences, no headings, no preamble. Do not list the steps themselves — they are printed under your text by the page layout.",

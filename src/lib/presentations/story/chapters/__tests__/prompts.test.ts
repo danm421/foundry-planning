@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildChapterPrompt } from "../prompts";
-import { CHAPTERS, chapterEnumerates } from "../registry";
+import { CHAPTERS, chapterEnumerates, chapterOutputAsk } from "../registry";
 import { moneyFact, pctFact, quotedFact } from "../../facts";
 import { runGates } from "../../validate";
 import { CHAPTER_IDS, type StoryContext } from "../../types";
@@ -160,8 +160,16 @@ describe("buildChapterPrompt", () => {
     // model's own definitions of the same terms have not.
     expect(glossary).toContain("Do not explain the technical terms themselves");
 
+    // A twoUp sheet holds 130 words against a full sheet's 300 — its own ask,
+    // not the list chapters' shape and not the full-sheet one either. See
+    // `chapterOutputAsk — the ask matches the sheet` below for the direct
+    // pin against `chapterOutputAsk`.
+    const twoUp = buildChapterPrompt("whatWerePlanningFor", CTX, [], []).system;
+    expect(twoUp).toContain("TWO short paragraphs");
+    expect(twoUp).not.toContain("2 to 4 short paragraphs");
+
     for (const chapterId of CHAPTER_IDS.filter(
-      (id) => CHAPTERS[id].layout !== "checklist" && CHAPTERS[id].layout !== "glossary",
+      (id) => !["checklist", "glossary", "twoUp"].includes(CHAPTERS[id].layout),
     )) {
       expect(buildChapterPrompt(chapterId, CTX, [], []).system).toContain("2 to 4 short paragraphs");
     }
@@ -363,5 +371,27 @@ describe("the register rules", () => {
   it("marks the chapter brief as instructions the client never sees", () => {
     const { user } = buildChapterPrompt("planInOnePage", CTX, [], []);
     expect(user).toMatch(/never sees/i);
+  });
+});
+
+describe("chapterOutputAsk — the ask matches the sheet", () => {
+  it("asks a twoUp chapter for less prose than a heroProse chapter", () => {
+    const twoUp = chapterOutputAsk("whatWerePlanningFor"); // layout: twoUp
+    const hero = chapterOutputAsk("whatYouHave"); // layout: heroProse
+    expect(twoUp).not.toBe(hero);
+  });
+
+  it("asks a twoUp chapter for two paragraphs, which is what 130 words holds", () => {
+    expect(chapterOutputAsk("whatWerePlanningFor")).toContain("TWO short paragraphs");
+  });
+
+  it("still asks a heroProse chapter for the full sheet", () => {
+    expect(chapterOutputAsk("whatYouHave")).toContain("2 to 4 short paragraphs");
+  });
+
+  // Every layout answers. A sixth added without an ask would inherit one written
+  // for a different sheet — the failure `OUTPUT_ASK` being a Record prevents.
+  it.each(CHAPTER_IDS)("gives %s a non-empty ask", (id) => {
+    expect(chapterOutputAsk(id).length).toBeGreaterThan(0);
   });
 });
