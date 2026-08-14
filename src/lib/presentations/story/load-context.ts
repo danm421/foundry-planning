@@ -88,12 +88,12 @@ export function composeStoryHousehold(client: {
  *
  * `loadStoryContext` below reads them off the effective tree it already loaded;
  * that load is measured in SECONDS, and the samples route only needs the names.
- * So this reads them straight from the CRM household contacts — the same source
- * `load-client-data.ts` builds `ClientData.client` from (primary contact for the
- * first and last name, spouse contact for the spouse's). Reading
- * `clients.firstName`/`lastName` instead would be a DIFFERENT source, and for
- * any household where the two disagree the scrubber would take out the wrong
- * surname and leave the real one in the sample.
+ * So this goes to the one place the names actually live: `crm_household_contacts`,
+ * primary and spouse BY ROLE. There is no name column on `clients` at all — the
+ * CRM contacts are the sole source of identity, which is exactly how
+ * `load-client-data.ts:156-158` builds `ClientData.client`. Following any other
+ * route to a name would be inventing a second source for the scrubber to
+ * disagree with the chapters about.
  *
  * Throws rather than returning blanks when the client or its primary contact is
  * missing — the same condition `load-client-data.ts` throws on. A caller that
@@ -518,9 +518,10 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
 
   const client = base.effectiveTree.client;
   // The household pair is COMPOSED, not spelled out again — `loadStoryHousehold`
-  // hands the samples route the identical two strings off the CRM contacts these
-  // fields came from. Still read off the EFFECTIVE TREE here, so a story built
-  // from a frozen snapshot keeps the names that snapshot was taken with.
+  // hands the samples route the identical two strings. It stays composed from the
+  // tree rather than calling that helper because the tree is already in hand
+  // here: the names are on it, and a second read would be two queries for
+  // something this function has already paid for.
   const { firstNames, householdName } = composeStoryHousehold(client);
   /** The estate report's `clientName` — one person, not the pair above. */
   const firstName = client.firstName || "the household";

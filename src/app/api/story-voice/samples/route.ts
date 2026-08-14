@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
+import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import {
   requireActiveSubscriptionForFirm,
   requireOrgAdminOrOwner,
@@ -71,14 +72,20 @@ export async function POST(request: NextRequest) {
     // check every client read uses — a caller naming a client they cannot see
     // gets a 404, not a scrub against somebody else's names.
     //
-    // Scoped to `access.firmId`, the CLIENT's firm, not the caller's org: a
-    // client shared from another firm is one the caller may legitimately harvest
-    // from, and scoping the household read to the caller's org would find no
-    // row, leave the names blank, and store the sample with the real name in it.
+    // Scoped to `access.firmId`, the CLIENT's firm, not the caller's org. A
+    // client shared from another firm is one this caller may legitimately
+    // harvest from, and `loadStoryHousehold` is firm-scoped: hand it the
+    // caller's org and it finds no row and THROWS, so every harvest from a
+    // shared client would 500. Nothing unsafe — the fail is closed either way —
+    // but a feature that is simply broken for shared clients.
     let household = { firstNames: "", householdName: "" };
+    /** "own" until a source client says otherwise: with no client read, nothing
+     *  crossed a firm boundary. */
+    let sourceAccess: "own" | "shared" = "own";
     if (sourceClientId) {
       const access = await verifyClientAccess(sourceClientId);
       if (!access.ok) return NextResponse.json({ error: "Client not found" }, { status: 404 });
+      sourceAccess = access.access;
       household = await loadStoryHousehold(sourceClientId, access.firmId);
     }
 
@@ -98,7 +105,13 @@ export async function POST(request: NextRequest) {
       resourceId: id,
       clientId: sourceClientId,
       firmId,
-      metadata: { sourceChapterId, firmDefault },
+      // The row lands in the CALLER's firm while the prose came from a client
+      // that may belong to another — stamp who really did it, the same way the
+      // other cross-firm-capable client routes do.
+      metadata: crossFirmAuditMeta({ access: sourceAccess }, firmId, {
+        sourceChapterId,
+        firmDefault,
+      }),
     });
 
     // The SCRUBBED text goes back, so the advisor reads exactly what the model

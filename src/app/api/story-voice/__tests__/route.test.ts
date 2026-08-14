@@ -157,10 +157,10 @@ describe("POST /api/story-voice/samples", () => {
     });
   });
 
-  it("scrubs against the CLIENT's firm, not the caller's — a shared client still loses its names", async () => {
-    // A cross-org shared client belongs to another firm. Scoping the household
-    // read to the caller's org would find no row, leave the names blank, and
-    // store the sample with the client's real name in it.
+  it("scrubs against the CLIENT's firm, not the caller's — a shared client is harvestable at all", async () => {
+    // A cross-org shared client belongs to another firm, and `loadStoryHousehold`
+    // is firm-scoped. Hand it the caller's org and it finds no row and THROWS —
+    // so every harvest from a shared client would 500. Closed, but broken.
     mocks.verifyClientAccess.mockResolvedValue({
       ok: true,
       permission: "edit",
@@ -169,6 +169,13 @@ describe("POST /api/story-voice/samples", () => {
     });
     await POST(req({ text: RAW, sourceClientId: CLIENT }));
     expect(mocks.loadStoryHousehold).toHaveBeenCalledWith(CLIENT, "org_other_firm");
+    // The row lands in the CALLER's firm while the prose came from another's, so
+    // the audit says who really did it.
+    expect(mocks.recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ crossFirmActor: true, actorFirmId: FIRM }),
+      }),
+    );
   });
 
   it("stores nothing when the household cannot be resolved", async () => {
@@ -216,6 +223,9 @@ describe("POST /api/story-voice/samples", () => {
         resourceId: SAMPLE,
         clientId: CLIENT,
         firmId: FIRM,
+        // Own-firm: `crossFirmAuditMeta` returns the base unchanged, so no
+        // cross-firm stamp rides along on the ordinary case.
+        metadata: { sourceChapterId: "whatWeRecommend", firmDefault: false },
       }),
     );
   });
@@ -254,8 +264,23 @@ describe("POST /api/story-voice/samples", () => {
     );
   });
 
-  it("rejects text past the column's stated bound rather than truncating it", async () => {
-    const res = await POST(req({ text: "a".repeat(1201) }));
+  it("rejects text past the prompt budget rather than truncating it", async () => {
+    // 2,000 is well under the 20,000 an advisor may write into a chapter, so a
+    // harvest of a long edit is REFUSED, not silently shortened. The panel has to
+    // say so; nothing here can.
+    const res = await POST(req({ text: "a".repeat(2001) }));
+    expect(res.status).toBe(400);
+    expect(mocks.insertVoiceSample).not.toHaveBeenCalled();
+  });
+
+  it("accepts a sample right up to the bound", async () => {
+    // The other side of the cap, so an off-by-one that moved it would show.
+    const res = await POST(req({ text: "a".repeat(2000) }));
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects a sample too short to be a sample of anything", async () => {
+    const res = await POST(req({ text: "ok" }));
     expect(res.status).toBe(400);
     expect(mocks.insertVoiceSample).not.toHaveBeenCalled();
   });
@@ -327,6 +352,12 @@ describe("PATCH /api/story-voice/samples/[id]", () => {
     );
   });
 
+  it("404s a malformed id instead of letting it reach Postgres", async () => {
+    const res = await PATCH(req({ enabled: true }), { params: params("not-a-uuid") });
+    expect(res.status).toBe(404);
+    expect(mocks.setVoiceSampleEnabled).not.toHaveBeenCalled();
+  });
+
   it("refuses an attempt to rewrite the stored text", async () => {
     // `text` is not a PATCH field: POST is the only writer, because POST is
     // where `scrubSample` runs. `.strict()` makes that a 400 rather than a
@@ -343,6 +374,12 @@ describe("DELETE /api/story-voice/samples/[id]", () => {
     const res = await DELETE(req({}), { params: params(SAMPLE) });
     expect(res.status).toBe(404);
     expect(mocks.recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("404s a malformed id instead of letting it reach Postgres", async () => {
+    const res = await DELETE(req({}), { params: params("not-a-uuid") });
+    expect(res.status).toBe(404);
+    expect(mocks.deleteVoiceSample).not.toHaveBeenCalled();
   });
 
   it("audits the delete", async () => {
@@ -418,7 +455,7 @@ describe("PUT /api/story-voice", () => {
     );
   });
 
-  it("rejects a style note longer than a system prompt can absorb", async () => {
+  it("rejects a style note longer than the same bound the samples carry", async () => {
     const res = await PROFILE_PUT(req({ styleNote: "x".repeat(2001) }));
     expect(res.status).toBe(400);
     expect(mocks.upsertVoiceProfile).not.toHaveBeenCalled();

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
@@ -7,6 +8,18 @@ import { storyVoiceSamplePatchSchema } from "@/lib/schemas/story-voice";
 import { setVoiceSampleEnabled, deleteVoiceSample } from "@/lib/presentations/story/voice/repo";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Guard before the query — a malformed uuid would throw at the pg layer and 500
+ * a request that is simply naming a sample that cannot exist. 404, not 400, and
+ * with the handlers' own message: it is the same answer a well-formed id from
+ * another firm gets, which is what keeps the two indistinguishable. Matches the
+ * three sibling `[id]` routes (`observations/draft-runs`, `meeting-prep/runs`,
+ * `intake/documents`), all of which 404 here.
+ */
+function malformed(id: string): boolean {
+  return !z.string().uuid().safeParse(id).success;
+}
 
 /**
  * Switch one sample on or off.
@@ -27,6 +40,7 @@ export async function PATCH(
     const { orgId: firmId } = await requireOrgAndUser();
     await requireActiveSubscriptionForFirm(firmId);
     const { id } = await params;
+    if (malformed(id)) return NextResponse.json({ error: "Sample not found" }, { status: 404 });
 
     const parsed = await parseBody(storyVoiceSamplePatchSchema, request);
     if (!parsed.ok) return parsed.response;
@@ -60,6 +74,7 @@ export async function DELETE(
     const { orgId: firmId } = await requireOrgAndUser();
     await requireActiveSubscriptionForFirm(firmId);
     const { id } = await params;
+    if (malformed(id)) return NextResponse.json({ error: "Sample not found" }, { status: 404 });
 
     const deleted = await deleteVoiceSample({ firmId, id });
     if (!deleted) return NextResponse.json({ error: "Sample not found" }, { status: 404 });

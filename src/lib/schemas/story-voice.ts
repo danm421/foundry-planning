@@ -3,22 +3,38 @@
 import { z } from "zod";
 import { CHAPTER_IDS } from "@/lib/presentations/story/types";
 
-/** Roughly three paragraphs. More guidance than a system prompt can absorb, and
- *  a bound on an otherwise unlimited write to a text column. */
+/**
+ * The bound BOTH voice texts carry, and the reason is the same one twice: every
+ * character here is spent in the system prompt of all fourteen chapters, four
+ * samples plus the note at a time. It is what keeps a generation affordable, and
+ * it is a bound on two otherwise unlimited writes to `text` columns.
+ *
+ * 2,000 characters is roughly three paragraphs of guidance, and — at the
+ * 6.3-6.9 characters per word this document's own prose runs to — about 290-315
+ * words of sample. That covers the longest chapter the narrators write (a
+ * `heroProse` chapter is budgeted 300 words, `chapters/registry.ts:304`) with a
+ * little headroom.
+ *
+ * ⚠️ It is FAR below the 20,000 an advisor may write into a chapter
+ * (`planStoryChapterPatchSchema.editedText`), so a harvest of a long edited
+ * chapter is refused rather than truncated — the panel has to say so.
+ */
+const VOICE_TEXT_MAX = 2000;
+
 export const storyVoiceProfilePutSchema = z
   .object({
-    styleNote: z.string().max(2000),
+    styleNote: z.string().max(VOICE_TEXT_MAX),
     /** True to write the FIRM default rather than this advisor's own row.
      *  Admin-only; the route re-checks the role. */
     firmDefault: z.boolean().default(false),
   })
   .strict();
 
-/** About two chapters of prose — an exemplar longer than that is a document,
- *  not a sample of a voice. */
 export const storyVoiceSamplePostSchema = z
   .object({
-    text: z.string().min(20).max(1200),
+    /** The floor is there so a stray click cannot store "ok" as an exemplar of
+     *  how someone writes. */
+    text: z.string().min(20).max(VOICE_TEXT_MAX),
     /**
      * Checked against the live arc rather than stored blind. The column is free
      * text, so an unrecognised id would sit in a row the panel then labels with

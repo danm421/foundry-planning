@@ -3265,7 +3265,9 @@ export const storyVoiceSamples = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     firmId: text("firm_id").notNull(),
     advisorUserId: text("advisor_user_id").notNull().default(""),
-    /** Already scrubbed. 1,200 chars is roughly two chapters of prose. */
+    /** Already scrubbed. Unbounded here; the writing route caps it at 2,000
+     *  characters — about one long chapter — because four of these enter the
+     *  system prompt of every chapter. See `lib/schemas/story-voice.ts`. */
     text: text("text").notNull(),
     /** Where it came from, for the advisor's own recognition in the list. Null
      *  for a sample they typed rather than harvested. */
