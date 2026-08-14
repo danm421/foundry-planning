@@ -4,7 +4,7 @@
 // was never generated.
 import type { BuildDataContext } from "@/components/presentations/registry";
 import { CHAPTERS, type ChapterLayout } from "@/lib/presentations/story/chapters/registry";
-import { quotableDetail } from "@/lib/presentations/story/chapters/what-we-recommend";
+import { quotableDetail, usableName } from "@/lib/presentations/story/chapters/what-we-recommend";
 import type { Fact } from "@/lib/presentations/story/facts";
 import { GLOSSARY, type GlossaryTerm } from "@/lib/presentations/story/glossary";
 import {
@@ -483,7 +483,11 @@ export function buildPlanStoryData(
     const allStrategies =
       def.layout === "strategyCards"
         ? input.story.strategies.map((s) => ({
-            name: s.name,
+            // The prose refuses the same machine text (`what-we-recommend.ts`
+            // `describe`) for a reason that applies here just as much: this card
+            // sits beside that prose on the same sheet, so a name refused in one
+            // place and printed in the other is the same leak in a nicer font.
+            name: usableName(s.name) ? s.name : "",
             what: s.rows.map((r) => r.what).join(", "),
             // NOT the raw `detail[0]`. That field is written by the Scenario
             // Changes table in its own rounding and its own case, and nothing in

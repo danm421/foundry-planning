@@ -115,11 +115,59 @@ export function quotableDetail(detail: string | undefined, facts: Fact[]): strin
   return clause && grounded(clause, facts) ? clause : null;
 }
 
+/**
+ * Characters and shapes that mean a "strategy name" is not a phrase a client can
+ * read — it is the Scenario Changes table's own machine text, or a field an
+ * advisor typed for themselves.
+ *
+ *   ·  the table's segment separator          "Susan - 401k · 10% of salary"
+ *   →  its before/after arrow                 "Roth percent: — → 100%"
+ *   :  a label/value pair                     "Annual amount: $20k"
+ *   —  its no-value marker
+ *   (Plan Start) / (Client Retirement)        milestone refs, printed raw
+ *
+ * A name carrying any of them is not quoted. The AREA PHRASE says the same thing
+ * in the client's own words, which is what the suppressed path is for — this
+ * chapter is the one the model most often fails to write, and what replaces it
+ * has to be publishable on its own.
+ *
+ * ⚠️ Deliberately NOT a figure check. `grounded()` already covers figures, and a
+ * label can be perfectly grounded and still be unreadable ("Reiinvest Assets
+ * Aggresive" holds no figure at all). Two different faults, two different tests.
+ */
+const MACHINE_TEXT = /[·→:]|[—–]\s*$|\((?:Plan Start|Client Retirement)\)/u;
+
+/**
+ * A label an advisor typed for a toggle group, quotable on a client's page?
+ *
+ * Length is the second half of the answer. A "strategy name" of eighty
+ * characters is a sentence the changes table joined, not a name — the observed
+ * ones run to "Susan - 401k · 10% of salary — Roth percent: — → 100%".
+ *
+ * Exported because the strategy CARDS print `name` too (`view-model.ts`,
+ * `buildPlanStoryData`), a second printing point the same machine text reaches
+ * unless it goes through the same refusal.
+ */
+export function usableName(name: string): boolean {
+  const trimmed = name.trim();
+  return trimmed.length > 0 && trimmed.length <= 48 && !MACHINE_TEXT.test(trimmed);
+}
+
+/** "your spending" → "adjusts your spending". One sentence a client can read,
+ *  built from the area alone, for a strategy whose own label cannot be shown. */
+function describeByArea(strategy: StoryStrategy): string {
+  const first = strategy.rows[0];
+  return first ? `One change adjusts ${AREA_PHRASE[first.area]}.` : "One change adjusts the plan.";
+}
+
 function describe(strategy: StoryStrategy, facts: Fact[]): string {
   const first = strategy.rows[0];
+  // The label is refused BEFORE the detail — or the absence of any row — is
+  // considered: a strategy with no rows but a machine-text name would otherwise
+  // fall through the `!first` branch below and print the name anyway.
+  if (!usableName(strategy.name)) return describeByArea(strategy);
   if (!first) return `${strategy.name}.`;
 
-  // Ground what will actually be printed, not the raw detail it came from.
   const clause = quotableDetail(first.detail[0], facts);
   if (clause) return `${strategy.name} — ${clause}.`;
 
