@@ -6,19 +6,23 @@ import { validateFacts } from "./facts";
 import { validateReadability, validateReadabilityEnumerating, validateNoAdvice } from "./readability";
 import { validateVoice, validateVoiceEnumerating } from "./voice";
 import { validateLabels, registerGate } from "./register";
+import { foreignNamesGate } from "./foreign-names";
 import type { GateFailure, Validator } from "./types";
 
 export type { GateFailure, GateId, Validator } from "./types";
 
 export interface GateOptions {
   /**
-   * The household's given names, split — Gate 6 is the one gate that has to
-   * know who the reader is, and `Validator` has no room for it. Passed per call
-   * rather than by widening the four shipped signatures.
+   * The household's given names, split — Gates 6 and 7 are the gates that have
+   * to know who the reader is, and `Validator` has no room for it. Passed per
+   * call rather than by widening the four shipped signatures.
    *
-   * Defaulted to empty so a caller with no household simply skips the name half
-   * of Gate 6 rather than throwing; the self-reference and third-person-noun
-   * halves still run, and both are name-independent.
+   * Defaulted to empty, and the two gates degrade differently on that default.
+   * Gate 6 skips its name half and still runs the self-reference and
+   * third-person-noun halves, both name-independent. Gate 7 loses the only list
+   * of names it may NOT report, so with no household every dictionary name in
+   * the draft is foreign — correct for a caller with no household, and the
+   * reason a caller that has one must pass it.
    */
   firstNames?: string[];
   /**
@@ -50,6 +54,7 @@ function gatesFor(enumerates: boolean): Validator[] {
 }
 
 export function runGates(markdown: string, facts: Fact[], opts: GateOptions = {}): GateFailure[] {
-  const gates = [...gatesFor(opts.enumerates ?? false), registerGate(opts.firstNames ?? [])];
+  const names = opts.firstNames ?? [];
+  const gates = [...gatesFor(opts.enumerates ?? false), registerGate(names), foreignNamesGate(names)];
   return gates.flatMap((gate) => gate(markdown, facts));
 }
