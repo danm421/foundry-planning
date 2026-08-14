@@ -437,6 +437,47 @@ describe("buildPlanStoryData — strategy cards", () => {
       expect(chapter.strategies).toEqual([]);
     }
   });
+
+  /**
+   * The same refusal `describe()` applies to the prose (`what-we-recommend.ts`)
+   * has to apply to the card too — it prints beside that prose on the same
+   * sheet, so a name refused in one place and shown in the other is the same
+   * leak in a nicer font. Assertions here only touch `strategies[0].name`, never
+   * `chapter.paragraphs`: the prose side of this gate already has its own
+   * RED/GREEN/mutation coverage in `chapters/__tests__/narratives.test.ts`, and
+   * `restatesCard` treats a blanked card name (`name.length === 0`) as never a
+   * restatement of anything, so pulling paragraph content into this assertion
+   * would be testing Task 1's paragraph ceiling by accident, not this gate.
+   */
+  it("blanks a card's name that carries the changes table's own machine text", () => {
+    const data = buildPlanStoryData(
+      deckCtx(
+        input({
+          hasProposal: true,
+          strategies: [{ name: "Susan - 401k · 10% of salary", rows: [row()] }],
+        }),
+      ),
+      PROPOSED,
+    );
+    expect(data.chapters.find((c) => c.chapterId === "whatWeRecommend")!.strategies[0].name).toBe("");
+  });
+
+  // …and the must-PASS direction: a clean label still reaches the card, because
+  // that is what the client recognises.
+  it("keeps a clean card name intact", () => {
+    const data = buildPlanStoryData(
+      deckCtx(
+        input({
+          hasProposal: true,
+          strategies: [{ name: "Delay Social Security", rows: [row()] }],
+        }),
+      ),
+      PROPOSED,
+    );
+    expect(data.chapters.find((c) => c.chapterId === "whatWeRecommend")!.strategies[0].name).toBe(
+      "Delay Social Security",
+    );
+  });
 });
 
 describe("buildPlanStoryData — the subtitle names the plan the prose is about", () => {
