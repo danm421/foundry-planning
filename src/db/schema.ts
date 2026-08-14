@@ -3221,8 +3221,12 @@ export const storyVoiceProfiles = pgTable(
     advisorUserId: text("advisor_user_id").notNull().default(""),
     /**
      * The advisor's own description of how they write, in their words. Sent to
-     * the model as an instruction, so it is bounded — 2,000 characters is about
-     * three paragraphs, which is more guidance than a system prompt can absorb.
+     * the model as an instruction, so it is meant to stay short — around 2,000
+     * characters, about three paragraphs, is already more guidance than a
+     * system prompt can absorb. That bound is NOT enforced here: this is a
+     * plain `text` column with no length limit and no CHECK. Holding the line
+     * is meant to be the writing route's job, in its Zod schema — that route
+     * does not exist yet.
      */
     styleNote: text("style_note").notNull().default(""),
     updatedBy: text("updated_by"),
@@ -3242,9 +3246,17 @@ export const storyVoiceProfiles = pgTable(
  * FIGURE that is not in this household's pack, so a leaked dollar cannot print;
  * nothing rejected a leaked NAME until Gate 7 (`validate/foreign-names.ts`).
  *
- * Two rules, both enforced before a row is ever read:
- *   1. `text` is written by `voice/scrub.ts`, never by a route taking raw input.
- *   2. `enabled` starts FALSE. An advisor turns a sample on deliberately.
+ * This table and its repo do NOT validate `text` — that is a contract on the
+ * CALLER, not an invariant this schema enforces today. The only intended
+ * writer is the samples route (not yet built), and only after it runs the
+ * scrubber (`voice/scrub.ts`, also not yet built) on the way in. Storing the
+ * advisor's raw writing and scrubbing on read was considered and rejected: a
+ * row would then sit in this table, readable into another household's
+ * prompt, for however long it took to get around to scrubbing it — with the
+ * Cooper name in it the whole time.
+ *
+ * `enabled` starts FALSE and IS enforced here, by the column default — an
+ * advisor turns a sample on deliberately.
  */
 export const storyVoiceSamples = pgTable(
   "story_voice_samples",
