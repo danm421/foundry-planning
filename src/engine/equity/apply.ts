@@ -1,7 +1,7 @@
 import type { EquityYearResult } from "./tax-events";
 
 export interface ApplyEquityOutput {
-  taxDeltas: { ordinaryIncome: number; capitalGains: number; stCapitalGains: number; isoSpread: number };
+  taxDeltas: { ordinaryIncome: number; ficaExemptOrdinaryIncome: number; capitalGains: number; stCapitalGains: number; isoSpread: number };
   netCashToChecking: number;
 }
 
@@ -33,6 +33,7 @@ export function applyEquityYear(
   return {
     taxDeltas: {
       ordinaryIncome: result.ordinaryIncome,
+      ficaExemptOrdinaryIncome: result.ficaExemptOrdinaryIncome,
       capitalGains: result.capitalGains,
       stCapitalGains: result.stCapitalGains,
       isoSpread: result.isoSpread,

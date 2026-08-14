@@ -324,3 +324,45 @@ describe("equity compensation — end-to-end projection", () => {
     expect(yExercise.portfolioAssets.taxable[DEST_ID]).toBeGreaterThan(0);
   });
 });
+
+describe("equity compensation — disqualifying ISO income is not payroll wages", () => {
+  // IRC §3121(a)(22) excludes remuneration on a disposition of ISO stock from
+  // FICA "wages". It stays fully taxable Form W-2 box 1 income, so it must show
+  // up in the earned-income base and NOT in Social Security / Medicare.
+  //
+  // One ISO grant, exercised at vest in 2028 and sold the same year (cashless
+  // exercise-and-sell). 5,000 shares, FMV 121, strike 10 → the whole $555,000
+  // bargain element is a disqualifying disposition.
+  const DISQUALIFYING_ISO: StockOptionPlan = {
+    ...EQUITY_PLAN,
+    grants: [
+      {
+        ...EQUITY_PLAN.grants[1], // the ISO grant
+        strategy: { exerciseTiming: "at_vest", sellTiming: "immediately" },
+      },
+    ],
+  };
+
+  const baseline = runProjection(buildData({ stockOptionPlans: [] }));
+  const withIso = runProjection(buildData({ stockOptionPlans: [DISQUALIFYING_ISO] }));
+  const yBase = baseline.find((y) => y.year === ISO_EXERCISE_YEAR)!;
+  const yIso = withIso.find((y) => y.year === ISO_EXERCISE_YEAR)!;
+
+  const expectedOi = ISO_SHARES * (fmv(ISO_EXERCISE_YEAR) - ISO_STRIKE); // 555,000
+
+  it("books the whole bargain element as earned income", () => {
+    expect(yIso.taxDetail!.earnedIncome - yBase.taxDetail!.earnedIncome).toBeCloseTo(expectedOi, 2);
+    expect(yIso.taxDetail!.ficaExemptEarnedIncome).toBeCloseTo(expectedOi, 2);
+  });
+
+  it("charges no payroll tax on it — FICA matches the no-equity baseline", () => {
+    expect(yIso.taxResult!.flow.fica).toBeCloseTo(yBase.taxResult!.flow.fica, 2);
+    expect(yIso.taxResult!.flow.additionalMedicare)
+      .toBeCloseTo(yBase.taxResult!.flow.additionalMedicare, 2);
+  });
+
+  it("still taxes it as income — the bracket tax rises", () => {
+    expect(yIso.taxResult!.flow.regularFederalIncomeTax)
+      .toBeGreaterThan(yBase.taxResult!.flow.regularFederalIncomeTax);
+  });
+});

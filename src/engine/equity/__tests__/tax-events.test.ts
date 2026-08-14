@@ -126,3 +126,45 @@ describe("ISO disqualifying disposition", () => {
     expect(r.capitalGains).toBeCloseTo(0, 2);
   });
 });
+
+describe("FICA-exempt equity income (IRC §3121(a)(22))", () => {
+  // Three kinds of equity ordinary income share one bucket, but only two are
+  // payroll wages. Income from a disqualifying disposition of ISO stock is
+  // fully taxable W-2 box 1 income that §3121(a)(22) excludes from FICA — so it
+  // has to be reported as a subset of ordinaryIncome, not removed from it.
+  const isoGrant: EquityGrant = {
+    id: "g-dq", grantNumber: "ISO-DQ", grantType: "iso", grantYear: 2026, sharesGranted: 10_000,
+    has83bElection: false, fmvAtGrant: null, strikePrice: 10, strikeDiscountPct: null,
+    expirationYear: 2036, plannedEvents: [],
+    strategy: { exerciseTiming: "at_vest", sellTiming: "immediately" },
+    tranches: [{ id: "t1", vestYear: 2027, shares: 10_000, sharesExercised: 0, sharesSold: 0, strategy: null }],
+  };
+
+  it("flags a disqualifying ISO disposition as exempt without taking it out of ordinary income", () => {
+    // Cashless exercise-and-sell at $100 on a $10 strike: the whole $900,000
+    // bargain element is ordinary income, and none of it is FICA wages.
+    const p = plan(isoGrant);
+    const st = createEquityState([p], PSY);
+    const r = computeEquityYear(p, st, 2027);
+    expect(r.ordinaryIncome).toBeCloseTo(900_000, 2);
+    expect(r.ficaExemptOrdinaryIncome).toBeCloseTo(900_000, 2);
+  });
+
+  it("leaves an RSU vest fully FICA-bearing", () => {
+    const p = plan(rsuFutureVest);
+    const st = createEquityState([p], PSY);
+    const r = computeEquityYear(p, st, 2027);
+    expect(r.ordinaryIncome).toBeCloseTo(10_000, 2);
+    expect(r.ficaExemptOrdinaryIncome).toBe(0);
+  });
+
+  it("leaves an NQSO exercise spread fully FICA-bearing", () => {
+    const g: EquityGrant = { ...rsuFutureVest, id: "g-nq", grantType: "nqso", strikePrice: 10,
+      tranches: [{ id: "t1", vestYear: 2027, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null }] };
+    const p = plan(g);
+    const st = createEquityState([p], PSY);
+    const r = computeEquityYear(p, st, 2027);
+    expect(r.ordinaryIncome).toBeCloseTo(9_000, 2);
+    expect(r.ficaExemptOrdinaryIncome).toBe(0);
+  });
+});

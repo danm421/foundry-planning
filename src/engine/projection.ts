@@ -111,7 +111,7 @@ import {
   computeAnchoredHypotheticalEstateTax,
   emptyHypotheticalEstateTax,
 } from "./what-if/hypothetical-estate-tax";
-import { calcSeca, calcSeAdditionalMedicare } from "../lib/tax/fica";
+import { calcSeca, calcSeAdditionalMedicare, ficaWagesOf } from "../lib/tax/fica";
 import { resolveCashValueForYear } from "./life-insurance-schedule";
 import { computeTermEndYear } from "./life-insurance-expiry";
 import {
@@ -1363,6 +1363,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // AFTER BoY purchases/sales but BEFORE the growth loop so the destination
     // account participates in this year's growth.
     let equityOrdinaryIncome = 0;
+    // Subset of equityOrdinaryIncome that IRC §3121(a)(22) keeps out of FICA
+    // (disqualifying ISO dispositions). Still fully taxable box 1 income.
+    let equityFicaExemptIncome = 0;
     let equityCapitalGains = 0;
     let equityStCapitalGains = 0;
     let equityIsoSpread = 0;
@@ -1449,6 +1452,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           stCapitalGains: prev.stCapitalGains + applied.taxDeltas.stCapitalGains,
         });
         equityOrdinaryIncome += applied.taxDeltas.ordinaryIncome;
+        equityFicaExemptIncome += applied.taxDeltas.ficaExemptOrdinaryIncome;
         equityCapitalGains += applied.taxDeltas.capitalGains;
         equityStCapitalGains += applied.taxDeltas.stCapitalGains;
         equityIsoSpread += applied.taxDeltas.isoSpread;
@@ -2099,8 +2103,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // set, otherwise fall back to the legacy type-based mapping.
     const taxDetail: ProjectionYear["taxDetail"] = {
       // Equity W-2 ordinary income (RSU vest FMV, NQSO/disqualifying-ISO
-      // bargain element) is FICA-bearing earned income.
+      // bargain element) is earned income. The RSU and NQSO legs are payroll
+      // wages; the disqualifying-ISO leg is not.
       earnedIncome: equityOrdinaryIncome,
+      ficaExemptEarnedIncome: equityFicaExemptIncome,
       ordinaryIncome: realizationOI,
       dividends: realizationQDiv,
       // Equity capital gains booked on sale by the equity module. Asset-sale
@@ -4056,18 +4062,25 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     }
     const secaResult = useBracket && resolved
       ? (() => {
+          // Wages that actually consumed the SS wage base / Additional Medicare
+          // threshold. FICA-exempt earned income consumed neither, so counting
+          // it here would under-charge SECA on the self-employment side.
+          const ficaSsWages = ficaWagesOf(
+            taxDetail.earnedIncome,
+            taxDetail.ficaExemptEarnedIncome,
+          );
           const seca = calcSeca({
             seEarnings,
             ssTaxRate: resolved.params.ssTaxRate,
             ssWageBase: resolved.params.ssWageBase,
             medicareTaxRate: resolved.params.medicareTaxRate,
-            ficaSsWages: taxDetail.earnedIncome,
+            ficaSsWages,
           });
           // SE-side 0.9% Additional Medicare surtax (IRC §1401(b)(2)). Same
           // filing-status threshold source as the wage-side surtax in
           // calculate.ts (mfj / mfs / single, with HoH → single); wages
-          // (taxDetail.earnedIncome) consume the threshold first so it's
-          // applied exactly once across wage- and SE-sides.
+          // (ficaSsWages, net of the FICA-exempt leg) consume the threshold
+          // first so it's applied exactly once across wage- and SE-sides.
           const addlMedicareThreshold =
             filingStatus === "married_joint"
               ? resolved.params.addlMedicareThreshold.mfj
@@ -4076,7 +4089,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
                 : resolved.params.addlMedicareThreshold.single;
           const additionalMedicare = calcSeAdditionalMedicare({
             seEarnings,
-            ficaSsWages: taxDetail.earnedIncome,
+            ficaSsWages,
             threshold: addlMedicareThreshold,
             rate: resolved.params.addlMedicareRate,
           });
@@ -6340,6 +6353,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         taxDetail: {
           ...finalTaxInput.taxDetail,
           earnedIncome: finalTaxInput.taxDetail.earnedIncome - equityOrdinaryIncome,
+          // The counterfactual removes ALL equity ordinary income, both legs,
+          // so nothing FICA-exempt is left in the base it computes against.
+          ficaExemptEarnedIncome: 0,
           capitalGains: finalTaxInput.taxDetail.capitalGains - equityCapitalGains,
           stCapitalGains: finalTaxInput.taxDetail.stCapitalGains - equityStCapitalGains,
           bySource: { ...finalTaxInput.taxDetail.bySource },

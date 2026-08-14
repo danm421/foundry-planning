@@ -186,6 +186,17 @@ export interface CalcInput {
   filingStatus: FilingStatus;
   // From projection engine's existing taxDetail:
   earnedIncome: number;
+  /** SUBSET of `earnedIncome` that is NOT "wages" under IRC §3121(a), so it
+   *  bears no Social Security, Medicare, or Additional Medicare tax while
+   *  staying fully taxable Form W-2 box 1 income. Today the only source is a
+   *  disqualifying disposition of ISO stock (§3121(a)(22), which also covers
+   *  ESPP when that is modeled).
+   *
+   *  A subset, not a sibling bucket: the amount belongs in AGI, in the
+   *  brackets, and in the credit layer's earned-income figure — only the
+   *  payroll-tax calls net it out. Optional for back-compat; omitting it treats
+   *  every dollar as wages, which is correct for every other source. */
+  ficaExemptEarnedIncome?: number;
   ordinaryIncome: number;     // non-qual div, RMDs, IRA distributions, etc.
   /** Taxable interest income (savings, CDs, bonds). Split out from
    *  `ordinaryIncome` so NIIT can include it per IRC §1411(c)(1)(A)(i);

@@ -1423,6 +1423,9 @@ export interface ProjectionYear {
 
   taxDetail?: {
     earnedIncome: number;
+    /** Subset of `earnedIncome` bearing no FICA — see
+     *  `CalcInput.ficaExemptEarnedIncome`. Absent/0 = all of it is wages. */
+    ficaExemptEarnedIncome?: number;
     ordinaryIncome: number;
     dividends: number;
     capitalGains: number;

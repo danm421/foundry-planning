@@ -26,7 +26,8 @@ export interface EquityState {
 }
 
 export interface EquityYearResult {
-  ordinaryIncome: number;   // W-2 wages (FICA-bearing)
+  ordinaryIncome: number;   // W-2 box 1 income (RSU vest, NQSO spread, disqualifying ISO)
+  ficaExemptOrdinaryIncome: number; // subset of ordinaryIncome, no FICA (§3121(a)(22))
   isoSpread: number;        // AMT preference
   capitalGains: number;     // long-term
   stCapitalGains: number;   // short-term
@@ -74,7 +75,7 @@ export function createEquityState(plans: StockOptionPlan[], planStartYear: numbe
 }
 
 function emptyResult(): EquityYearResult {
-  return { ordinaryIncome: 0, isoSpread: 0, capitalGains: 0, stCapitalGains: 0, strikeCashOutflow: 0, sellProceeds: 0, sellToCoverProceeds: 0, acquisitions: [], saleBasisRemoved: 0, details: [] };
+  return { ordinaryIncome: 0, ficaExemptOrdinaryIncome: 0, isoSpread: 0, capitalGains: 0, stCapitalGains: 0, strikeCashOutflow: 0, sellProceeds: 0, sellToCoverProceeds: 0, acquisitions: [], saleBasisRemoved: 0, details: [] };
 }
 
 export function computeEquityYear(plan: StockOptionPlan, state: EquityState, year: number): EquityYearResult {
@@ -182,7 +183,13 @@ export function computeEquityYear(plan: StockOptionPlan, state: EquityState, yea
           // LESSER of the exercise-date bargain element or the actual gain on sale. A drop after
           // exercise caps OI at (salePrice − strike) and is NOT a separate capital loss.
           const oiPerShare = Math.min(Math.max(0, lot.fmvAtExercise - lot.strike), Math.max(0, f - lot.strike));
-          res.ordinaryIncome += ROUND(shares * oiPerShare);
+          const oi = ROUND(shares * oiPerShare);
+          res.ordinaryIncome += oi;
+          // Box 1 income, but NOT §3121(a) wages — IRC §3121(a)(22) excludes
+          // remuneration on a disposition of ISO/ESPP stock from FICA. This is
+          // the ONLY equity leg that is exempt: RSU vests and NQSO spreads above
+          // are ordinary payroll wages.
+          res.ficaExemptOrdinaryIncome += oi;
           // Residual vs stepped-up basis (strike + OI/share). Up → post-exercise appreciation;
           // flat-after-drop → 0; below strike → a true capital loss.
           const gain = ROUND(shares * (f - lot.strike) - shares * oiPerShare);
