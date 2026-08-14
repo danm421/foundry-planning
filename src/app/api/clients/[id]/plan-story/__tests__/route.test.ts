@@ -41,6 +41,8 @@ const mocks = vi.hoisted(() => ({
   markChapterReviewed: vi.fn(),
   upsertGeneratedChapter: vi.fn(),
   loadStoryContext: vi.fn(),
+  loadVoiceProfile: vi.fn(),
+  listVoiceSamples: vi.fn(),
   generateChapter: vi.fn(),
   checkPlanStoryRateLimit: vi.fn(),
   /** What `select ... from scenarios where id = ? and client_id = ?` returns. */
@@ -100,6 +102,18 @@ vi.mock("@/lib/presentations/story/load-context", () => ({
   loadStoryContext: mocks.loadStoryContext,
 }));
 
+// The other half of `loadStoryRun`. Both readers go to the database, and the
+// `@/db` stub above answers only the scenario lookup — so they are replaced
+// here for the same reason `loadStoryContext` is: this file tests the routes,
+// not the voice tables. `resolveVoice` still runs for real, which is what makes
+// the hashes below the ones a run would store. What no test here can see is
+// whether the two routes resolve the SAME voice; that pin is
+// `story/__tests__/run-context.test.ts`, on the one helper they both call.
+vi.mock("@/lib/presentations/story/voice/repo", () => ({
+  loadVoiceProfile: mocks.loadVoiceProfile,
+  listVoiceSamples: mocks.listVoiceSamples,
+}));
+
 vi.mock("@/lib/presentations/story/generate", () => ({
   generateChapter: mocks.generateChapter,
 }));
@@ -119,6 +133,7 @@ import { GET as GET_STALE } from "../stale/route";
 import { POST } from "../generate/route";
 import { PATCH } from "../[chapterId]/route";
 import { chapterSourceHash } from "@/lib/presentations/story/chapters/prompts";
+import { EMPTY_VOICE } from "@/lib/presentations/story/voice/resolve";
 
 import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
 import { CHAPTER_IDS } from "@/lib/presentations/story/types";
@@ -197,6 +212,9 @@ beforeEach(() => {
   mocks.scenarioRows = [];
   mocks.requireOrgId.mockResolvedValue("org_1");
   mocks.requireOrgAndUser.mockResolvedValue({ orgId: "org_1", userId: "user_1" });
+  // No stored voice, so every hash below is the empty-voice one.
+  mocks.loadVoiceProfile.mockResolvedValue(null);
+  mocks.listVoiceSamples.mockResolvedValue([]);
   mocks.verifyClientAccess.mockResolvedValue({
     ok: true,
     permission: "edit",
@@ -413,7 +431,7 @@ describe("GET /api/clients/[id]/plan-story/stale", () => {
     GET_STALE(req(`http://x/${query}`), { params: Promise.resolve({ id: CLIENT_ID }) });
 
   /** The hash a generation run against `NO_FACTS` would have stored. */
-  const FRESH = chapterSourceHash("planInOnePage", NO_FACTS, []);
+  const FRESH = chapterSourceHash("planInOnePage", NO_FACTS, EMPTY_VOICE);
 
   beforeEach(() => {
     mocks.loadStoryContext.mockResolvedValue(NO_FACTS);
@@ -449,7 +467,7 @@ describe("GET /api/clients/[id]/plan-story/stale", () => {
   it("names the chapter whose stored hash no longer matches the plan", async () => {
     mocks.listStoryChapters.mockResolvedValue([
       chapterRow({ chapterId: "planInOnePage", sourceHash: "written-against-an-older-plan" }),
-      chapterRow({ chapterId: "whatYouHave", sourceHash: chapterSourceHash("whatYouHave", NO_FACTS, []) }),
+      chapterRow({ chapterId: "whatYouHave", sourceHash: chapterSourceHash("whatYouHave", NO_FACTS, EMPTY_VOICE) }),
     ]);
     const res = await stale("?scenarioId=base");
     expect(await res.json()).toMatchObject({ stale: ["planInOnePage"] });

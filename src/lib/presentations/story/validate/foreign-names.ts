@@ -7,10 +7,12 @@
 // FIGURE — it is not in this pack's spellings — and there is nothing for a
 // leaked name.
 //
-// The exemplar path is BUILT AND NOT YET FED at this commit: `prompts.ts` injects
-// `voiceSamples` and `run-context.ts` still hands it `[]`. This gate goes in
-// first, deliberately — it is the check that has to exist before anything fills
-// that list.
+// The exemplar path IS fed as of this commit: `run-context.ts` resolves a real
+// voice out of the database and `prompts.ts` writes its samples into the system
+// prompt. This gate went in first, deliberately — it is the check that had to
+// exist before anything could fill that list. What is still missing is only the
+// Settings screen an advisor adds samples on, so today the list is non-empty
+// exactly when a row was written by hand.
 //
 // ⚠️⚠️ This gate reads capitalised words, and a financial report is full of them:
 // Social Security, Roth, Medicare, Traditional IRA, every month, every sentence

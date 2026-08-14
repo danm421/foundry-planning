@@ -1,6 +1,6 @@
 // Inherits the shipped Retirement Comparison prompt's DNA (warm, second
 // person, first names used sparingly, short paragraphs, no headings) and adds
-// the fact table, the document role, the voice samples, and the retry block.
+// the fact table, the document role, the advisor's voice, and the retry block.
 //
 // Every instruction here is the model-facing half of a gate in `../validate`.
 // The gates are what actually hold — this only lowers the odds of spending the
@@ -12,6 +12,7 @@ import type { GateFailure } from "../validate";
 import { extractFigures } from "../validate/facts";
 import { MAX_MEAN_SENTENCE_WORDS, MAX_SENTENCE_WORDS } from "../validate/readability";
 import { factsForChapter, type ChapterId, type StoryContext } from "../types";
+import type { StoryVoice } from "../voice/resolve";
 import { CHAPTERS, chapterEnumerates, chapterOutputAsk } from "./registry";
 
 /** Gate 3's banned openers, in full. Copied rather than imported: `ACTION_VERBS`
@@ -120,7 +121,7 @@ function rowLine(row: ChangeRow, spellings: Set<string>): string {
 export function buildChapterPrompt(
   chapterId: ChapterId,
   ctx: StoryContext,
-  voiceSamples: string[],
+  voice: StoryVoice,
   retryFailures: GateFailure[],
 ): { system: string; user: string } {
   const def = CHAPTERS[chapterId];
@@ -193,10 +194,20 @@ export function buildChapterPrompt(
       : "This chapter stands on its own. Close the thought — nothing follows it.",
   ];
 
-  if (voiceSamples.length > 0) {
+  if (voice.styleNote.trim().length > 0) {
+    systemParts.push(
+      // The advisor's own words about how they write, relayed as guidance rather
+      // than as a rule: it is not a gate, nothing checks it, and a model told to
+      // OBEY an unconstrained free-text instruction is a model an advisor can
+      // accidentally talk out of every rule above.
+      `The advisor describes their own writing this way — follow it where it does not conflict with anything above: ${voice.styleNote.trim()}`,
+    );
+  }
+
+  if (voice.samples.length > 0) {
     systemParts.push(
       "Match the voice of these samples of the advisor's own writing. Copy their rhythm and register, not their content:",
-      ...voiceSamples.map((s) => `Sample: ${s}`),
+      ...voice.samples.map((s) => `Sample: ${s}`),
     );
   }
 
@@ -271,21 +282,21 @@ export function buildChapterPrompt(
  * come apart LOUDLY: a hash differing by a character reports every chapter of
  * every report out of date, permanently, with nothing to clear it.
  *
- * ⚠️ `voiceSamples` is a parameter rather than a hardcoded `[]` for exactly that
- * reason. They change the system prompt (see above), so the side rebuilding the
- * hash has to supply the same samples the generating side had — which is why
- * `run-context.ts` carries them as part of one run's inputs instead of each
- * caller spelling them out.
+ * ⚠️ `voice` is a parameter rather than a hardcoded empty one for exactly that
+ * reason. BOTH of its halves change the system prompt (see above) — the style
+ * note as much as the samples — so the side rebuilding the hash has to supply
+ * the same voice the generating side had, which is why `run-context.ts` resolves
+ * it once as part of one run's inputs instead of each caller spelling it out.
  */
 export function chapterSourceHash(
   chapterId: ChapterId,
   ctx: StoryContext,
-  voiceSamples: string[],
+  voice: StoryVoice,
 ): string {
   // Scoped here as well as in `generateChapter`, which hands this an
   // already-scoped context: `factsForChapter` is a filter, so applying it twice
   // is the same array, and requiring callers to remember makes the hash depend
   // on a convention rather than on its arguments.
   const scoped: StoryContext = { ...ctx, facts: factsForChapter(ctx.facts, chapterId) };
-  return hashAiRequest(buildChapterPrompt(chapterId, scoped, voiceSamples, []));
+  return hashAiRequest(buildChapterPrompt(chapterId, scoped, voice, []));
 }

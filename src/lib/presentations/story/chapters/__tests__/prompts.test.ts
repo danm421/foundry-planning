@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildChapterPrompt } from "../prompts";
+import { EMPTY_VOICE } from "../../voice/resolve";
 import { CHAPTERS, chapterEnumerates, chapterOutputAsk } from "../registry";
 import { moneyFact, pctFact, quotedFact } from "../../facts";
 import { runGates } from "../../validate";
@@ -17,36 +18,53 @@ const CTX: StoryContext = {
 
 describe("buildChapterPrompt", () => {
   it("lists every allowed figure with its label, and forbids inventing others", () => {
-    const { system, user } = buildChapterPrompt("planInOnePage", CTX, [], []);
+    const { system, user } = buildChapterPrompt("planInOnePage", CTX, EMPTY_VOICE, []);
     expect(user).toContain("Confidence, proposed: 91%");
     expect(user).toContain("Net worth: $2.1M");
     expect(system).toContain("Only use the figures listed");
   });
 
   it("names the household and the scenario", () => {
-    const { user } = buildChapterPrompt("planInOnePage", CTX, [], []);
+    const { user } = buildChapterPrompt("planInOnePage", CTX, EMPTY_VOICE, []);
     expect(user).toContain("Alan and Teresa");
     expect(user).toContain("Retire at 62 + Roth");
   });
 
   it("includes the strategies for the recommendation chapter", () => {
-    const { user } = buildChapterPrompt("whatWeRecommend", CTX, [], []);
+    const { user } = buildChapterPrompt("whatWeRecommend", CTX, EMPTY_VOICE, []);
     expect(user).toContain("Delay Social Security");
     expect(user).toContain("Claiming age moves from 67 to 70");
   });
 
   it("tells the model to point forward in frontMatter mode", () => {
-    const { system } = buildChapterPrompt("planInOnePage", { ...CTX, documentRole: "frontMatter" }, [], []);
+    const { system } = buildChapterPrompt("planInOnePage", { ...CTX, documentRole: "frontMatter" }, EMPTY_VOICE, []);
     expect(system).toContain("pages that follow");
   });
 
   it("includes voice samples as style examples when supplied", () => {
-    const { system } = buildChapterPrompt("planInOnePage", CTX, ["We kept this simple on purpose."], []);
+    const { system } = buildChapterPrompt("planInOnePage", CTX, { styleNote: "", samples: ["We kept this simple on purpose."] }, []);
     expect(system).toContain("We kept this simple on purpose.");
   });
 
+  // …and the other half of the voice. Relayed as guidance, never as an override:
+  // the note is free text an advisor typed, and a model told to OBEY it can be
+  // talked out of every rule above it.
+  it("relays the style note as guidance that yields to the rules above it", () => {
+    const { system } = buildChapterPrompt("planInOnePage", CTX, { styleNote: "Short sentences.", samples: [] }, []);
+    expect(system).toContain("Short sentences.");
+    expect(system).toContain("where it does not conflict with anything above");
+  });
+
+  // Kills: a blank note pushing an instruction that trails off into nothing —
+  // and, because the note is hashed, one that makes an empty voice hash
+  // differently from a whitespace one.
+  it("says nothing about the advisor's own description when there is none", () => {
+    const { system } = buildChapterPrompt("planInOnePage", CTX, { styleNote: "   ", samples: [] }, []);
+    expect(system).not.toContain("The advisor describes their own writing");
+  });
+
   it("names every broken rule on a retry", () => {
-    const { user } = buildChapterPrompt("planInOnePage", CTX, [], [
+    const { user } = buildChapterPrompt("planInOnePage", CTX, EMPTY_VOICE, [
       { gate: "facts", message: "The figure $3.4M is not one of the supplied plan figures." },
       { gate: "voice", message: "Drop the three-item parallel list." },
     ]);
@@ -64,7 +82,7 @@ describe("buildChapterPrompt", () => {
       ...CTX,
       strategies: [{ name: "Sell the rental", rows: [{ area: "Assets", what: "Rental property", op: "remove", before: "In plan", after: "—", detail: ["Sold in 2029"] }] }],
     };
-    const { system, user } = buildChapterPrompt("whatWeRecommend", ctx, [], []);
+    const { system, user } = buildChapterPrompt("whatWeRecommend", ctx, EMPTY_VOICE, []);
     expect(user).toContain("Sell the rental");
     expect(system).toContain("never repeat a label word for word");
   });
@@ -76,7 +94,7 @@ describe("buildChapterPrompt", () => {
   const GATE_3_VERBS = ["buy", "sell", "purchase", "liquidate", "move", "switch", "shift", "trim", "rebalance", "reallocate", "convert", "roll", "invest"];
 
   it("names every action word Gate 3 rejects at the head of a clause", () => {
-    const { system } = buildChapterPrompt("whatWeRecommend", CTX, [], []);
+    const { system } = buildChapterPrompt("whatWeRecommend", CTX, EMPTY_VOICE, []);
     const line = system.split("\n").find((l) => l.startsWith("Never open a sentence or a clause"));
     expect(line).toBeDefined();
     for (const verb of GATE_3_VERBS) {
@@ -89,7 +107,7 @@ describe("buildChapterPrompt", () => {
   });
 
   it("names Gate 2's sentence-length limits, and the gate holds those numbers", () => {
-    const { system } = buildChapterPrompt("planInOnePage", CTX, [], []);
+    const { system } = buildChapterPrompt("planInOnePage", CTX, EMPTY_VOICE, []);
     expect(system).toContain("under 20 words");
     expect(system).toContain("past 40");
     const readability = (text: string) => runGates(text, CTX.facts).filter((f) => f.gate === "readability");
@@ -115,7 +133,7 @@ describe("buildChapterPrompt", () => {
   it("asks for a mean no chapter's gate will then reject it for", () => {
     const asked = `${"word ".repeat(19)}end. `.repeat(3); // 20 words a sentence
     for (const chapterId of CHAPTER_IDS) {
-      const { system } = buildChapterPrompt(chapterId, CTX, [], []);
+      const { system } = buildChapterPrompt(chapterId, CTX, EMPTY_VOICE, []);
       expect(system).toContain("under 20 words");
       expect(system).toContain("past 40");
       const opts = { enumerates: chapterEnumerates(chapterId) };
@@ -145,14 +163,14 @@ describe("buildChapterPrompt", () => {
    * is the list underneath.
    */
   it("asks the list chapters for less prose, and everyone else for a chapter", () => {
-    const steps = buildChapterPrompt("whatHappensNext", CTX, [], []).system;
+    const steps = buildChapterPrompt("whatHappensNext", CTX, EMPTY_VOICE, []).system;
     expect(steps).toContain("ONE short paragraph");
     expect(steps).not.toContain("2 to 4 short paragraphs");
     // …and it must not write the steps out: they print underneath, and a model
     // that restates them prints the household's list twice.
     expect(steps).toContain("Do not list the steps themselves");
 
-    const glossary = buildChapterPrompt("thingsToKnow", CTX, [], []).system;
+    const glossary = buildChapterPrompt("thingsToKnow", CTX, EMPTY_VOICE, []).system;
     expect(glossary).toContain("ONE or TWO short paragraphs");
     expect(glossary).not.toContain("2 to 4 short paragraphs");
     // Same rule, and here it also protects the words themselves: the entries
@@ -164,25 +182,25 @@ describe("buildChapterPrompt", () => {
     // not the list chapters' shape and not the full-sheet one either. See
     // `chapterOutputAsk — the ask matches the sheet` below for the direct
     // pin against `chapterOutputAsk`.
-    const twoUp = buildChapterPrompt("whatWerePlanningFor", CTX, [], []).system;
+    const twoUp = buildChapterPrompt("whatWerePlanningFor", CTX, EMPTY_VOICE, []).system;
     expect(twoUp).toContain("TWO short paragraphs");
     expect(twoUp).not.toContain("2 to 4 short paragraphs");
 
     for (const chapterId of CHAPTER_IDS.filter(
       (id) => !["checklist", "glossary", "twoUp"].includes(CHAPTERS[id].layout),
     )) {
-      expect(buildChapterPrompt(chapterId, CTX, [], []).system).toContain("2 to 4 short paragraphs");
+      expect(buildChapterPrompt(chapterId, CTX, EMPTY_VOICE, []).system).toContain("2 to 4 short paragraphs");
     }
   });
 
   // The other half of the same trade. The chapter that has to name every account
   // a household owns was being told never to write a three-item list.
   it("lets the enumerating chapter list things, and still bans the flourish", () => {
-    const { system } = buildChapterPrompt("whatWeRecommend", CTX, [], []);
+    const { system } = buildChapterPrompt("whatWeRecommend", CTX, EMPTY_VOICE, []);
     expect(system).toContain("three-item parallel list of qualities");
     expect(system).toContain("listing what they own");
     // The prose chapters keep the flat rule.
-    expect(buildChapterPrompt("planInOnePage", CTX, [], []).system).toContain(
+    expect(buildChapterPrompt("planInOnePage", CTX, EMPTY_VOICE, []).system).toContain(
       "Never write a three-item parallel list.",
     );
   });
@@ -201,7 +219,7 @@ describe("buildChapterPrompt", () => {
         },
       ],
     };
-    const { user } = buildChapterPrompt("whatWeRecommend", ctx, [], []);
+    const { user } = buildChapterPrompt("whatWeRecommend", ctx, EMPTY_VOICE, []);
     // The op word carries the change even when the row has nothing else.
     expect(user).toContain("Rental property (removed)");
     expect(user).toContain("Roth conversion (added)");
@@ -232,7 +250,7 @@ describe("buildChapterPrompt", () => {
         },
       ],
     };
-    const { user } = buildChapterPrompt("whatWeRecommend", ctx, [], []);
+    const { user } = buildChapterPrompt("whatWeRecommend", ctx, EMPTY_VOICE, []);
     expect(user).toContain("Confidence (raised): 73% → 91%");
     expect(user).toContain("Annual amount (raised) — Changes what you're saving.");
     expect(user).toContain("Salary end year (moved earlier)");
@@ -253,7 +271,7 @@ describe("buildChapterPrompt", () => {
         },
       ],
     };
-    const { user } = buildChapterPrompt("whatWeRecommend", ctx, [], []);
+    const { user } = buildChapterPrompt("whatWeRecommend", ctx, EMPTY_VOICE, []);
     expect(user).toContain("- Living expenses (changed)");
     expect(user).not.toContain("Updated");
     expect(user).not.toContain("$20k");
@@ -297,13 +315,13 @@ describe("buildChapterPrompt", () => {
     };
 
     it("keeps the banned form out of the prompt from either field", () => {
-      const { user } = buildChapterPrompt("whatWeRecommend", ctx, [], []);
+      const { user } = buildChapterPrompt("whatWeRecommend", ctx, EMPTY_VOICE, []);
       expect(user).not.toContain("($50k)");
       expect(user).not.toContain("($20k)");
     });
 
     it("keeps the operation word, so no row is left a bare noun", () => {
-      const { user } = buildChapterPrompt("whatWeRecommend", ctx, [], []);
+      const { user } = buildChapterPrompt("whatWeRecommend", ctx, EMPTY_VOICE, []);
       // The pair is suppressed; the direction read off it is not — `editWord`
       // runs before the quotability check for exactly this reason.
       expect(user).toContain("- Travel · Annual amount (raised) — Adjusts this expense.");
@@ -327,13 +345,13 @@ describe("buildChapterPrompt", () => {
           },
         ],
       };
-      const { user } = buildChapterPrompt("whatWeRecommend", clean, [], []);
+      const { user } = buildChapterPrompt("whatWeRecommend", clean, EMPTY_VOICE, []);
       expect(user).toContain("- Travel · Annual amount (raised): $100k → $150k — Adjusts this expense.");
     });
   });
 
   it("leaves no heading standing over an empty list", () => {
-    const { user } = buildChapterPrompt("whatWeRecommend", { ...CTX, strategies: [], facts: [] }, [], []);
+    const { user } = buildChapterPrompt("whatWeRecommend", { ...CTX, strategies: [], facts: [] }, EMPTY_VOICE, []);
     expect(user).not.toContain("The changes, grouped as strategies");
     expect(user).not.toMatch(/figures you may use:\n\n/u);
   });
@@ -341,23 +359,23 @@ describe("buildChapterPrompt", () => {
 
 describe("the register rules", () => {
   it("tells the model the fact labels are not English", () => {
-    const { system } = buildChapterPrompt("whatYouHave", CTX, [], []);
+    const { system } = buildChapterPrompt("whatYouHave", CTX, EMPTY_VOICE, []);
     expect(system).toMatch(/heading|label/i);
     expect(system).toContain("never copy");
   });
 
   it("forbids describing the page", () => {
-    const { system } = buildChapterPrompt("whatYouHave", CTX, [], []);
+    const { system } = buildChapterPrompt("whatYouHave", CTX, EMPTY_VOICE, []);
     expect(system).toMatch(/never mention the page/i);
   });
 
   it("pins the names to direct address", () => {
-    const { system } = buildChapterPrompt("whatYouHave", CTX, [], []);
+    const { system } = buildChapterPrompt("whatYouHave", CTX, EMPTY_VOICE, []);
     expect(system).toMatch(/address them directly/i);
   });
 
   it("labels the fact table as internal notes rather than as figures to quote", () => {
-    const { user } = buildChapterPrompt("whatYouHave", CTX, [], []);
+    const { user } = buildChapterPrompt("whatYouHave", CTX, EMPTY_VOICE, []);
     // The heading before the list is what invited the transcription.
     expect(user).toContain("The left of each line is our own note");
   });
@@ -369,7 +387,7 @@ describe("the register rules", () => {
    * where they are handed over, is the cheapest half of that fix.
    */
   it("marks the chapter brief as instructions the client never sees", () => {
-    const { user } = buildChapterPrompt("planInOnePage", CTX, [], []);
+    const { user } = buildChapterPrompt("planInOnePage", CTX, EMPTY_VOICE, []);
     expect(user).toMatch(/never sees/i);
   });
 });

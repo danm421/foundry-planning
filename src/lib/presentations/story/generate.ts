@@ -15,6 +15,7 @@ import { buildChapterPrompt, chapterSourceHash } from "./chapters/prompts";
 import { CHAPTERS, chapterEnumerates } from "./chapters/registry";
 import { runGates, type GateFailure } from "./validate";
 import { factsForChapter, type ChapterId, type StoryContext } from "./types";
+import type { StoryVoice } from "./voice/resolve";
 
 /** Pinned explicitly rather than through AZURE_ANALYSIS_MODEL, matching the
  *  shipped comparison generator (pages/retirement-comparison/generate-ai.ts).
@@ -157,7 +158,9 @@ export interface GenerateChapterArgs {
   clientId: string;
   chapterId: ChapterId;
   ctx: StoryContext;
-  voiceSamples: string[];
+  /** Resolved once for the whole run (`run-context.ts`), because it is an input
+   *  to the `sourceHash` this returns. */
+  voice: StoryVoice;
   /** Bypass the cache and force a fresh call — the panel's Regenerate action. */
   force?: boolean;
   deps?: GenerateChapterDeps;
@@ -221,7 +224,7 @@ function retryNotes(failures: GateFailure[]): GateFailure[] {
 }
 
 export async function generateChapter(args: GenerateChapterArgs): Promise<GeneratedChapter> {
-  const { clientId, chapterId, voiceSamples } = args;
+  const { clientId, chapterId, voice } = args;
   /**
    * Scope the pack to this chapter ONCE, here, and let everything below read the
    * result: the prompt the model is shown, the gate that judges what it wrote,
@@ -256,11 +259,11 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
   const getCached = args.deps?.getCached ?? getCachedAnalysis;
   const setCached = args.deps?.setCached ?? setCachedAnalysis;
 
-  const first = buildChapterPrompt(chapterId, ctx, voiceSamples, []);
+  const first = buildChapterPrompt(chapterId, ctx, voice, []);
   // Not `hashAiRequest(first)`, though it is the same value: the staleness route
   // has to rebuild this hash from a context it loads itself, so the expression
   // lives in ONE place both sides call (`chapters/prompts.ts`).
-  const sourceHash = chapterSourceHash(chapterId, ctx, voiceSamples);
+  const sourceHash = chapterSourceHash(chapterId, ctx, voice);
 
   const narrative = CHAPTERS[chapterId].narrate(ctx).join("\n\n");
   /**
@@ -360,7 +363,7 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
     firstFailures = runGates(attempt1, ctx.facts, gateOpts);
 
     if (firstFailures.length > 0) {
-      const retry = buildChapterPrompt(chapterId, ctx, voiceSamples, retryNotes(firstFailures));
+      const retry = buildChapterPrompt(chapterId, ctx, voice, retryNotes(firstFailures));
       const attempt2 = await draft(retry);
       const retryFailures = dedupe(runGates(attempt2, ctx.facts, gateOpts));
       if (retryFailures.length > 0) return fallback(retryFailures);

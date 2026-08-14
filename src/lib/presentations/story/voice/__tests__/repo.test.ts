@@ -15,6 +15,12 @@ import { storyVoiceProfiles, storyVoiceSamples } from "@/db/schema";
 // `matches` walks the real drizzle condition against each row instead of
 // returning `rows` verbatim. A `where` that dropped its firmId comparison,
 // or a mock that ignored `where` entirely, would fail the scoping tests.
+//
+// `orderBy` is applied for the same reason (`ordered`, below). The order is
+// not cosmetic: `resolveVoice` keeps only the first four samples, so a mock
+// that handed the rows back unsorted — as this one did — would let `desc`
+// become `asc` with nothing red, and every chapter would be written from the
+// advisor's OLDEST four samples instead of their newest.
 
 /**
  * Postgres column name -> the row's JS key, merged across both voice tables.
@@ -47,6 +53,29 @@ function matches(condition: SQL, row: Record<string, unknown>): boolean {
   return isOr ? results.some(Boolean) : results.every(Boolean);
 }
 
+/**
+ * Sorts rows by a real `orderBy(desc(col))` argument. `desc(x)` is
+ * ``sql`${x} desc` ``, so both the column and the direction word are in the
+ * same chunk list `matches` walks — reading them is what makes the direction
+ * observable to a test rather than a claim in a docblock.
+ */
+function ordered(order: SQL, filtered: Record<string, unknown>[]): Record<string, unknown>[] {
+  const column = order.queryChunks.find((c): c is Column => c instanceof Column);
+  if (!column) throw new Error("orderBy was handed no column");
+  const key = COLUMN_KEY[column.name];
+  const descending = order.queryChunks.some(
+    (c) => c instanceof StringChunk && c.value.join("").trim() === "desc",
+  );
+  // A row missing the sort column would sort as NaN — every comparison false,
+  // so the rows come back in input order and the test reads as a pass whichever
+  // direction the code asked for. Loud instead.
+  const value = (row: Record<string, unknown>): number => {
+    if (row[key] == null) throw new Error(`test row has no ${key} to order by`);
+    return Number(row[key]);
+  };
+  return [...filtered].sort((a, b) => (descending ? value(b) - value(a) : value(a) - value(b)));
+}
+
 const m = vi.hoisted(() => ({
   upsert: vi.fn(),
   insertReturning: vi.fn(),
@@ -60,7 +89,7 @@ const m = vi.hoisted(() => ({
 let rows: Record<string, unknown>[] = [];
 
 const selectResult = (filtered: Record<string, unknown>[]) => ({
-  orderBy: () => Promise.resolve(filtered),
+  orderBy: (order: SQL) => Promise.resolve(ordered(order, filtered)),
   then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
     Promise.resolve(filtered).then(resolve, reject),
 });
@@ -197,6 +226,25 @@ describe("listVoiceSamples", () => {
     ];
     const result = await listVoiceSamples(FIRM, USER);
     expect(result.map((r) => r.id).sort()).toEqual(["s1", "s2"]);
+  });
+
+  /**
+   * ⚠️ Newest first, and it is `resolveVoice` that makes this matter: it keeps
+   * the FIRST FOUR of whatever this returns. An `asc` here would silently send
+   * the advisor's oldest four samples to all fourteen chapters, forever, with
+   * nothing else in the suite able to notice.
+   *
+   * Given in neither order, so a mock that ignored the ordering entirely fails
+   * this too.
+   */
+  it("returns the newest sample first, mixing the advisor's with the firm's", async () => {
+    rows = [
+      { id: "middle", firmId: FIRM, advisorUserId: USER, createdAt: new Date("2026-03-01") },
+      { id: "oldest", firmId: FIRM, advisorUserId: "", createdAt: new Date("2026-01-01") },
+      { id: "newest", firmId: FIRM, advisorUserId: USER, createdAt: new Date("2026-06-01") },
+    ];
+    const result = await listVoiceSamples(FIRM, USER);
+    expect(result.map((r) => r.id)).toEqual(["newest", "middle", "oldest"]);
   });
 
   it("excludes another advisor's samples at the same firm", async () => {

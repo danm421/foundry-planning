@@ -2,7 +2,7 @@
 // waits once, ahead of the meeting; the PDF export then makes no LLM calls at
 // all. maxDuration matches the presentation runs route for the same reason.
 import { NextRequest, NextResponse } from "next/server";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { checkPlanStoryRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
@@ -29,7 +29,9 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const callerOrg = await requireOrgId();
+    // The user id as well as the org: whose VOICE this run is written in is the
+    // acting advisor's, and it is an input to every chapter's stored hash.
+    const { orgId: callerOrg, userId } = await requireOrgAndUser();
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
 
@@ -96,9 +98,10 @@ export async function POST(
     // stored hash, and a chapter that reads permanently out of date with
     // nothing able to clear it. Scoping this is a real saving and its own
     // change; it is not free.
-    const { ctx, candidates, voiceSamples } = await loadStoryRun({
+    const { ctx, candidates, voice } = await loadStoryRun({
       clientId: id,
       firmId,
+      advisorUserId: userId,
       scenarioId,
       documentRole,
     });
@@ -163,10 +166,10 @@ export async function POST(
           clientId: id,
           chapterId,
           ctx,
-          // From the run, not a literal: they are an input to the stored
+          // From the run, not a literal: it is an input to the stored
           // `sourceHash`, and the staleness route rebuilds that hash from the
           // same object (`run-context.ts`).
-          voiceSamples,
+          voice,
           force: parsed.data.force ?? false,
         }),
       ),

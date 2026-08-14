@@ -13,7 +13,7 @@
 // then flag every chapter of every report out of date — a badge that is always
 // on is worse than no badge, because the advisor learns to ignore it.
 import { NextRequest, NextResponse } from "next/server";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { authErrorResponse } from "@/lib/authz";
 import {
@@ -39,7 +39,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    await requireOrgId();
+    // The org check is the gate; the user id is needed as well because the voice
+    // the comparison hash is rebuilt from is the CALLER'S (`run-context.ts`).
+    const { userId } = await requireOrgAndUser();
     const { id } = await params;
     const access = await verifyClientAccess(id);
     if (!access.ok) {
@@ -81,9 +83,10 @@ export async function GET(
       return NextResponse.json({ scenarioId, documentRole, stale: [] });
     }
 
-    const { ctx, candidates, voiceSamples } = await loadStoryRun({
+    const { ctx, candidates, voice } = await loadStoryRun({
       clientId: id,
       firmId: access.firmId,
+      advisorUserId: userId,
       scenarioId,
       documentRole,
     });
@@ -97,7 +100,7 @@ export async function GET(
       // its own facts matches nothing any run ever wrote — a stale badge nobody
       // can clear by regenerating.
       .filter((r) => inThisRun.has(r.chapterId))
-      .filter((r) => isChapterStale(r, chapterSourceHash(r.chapterId, ctx, voiceSamples)))
+      .filter((r) => isChapterStale(r, chapterSourceHash(r.chapterId, ctx, voice)))
       .map((r) => r.chapterId);
 
     return NextResponse.json({ scenarioId, documentRole, stale });
