@@ -17,6 +17,7 @@ import {
   BUDGET_WORDS_GLOSSARY,
   MAX_FIGURE_CARDS,
   MAX_GLOSSARY_TERMS,
+  MAX_PARAGRAPHS_WITH_CARDS,
   MAX_STEPS,
   MAX_STRATEGY_CARDS,
   SHEET_BUDGET_WORDS,
@@ -558,7 +559,11 @@ describe("one sheet per chapter, by construction", () => {
   it("prints every card when they fit", () => {
     const chapter = recommend(withStrategies(MAX_STRATEGY_CARDS));
     expect(chapter.strategies).toHaveLength(MAX_STRATEGY_CARDS);
-    expect(chapter.overflowNote).toBe("");
+    // The cards all fit, but the prose does not fit for free alongside them: the
+    // AI-off narrator writes one paragraph per strategy, and four of those beside
+    // a full card set is exactly the shape `MAX_PARAGRAPHS_WITH_CARDS` caps — the
+    // note says so rather than silently dropping the fourth.
+    expect(chapter.overflowNote).not.toBe("");
   });
 
   it("caps the cards at the sheet's capacity", () => {
@@ -639,6 +644,24 @@ describe("one sheet per chapter, by construction", () => {
     const note = recommend(withStrategies(11, { whatWeRecommend: long })).overflowNote;
     expect(note).toBe(`…and ${11 - MAX_STRATEGY_CARDS} more changes we'll walk through together.`);
     expect(note.split("…and")).toHaveLength(2);
+  });
+
+  it("caps the AI-off recommendation narrative at the paragraph ceiling", () => {
+    // Eleven strategies, the Cooper shape. The narrator writes one short
+    // paragraph each; four are dropped as restatements of their cards.
+    const strategies = Array.from({ length: 11 }, (_, i) => ({
+      name: `Strategy ${i + 1}`,
+      rows: [row({ what: "Annual amount", area: "Savings", detail: [] })],
+    }));
+    const chapter = recommend(
+      buildPlanStoryData(
+        deckCtx(input({ hasProposal: true, strategies, facts: [] }), "Proposed"),
+        PROPOSED,
+      ),
+    );
+    expect(chapter.paragraphs.length).toBeLessThanOrEqual(MAX_PARAGRAPHS_WITH_CARDS);
+    // What was dropped is SAID. The card overflow leads, since it can say how many.
+    expect(chapter.overflowNote).not.toBe("");
   });
 });
 
