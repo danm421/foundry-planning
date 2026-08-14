@@ -3202,6 +3202,74 @@ export const planStoryChapters = pgTable(
 export type PlanStoryChapterRow = InferSelectModel<typeof planStoryChapters>;
 export type NewPlanStoryChapterRow = InferInsertModel<typeof planStoryChapters>;
 
+/**
+ * The voice a firm's — or one advisor's — Plan Story chapters are written in.
+ *
+ * ⚠️ `advisorUserId` is NOT NULL with "" meaning THE FIRM DEFAULT, deliberately.
+ * A nullable column would be the obvious spelling and is wrong: Postgres treats
+ * every NULL as distinct in a unique index, so two firm-default rows would both
+ * insert cleanly and `loadVoiceProfile` would return whichever the planner
+ * happened to hand back.
+ */
+export const storyVoiceProfiles = pgTable(
+  "story_voice_profiles",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    /** Clerk org id. Text, no FK — the crm_* convention. */
+    firmId: text("firm_id").notNull(),
+    /** Clerk user id, or "" for the firm default. See the note above. */
+    advisorUserId: text("advisor_user_id").notNull().default(""),
+    /**
+     * The advisor's own description of how they write, in their words. Sent to
+     * the model as an instruction, so it is bounded — 2,000 characters is about
+     * three paragraphs, which is more guidance than a system prompt can absorb.
+     */
+    styleNote: text("style_note").notNull().default(""),
+    updatedBy: text("updated_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("story_voice_profiles_firm_advisor_uq").on(t.firmId, t.advisorUserId)],
+);
+
+/**
+ * Samples of the advisor's own writing the model is asked to match.
+ *
+ * ⚠️⚠️ EVERY ROW HERE IS SENT TO THE MODEL ON SOMEBODY ELSE'S REPORT. A sample
+ * harvested from the Cooper household is an input to the Warner household's
+ * prompt — that is the entire point of an exemplar, and it is also a
+ * cross-client leak vector the five shipped gates do not see. Gate 1 rejects a
+ * FIGURE that is not in this household's pack, so a leaked dollar cannot print;
+ * nothing rejected a leaked NAME until Gate 7 (`validate/foreign-names.ts`).
+ *
+ * Two rules, both enforced before a row is ever read:
+ *   1. `text` is written by `voice/scrub.ts`, never by a route taking raw input.
+ *   2. `enabled` starts FALSE. An advisor turns a sample on deliberately.
+ */
+export const storyVoiceSamples = pgTable(
+  "story_voice_samples",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id").notNull(),
+    advisorUserId: text("advisor_user_id").notNull().default(""),
+    /** Already scrubbed. 1,200 chars is roughly two chapters of prose. */
+    text: text("text").notNull(),
+    /** Where it came from, for the advisor's own recognition in the list. Null
+     *  for a sample they typed rather than harvested. */
+    sourceChapterId: text("source_chapter_id"),
+    sourceClientId: uuid("source_client_id").references(() => clients.id, { onDelete: "set null" }),
+    /** Off until the advisor turns it on. Never defaulted true. */
+    enabled: boolean("enabled").notNull().default(false),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("story_voice_samples_firm_advisor_idx").on(t.firmId, t.advisorUserId)],
+);
+
+export type StoryVoiceProfileRow = InferSelectModel<typeof storyVoiceProfiles>;
+export type StoryVoiceSampleRow = InferSelectModel<typeof storyVoiceSamples>;
+
 export const withdrawalStrategies = pgTable("withdrawal_strategies", {
   id: uuid("id").defaultRandom().primaryKey(),
   clientId: uuid("client_id")

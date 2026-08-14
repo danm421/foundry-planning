@@ -1688,6 +1688,13 @@
       "when": 1786584622833,
       "tag": "0240_hesitant_frightful_four",
       "breakpoints": true
+    },
+    {
+      "idx": 241,
+      "version": "7",
+      "when": 1786727664709,
+      "tag": "0241_gifted_mac_gargan",
+      "breakpoints": true
     }
   ]
 }
