@@ -7,6 +7,10 @@ import { PRESENTATION_THEME } from "@/lib/presentations/theme";
 import type { SectionAccent } from "@/lib/presentations/theme";
 import type { PlanStoryChapterView } from "@/lib/presentations/pages/plan-story/view-model";
 
+/** The text measure this page reads at — every full-width run of words on the
+ *  sheet, prose and glossary alike, stops at the same line length. */
+const MEASURE = 430;
+
 const styles = StyleSheet.create({
   wrap: { paddingTop: 18, paddingHorizontal: 24 },
   // The deck's eyebrow, verbatim from `shared/section-head.tsx` — this page
@@ -28,7 +32,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   rule: { height: 2, width: 48, marginBottom: 18 },
-  body: { fontSize: 11, lineHeight: 1.65, color: PRESENTATION_THEME.ink2, marginBottom: 11, maxWidth: 430 },
+  body: { fontSize: 11, lineHeight: 1.65, color: PRESENTATION_THEME.ink2, marginBottom: 11, maxWidth: MEASURE },
   card: {
     borderWidth: 0.75,
     borderColor: PRESENTATION_THEME.hair2,
@@ -80,6 +84,26 @@ const styles = StyleSheet.create({
     color: PRESENTATION_THEME.ink3,
     marginTop: 2,
   },
+  /** The glossary, set off from the prose by a hairline rather than a panel —
+   *  hierarchy on this deck comes from rules, never from a box or a shadow. */
+  glossaryBlock: {
+    marginTop: 6,
+    paddingTop: 10,
+    borderTopWidth: 0.75,
+    borderTopColor: PRESENTATION_THEME.hair2,
+  },
+  /** One line per term, a little smaller than the body copy above it: this is
+   *  reference matter a client comes back to, not the page's argument. */
+  term: {
+    fontSize: 10,
+    lineHeight: 1.5,
+    color: PRESENTATION_THEME.ink2,
+    marginBottom: 5,
+    maxWidth: MEASURE,
+  },
+  // Inter 600 — the same weight the deck's own headings use, and enough to let
+  // the eye find a word down the list without a second colour.
+  termWord: { fontWeight: 600, color: PRESENTATION_THEME.ink },
   cardName: { fontSize: 12, fontWeight: 700, color: PRESENTATION_THEME.ink, marginBottom: 3 },
   cardLabel: { fontSize: 7.5, letterSpacing: 0.6, color: PRESENTATION_THEME.ink3, marginBottom: 2 },
   cardText: { fontSize: 10, lineHeight: 1.5, color: PRESENTATION_THEME.ink2 },
@@ -166,6 +190,34 @@ export function PlanStoryChapterPdf({
             ))}
           </View>
         </View>
+      </View>
+    );
+  }
+
+  if (chapter.layout === "glossary") {
+    return (
+      <View style={styles.wrap}>
+        <ChapterHead title={chapter.title} accent={accent} eyebrow={eyebrow} />
+        <Paragraphs paragraphs={chapter.paragraphs} />
+        {chapter.glossary.length > 0 && (
+          <View style={styles.glossaryBlock}>
+            {/* The lead-in is a LABEL, not a sentence of prose — prose on this
+                chapter is replaced by the model the first time an advisor hits
+                Generate, and the list would be left without its introduction. */}
+            <Text style={[styles.cardLabel, { marginBottom: 7 }]}>IN PLAIN ENGLISH</Text>
+            {chapter.glossary.map((t, i) => (
+              <Text key={i} style={styles.term}>
+                {/* The term is stored lowercase, because it is matched against
+                    the gates' ban list; the capital belongs to the line. */}
+                <Text style={styles.termWord}>
+                  {t.term.charAt(0).toUpperCase() + t.term.slice(1)}
+                </Text>
+                {` — ${t.plain}`}
+              </Text>
+            ))}
+          </View>
+        )}
+        <OverflowNote note={chapter.overflowNote} />
       </View>
     );
   }

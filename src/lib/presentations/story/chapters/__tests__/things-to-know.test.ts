@@ -4,7 +4,7 @@ import { GLOSSARY } from "../../glossary";
 import { runGates } from "../../validate";
 import { extractFigures } from "../../validate/facts";
 import { pctFact, yearFact, type Fact } from "../../facts";
-import { MAX_PARAGRAPHS, SHEET_BUDGET_WORDS } from "@/lib/presentations/pages/plan-story/view-model";
+import { BUDGET_WORDS_GLOSSARY, MAX_PARAGRAPHS } from "@/lib/presentations/pages/plan-story/view-model";
 import type { StoryContext } from "../../types";
 
 function ctxWith(facts: Fact[]): StoryContext {
@@ -62,39 +62,34 @@ describe("narrateThingsToKnow", () => {
   });
 
   /**
-   * All of them, not the ones this report used. Filtering to "terms that
-   * appeared" needs the whole document's text at build time, which the
-   * per-chapter architecture does not have — and a glossary that omits a term
-   * the advisor's own edit introduced is worse than one carrying a spare line.
+   * The glossary is NOT prose, and this is the red that keeps it that way.
+   *
+   * The page prints it as a structured block under whatever this narrator
+   * writes, so a narrator that also wrote it out would print every definition
+   * twice on an ungenerated deck — and, on a generated one, put the model's
+   * paraphrase of eleven definitions above our own. `view-model.test.ts` owns
+   * the other half: that the block is there on both paths.
    */
-  it("prints every glossary term and its explanation", () => {
+  it("leaves the glossary to the page and writes none of it", () => {
     const text = textOf(CTX).toLowerCase();
     for (const entry of GLOSSARY) {
-      expect(text, entry.term).toContain(entry.term.toLowerCase());
-      expect(text, entry.term).toContain(entry.plain.toLowerCase());
+      expect(text, entry.term).not.toContain(entry.plain.toLowerCase());
     }
   });
 
   /**
-   * The glossary is ONE block of lines, not an entry per paragraph — and this
-   * has to be asserted through the ROUND TRIP, because at the narrator's own
-   * boundary the difference is invisible.
+   * What the export actually receives, not what this function returns.
    *
-   * `generate.ts` stores the AI-off narrative as `narrate(ctx).join("\n\n")`,
-   * and the export splits it back on a blank line. So a glossary joined with a
-   * blank line instead of a newline returns the same 4-element array here and
-   * arrives at the page as FOURTEEN paragraphs — past `MAX_PARAGRAPHS`, which
-   * drops the last few terms and prints a trim note over them. Asserting the
-   * array length alone passes on both, which is exactly how this was written
-   * wrong the first time.
+   * `generate.ts` stores the AI-off narrative as `narrate(ctx).join("\n\n")` and
+   * the export splits it back on a blank line, so a paragraph carrying a bare
+   * newline inside it is one paragraph here and two there. Asserting the
+   * returned array's length alone cannot tell the two apart.
    */
-  it("survives being stored and re-split as one glossary paragraph", () => {
-    const stored = narrateThingsToKnow(CTX).join("\n\n");
-    const paragraphs = stored.split(/\n{2,}/u);
-    expect(paragraphs).toHaveLength(4);
-    expect(paragraphs.filter((p) => p.toLowerCase().includes("glidepath"))).toHaveLength(1);
+  it("survives being stored and re-split", () => {
+    const paragraphs = narrateThingsToKnow(CTX).join("\n\n").split(/\n{2,}/u);
+    expect(paragraphs).toHaveLength(3);
     // The IMPORTED ceiling, not a copy of it: `capParagraphs` drops from the
-    // end, so a layout tune that lowered this below four would take the closing
+    // end, so a layout tune that lowered this below three would take the closing
     // line — the only invitation the report makes — off the sheet.
     expect(paragraphs.length).toBeLessThanOrEqual(MAX_PARAGRAPHS);
   });
@@ -123,18 +118,18 @@ describe("narrateThingsToKnow", () => {
   });
 
   /**
-   * The ceiling is `SHEET_BUDGET_WORDS`, 300. This asserts a floor of headroom
-   * under it instead, because of WHICH paragraph goes when the budget runs out:
-   * `capParagraphs` drops from the end, and the end of this chapter is the
-   * advisor's own invitation to ask. The glossary is two thirds of the words
-   * and grows every time a term is added to `glossary.ts`, so a test that only
-   * checked "under 300" would pass on the last sheet before the one that
-   * silently loses its closing line.
+   * The ceiling is `BUDGET_WORDS_GLOSSARY`, 90 — this sheet's prose budget, not
+   * a full sheet's 300, because the glossary block underneath takes the rest.
+   * This asserts a floor of headroom under it instead, because of WHICH
+   * paragraph goes when the budget runs out: `capParagraphs` drops from the end,
+   * and the end of this chapter is the advisor's own invitation to ask. A test
+   * that only checked "under 90" would pass on the last sentence before the one
+   * that silently loses that line.
    */
   it.each(PACKS)("leaves the sheet real headroom on %s", (_label, pack) => {
     for (const role of ["standalone", "frontMatter"] as const) {
       const words = textOf({ ...pack, documentRole: role }).split(/\s+/u).filter(Boolean).length;
-      expect(words).toBeLessThanOrEqual(SHEET_BUDGET_WORDS - 50);
+      expect(words).toBeLessThanOrEqual(BUDGET_WORDS_GLOSSARY - 20);
     }
   });
 

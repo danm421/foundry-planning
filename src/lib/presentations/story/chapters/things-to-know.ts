@@ -2,12 +2,12 @@
 // came with it.
 //
 // The last sheet, and the only one whose job is to make the previous twelve
-// readable rather than to add a figure. Two halves: the assumptions the plan
-// actually ran on, said as sentences rather than as the Planning Assumptions
-// page's grid, and the glossary — which is the report's half of the bargain
-// Gate 2 strikes. That gate refuses a term used without an explanation; this is
-// where the explanation lives, and `glossary.test.ts` pins that every banned
-// term has one.
+// readable rather than to add a figure. Two halves, and only the first is
+// written here: the assumptions the plan actually ran on, said as sentences
+// rather than as the Planning Assumptions page's grid. The second half is the
+// glossary — the report's side of the bargain Gate 2 strikes, since that gate
+// refuses a term used without an explanation and `glossary.test.ts` pins that
+// every banned term has one.
 //
 // Deliberately the same in both registers, like chapter 12 and unlike every
 // other chapter. A `frontMatter` chapter is told to point at the pages that
@@ -16,11 +16,12 @@
 // at a page that might not be there is the one thing a forward reference must
 // never do.
 //
-// `heroProse`, so the prose budget is 300 words over at most eight paragraphs.
-// The glossary is ELEVEN entries, so it arrives as one paragraph of lines
-// rather than a paragraph each: `view-model.ts#capParagraphs` drops whole
-// paragraphs past the eighth, which would silently cut the last three terms.
-import { GLOSSARY } from "../glossary";
+// ⚠️ The glossary itself is NOT written here. It is a structured field on
+// `PlanStoryChapterView`, printed by the `glossary` layout — because stored text
+// wins over this narrator at export, and a model asked for two short paragraphs
+// will never write eleven definitions back. In prose the glossary would appear
+// only on decks that were never generated. What this file writes is the prose
+// AROUND it, which the model is free to replace.
 import { factDisplay, findFact, type StoryContext } from "../types";
 
 /**
@@ -28,8 +29,9 @@ import { factDisplay, findFact, type StoryContext } from "../types";
  *
  * Two units, and short — the assumption sentences below run long, and Gate 4
  * judges the spread across the whole chapter rather than the length of any one
- * line. Every draft that opened with a single long sentence scored under the
- * rhythm floor once the glossary's even lines were counted with it.
+ * line. With the glossary printed by the layout rather than written here, these
+ * three paragraphs are the whole of what the gates see, so the short opening is
+ * what keeps the rhythm off the floor.
  */
 const NOT_A_PROMISE =
   "A plan is a projection, not a promise. Here's what sits underneath yours.";
@@ -58,8 +60,6 @@ const HOW_TAX_IS_WORKED_OUT =
  *  rather than skipped: "we assumed nothing" is itself an assumption a client
  *  is entitled to know about, and it needs no figure to state. */
 const PRICES_HELD_FLAT = "We've held prices flat, so every figure is in today's money.";
-
-const GLOSSARY_LEAD = "A few of the words, in plain English:";
 
 /** The advisor's own words are the last thing on the sheet, and the only
  *  invitation this report makes. */
@@ -92,31 +92,10 @@ function whatWeAssumed(ctx: StoryContext): string[] {
   return said;
 }
 
-/**
- * The glossary as ONE paragraph, one term per line.
- *
- * The line break is what makes this legible AND what keeps it inside the gates:
- * `validate/readability.ts` and `validate/voice.ts` both split a chapter on
- * newlines, so each entry is measured as its own unit. Welded into a single
- * run-on it would be one ninety-word "sentence" and Gate 2 would reject the
- * chapter outright.
- *
- * The em-dash is load-bearing too. Gate 2 admits a banned term only when a
- * gloss marker FOLLOWS it in the same unit, and this is that marker — so the
- * glossary is the one place in the report allowed to write these words.
- */
-function glossaryBlock(): string {
-  const lines = GLOSSARY.map(
-    (entry) => `${entry.term.charAt(0).toUpperCase()}${entry.term.slice(1)} — ${entry.plain}`,
-  );
-  return [GLOSSARY_LEAD, ...lines].join("\n");
-}
-
 export function narrateThingsToKnow(ctx: StoryContext): string[] {
   return [
     NOT_A_PROMISE,
     [...whatWeAssumed(ctx), HOW_THINGS_GROW, HOW_TAX_IS_WORKED_OUT].join(" "),
-    glossaryBlock(),
     ASK_US,
   ];
 }

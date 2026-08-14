@@ -1,7 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { BuildDataContext } from "@/components/presentations/registry";
 import type { ChangeRow } from "@/lib/presentations/pages/scenario-changes/types";
 import type { Fact } from "@/lib/presentations/story/facts";
+import { GLOSSARY } from "@/lib/presentations/story/glossary";
 import { CHAPTER_IDS, type ChapterId, type StoryContext } from "@/lib/presentations/story/types";
 import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
 
@@ -13,7 +14,9 @@ import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
 const DEFAULT_PRINTED = CHAPTER_IDS.filter((id) => !CHAPTERS[id].requiresProposal);
 import {
   buildPlanStoryData,
+  BUDGET_WORDS_GLOSSARY,
   MAX_FIGURE_CARDS,
+  MAX_GLOSSARY_TERMS,
   MAX_STEPS,
   MAX_STRATEGY_CARDS,
   SHEET_BUDGET_WORDS,
@@ -636,6 +639,89 @@ describe("one sheet per chapter, by construction", () => {
     const note = recommend(withStrategies(11, { whatWeRecommend: long })).overflowNote;
     expect(note).toBe(`…and ${11 - MAX_STRATEGY_CARDS} more changes we'll walk through together.`);
     expect(note.split("…and")).toHaveLength(2);
+  });
+});
+
+/**
+ * The glossary, which is the one thing on this page that must survive a
+ * Generate.
+ *
+ * Stored text wins over the narrator, and the model is asked for two short
+ * paragraphs — so a glossary written in PROSE would print only on decks nobody
+ * ever generated. Carrying it as a structured field is what makes it
+ * unreachable by the model, exactly as the strategy cards and the next steps
+ * already are. `things-to-know.test.ts` owns the other half: that the narrator
+ * writes none of it.
+ */
+describe("buildPlanStoryData — the glossary block", () => {
+  const glossaryChapter = (text: Partial<Record<ChapterId, string>> = {}) =>
+    buildPlanStoryData(deckCtx(input({}, text)), PLAN_STORY_OPTIONS_DEFAULT).chapters.find(
+      (c) => c.chapterId === "thingsToKnow",
+    )!;
+
+  it("carries every plain-English term on the chapter that prints them", () => {
+    expect(glossaryChapter().glossary).toEqual([...GLOSSARY]);
+  });
+
+  /** ⭐ The case the whole shape exists for. A generated draft replaces the
+   *  prose and cannot touch the list under it. */
+  it("keeps the terms when a generated draft has replaced the prose", () => {
+    const chapter = glossaryChapter({
+      thingsToKnow: "A plan is a projection, not a promise. Here's what sits underneath yours.",
+    });
+    expect(chapter.paragraphs).toHaveLength(1);
+    expect(chapter.glossary).toEqual([...GLOSSARY]);
+  });
+
+  it("gives every other chapter an empty one, whatever its layout", () => {
+    const data = buildPlanStoryData(deckCtx(input({ hasProposal: true })), PROPOSED);
+    for (const chapter of data.chapters) {
+      if (chapter.chapterId === "thingsToKnow") continue;
+      expect(chapter.glossary, chapter.chapterId).toEqual([]);
+    }
+  });
+
+  /**
+   * The cap, proved by GROWING the list rather than by restating the slice.
+   *
+   * `GLOSSARY` is a module constant — eleven entries today, against a cap of
+   * twelve — so the only way to reach the bound is to swap the module. Without
+   * this, a mutant that dropped the `slice` survives until someone adds the
+   * thirteenth term to `glossary.ts` and every client's report grows a sheet.
+   */
+  it("drops the terms past the cap and says how many, rather than adding a sheet", async () => {
+    const OVER = 3;
+    vi.resetModules();
+    vi.doMock("@/lib/presentations/story/glossary", () => ({
+      GLOSSARY: Array.from({ length: MAX_GLOSSARY_TERMS + OVER }, (_, i) => ({
+        term: `term ${i + 1}`,
+        plain: "what it means, in one short line.",
+      })),
+    }));
+    try {
+      const { buildPlanStoryData: build } = await import("../view-model");
+      const chapter = build(deckCtx(input()), PLAN_STORY_OPTIONS_DEFAULT).chapters.find(
+        (c) => c.chapterId === "thingsToKnow",
+      )!;
+      expect(chapter.glossary).toHaveLength(MAX_GLOSSARY_TERMS);
+      expect(chapter.overflowNote).toBe(`…and ${OVER} more terms we'll walk through together.`);
+    } finally {
+      vi.doUnmock("@/lib/presentations/story/glossary");
+      vi.resetModules();
+    }
+  });
+
+  // The prose above the list is charged a budget of its own — the terms take
+  // most of the sheet — so a pasted 20,000-character note is trimmed here rather
+  // than pushing the glossary onto a second sheet.
+  it("bounds the prose above the list to this sheet's own budget", () => {
+    const long = Array.from({ length: 40 }, () => "word ".repeat(50).trim()).join("\n\n");
+    const chapter = glossaryChapter({ thingsToKnow: long });
+    const words = chapter.paragraphs.join(" ").split(/\s+/u).filter(Boolean).length;
+    expect(words).toBeLessThanOrEqual(BUDGET_WORDS_GLOSSARY);
+    // …and well under what a chapter with nothing beneath its prose may spend.
+    expect(words).toBeLessThan(SHEET_BUDGET_WORDS);
+    expect(chapter.overflowNote).not.toBe("");
   });
 });
 

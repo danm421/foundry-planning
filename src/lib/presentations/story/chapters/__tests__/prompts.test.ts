@@ -137,21 +137,32 @@ describe("buildChapterPrompt", () => {
   });
 
   /**
-   * The checklist chapter's sheet holds 35 words of prose above the advisor's
-   * own numbered steps. Asked for "2 to 4 short paragraphs" it would be trimmed
-   * on almost every run, and the note that replaces what was cut would become
-   * that chapter's normal ending — on the one page whose real content is the
-   * list underneath.
+   * Two sheets print a LIST under their prose — the advisor's own numbered
+   * steps, and the glossary — and both hold far less prose than a full one (35
+   * and 90 words against 300). Asked for "2 to 4 short paragraphs" either would
+   * be trimmed on almost every run, and the note that replaces what was cut
+   * would become that chapter's normal ending, on the pages whose real content
+   * is the list underneath.
    */
-  it("asks the list chapter for one paragraph, and everyone else for a chapter", () => {
-    const list = buildChapterPrompt("whatHappensNext", CTX, [], []).system;
-    expect(list).toContain("ONE short paragraph");
-    expect(list).not.toContain("2 to 4 short paragraphs");
+  it("asks the list chapters for less prose, and everyone else for a chapter", () => {
+    const steps = buildChapterPrompt("whatHappensNext", CTX, [], []).system;
+    expect(steps).toContain("ONE short paragraph");
+    expect(steps).not.toContain("2 to 4 short paragraphs");
     // …and it must not write the steps out: they print underneath, and a model
     // that restates them prints the household's list twice.
-    expect(list).toContain("Do not list the steps themselves");
+    expect(steps).toContain("Do not list the steps themselves");
 
-    for (const chapterId of CHAPTER_IDS.filter((id) => CHAPTERS[id].layout !== "checklist")) {
+    const glossary = buildChapterPrompt("thingsToKnow", CTX, [], []).system;
+    expect(glossary).toContain("ONE or TWO short paragraphs");
+    expect(glossary).not.toContain("2 to 4 short paragraphs");
+    // Same rule, and here it also protects the words themselves: the entries
+    // that print under this prose have been through the gates one by one, and a
+    // model's own definitions of the same terms have not.
+    expect(glossary).toContain("Do not explain the technical terms themselves");
+
+    for (const chapterId of CHAPTER_IDS.filter(
+      (id) => CHAPTERS[id].layout !== "checklist" && CHAPTERS[id].layout !== "glossary",
+    )) {
       expect(buildChapterPrompt(chapterId, CTX, [], []).system).toContain("2 to 4 short paragraphs");
     }
   });

@@ -6,6 +6,7 @@ import type { BuildDataContext } from "@/components/presentations/registry";
 import { CHAPTERS, type ChapterLayout } from "@/lib/presentations/story/chapters/registry";
 import { quotableDetail } from "@/lib/presentations/story/chapters/what-we-recommend";
 import type { Fact } from "@/lib/presentations/story/facts";
+import { GLOSSARY, type GlossaryTerm } from "@/lib/presentations/story/glossary";
 import {
   factsForChapter,
   type ChapterId,
@@ -31,6 +32,18 @@ export interface PlanStoryChapterView {
    *  layout. The story's own shape, not a second copy of it — these print the
    *  advisor's words unaltered and this page is where that promise is kept. */
   steps: StoryStep[];
+  /**
+   * The plain-English terms under a `glossary` chapter's prose; empty for every
+   * other layout.
+   *
+   * A STRUCTURED field rather than prose, which is the whole point of it: the
+   * export prefers stored text over the narrator, so anything written into the
+   * chapter's paragraphs is replaced the first time an advisor hits Generate.
+   * The model is asked for two short paragraphs and will never write eleven
+   * definitions back, so a prose glossary would print only on the decks nobody
+   * generated. Same shape as `steps` and `figures`, for the same reason.
+   */
+  glossary: GlossaryTerm[];
   /** The client-facing sentence that replaces what a sheet could not hold.
    *  "" means nothing was dropped. */
   overflowNote: string;
@@ -201,6 +214,36 @@ export const MAX_STEPS = 8;
 const BUDGET_WORDS_CHECKLIST = 35;
 
 /**
+ * The plain-English terms a `glossary` chapter prints before the sheet runs out.
+ *
+ * Measured beside the full prose budget and the trim note, in the WORST shape
+ * that budget allows — `MAX_PARAGRAPHS` short paragraphs rather than two long
+ * ones, since a paragraph costs its own bottom margin whichever it is: twelve
+ * terms lay out and thirteen spill. (At two or three paragraphs of prose, which
+ * is what the narrator and the prompt actually produce, fourteen still fit — the
+ * cap is set for the case a 20,000-character advisor edit can reach.)
+ *
+ * ⚠️ This list is OURS, not a household's — it grows when someone adds a word to
+ * `glossary.ts`, on every client's report at once. The cap is what stops that
+ * edit from silently adding a second sheet and mis-numbering the rest of the
+ * deck; what it drops is said in the same `overflowNote` the steps use, and
+ * `glossary.test.ts` goes red at the same time so the edit is re-measured rather
+ * than quietly truncated.
+ */
+export const MAX_GLOSSARY_TERMS = 12;
+
+/**
+ * …and what the prose above that list may spend.
+ *
+ * The terms ARE the chapter — the prose is the assumptions and the one
+ * invitation to ask, which the narrator writes in about 60 words. Measured
+ * beside a full set of terms and the trim note: 90 words lay out in every
+ * paragraph shape, and what runs out past that is LINES, not words — thirteen
+ * terms spill at 60 words just as they do at 90.
+ */
+export const BUDGET_WORDS_GLOSSARY = 90;
+
+/**
  * A ceiling on paragraph COUNT as well, because the word ceiling alone cannot
  * see the shape that actually costs the most: 300 words split into sixty
  * four-word paragraphs pays sixty bottom margins. Eleven paragraphs were
@@ -208,18 +251,38 @@ const BUDGET_WORDS_CHECKLIST = 35;
  */
 export const MAX_PARAGRAPHS = 8;
 
+/**
+ * A `switch` with no `default`, so a sixth layout is a COMPILE error here rather
+ * than a silent 300-word budget.
+ *
+ * That default is the one this file exists to prevent: a layout printing
+ * something under its prose, handed a full sheet's words, renders onto a second
+ * sheet — and `estimatePlanStoryPageCount` reserved one, so the contents page
+ * mis-numbers everything after the story. The renderer's own layout branch is
+ * held to the same question by `chapters/__tests__/registry.test.ts`, which
+ * cannot be a type because the fall-through there is a valid page.
+ */
 function proseBudgetWords(layout: ChapterLayout, cards: number): number {
-  if (layout === "twoUp") return BUDGET_WORDS_TWO_UP;
-  if (layout === "checklist") return BUDGET_WORDS_CHECKLIST;
-  return cards > 0 ? BUDGET_WORDS_WITH_CARDS : SHEET_BUDGET_WORDS;
+  switch (layout) {
+    case "twoUp":
+      return BUDGET_WORDS_TWO_UP;
+    case "checklist":
+      return BUDGET_WORDS_CHECKLIST;
+    case "glossary":
+      return BUDGET_WORDS_GLOSSARY;
+    case "heroProse":
+    case "strategyCards":
+      return cards > 0 ? BUDGET_WORDS_WITH_CARDS : SHEET_BUDGET_WORDS;
+  }
 }
 
 /** "…and four more changes we'll walk through together." — the sentence that
  *  replaces what a sheet cannot hold. Client-facing, and true: it says the
  *  changes exist and that the advisor will cover them, rather than implying the
- *  report is complete. One sentence for both capped lists, because a list that
- *  silently stops reads as the whole list either way. */
-function overflowNoteFor(dropped: number, thing: "change" | "step"): string {
+ *  report is complete. One sentence for every capped list — the cards, the
+ *  steps, the glossary — because a list that silently stops reads as the whole
+ *  list whichever list it is. */
+function overflowNoteFor(dropped: number, thing: "change" | "step" | "term"): string {
   if (dropped <= 0) return "";
   return dropped === 1
     ? `…and one more ${thing} we'll walk through together.`
@@ -397,6 +460,10 @@ export function buildPlanStoryData(
     const figures = def.layout === "twoUp" ? figuresFor(facts) : [];
     const allSteps = def.layout === "checklist" ? (input.story.nextSteps ?? []) : [];
     const steps = allSteps.slice(0, MAX_STEPS);
+    // Not a household's data and not the story's — the same eleven terms on
+    // every report, read from the module the gates' ban list is pinned against.
+    const allTerms = def.layout === "glossary" ? GLOSSARY : [];
+    const glossary = allTerms.slice(0, MAX_GLOSSARY_TERMS);
     // Discard what the cards already say BEFORE counting, so the budget is spent
     // on what a client will actually read.
     const printable = paragraphs.filter((p) => !strategies.some((s) => restatesCard(p, s)));
@@ -416,13 +483,16 @@ export function buildPlanStoryData(
       strategies,
       figures,
       steps,
-      // ONE note, whichever bound bit. Both mean the same thing to the reader —
-      // there is more, and the advisor will cover it — and two notes on one
-      // sheet would be the overflow this cap exists to prevent. The card count
-      // leads because it is the specific one: it can say how many.
+      glossary,
+      // ONE note, whichever bound bit. They all mean the same thing to the
+      // reader — there is more, and the advisor will cover it — and two notes on
+      // one sheet would be the overflow these caps exist to prevent. The counted
+      // lists lead because they are the specific ones: they can say how many.
+      // Only one can ever be non-zero, since each is scoped to its own layout.
       overflowNote:
         overflowNoteFor(allStrategies.length - strategies.length, "change") ||
         overflowNoteFor(allSteps.length - steps.length, "step") ||
+        overflowNoteFor(allTerms.length - glossary.length, "term") ||
         (trimmed ? PROSE_TRIMMED_NOTE : ""),
     };
   });

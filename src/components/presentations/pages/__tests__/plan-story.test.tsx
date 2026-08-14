@@ -17,6 +17,7 @@ import {
   type PlanStoryPageData,
 } from "@/lib/presentations/pages/plan-story/view-model";
 import { CHAPTER_IDS } from "@/lib/presentations/story/types";
+import { GLOSSARY } from "@/lib/presentations/story/glossary";
 
 /** Every chapter of the arc switched off — the advisor-turned-it-all-off case. */
 function allSectionsOff(): PlanStoryOptions["sections"] {
@@ -79,6 +80,7 @@ function chapter(over: Partial<PlanStoryChapterView> = {}): PlanStoryChapterView
     strategies: [],
     figures: [],
     steps: [],
+    glossary: [],
     overflowNote: "",
     ...over,
   };
@@ -377,5 +379,61 @@ describe("PlanStoryChapterPdf — the checklist layout", () => {
     expect(printed({ layout: "heroProse", steps: STEPS })).not.toContain(
       "Open the Roth account and fund it for this year.",
     );
+  });
+});
+
+describe("PlanStoryChapterPdf — the glossary layout", () => {
+  const GLOSSARY_CHAPTER = chapter({
+    chapterId: "thingsToKnow",
+    title: "Things to know",
+    layout: "glossary",
+    paragraphs: ["A plan is a projection, not a promise."],
+    glossary: [...GLOSSARY],
+  });
+
+  function printed(over: Partial<PlanStoryChapterView> = {}): string[] {
+    return textOf(
+      PlanStoryChapterPdf({
+        chapter: { ...GLOSSARY_CHAPTER, ...over },
+        accent: FRAME.accent,
+        eyebrow: "Your Plan",
+      }),
+    );
+  }
+
+  /** The whole point of the structured field: what a client actually reads is
+   *  the glossary module, not something a model wrote about it. */
+  it("prints every term and its explanation, under the prose", () => {
+    const out = printed();
+    const joined = out.join(" ");
+    for (const entry of GLOSSARY) {
+      expect(joined, entry.term).toContain(entry.plain);
+    }
+    expect(out.indexOf("A plan is a projection, not a promise.")).toBeLessThan(
+      out.findIndex((line) => line.includes(GLOSSARY[0].plain)),
+    );
+  });
+
+  it("capitalises the term the line starts, and keeps the gloss dash", () => {
+    expect(printed().join(" ")).toContain(
+      `${GLOSSARY[0].term.charAt(0).toUpperCase()}${GLOSSARY[0].term.slice(1)}`,
+    );
+    expect(printed().some((line) => line.startsWith(" — "))).toBe(true);
+  });
+
+  // The list has no lead-in sentence of its own — a model's draft replaces the
+  // prose above it, and a list left standing without its introduction is why the
+  // label is printed by the layout instead.
+  it("labels the block itself rather than leaning on the prose", () => {
+    expect(printed({ paragraphs: [] })).toContain("IN PLAIN ENGLISH");
+  });
+
+  it("prints no glossary on any other layout", () => {
+    expect(printed({ layout: "heroProse" }).join(" ")).not.toContain(GLOSSARY[0].plain);
+  });
+
+  // …and nothing to label when the cap or an empty module leaves no terms.
+  it("prints no label over an empty list", () => {
+    expect(printed({ glossary: [] })).not.toContain("IN PLAIN ENGLISH");
   });
 });

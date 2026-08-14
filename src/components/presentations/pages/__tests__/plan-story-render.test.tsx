@@ -18,12 +18,15 @@ import { PLAN_STORY_OPTIONS_DEFAULT, type PlanStoryOptions } from "@/lib/present
 import { CHAPTER_IDS, type ChapterId } from "@/lib/presentations/story/types";
 import {
   buildPlanStoryData,
+  BUDGET_WORDS_GLOSSARY,
   MAX_FIGURE_CARDS,
+  MAX_GLOSSARY_TERMS,
+  MAX_PARAGRAPHS,
   MAX_STEPS,
   MAX_STRATEGY_CARDS,
   type PlanStoryPageData,
 } from "@/lib/presentations/pages/plan-story/view-model";
-import { narrateThingsToKnow } from "@/lib/presentations/story/chapters/things-to-know";
+import { GLOSSARY } from "@/lib/presentations/story/glossary";
 import { pctFact, yearFact } from "@/lib/presentations/story/facts";
 
 /** Eight sheets' worth — what a 20,000-character `editedText` buys. */
@@ -78,6 +81,7 @@ const REALISTIC: PlanStoryPageData = {
       strategies: [],
       figures: [],
       steps: [],
+      glossary: [],
       overflowNote: "",
     },
     {
@@ -98,6 +102,7 @@ const REALISTIC: PlanStoryPageData = {
         { label: "The last year we plan to", value: "2065" },
       ],
       steps: [],
+      glossary: [],
       overflowNote: "",
     },
     {
@@ -111,6 +116,7 @@ const REALISTIC: PlanStoryPageData = {
       strategies: [],
       figures: [],
       steps: [],
+      glossary: [],
       overflowNote: "",
     },
     {
@@ -128,6 +134,7 @@ const REALISTIC: PlanStoryPageData = {
       ],
       figures: [],
       steps: [],
+      glossary: [],
       overflowNote: "",
     },
   ],
@@ -160,6 +167,7 @@ function worstCase(cards: number, words: number, overflowNote = ""): PlanStoryPa
         })),
         figures: [],
         steps: [],
+        glossary: [],
         overflowNote,
       },
     ],
@@ -492,14 +500,28 @@ const STORY_13 = {
   ],
 };
 
-/** Straight to the renderer, NO view-model in between.
+/**
+ * The sheet at BOTH of its bounds at once, straight to the renderer with NO
+ * view-model in between.
  *
- *  ⚠️ Going through `buildPlanStoryData` cannot answer the layout question at
- *  all: `capParagraphs` drops whatever exceeds `SHEET_BUDGET_WORDS` before the
- *  renderer ever sees it, so an overgrown glossary comes back as one sheet plus
- *  a trim note — indistinguishable from one that fit. The BUDGET is tested
- *  above; this is the SHEET. */
-function sheetOf(paragraphs: string[]): PlanStoryPageData {
+ * ⚠️ Going through `buildPlanStoryData` cannot answer the layout question: it
+ * caps the list at `MAX_GLOSSARY_TERMS` and trims the prose to
+ * `BUDGET_WORDS_GLOSSARY` before the renderer ever sees either, so an overgrown
+ * glossary comes back as one sheet plus a note — indistinguishable from one that
+ * fit. Those caps are what the shipping-path case above proves; this is what
+ * proves the caps are in the right place.
+ *
+ * The prose is spent in `MAX_PARAGRAPHS` short paragraphs rather than two long
+ * ones because that is the worst shape the budget allows — a paragraph pays its
+ * own bottom margin whether it holds four words or forty, and it is LINES this
+ * sheet runs out of.
+ */
+function sheetAtTheBound(terms: number): PlanStoryPageData {
+  const spare = Array.from({ length: Math.max(0, terms - GLOSSARY.length) }, (_, i) => ({
+    term: `spare term ${i + 1}`,
+    plain: "a definition written about as long as the longest one the glossary carries today.",
+  }));
+  const perParagraph = Math.ceil(BUDGET_WORDS_GLOSSARY / MAX_PARAGRAPHS);
   return {
     title: "Your Plan",
     subtitle: "Proposed",
@@ -509,50 +531,66 @@ function sheetOf(paragraphs: string[]): PlanStoryPageData {
       {
         chapterId: "thingsToKnow",
         title: "Things to know",
-        layout: "heroProse",
-        paragraphs,
+        layout: "glossary",
+        paragraphs: Array.from({ length: MAX_PARAGRAPHS }, () =>
+          "Your plan holds through the years we modelled and leaves room to spare for now."
+            .split(/\s+/u)
+            .slice(0, perParagraph)
+            .join(" "),
+        ),
         strategies: [],
         figures: [],
         steps: [],
-        overflowNote: "",
+        glossary: [...GLOSSARY, ...spare].slice(0, terms),
+        overflowNote: "…and three more terms we'll walk through together.",
       },
     ],
   };
 }
 
 describe("Plan Story — the glossary sheet, really rendered", () => {
-  it("prints all four paragraphs through the view-model, with nothing trimmed", () => {
+  /** The shipping path: the real narrator, the real glossary, one sheet. */
+  it("lays the whole glossary and the assumptions out on one sheet", async () => {
     const data = buildPlanStoryData(
       { planStory: { story: STORY_13, text: {} }, scenarioLabel: "Proposed" } as never,
       onlyChapter("thingsToKnow"),
     );
+    expect(data.chapters[0].layout).toBe("glossary");
+    expect(data.chapters[0].glossary).toHaveLength(GLOSSARY.length);
+    expect(data.chapters[0].paragraphs).toHaveLength(3);
     expect(data.chapters[0].overflowNote).toBe("");
-    expect(data.chapters[0].paragraphs).toHaveLength(4);
-  });
+    expect(await pagesOf(data)).toBe(1);
+  }, 30_000);
 
-  it("lays the whole glossary and the assumptions out on one sheet", async () => {
-    expect(await pagesOf(sheetOf(narrateThingsToKnow(STORY_13 as never)))).toBe(1);
+  // …and the same path with eight sheets of advisor prose pasted over it, which
+  // is what a 20,000-character `editedText` buys. The glossary is not what gives
+  // way; the prose is.
+  it("lays out one sheet with the whole glossary and eight sheets of prose", async () => {
+    const data = buildPlanStoryData(
+      { planStory: { story: STORY_13, text: { thingsToKnow: LONG_PROSE } }, scenarioLabel: "Proposed" } as never,
+      onlyChapter("thingsToKnow"),
+    );
+    expect(data.chapters[0].glossary).toHaveLength(GLOSSARY.length);
+    expect(data.chapters[0].overflowNote).not.toBe("");
+    expect(await pagesOf(data)).toBe(1);
+  }, 30_000);
+
+  it("lays out the full cap — every term the page will print, at the prose budget", async () => {
+    expect(await pagesOf(sheetAtTheBound(MAX_GLOSSARY_TERMS))).toBe(1);
   }, 30_000);
 
   /**
-   * THE RED for the case above. Without it a count of 1 could mean the layout
-   * is incapable of paginating rather than that the content fits — `PageFrame`
-   * gives its body `flex: 1`, and react-pdf clips past the available height on
-   * some layouts instead of breaking.
+   * THE RED for the case above. Without it a count of 1 could mean the layout is
+   * incapable of paginating rather than that the content fits — `PageFrame` gives
+   * its body `flex: 1`, and react-pdf clips past the available height on some
+   * layouts instead of breaking.
    *
-   * MEASURED: six spare entries still lay out and eight do not, so today's
-   * eleven have room for about six more. That is the number to watch when a
-   * term is added — this case is the instrument, and the one above is the
-   * reading.
+   * ONE term past the cap, so it also pins the cap where it is rather than
+   * somewhere below it. `glossary.test.ts` keeps `glossary.ts` itself under the
+   * same number, so the thirteenth term added goes red here rather than shipping
+   * as a silent truncation.
    */
-  it("spills once the glossary is grown past what the sheet holds", async () => {
-    const paragraphs = narrateThingsToKnow(STORY_13 as never);
-    const spare = Array.from(
-      { length: 8 },
-      (_, i) => `Spare term ${i} — a definition about as long as the longest one the glossary carries.`,
-    );
-    const grown = [...paragraphs];
-    grown[2] = [grown[2], ...spare].join("\n");
-    expect(await pagesOf(sheetOf(grown))).toBeGreaterThan(1);
+  it("spills at one term past the cap, which is why the cap is where it is", async () => {
+    expect(await pagesOf(sheetAtTheBound(MAX_GLOSSARY_TERMS + 1))).toBeGreaterThan(1);
   }, 30_000);
 });

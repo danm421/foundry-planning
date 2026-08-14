@@ -17,7 +17,7 @@ import { narrateHealthCareCosts } from "./health-care-costs";
 import { narrateWhatHappensNext } from "./what-happens-next";
 import { narrateThingsToKnow } from "./things-to-know";
 
-export type ChapterLayout = "heroProse" | "twoUp" | "strategyCards" | "checklist";
+export type ChapterLayout = "heroProse" | "twoUp" | "strategyCards" | "checklist" | "glossary";
 
 export interface ChapterDef {
   id: ChapterId;
@@ -200,7 +200,13 @@ export const CHAPTERS: Record<ChapterId, ChapterDef> = {
   thingsToKnow: {
     id: "thingsToKnow",
     title: "Things to know",
-    layout: "heroProse",
+    // The glossary is PRINTED BY THE LAYOUT, not written by the narrator — the
+    // one thing on this page that has to survive a Generate. Stored text wins
+    // over `narrate()` at export, and a model asked for three short paragraphs
+    // will never write eleven definitions back, so a prose glossary would appear
+    // only on decks nobody generated. The same shape `steps`, `figures` and the
+    // strategy cards already use.
+    layout: "glossary",
     narrate: narrateThingsToKnow,
     requiresProposal: false,
     coverage: false,
@@ -258,7 +264,7 @@ export const CHECKLIST_CHAPTERS: readonly ChapterId[] = CHAPTER_IDS.filter(
  * real content is the list underneath it.
  *
  * A `Record`, not a branch in `prompts.ts`: it lives beside the layouts it keys
- * on, and a fifth layout has to answer this question rather than inheriting an
+ * on, and a new layout has to answer this question rather than inheriting an
  * ask that was written for a different sheet.
  *
  * ⚠️ The WORDS, never a number read from the budget. `prompts.ts` records the
@@ -276,6 +282,12 @@ const OUTPUT_ASK: Record<ChapterLayout, string> = {
   strategyCards: "Output: clean Markdown, 2 to 4 short paragraphs, no headings, no preamble.",
   checklist:
     "Output: clean Markdown, ONE short paragraph of at most two sentences, no headings, no preamble. Do not list the steps themselves — they are printed under your text by the page layout.",
+  // The same sentence pattern as `checklist`, and for the same reason: the list
+  // under the prose is printed by the layout, so a model that writes its own
+  // copy of it spends the sheet twice. Two paragraphs rather than four — the
+  // glossary is most of this sheet.
+  glossary:
+    "Output: clean Markdown, ONE or TWO short paragraphs, no headings, no preamble. Do not explain the technical terms themselves — the plain-English list of them is printed under your text by the page layout.",
 };
 
 export function chapterOutputAsk(chapterId: ChapterId): string {

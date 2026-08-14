@@ -12,23 +12,27 @@
 // way only: every banned term must be here, and this may hold anything else the
 // household would ask about.
 //
-// ⚠️ Every entry costs the chapter's sheet. `things-to-know.ts` prints all of
-// them inside a 300-word budget it shares with the assumptions, so an entry
-// added here has to be paid for there — that chapter's own suite is what
-// notices.
+// ⚠️ Every entry costs chapter 13's sheet, on every client's report at once —
+// this list is ours, not a household's. `pages/plan-story/view-model.ts` caps it
+// at `MAX_GLOSSARY_TERMS` so an entry added here can never add a second sheet
+// and mis-number the deck; what the cap drops is said in the overflow note, and
+// `plan-story-render.test.tsx` is what measures the ceiling.
 export interface GlossaryTerm {
-  /** The term as a reader meets it, lowercased. `chapters/things-to-know.ts`
-   *  capitalises it for the line it starts. */
+  /** The term as a reader meets it, lowercased — that is the form the gates'
+   *  ban list is matched against. `plan-story/chapter-pdf.tsx` capitalises it
+   *  for the line it starts. */
   term: string;
   /**
    * What completes "Term — …", so it opens lowercase and closes with a full
    * stop. One sentence, no other banned term inside it, and NO FIGURE.
    *
-   * "No figure" is not a style note: the chapter prints these verbatim and Gate
-   * 1 rejects any number that is not in the household's own fact pack, which a
-   * fixed sentence can never be. "One hundredth of a percent" below is written
-   * the long way round for exactly that reason — "one percent" is a figure to
-   * `validate/facts.ts`, and "a percent" is not.
+   * "No figure" is not a style note. The page prints these as a structured
+   * block, outside the chapter prose the gates read, so `glossary.test.ts` —
+   * which runs the gates over each entry against an EMPTY fact pack — is the
+   * only thing standing between an invented number and a client's page. "One
+   * hundredth of a percent" below is written the long way round for exactly that
+   * reason: "one percent" is a figure to `validate/facts.ts`, and "a percent" is
+   * not.
    */
   plain: string;
 }

@@ -113,9 +113,15 @@ describe("the chapter registry", () => {
     }
   });
 
-  it("uses only the four layouts the PDF knows how to print", () => {
+  // Hand-written on purpose, and it is the RENDERER's list: `chapter-pdf.tsx`
+  // branches on three of these and falls through to the prose sheet for the
+  // rest, so a sixth layout added here would print as `heroProse` — with its
+  // own collection, whatever it is, silently absent from a client's page.
+  it("uses only the five layouts the PDF knows how to print", () => {
     for (const id of CHAPTER_IDS) {
-      expect(["heroProse", "twoUp", "strategyCards", "checklist"]).toContain(CHAPTERS[id].layout);
+      expect(["heroProse", "twoUp", "strategyCards", "checklist", "glossary"]).toContain(
+        CHAPTERS[id].layout,
+      );
     }
   });
 
