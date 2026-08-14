@@ -13,10 +13,10 @@
 //
 // (`route.ts` may export nothing but handlers, so a shared helper for two routes
 // lives here rather than beside either of them.)
-import { CHAPTERS } from "./chapters/registry";
+import { storyCandidates } from "./chapters/registry";
 import { loadStoryContext } from "./load-context";
 import type { DocumentRole } from "./repo";
-import { CHAPTER_IDS, type ChapterId, type StoryContext } from "./types";
+import type { ChapterId, StoryContext } from "./types";
 
 export interface StoryRun {
   ctx: StoryContext;
@@ -24,6 +24,9 @@ export interface StoryRun {
    * The chapters this run COULD narrate, so the loader can skip the solves
    * behind facts nothing will read. On a base-only run that is both max-spend
    * solves, since the chapter reading them requires a proposal.
+   *
+   * `storyCandidates` in `chapters/registry.ts` — the same answer the generate
+   * route and the chapter list ask for, not a copy of it.
    *
    * ⚠️ NOT the list the generate route finally writes: that one also reads
    * `available` and `hasSomethingToPropose`, both derived from `ctx`, which is
@@ -47,19 +50,6 @@ export interface StoryRun {
    * instead of two literals that have to be remembered together.
    */
   voiceSamples: string[];
-}
-
-/**
- * `StoryRun.candidates`, derived from the ref ALONE — so it costs nothing and
- * can be asked before the load. Read that field's invariant before using it: it
- * is a SUPERSET of what finally gets narrated, never the list itself.
- *
- * Exported so a caller can refuse an impossible request without paying for the
- * context first, and still be reading the same derivation the load uses.
- */
-export function storyCandidates(scenarioId: string): ChapterId[] {
-  const hasProposedRef = scenarioId !== "base";
-  return CHAPTER_IDS.filter((c) => hasProposedRef || !CHAPTERS[c].requiresProposal);
 }
 
 /**

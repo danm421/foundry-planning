@@ -10,11 +10,11 @@ import { recordAudit } from "@/lib/audit";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { parseBody } from "@/lib/schemas/common";
 import { planStoryGenerateSchema } from "@/lib/schemas/plan-story";
-import { loadStoryRun, storyCandidates } from "@/lib/presentations/story/run-context";
+import { loadStoryRun } from "@/lib/presentations/story/run-context";
 import { generateChapter } from "@/lib/presentations/story/generate";
 import { upsertGeneratedChapter } from "@/lib/presentations/story/repo";
 import { resolveStoryScenarioId } from "@/lib/presentations/story/scenario-scope";
-import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
+import { CHAPTERS, storyCandidates } from "@/lib/presentations/story/chapters/registry";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 800;

@@ -12,6 +12,10 @@ interface Row {
   aiSuppressed: boolean;
   error: string | null;
   reviewed: boolean;
+  /** Whether a generation could write this chapter for this story — decided by
+   *  the route, never by the panel, so it is a FIXTURE value here. Both rows
+   *  below say yes; the row that says no has its own tests. */
+  candidate?: boolean;
 }
 
 const CHAPTERS: Row[] = [
@@ -24,6 +28,7 @@ const CHAPTERS: Row[] = [
     aiSuppressed: false,
     error: null,
     reviewed: false,
+    candidate: true,
   },
   {
     chapterId: "whatWeRecommend",
@@ -34,6 +39,7 @@ const CHAPTERS: Row[] = [
     aiSuppressed: false,
     error: null,
     reviewed: false,
+    candidate: true,
   },
 ];
 
@@ -681,6 +687,71 @@ describe("PlanStoryReviewPanel", () => {
       expect((await screen.findByRole("alert")).textContent).toMatch(/30 seconds/i);
       // …and against the panel, not a row: no single chapter failed.
       expect(within(row(A)).queryByRole("alert")).toBeNull();
+    });
+
+    /**
+     * ⭐ The rows a base-only report can only refuse — the five proposal
+     * chapters. There is nothing the advisor can do to make the button work, so
+     * it is not offered rather than offered and answered with an error.
+     */
+    describe("a chapter this story cannot write", () => {
+      const cannot = [CHAPTERS[0], { ...CHAPTERS[1], candidate: false }];
+
+      function regenerateIn(title: string) {
+        return within(row(title)).queryByRole("button", { name: /^regenerate$/i });
+      }
+
+      // Kills: rendering the button on every row regardless — the click it
+      // invites is refused, and the refusal is the only thing that explains it.
+      it("offers no Regenerate button", async () => {
+        stubFetch(cannot);
+        render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+        await screen.findByRole("region", { name: B });
+        expect(regenerateIn(B)).toBeNull();
+        // …and only that row. Kills: hiding the button once any row cannot be
+        // written, which would take the feature off the whole panel.
+        expect(regenerateIn(A)).toBeTruthy();
+      });
+
+      // Kills: hiding the row, or standing it down entirely. Nothing can WRITE
+      // this chapter, but the advisor's own words in the box still print — the
+      // stored edit wins over the model's text at export — and the export gate
+      // still counts this row as one they have to read.
+      it("still takes the advisor's own words, and still has to be reviewed", async () => {
+        stubFetch(cannot);
+        render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+        const section = await screen.findByRole("region", { name: B });
+        expect(within(section).getByRole("button", { name: /mark reviewed/i })).toBeTruthy();
+        const box = within(section).getByRole("textbox");
+        fireEvent.change(box, { target: { value: "What I'd tell them myself." } });
+        fireEvent.blur(box);
+        await waitFor(() => expect(patchCalls().length).toBe(1));
+        expect(String((patchCalls()[0][1] as RequestInit).body)).toContain(
+          "What I'd tell them myself.",
+        );
+      });
+
+      /**
+       * ⚠️ The flag has to FAIL OPEN. It arrives as JSON off a route the panel
+       * cannot type-check, so a payload without it — a renamed field, a listing
+       * written before this shipped — must show every button and let the route
+       * refuse, never silently take Regenerate off all fourteen rows.
+       *
+       * Kills: `!row.candidate`, which reads a missing field as "cannot write".
+       */
+      it("keeps every button when the list does not answer the question", async () => {
+        stubFetch(
+          CHAPTERS.map((r) => {
+            const noFlag = { ...r };
+            delete noFlag.candidate;
+            return noFlag;
+          }),
+        );
+        render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+        await screen.findByRole("region", { name: B });
+        expect(regenerateIn(A)).toBeTruthy();
+        expect(regenerateIn(B)).toBeTruthy();
+      });
     });
 
     // Kills: leaving the advisor's unsaved words shadowing the prose that just

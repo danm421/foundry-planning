@@ -28,6 +28,18 @@ interface ChapterRow {
   aiSuppressed: boolean;
   error: string | null;
   reviewed: boolean;
+  /**
+   * Could a generation write this chapter for this story at all? Read off the
+   * chapter list, never derived here: the route answers it from the same
+   * function the generate route refuses with, so the button and the refusal
+   * cannot disagree. Only its FALSE half is reliable — the route's own note
+   * says why.
+   *
+   * ⚠️ Optional, and read as `!== false` below, so a payload that does not
+   * answer shows every button and lets the route refuse. A missing field must
+   * never read as "nothing here can be written".
+   */
+  candidate?: boolean;
 }
 
 /**
@@ -455,15 +467,23 @@ export function PlanStoryReviewPanel({
             {/* One row's rewrite, past the 30-day cache. Disabled while ANY
                 chapter is being rewritten, and while a whole run is going: each
                 click is a model call the firm pays for, and the wait is long
-                enough that a second click is the natural thing to do. */}
-            <button
-              type="button"
-              className="text-xs text-ink-3 underline hover:text-ink disabled:no-underline disabled:opacity-50"
-              disabled={busy || regenerating != null || saving === row.chapterId}
-              onClick={() => void regenerate(row.chapterId)}
-            >
-              {regenerating === row.chapterId ? "Rewriting…" : "Regenerate"}
-            </button>
+                enough that a second click is the natural thing to do.
+
+                Absent entirely — not greyed — on a row this story could never
+                write: the five proposal chapters of a base-only report. Nothing
+                the advisor can do makes it work, so a button whose only function
+                is to explain itself is not offered. The rest of the row stays
+                live: the box still takes their own words, and those still print. */}
+            {row.candidate !== false && (
+              <button
+                type="button"
+                className="text-xs text-ink-3 underline hover:text-ink disabled:no-underline disabled:opacity-50"
+                disabled={busy || regenerating != null || saving === row.chapterId}
+                onClick={() => void regenerate(row.chapterId)}
+              >
+                {regenerating === row.chapterId ? "Rewriting…" : "Regenerate"}
+              </button>
+            )}
             {row.reviewed && <span className="text-xs text-good">Reviewed</span>}
           </div>
         </section>

@@ -237,6 +237,31 @@ export function chapterEnumerates(chapterId: ChapterId): boolean {
 }
 
 /**
+ * The chapters a story on THIS scenario could narrate — derived from the ref
+ * alone, so asking costs nothing and can be asked before any facts exist.
+ *
+ * ⚠️⚠️ A SUPERSET of what finally gets written, never the list itself. The full
+ * answer also reads `available` and `hasSomethingToPropose`, both of which need
+ * the loaded context; a proposal carrying no changes is in here and is still
+ * refused later. That is the correct direction to be wrong in — see
+ * `StoryRun.candidates`, whose invariant this is.
+ *
+ * Three callers need the identical answer and must not each derive it: the
+ * loader scopes its solves to it, the generate route refuses an impossible
+ * chapter with it before spending anything, and the chapter list tells the panel
+ * which rows can offer Regenerate at all. Three copies of `scenarioId !== "base"`
+ * is how the button comes back on a row the route can only refuse.
+ *
+ * Lives HERE rather than with the loader for a second reason: the chapter list
+ * is re-read after every keystroke-blur, and importing the loader would pull the
+ * projection engine into that route for one boolean.
+ */
+export function storyCandidates(scenarioId: string): ChapterId[] {
+  const hasProposedRef = scenarioId !== "base";
+  return CHAPTER_IDS.filter((c) => hasProposedRef || !CHAPTERS[c].requiresProposal);
+}
+
+/**
  * The chapters printed as a list of the advisor's own next steps.
  *
  * Exported for `load-context.ts`, which skips the `plan_observations` read when

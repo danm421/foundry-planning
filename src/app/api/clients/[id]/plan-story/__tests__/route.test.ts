@@ -305,6 +305,45 @@ describe("GET /api/clients/[id]/plan-story", () => {
     });
   });
 
+  /**
+   * ⭐ Which rows the panel may offer Regenerate on. The button is absent, not
+   * greyed, on a chapter this story could only refuse — so the flag behind it has
+   * to be the SAME derivation the generate route refuses with, or a button comes
+   * back on a row that answers it with an error.
+   *
+   * Kills: sending `true` for every chapter; sending the registry's
+   * `requiresProposal` unflipped (the button would vanish from the rows that most
+   * need it); dropping the field (the panel fails open and shows all fourteen).
+   */
+  it("marks the chapters a base-only story cannot write", async () => {
+    const res = await GET(req("http://x/?scenarioId=base"), {
+      params: Promise.resolve({ id: CLIENT_ID }),
+    });
+    const body = await res.json();
+    const byId = new Map(
+      body.chapters.map((c: { chapterId: string; candidate: boolean }) => [c.chapterId, c.candidate]),
+    );
+    // Off the real registry, so a fifteenth chapter joins this assertion by
+    // existing rather than by being remembered.
+    for (const id of CHAPTER_IDS) {
+      expect(byId.get(id)).toBe(!CHAPTERS[id].requiresProposal);
+    }
+    // …and the five are really there: an assertion that holds because every
+    // chapter is writable proves nothing about the flag.
+    expect(CHAPTER_IDS.filter((id) => CHAPTERS[id].requiresProposal).length).toBeGreaterThan(0);
+  });
+
+  // Kills: keying the flag on `requiresProposal` alone. A proposal report is
+  // exactly where the recommendation chapter is worth rewriting, and hiding its
+  // button there removes the feature from the story that needs it most.
+  it("offers every chapter once the report has a proposal", async () => {
+    const res = await GET(req(`http://x/?scenarioId=${SCENARIO_ID}`), {
+      params: Promise.resolve({ id: CLIENT_ID }),
+    });
+    const body = await res.json();
+    expect(body.chapters.every((c: { candidate: boolean }) => c.candidate)).toBe(true);
+  });
+
   // Kills: `verifyClientAccess("OTHER-CLIENT")` — a gate that authorizes one
   // client while the read runs against another. Every other test in this
   // describe passes whatever id the route hands the gate.

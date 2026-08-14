@@ -8,7 +8,7 @@ import {
   isDocumentRole,
   type DocumentRole,
 } from "@/lib/presentations/story/repo";
-import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
+import { CHAPTERS, storyCandidates } from "@/lib/presentations/story/chapters/registry";
 import { CHAPTER_IDS } from "@/lib/presentations/story/types";
 
 export const dynamic = "force-dynamic";
@@ -42,6 +42,12 @@ export async function GET(
     const documentRole: DocumentRole = roleParam ?? "standalone";
     const rows = await listStoryChapters(id, scenarioId, documentRole);
     const byId = new Map(rows.map((r) => [r.chapterId, r]));
+    // Which rows a generation could write at all, so the panel can leave the
+    // Regenerate button off the ones it could only refuse. Asked HERE rather
+    // than re-derived in the panel: "does this story have a proposal" would
+    // otherwise be spelled a third time, in a client component, where it goes
+    // stale silently the day the derivation grows a second condition.
+    const candidates = new Set(storyCandidates(scenarioId));
 
     // Every chapter appears, generated or not — the panel needs a row to show
     // "not generated yet" against, not a gap.
@@ -67,6 +73,16 @@ export async function GET(
         // blank reason.
         error: row?.error ?? null,
         reviewed: row?.reviewedAt != null,
+        /**
+         * Could a generation write this chapter for this story at all? False for
+         * the five chapters that need a proposal when the report is base-only.
+         *
+         * ⚠️ A SUPERSET — the ref-level half of the answer only. A coverage
+         * chapter with no policies behind it is `true` here and still refused
+         * once the facts are in, and the panel still reports THAT refusal as a
+         * message. So this is what hides a button, never what authorizes a run.
+         */
+        candidate: candidates.has(chapterId),
       };
     });
 
