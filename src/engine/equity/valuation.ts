@@ -1,7 +1,7 @@
 import type { StockOptionPlan, EquityGrant } from "./types";
 import { buildGrantTimeline, type EquityAction } from "./timeline";
 import { resolveStrategy } from "./strategy";
-import { projectFmv, resolveStrikePrice } from "./price-model";
+import { fmvCurve, resolveStrikePrice } from "./price-model";
 
 /** Shares of `grant` still under option/RSU as of `year` — a QUANTITY, not a
  *  per-row flag. Shares already sold never come back, and every acquisition or
@@ -47,10 +47,11 @@ export function remainingGrantValue(
   priceYear: number = year,
 ): number {
   const acct = resolveStrategy(plan.strategy, null, null);
-  const fmv = projectFmv(plan.pricePerShare, plan.growthRate, priceYear, planStartYear);
+  const fmvAt = fmvCurve(plan, planStartYear);
+  const fmv = fmvAt(priceYear);
   let total = 0;
   for (const grant of plan.grants) {
-    const timeline = buildGrantTimeline(grant, acct, planStartYear);
+    const timeline = buildGrantTimeline(grant, acct, planStartYear, fmvAt);
     const shares = sharesStillInGrant(grant, timeline, year);
     if (shares <= 0) continue;
     if (grant.grantType === "rsu") {

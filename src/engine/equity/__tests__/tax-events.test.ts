@@ -79,7 +79,9 @@ describe("ISO disqualifying disposition", () => {
     const p = plan(g);
     const st = createEquityState([p], PSY);
     computeEquityYear(p, st, 2027); // exercise → seeds the lot
-    const lot = st.lots.get("g4:t1")!;
+    // Lots are keyed by acquisition event now, not by vesting row: `#ex` is the
+    // lot this in-plan exercise created.
+    const lot = st.lots.get("g4:t1#ex")!;
     lot.fmvAtExercise = 100; lot.strike = 10; lot.basisPerShare = 10; lot.exerciseYear = 2027;
     return { p, st };
   }
@@ -166,5 +168,64 @@ describe("FICA-exempt equity income (IRC §3121(a)(22))", () => {
     const r = computeEquityYear(p, st, 2027);
     expect(r.ordinaryIncome).toBeCloseTo(9_000, 2);
     expect(r.ficaExemptOrdinaryIncome).toBe(0);
+  });
+});
+
+describe("a vesting row holding two lots at once", () => {
+  // 1,000 NQSO at a $10 strike, 400 already exercised and held before the plan.
+  // The plan exercises the other 600 in 2030 and sells everything in 2033.
+  // Both lots hung off the same ledger key, so the 2030 exercise overwrote the
+  // seeded 400 and the sale could only find 600 shares to sell.
+  const splitRow: EquityGrant = {
+    id: "g-split", grantNumber: "NQ-SPLIT", grantType: "nqso", grantYear: 2024, sharesGranted: 1000,
+    has83bElection: false, fmvAtGrant: null, strikePrice: 10, strikeDiscountPct: null,
+    expirationYear: 2034, plannedEvents: [],
+    strategy: { exerciseTiming: "specific_year", exerciseYear: 2030, sellTiming: "hold_then_sell_year", sellYear: 2033 },
+    tranches: [{ id: "t1", vestYear: 2025, shares: 1000, sharesExercised: 400, sharesSold: 0, strategy: null }],
+  };
+
+  it("sells all 1,000 shares, not just the lot that survived the overwrite", () => {
+    const p = plan(splitRow); // pricePerShare 100, growthRate 0
+    const st = createEquityState([p], PSY);
+    let proceeds = 0;
+    let strikeOut = 0;
+    for (let y = PSY; y <= 2035; y++) {
+      const r = computeEquityYear(p, st, y);
+      proceeds += r.sellProceeds;
+      strikeOut += r.strikeCashOutflow;
+    }
+    expect(proceeds).toBeCloseTo(1000 * 100, 2); // 100,000 — was 60,000
+    expect(strikeOut).toBeCloseTo(600 * 10, 2);  // 6,000 for the 600 exercised
+    expect(proceeds - strikeOut).toBeCloseTo(94_000, 2); // lifetime cash; was 54,000
+  });
+});
+
+describe("options the plan must not exercise", () => {
+  it("books no income and no cash for an option that lapsed before the plan", () => {
+    const g: EquityGrant = {
+      id: "g-lapsed", grantNumber: "NQ-OLD", grantType: "nqso", grantYear: 2018, sharesGranted: 5000,
+      has83bElection: false, fmvAtGrant: null, strikePrice: 10, strikeDiscountPct: null,
+      expirationYear: 2025, strategy: null, plannedEvents: [],
+      tranches: [{ id: "t1", vestYear: 2020, shares: 5000, sharesExercised: 0, sharesSold: 0, strategy: null }],
+    };
+    const p = plan(g);
+    const st = createEquityState([p], PSY);
+    const r = computeEquityYear(p, st, PSY);
+    expect(r.ordinaryIncome).toBe(0);      // was 450,000 of phantom W-2 income
+    expect(r.strikeCashOutflow).toBe(0);   // was 50,000 of cash spent
+  });
+
+  it("books no cash for an option that is under water at its exercise year", () => {
+    const g: EquityGrant = {
+      id: "g-uw", grantNumber: "NQ-UW", grantType: "nqso", grantYear: 2024, sharesGranted: 1000,
+      has83bElection: false, fmvAtGrant: null, strikePrice: 100, strikeDiscountPct: null,
+      expirationYear: 2034, strategy: null, plannedEvents: [],
+      tranches: [{ id: "t1", vestYear: 2027, shares: 1000, sharesExercised: 0, sharesSold: 0, strategy: null }],
+    };
+    const p = plan(g, { pricePerShare: 50 }); // $50 share against a $100 strike
+    const st = createEquityState([p], PSY);
+    const r = computeEquityYear(p, st, 2027);
+    expect(r.strikeCashOutflow).toBe(0);   // was 100,000 spent to buy 50,000 of stock
+    expect(r.acquisitions).toHaveLength(0);
   });
 });

@@ -94,3 +94,40 @@ describe("remainingGrantValue — rows that are partly acquired", () => {
     expect(remainingGrantValue(p, 2026, PSY, 2027)).toBeCloseTo(1000 * 107);  // grown through year-end
   });
 });
+
+/** The exercise gate lives in the timeline precisely so the balance sheet and
+ *  the tax ledger cannot disagree. These are the balance-sheet half: move the
+ *  gate into tax-events alone and the shares silently leave net worth. */
+describe("remainingGrantValue — options the plan never exercises", () => {
+  it("keeps an unexercised out-of-the-money option on the books until it expires", () => {
+    // $100 strike; the share is $57.50 at the 2027 vest, so the plan does not
+    // exercise. The OPTION still exists until 2034 — and once the share price
+    // grows past the strike it is worth real money again. If the gate lived in
+    // the tax ledger alone, the balance sheet would have dropped these shares
+    // at 2027 and this recovery would read as $0.
+    const g: EquityGrant = {
+      id: "guw", grantNumber: "NQ-UW", grantType: "nqso", grantYear: 2024, sharesGranted: 1000,
+      has83bElection: false, fmvAtGrant: null, strikePrice: 100, strikeDiscountPct: null,
+      expirationYear: 2034, strategy: null, plannedEvents: [],
+      tranches: [{ id: "t1", vestYear: 2027, shares: 1000, sharesExercised: 0, sharesSold: 0, strategy: null }],
+    };
+    const p = plan(g);
+    p.pricePerShare = 50;
+    p.growthRate = 0.15;
+    const fmv = (y: number) => 50 * 1.15 ** (y - PSY);
+    expect(fmv(2027)).toBeLessThan(100);                       // under water at vest
+    expect(remainingGrantValue(p, 2027, PSY)).toBeCloseTo(0);  // intrinsic floored at 0
+    expect(remainingGrantValue(p, 2033, PSY)).toBeCloseTo(1000 * (fmv(2033) - 100), 4);
+    expect(remainingGrantValue(p, 2034, PSY)).toBeCloseTo(0);  // expired → off the books
+  });
+
+  it("drops an option that lapsed before the plan started", () => {
+    const g: EquityGrant = {
+      id: "glapsed", grantNumber: "NQ-OLD", grantType: "nqso", grantYear: 2018, sharesGranted: 5000,
+      has83bElection: false, fmvAtGrant: null, strikePrice: 10, strikeDiscountPct: null,
+      expirationYear: 2025, strategy: null, plannedEvents: [],
+      tranches: [{ id: "t1", vestYear: 2020, shares: 5000, sharesExercised: 0, sharesSold: 0, strategy: null }],
+    };
+    expect(remainingGrantValue(plan(g), 2026, PSY)).toBeCloseTo(0);
+  });
+});

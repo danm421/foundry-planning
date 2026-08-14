@@ -1,10 +1,11 @@
 import type { StockOptionPlan, EquityGrant, GrantType } from "./types";
 import { resolveStrategy } from "./strategy";
 import { buildGrantTimeline, type EquityAction } from "./timeline";
-import { projectFmv, resolveStrikePrice } from "./price-model";
+import { fmvCurve, resolveStrikePrice } from "./price-model";
 import { computeSellToCover } from "./withholding";
 
-/** One acquired-and-held lot (per tranche). */
+/** One acquired-and-held lot — per ACQUISITION EVENT, not per tranche: a row
+ *  partly exercised before the plan holds two. */
 interface Lot {
   grantId: string;
   trancheId: string;
@@ -21,7 +22,7 @@ interface Lot {
 export interface EquityState {
   planStartYear: number;
   actionsByYear: Map<string, Map<number, EquityAction[]>>; // accountId → year → actions
-  lots: Map<string, Lot>;        // key = `${grantId}:${trancheId}`
+  lots: Map<string, Lot>;        // key = `${grantId}:${lotId}` — see lotKey
   grantsById: Map<string, EquityGrant>;
 }
 
@@ -55,17 +56,20 @@ export interface EquityYearDetail {
 }
 
 const ROUND = (n: number) => Math.round(n * 1e6) / 1e6;
-const lotKey = (a: { grantId: string; trancheId: string }) => `${a.grantId}:${a.trancheId}`;
+/** Keyed by acquisition event: keying by vesting row alone made the second
+ *  `lots.set` overwrite the first and stranded the difference. */
+const lotKey = (a: { grantId: string; lotId: string }) => `${a.grantId}:${a.lotId}`;
 
 export function createEquityState(plans: StockOptionPlan[], planStartYear: number): EquityState {
   const actionsByYear = new Map<string, Map<number, EquityAction[]>>();
   const grantsById = new Map<string, EquityGrant>();
   for (const p of plans) {
     const acctStrategy = resolveStrategy(p.strategy, null, null);
+    const fmvAt = fmvCurve(p, planStartYear);
     const byYear = new Map<number, EquityAction[]>();
     for (const g of p.grants) {
       grantsById.set(g.id, g);
-      for (const a of buildGrantTimeline(g, acctStrategy, planStartYear)) {
+      for (const a of buildGrantTimeline(g, acctStrategy, planStartYear, fmvAt)) {
         (byYear.get(a.year) ?? byYear.set(a.year, []).get(a.year)!).push(a);
       }
     }
@@ -81,7 +85,7 @@ function emptyResult(): EquityYearResult {
 export function computeEquityYear(plan: StockOptionPlan, state: EquityState, year: number): EquityYearResult {
   const res = emptyResult();
   const actions = state.actionsByYear.get(plan.accountId)?.get(year) ?? [];
-  const fmv = (y: number) => projectFmv(plan.pricePerShare, plan.growthRate, y, state.planStartYear);
+  const fmv = fmvCurve(plan, state.planStartYear);
 
   // Process acquisitions/exercises BEFORE sells in the same year (cashless/sell-to-cover).
   const order: Record<string, number> = { seed_held: 0, acquire_rsu: 1, exercise: 2, sell: 3, expire: 4 };
