@@ -112,6 +112,10 @@ export function AssetAllocationOptionsControl({
           <input type="checkbox" className="accent-accent" checked={v.showExcluded} onChange={(e) => onChange({ ...v, showExcluded: e.target.checked })} />
           <span>Show excluded accounts</span>
         </label>
+        <label className="flex items-center gap-2 hover:text-ink">
+          <input type="checkbox" className="accent-accent" checked={v.showReturn} onChange={(e) => onChange({ ...v, showReturn: e.target.checked })} />
+          <span>Show blended return</span>
+        </label>
       </OptionsGroup>
     </OptionsRow>
   );

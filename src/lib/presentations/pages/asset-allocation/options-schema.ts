@@ -16,6 +16,10 @@ const baseSchema = z.object({
   // Itemize investable accounts that have no asset mix below the donuts.
   // Defaulted so option blobs saved before this field still parse.
   showExcluded: z.boolean().default(true),
+  // Print each side's blended expected return under its donut. Defaults OFF —
+  // it is a forward-looking figure, so it only appears in a deck the advisor
+  // explicitly turned it on for, never retroactively in an already-saved one.
+  showReturn: z.boolean().default(false),
 });
 export type AssetAllocationOptions = z.infer<typeof baseSchema>;
 
@@ -26,6 +30,7 @@ export const ASSET_ALLOCATION_OPTIONS_DEFAULT: AssetAllocationOptions = {
   includeOutOfEstate: false,
   showTable: true,
   showExcluded: true,
+  showReturn: false,
 };
 
 /**
@@ -42,6 +47,7 @@ function migrateRawOptions(raw: unknown): unknown {
       includeOutOfEstate: o.includeOutOfEstate ?? false,
       showTable: o.showTable ?? true,
       showExcluded: o.showExcluded ?? true,
+      showReturn: o.showReturn ?? false,
     };
   }
   return raw;

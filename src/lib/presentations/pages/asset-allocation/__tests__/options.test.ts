@@ -36,6 +36,14 @@ describe("assetAllocationOptionsSchema", () => {
     expect(parsed.includeOutOfEstate).toBe(true);
     expect(parsed.showTable).toBe(false);
   });
+  // A deck saved before the toggle existed must not sprout a return figure.
+  it("leaves showReturn off for an option blob saved before the field existed", () => {
+    const legacy: Record<string, unknown> = { ...ASSET_ALLOCATION_OPTIONS_DEFAULT };
+    delete legacy.showReturn;
+    expect(assetAllocationOptionsSchema.parse(legacy).showReturn).toBe(false);
+    expect(normalizeAssetAllocationOptions(legacy).showReturn).toBe(false);
+    expect(assetAllocationOptionsSchema.parse({ groupKey: "taxable" }).showReturn).toBe(false);
+  });
 });
 
 describe("normalizeAssetAllocationOptions", () => {
@@ -58,17 +66,25 @@ describe("summarizeAssetAllocationOptions", () => {
   it("summarizes sources + view + table", () => {
     const s = summarizeAssetAllocationOptions({
       left: { kind: "group", id: "all-liquid" }, right: { kind: "recommended" },
-      view: "detailed", includeOutOfEstate: false, showTable: true, showExcluded: true,
+      view: "detailed", includeOutOfEstate: false, showTable: true, showExcluded: true, showReturn: false,
     });
     expect(s).toContain("By class");
     expect(s.toLowerCase()).toContain("table");
     expect(s).not.toContain("excluded");
+    expect(s).not.toContain("blended return");
   });
   it("flags hidden excluded accounts only when showExcluded is off", () => {
     const s = summarizeAssetAllocationOptions({
       left: { kind: "group", id: "all-liquid" }, right: { kind: "recommended" },
-      view: "detailed", includeOutOfEstate: false, showTable: true, showExcluded: false,
+      view: "detailed", includeOutOfEstate: false, showTable: true, showExcluded: false, showReturn: false,
     });
     expect(s).toContain("no excluded accounts");
+  });
+  it("flags the blended return only when showReturn is on", () => {
+    const s = summarizeAssetAllocationOptions({
+      left: { kind: "group", id: "all-liquid" }, right: { kind: "recommended" },
+      view: "detailed", includeOutOfEstate: false, showTable: true, showExcluded: true, showReturn: true,
+    });
+    expect(s).toContain("with blended return");
   });
 });
