@@ -17,5 +17,7 @@ export function summarizeAssetAllocationOptions(o: AssetAllocationOptions): stri
   parts.push(o.showTable ? "with table" : "no table");
   // Excluded accounts show by default; only flag the non-default hidden state.
   if (!o.showExcluded) parts.push("no excluded accounts");
+  // Blended return is off by default; flag the non-default shown state.
+  if (o.showReturn) parts.push("with blended return");
   return parts.join(" · ");
 }

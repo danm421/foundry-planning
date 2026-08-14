@@ -19,7 +19,12 @@ function bundle(overrides: Partial<InvestmentsBundle> = {}): InvestmentsBundle {
       { id: "eq", name: "US Equity", sortOrder: 0, assetType: "equities" },
       { id: "bd", name: "Bonds", sortOrder: 1, assetType: "taxable_bonds" },
     ],
-    assetClassData: [], cashAssetClassId: null, riskFreeRate: 0.03, correlationRows: [],
+    // Equity 8% / bonds 4% geometric — round numbers so a blend is checkable by hand.
+    assetClassData: [
+      { id: "eq", arithmeticMean: 0.09, geometricReturn: 0.08, volatility: 0.16, pctOrdinaryIncome: 0, pctLtCapitalGains: 1, pctQualifiedDividends: 0, pctTaxExempt: 0 },
+      { id: "bd", arithmeticMean: 0.04, geometricReturn: 0.04, volatility: 0.05, pctOrdinaryIncome: 1, pctLtCapitalGains: 0, pctQualifiedDividends: 0, pctTaxExempt: 0 },
+    ],
+    cashAssetClassId: null, riskFreeRate: 0.03, correlationRows: [],
     accountMixByAccountId: { a1: [{ assetClassId: "eq", weight: 1 }], a2: [{ assetClassId: "bd", weight: 1 }] },
     modelPortfolioAllocationsByPortfolioId: { mp1: [{ assetClassId: "eq", weight: 0.6 }, { assetClassId: "bd", weight: 0.4 }] },
     tickerPortfolioAllocationsByPortfolioId: {},
@@ -33,8 +38,21 @@ function bundle(overrides: Partial<InvestmentsBundle> = {}): InvestmentsBundle {
   };
 }
 function opts(o: Partial<AssetAllocationOptions> = {}): AssetAllocationOptions {
-  return { left: { kind: "group", id: "all-liquid" }, right: null, view: "detailed", includeOutOfEstate: false, showTable: true, showExcluded: true, ...o };
+  return { left: { kind: "group", id: "all-liquid" }, right: null, view: "detailed", includeOutOfEstate: false, showTable: true, showExcluded: true, showReturn: false, ...o };
 }
+
+// An investable account whose growth_source resolves to no asset mix ("custom"
+// here) is excluded from the donut and itemized in excludedRows.
+const excludedBundle = () =>
+  bundle({
+    accounts: [
+      { id: "a1", name: "Brokerage", category: "taxable", growthSource: "asset_mix", modelPortfolioId: null, tickerPortfolioId: null, value: 75, ownerEntityId: null, entityInPortfolio: false },
+      { id: "a3", name: "Old 401(k)", category: "retirement", growthSource: "custom", modelPortfolioId: null, tickerPortfolioId: null, value: 50, ownerEntityId: null, entityInPortfolio: false },
+    ],
+    resolvedGroups: {
+      "all-liquid": { groupKey: "all-liquid", groupName: "All Liquid Assets", groupColor: null, isDefault: true, accountIds: ["a1", "a3"] },
+    },
+  });
 
 describe("buildAssetAllocationData", () => {
   it("single donut when right is null", () => {
@@ -81,19 +99,6 @@ describe("buildAssetAllocationData", () => {
     expect(data.tableRows).toHaveLength(0);
   });
 
-  // An investable account whose growth_source resolves to no asset mix ("custom"
-  // here) is excluded from the donut and itemized in excludedRows.
-  const excludedBundle = () =>
-    bundle({
-      accounts: [
-        { id: "a1", name: "Brokerage", category: "taxable", growthSource: "asset_mix", modelPortfolioId: null, tickerPortfolioId: null, value: 75, ownerEntityId: null, entityInPortfolio: false },
-        { id: "a3", name: "Old 401(k)", category: "retirement", growthSource: "custom", modelPortfolioId: null, tickerPortfolioId: null, value: 50, ownerEntityId: null, entityInPortfolio: false },
-      ],
-      resolvedGroups: {
-        "all-liquid": { groupKey: "all-liquid", groupName: "All Liquid Assets", groupColor: null, isDefault: true, accountIds: ["a1", "a3"] },
-      },
-    });
-
   it("itemizes investable accounts without an asset mix as excludedRows", () => {
     const data = buildAssetAllocationData(excludedBundle(), opts());
     expect(data.excludedRows).toEqual([{ id: "a3", name: "Old 401(k)", value: 50 }]);
@@ -109,5 +114,52 @@ describe("buildAssetAllocationData", () => {
   it("has no excludedRows for a fully allocated household", () => {
     const data = buildAssetAllocationData(bundle(), opts());
     expect(data.excludedRows).toHaveLength(0);
+  });
+});
+
+describe("blended return", () => {
+  it("is null on both sides when showReturn is off", () => {
+    const data = buildAssetAllocationData(
+      bundle({ selectedBenchmarkPortfolioId: "mp1" }),
+      opts({ right: { kind: "recommended" } }),
+    );
+    expect(data.leftReturn).toBeNull();
+    expect(data.rightReturn).toBeNull();
+    expect(data.disclosure).not.toContain("Blended return");
+  });
+
+  it("value-weights a group across its accounts", () => {
+    // $75 all-equity (8%) + $25 all-bond (4%) → 0.75(.08) + 0.25(.04) = 7%.
+    const data = buildAssetAllocationData(bundle(), opts({ showReturn: true }));
+    expect(data.leftReturn).toBeCloseTo(0.07, 10);
+    expect(data.rightReturn).toBeNull();
+  });
+
+  it("blends a model portfolio from its own weights", () => {
+    // 60/40 → 0.6(.08) + 0.4(.04) = 6.4%.
+    const data = buildAssetAllocationData(
+      bundle({ selectedBenchmarkPortfolioId: "mp1" }),
+      opts({ showReturn: true, right: { kind: "recommended" } }),
+    );
+    expect(data.leftReturn).toBeCloseTo(0.07, 10);
+    expect(data.rightReturn).toBeCloseTo(0.064, 10);
+  });
+
+  it("weights over classified dollars, so an unallocated account cannot drag it down", () => {
+    // $75 all-equity + a $50 account with no asset mix → 8%, not 8% × 75/125.
+    const data = buildAssetAllocationData(excludedBundle(), opts({ showReturn: true }));
+    expect(data.leftReturn).toBeCloseTo(0.08, 10);
+  });
+
+  it("is null rather than a confident 0.0% when no assumptions exist", () => {
+    const data = buildAssetAllocationData(bundle({ assetClassData: [] }), opts({ showReturn: true }));
+    expect(data.leftReturn).toBeNull();
+    expect(data.disclosure).not.toContain("Blended return");
+  });
+
+  it("adds the assumption disclosure once a return is shown", () => {
+    const data = buildAssetAllocationData(bundle(), opts({ showReturn: true }));
+    expect(data.disclosure).toContain("Investable assets only.");
+    expect(data.disclosure).toContain("not a guarantee");
   });
 });

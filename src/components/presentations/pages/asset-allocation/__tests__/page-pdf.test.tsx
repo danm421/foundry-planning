@@ -58,7 +58,19 @@ const data: AssetAllocationData = {
     .sort((a, b) => Math.abs(b.diffPct) - Math.abs(a.diffPct)),
   excludedRows: [],
   excludedTotal: 0,
+  leftReturn: null,
+  rightReturn: null,
   disclosure: "Investable assets only.",
+};
+
+/** What buildAssetAllocationData emits with showReturn on: a rate under each
+ *  donut title plus the (much longer) assumption disclosure in the callout. */
+const withReturn: AssetAllocationData = {
+  ...data,
+  leftReturn: 0.0684,
+  rightReturn: 0.0612,
+  disclosure:
+    "Investable assets only. Excludes $1,105,000 in accounts without an asset mix. Blended return is a weighted capital market assumption, not a guarantee.",
 };
 
 const framing = {
@@ -97,6 +109,27 @@ describe("AssetAllocationPagePdf render smoke", () => {
     };
     const buf = await renderToBuffer(
       <Document>{AssetAllocationPagePdf({ data: withExcluded, ...framing })}</Document>,
+    );
+    expect(countPages(buf)).toBe(1);
+  });
+
+  // The fullest the page ever gets: two donuts each carrying a return line, the
+  // comparison, the excluded table, and the long assumption disclosure.
+  it("everything on — returns + excluded + assumption disclosure — fits on one page", async () => {
+    const buf = await renderToBuffer(
+      <Document>
+        {AssetAllocationPagePdf({
+          data: {
+            ...withReturn,
+            excludedRows: [
+              { id: "x1", name: "Checking", value: 55_000 },
+              { id: "x2", name: "Old 401(k)", value: 1_050_000 },
+            ],
+            excludedTotal: 1_105_000,
+          },
+          ...framing,
+        })}
+      </Document>,
     );
     expect(countPages(buf)).toBe(1);
   });

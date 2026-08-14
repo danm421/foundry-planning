@@ -7,14 +7,17 @@ import { PRESENTATION_THEME } from "@/lib/presentations/theme";
 // line. Two of these cells sit side-by-side within the page content width.
 const CELL_WIDTH = 210;
 
-export function DonutPdf({ spec, title }: { spec: DonutSpec; title?: string }) {
+export function DonutPdf({ spec, title, subtitle }: { spec: DonutSpec; title?: string; subtitle?: string }) {
   const cx = spec.size / 2;
   const cy = spec.size / 2;
   const ringWidth = (spec.size / 2) / (spec.rings.length + 0.6);
   return (
     <View style={{ width: CELL_WIDTH, alignItems: "center" }}>
       {title && (
-        <Text style={{ fontSize: 9, color: PRESENTATION_THEME.ink2, textAlign: "center", marginBottom: 4 }}>{title}</Text>
+        <Text style={{ fontSize: 9, color: PRESENTATION_THEME.ink2, textAlign: "center", marginBottom: subtitle ? 1 : 4 }}>{title}</Text>
+      )}
+      {subtitle && (
+        <Text style={{ fontSize: 8, color: PRESENTATION_THEME.ink3, textAlign: "center", marginBottom: 4, fontFamily: "JetBrains Mono" }}>{subtitle}</Text>
       )}
       <Svg width={spec.size} height={spec.size}>
         {spec.rings.map((ring, ri) => {

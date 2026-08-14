@@ -36,7 +36,7 @@ function bundle(overrides: Partial<InvestmentsBundle> = {}): InvestmentsBundle {
 }
 const OPTS: AssetAllocationOptions = {
   left: { kind: "group", id: "all-liquid" }, right: null,
-  view: "detailed", includeOutOfEstate: false, showTable: true, showExcluded: true,
+  view: "detailed", includeOutOfEstate: false, showTable: true, showExcluded: true, showReturn: false,
 };
 
 describe("portfolioToNormalized", () => {

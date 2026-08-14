@@ -9,6 +9,8 @@ import { DonutPdf } from "./donut-pdf";
 
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
 const money = (v: number) => `$${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+/** undefined (not an empty string) so DonutPdf drops the line entirely. */
+const returnLabel = (v: number | null) => (v === null ? undefined : `${pct(v)} blended return`);
 
 const S = StyleSheet.create({
   headCell: { fontSize: 7, color: T.ink3, textTransform: "uppercase", letterSpacing: 0.5 },
@@ -33,9 +35,11 @@ export function AssetAllocationPagePdf({
     >
       <SectionHead title="Asset Allocation" subtitle={data.subtitle} accent={accent} />
       <View style={{ flexDirection: "row", justifyContent: "space-around", marginBottom: 14 }}>
-        <DonutPdf spec={data.leftDonut} title={data.leftName} />
+        <DonutPdf spec={data.leftDonut} title={data.leftName} subtitle={returnLabel(data.leftReturn)} />
         {/* rightName is non-null whenever rightDonut is (both derive from `right` in the view-model) */}
-        {data.rightDonut && <DonutPdf spec={data.rightDonut} title={data.rightName!} />}
+        {data.rightDonut && (
+          <DonutPdf spec={data.rightDonut} title={data.rightName!} subtitle={returnLabel(data.rightReturn)} />
+        )}
       </View>
       {(showTable || hasDiff) && (
         // Table and Difference sit side-by-side so the page stays single-page.
