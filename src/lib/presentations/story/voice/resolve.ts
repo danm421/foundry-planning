@@ -13,7 +13,16 @@ export interface StoryVoice {
   samples: string[];
 }
 
-export const EMPTY_VOICE: StoryVoice = { styleNote: "", samples: [] };
+/** Frozen at BOTH levels — the list separately, because freezing the wrapper
+ *  leaves the array it holds open. It is ONE object used as the default at
+ *  dozens of call sites, so a single `EMPTY_VOICE.samples.push(...)` anywhere
+ *  would change the system prompt, and every hash written from it, everywhere
+ *  at once. Two statements rather than a nested `Object.freeze`, which returns a
+ *  `readonly` type that `StoryVoice.samples` will not take. */
+const NO_SAMPLES: string[] = [];
+Object.freeze(NO_SAMPLES);
+
+export const EMPTY_VOICE: StoryVoice = Object.freeze({ styleNote: "", samples: NO_SAMPLES });
 
 /**
  * At most four. Every sample is a system-prompt line on every one of fourteen
@@ -31,6 +40,11 @@ export function resolveVoice(
     samples: samples
       .filter((s) => s.enabled && s.text.trim().length > 0)
       .slice(0, MAX_SAMPLES)
-      .map((s) => s.text),
+      // The SAME string the filter judged. Emitting the raw text instead would
+      // let a sample stored with leading or trailing blank lines through the
+      // blank check and then break its own "Sample: " line open — and in a
+      // system prompt of one instruction per line, a bare line is an
+      // instruction.
+      .map((s) => s.text.trim()),
   };
 }

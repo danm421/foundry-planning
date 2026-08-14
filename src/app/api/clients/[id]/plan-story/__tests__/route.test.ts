@@ -106,9 +106,15 @@ vi.mock("@/lib/presentations/story/load-context", () => ({
 // `@/db` stub above answers only the scenario lookup — so they are replaced
 // here for the same reason `loadStoryContext` is: this file tests the routes,
 // not the voice tables. `resolveVoice` still runs for real, which is what makes
-// the hashes below the ones a run would store. What no test here can see is
-// whether the two routes resolve the SAME voice; that pin is
-// `story/__tests__/run-context.test.ts`, on the one helper they both call.
+// the hashes below the ones a run would store.
+//
+// ⚠️⚠️ They are spies as well as stubs, and each route asserts the IDENTITY it
+// asked them for. `loadStoryRun` takes `firmId` and `advisorUserId` as two
+// plain strings, so handing it the client id, the org id or the other route's
+// firm compiles perfectly — and the two routes would then resolve different
+// voices, hash differently, and flag every chapter of every report out of date
+// forever. `run-context.test.ts` pins the HELPER; only this file can pin what
+// the routes feed it.
 vi.mock("@/lib/presentations/story/voice/repo", () => ({
   loadVoiceProfile: mocks.loadVoiceProfile,
   listVoiceSamples: mocks.listVoiceSamples,
@@ -482,6 +488,21 @@ describe("GET /api/clients/[id]/plan-story/stale", () => {
     expect((await (await stale("?scenarioId=base")).json()).stale).toEqual([]);
   });
 
+  /**
+   * ⚠️⚠️ Kills: rebuilding the voice for the wrong identity. `advisorUserId: id`
+   * — the CLIENT id — type-checks, and every other assertion in this file
+   * survives it, because a wrong-but-consistent identity still resolves SOME
+   * voice. It only shows up against the other route, as a hash that never
+   * matches: the badge would then be on for every chapter of every report, with
+   * regenerating unable to clear it.
+   */
+  it("resolves the voice for the calling advisor at this client's firm", async () => {
+    mocks.listStoryChapters.mockResolvedValue([chapterRow({ sourceHash: FRESH })]);
+    await stale("?scenarioId=base");
+    expect(mocks.loadVoiceProfile).toHaveBeenCalledWith("firm_1", "user_1");
+    expect(mocks.listVoiceSamples).toHaveBeenCalledWith("firm_1", "user_1");
+  });
+
   // Kills: rebuilding the context from a different scenario than the rows were
   // listed under. The two would then never agree and every chapter reads stale.
   it("lists and rebuilds under the same scenario and register", async () => {
@@ -709,6 +730,23 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
       }),
       { params: Promise.resolve({ id: CLIENT_ID }) },
     );
+
+  /**
+   * ⚠️⚠️ The same identity, asked for the same way as the staleness route asks
+   * — which is the whole reason `StoryRun` carries the voice at all. Written as
+   * two separate assertions in two separate describes rather than one shared
+   * helper, because what has to agree is what each ROUTE passes, and a helper
+   * both call would agree with itself no matter what the routes did.
+   *
+   * Kills: `advisorUserId: id`. It type-checks (both are `string`), the whole
+   * suite stays green without this, and in production the generate side writes
+   * hashes the staleness side can never reproduce.
+   */
+  it("writes in the voice of the calling advisor at this client's firm", async () => {
+    await post({ scenarioId: "base", documentRole: "standalone" });
+    expect(mocks.loadVoiceProfile).toHaveBeenCalledWith("firm_1", "user_1");
+    expect(mocks.listVoiceSamples).toHaveBeenCalledWith("firm_1", "user_1");
+  });
 
   // Kills: removing the `requiresProposal` filter — a base-only story would
   // publish a recommendation chapter with nothing to recommend.

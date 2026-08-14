@@ -53,27 +53,52 @@ function matches(condition: SQL, row: Record<string, unknown>): boolean {
   return isOr ? results.some(Boolean) : results.every(Boolean);
 }
 
+/** Dates and numbers compare numerically; anything else (a uuid) lexically,
+ *  which is the order Postgres gives those too. */
+function compareValues(a: unknown, b: unknown): number {
+  if (a instanceof Date && b instanceof Date) return a.getTime() - b.getTime();
+  if (typeof a === "number" && typeof b === "number") return a - b;
+  return String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0;
+}
+
 /**
- * Sorts rows by a real `orderBy(desc(col))` argument. `desc(x)` is
- * ``sql`${x} desc` ``, so both the column and the direction word are in the
- * same chunk list `matches` walks — reading them is what makes the direction
- * observable to a test rather than a claim in a docblock.
+ * Sorts rows by the real `orderBy(desc(col), desc(col))` arguments. `desc(x)` is
+ * ``sql`${x} desc` ``, so both the column and the direction word are in the same
+ * chunk list `matches` walks — reading them is what makes the direction, and the
+ * presence of a tiebreak, observable to a test rather than a claim in a docblock.
+ *
+ * EVERY key is applied, in order. Applying only the first would leave the
+ * tiebreak untestable for the same reason ignoring `orderBy` left the direction
+ * untestable.
  */
-function ordered(order: SQL, filtered: Record<string, unknown>[]): Record<string, unknown>[] {
-  const column = order.queryChunks.find((c): c is Column => c instanceof Column);
-  if (!column) throw new Error("orderBy was handed no column");
-  const key = COLUMN_KEY[column.name];
-  const descending = order.queryChunks.some(
-    (c) => c instanceof StringChunk && c.value.join("").trim() === "desc",
-  );
-  // A row missing the sort column would sort as NaN — every comparison false,
-  // so the rows come back in input order and the test reads as a pass whichever
-  // direction the code asked for. Loud instead.
-  const value = (row: Record<string, unknown>): number => {
+function ordered(
+  orders: SQL[],
+  filtered: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  const keys = orders.map((order) => {
+    const column = order.queryChunks.find((c): c is Column => c instanceof Column);
+    if (!column) throw new Error("orderBy was handed no column");
+    return {
+      key: COLUMN_KEY[column.name],
+      descending: order.queryChunks.some(
+        (c) => c instanceof StringChunk && c.value.join("").trim() === "desc",
+      ),
+    };
+  });
+  // A row missing a sort column would compare as "undefined" against every
+  // other, so the rows would come back in an order that says nothing and the
+  // test would read as a pass whatever the code asked for. Loud instead.
+  const value = (row: Record<string, unknown>, key: string): unknown => {
     if (row[key] == null) throw new Error(`test row has no ${key} to order by`);
-    return Number(row[key]);
+    return row[key];
   };
-  return [...filtered].sort((a, b) => (descending ? value(b) - value(a) : value(a) - value(b)));
+  return [...filtered].sort((a, b) => {
+    for (const { key, descending } of keys) {
+      const c = compareValues(value(a, key), value(b, key));
+      if (c !== 0) return descending ? -c : c;
+    }
+    return 0;
+  });
 }
 
 const m = vi.hoisted(() => ({
@@ -89,7 +114,7 @@ const m = vi.hoisted(() => ({
 let rows: Record<string, unknown>[] = [];
 
 const selectResult = (filtered: Record<string, unknown>[]) => ({
-  orderBy: (order: SQL) => Promise.resolve(ordered(order, filtered)),
+  orderBy: (...orders: SQL[]) => Promise.resolve(ordered(orders, filtered)),
   then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
     Promise.resolve(filtered).then(resolve, reject),
 });
@@ -245,6 +270,28 @@ describe("listVoiceSamples", () => {
     ];
     const result = await listVoiceSamples(FIRM, USER);
     expect(result.map((r) => r.id)).toEqual(["newest", "middle", "oldest"]);
+  });
+
+  /**
+   * ⚠️⚠️ …and a TIE is not a rare case: `created_at` defaults to `now()`, which
+   * inside one transaction is the same value for every row written. Without a
+   * second key Postgres may return those in any order it likes, `resolveVoice`
+   * slices the first four off it, and the four that reach the prompt — and the
+   * hash — can differ between the generate run and the staleness check.
+   *
+   * The id is the tiebreak because it is stable, NOT because it is later: a v4
+   * uuid carries no time at all. What is asserted here is only that ties resolve
+   * the same way twice.
+   */
+  it("breaks a createdAt tie on a stable key rather than leaving it to the database", async () => {
+    const sameMoment = new Date("2026-03-01");
+    rows = [
+      { id: "aaa", firmId: FIRM, advisorUserId: USER, createdAt: sameMoment },
+      { id: "ccc", firmId: FIRM, advisorUserId: USER, createdAt: sameMoment },
+      { id: "bbb", firmId: FIRM, advisorUserId: USER, createdAt: sameMoment },
+    ];
+    const result = await listVoiceSamples(FIRM, USER);
+    expect(result.map((r) => r.id)).toEqual(["ccc", "bbb", "aaa"]);
   });
 
   it("excludes another advisor's samples at the same firm", async () => {

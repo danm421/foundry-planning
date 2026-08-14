@@ -2,7 +2,17 @@
 // routes read it through `run-context.ts`, so anything non-deterministic or
 // order-dependent here reports every chapter of every report out of date.
 import { describe, it, expect } from "vitest";
-import { resolveVoice } from "../resolve";
+import { EMPTY_VOICE, resolveVoice } from "../resolve";
+
+// One object is the default at dozens of call sites, so a push into it would
+// change every prompt and every stored hash at once. Both levels, because
+// freezing the wrapper alone still leaves `samples` open.
+describe("EMPTY_VOICE", () => {
+  it("is frozen, and so is its sample list", () => {
+    expect(Object.isFrozen(EMPTY_VOICE)).toBe(true);
+    expect(Object.isFrozen(EMPTY_VOICE.samples)).toBe(true);
+  });
+});
 
 describe("resolveVoice", () => {
   it("takes only the enabled samples", () => {
@@ -21,6 +31,15 @@ describe("resolveVoice", () => {
       { text: "   \n\t ", enabled: true } as never,
       { text: "real", enabled: true } as never,
     ]);
+    expect(out.samples).toEqual(["real"]);
+  });
+
+  // …and it emits the string it judged, not the raw one. Kills: a filter that
+  // trims and a `map` that does not — "\n\nreal\n\n" clears the blank check and
+  // then opens a blank line inside its own "Sample: " line, where a bare line
+  // reads as an instruction.
+  it("emits the trimmed text, the same string the filter judged", () => {
+    const out = resolveVoice(null, [{ text: "\n\n  real  \n\n", enabled: true } as never]);
     expect(out.samples).toEqual(["real"]);
   });
 

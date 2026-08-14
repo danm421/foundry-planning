@@ -61,6 +61,14 @@ export async function upsertVoiceProfile(args: {
  * Every sample that applies to this advisor — their own AND the firm's, newest
  * first. Both, not one or the other: a firm sample is a house style an advisor
  * adds their own voice on top of, which is not the precedence the PROFILE has.
+ *
+ * ⚠️ The order is load-bearing, not presentational: `resolveVoice` keeps the
+ * FIRST FOUR of what this returns and they go into `chapterSourceHash`. So the
+ * id is a second sort key — two rows written in one transaction share
+ * `defaultNow()` to the microsecond, and Postgres is free to return a tie in any
+ * order it likes, which would move a sample in and out of the four and change
+ * every chapter's stored hash. The id is a v4 uuid and carries NO time: it is
+ * here for DETERMINISM, and any stable key would do.
  */
 export async function listVoiceSamples(
   firmId: string,
@@ -70,7 +78,7 @@ export async function listVoiceSamples(
     .select()
     .from(storyVoiceSamples)
     .where(eq(storyVoiceSamples.firmId, firmId))
-    .orderBy(desc(storyVoiceSamples.createdAt));
+    .orderBy(desc(storyVoiceSamples.createdAt), desc(storyVoiceSamples.id));
   return rows.filter(
     (r) => r.advisorUserId === advisorUserId || r.advisorUserId === FIRM_DEFAULT_ADVISOR,
   );
