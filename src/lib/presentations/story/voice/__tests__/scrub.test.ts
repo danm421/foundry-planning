@@ -35,6 +35,62 @@ describe("scrubSample", () => {
     expect(scrubSample("Work ends in 2035 and we plan through 2070.", HOUSEHOLD)).not.toMatch(/\d/u);
   });
 
+  /**
+   * ⚠️ The first real harvest, 2026-08-14. A kind-blind stand-in stored "Work
+   * income stops in that amount. The plan runs to that amount." — and the prompt
+   * line directly above the samples orders the model to "copy their rhythm and
+   * register". Six "that amount"s in one passage IS a rhythm, and it is not the
+   * advisor's. The stand-in has to leave a sentence that is still English.
+   */
+  it.each([
+    ["Work income stops in 2035.", "Work income stops in that year."],
+    ["After 2035 the paychecks stop and the portfolio takes over.", "After that year the paychecks stop and the portfolio takes over."],
+    ["The plan runs to 2070.", "The plan runs to that year."],
+    ["The confidence level is 91%.", "The confidence level is that rate."],
+    ["It grows at 6.5% a year.", "It grows at that rate a year."],
+    ["You own $4.7M and owe $610K.", "You own that amount and owe that amount."],
+  ])("matches the stand-in to the KIND of figure: %s", (input, expected) => {
+    expect(scrubSample(input, HOUSEHOLD)).toBe(expected);
+  });
+
+  // ⭐ The safety half, and the reason the kinds are decided from the figure's
+  // own SHAPE rather than from where it sits: the kind changes the WORD and
+  // never the coverage. Nothing here is a hole a figure can leave through.
+  it("removes every figure whatever kind it is", () => {
+    const out = scrubSample("2035, 91%, $4.7M, 480k, 1,200, 12 and 73.7% — all of it.", HOUSEHOLD);
+    expect(out).not.toMatch(/\d/u);
+    expect(out).not.toMatch(/[$%]/u);
+    expect(out).toContain("all of it");
+  });
+
+  // A year is four digits and NOTHING else: a currency mark, a thousands
+  // separator or a decimal point each mean the digits are a quantity that merely
+  // reads like a year. The separator and the point are the ones the bareness test
+  // itself has to catch — a currency mark is already decided a line above it.
+  it.each([
+    ["It costs $2035 a month.", "It costs that amount a month."],
+    ["It costs 2,035 a month.", "It costs that amount a month."],
+    ["It grew to 2035.40 by then.", "It grew to that amount by then."],
+    // A magnitude letter says money whichever case an advisor writes it in — and
+    // the two cases arrive here differently, because `FIGURE` only takes an
+    // UPPERCASE one into its own group and a lowercase one comes glued on by the
+    // trailing `\p{L}*`.
+    ["It holds 2035K of them.", "It holds that amount of them."],
+    ["It holds 2035k of them.", "It holds that amount of them."],
+    ["Work ends in 2035.", "Work ends in that year."],
+  ])("reads four bare digits as a year and anything else as an amount: %s", (input, expected) => {
+    expect(scrubSample(input, HOUSEHOLD)).toBe(expected);
+  });
+
+  // Capitalisation is the one thing grammar is not excused on — same rule as the
+  // name stand-in, and every kind has to obey it or the register breaks.
+  it("capitalises a kind stand-in that opens a sentence", () => {
+    expect(scrubSample("2035 was when work ended.", HOUSEHOLD)).toBe("That year was when work ended.");
+    expect(scrubSample("It holds. 91% is the confidence.", HOUSEHOLD)).toBe(
+      "It holds. That rate is the confidence.",
+    );
+  });
+
   // …and the must-PASS half. A scrubber that returns "" for everything satisfies
   // every assertion above and destroys the feature.
   it("keeps the sentences that carry the VOICE, which is the whole point", () => {
@@ -72,7 +128,9 @@ describe("scrubSample", () => {
   ])("leaves no letter welded to a stand-in: %s", (input, survives) => {
     const out = scrubSample(input, HOUSEHOLD);
     expect(out).toContain(survives);
-    expect(out).not.toMatch(/amount\p{L}/u);
+    // Every kind of stand-in, not just the amount — a guard that named one word
+    // would stop covering the two years in the first case below.
+    expect(out).not.toMatch(/that (?:amount|year|rate)\p{L}/iu);
     expect(out).not.toMatch(/\d/u);
   });
 
@@ -90,7 +148,7 @@ describe("scrubSample", () => {
   // lost the punctuation that carries its rhythm.
   it("keeps the comma that ends a clause after a figure", () => {
     expect(scrubSample("Work ends in 2035, and we plan through 2070.", HOUSEHOLD)).toBe(
-      "Work ends in that amount, and we plan through that amount.",
+      "Work ends in that year, and we plan through that year.",
     );
   });
 
@@ -144,7 +202,7 @@ describe("scrubSample", () => {
     expect(scrubSample("1. You own the boat\n10. You owe nothing", HOUSEHOLD)).toBe(
       "1. You own the boat\n10. You owe nothing",
     );
-    expect(scrubSample("2035 was the year.", HOUSEHOLD)).toBe("That amount was the year.");
+    expect(scrubSample("2035 was when work ended.", HOUSEHOLD)).toBe("That year was when work ended.");
     expect(scrubSample("1.5M is the total.", HOUSEHOLD)).toBe("That amount is the total.");
   });
 
@@ -152,9 +210,9 @@ describe("scrubSample", () => {
   // model writing "2035. Work ends." got every year through the figure pass
   // untouched — a figure surviving the one pass that exists to remove figures.
   it.each([
-    ["2035. Work ends then.", "That amount. Work ends then."],
-    ["2035) Work ends then.", "That amount) Work ends then."],
-    ["  2035. Work ends then.", "That amount. Work ends then."],
+    ["2035. Work ends then.", "That year. Work ends then."],
+    ["2035) Work ends then.", "That year) Work ends then."],
+    ["  2035. Work ends then.", "That year. Work ends then."],
   ])("scrubs a year that is dressed as a list marker: %s", (input, expected) => {
     expect(scrubSample(input, HOUSEHOLD)).toBe(expected);
   });

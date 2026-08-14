@@ -11,7 +11,9 @@
 //   FIGURES — every number. A figure is about one plan and no other, and a model
 //             shown "$2.4M" in an exemplar will write it into a chapter where it
 //             is false. Gate 1 would then reject that chapter and spend its one
-//             retry on a word we handed it.
+//             retry on a word we handed it. Every one of them goes; what replaces
+//             it matches the KIND of figure it was, so the sentence around it is
+//             still English — see `figureStandIn`.
 //
 // What survives is rhythm, register, and the advisor's own turns of phrase,
 // which is exactly what `prompts.ts` asks the model to copy: "Copy their rhythm
@@ -162,10 +164,65 @@ const SCRUBBABLE = new RegExp(
  *  Its shape, not its grammar — "they owns" is a sample the model reads for
  *  length and cadence, and both survive the swap. */
 const NAME_STAND_IN = "they";
-const FIGURE_STAND_IN = "that amount";
 /** The household gets its own stand-in rather than the people's. Reusing "they"
  *  produced "the they household", which is not a sentence in any register. */
 const HOUSEHOLD_STAND_IN = "the household";
+
+/**
+ * A figure's stand-in matches its KIND, because one word for all of them is not
+ * English.
+ *
+ * ⚠️ The first real harvest, 2026-08-14, stored "Work income stops in that
+ * amount. The plan runs to that amount." and "the confidence level, which is
+ * that amount" — and `prompts.ts` prints, one line above the samples, "Copy
+ * their rhythm and register". Six "that amount"s in a passage IS a rhythm, and
+ * it is one no advisor wrote. This text's ONLY job is to read like their
+ * writing, so a stand-in that breaks the sentence costs the whole sample.
+ *
+ * These three are what the corpus actually holds — a date, a rate, a sum — and
+ * anything else falls back to the amount. An age is the fallback's known cost:
+ * "You claim at 67" comes out as "You claim at that amount", which is clumsy.
+ * Clumsy is the whole cost, because the fallback is still a stand-in — no input
+ * reaches a branch that declines to replace the figure.
+ */
+const AMOUNT_STAND_IN = "that amount";
+const YEAR_STAND_IN = "that year";
+const RATE_STAND_IN = "that rate";
+/** Every figure stand-in, so the rules downstream (capitalisation, collapsing)
+ *  cover the kinds by construction. Naming one of them by hand is how a kind
+ *  ends up with half the treatment. */
+const FIGURE_STAND_INS = [AMOUNT_STAND_IN, YEAR_STAND_IN, RATE_STAND_IN];
+
+/**
+ * A year is four bare digits in this century or the last, and NOTHING else.
+ *
+ * ⚠️ The bareness is the whole test. A currency mark, a thousands separator or a
+ * decimal point all say the digits are a quantity that merely reads like a date
+ * — "$2035 a month", "2,035 hours", "2035.40" — and calling one of those a year
+ * writes a sentence about time out of a sentence about money. Guarded by the
+ * `$` and `[KMB]` checks above it and by the anchors here.
+ */
+const YEAR = /^(?:19|20)\d{2}$/u;
+
+/**
+ * Which stand-in a matched figure takes, decided from the figure's own SHAPE.
+ *
+ * ⭐ It changes the WORD and never the coverage: every branch returns a stand-in,
+ * so every figure `SCRUBBABLE` matches is still replaced. There is no path here
+ * that returns the digits.
+ */
+function figureStandIn(figure: string): string {
+  if (figure.includes("%")) return RATE_STAND_IN;
+  // A magnitude letter is money in this corpus ("$4.7M", "480K"), and it is what
+  // keeps a quantity that happens to be four digits — "2035K" — off the year
+  // branch below. Case-insensitive because the two cases arrive here differently:
+  // `FIGURE` takes an UPPERCASE magnitude into its own group, and a lowercase one
+  // comes glued on by its trailing `\p{L}*`.
+  if (figure.includes("$") || /\d\s*[KMB]/iu.test(figure)) return AMOUNT_STAND_IN;
+  // `FIGURE` takes any letters glued to the digits, so "the mid-2030s" arrives
+  // as "2030s" and "January 1st" as "1st". The digits are what carries the kind.
+  return YEAR.test(figure.replace(/\p{L}+$/u, "")) ? YEAR_STAND_IN : AMOUNT_STAND_IN;
+}
 
 /**
  * Where a sentence can begin in MARKDOWN, which is what a chapter is: after a
@@ -191,8 +248,19 @@ const SENTENCE_OPENER = String.raw`(?:^|[.!?]["'’)\]]?\s+|\n)[ \t]*(?:#{1,6}[ 
  * prose".
  */
 const STAND_IN_AT_SENTENCE_START = new RegExp(
-  String.raw`(${SENTENCE_OPENER})(that amount|the household|their|they)\b`,
+  // Built from the constants, so a kind added above cannot be left uncapitalised
+  // here. No entry is a prefix of another, so the alternation's order carries
+  // nothing — it is the order they are declared in, and nothing more.
+  String.raw`(${SENTENCE_OPENER})(${[...FIGURE_STAND_INS, HOUSEHOLD_STAND_IN, "their", NAME_STAND_IN].join("|")})\b`,
   "gu",
+);
+
+/** A run of the SAME stand-in, which is what two adjacent figures leave behind.
+ *  The backreference is what keeps it to one kind — "that amount that year" is
+ *  two different figures and reads as two. */
+const REPEATED_FIGURE_STAND_IN = new RegExp(
+  String.raw`\b(${FIGURE_STAND_INS.join("|")})(?:[\s,]+\1\b)+`,
+  "giu",
 );
 
 export function scrubSample(
@@ -208,7 +276,7 @@ export function scrubSample(
     out = out.replace(wordPattern(name), NAME_STAND_IN);
   }
   if (surname.length > 0) out = out.replace(surnamePattern(surname), HOUSEHOLD_STAND_IN);
-  out = out.replace(SCRUBBABLE, (_match, termOfArt: string | undefined) => termOfArt ?? FIGURE_STAND_IN);
+  out = out.replace(SCRUBBABLE, (match: string, keep: string | undefined) => keep ?? figureStandIn(match));
   // A stand-in run together with its neighbour ("they, they") reads as damage
   // rather than as prose; collapse what the name and figure passes leave behind.
   return (
@@ -219,7 +287,7 @@ export function scrubSample(
       // already says both. Two figures are two figures, and "between that amount
       // and that amount" must keep its second half.
       .replace(/\b(they)(?:(?:[\s,]+|\s+and\s+)\1\b)+/giu, "$1")
-      .replace(/\b(that amount)(?:[\s,]+\1\b)+/giu, "$1")
+      .replace(REPEATED_FIGURE_STAND_IN, "$1")
       // "Susan's 401(k)" is a shape Gate 6 deliberately permits, so a harvested
       // chapter contains it and the swap above leaves "they's".
       .replace(/\bthey['’]s\b/giu, "their")

@@ -25,9 +25,10 @@ Object.freeze(NO_SAMPLES);
 export const EMPTY_VOICE: StoryVoice = Object.freeze({ styleNote: "", samples: NO_SAMPLES });
 
 /**
- * At most four. Every sample is a system-prompt line on every one of fourteen
- * chapters, so the cost is linear in this number and the return is not: past
- * three or four exemplars a model is matching an average rather than a voice.
+ * At most four. Every sample is a quoted block in the system prompt of every one
+ * of fourteen chapters, so the cost is linear in this number and the return is
+ * not: past three or four exemplars a model is matching an average rather than a
+ * voice.
  *
  * Exported because the Settings → Voice panel marks which rows actually reach a
  * prompt, and a second `4` written over there would eventually disagree with
@@ -60,11 +61,14 @@ export function resolveVoice(
     samples: samples
       .filter(isSendable)
       .slice(0, MAX_SAMPLES)
-      // The SAME string the filter judged. Emitting the raw text instead would
-      // let a sample stored with leading or trailing blank lines through the
-      // blank check and then break its own "Sample: " line open — and in a
-      // system prompt of one instruction per line, a bare line is an
-      // instruction.
+      // The SAME string the filter judged: `isSendable` tests `text.trim()`, so
+      // the raw text is a different string from the one that passed the check.
+      // A sample stored as "\n\n  real  \n\n" reaches the prompt wrapped in empty
+      // quoted lines top and bottom — noise in the one text kept for its shape.
+      //
+      // The ENDS are all this covers. The interior is `prompts.ts#quoteSample`,
+      // which marks every line of a sample; before it existed, a sample's second
+      // paragraph landed at instruction level in the system prompt.
       .map((s) => s.text.trim()),
   };
 }

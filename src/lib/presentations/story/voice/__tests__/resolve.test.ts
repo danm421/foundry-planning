@@ -24,7 +24,7 @@ describe("resolveVoice", () => {
   });
 
   // Kills: dropping the blank-text half of the filter. A sample that is nothing
-  // but whitespace is an empty "Sample:" line in all fourteen system prompts —
+  // but whitespace is an empty quoted block in all fourteen system prompts —
   // and it changes the hash, so it is not merely untidy.
   it("drops a sample whose text is blank", () => {
     const out = resolveVoice(null, [
@@ -36,8 +36,9 @@ describe("resolveVoice", () => {
 
   // …and it emits the string it judged, not the raw one. Kills: a filter that
   // trims and a `map` that does not — "\n\nreal\n\n" clears the blank check and
-  // then opens a blank line inside its own "Sample: " line, where a bare line
-  // reads as an instruction.
+  // then reaches the prompt wrapped in empty quoted lines.
+  // `prompts.ts#quoteSample` keeps those from being bare lines; it does not make
+  // them worth sending.
   it("emits the trimmed text, the same string the filter judged", () => {
     const out = resolveVoice(null, [{ text: "\n\n  real  \n\n", enabled: true } as never]);
     expect(out.samples).toEqual(["real"]);

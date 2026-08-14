@@ -470,9 +470,13 @@ export function VoiceProfilePanel({
           </h2>
           <FieldTooltip text="Switching a sample off stops it being sent, and the words stay here. Deleting removes them from Foundry for good — use that if a client's name or a figure survived the scrub." />
         </div>
+        {/* Word-level, not byte-level. `prompts.ts#quoteSample` marks every line of a
+            sample so that none of it can be read as an instruction, so the assistant
+            sees these words inside a quote. The words themselves are what this
+            sentence promises, and nothing is added to them or taken from them. */}
         <p className="max-w-prose text-sm text-ink-3">
-          Each sample is shown exactly as the assistant receives it. Names and figures from the
-          household it came from were taken out when it was saved.
+          These are the exact words the assistant receives. Names and figures from the household
+          it came from were taken out when it was saved.
         </p>
 
         {samplesProblem != null && (
