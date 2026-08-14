@@ -217,11 +217,13 @@ function figureStandIn(figure: string): string {
   // keeps a quantity that happens to be four digits — "2035K" — off the year
   // branch below.
   //
-  // ⚠️ Case-insensitive because the FIGURE STRING can carry a lowercase magnitude
-  // two ways, and `SCRUBBABLE` is compiled `giu`, so `[KMB]` there already
-  // matches either case: "2035 k" comes through inside the magnitude group, and
-  // "2035k" comes through glued on by the trailing `\p{L}*`. A case-SENSITIVE
-  // test here missed both, and read "2035k" as a year.
+  // ⚠️ Case-insensitive because the FIGURE STRING reaching this function carries
+  // the magnitude letter in whatever case the advisor wrote it. `SCRUBBABLE` is
+  // compiled `giu`, so its own `[KMB]` already matches either case — measured:
+  // "2035 k" matches as ["2035 k"] under `giu` and only ["2035"] under `gu`.
+  // A case-SENSITIVE test here therefore read "2035k" as a year. ("2035 k" landed
+  // on the amount either way, because the space it leaves behind defeats the
+  // anchored year test below — so it is a control here, not a second red.)
   if (figure.includes("$") || /\d\s*[KMB]/iu.test(figure)) return AMOUNT_STAND_IN;
   // `FIGURE` takes any letters glued to the digits, so "the mid-2030s" arrives
   // as "2030s" and "January 1st" as "1st". The digits are what carries the kind.

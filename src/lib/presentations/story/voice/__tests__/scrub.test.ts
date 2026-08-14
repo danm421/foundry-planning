@@ -71,10 +71,11 @@ describe("scrubSample", () => {
     ["It costs $2035 a month.", "It costs that amount a month."],
     ["It costs 2,035 a month.", "It costs that amount a month."],
     ["It grew to 2035.40 by then.", "It grew to that amount by then."],
-    // A magnitude letter says money whichever case an advisor writes it in. Both
-    // cases reach the kind test as part of the figure STRING — `SCRUBBABLE` is
-    // compiled `giu`, so its own `[KMB]` matches either — and a case-sensitive
-    // kind test read the lowercase one as a year.
+    // A magnitude letter says money whichever case an advisor writes it in. The
+    // letter reaches the kind test as part of the figure STRING — `SCRUBBABLE` is
+    // compiled `giu`, so its own `[KMB]` matches either case — and a
+    // case-sensitive kind test read "2035k" as a year. The first and third are
+    // controls: they passed before that fix and after it.
     ["It holds 2035K of them.", "It holds that amount of them."],
     ["It holds 2035k of them.", "It holds that amount of them."],
     ["It holds 2035 k of them.", "It holds that amount of them."],

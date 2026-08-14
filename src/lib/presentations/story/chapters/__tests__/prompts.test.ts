@@ -142,7 +142,7 @@ describe("buildChapterPrompt", () => {
       [],
     );
     for (const line of system.split("\n")) {
-      if (appLines.has(line)) continue; // one of the fourteen rules, unchanged
+      if (appLines.has(line)) continue; // one of the app's own rules, unchanged
       expect(line).toMatch(/^(?:>|Sample \d+:$|The advisor describes|Match the voice)/u);
     }
   });
