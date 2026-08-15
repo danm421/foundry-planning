@@ -180,12 +180,61 @@ describe("splitParagraphs — delimiter-run splitting (a run of 3+ closes across
 
   it("does not let a run cross between DIFFERENT delimiter characters", () => {
     // Splitting only ever happens within runs of the SAME character. A `*`
-    // closer must not be able to reach past a `_` sitting closer on the
-    // stack and consume it — CommonMark rule 9 requires the same character
-    // on both ends of a pairing. If this ever regressed, the `*` before "c"
-    // would incorrectly pair with the `_` before "b" instead of staying
-    // literal, and the output would lose the mid-line "*".
+    // closer must not reach past a `_` sitting nearer on the stack and
+    // consume it — a pairing needs the same character on both ends.
+    // Measured: deleting that guard yields ["a b c"], losing the mid-line
+    // "*" as well.
+    //
+    // NOT a CommonMark conformance pin. CommonMark searches DOWN the stack
+    // for a compatible opener and so reads this line as "a _b c_" — a
+    // difference this module accepts, since both readings print a literal
+    // delimiter either way. See `stripEmphasis`.
     expect(splitParagraphs("*a _b* c_")).toEqual(["*a b* c"]);
+  });
+});
+
+describe("splitParagraphs — CommonMark rule 9 (the multiple-of-3 clause)", () => {
+  // Rule 9 forbids a pairing when EITHER end is a run that can both open and
+  // close, and the two runs' ORIGINAL lengths sum to a multiple of 3 — unless
+  // both lengths are themselves multiples of 3. A run is both-capable when it
+  // is flanked on both sides, which happens exactly two ways, one per group
+  // below: sitting between two plain characters (letters or digits), and
+  // sitting between two punctuation marks such as a `%` and a comma.
+  //
+  // Every expected value below is CommonMark's own, taken from markdown-it in
+  // commonmark mode and pinned here as a literal (T14-6 — the parser is a
+  // throwaway oracle, never a dependency of this module or these tests).
+  it.each([
+    ["Fees are 0.35%*, custody is 0.05%**.", "Fees are 0.35%*, custody is 0.05%**."],
+    ["The fee is 22%*, the other is 24%**.", "The fee is 22%*, the other is 24%**."],
+    ["(see note)*, and (see note 2)**.", "(see note)*, and (see note 2)**."],
+  ])("leaves two footnote marks of different lengths alone: %s", (input, expected) => {
+    expect(splitParagraphs(input)).toEqual([expected]);
+  });
+
+  it.each([
+    ["**foo*bar*baz**", "foobarbaz"],
+    ["**really*important*stuff**", "reallyimportantstuff"],
+    ["a**b*c*d**", "abcd"],
+  ])("still consumes every delimiter of a nested intraword span: %s", (input, expected) => {
+    // Refusing the forbidden pairing is what makes these work: the inner
+    // 1-run can't close against the outer 2-run (1 + 2 = 3), so it stays
+    // available as an opener for the NEXT 1-run — and the outer 2-run is
+    // still on the stack when the closing 2-run arrives. Pairing them
+    // greedily instead leaves a literal `**` on the printed page.
+    expect(splitParagraphs(input)).toEqual([expected]);
+  });
+
+  it("still pairs when both run lengths are themselves multiples of three", () => {
+    // 3 + 3 = 6 is a multiple of 3, but rule 9's own exception applies.
+    expect(splitParagraphs("foo***bar***baz")).toEqual(["foobarbaz"]);
+  });
+
+  it("still pairs when the sum is a multiple of three but neither run can both open and close", () => {
+    // 1 + 2 = 3, but the leading `*` can only open (nothing before it) and
+    // the trailing `**` can only close (nothing after it), so rule 9's
+    // precondition is never met and the pairing stands.
+    expect(splitParagraphs("*foo**")).toEqual(["foo*"]);
   });
 });
 
@@ -205,10 +254,20 @@ describe("splitParagraphs — code spans", () => {
   });
 
   it("does not treat a mismatched-length backtick pair as a code span", () => {
-    // Two backticks, then one — CommonMark requires the CLOSING run to be
-    // the same length as the opening one; with none available, nothing
-    // strips and the line stays fully literal.
+    // Measured run lengths: [2, 4]. CommonMark requires the CLOSING run to be
+    // exactly as long as the opening one, and there is no length-2 run later
+    // on the line, so nothing strips and it stays fully literal. markdown-it
+    // in commonmark mode agrees character for character.
     expect(splitParagraphs("``word````")).toEqual(["``word````"]);
+  });
+
+  it("leaves the emphasis inside a code span in place — the one shape it does not", () => {
+    // Documented in `stripCodeSpans`: the backticks are deleted and the rest
+    // of the line is then handed to the emphasis scan, so what a code span
+    // wrapped gets rescanned. CommonMark keeps `__init__` verbatim; this
+    // module reads its underscores as bold. Pinned so the gap stays visible
+    // and cannot be "fixed" by accident without someone noticing.
+    expect(splitParagraphs("`__init__`")).toEqual(["init"]);
   });
 });
 
