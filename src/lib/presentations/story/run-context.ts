@@ -106,14 +106,23 @@ export async function loadStoryRun(args: {
    * Whose voice. A Clerk user id — `loadVoiceProfile` falls back to the firm's
    * row when this advisor has none.
    *
-   * ⚠️ The GENERATE route passes the acting advisor, and stamps that same id on
-   * every row it writes (`generatedByUserId`). The STALENESS route passes the
-   * caller — which is only the right voice for a chapter the caller generated,
-   * so it reads each row's stamp and rebuilds that chapter's hash through
-   * `loadAdvisorVoice` for whoever wrote it, falling back to this one on a row
-   * written before the stamp existed. Firm-wide voice rows are shared and cost
-   * nothing here; a PERSONAL note or sample is what makes two people at one firm
-   * disagree.
+   * ⚠️ THE CALLER's voice — not necessarily the voice a chapter already in
+   * storage was written in. The two coincide only for a caller about to WRITE
+   * fresh prose: this advisor's voice is what the new words go in, and it is
+   * stamped on the row as `generatedByUserId` so a later reader can tell whose
+   * voice it was.
+   *
+   * A caller instead COMPARING this run against an existing row must not
+   * assume the two coincide — it has to read that row's own stamp and rebuild
+   * THAT chapter's hash through `loadAdvisorVoice` for whoever actually wrote
+   * it, falling back to this parameter only on a row written before the stamp
+   * existed. Firm-wide voice rows are shared and cost nothing extra there; a
+   * PERSONAL note or sample is what makes two people at one firm disagree.
+   *
+   * A caller whose question never touches voice at all — nothing in
+   * `ctx.facts` reads it — may pass any value that names a real advisor: this
+   * parameter is required because `loadStoryRun` always resolves one, not
+   * because every caller's answer depends on what it resolves to.
    */
   advisorUserId: string;
   /** Already resolved by `resolveStoryScenarioId` — "base" or a real id. */

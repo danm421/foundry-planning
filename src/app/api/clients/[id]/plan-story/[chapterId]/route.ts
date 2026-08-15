@@ -9,6 +9,7 @@ import { planStoryChapterPatchSchema } from "@/lib/schemas/plan-story";
 import {
   updateChapterText,
   markChapterReviewed,
+  clearChapterReviewed,
   loadStoryChapter,
   hasNewerGeneration,
 } from "@/lib/presentations/story/repo";
@@ -22,9 +23,9 @@ function isChapterId(v: unknown): v is ChapterId {
 }
 
 /**
- * The advisor's three write actions on one chapter: replace its words, say they
- * stand behind them, and let a rewrite their own version was standing in front
- * of through.
+ * The advisor's four write actions on one chapter: replace its words, say they
+ * stand behind them, take that back, and let a rewrite their own version was
+ * standing in front of through.
  *
  * ⚠️ Everything below is about this handler's calls into `story/repo`, and
  * about those ONLY. It is not a claim about the handler as a whole, which
@@ -32,16 +33,19 @@ function isChapterId(v: unknown): v is ChapterId {
  * further down is a scenario lookup with a 404 of its own, and
  * `requireClientEditAccess` ahead of it is a database read too.
  *
- * Four of those repo calls touch storage. Three are the WRITERS —
+ * Five of those repo calls touch storage. Four are the WRITERS —
  * `updateChapterText` for an edit and again for an accept, plus
- * `markChapterReviewed` — and all three are upserts, so each either stores the
- * write or throws. None of them has a zero-row outcome to check, and none needs
- * a "this chapter has no row yet" 404: the panel offers every chapter whether
- * one was ever generated or not, so writing one from scratch is a first-class
- * path rather than an edge case.
+ * `markChapterReviewed` and `clearChapterReviewed`. The first three are
+ * upserts, so each either stores the write or throws, with no zero-row outcome
+ * to check and no "this chapter has no row yet" 404: the panel offers every
+ * chapter whether one was ever generated or not, so writing one from scratch is
+ * a first-class path rather than an edge case. `clearChapterReviewed` is the
+ * one exception — a plain UPDATE, deliberately: a chapter with no row was never
+ * reviewed, so a zero-row result there is not a failure to surface, just
+ * nothing to clear.
  *
- * The fourth, `loadStoryChapter`, is a read, and the accept path is the only
- * one that makes it — the edit and review paths reach `story/repo` without
+ * The fifth, `loadStoryChapter`, is a read, and the accept path is the only one
+ * that makes it — the edit and both review paths reach `story/repo` without
  * reading, which a test pins. It is not an authorization check: it is scoped on
  * the same already-authorized clientId as the writers, and its job is to
  * confirm the row really is shadowing a newer generation before the accept
@@ -52,7 +56,7 @@ function isChapterId(v: unknown): v is ChapterId {
  * nothing.)
  *
  * `requireClientEditAccess` is what stands between a caller and another
- * client's chapter row, which is why it runs ahead of all four.
+ * client's chapter row, which is why it runs ahead of all five.
  */
 export async function PATCH(
   request: NextRequest,
@@ -75,7 +79,10 @@ export async function PATCH(
     const { editedText, reviewed, documentRole, acceptGenerated } = parsed.data;
     // Reported rather than answered with a cheerful `{ ok: true }`: a panel bug
     // that sends no field at all would otherwise look exactly like a saved edit.
-    if (editedText === undefined && reviewed !== true && acceptGenerated !== true) {
+    // `reviewed === undefined`, not `!== true`: an explicit `false` is the
+    // advisor's undo, and it must count as something to do rather than fall
+    // through to this 400 the way an absent field does.
+    if (editedText === undefined && reviewed === undefined && acceptGenerated !== true) {
       return NextResponse.json(
         { error: "Nothing to update — send editedText, reviewed or acceptGenerated" },
         { status: 400 },
@@ -169,6 +176,24 @@ export async function PATCH(
       await markChapterReviewed({ clientId: id, scenarioId, documentRole, chapterId, userId });
       await recordAudit({
         action: "plan_story.chapter_reviewed",
+        resourceType: "plan_story_chapter",
+        resourceId: chapterId,
+        clientId: id,
+        firmId,
+        metadata: crossFirmAuditMeta({ access }, callerOrg, { scenarioId, documentRole }),
+      });
+    }
+
+    /**
+     * The advisor's undo: a mis-click on Mark reviewed, or a second look that
+     * changes their mind. `clearChapterReviewed` is a plain UPDATE — a chapter
+     * that was never reviewed has no row to update, so there is nothing here
+     * for the request to throw away, unlike `acceptGenerated` above.
+     */
+    if (reviewed === false) {
+      await clearChapterReviewed({ clientId: id, scenarioId, documentRole, chapterId });
+      await recordAudit({
+        action: "plan_story.chapter_unreviewed",
         resourceType: "plan_story_chapter",
         resourceId: chapterId,
         clientId: id,

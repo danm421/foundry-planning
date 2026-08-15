@@ -120,6 +120,9 @@ const COULD_NOT_LOAD =
   "Couldn't load this report's chapters. Check your connection and try again.";
 const COULD_NOT_SAVE = "Couldn't save your edit. Your words are still in the box — try again.";
 const COULD_NOT_REVIEW = "Couldn't mark that chapter reviewed. Try again.";
+/** Its own sentence rather than `COULD_NOT_REVIEW`'s: the chapter is still
+ *  marked reviewed, which is the opposite of what that one says. */
+const COULD_NOT_UNREVIEW = "Couldn't undo that chapter's review. Try again.";
 /** Its own sentence rather than `COULD_NOT_SAVE`'s: the advisor typed nothing
  *  here, so "your words are still in the box" would be about a box they never
  *  touched — and what they need to know is that their version still prints. */
@@ -333,8 +336,9 @@ export function PlanStoryReviewPanel({
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   /** The chapter with a write in flight, so a second click cannot double-write
-   *  it. Marking reviewed is not reversible from any surface, and every PATCH
-   *  files its own audit row. */
+   *  it. Every PATCH — an edit, a review, an undo of one, or an accept — files
+   *  its own audit row, so a double click would double the record as well as
+   *  the write. */
   const [saving, setSaving] = useState<string | null>(null);
   /** The chapter being rewritten, if any. Its own state rather than `saving`'s:
    *  a rewrite is a wait measured in tens of seconds, so the row it is happening
@@ -366,6 +370,13 @@ export function PlanStoryReviewPanel({
   const [harvesting, setHarvesting] = useState<string | null>(null);
   /** Chapter ids the plan has moved underneath. See `CHAPTER_OUT_OF_DATE`. */
   const [outOfDate, setOutOfDate] = useState<Set<string>>(new Set());
+  /**
+   * The figures each chapter was allowed to use, keyed by chapter id — the
+   * review panel's disclosure half of the same pack the model was shown.
+   * Empty until `loadFacts` below answers; a chapter absent from the map reads
+   * as "nothing to disclose yet", same as an unanswered `outOfDate`.
+   */
+  const [facts, setFacts] = useState<Record<string, { label: string; display: string }[]>>({});
   /**
    * Reading the story instead of editing it.
    *
@@ -428,6 +439,42 @@ export function PlanStoryReviewPanel({
     // nothing able to clear it.
   }, [clientId, scenario, documentRole, styleQuery]);
 
+  /**
+   * The disclosure half — which figures a chapter was allowed to use. Its own
+   * request and its own state, for the same reason `loadOutOfDate` above is:
+   * answering it costs a whole story context (`loadStoryRun`, 23.2s cold, 4.0s
+   * warm), and the chapter list is reread after every save.
+   *
+   * ⚠️ NOT in `loadOutOfDate`'s dependency list, and deliberately not merged
+   * with it. Facts come off `ctx.facts`, which reads plan projections, not the
+   * advisor's tone and length — a style change has nothing to answer here, and
+   * folding this in would spend a second twenty-second run on every tone
+   * dropdown to find that out.
+   *
+   * A failure is logged and shows nothing, the same rule `loadOutOfDate`
+   * follows: this is a disclosure, not a chapter, so a failed load here must
+   * not raise the alarm that means "your chapters did not load".
+   */
+  const loadFacts = useCallback(async () => {
+    try {
+      const res = await fetch(
+        `/api/clients/${clientId}/plan-story/facts?scenarioId=${encodeURIComponent(scenario)}` +
+          `&documentRole=${encodeURIComponent(documentRole)}`,
+      );
+      if (!res.ok) throw new Error(`GET plan-story/facts ${res.status}`);
+      const body = (await res.json()) as {
+        facts?: Record<string, { label: string; display: string }[]>;
+      };
+      // `?? {}`, the same defensiveness `loadOutOfDate` gets for free from
+      // `new Set(body.stale)`: a response this route did not actually answer
+      // (an unrelated payload shape, a field the caller renamed) must read as
+      // "nothing to disclose yet", never crash the row it would have decorated.
+      setFacts(body.facts ?? {});
+    } catch (err) {
+      console.error("[plan-story] could not load the figures each chapter may use", err);
+    }
+  }, [clientId, scenario, documentRole]);
+
   // The story being SHOWN changed — a different client, scenario or preset. The
   // drafts belong to the story being left behind, so they go with it.
   useEffect(() => {
@@ -448,6 +495,14 @@ export function PlanStoryReviewPanel({
     setOutOfDate(new Set());
     void loadOutOfDate();
   }, [loadOutOfDate]);
+
+  // …and the facts disclosure, on the same mount-time rule as the badge above
+  // but its own effect: `loadFacts` does not depend on the style, so a tone
+  // change must not re-run it the way it re-runs `loadOutOfDate`.
+  useEffect(() => {
+    setFacts({});
+    void loadFacts();
+  }, [loadFacts]);
 
   async function patch(
     chapterId: string,
@@ -970,13 +1025,60 @@ export function PlanStoryReviewPanel({
                   {harvesting === row.chapterId ? "Saving…" : "Save as a voice sample"}
                 </button>
               )}
-              {row.reviewed && <span className="text-xs text-good">Reviewed</span>}
+              {row.reviewed && (
+                <>
+                  <span className="text-xs text-good">Reviewed</span>
+                  {/* The advisor's undo: `PATCH {reviewed:false}` — see
+                      `clearChapterReviewed` (`story/repo.ts`). Before this, the
+                      only way off a mis-click was Regenerate, which spends a
+                      model call to answer a question that was never about the
+                      words. */}
+                  <button
+                    type="button"
+                    className="text-xs text-ink-3 underline hover:text-ink disabled:no-underline disabled:opacity-50"
+                    disabled={saving === row.chapterId || regenerating === row.chapterId}
+                    onClick={() =>
+                      void patch(row.chapterId, { reviewed: false }, COULD_NOT_UNREVIEW)
+                    }
+                  >
+                    Undo review
+                  </button>
+                </>
+              )}
             </div>
 
             {confirmations[row.chapterId] != null && (
               <p role="status" className="mt-2 text-xs text-good">
                 {confirmations[row.chapterId]}
               </p>
+            )}
+
+            {/* The disclosure half of the review: which figures this chapter
+                was allowed to quote, from the same pack the model was shown
+                (`factsForChapter`, `story/types.ts`). Collapsed by default —
+                this is a reference an advisor checks, not something read on
+                every pass down the list — and guarded by `isChapterId` for the
+                same reason the style fields above are: a row can outlive the
+                chapter it names, and there is nothing to disclose for one that
+                has left the arc. */}
+            {isChapterId(row.chapterId) && (
+              <details className="mt-2 text-xs text-ink-3">
+                <summary className="cursor-pointer select-none hover:text-ink">
+                  The figures this chapter may use ({(facts[row.chapterId] ?? []).length})
+                </summary>
+                <ul className="mt-1 flex flex-col gap-0.5 pl-4">
+                  {(facts[row.chapterId] ?? []).map((f, i) => (
+                    // Index keys, the same choice the read-through view makes
+                    // for its paragraphs: nothing here carries an id the panel
+                    // was sent — `label` is not asserted unique — and the list
+                    // is replaced whole on every `loadFacts`, never reordered
+                    // in place.
+                    <li key={i} className="list-disc">
+                      {f.label}: {f.display}
+                    </li>
+                  ))}
+                </ul>
+              </details>
             )}
           </section>
         ))}

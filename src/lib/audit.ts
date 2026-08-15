@@ -444,12 +444,19 @@ export type AuditAction =
   | "intake.document.uploaded"
   | "intake.document.deleted"
   // Plan Story (AI-narrated chapters for the client-facing plan PDF).
-  // `generated` is one run over every chapter of one scenario; the other two
-  // are per chapter. Generation is advisor-triggered from the review panel and
-  // makes model calls, so it is audited like the other LLM actions above.
+  // `generated` is one run over every chapter of one scenario; every other
+  // action here is per chapter. Generation is advisor-triggered from the
+  // review panel and makes model calls, so it is audited like the other LLM
+  // actions above.
   | "plan_story.generated"
   | "plan_story.chapter_edited"
   | "plan_story.chapter_reviewed"
+  // The advisor's undo for `chapter_reviewed` — a mis-click, or a second look
+  // that changes their mind. Its own action rather than folded into a second
+  // `chapter_reviewed` row: an audit trail that could not tell "reviewed" from
+  // "un-reviewed" apart would read as a chapter that was approved when the
+  // last thing that happened to it was the opposite.
+  | "plan_story.chapter_unreviewed"
   // …and its own action rather than an edit, because it is the one thing in
   // this feature that THROWS AWAY words a human wrote: the advisor is letting a
   // rewrite their own version was standing in front of through, and their

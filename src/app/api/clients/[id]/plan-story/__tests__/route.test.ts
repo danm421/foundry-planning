@@ -11,11 +11,15 @@ import type { NextRequest } from "next/server";
  * them, WITH WHICH CLIENT ID, and before which write — never that a gate itself
  * decides correctly.
  *
- * The client-id half is load-bearing rather than tidy. Both write paths are
- * upserts, so an authorized-but-different client id does not harmlessly match
- * zero rows — it CREATES one. "The gate rejects" tests cannot see that: a
- * rejected gate rejects for everybody, and says nothing about who was checked.
- * So every route below asserts the argument as well as the call, and
+ * The client-id half is load-bearing rather than tidy. Two of the PATCH
+ * handler's write paths are upserts, so an authorized-but-different client id
+ * does not harmlessly match zero rows — it CREATES one. The third,
+ * `clearChapterReviewed`, is a plain UPDATE, where the same mistake fails
+ * differently: it matches nothing and silently no-ops, which reads as an
+ * un-review that landed when nothing changed. Either way "the gate rejects"
+ * tests cannot see it: a rejected gate rejects for everybody, and says nothing
+ * about who was checked. So every route below asserts the argument as well as
+ * the call, and
  * `requireActiveSubscriptionForFirm` — whose return is void and discarded, so
  * tsc cannot see its removal — is pinned by order as well.
  *
@@ -40,6 +44,7 @@ const mocks = vi.hoisted(() => ({
   loadStoryChapter: vi.fn(),
   updateChapterText: vi.fn(),
   markChapterReviewed: vi.fn(),
+  clearChapterReviewed: vi.fn(),
   upsertGeneratedChapter: vi.fn(),
   loadStoryContext: vi.fn(),
   loadVoiceProfile: vi.fn(),
@@ -99,6 +104,7 @@ vi.mock("@/lib/presentations/story/repo", async () => {
     loadStoryChapter: mocks.loadStoryChapter,
     updateChapterText: mocks.updateChapterText,
     markChapterReviewed: mocks.markChapterReviewed,
+    clearChapterReviewed: mocks.clearChapterReviewed,
     upsertGeneratedChapter: mocks.upsertGeneratedChapter,
   };
 });
@@ -141,6 +147,7 @@ vi.mock("@/lib/rate-limit", async () => {
 import { ForbiddenError } from "@/lib/authz";
 import { GET } from "../route";
 import { GET as GET_STALE } from "../stale/route";
+import { GET as GET_FACTS } from "../facts/route";
 import { POST } from "../generate/route";
 import { PATCH } from "../[chapterId]/route";
 import { chapterSourceHash } from "@/lib/presentations/story/chapters/prompts";
@@ -273,6 +280,7 @@ beforeEach(() => {
   mocks.loadStoryChapter.mockResolvedValue(shadowedRow());
   mocks.updateChapterText.mockResolvedValue(undefined);
   mocks.markChapterReviewed.mockResolvedValue(undefined);
+  mocks.clearChapterReviewed.mockResolvedValue(undefined);
   mocks.upsertGeneratedChapter.mockResolvedValue(undefined);
   // Identity-preserving: the loader echoes the document role it was handed, so
   // the value the ROUTE derived is observable at `generateChapter`, which is the
@@ -839,6 +847,128 @@ describe("GET /api/clients/[id]/plan-story/stale", () => {
   });
 });
 
+/**
+ * The disclosure endpoint — which figures a chapter was allowed to use. Its
+ * own request, for the reason the staleness route above is: answering it
+ * costs a whole story context, 23.2s cold and 4.0s warm, and the chapter list
+ * is reread after every save.
+ *
+ * Unlike the staleness route, this one does not compare a stored hash against
+ * anything, so it has no per-writer voice resolution to prove: `ctx.facts`
+ * reads plan projections, not voice, and `factsForChapter` filters by chapter
+ * id alone.
+ */
+describe("GET /api/clients/[id]/plan-story/facts", () => {
+  const facts = (query: string) =>
+    GET_FACTS(req(`http://x/${query}`), { params: Promise.resolve({ id: CLIENT_ID }) });
+
+  /** Unscoped — a plan-level total, and true for every chapter it reaches. */
+  const YEAR_FACT = {
+    id: "plan.retirementYear",
+    label: "The year you stop working",
+    display: "2035",
+    raw: 2035,
+  };
+  /** Scoped to one chapter, so it must NOT reach `planInOnePage`. */
+  const SCOPED_FACT = {
+    id: "estate.net.base",
+    label: "What reaches your heirs, current plan",
+    display: "$9.2M",
+    raw: 9_200_000,
+    chapters: ["whatsLeftForPeople"],
+  };
+
+  beforeEach(() => {
+    mocks.loadStoryContext.mockResolvedValue({
+      ...NO_FACTS,
+      facts: [YEAR_FACT, SCOPED_FACT],
+    });
+  });
+
+  // Kills: dropping the `!access.ok` early return from the one read that then
+  // goes on to project another firm's fact pack.
+  it("404s when the caller cannot see the client", async () => {
+    mocks.verifyClientAccess.mockResolvedValue({ ok: false });
+    const res = await facts("?scenarioId=base");
+    expect(res.status).toBe(404);
+    expect(mocks.loadStoryContext).not.toHaveBeenCalled();
+  });
+
+  // The exact case the brief names: an unscoped, plan-level fact reaches the
+  // chapter under test.
+  it("lists a plan-level figure for a chapter, label and display exactly as stored", async () => {
+    const res = await facts("?scenarioId=base&documentRole=standalone");
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.facts.planInOnePage).toContainEqual({
+      label: "The year you stop working",
+      display: "2035",
+    });
+  });
+
+  // Kills: sending the whole pack to every chapter regardless of `chapters` —
+  // exactly the leak `factsForChapter` exists to prevent, and the reason this
+  // route reuses it rather than re-deriving the filter.
+  it("withholds a figure scoped to a different chapter", async () => {
+    const res = await facts("?scenarioId=base&documentRole=standalone");
+    const body = await res.json();
+    expect(body.facts.planInOnePage).not.toContainEqual(
+      expect.objectContaining({ label: "What reaches your heirs, current plan" }),
+    );
+    expect(body.facts.whatsLeftForPeople).toContainEqual({
+      label: "What reaches your heirs, current plan",
+      display: "$9.2M",
+    });
+  });
+
+  // Kills: forwarding the whole `Fact` object. `raw` and `id` are internal —
+  // sending them is the first step toward a chapter that quotes a figure the
+  // gate never checked.
+  it("sends only the label and display, never the raw number or the id", async () => {
+    const res = await facts("?scenarioId=base&documentRole=standalone");
+    const body = await res.json();
+    expect(body.facts.planInOnePage).toContainEqual({
+      label: "The year you stop working",
+      display: "2035",
+    });
+    expect(body.facts.planInOnePage[0]).not.toHaveProperty("raw");
+    expect(body.facts.planInOnePage[0]).not.toHaveProperty("id");
+  });
+
+  // Every chapter answers, including ones with no facts scoped to them at all
+  // — the panel shows the disclosure beside every row, not just the ones with
+  // something to say.
+  it("answers every chapter in the arc, even one with nothing scoped to it", async () => {
+    const res = await facts("?scenarioId=base&documentRole=standalone");
+    const body = await res.json();
+    expect(Object.keys(body.facts)).toEqual(CHAPTER_IDS);
+  });
+
+  it("refuses an unrecognised role rather than defaulting", async () => {
+    const res = await facts("?scenarioId=base&documentRole=whatever");
+    expect(res.status).toBe(400);
+    expect(mocks.loadStoryContext).not.toHaveBeenCalled();
+  });
+
+  // Same rule as the staleness route: this endpoint LOADS the scenario rather
+  // than merely reading rows, and a snapshot degrades to a proposal nothing
+  // was actually written from.
+  it("refuses a snapshot ref rather than loading a degraded plan", async () => {
+    const res = await facts("?scenarioId=snap:abc");
+    expect(res.status).toBe(400);
+    expect(mocks.loadStoryContext).not.toHaveBeenCalled();
+  });
+
+  // `loadStoryRun` requires an advisor id; facts do not depend on voice, so
+  // this is the caller's own — never a second per-writer resolution the way
+  // the staleness route makes.
+  it("resolves the calling advisor's voice, the only identity loadStoryRun requires", async () => {
+    await facts("?scenarioId=base");
+    expect(mocks.loadVoiceProfile).toHaveBeenCalledWith("firm_1", "user_1");
+    expect(mocks.loadVoiceProfile).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("PATCH /api/clients/[id]/plan-story/[chapterId]", () => {
   const patch = (body: unknown, chapterId = "planInOnePage") =>
     PATCH(jsonReq(body), { params: Promise.resolve({ id: CLIENT_ID, chapterId }) });
@@ -934,6 +1064,58 @@ describe("PATCH /api/clients/[id]/plan-story/[chapterId]", () => {
     expect(res.status).toBe(400);
     expect(mocks.updateChapterText).not.toHaveBeenCalled();
     expect(mocks.markChapterReviewed).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The advisor's undo: nothing could clear `reviewedAt` before this task, so
+   * a mis-click on Mark reviewed could only be worked around by Regenerate —
+   * which spends a model call to answer a question that was never about the
+   * words.
+   */
+  describe("un-reviewing a chapter", () => {
+    it("clears the review without touching the words", async () => {
+      const res = await patch({ scenarioId: "base", documentRole: "standalone", reviewed: false });
+      expect(res.status).toBe(200);
+      expect(mocks.clearChapterReviewed).toHaveBeenCalledWith({
+        clientId: CLIENT_ID,
+        scenarioId: "base",
+        documentRole: "standalone",
+        chapterId: "planInOnePage",
+      });
+      expect(mocks.updateChapterText).not.toHaveBeenCalled();
+      expect(mocks.markChapterReviewed).not.toHaveBeenCalled();
+    });
+
+    it("audits an un-review as its own action, not as a review", async () => {
+      await patch({ scenarioId: "base", documentRole: "standalone", reviewed: false });
+      expect(mocks.recordAudit).toHaveBeenCalledWith({
+        action: "plan_story.chapter_unreviewed",
+        resourceType: "plan_story_chapter",
+        resourceId: "planInOnePage",
+        clientId: CLIENT_ID,
+        firmId: "firm_1",
+        metadata: { scenarioId: "base", documentRole: "standalone" },
+      });
+    });
+
+    // Kills: `clearChapterReviewed({… scenarioId: "base" …})` hardcoded — the
+    // same defect the reviewed:true test above this guards against, on the
+    // sibling write.
+    it("un-reviews the scenario the advisor is looking at, not a hardcoded base", async () => {
+      mocks.scenarioRows = [{ id: SCENARIO_ID }];
+      await patch({ scenarioId: SCENARIO_ID, documentRole: "standalone", reviewed: false });
+      expect(mocks.clearChapterReviewed).toHaveBeenCalledWith(
+        expect.objectContaining({ clientId: CLIENT_ID, scenarioId: SCENARIO_ID }),
+      );
+    });
+
+    // Kills: a truthiness test on the flag that reads `false` the same as
+    // absent — the exact bug this task exists to fix. Before the guard change
+    // this body 400ed with nothing written.
+    it("does not fall through to the nothing-to-change guard", async () => {
+      const res = await patch({ scenarioId: "base", documentRole: "standalone", reviewed: false });
+      expect(res.status).not.toBe(400);
+    });
   });
 
   /**
@@ -1057,12 +1239,14 @@ describe("PATCH /api/clients/[id]/plan-story/[chapterId]", () => {
       );
     });
 
-    // …and the read never happens for the two write paths that do not discard
-    // anything. An edit and a review are the per-keystroke and per-click paths;
-    // neither may grow a lookup because this one needed one.
-    it("does not read the row for an ordinary edit or review", async () => {
+    // …and the read never happens for the write paths that do not discard
+    // anything. An edit, a review and its undo are the per-keystroke and
+    // per-click paths; none of them may grow a lookup because this one needed
+    // one.
+    it("does not read the row for an ordinary edit, review, or un-review", async () => {
       await patch({ scenarioId: "base", documentRole: "standalone", editedText: "hi" });
       await patch({ scenarioId: "base", documentRole: "standalone", reviewed: true });
+      await patch({ scenarioId: "base", documentRole: "standalone", reviewed: false });
       expect(mocks.loadStoryChapter).not.toHaveBeenCalled();
     });
 

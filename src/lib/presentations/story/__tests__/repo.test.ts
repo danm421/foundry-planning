@@ -9,9 +9,12 @@ import { GATE_VERSION } from "../validate";
 const m = vi.hoisted(() => ({
   select: vi.fn(),
   upsert: vi.fn(),
-  // Nothing here issues a bare UPDATE. The stub exists so that a regression to
-  // one fails as an assertion naming what went wrong, rather than as a
-  // TypeError from a missing mock.
+  // `clearChapterReviewed` is the one writer here that issues a bare UPDATE —
+  // see `lastUpdate` below for why it must not create a row. The other three
+  // writers are upserts, and `lastUpsert` asserts THIS stub was not called for
+  // those — so a regression that turned one of them into a plain update fails
+  // as an assertion naming what went wrong, rather than as a TypeError from a
+  // missing mock.
   update: vi.fn(),
 }));
 
@@ -34,6 +37,7 @@ import {
   upsertGeneratedChapter,
   updateChapterText,
   markChapterReviewed,
+  clearChapterReviewed,
 } from "../repo";
 
 const dialect = new PgDialect();
@@ -74,6 +78,18 @@ const lastUpsert = () => {
     { target: { name: string }[]; set: Record<string, unknown> },
   ];
   return { values, target: config.target, set: config.set };
+};
+
+/**
+ * The mirror of `lastUpsert`, for `clearChapterReviewed` — the one writer that
+ * must NOT create a row. A chapter with no row was never reviewed, so there is
+ * nothing to clear; an upsert there would invent one.
+ */
+const lastUpdate = () => {
+  expect(m.upsert).not.toHaveBeenCalled();
+  expect(m.update).toHaveBeenCalledTimes(1);
+  const [set, where] = m.update.mock.calls[0] as [Record<string, unknown>, unknown];
+  return { set, where: render(where) };
 };
 
 /**
@@ -618,5 +634,61 @@ describe("markChapterReviewed", () => {
   it("conflicts on the client/scenario/role/chapter key", async () => {
     const { target } = await reviewArgs();
     expect(target.map((c) => c.name)).toEqual(KEY);
+  });
+});
+
+/**
+ * The advisor's undo for `markChapterReviewed` above — and the one writer in
+ * this file that must NOT behave like the other three. Reviewing a
+ * never-generated chapter is a real, offered action, so `markChapterReviewed`
+ * creates a row for it; un-reviewing a chapter that was never marked has no
+ * such case, so this is a plain UPDATE that a chapter with no row simply does
+ * not match.
+ */
+describe("clearChapterReviewed", () => {
+  const clearArgs = async () => {
+    await clearChapterReviewed({
+      clientId: "client-1",
+      scenarioId: "scenario-9",
+      documentRole: "frontMatter",
+      chapterId: "whatWeRecommend",
+    });
+    return lastUpdate();
+  };
+
+  it("issues a plain update rather than an upsert", async () => {
+    await clearArgs();
+    expect(m.upsert).not.toHaveBeenCalled();
+    expect(m.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears both review columns", async () => {
+    const { set } = await clearArgs();
+    expect(set.reviewedAt).toBeNull();
+    expect(set.reviewedByUserId).toBeNull();
+  });
+
+  it("moves the row's updated stamp", async () => {
+    const { set } = await clearArgs();
+    expect(set.updatedAt).toBeInstanceOf(Date);
+  });
+
+  // Scoped on the full four-part key, exactly as the other three writers are —
+  // a filter missing a term would clear a different report's chapter.
+  it("scopes the update to the one row the four-part key names", async () => {
+    const { where } = await clearArgs();
+    expect(where.sql).toContain("client_id");
+    expect(where.sql).toContain("scenario_id");
+    expect(where.sql).toContain("document_role");
+    expect(where.sql).toContain("chapter_id");
+    expect(where.params).toEqual(["client-1", "scenario-9", "frontMatter", "whatWeRecommend"]);
+  });
+
+  // Review is an assertion about specific sentences; clearing it must not
+  // touch the sentences themselves, on either side.
+  it("does not touch the model's or the advisor's stored words", async () => {
+    const { set } = await clearArgs();
+    expect(set).not.toHaveProperty("generatedText");
+    expect(set).not.toHaveProperty("editedText");
   });
 });

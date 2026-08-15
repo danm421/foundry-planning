@@ -76,28 +76,44 @@ const UNAVAILABLE = "The writing assistant was unavailable.";
 const TOO_SHORT = "The writing assistant returned too little text to use.";
 
 /**
- * The staleness endpoint is a SECOND request, deliberately — see the panel's own
- * comment. Any stub that asserts on a badge has to answer it; the stubs that do
- * not fall through to the chapter-list payload, whose missing `stale` key reads
- * as "nothing is out of date". So a badge assertion added to one of THOSE would
- * prove nothing — answer this endpoint explicitly there too.
+ * The staleness endpoint and the facts endpoint are each a SECOND (and third)
+ * request, deliberately — see the panel's own comments on `loadOutOfDate` and
+ * `loadFacts`. Any stub that asserts on one has to answer it explicitly; the
+ * stubs that do not fall through to the chapter-list payload, whose missing
+ * `stale` or `facts` key reads as "nothing out of date" / "nothing to
+ * disclose". So an assertion added to one of THOSE would prove nothing —
+ * answer the endpoint explicitly there too.
  */
 const isStaleUrl = (url: unknown) => String(url).includes("/plan-story/stale");
+const isFactsUrl = (url: unknown) => String(url).includes("/plan-story/facts");
 
-/** The two READ legs every stub in this file has to answer — the chapter list,
- *  and the staleness check that is deliberately a second request. One copy, so
- *  a third read leg is added once rather than in every stub below. */
-function answerRead(url: string, chapters: Row[] = CHAPTERS, stale: string[] = [], status = 200) {
+/** The three READ legs every stub in this file has to answer — the chapter
+ *  list, the staleness check, and the facts disclosure, each its own request.
+ *  One copy, so a fourth read leg is added once rather than in every stub
+ *  below. */
+function answerRead(
+  url: string,
+  chapters: Row[] = CHAPTERS,
+  stale: string[] = [],
+  status = 200,
+  facts: Record<string, { label: string; display: string }[]> = {},
+) {
   if (isStaleUrl(url)) return new Response(JSON.stringify({ stale }), { status: 200 });
+  if (isFactsUrl(url)) return new Response(JSON.stringify({ facts }), { status: 200 });
   return new Response(JSON.stringify({ scenarioId: "base", chapters }), { status });
 }
 
-function stubFetch(chapters: Row[], getStatus = 200, stale: string[] = []) {
+function stubFetch(
+  chapters: Row[],
+  getStatus = 200,
+  stale: string[] = [],
+  facts: Record<string, { label: string; display: string }[]> = {},
+) {
   const fn = vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method === "PATCH" || init?.method === "POST") {
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     }
-    return answerRead(url, chapters, stale, getStatus);
+    return answerRead(url, chapters, stale, getStatus, facts);
   });
   vi.stubGlobal("fetch", fn);
   return fn;
@@ -113,6 +129,10 @@ function patchCalls() {
 
 function staleCalls() {
   return calls().filter((c) => isStaleUrl(c[0]));
+}
+
+function factsCalls() {
+  return calls().filter((c) => isFactsUrl(c[0]));
 }
 
 function postCalls() {
@@ -953,12 +973,182 @@ describe("PlanStoryReviewPanel", () => {
     renderPanel();
     const button = (await screen.findAllByRole("button", { name: /mark reviewed/i }))[0];
     fireEvent.click(button);
-    // Marking reviewed cannot be undone from any surface and files an audit row
-    // per call, so the second click must land on a disabled control.
+    // Every PATCH files its own audit row — a review and its undo included —
+    // so the second click must land on a disabled control rather than double
+    // the write and the record.
     expect((button as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(button);
     await waitFor(() => expect(patchCalls().length).toBeGreaterThan(0));
     expect(patchCalls().length).toBe(1);
+  });
+
+  /**
+   * The advisor's undo. Before this task nothing could clear `reviewedAt`
+   * from any surface — a mis-click on Mark reviewed could only be worked
+   * around by Regenerate, which spends a model call to answer a question that
+   * was never about the words.
+   */
+  describe("undoing a review", () => {
+    const REVIEWED: Row = { ...CHAPTERS[0], reviewed: true };
+    const UNDO = /undo review/i;
+
+    it("is offered only on a chapter already marked reviewed", async () => {
+      stubFetch([REVIEWED, CHAPTERS[1]]);
+      renderPanel();
+      await screen.findByText(REVIEWED.title);
+      expect(within(row(REVIEWED.title)).getByRole("button", { name: UNDO })).toBeTruthy();
+      // …and not on a chapter nobody has reviewed — there is nothing there to
+      // undo.
+      expect(within(row(CHAPTERS[1].title)).queryByRole("button", { name: UNDO })).toBeNull();
+    });
+
+    it("sends reviewed:false for that chapter, and only that field", async () => {
+      stubFetch([REVIEWED, CHAPTERS[1]]);
+      renderPanel();
+      const section = await screen.findByRole("region", { name: REVIEWED.title });
+      fireEvent.click(within(section).getByRole("button", { name: UNDO }));
+      await waitFor(() => expect(patchCalls().length).toBe(1));
+      const [url, init] = patchCalls()[0] as [string, RequestInit];
+      expect(String(url)).toContain("/plan-story/planInOnePage");
+      expect(JSON.parse(String(init.body))).toMatchObject({ reviewed: false });
+      // Never alongside an edit or an accept — those are different clicks with
+      // different consequences, and this one is not about the words at all.
+      expect(JSON.parse(String(init.body))).not.toHaveProperty("editedText");
+      expect(JSON.parse(String(init.body))).not.toHaveProperty("acceptGenerated");
+    });
+
+    // Kills: leaving the button live while the write is in flight. Every
+    // PATCH files its own audit row, so a second click here would double the
+    // record as well as the write.
+    it("cannot be pressed twice into the same chapter", async () => {
+      stubFetch([REVIEWED, CHAPTERS[1]]);
+      renderPanel();
+      const section = await screen.findByRole("region", { name: REVIEWED.title });
+      const button = within(section).getByRole("button", { name: UNDO }) as HTMLButtonElement;
+      fireEvent.click(button);
+      expect(button.disabled).toBe(true);
+      fireEvent.click(button);
+      await waitFor(() => expect(patchCalls().length).toBeGreaterThan(0));
+      expect(patchCalls().length).toBe(1);
+    });
+
+    it("tells the advisor against that chapter when the undo is refused", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string, init?: RequestInit) =>
+          init?.method === "PATCH"
+            ? new Response(JSON.stringify({ error: "no" }), { status: 500 })
+            : answerRead(url, [REVIEWED, CHAPTERS[1]]),
+        ),
+      );
+      renderPanel();
+      const section = await screen.findByRole("region", { name: REVIEWED.title });
+      fireEvent.click(within(section).getByRole("button", { name: UNDO }));
+      const alert = await within(section).findByRole("alert");
+      expect(alert.textContent).toMatch(/couldn't undo/i);
+      // …and against that chapter alone.
+      expect(within(row(CHAPTERS[1].title)).queryByRole("alert")).toBeNull();
+    });
+  });
+
+  /**
+   * The disclosure half of the review: which figures a chapter was allowed to
+   * quote, from the same pack the model was shown. The panel calls its own
+   * route for it (`loadFacts`), once on mount, beside the staleness check —
+   * see that route's docblock for why they are two requests rather than one.
+   */
+  describe("the figures a chapter may use", () => {
+    const FACTS = {
+      planInOnePage: [{ label: "The year you stop working", display: "2035" }],
+      whatWeRecommend: [],
+    };
+
+    /** The row's `<summary>`, read directly rather than through `getByText`:
+     *  the count sits beside sibling list items inside the same `<details>`,
+     *  so a text-content query broad enough to see the count would also match
+     *  the enclosing element once any figure is listed under it. */
+    function summary(title: string): HTMLElement {
+      return row(title).querySelector("summary") as HTMLElement;
+    }
+
+    it("asks for the disclosure once, beside the staleness check", async () => {
+      stubFetch(CHAPTERS, 200, [], FACTS);
+      renderPanel();
+      await screen.findByText(CHAPTERS[0].title);
+      await waitFor(() => expect(factsCalls().length).toBe(1));
+      expect(staleCalls().length).toBe(1);
+    });
+
+    it("shows the count and the figures once loaded", async () => {
+      stubFetch(CHAPTERS, 200, [], FACTS);
+      renderPanel();
+      await screen.findByText(CHAPTERS[0].title);
+      await waitFor(() =>
+        expect(summary(CHAPTERS[0].title).textContent).toMatch(
+          /the figures this chapter may use \(1\)/i,
+        ),
+      );
+      expect(row(CHAPTERS[0].title).textContent).toContain("The year you stop working: 2035");
+    });
+
+    it("shows zero for a chapter with nothing scoped to it", async () => {
+      stubFetch(CHAPTERS, 200, [], FACTS);
+      renderPanel();
+      await screen.findByText(CHAPTERS[1].title);
+      await waitFor(() =>
+        expect(summary(CHAPTERS[1].title).textContent).toMatch(
+          /the figures this chapter may use \(0\)/i,
+        ),
+      );
+    });
+
+    // Same rule `loadOutOfDate` follows: a disclosure that failed to load is
+    // not a chapter that failed to load, so it must not raise the panel-level
+    // alarm.
+    it("stays quiet when the check itself fails", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string) => {
+          if (isFactsUrl(url)) return new Response(JSON.stringify({ error: "nope" }), { status: 500 });
+          return answerRead(url, CHAPTERS);
+        }),
+      );
+      renderPanel();
+      await waitFor(() =>
+        expect(console.error).toHaveBeenCalledWith(
+          expect.stringContaining("figures"),
+          expect.anything(),
+        ),
+      );
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+
+    // Kills: folding this into `loadOutOfDate`'s dependency list. Facts read
+    // plan projections, not the advisor's tone and length, so a style change
+    // has nothing new to answer here.
+    it("does not ask again on a style change", async () => {
+      const { rerender } = renderPanel({
+        chapterStyle: { planInOnePage: { tone: "plain", length: "full" } },
+      });
+      await waitFor(() => expect(factsCalls().length).toBe(1));
+      rerender({ chapterStyle: { planInOnePage: { tone: "direct", length: "short" } } });
+      // The staleness route DOES re-ask on a style change — this is the
+      // synchronisation point that proves the rerender actually landed.
+      await waitFor(() => expect(staleCalls().length).toBe(2));
+      expect(factsCalls().length).toBe(1);
+    });
+
+    // Kills: putting this in the same effect `load()` runs from, which would
+    // re-ask on every save the way a chapter-list-backed field would.
+    it("survives a save, and does not run again on one", async () => {
+      stubFetch(CHAPTERS, 200, [], FACTS);
+      renderPanel();
+      const box = await screen.findByDisplayValue(CHAPTERS[0].text);
+      fireEvent.change(box, { target: { value: "my words" } });
+      fireEvent.blur(box);
+      await waitFor(() => expect(patchCalls().length).toBe(1));
+      expect(factsCalls().length).toBe(1);
+    });
   });
 
   describe("why a chapter is missing", () => {
@@ -1283,7 +1473,11 @@ describe("the advisor's tone and length", () => {
     expect((box as HTMLTextAreaElement).value).toBe("Half a sentence the advisor is still");
     // Kills a re-fetch of the chapter list: that is what replaces the box's text
     // with the stored row, and it has no business running on a tone change.
-    expect(calls().filter((c) => !isStaleUrl(c[0]) && c[1] === undefined).length).toBe(1);
+    // The facts GET is excluded too — it is also a plain, init-less GET, and
+    // asking whether IT re-ran on a style change is a separate test below.
+    expect(
+      calls().filter((c) => !isStaleUrl(c[0]) && !isFactsUrl(c[0]) && c[1] === undefined).length,
+    ).toBe(1);
   });
 
   // Kills: re-firing the request on a re-render that changed nothing. The panel

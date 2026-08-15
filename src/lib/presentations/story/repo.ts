@@ -385,3 +385,34 @@ export async function markChapterReviewed(args: {
       set: { reviewedAt: now, reviewedByUserId: args.userId, updatedAt: now },
     });
 }
+
+/**
+ * The advisor's undo: clear a review without touching a word of the chapter.
+ *
+ * A plain UPDATE, deliberately NOT an upsert like the three writers above.
+ * `markChapterReviewed` creates a row because reviewing a never-generated
+ * chapter is a real, offered action — the panel lists it and the advisor can
+ * approve the deterministic narrative that would print in its place.
+ * Un-reviewing has no such case: a chapter with no row was never reviewed, so
+ * there is nothing to clear and no row worth creating just to say so. The
+ * four-part key already scopes the statement to the one row it could possibly
+ * match, so a miss is silent and correct rather than a no-op to special-case.
+ */
+export async function clearChapterReviewed(args: {
+  clientId: string;
+  scenarioId: string;
+  documentRole: DocumentRole;
+  chapterId: ChapterId;
+}): Promise<void> {
+  await db
+    .update(planStoryChapters)
+    .set({ reviewedAt: null, reviewedByUserId: null, updatedAt: new Date() })
+    .where(
+      and(
+        eq(planStoryChapters.clientId, args.clientId),
+        eq(planStoryChapters.scenarioId, args.scenarioId),
+        eq(planStoryChapters.documentRole, args.documentRole),
+        eq(planStoryChapters.chapterId, args.chapterId),
+      ),
+    );
+}

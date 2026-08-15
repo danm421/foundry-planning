@@ -25,12 +25,13 @@ const documentRole = z.enum(["standalone", "frontMatter"]);
 
 /**
  * One chapter's advisor actions. Every field is optional so a single PATCH can
- * save an edit, mark it reviewed, or do both — but a body carrying none of them
- * is rejected by the route, since it would otherwise answer a no-op exactly
- * like a saved edit.
+ * save an edit, mark a chapter reviewed or clear that mark, or any combination
+ * — but a body carrying none of them is rejected by the route, since it would
+ * otherwise answer a no-op exactly like a saved edit.
  *
  * An empty `editedText` is meaningful: it drops the advisor's version and lets
- * the model's words render again.
+ * the model's words render again. `reviewed: false` is the same idea applied
+ * to review — see the field below.
  */
 export const planStoryChapterPatchSchema = z
   .object({
@@ -40,6 +41,14 @@ export const planStoryChapterPatchSchema = z
     // longest one the narrators produce — headroom for an advisor who writes
     // long, and a bound on an otherwise unlimited write to a text column.
     editedText: z.string().max(20000).optional(),
+    /**
+     * `true` marks the chapter reviewed. `false` clears that mark — the
+     * advisor's undo for a mis-click, or a second look that changes their
+     * mind — and reads the same way `editedText`'s empty string does above: a
+     * PRESENT value, even a falsy one, is an instruction. `undefined` is the
+     * only value that means "leave review alone", which is what the route's
+     * guard checks for.
+     */
     reviewed: z.boolean().optional(),
     /**
      * "Use the new version instead" — let a rewrite the advisor's own words are
