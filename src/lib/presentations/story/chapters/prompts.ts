@@ -11,7 +11,13 @@ import { factDisplaySet, hasAccountingNegative } from "../facts";
 import type { GateFailure } from "../validate";
 import { extractFigures } from "../validate/facts";
 import { MAX_MEAN_SENTENCE_WORDS, MAX_SENTENCE_WORDS } from "../validate/readability";
-import { factsForChapter, type ChapterId, type StoryContext } from "../types";
+import {
+  factsForChapter,
+  type ChapterId,
+  type ChapterStyle,
+  type ChapterTone,
+  type StoryContext,
+} from "../types";
 import type { StoryVoice } from "../voice/resolve";
 import { CHAPTERS, chapterEnumerates, chapterOutputAsk } from "./registry";
 
@@ -159,21 +165,77 @@ function quoteAdvisorText(text: string): string {
     .join("\n");
 }
 
+/**
+ * A household's own name fields, flattened to one line.
+ *
+ * The same column-0 hole as the two voice boxes, in the one place `quoteAdvisorText`
+ * cannot close it. `firstNames` and `householdName` are interpolated MID-SENTENCE
+ * — "Use their first names (X) once at most" — so prefixing every line with "> "
+ * would put a quote marker inside an English sentence and mangle the rule it sits
+ * in. What both fixes share is the property: no line of a field this module did
+ * not author reaches column 0.
+ *
+ * Measured at 6037c7ad0, before this existed: a newline in `firstNames` turned a
+ * fifteen-line system prompt into a seventeen-line one, with two attacker-chosen
+ * lines sitting among the app's own rules and indistinguishable in shape from
+ * them, plus a third in the user prompt.
+ *
+ * A name has no legitimate line break, so the break is what goes. Lone CR is
+ * covered for the reason `quoteAdvisorText` documents: a bare `\r` is a line
+ * break to whatever reads the prompt and is not one to `split("\n")`, so a
+ * fix that only handles `\n` leaves the welded shape behind.
+ */
+function singleLine(text: string): string {
+  return text.replace(/(?:\r\n|\r|\n)+/gu, " ").trim();
+}
+
+/**
+ * The register the advisor asked for, one sentence per tone.
+ *
+ * ⚠️ Style touches exactly TWO of this prompt's fifteen lines and no others:
+ * this one, which replaces the fixed "write the way you would talk to them
+ * across a table" instruction, and the output ask, which `chapterOutputAsk`
+ * lengthens or shortens. Every other line is the model-facing half of a gate,
+ * and a setting that could soften one of those is a setting an advisor can be
+ * talked out of a rule by.
+ *
+ * Both are APP-AUTHORED constants selected by a closed enum — `tone` and
+ * `length` are parsed by `z.enum` on the way in, so no advisor text is
+ * interpolated and neither line can carry an injected instruction.
+ *
+ * ⚠️ `warm` is BYTE-IDENTICAL to the line this prompt carried before the setting
+ * existed. That is what lets every chapter already generated keep its stored
+ * `sourceHash`; `__tests__/prompts.test.ts` pins it against fourteen hashes
+ * recorded before the change.
+ */
+const TONE_LINE: Record<ChapterTone, string> = {
+  warm: "Write the way you would talk to them across a table: warm, direct, second person, contractions, no corporate voice.",
+  plain: "Write plainly and briefly: second person, contractions, short declarative sentences, no warmth you have to reach for.",
+  direct:
+    "Write directly and unsentimentally: second person, contractions, say the thing, no softening and no reassurance the figures do not support.",
+};
+
 export function buildChapterPrompt(
   chapterId: ChapterId,
   ctx: StoryContext,
   voice: StoryVoice,
+  style: ChapterStyle,
   retryFailures: GateFailure[],
 ): { system: string; user: string } {
   const def = CHAPTERS[chapterId];
   // Whether this chapter's job is to name things. One predicate, shared with the
   // gate runner, so the model is never told a rule it will not be judged under.
   const enumerates = chapterEnumerates(chapterId);
+  // Read once, here, and interpolated from these two below: the household's own
+  // fields appear on three lines, and three separate calls is three chances for
+  // one of them to be the raw field.
+  const firstNames = singleLine(ctx.household.firstNames);
+  const householdName = singleLine(ctx.household.householdName);
 
   const systemParts = [
     "You are a financial advisor writing one short chapter of a plan you are handing to your own client.",
-    "Write the way you would talk to them across a table: warm, direct, second person, contractions, no corporate voice.",
-    `Use their first names (${ctx.household.firstNames}) once at most — more sounds like a mail merge.`,
+    TONE_LINE[style.tone],
+    `Use their first names (${firstNames}) once at most — more sounds like a mail merge.`,
     // The last sentence is Gate 2's two numeric limits, said out loud and READ
     // FROM the gate rather than retyped. Without them the chapter can be
     // rejected for a rule it was never given.
@@ -204,7 +266,7 @@ export function buildChapterPrompt(
     // in the registry, beside the layouts themselves and beside
     // `chapterEnumerates`, which is the same idea: a chapter must never be asked
     // for something the page it prints on cannot hold.
-    chapterOutputAsk(chapterId),
+    chapterOutputAsk(chapterId, style.length),
     "Only use the figures listed below, copied exactly as they are written. Never invent a figure, never reformat one, never compute a new one.",
     // Gate 5's model-facing half. The pack is presented to the model as
     // `label: display`, and the 2026-08-12 read found it transcribing the pair
@@ -215,7 +277,7 @@ export function buildChapterPrompt(
     "Never mention the page, the chapter, the report or the summary. Do not say what this page is for or why it matters. Write about their money, not about the document.",
     // Gate 6b's half. The existing "use their first names once at most" line
     // says how OFTEN; this says WHERE, which is the part that went wrong.
-    `Use their first names only to address them directly at the start of a sentence ("${ctx.household.firstNames}, your plan holds up"). Never write about them in the third person, and never call them "the household", "the client" or "the couple" — they are reading this.`,
+    `Use their first names only to address them directly at the start of a sentence ("${firstNames}, your plan holds up"). Never write about them in the third person, and never call them "the household", "the client" or "the couple" — they are reading this.`,
     "Describe what the plan shows and why it moves. Do not tell them to buy, sell, or move anything.",
     // Gate 3 reads a clause that OPENS with one of these as an instruction
     // whatever follows it, so this is a real constraint on ordinary prose and
@@ -303,7 +365,7 @@ export function buildChapterPrompt(
       : [];
 
   const user = [
-    `Household: ${ctx.household.householdName} — ${ctx.household.firstNames}.`,
+    `Household: ${householdName} — ${firstNames}.`,
     `Plan being presented: "${ctx.scenarioLabel}".`,
     "",
     // The brief is written FOR the model — "This is the page that gets read when
@@ -341,16 +403,23 @@ export function buildChapterPrompt(
  * note as much as the samples — so the side rebuilding the hash has to supply
  * the same voice the generating side had, which is why `run-context.ts` resolves
  * it once as part of one run's inputs instead of each caller spelling it out.
+ *
+ * ⚠️ `style` is the same argument again, and it is the harder one: it is
+ * per-chapter and travels on the REQUEST, so there is no run object making the
+ * two sides agree. What they share is `resolveChapterStyles` (`../types.ts`),
+ * which is how a chapter the advisor never touched resolves to the same style on
+ * a POST body and on a GET query.
  */
 export function chapterSourceHash(
   chapterId: ChapterId,
   ctx: StoryContext,
   voice: StoryVoice,
+  style: ChapterStyle,
 ): string {
   // Scoped here as well as in `generateChapter`, which hands this an
   // already-scoped context: `factsForChapter` is a filter, so applying it twice
   // is the same array, and requiring callers to remember makes the hash depend
   // on a convention rather than on its arguments.
   const scoped: StoryContext = { ...ctx, facts: factsForChapter(ctx.facts, chapterId) };
-  return hashAiRequest(buildChapterPrompt(chapterId, scoped, voice, []));
+  return hashAiRequest(buildChapterPrompt(chapterId, scoped, voice, style, []));
 }

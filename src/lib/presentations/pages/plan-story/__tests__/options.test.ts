@@ -357,3 +357,49 @@ describe("the two presets", () => {
     }
   });
 });
+
+describe("chapterStyle", () => {
+  it("defaults every chapter to warm and standard", () => {
+    const parsed = planStoryOptionsSchema.parse({});
+    for (const id of CHAPTER_IDS) {
+      expect(parsed.chapterStyle[id]).toEqual({ tone: "warm", length: "standard" });
+    }
+  });
+
+  // The per-key default, separately from the object-level one — a deck saved
+  // before a chapter existed stores a PARTIAL map, and this is what fills it.
+  it("fills a chapter missing from a stored partial map", () => {
+    const parsed = planStoryOptionsSchema.parse({
+      chapterStyle: { planInOnePage: { tone: "plain", length: "short" } },
+    });
+    expect(parsed.chapterStyle.planInOnePage).toEqual({ tone: "plain", length: "short" });
+    expect(parsed.chapterStyle.thingsToKnow).toEqual({ tone: "warm", length: "standard" });
+  });
+
+  // ⭐ THE INVARIANT. `estimatePlanStoryPageCount` reserves sheets from the
+  // options alone and `documentSections` numbers the contents from that
+  // reservation. Style must never move the print list.
+  it("does not change which chapters print", () => {
+    const base = planStoryOptionsSchema.parse({ scenarioId: "scn-1" });
+    const styled = {
+      ...base,
+      chapterStyle: Object.fromEntries(
+        CHAPTER_IDS.map((id) => [id, { tone: "direct", length: "full" }]),
+      ),
+    } as PlanStoryOptions;
+    expect(printedChapters(styled)).toEqual(printedChapters(base));
+    expect(estimatePlanStoryPageCount(undefined, styled)).toBe(
+      estimatePlanStoryPageCount(undefined, base),
+    );
+  });
+
+  // Kills: fourteen keys sharing one style object. Zod 4's `.default(x)` hands
+  // back the SAME map on every parse, so a default map built without a per-key
+  // copy would alias one object fourteen times, and a panel editing one parsed
+  // entry in place would edit the other thirteen. The same hazard `PRESETS.full`
+  // copies its way out of above.
+  it("gives each chapter its own style object", () => {
+    const parsed = planStoryOptionsSchema.parse({});
+    expect(parsed.chapterStyle.planInOnePage).not.toBe(parsed.chapterStyle.thingsToKnow);
+  });
+});

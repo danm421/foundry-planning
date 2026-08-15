@@ -8,7 +8,13 @@ import { callAIExtractionWithMeta } from "@/lib/extraction/azure-client";
 import { generateChapter } from "../generate";
 import { CHAPTERS } from "../chapters/registry";
 import { moneyFact, pctFact, quotedFact } from "../facts";
-import { CHAPTER_IDS, type ChapterId, type StoryContext, type StoryStrategy } from "../types";
+import {
+  CHAPTER_IDS,
+  DEFAULT_CHAPTER_STYLE,
+  type ChapterId,
+  type StoryContext,
+  type StoryStrategy,
+} from "../types";
 import { EMPTY_VOICE } from "../voice/resolve";
 import type { ChangeRow } from "@/lib/presentations/pages/scenario-changes/types";
 
@@ -79,7 +85,7 @@ function occurrences(haystack: string, needle: string): number {
 describe("generateChapter", () => {
   it("returns model output that clears every gate", async () => {
     const gen = vi.fn().mockResolvedValue(GOOD);
-    const res = await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, deps: deps(gen) });
+    const res = await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE, deps: deps(gen) });
     expect(res.markdown).toBe(GOOD);
     expect(res.aiSuppressed).toBe(false);
     expect(gen).toHaveBeenCalledTimes(1);
@@ -87,7 +93,7 @@ describe("generateChapter", () => {
 
   it("retries exactly once when a gate fails, and keeps the clean second attempt", async () => {
     const gen = vi.fn().mockResolvedValueOnce(ONE_FIGURE).mockResolvedValueOnce(GOOD);
-    const res = await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, deps: deps(gen) });
+    const res = await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE, deps: deps(gen) });
     expect(gen).toHaveBeenCalledTimes(2);
     expect(res.markdown).toBe(GOOD);
     expect(res.aiSuppressed).toBe(false);
@@ -95,7 +101,7 @@ describe("generateChapter", () => {
 
   it("names the broken rule in the retry prompt", async () => {
     const gen = vi.fn().mockResolvedValueOnce(ONE_FIGURE).mockResolvedValueOnce(GOOD);
-    await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, deps: deps(gen) });
+    await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE, deps: deps(gen) });
     expect(retryPrompt(gen)).toContain("$3.4M");
   });
 
@@ -103,7 +109,7 @@ describe("generateChapter", () => {
     const setCached = vi.fn().mockResolvedValue(undefined);
     const gen = vi.fn().mockResolvedValue(ONE_FIGURE);
     const res = await generateChapter({
-      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE,
+      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE,
       deps: { generate: gen, getCached: async () => null, setCached },
     });
     expect(gen).toHaveBeenCalledTimes(2);
@@ -119,7 +125,7 @@ describe("generateChapter", () => {
   it("falls back rather than throwing when the model call errors", async () => {
     const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
     const gen = vi.fn().mockRejectedValue(new Error("azure exploded"));
-    const res = await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, deps: deps(gen) });
+    const res = await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE, deps: deps(gen) });
     expect(res.aiSuppressed).toBe(true);
     expect(res.markdown.length).toBeGreaterThan(0);
     quiet.mockRestore();
@@ -128,7 +134,7 @@ describe("generateChapter", () => {
   it("reports an outage as an outage, not as a gate finding", async () => {
     const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
     const gen = vi.fn().mockRejectedValue(new Error("azure exploded"));
-    const res = await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, deps: deps(gen) });
+    const res = await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE, deps: deps(gen) });
     // The advisor's review panel groups `failures` by gate. Filing an outage
     // under one tells them the model wrote a bad figure, which it never did.
     expect(res.failures).toEqual([]);
@@ -141,7 +147,7 @@ describe("generateChapter", () => {
   it("serves a cache hit without calling the model", async () => {
     const gen = vi.fn();
     const res = await generateChapter({
-      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE,
+      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE,
       deps: { generate: gen, getCached: async () => ({ markdown: GOOD, generatedAt: "2026-08-11T00:00:00Z" }), setCached: async () => {} },
     });
     expect(gen).not.toHaveBeenCalled();
@@ -149,7 +155,7 @@ describe("generateChapter", () => {
   });
 
   it("returns a stable sourceHash for identical inputs", async () => {
-    const args = { clientId: "c1", chapterId: "planInOnePage" as const, ctx: CTX, voice: EMPTY_VOICE, deps: deps(async () => GOOD) };
+    const args = { clientId: "c1", chapterId: "planInOnePage" as const, ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE, deps: deps(async () => GOOD) };
     const a = await generateChapter(args);
     const b = await generateChapter(args);
     expect(a.sourceHash).toBe(b.sourceHash);
@@ -159,7 +165,7 @@ describe("generateChapter", () => {
   it("writes the clean chapter to the cache under the source hash", async () => {
     const setCached = vi.fn().mockResolvedValue(undefined);
     const res = await generateChapter({
-      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE,
+      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE,
       deps: { generate: async () => GOOD, getCached: async () => null, setCached },
     });
     expect(setCached).toHaveBeenCalledWith("c1", res.sourceHash, { markdown: GOOD, generatedAt: res.generatedAt });
@@ -175,7 +181,7 @@ describe("generateChapter", () => {
   ])("keeps the chapter when the cache write %s", async (_shape, setCached) => {
     const quiet = vi.spyOn(console, "warn").mockImplementation(() => {});
     const res = await generateChapter({
-      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE,
+      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE,
       deps: { generate: async () => GOOD, getCached: async () => null, setCached },
     });
     // A cache miss on the next run is cheap; suppressing a chapter we already
@@ -189,7 +195,7 @@ describe("generateChapter", () => {
   it("skips the cache read when forced", async () => {
     const getCached = vi.fn().mockResolvedValue({ markdown: "stale text", generatedAt: "2026-01-01T00:00:00Z" });
     const res = await generateChapter({
-      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, force: true,
+      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE, force: true,
       deps: { generate: async () => GOOD, getCached, setCached: async () => {} },
     });
     expect(getCached).not.toHaveBeenCalled();
@@ -219,7 +225,7 @@ describe("generateChapter", () => {
     const setCached = vi.fn().mockResolvedValue(undefined);
     const gen = vi.fn().mockResolvedValue(stub);
     const res = await generateChapter({
-      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE,
+      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE,
       deps: { generate: gen, getCached: async () => null, setCached },
     });
     expect(res.markdown).toContain("91%");
@@ -255,7 +261,7 @@ describe("generateChapter", () => {
     const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
     const setCached = vi.fn().mockResolvedValue(undefined);
     const res = await generateChapter({
-      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE,
+      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE,
       deps: { generate: async () => answer, getCached: async () => null, setCached },
     });
     expect(res.failures).toEqual([]);
@@ -284,7 +290,7 @@ describe("generateChapter", () => {
     const ctx: StoryContext = { ...CTX, strategies: [{ name: "Convert to Roth", rows: [] }] };
     const setCached = vi.fn().mockResolvedValue(undefined);
     const res = await generateChapter({
-      clientId: "c1", chapterId: "whatWeRecommend", ctx, voice: EMPTY_VOICE,
+      clientId: "c1", chapterId: "whatWeRecommend", ctx, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE,
       deps: {
         generate: async () =>
           "I'm sorry, I can't help with that. As an AI language model, I don't have the ability to give personalised financial advice. Please consult a qualified professional.",
@@ -306,7 +312,7 @@ describe("generateChapter", () => {
     // entry is to hand-write the chapter.
     const gen = vi.fn().mockResolvedValue(GOOD);
     const res = await generateChapter({
-      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE,
+      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE,
       deps: {
         generate: gen,
         getCached: async () => ({ markdown: "I'm sorry, I can't help with that.", generatedAt: "2026-01-01T00:00:00Z" }),
@@ -328,7 +334,7 @@ describe("generateChapter", () => {
       "Here's where things stand for you both. Nothing in the plan needs to move this year, and that is the whole message.";
     const setCached = vi.fn().mockResolvedValue(undefined);
     const res = await generateChapter({
-      clientId: "c1", chapterId: "planInOnePage", ctx, voice: EMPTY_VOICE,
+      clientId: "c1", chapterId: "planInOnePage", ctx, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE,
       deps: { generate: async () => prose, getCached: async () => null, setCached },
     });
     expect(res.aiSuppressed).toBe(false);
@@ -339,7 +345,7 @@ describe("generateChapter", () => {
   it("keeps the first attempt's findings when the retry comes back too short", async () => {
     const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
     const gen = vi.fn().mockResolvedValueOnce(ONE_FIGURE).mockResolvedValueOnce("Hello.");
-    const res = await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, deps: deps(gen) });
+    const res = await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE, deps: deps(gen) });
     expect(res.aiSuppressed).toBe(true);
     expect(res.error).toBe(TOO_SHORT);
     // The first draft's invented figure is what explains the suppression. The
@@ -353,7 +359,7 @@ describe("generateChapter", () => {
   it("regenerates rather than serving a cache hit with no chapter in it", async () => {
     const gen = vi.fn().mockResolvedValue(GOOD);
     const res = await generateChapter({
-      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE,
+      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE,
       deps: { generate: gen, getCached: async () => ({ markdown: "   ", generatedAt: "2026-01-01T00:00:00Z" }), setCached: async () => {} },
     });
     // The same floor on the read side, so an entry left by an older deploy heals
@@ -387,7 +393,7 @@ describe("generateChapter", () => {
     const quiet = vi.spyOn(console, "warn").mockImplementation((...args) => void warnings.push(args));
     const gen = vi.fn().mockResolvedValue(GOOD);
     const res = await generateChapter({
-      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE,
+      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE,
       deps: { generate: gen, getCached, setCached: async () => {} },
     });
     expect(res.markdown).toBe(GOOD);
@@ -399,7 +405,7 @@ describe("generateChapter", () => {
   it("calls the pinned deployment when no model is injected", async () => {
     vi.mocked(callAIExtractionWithMeta).mockResolvedValue({ content: GOOD, finishReason: "stop" });
     const res = await generateChapter({
-      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE,
+      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE,
       deps: { getCached: async () => null, setCached: async () => {} },
     });
     expect(res.markdown).toBe(GOOD);
@@ -419,7 +425,7 @@ describe("generateChapter", () => {
     const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.mocked(callAIExtractionWithMeta).mockResolvedValue({ content: GOOD, finishReason });
     const res = await generateChapter({
-      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE,
+      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE,
       deps: { getCached: async () => null, setCached: async () => {} },
     });
     expect(res.aiSuppressed).toBe(true);
@@ -429,7 +435,7 @@ describe("generateChapter", () => {
 
   it("carries every distinct broken rule into the retry, and a repeated one only once", async () => {
     const gen = vi.fn().mockResolvedValueOnce(BAD_EVERY_GATE).mockResolvedValueOnce(GOOD);
-    await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, deps: deps(gen) });
+    await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE, deps: deps(gen) });
     const retry = retryPrompt(gen);
     // Nothing is capped away: one rule from each gate, including the last one
     // the runner emits.
@@ -443,7 +449,7 @@ describe("generateChapter", () => {
 
   it("tells the retry that a flagged sentence may name no holding at all", async () => {
     const gen = vi.fn().mockResolvedValueOnce(LABEL_ECHO).mockResolvedValueOnce(GOOD);
-    await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, deps: deps(gen) });
+    await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE, deps: deps(gen) });
     const retry = retryPrompt(gen);
     // Gate 3's own message sends the model looking for a holding to stop
     // trading. There is none here — the sentence was rejected for opening on a
@@ -454,7 +460,7 @@ describe("generateChapter", () => {
 
   it("adds no advice note when the advice gate did not fire", async () => {
     const gen = vi.fn().mockResolvedValueOnce(ONE_FIGURE).mockResolvedValueOnce(GOOD);
-    await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, deps: deps(gen) });
+    await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE, deps: deps(gen) });
     expect(retryPrompt(gen)).not.toContain("do not open a sentence or a clause");
   });
 
@@ -512,7 +518,7 @@ describe("generateChapter", () => {
       const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
       const narrative = CHAPTERS[chapterId].narrate(ctx).join("\n\n");
       const res = await generateChapter({
-        clientId: "c1", chapterId, ctx, voice: EMPTY_VOICE,
+        clientId: "c1", chapterId, ctx, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE,
         deps: { generate: async () => narrative, getCached: async () => null, setCached: async () => {} },
       });
       // The floor never fires on it...
@@ -549,7 +555,7 @@ describe("generateChapter", () => {
     it("hides a proposed change's figure from the chapter about today, and rejects it", async () => {
       const gen = vi.fn().mockResolvedValue(USES_SALE);
       const res = await generateChapter({
-        clientId: "c1", chapterId: "whatYouHave", ctx, voice: EMPTY_VOICE, deps: deps(gen),
+        clientId: "c1", chapterId: "whatYouHave", ctx, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE, deps: deps(gen),
       });
       // SHOWN: the fact block never lists it…
       expect(gen.mock.calls[0][1] as string).not.toContain("$850k");
@@ -562,7 +568,7 @@ describe("generateChapter", () => {
     it("shows the same figure to the recommendation chapter, and accepts it", async () => {
       const gen = vi.fn().mockResolvedValue(USES_SALE);
       const res = await generateChapter({
-        clientId: "c1", chapterId: "whatWeRecommend", ctx, voice: EMPTY_VOICE, deps: deps(gen),
+        clientId: "c1", chapterId: "whatWeRecommend", ctx, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE, deps: deps(gen),
       });
       expect(gen.mock.calls[0][1] as string).toContain("$850k");
       expect(res.aiSuppressed).toBe(false);
@@ -573,7 +579,7 @@ describe("generateChapter", () => {
     it("leaves plan-level totals visible to every chapter", async () => {
       for (const chapterId of ["planInOnePage", "whatYouHave", "whatWeRecommend"] as const) {
         const gen = vi.fn().mockResolvedValue(GOOD);
-        await generateChapter({ clientId: "c1", chapterId, ctx, voice: EMPTY_VOICE, deps: deps(gen) });
+        await generateChapter({ clientId: "c1", chapterId, ctx, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE, deps: deps(gen) });
         expect(gen.mock.calls[0][1] as string).toContain("$2.1M");
       }
     });
@@ -601,7 +607,7 @@ describe("generateChapter", () => {
     it("publishes it on the strategy chapter", async () => {
       const gen = vi.fn().mockResolvedValue(LONG_SENTENCES);
       const res = await generateChapter({
-        clientId: "c1", chapterId: "whatWeRecommend", ctx: CTX, voice: EMPTY_VOICE, deps: deps(gen),
+        clientId: "c1", chapterId: "whatWeRecommend", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE, deps: deps(gen),
       });
       expect(res.aiSuppressed).toBe(false);
       expect(res.markdown).toBe(LONG_SENTENCES);
@@ -613,7 +619,7 @@ describe("generateChapter", () => {
     it("suppresses the same draft on a prose chapter", async () => {
       const gen = vi.fn().mockResolvedValue(LONG_SENTENCES);
       const res = await generateChapter({
-        clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, deps: deps(gen),
+        clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE, deps: deps(gen),
       });
       expect(res.aiSuppressed).toBe(true);
       // …and for the sentence length, not for something else the fixture broke.
@@ -623,7 +629,7 @@ describe("generateChapter", () => {
 
   it("shows the review panel each broken rule once", async () => {
     const gen = vi.fn().mockResolvedValue(BAD_EVERY_GATE);
-    const res = await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, deps: deps(gen) });
+    const res = await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE, deps: deps(gen) });
     expect(res.aiSuppressed).toBe(true);
     const advice = res.failures.filter((f) => f.message.includes(ADVICE_SENTENCE));
     expect(advice).toHaveLength(1);

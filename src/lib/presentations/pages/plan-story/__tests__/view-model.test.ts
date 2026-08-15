@@ -524,6 +524,7 @@ describe("the estimate and the render agree", () => {
             documentRole: "standalone",
             scenarioId,
             sections,
+            chapterStyle: PLAN_STORY_OPTIONS_DEFAULT.chapterStyle,
           };
           // The export loader derives both from the same rule, so the fixture
           // does too — anything else would test a state production cannot reach.

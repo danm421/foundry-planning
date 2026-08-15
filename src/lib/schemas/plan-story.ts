@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { chapterStyleSchema } from "@/lib/presentations/pages/plan-story/options-schema";
 import { CHAPTER_IDS } from "@/lib/presentations/story/types";
 
 /** Literal "base" or a scenario id. Whether the caller may actually key a story
@@ -62,6 +63,33 @@ export const planStoryGenerateSchema = z
     chapterId: z.enum(CHAPTER_IDS).optional(),
     /** The panel's Regenerate action — bypass the 30-day AI cache. */
     force: z.boolean().optional(),
+    /**
+     * How each chapter should be written — the deck's own per-chapter tone and
+     * length, sent as saved. An input to every chapter's stored `sourceHash`, so
+     * the staleness route takes the same map (as repeated query parameters, this
+     * being a GET) and both fill their gaps through `resolveChapterStyles`.
+     *
+     * ⚠️ `partialRecord`, not `record`. The ordinary payload is PARTIAL — the
+     * panel sends only the chapters an advisor has restyled — and `z.record`
+     * over an enum key is EXHAUSTIVE in Zod 4, wanting all fourteen. Measured
+     * both ways: it accepts a one-chapter map TODAY only because
+     * `chapterStyleSchema` carries its own `.default`, which quietly fills the
+     * other thirteen. That is a property of the ENTRY, not of the map — with a
+     * non-defaulting entry the same expression fails a one-chapter map with
+     * thirteen "expected object, received undefined" issues, while an ABSENT
+     * field still passes on `.default({})`, so the break would not show until an
+     * advisor changed a single tone. `partialRecord` says what is meant and does
+     * not rest on the entry.
+     *
+     * Still an enum over the real id list, for the reason `chapterId` above is
+     * one: an unknown key is a caller bug, and this map decides what a paid model
+     * call is written in.
+     *
+     * The entry is the PAGE's schema, imported rather than restated: the panel
+     * sends what the deck stored, so a second spelling could accept a tone the
+     * deck cannot store, or refuse one it can.
+     */
+    chapterStyle: z.partialRecord(z.enum(CHAPTER_IDS), chapterStyleSchema).default({}),
   })
   .strict();
 

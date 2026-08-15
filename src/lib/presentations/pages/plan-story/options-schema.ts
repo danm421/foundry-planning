@@ -26,7 +26,14 @@
 // wraps the default in an optional and the field stops defaulting.
 import { z } from "zod";
 import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
-import { CHAPTER_IDS, type ChapterId } from "@/lib/presentations/story/types";
+import {
+  CHAPTER_IDS,
+  CHAPTER_LENGTHS,
+  CHAPTER_TONES,
+  DEFAULT_CHAPTER_STYLE,
+  type ChapterId,
+  type ChapterStyle,
+} from "@/lib/presentations/story/types";
 
 /** Every chapter, switched on or off by one rule — so a new chapter joins the
  *  presets by joining `CHAPTER_IDS`, and cannot be silently left out of one. */
@@ -61,12 +68,57 @@ const sectionShape = Object.fromEntries(
   CHAPTER_IDS.map((id) => [id, z.boolean().default(DEFAULT_SECTIONS[id])]),
 ) as Record<ChapterId, z.ZodDefault<z.ZodBoolean>>;
 
+/**
+ * How ONE chapter is written: the advisor's register and how much prose to ask
+ * for. Both default, so a deck that stored a half-filled entry gets the rest.
+ *
+ * ONE schema object, reused for all fourteen keys rather than rebuilt per key.
+ * Zod schemas are immutable and all fourteen defaults are the same, so sharing
+ * changes nothing at runtime — and `typeof chapterStyleSchema` is a generic that
+ * cannot go stale when a third tone is added, which a hand-spelled one can.
+ * (`sectionShape` below spells its generic out only because `ZodBoolean` takes
+ * no type argument. `ZodEnum` does, and in Zod 4 it is an entries OBJECT, not
+ * the tuple Zod 3 took.)
+ */
+export const chapterStyleSchema = z
+  .object({
+    tone: z.enum(CHAPTER_TONES).default(DEFAULT_CHAPTER_STYLE.tone),
+    length: z.enum(CHAPTER_LENGTHS).default(DEFAULT_CHAPTER_STYLE.length),
+  })
+  .default(DEFAULT_CHAPTER_STYLE);
+
+/**
+ * One key per chapter. The PER-KEY defaults matter separately from the
+ * object-level one for the same reason `sectionShape`'s do: a deck saved before
+ * a chapter existed stores a PARTIAL map, and these are what fill it.
+ */
+const styleShape = Object.fromEntries(
+  CHAPTER_IDS.map((id) => [id, chapterStyleSchema]),
+) as Record<ChapterId, typeof chapterStyleSchema>;
+
+/** Every chapter at the default, each key its OWN object.
+ *
+ *  The object-level `.default()` hands this same map back on every parse
+ *  (measured; `sections` has the property too), so without the copy all fourteen
+ *  keys would alias one `DEFAULT_CHAPTER_STYLE` and a caller editing one entry in
+ *  place would edit the other thirteen — and the module constant with them. The
+ *  same hazard `PRESETS.full` copies its way out of below. */
+const DEFAULT_CHAPTER_STYLES = Object.fromEntries(
+  CHAPTER_IDS.map((id) => [id, { ...DEFAULT_CHAPTER_STYLE }]),
+) as Record<ChapterId, ChapterStyle>;
+
 export const planStoryOptionsSchema = z.object({
   preset: z.enum(["full", "brief", "custom"]).default("full"),
   documentRole: z.enum(["standalone", "frontMatter"]).default("standalone"),
   /** The scenario whose changes the story presents. Empty = base-only story. */
   scenarioId: z.string().default(""),
   sections: z.object(sectionShape).default(DEFAULT_SECTIONS),
+  /**
+   * How each chapter is written. Deliberately NOT read by `printedChapters` —
+   * style changes the prose, never which sheets the deck reserves. The test
+   * `does not change which chapters print` is what holds that.
+   */
+  chapterStyle: z.object(styleShape).default(DEFAULT_CHAPTER_STYLES),
 });
 
 export type PlanStoryOptions = z.infer<typeof planStoryOptionsSchema>;
@@ -76,6 +128,7 @@ export const PLAN_STORY_OPTIONS_DEFAULT: PlanStoryOptions = {
   documentRole: "standalone",
   scenarioId: "",
   sections: DEFAULT_SECTIONS,
+  chapterStyle: DEFAULT_CHAPTER_STYLES,
 };
 
 export type PresetId = "full" | "brief";

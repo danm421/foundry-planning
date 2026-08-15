@@ -15,6 +15,7 @@ import { generateChapter } from "@/lib/presentations/story/generate";
 import { upsertGeneratedChapter } from "@/lib/presentations/story/repo";
 import { resolveStoryScenarioId } from "@/lib/presentations/story/scenario-scope";
 import { CHAPTERS, storyCandidates } from "@/lib/presentations/story/chapters/registry";
+import { resolveChapterStyles } from "@/lib/presentations/story/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 800;
@@ -49,6 +50,15 @@ export async function POST(
     const { documentRole } = parsed.data;
     /** One chapter, from the panel's Regenerate. Absent means the whole story. */
     const requested = parsed.data.chapterId;
+    /**
+     * Every chapter's register and length, gaps filled with the default.
+     *
+     * Resolved HERE rather than per chapter below, and through the same helper
+     * the staleness route calls: a chapter the advisor never touched has to
+     * resolve to the same style on both sides, or the hash this run stores is
+     * not the hash the check rebuilds and the chapter reads permanently stale.
+     */
+    const chapterStyles = resolveChapterStyles(parsed.data.chapterStyle);
 
     // A chapter this story could never narrate — a recommendation on a base-only
     // report — is refused here, before anything is spent. `storyCandidates` is
@@ -170,6 +180,9 @@ export async function POST(
           // `sourceHash`, and the staleness route rebuilds that hash from the
           // same object (`run-context.ts`).
           voice,
+          // …and the second hash input, which does NOT come off the run: style
+          // is per-chapter and travels on this request.
+          style: chapterStyles[chapterId],
           force: parsed.data.force ?? false,
         }),
       ),

@@ -11,6 +11,10 @@
 // The hash itself is NOT here: it is `chapterSourceHash` in `chapters/prompts.ts`,
 // so that `generate.ts` calls the same function rather than a matching one.
 //
+// Nor is every INPUT to it. The advisor's per-chapter tone and length are hash
+// inputs that travel on the request rather than off this load — see the note on
+// `voice` below — so "one run's inputs" means the ones a load can answer.
+//
 // (`route.ts` may export nothing but handlers, so a shared helper for two routes
 // lives here rather than beside either of them.)
 import { storyCandidates } from "./chapters/registry";
@@ -49,6 +53,13 @@ export interface StoryRun {
    * staleness side must be handed the identical object, which is what reading it
    * off the run makes automatic. It is no longer the documented empty literal it
    * was through Plans 1 and 2.
+   *
+   * ⚠️ …but no longer the ONLY input this run has to supply. The per-chapter
+   * tone and length are hash inputs too, and they are deliberately NOT here:
+   * they are per-CHAPTER and travel on the request, so there is nothing for a
+   * run-level field to hold. Both routes resolve them through
+   * `resolveChapterStyles` (`./types.ts`) instead — one spelling, two
+   * transports. Don't go looking for style on this object.
    */
   voice: StoryVoice;
 }

@@ -25,7 +25,13 @@ import {
 import { resolveStoryScenarioId } from "@/lib/presentations/story/scenario-scope";
 import { loadStoryRun } from "@/lib/presentations/story/run-context";
 import { chapterSourceHash } from "@/lib/presentations/story/chapters/prompts";
-import { isChapterId } from "@/lib/presentations/story/types";
+import { chapterStyleSchema } from "@/lib/presentations/pages/plan-story/options-schema";
+import {
+  isChapterId,
+  resolveChapterStyles,
+  type ChapterId,
+  type ChapterStyle,
+} from "@/lib/presentations/story/types";
 
 export const dynamic = "force-dynamic";
 // Two projections, a Monte Carlo read and a balance sheet, and on a proposal two
@@ -33,6 +39,39 @@ export const dynamic = "force-dynamic";
 // default would be too, but the cost is the reason this route exists separately
 // and saying so here keeps the two facts together.
 export const maxDuration = 300;
+
+/**
+ * The advisor's per-chapter tone and length, read off REPEATED FLAT parameters:
+ * `?style=planInOnePage:direct:full&style=thingsToKnow:plain:short`.
+ *
+ * Null means one of them was unreadable, which is a 400 — the same rule
+ * `documentRole` follows below, and for the same reason: a guessed style rebuilds
+ * a different prompt from the one the run was written from, so every chapter
+ * would read stale with nothing able to clear it.
+ *
+ * Flat rather than a JSON blob, matching every other query parameter this app
+ * has: there is no JSON-encoded query parameter anywhere in `src/`, an
+ * unguarded `JSON.parse` on query input throws into this route's `catch` and is
+ * answered 500 where a caller error is a 400, and this form reads in a log.
+ *
+ * What a valid style IS comes from `chapterStyleSchema` — the same object the
+ * saved deck and the generate body are validated against, so the three cannot
+ * drift into accepting different tones. The explicit three-part check is what
+ * keeps its per-field defaults from filling in a half-written parameter.
+ */
+function parseChapterStyles(values: string[]): Partial<Record<ChapterId, ChapterStyle>> | null {
+  const styles: Partial<Record<ChapterId, ChapterStyle>> = {};
+  for (const value of values) {
+    const parts = value.split(":");
+    if (parts.length !== 3) return null;
+    const [chapterId, tone, length] = parts;
+    if (!isChapterId(chapterId)) return null;
+    const parsed = chapterStyleSchema.safeParse({ tone, length });
+    if (!parsed.success) return null;
+    styles[chapterId] = parsed.data;
+  }
+  return styles;
+}
 
 export async function GET(
   request: NextRequest,
@@ -57,6 +96,16 @@ export async function GET(
       return NextResponse.json({ error: "Unknown documentRole" }, { status: 400 });
     }
     const documentRole: DocumentRole = roleParam ?? "standalone";
+
+    // Absent is the ordinary case — a panel where the advisor has changed no
+    // tone — and means every chapter at the default. Resolved through the same
+    // helper the generate route fills ITS gaps with, because a chapter neither
+    // side was told about has to reach the same style on both.
+    const requested = parseChapterStyles(url.searchParams.getAll("style"));
+    if (requested === null) {
+      return NextResponse.json({ error: "Unreadable style" }, { status: 400 });
+    }
+    const chapterStyles = resolveChapterStyles(requested);
 
     // Resolved, not taken on trust — unlike the chapter list, which only reads
     // rows. This one goes on to LOAD a scenario, and `loadStoryContext` degrades
@@ -100,7 +149,7 @@ export async function GET(
       // its own facts matches nothing any run ever wrote — a stale badge nobody
       // can clear by regenerating.
       .filter((r) => inThisRun.has(r.chapterId))
-      .filter((r) => isChapterStale(r, chapterSourceHash(r.chapterId, ctx, voice)))
+      .filter((r) => isChapterStale(r, chapterSourceHash(r.chapterId, ctx, voice, chapterStyles[r.chapterId])))
       .map((r) => r.chapterId);
 
     return NextResponse.json({ scenarioId, documentRole, stale });

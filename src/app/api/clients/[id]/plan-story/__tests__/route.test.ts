@@ -142,7 +142,7 @@ import { chapterSourceHash } from "@/lib/presentations/story/chapters/prompts";
 import { EMPTY_VOICE } from "@/lib/presentations/story/voice/resolve";
 
 import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
-import { CHAPTER_IDS } from "@/lib/presentations/story/types";
+import { CHAPTER_IDS, DEFAULT_CHAPTER_STYLE } from "@/lib/presentations/story/types";
 import type { StoryContext } from "@/lib/presentations/story/types";
 
 /**
@@ -437,7 +437,7 @@ describe("GET /api/clients/[id]/plan-story/stale", () => {
     GET_STALE(req(`http://x/${query}`), { params: Promise.resolve({ id: CLIENT_ID }) });
 
   /** The hash a generation run against `NO_FACTS` would have stored. */
-  const FRESH = chapterSourceHash("planInOnePage", NO_FACTS, EMPTY_VOICE);
+  const FRESH = chapterSourceHash("planInOnePage", NO_FACTS, EMPTY_VOICE, DEFAULT_CHAPTER_STYLE);
 
   beforeEach(() => {
     mocks.loadStoryContext.mockResolvedValue(NO_FACTS);
@@ -473,7 +473,7 @@ describe("GET /api/clients/[id]/plan-story/stale", () => {
   it("names the chapter whose stored hash no longer matches the plan", async () => {
     mocks.listStoryChapters.mockResolvedValue([
       chapterRow({ chapterId: "planInOnePage", sourceHash: "written-against-an-older-plan" }),
-      chapterRow({ chapterId: "whatYouHave", sourceHash: chapterSourceHash("whatYouHave", NO_FACTS, EMPTY_VOICE) }),
+      chapterRow({ chapterId: "whatYouHave", sourceHash: chapterSourceHash("whatYouHave", NO_FACTS, EMPTY_VOICE, DEFAULT_CHAPTER_STYLE) }),
     ]);
     const res = await stale("?scenarioId=base");
     expect(await res.json()).toMatchObject({ stale: ["planInOnePage"] });
@@ -536,6 +536,63 @@ describe("GET /api/clients/[id]/plan-story/stale", () => {
     const res = await stale("?scenarioId=base&documentRole=whatever");
     expect(res.status).toBe(400);
     expect(mocks.listStoryChapters).not.toHaveBeenCalled();
+  });
+
+  /**
+   * ⭐⭐ The advisor's per-chapter tone and length, which are the second input to
+   * the hash and — unlike the voice — do NOT come off the run. They travel on
+   * the request, so this route has to be told them, in a spelling the generate
+   * route's body resolves to the same value.
+   *
+   * Both directions, because each kills a different defect and PASSES for the
+   * other. A route that ignores the parameter hashes everything at the default:
+   * it fails the first and passes the second. A hash that ignores its style
+   * argument puts both sides on the same wrong value: it passes the first and
+   * fails the second — measured, that is what this file reported before the
+   * argument existed.
+   */
+  const STYLED = { tone: "direct", length: "full" } as const;
+  const STYLED_HASH = chapterSourceHash("planInOnePage", NO_FACTS, EMPTY_VOICE, STYLED);
+
+  it("reports a chapter fresh when the panel sends the style the run was written in", async () => {
+    mocks.listStoryChapters.mockResolvedValue([
+      chapterRow({ chapterId: "planInOnePage", sourceHash: STYLED_HASH }),
+    ]);
+    const res = await stale("?scenarioId=base&style=planInOnePage:direct:full");
+    expect(res.status).toBe(200);
+    expect((await res.json()).stale).toEqual([]);
+  });
+
+  it("reports it stale once the advisor has changed the tone", async () => {
+    mocks.listStoryChapters.mockResolvedValue([
+      chapterRow({ chapterId: "planInOnePage", sourceHash: STYLED_HASH }),
+    ]);
+    const res = await stale("?scenarioId=base&style=planInOnePage:warm:full");
+    expect((await res.json()).stale).toEqual(["planInOnePage"]);
+  });
+
+  // A chapter the advisor never touched is absent from the query, and both
+  // sides have to fill that gap the same way — `resolveChapterStyles`, once.
+  it("falls back to the default style for a chapter the panel did not name", async () => {
+    mocks.listStoryChapters.mockResolvedValue([
+      chapterRow({ chapterId: "planInOnePage", sourceHash: FRESH }),
+    ]);
+    const res = await stale("?scenarioId=base&style=whatYouHave:direct:full");
+    expect((await res.json()).stale).toEqual([]);
+  });
+
+  // Kills: parsing the parameter loosely. An unreadable style is a caller bug,
+  // and guessing one answers about the wrong prompt — the same rule
+  // `documentRole` above follows, for the same reason.
+  it.each([
+    ["an unknown tone", "planInOnePage:shouty:full"],
+    ["an unknown length", "planInOnePage:warm:epic"],
+    ["an unknown chapter", "noSuchChapter:warm:full"],
+    ["a missing field", "planInOnePage:warm"],
+  ])("refuses a style parameter carrying %s", async (_label, param) => {
+    const res = await stale(`?scenarioId=base&style=${param}`);
+    expect(res.status).toBe(400);
+    expect(mocks.loadStoryContext).not.toHaveBeenCalled();
   });
 });
 
@@ -746,6 +803,59 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
     await post({ scenarioId: "base", documentRole: "standalone" });
     expect(mocks.loadVoiceProfile).toHaveBeenCalledWith("firm_1", "user_1");
     expect(mocks.listVoiceSamples).toHaveBeenCalledWith("firm_1", "user_1");
+  });
+
+  /**
+   * ⭐ The generating half of the tone comparison. The style the panel sent has
+   * to reach `generateChapter` PER CHAPTER, and every chapter the panel did not
+   * name has to fall back the same way the staleness route fills its gaps —
+   * `resolveChapterStyles`, one spelling, both sides.
+   *
+   * Kills: a route that accepts `chapterStyle` and drops it. It answers 200, the
+   * prose comes back in the wrong register, and the hashes it stores are ones
+   * the staleness check can never reproduce.
+   */
+  it("writes each chapter in the style the panel sent, and the default for the rest", async () => {
+    await post({
+      scenarioId: "base",
+      documentRole: "standalone",
+      chapterStyle: { planInOnePage: { tone: "direct", length: "full" } },
+    });
+    const styleFor = (chapterId: string) =>
+      mocks.generateChapter.mock.calls
+        .map((call) => call[0] as { chapterId: string; style: unknown })
+        .find((args) => args.chapterId === chapterId)?.style;
+    expect(styleFor("planInOnePage")).toEqual({ tone: "direct", length: "full" });
+    expect(styleFor("whatYouHave")).toEqual({ tone: "warm", length: "standard" });
+  });
+
+  /**
+   * The ordinary payload is PARTIAL — the panel sends only the chapters an
+   * advisor has restyled.
+   *
+   * ⚠️ Kills: any schema that demands all fourteen keys — a 400 on every
+   * Regenerate the moment one tone changes, and invisible until then, because an
+   * ABSENT field passes on its `.default({})` whatever shape the map has.
+   */
+  it("accepts a style map naming a single chapter", async () => {
+    const res = await post({
+      scenarioId: "base",
+      documentRole: "standalone",
+      chapterStyle: { planInOnePage: { tone: "plain", length: "short" } },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  // …and still refuses a chapter id this build does not know, for the reason
+  // `chapterId` itself is an enum: storage holds `chapter_id` as free text.
+  it("refuses a style map naming a chapter that does not exist", async () => {
+    const res = await post({
+      scenarioId: "base",
+      documentRole: "standalone",
+      chapterStyle: { noSuchChapter: { tone: "plain", length: "short" } },
+    });
+    expect(res.status).toBe(400);
+    expect(mocks.generateChapter).not.toHaveBeenCalled();
   });
 
   // Kills: removing the `requiresProposal` filter — a base-only story would

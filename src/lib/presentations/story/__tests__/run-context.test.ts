@@ -31,7 +31,12 @@ import { chapterSourceHash } from "../chapters/prompts";
 import { generateChapter } from "../generate";
 import { CHAPTERS } from "../chapters/registry";
 import { moneyFact, pctFact } from "../facts";
-import { CHAPTER_IDS, type StoryContext } from "../types";
+import {
+  CHAPTER_IDS,
+  DEFAULT_CHAPTER_STYLE,
+  type ChapterStyle,
+  type StoryContext,
+} from "../types";
 import { EMPTY_VOICE, type StoryVoice } from "../voice/resolve";
 
 const CTX: StoryContext = {
@@ -82,9 +87,10 @@ describe("chapterSourceHash", () => {
       chapterId,
       ctx: CTX,
       voice: EMPTY_VOICE,
+      style: DEFAULT_CHAPTER_STYLE,
       deps,
     });
-    expect(chapterSourceHash(chapterId, CTX, EMPTY_VOICE)).toBe(generated.sourceHash);
+    expect(chapterSourceHash(chapterId, CTX, EMPTY_VOICE, DEFAULT_CHAPTER_STYLE)).toBe(generated.sourceHash);
   });
 
   /**
@@ -102,10 +108,11 @@ describe("chapterSourceHash", () => {
       chapterId: "planInOnePage",
       ctx: CTX,
       voice,
+      style: DEFAULT_CHAPTER_STYLE,
       deps,
     });
-    expect(chapterSourceHash("planInOnePage", CTX, voice)).toBe(generated.sourceHash);
-    expect(chapterSourceHash("planInOnePage", CTX, EMPTY_VOICE)).not.toBe(generated.sourceHash);
+    expect(chapterSourceHash("planInOnePage", CTX, voice, DEFAULT_CHAPTER_STYLE)).toBe(generated.sourceHash);
+    expect(chapterSourceHash("planInOnePage", CTX, EMPTY_VOICE, DEFAULT_CHAPTER_STYLE)).not.toBe(generated.sourceHash);
   });
 
   /**
@@ -122,17 +129,50 @@ describe("chapterSourceHash", () => {
       chapterId: "planInOnePage",
       ctx: CTX,
       voice,
+      style: DEFAULT_CHAPTER_STYLE,
       deps,
     });
-    expect(chapterSourceHash("planInOnePage", CTX, voice)).toBe(generated.sourceHash);
-    expect(chapterSourceHash("planInOnePage", CTX, EMPTY_VOICE)).not.toBe(generated.sourceHash);
+    expect(chapterSourceHash("planInOnePage", CTX, voice, DEFAULT_CHAPTER_STYLE)).toBe(generated.sourceHash);
+    expect(chapterSourceHash("planInOnePage", CTX, EMPTY_VOICE, DEFAULT_CHAPTER_STYLE)).not.toBe(generated.sourceHash);
+  });
+
+  /**
+   * ⭐⭐ …and the SECOND hash input that is not on the run.
+   *
+   * The advisor's per-chapter tone and length travel on the REQUEST — the
+   * generate route reads them off its body, the staleness route off its query —
+   * so unlike the voice there is no shared object making the two agree. The
+   * threading is all that does, and this is what pins it: the recomputed hash
+   * matches only when it is given the style the run was written in.
+   *
+   * Both assertions, because they kill different things and each one alone is
+   * satisfied by a real defect. Dropping `style` on the way into either prompt
+   * function fails the FIRST. A `chapterSourceHash` that ignores its style
+   * argument altogether passes it — both sides then agree, at the wrong value —
+   * and fails the SECOND; measured, that is exactly what this file reported
+   * before the argument existed.
+   */
+  it("matches a generation written in a chosen style, and only in that style", async () => {
+    const style: ChapterStyle = { tone: "direct", length: "full" };
+    const generated = await generateChapter({
+      clientId: "c1",
+      chapterId: "planInOnePage",
+      ctx: CTX,
+      voice: EMPTY_VOICE,
+      style,
+      deps,
+    });
+    expect(chapterSourceHash("planInOnePage", CTX, EMPTY_VOICE, style)).toBe(generated.sourceHash);
+    expect(chapterSourceHash("planInOnePage", CTX, EMPTY_VOICE, DEFAULT_CHAPTER_STYLE)).not.toBe(
+      generated.sourceHash,
+    );
   });
 
   // Kills: a hash that ignores the chapter. Staleness would then be one answer
   // for the whole report, so an edit that moved one chapter's figures would
   // flag all fourteen.
   it("gives different chapters different hashes", () => {
-    const hashes = new Set(CHAPTER_IDS.map((id) => chapterSourceHash(id, CTX, EMPTY_VOICE)));
+    const hashes = new Set(CHAPTER_IDS.map((id) => chapterSourceHash(id, CTX, EMPTY_VOICE, DEFAULT_CHAPTER_STYLE)));
     expect(hashes.size).toBe(CHAPTER_IDS.length);
   });
 
@@ -140,11 +180,12 @@ describe("chapterSourceHash", () => {
   // A constant hash reports nothing stale, ever, and the badge is dead code
   // that looks alive.
   it("moves when the plan behind the chapter moves", () => {
-    const before = chapterSourceHash("planInOnePage", CTX, EMPTY_VOICE);
+    const before = chapterSourceHash("planInOnePage", CTX, EMPTY_VOICE, DEFAULT_CHAPTER_STYLE);
     const after = chapterSourceHash(
       "planInOnePage",
       { ...CTX, facts: [...CTX.facts, moneyFact("today.netWorth", "Net worth", 2_400_000)] },
       EMPTY_VOICE,
+      DEFAULT_CHAPTER_STYLE,
     );
     expect(after).not.toBe(before);
   });
@@ -158,8 +199,8 @@ describe("chapterSourceHash", () => {
       chapters: ["protectingYourFamily" as const],
     };
     expect(
-      chapterSourceHash("planInOnePage", { ...CTX, facts: [...CTX.facts, elsewhere] }, EMPTY_VOICE),
-    ).toBe(chapterSourceHash("planInOnePage", CTX, EMPTY_VOICE));
+      chapterSourceHash("planInOnePage", { ...CTX, facts: [...CTX.facts, elsewhere] }, EMPTY_VOICE, DEFAULT_CHAPTER_STYLE),
+    ).toBe(chapterSourceHash("planInOnePage", CTX, EMPTY_VOICE, DEFAULT_CHAPTER_STYLE));
   });
 });
 

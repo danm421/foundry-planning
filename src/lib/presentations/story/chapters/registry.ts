@@ -1,7 +1,7 @@
 // The chapter list, and everything the rest of the report needs to know about a
 // chapter without importing it: its heading, the layout that prints it, the
 // AI-off narrator, and the one line that tells the model what it is for.
-import { CHAPTER_IDS, type ChapterId, type StoryContext } from "../types";
+import { CHAPTER_IDS, type ChapterId, type ChapterLength, type StoryContext } from "../types";
 import { narratePlanInOnePage } from "./plan-in-one-page";
 import { narrateWhatWerePlanningFor } from "./what-were-planning-for";
 import { narrateWhereTheMoneyGoes } from "./where-the-money-goes";
@@ -327,6 +327,34 @@ const OUTPUT_ASK: Record<ChapterLayout, string> = {
     "Output: clean Markdown, ONE or TWO short paragraphs, no headings, no preamble. Do not explain the technical terms themselves — the plain-English list of them is printed under your text by the page layout.",
 };
 
-export function chapterOutputAsk(chapterId: ChapterId): string {
-  return OUTPUT_ASK[CHAPTERS[chapterId].layout];
+/**
+ * How the ask MOVES with the advisor's length setting.
+ *
+ * Applied to the layout's own sentence rather than replacing it: a checklist
+ * chapter asked for "four paragraphs" would bury the list that is its actual
+ * content, whatever the advisor picked. So `short` and `full` are modifiers and
+ * the layout stays in charge of the shape.
+ *
+ * ⚠️ CONCATENATED onto the ask, on the SAME line — never added as a separate
+ * entry in `prompts.ts#systemParts`. That prompt is one instruction per line and
+ * a chapter's ask is one instruction; a second line would read as a second rule.
+ *
+ * ⚠️ Still no numbers, for the reason `prompts.ts` documents at length: a word
+ * count in this prompt is an anchor the model writes past by about five words.
+ * The RENDER caps what prints (`pages/plan-story/view-model.ts`), so `full`
+ * cannot overflow a sheet — it can only spend the trim note.
+ *
+ * `standard` is the EMPTY string, and that is load-bearing rather than tidy: it
+ * makes a default-style prompt byte-identical to the one that existed before
+ * this setting, so no chapter already generated reads stale on the deploy that
+ * adds it. See `types.ts#DEFAULT_CHAPTER_STYLE`.
+ */
+const LENGTH_MODIFIER: Record<ChapterLength, string> = {
+  short: " Keep it to the fewest sentences that still answer the brief.",
+  standard: "",
+  full: " Use the whole space you have; this chapter carries more than one idea.",
+};
+
+export function chapterOutputAsk(chapterId: ChapterId, length: ChapterLength = "standard"): string {
+  return OUTPUT_ASK[CHAPTERS[chapterId].layout] + LENGTH_MODIFIER[length];
 }
