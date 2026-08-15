@@ -137,9 +137,17 @@ export interface GeneratedChapter {
   markdown: string;
   /** SHA-256 of the first-attempt prompt — the staleness key. */
   sourceHash: string;
-  /** `GATE_VERSION` this chapter was judged against — the other staleness key,
-   *  beside `sourceHash`. See `validate/index.ts` for what it catches that a
-   *  prompt hash cannot. */
+  /**
+   * `GATE_VERSION` this chapter's stored words were judged against — the
+   * other staleness key, beside `sourceHash`. True by measurement on the two
+   * paths that publish a model draft: both call `runGates` on exactly the
+   * text being returned and only return it once that call is empty.
+   *
+   * ⚠️ NOT true on the `fallback` path below. The stored markdown there is the
+   * deterministic narrative, which no gate ever judges — the gates judged the
+   * model draft that got rejected. Stamped there anyway so a suppressed
+   * chapter is not invisible to a later tightening either.
+   */
   gateVersion: number;
   /** True when the gates rejected both attempts (or the call failed) and the
    *  deterministic narrative is what rendered. */
@@ -148,9 +156,9 @@ export interface GeneratedChapter {
   failures: GateFailure[];
   /**
    * Set instead of `failures` when the model never produced a draft. An outage
-   * is not a gate finding: `GateId` has four values and none of them is "the
-   * assistant was down", so filing one under `facts` would tell the advisor the
-   * model wrote a figure it never wrote.
+   * is not a gate finding: none of `GateId`'s values is "the assistant was
+   * down", so filing one under `facts` would tell the advisor the model wrote
+   * a figure it never wrote.
    */
   error: string | null;
   generatedAt: string;
@@ -313,6 +321,27 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
     cached: false,
   });
 
+  /**
+   * Two gate rules move for a chapter that has to name every strategy or every
+   * account — see `validate/index.ts#GateOptions.enumerates`. The SAME predicate
+   * `buildChapterPrompt` reads, so what the model is told and what it is judged
+   * against cannot come apart.
+   *
+   * Computed here, ahead of the cache read below, rather than beside the
+   * generation attempts further down — a cache hit needs it too, to re-gate
+   * what it is about to serve.
+   */
+  const gateOpts = {
+    firstNames: firstNamesOf(ctx),
+    enumerates: chapterEnumerates(chapterId),
+    // Gate 7 reports a name that is not this household's, and a goal or a
+    // strategy label is where a household names somebody who is not one of the
+    // two adults — a child, a parent, a beneficiary. Both are typed by hand and
+    // both reach the prose, so without this the gate rejects a chapter for
+    // quoting the client's own words.
+    householdText: [...ctx.goals.map((g) => g.name), ...ctx.strategies.map((s) => s.name)],
+  };
+
   if (!args.force) {
     // `ai-cache.ts` casts whatever Redis returns to `AiCacheValue` without
     // checking its shape, so nothing guarantees `markdown` is even a string —
@@ -325,13 +354,26 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
       // A hit with no chapter in it is not a hit. The same floor as the write
       // path, applied in both directions, so an entry left by an older deploy
       // heals on the next render instead of serving a stub for its 30-day TTL.
-      // Not re-validation: the gates are deliberately NOT re-run on a hit.
       const cachedMarkdown = typeof hit?.markdown === "string" ? hit.markdown : "";
       // Both floors, applied in both directions. A refusal that was cached before
       // this rule existed heals on the next render instead of being served for
       // its 30-day TTL — which matters more here than for a stub, because `force`
       // is the only other escape and no UI sends it.
-      if (hit && hasSubstance(cachedMarkdown) && aboutThePlan(cachedMarkdown)) {
+      //
+      // …and the current gates, for real this time. A hit is text a PAST run
+      // judged, possibly under an older gate set — `GATE_VERSION`'s entire job
+      // (Task 13) is to let a tightening reach it, and a plain re-stamp on the
+      // assumption it would still pass cannot do that. So the hit is actually
+      // re-checked against the gates as they stand NOW. A hit that fails is
+      // treated as a MISS below — it falls through to a fresh model call —
+      // which is what "a tightening reaches text already written" has to
+      // mean: the words a new gate would reject are not served again.
+      if (
+        hit &&
+        hasSubstance(cachedMarkdown) &&
+        aboutThePlan(cachedMarkdown) &&
+        runGates(cachedMarkdown, ctx.facts, gateOpts).length === 0
+      ) {
         return {
           chapterId, markdown: cachedMarkdown, sourceHash, gateVersion: GATE_VERSION, aiSuppressed: false,
           failures: [], error: null, generatedAt: hit.generatedAt, cached: true,
@@ -359,23 +401,6 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
   // suppression to the advisor, and losing them leaves Regenerate as the only
   // move.
   let firstFailures: GateFailure[] = [];
-
-  /**
-   * Two gate rules move for a chapter that has to name every strategy or every
-   * account — see `validate/index.ts#GateOptions.enumerates`. The SAME predicate
-   * `buildChapterPrompt` reads, so what the model is told and what it is judged
-   * against cannot come apart.
-   */
-  const gateOpts = {
-    firstNames: firstNamesOf(ctx),
-    enumerates: chapterEnumerates(chapterId),
-    // Gate 7 reports a name that is not this household's, and a goal or a
-    // strategy label is where a household names somebody who is not one of the
-    // two adults — a child, a parent, a beneficiary. Both are typed by hand and
-    // both reach the prose, so without this the gate rejects a chapter for
-    // quoting the client's own words.
-    householdText: [...ctx.goals.map((g) => g.name), ...ctx.strategies.map((s) => s.name)],
-  };
 
   try {
     const attempt1 = await draft(first);

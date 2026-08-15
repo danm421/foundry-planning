@@ -84,9 +84,10 @@ export function runGates(markdown: string, facts: Fact[], opts: GateOptions = {}
  * older set is out of date in exactly the sense the badge already means — the
  * words on the page are not the words this build would write.
  *
- * ⚠️ Bumping this reports every stored chapter in every firm out of date at
- * once. That is correct and it is also a support event: say so in the release
- * note, and never bump it for a gate's message wording.
+ * ⚠️ Bumping this reports every GENERATED chapter in every firm out of date at
+ * once — every row with a real `sourceHash`; a row nothing has generated stays
+ * fresh (`isChapterStale`). That is correct and it is also a support event:
+ * say so in the release note, and never bump it for a gate's message wording.
  *
  * 1  `GateId` at this plan's merge-base (`151fee59c`) — six gates: facts,
  *    readability, advice, voice, labels, register.

@@ -68,6 +68,19 @@ const LABEL_ECHO =
   "Convert to Roth is the first of the two changes we're making this year.\n" +
   "Your confidence lands at 91%, and the plan holds from there.";
 
+/**
+ * Clears BOTH pre-existing floors — `hasSubstance` (16 words) and
+ * `aboutThePlan` (names CTX's own `$2.1M` and `91%` verbatim, not an invented
+ * figure) — and fails only the advice gate, on the same "Sell your Apple
+ * shares." opener `BAD_EVERY_GATE` uses. Needed as its own fixture because
+ * neither `BAD_EVERY_GATE` nor `ONE_FIGURE` is ever run through `aboutThePlan`
+ * in this file — both are always replaced by a clean retry first — so reusing
+ * either here would leave it unproven whether THIS test's fallthrough is
+ * caused by the new gate re-check or by a floor that was already there.
+ */
+const GATE_FAIL_BUT_ON_PLAN =
+  "Sell your Apple shares. Your net worth is $2.1M today, and your confidence lands at 91%.";
+
 const ADVICE_SENTENCE = 'Rewrite: "Sell your Apple shares."';
 
 function deps(generate: (s: string, u: string) => Promise<string>) {
@@ -165,6 +178,34 @@ describe("generateChapter", () => {
       deps: { generate: gen, getCached: async () => ({ markdown: GOOD, generatedAt: "2026-08-11T00:00:00Z" }), setCached: async () => {} },
     });
     expect(gen).not.toHaveBeenCalled();
+    expect(res.markdown).toBe(GOOD);
+    // Stamped current — and this is only true because the hit was ACTUALLY
+    // re-gated below and cleared, not assumed clean because it came from a
+    // cache. See the fallthrough test beside this one for the other half.
+    expect(res.gateVersion).toBe(GATE_VERSION);
+  });
+
+  /**
+   * Ruling T13-7. Bumping `GATE_VERSION` alone cannot reach a chapter the AI
+   * cache still holds an answer for — a plain hash-and-stamp on a hit would
+   * report text a new gate never saw as written under it. The remedy is to
+   * re-run the CURRENT gates on the cached text itself: clean, it is served
+   * and genuinely earns the current stamp (the test above); not clean, the
+   * hit is treated as a MISS and this falls through to a fresh model call —
+   * which is what "a tightening reaches text already written" has to mean.
+   */
+  it("treats a cache hit that fails the current gates as a miss, and generates fresh instead", async () => {
+    const gen = vi.fn().mockResolvedValue(GOOD);
+    const res = await generateChapter({
+      clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE,
+      deps: {
+        generate: gen,
+        getCached: async () => ({ markdown: GATE_FAIL_BUT_ON_PLAN, generatedAt: "2026-08-11T00:00:00Z" }),
+        setCached: async () => {},
+      },
+    });
+    expect(gen).toHaveBeenCalledTimes(1);
+    expect(res.cached).toBe(false);
     expect(res.markdown).toBe(GOOD);
   });
 

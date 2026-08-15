@@ -3211,10 +3211,13 @@ export const planStoryChapters = pgTable(
      * catches a gate being added or tightened after the words were already
      * written and cached, which nothing else can reach.
      *
-     * ⚠️ `.default(1)` reports every row written before this column existed
-     * out of date the moment `GATE_VERSION` passes 1 — every stored chapter in
-     * every firm, at once. That is intended, not a migration accident: see the
-     * constant's own docblock. It clears on one regenerate per chapter.
+     * ⚠️ `.default(1)` reports every GENERATED row out of date the moment
+     * `GATE_VERSION` passes 1 — every stored chapter that has actually been
+     * generated, in every firm, at once. (A row with no `sourceHash` — never
+     * generated, or written only by `updateChapterText` / `markChapterReviewed`
+     * — stays fresh; see `isChapterStale`.) That is intended, not a migration
+     * accident: see the constant's own docblock. It clears on one regenerate
+     * per chapter.
      */
     gateVersion: integer("gate_version").notNull().default(1),
     /** True when the gates rejected the model and the fallback was stored. */
