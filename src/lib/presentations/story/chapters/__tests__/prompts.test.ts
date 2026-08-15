@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildChapterPrompt, chapterSourceHash } from "../prompts";
 import { EMPTY_VOICE } from "../../voice/resolve";
 import { CHAPTERS, chapterEnumerates, chapterOutputAsk } from "../registry";
-import { moneyFact, pctFact, quotedFact } from "../../facts";
+import { moneyFact, pctFact, quotedFact, yearFact, type Fact } from "../../facts";
 import { runGates } from "../../validate";
 import {
   CHAPTER_IDS,
@@ -498,6 +498,86 @@ describe("buildChapterPrompt", () => {
     const { user } = buildChapterPrompt("whatWeRecommend", { ...CTX, strategies: [], facts: [] }, EMPTY_VOICE, DEFAULT_CHAPTER_STYLE, []);
     expect(user).not.toContain("The changes, grouped as strategies");
     expect(user).not.toMatch(/figures you may use:\n\n/u);
+  });
+});
+
+/**
+ * ⚠️⚠️ The measured failure this splits the fact list to fix.
+ *
+ * A live-model checkpoint run of this plan, 2026-08-14: the voice collapsed
+ * fourteen chapters into ONE TEMPLATE. "2035 is when work income stops" opened a
+ * paragraph in 7 of 14 chapters, and 22 of 48 paragraphs opened with the shape
+ * `<figure> is <what it is>`. Reading the two households as a client does,
+ * Cooper named "work ends in 2035" and "through 2070" in 12 of 14 chapters.
+ *
+ * The cause is upstream of the voice and structural: `plan.retirementYear` and
+ * `plan.endOfLifeYear` are the only two facts `buildStoryFacts` emits with no
+ * `chapters`, which `factsForChapter` reads as "belongs everywhere" — so every
+ * chapter's prompt listed the same two numbers under "the only figures you may
+ * use", and fourteen chapters handed the same numbers wrote the same numbers.
+ *
+ * `primary` does NOT re-scope anything: the figure is still shown, still
+ * grounded, and Gate 1 still accepts it. Only the emphasis moves.
+ */
+describe("buildChapterPrompt — figures another chapter owns", () => {
+  const RETIREMENT = yearFact("plan.retirementYear", "The year you stop working", 2035);
+  const OWNED: Fact = { ...RETIREMENT, primary: "whatWerePlanningFor" };
+  const promptFor = (chapterId: ChapterId, facts: Fact[]) =>
+    buildChapterPrompt(chapterId, { ...CTX, facts }, EMPTY_VOICE, DEFAULT_CHAPTER_STYLE, []).user;
+
+  it("lists an owned figure as this chapter's own, in the chapter that owns it", () => {
+    const user = promptFor("whatWerePlanningFor", [OWNED]);
+    expect(user).toContain("The only figures you may use");
+    expect(user).not.toContain("belong to another page");
+  });
+
+  it("moves it out of that list in every other chapter", () => {
+    const user = promptFor("whatYouHave", [OWNED]);
+    expect(user).toContain("belong to another page");
+    expect(user).toContain("You have no figures of your own for this chapter.");
+    expect(user).not.toContain("The only figures you may use");
+  });
+
+  /**
+   * The production shape for twelve of the fourteen: a chapter with figures of
+   * its own AND the two plan years it does not own. Its own come first, under a
+   * heading that no longer claims to be the whole permitted set — because it
+   * isn't, and the block below it says so.
+   */
+  it("keeps a chapter's own figures above the ones it does not own", () => {
+    const own = moneyFact("today.netWorth", "Net worth today", 2_100_000, ["whatYouHave"]);
+    const user = promptFor("whatYouHave", [own, OWNED]);
+    expect(user).toContain("The figures for this chapter, copied exactly.");
+    expect(user).not.toContain("The only figures you may use");
+    expect(user).toContain("- Net worth today: $2.1M");
+    expect(user).toContain("belong to another page");
+    expect(user.indexOf("- Net worth today")).toBeLessThan(user.indexOf("- The year you stop working"));
+  });
+
+  /**
+   * ⚠️ The property that makes this emphasis rather than scoping, and the one
+   * worth stating carefully: `validateFacts` grounds the finished prose against
+   * `ctx.facts` WHOLE, so Gate 1 permits this figure with or without the block
+   * below. Dropping it from the prompt would not narrow the gate — it would put
+   * the model in the position `types.ts#factsForChapter` forbids, allowed to
+   * write a figure it was never shown and so free to spell it its own way.
+   */
+  it("still shows the figure, so the shown set stays the set Gate 1 allows", () => {
+    expect(promptFor("whatYouHave", [OWNED])).toContain("2035");
+  });
+
+  it("leaves an unowned plan-level fact exactly where it was", () => {
+    const user = promptFor("whatYouHave", [RETIREMENT]);
+    expect(user).toContain("The only figures you may use");
+    expect(user).not.toContain("belong to another page");
+  });
+
+  // …and a chapter with nothing at all still gets the sentence `generate.ts`
+  // relies on when it decides whether the "about this plan" floor applies.
+  it("still tells a chapter with no figures at all to write without numbers", () => {
+    const user = promptFor("whatHappensNext", []);
+    expect(user).toContain("You have no figures for this chapter. Write it without any numbers at all.");
+    expect(user).not.toContain("belong to another page");
   });
 });
 

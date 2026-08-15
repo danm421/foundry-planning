@@ -360,13 +360,69 @@ export function buildChapterPrompt(
   // "The only figures you may use:" over a `label: display` list reads as a
   // two-column table to be recited; naming the left column as ours, once, at
   // the list itself, is what stops the recitation.
+  //
+  // ⚠️ `ctx.facts` arrives ALREADY scoped — `generateChapter` applies
+  // `factsForChapter` once at the top, and `chapterSourceHash` below does the
+  // same before calling in. The split here is not a second scoping pass. Both
+  // halves are PRINTED, which is what keeps the set the model is shown equal to
+  // the set Gate 1 allows — `types.ts#factsForChapter` states that rule, and
+  // `validate/facts.ts` grounds against `ctx.facts` whole, so dropping a figure
+  // from this list would not narrow the gate by one figure. It would only leave
+  // a chapter that needs the figure to spell it itself. What moves here is
+  // emphasis. See `facts.ts#Fact.primary`.
+  const mine = ctx.facts.filter((f) => !f.primary || f.primary === chapterId);
+  const elsewhere = ctx.facts.filter((f) => f.primary && f.primary !== chapterId);
+
   const factBlock =
-    ctx.facts.length > 0
+    mine.length > 0
       ? [
-          "The only figures you may use, copied exactly. The left of each line is our own note about what the figure means — never print it:",
-          ctx.facts.map((f) => `- ${f.label}: ${f.display}`).join("\n"),
+          // "The only figures you may use" is exactly true when nothing follows
+          // it, and false the moment `coveredBlock` does — those figures are
+          // usable too, which is the point of showing them. Two headings rather
+          // than one softened heading, because keeping the original wording
+          // untouched for a pack with no `primary` in it is what leaves the
+          // prompt byte-identical there, which the fourteen hashes in
+          // `__tests__/prompts.test.ts` pin.
+          `${elsewhere.length > 0 ? "The figures for this chapter" : "The only figures you may use"}, copied exactly. The left of each line is our own note about what the figure means — never print it:`,
+          mine.map((f) => `- ${f.label}: ${f.display}`).join("\n"),
         ]
-      : ["You have no figures for this chapter. Write it without any numbers at all."];
+      : elsewhere.length > 0
+        ? // Reachable, and measured rather than imagined: no scope constant in
+          // `build-facts.ts` names `whatHappensNext`, so on a fully-populated
+          // pack its whole scoped set is the two plan years — none of which it
+          // owns. The other branch's sentence would tell that chapter to "write
+          // it without any numbers at all" directly above a list of two.
+          ["You have no figures of your own for this chapter."]
+        : ["You have no figures for this chapter. Write it without any numbers at all."];
+
+  /**
+   * The figures another chapter owns. Still shown, deliberately.
+   *
+   * `validate/facts.ts` grounds the finished prose against `ctx.facts` whole, so
+   * these figures are permitted whether or not this block exists — which is
+   * exactly why they have to be listed. Leaving them out would put the model in
+   * the one position `types.ts#factsForChapter` forbids: allowed to write a
+   * figure it was never shown, and therefore free to spell it its own way. This
+   * block changes emphasis, not permission.
+   *
+   * ⚠️ It does not say "already covered". `whatWerePlanningFor` — the chapter
+   * that owns both plan years today — is SECOND in `CHAPTER_IDS`, so on
+   * `planInOnePage`, the first, the owning page comes later; "you have already
+   * covered this" would be a false premise handed to the model on the report's
+   * headline page.
+   *
+   * "Never open a paragraph with one" is the measured defect stated as a rule:
+   * the 2026-08-14 checkpoint read found "2035 is when work income stops"
+   * OPENING a paragraph in 7 of 14 chapters.
+   */
+  const coveredBlock =
+    elsewhere.length > 0
+      ? [
+          "",
+          "These figures belong to another page of this report, and that page is where they are explained. Use one here only if this chapter cannot be written without it, and never open a paragraph with one:",
+          elsewhere.map((f) => `- ${f.label}: ${f.display}`).join("\n"),
+        ]
+      : [];
 
   // `rowLine` grounds the two fields that carry the describers' formatted
   // figures: `before`/`after` and `detail[0]`. It does NOT ground `row.what` or
@@ -402,6 +458,7 @@ export function buildChapterPrompt(
     `This chapter — "${def.title}". Your brief for it, which the client never sees: ${def.brief}`,
     "",
     ...factBlock,
+    ...coveredBlock,
     ...strategyBlock,
     ...retryBlock,
     "",

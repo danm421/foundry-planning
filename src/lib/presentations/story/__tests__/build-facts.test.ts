@@ -35,6 +35,40 @@ const input: StoryFactsInput = {
   inflationRate: 0.025,
 };
 
+/**
+ * Every optional input filled, so `buildStoryFacts` emits every fact it can:
+ * both sides of each pair, a cover shortfall, a Medicare surcharge, a dated
+ * goal, a shortfall year, this year's flow, and a strategy row whose figures are
+ * quotable. A sweep over the pack is only a sweep over the whole file if the
+ * input reaches every branch that pushes a fact.
+ */
+const EVERY_FACT: StoryFactsInput = {
+  ...input,
+  goals: [{ name: "Second home", year: 2032, kind: "Purchase" }],
+  flow: { income: 480_000, spending: 300_000, saving: 90_000 },
+  shortfallYear: 2048,
+  maxSpend: { base: 210_000, proposed: 260_000 },
+  estate: { base: { net: 3_100_000, cost: 700_000 }, proposed: { net: 3_900_000, cost: 400_000 } },
+  lifetimeTax: { base: 1_400_000, proposed: 1_100_000 },
+  cover: { on: "Alan", have: 1_000_000, need: 2_500_000, gap: 1_500_000 },
+  medicare: { lifetime: 400_000, irmaa: 60_000 },
+  strategies: [
+    {
+      name: "Sell the rental",
+      rows: [
+        {
+          area: "Assets",
+          what: "Rental property",
+          op: "edit",
+          before: "$800k",
+          after: "$850k",
+          detail: ["Sold in 2029 for $850k"],
+        },
+      ],
+    },
+  ],
+};
+
 describe("buildStoryFacts", () => {
   it("emits stable ids for every headline figure", () => {
     const ids = buildStoryFacts(input).map((f) => f.id);
@@ -626,6 +660,78 @@ describe("fact scoping", () => {
   it("gives the plan's own years to every chapter", () => {
     for (const id of ["planInOnePage", "whatYouHave", "whatWeRecommend"] as const) {
       expect(factsForChapter(facts, id).map((f) => f.id)).toContain("plan.endOfLifeYear");
+    }
+  });
+});
+
+/**
+ * ⚠️⚠️ The two facts a client met on 12 of 14 pages, and where that is fixed.
+ *
+ * Measured on a live-model checkpoint run, 2026-08-14: Cooper named "work ends
+ * in 2035" and "through 2070" in 12 of 14 chapters, "2035 is when work income
+ * stops" opened a paragraph in 7 of 14, and 22 of 48 paragraphs opened with the
+ * shape `<figure> is <what it is>`. `plan.retirementYear` and `plan.endOfLifeYear`
+ * are the ONLY two facts this file emits with no `chapters` — `factsForChapter`
+ * reads that as "belongs everywhere", which is exactly what the read found.
+ *
+ * `primary` does not re-scope them. Both stay available to all fourteen chapters
+ * (the `fact scoping` block above pins that, and Gate 1 depends on it); the
+ * prompt only stops listing them as this chapter's own. See
+ * `chapters/prompts.ts`.
+ */
+describe("a home chapter for the figures every chapter could see", () => {
+  it("gives the retirement year and the horizon to the chapter about their goals", () => {
+    const facts = buildStoryFacts(input);
+    expect(facts.find((f) => f.id === "plan.retirementYear")?.primary).toBe("whatWerePlanningFor");
+    expect(facts.find((f) => f.id === "plan.endOfLifeYear")?.primary).toBe("whatWerePlanningFor");
+  });
+
+  /**
+   * ⚠️ The invariant, and the reason it is a test rather than a comment: a
+   * `primary` naming a chapter the fact's own `chapters` excludes produces a
+   * figure that is "another page's" in every chapter that can see it and this
+   * chapter's own in NONE — emphasised nowhere, demoted everywhere. A `primary`
+   * on a single-chapter scope is the opposite failure and just as silent: the
+   * field can never do anything, because the only chapter that sees the fact is
+   * the one that owns it.
+   *
+   * Swept over every fact `buildStoryFacts` emits from a fully-populated input,
+   * not over the two assigned today, so a later assignment cannot slip past it.
+   * The enumeration above the loop is what makes it non-vacuous — without it the
+   * sweep passes just as well when nothing carries a `primary` at all.
+   */
+  it("never names a chapter the fact itself cannot reach", () => {
+    const facts = buildStoryFacts(EVERY_FACT);
+    // One id per CONDITIONAL branch in `buildStoryFacts`, so "swept the whole
+    // file" is checkable rather than asserted. Measured 2026-08-14: this input
+    // emits 32 facts and reaches every branch that pushes one.
+    expect(facts.map((f) => f.id)).toEqual(
+      expect.arrayContaining([
+        "estate.cost.proposed",
+        "tax.lifetime.proposed",
+        "cover.gap",
+        "medicare.irmaa",
+        "goal.0.year",
+        "spend.proposed",
+        "base.shortfallYear",
+        "flow.saving",
+        "outcome.confidence.proposed",
+        "outcome.legacy.proposed",
+        "quoted.$850k",
+        "plan.retirementYear",
+        "plan.endOfLifeYear",
+      ]),
+    );
+    expect(facts.filter((f) => f.primary).map((f) => f.id).sort()).toEqual([
+      "plan.endOfLifeYear",
+      "plan.retirementYear",
+    ]);
+    for (const fact of facts) {
+      if (!fact.primary || !fact.chapters) continue;
+      expect(fact.chapters).toContain(fact.primary);
+      // …and a scope of one makes the field a no-op, which is the failure that
+      // reads as a green assignment.
+      expect(fact.chapters.length).toBeGreaterThan(1);
     }
   });
 });
