@@ -14,6 +14,9 @@ import {
   type StoryStep,
 } from "@/lib/presentations/story/types";
 import { printedChapters, type PlanStoryOptions } from "./options-schema";
+// Its own module so the review panel — a client component — can split the same
+// way without pulling this file's glossary and narrator imports with it.
+import { splitParagraphs } from "./paragraphs";
 
 export interface PlanStoryChapterView {
   chapterId: ChapterId;
@@ -75,45 +78,6 @@ const NO_STORY = "The plan story isn't available for this report.";
 const NO_CHAPTERS = "No chapters are switched on for this report.";
 
 const TITLE = "Your Plan";
-
-/** A table's delimiter row (`|---|---|`) and the horizontal rules a model writes
- *  between sections. Neither carries a word, so both are dropped whole. */
-const RULE_LINE_RE = /^[\s|:-]*-[\s|:-]*$/u;
-
-/**
- * Markdown syntax, removed before it reaches the page.
- *
- * The system prompt asks the model for "clean Markdown" (chapters/prompts.ts)
- * and `chapter-pdf.tsx` renders each paragraph into a raw react-pdf `<Text>`, so
- * `##`, `**` and a table's pipes print to the client exactly as written. No gate
- * catches this — Gate 2 rejects only a NESTED heading — and this is the only
- * place that also covers the advisor's own `editedText`, which no gate ever sees.
- *
- * The character classes are the ones `validate/facts.ts#normalizeFigures` and
- * `validate/voice.ts#normalize` already fold for the same reason: emphasis is
- * decoration, not spelling.
- */
-function stripMarkdown(paragraph: string): string {
-  return paragraph
-    .split(/\r?\n/u)
-    .filter((line) => !RULE_LINE_RE.test(line))
-    .map((line) =>
-      line
-        .replace(/^ {0,3}#{1,6}\s+/u, "") // heading
-        .replace(/^\s*\|/u, "") // a table row's outer pipes…
-        .replace(/\|\s*$/u, "")
-        .replace(/\s*\|\s*/gu, " · ") // …and the separators between its cells
-        .replace(/[*_`]/gu, "") // emphasis and code ticks
-        .trim(),
-    )
-    .filter(Boolean)
-    .join("\n");
-}
-
-/** Blank lines separate paragraphs; a single newline is a line break inside one. */
-function splitParagraphs(text: string): string[] {
-  return text.split(/\n{2,}/u).map(stripMarkdown).filter(Boolean);
-}
 
 /**
  * What one story sheet holds — and therefore what the page-count estimate is

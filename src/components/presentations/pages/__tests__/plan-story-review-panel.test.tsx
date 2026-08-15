@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { PlanStoryReviewPanel } from "@/components/presentations/pages/plan-story/review-panel";
+import { MAX_PARAGRAPHS } from "@/lib/presentations/pages/plan-story/view-model";
 // A pure function over two string unions — no Azure and no Redis, unlike the
 // `generate.ts` constants spelled out below. Imported rather than restated
 // because it is the ONE spelling of "every chapter at the default", and a
@@ -1240,5 +1241,137 @@ describe("the advisor's tone and length", () => {
     const tone = toneSelect(A);
     expect(tone.getAttribute("aria-label")).toBeNull();
     expect(row(A).querySelector(`label[for="${tone.id}"]`)?.textContent).toBe("Tone");
+  });
+});
+
+/**
+ * The whole story, end to end — what the client will read, in the order the
+ * report prints it, instead of fourteen separate edit boxes.
+ *
+ * Two things it exists to prove, and neither is about layout:
+ *
+ * 1. It shows the STORED words. What prints is what is stored, so a read-through
+ *    carrying an unsaved keystroke would certify prose the export will never
+ *    use.
+ * 2. It applies NONE of the sheet's drop rules. `MAX_PARAGRAPHS` and
+ *    `restatesCard` decide what one printed sheet holds; this view is not
+ *    paginated, so a chapter reads here in full even when its sheet will not
+ *    hold all of it.
+ */
+describe("the whole story, read through", () => {
+  const OPEN = /read it through/i;
+
+  function whole(): HTMLElement {
+    return screen.getByRole("article", { name: /the whole story/i });
+  }
+
+  /** Wait for the chapters, then switch the panel into the reading view. */
+  async function readThrough() {
+    await screen.findByText(CHAPTERS[0].title);
+    fireEvent.click(screen.getByRole("button", { name: OPEN }));
+  }
+
+  it("reads the whole story through, in document order, with nothing editable", async () => {
+    renderPanel();
+    await readThrough();
+
+    // Every chapter's words, in the order the report prints them…
+    expect(within(whole()).getAllByRole("heading").map((h) => h.textContent)).toEqual(
+      CHAPTERS.map((c) => c.title),
+    );
+    // …and not one control the advisor could type into by accident.
+    expect(within(whole()).queryAllByRole("textbox")).toHaveLength(0);
+  });
+
+  /**
+   * The one thing this view must not do: an unsaved edit is not what prints, and
+   * a read-through showing it would certify words the export will never use.
+   *
+   * ⚠️⚠️ `fireEvent.change`, and the choice is not the file's idiom talking — it
+   * is the only spelling that can FAIL. `userEvent.type` focuses the box and
+   * `userEvent.click` on the toggle then blurs it, which fires the panel's own
+   * save; `patch` reloads and drops the draft, so by the time the assertion runs
+   * there is no unsaved edit left for a wrong implementation to leak. Measured:
+   * with the read-through mutated to `drafts[row.chapterId] ?? row.text`, the
+   * `userEvent` version PASSED and this one fails.
+   */
+  it("shows the stored words, not an unsaved edit", async () => {
+    renderPanel();
+    const box = await screen.findByLabelText(`${CHAPTERS[0].title} text`);
+    fireEvent.change(box, { target: { value: `${CHAPTERS[0].text} AND SOMETHING UNSAVED` } });
+    fireEvent.click(screen.getByRole("button", { name: OPEN }));
+    // The draft is still unsaved — nothing blurred the box — so a read-through
+    // that read `drafts` would show it.
+    expect(patchCalls()).toHaveLength(0);
+    expect(whole()).not.toHaveTextContent("UNSAVED");
+  });
+
+  /**
+   * …and withholding the draft is not the same as discarding it. The panel's own
+   * save path is what normally rescues an edit here — a click on the toggle
+   * blurs the box first — so this is the other branch: a draft that reached
+   * state without a blur is still in its box on the way back.
+   */
+  it("hands an unsaved edit back to its box on the way out of the reading view", async () => {
+    renderPanel();
+    const box = await screen.findByLabelText(`${CHAPTERS[0].title} text`);
+    const typed = `${CHAPTERS[0].text} AND SOMETHING UNSAVED`;
+    fireEvent.change(box, { target: { value: typed } });
+    fireEvent.click(screen.getByRole("button", { name: OPEN }));
+    fireEvent.click(screen.getByRole("button", { name: /back to editing/i }));
+
+    expect(patchCalls()).toHaveLength(0);
+    expect((screen.getByLabelText(`${CHAPTERS[0].title} text`) as HTMLTextAreaElement).value).toBe(
+      typed,
+    );
+  });
+
+  it("splits the stored prose into paragraphs and prints no markdown", async () => {
+    stubFetch([
+      { ...CHAPTERS[0], text: "**Alan** retires at 62.\n\n## What that means\n\nThe plan holds." },
+    ]);
+    renderPanel();
+    await readThrough();
+
+    expect(Array.from(whole().querySelectorAll("p")).map((p) => p.textContent)).toEqual([
+      "Alan retires at 62.",
+      "What that means",
+      "The plan holds.",
+    ]);
+  });
+
+  /**
+   * ⚠️ `MAX_PARAGRAPHS` imported rather than restated, and imported HERE rather
+   * than into the panel: it is the measured ceiling of one printed sheet, and a
+   * literal copied into this file would go on passing after the sheet was
+   * remeasured. The panel must not import it at all — that ceiling is a
+   * pagination decision, and this view is not paginated.
+   */
+  it("reads a chapter past what its sheet will hold rather than dropping paragraphs", async () => {
+    const over = MAX_PARAGRAPHS + 4;
+    stubFetch([
+      {
+        ...CHAPTERS[0],
+        text: Array.from({ length: over }, (_, i) => `Paragraph ${i + 1}.`).join("\n\n"),
+      },
+    ]);
+    renderPanel();
+    await readThrough();
+
+    expect(whole().querySelectorAll("p")).toHaveLength(over);
+    expect(within(whole()).getByText(`Paragraph ${over}.`)).toBeTruthy();
+  });
+
+  /**
+   * Five of the fourteen chapters can never be written for a base-only report,
+   * and a chapter can be emptied on purpose. A heading with nothing under it
+   * reads as a rendering failure — it has to say which it is.
+   */
+  it("says so where a chapter has nothing to read yet", async () => {
+    renderPanel();
+    await readThrough();
+    const blank = within(whole()).getByRole("heading", { name: CHAPTERS[1].title })
+      .parentElement as HTMLElement;
+    expect(within(blank).getByText(/nothing written/i)).toBeTruthy();
   });
 });

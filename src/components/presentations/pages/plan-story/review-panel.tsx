@@ -18,6 +18,9 @@
 //    surfaces would start disagreeing about what the advisor approved.
 "use client";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
+// The same split the printed sheet uses, from a module that holds nothing else —
+// see its own header for why it is not `view-model.ts`.
+import { splitParagraphs } from "@/lib/presentations/pages/plan-story/paragraphs";
 import { sampleRefusal } from "@/lib/presentations/story/voice/refusal";
 import { chapterIgnoresFullLength } from "@/lib/presentations/story/chapters/registry";
 import {
@@ -118,6 +121,22 @@ const COULD_NOT_HARVEST = "Couldn't save that as a voice sample. Nothing was sto
  * nothing about what happens next has not been asked.
  */
 const HARVESTED = "Saved to your voice samples. It's off until you turn it on in Settings → Voice.";
+
+/**
+ * The read-through's own name, and what a chapter with no words says.
+ *
+ * Five of the fourteen chapters can never be written for a base-only report, and
+ * any chapter can be emptied on purpose — so a read-through of a half-written
+ * story reaches headings with nothing under them. A blank there reads as a
+ * rendering failure, and this says which it is.
+ *
+ * ⚠️ Deliberately NOT `statusLabel`'s "Not generated yet". That answers a
+ * different question: a chapter the advisor generated and then emptied is
+ * "Edited" by that label and still has nothing to read. This sentence is about
+ * the WORDS, which is what a read-through is for.
+ */
+const WHOLE_STORY = "The whole story";
+const NOTHING_TO_READ = "Nothing written for this chapter yet.";
 
 /**
  * The advisor's words for the two settings. Keyed on the stored value, so a
@@ -319,6 +338,14 @@ export function PlanStoryReviewPanel({
   const [harvesting, setHarvesting] = useState<string | null>(null);
   /** Chapter ids the plan has moved underneath. See `CHAPTER_OUT_OF_DATE`. */
   const [outOfDate, setOutOfDate] = useState<Set<string>>(new Set());
+  /**
+   * Reading the story instead of editing it.
+   *
+   * PANEL-LOCAL on purpose, unlike the style: which view an advisor is looking
+   * at changes nothing about the report, so there is nothing to persist and
+   * nothing for an export to read.
+   */
+  const [reading, setReading] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -675,9 +702,28 @@ export function PlanStoryReviewPanel({
         <p className="text-sm text-ink-3" aria-live="polite">
           {reviewSummary(loaded, unreviewed)}
         </p>
+        {/* Beside Generate all, and carrying Generate all's own classes — it is
+            the same kind of thing, a panel-wide action rather than a per-chapter
+            one. Two differences, both deliberate: `ml-auto` moved here because
+            this is now the first of the pair, and no `disabled:` rule, because
+            nothing disables it. Reading is safe during a run and during a
+            rewrite; both of those replace prose, and watching them land is a
+            reason to be in this view rather than out of it.
+
+            `aria-pressed` rather than `aria-expanded`: it is a mode the panel
+            stays in until it is pressed again, not a disclosure hanging off the
+            button. */}
         <button
           type="button"
-          className="ml-auto rounded border border-hair px-3 py-1.5 text-sm text-ink-2 hover:text-ink disabled:opacity-50"
+          className="ml-auto rounded border border-hair px-3 py-1.5 text-sm text-ink-2 hover:text-ink"
+          aria-pressed={reading}
+          onClick={() => setReading((r) => !r)}
+        >
+          {reading ? "Back to editing" : "Read it through"}
+        </button>
+        <button
+          type="button"
+          className="rounded border border-hair px-3 py-1.5 text-sm text-ink-2 hover:text-ink disabled:opacity-50"
           onClick={() => void generateAll()}
           // …and not while one chapter is being rewritten: the run would write
           // over that chapter mid-rewrite, and both clicks are spend.
@@ -687,121 +733,166 @@ export function PlanStoryReviewPanel({
         </button>
       </div>
 
-      {rows.map((row) => (
-        // Named, so a message inside it is announced against the chapter it is
-        // about rather than floating in the panel.
-        <section
-          key={row.chapterId}
-          role="region"
-          aria-label={row.title}
-          className="rounded border border-hair p-3"
-        >
-          <header className="mb-2 flex items-center justify-between gap-3">
-            <h3 className="text-sm font-semibold text-ink">{row.title}</h3>
-            <span className="text-[11px] uppercase tracking-[0.1em] text-ink-3">
-              {statusLabel(row)}
-            </span>
-          </header>
+      {/* The whole story, end to end, as the client will read it — instead of
+          fourteen edit boxes, not alongside them: two copies of every chapter
+          would double a panel that already carries fourteen textareas, and a
+          screen reader would meet each title twice.
 
-          {problems[row.chapterId] != null && (
-            <p role="alert" className="mb-2 text-sm text-crit">
-              {problems[row.chapterId]}
-            </p>
-          )}
+          ⚠️ `row.text` is the STORED text, deliberately, not the draft in the
+          box. This is what an advisor reads to decide the story hangs together,
+          and what prints is what is stored — showing unsaved keystrokes here
+          would certify words the export will never use.
 
-          {outOfDate.has(row.chapterId) && (
-            <p className="mb-2 text-xs text-warn">{CHAPTER_OUT_OF_DATE}</p>
-          )}
+          No words are lost either way. Clicking this toggle blurs the box the
+          advisor was typing in, and that blur saves; a draft that somehow never
+          was blurred is still in `drafts` and back in its box on the way out of
+          this view.
 
-          {row.error != null && (
-            <p className="mb-2 text-xs text-warn">{REASONS[row.error] ?? row.error}</p>
-          )}
+          It applies none of the sheet's drop rules either, which is rule 3 at
+          the top of this file: `splitParagraphs` splits and strips markdown and
+          stops. A chapter can therefore read longer here than the one sheet it
+          prints on — this view is not paginated, and that is the honest
+          answer. */}
+      {reading && (
+        <article aria-label={WHOLE_STORY} className="flex flex-col gap-6 py-1">
+          {rows.map((row) => {
+            const paragraphs = splitParagraphs(row.text);
+            return (
+              <section key={row.chapterId} className="flex flex-col gap-2">
+                <h3 className="text-sm font-semibold text-ink">{row.title}</h3>
+                {paragraphs.length === 0 ? (
+                  <p className="text-xs text-ink-3">{NOTHING_TO_READ}</p>
+                ) : (
+                  paragraphs.map((paragraph, i) => (
+                    // Index keys: a paragraph has no identity of its own, and the
+                    // whole list is rebuilt whenever the chapter's text changes.
+                    <p key={i} className="max-w-prose text-sm leading-relaxed text-ink">
+                      {paragraph}
+                    </p>
+                  ))
+                )}
+              </section>
+            );
+          })}
+        </article>
+      )}
 
-          <textarea
-            className="min-h-28 w-full rounded border border-hair bg-card-2 p-2 text-sm leading-relaxed text-ink focus:border-accent focus:outline-none"
-            aria-label={`${row.title} text`}
-            value={drafts[row.chapterId] ?? row.text}
-            onChange={(e) => {
-              setDrafts((d) => ({ ...d, [row.chapterId]: e.target.value }));
-              // "Saved to your voice samples" named the words as they stood when
-              // it was pressed. Once they change, the sentence is about a
-              // passage that is no longer in the box.
-              setConfirmations((c) => without(c, row.chapterId));
-            }}
-            onBlur={(e) => {
-              if (e.target.value === row.text) return;
-              void patch(row.chapterId, { editedText: e.target.value }, COULD_NOT_SAVE);
-            }}
-          />
+      {!reading &&
+        rows.map((row) => (
+          // Named, so a message inside it is announced against the chapter it is
+          // about rather than floating in the panel.
+          <section
+            key={row.chapterId}
+            role="region"
+            aria-label={row.title}
+            className="rounded border border-hair p-3"
+          >
+            <header className="mb-2 flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-ink">{row.title}</h3>
+              <span className="text-[11px] uppercase tracking-[0.1em] text-ink-3">
+                {statusLabel(row)}
+              </span>
+            </header>
 
-          {/* Guarded, not assumed: `chapter_id` is free text in storage, so a
-              row can outlive the chapter it names. There is no style to set for
-              a chapter that has left the arc, and the rest of the row still
-              works. */}
-          {isChapterId(row.chapterId) && styleFields(row.chapterId)}
+            {problems[row.chapterId] != null && (
+              <p role="alert" className="mb-2 text-sm text-crit">
+                {problems[row.chapterId]}
+              </p>
+            )}
 
-          <div className="mt-2 flex items-center gap-3">
-            <button
-              type="button"
-              className="text-xs text-ink-3 underline hover:text-ink disabled:no-underline disabled:opacity-50"
-              disabled={saving === row.chapterId || regenerating === row.chapterId}
-              onClick={() => void patch(row.chapterId, { reviewed: true }, COULD_NOT_REVIEW)}
-            >
-              Mark reviewed
-            </button>
-            {/* One row's rewrite, past the 30-day cache. Disabled while ANY
-                chapter is being rewritten, and while a whole run is going: each
-                click is a model call the firm pays for, and the wait is long
-                enough that a second click is the natural thing to do.
+            {outOfDate.has(row.chapterId) && (
+              <p className="mb-2 text-xs text-warn">{CHAPTER_OUT_OF_DATE}</p>
+            )}
 
-                Absent entirely — not greyed — on a row this story could never
-                write: the five proposal chapters of a base-only report. Nothing
-                the advisor can do makes it work, so a button whose only function
-                is to explain itself is not offered. The rest of the row stays
-                live: the box still takes their own words, and those still print. */}
-            {row.candidate !== false && (
+            {row.error != null && (
+              <p className="mb-2 text-xs text-warn">{REASONS[row.error] ?? row.error}</p>
+            )}
+
+            <textarea
+              className="min-h-28 w-full rounded border border-hair bg-card-2 p-2 text-sm leading-relaxed text-ink focus:border-accent focus:outline-none"
+              aria-label={`${row.title} text`}
+              value={drafts[row.chapterId] ?? row.text}
+              onChange={(e) => {
+                setDrafts((d) => ({ ...d, [row.chapterId]: e.target.value }));
+                // "Saved to your voice samples" named the words as they stood when
+                // it was pressed. Once they change, the sentence is about a
+                // passage that is no longer in the box.
+                setConfirmations((c) => without(c, row.chapterId));
+              }}
+              onBlur={(e) => {
+                if (e.target.value === row.text) return;
+                void patch(row.chapterId, { editedText: e.target.value }, COULD_NOT_SAVE);
+              }}
+            />
+
+            {/* Guarded, not assumed: `chapter_id` is free text in storage, so a
+                row can outlive the chapter it names. There is no style to set for
+                a chapter that has left the arc, and the rest of the row still
+                works. */}
+            {isChapterId(row.chapterId) && styleFields(row.chapterId)}
+
+            <div className="mt-2 flex items-center gap-3">
               <button
                 type="button"
                 className="text-xs text-ink-3 underline hover:text-ink disabled:no-underline disabled:opacity-50"
-                disabled={busy || regenerating != null || saving === row.chapterId}
-                onClick={() => void regenerate(row.chapterId)}
+                disabled={saving === row.chapterId || regenerating === row.chapterId}
+                onClick={() => void patch(row.chapterId, { reviewed: true }, COULD_NOT_REVIEW)}
               >
-                {regenerating === row.chapterId ? "Rewriting…" : "Regenerate"}
+                Mark reviewed
               </button>
-            )}
-            {/* Only on a row the advisor has actually rewritten. A generated
-                chapter is the model's own prose, and keeping it as an exemplar
-                of how this advisor writes would teach the model to copy itself.
-                An EDITED one is the advisor's words, which is the whole point. */}
-            {row.edited && (
-              <button
-                type="button"
-                className="text-xs text-ink-3 underline hover:text-ink disabled:no-underline disabled:opacity-50"
-                // …and dead while a whole run or any rewrite is going, exactly as
-                // Regenerate above is. A harvest mid-"Generate all" stores the
-                // words the run is about to overwrite, and `generateAll` then
-                // clears the very confirmation that would have named them.
-                disabled={
-                  busy ||
-                  regenerating != null ||
-                  saving === row.chapterId ||
-                  harvesting === row.chapterId
-                }
-                onClick={() => void harvest(row.chapterId, drafts[row.chapterId] ?? row.text)}
-              >
-                {harvesting === row.chapterId ? "Saving…" : "Save as a voice sample"}
-              </button>
-            )}
-            {row.reviewed && <span className="text-xs text-good">Reviewed</span>}
-          </div>
+              {/* One row's rewrite, past the 30-day cache. Disabled while ANY
+                  chapter is being rewritten, and while a whole run is going: each
+                  click is a model call the firm pays for, and the wait is long
+                  enough that a second click is the natural thing to do.
 
-          {confirmations[row.chapterId] != null && (
-            <p role="status" className="mt-2 text-xs text-good">
-              {confirmations[row.chapterId]}
-            </p>
-          )}
-        </section>
-      ))}
+                  Absent entirely — not greyed — on a row this story could never
+                  write: the five proposal chapters of a base-only report. Nothing
+                  the advisor can do makes it work, so a button whose only function
+                  is to explain itself is not offered. The rest of the row stays
+                  live: the box still takes their own words, and those still print. */}
+              {row.candidate !== false && (
+                <button
+                  type="button"
+                  className="text-xs text-ink-3 underline hover:text-ink disabled:no-underline disabled:opacity-50"
+                  disabled={busy || regenerating != null || saving === row.chapterId}
+                  onClick={() => void regenerate(row.chapterId)}
+                >
+                  {regenerating === row.chapterId ? "Rewriting…" : "Regenerate"}
+                </button>
+              )}
+              {/* Only on a row the advisor has actually rewritten. A generated
+                  chapter is the model's own prose, and keeping it as an exemplar
+                  of how this advisor writes would teach the model to copy itself.
+                  An EDITED one is the advisor's words, which is the whole point. */}
+              {row.edited && (
+                <button
+                  type="button"
+                  className="text-xs text-ink-3 underline hover:text-ink disabled:no-underline disabled:opacity-50"
+                  // …and dead while a whole run or any rewrite is going, exactly as
+                  // Regenerate above is. A harvest mid-"Generate all" stores the
+                  // words the run is about to overwrite, and `generateAll` then
+                  // clears the very confirmation that would have named them.
+                  disabled={
+                    busy ||
+                    regenerating != null ||
+                    saving === row.chapterId ||
+                    harvesting === row.chapterId
+                  }
+                  onClick={() => void harvest(row.chapterId, drafts[row.chapterId] ?? row.text)}
+                >
+                  {harvesting === row.chapterId ? "Saving…" : "Save as a voice sample"}
+                </button>
+              )}
+              {row.reviewed && <span className="text-xs text-good">Reviewed</span>}
+            </div>
+
+            {confirmations[row.chapterId] != null && (
+              <p role="status" className="mt-2 text-xs text-good">
+                {confirmations[row.chapterId]}
+              </p>
+            )}
+          </section>
+        ))}
     </div>
   );
 }
