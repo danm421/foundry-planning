@@ -30,8 +30,7 @@ function isChapterId(v: unknown): v is ChapterId {
  * about those ONLY. It is not a claim about the handler as a whole, which
  * reads other things and can fail for other reasons — `resolveStoryScenarioId`
  * further down is a scenario lookup with a 404 of its own, and
- * `requireClientEditAccess` and `requireActiveSubscriptionForFirm` ahead of it
- * are database reads too.
+ * `requireClientEditAccess` ahead of it is a database read too.
  *
  * Four of those repo calls touch storage. Three are the WRITERS —
  * `updateChapterText` for an edit and again for an accept, plus
