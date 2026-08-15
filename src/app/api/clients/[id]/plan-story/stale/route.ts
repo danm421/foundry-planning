@@ -131,6 +131,11 @@ export async function GET(
               // Whose voice this chapter's stored hash was built from. Null on
               // every row written before the column existed.
               generatedByUserId: r.generatedByUserId,
+              // The gate set this row was written under — `isChapterStale`
+              // compares it to `GATE_VERSION` beside the hash, so a gate
+              // tightening can flag a chapter the plan-shape check alone would
+              // call fresh.
+              gateVersion: r.gateVersion,
             },
           ]
         : [],

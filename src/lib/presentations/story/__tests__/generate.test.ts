@@ -16,6 +16,7 @@ import {
   type StoryStrategy,
 } from "../types";
 import { EMPTY_VOICE } from "../voice/resolve";
+import { GATE_VERSION } from "../validate";
 import type { ChangeRow } from "@/lib/presentations/pages/scenario-changes/types";
 
 const UNAVAILABLE = "The writing assistant was unavailable.";
@@ -91,6 +92,16 @@ describe("generateChapter", () => {
     expect(gen).toHaveBeenCalledTimes(1);
   });
 
+  // The gate set a chapter was judged against, stamped so a later tightening
+  // can find it. Without this, `ai-cache.ts`'s 30-day cache and the stored row
+  // that outlives it are both invisible to a gate added or tightened after the
+  // words were already written.
+  it("stamps the current gate version on a generated chapter", async () => {
+    const gen = vi.fn().mockResolvedValue(GOOD);
+    const res = await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE, deps: deps(gen) });
+    expect(res.gateVersion).toBe(GATE_VERSION);
+  });
+
   it("retries exactly once when a gate fails, and keeps the clean second attempt", async () => {
     const gen = vi.fn().mockResolvedValueOnce(ONE_FIGURE).mockResolvedValueOnce(GOOD);
     const res = await generateChapter({ clientId: "c1", chapterId: "planInOnePage", ctx: CTX, voice: EMPTY_VOICE, style: DEFAULT_CHAPTER_STYLE, deps: deps(gen) });
@@ -120,6 +131,9 @@ describe("generateChapter", () => {
     // gives no way to delete. Without this, caching just before the fallback
     // survives every gate test in the suite.
     expect(setCached).not.toHaveBeenCalled();
+    // The fallback path stamps it too — a suppressed chapter is still a row a
+    // later gate tightening has to be able to reach.
+    expect(res.gateVersion).toBe(GATE_VERSION);
   });
 
   it("falls back rather than throwing when the model call errors", async () => {

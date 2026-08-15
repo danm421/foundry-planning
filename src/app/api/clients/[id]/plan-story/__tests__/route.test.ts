@@ -145,6 +145,7 @@ import { POST } from "../generate/route";
 import { PATCH } from "../[chapterId]/route";
 import { chapterSourceHash } from "@/lib/presentations/story/chapters/prompts";
 import { EMPTY_VOICE } from "@/lib/presentations/story/voice/resolve";
+import { GATE_VERSION } from "@/lib/presentations/story/validate";
 
 import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
 import { CHAPTER_IDS, DEFAULT_CHAPTER_STYLE } from "@/lib/presentations/story/types";
@@ -215,6 +216,10 @@ const chapterRow = (over: Partial<Record<string, unknown>> = {}) => ({
   editedText: null,
   editedAt: null,
   sourceHash: null,
+  // Defaulted at the CURRENT version, not the column's own `.default(1)` —
+  // otherwise every existing fixture in this file that sets a real hash newly
+  // reports stale, for a dimension it is not testing.
+  gateVersion: GATE_VERSION,
   aiSuppressed: false,
   error: null,
   reviewedAt: null,
@@ -575,6 +580,30 @@ describe("GET /api/clients/[id]/plan-story/stale", () => {
       chapterRow({ chapterId: "planInOnePage", sourceHash: FRESH }),
     ]);
     expect((await (await stale("?scenarioId=base")).json()).stale).toEqual([]);
+  });
+
+  /**
+   * The other staleness key. `sourceHash` catches the plan moving; this
+   * catches a gate being added or tightened after the chapter was already
+   * written and cached — which nothing could reach before, because
+   * `ai-cache.ts` holds an answer for 30 days with no way to delete it.
+   */
+  it("names a chapter written under an older gate set, even with a matching hash", async () => {
+    mocks.listStoryChapters.mockResolvedValue([
+      chapterRow({ chapterId: "planInOnePage", sourceHash: FRESH, gateVersion: GATE_VERSION - 1 }),
+    ]);
+    const res = await stale("?scenarioId=base");
+    expect(await res.json()).toMatchObject({ stale: ["planInOnePage"] });
+  });
+
+  // …and the other direction, so bumping `GATE_VERSION` is not a way to report
+  // every chapter of every report permanently stale.
+  it("reports a chapter written under the current gate set as fresh", async () => {
+    mocks.listStoryChapters.mockResolvedValue([
+      chapterRow({ chapterId: "planInOnePage", sourceHash: FRESH, gateVersion: GATE_VERSION }),
+    ]);
+    const res = await stale("?scenarioId=base");
+    expect(await res.json()).toMatchObject({ stale: [] });
   });
 
   /**

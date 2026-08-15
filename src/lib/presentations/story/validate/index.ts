@@ -73,3 +73,23 @@ export function runGates(markdown: string, facts: Fact[], opts: GateOptions = {}
   ];
   return gates.flatMap((gate) => gate(markdown, facts));
 }
+
+/**
+ * Bumped whenever a gate is added or tightened. Stored on every generated
+ * chapter, so a tightening can REACH text already written — which nothing could
+ * do before, because `ai-cache.ts` holds an answer for 30 days and cannot delete
+ * an entry, and the stored row outlives the cache.
+ *
+ * The staleness route reads it beside `sourceHash`: a chapter written under an
+ * older set is out of date in exactly the sense the badge already means — the
+ * words on the page are not the words this build would write.
+ *
+ * ⚠️ Bumping this reports every stored chapter in every firm out of date at
+ * once. That is correct and it is also a support event: say so in the release
+ * note, and never bump it for a gate's message wording.
+ *
+ * 1  `GateId` at this plan's merge-base (`151fee59c`) — six gates: facts,
+ *    readability, advice, voice, labels, register.
+ * 2  This plan's Task 5 adds `foreignName` as a seventh gate (`foreign-names.ts`).
+ */
+export const GATE_VERSION = 2;

@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { PlanStoryChapterRow } from "@/db/schema";
 import type { StoryContext } from "@/lib/presentations/story/types";
 import { isChapterId, CHAPTER_IDS } from "../types";
+import { GATE_VERSION } from "../validate";
 
 const m = vi.hoisted(() => ({ loadStoryContext: vi.fn(), listStoryChapters: vi.fn() }));
 
@@ -55,6 +56,7 @@ const row = (over: Partial<PlanStoryChapterRow>): PlanStoryChapterRow => ({
   editedText: null,
   editedAt: null,
   sourceHash: null,
+  gateVersion: GATE_VERSION,
   aiSuppressed: false,
   error: null,
   reviewedAt: null,

@@ -8,6 +8,7 @@ import { db } from "@/db";
 import { planStoryChapters, type PlanStoryChapterRow } from "@/db/schema";
 import type { ChapterId } from "./types";
 import type { GeneratedChapter } from "./generate";
+import { GATE_VERSION } from "./validate";
 
 /**
  * Which register a chapter's words were written in. The same two values the
@@ -98,10 +99,24 @@ export function hasNewerGeneration(row: {
   return row.generatedAt.getTime() > row.editedAt.getTime();
 }
 
-/** True when the plan has moved since this chapter was generated. Never true
- *  for a chapter that has not been generated at all. */
-export function isChapterStale(row: { sourceHash: string | null }, currentHash: string): boolean {
-  return row.sourceHash != null && row.sourceHash !== currentHash;
+/**
+ * True when the plan has moved since this chapter was generated, OR the gate
+ * set has — both live behind the SAME guard, so neither is ever true for a
+ * chapter that has not been generated at all. A never-generated row carries
+ * the `gate_version` column's own default, not a real answer.
+ *
+ * `gateVersion` is optional so a caller that only means to ask about the plan
+ * moving — this file's own pinned tests among them — need not supply one; a
+ * missing value cannot make a row stale on the dimension it did not ask about.
+ */
+export function isChapterStale(
+  row: { sourceHash: string | null; gateVersion?: number },
+  currentHash: string,
+): boolean {
+  return (
+    row.sourceHash != null &&
+    (row.sourceHash !== currentHash || (row.gateVersion ?? GATE_VERSION) < GATE_VERSION)
+  );
 }
 
 /**
@@ -252,6 +267,7 @@ export async function upsertGeneratedChapter(args: {
       generatedAt: now,
       generatedByUserId,
       sourceHash: chapter.sourceHash,
+      gateVersion: chapter.gateVersion,
       aiSuppressed: chapter.aiSuppressed,
       error: chapter.error,
     })
@@ -268,6 +284,13 @@ export async function upsertGeneratedChapter(args: {
         // check to the wrong voice.
         generatedByUserId,
         sourceHash: chapter.sourceHash,
+        // Also unconditional, and for the same reason. This run's gate set
+        // applied whether or not the model produced new words — never through
+        // `stampedWhenTextChanges`, or an advisor who regenerates under a
+        // newer gate set and gets byte-identical prose back keeps the OLD
+        // stamp, and the row reports stale forever with no regenerate able to
+        // clear it.
+        gateVersion: chapter.gateVersion,
         aiSuppressed: chapter.aiSuppressed,
         // Written on every run, null included: a stored outage that outlives
         // the outage tells the advisor the assistant is still down.

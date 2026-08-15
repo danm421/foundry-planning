@@ -13,7 +13,7 @@ import {
 } from "@/lib/presentations/ai-cache";
 import { buildChapterPrompt, chapterSourceHash } from "./chapters/prompts";
 import { CHAPTERS, chapterEnumerates } from "./chapters/registry";
-import { runGates, type GateFailure } from "./validate";
+import { runGates, GATE_VERSION, type GateFailure } from "./validate";
 import {
   factsForChapter,
   type ChapterId,
@@ -137,6 +137,10 @@ export interface GeneratedChapter {
   markdown: string;
   /** SHA-256 of the first-attempt prompt — the staleness key. */
   sourceHash: string;
+  /** `GATE_VERSION` this chapter was judged against — the other staleness key,
+   *  beside `sourceHash`. See `validate/index.ts` for what it catches that a
+   *  prompt hash cannot. */
+  gateVersion: number;
   /** True when the gates rejected both attempts (or the call failed) and the
    *  deterministic narrative is what rendered. */
   aiSuppressed: boolean;
@@ -301,6 +305,7 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
     chapterId,
     markdown: narrative,
     sourceHash,
+    gateVersion: GATE_VERSION,
     aiSuppressed: true,
     failures,
     error,
@@ -328,7 +333,7 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
       // is the only other escape and no UI sends it.
       if (hit && hasSubstance(cachedMarkdown) && aboutThePlan(cachedMarkdown)) {
         return {
-          chapterId, markdown: cachedMarkdown, sourceHash, aiSuppressed: false,
+          chapterId, markdown: cachedMarkdown, sourceHash, gateVersion: GATE_VERSION, aiSuppressed: false,
           failures: [], error: null, generatedAt: hit.generatedAt, cached: true,
         };
       }
@@ -406,7 +411,7 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
       console.warn("[plan-story] cache write failed (non-fatal)", chapterId, err);
     }
     return {
-      chapterId, markdown, sourceHash, aiSuppressed: false,
+      chapterId, markdown, sourceHash, gateVersion: GATE_VERSION, aiSuppressed: false,
       failures: [], error: null, generatedAt, cached: false,
     };
   } catch (err) {

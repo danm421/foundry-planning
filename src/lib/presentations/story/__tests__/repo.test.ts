@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { GeneratedChapter } from "../generate";
+import { GATE_VERSION } from "../validate";
 
 // Only `@/db` is mocked — the schema and drizzle-orm are real, so every
 // assertion below reads the actual SQL object the repository builds (the
@@ -44,6 +45,7 @@ const chapter = (over: Partial<GeneratedChapter> = {}): GeneratedChapter => ({
   chapterId: "planInOnePage",
   markdown: "Your plan holds.",
   sourceHash: "hash-1",
+  gateVersion: GATE_VERSION,
   aiSuppressed: false,
   failures: [],
   error: null,
@@ -112,6 +114,19 @@ describe("isChapterStale", () => {
 
   it("is not stale when nothing has been generated yet", () => {
     expect(isChapterStale({ sourceHash: null }, "aaa")).toBe(false);
+  });
+
+  // The gate check lives behind the SAME `sourceHash != null` guard as the
+  // hash check above, so it never fires on a row nothing has generated — a
+  // never-generated row still carries the column default `1`.
+  it("is stale when the row was written under an older gate set", () => {
+    expect(isChapterStale({ sourceHash: "aaa", gateVersion: GATE_VERSION - 1 }, "aaa")).toBe(true);
+  });
+
+  // The other direction, so bumping `GATE_VERSION` is not a way to report
+  // every chapter of every report permanently stale.
+  it("is fresh when the row was written under the current gate set", () => {
+    expect(isChapterStale({ sourceHash: "aaa", gateVersion: GATE_VERSION }, "aaa")).toBe(false);
   });
 });
 
@@ -411,6 +426,24 @@ describe("upsertGeneratedChapter", () => {
     const { values, set } = await upsertArgs();
     expect(values.generatedByUserId).toBe("user_42");
     expect(set.generatedByUserId).toBe("user_42");
+  });
+
+  /**
+   * ⚠️⚠️ Unconditional, exactly as `sourceHash` beside it is, and NEVER
+   * through `stampedWhenTextChanges`.
+   *
+   * An advisor who regenerates under a newer gate set and gets byte-identical
+   * prose back must still have the row's stamp move. Conditioned on the words
+   * changing, that run would leave the OLD version in place — the row reports
+   * stale forever, and no amount of regenerating can clear it.
+   */
+  it("stamps the gate version on every run, even when the words are unchanged", async () => {
+    const { values, set } = await upsertArgs({ gateVersion: 3 });
+    expect(values.gateVersion).toBe(3);
+    // A plain value, not a `case when … is distinct from …` fragment — proof
+    // this does not move through `stampedWhenTextChanges` the way
+    // `generatedAt` does.
+    expect(set.gateVersion).toBe(3);
   });
 
   /**
