@@ -1271,6 +1271,12 @@ describe("the whole story, read through", () => {
     fireEvent.click(screen.getByRole("button", { name: OPEN }));
   }
 
+  /** One chapter's block inside the read-through — the `<section>` its heading
+   *  sits in. The article's sections are unnamed, so the heading is the handle. */
+  function chapter(title: string): HTMLElement {
+    return within(whole()).getByRole("heading", { name: title }).parentElement as HTMLElement;
+  }
+
   it("reads the whole story through, in document order, with nothing editable", async () => {
     renderPanel();
     await readThrough();
@@ -1279,8 +1285,39 @@ describe("the whole story, read through", () => {
     expect(within(whole()).getAllByRole("heading").map((h) => h.textContent)).toEqual(
       CHAPTERS.map((c) => c.title),
     );
-    // …and not one control the advisor could type into by accident.
+    // …and not one control the advisor could type into, pick from or press by
+    // accident. Three roles because a row carries all three: the textarea is a
+    // `textbox`, Task 9's Tone and Length selects are `combobox`es, and Mark
+    // reviewed / Regenerate / Save as a voice sample are `button`s. `textbox`
+    // alone would let a whole row's controls through.
     expect(within(whole()).queryAllByRole("textbox")).toHaveLength(0);
+    expect(within(whole()).queryAllByRole("combobox")).toHaveLength(0);
+    expect(within(whole()).queryAllByRole("button")).toHaveLength(0);
+  });
+
+  /**
+   * ⚠️ NO `aria-pressed`, and the label changes instead — you pick one.
+   * "Back to editing, toggle button, pressed" announces the pressed state
+   * against the action NOT yet taken, which is backwards.
+   *
+   * This is the opposite choice from every other toggle in the repo, so it is
+   * pinned here: `transactions-list.tsx:302` ("Unreviewed"),
+   * `ownership-editor.tsx:122` (a fixed `label` prop) and
+   * `plaid-account-decision-row.tsx:237` ("Add as new") all keep one label and
+   * let `aria-pressed` carry the state. They are filters and choices; this one
+   * replaces the whole panel body, so the label is the honest place for it.
+   */
+  it("carries its state in the label rather than a pressed attribute", async () => {
+    renderPanel();
+    await screen.findByText(CHAPTERS[0].title);
+    const toggle = screen.getByRole("button", { name: OPEN });
+    expect(toggle.getAttribute("aria-pressed")).toBeNull();
+
+    fireEvent.click(toggle);
+    const back = screen.getByRole("button", { name: /back to editing/i });
+    expect(back.getAttribute("aria-pressed")).toBeNull();
+    // The label really is the state: the old one is gone, not sitting beside it.
+    expect(screen.queryByRole("button", { name: OPEN })).toBeNull();
   });
 
   /**
@@ -1370,8 +1407,48 @@ describe("the whole story, read through", () => {
   it("says so where a chapter has nothing to read yet", async () => {
     renderPanel();
     await readThrough();
-    const blank = within(whole()).getByRole("heading", { name: CHAPTERS[1].title })
-      .parentElement as HTMLElement;
+    expect(within(chapter(CHAPTERS[1].title)).getByText(/nothing written/i)).toBeTruthy();
+  });
+
+  /**
+   * ⚠️⚠️ …and "yet" is a promise this report cannot keep on the five chapters
+   * that need a proposal to recommend — `whatWeRecommend`, `willTheMoneyLast`,
+   * `whatYouCanSpend`, `whatsLeftForPeople`, `whatYoullPayInTax`
+   * (`requiresProposal` in `chapters/registry.ts`). On a base-only story
+   * `storyCandidates` marks every one of them `candidate: false`, nothing the
+   * advisor does writes them, and `printedChapters` drops them from the report
+   * outright. Telling the advisor to wait is the wrong sentence.
+   *
+   * ⚠️ `=== false`, never a falsy check: the field is OPTIONAL, and a payload
+   * that does not answer must read as "this might be writable", exactly as the
+   * Regenerate button's own `!== false` does.
+   */
+  it("does not promise words that can never arrive on a chapter this report cannot write", async () => {
+    stubFetch([CHAPTERS[0], { ...CHAPTERS[1], candidate: false }]);
+    renderPanel();
+    await readThrough();
+
+    const blank = chapter(CHAPTERS[1].title);
+    expect(within(blank).queryByText(/nothing written/i)).toBeNull();
+    expect(within(blank).getByText(/needs a proposal/i)).toBeTruthy();
+  });
+
+  /**
+   * ⚠️⚠️ The OPTIONAL half, and the only case that can tell `=== false` from a
+   * falsy check. A payload that does not answer `candidate` — one from before
+   * the field existed — must read as "this might still be written", never as
+   * "this report will never write it". Both tests above pass under
+   * `!row.candidate`; measured, and this is the one that does not.
+   */
+  it("does not blame a proposal when the payload never said whether the chapter is writable", async () => {
+    const unanswered = { ...CHAPTERS[1] };
+    delete unanswered.candidate;
+    stubFetch([CHAPTERS[0], unanswered]);
+    renderPanel();
+    await readThrough();
+
+    const blank = chapter(CHAPTERS[1].title);
+    expect(within(blank).queryByText(/needs a proposal/i)).toBeNull();
     expect(within(blank).getByText(/nothing written/i)).toBeTruthy();
   });
 });

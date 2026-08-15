@@ -18,8 +18,8 @@
 //    surfaces would start disagreeing about what the advisor approved.
 "use client";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
-// The same split the printed sheet uses, from a module that holds nothing else —
-// see its own header for why it is not `view-model.ts`.
+// The same split the printed sheet uses, from a module whose own import closure
+// is one module — itself. See its header for why it is not `view-model.ts`.
 import { splitParagraphs } from "@/lib/presentations/pages/plan-story/paragraphs";
 import { sampleRefusal } from "@/lib/presentations/story/voice/refusal";
 import { chapterIgnoresFullLength } from "@/lib/presentations/story/chapters/registry";
@@ -122,21 +122,29 @@ const COULD_NOT_HARVEST = "Couldn't save that as a voice sample. Nothing was sto
  */
 const HARVESTED = "Saved to your voice samples. It's off until you turn it on in Settings → Voice.";
 
+const WHOLE_STORY = "The whole story";
+
 /**
- * The read-through's own name, and what a chapter with no words says.
+ * What a chapter with no words says — and there are TWO answers, because a
+ * heading over a blank reads as a rendering failure either way and the reason is
+ * not the same.
  *
- * Five of the fourteen chapters can never be written for a base-only report, and
- * any chapter can be emptied on purpose — so a read-through of a half-written
- * story reaches headings with nothing under them. A blank there reads as a
- * rendering failure, and this says which it is.
+ * `NOTHING_TO_READ` is the ordinary one: nobody has written it yet, and pressing
+ * Generate all would. `NEEDS_A_PROPOSAL` is for a row the report can never
+ * write, and "yet" there is a promise it cannot keep — the advisor would wait
+ * for prose that has nothing to come from. Told apart by `candidate`, the flag
+ * the Regenerate button already branches on further down: `storyCandidates`
+ * (`chapters/registry.ts`) clears it on the five `requiresProposal` chapters —
+ * `whatWeRecommend`, `willTheMoneyLast`, `whatYouCanSpend`, `whatsLeftForPeople`
+ * and `whatYoullPayInTax` — whenever the story is base-only.
  *
  * ⚠️ Deliberately NOT `statusLabel`'s "Not generated yet". That answers a
  * different question: a chapter the advisor generated and then emptied is
- * "Edited" by that label and still has nothing to read. This sentence is about
- * the WORDS, which is what a read-through is for.
+ * "Edited" by that label and still has nothing to read. These are about the
+ * WORDS, which is what a read-through is for.
  */
-const WHOLE_STORY = "The whole story";
 const NOTHING_TO_READ = "Nothing written for this chapter yet.";
+const NEEDS_A_PROPOSAL = "This chapter needs a proposal to recommend, so this report won't write it.";
 
 /**
  * The advisor's words for the two settings. Keyed on the stored value, so a
@@ -710,13 +718,18 @@ export function PlanStoryReviewPanel({
             rewrite; both of those replace prose, and watching them land is a
             reason to be in this view rather than out of it.
 
-            `aria-pressed` rather than `aria-expanded`: it is a mode the panel
-            stays in until it is pressed again, not a disclosure hanging off the
-            button. */}
+            ⚠️⚠️ NO `aria-pressed`, and that is the opposite of what every other
+            toggle in this repo does — `transactions-list.tsx:302`
+            ("Unreviewed"), `ownership-editor.tsx:122` (a fixed `label` prop) and
+            `plaid-account-decision-row.tsx:237` ("Add as new") all hold one
+            label and let the attribute carry the state. Those are filters and
+            choices. This one REPLACES the panel body, so it changes its label
+            instead — and you pick one or the other. Both together announce "Back
+            to editing, toggle button, pressed", which states the pressed state
+            against the action not yet taken. A test pins the absence. */}
         <button
           type="button"
           className="ml-auto rounded border border-hair px-3 py-1.5 text-sm text-ink-2 hover:text-ink"
-          aria-pressed={reading}
           onClick={() => setReading((r) => !r)}
         >
           {reading ? "Back to editing" : "Read it through"}
@@ -733,10 +746,19 @@ export function PlanStoryReviewPanel({
         </button>
       </div>
 
-      {/* The whole story, end to end, as the client will read it — instead of
-          fourteen edit boxes, not alongside them: two copies of every chapter
-          would double a panel that already carries fourteen textareas, and a
-          screen reader would meet each title twice.
+      {/* The whole story, end to end, in the order the report prints it —
+          instead of fourteen edit boxes, not alongside them: two copies of every
+          chapter would double a panel that already carries fourteen textareas,
+          and a screen reader would meet each title twice.
+
+          ⚠️ The ORDER is the report's; the MEMBERSHIP is this panel's. What
+          prints is `printedChapters(options)` (`options-schema.ts`), which also
+          drops every chapter the advisor switched off in `sections` — and this
+          component is not given the options, deliberately. So an advisor who
+          switched three chapters off reads a longer story here than the client
+          gets. Do not "fix" that by taking an options prop: the print list is
+          the renderer's to answer, and a second spelling of it here is rule 3 at
+          the top of this file happening again.
 
           ⚠️ `row.text` is the STORED text, deliberately, not the draft in the
           box. This is what an advisor reads to decide the story hangs together,
@@ -761,7 +783,13 @@ export function PlanStoryReviewPanel({
               <section key={row.chapterId} className="flex flex-col gap-2">
                 <h3 className="text-sm font-semibold text-ink">{row.title}</h3>
                 {paragraphs.length === 0 ? (
-                  <p className="text-xs text-ink-3">{NOTHING_TO_READ}</p>
+                  // `=== false`, never a falsy check — the field is optional, and
+                  // a payload that does not answer must not be read as "nothing
+                  // here can be written". Same rule as the Regenerate button's
+                  // `!== false` below, from the other side.
+                  <p className="text-xs text-ink-3">
+                    {row.candidate === false ? NEEDS_A_PROPOSAL : NOTHING_TO_READ}
+                  </p>
                 ) : (
                   paragraphs.map((paragraph, i) => (
                     // Index keys: a paragraph has no identity of its own, and the

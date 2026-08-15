@@ -1,12 +1,24 @@
 // The one spelling of "turn a chapter's stored text into printable paragraphs",
 // shared by the PDF's view-model and the advisor's whole-story read-through.
 //
-// ⚠️ Its own module rather than two exports on `view-model.ts`. The review panel
-// is a `"use client"` component, and `view-model.ts` imports the glossary
-// (`story/glossary`), the what-we-recommend narrator, the chapter registry and
-// the options schema — all of that would follow a two-line function into the
-// client bundle. Nothing here reaches past a regular expression, so both sides
-// can hold it, and there is still only one spelling of the split.
+// ⚠️ Its own module rather than two exports on `view-model.ts`, because the
+// review panel is a `"use client"` component and importing the view-model would
+// grow its bundle for a two-line function.
+//
+// MEASURED, by walking the value-import graph from each entry point rather than
+// by reading import lists — and most of what `view-model.ts` pulls turned out to
+// be in the panel's bundle already, costing nothing. Before this module existed
+// the panel's closure was 25 modules, and `chapters/registry`,
+// `chapters/what-we-recommend` and `story/facts` were all three in it, reached
+// through the `chapterIgnoresFullLength` import the panel has always held. So of
+// the view-model's own imports exactly two are genuinely new to the client:
+// `story/glossary` and `plan-story/options-schema`, plus `view-model.ts` itself.
+//
+// That is a smaller saving than "it drags the narrator in" would suggest, and it
+// is the real one. The other half of the argument does not depend on size: a
+// module holding nothing but this cannot grow a client-only import by accident,
+// where a shared `view-model.ts` export would. Its own closure is ONE module —
+// itself. It imports nothing.
 //
 // It splits and strips, and stops there. The sheet's own budget —
 // `MAX_PARAGRAPHS`, `MAX_PARAGRAPHS_WITH_CARDS`, `restatesCard` — stays in the

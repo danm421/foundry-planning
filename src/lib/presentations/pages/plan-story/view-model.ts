@@ -15,7 +15,9 @@ import {
 } from "@/lib/presentations/story/types";
 import { printedChapters, type PlanStoryOptions } from "./options-schema";
 // Its own module so the review panel — a client component — can split the same
-// way without pulling this file's glossary and narrator imports with it.
+// way without pulling this file into its bundle. Measured: `story/glossary` and
+// `./options-schema` are the two modules that would genuinely be new there; see
+// `paragraphs.ts` for the rest of the count.
 import { splitParagraphs } from "./paragraphs";
 
 export interface PlanStoryChapterView {
