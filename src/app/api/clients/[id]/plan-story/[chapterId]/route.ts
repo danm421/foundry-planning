@@ -26,25 +26,34 @@ function isChapterId(v: unknown): v is ChapterId {
  * stand behind them, and let a rewrite their own version was standing in front
  * of through.
  *
- * Both WRITERS — `updateChapterText` and `markChapterReviewed` — are upserts, so
- * each either stores the write or throws. Neither has a zero-row outcome to
- * check for, and neither has a chapter that "has no row yet" to 404 on: the
- * panel offers every chapter whether one was ever generated or not, so writing
- * one from scratch is a first-class path rather than an edge case.
+ * ⚠️ Everything below is about this handler's calls into `story/repo`, and
+ * about those ONLY. It is not a claim about the handler as a whole, which
+ * reads other things and can fail for other reasons — `resolveStoryScenarioId`
+ * further down is a scenario lookup with a 404 of its own, and
+ * `requireClientEditAccess` and `requireActiveSubscriptionForFirm` ahead of it
+ * are database reads too.
  *
- * There is also exactly ONE read, `loadStoryChapter`, and only on the accept
- * path. It is NOT an authorization check — it is scoped on the same
- * already-authorized clientId as everything else here, and its job is to
+ * Four of those repo calls touch storage. Three are the WRITERS —
+ * `updateChapterText` for an edit and again for an accept, plus
+ * `markChapterReviewed` — and all three are upserts, so each either stores the
+ * write or throws. None of them has a zero-row outcome to check, and none needs
+ * a "this chapter has no row yet" 404: the panel offers every chapter whether
+ * one was ever generated or not, so writing one from scratch is a first-class
+ * path rather than an edge case.
+ *
+ * The fourth, `loadStoryChapter`, is a read, and the accept path is the only
+ * one that makes it — the edit and review paths reach `story/repo` without
+ * reading, which a test pins. It is not an authorization check: it is scoped on
+ * the same already-authorized clientId as the writers, and its job is to
  * confirm the row really is shadowing a newer generation before the accept
- * throws the advisor's version away. So it is this handler's only zero-row
- * branch, and it answers 409 (the row moved under a click that was correct when
- * it was made) rather than 404 (the chapter is real either way). The edit and
- * review paths stay read-free, and a test pins them that way.
+ * throws the advisor's version away. Its miss answers 409, because the row
+ * moved under a click that was correct when it was made.
  *
- * That leaves `requireClientEditAccess` the only thing standing between a
- * caller and another client's row, which is why it runs ahead of all four calls
- * — the edit's upsert, the accept's read and its upsert, and the review's
- * upsert.
+ * (`hasNewerGeneration`, imported from the same module, is pure and touches
+ * nothing.)
+ *
+ * `requireClientEditAccess` is what stands between a caller and another
+ * client's chapter row, which is why it runs ahead of all four.
  */
 export async function PATCH(
   request: NextRequest,
