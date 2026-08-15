@@ -12,6 +12,7 @@ import type {
   PlanSettings,
   SavingsRule,
 } from "@/engine/types";
+import type { EquityGrant, StockOptionPlan } from "@/engine/equity/types";
 
 // Fully typed fixtures, no casts — the same idiom as `map-items.test.ts`. A cast
 // to `MapBoardsInput` would hide a field-shape drift between this fixture and
@@ -291,5 +292,85 @@ describe("buildMapBoards", () => {
       title: "Riley's life expectancy",
       year: 2067,
     });
+  });
+});
+
+/** A stock_options account's `value` column is a permanent "0" — the shares
+ *  live in the grants table. The boards read the account, so without a
+ *  derivation the Map draws a real position as a $0 card and understates net
+ *  worth by its whole value. */
+describe("buildMapBoards — stock_options accounts", () => {
+  const rsuGrant: EquityGrant = {
+    id: "g1",
+    grantNumber: "RS-1",
+    grantType: "rsu",
+    grantYear: 2024,
+    sharesGranted: 1000,
+    has83bElection: false,
+    fmvAtGrant: null,
+    strikePrice: null,
+    strikeDiscountPct: null,
+    expirationYear: null,
+    strategy: null,
+    tranches: [
+      { id: "t1", vestYear: 2030, shares: 1000, sharesExercised: 0, sharesSold: 0, strategy: null },
+    ],
+    plannedEvents: [],
+  };
+
+  const equityPlan: StockOptionPlan = {
+    accountId: "so-1",
+    ticker: "TSLA",
+    pricePerShare: 100,
+    growthRate: 0,
+    destinationAccountId: null,
+    autoCreateDestination: true,
+    sellToCover: false,
+    withholdingRate: 0.22,
+    strategy: {
+      exerciseTiming: "at_vest",
+      exerciseYear: null,
+      sellTiming: "hold",
+      sellYear: null,
+      sellPercentPerYear: null,
+      sellStartYear: null,
+    },
+    owner: "client",
+    grants: [rsuGrant],
+  };
+
+  const equityAccount = account({
+    id: "so-1",
+    name: "TSLA Options",
+    category: "stock_options",
+    subType: "rsu",
+    value: 0,
+    basis: 0,
+  });
+
+  const equityInput = () =>
+    input({
+      effectiveTree: tree({
+        accounts: [account(), equityAccount],
+        stockOptionPlans: [equityPlan],
+      }),
+    });
+
+  it("draws the card at the value of the shares still under grant, not the stored 0", () => {
+    const { items } = buildMapBoards(equityInput());
+    expect(items.find((i) => i.id === "so-1")?.value).toBe(100_000);
+  });
+
+  it("counts that same derived value in net worth", () => {
+    // 500,000 brokerage + 100,000 of unvested RSU − 200,000 mortgage.
+    expect(buildMapBoards(equityInput()).netWorth).toBe(400_000);
+  });
+
+  it("leaves a stock_options account with no grants entered at 0", () => {
+    const { items, netWorth } = buildMapBoards(
+      input({ effectiveTree: tree({ accounts: [account(), equityAccount] }) }),
+    );
+    expect(items.find((i) => i.id === "so-1")?.value).toBe(0);
+    expect(netWorth).toBe(300_000);
   });
 });

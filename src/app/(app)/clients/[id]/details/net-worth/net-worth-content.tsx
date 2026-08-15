@@ -197,6 +197,8 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
     familyMembers: effectiveTree.familyMembers ?? [],
     accountMetaById,
     linkedSourceById,
+    stockOptionPlans: effectiveTree.stockOptionPlans,
+    planStartYear,
   });
 
   const liabilityProps: LiabilityRow[] = effectiveTree.liabilities.map((l) => {

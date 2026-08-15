@@ -101,6 +101,19 @@ export function buildScenarioDesiredFields(
   }
   const merged: Record<string, unknown> = { ...out, ...patch };
 
+  // A stock_options account's `value` column is a permanent "0" — every share
+  // lives in `stock_option_grants`, and the number this row carries was DERIVED
+  // for display (`lib/accounts/equity-derived-values.ts`). Writing it back would
+  // turn a computed figure into stored data: the position would stop tracking
+  // its own grants, and the projection would then grow that frozen number as if
+  // it were a real balance.
+  //
+  // Stripped here rather than in `NON_WRITABLE_KEYS` because `value` is a real,
+  // advisor-entered field for every OTHER category — the set is keyed by field,
+  // and this exclusion is keyed by the row's category. Applied AFTER the patch
+  // merge so no caller can reintroduce it.
+  if (row.category === "stock_options") delete merged.value;
+
   // NEVER emit `growthRate: null`. `AccountRow.growthRate` is null for every
   // account whose rate is DERIVED (model_portfolio, ticker_portfolio,
   // asset_mix, default, inflation) — null means "this view carries no rate",

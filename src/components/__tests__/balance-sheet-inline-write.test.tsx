@@ -409,3 +409,53 @@ describe("BalanceSheetView liability row under permission='view'", () => {
     expect(screen.queryByRole("button", { name: "Edit Home Mortgage" })).not.toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// 5. Equity rows — the value cell is READ-ONLY.
+//
+//    A stock_options account's displayed value is derived from its grants
+//    (`lib/accounts/equity-derived-values.ts`); the stored column is a
+//    permanent "0". An editable cell here would accept a number that the next
+//    render silently recomputes away, and — before the category strip in
+//    `buildScenarioDesiredFields` — would have persisted the derived figure as
+//    real data.
+// ---------------------------------------------------------------------------
+
+describe("BalanceSheetView equity rows", () => {
+  const EQUITY_ACCOUNT = {
+    ...ACCOUNT,
+    id: "so-1",
+    name: "TSLA Options",
+    category: "stock_options" as const,
+    subType: "rsu",
+    value: "42000",
+    basis: "0",
+  };
+
+  function renderWithEquity() {
+    return render(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <BalanceSheetView {...BASE_PROPS} accounts={[ACCOUNT, EQUITY_ACCOUNT]} />
+      </ClientAccessProvider>,
+    );
+  }
+
+  it("offers no amount editor on a stock_options row", () => {
+    renderWithEquity();
+    fireEvent.click(screen.getAllByRole("button", { name: /stock options/i })[0]);
+
+    // The row is on screen and shows its derived value...
+    expect(screen.getByText("TSLA Options")).toBeTruthy();
+    // ...but nothing offers to edit it.
+    expect(screen.queryByRole("button", { name: "Edit amount for TSLA Options" })).toBeNull();
+  });
+
+  it("still offers one on an ordinary asset row in the same table", () => {
+    // Negative control: proves the assertion above is about the CATEGORY and
+    // not about the row being missing, the group being collapsed, or edit
+    // permission being off.
+    renderWithEquity();
+    expandTaxable();
+    expect(screen.getByRole("button", { name: "Edit amount for Brokerage Account" })).toBeTruthy();
+  });
+});

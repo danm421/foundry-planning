@@ -7,6 +7,7 @@
 //
 // Pure: no DB, no React, no `new Date()`. The caller passes `today` so ages are
 // reproducible in tests and cannot drift a Jan-1 DOB across timezones.
+import { withDerivedEquityValues } from "@/lib/accounts/equity-derived-values";
 import { ageOnDate, birthYearFromDob, yearForAge } from "@/lib/age-year";
 import { buildClientMilestones } from "@/lib/milestones";
 import { buildMapGoals, type MapGoal } from "./goals";
@@ -95,10 +96,21 @@ export function buildMapBoards(input: MapBoardsInput): MapBoards {
     nameByEntityId: new Map(entityRows.map((e) => [e.id, e.name])),
   };
 
-  const accountById = new Map<string, Account>(effectiveTree.accounts.map((a) => [a.id, a]));
+  // Every account read below comes from HERE, not from `effectiveTree.accounts`
+  // — a stock_options account's stored value is a permanent "0" and its real
+  // balance lives in the grants. Substituting once, above the item list, the
+  // net-worth sum and the lookup map together, is what stops the three from
+  // disagreeing about what a position is worth.
+  const accounts = withDerivedEquityValues(
+    effectiveTree.accounts,
+    effectiveTree.stockOptionPlans,
+    planStartYear,
+  );
+
+  const accountById = new Map<string, Account>(accounts.map((a) => [a.id, a]));
 
   const items: MapItem[] = [
-    ...effectiveTree.accounts.map((a: Account) =>
+    ...accounts.map((a: Account) =>
       toMapItem(a, "account", ACCOUNT_CATEGORY[a.category], a.value, ctx),
     ),
     ...effectiveTree.liabilities.map((l: Liability) =>
@@ -153,9 +165,11 @@ export function buildMapBoards(input: MapBoardsInput): MapBoards {
     socialSecurity: { incomes: effectiveTree.incomes, clientInfo: effectiveClient },
   });
 
-  // Net worth = assets − debts, the same signs the item list carries.
+  // Net worth = assets − debts, the same signs the item list carries — and off
+  // the SAME derived `accounts` the cards are drawn from, so the total can
+  // never disagree with the cards that make it up.
   const netWorth =
-    effectiveTree.accounts.reduce((sum, a) => sum + a.value, 0) -
+    accounts.reduce((sum, a) => sum + a.value, 0) -
     effectiveTree.liabilities.reduce((sum, l) => sum + l.balance, 0);
 
   const people = {

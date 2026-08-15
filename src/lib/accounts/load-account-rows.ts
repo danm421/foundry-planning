@@ -15,6 +15,8 @@ import { accounts } from "@/db/schema";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 import type { AccountMeta } from "@/lib/scenario/account-meta";
 import type { AccountRow, LinkedSource } from "@/components/balance-sheet-view";
+import type { StockOptionPlan } from "@/engine/equity/types";
+import { withDerivedEquityValues } from "./equity-derived-values";
 
 export type AccountMetaRow = Awaited<ReturnType<typeof loadAccountMetaRows>>[number];
 
@@ -69,6 +71,14 @@ export interface BuildAccountRowsArgs {
   familyMembers: readonly { id: string; role: string; firstName: string; lastName?: string | null }[];
   accountMetaById: ReadonlyMap<string, AccountMeta>;
   linkedSourceById: ReadonlyMap<string, LinkedSource>;
+  /** `effectiveTree.stockOptionPlans`. Required, not optional: a stock_options
+   *  account's stored value is a permanent "0", so a caller that omitted these
+   *  would silently render a real equity position as $0 — the bug this exists
+   *  to close. Pass `[]` only when the tree genuinely has no plans. */
+  stockOptionPlans: readonly StockOptionPlan[] | undefined;
+  /** `effectiveTree.planSettings.planStartYear` — the year the derived equity
+   *  balance is priced at. */
+  planStartYear: number;
 }
 
 /** Structural stand-in for the engine `Account`. Declared locally so this
@@ -101,11 +111,19 @@ type EngineAccountLike = Parameters<typeof controllingEntity>[0] & {
 };
 
 export function buildAccountRows({
-  accounts: engineAccounts,
+  accounts,
   familyMembers,
   accountMetaById,
   linkedSourceById,
+  stockOptionPlans,
+  planStartYear,
 }: BuildAccountRowsArgs): AccountRow[] {
+  // Derived for DISPLAY only — see `equity-derived-values.ts`. The `value` this
+  // puts on the row is not data, which is why `buildScenarioDesiredFields`
+  // strips it for stock_options rows and the Net Worth value cell is read-only
+  // on them.
+  const engineAccounts = withDerivedEquityValues(accounts, stockOptionPlans, planStartYear);
+
   const clientFmId = familyMembers.find((fm) => fm.role === "client")?.id ?? null;
   const spouseFmId = familyMembers.find((fm) => fm.role === "spouse")?.id ?? null;
 

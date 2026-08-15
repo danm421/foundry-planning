@@ -274,6 +274,8 @@ export async function MapContent({ clientId: id, scenarioParam }: MapContentProp
       familyMembers: effectiveTree.familyMembers ?? [],
       accountMetaById,
       linkedSourceById: linkedSourceMapFrom(accountMetaRows),
+      stockOptionPlans: effectiveTree.stockOptionPlans,
+      planStartYear: effectiveTree.planSettings.planStartYear,
     }).map((r) => [r.id, r]),
   );
 

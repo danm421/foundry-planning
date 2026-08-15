@@ -1152,7 +1152,12 @@ export default function BalanceSheetView({
                           // A linked account's value is owned by the integration
                           // — editing it here would be overwritten on the next
                           // sync without warning.
-                          canEdit && a.linkedSource == null ? (
+                          //
+                          // A stock_options account's is owned by its grants for
+                          // the same reason: the number shown is derived from
+                          // them, so an edit here would be silently recomputed
+                          // away on the next render. Change the grants instead.
+                          canEdit && a.linkedSource == null && a.category !== "stock_options" ? (
                             <InlineAmount
                               amount={Number(a.value)}
                               label={a.name}
