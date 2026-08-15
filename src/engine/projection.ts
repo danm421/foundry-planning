@@ -1405,9 +1405,22 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if (!hasActivity) continue;
 
         // Resolve / lazily create the destination taxable account.
-        let destId =
-          plan.destinationAccountId ?? equityDestByPlan.get(plan.accountId) ?? null;
-        if (!destId && plan.autoCreateDestination) {
+        //
+        // A CASH account is never eligible to hold shares in kind (audit F31):
+        // booked there, employer stock stops appreciating, becomes fully
+        // spendable, and a later sell drains a balance no shares back it. So a
+        // plan that names no destination — or names a cash account — gets the
+        // synthetic taxable holding account instead of the old fall-through to
+        // household checking. The CASH legs (sale proceeds, strike outflow)
+        // still route to checking through creditCash below; only the in-kind
+        // leg is redirected.
+        const namedDest = plan.destinationAccountId;
+        const eligibleNamedDest =
+          namedDest != null && accountById.get(namedDest)?.category !== "cash"
+            ? namedDest
+            : null;
+        let destId = eligibleNamedDest ?? equityDestByPlan.get(plan.accountId) ?? null;
+        if (!destId) {
           destId = `equity-dest-${plan.accountId}`;
           equityDestByPlan.set(plan.accountId, destId);
           // Mirror applyAssetPurchases' synthetic-account creation. The
@@ -1463,7 +1476,6 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             planSettings.planEndYear,
           );
         }
-        if (!destId) destId = checkingId; // fallback: no destination → land value in checking
 
         const applied = applyEquityYear(result, destId, accountBalances, basisMap);
         const planAcqValue = result.acquisitions.reduce((s, a) => s + a.value, 0);
@@ -1487,12 +1499,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // offset the checking inflow so net worth isn't double-counted. The
         // value movements already landed on accountBalances/basisMap inside
         // applyEquityYear; here we keep the ledger's running endingValue and
-        // contributions/distributions in step with them.
-        // destId can fall back to checkingId when autoCreateDestination is false;
-        // don't post share-movement entries onto the household checking ledger
-        // (its flows net via checkingExternalDelta, and the cash still lands via
-        // the creditCash call below).
-        if (destId && destId !== checkingId && accountLedgers[destId]) {
+        // contributions/distributions in step with them. The sell leg posts
+        // `sellProceedsApplied`, not the gross — those are the same number
+        // unless the destination held less than the module sold, and posting
+        // the gross there would drift the ledger off the balance.
+        // destId is never the household checking id (cash accounts are refused
+        // above), so no share-movement entry can land on the checking ledger —
+        // its flows net via checkingExternalDelta, and the cash still lands via
+        // the creditCash call below.
+        if (accountLedgers[destId]) {
           if (planAcqValue > 0) {
             accountLedgers[destId].contributions += planAcqValue;
             accountLedgers[destId].endingValue += planAcqValue;
@@ -1503,13 +1518,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
               sourceId: plan.accountId,
             });
           }
-          if (result.sellProceeds > 0) {
-            accountLedgers[destId].distributions += result.sellProceeds;
-            accountLedgers[destId].endingValue -= result.sellProceeds;
+          if (applied.sellProceedsApplied > 0) {
+            accountLedgers[destId].distributions += applied.sellProceedsApplied;
+            accountLedgers[destId].endingValue -= applied.sellProceedsApplied;
             accountLedgers[destId].entries.push({
               category: "withdrawal",
               label: `${plan.ticker ?? "Equity"} shares sold`,
-              amount: -result.sellProceeds,
+              amount: -applied.sellProceedsApplied,
               sourceId: plan.accountId,
             });
           }

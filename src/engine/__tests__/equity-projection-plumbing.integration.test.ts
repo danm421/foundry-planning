@@ -187,7 +187,7 @@ describe("F10 — the equity destination account is a drawdown source", () => {
     startYear: DEFICIT_YEAR,
     endYear: DEFICIT_YEAR,
     growthRate: 0,
-    category: "other",
+    type: "other",
   };
 
   const years = runProjection(
@@ -371,5 +371,173 @@ describe("F30/F38 — equity cash OUT is reported, not just cash IN", () => {
     const proceeds = y.income.bySource[`equity-proceeds:${SO_ID}`];
     // 5,000 × (121 − 10) = $555,000 net of the strike already paid.
     expect(proceeds).toBeCloseTo(NQSO_SHARES * (fmv(EXERCISE_YEAR) - STRIKE), 2);
+  });
+});
+
+// ── F31 — in-kind shares never land in a cash account ───────────────────────
+
+describe("F31 — vested shares are never booked into a cash account", () => {
+  const acquiredValue = SHARES * fmv(VEST_YEAR); // $110,000 at vest
+
+  /** The reference run: a plan that mints its own destination account. */
+  const withDestination = runProjection(buildData({ stockOptionPlans: [HOLD_PLAN] }));
+
+  it("holds the shares outside cash when the plan names no destination", () => {
+    // Pre-fix this fell back to the household checking id and booked $110,000
+    // of employer stock into checking AS CASH: it stopped appreciating, became
+    // fully spendable, and a later sell drained a balance no shares backed.
+    const noDestination = runProjection(
+      buildData({
+        stockOptionPlans: [
+          { ...HOLD_PLAN, autoCreateDestination: false, destinationAccountId: null },
+        ],
+      }),
+    );
+    const vest = noDestination.find((y) => y.year === VEST_YEAR)!;
+    expect(vest.portfolioAssets.taxable[DEST_ID]).toBeCloseTo(acquiredValue * (1 + GROWTH), 0);
+
+    // And checking is untouched by the in-kind movement — every year matches
+    // the run that always had a destination.
+    for (const y of noDestination) {
+      const ref = withDestination.find((r) => r.year === y.year)!;
+      expect(y.portfolioAssets.cash[CHECKING.id] ?? 0).toBeCloseTo(
+        ref.portfolioAssets.cash[CHECKING.id] ?? 0,
+        4,
+      );
+    }
+  });
+
+  it("refuses a cash account the plan names explicitly", () => {
+    const SAVINGS: Account = {
+      id: "savings",
+      name: "Savings",
+      category: "cash",
+      subType: "savings",
+      titlingType: "jtwros",
+      value: 0,
+      basis: 0,
+      growthRate: 0,
+      rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+    const namedCash = runProjection(
+      buildData({
+        accounts: [CHECKING, SO_ACCOUNT, SAVINGS],
+        stockOptionPlans: [{ ...HOLD_PLAN, destinationAccountId: SAVINGS.id }],
+      }),
+    );
+    const vest = namedCash.find((y) => y.year === VEST_YEAR)!;
+    expect(vest.portfolioAssets.cash[SAVINGS.id] ?? 0).toBe(0);
+    expect(vest.portfolioAssets.taxable[DEST_ID]).toBeCloseTo(acquiredValue * (1 + GROWTH), 0);
+  });
+
+  it("lets the shares keep appreciating instead of freezing as cash", () => {
+    // The direct client-facing cost of the old behaviour: cash does not grow.
+    const noDestination = runProjection(
+      buildData({
+        stockOptionPlans: [
+          { ...HOLD_PLAN, autoCreateDestination: false, destinationAccountId: null },
+        ],
+      }),
+    );
+    const y2030 = noDestination.find((y) => y.year === 2030)!;
+    expect(y2030.portfolioAssets.taxable[DEST_ID]).toBeCloseTo(SHARES * fmv(2031), 0);
+    // Pre-fix the same position sat at a flat $110,000 inside checking.
+    expect(y2030.portfolioAssets.taxable[DEST_ID]).toBeGreaterThan(acquiredValue);
+  });
+
+  it("honours a named TAXABLE destination unchanged", () => {
+    // Regression guard: only cash destinations are overridden.
+    const BROKERAGE: Account = {
+      id: "brokerage",
+      name: "Brokerage",
+      category: "taxable",
+      subType: "brokerage",
+      titlingType: "jtwros",
+      value: 0,
+      basis: 0,
+      growthRate: GROWTH,
+      rmdEnabled: false,
+      realization: {
+        pctOrdinaryIncome: 0,
+        pctLtCapitalGains: 1,
+        pctQualifiedDividends: 0,
+        pctTaxExempt: 0,
+        turnoverPct: 0,
+      },
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+    const named = runProjection(
+      buildData({
+        accounts: [CHECKING, SO_ACCOUNT, BROKERAGE],
+        stockOptionPlans: [{ ...HOLD_PLAN, destinationAccountId: BROKERAGE.id }],
+      }),
+    );
+    const vest = named.find((y) => y.year === VEST_YEAR)!;
+    expect(vest.portfolioAssets.taxable[BROKERAGE.id]).toBeCloseTo(
+      acquiredValue * (1 + GROWTH),
+      0,
+    );
+    expect(vest.portfolioAssets.taxable[DEST_ID] ?? 0).toBe(0);
+  });
+});
+
+// ── F31 × F10 — selling shares the destination can no longer back ───────────
+// Now that the destination is a drawdown source (F10), a deficit year can
+// liquidate part of it before the plan's scheduled sale. The equity module
+// still sells the full share count. Pre-fix the balance was floored at zero
+// while the full proceeds were credited to checking — net worth grew by the
+// difference. The reconciliation drains what is there and credits only that.
+
+describe("F31 — a raided destination cannot manufacture sale proceeds", () => {
+  const DEFICIT_YEAR = 2029;
+  const SELL_YEAR = 2031;
+
+  const SELL_PLAN: StockOptionPlan = {
+    ...HOLD_PLAN,
+    grants: [
+      {
+        ...HOLD_PLAN.grants[0],
+        strategy: { sellTiming: "hold_then_sell_year", sellYear: SELL_YEAR },
+      },
+    ],
+  };
+  const BIG_EXPENSE: Expense = {
+    id: "exp-big",
+    name: "Big one-off",
+    annualAmount: 250_000,
+    startYear: DEFICIT_YEAR,
+    endYear: DEFICIT_YEAR,
+    growthRate: 0,
+    type: "other",
+  };
+
+  const years = runProjection(
+    buildData({ expenses: [BIG_EXPENSE], stockOptionPlans: [SELL_PLAN] }),
+  );
+  const preSell = years.find((y) => y.year === SELL_YEAR - 1)!;
+  const sell = years.find((y) => y.year === SELL_YEAR)!;
+  const available = preSell.portfolioAssets.taxable[DEST_ID]!;
+
+  it("really is under-funded going into the sale", () => {
+    // Fixture guard. The deficit year drew on the destination, so it holds far
+    // less than the 1,000 shares the module is about to sell.
+    expect(years.find((y) => y.year === DEFICIT_YEAR)!.withdrawals.byAccount[DEST_ID] ?? 0)
+      .toBeGreaterThan(0);
+    expect(available).toBeGreaterThan(0);
+    expect(available).toBeLessThan(SHARES * fmv(SELL_YEAR));
+  });
+
+  it("credits only the cash the destination could back", () => {
+    // Pre-fix this reported the full $161,051 while the account gave up
+    // $72,240 — $88,811 of net worth out of nothing.
+    expect(sell.income.bySource[`equity-proceeds:${SO_ID}`]).toBeCloseTo(available, 2);
+    expect(sell.portfolioAssets.taxable[DEST_ID] ?? 0).toBeCloseTo(0, 6);
+  });
+
+  it("keeps the destination's Portfolio Activity in step with its balance", () => {
+    // The ledger distribution must be what the account actually gave up, not
+    // the gross sale.
+    expect(sell.accountLedgers[DEST_ID]!.distributions).toBeCloseTo(available, 2);
   });
 });
