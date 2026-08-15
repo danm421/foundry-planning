@@ -294,26 +294,38 @@ function buildDefaultWithdrawalStrategy(
   return strategy;
 }
 
-/** Insert just-paid-out life-insurance proceeds accounts into the effective
- *  withdrawal strategy. The strategy is snapshotted at projection start from
- *  `data.accounts`, where these accounts were still `life_insurance` (no
- *  withdrawal priority via `categoryWithdrawalPriority`). Without this they are
- *  never drawn, so retirement assets liquidate ahead of available proceeds.
- *  Proceeds land in the taxable tier: strictly after every existing cash /
- *  taxable account, strictly before retirement. Mutates `strategy` in place;
- *  skips ids already present (idempotent across re-entry).
+/** Insert accounts that only became liquid INSIDE the year loop into the
+ *  effective withdrawal strategy. The strategy is snapshotted at projection
+ *  start from `data.accounts`, so anything the loop mints (or re-categorizes)
+ *  afterwards is invisible to the drawdown planner and is never drawn — the
+ *  plan liquidates retirement assets, or overdraws checking outright, while
+ *  the new account sits untouched.
  *
- *  Correctness depends on an invariant enforced in `life-insurance-payout.ts`:
- *  the payout transform produces a `category: "taxable"` account whose id is
- *  unchanged from the original policy. The taxable-tier placement assumes that. */
-export function appendProceedsToWithdrawalStrategy(
+ *  Two callers today:
+ *    - life-insurance death benefits, which enter as `life_insurance` (no
+ *      withdrawal priority) and are re-categorized to `taxable` on payout;
+ *    - equity-compensation destination accounts, minted on the first vest /
+ *      exercise (audit F10).
+ *  Purchase-created accounts (`applyAssetPurchases`) have the same blind spot
+ *  and can adopt this helper when their tier placement is settled.
+ *
+ *  Placement: the taxable tier — strictly after every existing cash / taxable
+ *  account, strictly before retirement — so a real brokerage is still spent
+ *  first. Mutates `strategy` in place; skips ids already present (idempotent
+ *  across re-entry).
+ *
+ *  Correctness depends on the caller handing over a `taxable`-category account.
+ *  For life insurance that invariant is enforced in `life-insurance-payout.ts`
+ *  (the payout transform keeps the policy's id and flips its category); for
+ *  equity the destination account is minted as `taxable` a few lines below. */
+export function appendLoopMintedAccountsToWithdrawalStrategy(
   strategy: WithdrawalPriority[],
-  proceedsAccountIds: string[],
+  newAccountIds: string[],
   accounts: ReadonlyArray<Pick<Account, "id" | "category">>,
-  deathYear: number,
+  availableFromYear: number,
   planEndYear: number,
 ): void {
-  if (proceedsAccountIds.length === 0) return;
+  if (newAccountIds.length === 0) return;
   const accountById = new Map(accounts.map((a) => [a.id, a]));
   // Highest priorityOrder among cash/taxable entries already in the strategy;
   // baseline 1 (the cash tier) when none exist.
@@ -326,13 +338,13 @@ export function appendProceedsToWithdrawalStrategy(
   }
   // +0.5 → sorts strictly after existing liquid accounts, strictly before
   // retirement (priorityOrder 3 in the default strategy).
-  const proceedsPriority = maxLiquidPriority + 0.5;
-  for (const accountId of proceedsAccountIds) {
+  const newPriority = maxLiquidPriority + 0.5;
+  for (const accountId of newAccountIds) {
     if (strategy.some((s) => s.accountId === accountId)) continue;
     strategy.push({
       accountId,
-      priorityOrder: proceedsPriority,
-      startYear: deathYear,
+      priorityOrder: newPriority,
+      startYear: availableFromYear,
       endYear: planEndYear,
     });
   }
@@ -582,7 +594,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // are skipped. The household checking is always the target, never a source.
   // Copy the configured strategy (or build the default) into a fresh array we
   // own. Death events append life-insurance proceeds accounts to it mid-run
-  // (see appendProceedsToWithdrawalStrategy); we must not mutate the caller's
+  // (see appendLoopMintedAccountsToWithdrawalStrategy); we must not mutate the caller's
   // `data.withdrawalStrategy`.
   const effectiveWithdrawalStrategy: WithdrawalPriority[] =
     data.withdrawalStrategy.length > 0
@@ -1438,6 +1450,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             entries: [],
             basisBoY: 0,
           };
+          // The strategy was snapshotted before the year loop, so this account
+          // does not exist in it. Without the append the plan can SEE the
+          // vested shares but cannot SPEND them: a deficit year overdraws
+          // checking with a fully liquid, publicly traded position sitting
+          // untouched (audit F10). Same fixer life-insurance proceeds use.
+          appendLoopMintedAccountsToWithdrawalStrategy(
+            effectiveWithdrawalStrategy,
+            [destId],
+            workingAccounts,
+            year,
+            planSettings.planEndYear,
+          );
         }
         if (!destId) destId = checkingId; // fallback: no destination → land value in checking
 
@@ -7615,7 +7639,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // liquidate ahead of available proceeds. Insert each into the taxable
       // tier. (Final-death payouts need no entry: the projection terminates
       // that year, so there are no further withdrawals to satisfy.)
-      appendProceedsToWithdrawalStrategy(
+      appendLoopMintedAccountsToWithdrawalStrategy(
         effectiveWithdrawalStrategy,
         deathResult.lifeInsurancePayouts.map((p) => p.policyId),
         workingAccounts,
