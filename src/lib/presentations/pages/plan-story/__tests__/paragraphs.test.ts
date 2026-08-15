@@ -4,11 +4,10 @@ import { splitParagraphs } from "../paragraphs";
 // stripMarkdown (via splitParagraphs) has two jobs that pull against each
 // other: strip real markdown syntax the model was asked to write, without
 // rewriting the advisor's own prose — a footnote asterisk, a `snake_case`
-// reference, a literal "either | or" — which no gate ever inspects. The
-// table below is the record of what was measured; see task-14-report.md for
-// the full input → expected walkthrough, including the two rows
-// ("__init__...", "****") whose expected values needed correcting against
-// CommonMark's actual rules rather than assumed from first read.
+// reference, a literal "either | or" — which no gate ever inspects. One row
+// below ("__init__...") needed its expected value corrected against
+// CommonMark's actual rules rather than assumed from first read; see that
+// test's own comment for why.
 describe("splitParagraphs — advisor prose survives", () => {
   it.each([
     ["We looked at $2.1M today*", "We looked at $2.1M today*"],
@@ -80,6 +79,42 @@ describe("splitParagraphs — the two rows the brief's own remedy fails", () => 
   // get "fixed" back by someone assuming all double underscores are safe.
   it("strips a double-underscore identifier sitting at true word boundaries, per CommonMark", () => {
     expect(splitParagraphs("__init__ is a dunder method.")).toEqual(["init is a dunder method."]);
+  });
+});
+
+describe("splitParagraphs — a footnote asterisk next to punctuation", () => {
+  // CommonMark's flanking rule has a punctuation clause the whitespace-only
+  // check in EMPHASIS_RE doesn't cover: a `*` next to punctuation can open
+  // or close ONLY if the character on the OTHER side of it is a boundary
+  // (whitespace, punctuation, or the edge of the line). A footnote mark
+  // right before a comma or semicolon is preceded by a plain digit — not a
+  // boundary — so it fails on the open side and the pair never forms.
+  it.each([
+    [
+      "We project $2.1M by 2045*, and $3.4M by 2055*.",
+      "We project $2.1M by 2045*, and $3.4M by 2055*.",
+    ],
+    [
+      "We looked at $2.1M today*. Also see the note*.",
+      "We looked at $2.1M today*. Also see the note*.",
+    ],
+    ["Retirement at 65*; college at 18*.", "Retirement at 65*; college at 18*."],
+  ])("leaves %s alone", (input, expected) => {
+    expect(splitParagraphs(input)).toEqual([expected]);
+  });
+
+  it("leaves an asterisk followed by a space alone, even with a real pair later on the line", () => {
+    expect(splitParagraphs("A * gap and *real* emphasis.")).toEqual(["A * gap and real emphasis."]);
+  });
+
+  // The other side of the same clause: a `*` immediately preceded by
+  // punctuation (here "%") IS a boundary on that side, so this pair is
+  // genuinely flanked and strips like any other emphasis — the rule can't be
+  // relaxed to spare this shape without leaving the CommonMark spec.
+  it("still strips a genuinely-flanked span even when it sits next to punctuation", () => {
+    expect(splitParagraphs("Fees are 0.35%*, net of the platform*.")).toEqual([
+      "Fees are 0.35%, net of the platform.",
+    ]);
   });
 });
 

@@ -72,9 +72,28 @@ function isTableRow(line: string): boolean {
  *  (CommonMark allows intraword `*` emphasis); `_`/`__` may not, so they carry
  *  a boundary guard the star delimiters must NOT have — one alternation
  *  cannot serve both, because a guard tight enough to spare `plan_review_2026`
- *  also has to leave `*really*good` alone. */
+ *  also has to leave `*really*good` alone. The `(?=\S)`/`(?<=\S)` pair around
+ *  each content group is CommonMark's flanking rule's whitespace clause; the
+ *  star branch's punctuation clause (a `*` next to punctuation can only open
+ *  or close from the OTHER side of a boundary) is checked separately in
+ *  `stripEmphasis`, because it needs the character outside the whole match,
+ *  which no regex assertion placed inside this pattern can see on both ends
+ *  at once. */
 const EMPHASIS_RE =
   /(\*\*|\*)(?=\S)(.+?)(?<=\S)\1|(?<![\p{L}\p{N}])(__|_)(?=\S)(.+?)(?<=\S)\3(?![\p{L}\p{N}])|`(?=\S)(.+?)(?<=\S)`/gu;
+
+/** CommonMark's "Unicode punctuation character": ASCII punctuation plus the
+ *  Unicode general categories P* and S* — the same union the spec's own
+ *  definition uses (so `$`, `%` and `+` count, not just `.,;`). */
+const PUNCTUATION_RE = /[\p{P}\p{S}]/u;
+
+/** A "good" neighbour for the punctuation clause below: the edge of the
+ *  line, whitespace, or punctuation itself. `undefined` stands for the edge
+ *  of the line — `stripMarkdown` already processes one line at a time, so
+ *  there is no character past either end to read. */
+function isBoundaryLike(neighbor: string | undefined): boolean {
+  return neighbor === undefined || /\s/u.test(neighbor) || PUNCTUATION_RE.test(neighbor);
+}
 
 /** One pass only unwraps the OUTER pair of a nested span (`**a *b* c**` →
  *  `a *b* c`) — the inner delimiters are consumed as literal text inside the
@@ -93,7 +112,27 @@ function stripEmphasis(line: string): string {
         _underDelim: string | undefined,
         underContent: string | undefined,
         codeContent: string | undefined,
-      ) => starContent ?? underContent ?? codeContent ?? match,
+        offset: number,
+        source: string,
+      ) => {
+        if (starContent !== undefined) {
+          // CommonMark left/right-flanking, punctuation clause: a `*` that
+          // opens or closes right next to a punctuation character is only a
+          // valid delimiter if the character on the OTHER side of it is a
+          // boundary (whitespace, punctuation, or the edge of the line). A
+          // footnote mark like "2045*," fails this — the `*` is followed by
+          // punctuation (","), but preceded by a plain digit ("5"), so it
+          // cannot open. "0.35%*," passes — the `*` is preceded by
+          // punctuation ("%"), which is what makes it a real opener there.
+          const opens =
+            !PUNCTUATION_RE.test(starContent[0]) || isBoundaryLike(source[offset - 1]);
+          const closes =
+            !PUNCTUATION_RE.test(starContent[starContent.length - 1]) ||
+            isBoundaryLike(source[offset + match.length]);
+          return opens && closes ? starContent : match;
+        }
+        return underContent ?? codeContent ?? match;
+      },
     );
     if (next === current) return next;
     current = next;
