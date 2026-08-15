@@ -25,9 +25,25 @@
 // view-model beside the page it is about: those decide what one printed sheet
 // holds, and the read-through is not paginated.
 
-/** A table's delimiter row (`|---|---|`) and the horizontal rules a model writes
- *  between sections. Neither carries a word, so both are dropped whole. */
+/** A table's delimiter row (`|---|---|`) and a `-`-spelled horizontal rule a
+ *  model writes between sections. Neither carries a word, so both are
+ *  dropped whole. */
 const RULE_LINE_RE = /^[\s|:-]*-[\s|:-]*$/u;
+
+/** The other two spellings CommonMark allows for a horizontal rule: three or
+ *  more of the SAME character, `*` or `_`, each optionally followed by
+ *  whitespace. `RULE_LINE_RE` above only ever checked for a literal `-` —
+ *  when this module's strip was a blanket `[*_`]` delete, a `***`/`___` line
+ *  still vanished as a side effect (reduced to the empty string, then
+ *  dropped by `.filter(Boolean)`); once the strip became syntax-aware, an
+ *  UNMATCHED delimiter run prints literally instead of vanishing, and this
+ *  gap started reaching the page. Measured: the pre-task implementation
+ *  (`31518ab2f`) produced `[]` for a standalone `"***"` paragraph; the
+ *  syntax-aware strip alone produced `["***"]` — a lone `***` printing on a
+ *  client PDF. This closes that gap without loosening `RULE_LINE_RE` itself,
+ *  which also has to stay permissive enough to catch a table's own
+ *  delimiter row (pipes and alignment colons `*`/`_` never appear in). */
+const STAR_OR_UNDERSCORE_RULE_RE = /^\s{0,3}(?:(?:\*\s*){3,}|(?:_\s*){3,})$/u;
 
 /**
  * Markdown syntax, removed before it reaches the page.
@@ -41,7 +57,7 @@ const RULE_LINE_RE = /^[\s|:-]*-[\s|:-]*$/u;
 function stripMarkdown(paragraph: string): string {
   return paragraph
     .split(/\r?\n/u)
-    .filter((line) => !RULE_LINE_RE.test(line))
+    .filter((line) => !RULE_LINE_RE.test(line) && !STAR_OR_UNDERSCORE_RULE_RE.test(line))
     .map((line) => {
       const withoutHeading = line.replace(/^ {0,3}#{1,6}\s+/u, "");
       const withoutPipes = isTableRow(line)
@@ -66,78 +82,140 @@ function isTableRow(line: string): boolean {
   return /^\s*\|/u.test(line) || (line.match(/\|/gu)?.length ?? 0) >= 2;
 }
 
-/** `**bold**`, `*em*`, `_em_`, `` `code` `` — matched pairs only, so an
- *  advisor's own footnote asterisk or an identifier's underscores survive
- *  unless they're genuinely paired markdown. `*`/`**` may sit inside a word
- *  (CommonMark allows intraword `*` emphasis); `_`/`__` may not, so they carry
- *  a boundary guard the star delimiters must NOT have — one alternation
- *  cannot serve both, because a guard tight enough to spare `plan_review_2026`
- *  also has to leave `*really*good` alone. The `(?=\S)`/`(?<=\S)` pair around
- *  each content group is CommonMark's flanking rule's whitespace clause; the
- *  star branch's punctuation clause (a `*` next to punctuation can only open
- *  or close from the OTHER side of a boundary) is checked separately in
- *  `stripEmphasis`, because it needs the character outside the whole match,
- *  which no regex assertion placed inside this pattern can see on both ends
- *  at once. */
-const EMPHASIS_RE =
-  /(\*\*|\*)(?=\S)(.+?)(?<=\S)\1|(?<![\p{L}\p{N}])(__|_)(?=\S)(.+?)(?<=\S)\3(?![\p{L}\p{N}])|`(?=\S)(.+?)(?<=\S)`/gu;
+// `**bold**`, `*em*`, `_em_`, `` `code` `` — matched pairs only, so an
+// advisor's own footnote asterisk or an identifier's underscores survive
+// unless they're genuinely paired markdown.
+//
+// Implemented as a small SCAN below, not a single regex-with-backreference —
+// that was tried and measurably broke. A regex's lazy `.+?` doesn't stop at
+// the nearest `*`; when the nearest candidate fails CommonMark's flanking
+// rules, the engine is forced to extend PAST it, consuming it as literal
+// content, until it reaches a farther `*` that satisfies the pattern
+// structurally. Rejecting the resulting span after the fact (in a
+// `.replace()` callback) throws away everything genuine it swallowed on the
+// way — measured: `"It is *great*, the total is $5*, and it is also
+// *wonderful*."` lost "wonderful" entirely, because the disqualified `$5*`
+// forced the match to widen past it. CommonMark's own algorithm avoids this
+// by classifying each delimiter run's ability to open/close FIRST (the
+// flanking rules below), then pairing runs with a stack — a disqualified run
+// simply never gets pushed or popped, so it can't disturb anything else.
 
 /** CommonMark's "Unicode punctuation character": ASCII punctuation plus the
  *  Unicode general categories P* and S* — the same union the spec's own
  *  definition uses (so `$`, `%` and `+` count, not just `.,;`). */
 const PUNCTUATION_RE = /[\p{P}\p{S}]/u;
+const WHITESPACE_RE = /\s/u;
 
 /** A "good" neighbour for the punctuation clause below: the edge of the
  *  line, whitespace, or punctuation itself. `undefined` stands for the edge
  *  of the line — `stripMarkdown` already processes one line at a time, so
  *  there is no character past either end to read. */
 function isBoundaryLike(neighbor: string | undefined): boolean {
-  return neighbor === undefined || /\s/u.test(neighbor) || PUNCTUATION_RE.test(neighbor);
+  return neighbor === undefined || WHITESPACE_RE.test(neighbor) || PUNCTUATION_RE.test(neighbor);
 }
 
-/** One pass only unwraps the OUTER pair of a nested span (`**a *b* c**` →
- *  `a *b* c`) — the inner delimiters are consumed as literal text inside the
- *  match, not re-scanned. Re-applying to a fixed point clears the rest; the
- *  10-pass cap is a safety valve, not a real limit — a single line of chapter
- *  prose never nests this deep. */
-function stripEmphasis(line: string): string {
-  let current = line;
-  for (let pass = 0; pass < 10; pass++) {
-    const next = current.replace(
-      EMPHASIS_RE,
-      (
-        match: string,
-        _starDelim: string | undefined,
-        starContent: string | undefined,
-        _underDelim: string | undefined,
-        underContent: string | undefined,
-        codeContent: string | undefined,
-        offset: number,
-        source: string,
-      ) => {
-        if (starContent !== undefined) {
-          // CommonMark left/right-flanking, punctuation clause: a `*` that
-          // opens or closes right next to a punctuation character is only a
-          // valid delimiter if the character on the OTHER side of it is a
-          // boundary (whitespace, punctuation, or the edge of the line). A
-          // footnote mark like "2045*," fails this — the `*` is followed by
-          // punctuation (","), but preceded by a plain digit ("5"), so it
-          // cannot open. "0.35%*," passes — the `*` is preceded by
-          // punctuation ("%"), which is what makes it a real opener there.
-          const opens =
-            !PUNCTUATION_RE.test(starContent[0]) || isBoundaryLike(source[offset - 1]);
-          const closes =
-            !PUNCTUATION_RE.test(starContent[starContent.length - 1]) ||
-            isBoundaryLike(source[offset + match.length]);
-          return opens && closes ? starContent : match;
-        }
-        return underContent ?? codeContent ?? match;
-      },
-    );
-    if (next === current) return next;
-    current = next;
+/** CommonMark's left/right-flanking rules. `undefined` (edge of line) counts
+ *  as whitespace for the "not preceded/followed by whitespace" clause —
+ *  there is no character there to BE non-whitespace — but still counts as a
+ *  boundary for the punctuation clause, which explicitly allows "or the
+ *  edge of the line". */
+function isLeftFlanking(prev: string | undefined, next: string | undefined): boolean {
+  if (next === undefined || WHITESPACE_RE.test(next)) return false;
+  return !PUNCTUATION_RE.test(next) || isBoundaryLike(prev);
+}
+function isRightFlanking(prev: string | undefined, next: string | undefined): boolean {
+  if (prev === undefined || WHITESPACE_RE.test(prev)) return false;
+  return !PUNCTUATION_RE.test(prev) || isBoundaryLike(next);
+}
+
+type DelimType = "*" | "**" | "_" | "__";
+
+interface DelimRun {
+  type: DelimType;
+  start: number;
+  end: number;
+  canOpen: boolean;
+  canClose: boolean;
+}
+
+/** Longest run first (`**` before `*`) at each position, same preference the
+ *  old regex alternation used. A run of 3+ of the same character — not a
+ *  target of any test here, and CommonMark's own handling of it is a further
+ *  layer of complexity this module doesn't need — falls out as a 2-run
+ *  immediately followed by 1-runs. */
+const DELIM_TOKEN_RE = /\*\*|\*|__|_/gu;
+
+function scanDelimiterRuns(line: string): DelimRun[] {
+  const runs: DelimRun[] = [];
+  DELIM_TOKEN_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = DELIM_TOKEN_RE.exec(line))) {
+    const type = match[0] as DelimType;
+    const start = match.index;
+    const end = start + match[0].length;
+    const prev = start > 0 ? line[start - 1] : undefined;
+    const next = end < line.length ? line[end] : undefined;
+    const left = isLeftFlanking(prev, next);
+    const right = isRightFlanking(prev, next);
+    // `_`/`__` additionally can't open/close INTRAWORD (CommonMark's extra
+    // rule for underscores): flanking on BOTH sides at once only counts as a
+    // valid opener/closer when the OTHER side is punctuation — which is what
+    // stops `plan_review_2026` from reading as a pair (flanking on both
+    // sides, neither side punctuation) while still letting `__init__`
+    // (flanking on only one side each — start-of-line / space) strip as
+    // real bold. `*`/`**` carry no such restriction.
+    const underscoreGuard = type === "_" || type === "__";
+    runs.push({
+      type,
+      start,
+      end,
+      canOpen: underscoreGuard ? left && (!right || (prev !== undefined && PUNCTUATION_RE.test(prev))) : left,
+      canClose: underscoreGuard ? right && (!left || (next !== undefined && PUNCTUATION_RE.test(next))) : right,
+    });
   }
-  return current;
+  return runs;
+}
+
+/** A single backtick pair — matched pair only, non-whitespace-padded
+ *  content, same shape as the delimiter runs below but without their
+ *  flanking rules (code spans aren't emphasis). Runs first, so a code
+ *  span's own `*`/`_` characters are gone before the delimiter scan ever
+ *  sees them — except for one pre-existing, ledgered gap this task doesn't
+ *  close: that scan still re-examines whatever the code span's CONTENT
+ *  contained, the same as it always has. */
+const CODE_SPAN_RE = /`(?=\S)(.+?)(?<=\S)`/gu;
+
+/** Delimiter runs are paired with a stack: a closer looks for the nearest
+ *  still-open run of the SAME type (strict nesting only — this module has
+ *  never needed the crossing patterns full CommonMark allows, and chapter
+ *  prose doesn't produce them). Stripping a matched pair is then just
+ *  deleting its two delimiter runs; nesting needs no second pass, because an
+ *  inner pair's runs are already marked for deletion by the time the outer
+ *  pair's content is read out. */
+function stripEmphasis(line: string): string {
+  const withoutCode = line.replace(CODE_SPAN_RE, (_match, content: string) => content);
+  const runs = scanDelimiterRuns(withoutCode);
+  const stack: DelimRun[] = [];
+  const toDelete = new Set<DelimRun>();
+  for (const run of runs) {
+    const opener = stack[stack.length - 1];
+    if (run.canClose && opener !== undefined && opener.type === run.type) {
+      stack.pop();
+      toDelete.add(opener);
+      toDelete.add(run);
+    } else if (run.canOpen) {
+      stack.push(run);
+    }
+  }
+  let out = "";
+  let cursor = 0;
+  for (const run of runs) {
+    if (!toDelete.has(run)) continue;
+    out += withoutCode.slice(cursor, run.start);
+    cursor = run.end;
+  }
+  out += withoutCode.slice(cursor);
+  return out;
 }
 
 /** Blank lines separate paragraphs; a single newline is a line break inside one. */

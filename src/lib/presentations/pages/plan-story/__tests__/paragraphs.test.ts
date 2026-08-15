@@ -45,7 +45,7 @@ describe("splitParagraphs — markdown syntax still strips", () => {
 
   it("unwraps nested emphasis rather than leaving the inner delimiters behind", () => {
     expect(splitParagraphs("**a *b* c**")).toEqual(["a b c"]);
-    expect(splitParagraphs("**really *significant*** growth")).toEqual(["really significant growth"]);
+    expect(splitParagraphs("**bold and *italic* together**")).toEqual(["bold and italic together"]);
   });
 
   it("does not let emphasis span two paragraphs (or lines) it never opened on", () => {
@@ -83,12 +83,12 @@ describe("splitParagraphs — the two rows the brief's own remedy fails", () => 
 });
 
 describe("splitParagraphs — a footnote asterisk next to punctuation", () => {
-  // CommonMark's flanking rule has a punctuation clause the whitespace-only
-  // check in EMPHASIS_RE doesn't cover: a `*` next to punctuation can open
-  // or close ONLY if the character on the OTHER side of it is a boundary
-  // (whitespace, punctuation, or the edge of the line). A footnote mark
-  // right before a comma or semicolon is preceded by a plain digit — not a
-  // boundary — so it fails on the open side and the pair never forms.
+  // CommonMark's flanking rule has a punctuation clause: a `*` next to
+  // punctuation can open or close ONLY if the character on the OTHER side of
+  // it is a boundary (whitespace, punctuation, or the edge of the line). A
+  // footnote mark right before a comma or semicolon is preceded by a plain
+  // digit — not a boundary — so it fails on the open side and the pair never
+  // forms.
   it.each([
     [
       "We project $2.1M by 2045*, and $3.4M by 2055*.",
@@ -118,6 +118,38 @@ describe("splitParagraphs — a footnote asterisk next to punctuation", () => {
   });
 });
 
+describe("splitParagraphs — a disqualified asterisk does not disable a later real pair", () => {
+  // A regex-and-reject approach (the previous shape of this module) matched
+  // and consumed a whole span before deciding whether it was genuine, so
+  // rejecting a disqualified opener threw away every real pair it happened
+  // to sit in front of on the same line. The scanner in paragraphs.ts fixes
+  // this by classifying open/close ability BEFORE pairing, so a
+  // disqualified run simply never gets pushed or popped and can't disturb
+  // anything else. These four are measured repros of that defect, kept as
+  // permanent regressions.
+  it("does not suppress a later bold span when an earlier asterisk can't open", () => {
+    expect(splitParagraphs("Withholding is 22%*, and it is **very significant**.")).toEqual([
+      "Withholding is 22%*, and it is very significant.",
+    ]);
+  });
+
+  it("does not suppress a later bold span when an earlier footnote asterisk can't open", () => {
+    expect(
+      splitParagraphs("We project $2.1M by 2045*, which assumes **a 6% return** and no plan changes."),
+    ).toEqual(["We project $2.1M by 2045*, which assumes a 6% return and no plan changes."]);
+  });
+
+  it("does not suppress a later italic span when an earlier footnote asterisk can't open", () => {
+    expect(splitParagraphs("It is *great*, the total is $5*, and it is also *wonderful*.")).toEqual([
+      "It is great, the total is $5*, and it is also wonderful.",
+    ]);
+  });
+
+  it("minimal repro: a disqualified asterisk followed by a real pair", () => {
+    expect(splitParagraphs("x*,y *z* w")).toEqual(["x*,y z w"]);
+  });
+});
+
 describe("splitParagraphs — table rows vs. a literal pipe in prose", () => {
   it("flattens a table row with outer pipes", () => {
     expect(splitParagraphs("| Year | Amount |")).toEqual(["Year · Amount"]);
@@ -129,5 +161,41 @@ describe("splitParagraphs — table rows vs. a literal pipe in prose", () => {
 
   it("leaves a single mid-sentence pipe alone — advisor prose, not a table cell", () => {
     expect(splitParagraphs("Either one | the other.")).toEqual(["Either one | the other."]);
+  });
+});
+
+describe("splitParagraphs — a *-or-_-spelled horizontal rule drops whole, like the -spelled one", () => {
+  // RULE_LINE_RE only ever checked for a literal `-`. While the strip was a
+  // blanket [*_`] delete, a "***"/"___" line still vanished as a side effect
+  // — reduced to the empty string, then dropped by .filter(Boolean) — so the
+  // gap didn't show. Once the strip became syntax-aware (this task), an
+  // UNMATCHED delimiter run prints literally instead of vanishing, and a
+  // model-written rule started reaching the page as literal asterisks.
+  // Measured against the pre-task implementation (31518ab2f): it produced
+  // [] for a standalone "***" paragraph.
+  it.each([
+    ["***", []],
+    ["___", []],
+    ["* * *", []], // CommonMark allows spaces between the delimiter characters
+    ["_ _ _", []],
+  ])("drops %s entirely", (input, expected) => {
+    expect(splitParagraphs(input)).toEqual(expected);
+  });
+
+  it("drops the rule but keeps the paragraphs around it", () => {
+    expect(splitParagraphs("Here is the plan.\n\n***\n\nAnd here is more.")).toEqual([
+      "Here is the plan.",
+      "And here is more.",
+    ]);
+  });
+
+  it("does not treat two stars alone as a rule — CommonMark requires three or more", () => {
+    // Not a valid emphasis pair either (nothing to pair with), so it stays
+    // literal — same treatment as any other unmatched delimiter run.
+    expect(splitParagraphs("**")).toEqual(["**"]);
+  });
+
+  it("does not mistake a real single-word italic spanning the whole line for a rule", () => {
+    expect(splitParagraphs("*text*")).toEqual(["text"]);
   });
 });
