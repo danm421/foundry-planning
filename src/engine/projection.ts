@@ -1525,13 +1525,21 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           sourceId: plan.accountId,
         });
 
-        // Surface the proceeds as Other Inflows: income.bySource (a scalar map)
-        // gets a per-plan key for the drill-down, and householdEquityCashIn is
-        // folded into totalIncome below. Deliberately NOT added to
-        // income.total / income.other — those stay as computeIncome reported
-        // them, so the cash is counted exactly once (creditCash + the
-        // totalIncome fold). Mirrors the notes-receivable pattern.
-        if (applied.netCashToChecking > 0) {
+        // Surface the net equity cash as Other Inflows: income.bySource (a
+        // scalar map) gets a per-plan key for the drill-down, and
+        // householdEquityCashIn is folded into totalIncome below. Deliberately
+        // NOT added to income.total / income.other — those stay as
+        // computeIncome reported them, so the cash is counted exactly once
+        // (creditCash + the totalIncome fold). Mirrors the notes-receivable
+        // pattern.
+        //
+        // SIGNED, not positive-only (audit F30/F38). An exercise-and-hold pays
+        // strike out of pocket and receives nothing, so netCashToChecking is
+        // negative. creditCash already debits the balance either way; gating
+        // the fold on `> 0` left Net Cash Flow overstating the year by exactly
+        // the strike outflow and made the ledger's own "reconciles with the
+        // cash flow" footnote false.
+        if (applied.netCashToChecking !== 0) {
           householdEquityCashIn += applied.netCashToChecking;
           const key = `equity-proceeds:${plan.accountId}`;
           income.bySource[key] = (income.bySource[key] ?? 0) + applied.netCashToChecking;

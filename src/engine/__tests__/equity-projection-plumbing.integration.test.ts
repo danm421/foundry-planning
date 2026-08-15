@@ -267,3 +267,109 @@ describe("F10 — the equity destination account is a drawdown source", () => {
     );
   });
 });
+
+// ── F30/F38 — cash spent exercising options reaches the cash-flow statement ──
+
+describe("F30/F38 — equity cash OUT is reported, not just cash IN", () => {
+  const EXERCISE_YEAR = 2028; // FMV 121
+  const NQSO_SHARES = 5_000;
+  const STRIKE = 10;
+  const STRIKE_OUTFLOW = NQSO_SHARES * STRIKE; // $50,000 paid out of pocket
+
+  // Checking is deep enough that the exercise never triggers a shortfall —
+  // this test is about REPORTING, not funding.
+  const FUNDED_CHECKING: Account = { ...CHECKING, value: 500_000, basis: 500_000 };
+
+  /** NQSO exercised at vest and HELD: pays strike, receives nothing. */
+  const EXERCISE_AND_HOLD: StockOptionPlan = {
+    ...HOLD_PLAN,
+    grants: [
+      {
+        id: "g-nqso",
+        grantNumber: "NQ-1",
+        grantType: "nqso",
+        grantYear: 2025,
+        sharesGranted: NQSO_SHARES,
+        has83bElection: false,
+        fmvAtGrant: null,
+        strikePrice: STRIKE,
+        strikeDiscountPct: null,
+        expirationYear: 2035,
+        strategy: { exerciseTiming: "at_vest", sellTiming: "hold" },
+        tranches: [
+          {
+            id: "t-nq",
+            vestYear: EXERCISE_YEAR,
+            shares: NQSO_SHARES,
+            sharesExercised: 0,
+            sharesSold: 0,
+            strategy: null,
+          },
+        ],
+        plannedEvents: [],
+      },
+    ],
+  };
+
+  const fixture = (over: Partial<ClientData>) =>
+    buildData({ accounts: [FUNDED_CHECKING, SO_ACCOUNT], ...over });
+
+  const equityYears = runProjection(fixture({ stockOptionPlans: [EXERCISE_AND_HOLD] }));
+  const baseYears = runProjection(fixture({ stockOptionPlans: [] }));
+  const cashAt = (ys: typeof equityYears, y: number) =>
+    ys.find((x) => x.year === y)!.portfolioAssets.cash[CHECKING.id] ?? 0;
+
+  it("moves the strike cash out of checking", () => {
+    // Fixture guard: the outflow really happens on the balance side. This has
+    // always been true — creditCash is unconditional; only the REPORTING was
+    // gated. Without the exercise there is nothing for the tests below to miss.
+    const entries = equityYears.find((y) => y.year === EXERCISE_YEAR)!
+      .accountLedgers[CHECKING.id]!.entries;
+    const equityEntry = entries.find((e) => /equity proceeds/.test(e.label ?? ""));
+    expect(equityEntry?.amount).toBeCloseTo(-STRIKE_OUTFLOW, 2);
+  });
+
+  it("reconciles net cash flow with the actual checking movement", () => {
+    // In this fixture every dollar of household cash flow lands in checking —
+    // no savings rules, no surplus transfer target — so year-over-year checking
+    // movement IS net cash flow. The baseline below proves that invariant; the
+    // equity run broke it by exactly the strike outflow ($50,000).
+    const movement = cashAt(equityYears, EXERCISE_YEAR) - cashAt(equityYears, EXERCISE_YEAR - 1);
+    const reported = equityYears.find((y) => y.year === EXERCISE_YEAR)!.netCashFlow;
+    expect(movement).toBeCloseTo(reported, 0);
+  });
+
+  it("holds that same reconciliation on the no-equity baseline", () => {
+    // Guards the invariant the assertion above leans on: if checking movement
+    // and netCashFlow diverged for unrelated reasons, the test above would be
+    // measuring noise.
+    const movement = cashAt(baseYears, EXERCISE_YEAR) - cashAt(baseYears, EXERCISE_YEAR - 1);
+    const reported = baseYears.find((y) => y.year === EXERCISE_YEAR)!.netCashFlow;
+    expect(movement).toBeCloseTo(reported, 0);
+  });
+
+  it("carries the outflow on the per-plan drill-down key", () => {
+    const y = equityYears.find((x) => x.year === EXERCISE_YEAR)!;
+    expect(y.income.bySource[`equity-proceeds:${SO_ID}`]).toBeCloseTo(-STRIKE_OUTFLOW, 2);
+  });
+
+  it("still reports positive equity cash the same way", () => {
+    // Regression guard on the other side of the dropped gate: exercise-and-sell
+    // nets cash IN, and that must keep flowing to the same key.
+    const SELL: StockOptionPlan = {
+      ...EXERCISE_AND_HOLD,
+      grants: [
+        {
+          ...EXERCISE_AND_HOLD.grants[0],
+          strategy: { exerciseTiming: "at_vest", sellTiming: "immediately" },
+        },
+      ],
+    };
+    const y = runProjection(fixture({ stockOptionPlans: [SELL] })).find(
+      (x) => x.year === EXERCISE_YEAR,
+    )!;
+    const proceeds = y.income.bySource[`equity-proceeds:${SO_ID}`];
+    // 5,000 × (121 − 10) = $555,000 net of the strike already paid.
+    expect(proceeds).toBeCloseTo(NQSO_SHARES * (fmv(EXERCISE_YEAR) - STRIKE), 2);
+  });
+});
