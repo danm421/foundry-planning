@@ -89,12 +89,17 @@ export interface ChapterStyle {
  * fourteen hashes recorded before the change.
  *
  * ⚠️ ONE EXCEPTION, and it is not the style's: `chapters/prompts.ts#singleLine`
- * NORMALISES the household name fields, so a record whose stored `firstNames` or
- * `householdName` carries stray whitespace or a line break hashes differently
- * across this deploy and reads stale once, clearing on the next generation.
- * Measured, not reasoned: with `firstNames = "  Alan and Teresa  "` the prompts
- * differ in both halves and the hash moves from `b54b08f3…` to `62ce3f36…`. A
- * name already clean — every fixture, and the ordinary record — is
+ * NORMALISES the household name fields. A record whose `firstNames` or
+ * `householdName` is PADDED with whitespace, or carries a CR or LF ANYWHERE,
+ * hashes differently across this deploy and reads stale once, clearing on the
+ * next generation. Internal spacing that is neither — a double space, a tab, a
+ * U+2028 — is left exactly as stored and moves nothing.
+ *
+ * Measured, not reasoned, and in the direction the deploy runs: with
+ * `firstNames = "  Alan and Teresa  "` the prompts differ in both halves, and
+ * the hash the run STORED (`62ce3f36…`) is rebuilt as `b54b08f3…` — which is the
+ * hash a clean name has always produced, since the trim makes the two records
+ * agree. A name already clean — every fixture, and the ordinary record — is
  * byte-identical.
  */
 export const DEFAULT_CHAPTER_STYLE: ChapterStyle = { tone: "warm", length: "standard" };

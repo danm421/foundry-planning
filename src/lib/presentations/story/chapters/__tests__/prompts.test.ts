@@ -644,8 +644,8 @@ describe("tone and length", () => {
   });
 
   // …and the length moves exactly one OTHER line — the output ask, which the
-  // layout still owns. `standard` moves nothing at all, which is the half that
-  // preserves every stored hash.
+  // layout still owns. `standard` moves nothing at all: that empty string is one
+  // half of the byte-identity the hash pins rest on, `TONE_LINE.warm` the other.
   it("changes the output ask and no other, and changes nothing at standard", () => {
     const standard = systemLines(DEFAULT_CHAPTER_STYLE);
     for (const length of CHAPTER_LENGTHS) {
@@ -657,9 +657,13 @@ describe("tone and length", () => {
     expect(systemLines({ tone: "warm", length: "full" })[5]).toContain("whole space");
   });
 
-  // ⚠️ The modifier is CONCATENATED onto the layout's own ask rather than
-  // replacing it: a checklist chapter asked for four paragraphs would bury the
-  // list that is its actual content, whatever the advisor picked.
+  // The modifier is CONCATENATED onto the layout's own ask rather than replacing
+  // it, so the layout keeps naming the SHAPE at every length.
+  //
+  // ⚠️ Concatenation is NOT what stops a modifier contradicting that shape — the
+  // first version of this Record proved it could. `FIXED_SHAPE_ASK` is, by not
+  // applying `full` at all where the ask names a ceiling. Pinned in
+  // `chapterOutputAsk — the ask matches the sheet`.
   it("keeps the layout's own shape at every length", () => {
     for (const length of CHAPTER_LENGTHS) {
       expect(chapterOutputAsk("whatWerePlanningFor", length)).toContain("TWO short paragraphs");
@@ -682,8 +686,14 @@ describe("tone and length", () => {
 
 /**
  * ⭐⭐ What makes this setting free to ship: at the DEFAULT style the prompt is
- * byte-identical to the one that existed before the setting did, so every
- * chapter already generated keeps the `sourceHash` stored against it.
+ * byte-identical to the one that existed before the setting did, so a chapter
+ * already generated keeps the `sourceHash` stored against it.
+ *
+ * ⚠️ …for a household whose name fields are already clean, which this fixture's
+ * are. `prompts.ts#singleLine` also normalises `firstNames` and `householdName`,
+ * so a name that is PADDED, or carries a CR or LF, hashes differently across
+ * this deploy — see `trims a padded name` further down this file, which exists
+ * precisely because these fourteen hashes structurally cannot see it.
  *
  * The fourteen hashes below were computed at 6037c7ad0 — the commit BEFORE
  * `style` reached `buildChapterPrompt` — against the frozen context in this
@@ -698,7 +708,7 @@ describe("tone and length", () => {
  * permanently, on the deploy that adds the setting — before an advisor has
  * touched a single control.
  */
-describe("the default style preserves every stored hash", () => {
+describe("the default style preserves a clean household's stored hashes", () => {
   const HASH_PIN_CTX: StoryContext = {
     household: { firstNames: "Alan and Teresa", householdName: "the Bradshaw household" },
     scenarioLabel: "Retire at 62 + Roth",
@@ -798,13 +808,14 @@ describe("household names cannot open a line of their own", () => {
   /**
    * ⚠️ Where a default style does NOT preserve a stored hash, and it is this
    * helper's doing rather than the tone's: `singleLine` NORMALISES, trim
-   * included, so a record whose name carries stray whitespace or a line break
-   * builds a different prompt than it did before this change and reads stale
-   * once.
+   * included, so a record whose name is PADDED with whitespace, or carries a CR
+   * or LF anywhere, builds a different prompt than it did before this change and
+   * reads stale once. (Internal spacing that is neither is left as stored.)
    *
-   * Pinned rather than left in a comment, because the fourteen golden hashes
-   * above run on a CLEAN fixture and therefore cannot see it — which is exactly
-   * how the unconditional "byte-identical" claim survived three docblocks.
+   * Pinned rather than left in a comment, because the fourteen golden hashes run
+   * on a CLEAN fixture and therefore cannot see it — which is exactly how the
+   * unconditional "byte-identical" claim survived FOUR docblocks, this file's
+   * included, through a round that corrected three of them.
    */
   it("trims a padded name — normalising, not the style, is what moves a hash", () => {
     const { system, user } = attacked("  Alan and Teresa  ", "  the Bradshaw household  ");

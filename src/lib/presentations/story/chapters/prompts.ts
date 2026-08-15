@@ -185,17 +185,28 @@ function quoteAdvisorText(text: string): string {
  * break to whatever reads the prompt and is not one to `split("\n")`, so a
  * fix that only handles `\n` leaves the welded shape behind.
  *
- * ⚠️ IT ALSO TRIMS. Normalising — not the style — is therefore what moves a
- * stored `sourceHash` for a household nobody has restyled: any record whose name
- * carries stray whitespace or a line break hashes differently across this
- * deploy. Measured: `"  Alan and Teresa  "` built `(  Alan and Teresa  )` before
- * and builds `(Alan and Teresa)` now, the prompt differs in BOTH halves, and the
- * hash moves from `b54b08f3…` to `62ce3f36…`. Those chapters read stale once and
- * clear on the next generation. Kept anyway: a leading newline collapses to a leading SPACE, so
- * without the trim the app's own sentence reads "Use their first names ( Alan
- * and Teresa) once at most" — a permanently mangled rule, traded for avoiding a
- * badge that clears itself. The three docblocks that claim byte-identity name
- * this exception; `__tests__/prompts.test.ts` pins the trim itself.
+ * ⚠️ IT ALSO TRIMS. Normalising — not the style — is therefore the one thing in
+ * this change that moves a stored `sourceHash` for a household nobody has
+ * restyled. Measured against this exact body: a name PADDED with whitespace
+ * `trim` recognises (space, tab, NBSP, U+2028, VT, LF), or carrying a CR or LF
+ * ANYWHERE, moves. Internal spacing that is neither — a double space, a tab, a
+ * U+2028, a NEL — does not: it is left exactly as stored.
+ *
+ * Measured in the direction the deploy runs: `"  Alan and Teresa  "` built
+ * `(  Alan and Teresa  )` before and builds `(Alan and Teresa)` now, the prompt
+ * differs in BOTH halves, and the hash the run STORED (`62ce3f36…`) is rebuilt
+ * as `b54b08f3…` — the hash a clean name has always produced. Those chapters
+ * read stale once and clear on the next generation.
+ *
+ * Kept anyway: a leading newline collapses to a leading SPACE, so without the
+ * trim the app's own sentence reads "Use their first names ( Alan and Teresa)
+ * once at most" — a permanently mangled rule, traded for avoiding a badge that
+ * clears itself.
+ *
+ * FOUR docblocks claim the byte-identity this qualifies, and all four name this
+ * exception: `types.ts#DEFAULT_CHAPTER_STYLE`, `registry.ts#LENGTH_MODIFIER`,
+ * `TONE_LINE` below, and the hash-pin block in `__tests__/prompts.test.ts` —
+ * which also pins the trim itself.
  */
 function singleLine(text: string): string {
   return text.replace(/(?:\r\n|\r|\n)+/gu, " ").trim();
@@ -219,9 +230,9 @@ function singleLine(text: string): string {
  * existed. That is what lets a chapter already generated keep its stored
  * `sourceHash` across this deploy; `__tests__/prompts.test.ts` pins it against
  * fourteen hashes recorded before the change. The style is not the only thing
- * that had to hold for that — `singleLine` below normalises the name fields, so
- * a record carrying stray whitespace or a line break still moves. Its docblock
- * has the measurement.
+ * that had to hold for that — `singleLine` above normalises the name fields, so
+ * a record whose name is padded, or carries a CR or LF, still moves. Its
+ * docblock has the measurement and the direction.
  */
 const TONE_LINE: Record<ChapterTone, string> = {
   warm: "Write the way you would talk to them across a table: warm, direct, second person, contractions, no corporate voice.",

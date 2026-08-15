@@ -348,9 +348,9 @@ const OUTPUT_ASK: Record<ChapterLayout, string> = {
  *
  * `standard` is the EMPTY string, and that is load-bearing rather than tidy: it
  * makes a default-style prompt byte-identical to the one that existed before
- * this setting (for a household whose name fields carry no stray whitespace and
- * no line break — see `chapters/prompts.ts#singleLine`), so no chapter already
- * generated reads stale on the deploy that adds it. See
+ * this setting (for a household whose name fields carry no padding and no CR or
+ * LF — `chapters/prompts.ts#singleLine` has the measurement), so no chapter
+ * already generated reads stale on the deploy that adds it. See
  * `types.ts#DEFAULT_CHAPTER_STYLE`.
  */
 const LENGTH_MODIFIER: Record<ChapterLength, string> = {
@@ -374,7 +374,7 @@ const LENGTH_MODIFIER: Record<ChapterLength, string> = {
  *
  * So `full` is not SOFTENED for them, it is not applied: `chapterOutputAsk`
  * hands back the layout's own sentence unchanged, and there is no wording left
- * for a model to weigh against the ceiling above it. `short` still applies —
+ * for a model to weigh against the ceiling the layout set. `short` still applies —
  * asking for fewer sentences than a ceiling allows is coherent, and cannot make
  * the trim note fire.
  *
