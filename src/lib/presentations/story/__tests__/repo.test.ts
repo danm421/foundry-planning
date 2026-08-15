@@ -29,6 +29,7 @@ import {
   isChapterStale,
   hasNewerGeneration,
   listStoryChapters,
+  loadStoryChapter,
   upsertGeneratedChapter,
   updateChapterText,
   markChapterReviewed,
@@ -189,20 +190,43 @@ describe("hasNewerGeneration", () => {
   });
 
   /**
-   * ⚠️⚠️ BACKFILL CASE 1, and the one every pre-existing edited row hits.
+   * ⭐⭐ BACKFILL CASE 1 — and it is DECIDABLE, not a guess.
    *
-   * `edited_at` arrives NULL on every row written before the column existed,
-   * while `edited_text` on those rows is real advisor prose. The order of the
-   * two writes is UNKNOWABLE there, and a wrong TRUE puts "Use the new version
-   * instead" in front of an advisor over words that were never superseded — the
-   * exact harm this feature exists to prevent, pointing the other way.
+   * `edited_at` NULL means `updateChapterText` has not run since 0242 deployed,
+   * and it is the only writer of `edited_text` anywhere in `src/`. A non-null
+   * `generated_at` means a generation HAS run since 0242 deployed. So the edit
+   * is before the deploy and the generation is after it: the model demonstrably
+   * wrote last, and TRUE is the accurate answer rather than an optimistic one.
+   *
+   * ⚠️ This is the confirmed-live Cooper chapter. Its `edited_at` is NULL, and
+   * refusing to answer here would mean pressing Regenerate after deploy stores
+   * new prose and STILL shows no banner — so anyone re-running the live repro
+   * concludes the fix did not work.
    */
-  it("is false for an edit made before the column existed, whatever the model's timestamp says", () => {
+  it("is true for a pre-migration edit once a generation has run since", () => {
     expect(
       hasNewerGeneration({
         editedText: "the advisor's real, pre-migration words",
         generatedText: "theirs",
         generatedAt: LATER,
+        editedAt: null,
+      }),
+    ).toBe(true);
+  });
+
+  /**
+   * …and the sub-case that is NOT decidable, which is what keeps the rule above
+   * honest rather than merely permissive. Neither side has a timestamp, so both
+   * writes predate 0242 and their order is genuinely unknowable — a wrong TRUE
+   * here puts "Use the new version instead" in front of an advisor over prose
+   * nothing superseded.
+   */
+  it("is false when neither side has a timestamp to be decided on", () => {
+    expect(
+      hasNewerGeneration({
+        editedText: "the advisor's real, pre-migration words",
+        generatedText: "theirs",
+        generatedAt: null,
         editedAt: null,
       }),
     ).toBe(false);
@@ -258,6 +282,48 @@ describe("listStoryChapters", () => {
   it("reads the other role's rows for the other role", async () => {
     await listStoryChapters("client-1", "base", "frontMatter");
     expect(render(m.select.mock.calls[0][0]).params).toEqual(["client-1", "base", "frontMatter"]);
+  });
+});
+
+/**
+ * ONE chapter's row, for the one caller that has to look before it writes:
+ * "Use the new version instead" discards advisor prose, so the route checks
+ * that the version it is about to discard really is shadowing a newer one.
+ */
+describe("loadStoryChapter", () => {
+  const load = async () => {
+    const row = await loadStoryChapter({
+      clientId: "client-1",
+      scenarioId: "scenario-9",
+      documentRole: "frontMatter",
+      chapterId: "whatYouHave",
+    });
+    return { row, where: render(m.select.mock.calls[0][0]) };
+  };
+
+  // Scoped on the FULL key, not just the chapter: the same chapter id exists
+  // for every client, scenario and register in the table, and a read missing a
+  // term would answer the accept guard about somebody else's row.
+  it("reads the one row the four-part key names", async () => {
+    const { where } = await load();
+    expect(where.sql).toContain("client_id");
+    expect(where.sql).toContain("scenario_id");
+    expect(where.sql).toContain("document_role");
+    expect(where.sql).toContain("chapter_id");
+    expect(where.params).toEqual(["client-1", "scenario-9", "frontMatter", "whatYouHave"]);
+  });
+
+  // The panel offers every chapter whether one has been generated or not, so
+  // "no row" is an ordinary state and has to be an ordinary answer — not an
+  // index error on an empty array.
+  it("answers null for a chapter that has no row", async () => {
+    m.select.mockResolvedValue([]);
+    expect((await load()).row).toBeNull();
+  });
+
+  it("returns the row when there is one", async () => {
+    m.select.mockResolvedValue([{ chapterId: "whatYouHave", generatedText: "Words." }]);
+    expect((await load()).row).toMatchObject({ generatedText: "Words." });
   });
 });
 

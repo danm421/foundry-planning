@@ -6,7 +6,12 @@ import { recordAudit } from "@/lib/audit";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { parseBody } from "@/lib/schemas/common";
 import { planStoryChapterPatchSchema } from "@/lib/schemas/plan-story";
-import { updateChapterText, markChapterReviewed } from "@/lib/presentations/story/repo";
+import {
+  updateChapterText,
+  markChapterReviewed,
+  loadStoryChapter,
+  hasNewerGeneration,
+} from "@/lib/presentations/story/repo";
 import { resolveStoryScenarioId } from "@/lib/presentations/story/scenario-scope";
 import { CHAPTER_IDS, type ChapterId } from "@/lib/presentations/story/types";
 
@@ -101,6 +106,32 @@ export async function PATCH(
      * advisor's own sentences, which is what the click is for.
      */
     if (acceptGenerated === true) {
+      /**
+       * ⚠️⚠️ THE ONE READ THIS ROUTE DOES, and the only path that earns one.
+       *
+       * Everything else here is an upsert precisely so it needs no lookup. But
+       * the banner this click comes from was rendered off a chapter list that
+       * can be minutes old: an advisor with the report open in two tabs can
+       * save a fresh edit in one and press this in the other, and an unchecked
+       * accept would then discard writing nothing had shadowed and revert the
+       * chapter to OLDER model prose.
+       *
+       * The click stays explicit and audited either way, so this is not what
+       * keeps Decision 1 true. It is what keeps the button's own sentence true
+       * — "the assistant rewrote this chapter after you edited it" — and a
+       * control that lies about what it is about to do is the defect this whole
+       * task exists to fix.
+       *
+       * 409 rather than 400: the request was well formed and was right when it
+       * was made. The row moved underneath it.
+       */
+      const row = await loadStoryChapter({ clientId: id, scenarioId, documentRole, chapterId });
+      if (row == null || !hasNewerGeneration(row)) {
+        return NextResponse.json(
+          { error: "This chapter has no newer version to switch to — reload and look again." },
+          { status: 409 },
+        );
+      }
       await updateChapterText({ clientId: id, scenarioId, documentRole, chapterId, editedText: "" });
       await recordAudit({
         action: "plan_story.generated_accepted",

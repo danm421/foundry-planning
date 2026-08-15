@@ -61,11 +61,11 @@ export function resolveChapterText(
  * writing without a click that says so. It is what the panel needs in order to
  * SAY what happened and offer the swap.
  *
- * ⚠️ Both timestamps are nullable, and a null is a REFUSAL to answer rather
- * than a zero. Every row written before 0242 carries null on BOTH sides, and a
- * row edited since but not regenerated carries one — either way the order is
- * unknowable. False is the only safe reading: a wrong TRUE puts "Use the new
- * version instead" in front of an advisor over prose that was never superseded.
+ * ⚠️ Both timestamps are nullable, and a null is not a zero — it means that
+ * writer has not run since 0242 deployed. Which makes ONE of the two null cases
+ * decidable and the other not; see the guards below. Where it is not decidable,
+ * false: a wrong TRUE puts "Use the new version instead" in front of an advisor
+ * over prose that was never superseded.
  */
 export function hasNewerGeneration(row: {
   editedText: string | null;
@@ -75,7 +75,23 @@ export function hasNewerGeneration(row: {
 }): boolean {
   if (words(row.editedText) == null) return false;
   if (words(row.generatedText) == null) return false;
-  if (row.editedAt == null || row.generatedAt == null) return false;
+  // No generation since 0242. Whatever produced the stored words did so before
+  // the deploy, and so did the edit — genuinely unknowable, so we do not guess.
+  if (row.generatedAt == null) return false;
+  /**
+   * ⭐ A generation HAS run since 0242 and no edit has — so the model wrote
+   * last, and this is a fact rather than an optimistic reading.
+   *
+   * `updateChapterText` is the ONLY writer of `edited_text` anywhere in `src/`,
+   * and it stamps `editedAt` unconditionally on both its paths. A null here
+   * therefore means no edit since the deploy, while the non-null `generatedAt`
+   * above means a generation since it.
+   *
+   * ⚠️ This is exactly the chapter the live defect was confirmed on — its
+   * `edited_at` is NULL. Refusing to answer would leave that row showing no
+   * banner after a Regenerate, which reads as the fix not working.
+   */
+  if (row.editedAt == null) return true;
   // Strictly later. `updateChapterText` stamps `editedAt` and `updatedAt` from
   // one clock read, and a generation that reproduced the stored words does not
   // move `generatedAt` at all — so equal means the advisor's write is current.
@@ -161,6 +177,38 @@ export async function listStoryChapters(
         eq(planStoryChapters.documentRole, documentRole),
       ),
     );
+}
+
+/**
+ * ONE chapter's row, or null when it has never been written.
+ *
+ * Its own read rather than a `listStoryChapters(...).find(...)`: the only
+ * caller is the accept path, which needs one row's timestamps and would
+ * otherwise pull fourteen chapters of prose across the wire to look at one.
+ *
+ * ⚠️ Scoped on the FULL four-part key, not on `chapterId`. Every client,
+ * scenario and register in this table holds a row for the same chapter id, so a
+ * read missing a term would answer the accept guard about a different report's
+ * chapter — and that guard decides whether advisor writing is destroyed.
+ */
+export async function loadStoryChapter(args: {
+  clientId: string;
+  scenarioId: string;
+  documentRole: DocumentRole;
+  chapterId: ChapterId;
+}): Promise<PlanStoryChapterRow | null> {
+  const [row] = await db
+    .select()
+    .from(planStoryChapters)
+    .where(
+      and(
+        eq(planStoryChapters.clientId, args.clientId),
+        eq(planStoryChapters.scenarioId, args.scenarioId),
+        eq(planStoryChapters.documentRole, args.documentRole),
+        eq(planStoryChapters.chapterId, args.chapterId),
+      ),
+    );
+  return row ?? null;
 }
 
 /**

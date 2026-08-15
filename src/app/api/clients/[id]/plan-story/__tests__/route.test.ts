@@ -37,6 +37,7 @@ const mocks = vi.hoisted(() => ({
   requireActiveSubscriptionForFirm: vi.fn(),
   recordAudit: vi.fn(),
   listStoryChapters: vi.fn(),
+  loadStoryChapter: vi.fn(),
   updateChapterText: vi.fn(),
   markChapterReviewed: vi.fn(),
   upsertGeneratedChapter: vi.fn(),
@@ -92,6 +93,10 @@ vi.mock("@/lib/presentations/story/repo", async () => {
   return {
     ...actual,
     listStoryChapters: mocks.listStoryChapters,
+    // A READER, unlike the three below it — but mocked for the same reason: it
+    // goes to the database. `hasNewerGeneration` stays REAL, so the accept
+    // guard's decision is exercised rather than restated.
+    loadStoryChapter: mocks.loadStoryChapter,
     updateChapterText: mocks.updateChapterText,
     markChapterReviewed: mocks.markChapterReviewed,
     upsertGeneratedChapter: mocks.upsertGeneratedChapter,
@@ -221,6 +226,16 @@ const chapterRow = (over: Partial<Record<string, unknown>> = {}) => ({
 const EDITED_AT = new Date("2026-08-14T11:00:00.000Z");
 const REWRITTEN_AT = new Date("2026-08-14T12:00:00.000Z");
 
+/** The row "Use the new version instead" is legitimately pressed on: the
+ *  advisor's words, with a newer generation stored behind them. */
+const shadowedRow = () =>
+  chapterRow({
+    generatedText: "The model's rewrite.",
+    generatedAt: REWRITTEN_AT,
+    editedText: "My words.",
+    editedAt: EDITED_AT,
+  });
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.scenarioRows = [];
@@ -248,6 +263,9 @@ beforeEach(() => {
   });
   mocks.recordAudit.mockResolvedValue(undefined);
   mocks.listStoryChapters.mockResolvedValue([]);
+  // The ordinary state for the accept path: a rewrite really is being
+  // withheld. Every refusal case below overrides it.
+  mocks.loadStoryChapter.mockResolvedValue(shadowedRow());
   mocks.updateChapterText.mockResolvedValue(undefined);
   mocks.markChapterReviewed.mockResolvedValue(undefined);
   mocks.upsertGeneratedChapter.mockResolvedValue(undefined);
@@ -947,6 +965,78 @@ describe("PATCH /api/clients/[id]/plan-story/[chapterId]", () => {
       expect(mocks.recordAudit).not.toHaveBeenCalled();
     });
 
+    /**
+     * ⚠️⚠️ CHECKED AGAINST THE ROW IT CLAIMS TO BE ACCEPTING.
+     *
+     * The panel's payload says "accept", but the banner behind it was rendered
+     * from a chapter list that may be minutes old. An advisor with the report
+     * open in two tabs can save a fresh edit in one and then press this button
+     * in the other — and without the read, the route discards writing that was
+     * never shadowed and reverts the chapter to OLDER model prose.
+     *
+     * Decision 1 is not broken either way (the click is explicit and audited),
+     * but the button's own sentence — "the assistant rewrote this after you
+     * edited it" — stops being true, and a control that lies about what it is
+     * doing is the thing this whole task exists to fix.
+     */
+    it("refuses when the row is not actually shadowing a newer generation", async () => {
+      // The advisor wrote LAST — what the second tab just did.
+      mocks.loadStoryChapter.mockResolvedValue(
+        chapterRow({
+          generatedText: "The model's older draft.",
+          generatedAt: EDITED_AT,
+          editedText: "My fresh words.",
+          editedAt: REWRITTEN_AT,
+        }),
+      );
+      const res = await patch({
+        scenarioId: "base",
+        documentRole: "standalone",
+        acceptGenerated: true,
+      });
+      expect(res.status).toBe(409);
+      expect(mocks.updateChapterText).not.toHaveBeenCalled();
+      expect(mocks.recordAudit).not.toHaveBeenCalled();
+    });
+
+    // …and the same for a chapter with no row at all, which is an ordinary
+    // state here: the panel lists every chapter whether one was ever written.
+    it("refuses when there is no row behind the click", async () => {
+      mocks.loadStoryChapter.mockResolvedValue(null);
+      const res = await patch({
+        scenarioId: "base",
+        documentRole: "standalone",
+        acceptGenerated: true,
+      });
+      expect(res.status).toBe(409);
+      expect(mocks.updateChapterText).not.toHaveBeenCalled();
+      expect(mocks.recordAudit).not.toHaveBeenCalled();
+    });
+
+    // Kills: reading a different row than the one being written. The four-part
+    // key is what makes the guard about THIS chapter of THIS report.
+    it("reads the same row it writes", async () => {
+      await patch({ scenarioId: "base", documentRole: "standalone", acceptGenerated: true });
+      expect(mocks.loadStoryChapter).toHaveBeenCalledWith({
+        clientId: CLIENT_ID,
+        scenarioId: "base",
+        documentRole: "standalone",
+        chapterId: "planInOnePage",
+      });
+      expect(mocks.loadStoryChapter.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.updateChapterText.mock.invocationCallOrder[0],
+      );
+    });
+
+    // …and the read never happens for the two write paths that do not discard
+    // anything. An edit and a review are the per-keystroke and per-click paths;
+    // neither may grow a lookup because this one needed one.
+    it("does not read the row for an ordinary edit or review", async () => {
+      await patch({ scenarioId: "base", documentRole: "standalone", editedText: "hi" });
+      await patch({ scenarioId: "base", documentRole: "standalone", reviewed: true });
+      expect(mocks.loadStoryChapter).not.toHaveBeenCalled();
+    });
+
     // Kills: a truthiness test on the flag. `false` is a caller saying "no",
     // which changes nothing — and a body that changes nothing is a 400 for the
     // reason the test above this describe gives.
@@ -1089,7 +1179,9 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
     expect(mocks.upsertGeneratedChapter).toHaveBeenCalledWith(
       expect.objectContaining({ clientId: CLIENT_ID, generatedByUserId: "user_1" }),
     );
-    // Every row, not just the first: a run writes thirteen of them.
+    // Every row, not just the first — `BASE_ONLY.length` of them for this
+    // story, counted off the real registry rather than written down here.
+    expect(mocks.upsertGeneratedChapter.mock.calls).toHaveLength(BASE_ONLY.length);
     for (const call of mocks.upsertGeneratedChapter.mock.calls) {
       expect((call[0] as { generatedByUserId: string }).generatedByUserId).toBe("user_1");
     }
