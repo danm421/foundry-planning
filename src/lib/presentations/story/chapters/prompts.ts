@@ -373,27 +373,29 @@ export function buildChapterPrompt(
   const mine = ctx.facts.filter((f) => !f.primary || f.primary === chapterId);
   const elsewhere = ctx.facts.filter((f) => f.primary && f.primary !== chapterId);
 
-  const factBlock =
-    mine.length > 0
-      ? [
-          // "The only figures you may use" is exactly true when nothing follows
-          // it, and false the moment `coveredBlock` does — those figures are
-          // usable too, which is the point of showing them. Two headings rather
-          // than one softened heading, because keeping the original wording
-          // untouched for a pack with no `primary` in it is what leaves the
-          // prompt byte-identical there, which the fourteen hashes in
-          // `__tests__/prompts.test.ts` pin.
-          `${elsewhere.length > 0 ? "The figures for this chapter" : "The only figures you may use"}, copied exactly. The left of each line is our own note about what the figure means — never print it:`,
-          mine.map((f) => `- ${f.label}: ${f.display}`).join("\n"),
-        ]
-      : elsewhere.length > 0
-        ? // Reachable, and measured rather than imagined: no scope constant in
-          // `build-facts.ts` names `whatHappensNext`, so on a fully-populated
-          // pack its whole scoped set is the two plan years — none of which it
-          // owns. The other branch's sentence would tell that chapter to "write
-          // it without any numbers at all" directly above a list of two.
-          ["You have no figures of your own for this chapter."]
-        : ["You have no figures for this chapter. Write it without any numbers at all."];
+  let factBlock: string[];
+  if (mine.length > 0) {
+    // "The only figures you may use" is exactly true when nothing follows it, and
+    // false the moment `coveredBlock` does — those figures are usable too, which
+    // is the point of showing them. Two headings rather than one softened
+    // heading, because keeping the original wording untouched for a pack with no
+    // `primary` in it is what leaves the prompt byte-identical there, which the
+    // fourteen hashes in `__tests__/prompts.test.ts` pin.
+    const heading = elsewhere.length > 0 ? "The figures for this chapter" : "The only figures you may use";
+    factBlock = [
+      `${heading}, copied exactly. The left of each line is our own note about what the figure means — never print it:`,
+      mine.map((f) => `- ${f.label}: ${f.display}`).join("\n"),
+    ];
+  } else if (elsewhere.length > 0) {
+    // Reachable, and measured rather than imagined: no scope constant in
+    // `build-facts.ts` names `whatHappensNext`, so on a fully-populated pack its
+    // whole scoped set is the two plan years — none of which it owns. The branch
+    // below would tell that chapter to "write it without any numbers at all"
+    // directly above a list of two.
+    factBlock = ["You have no figures of your own for this chapter."];
+  } else {
+    factBlock = ["You have no figures for this chapter. Write it without any numbers at all."];
+  }
 
   /**
    * The figures another chapter owns. Still shown, deliberately.

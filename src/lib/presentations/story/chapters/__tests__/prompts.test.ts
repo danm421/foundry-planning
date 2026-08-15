@@ -572,8 +572,13 @@ describe("buildChapterPrompt — figures another chapter owns", () => {
     expect(user).not.toContain("belong to another page");
   });
 
-  // …and a chapter with nothing at all still gets the sentence `generate.ts`
-  // relies on when it decides whether the "about this plan" floor applies.
+  // …and a chapter with nothing at all keeps that sentence VERBATIM, because
+  // `generate.ts#floorApplies`'s docblock quotes it as the reason the "about this
+  // plan" floor is calibrated where it is. Nothing reads the string at runtime:
+  // the floor is `namesSomethingSupplied(narrative, ctx)`, which matches the
+  // deterministic narrative against the pack's `display` values, the strategy
+  // names and the household's first names. This pin keeps the citation true; it
+  // does not hold a mechanism up.
   it("still tells a chapter with no figures at all to write without numbers", () => {
     const user = promptFor("whatHappensNext", []);
     expect(user).toContain("You have no figures for this chapter. Write it without any numbers at all.");

@@ -10,7 +10,7 @@ import { buildStoryFacts, groupStrategies, type StoryFactsInput } from "../build
 import { factDisplaySet } from "../facts";
 import { extractFigures, validateFacts } from "../validate/facts";
 import { narrateWhatWeRecommend } from "../chapters/what-we-recommend";
-import { factsForChapter, type StoryContext, type StoryStrategy } from "../types";
+import { CHAPTER_IDS, factsForChapter, type StoryContext, type StoryStrategy } from "../types";
 
 const input: StoryFactsInput = {
   todayAssets: 2_400_000,
@@ -671,19 +671,36 @@ describe("fact scoping", () => {
  * in 2035" and "through 2070" in 12 of 14 chapters, "2035 is when work income
  * stops" opened a paragraph in 7 of 14, and 22 of 48 paragraphs opened with the
  * shape `<figure> is <what it is>`. `plan.retirementYear` and `plan.endOfLifeYear`
- * are the ONLY two facts this file emits with no `chapters` — `factsForChapter`
- * reads that as "belongs everywhere", which is exactly what the read found.
+ * are the ONLY two facts `build-facts.ts` emits with no `chapters` —
+ * `factsForChapter` reads that as "belongs everywhere", which is exactly what the
+ * read found.
  *
- * `primary` does not re-scope them. Both stay available to all fourteen chapters
- * (the `fact scoping` block above pins that, and Gate 1 depends on it); the
- * prompt only stops listing them as this chapter's own. See
- * `chapters/prompts.ts`.
+ * `primary` does not re-scope them. Both stay available to all fourteen chapters,
+ * which `leaves both of them reachable from every chapter` below pins in full —
+ * and Gate 1 depends on it, because `validateFacts` grounds a chapter's prose
+ * against that chapter's scoped pack. What changes is only that the prompt stops
+ * listing them as this chapter's own. See `chapters/prompts.ts`.
  */
 describe("a home chapter for the figures every chapter could see", () => {
   it("gives the retirement year and the horizon to the chapter about their goals", () => {
     const facts = buildStoryFacts(input);
     expect(facts.find((f) => f.id === "plan.retirementYear")?.primary).toBe("whatWerePlanningFor");
     expect(facts.find((f) => f.id === "plan.endOfLifeYear")?.primary).toBe("whatWerePlanningFor");
+  });
+
+  /**
+   * The other half of that, and the half the pre-existing `fact scoping` block
+   * does NOT cover: it checks one of the two facts against three chapters.
+   * `primary` must leave both reachable from all fourteen, or Gate 1 would reject
+   * a chapter for a year that is no longer in its scoped pack.
+   */
+  it("leaves both of them reachable from every chapter", () => {
+    const facts = buildStoryFacts(input);
+    for (const id of CHAPTER_IDS) {
+      const ids = factsForChapter(facts, id).map((f) => f.id);
+      expect(ids).toContain("plan.retirementYear");
+      expect(ids).toContain("plan.endOfLifeYear");
+    }
   });
 
   /**
