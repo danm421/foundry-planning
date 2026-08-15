@@ -33,17 +33,25 @@ const RULE_LINE_RE = /^[\s|:-]*-[\s|:-]*$/u;
 /** The other two spellings CommonMark allows for a horizontal rule: three or
  *  more of the SAME character, `*` or `_`, each optionally followed by
  *  whitespace. `RULE_LINE_RE` above only ever checked for a literal `-` —
- *  when this module's strip was a blanket `[*_`]` delete, a `***`/`___` line
- *  still vanished as a side effect (reduced to the empty string, then
- *  dropped by `.filter(Boolean)`); once the strip became syntax-aware, an
- *  UNMATCHED delimiter run prints literally instead of vanishing, and this
- *  gap started reaching the page. Measured: the pre-task implementation
- *  (`31518ab2f`) produced `[]` for a standalone `"***"` paragraph; the
- *  syntax-aware strip alone produced `["***"]` — a lone `***` printing on a
- *  client PDF. This closes that gap without loosening `RULE_LINE_RE` itself,
- *  which also has to stay permissive enough to catch a table's own
- *  delimiter row (pipes and alignment colons `*`/`_` never appear in). */
+ *  while this module's strip was a blanket `[*_`]` delete, a `***`/`___`
+ *  line still vanished as a side effect (each character removed, leaving an
+ *  empty string, then dropped by `.filter(Boolean)`); once the strip became
+ *  syntax-aware, an UNMATCHED delimiter run prints literally instead of
+ *  vanishing, and this gap started reaching the page. This closes that gap
+ *  without loosening `RULE_LINE_RE` itself, which also has to stay
+ *  permissive enough to catch a table's own delimiter row (pipes and
+ *  alignment colons `*`/`_` never appear in). */
 const STAR_OR_UNDERSCORE_RULE_RE = /^\s{0,3}(?:(?:\*\s*){3,}|(?:_\s*){3,})$/u;
+
+/** A line that is nothing but backtick(s) — a stray or malformed code-fence
+ *  attempt with no prose value, the backtick equivalent of the rule above.
+ *  Unlike `*`/`_`, a bare backtick has no legitimate meaning in financial
+ *  narrative prose (it is not a footnote mark, a math sign, or part of an
+ *  identifier), so — same as the `*`/`_`-spelled rule — this drops the
+ *  WHOLE LINE rather than leaving an unmatched delimiter to print literally.
+ *  A backtick embedded in real prose (`` "It costs `$5 more" ``) is
+ *  unaffected: that line has other content and never matches this. */
+const BACKTICK_ONLY_LINE_RE = /^\s*`+\s*$/u;
 
 /**
  * Markdown syntax, removed before it reaches the page.
@@ -57,7 +65,12 @@ const STAR_OR_UNDERSCORE_RULE_RE = /^\s{0,3}(?:(?:\*\s*){3,}|(?:_\s*){3,})$/u;
 function stripMarkdown(paragraph: string): string {
   return paragraph
     .split(/\r?\n/u)
-    .filter((line) => !RULE_LINE_RE.test(line) && !STAR_OR_UNDERSCORE_RULE_RE.test(line))
+    .filter(
+      (line) =>
+        !RULE_LINE_RE.test(line) &&
+        !STAR_OR_UNDERSCORE_RULE_RE.test(line) &&
+        !BACKTICK_ONLY_LINE_RE.test(line),
+    )
     .map((line) => {
       const withoutHeading = line.replace(/^ {0,3}#{1,6}\s+/u, "");
       const withoutPipes = isTableRow(line)
@@ -99,6 +112,17 @@ function isTableRow(line: string): boolean {
 // by classifying each delimiter run's ability to open/close FIRST (the
 // flanking rules below), then pairing runs with a stack — a disqualified run
 // simply never gets pushed or popped, so it can't disturb anything else.
+//
+// The stack below also SPLITS a run rather than treating "*" and "**" as two
+// unrelated token types: CommonMark lets a delimiter run of length 3 close a
+// "**" pair and still have one "*" left over to open or close something
+// else — `"***bold and italic***"` needs its whole 3-run to close against
+// its whole 3-run opener (one match, all 6 characters), and
+// `"**really *significant*** growth"` needs the trailing 3-run to close
+// against TWO different openers in turn (1 character against the `*`
+// opener, then its remaining 2 against the `**` opener). Treating "*" and
+// "**" as fixed, non-splittable tokens (the previous shape of this scan)
+// left both of those printing literal asterisks on the page.
 
 /** CommonMark's "Unicode punctuation character": ASCII punctuation plus the
  *  Unicode general categories P* and S* — the same union the spec's own
@@ -118,7 +142,8 @@ function isBoundaryLike(neighbor: string | undefined): boolean {
  *  as whitespace for the "not preceded/followed by whitespace" clause —
  *  there is no character there to BE non-whitespace — but still counts as a
  *  boundary for the punctuation clause, which explicitly allows "or the
- *  edge of the line". */
+ *  edge of the line". Computed once per run from its ORIGINAL neighbours;
+ *  a run's ability to open/close does not change as it is later split. */
 function isLeftFlanking(prev: string | undefined, next: string | undefined): boolean {
   if (next === undefined || WHITESPACE_RE.test(next)) return false;
   return !PUNCTUATION_RE.test(next) || isBoundaryLike(prev);
@@ -128,45 +153,48 @@ function isRightFlanking(prev: string | undefined, next: string | undefined): bo
   return !PUNCTUATION_RE.test(prev) || isBoundaryLike(next);
 }
 
-type DelimType = "*" | "**" | "_" | "__";
-
+/** A run's `start`/`end` shrink as it is split across multiple pairings — an
+ *  opener is consumed from its END (the side nearest the content it will
+ *  wrap, closest-nesting-first) and a closer from its START (same reason,
+ *  mirrored) — so `start`/`end` always bound whatever of the run is still
+ *  unconsumed and available to pair with something else. `canOpen`/
+ *  `canClose` are fixed at scan time and apply to the whole run for its
+ *  lifetime, however much of it remains. */
 interface DelimRun {
-  type: DelimType;
+  char: "*" | "_";
   start: number;
   end: number;
   canOpen: boolean;
   canClose: boolean;
 }
 
-/** Longest run first (`**` before `*`) at each position, same preference the
- *  old regex alternation used. A run of 3+ of the same character — not a
- *  target of any test here, and CommonMark's own handling of it is a further
- *  layer of complexity this module doesn't need — falls out as a 2-run
- *  immediately followed by 1-runs. */
-const DELIM_TOKEN_RE = /\*\*|\*|__|_/gu;
+/** Maximal runs of `*` or `_` — NOT capped at length 2. Splitting a run
+ *  across multiple pairings (below) is what makes a fixed cap unnecessary:
+ *  a length-3 run is one token here, not "**" plus "*". */
+const DELIM_TOKEN_RE = /\*+|_+/gu;
 
 function scanDelimiterRuns(line: string): DelimRun[] {
   const runs: DelimRun[] = [];
   DELIM_TOKEN_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = DELIM_TOKEN_RE.exec(line))) {
-    const type = match[0] as DelimType;
+    const char = match[0][0] as "*" | "_";
     const start = match.index;
     const end = start + match[0].length;
     const prev = start > 0 ? line[start - 1] : undefined;
     const next = end < line.length ? line[end] : undefined;
     const left = isLeftFlanking(prev, next);
     const right = isRightFlanking(prev, next);
-    // `_`/`__` additionally can't open/close INTRAWORD (CommonMark's extra
-    // rule for underscores): flanking on BOTH sides at once only counts as a
+    // `_` additionally can't open/close INTRAWORD (CommonMark's extra rule
+    // for underscores): flanking on BOTH sides at once only counts as a
     // valid opener/closer when the OTHER side is punctuation — which is what
     // stops `plan_review_2026` from reading as a pair (flanking on both
     // sides, neither side punctuation) while still letting `__init__`
     // (flanking on only one side each — start-of-line / space) strip as
-    // real bold. `*`/`**` carry no such restriction.
-    const underscoreGuard = type === "_" || type === "__";
+    // real bold. `*` carries no such restriction.
+    const underscoreGuard = char === "_";
     runs.push({
-      type,
+      char,
       start,
       end,
       canOpen: underscoreGuard ? left && (!right || (prev !== undefined && PUNCTUATION_RE.test(prev))) : left,
@@ -176,46 +204,95 @@ function scanDelimiterRuns(line: string): DelimRun[] {
   return runs;
 }
 
-/** A single backtick pair — matched pair only, non-whitespace-padded
- *  content, same shape as the delimiter runs below but without their
- *  flanking rules (code spans aren't emphasis). Runs first, so a code
- *  span's own `*`/`_` characters are gone before the delimiter scan ever
- *  sees them — except for one pre-existing, ledgered gap this task doesn't
- *  close: that scan still re-examines whatever the code span's CONTENT
- *  contained, the same as it always has. */
-const CODE_SPAN_RE = /`(?=\S)(.+?)(?<=\S)`/gu;
-
-/** Delimiter runs are paired with a stack: a closer looks for the nearest
- *  still-open run of the SAME type (strict nesting only — this module has
- *  never needed the crossing patterns full CommonMark allows, and chapter
- *  prose doesn't produce them). Stripping a matched pair is then just
- *  deleting its two delimiter runs; nesting needs no second pass, because an
- *  inner pair's runs are already marked for deletion by the time the outer
- *  pair's content is read out. */
-function stripEmphasis(line: string): string {
-  const withoutCode = line.replace(CODE_SPAN_RE, (_match, content: string) => content);
-  const runs = scanDelimiterRuns(withoutCode);
-  const stack: DelimRun[] = [];
-  const toDelete = new Set<DelimRun>();
-  for (const run of runs) {
-    const opener = stack[stack.length - 1];
-    if (run.canClose && opener !== undefined && opener.type === run.type) {
-      stack.pop();
-      toDelete.add(opener);
-      toDelete.add(run);
-    } else if (run.canOpen) {
-      stack.push(run);
-    }
+/** CommonMark code spans: a backtick run opens, and the NEXT run of the SAME
+ *  length closes it — a different backtick count in between is content, not
+ *  a delimiter (the single `` ` `` inside `` ``word`word`` `` survives as
+ *  literal code content this way, which is the actual mechanism CommonMark
+ *  gives an advisor for writing a code span that itself needs to show a
+ *  backtick). Non-whitespace-padded, same as the delimiter runs above, but
+ *  without their flanking rules — code spans aren't emphasis.
+ *  First-found-length-match wins, and scanning resumes after the closer.
+ *
+ *  Matching runs by length correctly in one pass replaces what this
+ *  module's old fixed-point loop was accidentally doing for nested spans by
+ *  brute force: `` ``a`` `` took three passes of a single-backtick regex
+ *  (``a`` → `a` → a) to fully resolve; one correct pass gets there directly. */
+function stripCodeSpans(line: string): string {
+  const runs: { start: number; end: number }[] = [];
+  const runRe = /`+/gu;
+  let match: RegExpExecArray | null;
+  while ((match = runRe.exec(line))) {
+    runs.push({ start: match.index, end: match.index + match[0].length });
   }
+  if (runs.length < 2) return line;
+
+  const toDelete: [number, number][] = [];
+  let i = 0;
+  while (i < runs.length - 1) {
+    const opener = runs[i];
+    const openerLength = opener.end - opener.start;
+    const closerIndex = runs.findIndex((run, j) => j > i && run.end - run.start === openerLength);
+    if (closerIndex === -1) {
+      i++;
+      continue;
+    }
+    const closer = runs[closerIndex];
+    const content = line.slice(opener.end, closer.start);
+    if (content.length > 0 && !WHITESPACE_RE.test(content[0]) && !WHITESPACE_RE.test(content[content.length - 1])) {
+      toDelete.push([opener.start, opener.end], [closer.start, closer.end]);
+    }
+    i = closerIndex + 1;
+  }
+  if (toDelete.length === 0) return line;
+  return deleteRanges(line, toDelete);
+}
+
+function deleteRanges(source: string, ranges: [number, number][]): string {
+  const sorted = [...ranges].sort((a, b) => a[0] - b[0]);
   let out = "";
   let cursor = 0;
-  for (const run of runs) {
-    if (!toDelete.has(run)) continue;
-    out += withoutCode.slice(cursor, run.start);
-    cursor = run.end;
+  for (const [start, end] of sorted) {
+    out += source.slice(cursor, start);
+    cursor = Math.max(cursor, end);
   }
-  out += withoutCode.slice(cursor);
+  out += source.slice(cursor);
   return out;
+}
+
+/** Delimiter runs are paired with a stack: a closer looks for the nearest
+ *  still-open run of the SAME character (strict nesting only — this module
+ *  has never needed the crossing patterns full CommonMark allows between
+ *  DIFFERENT characters, and chapter prose doesn't produce them; `*` and
+ *  `_` can never pair with each other). Consuming `min(opener, closer)`
+ *  length at each match, shrinking both, and continuing while the closer
+ *  still has length left is the split described above. Because this module
+ *  only ever deletes matched delimiter characters and keeps content
+ *  verbatim, the precise 1-then-2 chunking CommonMark's own reference
+ *  algorithm uses to prefer strong over regular emphasis makes no
+ *  observable difference here — the total characters consumed between one
+ *  opener and one closer is `min(opener length, closer length)` either way,
+ *  so one bigger step produces the same deletions as several smaller ones. */
+function stripEmphasis(line: string): string {
+  const withoutCode = stripCodeSpans(line);
+  const runs = scanDelimiterRuns(withoutCode);
+  const stack: DelimRun[] = [];
+  const toDelete: [number, number][] = [];
+  for (const run of runs) {
+    if (run.canClose) {
+      while (run.start < run.end) {
+        const opener = stack[stack.length - 1];
+        if (opener === undefined || opener.char !== run.char) break;
+        const use = Math.min(opener.end - opener.start, run.end - run.start);
+        toDelete.push([opener.end - use, opener.end]);
+        opener.end -= use;
+        toDelete.push([run.start, run.start + use]);
+        run.start += use;
+        if (opener.start === opener.end) stack.pop();
+      }
+    }
+    if (run.start < run.end && run.canOpen) stack.push(run);
+  }
+  return deleteRanges(withoutCode, toDelete);
 }
 
 /** Blank lines separate paragraphs; a single newline is a line break inside one. */

@@ -46,6 +46,11 @@ describe("splitParagraphs — markdown syntax still strips", () => {
   it("unwraps nested emphasis rather than leaving the inner delimiters behind", () => {
     expect(splitParagraphs("**a *b* c**")).toEqual(["a b c"]);
     expect(splitParagraphs("**bold and *italic* together**")).toEqual(["bold and italic together"]);
+    // A length-3 closing run must be able to close against TWO different
+    // openers in turn (1 character against the `*` opener, then its
+    // remaining 2 against the `**` opener) — this is delimiter-run
+    // splitting, covered in depth below.
+    expect(splitParagraphs("**really *significant*** growth")).toEqual(["really significant growth"]);
   });
 
   it("does not let emphasis span two paragraphs (or lines) it never opened on", () => {
@@ -147,6 +152,81 @@ describe("splitParagraphs — a disqualified asterisk does not disable a later r
 
   it("minimal repro: a disqualified asterisk followed by a real pair", () => {
     expect(splitParagraphs("x*,y *z* w")).toEqual(["x*,y z w"]);
+  });
+});
+
+describe("splitParagraphs — delimiter-run splitting (a run of 3+ closes across multiple openers)", () => {
+  // Treating "*" and "**" as fixed, non-splittable tokens (an earlier shape
+  // of this scan) left a length-3 run — "***" — unable to close against
+  // EITHER a "*" or a "**" opener, so it printed literally. CommonMark lets
+  // one physical run supply characters to more than one pairing. Measured
+  // against the pre-task implementation and fix-round-1 (both agree, via
+  // different mechanisms, since neither treated "*"/"**" as fixed tokens):
+  it.each([
+    ["***bold and italic***", "bold and italic"],
+    ["___text___", "text"],
+    ["***Important:*** review annually.", "Important: review annually."],
+  ])("closes a length-3 run against a length-3 opener in one match: %s", (input, expected) => {
+    expect(splitParagraphs(input)).toEqual([expected]);
+  });
+
+  it("closes a length-3 run against two different openers in turn", () => {
+    // 1 character of the trailing "***" closes the "*" opener (wrapping
+    // "significant"); the remaining 2 characters close the "**" opener
+    // (wrapping "really *significant*", already resolved) — both openers
+    // end up fully consumed, so every delimiter on the line disappears.
+    expect(splitParagraphs("**really *significant*** growth")).toEqual(["really significant growth"]);
+  });
+
+  it("does not let a run cross between DIFFERENT delimiter characters", () => {
+    // Splitting only ever happens within runs of the SAME character. A `*`
+    // closer must not be able to reach past a `_` sitting closer on the
+    // stack and consume it — CommonMark rule 9 requires the same character
+    // on both ends of a pairing. If this ever regressed, the `*` before "c"
+    // would incorrectly pair with the `_` before "b" instead of staying
+    // literal, and the output would lose the mid-line "*".
+    expect(splitParagraphs("*a _b* c_")).toEqual(["*a b* c"]);
+  });
+});
+
+describe("splitParagraphs — code spans", () => {
+  it("resolves a double-backtick span in one pass, without the old fixed-point loop", () => {
+    // The old fixed-point loop happened to fix this by re-running a
+    // single-backtick regex three times ("``a``" → "`a`" → "a"). Matching
+    // equal-length backtick runs directly gets there in one pass instead.
+    expect(splitParagraphs("``a``")).toEqual(["a"]);
+  });
+
+  it("lets a longer delimiter run wrap content that itself contains a shorter backtick run", () => {
+    // The `` ` `` in the middle survives as literal CODE CONTENT — this is
+    // the actual CommonMark mechanism for writing a code span that itself
+    // needs to display a literal backtick.
+    expect(splitParagraphs("``word`word``")).toEqual(["word`word"]);
+  });
+
+  it("does not treat a mismatched-length backtick pair as a code span", () => {
+    // Two backticks, then one — CommonMark requires the CLOSING run to be
+    // the same length as the opening one; with none available, nothing
+    // strips and the line stays fully literal.
+    expect(splitParagraphs("``word````")).toEqual(["``word````"]);
+  });
+});
+
+describe("splitParagraphs — a line that is nothing but backtick(s) drops whole", () => {
+  // The identical class to the `*`/`_`-spelled rule above, introduced the
+  // same way: while the strip was a blanket delete, a lone backtick line
+  // vanished as a side effect; once the strip became syntax-aware, an
+  // unmatched backtick — which has no legitimate meaning in financial
+  // narrative prose, unlike `*`/`_` — started printing literally instead.
+  it.each([
+    ["`", []],
+    ["```", []],
+  ])("drops %s entirely", (input, expected) => {
+    expect(splitParagraphs(input)).toEqual(expected);
+  });
+
+  it("does not touch a backtick that is genuinely part of a sentence", () => {
+    expect(splitParagraphs("It costs `$5 more")).toEqual(["It costs `$5 more"]);
   });
 });
 
