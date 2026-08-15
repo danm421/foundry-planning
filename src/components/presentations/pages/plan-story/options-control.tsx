@@ -3,7 +3,7 @@
 // options" — the review panel below the toggles is the same story the toggles
 // describe, on the same scenario.
 "use client";
-import { useId } from "react";
+import { useId, useMemo } from "react";
 import {
   applyPreset,
   type PlanStoryOptions,
@@ -14,6 +14,7 @@ import {
   CHAPTER_IDS,
   CHAPTER_LENGTHS,
   CHAPTER_TONES,
+  resolveChapterStyles,
   type ChapterId,
   type ChapterStyle,
 } from "@/lib/presentations/story/types";
@@ -60,10 +61,17 @@ const LENGTH_LABELS: Record<ChapterStyle["length"], string> = {
   full: "Full",
 };
 
-/** Per field, because a `FieldTooltip` belongs to the control it sits beside —
- *  and because the one thing an advisor has to know here is that this writes to
- *  all fourteen chapters rather than sitting behind them as a default. */
-const voiceTooltip = (what: string) =>
+/**
+ * Per field, because a `FieldTooltip` belongs to the control it sits beside —
+ * and because the one thing an advisor has to know here is that this writes to
+ * all fourteen chapters rather than sitting behind them as a default.
+ *
+ * ⚠️ The word "voice" is deliberately absent from this whole group. It already
+ * names the voice-SAMPLE library in this feature, which the review panel below
+ * points at by name ("Settings → Voice"), so a group called Voice would put two
+ * unrelated controls under one word on one screen.
+ */
+const readsTooltip = (what: string) =>
   `Sets the ${what} of every chapter at once. Change a single chapter in Review below — this then reads Mixed.`;
 
 const FIELD_SELECT =
@@ -77,6 +85,9 @@ const FIELD_SELECT =
  * over those fourteen entries, and the only honest thing it can display is what
  * they actually say. Without the mixed answer it would show one chapter's value
  * as though it were the report's, and quietly contradict the panel below it.
+ *
+ * ⚠️ Takes the RESOLVED map — never `value.chapterStyle`, which a deck saved
+ * before the field existed does not carry. See `styles` in the component.
  */
 function sharedValue<K extends keyof ChapterStyle>(
   chapterStyle: Record<ChapterId, ChapterStyle>,
@@ -102,25 +113,45 @@ export function PlanStoryOptionsControl({
   const lengthFieldId = useId();
 
   /**
+   * Every chapter's style, gaps filled — and the ONLY thing this control reads.
+   *
+   * ⚠️⚠️ RESOLVED rather than read straight off `value`. `chapterStyle` shipped
+   * after this page did, and stored options are validated on WRITE only: the
+   * template read path casts (`templates-repo.ts`), the localStorage draft
+   * restores raw (`use-launcher-draft.ts`), and the launcher hands the object
+   * over untouched (`selected-page-row.tsx`). So EVERY deck and draft saved
+   * before that ships arrives here without the field, and reading into it during
+   * render threw and took the whole Options dialog with it.
+   *
+   * The panel beside this one already types its copy `Partial<…>` for exactly
+   * this reason; this is the same admission on the control's side.
+   *
+   * ⚠️ Do NOT extend the same treatment to `value.sections` below. A missing key
+   * there is an uncontrolled-input warning rather than a throw, and `sections`
+   * has existed for as long as the page has — there is no stored deck without it.
+   */
+  const styles = useMemo(() => resolveChapterStyles(value.chapterStyle), [value.chapterStyle]);
+
+  /**
    * Writes ONE field across all fourteen entries, keeping each chapter's other
    * field as it stands.
    *
    * ⚠️ Deliberately does NOT drop the report out of its preset, unlike the
    * chapter checkboxes below. A preset names a document role and a chapter set
-   * — `PRESETS` carries exactly those two — and says nothing about the voice, so
-   * a "Full story" deck read in a direct register is still a Full story.
+   * — `PRESETS` carries exactly those two — and says nothing about how it reads,
+   * so a "Full story" deck written in a direct register is still a Full story.
    */
   function setEveryChapter<K extends keyof ChapterStyle>(field: K, next: ChapterStyle[K]) {
     onChange({
       ...value,
       chapterStyle: Object.fromEntries(
-        CHAPTER_IDS.map((id) => [id, { ...value.chapterStyle[id], [field]: next }]),
+        CHAPTER_IDS.map((id) => [id, { ...styles[id], [field]: next }]),
       ) as Record<ChapterId, ChapterStyle>,
     });
   }
 
-  const sharedTone = sharedValue(value.chapterStyle, "tone");
-  const sharedLength = sharedValue(value.chapterStyle, "length");
+  const sharedTone = sharedValue(styles, "tone");
+  const sharedLength = sharedValue(styles, "length");
 
   // Live scenarios only — the same set `ScenarioPickerDropdown` calls live, and
   // load-bearing rather than tidy here. Everything this drops writes a
@@ -183,10 +214,10 @@ export function PlanStoryOptionsControl({
 
         {/* Beside the preset, because both answer "how does this report read"
             before the chapter checkboxes answer "what is in it". */}
-        <OptionsGroup label="Voice">
+        <OptionsGroup label="How it reads">
           <div className={`flex items-center gap-1.5 ${caption}`}>
             <label htmlFor={toneFieldId}>Tone</label>
-            <FieldTooltip text={voiceTooltip("tone")} />
+            <FieldTooltip text={readsTooltip("tone")} />
           </div>
           <select
             id={toneFieldId}
@@ -212,7 +243,7 @@ export function PlanStoryOptionsControl({
 
           <div className={`flex items-center gap-1.5 ${caption}`}>
             <label htmlFor={lengthFieldId}>Length</label>
-            <FieldTooltip text={voiceTooltip("length")} />
+            <FieldTooltip text={readsTooltip("length")} />
           </div>
           <select
             id={lengthFieldId}
@@ -275,15 +306,15 @@ export function PlanStoryOptionsControl({
             clientId={clientId}
             scenarioId={value.scenarioId}
             documentRole={value.documentRole}
-            chapterStyle={value.chapterStyle}
+            chapterStyle={styles}
             // One chapter's entry, replaced. The panel holds no style of its
             // own — this is the write, and the options are what the deck saves,
             // what a reload reads back and what the export prints from.
+            //
+            // Spreads the RESOLVED map, so a pre-style deck is written back
+            // complete rather than having one key set beside thirteen absences.
             onChapterStyleChange={(chapterId, style) =>
-              onChange({
-                ...value,
-                chapterStyle: { ...value.chapterStyle, [chapterId]: style },
-              })
+              onChange({ ...value, chapterStyle: { ...styles, [chapterId]: style } })
             }
           />
         </div>

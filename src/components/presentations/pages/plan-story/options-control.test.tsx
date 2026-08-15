@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { PlanStoryOptionsControl } from "./options-control";
 import { PresentationOptionsProvider } from "@/components/presentations/options-context";
 import { EMPTY_INVESTMENT_OPTION_CATALOG } from "@/lib/presentations/investment-option-catalog";
@@ -28,10 +28,22 @@ const SCENARIOS: ScenarioOption[] = [
 
 function renderControl(
   overrides: Partial<PlanStoryOptions> = {},
-  opts: { clientId?: string | null; scenarios?: ScenarioOption[] } = {},
+  opts: {
+    clientId?: string | null;
+    scenarios?: ScenarioOption[];
+    /**
+     * The options object VERBATIM, skipping the merge over the defaults.
+     *
+     * The only way to render what a deck ACTUALLY stored: stored options are
+     * validated on write and merely cast on read, so a deck saved before a field
+     * existed reaches this control without that field — and merging the defaults
+     * in, as every other test here wants, is exactly what hides that.
+     */
+    storedValue?: PlanStoryOptions;
+  } = {},
 ) {
   const onChange = vi.fn();
-  const value = { ...PLAN_STORY_OPTIONS_DEFAULT, ...overrides };
+  const value = opts.storedValue ?? { ...PLAN_STORY_OPTIONS_DEFAULT, ...overrides };
   const control = <PlanStoryOptionsControl value={value} onChange={onChange} />;
   render(
     opts.clientId === null ? (
@@ -197,8 +209,11 @@ describe("PlanStoryOptionsControl", () => {
    * field — `chapterStyle`, per chapter — and no `defaultStyle`, so there is
    * nothing for a per-chapter value to override. This control writes all
    * fourteen entries and displays what they say.
+   *
+   * Named "How it reads" on screen, never "Voice": that word already names the
+   * voice-SAMPLE library this feature points advisors at.
    */
-  describe("the report-level voice", () => {
+  describe("the report-level tone and length", () => {
     const MIXED: PlanStoryOptions["chapterStyle"] = {
       ...PLAN_STORY_OPTIONS_DEFAULT.chapterStyle,
       planInOnePage: { tone: "direct", length: "short" },
@@ -269,6 +284,44 @@ describe("PlanStoryOptionsControl", () => {
       expect((onChange.mock.calls[0][0] as PlanStoryOptions).preset).toBe("full");
     });
 
+    /**
+     * ⚠️⚠️ EVERY deck, template and restored draft holding a Plan Story page
+     * predates `chapterStyle` — it shipped in Task 8.
+     *
+     * Stored options are validated on WRITE only
+     * (`api/presentation-templates/route.ts` → `template-descriptor-schema.ts`);
+     * the read path CASTS (`templates-repo.ts` — `pages: r.pages as
+     * TemplateDescriptor[]`), the localStorage draft restores raw and filters
+     * only unknown page ids (`use-launcher-draft.ts`), and the launcher hands
+     * the object straight over (`selected-page-row.tsx` — `props.options as
+     * never`). So the field arrives ABSENT and nothing in between fills it.
+     *
+     * Reading `chapterStyle[CHAPTER_IDS[0]][field]` during render then throws
+     * and takes the whole Options dialog with it.
+     */
+    it("opens on a deck saved before chapter styles existed", () => {
+      const storedValue = { ...PLAN_STORY_OPTIONS_DEFAULT };
+      delete (storedValue as Partial<PlanStoryOptions>).chapterStyle;
+      renderControl({}, { storedValue });
+      // The dialog renders at all…
+      expect(screen.getByText("Preset")).toBeInTheDocument();
+      // …and the absent field reads as the default rather than as a blank.
+      expect((screen.getByLabelText("Tone") as HTMLSelectElement).value).toBe("warm");
+      expect((screen.getByLabelText("Length") as HTMLSelectElement).value).toBe("standard");
+    });
+
+    // …and a bulk write from that deck fills all fourteen rather than spreading
+    // `undefined` back into storage.
+    it("heals a pre-style deck when the advisor sets a tone", () => {
+      const storedValue = { ...PLAN_STORY_OPTIONS_DEFAULT };
+      delete (storedValue as Partial<PlanStoryOptions>).chapterStyle;
+      const { onChange } = renderControl({}, { storedValue });
+      fireEvent.change(screen.getByLabelText("Tone"), { target: { value: "plain" } });
+      const next = styles(onChange);
+      expect(CHAPTER_IDS.every((id) => next[id]?.length === "standard")).toBe(true);
+      expect(CHAPTER_IDS.every((id) => next[id]?.tone === "plain")).toBe(true);
+    });
+
     it("hands the panel the stored style rather than a fresh default", async () => {
       renderControl({ chapterStyle: MIXED, scenarioId: LIVE_ID });
       await waitFor(() => expect(fetchMock()).toHaveBeenCalled());
@@ -277,6 +330,79 @@ describe("PlanStoryOptionsControl", () => {
       );
       expect(stale).toBeTruthy();
       expect(String(stale![0])).toContain("planInOnePage%3Adirect%3Ashort");
+    });
+  });
+
+  /**
+   * ⚠️⚠️ THE WIRE, and it was covered by nothing.
+   *
+   * The panel's own tests prove it CALLS `onChapterStyleChange`; the tests above
+   * prove this control passes styles DOWN. Neither runs the handler that joins
+   * them — replacing its whole body with a no-op left 84/84 green. That handler
+   * is the entire path by which an advisor's per-chapter tone survives a reload
+   * and reaches the export, so it has to be exercised through the real panel.
+   */
+  describe("one chapter's own style, written back", () => {
+    const PANEL_ROW = {
+      chapterId: "planInOnePage",
+      title: "Your plan, in one page",
+      text: "Your plan holds.",
+      generated: true,
+      edited: false,
+      aiSuppressed: false,
+      error: null,
+      reviewed: false,
+      candidate: true,
+    };
+
+    /** The panel makes TWO reads — the chapter list and the staleness check —
+     *  and renders no rows until the first answers. */
+    function stubPanelRow() {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string) =>
+          String(url).includes("/plan-story/stale")
+            ? new Response(JSON.stringify({ stale: [] }), { status: 200 })
+            : new Response(JSON.stringify({ scenarioId: "base", chapters: [PANEL_ROW] }), {
+                status: 200,
+              }),
+        ),
+      );
+    }
+
+    it("replaces that chapter's entry and leaves the other thirteen alone", async () => {
+      stubPanelRow();
+      const { onChange } = renderControl();
+      await screen.findByText(PANEL_ROW.title);
+      // Scoped to the row: the report-level pair carries the same two labels.
+      const tone = within(screen.getByRole("region", { name: PANEL_ROW.title })).getByLabelText(
+        "Tone",
+      );
+      fireEvent.change(tone, { target: { value: "direct" } });
+
+      expect(onChange).toHaveBeenCalledTimes(1);
+      const next = (onChange.mock.calls[0][0] as PlanStoryOptions).chapterStyle;
+      expect(next.planInOnePage).toEqual({ tone: "direct", length: "standard" });
+      // Exactly one chapter moved — a handler that wrote every entry would pass
+      // the line above and fail this one.
+      expect(CHAPTER_IDS.filter((id) => next[id].tone !== "warm")).toEqual(["planInOnePage"]);
+      expect(CHAPTER_IDS.every((id) => next[id].length === "standard")).toBe(true);
+    });
+
+    // …and the rest of the options survive the write. Kills a handler that
+    // rebuilds the object rather than spreading it.
+    it("keeps the rest of the report's options", async () => {
+      stubPanelRow();
+      const { onChange } = renderControl({ scenarioId: LIVE_ID, preset: "brief" });
+      await screen.findByText(PANEL_ROW.title);
+      fireEvent.change(
+        within(screen.getByRole("region", { name: PANEL_ROW.title })).getByLabelText("Length"),
+        { target: { value: "short" } },
+      );
+      const next = onChange.mock.calls[0][0] as PlanStoryOptions;
+      expect(next.scenarioId).toBe(LIVE_ID);
+      expect(next.preset).toBe("brief");
+      expect(next.chapterStyle.planInOnePage).toEqual({ tone: "warm", length: "short" });
     });
   });
 

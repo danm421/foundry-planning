@@ -100,7 +100,9 @@ function postCalls() {
 }
 
 /** The first generation request's body. `chapterStyle` is spelled out because
- *  three tests read into it; everything else stays `unknown`. */
+ *  the style tests read into it — *sends the row's tone and length with a
+ *  Regenerate* and *sends the style with a whole-run Generate all too*;
+ *  everything else stays `unknown`. */
 function postBody() {
   return JSON.parse(String((postCalls()[0][1] as RequestInit).body)) as {
     chapterStyle: Record<string, { tone: string; length: string }>;
@@ -137,9 +139,13 @@ function renderPanel(overrides: Partial<ComponentProps<typeof PlanStoryReviewPan
      * The same panel with new props IN PLACE, rather than a second mount. The
      * only way to prove a style change re-checks staleness without clearing the
      * drafts: a remount clears them anyway, so it would pass either way.
+     *
+     * ⚠️ `overrides` is re-applied UNDER `next`, so a test that rendered with a
+     * scenario and then rerenders only a style keeps that scenario. Without it
+     * the rerender silently reverts to `base` on every prop it does not name.
      */
     rerender: (next: Partial<ComponentProps<typeof PlanStoryReviewPanel>>) =>
-      view.rerender(<PlanStoryReviewPanel {...base} {...next} />),
+      view.rerender(<PlanStoryReviewPanel {...base} {...overrides} {...next} />),
   };
 }
 
@@ -607,7 +613,6 @@ describe("PlanStoryReviewPanel", () => {
   describe("rewriting one chapter", () => {
     const A = "Your plan, in one page";
     const B = "What we're recommending, and why";
-
 
     /** The generate route, refusing with `status` and (for a ceiling) the wait
      *  its `Retry-After` header names. */
