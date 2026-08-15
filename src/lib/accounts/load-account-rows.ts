@@ -111,18 +111,22 @@ type EngineAccountLike = Parameters<typeof controllingEntity>[0] & {
 };
 
 export function buildAccountRows({
-  accounts,
+  accounts: treeAccounts,
   familyMembers,
   accountMetaById,
   linkedSourceById,
   stockOptionPlans,
   planStartYear,
 }: BuildAccountRowsArgs): AccountRow[] {
+  // Renamed off `accounts` deliberately — this module imports the `accounts`
+  // TABLE from the schema, and a parameter of that name shadows it inside this
+  // function.
+  //
   // Derived for DISPLAY only — see `equity-derived-values.ts`. The `value` this
   // puts on the row is not data, which is why `buildScenarioDesiredFields`
   // strips it for stock_options rows and the Net Worth value cell is read-only
   // on them.
-  const engineAccounts = withDerivedEquityValues(accounts, stockOptionPlans, planStartYear);
+  const engineAccounts = withDerivedEquityValues(treeAccounts, stockOptionPlans, planStartYear);
 
   const clientFmId = familyMembers.find((fm) => fm.role === "client")?.id ?? null;
   const spouseFmId = familyMembers.find((fm) => fm.role === "spouse")?.id ?? null;
