@@ -76,7 +76,7 @@ const sectionShape = Object.fromEntries(
  * Zod schemas are immutable and all fourteen defaults are the same, so sharing
  * changes nothing at runtime — and `typeof chapterStyleSchema` is a generic that
  * cannot go stale when a third tone is added, which a hand-spelled one can.
- * (`sectionShape` below spells its generic out only because `ZodBoolean` takes
+ * (`sectionShape` above spells its generic out only because `ZodBoolean` takes
  * no type argument. `ZodEnum` does, and in Zod 4 it is an entries OBJECT, not
  * the tuple Zod 3 took.)
  */

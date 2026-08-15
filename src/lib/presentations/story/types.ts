@@ -83,10 +83,19 @@ export interface ChapterStyle {
  * ⚠️ Both values are load-bearing, not arbitrary. `TONE_LINE.warm` is the exact
  * sentence the system prompt carried before this setting existed and
  * `LENGTH_MODIFIER.standard` is the empty string, so a default-style prompt is
- * BYTE-IDENTICAL to the pre-setting one — which is what lets every chapter
- * already generated keep its stored `sourceHash` instead of reading stale on the
- * deploy that adds the setting. `chapters/__tests__/prompts.test.ts` pins that
- * against fourteen hashes recorded before the change.
+ * BYTE-IDENTICAL to the pre-setting one — which is what lets a chapter already
+ * generated keep its stored `sourceHash` instead of reading stale on the deploy
+ * that adds the setting. `chapters/__tests__/prompts.test.ts` pins that against
+ * fourteen hashes recorded before the change.
+ *
+ * ⚠️ ONE EXCEPTION, and it is not the style's: `chapters/prompts.ts#singleLine`
+ * NORMALISES the household name fields, so a record whose stored `firstNames` or
+ * `householdName` carries stray whitespace or a line break hashes differently
+ * across this deploy and reads stale once, clearing on the next generation.
+ * Measured, not reasoned: with `firstNames = "  Alan and Teresa  "` the prompts
+ * differ in both halves and the hash moves from `b54b08f3…` to `62ce3f36…`. A
+ * name already clean — every fixture, and the ordinary record — is
+ * byte-identical.
  */
 export const DEFAULT_CHAPTER_STYLE: ChapterStyle = { tone: "warm", length: "standard" };
 

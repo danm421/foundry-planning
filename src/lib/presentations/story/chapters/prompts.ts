@@ -184,6 +184,18 @@ function quoteAdvisorText(text: string): string {
  * covered for the reason `quoteAdvisorText` documents: a bare `\r` is a line
  * break to whatever reads the prompt and is not one to `split("\n")`, so a
  * fix that only handles `\n` leaves the welded shape behind.
+ *
+ * ⚠️ IT ALSO TRIMS. Normalising — not the style — is therefore what moves a
+ * stored `sourceHash` for a household nobody has restyled: any record whose name
+ * carries stray whitespace or a line break hashes differently across this
+ * deploy. Measured: `"  Alan and Teresa  "` built `(  Alan and Teresa  )` before
+ * and builds `(Alan and Teresa)` now, the prompt differs in BOTH halves, and the
+ * hash moves from `b54b08f3…` to `62ce3f36…`. Those chapters read stale once and
+ * clear on the next generation. Kept anyway: a leading newline collapses to a leading SPACE, so
+ * without the trim the app's own sentence reads "Use their first names ( Alan
+ * and Teresa) once at most" — a permanently mangled rule, traded for avoiding a
+ * badge that clears itself. The three docblocks that claim byte-identity name
+ * this exception; `__tests__/prompts.test.ts` pins the trim itself.
  */
 function singleLine(text: string): string {
   return text.replace(/(?:\r\n|\r|\n)+/gu, " ").trim();
@@ -204,9 +216,12 @@ function singleLine(text: string): string {
  * interpolated and neither line can carry an injected instruction.
  *
  * ⚠️ `warm` is BYTE-IDENTICAL to the line this prompt carried before the setting
- * existed. That is what lets every chapter already generated keep its stored
- * `sourceHash`; `__tests__/prompts.test.ts` pins it against fourteen hashes
- * recorded before the change.
+ * existed. That is what lets a chapter already generated keep its stored
+ * `sourceHash` across this deploy; `__tests__/prompts.test.ts` pins it against
+ * fourteen hashes recorded before the change. The style is not the only thing
+ * that had to hold for that — `singleLine` below normalises the name fields, so
+ * a record carrying stray whitespace or a line break still moves. Its docblock
+ * has the measurement.
  */
 const TONE_LINE: Record<ChapterTone, string> = {
   warm: "Write the way you would talk to them across a table: warm, direct, second person, contractions, no corporate voice.",

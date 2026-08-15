@@ -538,23 +538,76 @@ describe("the register rules", () => {
 
 describe("chapterOutputAsk — the ask matches the sheet", () => {
   it("asks a twoUp chapter for less prose than a heroProse chapter", () => {
-    const twoUp = chapterOutputAsk("whatWerePlanningFor"); // layout: twoUp
-    const hero = chapterOutputAsk("whatYouHave"); // layout: heroProse
+    const twoUp = chapterOutputAsk("whatWerePlanningFor", "standard"); // layout: twoUp
+    const hero = chapterOutputAsk("whatYouHave", "standard"); // layout: heroProse
     expect(twoUp).not.toBe(hero);
   });
 
   it("asks a twoUp chapter for two paragraphs, which is what 130 words holds", () => {
-    expect(chapterOutputAsk("whatWerePlanningFor")).toContain("TWO short paragraphs");
+    expect(chapterOutputAsk("whatWerePlanningFor", "standard")).toContain("TWO short paragraphs");
   });
 
   it("still asks a heroProse chapter for the full sheet", () => {
-    expect(chapterOutputAsk("whatYouHave")).toContain("2 to 4 short paragraphs");
+    expect(chapterOutputAsk("whatYouHave", "standard")).toContain("2 to 4 short paragraphs");
   });
 
   // Every layout answers. A sixth added without an ask would inherit one written
   // for a different sheet — the failure `OUTPUT_ASK` being a Record prevents.
   it.each(CHAPTER_IDS)("gives %s a non-empty ask", (id) => {
-    expect(chapterOutputAsk(id).length).toBeGreaterThan(0);
+    expect(chapterOutputAsk(id, "standard").length).toBeGreaterThan(0);
+  });
+
+  /**
+   * ⭐⭐ Two sheets print a LIST the layout writes, and their asks name a FIXED
+   * shape around it — "ONE short paragraph of at most two sentences" and "ONE or
+   * TWO short paragraphs". `full` cannot be applied to those: the sheets hold 35
+   * and 90 words against a full sheet's 300, so an ask that told them to use more
+   * space would make the trim note their normal ending rather than their
+   * exception. That is the defect Task 3 closed, and a length modifier is a way
+   * to re-open it on two chapters.
+   *
+   * Suppressed by CONSTRUCTION rather than softened: at `full` those two get the
+   * layout's own sentence back, unchanged.
+   *
+   * The two layouts are named here rather than imported from the registry, so
+   * this is a second opinion on that Record and not a restatement of it — a
+   * layout added to one side and not the other fails, in either direction.
+   */
+  const FIXED_SHAPE_LAYOUTS = ["checklist", "glossary"];
+
+  it.each(CHAPTER_IDS)("never asks %s for more space than its sheet's shape allows", (id) => {
+    const standard = chapterOutputAsk(id, "standard");
+    const full = chapterOutputAsk(id, "full");
+    // Concatenated onto the layout's own sentence, never replacing it — at every
+    // length, on every sheet.
+    expect(full.startsWith(standard)).toBe(true);
+    if (FIXED_SHAPE_LAYOUTS.includes(CHAPTERS[id].layout)) {
+      expect(full).toBe(standard);
+    } else {
+      expect(full).not.toBe(standard);
+      expect(full).toContain("whole space");
+    }
+    // …and `short` still applies everywhere. Shortening a one-paragraph ask is
+    // coherent; lengthening it is what is not.
+    const short = chapterOutputAsk(id, "short");
+    expect(short.startsWith(standard)).toBe(true);
+    expect(short).toContain("fewest sentences");
+  });
+
+  /**
+   * The same invariant stated once, off the ask's OWN words rather than off the
+   * layout — so it holds for a sixth layout nobody has thought about yet. No ask
+   * may both name a ceiling and tell the model to write past it.
+   */
+  it("never both names a sentence ceiling and asks for more space", () => {
+    for (const id of CHAPTER_IDS) {
+      for (const length of CHAPTER_LENGTHS) {
+        const ask = chapterOutputAsk(id, length);
+        if (/ONE (?:short paragraph|or TWO short paragraphs)/u.test(ask)) {
+          expect(ask).not.toContain("whole space");
+        }
+      }
+    }
   });
 });
 
@@ -740,6 +793,23 @@ describe("household names cannot open a line of their own", () => {
     const { user } = attacked("Alan and Teresa", `the Bradshaw household\n${ATTACK}`);
     for (const line of user.split("\n")) expect(line.startsWith(ATTACK)).toBe(false);
     expect(user.split("\n")[0]).toBe(`Household: the Bradshaw household ${ATTACK} — Alan and Teresa.`);
+  });
+
+  /**
+   * ⚠️ Where a default style does NOT preserve a stored hash, and it is this
+   * helper's doing rather than the tone's: `singleLine` NORMALISES, trim
+   * included, so a record whose name carries stray whitespace or a line break
+   * builds a different prompt than it did before this change and reads stale
+   * once.
+   *
+   * Pinned rather than left in a comment, because the fourteen golden hashes
+   * above run on a CLEAN fixture and therefore cannot see it — which is exactly
+   * how the unconditional "byte-identical" claim survived three docblocks.
+   */
+  it("trims a padded name — normalising, not the style, is what moves a hash", () => {
+    const { system, user } = attacked("  Alan and Teresa  ", "  the Bradshaw household  ");
+    expect(system).toContain("(Alan and Teresa) once at most");
+    expect(user.split("\n")[0]).toBe("Household: the Bradshaw household — Alan and Teresa.");
   });
 
   // …and an ordinary household is untouched, so nothing above is passing

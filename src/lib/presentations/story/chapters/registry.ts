@@ -330,24 +330,28 @@ const OUTPUT_ASK: Record<ChapterLayout, string> = {
 /**
  * How the ask MOVES with the advisor's length setting.
  *
- * Applied to the layout's own sentence rather than replacing it: a checklist
- * chapter asked for "four paragraphs" would bury the list that is its actual
- * content, whatever the advisor picked. So `short` and `full` are modifiers and
- * the layout stays in charge of the shape.
+ * Concatenated onto the layout's own sentence rather than replacing it, so the
+ * layout keeps naming the SHAPE and the advisor only names the amount.
  *
- * ⚠️ CONCATENATED onto the ask, on the SAME line — never added as a separate
- * entry in `prompts.ts#systemParts`. That prompt is one instruction per line and
- * a chapter's ask is one instruction; a second line would read as a second rule.
+ * ⚠️ That is not on its own enough, and the first version of this Record proved
+ * it. A modifier can contradict the sentence it lands on: `full` on a checklist
+ * chapter read "…ONE short paragraph of at most two sentences … Use the whole
+ * space you have; this chapter carries more than one idea." Concatenation was
+ * never the safeguard — `FIXED_SHAPE_ASK` below is.
  *
- * ⚠️ Still no numbers, for the reason `prompts.ts` documents at length: a word
- * count in this prompt is an anchor the model writes past by about five words.
- * The RENDER caps what prints (`pages/plan-story/view-model.ts`), so `full`
- * cannot overflow a sheet — it can only spend the trim note.
+ * ⚠️ CONCATENATED on the SAME line — never added as a separate entry in
+ * `prompts.ts#systemParts`. That prompt is one instruction per line and a
+ * chapter's ask is one instruction; a second line would read as a second rule.
+ *
+ * ⚠️ No numbers, for the reason `prompts.ts` documents at length: a word count
+ * in this prompt is an anchor the model writes past by about five words.
  *
  * `standard` is the EMPTY string, and that is load-bearing rather than tidy: it
  * makes a default-style prompt byte-identical to the one that existed before
- * this setting, so no chapter already generated reads stale on the deploy that
- * adds it. See `types.ts#DEFAULT_CHAPTER_STYLE`.
+ * this setting (for a household whose name fields carry no stray whitespace and
+ * no line break — see `chapters/prompts.ts#singleLine`), so no chapter already
+ * generated reads stale on the deploy that adds it. See
+ * `types.ts#DEFAULT_CHAPTER_STYLE`.
  */
 const LENGTH_MODIFIER: Record<ChapterLength, string> = {
   short: " Keep it to the fewest sentences that still answer the brief.",
@@ -355,6 +359,40 @@ const LENGTH_MODIFIER: Record<ChapterLength, string> = {
   full: " Use the whole space you have; this chapter carries more than one idea.",
 };
 
-export function chapterOutputAsk(chapterId: ChapterId, length: ChapterLength = "standard"): string {
-  return OUTPUT_ASK[CHAPTERS[chapterId].layout] + LENGTH_MODIFIER[length];
+/**
+ * Which layouts' asks name a FIXED SHAPE — a ceiling in sentences or paragraphs
+ * that the prose must sit inside because the sheet's real content is the LIST
+ * printed under it.
+ *
+ * `checklist` and `glossary` are those two, and `view-model.ts` is why: they get
+ * 35 and 90 words against a full sheet's 300, then print
+ * "…there's more here than fits this page" over whatever they drop. A chapter
+ * asked for more prose than its sheet holds makes that note its normal ending
+ * rather than its exception — the defect `OUTPUT_ASK` above and `view-model.ts`
+ * were written to close (Wave A, Task 3), which a length modifier applied
+ * blindly re-opens on exactly these two chapters.
+ *
+ * So `full` is not SOFTENED for them, it is not applied: `chapterOutputAsk`
+ * hands back the layout's own sentence unchanged, and there is no wording left
+ * for a model to weigh against the ceiling above it. `short` still applies —
+ * asking for fewer sentences than a ceiling allows is coherent, and cannot make
+ * the trim note fire.
+ *
+ * A `Record`, like `OUTPUT_ASK` itself, so a sixth layout has to ANSWER this
+ * rather than inherit an answer written for a different sheet.
+ */
+const FIXED_SHAPE_ASK: Record<ChapterLayout, boolean> = {
+  heroProse: false,
+  twoUp: false,
+  strategyCards: false,
+  checklist: true,
+  glossary: true,
+};
+
+/** ⚠️ `length` is REQUIRED. It was defaulted, which made the one argument in
+ *  this threading whose omission the compiler could not see. */
+export function chapterOutputAsk(chapterId: ChapterId, length: ChapterLength): string {
+  const layout = CHAPTERS[chapterId].layout;
+  const suppressed = length === "full" && FIXED_SHAPE_ASK[layout];
+  return OUTPUT_ASK[layout] + (suppressed ? "" : LENGTH_MODIFIER[length]);
 }
