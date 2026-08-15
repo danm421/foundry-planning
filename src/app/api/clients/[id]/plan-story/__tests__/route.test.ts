@@ -205,13 +205,21 @@ const jsonReq = (body: unknown): NextRequest =>
 const chapterRow = (over: Partial<Record<string, unknown>> = {}) => ({
   chapterId: "planInOnePage",
   generatedText: null,
+  generatedAt: null,
+  generatedByUserId: null,
   editedText: null,
+  editedAt: null,
   sourceHash: null,
   aiSuppressed: false,
   error: null,
   reviewedAt: null,
   ...over,
 });
+
+/** An edited chapter the model has since rewritten — the state the panel has to
+ *  announce, and the one confirmed live on a real household. */
+const EDITED_AT = new Date("2026-08-14T11:00:00.000Z");
+const REWRITTEN_AT = new Date("2026-08-14T12:00:00.000Z");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -327,6 +335,69 @@ describe("GET /api/clients/[id]/plan-story", () => {
       error: "The writing assistant was unavailable.",
       reviewed: true,
     });
+  });
+
+  /**
+   * ⭐⭐ The rewrite that is stored and invisible.
+   *
+   * Confirmed live: after one Regenerate over an edited chapter the row reads
+   * `generated: true, edited: true` and `text` is still the advisor's sentence.
+   * The advisor is looking at a button whose failure message is "The words on
+   * screen are unchanged — try again", so the success and the failure are the
+   * same picture. The list has to hand the panel the prose it is withholding.
+   *
+   * Kills: dropping the field (the banner can never render); sending
+   * `generatedText` unconditionally (every generated chapter would claim to be
+   * shadowing an edit).
+   */
+  it("hands the panel the model's newer words when they are being withheld", async () => {
+    mocks.listStoryChapters.mockResolvedValue([
+      chapterRow({
+        generatedText: "The model's rewrite.",
+        generatedAt: REWRITTEN_AT,
+        editedText: "My words.",
+        editedAt: EDITED_AT,
+      }),
+    ]);
+    const res = await GET(req("http://x/?scenarioId=base"), {
+      params: Promise.resolve({ id: CLIENT_ID }),
+    });
+    const body = await res.json();
+    // What PRINTS is unchanged — the advisor's words still win — and that is
+    // exactly why the other field has to exist.
+    expect(body.chapters[0]).toMatchObject({
+      text: "My words.",
+      edited: true,
+      newerGeneratedText: "The model's rewrite.",
+    });
+  });
+
+  // …and the ordinary edited chapter, where the advisor wrote last. Nothing is
+  // being withheld, so there is nothing to announce and nothing to offer.
+  it("says nothing is withheld when the advisor wrote last", async () => {
+    mocks.listStoryChapters.mockResolvedValue([
+      chapterRow({
+        generatedText: "The model's older draft.",
+        generatedAt: EDITED_AT,
+        editedText: "My words.",
+        editedAt: REWRITTEN_AT,
+      }),
+    ]);
+    const res = await GET(req("http://x/?scenarioId=base"), {
+      params: Promise.resolve({ id: CLIENT_ID }),
+    });
+    const body = await res.json();
+    expect(body.chapters[0].newerGeneratedText).toBeNull();
+  });
+
+  // A chapter with no row at all. The projection runs for all fourteen, so the
+  // field has to answer for the thirteen that were never written too.
+  it("answers the field for a chapter that has never been written", async () => {
+    const res = await GET(req("http://x/?scenarioId=base"), {
+      params: Promise.resolve({ id: CLIENT_ID }),
+    });
+    const body = await res.json();
+    expect(body.chapters[0].newerGeneratedText).toBeNull();
   });
 
   /**
@@ -495,12 +566,137 @@ describe("GET /api/clients/[id]/plan-story/stale", () => {
    * voice. It only shows up against the other route, as a hash that never
    * matches: the badge would then be on for every chapter of every report, with
    * regenerating unable to clear it.
+   *
+   * ⚠️ The CALLER here because the row below says nobody generated it — see the
+   * backfill case in the block underneath, which is what that means.
    */
   it("resolves the voice for the calling advisor at this client's firm", async () => {
     mocks.listStoryChapters.mockResolvedValue([chapterRow({ sourceHash: FRESH })]);
     await stale("?scenarioId=base");
     expect(mocks.loadVoiceProfile).toHaveBeenCalledWith("firm_1", "user_1");
     expect(mocks.listVoiceSamples).toHaveBeenCalledWith("firm_1", "user_1");
+  });
+
+  /**
+   * ⭐⭐ WHOSE voice the stored hash is rebuilt in — the writer's, not the
+   * reader's.
+   *
+   * The badge answers "have the inputs THIS CHAPTER was written from changed",
+   * and the voice is one of those inputs. Rebuilt in the caller's voice it
+   * answers a different question — "would I get something different if I
+   * regenerated this" — so a colleague opening a report a partner wrote in
+   * their own personal voice sees an out-of-date badge on all fourteen
+   * chapters, and regenerating is the only thing that clears it, which
+   * overwrites the partner's prose to do so.
+   */
+  describe("whose voice the stored hash is rebuilt in", () => {
+    /** The same hash, in a SECOND advisor's voice — a personal style note is
+     *  all it takes for two people at one firm to write different prompts. */
+    const OTHER_VOICE = { styleNote: "Short sentences. No adverbs.", samples: [] };
+    const OTHER_HASH = chapterSourceHash(
+      "planInOnePage",
+      NO_FACTS,
+      OTHER_VOICE,
+      DEFAULT_CHAPTER_STYLE,
+    );
+
+    /** `loadVoiceProfile` answering per advisor, so the two resolve differently.
+     *  `resolveVoice` still runs for real over what this returns. */
+    function voiceOf(styleNotes: Record<string, string>) {
+      mocks.loadVoiceProfile.mockImplementation(async (firmId: string, userId: string) =>
+        styleNotes[userId] != null
+          ? { firmId, advisorUserId: userId, styleNote: styleNotes[userId] }
+          : null,
+      );
+    }
+
+    /**
+     * ⚠️⚠️ Kills: `advisorUserId: userId` at the load — today's code. The row
+     * was written by `user_2` in `user_2`'s voice, and the caller is `user_1`
+     * with no voice at all: rebuilt as the caller, the hash is the EMPTY-voice
+     * one, misses, and the chapter reads out of date.
+     */
+    it("rebuilds it in the voice of the advisor who generated the chapter", async () => {
+      voiceOf({ user_2: OTHER_VOICE.styleNote });
+      mocks.listStoryChapters.mockResolvedValue([
+        chapterRow({ chapterId: "planInOnePage", sourceHash: OTHER_HASH, generatedByUserId: "user_2" }),
+      ]);
+      const res = await stale("?scenarioId=base");
+      expect(res.status).toBe(200);
+      expect((await res.json()).stale).toEqual([]);
+      expect(mocks.loadVoiceProfile).toHaveBeenCalledWith("firm_1", "user_2");
+      expect(mocks.listVoiceSamples).toHaveBeenCalledWith("firm_1", "user_2");
+    });
+
+    /**
+     * ⚠️⚠️ BACKFILL. Every row written before `generated_by_user_id` existed
+     * carries NULL, and who generated it is unknowable. Falling back to the
+     * CALLER reproduces today's behaviour exactly — so no existing report's
+     * badges move on deploy — and the row self-heals the next time it is
+     * generated. A firm default instead would flip the answer for every
+     * existing personal-voice row, for nothing.
+     */
+    it("falls back to the caller's voice for a row that does not say who wrote it", async () => {
+      voiceOf({ user_1: OTHER_VOICE.styleNote });
+      mocks.listStoryChapters.mockResolvedValue([
+        chapterRow({ chapterId: "planInOnePage", sourceHash: OTHER_HASH, generatedByUserId: null }),
+      ]);
+      const res = await stale("?scenarioId=base");
+      expect((await res.json()).stale).toEqual([]);
+      expect(mocks.loadVoiceProfile).toHaveBeenCalledWith("firm_1", "user_1");
+      expect(mocks.loadVoiceProfile).not.toHaveBeenCalledWith("firm_1", null);
+    });
+
+    /**
+     * ⭐ Per ROW, not per run — and one query per DISTINCT advisor, not per
+     * chapter.
+     *
+     * A partner generates the whole story and a colleague regenerates two
+     * chapters: those chapters are now in a different voice from the other
+     * twelve, and one voice for the run gets one of the two groups wrong
+     * whichever it picks. The count is the other half — resolving inside the
+     * per-chapter loop would be fourteen round trips to answer a question with
+     * two answers.
+     */
+    it("resolves one voice per distinct writer, however many chapters they wrote", async () => {
+      voiceOf({ user_2: OTHER_VOICE.styleNote });
+      const byUser2 = ["planInOnePage", "whatYouHave", "whereTheMoneyGoes"] as const;
+      mocks.listStoryChapters.mockResolvedValue(
+        byUser2.map((chapterId) =>
+          chapterRow({
+            chapterId,
+            sourceHash: chapterSourceHash(chapterId, NO_FACTS, OTHER_VOICE, DEFAULT_CHAPTER_STYLE),
+            generatedByUserId: "user_2",
+          }),
+        ),
+      );
+      const res = await stale("?scenarioId=base");
+      // Every one of the three is fresh, so all three really were hashed in
+      // `user_2`'s voice rather than one of them happening to match.
+      expect((await res.json()).stale).toEqual([]);
+      // The caller's, resolved once by the run, plus `user_2`'s. NOT three.
+      expect(mocks.loadVoiceProfile).toHaveBeenCalledTimes(2);
+      expect(mocks.listVoiceSamples).toHaveBeenCalledTimes(2);
+    });
+
+    /**
+     * …and the two groups really do get different voices. Both chapters are
+     * stored with the hash their OWN writer would produce; a route that picked
+     * one voice for the run flags whichever group it did not pick.
+     */
+    it("hashes two writers' chapters against their own voices in one pass", async () => {
+      voiceOf({ user_2: OTHER_VOICE.styleNote });
+      mocks.listStoryChapters.mockResolvedValue([
+        chapterRow({ chapterId: "planInOnePage", sourceHash: OTHER_HASH, generatedByUserId: "user_2" }),
+        chapterRow({
+          chapterId: "whatYouHave",
+          sourceHash: chapterSourceHash("whatYouHave", NO_FACTS, EMPTY_VOICE, DEFAULT_CHAPTER_STYLE),
+          generatedByUserId: "user_1",
+        }),
+      ]);
+      const res = await stale("?scenarioId=base");
+      expect((await res.json()).stale).toEqual([]);
+    });
   });
 
   // Kills: rebuilding the context from a different scenario than the rows were
@@ -693,6 +889,78 @@ describe("PATCH /api/clients/[id]/plan-story/[chapterId]", () => {
     expect(mocks.markChapterReviewed).not.toHaveBeenCalled();
   });
 
+  /**
+   * ⭐⭐ "Use the new version instead" — the click that lets the model's newer
+   * words through, and the ONLY thing in this feature that discards an
+   * advisor's writing.
+   */
+  describe("taking the model's newer version", () => {
+    it("drops the advisor's edit so the model's newer words render", async () => {
+      const res = await patch({
+        scenarioId: "base",
+        documentRole: "standalone",
+        acceptGenerated: true,
+      });
+      expect(res.status).toBe(200);
+      // The empty string is already the documented "drop my version" — reusing
+      // the shipped path rather than adding a delete, so the render precedence
+      // has one spelling and `generatedText` stays revertible.
+      expect(mocks.updateChapterText).toHaveBeenCalledWith({
+        clientId: CLIENT_ID,
+        scenarioId: "base",
+        documentRole: "standalone",
+        chapterId: "planInOnePage",
+        editedText: "",
+      });
+    });
+
+    // Kills: auditing it as an ordinary edit, or not at all. This is the one
+    // action in the feature that throws away words a human wrote, so the row
+    // that records it has to say which action it was.
+    it("audits it under its own action, because it discards an advisor's writing", async () => {
+      await patch({ scenarioId: "base", documentRole: "standalone", acceptGenerated: true });
+      expect(mocks.recordAudit).toHaveBeenCalledWith({
+        action: "plan_story.generated_accepted",
+        resourceType: "plan_story_chapter",
+        resourceId: "planInOnePage",
+        clientId: CLIENT_ID,
+        firmId: "firm_1",
+        metadata: { scenarioId: "base", documentRole: "standalone" },
+      });
+    });
+
+    /**
+     * ⚠️ Two contradictory instructions in one body — "store these words" and
+     * "throw my words away". Silently resolving them would resolve them
+     * LOSSILY, since the accept writes an empty string over whatever the same
+     * request just saved. A caller sending both is a caller bug.
+     */
+    it("refuses a body that both saves an edit and discards one", async () => {
+      const res = await patch({
+        scenarioId: "base",
+        documentRole: "standalone",
+        editedText: "My words.",
+        acceptGenerated: true,
+      });
+      expect(res.status).toBe(400);
+      expect(mocks.updateChapterText).not.toHaveBeenCalled();
+      expect(mocks.recordAudit).not.toHaveBeenCalled();
+    });
+
+    // Kills: a truthiness test on the flag. `false` is a caller saying "no",
+    // which changes nothing — and a body that changes nothing is a 400 for the
+    // reason the test above this describe gives.
+    it("treats an explicit false as nothing to do", async () => {
+      const res = await patch({
+        scenarioId: "base",
+        documentRole: "standalone",
+        acceptGenerated: false,
+      });
+      expect(res.status).toBe(400);
+      expect(mocks.updateChapterText).not.toHaveBeenCalled();
+    });
+  });
+
   // Kills: deleting `requireActiveSubscriptionForFirm`, or moving it after the
   // write. Its return is void and discarded, so tsc cannot see its removal and
   // no other test in this file touches it.
@@ -803,6 +1071,28 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
     await post({ scenarioId: "base", documentRole: "standalone" });
     expect(mocks.loadVoiceProfile).toHaveBeenCalledWith("firm_1", "user_1");
     expect(mocks.listVoiceSamples).toHaveBeenCalledWith("firm_1", "user_1");
+  });
+
+  /**
+   * ⚠️⚠️ …and STORES whose voice that was, on every row it writes.
+   *
+   * The freshness check rebuilds each chapter's hash and the voice is one of
+   * the inputs, so a row that does not say who wrote it can only be rebuilt in
+   * the READER's voice. Without this stamp the fix in the staleness route has
+   * nothing to read, and a colleague opening the report sees every chapter
+   * badged out of date.
+   *
+   * Kills: stamping the org id, the client id, or nothing at all.
+   */
+  it("stamps the advisor whose voice each chapter was written in", async () => {
+    await post({ scenarioId: "base", documentRole: "standalone" });
+    expect(mocks.upsertGeneratedChapter).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: CLIENT_ID, generatedByUserId: "user_1" }),
+    );
+    // Every row, not just the first: a run writes thirteen of them.
+    for (const call of mocks.upsertGeneratedChapter.mock.calls) {
+      expect((call[0] as { generatedByUserId: string }).generatedByUserId).toBe("user_1");
+    }
   });
 
   /**

@@ -27,15 +27,59 @@ export function isDocumentRole(value: string): value is DocumentRole {
   return value === "standalone" || value === "frontMatter";
 }
 
+/**
+ * Words, or nothing — whitespace is not an edit and not a chapter.
+ *
+ * The ONE spelling of that rule. It decides what renders below AND whether
+ * there is a rewrite to announce in `hasNewerGeneration`; two spellings of it
+ * is how a chapter comes to be told it is shadowing a rewrite made of spaces.
+ */
+function words(text: string | null): string | null {
+  return text != null && text.trim().length > 0 ? text : null;
+}
+
 /** Render precedence: the advisor's edit, then the model, then the
  *  deterministic narrative. A whitespace-only edit is not an edit. */
 export function resolveChapterText(
   row: { editedText: string | null; generatedText: string | null },
   fallback: string,
 ): string {
-  if (row.editedText && row.editedText.trim().length > 0) return row.editedText;
-  if (row.generatedText && row.generatedText.trim().length > 0) return row.generatedText;
-  return fallback;
+  return words(row.editedText) ?? words(row.generatedText) ?? fallback;
+}
+
+/**
+ * Is the model's stored version NEWER than the advisor's, and therefore stored
+ * without being what prints?
+ *
+ * Confirmed live on a real household: press Regenerate on a chapter you have
+ * edited and the new prose lands in `generatedText` while `editedText` keeps
+ * winning at render time — so the advisor sees their own unchanged sentence,
+ * which is exactly what that button's FAILURE message describes ("The words on
+ * screen are unchanged — try again"). Nothing on screen can tell the two apart.
+ *
+ * The answer is not "prefer the newer text": that would overwrite an advisor's
+ * writing without a click that says so. It is what the panel needs in order to
+ * SAY what happened and offer the swap.
+ *
+ * ⚠️ Both timestamps are nullable, and a null is a REFUSAL to answer rather
+ * than a zero. Every row written before 0242 carries null on BOTH sides, and a
+ * row edited since but not regenerated carries one — either way the order is
+ * unknowable. False is the only safe reading: a wrong TRUE puts "Use the new
+ * version instead" in front of an advisor over prose that was never superseded.
+ */
+export function hasNewerGeneration(row: {
+  editedText: string | null;
+  generatedText: string | null;
+  generatedAt: Date | null;
+  editedAt: Date | null;
+}): boolean {
+  if (words(row.editedText) == null) return false;
+  if (words(row.generatedText) == null) return false;
+  if (row.editedAt == null || row.generatedAt == null) return false;
+  // Strictly later. `updateChapterText` stamps `editedAt` and `updatedAt` from
+  // one clock read, and a generation that reproduced the stored words does not
+  // move `generatedAt` at all — so equal means the advisor's write is current.
+  return row.generatedAt.getTime() > row.editedAt.getTime();
 }
 
 /** True when the plan has moved since this chapter was generated. Never true
@@ -80,6 +124,28 @@ function clearedWhenTextChanges(column: AnyPgColumn): SQL {
   return sql`case when ${TEXT_CHANGED} then null else ${column} end`;
 }
 
+/**
+ * The mirror of the above: a column that RECORDS the moment the words changed,
+ * and holds still when they did not.
+ *
+ * Same condition, same reason. `generatedAt` is what `hasNewerGeneration` reads
+ * as "when the model wrote", and the generate route upserts on every run
+ * including a cache hit reproducing the stored chapter word for word — so an
+ * unconditional stamp would tell an advisor who edited a chapter and then
+ * pressed Generate all that the assistant had rewritten it behind them, and
+ * offer to replace their writing with the very prose they had replaced.
+ *
+ * ⚠️ `toISOString()`, not the `Date`. Drizzle maps a `timestamp` column's Date
+ * through `mapToDriverValue` (UTC), but a raw `sql` fragment has no column type
+ * to map through — node-postgres would serialize the Date in LOCAL time with an
+ * offset, and `timestamp without time zone` truncates the offset, storing the
+ * wall clock of whatever region the server is in. `editedAt` goes through the
+ * column, so the two would be hours apart and the comparison meaningless.
+ */
+function stampedWhenTextChanges(column: AnyPgColumn, at: Date): SQL {
+  return sql`case when ${TEXT_CHANGED} then ${at.toISOString()}::timestamp else ${column} end`;
+}
+
 export async function listStoryChapters(
   clientId: string,
   scenarioId: string,
@@ -99,9 +165,14 @@ export async function listStoryChapters(
 
 /**
  * Store a fresh generation. The advisor's `editedText` is deliberately NOT
- * cleared — the panel shows it as stale and lets them re-accept. Silently
- * discarding an advisor's writing because a projection moved would be the
- * worst failure mode this feature has.
+ * cleared — silently discarding an advisor's writing because a projection moved
+ * would be the worst failure mode this feature has.
+ *
+ * Which leaves the model's new words stored and not printing, and that state
+ * has to be VISIBLE rather than merely safe: `generatedAt` below is what
+ * `hasNewerGeneration` reads to tell the panel to say so and offer the swap.
+ * Before it existed the rewrite was stored, invisible, and indistinguishable
+ * from the button having failed.
  */
 export async function upsertGeneratedChapter(args: {
   clientId: string;
@@ -110,8 +181,18 @@ export async function upsertGeneratedChapter(args: {
    *  indistinguishable from the bug the column was added to fix. */
   documentRole: DocumentRole;
   chapter: GeneratedChapter;
+  /**
+   * Whose voice these words are in — the acting advisor's Clerk user id.
+   *
+   * ⚠️ Required, and it travels with `sourceHash` rather than beside it: the
+   * hash is BUILT from this advisor's voice, and the freshness check has to
+   * rebuild it from the same one. A row that cannot say who wrote it can only
+   * be rebuilt in the reader's voice, which answers a different question.
+   */
+  generatedByUserId: string;
 }): Promise<void> {
-  const { clientId, scenarioId, documentRole, chapter } = args;
+  const { clientId, scenarioId, documentRole, chapter, generatedByUserId } = args;
+  const now = new Date();
   await db
     .insert(planStoryChapters)
     .values({
@@ -120,6 +201,8 @@ export async function upsertGeneratedChapter(args: {
       documentRole,
       chapterId: chapter.chapterId,
       generatedText: chapter.markdown,
+      generatedAt: now,
+      generatedByUserId,
       sourceHash: chapter.sourceHash,
       aiSuppressed: chapter.aiSuppressed,
       error: chapter.error,
@@ -128,6 +211,14 @@ export async function upsertGeneratedChapter(args: {
       target: CHAPTER_KEY,
       set: {
         generatedText: chapter.markdown,
+        // Only when the words really moved — see `stampedWhenTextChanges`.
+        generatedAt: stampedWhenTextChanges(planStoryChapters.generatedAt, now),
+        // …and this one on EVERY run, exactly as `sourceHash` below is: the two
+        // are the answer and the question. This run's hash was built from THIS
+        // advisor's voice whether or not the model produced new words, and a
+        // stamp that disagreed with the hash beside it would send the freshness
+        // check to the wrong voice.
+        generatedByUserId,
         sourceHash: chapter.sourceHash,
         aiSuppressed: chapter.aiSuppressed,
         // Written on every run, null included: a stored outage that outlives
@@ -135,7 +226,7 @@ export async function upsertGeneratedChapter(args: {
         error: chapter.error,
         reviewedAt: clearedWhenTextChanges(planStoryChapters.reviewedAt),
         reviewedByUserId: clearedWhenTextChanges(planStoryChapters.reviewedByUserId),
-        updatedAt: new Date(),
+        updatedAt: now,
       },
     });
 }
@@ -162,6 +253,11 @@ export async function updateChapterText(args: {
   chapterId: ChapterId;
   editedText: string;
 }): Promise<void> {
+  // ⚠️ ONE clock read, shared by both stamps and both paths.
+  // `hasNewerGeneration` asks whether the model's stamp is STRICTLY later than
+  // this one; two `new Date()` calls a millisecond apart would let an ordinary
+  // save read as a rewrite that shadowed it.
+  const now = new Date();
   await db
     .insert(planStoryChapters)
     .values({
@@ -170,10 +266,12 @@ export async function updateChapterText(args: {
       documentRole: args.documentRole,
       chapterId: args.chapterId,
       editedText: args.editedText,
+      editedAt: now,
+      updatedAt: now,
     })
     .onConflictDoUpdate({
       target: CHAPTER_KEY,
-      set: { editedText: args.editedText, updatedAt: new Date() },
+      set: { editedText: args.editedText, editedAt: now, updatedAt: now },
     });
 }
 

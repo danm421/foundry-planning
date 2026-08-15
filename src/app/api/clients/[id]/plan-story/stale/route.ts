@@ -23,7 +23,8 @@ import {
   type DocumentRole,
 } from "@/lib/presentations/story/repo";
 import { resolveStoryScenarioId } from "@/lib/presentations/story/scenario-scope";
-import { loadStoryRun } from "@/lib/presentations/story/run-context";
+import { loadStoryRun, loadAdvisorVoice } from "@/lib/presentations/story/run-context";
+import type { StoryVoice } from "@/lib/presentations/story/voice/resolve";
 import { chapterSourceHash } from "@/lib/presentations/story/chapters/prompts";
 import { chapterStyleSchema } from "@/lib/presentations/pages/plan-story/options-schema";
 import {
@@ -78,8 +79,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    // The org check is the gate; the user id is needed as well because the voice
-    // the comparison hash is rebuilt from is the CALLER'S (`run-context.ts`).
+    // The org check is the gate; the user id is needed as well because a
+    // chapter that does not say who generated it is rebuilt in the CALLER's
+    // voice — see the fallback below.
     const { userId } = await requireOrgAndUser();
     const { id } = await params;
     const access = await verifyClientAccess(id);
@@ -122,7 +124,15 @@ export async function GET(
     // the narrowing has to survive into the hash call below.
     const generated = rows.flatMap((r) =>
       r.sourceHash != null && isChapterId(r.chapterId)
-        ? [{ chapterId: r.chapterId, sourceHash: r.sourceHash }]
+        ? [
+            {
+              chapterId: r.chapterId,
+              sourceHash: r.sourceHash,
+              // Whose voice this chapter's stored hash was built from. Null on
+              // every row written before the column existed.
+              generatedByUserId: r.generatedByUserId,
+            },
+          ]
         : [],
     );
     // Nothing generated, nothing that can be stale — and no reason to spend
@@ -141,6 +151,39 @@ export async function GET(
     });
     const inThisRun = new Set(candidates);
 
+    /**
+     * ⚠️⚠️ A voice PER GENERATING ADVISOR, not one for the run.
+     *
+     * The badge answers "have the inputs THIS CHAPTER was written from
+     * changed", and the voice is one of those inputs. Rebuilt in the caller's
+     * voice it answers "would I get something different if I regenerated this"
+     * instead — so a colleague opening a report a partner wrote in their own
+     * personal voice reads an out-of-date badge on all fourteen chapters, and
+     * the only thing that clears it is regenerating, which overwrites the
+     * partner's prose to do it.
+     *
+     * Per ROW rather than per run because two advisors really can share a
+     * report: one generates the story, another rewrites two chapters, and
+     * those two are now in a different voice from the other twelve.
+     *
+     * ⚠️ One read per DISTINCT writer — in practice one, and usually zero
+     * extra, since the run above already resolved the caller. Resolving inside
+     * the filter below would be fourteen round trips to answer a question with
+     * one or two answers.
+     */
+    const voices = new Map<string, StoryVoice>([[userId, voice]]);
+    const writers = [
+      ...new Set(
+        generated.flatMap((r) =>
+          r.generatedByUserId != null && !voices.has(r.generatedByUserId)
+            ? [r.generatedByUserId]
+            : [],
+        ),
+      ),
+    ];
+    const resolved = await Promise.all(writers.map((w) => loadAdvisorVoice(access.firmId, w)));
+    writers.forEach((w, i) => voices.set(w, resolved[i]));
+
     const stale = generated
       // A stored row for a chapter this run would not load facts for. Rare but
       // reachable: the candidate list comes off the scenario ref, so a chapter
@@ -149,7 +192,19 @@ export async function GET(
       // its own facts matches nothing any run ever wrote — a stale badge nobody
       // can clear by regenerating.
       .filter((r) => inThisRun.has(r.chapterId))
-      .filter((r) => isChapterStale(r, chapterSourceHash(r.chapterId, ctx, voice, chapterStyles[r.chapterId])))
+      .filter((r) => {
+        // A row that does not say who wrote it is compared against the
+        // CALLER's voice, which is exactly what every row did before the
+        // column existed — so no existing report's badges move on deploy, and
+        // the row starts answering for itself the next time it is generated. A
+        // firm default here would flip the answer for every existing
+        // personal-voice row, and buy nothing.
+        const writer = voices.get(r.generatedByUserId ?? userId) ?? voice;
+        return isChapterStale(
+          r,
+          chapterSourceHash(r.chapterId, ctx, writer, chapterStyles[r.chapterId]),
+        );
+      })
       .map((r) => r.chapterId);
 
     return NextResponse.json({ scenarioId, documentRole, stale });

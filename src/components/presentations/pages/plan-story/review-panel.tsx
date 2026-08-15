@@ -56,6 +56,21 @@ interface ChapterRow {
    * never read as "nothing here can be written".
    */
   candidate?: boolean;
+  /**
+   * The model's rewrite, when it is NEWER than the advisor's edit and therefore
+   * stored without being what prints — null on every ordinary row.
+   *
+   * The prose itself rather than a flag, because the advisor is being asked
+   * whether to discard their own words for these: a click that says "use the
+   * new version" without showing the new version is not a choice.
+   *
+   * Decided by the route (`hasNewerGeneration`, `story/repo.ts`), never here.
+   * Both timestamps it reads live in storage, and re-deriving "which of these
+   * two is newer" in a client component from fields this payload does not even
+   * carry is how the panel would come to offer the swap over prose nothing
+   * superseded.
+   */
+  newerGeneratedText?: string | null;
 }
 
 /**
@@ -105,6 +120,11 @@ const COULD_NOT_LOAD =
   "Couldn't load this report's chapters. Check your connection and try again.";
 const COULD_NOT_SAVE = "Couldn't save your edit. Your words are still in the box — try again.";
 const COULD_NOT_REVIEW = "Couldn't mark that chapter reviewed. Try again.";
+/** Its own sentence rather than `COULD_NOT_SAVE`'s: the advisor typed nothing
+ *  here, so "your words are still in the box" would be about a box they never
+ *  touched — and what they need to know is that their version still prints. */
+const COULD_NOT_ACCEPT =
+  "Couldn't switch to the new version. Your own words are still what prints — try again.";
 const COULD_NOT_GENERATE =
   "Couldn't write the chapters. Nothing was generated — try again in a moment.";
 const COULD_NOT_REGENERATE =
@@ -834,6 +854,45 @@ export function PlanStoryReviewPanel({
 
             {row.error != null && (
               <p className="mb-2 text-xs text-warn">{REASONS[row.error] ?? row.error}</p>
+            )}
+
+            {/* ⚠️⚠️ A rewrite the advisor's own words are standing in front of.
+                Confirmed live: press Regenerate on a chapter you have edited and
+                the new prose is stored and INVISIBLE — the same picture as this
+                button failing, since its failure message is literally "The words
+                on screen are unchanged".
+
+                Three parts, all load-bearing. It SAYS what happened, so the
+                advisor is not left comparing a silent success against a silent
+                failure. It SHOWS the passage, because a click that discards
+                their writing for prose they have not read is not a choice. And
+                the swap is behind that explicit click: nothing in this feature
+                overwrites an advisor's words without one that says so, which is
+                also why the box above still holds their version and still
+                prints it. */}
+            {row.newerGeneratedText != null && (
+              <div className="mb-2 rounded border border-hair bg-card-2 p-2">
+                <p className="text-xs text-warn">
+                  Your own words are showing. The assistant rewrote this chapter after you
+                  edited it — the new version is stored but isn&apos;t what prints.
+                </p>
+                <p className="mt-1 whitespace-pre-wrap text-xs text-ink-3">
+                  {row.newerGeneratedText}
+                </p>
+                <button
+                  type="button"
+                  className="mt-1 text-xs text-ink-3 underline hover:text-ink disabled:no-underline disabled:opacity-50"
+                  // Dead while this row has a write in flight, on the same rule
+                  // as Mark reviewed below: each press files its own audit row,
+                  // and this one records advisor writing being thrown away.
+                  disabled={saving === row.chapterId || regenerating === row.chapterId}
+                  onClick={() =>
+                    void patch(row.chapterId, { acceptGenerated: true }, COULD_NOT_ACCEPT)
+                  }
+                >
+                  Use the new version instead
+                </button>
+              </div>
             )}
 
             <textarea

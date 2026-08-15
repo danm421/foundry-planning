@@ -218,7 +218,18 @@ export async function POST(
     });
 
     await Promise.all(
-      generated.map((chapter) => upsertGeneratedChapter({ clientId: id, scenarioId, documentRole, chapter })),
+      generated.map((chapter) =>
+        upsertGeneratedChapter({
+          clientId: id,
+          scenarioId,
+          documentRole,
+          chapter,
+          // The SAME id the run resolved its voice from, stored beside the hash
+          // that voice produced. The staleness route rebuilds each chapter's
+          // hash from whoever wrote it, and can only do that if the row says.
+          generatedByUserId: userId,
+        }),
+      ),
     );
 
     return NextResponse.json({

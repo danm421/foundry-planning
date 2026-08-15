@@ -450,6 +450,11 @@ export type AuditAction =
   | "plan_story.generated"
   | "plan_story.chapter_edited"
   | "plan_story.chapter_reviewed"
+  // …and its own action rather than an edit, because it is the one thing in
+  // this feature that THROWS AWAY words a human wrote: the advisor is letting a
+  // rewrite their own version was standing in front of through, and their
+  // version does not survive it.
+  | "plan_story.generated_accepted"
   // Plan Story voice — the advisor's style note and the writing samples the
   // model is shown. Audited because every ENABLED sample is sent to the model
   // while writing OTHER households' reports, so who added one, and who switched

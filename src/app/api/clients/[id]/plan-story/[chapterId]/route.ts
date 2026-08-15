@@ -17,13 +17,14 @@ function isChapterId(v: unknown): v is ChapterId {
 }
 
 /**
- * The advisor's two write actions on one chapter: replace its words, and say
- * they stand behind them.
+ * The advisor's write actions on one chapter: replace its words, say they stand
+ * behind them, and let a rewrite their own version was standing in front of
+ * through.
  *
- * Both repo calls are upserts, so each one either stores the write or throws —
+ * Every repo call is an upsert, so each one either stores the write or throws —
  * there is no zero-row outcome to check for, and no chapter that "has no row
  * yet" to 404 on. That makes `requireClientEditAccess` the sole barrier in
- * front of them, which is why it runs before either.
+ * front of them, which is why it runs before any of them.
  */
 export async function PATCH(
   request: NextRequest,
@@ -43,12 +44,26 @@ export async function PATCH(
     // `undefined` = the field was absent. An empty string is a real instruction
     // — "drop my edit and let the model's words render again" — so the two
     // cannot be collapsed into a truthiness test.
-    const { editedText, reviewed, documentRole } = parsed.data;
+    const { editedText, reviewed, documentRole, acceptGenerated } = parsed.data;
     // Reported rather than answered with a cheerful `{ ok: true }`: a panel bug
-    // that sends neither field would otherwise look exactly like a saved edit.
-    if (editedText === undefined && reviewed !== true) {
+    // that sends no field at all would otherwise look exactly like a saved edit.
+    if (editedText === undefined && reviewed !== true && acceptGenerated !== true) {
       return NextResponse.json(
-        { error: "Nothing to update — send editedText or reviewed" },
+        { error: "Nothing to update — send editedText, reviewed or acceptGenerated" },
+        { status: 400 },
+      );
+    }
+    /**
+     * ⚠️ Two contradictory instructions in one body: "store these words" and
+     * "throw my words away". Resolving them silently resolves them LOSSILY —
+     * the accept writes an empty string over whatever the same request just
+     * saved — and this is the one path in the feature that destroys advisor
+     * writing, so it may not run as a side effect of a request that also meant
+     * to keep some. A caller sending both is a caller bug, and a 400 says so.
+     */
+    if (editedText !== undefined && acceptGenerated === true) {
+      return NextResponse.json(
+        { error: "Send either editedText or acceptGenerated, not both" },
         { status: 400 },
       );
     }
@@ -67,6 +82,29 @@ export async function PATCH(
         // The chapter row has no id of its own worth quoting; the row is
         // identified by (clientId, scenarioId, documentRole, chapterId), and
         // the audit row already carries the first of those in its own column.
+        resourceId: chapterId,
+        clientId: id,
+        firmId,
+        metadata: crossFirmAuditMeta({ access }, callerOrg, { scenarioId, documentRole }),
+      });
+    }
+
+    /**
+     * The advisor has read the rewrite their own words were standing in front
+     * of, and chosen it.
+     *
+     * `editedText: ""` rather than a delete: the empty string is ALREADY the
+     * documented "drop my version and let the model's words render again"
+     * (`schemas/plan-story.ts`), so this reuses a shipped path instead of
+     * adding a second way to say the same thing — and `generatedText` is
+     * untouched either way, so nothing about it is irreversible except the
+     * advisor's own sentences, which is what the click is for.
+     */
+    if (acceptGenerated === true) {
+      await updateChapterText({ clientId: id, scenarioId, documentRole, chapterId, editedText: "" });
+      await recordAudit({
+        action: "plan_story.generated_accepted",
+        resourceType: "plan_story_chapter",
         resourceId: chapterId,
         clientId: id,
         firmId,

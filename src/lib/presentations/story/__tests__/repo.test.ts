@@ -27,6 +27,7 @@ vi.mock("@/db", () => ({
 import {
   resolveChapterText,
   isChapterStale,
+  hasNewerGeneration,
   listStoryChapters,
   upsertGeneratedChapter,
   updateChapterText,
@@ -113,6 +114,135 @@ describe("isChapterStale", () => {
   });
 });
 
+/**
+ * "The model rewrote this chapter after the advisor edited it, and what prints
+ * is still the advisor's words."
+ *
+ * Confirmed live on a real household: after one Regenerate over an edited
+ * chapter the new prose is stored and INVISIBLE, which is indistinguishable
+ * from the button having failed — its failure message is literally "The words
+ * on screen are unchanged".
+ */
+describe("hasNewerGeneration", () => {
+  const EDITED = new Date("2026-08-14T11:00:00Z");
+  const LATER = new Date("2026-08-14T12:00:00Z");
+
+  it("is true when the model wrote after the advisor did", () => {
+    expect(
+      hasNewerGeneration({
+        editedText: "mine",
+        generatedText: "theirs",
+        generatedAt: LATER,
+        editedAt: EDITED,
+      }),
+    ).toBe(true);
+  });
+
+  it("is false when the advisor wrote last", () => {
+    expect(
+      hasNewerGeneration({
+        editedText: "mine",
+        generatedText: "theirs",
+        generatedAt: EDITED,
+        editedAt: LATER,
+      }),
+    ).toBe(false);
+  });
+
+  it("is false when there is no edit to be shadowed", () => {
+    expect(
+      hasNewerGeneration({
+        editedText: null,
+        generatedText: "theirs",
+        generatedAt: LATER,
+        editedAt: null,
+      }),
+    ).toBe(false);
+  });
+
+  // A whitespace-only edit is not an edit — the same rule `resolveChapterText`
+  // already applies, and two spellings of it is how they come apart.
+  it("is false for a whitespace-only edit", () => {
+    expect(
+      hasNewerGeneration({
+        editedText: "   ",
+        generatedText: "theirs",
+        generatedAt: LATER,
+        editedAt: EDITED,
+      }),
+    ).toBe(false);
+  });
+
+  // Nothing to offer, so nothing to announce. The panel renders
+  // `newerGeneratedText` as the passage the advisor is being asked to accept,
+  // so a TRUE here with no words behind it puts a banner and a button over a
+  // blank.
+  it("is false when the model has written nothing to swap in", () => {
+    expect(
+      hasNewerGeneration({
+        editedText: "mine",
+        generatedText: "   ",
+        generatedAt: LATER,
+        editedAt: EDITED,
+      }),
+    ).toBe(false);
+  });
+
+  /**
+   * ⚠️⚠️ BACKFILL CASE 1, and the one every pre-existing edited row hits.
+   *
+   * `edited_at` arrives NULL on every row written before the column existed,
+   * while `edited_text` on those rows is real advisor prose. The order of the
+   * two writes is UNKNOWABLE there, and a wrong TRUE puts "Use the new version
+   * instead" in front of an advisor over words that were never superseded — the
+   * exact harm this feature exists to prevent, pointing the other way.
+   */
+  it("is false for an edit made before the column existed, whatever the model's timestamp says", () => {
+    expect(
+      hasNewerGeneration({
+        editedText: "the advisor's real, pre-migration words",
+        generatedText: "theirs",
+        generatedAt: LATER,
+        editedAt: null,
+      }),
+    ).toBe(false);
+  });
+
+  /**
+   * ⚠️⚠️ BACKFILL CASE 2, the same argument from the other side: a chapter
+   * GENERATED before the column existed carries a null `generated_at`, so
+   * "did the model write after the advisor" is equally unanswerable.
+   */
+  it("is false for a generation made before the column existed", () => {
+    expect(
+      hasNewerGeneration({
+        editedText: "mine",
+        generatedText: "theirs",
+        generatedAt: null,
+        editedAt: EDITED,
+      }),
+    ).toBe(false);
+  });
+
+  /**
+   * The save path itself. `updateChapterText` stamps `editedAt` from the same
+   * clock read as `updatedAt`, and a generation that produced the identical
+   * words does not move `generatedAt` at all — so equal timestamps mean "the
+   * advisor's write is the current one", never "the model's is".
+   */
+  it("is false when the two timestamps are the same instant", () => {
+    const at = new Date("2026-08-14T12:00:00Z");
+    expect(
+      hasNewerGeneration({
+        editedText: "mine",
+        generatedText: "theirs",
+        generatedAt: at,
+        editedAt: at,
+      }),
+    ).toBe(false);
+  });
+});
+
 describe("listStoryChapters", () => {
   it("reads one client's chapters for one scenario in one role", async () => {
     await listStoryChapters("client-1", "base", "standalone");
@@ -134,7 +264,11 @@ describe("listStoryChapters", () => {
 describe("upsertGeneratedChapter", () => {
   const upsertArgs = async (over: Partial<GeneratedChapter> = {}) => {
     await upsertGeneratedChapter({
-      clientId: "client-1", scenarioId: "base", documentRole: "standalone", chapter: chapter(over),
+      clientId: "client-1",
+      scenarioId: "base",
+      documentRole: "standalone",
+      chapter: chapter(over),
+      generatedByUserId: "user_42",
     });
     return lastUpsert();
   };
@@ -193,6 +327,59 @@ describe("upsertGeneratedChapter", () => {
     expect(target.map((c) => c.name)).toEqual(KEY);
   });
 
+  /**
+   * ⚠️⚠️ Whose voice these words are in, stamped on the row — and stamped
+   * UNCONDITIONALLY, exactly as `sourceHash` beside it is.
+   *
+   * The freshness check rebuilds the stored hash and compares. The hash is
+   * built from a voice, so the row has to say WHOSE, or the check rebuilds it
+   * in the reader's voice and a colleague opening a report written in another
+   * advisor's personal voice sees an out-of-date badge on all fourteen
+   * chapters with nothing able to clear it.
+   *
+   * Unconditional because it must agree with `sourceHash`, which is: the two
+   * are the question and the answer, and a run that reproduces the same words
+   * still overwrites the hash with its own.
+   */
+  it("stamps whose voice wrote the chapter, on both the first run and every later one", async () => {
+    const { values, set } = await upsertArgs();
+    expect(values.generatedByUserId).toBe("user_42");
+    expect(set.generatedByUserId).toBe("user_42");
+  });
+
+  /**
+   * ⭐ When the model's words last actually CHANGED — the timestamp
+   * `hasNewerGeneration` reads, and the reason it is not `updatedAt`.
+   *
+   * Conditional on the same `TEXT_CHANGED` predicate the review flags are
+   * cleared under, and for the mirror-image reason: the generate route upserts
+   * on EVERY run including a cache hit that reproduces the stored chapter word
+   * for word. An unconditional stamp there would tell an advisor who edited a
+   * chapter and then pressed Generate all that "the assistant rewrote this
+   * chapter after you edited it" — and offer to replace their writing with the
+   * very prose they had already replaced.
+   */
+  it("records when the words changed, and holds still when a run reproduces them", async () => {
+    const { values, set } = await upsertArgs();
+    expect(values.generatedAt).toBeInstanceOf(Date);
+    const { sql, params } = render(set.generatedAt);
+    expect(sql).toContain("is distinct from excluded.generated_text");
+    expect(sql).toMatch(/then \$\d+::timestamp else/i);
+    expect(sql).toContain('"plan_story_chapters"."generated_at"');
+    /**
+     * ⚠️⚠️ A UTC ISO STRING, and the SAME instant the insert path stores.
+     *
+     * The insert goes through drizzle's `timestamp` column, which maps a Date
+     * with `toISOString()`. This branch is a raw fragment with no column to map
+     * through, so a bound Date would be serialized by node-postgres in LOCAL
+     * time with an offset that `timestamp without time zone` then truncates —
+     * the same moment stored hours apart depending on which path ran, and
+     * `hasNewerGeneration` comparing the two would be reading noise.
+     */
+    expect(params).toEqual([(values.generatedAt as Date).toISOString()]);
+    expect(String(params[0])).toMatch(/Z$/);
+  });
+
   // Review says "an advisor read THESE words and approved them". New words must
   // arrive unreviewed — but a re-render that lands on the same chapter (a cache
   // hit, or a Regenerate that reproduces it) must not un-review it either, or
@@ -243,6 +430,25 @@ describe("updateChapterText", () => {
     expect(set).not.toHaveProperty("generatedText");
   });
 
+  /**
+   * ⭐ WHEN the advisor wrote — the other half of `hasNewerGeneration`, and on
+   * BOTH paths. The insert path runs whenever a chapter has never been
+   * generated, which the panel actively offers; a stamp only in the conflict
+   * branch would leave those rows saying the advisor has never written.
+   *
+   * ⚠️ ONE clock read shared with `updatedAt`, so the two are the same instant
+   * rather than a millisecond apart. `hasNewerGeneration` asks whether the
+   * model's stamp is strictly later, and two `new Date()` calls here would let
+   * an ordinary save read as a rewrite that shadowed it.
+   */
+  it("records when the advisor wrote, on both the insert and the conflict path", async () => {
+    const { values, set } = await editArgs();
+    expect(values.editedAt).toBeInstanceOf(Date);
+    expect(set.editedAt).toBeInstanceOf(Date);
+    expect((set.editedAt as Date).getTime()).toBe((set.updatedAt as Date).getTime());
+    expect((values.editedAt as Date).getTime()).toBe((set.editedAt as Date).getTime());
+  });
+
   it("conflicts on the client/scenario/role/chapter key", async () => {
     const { target } = await editArgs();
     expect(target.map((c) => c.name)).toEqual(KEY);
@@ -281,6 +487,33 @@ describe("markChapterReviewed", () => {
     const { set } = await reviewArgs();
     expect(set.reviewedAt).toBeInstanceOf(Date);
     expect(set.reviewedByUserId).toBe("user_42");
+  });
+
+  /**
+   * ⚠️⚠️ THE REASON `hasNewerGeneration` DOES NOT READ `updatedAt`, pinned as a
+   * property of this writer rather than left as an assertion in a comment.
+   *
+   * Marking a chapter reviewed moves `updatedAt` and leaves `editedAt` alone.
+   * So on the ordinary flow — edit a chapter, then mark it reviewed —
+   * `updatedAt` ends up strictly later than `editedAt` with no model call
+   * anywhere near it. "Is the model's version newer than the advisor's" asked
+   * against `updatedAt` answers YES there, which would put "Use the new version
+   * instead" in front of every advisor who reviewed their own writing, over
+   * prose they had already replaced.
+   *
+   * `generatedAt` exists because of this line. If a later change makes this
+   * writer stop touching `updatedAt`, that does not make `updatedAt` usable —
+   * it makes it a timestamp two unrelated writers happen to agree about.
+   */
+  it("moves the row's updated stamp without claiming the advisor wrote", async () => {
+    const { values, set } = await reviewArgs();
+    expect(set.updatedAt).toBeInstanceOf(Date);
+    expect(set).not.toHaveProperty("editedAt");
+    expect(values).not.toHaveProperty("editedAt");
+    // …and it does not claim a generation either, for the same reason: the
+    // words on the row are whatever they already were.
+    expect(set).not.toHaveProperty("generatedAt");
+    expect(set).not.toHaveProperty("generatedByUserId");
   });
 
   it("conflicts on the client/scenario/role/chapter key", async () => {

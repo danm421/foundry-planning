@@ -24,8 +24,8 @@ const scenarioId = z.string().min(1).max(64).optional();
 const documentRole = z.enum(["standalone", "frontMatter"]);
 
 /**
- * One chapter's two advisor actions. Both fields are optional so a single PATCH
- * can save an edit, mark it reviewed, or do both — but a body carrying neither
+ * One chapter's advisor actions. Every field is optional so a single PATCH can
+ * save an edit, mark it reviewed, or do both — but a body carrying none of them
  * is rejected by the route, since it would otherwise answer a no-op exactly
  * like a saved edit.
  *
@@ -41,6 +41,21 @@ export const planStoryChapterPatchSchema = z
     // long, and a bound on an otherwise unlimited write to a text column.
     editedText: z.string().max(20000).optional(),
     reviewed: z.boolean().optional(),
+    /**
+     * "Use the new version instead" — let a rewrite the advisor's own words are
+     * standing in front of through.
+     *
+     * A flag rather than the text itself, deliberately: the words are already
+     * stored in `generated_text`, and taking them off the request would let a
+     * caller write anything into a chapter under the model's name. What this
+     * says is only WHICH of the two stored versions prints, which the route
+     * spells as clearing the edit.
+     *
+     * ⚠️ The only field in this feature that discards writing a human did, so
+     * it is the one that must never be inferred — the route audits it under its
+     * own action, and the panel puts it behind a click that says what it does.
+     */
+    acceptGenerated: z.boolean().optional(),
   })
   .strict();
 

@@ -23,6 +23,10 @@ interface Row {
    *  the route, never by the panel, so it is a FIXTURE value here. Both rows
    *  below say yes; the row that says no has its own tests. */
   candidate?: boolean;
+  /** The model's rewrite, when it is newer than the advisor's edit and so is
+   *  stored without being what prints. Null on every ordinary row — the route
+   *  decides, `hasNewerGeneration` in `story/repo.ts`. */
+  newerGeneratedText: string | null;
 }
 
 const CHAPTERS: Row[] = [
@@ -36,6 +40,7 @@ const CHAPTERS: Row[] = [
     error: null,
     reviewed: false,
     candidate: true,
+    newerGeneratedText: null,
   },
   {
     chapterId: "whatWeRecommend",
@@ -47,8 +52,22 @@ const CHAPTERS: Row[] = [
     error: null,
     reviewed: false,
     candidate: true,
+    newerGeneratedText: null,
   },
 ];
+
+/** Every field the payload carries, at its ordinary value — so a fixture built
+ *  here only has to say what makes it interesting, and the next field the route
+ *  gains is added once rather than at every literal. */
+const ORDINARY = {
+  generated: true,
+  edited: false,
+  aiSuppressed: false,
+  error: null,
+  reviewed: false,
+  candidate: true,
+  newerGeneratedText: null,
+} satisfies Omit<Row, "chapterId" | "title" | "text">;
 
 /** The two frozen constants `story/generate.ts` writes to `error` (:28, :32).
  *  Spelled out here rather than imported: that module reaches Azure and Redis,
@@ -606,6 +625,106 @@ describe("PlanStoryReviewPanel", () => {
   });
 
   /**
+   * ⭐⭐ A rewrite the advisor's own words are standing in front of.
+   *
+   * Confirmed live: press Regenerate on a chapter you have edited and the new
+   * prose is stored and INVISIBLE — which is the same picture as the button
+   * failing, since its failure message is "The words on screen are unchanged".
+   * The row has to say what happened, show what was written, and offer the swap
+   * behind a click that says it discards their version.
+   */
+  describe("a rewrite the advisor's own words are standing in front of", () => {
+    const A = "Your plan, in one page";
+    const B = "What we're recommending, and why";
+    const REWRITE = "The assistant's newer paragraph.";
+
+    /** The first row edited, with a newer generation behind it. */
+    const shadowed = (over: Partial<Row> = {}): Row[] => [
+      { ...CHAPTERS[0], edited: true, newerGeneratedText: REWRITE, ...over },
+      CHAPTERS[1],
+    ];
+
+    it("says the rewrite happened and shows what it wrote", async () => {
+      stubFetch(shadowed());
+      renderPanel();
+      const section = await screen.findByRole("region", { name: A });
+      expect(within(section).getByText(/rewrote this chapter after you/i)).toBeTruthy();
+      expect(within(section).getByText(REWRITE)).toBeTruthy();
+      // …and the box still holds what PRINTS, which is the advisor's version.
+      // A banner that also replaced the text would be the overwrite it exists
+      // to warn about.
+      expect(await screen.findByDisplayValue(CHAPTERS[0].text)).toBeTruthy();
+    });
+
+    // Kills: rendering the banner on every row. Thirteen chapters were not
+    // rewritten behind anybody's back.
+    it("says nothing on a row with no withheld rewrite", async () => {
+      stubFetch(shadowed());
+      renderPanel();
+      await screen.findByRole("region", { name: A });
+      expect(within(row(B)).queryByText(/rewrote this chapter after you/i)).toBeNull();
+    });
+
+    it("says nothing at all when no chapter is shadowing a rewrite", async () => {
+      renderPanel();
+      await screen.findByRole("region", { name: A });
+      expect(screen.queryByText(/rewrote this chapter after you/i)).toBeNull();
+    });
+
+    /**
+     * ⚠️⚠️ The click that DISCARDS advisor writing, and the whole reason this
+     * task exists rather than the panel quietly preferring the newer text.
+     * Nothing overwrites an advisor's words without a click that says so.
+     */
+    it("swaps in the model's version on an explicit click, and only then", async () => {
+      stubFetch(shadowed());
+      renderPanel();
+      const section = await screen.findByRole("region", { name: A });
+      // Nothing has been written yet — the banner alone is not the swap.
+      expect(patchCalls()).toHaveLength(0);
+
+      fireEvent.click(within(section).getByRole("button", { name: /use the new version/i }));
+      await waitFor(() => expect(patchCalls()).toHaveLength(1));
+      const [url, init] = patchCalls()[0] as [string, RequestInit];
+      expect(String(url)).toContain("/plan-story/planInOnePage");
+      expect(JSON.parse(String(init.body))).toMatchObject({
+        scenarioId: "base",
+        documentRole: "standalone",
+        acceptGenerated: true,
+      });
+      // …and never as a plain edit, which would store the model's paragraph as
+      // the advisor's own words rather than dropping theirs.
+      expect(JSON.parse(String(init.body))).not.toHaveProperty("editedText");
+    });
+
+    /**
+     * A refused swap says so against THIS chapter and changes nothing on
+     * screen. Its message may not read like the edit box's — the advisor typed
+     * nothing here, so "your words are still in the box" would be about a box
+     * they never touched.
+     */
+    it("reports a refused swap against the chapter, leaving the advisor's words in place", async () => {
+      const rows = shadowed();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string, init?: RequestInit) =>
+          init?.method === "PATCH"
+            ? new Response(JSON.stringify({ error: "no" }), { status: 500 })
+            : answerRead(url, rows),
+        ),
+      );
+      renderPanel();
+      const section = await screen.findByRole("region", { name: A });
+      fireEvent.click(within(section).getByRole("button", { name: /use the new version/i }));
+
+      const alert = await within(section).findByRole("alert");
+      expect(alert.textContent).toMatch(/couldn't switch/i);
+      expect(within(row(B)).queryByRole("alert")).toBeNull();
+      expect(screen.getByDisplayValue(CHAPTERS[0].text)).toBeTruthy();
+    });
+  });
+
+  /**
    * ⭐ Regenerate — the only control in the app that spends model calls on ONE
    * chapter, and the reason `force` is reachable at all. Every case here is
    * about a click that costs money: what it asks for, what it does when the
@@ -1065,12 +1184,7 @@ describe("the advisor's tone and length", () => {
     chapterId: "whatHappensNext",
     title: "What happens next",
     text: "Alan opens the Roth.",
-    generated: true,
-    edited: false,
-    aiSuppressed: false,
-    error: null,
-    reviewed: false,
-    candidate: true,
+    ...ORDINARY,
   };
 
   function toneSelect(title: string): HTMLSelectElement {

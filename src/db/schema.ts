@@ -3169,8 +3169,40 @@ export const planStoryChapters = pgTable(
     chapterId: text("chapter_id").notNull(),
     /** Last model output, kept untouched so an advisor can revert to it. */
     generatedText: text("generated_text"),
+    /**
+     * When `generatedText` last actually CHANGED — not when a run last touched
+     * the row. Held still by a cache hit that reproduces the stored chapter
+     * word for word, the same condition `reviewedAt` is cleared under.
+     *
+     * ⚠️ NOT `updatedAt`, and the difference is the whole point. `updatedAt`
+     * moves on every write this table has, including `markChapterReviewed` —
+     * so "is the model's version newer than the advisor's" asked against it
+     * answers YES for the ordinary flow of editing a chapter and then marking
+     * it reviewed, and offers to throw the advisor's writing away over it.
+     */
+    generatedAt: timestamp("generated_at"),
+    /**
+     * Whose voice this chapter was written in — the Clerk user id of the
+     * advisor whose generation stored the words and the `sourceHash` beside
+     * them. Null on every row written before this column existed.
+     *
+     * ⚠️ Load-bearing for the out-of-date badge, not provenance trivia. The
+     * stored hash is built from a VOICE, and the freshness check rebuilds it;
+     * rebuilding it in the reader's voice instead of the writer's answers
+     * "would I get something different if I regenerated this" rather than
+     * "have the inputs this chapter was written from changed" — so a colleague
+     * opening a report written in another advisor's personal voice sees a
+     * stale badge on every chapter, with nothing they can do to clear it.
+     */
+    generatedByUserId: text("generated_by_user_id"),
     /** The advisor's version. Null until edited; wins at render time. */
     editedText: text("edited_text"),
+    /**
+     * When `editedText` was last written. Distinct from `updatedAt`, which
+     * moves on every write including the model's — without this, "is the
+     * generated text newer than the advisor's" is unanswerable.
+     */
+    editedAt: timestamp("edited_at"),
     /** Prompt hash at generation — the staleness key. */
     sourceHash: text("source_hash"),
     /** True when the gates rejected the model and the fallback was stored. */
