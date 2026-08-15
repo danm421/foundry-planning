@@ -22,14 +22,29 @@ function isChapterId(v: unknown): v is ChapterId {
 }
 
 /**
- * The advisor's write actions on one chapter: replace its words, say they stand
- * behind them, and let a rewrite their own version was standing in front of
- * through.
+ * The advisor's three write actions on one chapter: replace its words, say they
+ * stand behind them, and let a rewrite their own version was standing in front
+ * of through.
  *
- * Every repo call is an upsert, so each one either stores the write or throws —
- * there is no zero-row outcome to check for, and no chapter that "has no row
- * yet" to 404 on. That makes `requireClientEditAccess` the sole barrier in
- * front of them, which is why it runs before any of them.
+ * Both WRITERS — `updateChapterText` and `markChapterReviewed` — are upserts, so
+ * each either stores the write or throws. Neither has a zero-row outcome to
+ * check for, and neither has a chapter that "has no row yet" to 404 on: the
+ * panel offers every chapter whether one was ever generated or not, so writing
+ * one from scratch is a first-class path rather than an edge case.
+ *
+ * There is also exactly ONE read, `loadStoryChapter`, and only on the accept
+ * path. It is NOT an authorization check — it is scoped on the same
+ * already-authorized clientId as everything else here, and its job is to
+ * confirm the row really is shadowing a newer generation before the accept
+ * throws the advisor's version away. So it is this handler's only zero-row
+ * branch, and it answers 409 (the row moved under a click that was correct when
+ * it was made) rather than 404 (the chapter is real either way). The edit and
+ * review paths stay read-free, and a test pins them that way.
+ *
+ * That leaves `requireClientEditAccess` the only thing standing between a
+ * caller and another client's row, which is why it runs ahead of all four calls
+ * — the edit's upsert, the accept's read and its upsert, and the review's
+ * upsert.
  */
 export async function PATCH(
   request: NextRequest,
@@ -107,10 +122,9 @@ export async function PATCH(
      */
     if (acceptGenerated === true) {
       /**
-       * ⚠️⚠️ THE ONE READ THIS ROUTE DOES, and the only path that earns one.
+       * ⚠️⚠️ WHY THE READ ABOVE EARNS ITS PLACE ON THIS PATH ALONE.
        *
-       * Everything else here is an upsert precisely so it needs no lookup. But
-       * the banner this click comes from was rendered off a chapter list that
+       * The banner this click comes from was rendered off a chapter list that
        * can be minutes old: an advisor with the report open in two tabs can
        * save a fresh edit in one and press this in the other, and an unchecked
        * accept would then discard writing nothing had shadowed and revert the
