@@ -363,6 +363,50 @@ describe("what-we-recommend keeps ungrounded figures off the page", () => {
   });
 });
 
+describe("narrateWhatWeRecommend — internal change text never reaches the client", () => {
+  /** Every one of these is a real string read off a client's exported PDF on
+   *  2026-08-14. The middot and the arrow are the Scenario Changes table's own
+   *  separators; the parenthesised words are its milestone refs. */
+  const LEAKED = [
+    "Susan - 401k · 10% of salary",
+    "Retirement Living Expenses · Annual amount",
+    "Roth percent: — → 100%",
+    "Sell rental (Plan Start)",
+    "Convert IRA (Client Retirement)",
+  ];
+
+  it.each(LEAKED)("does not print %s", (name) => {
+    const out = narrateWhatWeRecommend({
+      ...CTX,
+      hasProposal: true,
+      strategies: [{ name, rows: [{ what: "Annual amount", area: "Savings", op: "edit", before: "—", after: "—", detail: [] }] }],
+    });
+    const text = out.join(" ");
+    expect(text).not.toContain("·");
+    expect(text).not.toContain("→");
+    expect(text).not.toMatch(/\((?:Plan Start|Client Retirement)\)/u);
+  });
+
+  it("still names a clean strategy label, because that is what the client recognises", () => {
+    const out = narrateWhatWeRecommend({
+      ...CTX,
+      hasProposal: true,
+      strategies: [{ name: "Delay Social Security", rows: [{ what: "Claim age", area: "Income", op: "edit", before: "—", after: "—", detail: [] }] }],
+    });
+    expect(out.join(" ")).toContain("Delay Social Security");
+  });
+
+  it("falls back to the area phrase when a label is unusable, never to silence", () => {
+    const out = narrateWhatWeRecommend({
+      ...CTX,
+      hasProposal: true,
+      strategies: [{ name: "Susan - 401k · 10% of salary", rows: [{ what: "Annual amount", area: "Savings", op: "edit", before: "—", after: "—", detail: [] }] }],
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toBe("One change adjusts what you're saving.");
+  });
+});
+
 describe("what-you-have reads as a whole chapter", () => {
   const CAVEAT =
     "Not all of what you own is available to spend. Your home and anything held for someone else sit outside the money the plan draws on.";

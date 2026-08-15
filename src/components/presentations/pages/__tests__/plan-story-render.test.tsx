@@ -22,6 +22,7 @@ import {
   MAX_FIGURE_CARDS,
   MAX_GLOSSARY_TERMS,
   MAX_PARAGRAPHS,
+  MAX_PARAGRAPHS_WITH_CARDS,
   MAX_STEPS,
   MAX_STRATEGY_CARDS,
   type PlanStoryPageData,
@@ -219,6 +220,53 @@ function atTheBound(cards: number): PlanStoryPageData {
   );
 }
 
+/**
+ * The shape Wave F actually found on prod, which no fixture here could
+ * produce: `narrateWhatWeRecommend` writes ONE SHORT PARAGRAPH PER STRATEGY.
+ * Eleven strategies, four of them restating their cards and dropped, leaves
+ * seven paragraphs of about ten words — 70 words against an 80-word budget and
+ * seven paragraphs against a ceiling of eight, so every one of them prints and
+ * the sheet spills on bottom margins the word count cannot see.
+ *
+ * `LONG_PROSE` is 21-word paragraphs, so the word budget cuts it at three and
+ * the paragraph ceiling is never reached. That is why the shipped measurement
+ * was green while the deck mis-numbered.
+ */
+function cardsPlusShortParagraphs(cards: number, paragraphs: number): PlanStoryPageData {
+  return {
+    title: "Your Plan",
+    subtitle: "Proposed — Retire at 63",
+    isEmpty: false,
+    emptyMessage: "",
+    chapters: [
+      {
+        chapterId: "whatWeRecommend",
+        title: "What we're recommending, and why",
+        layout: "strategyCards",
+        paragraphs: Array.from(
+          { length: paragraphs },
+          (_, i) => `Strategy ${i + 1} — this changes what you're saving.`,
+        ),
+        strategies: Array.from({ length: cards }, (_, i) => ({
+          name: `Strategy ${i + 1}`,
+          what: "Annual amount",
+          // NOT "" — `chapter-pdf.tsx` renders the "WHAT IT DOES" block only
+          // when `detail` is non-empty, so an empty string silently ships a
+          // shorter card than a real one and overstates how many paragraphs fit
+          // beside it (measured: with `detail: ""` the sheet holds seven
+          // paragraphs beside four cards, not three — a card missing its own
+          // worst-case content, not the paragraph ceiling, was what changed).
+          detail: "Claim age: 67 → 70",
+        })),
+        figures: [],
+        steps: [],
+        glossary: [],
+        overflowNote: "…and 7 more changes we'll walk through together.",
+      },
+    ],
+  };
+}
+
 /** Options that print exactly the chapters a fixture holds. */
 function optionsPrinting(data: PlanStoryPageData): PlanStoryOptions {
   const held = new Set(data.chapters.map((c) => c.chapterId));
@@ -284,6 +332,20 @@ describe("Plan Story — real PDF render", () => {
   // rather than as a floor a later edit could quietly raise.
   it("spills at one card past the cap, which is why the cap is where it is", async () => {
     expect(await pagesOf(worstCase(MAX_STRATEGY_CARDS + 1, 0))).toBe(2);
+  }, 30_000);
+
+  it("lays out a full card set beside the paragraph ceiling", async () => {
+    expect(
+      await pagesOf(cardsPlusShortParagraphs(MAX_STRATEGY_CARDS, MAX_PARAGRAPHS_WITH_CARDS)),
+    ).toBe(1);
+  }, 30_000);
+
+  // …and the other direction, so the ceiling is pinned as a boundary rather than
+  // as a floor a later edit could quietly raise. This is the case Wave F measured.
+  it("spills at one paragraph past the ceiling, which is why the ceiling is where it is", async () => {
+    expect(
+      await pagesOf(cardsPlusShortParagraphs(MAX_STRATEGY_CARDS, MAX_PARAGRAPHS_WITH_CARDS + 1)),
+    ).toBeGreaterThan(1);
   }, 30_000);
 
   /**

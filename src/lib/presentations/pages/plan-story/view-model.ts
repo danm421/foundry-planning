@@ -4,7 +4,7 @@
 // was never generated.
 import type { BuildDataContext } from "@/components/presentations/registry";
 import { CHAPTERS, type ChapterLayout } from "@/lib/presentations/story/chapters/registry";
-import { quotableDetail } from "@/lib/presentations/story/chapters/what-we-recommend";
+import { quotableDetail, usableName } from "@/lib/presentations/story/chapters/what-we-recommend";
 import type { Fact } from "@/lib/presentations/story/facts";
 import { GLOSSARY, type GlossaryTerm } from "@/lib/presentations/story/glossary";
 import {
@@ -159,6 +159,22 @@ export const SHEET_BUDGET_WORDS = 300;
 const BUDGET_WORDS_WITH_CARDS = 80;
 
 /**
+ * …and how many PARAGRAPHS that 80 words may be spread across.
+ *
+ * `MAX_PARAGRAPHS` was measured on a sheet carrying no cards. A paragraph costs
+ * its own bottom margin whether it holds four words or forty — the note above
+ * `MAX_STRATEGY_CARDS` says so — and the AI-off narrator for this one chapter
+ * writes one ~10-word paragraph PER STRATEGY. Eleven strategies leave seven
+ * paragraphs after `restatesCard` drops the four that repeat their cards: 70
+ * words, inside the word budget, inside the eight-paragraph ceiling, and two
+ * sheets. Measured on Cooper 2026-08-14 — the story reserved 14 and printed 15.
+ *
+ * Three is measured, not chosen: four cards beside three short paragraphs lay
+ * out, four spill. `plan-story-render.test.tsx` re-runs both every suite.
+ */
+export const MAX_PARAGRAPHS_WITH_CARDS = 3;
+
+/**
  * What the figure column beside a `twoUp` chapter's prose holds.
  *
  * Eight cards lay out and nine spill, so the sheet is not what decides this —
@@ -276,6 +292,24 @@ function proseBudgetWords(layout: ChapterLayout, cards: number): number {
   }
 }
 
+/**
+ * The paragraph ceiling, by layout. A `switch` with no `default` for the same
+ * reason `proseBudgetWords` has none: a new layout must answer this question
+ * rather than inherit an eight-paragraph ceiling measured on a sheet that
+ * carries nothing under its prose.
+ */
+function proseParagraphCap(layout: ChapterLayout, cards: number): number {
+  switch (layout) {
+    case "twoUp":
+    case "checklist":
+    case "glossary":
+      return MAX_PARAGRAPHS;
+    case "heroProse":
+    case "strategyCards":
+      return cards > 0 ? MAX_PARAGRAPHS_WITH_CARDS : MAX_PARAGRAPHS;
+  }
+}
+
 /** "…and four more changes we'll walk through together." — the sentence that
  *  replaces what a sheet cannot hold. Client-facing, and true: it says the
  *  changes exist and that the advisor will cover them, rather than implying the
@@ -390,12 +424,16 @@ function truncateToBudget(paragraph: string, budget: number): string {
  * Paragraph-granular wherever it can be: cutting mid-thought on a client page is
  * worse than one paragraph fewer.
  */
-function capParagraphs(paragraphs: string[], budget: number): { kept: string[]; trimmed: boolean } {
+function capParagraphs(
+  paragraphs: string[],
+  budget: number,
+  maxParagraphs: number,
+): { kept: string[]; trimmed: boolean } {
   const kept: string[] = [];
   let words = 0;
   for (const p of paragraphs) {
     const n = wordCount(p);
-    if (kept.length > 0 && (words + n > budget || kept.length >= MAX_PARAGRAPHS)) {
+    if (kept.length > 0 && (words + n > budget || kept.length >= maxParagraphs)) {
       return { kept, trimmed: true };
     }
     if (kept.length === 0 && n > budget) return { kept: [truncateToBudget(p, budget)], trimmed: true };
@@ -445,7 +483,11 @@ export function buildPlanStoryData(
     const allStrategies =
       def.layout === "strategyCards"
         ? input.story.strategies.map((s) => ({
-            name: s.name,
+            // The prose refuses the same machine text (`what-we-recommend.ts`
+            // `describe`) for a reason that applies here just as much: this card
+            // sits beside that prose on the same sheet, so a name refused in one
+            // place and printed in the other is the same leak in a nicer font.
+            name: usableName(s.name) ? s.name : "",
             what: s.rows.map((r) => r.what).join(", "),
             // NOT the raw `detail[0]`. That field is written by the Scenario
             // Changes table in its own rounding and its own case, and nothing in
@@ -473,6 +515,7 @@ export function buildPlanStoryData(
     const { kept, trimmed } = capParagraphs(
       printable,
       proseBudgetWords(def.layout, strategies.length),
+      proseParagraphCap(def.layout, strategies.length),
     );
 
     return {

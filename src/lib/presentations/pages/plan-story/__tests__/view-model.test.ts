@@ -17,6 +17,7 @@ import {
   BUDGET_WORDS_GLOSSARY,
   MAX_FIGURE_CARDS,
   MAX_GLOSSARY_TERMS,
+  MAX_PARAGRAPHS_WITH_CARDS,
   MAX_STEPS,
   MAX_STRATEGY_CARDS,
   SHEET_BUDGET_WORDS,
@@ -436,6 +437,47 @@ describe("buildPlanStoryData — strategy cards", () => {
       expect(chapter.strategies).toEqual([]);
     }
   });
+
+  /**
+   * The same refusal `describe()` applies to the prose (`what-we-recommend.ts`)
+   * has to apply to the card too — it prints beside that prose on the same
+   * sheet, so a name refused in one place and shown in the other is the same
+   * leak in a nicer font. Assertions here only touch `strategies[0].name`, never
+   * `chapter.paragraphs`: the prose side of this gate already has its own
+   * RED/GREEN/mutation coverage in `chapters/__tests__/narratives.test.ts`, and
+   * `restatesCard` treats a blanked card name (`name.length === 0`) as never a
+   * restatement of anything, so pulling paragraph content into this assertion
+   * would be testing Task 1's paragraph ceiling by accident, not this gate.
+   */
+  it("blanks a card's name that carries the changes table's own machine text", () => {
+    const data = buildPlanStoryData(
+      deckCtx(
+        input({
+          hasProposal: true,
+          strategies: [{ name: "Susan - 401k · 10% of salary", rows: [row()] }],
+        }),
+      ),
+      PROPOSED,
+    );
+    expect(data.chapters.find((c) => c.chapterId === "whatWeRecommend")!.strategies[0].name).toBe("");
+  });
+
+  // …and the must-PASS direction: a clean label still reaches the card, because
+  // that is what the client recognises.
+  it("keeps a clean card name intact", () => {
+    const data = buildPlanStoryData(
+      deckCtx(
+        input({
+          hasProposal: true,
+          strategies: [{ name: "Delay Social Security", rows: [row()] }],
+        }),
+      ),
+      PROPOSED,
+    );
+    expect(data.chapters.find((c) => c.chapterId === "whatWeRecommend")!.strategies[0].name).toBe(
+      "Delay Social Security",
+    );
+  });
 });
 
 describe("buildPlanStoryData — the subtitle names the plan the prose is about", () => {
@@ -558,7 +600,11 @@ describe("one sheet per chapter, by construction", () => {
   it("prints every card when they fit", () => {
     const chapter = recommend(withStrategies(MAX_STRATEGY_CARDS));
     expect(chapter.strategies).toHaveLength(MAX_STRATEGY_CARDS);
-    expect(chapter.overflowNote).toBe("");
+    // The cards all fit, but the prose does not fit for free alongside them: the
+    // AI-off narrator writes one paragraph per strategy, and four of those beside
+    // a full card set is exactly the shape `MAX_PARAGRAPHS_WITH_CARDS` caps — the
+    // note says so rather than silently dropping the fourth.
+    expect(chapter.overflowNote).not.toBe("");
   });
 
   it("caps the cards at the sheet's capacity", () => {
@@ -639,6 +685,35 @@ describe("one sheet per chapter, by construction", () => {
     const note = recommend(withStrategies(11, { whatWeRecommend: long })).overflowNote;
     expect(note).toBe(`…and ${11 - MAX_STRATEGY_CARDS} more changes we'll walk through together.`);
     expect(note.split("…and")).toHaveLength(2);
+  });
+
+  it("caps the AI-off recommendation narrative at the paragraph ceiling", () => {
+    // Eleven strategies, the Cooper shape. `detail` is a real, groundable clause
+    // — "Claim age: 67 → 70" carries no dollar/percent/year figure (an age is
+    // deliberately not one, per `validate/facts.ts`'s FIGURE_RE), so it grounds
+    // with no `facts` needed, and `describe()` writes it onto both the card and
+    // the paragraph. That is what lets `restatesCard` genuinely drop the four
+    // paragraphs that restate their own card, leaving seven — which the
+    // paragraph ceiling then caps to three.
+    const strategies = Array.from({ length: 11 }, (_, i) => ({
+      name: `Strategy ${i + 1}`,
+      rows: [row({ what: "Annual amount", area: "Savings", detail: ["Claim age: 67 → 70"] })],
+    }));
+    const chapter = recommend(
+      buildPlanStoryData(
+        deckCtx(input({ hasProposal: true, strategies, facts: [] }), "Proposed"),
+        PROPOSED,
+      ),
+    );
+    expect(chapter.paragraphs.length).toBeLessThanOrEqual(MAX_PARAGRAPHS_WITH_CARDS);
+    // None of the surviving paragraphs belong to a strategy that has a card —
+    // proof the drop is `restatesCard` finding a restatement, not just the
+    // paragraph cap taking the first three off the raw eleven.
+    for (const paragraph of chapter.paragraphs) {
+      expect(chapter.strategies.some((s) => paragraph.startsWith(s.name))).toBe(false);
+    }
+    // What was dropped is SAID. The card overflow leads, since it can say how many.
+    expect(chapter.overflowNote).not.toBe("");
   });
 });
 
