@@ -254,6 +254,13 @@ function reviewSummary(loaded: boolean, unreviewed: number): string {
   return `${unreviewed} chapter${unreviewed === 1 ? "" : "s"} not yet reviewed`;
 }
 
+/** "…" until `loadFacts` has answered — a synthesized "0" here would tell the
+ *  advisor a chapter may use no figures while the real answer is still in
+ *  flight or never arrived, which is wrong rather than merely missing. */
+function factsCount(loaded: boolean, count: number): string {
+  return loaded ? String(count) : "…";
+}
+
 export function PlanStoryReviewPanel({
   clientId,
   scenarioId,
@@ -336,9 +343,8 @@ export function PlanStoryReviewPanel({
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   /** The chapter with a write in flight, so a second click cannot double-write
-   *  it. Every PATCH — an edit, a review, an undo of one, or an accept — files
-   *  its own audit row, so a double click would double the record as well as
-   *  the write. */
+   *  it. Every PATCH this guards files its own audit row, so a double click
+   *  would double the record as well as the write. */
   const [saving, setSaving] = useState<string | null>(null);
   /** The chapter being rewritten, if any. Its own state rather than `saving`'s:
    *  a rewrite is a wait measured in tens of seconds, so the row it is happening
@@ -373,10 +379,18 @@ export function PlanStoryReviewPanel({
   /**
    * The figures each chapter was allowed to use, keyed by chapter id — the
    * review panel's disclosure half of the same pack the model was shown.
-   * Empty until `loadFacts` below answers; a chapter absent from the map reads
-   * as "nothing to disclose yet", same as an unanswered `outOfDate`.
+   * Empty until `loadFacts` below answers.
    */
   const [facts, setFacts] = useState<Record<string, { label: string; display: string }[]>>({});
+  /**
+   * Has `loadFacts` actually answered — separate from `facts` itself because
+   * "zero figures" and "no answer yet" both LOOK like an empty map, and they
+   * are not the same claim: this is the one screen whose job is to tell the
+   * advisor what a chapter was allowed to quote, so printing a count before
+   * one is known would tell them "this chapter may use no figures" while the
+   * real answer is still in flight — a wrong answer, not a missing one.
+   */
+  const [factsLoaded, setFactsLoaded] = useState(false);
   /**
    * Reading the story instead of editing it.
    *
@@ -451,9 +465,11 @@ export function PlanStoryReviewPanel({
    * folding this in would spend a second twenty-second run on every tone
    * dropdown to find that out.
    *
-   * A failure is logged and shows nothing, the same rule `loadOutOfDate`
-   * follows: this is a disclosure, not a chapter, so a failed load here must
-   * not raise the alarm that means "your chapters did not load".
+   * A failure is logged rather than raising the panel-level alarm — the same
+   * rule `loadOutOfDate` follows, since this is a disclosure, not a chapter,
+   * and "your chapters did not load" would be the wrong message for it. It
+   * does NOT set `factsLoaded`, so a row that never got an answer keeps
+   * showing that rather than a synthesized zero.
    */
   const loadFacts = useCallback(async () => {
     try {
@@ -465,11 +481,16 @@ export function PlanStoryReviewPanel({
       const body = (await res.json()) as {
         facts?: Record<string, { label: string; display: string }[]>;
       };
-      // `?? {}`, the same defensiveness `loadOutOfDate` gets for free from
-      // `new Set(body.stale)`: a response this route did not actually answer
-      // (an unrelated payload shape, a field the caller renamed) must read as
-      // "nothing to disclose yet", never crash the row it would have decorated.
+      // `?? {}`: a response that answered with 200 but not the expected shape
+      // (an unrelated payload, a field the caller renamed) must not crash the
+      // row it would have decorated — but it still counts as ANSWERED, so
+      // `factsLoaded` is set either way. An actually empty pack and a
+      // malformed-but-200 response are indistinguishable from here, and both
+      // are closer to "disclose nothing" than to "keep the advisor waiting
+      // forever" — unlike a thrown request below, which never reaches this
+      // line and so never sets it.
       setFacts(body.facts ?? {});
+      setFactsLoaded(true);
     } catch (err) {
       console.error("[plan-story] could not load the figures each chapter may use", err);
     }
@@ -498,9 +519,12 @@ export function PlanStoryReviewPanel({
 
   // …and the facts disclosure, on the same mount-time rule as the badge above
   // but its own effect: `loadFacts` does not depend on the style, so a tone
-  // change must not re-run it the way it re-runs `loadOutOfDate`.
+  // change must not re-run it the way it re-runs `loadOutOfDate`. Reset
+  // `factsLoaded` along with the map — the story being shown just changed, so
+  // the previous story's answer is not one for this one.
   useEffect(() => {
     setFacts({});
+    setFactsLoaded(false);
     void loadFacts();
   }, [loadFacts]);
 
@@ -1060,11 +1084,17 @@ export function PlanStoryReviewPanel({
                 every pass down the list — and guarded by `isChapterId` for the
                 same reason the style fields above are: a row can outlive the
                 chapter it names, and there is nothing to disclose for one that
-                has left the arc. */}
+                has left the arc.
+
+                The count reads "…" rather than "0" until `loadFacts` answers
+                (`factsCount` above) — a wrong "0" would tell the advisor this
+                chapter may use no figures, over the 4-23s `loadStoryRun`
+                actually takes to answer, or permanently on a failed load. */}
             {isChapterId(row.chapterId) && (
               <details className="mt-2 text-xs text-ink-3">
                 <summary className="cursor-pointer select-none hover:text-ink">
-                  The figures this chapter may use ({(facts[row.chapterId] ?? []).length})
+                  The figures this chapter may use (
+                  {factsCount(factsLoaded, (facts[row.chapterId] ?? []).length)})
                 </summary>
                 <ul className="mt-1 flex flex-col gap-0.5 pl-4">
                   {(facts[row.chapterId] ?? []).map((f, i) => (

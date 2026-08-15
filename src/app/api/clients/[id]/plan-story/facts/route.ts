@@ -12,7 +12,13 @@
 //
 // The panel calls this once, on mount, beside the staleness GET — a SECOND,
 // independent `loadStoryRun`. The two requests run concurrently, so the
-// advisor waits once; the server pays the projection cost twice per mount.
+// advisor waits once. What the SERVER pays depends on whether anything has
+// been generated yet: on a freshly opened report the staleness route
+// short-circuits before its own `loadStoryRun` (`../stale/route.ts` — nothing
+// stored means nothing can be stale, "the common case for a report an
+// advisor has only just opened"), so this route's run is the only one that
+// mount pays for. Once something HAS been generated, both routes run it, and
+// the server pays the projection cost twice.
 // Folding this into the staleness response was considered and rejected:
 // that route also re-runs on every STYLE change (`Ruling T9-1`), and facts do
 // not move when a tone does — a fold would put a twenty-second load behind a
@@ -29,8 +35,7 @@ import { CHAPTER_IDS, factsForChapter, type ChapterId } from "@/lib/presentation
 export const dynamic = "force-dynamic";
 // Same cost, same reason as the staleness route: `loadStoryRun` runs two
 // projections, a Monte Carlo read and a balance sheet, and on a proposal two
-// solves. The measured cold number above is well inside this; the platform
-// default would not be.
+// solves. The measured cold number above is well inside this ceiling.
 export const maxDuration = 300;
 
 export async function GET(

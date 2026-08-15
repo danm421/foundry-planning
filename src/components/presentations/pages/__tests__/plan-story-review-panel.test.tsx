@@ -1102,10 +1102,39 @@ describe("PlanStoryReviewPanel", () => {
       );
     });
 
+    /**
+     * ⭐ The defect a synthesized zero would be: `loadStoryRun` takes 4-23s, and
+     * for every bit of that this chapter genuinely has NOT been told what it
+     * may use yet — which is a different claim from "it may use nothing".
+     * Kills: `useState<...>({})` read straight into the count with no loaded
+     * flag, which is what the row showed before this was caught in review.
+     */
+    it("shows a placeholder, never a synthesized zero, before the disclosure has answered", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string, init?: RequestInit) => {
+          if (isFactsUrl(url)) return new Promise<Response>(() => {}); // never resolves
+          if (init?.method === "PATCH" || init?.method === "POST") {
+            return new Response(JSON.stringify({ ok: true }), { status: 200 });
+          }
+          return answerRead(url, CHAPTERS);
+        }),
+      );
+      renderPanel();
+      await screen.findByText(CHAPTERS[0].title);
+      // The staleness GET DOES resolve on this stub — waiting on it is the
+      // synchronisation point proving the facts GET has had its own chance to
+      // settle and simply has not.
+      await waitFor(() => expect(staleCalls().length).toBe(1));
+      expect(summary(CHAPTERS[0].title).textContent).toContain("(…)");
+    });
+
     // Same rule `loadOutOfDate` follows: a disclosure that failed to load is
     // not a chapter that failed to load, so it must not raise the panel-level
-    // alarm.
-    it("stays quiet when the check itself fails", async () => {
+    // alarm. And unlike a chapter, there is no retry surface for this one, so
+    // the placeholder is what stays — permanently, not just until the next
+    // successful reload — rather than settling on a synthesized zero.
+    it("stays quiet, and keeps the placeholder, when the check itself fails", async () => {
       vi.stubGlobal(
         "fetch",
         vi.fn(async (url: string) => {
@@ -1121,6 +1150,7 @@ describe("PlanStoryReviewPanel", () => {
         ),
       );
       expect(screen.queryByRole("alert")).toBeNull();
+      expect(summary(CHAPTERS[0].title).textContent).toContain("(…)");
     });
 
     // Kills: folding this into `loadOutOfDate`'s dependency list. Facts read

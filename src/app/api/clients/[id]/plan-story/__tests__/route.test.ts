@@ -11,15 +11,15 @@ import type { NextRequest } from "next/server";
  * them, WITH WHICH CLIENT ID, and before which write — never that a gate itself
  * decides correctly.
  *
- * The client-id half is load-bearing rather than tidy. Two of the PATCH
- * handler's write paths are upserts, so an authorized-but-different client id
- * does not harmlessly match zero rows — it CREATES one. The third,
- * `clearChapterReviewed`, is a plain UPDATE, where the same mistake fails
- * differently: it matches nothing and silently no-ops, which reads as an
- * un-review that landed when nothing changed. Either way "the gate rejects"
- * tests cannot see it: a rejected gate rejects for everybody, and says nothing
- * about who was checked. So every route below asserts the argument as well as
- * the call, and
+ * The client-id half is load-bearing rather than tidy. Two of the three repo
+ * writers the PATCH handler calls (`updateChapterText`, `markChapterReviewed`)
+ * are upserts, so an authorized-but-different client id does not harmlessly
+ * match zero rows — it CREATES one. The third, `clearChapterReviewed`, is a
+ * plain UPDATE, where the same mistake fails differently: it matches nothing
+ * and silently no-ops, which reads as an un-review that landed when nothing
+ * changed. Either way "the gate rejects" tests cannot see it: a rejected gate
+ * rejects for everybody, and says nothing about who was checked. So every
+ * route below asserts the argument as well as the call, and
  * `requireActiveSubscriptionForFirm` — whose return is void and discarded, so
  * tsc cannot see its removal — is pinned by order as well.
  *

@@ -24,10 +24,11 @@ const scenarioId = z.string().min(1).max(64).optional();
 const documentRole = z.enum(["standalone", "frontMatter"]);
 
 /**
- * One chapter's advisor actions. Every field is optional so a single PATCH can
- * save an edit, mark a chapter reviewed or clear that mark, or any combination
- * — but a body carrying none of them is rejected by the route, since it would
- * otherwise answer a no-op exactly like a saved edit.
+ * One chapter's advisor actions. Every field is optional, and a single PATCH
+ * may set any number of them — but a body carrying none of them is rejected
+ * by the route, since it would otherwise answer a no-op exactly like a saved
+ * edit. Not every combination, though: `editedText` together with
+ * `acceptGenerated` is refused rather than resolved — see that field below.
  *
  * An empty `editedText` is meaningful: it drops the advisor's version and lets
  * the model's words render again. `reviewed: false` is the same idea applied
