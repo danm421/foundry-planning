@@ -10,7 +10,13 @@ import {
   type PresetId,
 } from "@/lib/presentations/pages/plan-story/options-schema";
 import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
-import { CHAPTER_IDS } from "@/lib/presentations/story/types";
+import {
+  CHAPTER_IDS,
+  CHAPTER_LENGTHS,
+  CHAPTER_TONES,
+  type ChapterId,
+  type ChapterStyle,
+} from "@/lib/presentations/story/types";
 import { OptionsRow, OptionsGroup } from "@/components/presentations/shared/options-layout";
 import { useClientId, useScenarioOptions } from "@/components/presentations/options-context";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
@@ -41,6 +47,45 @@ const BRIEF_CAVEAT =
 const STRUCTURAL = CHAPTER_IDS.filter((id) => !CHAPTERS[id].coverage);
 const COVERAGE = CHAPTER_IDS.filter((id) => CHAPTERS[id].coverage);
 
+/** The advisor's words for the two settings, matching the review panel's. */
+const TONE_LABELS: Record<ChapterStyle["tone"], string> = {
+  warm: "Warm",
+  plain: "Plain",
+  direct: "Direct",
+};
+
+const LENGTH_LABELS: Record<ChapterStyle["length"], string> = {
+  short: "Short",
+  standard: "Standard",
+  full: "Full",
+};
+
+/** Per field, because a `FieldTooltip` belongs to the control it sits beside —
+ *  and because the one thing an advisor has to know here is that this writes to
+ *  all fourteen chapters rather than sitting behind them as a default. */
+const voiceTooltip = (what: string) =>
+  `Sets the ${what} of every chapter at once. Change a single chapter in Review below — this then reads Mixed.`;
+
+const FIELD_SELECT =
+  "w-32 rounded border border-hair bg-card-2 px-2 py-1 text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40";
+
+/**
+ * The value all fourteen chapters share, or `""` when they do not.
+ *
+ * ⚠️ There is no stored report-level default to read: `PlanStoryOptions` holds
+ * `chapterStyle` PER CHAPTER and nothing else. So this control is a bulk setter
+ * over those fourteen entries, and the only honest thing it can display is what
+ * they actually say. Without the mixed answer it would show one chapter's value
+ * as though it were the report's, and quietly contradict the panel below it.
+ */
+function sharedValue<K extends keyof ChapterStyle>(
+  chapterStyle: Record<ChapterId, ChapterStyle>,
+  field: K,
+): ChapterStyle[K] | "" {
+  const first = chapterStyle[CHAPTER_IDS[0]][field];
+  return CHAPTER_IDS.every((id) => chapterStyle[id][field] === first) ? first : "";
+}
+
 export function PlanStoryOptionsControl({
   value,
   onChange,
@@ -53,6 +98,29 @@ export function PlanStoryOptionsControl({
   /** A real `<label for>` needs a real id, and this control can render twice on
    *  one page (two Plan Story entries in the same deck). */
   const scenarioFieldId = useId();
+  const toneFieldId = useId();
+  const lengthFieldId = useId();
+
+  /**
+   * Writes ONE field across all fourteen entries, keeping each chapter's other
+   * field as it stands.
+   *
+   * ⚠️ Deliberately does NOT drop the report out of its preset, unlike the
+   * chapter checkboxes below. A preset names a document role and a chapter set
+   * — `PRESETS` carries exactly those two — and says nothing about the voice, so
+   * a "Full story" deck read in a direct register is still a Full story.
+   */
+  function setEveryChapter<K extends keyof ChapterStyle>(field: K, next: ChapterStyle[K]) {
+    onChange({
+      ...value,
+      chapterStyle: Object.fromEntries(
+        CHAPTER_IDS.map((id) => [id, { ...value.chapterStyle[id], [field]: next }]),
+      ) as Record<ChapterId, ChapterStyle>,
+    });
+  }
+
+  const sharedTone = sharedValue(value.chapterStyle, "tone");
+  const sharedLength = sharedValue(value.chapterStyle, "length");
 
   // Live scenarios only — the same set `ScenarioPickerDropdown` calls live, and
   // load-bearing rather than tidy here. Everything this drops writes a
@@ -113,6 +181,58 @@ export function PlanStoryOptionsControl({
           )}
         </OptionsGroup>
 
+        {/* Beside the preset, because both answer "how does this report read"
+            before the chapter checkboxes answer "what is in it". */}
+        <OptionsGroup label="Voice">
+          <div className={`flex items-center gap-1.5 ${caption}`}>
+            <label htmlFor={toneFieldId}>Tone</label>
+            <FieldTooltip text={voiceTooltip("tone")} />
+          </div>
+          <select
+            id={toneFieldId}
+            className={FIELD_SELECT}
+            value={sharedTone}
+            onChange={(e) => setEveryChapter("tone", e.target.value as ChapterStyle["tone"])}
+          >
+            {/* Shown only when the fourteen disagree, and DISABLED: "Mixed" is
+                something the chapters are, not something an advisor can pick.
+                Absent when they agree, so the select never offers a state it is
+                not in. */}
+            {sharedTone === "" && (
+              <option value="" disabled>
+                Mixed
+              </option>
+            )}
+            {CHAPTER_TONES.map((tone) => (
+              <option key={tone} value={tone}>
+                {TONE_LABELS[tone]}
+              </option>
+            ))}
+          </select>
+
+          <div className={`flex items-center gap-1.5 ${caption}`}>
+            <label htmlFor={lengthFieldId}>Length</label>
+            <FieldTooltip text={voiceTooltip("length")} />
+          </div>
+          <select
+            id={lengthFieldId}
+            className={FIELD_SELECT}
+            value={sharedLength}
+            onChange={(e) => setEveryChapter("length", e.target.value as ChapterStyle["length"])}
+          >
+            {sharedLength === "" && (
+              <option value="" disabled>
+                Mixed
+              </option>
+            )}
+            {CHAPTER_LENGTHS.map((length) => (
+              <option key={length} value={length}>
+                {LENGTH_LABELS[length]}
+              </option>
+            ))}
+          </select>
+        </OptionsGroup>
+
         <OptionsGroup label="The story">
           {/* Ten chapters read better as two short columns than one tall one. */}
           <div className="grid grid-cols-2 gap-x-6 gap-y-1">{STRUCTURAL.map(chapterBox)}</div>
@@ -155,6 +275,16 @@ export function PlanStoryOptionsControl({
             clientId={clientId}
             scenarioId={value.scenarioId}
             documentRole={value.documentRole}
+            chapterStyle={value.chapterStyle}
+            // One chapter's entry, replaced. The panel holds no style of its
+            // own — this is the write, and the options are what the deck saves,
+            // what a reload reads back and what the export prints from.
+            onChapterStyleChange={(chapterId, style) =>
+              onChange({
+                ...value,
+                chapterStyle: { ...value.chapterStyle, [chapterId]: style },
+              })
+            }
           />
         </div>
       )}

@@ -9,6 +9,7 @@ import {
   PRESETS,
   type PlanStoryOptions,
 } from "@/lib/presentations/pages/plan-story/options-schema";
+import { CHAPTER_IDS } from "@/lib/presentations/story/types";
 import type { ScenarioOption } from "@/components/scenario/scenario-picker-dropdown";
 
 const LIVE_ID = "11111111-1111-4111-8111-111111111111";
@@ -105,12 +106,19 @@ describe("PlanStoryOptionsControl", () => {
   it("applies a preset's document role and chapter set, keeping the proposed plan", () => {
     const { onChange } = renderControl({ scenarioId: LIVE_ID });
     fireEvent.click(screen.getByRole("radio", { name: "Executive brief" }));
-    expect(onChange).toHaveBeenCalledWith({
-      preset: "brief",
-      documentRole: "frontMatter",
-      scenarioId: LIVE_ID,
-      sections: PRESETS.brief.sections,
-    });
+    // `objectContaining`, like the sibling assertion below: a preset carries a
+    // document role and a chapter set and says nothing about the rest of the
+    // options, so an exact whole-object match here is a match on fields this
+    // test is not about — and every field added to `PlanStoryOptions` since has
+    // broken it.
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        preset: "brief",
+        documentRole: "frontMatter",
+        scenarioId: LIVE_ID,
+        sections: PRESETS.brief.sections,
+      }),
+    );
   });
 
   it("drops the report out of its preset when a chapter is toggled by hand", () => {
@@ -180,6 +188,96 @@ describe("PlanStoryOptionsControl", () => {
     expect(select.tagName).toBe("SELECT");
     expect(select.getAttribute("aria-label")).toBeNull();
     expect(document.querySelector(`label[for="${select.id}"]`)?.textContent).toBe("Proposed plan");
+  });
+
+  /**
+   * The report-level pair.
+   *
+   * ⚠️ A BULK SETTER, not a stored default. `PlanStoryOptions` has one style
+   * field — `chapterStyle`, per chapter — and no `defaultStyle`, so there is
+   * nothing for a per-chapter value to override. This control writes all
+   * fourteen entries and displays what they say.
+   */
+  describe("the report-level voice", () => {
+    const MIXED: PlanStoryOptions["chapterStyle"] = {
+      ...PLAN_STORY_OPTIONS_DEFAULT.chapterStyle,
+      planInOnePage: { tone: "direct", length: "short" },
+    };
+
+    function styles(onChange: ReturnType<typeof vi.fn>) {
+      return (onChange.mock.calls[0][0] as PlanStoryOptions).chapterStyle;
+    }
+
+    it("writes the picked tone to every chapter, not just one", () => {
+      const { onChange } = renderControl();
+      fireEvent.change(screen.getByLabelText("Tone"), { target: { value: "direct" } });
+      const next = styles(onChange);
+      expect(CHAPTER_IDS.every((id) => next[id].tone === "direct")).toBe(true);
+    });
+
+    // Kills: rebuilding the entry from the default instead of from what is
+    // stored. Setting the tone would then silently reset fourteen lengths.
+    it("keeps each chapter's length when only the tone moves", () => {
+      const { onChange } = renderControl({ chapterStyle: MIXED });
+      fireEvent.change(screen.getByLabelText("Tone"), { target: { value: "plain" } });
+      const next = styles(onChange);
+      expect(next.planInOnePage).toEqual({ tone: "plain", length: "short" });
+      expect(next.thingsToKnow).toEqual({ tone: "plain", length: "standard" });
+    });
+
+    it("writes the picked length to every chapter, keeping their tones", () => {
+      const { onChange } = renderControl({ chapterStyle: MIXED });
+      fireEvent.change(screen.getByLabelText("Length"), { target: { value: "full" } });
+      const next = styles(onChange);
+      expect(CHAPTER_IDS.every((id) => next[id].length === "full")).toBe(true);
+      expect(next.planInOnePage.tone).toBe("direct");
+    });
+
+    it("shows the shared value when all fourteen agree", () => {
+      renderControl();
+      expect((screen.getByLabelText("Tone") as HTMLSelectElement).value).toBe("warm");
+      expect((screen.getByLabelText("Length") as HTMLSelectElement).value).toBe("standard");
+    });
+
+    /**
+     * ⭐ Without this the control shows one chapter's value as though it were
+     * the report's, and quietly contradicts the per-chapter selects below it.
+     */
+    it("reads Mixed rather than picking a side when they disagree", () => {
+      renderControl({ chapterStyle: MIXED });
+      const tone = screen.getByLabelText("Tone") as HTMLSelectElement;
+      expect(tone.value).toBe("");
+      expect(tone.selectedOptions[0].textContent).toBe("Mixed");
+      // Something the chapters ARE, not something to pick.
+      expect(tone.selectedOptions[0].disabled).toBe(true);
+    });
+
+    it("does not offer Mixed once the fourteen agree", () => {
+      renderControl();
+      const labels = Array.from(
+        (screen.getByLabelText("Tone") as HTMLSelectElement).options,
+      ).map((o) => o.textContent);
+      expect(labels).toEqual(["Warm", "Plain", "Direct"]);
+    });
+
+    // Kills: copying the chapter checkboxes' `preset: "custom"`. A preset names
+    // a document role and a chapter set and says nothing about the voice, so a
+    // Full story read in a direct register is still a Full story.
+    it("leaves the report in its preset", () => {
+      const { onChange } = renderControl();
+      fireEvent.change(screen.getByLabelText("Length"), { target: { value: "short" } });
+      expect((onChange.mock.calls[0][0] as PlanStoryOptions).preset).toBe("full");
+    });
+
+    it("hands the panel the stored style rather than a fresh default", async () => {
+      renderControl({ chapterStyle: MIXED, scenarioId: LIVE_ID });
+      await waitFor(() => expect(fetchMock()).toHaveBeenCalled());
+      const stale = fetchMock().mock.calls.find((c: unknown[]) =>
+        String(c[0]).includes("/plan-story/stale"),
+      );
+      expect(stale).toBeTruthy();
+      expect(String(stale![0])).toContain("planInOnePage%3Adirect%3Ashort");
+    });
   });
 
   it("renders no review panel and fetches nothing without a client in context", async () => {

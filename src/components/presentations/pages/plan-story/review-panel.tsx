@@ -17,8 +17,20 @@
 //    drop rules at print time; re-spelling any of them here is how the two
 //    surfaces would start disagreeing about what the advisor approved.
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { sampleRefusal } from "@/lib/presentations/story/voice/refusal";
+import { chapterIgnoresFullLength } from "@/lib/presentations/story/chapters/registry";
+import {
+  CHAPTER_IDS,
+  CHAPTER_LENGTHS,
+  CHAPTER_TONES,
+  isChapterId,
+  resolveChapterStyles,
+  type ChapterId,
+  type ChapterLength,
+  type ChapterStyle,
+  type ChapterTone,
+} from "@/lib/presentations/story/types";
 
 interface ChapterRow {
   chapterId: string;
@@ -108,6 +120,45 @@ const COULD_NOT_HARVEST = "Couldn't save that as a voice sample. Nothing was sto
 const HARVESTED = "Saved to your voice samples. It's off until you turn it on in Settings → Voice.";
 
 /**
+ * The advisor's words for the two settings. Keyed on the stored value, so a
+ * fourth tone has to be given a label rather than printing its own id.
+ */
+const TONE_LABELS: Record<ChapterTone, string> = {
+  warm: "Warm",
+  plain: "Plain",
+  direct: "Direct",
+};
+
+const LENGTH_LABELS: Record<ChapterLength, string> = {
+  short: "Short",
+  standard: "Standard",
+  full: "Full",
+};
+
+/**
+ * Shown on the two chapters whose sheet prints a list under the prose, and only
+ * while `full` is picked.
+ *
+ * ⚠️ Load-bearing rather than polite. `chapterIgnoresFullLength` marks the
+ * chapters where the length modifier is suppressed before the prompt is built,
+ * so `full` produces the same prompt and the same `sourceHash` as `standard`:
+ * without this line the advisor changes the setting, presses Regenerate, waits
+ * out a model call, and reads the identical paragraph back with nothing on
+ * screen to explain it.
+ */
+const FULL_IS_INERT = "This chapter prints a fixed list, so Full reads the same as Standard.";
+
+/** The row's own small-caps caption, matching the status label in its header
+ *  and the group legends in the options control above it. */
+const FIELD_CAPTION = "text-[11px] uppercase tracking-[0.1em] text-ink-3";
+
+/** Dense-panel select: the options control's field styling at the row's own
+ *  `text-xs`, so fourteen of these read as part of the row rather than as
+ *  fourteen forms. */
+const FIELD_SELECT =
+  "rounded border border-hair bg-card-2 px-1.5 py-1 text-xs text-ink focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/40";
+
+/**
  * What a refused generation says — the firm's ceiling, or `generic`.
  *
  * The ceiling gets its own sentence: nothing is broken, and the answer is to
@@ -157,6 +208,8 @@ export function PlanStoryReviewPanel({
   clientId,
   scenarioId,
   documentRole,
+  chapterStyle,
+  onChapterStyleChange,
 }: {
   clientId: string;
   /** The options' scenario. Empty means a base-only story. */
@@ -170,12 +223,59 @@ export function PlanStoryReviewPanel({
    * indistinguishable from the bug it replaced.
    */
   documentRole: "standalone" | "frontMatter";
+  /**
+   * How each chapter is written, as the deck stored it.
+   *
+   * PARTIAL, because that is what the panel is handed in tests and what a deck
+   * saved before this setting existed holds; the page passes the complete
+   * schema-defaulted map, which satisfies it. Every gap is filled through
+   * `resolveChapterStyles` — the same helper both routes fill theirs with — so a
+   * chapter nobody restyled reaches the same style on all three sides.
+   */
+  chapterStyle: Partial<Record<ChapterId, ChapterStyle>>;
+  /**
+   * ⚠️ REQUIRED, and the style is NOT held here.
+   *
+   * It lives in the report's options: that is what survives a reload, what the
+   * export reads, and what the saved deck stores. Panel-local state would look
+   * right on screen and print in the wrong voice.
+   */
+  onChapterStyleChange: (chapterId: ChapterId, style: ChapterStyle) => void;
 }) {
   // The routes want the literal "base" for a base-only story: their schema
   // requires a non-empty id (`schemas/plan-story.ts`) and
   // `resolveStoryScenarioId` maps a missing one to "base". The options spell
   // the same thing as "", so it is translated once, here.
   const scenario = scenarioId || "base";
+
+  /**
+   * Every chapter's style, gaps filled — the ONE value both transports are
+   * built from, so the body the run is written with and the query the freshness
+   * check is rebuilt from cannot spell the defaults differently.
+   */
+  const styles = useMemo(() => resolveChapterStyles(chapterStyle), [chapterStyle]);
+
+  /**
+   * The same map as repeated flat parameters, for the staleness GET:
+   * `style=planInOnePage:direct:full&style=…`, all fourteen.
+   *
+   * ⚠️ A STRING, and that is the point of the memo. `loadOutOfDate` keys on this
+   * rather than on `styles`, so a parent re-render handing down an equal-but-new
+   * object leaves it byte-identical — and the check does not spend another
+   * twenty seconds rebuilding a story context to answer the same question.
+   */
+  const styleQuery = useMemo(
+    () =>
+      CHAPTER_IDS.map(
+        (id) =>
+          `style=${encodeURIComponent(`${id}:${styles[id].tone}:${styles[id].length}`)}`,
+      ).join("&"),
+    [styles],
+  );
+
+  /** One base per mounted panel, so two Plan Story entries in a deck cannot
+   *  mint the same `<label for>` target. The chapter id makes it per row. */
+  const fieldIdBase = useId();
 
   const [rows, setRows] = useState<ChapterRow[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -259,7 +359,7 @@ export function PlanStoryReviewPanel({
     try {
       const res = await fetch(
         `/api/clients/${clientId}/plan-story/stale?scenarioId=${encodeURIComponent(scenario)}` +
-          `&documentRole=${encodeURIComponent(documentRole)}`,
+          `&documentRole=${encodeURIComponent(documentRole)}&${styleQuery}`,
       );
       if (!res.ok) throw new Error(`GET plan-story/stale ${res.status}`);
       const body = (await res.json()) as { stale: string[] };
@@ -267,17 +367,32 @@ export function PlanStoryReviewPanel({
     } catch (err) {
       console.error("[plan-story] could not check which chapters are out of date", err);
     }
-  }, [clientId, scenario, documentRole]);
+    // The STYLE is in here because it is an input to every chapter's stored
+    // `sourceHash`: ask in the default voice about a chapter written in another
+    // and the rebuilt hash matches nothing, so the row reads out of date with
+    // nothing able to clear it.
+  }, [clientId, scenario, documentRole, styleQuery]);
 
-  // Runs on mount and whenever the client, scenario or preset changes — the
-  // drafts, and which chapters are out of date, belong to the story being left
-  // behind, not to the one arriving.
+  // The story being SHOWN changed — a different client, scenario or preset. The
+  // drafts belong to the story being left behind, so they go with it.
   useEffect(() => {
     setDrafts({});
-    setOutOfDate(new Set());
     void load();
+  }, [load]);
+
+  /**
+   * …and freshness, asked separately.
+   *
+   * ⚠️⚠️ SPLIT from the effect above, not merged back into it. This one also
+   * re-runs when the STYLE moves, and the effect above clears the drafts — so
+   * one effect covering both would wipe an advisor's unsaved typing every time
+   * they touched a tone dropdown. The rows are not re-read here either: a style
+   * change moves nothing the chapter list reports.
+   */
+  useEffect(() => {
+    setOutOfDate(new Set());
     void loadOutOfDate();
-  }, [load, loadOutOfDate]);
+  }, [loadOutOfDate]);
 
   async function patch(
     chapterId: string,
@@ -339,7 +454,11 @@ export function PlanStoryReviewPanel({
       const res = await fetch(`/api/clients/${clientId}/plan-story/generate`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ scenarioId: scenario, documentRole }),
+        // ⚠️ The style goes with a WHOLE RUN too, not just with a Regenerate.
+        // This is the button an advisor presses first, and a run without it
+        // writes all fourteen chapters in the default voice AND stores fourteen
+        // default-voice hashes — so every restyled chapter then reads stale.
+        body: JSON.stringify({ scenarioId: scenario, documentRole, chapterStyle: styles }),
       });
       if (!res.ok) {
         setPanelProblem(generationFailure(res, COULD_NOT_GENERATE));
@@ -387,7 +506,16 @@ export function PlanStoryReviewPanel({
       const res = await fetch(`/api/clients/${clientId}/plan-story/generate`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ scenarioId: scenario, documentRole, chapterId, force: true }),
+        // The whole map, not this row's entry alone: the route resolves what it
+        // is sent and hashes the result, and one spelling of the style for both
+        // buttons is what keeps the two from drifting apart.
+        body: JSON.stringify({
+          scenarioId: scenario,
+          documentRole,
+          chapterId,
+          force: true,
+          chapterStyle: styles,
+        }),
       });
       if (!res.ok) {
         const message = generationFailure(res, COULD_NOT_REGENERATE);
@@ -458,6 +586,78 @@ export function PlanStoryReviewPanel({
   }
 
   const unreviewed = rows.filter((r) => !r.reviewed).length;
+
+  /**
+   * One row's two settings.
+   *
+   * On EVERY row, including the five proposal chapters a base-only story can
+   * never rewrite — those have no Regenerate button, but they still print, and
+   * the style is what decides how they read. Nothing here is disabled by a run
+   * in flight either: changing a tone writes to the report's options, not to the
+   * chapter, so it cannot collide with a generation.
+   */
+  function styleFields(chapterId: ChapterId) {
+    const style = styles[chapterId];
+    const toneId = `${fieldIdBase}-${chapterId}-tone`;
+    const lengthId = `${fieldIdBase}-${chapterId}-length`;
+    return (
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+        <div className="flex items-center gap-1.5">
+          {/* A real `<label for>` rather than an `aria-label`, the rule the
+              scenario picker already follows: it names the control to a screen
+              reader and gives the caption a click target. Which CHAPTER it
+              belongs to comes from the row's own region name. */}
+          <label htmlFor={toneId} className={FIELD_CAPTION}>
+            Tone
+          </label>
+          <select
+            id={toneId}
+            className={FIELD_SELECT}
+            value={style.tone}
+            onChange={(e) =>
+              onChapterStyleChange(chapterId, { ...style, tone: e.target.value as ChapterTone })
+            }
+          >
+            {CHAPTER_TONES.map((tone) => (
+              <option key={tone} value={tone}>
+                {TONE_LABELS[tone]}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <label htmlFor={lengthId} className={FIELD_CAPTION}>
+            Length
+          </label>
+          <select
+            id={lengthId}
+            className={FIELD_SELECT}
+            value={style.length}
+            onChange={(e) =>
+              onChapterStyleChange(chapterId, {
+                ...style,
+                length: e.target.value as ChapterLength,
+              })
+            }
+          >
+            {CHAPTER_LENGTHS.map((length) => (
+              <option key={length} value={length}>
+                {LENGTH_LABELS[length]}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Only while `full` is actually picked — the canvas stays quiet for the
+            advisor who is not using it, and the one who IS gets told rather than
+            left to wonder why the prose came back identical. */}
+        {style.length === "full" && chapterIgnoresFullLength(chapterId) && (
+          <p className="text-xs text-ink-3">{FULL_IS_INERT}</p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -533,6 +733,12 @@ export function PlanStoryReviewPanel({
               void patch(row.chapterId, { editedText: e.target.value }, COULD_NOT_SAVE);
             }}
           />
+
+          {/* Guarded, not assumed: `chapter_id` is free text in storage, so a
+              row can outlive the chapter it names. There is no style to set for
+              a chapter that has left the arc, and the rest of the row still
+              works. */}
+          {isChapterId(row.chapterId) && styleFields(row.chapterId)}
 
           <div className="mt-2 flex items-center gap-3">
             <button

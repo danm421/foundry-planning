@@ -396,3 +396,27 @@ export function chapterOutputAsk(chapterId: ChapterId, length: ChapterLength): s
   const suppressed = length === "full" && FIXED_SHAPE_ASK[layout];
   return OUTPUT_ASK[layout] + (suppressed ? "" : LENGTH_MODIFIER[length]);
 }
+
+/**
+ * Is `full` a SILENT NO-OP on this chapter?
+ *
+ * True for exactly the layouts `FIXED_SHAPE_ASK` marks, so it cannot drift from
+ * the suppression `chapterOutputAsk` actually performs — the same rule
+ * `chapterEnumerates` follows above, and for the same reason: a second copy of
+ * `layout === "checklist"` is how the answer starts disagreeing with itself.
+ *
+ * The review panel is the caller. Suppression happens BEFORE the prompt is
+ * built, so a chapter set to `full` here produces a prompt and a `sourceHash`
+ * byte-identical to `standard` — the advisor changes the setting, presses
+ * Regenerate, waits, and reads the same prose back. Unannotated, that is
+ * indistinguishable from the model ignoring them.
+ *
+ * ⚠️ An annotation, never a disabled or missing option: the report-level
+ * control sets all fourteen chapters at once, so these two legitimately HOLD
+ * `full`, and a `<select>` whose value is absent from its options renders a
+ * DIFFERENT option as selected. `short` still applies here, so the control has
+ * real work to do either way.
+ */
+export function chapterIgnoresFullLength(chapterId: ChapterId): boolean {
+  return FIXED_SHAPE_ASK[CHAPTERS[chapterId].layout];
+}

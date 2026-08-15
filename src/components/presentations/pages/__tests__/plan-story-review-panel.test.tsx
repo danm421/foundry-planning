@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { PlanStoryReviewPanel } from "@/components/presentations/pages/plan-story/review-panel";
+// A pure function over two string unions — no Azure and no Redis, unlike the
+// `generate.ts` constants spelled out below. Imported rather than restated
+// because it is the ONE spelling of "every chapter at the default", and a
+// second copy here would pass while the panel sent something else.
+import { resolveChapterStyles } from "@/lib/presentations/story/types";
 
 interface Row {
   chapterId: string;
@@ -89,8 +95,52 @@ function staleCalls() {
   return calls().filter((c) => isStaleUrl(c[0]));
 }
 
+function postCalls() {
+  return calls().filter((c) => (c[1] as RequestInit | undefined)?.method === "POST");
+}
+
+/** The first generation request's body. `chapterStyle` is spelled out because
+ *  three tests read into it; everything else stays `unknown`. */
+function postBody() {
+  return JSON.parse(String((postCalls()[0][1] as RequestInit).body)) as {
+    chapterStyle: Record<string, { tone: string; length: string }>;
+    [key: string]: unknown;
+  };
+}
+
 function row(title: string): HTMLElement {
   return screen.getByRole("region", { name: title });
+}
+
+/**
+ * The file's ONE render site.
+ *
+ * Both style props are REQUIRED on the panel — it may not invent a style the
+ * page will not print — so without this every test below would spell the full
+ * prop list out, and the next required prop would be a 48-site edit.
+ *
+ * Returns the EFFECTIVE style callback, not the spy it made: a test that passes
+ * its own would otherwise assert on a function the panel never received.
+ */
+function renderPanel(overrides: Partial<ComponentProps<typeof PlanStoryReviewPanel>> = {}) {
+  const base: ComponentProps<typeof PlanStoryReviewPanel> = {
+    clientId: "c1",
+    scenarioId: "base",
+    documentRole: "standalone",
+    chapterStyle: {},
+    onChapterStyleChange: vi.fn(),
+  };
+  const view = render(<PlanStoryReviewPanel {...base} {...overrides} />);
+  return {
+    onChapterStyleChange: { ...base, ...overrides }.onChapterStyleChange,
+    /**
+     * The same panel with new props IN PLACE, rather than a second mount. The
+     * only way to prove a style change re-checks staleness without clearing the
+     * drafts: a remount clears them anyway, so it would pass either way.
+     */
+    rerender: (next: Partial<ComponentProps<typeof PlanStoryReviewPanel>>) =>
+      view.rerender(<PlanStoryReviewPanel {...base} {...next} />),
+  };
 }
 
 /**
@@ -125,18 +175,18 @@ afterEach(() => {
 
 describe("PlanStoryReviewPanel", () => {
   it("lists every chapter with its text", async () => {
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    renderPanel();
     expect(await screen.findByText("Your plan, in one page")).toBeTruthy();
     expect(await screen.findByDisplayValue("Your plan holds.")).toBeTruthy();
   });
 
   it("shows a not-generated chapter as awaiting generation", async () => {
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    renderPanel();
     expect(await screen.findByText(/not generated/i)).toBeTruthy();
   });
 
   it("saves an edit back to the chapter route", async () => {
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    renderPanel();
     const box = await screen.findByDisplayValue("Your plan holds.");
     fireEvent.change(box, { target: { value: "My own words." } });
     fireEvent.blur(box);
@@ -151,7 +201,7 @@ describe("PlanStoryReviewPanel", () => {
   });
 
   it("does not re-save a chapter the advisor only clicked into", async () => {
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    renderPanel();
     const box = await screen.findByDisplayValue("Your plan holds.");
     fireEvent.blur(box);
     await waitFor(() => expect(calls().length).toBeGreaterThan(0));
@@ -176,7 +226,7 @@ describe("PlanStoryReviewPanel", () => {
     });
     vi.stubGlobal("fetch", fn);
 
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    renderPanel();
     const box = await screen.findByDisplayValue("The model's words.");
     fireEvent.change(box, { target: { value: "" } });
     fireEvent.blur(box);
@@ -199,7 +249,7 @@ describe("PlanStoryReviewPanel", () => {
     });
     vi.stubGlobal("fetch", fn);
 
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    renderPanel();
     const box = await screen.findByDisplayValue("Your plan holds.");
     fireEvent.change(box, { target: { value: "My own words." } });
     fireEvent.blur(box);
@@ -214,7 +264,7 @@ describe("PlanStoryReviewPanel", () => {
   });
 
   it("marks a chapter reviewed", async () => {
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    renderPanel();
     const buttons = await screen.findAllByRole("button", { name: /mark reviewed/i });
     fireEvent.click(buttons[0]);
     await waitFor(() => {
@@ -227,27 +277,25 @@ describe("PlanStoryReviewPanel", () => {
   });
 
   it("shows the unreviewed count so the export gate has something to read", async () => {
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    renderPanel();
     expect(await screen.findByText(/2 chapters not yet reviewed/i)).toBeTruthy();
   });
 
   it("never claims every chapter is reviewed when the chapters could not be loaded", async () => {
     stubFetch(CHAPTERS, 500);
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    renderPanel();
     await waitFor(() => expect(calls().length).toBeGreaterThan(0));
     expect(screen.queryByText(/all chapters reviewed/i)).toBeNull();
   });
 
   it("asks the routes for the base story rather than an empty scenario", async () => {
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="" documentRole="standalone" />);
+    renderPanel({ scenarioId: "" });
     await waitFor(() => expect(calls().length).toBeGreaterThan(0));
     expect(String(calls()[0][0])).toContain("scenarioId=base");
   });
 
   it("generates only when asked, and sends the scenario and register it is showing", async () => {
-    render(
-      <PlanStoryReviewPanel clientId="c1" scenarioId="scenario-7" documentRole="frontMatter" />,
-    );
+    renderPanel({ scenarioId: "scenario-7", documentRole: "frontMatter" });
     await screen.findByText("Your plan, in one page");
     expect(calls().some((c) => (c[1] as RequestInit | undefined)?.method === "POST")).toBe(
       false,
@@ -271,7 +319,7 @@ describe("PlanStoryReviewPanel", () => {
   });
 
   it("speaks the unreviewed count, which changes under the advisor", async () => {
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    renderPanel();
     const summary = await screen.findByText(/2 chapters not yet reviewed/i);
     expect(summary.getAttribute("aria-live")).toBe("polite");
   });
@@ -279,7 +327,7 @@ describe("PlanStoryReviewPanel", () => {
   describe("a request that did not do what it said", () => {
     it("tells the advisor when the chapters could not be loaded", async () => {
       stubFetch(CHAPTERS, 500);
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      renderPanel();
       expect((await screen.findByRole("alert")).textContent).toMatch(
         /couldn't load this report's chapters/i,
       );
@@ -292,7 +340,7 @@ describe("PlanStoryReviewPanel", () => {
           throw new TypeError("Failed to fetch");
         }),
       );
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      renderPanel();
       expect((await screen.findByRole("alert")).textContent).toMatch(/couldn't load/i);
     });
 
@@ -307,7 +355,7 @@ describe("PlanStoryReviewPanel", () => {
               }),
         ),
       );
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      renderPanel();
       const box = await screen.findByDisplayValue("Your plan holds.");
       fireEvent.change(box, { target: { value: "My own words." } });
       fireEvent.blur(box);
@@ -327,7 +375,7 @@ describe("PlanStoryReviewPanel", () => {
               }),
         ),
       );
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      renderPanel();
       fireEvent.click(await screen.findByRole("button", { name: /generate all/i }));
       expect((await screen.findByRole("alert")).textContent).toMatch(
         /nothing was generated/i,
@@ -351,7 +399,7 @@ describe("PlanStoryReviewPanel", () => {
           });
         }),
       );
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      renderPanel();
       const box = await screen.findByDisplayValue("Your plan holds.");
       fireEvent.change(box, { target: { value: "My own words." } });
       fireEvent.blur(box);
@@ -396,7 +444,7 @@ describe("PlanStoryReviewPanel", () => {
 
     it("keeps a failed save visible when another chapter then succeeds", async () => {
       refuseA();
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      renderPanel();
       await saveInto(A, "my words for A");
       await screen.findByRole("alert");
       await saveInto(B, "my words for B");
@@ -409,7 +457,7 @@ describe("PlanStoryReviewPanel", () => {
 
     it("never shows one chapter's failure against another", async () => {
       refuseA();
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      renderPanel();
       await saveInto(A, "my words for A");
       await screen.findByRole("alert");
 
@@ -423,7 +471,7 @@ describe("PlanStoryReviewPanel", () => {
         refuse = false;
         return refused;
       });
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      renderPanel();
       await saveInto(A, "first try");
       await screen.findByRole("alert");
       await saveInto(A, "second try");
@@ -441,7 +489,7 @@ describe("PlanStoryReviewPanel", () => {
   describe("chapters the plan has moved underneath", () => {
     it("says so on the chapter the check named", async () => {
       stubFetch(CHAPTERS, 200, ["planInOnePage"]);
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      renderPanel();
       expect(
         within(await screen.findByRole("region", { name: "Your plan, in one page" })).getByText(
           /plan has changed since/i,
@@ -454,7 +502,7 @@ describe("PlanStoryReviewPanel", () => {
 
     it("says nothing when no chapter is out of date", async () => {
       stubFetch(CHAPTERS, 200, []);
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      renderPanel();
       await screen.findByText("Your plan, in one page");
       expect(screen.queryByText(/plan has changed since/i)).toBeNull();
     });
@@ -466,7 +514,7 @@ describe("PlanStoryReviewPanel", () => {
      */
     it("survives a save, and does not run again on one", async () => {
       stubFetch(CHAPTERS, 200, ["planInOnePage"]);
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      renderPanel();
       const box = await screen.findByDisplayValue("Your plan holds.");
       fireEvent.change(box, { target: { value: "my words" } });
       fireEvent.blur(box);
@@ -485,7 +533,7 @@ describe("PlanStoryReviewPanel", () => {
      */
     it("takes the badge down for a chapter the run rewrote, without a second rebuild", async () => {
       generatingOnly(["planInOnePage"], ["planInOnePage", "whatWeRecommend"]);
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      renderPanel();
       await screen.findAllByText(/plan has changed since/i);
       fireEvent.click(screen.getByRole("button", { name: /generate all/i }));
 
@@ -499,7 +547,7 @@ describe("PlanStoryReviewPanel", () => {
     // behind it — was not rewritten, so if it was out of date it still is.
     it("leaves the badge on a chapter the run did not write", async () => {
       generatingOnly(["planInOnePage"], ["planInOnePage", "whatWeRecommend"]);
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      renderPanel();
       await screen.findAllByText(/plan has changed since/i);
       fireEvent.click(screen.getByRole("button", { name: /generate all/i }));
 
@@ -537,7 +585,7 @@ describe("PlanStoryReviewPanel", () => {
           });
         }),
       );
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      renderPanel();
       await waitFor(() =>
         expect(console.error).toHaveBeenCalledWith(
           expect.stringContaining("out of date"),
@@ -560,16 +608,6 @@ describe("PlanStoryReviewPanel", () => {
     const A = "Your plan, in one page";
     const B = "What we're recommending, and why";
 
-    function postCalls() {
-      return calls().filter((c) => (c[1] as RequestInit | undefined)?.method === "POST");
-    }
-
-    function postBody() {
-      return JSON.parse(String((postCalls()[0][1] as RequestInit).body)) as Record<
-        string,
-        unknown
-      >;
-    }
 
     /** The generate route, refusing with `status` and (for a ceiling) the wait
      *  its `Retry-After` header names. */
@@ -600,7 +638,7 @@ describe("PlanStoryReviewPanel", () => {
     // deleted from any surface, so a Regenerate that reads it returns the very
     // words the advisor pressed the button to replace.
     it("asks for that chapter alone, past the cache", async () => {
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="" documentRole="frontMatter" />);
+      renderPanel({ scenarioId: "", documentRole: "frontMatter" });
       await clickRegenerate(A);
       await waitFor(() => expect(postCalls().length).toBe(1));
       expect(String(postCalls()[0][0])).toContain("/plan-story/generate");
@@ -609,13 +647,18 @@ describe("PlanStoryReviewPanel", () => {
         documentRole: "frontMatter",
         chapterId: "planInOnePage",
         force: true,
+        // The advisor has restyled nothing here, so this is every chapter at the
+        // default. Still SENT rather than left off: the route hashes what it was
+        // told, and the exact match is what keeps a fifth field from arriving
+        // unnoticed.
+        chapterStyle: resolveChapterStyles({}),
       });
     });
 
     // Kills: a Regenerate that quietly runs the whole story. The button sits on
     // one row, and fourteen chapters is twenty-eight model calls.
     it("leaves every other chapter alone", async () => {
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      renderPanel();
       await clickRegenerate(B);
       await waitFor(() => expect(postCalls().length).toBe(1));
       expect(postBody().chapterId).toBe("whatWeRecommend");
@@ -628,7 +671,7 @@ describe("PlanStoryReviewPanel", () => {
      */
     it("names the wait against that row when the firm is over its ceiling", async () => {
       refuseGeneration(429, "45");
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      renderPanel();
       await clickRegenerate(A);
       const alert = await within(row(A)).findByRole("alert");
       expect(alert.textContent).toMatch(/45 seconds/i);
@@ -640,7 +683,7 @@ describe("PlanStoryReviewPanel", () => {
     // fixes, and an advisor told to wait for it waits forever.
     it("does not blame the ceiling for a failure that is not one", async () => {
       refuseGeneration(500);
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      renderPanel();
       await clickRegenerate(A);
       const alert = await within(row(A)).findByRole("alert");
       expect(alert.textContent).toMatch(/couldn't rewrite/i);
@@ -651,7 +694,7 @@ describe("PlanStoryReviewPanel", () => {
     // is a model call the firm pays for, and the wait is measured in tens of
     // seconds — long enough that a second click is the natural thing to do.
     it("cannot be pressed twice into the same chapter", async () => {
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      renderPanel();
       const button = await clickRegenerate(A);
       expect(button.disabled).toBe(true);
       fireEvent.click(button);
@@ -662,7 +705,7 @@ describe("PlanStoryReviewPanel", () => {
     // from the plan as it stands now — and touched nothing else.
     it("takes the out-of-date badge down for the chapter it rewrote, and only that one", async () => {
       stubFetch(CHAPTERS, 200, ["planInOnePage", "whatWeRecommend"]);
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      renderPanel();
       await screen.findAllByText(/plan has changed since/i);
       await clickRegenerate(A);
 
@@ -682,7 +725,7 @@ describe("PlanStoryReviewPanel", () => {
      */
     it("names the wait for a whole story too, without blaming a chapter", async () => {
       refuseGeneration(429, "30");
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      renderPanel();
       fireEvent.click(await screen.findByRole("button", { name: /generate all/i }));
       expect((await screen.findByRole("alert")).textContent).toMatch(/30 seconds/i);
       // …and against the panel, not a row: no single chapter failed.
@@ -705,7 +748,7 @@ describe("PlanStoryReviewPanel", () => {
       // invites is refused, and the refusal is the only thing that explains it.
       it("offers no Regenerate button", async () => {
         stubFetch(cannot);
-        render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+        renderPanel();
         await screen.findByRole("region", { name: B });
         expect(regenerateIn(B)).toBeNull();
         // …and only that row. Kills: hiding the button once any row cannot be
@@ -719,7 +762,7 @@ describe("PlanStoryReviewPanel", () => {
       // still counts this row as one they have to read.
       it("still takes the advisor's own words, and still has to be reviewed", async () => {
         stubFetch(cannot);
-        render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+        renderPanel();
         const section = await screen.findByRole("region", { name: B });
         expect(within(section).getByRole("button", { name: /mark reviewed/i })).toBeTruthy();
         const box = within(section).getByRole("textbox");
@@ -747,7 +790,7 @@ describe("PlanStoryReviewPanel", () => {
             return noFlag;
           }),
         );
-        render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+        renderPanel();
         await screen.findByRole("region", { name: B });
         expect(regenerateIn(A)).toBeTruthy();
         expect(regenerateIn(B)).toBeTruthy();
@@ -771,7 +814,7 @@ describe("PlanStoryReviewPanel", () => {
           return answerRead(url, [model]);
         }),
       );
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      renderPanel();
       const box = await screen.findByDisplayValue("Your plan holds.");
       fireEvent.change(box, { target: { value: "words I typed but never saved" } });
       await clickRegenerate(A);
@@ -782,7 +825,7 @@ describe("PlanStoryReviewPanel", () => {
   });
 
   it("will not write a chapter twice when Mark reviewed is double-clicked", async () => {
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    renderPanel();
     const button = (await screen.findAllByRole("button", { name: /mark reviewed/i }))[0];
     fireEvent.click(button);
     // Marking reviewed cannot be undone from any surface and files an audit row
@@ -796,7 +839,7 @@ describe("PlanStoryReviewPanel", () => {
   describe("why a chapter is missing", () => {
     function renderWith(overrides: Partial<Row>) {
       stubFetch([{ ...CHAPTERS[0], ...overrides }]);
-      render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+      renderPanel();
     }
 
     it("says the assistant did not answer when the call failed", async () => {
@@ -863,7 +906,7 @@ describe("saving a chapter as a voice sample", () => {
 
   it("is offered only on a chapter the advisor has rewritten", async () => {
     stubHarvest([EDITED, CHAPTERS[1]], ok);
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    renderPanel();
     await screen.findByText(EDITED.title);
     // The generated chapter's own words are the model's. Keeping those as an
     // exemplar of how this advisor writes would teach it to copy itself.
@@ -873,7 +916,7 @@ describe("saving a chapter as a voice sample", () => {
 
   it("sends the words on screen, the chapter, and the household they came from", async () => {
     stubHarvest([EDITED], ok);
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    renderPanel();
     const box = await screen.findByDisplayValue(EDITED.text);
     // An unsaved draft is what the advisor is looking at, so it is what a button
     // beside it has to store.
@@ -894,7 +937,7 @@ describe("saving a chapter as a voice sample", () => {
 
   it("says it is saved and off until the advisor turns it on", async () => {
     stubHarvest([EDITED], ok);
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    renderPanel();
     await screen.findByText(EDITED.title);
     fireEvent.click(within(row(EDITED.title)).getByRole("button", { name: HARVEST }));
     const status = await within(row(EDITED.title)).findByRole("status");
@@ -906,7 +949,7 @@ describe("saving a chapter as a voice sample", () => {
   it("names the limit and the length when the chapter is too long to keep", async () => {
     const long = { ...EDITED, text: "x".repeat(2500) };
     stubHarvest([long], refusesLength);
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    renderPanel();
     await screen.findByText(long.title);
     fireEvent.click(within(row(long.title)).getByRole("button", { name: HARVEST }));
 
@@ -920,7 +963,7 @@ describe("saving a chapter as a voice sample", () => {
 
   it("reports the refusal against that chapter and leaves the others clean", async () => {
     stubHarvest([EDITED, CHAPTERS[1]], () => new Response("no", { status: 500 }));
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    renderPanel();
     await screen.findByText(EDITED.title);
     fireEvent.click(within(row(EDITED.title)).getByRole("button", { name: HARVEST }));
     await waitFor(() => {
@@ -933,7 +976,7 @@ describe("saving a chapter as a voice sample", () => {
 
   it("drops the confirmation once the words it named have changed", async () => {
     stubHarvest([EDITED], ok);
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    renderPanel();
     const box = await screen.findByDisplayValue(EDITED.text);
     fireEvent.click(within(row(EDITED.title)).getByRole("button", { name: HARVEST }));
     await within(row(EDITED.title)).findByRole("status");
@@ -957,7 +1000,7 @@ describe("saving a chapter as a voice sample", () => {
         return answerRead(url, [EDITED]);
       }),
     );
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    renderPanel();
     await screen.findByText(EDITED.title);
     const harvestButton = within(row(EDITED.title)).getByRole("button", { name: HARVEST });
     expect((harvestButton as HTMLButtonElement).disabled).toBe(false);
@@ -974,7 +1017,7 @@ describe("saving a chapter as a voice sample", () => {
     stubHarvest([EDITED], () => {
       throw new Error("network down");
     });
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    renderPanel();
     await screen.findByText(EDITED.title);
     fireEvent.click(within(row(EDITED.title)).getByRole("button", { name: HARVEST }));
     await waitFor(() => {
@@ -987,7 +1030,7 @@ describe("saving a chapter as a voice sample", () => {
 
   it("will not store the same passage twice on a double click", async () => {
     stubHarvest([EDITED], ok);
-    render(<PlanStoryReviewPanel clientId="c1" scenarioId="base" documentRole="standalone" />);
+    renderPanel();
     await screen.findByText(EDITED.title);
     const button = within(row(EDITED.title)).getByRole("button", { name: HARVEST });
     fireEvent.click(button);
@@ -996,5 +1039,201 @@ describe("saving a chapter as a voice sample", () => {
     fireEvent.click(button);
     await within(row(EDITED.title)).findByRole("status");
     expect(calls().filter((c) => isHarvestUrl(c[0])).length).toBe(1);
+  });
+});
+
+/**
+ * The advisor's register and how much prose to ask for, per chapter.
+ *
+ * ⚠️ The style is an input to every chapter's stored `sourceHash`, so it has to
+ * reach BOTH transports: the generate POST that writes the hash, and the
+ * staleness GET that rebuilds it. A style on one and not the other is a chapter
+ * that reads permanently out of date with nothing able to clear it — which is
+ * why the two are tested separately here rather than through one another.
+ */
+describe("the advisor's tone and length", () => {
+  const A = "Your plan, in one page";
+
+  /** A checklist chapter — one of the two `full` cannot move. */
+  const NEXT_STEPS: Row = {
+    chapterId: "whatHappensNext",
+    title: "What happens next",
+    text: "Alan opens the Roth.",
+    generated: true,
+    edited: false,
+    aiSuppressed: false,
+    error: null,
+    reviewed: false,
+    candidate: true,
+  };
+
+  function toneSelect(title: string): HTMLSelectElement {
+    return within(row(title)).getByLabelText("Tone") as HTMLSelectElement;
+  }
+
+  function lengthSelect(title: string): HTMLSelectElement {
+    return within(row(title)).getByLabelText("Length") as HTMLSelectElement;
+  }
+
+  it("sends the row's tone and length with a Regenerate", async () => {
+    renderPanel({ chapterStyle: { planInOnePage: { tone: "direct", length: "short" } } });
+    await screen.findByText(A);
+    fireEvent.click(within(row(A)).getByRole("button", { name: /^regenerate$/i }));
+    await waitFor(() => expect(postCalls().length).toBe(1));
+    expect(postBody().chapterStyle.planInOnePage).toEqual({ tone: "direct", length: "short" });
+  });
+
+  /**
+   * ⭐ The button an advisor presses FIRST, and the one the brief did not pin.
+   * A whole run that omits the style writes fourteen chapters in the default
+   * voice and stores fourteen default-style hashes — so every restyled chapter
+   * then reads stale, and regenerating it one at a time is the only way out.
+   */
+  it("sends the style with a whole-run Generate all too", async () => {
+    renderPanel({ chapterStyle: { planInOnePage: { tone: "plain", length: "full" } } });
+    await screen.findByText(A);
+    fireEvent.click(screen.getByRole("button", { name: "Generate all" }));
+    await waitFor(() => expect(postCalls().length).toBe(1));
+    expect(postBody().chapterStyle.planInOnePage).toEqual({ tone: "plain", length: "full" });
+    // …and the thirteen the advisor never touched, at the default. The route
+    // fills its own gaps, but only from what it was SENT.
+    expect(postBody().chapterStyle.thingsToKnow).toEqual({ tone: "warm", length: "standard" });
+  });
+
+  // Kills: keeping the style in panel-local state. It would look right on
+  // screen and print wrong — the style lives in the PAGE'S OPTIONS, which is
+  // what survives a reload and what the export reads.
+  it("reports a style change up rather than storing it locally", async () => {
+    const { onChapterStyleChange } = renderPanel();
+    await screen.findByText(A);
+    fireEvent.change(toneSelect(A), { target: { value: "plain" } });
+    expect(onChapterStyleChange).toHaveBeenCalledWith("planInOnePage", {
+      tone: "plain",
+      length: "standard",
+    });
+  });
+
+  // The other half of the same pair: changing the length must not reset the
+  // tone the advisor already picked.
+  it("keeps the tone when only the length moves", async () => {
+    const { onChapterStyleChange } = renderPanel({
+      chapterStyle: { planInOnePage: { tone: "direct", length: "standard" } },
+    });
+    await screen.findByText(A);
+    fireEvent.change(lengthSelect(A), { target: { value: "short" } });
+    expect(onChapterStyleChange).toHaveBeenCalledWith("planInOnePage", {
+      tone: "direct",
+      length: "short",
+    });
+  });
+
+  it("asks the staleness route about every chapter, in the style it is showing", async () => {
+    renderPanel({ chapterStyle: { planInOnePage: { tone: "direct", length: "short" } } });
+    await waitFor(() => expect(staleCalls().length).toBe(1));
+    const styles = new URL(
+      String(staleCalls()[0][0]),
+      "http://localhost",
+    ).searchParams.getAll("style");
+    // All fourteen: the route resolves an absent chapter to the default, but the
+    // run stored a hash for one it was TOLD about, so the two agree only when
+    // the panel names them.
+    expect(styles).toHaveLength(14);
+    expect(styles).toContain("planInOnePage:direct:short");
+    expect(styles).toContain("thingsToKnow:warm:standard");
+  });
+
+  /**
+   * ⚠️⚠️ The trap this split was written for. `load()` and `loadOutOfDate()` ran
+   * from ONE effect whose body also cleared the drafts, so adding the style to
+   * that effect's deps wiped the advisor's unsaved typing on every tone change.
+   */
+  it("re-checks staleness on a style change without touching unsaved words", async () => {
+    const { rerender } = renderPanel();
+    await screen.findByText(A);
+    const box = within(row(A)).getByRole("textbox");
+    fireEvent.change(box, { target: { value: "Half a sentence the advisor is still" } });
+    await waitFor(() => expect(staleCalls().length).toBe(1));
+
+    rerender({ chapterStyle: { planInOnePage: { tone: "direct", length: "short" } } });
+
+    // Asked again, in the new style…
+    await waitFor(() => expect(staleCalls().length).toBe(2));
+    expect(String(staleCalls()[1][0])).toContain("planInOnePage%3Adirect%3Ashort");
+    // …and the words in the box are still theirs.
+    expect((box as HTMLTextAreaElement).value).toBe("Half a sentence the advisor is still");
+    // Kills a re-fetch of the chapter list: that is what replaces the box's text
+    // with the stored row, and it has no business running on a tone change.
+    expect(calls().filter((c) => !isStaleUrl(c[0]) && c[1] === undefined).length).toBe(1);
+  });
+
+  // Kills: re-firing the request on a re-render that changed nothing. The panel
+  // keys the check on a query STRING, so a parent handing it a fresh object of
+  // equal content must not spend another twenty seconds.
+  it("does not re-ask when the style is re-created with the same values", async () => {
+    const { rerender } = renderPanel({ chapterStyle: { planInOnePage: { tone: "plain", length: "full" } } });
+    await waitFor(() => expect(staleCalls().length).toBe(1));
+    rerender({ chapterStyle: { planInOnePage: { tone: "plain", length: "full" } } });
+    await waitFor(() => expect(screen.getByText(A)).toBeTruthy());
+    expect(staleCalls().length).toBe(1);
+  });
+
+  /**
+   * ⭐ `full` is a SILENT NO-OP on the two fixed-shape chapters — the prompt and
+   * the `sourceHash` come out byte-identical to `standard`. The option is not
+   * removed and not disabled: the report-level control sets all fourteen at
+   * once, so these rows legitimately HOLD `full`, and a `<select>` whose value is
+   * absent from its options shows the wrong one selected. So it is ANNOTATED.
+   */
+  it("says so on a chapter whose shape Full cannot change", async () => {
+    stubFetch([NEXT_STEPS]);
+    renderPanel({ chapterStyle: { whatHappensNext: { tone: "warm", length: "full" } } });
+    await screen.findByText(NEXT_STEPS.title);
+    expect(within(row(NEXT_STEPS.title)).getByText(/reads the same as Standard/i)).toBeTruthy();
+    // The option is still THERE and still selected — removing it would show the
+    // advisor a different length from the one the deck stored.
+    expect(lengthSelect(NEXT_STEPS.title).value).toBe("full");
+    expect(
+      Array.from(lengthSelect(NEXT_STEPS.title).options).map((o) => o.value),
+    ).toEqual(["short", "standard", "full"]);
+  });
+
+  it("keeps that note off the row until Full is actually picked", async () => {
+    stubFetch([NEXT_STEPS]);
+    renderPanel();
+    await screen.findByText(NEXT_STEPS.title);
+    expect(within(row(NEXT_STEPS.title)).queryByText(/reads the same as Standard/i)).toBeNull();
+  });
+
+  // …and never on a chapter Full really does move.
+  it("does not claim Full is inert on an ordinary chapter", async () => {
+    renderPanel({ chapterStyle: { planInOnePage: { tone: "warm", length: "full" } } });
+    await screen.findByText(A);
+    expect(within(row(A)).queryByText(/reads the same as Standard/i)).toBeNull();
+  });
+
+  /**
+   * The five proposal chapters of a base-only report have no Regenerate button
+   * at all. They still PRINT, and the advisor still exports them — so the style
+   * that decides how they read has to be settable on them.
+   */
+  it("offers the selects on a row this story cannot rewrite", async () => {
+    stubFetch([CHAPTERS[0], { ...CHAPTERS[1], candidate: false }]);
+    renderPanel();
+    await screen.findByText(CHAPTERS[1].title);
+    expect(within(row(CHAPTERS[1].title)).queryByRole("button", { name: /^regenerate$/i })).toBeNull();
+    expect(toneSelect(CHAPTERS[1].title)).toBeTruthy();
+    expect(lengthSelect(CHAPTERS[1].title)).toBeTruthy();
+  });
+
+  // A real `<label for>` rather than an `aria-label`, the rule the scenario
+  // picker already follows: it names the control to a screen reader AND gives
+  // the caption a click target. The chapter it belongs to comes from the row's
+  // own region name.
+  it("names each select with a real label", async () => {
+    renderPanel();
+    await screen.findByText(A);
+    const tone = toneSelect(A);
+    expect(tone.getAttribute("aria-label")).toBeNull();
+    expect(row(A).querySelector(`label[for="${tone.id}"]`)?.textContent).toBe("Tone");
   });
 });
