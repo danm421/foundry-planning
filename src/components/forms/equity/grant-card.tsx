@@ -35,6 +35,9 @@ interface GrantCardProps {
   currentYear?: number;
   onEdit: () => void;
   onDelete: () => void;
+  /** Hides Edit/Remove. Set while a scenario is active — grants are base-plan
+   *  only, so the card stays readable but not actionable. */
+  readOnly?: boolean;
 }
 
 const GRANT_TYPE_LABELS: Record<"rsu" | "nqso" | "iso", string> = {
@@ -56,7 +59,7 @@ function fmt(n: number): string {
   return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
-export default function GrantCard({ grant, currentYear, onEdit, onDelete }: GrantCardProps) {
+export default function GrantCard({ grant, currentYear, onEdit, onDelete, readOnly = false }: GrantCardProps) {
   const year = currentYear ?? new Date().getFullYear();
 
   // Convert tranches: vestDate YYYY-MM-DD → vestYear
@@ -100,22 +103,24 @@ export default function GrantCard({ grant, currentYear, onEdit, onDelete }: Gran
           )}
           <span className="text-xs text-gray-400">{grant.grantDate}</span>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={onEdit}
-            className="text-xs text-accent hover:text-accent-ink"
-          >
-            Edit
-          </button>
-          <button
-            type="button"
-            onClick={onDelete}
-            className="text-xs text-gray-400 hover:text-red-400"
-          >
-            Remove
-          </button>
-        </div>
+        {!readOnly && (
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={onEdit}
+              className="text-xs text-accent hover:text-accent-ink"
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={onDelete}
+              className="text-xs text-gray-400 hover:text-red-400"
+            >
+              Remove
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Segmented status bar */}

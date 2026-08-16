@@ -22,7 +22,14 @@ import type { BaseWritePlan } from "./promote-to-base-types";
 
 /** CascadeWarning.kind → the TargetKind whose base row must be deleted. The two
  *  reassign/unreference cascades change a reference rather than delete a row, so
- *  they map to null (no base delete). */
+ *  they map to null (no base delete).
+ *
+ *  Both equity cascades map to null because Postgres already does them: the
+ *  account delete this plan emits fires `stock_option_accounts.account_id`'s
+ *  ON DELETE CASCADE (taking the grants with it) and
+ *  `destination_account_id`'s ON DELETE SET NULL. Emitting a base write here
+ *  would be a second, redundant delete of a row that is already gone — and
+ *  there is no equity TargetKind to name it with. */
 const CASCADE_KIND_TO_TARGET: Record<CascadeWarning["kind"], TargetKind | null> = {
   transfer_dropped: "transfer",
   reinvestment_dropped: "reinvestment",
@@ -31,6 +38,8 @@ const CASCADE_KIND_TO_TARGET: Record<CascadeWarning["kind"], TargetKind | null> 
   will_bequest_dropped: "will_bequest",
   beneficiary_reassigned: null,
   external_beneficiary_unreferenced: null,
+  equity_plan_dropped: null,
+  equity_destination_cleared: null,
 };
 
 export function scenarioChangesToBaseWrites(

@@ -263,6 +263,11 @@ const RETIREMENT_SUB_TYPES = new Set(["traditional_ira", "roth_ira", "401k", "40
 // account first so the tab is immediately usable — no save + reopen.
 const RECORD_DEPENDENT_TABS = new Set(["holdings", "grants", "beneficiaries"]);
 
+/** Shown — and returned as the save error — when the equity editor is opened
+ *  inside a scenario. See `equityScenarioBlocked` below for why. */
+const EQUITY_SCENARIO_BLOCKED_MSG =
+  "Stock options are edited on the base plan. Switch out of this scenario to change grants, pricing or sell timing.";
+
 const DEFAULT_NAME_BY_CATEGORY: Record<AccountCategory, string> = {
   taxable: "Taxable Account",
   cash: "Cash Account",
@@ -731,6 +736,19 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     beneficiaryName.trim() === "";
   const canSave = name.trim().length > 0 && !educationBeneficiaryMissing;
 
+  // ── Equity is base-plan only (audit F14/F19) ────────────────────────────────
+  // Stock options are the ONE account category whose writes skip the scenario
+  // writer: both save paths below short-circuit and fetch the dedicated
+  // /stock-option-accounts routes, which resolve the BASE-case scenario id
+  // server-side. So an edit made while viewing "Retire at 55" rewrote the base
+  // plan — and therefore every other scenario and every saved presentation —
+  // with no scenario_change row in the Changes panel and no undo.
+  //
+  // Until equity edits become change rows (needs new targetKinds for the plan,
+  // its grants and its tranches), the editor is blocked in scenario mode rather
+  // than left to silently mutate base data. Same posture as the Holdings tab.
+  const equityScenarioBlocked = category === "stock_options" && writer.scenarioActive;
+
   // Lift submit-button state into the parent dialog so DialogShell can drive
   // the footer primary button's disabled/loading visuals. Gated on the same
   // `canSave` validity as the autosave path, so an invalid form (e.g. a 529
@@ -1002,6 +1020,10 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
 
     // ── stock_options: bypass the generic accounts route ────────────────────
     if (category === "stock_options") {
+      if (equityScenarioBlocked) {
+        setError(EQUITY_SCENARIO_BLOCKED_MSG);
+        return { ok: false, error: EQUITY_SCENARIO_BLOCKED_MSG };
+      }
       setLoading(true);
       setError(null);
       try {
@@ -1176,7 +1198,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       setLoading(false);
     }
   }, [
-    canSave, subType, category, realEstateGrowthRatePct, growthSource, growthRatePct,
+    canSave, equityScenarioBlocked, subType, category, realEstateGrowthRatePct, growthSource, growthRatePct,
     usesGrowthDropdown, name, owners, titlingType, parentBusinessId, accountValue, accountBasis, accountRothValue,
     rmdEnabled, countsTowardAum, priorYearEndValue, realEstateGrowthSource, modelPortfolioId, tickerPortfolioId, deriveFromHoldings,
     turnoverPct, overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
@@ -1202,6 +1224,10 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
 
     // ── stock_options: bypass the generic accounts route ────────────────────
     if (category === "stock_options") {
+      if (equityScenarioBlocked) {
+        setError(EQUITY_SCENARIO_BLOCKED_MSG);
+        return;
+      }
       setLoading(true);
       setError(null);
       try {
@@ -1464,7 +1490,13 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
 
   // ── In-form tab autosave ─────────────────────────────────────────────────────
   const accountAutoSave = useTabAutoSave({
-    isDirty,
+    // A blocked equity form reports itself CLEAN so tab switching still works.
+    // Without this the advisor is stranded: edit-mode seeding marks the form
+    // dirty, every tab click runs the autosave, the autosave refuses, and the
+    // Grants and Beneficiaries tabs become unreachable inside a scenario. There
+    // is nothing to lose by "discarding" — the fields are disabled, so the only
+    // dirt is the seeding itself.
+    isDirty: isDirty && !equityScenarioBlocked,
     canSave,
     saveAsync: saveAsyncImpl,
   });
@@ -1858,7 +1890,15 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
 
             {/* ── Stock Options equity fields — only visible for stock_options ── */}
             {category === "stock_options" && (
-              <>
+              /* `display: contents` keeps the fieldset out of the grid's box
+                 model, so the fields below lay out exactly as they did while
+                 the single `disabled` attribute reaches every control inside. */
+              <fieldset className="contents" disabled={equityScenarioBlocked}>
+                {equityScenarioBlocked && (
+                  <p className="col-span-2 rounded-md border border-gray-700 bg-gray-800/60 px-3 py-3 text-sm text-gray-400">
+                    {EQUITY_SCENARIO_BLOCKED_MSG}
+                  </p>
+                )}
                 {/* Row 1: Ticker + Public flag */}
                 <div>
                   <label className={fieldLabelClassName} htmlFor="equity-ticker">
@@ -2033,7 +2073,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                     </div>
                   )}
                 </div>
-              </>
+              </fieldset>
             )}
 
             {category !== "stock_options" && (
@@ -2652,7 +2692,11 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       {/* Grants tab — stock options only (Task 18) */}
       {!lockTab && category === "stock_options" && (
         <div className={activeTab === "grants" ? "" : "hidden"}>
-          <GrantsTab clientId={clientId} accountId={effectiveAccountId} />
+          <GrantsTab
+            clientId={clientId}
+            accountId={effectiveAccountId}
+            scenarioActive={writer.scenarioActive}
+          />
         </div>
       )}
 
