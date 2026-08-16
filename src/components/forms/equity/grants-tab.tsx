@@ -7,6 +7,15 @@ import VestingGrid, { type TrancheRow, newTrancheKey } from "./vesting-grid";
 interface GrantsTabProps {
   clientId: string;
   accountId: string | null;
+  /**
+   * True when `?scenario=<id>` is set. Grant writes go straight to the
+   * base-case `/stock-option-accounts/.../grants` routes (there is no
+   * grant targetKind for the scenario writer), so a what-if edit here would
+   * permanently rewrite the base plan with no Changes-panel row and no undo.
+   * The list stays visible and readable; only the writes are blocked.
+   * Audit F14/F19; mirrors the Holdings tab.
+   */
+  scenarioActive: boolean;
 }
 
 type GrantType = "rsu" | "nqso" | "iso";
@@ -503,7 +512,7 @@ function GrantEditor({
   );
 }
 
-export default function GrantsTab({ clientId, accountId }: GrantsTabProps) {
+export default function GrantsTab({ clientId, accountId, scenarioActive }: GrantsTabProps) {
   const [grants, setGrants] = useState<GrantDisplay[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -615,7 +624,7 @@ export default function GrantsTab({ clientId, accountId }: GrantsTabProps) {
   }
 
   async function handleSave(state: GrantEditorState) {
-    if (!grantsUrl) return;
+    if (!grantsUrl || scenarioActive) return;
     setSaving(true);
     setSaveError(null);
     try {
@@ -642,7 +651,7 @@ export default function GrantsTab({ clientId, accountId }: GrantsTabProps) {
   }
 
   async function handleDelete(grantId: string) {
-    if (!grantsUrl) return;
+    if (!grantsUrl || scenarioActive) return;
     setDeletingId(grantId);
     setLoadError(null);
     try {
@@ -660,6 +669,13 @@ export default function GrantsTab({ clientId, accountId }: GrantsTabProps) {
 
   return (
     <div className="space-y-4">
+      {scenarioActive && (
+        <p className="rounded-md border border-gray-700 bg-gray-800/60 px-3 py-3 text-sm text-gray-400">
+          Grants are edited on the base plan. Switch out of this scenario to add
+          or change grants.
+        </p>
+      )}
+
       {loadError && (
         <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{loadError}</p>
       )}
@@ -681,6 +697,7 @@ export default function GrantsTab({ clientId, accountId }: GrantsTabProps) {
             <GrantCard
               key={grant.id}
               grant={grant}
+              readOnly={scenarioActive}
               onEdit={() => openEditEditor(grant)}
               onDelete={() => {
                 if (deletingId === grant.id) return;
@@ -703,8 +720,9 @@ export default function GrantsTab({ clientId, accountId }: GrantsTabProps) {
         />
       )}
 
-      {/* Add grant button — hidden when editor is open */}
-      {!editorOpen && (
+      {/* Add grant button — hidden when the editor is open, and while a
+          scenario is active (grant writes are base-plan only). */}
+      {!editorOpen && !scenarioActive && (
         <button
           type="button"
           onClick={openAddEditor}
