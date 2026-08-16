@@ -14,7 +14,7 @@ const { afterTasks, unreviewed } = vi.hoisted(() => ({
   // `plan_story_chapters` rows — this suite is about the ROUTE's wiring
   // (audits when told to, stays soft either way), not about the gate's own
   // counting, which `export-gate.test.ts` already covers against the real
-  // schema and `printedChapters`.
+  // options schema (`planStoryOptionsSchema`) and `printedChapters`.
   unreviewed: vi.fn(),
 }));
 
@@ -229,6 +229,12 @@ describe("POST /presentations/runs — the soft gate", () => {
     unreviewed.mockResolvedValue([{ ...EIGHT_OF_TWELVE, unreviewed: 0 }]);
     await POST(req(storyBody), { params: Promise.resolve({ id: clientId }) });
     await Promise.all(afterTasks);
+    // Positive control: the export itself still ran and audited normally —
+    // proves the assertion below is "the gate stayed silent", not "nothing
+    // ran" or "the request failed before any audit call was reachable".
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "presentations.export_pdf" }),
+    );
     expect(recordAudit).not.toHaveBeenCalledWith(
       expect.objectContaining({ action: "plan_story.exported_unreviewed" }),
     );
@@ -259,6 +265,23 @@ describe("POST /presentations/runs — the soft gate", () => {
     const res = await POST(req(storyBody), { params: Promise.resolve({ id: clientId }) });
     expect(res.status).toBe(202); // createQueuedRun already ran; the failure is in after()
     await Promise.all(afterTasks);
+    expect(recordAudit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "plan_story.exported_unreviewed" }),
+    );
+  });
+
+  // The twin of the test above, for the OTHER branch: the ordering guarantee
+  // (audit only after a render lands) is a claim about the route, not about
+  // one branch of it, and the two branches call `auditUnreviewedStory` from
+  // two different places in the file — each needs its own failing-render
+  // case to be pinned rather than assumed from the other's.
+  it("never audits an export that fails before it renders, on the download=1 branch too", async () => {
+    unreviewed.mockResolvedValue([EIGHT_OF_TWELVE]);
+    vi.mocked(renderPresentationPdf).mockRejectedValueOnce(new Error("render blew up"));
+    const res = await POST(req(storyBody, "?download=1"), {
+      params: Promise.resolve({ id: clientId }),
+    });
+    expect(res.status).toBe(500); // no try/catch of its own on this branch — the outer catch
     expect(recordAudit).not.toHaveBeenCalledWith(
       expect.objectContaining({ action: "plan_story.exported_unreviewed" }),
     );

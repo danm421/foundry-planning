@@ -54,14 +54,20 @@ const STORY_PAGE_WITH_TWELVE_SECTIONS = {
   },
 };
 
-// Four of the twelve printed chapters reviewed. 12 - 4 = 8 — NOT 14 - 4 = 10,
-// which is what a version of the gate counting against every chapter that
-// EXISTS, rather than every chapter this page PRINTS, would answer instead.
+// Four of the twelve printed chapters reviewed, PLUS a fifth row that
+// EXISTS but was never reviewed (`reviewedAt: null`, the `row()` default) —
+// the most common real state: the model generated the chapter, a row is
+// there, nobody has read it. Without the `reviewedAt != null` filter in
+// `export-gate.ts`, this row's mere presence would count it reviewed too,
+// understating the gate — 12 - 5 = 7, not 8. 12 - 4 = 8 — NOT 14 - 4 = 10
+// either, which is what counting against every chapter that EXISTS, rather
+// than every chapter this page PRINTS, would answer instead.
 const REVIEWED_FOUR = [
   row({ chapterId: "planInOnePage", reviewedAt: new Date("2026-01-01") }),
   row({ chapterId: "whatWerePlanningFor", reviewedAt: new Date("2026-01-01") }),
   row({ chapterId: "whatYouHave", reviewedAt: new Date("2026-01-01") }),
   row({ chapterId: "whereTheMoneyGoes", reviewedAt: new Date("2026-01-01") }),
+  row({ chapterId: "thePathYoureOn" }), // generated, present, never reviewed
 ];
 
 // Every default option, untouched. Base-only (no scenario), so the five

@@ -90,13 +90,10 @@ function buildAutoFilename(
  * The soft export gate's warning (Task 16), appended to the run-progress
  * notice — the ONE production surface that both knows the count and fires
  * before the file exists. `runs/route.ts`'s 202 response is where
- * `storyReview` lives; the preview dialog can never carry it, since it
- * fetches `export-pdf`, which streams a PDF with no room for a JSON field
- * (see `pdf-preview-dialog.tsx`'s own `PreviewRequest.storyReview` doc
- * comment for that half of the story).
- *
- * Same copy as the dialog's warning line, so the same fact reads the same
- * way wherever an advisor meets it.
+ * `storyReview` lives; the preview dialog (`pdf-preview-dialog.tsx`) fetches
+ * `export-pdf` instead, which streams a PDF with no room for a JSON field, so
+ * it was tried as a second surface and removed (Ruling T16-6) — this notice
+ * is the only place an advisor sees this sentence.
  */
 function unreviewedStoryWarning(storyReview: UnreviewedStoryPage[] | undefined): string {
   return (storyReview ?? [])
@@ -198,6 +195,10 @@ export function PresentationsLauncher(props: Props) {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // The soft export gate's warning (Task 16) — its own state, not folded into
+  // `notice`'s string, so it can carry its own colour (Minor 6: it must not
+  // read as part of the success message it sits beside).
+  const [storyReviewWarning, setStoryReviewWarning] = useState<string | null>(null);
   const [runsRefreshKey, setRunsRefreshKey] = useState(0);
   const [previewRequest, setPreviewRequest] = useState<PreviewRequest | null>(null);
 
@@ -383,6 +384,7 @@ export function PresentationsLauncher(props: Props) {
   async function handleGenerate() {
     setError(null);
     setNotice(null);
+    setStoryReviewWarning(null);
     // Require a comparison on every Retirement Comparison page before exporting,
     // otherwise the PDF would ship empty placeholder slides. Name the offending
     // page(s) so the advisor knows which row to fix.
@@ -427,12 +429,8 @@ export function PresentationsLauncher(props: Props) {
       // soft gate's whole point: the export runs either way, and this is
       // just what makes the audit row the route also files an honest one.
       const body = (await res.json().catch(() => ({}))) as { storyReview?: UnreviewedStoryPage[] };
-      const warning = unreviewedStoryWarning(body.storyReview);
-      setNotice(
-        warning
-          ? `Generating your presentation — it'll appear in Recent runs. ${warning}`
-          : "Generating your presentation — it'll appear in Recent runs.",
-      );
+      setNotice("Generating your presentation — it'll appear in Recent runs.");
+      setStoryReviewWarning(unreviewedStoryWarning(body.storyReview) || null);
       setRunsRefreshKey((k) => k + 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -666,9 +664,15 @@ export function PresentationsLauncher(props: Props) {
           {error}
         </p>
       )}
-      {notice && (
-        <p className="mt-3 text-sm text-accent" role="status">
-          {notice}
+      {(notice || storyReviewWarning) && (
+        <p className="mt-3 text-sm" role="status">
+          {/* Two colours in one status region, not two regions: this is the
+              soft gate's warning (Minor 6) — it must not read as part of the
+              success message it's appended beside, but it also isn't a
+              second, separately-announced event. */}
+          {notice && <span className="text-accent">{notice}</span>}
+          {notice && storyReviewWarning && " "}
+          {storyReviewWarning && <span className="text-warn">{storyReviewWarning}</span>}
         </p>
       )}
 

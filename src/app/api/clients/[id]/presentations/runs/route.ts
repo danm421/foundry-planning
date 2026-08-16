@@ -170,7 +170,7 @@ export async function POST(
           via: "sync-download",
         }),
       });
-      if (unreviewedPages.length > 0) await auditUnreviewedStory();
+      await auditUnreviewedStory();
       const safeFilename = filename.replace(/["\\\r\n;]/g, "");
       return new NextResponse(buffer as unknown as BodyInit, {
         status: 200,
@@ -229,7 +229,7 @@ export async function POST(
           firmId,
           metadata: crossFirmAuditMeta({ access }, callerOrg, { pages: parsed.data.pages.map((p) => p.pageId), via: "background-run" }),
         });
-        if (unreviewedPages.length > 0) await auditUnreviewedStory();
+        await auditUnreviewedStory();
         await markDone(runId, doc?.id ?? null);
       } catch (err) {
         const msg = err instanceof Error ? err.message : "render failed";
