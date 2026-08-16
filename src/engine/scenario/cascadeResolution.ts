@@ -132,6 +132,55 @@ export function resolveCascades(
     tree.savingsRules = remaining;
   }
 
+  // Stock-option plans — drop the plan whose stock_options account was removed.
+  //
+  // `stockOptionPlans` is loaded straight from the base case and no targetKind
+  // overlays it, so without this the scenario deletes the account from the
+  // Balance Sheet while the engine keeps vesting the shares, booking the
+  // ordinary income and paying the tax — "what if he leaves the company" comes
+  // out with the base plan's numbers to the dollar. Same treatment as Roth
+  // conversions and savings rules above.
+  //
+  // A removed DESTINATION account is a different case: the equity survives, only
+  // the brokerage it delivers into is gone. Null the reference rather than drop
+  // the plan — projection.ts's eligibility test reads
+  // `accountById.get(namedDest)?.category !== "cash"`, and a MISSING account
+  // yields `undefined`, which passes that test, so the dangling id is adopted as
+  // the destination and the vested shares land on an account the scenario
+  // deleted (they disappear from the portfolio while the tax is still charged).
+  // Nulling it makes the engine mint its own destination instead.
+  if (tree.stockOptionPlans && removedAccountIds.size > 0) {
+    const remaining: typeof tree.stockOptionPlans = [];
+    for (const plan of tree.stockOptionPlans) {
+      const label = `Stock options · ${plan.ticker ?? plan.accountId}`;
+      if (removedAccountIds.has(plan.accountId)) {
+        warnings.push({
+          kind: "equity_plan_dropped",
+          message: `Stock option plan dropped — account ${plan.accountId} was removed`,
+          causedByChangeId: removedAccountToCause.get(plan.accountId)!,
+          affectedEntityId: plan.accountId,
+          affectedEntityLabel: label,
+        });
+        continue;
+      }
+
+      const dest = plan.destinationAccountId;
+      if (dest && removedAccountIds.has(dest)) {
+        warnings.push({
+          kind: "equity_destination_cleared",
+          message: `Stock option destination cleared — account ${dest} was removed`,
+          causedByChangeId: removedAccountToCause.get(dest)!,
+          affectedEntityId: plan.accountId,
+          affectedEntityLabel: label,
+        });
+        plan.destinationAccountId = null;
+      }
+
+      remaining.push(plan);
+    }
+    tree.stockOptionPlans = remaining;
+  }
+
   // family_member removal — drop matching BeneficiaryRefs from each account.
   // The engine falls back to "estate" when an account has no remaining
   // designations, so dropping is the right cleanup (no synthetic estate ref
