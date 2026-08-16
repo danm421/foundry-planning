@@ -428,6 +428,79 @@ describe("buildPlanStoryData — strategy cards", () => {
     expect(data.chapters.find((c) => c.chapterId === "whatWeRecommend")!.strategies[0].detail).toBe("");
   });
 
+  /**
+   * ⚠️ `ChangeRow.what` is NOT always text a person typed, which is what the
+   * card's missing check rested on.
+   *
+   * A savings rule has no `name` column (`engine/types.ts#SavingsRule`), so
+   * `describeChangeTarget` (`lib/scenario/describe-change-target.ts`) BUILDS one
+   * out of the account plus a formatted basis — "401(k) · $15k/yr" and
+   * "401(k) · 6% of salary" are both pinned in `describe-change-target.test.ts`
+   * — and `describe/kinds/savings.ts` puts that string straight into `what`.
+   *
+   * So the card's "what we'd do" line printed a figure in the changes table's
+   * own rounding and case, with no fact-pack check: the one thing the card's
+   * other two fields (`name` via `usableName`, `detail` via `quotableDetail`)
+   * both have. Same rule as the detail beside it — an ungrounded figure leaves
+   * the line out rather than borrowing a number.
+   */
+  it("drops a row's WHAT whose figure the fact pack does not hold", () => {
+    const data = buildPlanStoryData(
+      deckCtx(
+        input({
+          hasProposal: true,
+          facts: [],
+          strategies: [{ name: "Save more", rows: [row({ what: "401(k) · $15k/yr" })] }],
+        }),
+      ),
+      PROPOSED,
+    );
+    expect(data.chapters.find((c) => c.chapterId === "whatWeRecommend")!.strategies[0].what).toBe("");
+  });
+
+  // …and the must-PASS direction: a figure the pack holds, in the pack's own
+  // spelling, still reaches the card. Without this the rule above is satisfied
+  // by a `what` that is always "".
+  it("keeps a WHAT whose figure the pack holds in that spelling", () => {
+    const data = buildPlanStoryData(
+      deckCtx(
+        input({
+          hasProposal: true,
+          facts: [quoted("$15k")],
+          strategies: [{ name: "Save more", rows: [row({ what: "401(k) · $15k/yr" })] }],
+        }),
+      ),
+      PROPOSED,
+    );
+    expect(data.chapters.find((c) => c.chapterId === "whatWeRecommend")!.strategies[0].what).toBe(
+      "401(k) · $15k/yr",
+    );
+  });
+
+  // Per ROW, not per card: one refused row must not silence the ones beside it,
+  // and a card that kept the whole join whenever any row was clean would be the
+  // same leak with an extra step.
+  it("refuses only the offending row and keeps the rest of the join", () => {
+    const data = buildPlanStoryData(
+      deckCtx(
+        input({
+          hasProposal: true,
+          facts: [],
+          strategies: [
+            {
+              name: "Save more",
+              rows: [row(), row({ what: "401(k) · 6% of salary" }), row({ what: "Teresa's 401(k)" })],
+            },
+          ],
+        }),
+      ),
+      PROPOSED,
+    );
+    expect(data.chapters.find((c) => c.chapterId === "whatWeRecommend")!.strategies[0].what).toBe(
+      "Alan's Social Security, Teresa's 401(k)",
+    );
+  });
+
   it("gives a prose chapter no cards, however many strategies the plan has", () => {
     const data = buildPlanStoryData(
       deckCtx(input({ hasProposal: true, strategies })),

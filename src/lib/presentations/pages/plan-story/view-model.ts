@@ -454,7 +454,24 @@ export function buildPlanStoryData(
             // sits beside that prose on the same sheet, so a name refused in one
             // place and printed in the other is the same leak in a nicer font.
             name: usableName(s.name) ? s.name : "",
-            what: s.rows.map((r) => r.what).join(", "),
+            // …and `what` through the SAME refusal `detail` goes through, one
+            // row at a time. It is not the advisor's typing: a savings rule has
+            // no name of its own, so `describeChangeTarget` builds one out of
+            // the account plus a formatted basis ("401(k) · $15k/yr",
+            // "401(k) · 6% of salary" — both pinned in
+            // `lib/scenario/describe-change-target.test.ts`) and
+            // `describe/kinds/savings.ts` puts it straight into this field. A
+            // figure there is the changes table's rounding and case, and is in
+            // the pack only if something else put it there.
+            //
+            // Per ROW rather than over the joined string, so one refused change
+            // does not silence the ones beside it. Every row refused leaves ""
+            // — the same answer `detail` gives, and `chapter-pdf.tsx` drops the
+            // heading with it rather than printing a label over nothing.
+            what: s.rows
+              .map((r) => quotableDetail(r.what, facts))
+              .filter((w): w is string => w !== null)
+              .join(", "),
             // NOT the raw `detail[0]`. That field is written by the Scenario
             // Changes table in its own rounding and its own case, and nothing in
             // it is in the fact pack unless we put it there — so it goes through

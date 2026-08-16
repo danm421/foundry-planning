@@ -155,6 +155,33 @@ function stepMeta(step: { owner: string; when: string }): string {
   return [step.owner, step.when].map((s) => s.trim()).filter(Boolean).join(" · ");
 }
 
+/**
+ * A card with nothing in any of its three fields is not a card, and a bordered
+ * box with nothing inside it reads as a rendering failure.
+ *
+ * Each field is refused independently and each refusal is reachable on its own:
+ * `usableName` blanks a name carrying the changes table's machine text or
+ * running past 48 characters, and `quotableDetail` refuses a `what` or a
+ * `detail` whose figures the fact pack does not hold. What made this guard worth
+ * writing is that `what` USED to be unconditional, so a card always printed at
+ * least one line; it no longer does.
+ *
+ * ⚠️ Honest limit on that: the three refusals firing at once is a possible state
+ * of `PlanStoryChapterView`, not an observed one. I did not construct a live
+ * change that trips all three — the shapes I traced each keep one field (a
+ * savings-rule EDIT keeps "on <account>" as its detail; a savings-rule ADD has
+ * its own figures admitted to the pack from `detail[0]`, so its `what` grounds).
+ * This is one line that removes the state rather than a fix for a sighting.
+ *
+ * A RENDER decision, not a budget one: the view-model still counts this card
+ * against `MAX_STRATEGY_CARDS` and the overflow note, so nothing here can move
+ * a page number. Dropping an empty box only ever makes the sheet shorter — the
+ * same rule `OverflowNote` and `ChapterHead`'s eyebrow already keep.
+ */
+function isEmptyCard(card: PlanStoryChapterView["strategies"][number]): boolean {
+  return card.name.length === 0 && card.what.length === 0 && card.detail.length === 0;
+}
+
 export function PlanStoryChapterPdf({
   chapter,
   accent,
@@ -250,11 +277,19 @@ export function PlanStoryChapterPdf({
 
       <Paragraphs paragraphs={chapter.paragraphs} />
 
-      {cards.map((s, i) => (
+      {cards.filter((s) => !isEmptyCard(s)).map((s, i) => (
         <View key={i} style={styles.card}>
           <Text style={styles.cardName}>{s.name}</Text>
-          <Text style={styles.cardLabel}>WHAT WE&apos;D DO</Text>
-          <Text style={styles.cardText}>{s.what}</Text>
+          {/* Conditional for the same reason "what it does" below is: the
+              view-model refuses a `what` whose figures the fact pack does not
+              hold, and a heading over an empty line reads as a rendering
+              failure rather than as a withheld figure. */}
+          {s.what.length > 0 && (
+            <>
+              <Text style={styles.cardLabel}>WHAT WE&apos;D DO</Text>
+              <Text style={styles.cardText}>{s.what}</Text>
+            </>
+          )}
           {s.detail.length > 0 && (
             <>
               <Text style={[styles.cardLabel, { marginTop: 6 }]}>WHAT IT DOES</Text>

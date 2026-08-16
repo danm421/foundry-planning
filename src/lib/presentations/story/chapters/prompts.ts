@@ -428,11 +428,20 @@ export function buildChapterPrompt(
 
   // `rowLine` grounds the two fields that carry the describers' formatted
   // figures: `before`/`after` and `detail[0]`. It does NOT ground `row.what` or
-  // `strategy.name` — those are advisor- and household-entered text ("2019
-  // Roth", a toggle-group label), the ruling requires the labels to reach the
-  // model, and the system prompt's "only use the figures listed" line is what
-  // covers anything they carry. So the block's own instruction is about the
+  // `strategy.name`: the ruling requires the labels to reach the model, and the
+  // system prompt's "only use the figures listed" line plus Gate 1 are what
+  // cover anything they carry. So the block's own instruction is about the
   // labels, which are the one thing here that must not be quoted.
+  //
+  // ⚠️ NOT because those two fields hold only what a person typed. That was the
+  // stated reason here and it is FALSE: a savings rule has no name of its own,
+  // so `lib/scenario/describe-change-target.ts` BUILDS one out of the account
+  // plus a formatted basis ("401(k) · $15k/yr"), and `describe/kinds/savings.ts`
+  // writes it into `what` — which `build-facts.ts#nameFromRow` then reads back
+  // as `strategy.name` for any change with no toggle group, so BOTH fields
+  // carry it. Harmless on THIS path, where a gate reads whatever the model does
+  // with it — and not harmless where nothing does, which is why
+  // `pages/plan-story/view-model.ts` grounds `what` at the card.
   const spellings = factDisplaySet(ctx.facts);
   const strategyBlock =
     chapterId === "whatWeRecommend" && ctx.strategies.length > 0

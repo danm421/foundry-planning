@@ -316,6 +316,70 @@ describe("PlanStoryChapterPdf — the twoUp layout", () => {
   });
 });
 
+describe("PlanStoryChapterPdf — a strategy card whose WHAT was refused", () => {
+  const CARDS = chapter({
+    chapterId: "whatWeRecommend",
+    title: "What we're recommending, and why",
+    layout: "strategyCards",
+    paragraphs: ["Two changes."],
+  });
+
+  function printed(strategy: PlanStoryChapterView["strategies"][number]): string[] {
+    return textOf(
+      PlanStoryChapterPdf({
+        chapter: { ...CARDS, strategies: [strategy] },
+        accent: FRAME.accent,
+        eyebrow: "Your Plan · Proposed",
+      }),
+    );
+  }
+
+  it("prints the heading over the words it introduces", () => {
+    const out = printed({ name: "Save more", what: "Teresa's 401(k)", detail: "" });
+    expect(out).toContain("WHAT WE'D DO");
+    expect(out).toContain("Teresa's 401(k)");
+  });
+
+  /**
+   * `buildPlanStoryData` hands back `what: ""` when every row's `what` carried a
+   * figure the fact pack does not hold — a savings rule's derived name, in the
+   * changes table's own rounding. A heading printed over the resulting blank
+   * reads to a client as a rendering failure rather than as a withheld figure,
+   * so the heading goes with it. The same rule "what it does" already keeps.
+   */
+  it("prints no heading when there is nothing left to introduce", () => {
+    const out = printed({ name: "Save more", what: "", detail: "" });
+    expect(out).not.toContain("WHAT WE'D DO");
+    // …and the card is still a card: its name survives the refusal.
+    expect(out).toContain("Save more");
+  });
+
+  /**
+   * All three fields refused at once. A possible state of the view rather than a
+   * sighting — `chapter-pdf.tsx#isEmptyCard` records which shapes were traced
+   * and why none of them reaches it — but `what` used to be unconditional, so
+   * until this change a card always printed at least one line.
+   */
+  it("draws no card at all when all three of its fields were refused", () => {
+    const out = printed({ name: "", what: "", detail: "" });
+    // ⚠️ The EMPTY STRING is the whole assertion, and it is what tells "no box"
+    // from "a box with a blank line in it": a card that is drawn always emits
+    // its name `<Text>`, so `textOf` collects a "" for it. Both headings are
+    // already conditional, so asserting on those would pass either way.
+    expect(out).not.toContain("");
+    // The chapter itself still prints — only the empty box is gone.
+    expect(out).toContain("Two changes.");
+  });
+
+  // The control for the assertion above: a card carrying only a name IS drawn,
+  // and its two refused fields contribute no empty string of their own.
+  it("still draws a card that has a name and nothing else", () => {
+    const out = printed({ name: "Save more", what: "", detail: "" });
+    expect(out).toContain("Save more");
+    expect(out).not.toContain("");
+  });
+});
+
 describe("PlanStoryChapterPdf — the checklist layout", () => {
   const STEPS = [
     { text: "Open the Roth account and fund it for this year.", owner: "Cooper", when: "Before 15 April" },
