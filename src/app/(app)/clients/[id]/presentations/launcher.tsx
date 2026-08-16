@@ -42,6 +42,7 @@ import { useClientAccess } from "@/components/client-access-provider";
 import type { InvestmentOptionCatalog } from "@/lib/presentations/investment-option-catalog";
 import type { EntityPickerOption } from "@/lib/presentations/entity-picker-options";
 import type { ProposalOption } from "@/lib/presentations/investment-proposal-bundle";
+import type { UnreviewedStoryPage } from "@/lib/presentations/story/export-gate";
 
 interface Props {
   clientId: string;
@@ -83,6 +84,25 @@ function buildAutoFilename(
     `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}` +
     `-${pad(now.getHours())}${pad(now.getMinutes())}`;
   return `${last}_${tpl}_${stamp}.pdf`;
+}
+
+/**
+ * The soft export gate's warning (Task 16), appended to the run-progress
+ * notice — the ONE production surface that both knows the count and fires
+ * before the file exists. `runs/route.ts`'s 202 response is where
+ * `storyReview` lives; the preview dialog can never carry it, since it
+ * fetches `export-pdf`, which streams a PDF with no room for a JSON field
+ * (see `pdf-preview-dialog.tsx`'s own `PreviewRequest.storyReview` doc
+ * comment for that half of the story).
+ *
+ * Same copy as the dialog's warning line, so the same fact reads the same
+ * way wherever an advisor meets it.
+ */
+function unreviewedStoryWarning(storyReview: UnreviewedStoryPage[] | undefined): string {
+  return (storyReview ?? [])
+    .filter((p) => p.unreviewed > 0)
+    .map((p) => `${p.unreviewed} of ${p.total} Plan Story chapters haven't been reviewed yet.`)
+    .join(" ");
 }
 
 function makeInitialState(
@@ -402,7 +422,17 @@ export function PresentationsLauncher(props: Props) {
         const j = await res.json().catch(() => ({}));
         throw new Error(j.error ?? `HTTP ${res.status}`);
       }
-      setNotice("Generating your presentation — it'll appear in Recent runs.");
+      // `storyReview` rides this same response on the async/202 path (see
+      // `runs/route.ts`) — read here, before the file exists, which is the
+      // soft gate's whole point: the export runs either way, and this is
+      // just what makes the audit row the route also files an honest one.
+      const body = (await res.json().catch(() => ({}))) as { storyReview?: UnreviewedStoryPage[] };
+      const warning = unreviewedStoryWarning(body.storyReview);
+      setNotice(
+        warning
+          ? `Generating your presentation — it'll appear in Recent runs. ${warning}`
+          : "Generating your presentation — it'll appear in Recent runs.",
+      );
       setRunsRefreshKey((k) => k + 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
