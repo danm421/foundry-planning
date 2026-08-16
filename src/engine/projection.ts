@@ -294,26 +294,38 @@ function buildDefaultWithdrawalStrategy(
   return strategy;
 }
 
-/** Insert just-paid-out life-insurance proceeds accounts into the effective
- *  withdrawal strategy. The strategy is snapshotted at projection start from
- *  `data.accounts`, where these accounts were still `life_insurance` (no
- *  withdrawal priority via `categoryWithdrawalPriority`). Without this they are
- *  never drawn, so retirement assets liquidate ahead of available proceeds.
- *  Proceeds land in the taxable tier: strictly after every existing cash /
- *  taxable account, strictly before retirement. Mutates `strategy` in place;
- *  skips ids already present (idempotent across re-entry).
+/** Insert accounts that only became liquid INSIDE the year loop into the
+ *  effective withdrawal strategy. The strategy is snapshotted at projection
+ *  start from `data.accounts`, so anything the loop mints (or re-categorizes)
+ *  afterwards is invisible to the drawdown planner and is never drawn — the
+ *  plan liquidates retirement assets, or overdraws checking outright, while
+ *  the new account sits untouched.
  *
- *  Correctness depends on an invariant enforced in `life-insurance-payout.ts`:
- *  the payout transform produces a `category: "taxable"` account whose id is
- *  unchanged from the original policy. The taxable-tier placement assumes that. */
-export function appendProceedsToWithdrawalStrategy(
+ *  Two callers today:
+ *    - life-insurance death benefits, which enter as `life_insurance` (no
+ *      withdrawal priority) and are re-categorized to `taxable` on payout;
+ *    - equity-compensation destination accounts, minted on the first vest /
+ *      exercise (audit F10).
+ *  Purchase-created accounts (`applyAssetPurchases`) have the same blind spot
+ *  and can adopt this helper when their tier placement is settled.
+ *
+ *  Placement: the taxable tier — strictly after every existing cash / taxable
+ *  account, strictly before retirement — so a real brokerage is still spent
+ *  first. Mutates `strategy` in place; skips ids already present (idempotent
+ *  across re-entry).
+ *
+ *  Correctness depends on the caller handing over a `taxable`-category account.
+ *  For life insurance that invariant is enforced in `life-insurance-payout.ts`
+ *  (the payout transform keeps the policy's id and flips its category); for
+ *  equity the destination account is minted as `taxable` a few lines below. */
+export function appendLoopMintedAccountsToWithdrawalStrategy(
   strategy: WithdrawalPriority[],
-  proceedsAccountIds: string[],
+  newAccountIds: string[],
   accounts: ReadonlyArray<Pick<Account, "id" | "category">>,
-  deathYear: number,
+  availableFromYear: number,
   planEndYear: number,
 ): void {
-  if (proceedsAccountIds.length === 0) return;
+  if (newAccountIds.length === 0) return;
   const accountById = new Map(accounts.map((a) => [a.id, a]));
   // Highest priorityOrder among cash/taxable entries already in the strategy;
   // baseline 1 (the cash tier) when none exist.
@@ -326,13 +338,13 @@ export function appendProceedsToWithdrawalStrategy(
   }
   // +0.5 → sorts strictly after existing liquid accounts, strictly before
   // retirement (priorityOrder 3 in the default strategy).
-  const proceedsPriority = maxLiquidPriority + 0.5;
-  for (const accountId of proceedsAccountIds) {
+  const newPriority = maxLiquidPriority + 0.5;
+  for (const accountId of newAccountIds) {
     if (strategy.some((s) => s.accountId === accountId)) continue;
     strategy.push({
       accountId,
-      priorityOrder: proceedsPriority,
-      startYear: deathYear,
+      priorityOrder: newPriority,
+      startYear: availableFromYear,
       endYear: planEndYear,
     });
   }
@@ -582,7 +594,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // are skipped. The household checking is always the target, never a source.
   // Copy the configured strategy (or build the default) into a fresh array we
   // own. Death events append life-insurance proceeds accounts to it mid-run
-  // (see appendProceedsToWithdrawalStrategy); we must not mutate the caller's
+  // (see appendLoopMintedAccountsToWithdrawalStrategy); we must not mutate the caller's
   // `data.withdrawalStrategy`.
   const effectiveWithdrawalStrategy: WithdrawalPriority[] =
     data.withdrawalStrategy.length > 0
@@ -1393,9 +1405,22 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if (!hasActivity) continue;
 
         // Resolve / lazily create the destination taxable account.
-        let destId =
-          plan.destinationAccountId ?? equityDestByPlan.get(plan.accountId) ?? null;
-        if (!destId && plan.autoCreateDestination) {
+        //
+        // A CASH account is never eligible to hold shares in kind (audit F31):
+        // booked there, employer stock stops appreciating, becomes fully
+        // spendable, and a later sell drains a balance no shares back it. So a
+        // plan that names no destination — or names a cash account — gets the
+        // synthetic taxable holding account instead of the old fall-through to
+        // household checking. The CASH legs (sale proceeds, strike outflow)
+        // still route to checking through creditCash below; only the in-kind
+        // leg is redirected.
+        const namedDest = plan.destinationAccountId;
+        const eligibleNamedDest =
+          namedDest != null && accountById.get(namedDest)?.category !== "cash"
+            ? namedDest
+            : null;
+        let destId = eligibleNamedDest ?? equityDestByPlan.get(plan.accountId) ?? null;
+        if (!destId) {
           destId = `equity-dest-${plan.accountId}`;
           equityDestByPlan.set(plan.accountId, destId);
           // Mirror applyAssetPurchases' synthetic-account creation. The
@@ -1438,8 +1463,19 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             entries: [],
             basisBoY: 0,
           };
+          // The strategy was snapshotted before the year loop, so this account
+          // does not exist in it. Without the append the plan can SEE the
+          // vested shares but cannot SPEND them: a deficit year overdraws
+          // checking with a fully liquid, publicly traded position sitting
+          // untouched (audit F10). Same fixer life-insurance proceeds use.
+          appendLoopMintedAccountsToWithdrawalStrategy(
+            effectiveWithdrawalStrategy,
+            [destId],
+            workingAccounts,
+            year,
+            planSettings.planEndYear,
+          );
         }
-        if (!destId) destId = checkingId; // fallback: no destination → land value in checking
 
         const applied = applyEquityYear(result, destId, accountBalances, basisMap);
         const planAcqValue = result.acquisitions.reduce((s, a) => s + a.value, 0);
@@ -1463,12 +1499,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // offset the checking inflow so net worth isn't double-counted. The
         // value movements already landed on accountBalances/basisMap inside
         // applyEquityYear; here we keep the ledger's running endingValue and
-        // contributions/distributions in step with them.
-        // destId can fall back to checkingId when autoCreateDestination is false;
-        // don't post share-movement entries onto the household checking ledger
-        // (its flows net via checkingExternalDelta, and the cash still lands via
-        // the creditCash call below).
-        if (destId && destId !== checkingId && accountLedgers[destId]) {
+        // contributions/distributions in step with them. The sell leg posts
+        // `sellProceedsApplied`, not the gross — those are the same number
+        // unless the destination held less than the module sold, and posting
+        // the gross there would drift the ledger off the balance.
+        // destId is never the household checking id (cash accounts are refused
+        // above), so no share-movement entry can land on the checking ledger —
+        // its flows net via checkingExternalDelta, and the cash still lands via
+        // the creditCash call below.
+        if (accountLedgers[destId]) {
           if (planAcqValue > 0) {
             accountLedgers[destId].contributions += planAcqValue;
             accountLedgers[destId].endingValue += planAcqValue;
@@ -1479,13 +1518,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
               sourceId: plan.accountId,
             });
           }
-          if (result.sellProceeds > 0) {
-            accountLedgers[destId].distributions += result.sellProceeds;
-            accountLedgers[destId].endingValue -= result.sellProceeds;
+          if (applied.sellProceedsApplied > 0) {
+            accountLedgers[destId].distributions += applied.sellProceedsApplied;
+            accountLedgers[destId].endingValue -= applied.sellProceedsApplied;
             accountLedgers[destId].entries.push({
               category: "withdrawal",
               label: `${plan.ticker ?? "Equity"} shares sold`,
-              amount: -result.sellProceeds,
+              amount: -applied.sellProceedsApplied,
               sourceId: plan.accountId,
             });
           }
@@ -1501,13 +1540,21 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           sourceId: plan.accountId,
         });
 
-        // Surface the proceeds as Other Inflows: income.bySource (a scalar map)
-        // gets a per-plan key for the drill-down, and householdEquityCashIn is
-        // folded into totalIncome below. Deliberately NOT added to
-        // income.total / income.other — those stay as computeIncome reported
-        // them, so the cash is counted exactly once (creditCash + the
-        // totalIncome fold). Mirrors the notes-receivable pattern.
-        if (applied.netCashToChecking > 0) {
+        // Surface the net equity cash as Other Inflows: income.bySource (a
+        // scalar map) gets a per-plan key for the drill-down, and
+        // householdEquityCashIn is folded into totalIncome below. Deliberately
+        // NOT added to income.total / income.other — those stay as
+        // computeIncome reported them, so the cash is counted exactly once
+        // (creditCash + the totalIncome fold). Mirrors the notes-receivable
+        // pattern.
+        //
+        // SIGNED, not positive-only (audit F30/F38). An exercise-and-hold pays
+        // strike out of pocket and receives nothing, so netCashToChecking is
+        // negative. creditCash already debits the balance either way; gating
+        // the fold on `> 0` left Net Cash Flow overstating the year by exactly
+        // the strike outflow and made the ledger's own "reconciles with the
+        // cash flow" footnote false.
+        if (applied.netCashToChecking !== 0) {
           householdEquityCashIn += applied.netCashToChecking;
           const key = `equity-proceeds:${plan.accountId}`;
           income.bySource[key] = (income.bySource[key] ?? 0) + applied.netCashToChecking;
@@ -7615,7 +7662,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // liquidate ahead of available proceeds. Insert each into the taxable
       // tier. (Final-death payouts need no entry: the projection terminates
       // that year, so there are no further withdrawals to satisfy.)
-      appendProceedsToWithdrawalStrategy(
+      appendLoopMintedAccountsToWithdrawalStrategy(
         effectiveWithdrawalStrategy,
         deathResult.lifeInsurancePayouts.map((p) => p.policyId),
         workingAccounts,
