@@ -23,6 +23,7 @@ import {
 } from "@/lib/presentations/ensure-ai-summaries";
 import { savePlanToVault } from "@/lib/crm/vault-plans";
 import { recordAudit } from "@/lib/audit";
+import { unreviewedStoryChapters } from "@/lib/presentations/story/export-gate";
 import {
   ClientNotFoundError,
   ProjectionInputError,
@@ -84,6 +85,41 @@ export async function POST(
       // non-fatal — leave email null
     }
 
+    // The soft, audited export gate (spec decision: warn, never block — see
+    // `export-gate.ts`). The COUNT is computed here, ahead of both branches,
+    // because the async branch's response below has to carry it — but the
+    // audit WRITE is deferred to `auditUnreviewedStory`, called from each
+    // branch's own success point (same place `presentations.export_pdf` fires
+    // below), not from here. Two reasons: an audited row means "this
+    // happened", the rule `presentations.export_pdf` already keeps by firing
+    // only after a render lands rather than before one is attempted — a
+    // request that fails after this point (a bad scenario ref, a render
+    // error) must not leave a row claiming a deck went out that never did.
+    // And `recordAudit` is a real DB write, not fire-and-forget, so firing it
+    // here would add it to the async branch's 202 response time — the one
+    // thing `after()` below exists to avoid.
+    const storyReview = await unreviewedStoryChapters(id, parsed.data.pages);
+    const unreviewedPages = storyReview.filter((page) => page.unreviewed > 0);
+    const auditUnreviewedStory = () =>
+      Promise.all(
+        unreviewedPages.map((page) =>
+          recordAudit({
+            action: "plan_story.exported_unreviewed",
+            resourceType: "client",
+            resourceId: id,
+            clientId: id,
+            firmId,
+            metadata: crossFirmAuditMeta({ access }, callerOrg, {
+              pageId: page.pageId,
+              scenarioId: page.scenarioId,
+              documentRole: page.documentRole,
+              unreviewed: page.unreviewed,
+              total: page.total,
+            }),
+          }),
+        ),
+      );
+
     // Synchronous download mode (per-page "Download" button): render now and
     // stream the PDF straight back as an attachment, AND persist a copy to the
     // vault + Recent runs — one render shared by both. The deck-level
@@ -134,6 +170,7 @@ export async function POST(
           via: "sync-download",
         }),
       });
+      if (unreviewedPages.length > 0) await auditUnreviewedStory();
       const safeFilename = filename.replace(/["\\\r\n;]/g, "");
       return new NextResponse(buffer as unknown as BodyInit, {
         status: 200,
@@ -192,6 +229,7 @@ export async function POST(
           firmId,
           metadata: crossFirmAuditMeta({ access }, callerOrg, { pages: parsed.data.pages.map((p) => p.pageId), via: "background-run" }),
         });
+        if (unreviewedPages.length > 0) await auditUnreviewedStory();
         await markDone(runId, doc?.id ?? null);
       } catch (err) {
         const msg = err instanceof Error ? err.message : "render failed";
@@ -200,7 +238,12 @@ export async function POST(
       }
     });
 
-    return NextResponse.json({ runId }, { status: 202 });
+    // `storyReview` rides only on this path: the download branch's response IS
+    // the PDF, already handed to the advisor by the time anything could act on
+    // a warning derived from it. Here the render is still ahead of us (in
+    // `after()`, above), so the launcher can show the count before the file
+    // exists.
+    return NextResponse.json({ runId, storyReview }, { status: 202 });
   } catch (err) {
     // Render-path errors only reach here via the synchronous download branch —
     // the async after() job catches its own and marks the run failed instead.
