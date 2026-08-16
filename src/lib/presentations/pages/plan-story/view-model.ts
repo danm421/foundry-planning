@@ -360,6 +360,35 @@ function restatesCard(paragraph: string, strategy: PlanStoryChapterView["strateg
 }
 
 /**
+ * A card with nothing in any of its three fields is not a card, and a bordered
+ * box with nothing inside it reads as a rendering failure.
+ *
+ * Each field is refused independently and each refusal is reachable on its own:
+ * `usableName` blanks a name carrying the changes table's machine text or
+ * running past 48 characters, and `quotableDetail` refuses a `what` or a
+ * `detail` whose figures the fact pack does not hold.
+ *
+ * ⚠️ Honest limit: the three firing at once is a possible state, not an observed
+ * one. Every shape traced keeps one field — a savings-rule EDIT keeps
+ * `"on <account>"` as its detail, and a savings-rule ADD has its own figures
+ * admitted to the pack from `detail[0]`, so its `what` grounds. It is one line
+ * that removes the state, not a fix for a sighting.
+ *
+ * ⭐ Lives HERE and not in `chapter-pdf.tsx` for the reason `restatesCard` above
+ * states: the sheet budget is spent on what actually prints. Filtering in the
+ * renderer cost three real things, all of them measured — a card the renderer
+ * always drops still took a `MAX_STRATEGY_CARDS` slot and displaced a real one;
+ * `proseBudgetWords` trimmed prose to make room for a box never drawn; and the
+ * dropped card fell out of `overflowNoteFor`'s arithmetic, so a change left the
+ * client's report announced by nothing. Filtered before the slice, all three go
+ * away and the note counts it — which is right: the change exists and the
+ * advisor will cover it, which is exactly what that sentence says.
+ */
+function isEmptyCard(card: PlanStoryChapterView["strategies"][number]): boolean {
+  return card.name.length === 0 && card.what.length === 0 && card.detail.length === 0;
+}
+
+/**
  * Cut one paragraph down to `budget` words at a SENTENCE boundary.
  *
  * Reached only when the chapter's very first paragraph is already over budget —
@@ -468,6 +497,13 @@ export function buildPlanStoryData(
             // does not silence the ones beside it. Every row refused leaves ""
             // — the same answer `detail` gives, and `chapter-pdf.tsx` drops the
             // heading with it rather than printing a label over nothing.
+            //
+            // ⚠️ It does NOT rescue the card's NAME, which `usableName` blanks
+            // independently and for a different reason. The modal outcome for an
+            // ungrouped savings-rule EDIT is therefore a card with a blank name
+            // line printing one line — "WHAT IT DOES / on 401(k)" — not a card
+            // that merely lost its "what we'd do". The nameless card predates
+            // this refusal; see `future-work/reports.md`.
             what: s.rows
               .map((r) => quotableDetail(r.what, facts))
               .filter((w): w is string => w !== null)
@@ -481,7 +517,10 @@ export function buildPlanStoryData(
             detail: quotableDetail(s.rows[0]?.detail[0], facts) ?? "",
           }))
         : [];
-    const strategies = allStrategies.slice(0, MAX_STRATEGY_CARDS);
+    // Empty cards out BEFORE the slice, so one never displaces a card that would
+    // have printed. `allStrategies` keeps them, which is what leaves them inside
+    // the overflow note's arithmetic below.
+    const strategies = allStrategies.filter((s) => !isEmptyCard(s)).slice(0, MAX_STRATEGY_CARDS);
     const figures = def.layout === "twoUp" ? figuresFor(facts) : [];
     const allSteps = def.layout === "checklist" ? (input.story.nextSteps ?? []) : [];
     const steps = allSteps.slice(0, MAX_STEPS);
@@ -516,6 +555,10 @@ export function buildPlanStoryData(
       // lists lead because they are the specific ones: they can say how many.
       // Only one can ever be non-zero, since each is scoped to its own layout.
       overflowNote:
+        // `allStrategies`, NOT the filtered list — an empty card is a change the
+        // report cannot describe, and this sentence is what says the advisor
+        // will cover it. Counting the filtered list instead would drop it out of
+        // the report entirely, announced by nothing.
         overflowNoteFor(allStrategies.length - strategies.length, "change") ||
         overflowNoteFor(allSteps.length - steps.length, "step") ||
         overflowNoteFor(allTerms.length - glossary.length, "term") ||

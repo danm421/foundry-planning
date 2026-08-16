@@ -355,28 +355,26 @@ describe("PlanStoryChapterPdf — a strategy card whose WHAT was refused", () =>
   });
 
   /**
-   * All three fields refused at once. A possible state of the view rather than a
-   * sighting — `chapter-pdf.tsx#isEmptyCard` records which shapes were traced
-   * and why none of them reaches it — but `what` used to be unconditional, so
-   * until this change a card always printed at least one line.
+   * ⚠️ The MODAL outcome of the `what` refusal, and it is not "a card that lost
+   * one line". For an ungrouped savings-rule EDIT the strategy's name is the
+   * derived target name too (`build-facts.ts#nameFromRow`), so `usableName`
+   * blanks it for its `·` while `quotableDetail` refuses the identical string as
+   * `what` — and the edit's own `detail[0]` is `"on <account>"`, which carries no
+   * figure and grounds. What a client actually gets is a bordered box with a
+   * blank name line and one line under it.
+   *
+   * The nameless half predates this plan (`usableName` and the unconditional
+   * name `<Text>` are both at the merge-base); this pins the whole shape so the
+   * cost is written down where someone changing either half will see it.
    */
-  it("draws no card at all when all three of its fields were refused", () => {
-    const out = printed({ name: "", what: "", detail: "" });
-    // ⚠️ The EMPTY STRING is the whole assertion, and it is what tells "no box"
-    // from "a box with a blank line in it": a card that is drawn always emits
-    // its name `<Text>`, so `textOf` collects a "" for it. Both headings are
-    // already conditional, so asserting on those would pass either way.
-    expect(out).not.toContain("");
-    // The chapter itself still prints — only the empty box is gone.
-    expect(out).toContain("Two changes.");
-  });
-
-  // The control for the assertion above: a card carrying only a name IS drawn,
-  // and its two refused fields contribute no empty string of their own.
-  it("still draws a card that has a name and nothing else", () => {
-    const out = printed({ name: "Save more", what: "", detail: "" });
-    expect(out).toContain("Save more");
-    expect(out).not.toContain("");
+  it("draws a blank name line and only WHAT IT DOES for the composite refusal", () => {
+    const out = printed({ name: "", what: "", detail: "on 401(k)" });
+    expect(out).not.toContain("WHAT WE'D DO");
+    expect(out).toContain("WHAT IT DOES");
+    expect(out).toContain("on 401(k)");
+    // The blank name line is DRAWN — the card is not empty, so nothing filters
+    // it, and `textOf` collects the "" its name `<Text>` emits.
+    expect(out).toContain("");
   });
 });
 
