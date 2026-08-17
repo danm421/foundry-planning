@@ -1,7 +1,7 @@
 import type { StockOptionPlan, EquityGrant, GrantType } from "./types";
 import { projectFmv, resolveStrikePrice } from "./price-model";
 import { isQualifyingIsoDisposition } from "./holding-period";
-import { buildGrantTimeline } from "./timeline";
+import { buildGrantTimeline, type EquityAction } from "./timeline";
 import { resolveStrategy } from "./strategy";
 import { endOfYear, yearOf } from "./dates";
 
@@ -134,7 +134,13 @@ function buildRow(plan: StockOptionPlan, grant: EquityGrant, ctx: RowCtx): Vesti
 
   const exercisedTotal = grant.tranches.reduce((s, t) => s + t.sharesExercised, 0);
   const soldTotal = grant.tranches.reduce((s, t) => s + t.sharesSold, 0);
-  const strikes = isOption ? plannedStrikes(plan, grant, planStartYear) : [];
+  // One timeline, two questions. Both the Strike column and the estimated-
+  // acquisition marker have to agree with what the tax ledger actually does,
+  // and the only way to guarantee that is to ask the same function it runs.
+  const fmvAt = (year: number) => projectFmv(plan.pricePerShare, plan.growthRate, year, planStartYear);
+  const acct = resolveStrategy(plan.strategy, null, null); // exactly what createEquityState does
+  const actions = buildGrantTimeline(grant, acct, planStartYear, fmvAt);
+  const strikes = isOption ? plannedStrikes(grant, actions, fmvAt, planStartYear) : [];
 
   return {
     grantId: grant.id,
@@ -149,7 +155,7 @@ function buildRow(plan: StockOptionPlan, grant: EquityGrant, ctx: RowCtx): Vesti
     exercisable: isOption ? Math.max(0, vested - exercisedTotal) : null,
     exercised: isOption ? exercisedTotal : null,
     isoSplit: isoSplitFor(grant, asOfYear),
-    hasEstimatedAcquisition: hasEstimatedAcquisition(grant, planStartYear),
+    hasEstimatedAcquisition: hasEstimatedAcquisition(actions),
     sold: soldTotal,
     futureByYear,
     futurePlus,
@@ -175,11 +181,14 @@ function buildRow(plan: StockOptionPlan, grant: EquityGrant, ctx: RowCtx): Vesti
  *  A grant the plan never exercises (out of the money, lapsed, or vesting past
  *  expiry) has no exercise year at all. There is no ledger row to contradict,
  *  so it falls back to the plan-start resolution rather than showing nothing. */
-function plannedStrikes(plan: StockOptionPlan, grant: EquityGrant, planStartYear: number): number[] {
-  const fmvAt = (year: number) => projectFmv(plan.pricePerShare, plan.growthRate, year, planStartYear);
-  const acct = resolveStrategy(plan.strategy, null, null); // exactly what createEquityState does
+function plannedStrikes(
+  grant: EquityGrant,
+  actions: EquityAction[],
+  fmvAt: (year: number) => number,
+  planStartYear: number,
+): number[] {
   const found = new Set<number>();
-  for (const a of buildGrantTimeline(grant, acct, planStartYear, fmvAt)) {
+  for (const a of actions) {
     if (a.kind === "exercise") found.add(resolveStrikePrice(grant, fmvAt(a.year)));
   }
   if (found.size === 0) return [resolveStrikePrice(grant, fmvAt(planStartYear))];
@@ -194,32 +203,17 @@ function plannedStrikes(plan: StockOptionPlan, grant: EquityGrant, planStartYear
  *  nothing about it is what misleads, because a guess printed plainly reads
  *  exactly like a recorded fact.
  *
- *  The condition is `seed_held`'s, verbatim, because `seed_held` is the ONLY
- *  action the fallback touches. A row vesting in the future is acquired on its
- *  vest date by `acquire_rsu` and guesses nothing — marking it would put the
- *  warning on nearly every RSU grant in the book and teach advisors to ignore
- *  it. Audit F1/F2. */
-function hasEstimatedAcquisition(grant: EquityGrant, planStartYear: number): boolean {
-  const missing = (t: { acquiredOn: string | null; priceAtAcquisition: number | null }) =>
-    t.acquiredOn == null || t.priceAtAcquisition == null;
-
-  // 83(b) acquires the WHOLE grant at the grant date, and the timeline seeds it
-  // from the first row (or from nothing at all, when the grant has no rows).
-  if (grant.grantType === "rsu" && grant.has83bElection) {
-    if (yearOf(grant.grantDate) >= planStartYear) return false;
-    const sold = grant.tranches.reduce((s, t) => s + t.sharesSold, 0);
-    if (grant.sharesGranted - sold <= 0) return false;
-    const t0 = grant.tranches[0];
-    return t0 == null || missing(t0);
-  }
-
-  return grant.tranches.some((t) => {
-    const seeded =
-      grant.grantType === "rsu"
-        ? yearOf(t.vestDate) < planStartYear && t.shares - t.sharesSold > 0
-        : t.sharesExercised - t.sharesSold > 0;
-    return seeded && missing(t);
-  });
+ *  We ask the engine rather than restating its rule. `seed_held` is the ONLY
+ *  action the fallback touches, and the timeline already publishes the answer on
+ *  the action: `priceAtAcquisition` is set to `acquiredOn ? priceAtAcquisition
+ *  : null`, so a null there IS "the advisor left this blank". Re-deriving the
+ *  three seeding conditions here instead — pre-plan RSU rows, already-exercised
+ *  option rows, and the whole-grant 83(b) seed — is what let the Strike column
+ *  drift $17 from the ledger before F36. A row vesting in the future is acquired
+ *  on its vest date by `acquire_rsu`, emits no seed, and so is never marked.
+ *  Audit F1/F2. */
+function hasEstimatedAcquisition(actions: EquityAction[]): boolean {
+  return actions.some((a) => a.kind === "seed_held" && a.priceAtAcquisition == null);
 }
 
 /** ISO qualified/holding split for shares the client has ALREADY exercised.

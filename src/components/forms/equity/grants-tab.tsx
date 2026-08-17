@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import GrantCard, { type GrantDisplay } from "./grant-card";
-import VestingGrid, { type TrancheRow, newTrancheKey } from "./vesting-grid";
+import VestingGrid, { type TrancheRow, newTrancheKey, acquiredShares } from "./vesting-grid";
 
 interface GrantsTabProps {
   clientId: string;
@@ -162,7 +162,7 @@ function validateEditor(state: GrantEditorState): string | null {
     if (state.grantType !== "rsu" && exercised > s) {
       return `Tranche ${i + 1}: exercised shares cannot exceed the row's shares.`;
     }
-    const acquired = state.grantType === "rsu" ? s : exercised;
+    const acquired = acquiredShares(row, state.grantType === "rsu");
     if (sold > acquired) {
       return state.grantType === "rsu"
         ? `Tranche ${i + 1}: sold shares cannot exceed the row's shares.`

@@ -8,12 +8,12 @@ import {
   stockOptionPlannedEvents,
 } from "@/db/schema";
 import type { StockOptionPlan, EquityStrategy } from "@/engine/equity/types";
+import { yearOf } from "@/engine/equity/dates";
 
 const num = (v: string | number | null | undefined): number =>
   v == null ? 0 : typeof v === "number" ? v : parseFloat(v);
 const numN = (v: string | number | null | undefined): number | null =>
   v == null ? null : typeof v === "number" ? v : parseFloat(v);
-const yearOf = (isoDate: string): number => parseInt(isoDate.slice(0, 4), 10);
 
 // Use Pick to include only the columns assembleStockOptionPlans needs,
 // so the pure assembler doesn't require timestamp fields from $inferSelect.
