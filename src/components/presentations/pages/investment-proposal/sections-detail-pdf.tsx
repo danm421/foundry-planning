@@ -58,21 +58,29 @@ export function GrowthSection({ data, frame, accent }: SectionProps) {
 }
 
 export function StressSection({ data, frame, accent }: SectionProps) {
+  const rows = data.stress.available;
+  // Coverage suppression makes every window unavailable at once, so the
+  // all-empty sheet stopped being a rarity. Two things then misread: a subtitle
+  // promising a comparison the sheet does not contain, and a header row
+  // labelling five columns with nothing under them. Same rule as GrowthSection.
+  const suppressed = data.snapshot?.compute.realizedWindow.coverageSuppressed ?? false;
   return (
     <Frame frame={frame}>
       <SectionHead
         title="Stress test"
-        subtitle="How each portfolio behaved in past declines"
+        subtitle={rows.length > 0 ? "How each portfolio behaved in past declines" : "Not available"}
         accent={accent}
       />
-      <View style={S.row}>
-        <Text style={[S.headCell, { flex: 2 }]}>Window</Text>
-        <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Current</Text>
-        <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Proposed</Text>
-        <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Current $</Text>
-        <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Proposed $</Text>
-      </View>
-      {data.stress.available.map((w) => (
+      {rows.length > 0 && (
+        <View style={S.row}>
+          <Text style={[S.headCell, { flex: 2 }]}>Window</Text>
+          <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Current</Text>
+          <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Proposed</Text>
+          <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Current $</Text>
+          <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Proposed $</Text>
+        </View>
+      )}
+      {rows.map((w) => (
         <View key={w.key} style={S.row}>
           <Text style={S.rowName}>{`${w.label} (${w.start} – ${w.end})`}</Text>
           <Text style={S.rowNum}>{pct1(w.currentReturn)}</Text>
@@ -81,10 +89,19 @@ export function StressSection({ data, frame, accent }: SectionProps) {
           <Text style={S.rowNum}>{usd(w.proposedDollars)}</Text>
         </View>
       ))}
-      {/* A window that silently vanished reads as "no loss". Name it and say why. */}
-      {data.stress.unavailable.map((u) => (
-        <Text key={u.label} style={S.note}>{`${u.label}: ${u.reason}`}</Text>
-      ))}
+      {suppressed ? (
+        // One cause, not three. Repeating the identical sentence per window
+        // reads as three separate problems with the portfolio.
+        <Callout accent={accent}>
+          Too little of the portfolio has price history to show how it would have fared in past
+          declines.
+        </Callout>
+      ) : (
+        // A window that silently vanished reads as "no loss". Name it and say why.
+        data.stress.unavailable.map((u) => (
+          <Text key={u.label} style={S.note}>{`${u.label}: ${u.reason}`}</Text>
+        ))
+      )}
     </Frame>
   );
 }
