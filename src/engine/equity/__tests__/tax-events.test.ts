@@ -15,10 +15,10 @@ function plan(grant: EquityGrant, over: Partial<StockOptionPlan> = {}): StockOpt
 }
 
 const rsuFutureVest: EquityGrant = {
-  id: "g1", grantNumber: "RS-1", grantType: "rsu", grantYear: 2024, sharesGranted: 100,
+  id: "g1", grantNumber: "RS-1", grantType: "rsu", grantDate: "2024-01-15", sharesGranted: 100,
   has83bElection: false, fmvAtGrant: null, strikePrice: null, strikeDiscountPct: null,
   expirationYear: null, strategy: null,
-  tranches: [{ id: "t1", vestYear: 2027, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null }],
+  tranches: [{ id: "t1", vestDate: "2027-01-15", acquiredOn: null, priceAtAcquisition: null, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null }],
   plannedEvents: [],
 };
 
@@ -44,7 +44,7 @@ describe("RSU vest", () => {
 describe("NQSO exercise", () => {
   it("books spread as ordinary income and pays the strike as cash outflow", () => {
     const g: EquityGrant = { ...rsuFutureVest, id: "g2", grantType: "nqso", strikePrice: 10,
-      tranches: [{ id: "t1", vestYear: 2027, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null }] };
+      tranches: [{ id: "t1", vestDate: "2027-01-15", acquiredOn: null, priceAtAcquisition: null, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null }] };
     const p = plan(g);
     const st = createEquityState([p], PSY);
     const r = computeEquityYear(p, st, 2027);
@@ -56,8 +56,8 @@ describe("NQSO exercise", () => {
 
 describe("ISO exercise + AMT", () => {
   it("routes the spread to isoSpread (not ordinary income) and sets regular basis = strike", () => {
-    const g: EquityGrant = { ...rsuFutureVest, id: "g3", grantType: "iso", strikePrice: 10, grantYear: 2024, expirationYear: 2034,
-      tranches: [{ id: "t1", vestYear: 2027, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null }] };
+    const g: EquityGrant = { ...rsuFutureVest, id: "g3", grantType: "iso", strikePrice: 10, grantDate: "2024-01-15", expirationYear: 2034,
+      tranches: [{ id: "t1", vestDate: "2027-01-15", acquiredOn: null, priceAtAcquisition: null, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null }] };
     const p = plan(g);
     const st = createEquityState([p], PSY);
     const r = computeEquityYear(p, st, 2027);
@@ -68,23 +68,28 @@ describe("ISO exercise + AMT", () => {
 });
 
 describe("ISO disqualifying disposition", () => {
-  // ⚠️ Which side of the line a sale falls on is decided by `holding-period.ts`,
-  // NOT by these tests. That module reads whole years because whole years are
-  // all the database stores, and it says so at length: `>= 3` from grant and
-  // `>= 2` from exercise are the CONSERVATIVE readings of "more than 2 years"
-  // and "more than 1 year", and they over-tax the ambiguous middle. Audit
-  // F26/F27/F46. The cases below therefore pin the FORMULA — lesser-of, the
-  // residual, the long/short split — and take the boundary as given; the
-  // boundary's own legal divergence is characterized in holding-period.test.ts,
-  // which is the file G8 has to update.
+  // Which side of each line a sale falls on is decided by `holding-period.ts` on
+  // REAL DATES (G8). Two consequences drive every fixture below, and both are
+  // worth stating because they changed the shape of these tests:
   //
-  // Exercise in 2027 @ strike 10, fmvAtExercise 100, 100 shares, then drive the sale price by
-  // overriding lot fields + plan.pricePerShare so the exact f-per-share is deterministic.
+  //   1. An in-plan exercise happens on the VEST DATE (15 Jan 2027 here), and a
+  //      modeled sale happens on 31 DECEMBER of its year. So a sale in the year
+  //      AFTER the exercise is ~23 months — comfortably long-term. The only way
+  //      to model a short-term disposition is a SAME-YEAR sale. The predecessor's
+  //      whole-year rule called a 2028 sale short-term; that was the F26/F27
+  //      defect, not a property worth preserving.
+  //   2. The two §422(a)(1) legs are now independent in practice: moving the
+  //      GRANT date alone flips qualifying ↔ disqualifying while the residual
+  //      stays long-term, which is what makes the lesser-of formula testable
+  //      without also collapsing the capital-gain character.
+  //
+  // Exercise in 2027 @ strike 10, fmvAtExercise 100, 100 shares; the sale price
+  // is driven by overriding lot fields + plan.pricePerShare so f is deterministic.
   function exerciseAndPrep(grantOver: Partial<EquityGrant>, sellYear: number) {
     const g: EquityGrant = { ...rsuFutureVest, id: "g4", grantType: "iso", strikePrice: 10, expirationYear: 2034,
-      grantYear: 2024,
+      grantDate: "2024-01-15",
       strategy: { sellTiming: "hold_then_sell_year", sellYear },
-      tranches: [{ id: "t1", vestYear: 2027, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null }],
+      tranches: [{ id: "t1", vestDate: "2027-01-15", acquiredOn: null, priceAtAcquisition: null, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null }],
       ...grantOver };
     const p = plan(g);
     const st = createEquityState([p], PSY);
@@ -92,23 +97,31 @@ describe("ISO disqualifying disposition", () => {
     // Lots are keyed by acquisition event now, not by vesting row: `#ex` is the
     // lot this in-plan exercise created.
     const lot = st.lots.get("g4:t1#ex")!;
-    lot.fmvAtExercise = 100; lot.strike = 10; lot.basisPerShare = 10; lot.exerciseYear = 2027;
+    lot.fmvAtExercise = 100; lot.strike = 10; lot.basisPerShare = 10; lot.amtBasisPerShare = 100;
+    lot.exerciseDate = "2027-01-15"; lot.acquisitionDate = "2027-01-15";
     return { p, st };
   }
 
   it("converts the bargain element to ordinary income when sold too early (price flat)", () => {
-    // sell 2028 (1yr from exercise → disqualifying), f = 100 (flat). OI = full spread 9,000.
-    const { p, st } = exerciseAndPrep({}, 2028);
+    // Sell 31 Dec 2027 — 11.5 months from exercise, so the exercise leg fails and
+    // the disposition is disqualifying. f = 100 (flat). OI = full spread 9,000.
+    const { p, st } = exerciseAndPrep({}, 2027);
     p.pricePerShare = 100; p.growthRate = 0;
-    const r = computeEquityYear(p, st, 2028);
+    const r = computeEquityYear(p, st, 2027);
     expect(r.ordinaryIncome).toBeCloseTo(9000, 2);
+    expect(r.ficaExemptOrdinaryIncome).toBeCloseTo(9000, 2); // §3121(a)(22)
   });
 
   it("caps OI at the actual sale gain and books NO cap gain/loss when price falls but stays above strike", () => {
-    // grant 2027 so the 2029 sale fails the grant leg (disqualifying) but clears the
-    // exercise leg → long-term residual. f = 60.
+    // Grant 2027 so the 2029 sale fails the GRANT leg (disqualifying) while
+    // clearing the exercise leg → long-term residual. f = 60.
     // OI = lesser(spread 90, sale gain 50) = 50/sh → 5,000. residual = 0.
-    const { p, st } = exerciseAndPrep({ grantYear: 2027 }, 2029);
+    //
+    // ⚠️ The two zero assertions below are zero BY CONSTRUCTION and cannot fail —
+    // that is audit F51. They stay because a zero residual is real behaviour
+    // worth pinning, but the two cases that follow are what actually exercise
+    // the long/short flag.
+    const { p, st } = exerciseAndPrep({ grantDate: "2028-06-01" }, 2029);
     p.pricePerShare = 60; p.growthRate = 0;
     const r = computeEquityYear(p, st, 2029);
     expect(r.ordinaryIncome).toBeCloseTo(5000, 2);
@@ -116,10 +129,63 @@ describe("ISO disqualifying disposition", () => {
     expect(r.stCapitalGains).toBeCloseTo(0, 2);
   });
 
+  it("routes a REAL residual to LONG-TERM when the sale clears one year from exercise (F51)", () => {
+    // Grant 1 Jun 2027 → the 31 Dec 2029 sale is 2.5y from grant... which CLEARS
+    // the two-year leg. Use 1 Jun 2028 instead so the grant leg genuinely fails
+    // (2028+2 = 2030 > 2029) while the exercise leg clears → disqualifying with a
+    // long-term residual. f = 180.
+    // OI = lesser(spread 90, gain 170) = 90/sh → 9,000.
+    // residual = (180 − 10 − 90) × 100 = 8,000 → LONG-TERM. Non-zero, so the flag
+    // is observable: this is the assertion F51 said did not exist.
+    const { p, st } = exerciseAndPrep({ grantDate: "2028-06-01" }, 2029);
+    p.pricePerShare = 180; p.growthRate = 0;
+    const r = computeEquityYear(p, st, 2029);
+    expect(r.ordinaryIncome).toBeCloseTo(9000, 2);
+    expect(r.capitalGains).toBeCloseTo(8000, 2);
+    expect(r.stCapitalGains).toBeCloseTo(0, 2);
+  });
+
+  it("routes the SAME residual to SHORT-TERM when the sale is inside a year of exercise (F51 mirror)", () => {
+    // Same $8,000 residual, opposite bucket. Together with the case above this
+    // is the mutation-proof the old assertion could never give: sending every
+    // residual to `capitalGains` breaks exactly one of the two.
+    //
+    // It has to be a PRE-PLAN lot, and that is a fact about the model rather
+    // than a convenience. An in-plan exercise and an in-plan sale in the same
+    // year read the same `fmv(year)`, so the bargain element and the sale gain
+    // are identical and the residual is ZERO by construction; a sale in any
+    // later year is >1y from a January exercise and therefore long-term. A
+    // short-term residual is only reachable when the acquisition carries a REAL
+    // stored date — exactly what G8 added.
+    //
+    // ISO granted 15 Jan 2024, exercised 1 Feb 2026 at $100 with a $10 strike,
+    // sold 31 Dec 2026 at $180. Grant leg clears (2026-12-31 > 2026-01-15);
+    // exercise leg fails (2026-12-31 < 2027-02-01) → disqualifying, and the
+    // 11-month hold is short-term.
+    // OI = lesser(bargain 90, gain 170) = 90/sh → 9,000.
+    // residual = (180 − 10 − 90) × 100 = 8,000 → SHORT-TERM.
+    const g: EquityGrant = {
+      ...rsuFutureVest, id: "g5", grantType: "iso", strikePrice: 10, expirationYear: 2034,
+      grantDate: "2024-01-15", sharesGranted: 100,
+      strategy: { sellTiming: "hold_then_sell_year", sellYear: 2026 },
+      tranches: [{
+        id: "t1", vestDate: "2025-01-15", shares: 100, sharesExercised: 100, sharesSold: 0,
+        acquiredOn: "2026-02-01", priceAtAcquisition: 100, strategy: null,
+      }],
+    };
+    const p = plan(g);
+    p.pricePerShare = 180; p.growthRate = 0;
+    const st = createEquityState([p], PSY);
+    const r = computeEquityYear(p, st, 2026);
+    expect(r.ordinaryIncome).toBeCloseTo(9000, 2);
+    expect(r.stCapitalGains).toBeCloseTo(8000, 2);
+    expect(r.capitalGains).toBeCloseTo(0, 2);
+  });
+
   it("books a capital loss and zero OI when sold below strike", () => {
-    // grant 2027, sell 2029 (disqualifying, long-term residual). f = 5 (below strike).
-    // OI = lesser(spread 90, max(0, 5−10)=0) = 0. residual = (5−10)×100 = −500 long-term loss.
-    const { p, st } = exerciseAndPrep({ grantYear: 2027 }, 2029);
+    // Grant 1 Jun 2028, sell 2029 (disqualifying, long-term residual). f = 5.
+    // OI = lesser(spread 90, max(0, 5−10)=0) = 0. residual = (5−10)×100 = −500.
+    const { p, st } = exerciseAndPrep({ grantDate: "2028-06-01" }, 2029);
     p.pricePerShare = 5; p.growthRate = 0;
     const r = computeEquityYear(p, st, 2029);
     expect(r.ordinaryIncome).toBeCloseTo(0, 2);
@@ -127,15 +193,16 @@ describe("ISO disqualifying disposition", () => {
     expect(r.stCapitalGains).toBeCloseTo(0, 2);
   });
 
-  it("routes the post-exercise gain to SHORT-TERM when the disqualifying sale is within a year of exercise", () => {
-    // sell 2028 (1yr from exercise → disqualifying AND short-term). f = 150.
-    // OI = full spread 90/sh → 9,000. residual = (150−10−90)×100 = 5,000 → SHORT-TERM.
-    const { p, st } = exerciseAndPrep({}, 2028);
-    p.pricePerShare = 150; p.growthRate = 0;
-    const r = computeEquityYear(p, st, 2028);
-    expect(r.ordinaryIncome).toBeCloseTo(9000, 2);
-    expect(r.stCapitalGains).toBeCloseTo(5000, 2); // fails the exercise leg → short-term
-    expect(r.capitalGains).toBeCloseTo(0, 2);
+  it("gives a genuinely QUALIFYING sale pure capital gain and no ordinary income", () => {
+    // Grant 15 Jan 2024, exercise 15 Jan 2027, sell 31 Dec 2029: >2y from grant
+    // and >1y from exercise, so §422(a)(1) is satisfied on both legs. The entire
+    // gain over the $10 strike basis is long-term — no wages at all.
+    const { p, st } = exerciseAndPrep({}, 2029);
+    p.pricePerShare = 180; p.growthRate = 0;
+    const r = computeEquityYear(p, st, 2029);
+    expect(r.ordinaryIncome).toBeCloseTo(0, 2);
+    expect(r.capitalGains).toBeCloseTo(17_000, 2); // (180 − 10) × 100
+    expect(r.stCapitalGains).toBeCloseTo(0, 2);
   });
 });
 
@@ -145,11 +212,11 @@ describe("FICA-exempt equity income (IRC §3121(a)(22))", () => {
   // fully taxable W-2 box 1 income that §3121(a)(22) excludes from FICA — so it
   // has to be reported as a subset of ordinaryIncome, not removed from it.
   const isoGrant: EquityGrant = {
-    id: "g-dq", grantNumber: "ISO-DQ", grantType: "iso", grantYear: 2026, sharesGranted: 10_000,
+    id: "g-dq", grantNumber: "ISO-DQ", grantType: "iso", grantDate: "2026-01-15", sharesGranted: 10_000,
     has83bElection: false, fmvAtGrant: null, strikePrice: 10, strikeDiscountPct: null,
     expirationYear: 2036, plannedEvents: [],
     strategy: { exerciseTiming: "at_vest", sellTiming: "immediately" },
-    tranches: [{ id: "t1", vestYear: 2027, shares: 10_000, sharesExercised: 0, sharesSold: 0, strategy: null }],
+    tranches: [{ id: "t1", vestDate: "2027-01-15", acquiredOn: null, priceAtAcquisition: null, shares: 10_000, sharesExercised: 0, sharesSold: 0, strategy: null }],
   };
 
   it("flags a disqualifying ISO disposition as exempt without taking it out of ordinary income", () => {
@@ -172,7 +239,7 @@ describe("FICA-exempt equity income (IRC §3121(a)(22))", () => {
 
   it("leaves an NQSO exercise spread fully FICA-bearing", () => {
     const g: EquityGrant = { ...rsuFutureVest, id: "g-nq", grantType: "nqso", strikePrice: 10,
-      tranches: [{ id: "t1", vestYear: 2027, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null }] };
+      tranches: [{ id: "t1", vestDate: "2027-01-15", acquiredOn: null, priceAtAcquisition: null, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null }] };
     const p = plan(g);
     const st = createEquityState([p], PSY);
     const r = computeEquityYear(p, st, 2027);
@@ -187,11 +254,11 @@ describe("a vesting row holding two lots at once", () => {
   // Both lots hung off the same ledger key, so the 2030 exercise overwrote the
   // seeded 400 and the sale could only find 600 shares to sell.
   const splitRow: EquityGrant = {
-    id: "g-split", grantNumber: "NQ-SPLIT", grantType: "nqso", grantYear: 2024, sharesGranted: 1000,
+    id: "g-split", grantNumber: "NQ-SPLIT", grantType: "nqso", grantDate: "2024-01-15", sharesGranted: 1000,
     has83bElection: false, fmvAtGrant: null, strikePrice: 10, strikeDiscountPct: null,
     expirationYear: 2034, plannedEvents: [],
     strategy: { exerciseTiming: "specific_year", exerciseYear: 2030, sellTiming: "hold_then_sell_year", sellYear: 2033 },
-    tranches: [{ id: "t1", vestYear: 2025, shares: 1000, sharesExercised: 400, sharesSold: 0, strategy: null }],
+    tranches: [{ id: "t1", vestDate: "2025-01-15", acquiredOn: null, priceAtAcquisition: null, shares: 1000, sharesExercised: 400, sharesSold: 0, strategy: null }],
   };
 
   it("sells all 1,000 shares, not just the lot that survived the overwrite", () => {
@@ -213,10 +280,10 @@ describe("a vesting row holding two lots at once", () => {
 describe("options the plan must not exercise", () => {
   it("books no income and no cash for an option that lapsed before the plan", () => {
     const g: EquityGrant = {
-      id: "g-lapsed", grantNumber: "NQ-OLD", grantType: "nqso", grantYear: 2018, sharesGranted: 5000,
+      id: "g-lapsed", grantNumber: "NQ-OLD", grantType: "nqso", grantDate: "2018-01-15", sharesGranted: 5000,
       has83bElection: false, fmvAtGrant: null, strikePrice: 10, strikeDiscountPct: null,
       expirationYear: 2025, strategy: null, plannedEvents: [],
-      tranches: [{ id: "t1", vestYear: 2020, shares: 5000, sharesExercised: 0, sharesSold: 0, strategy: null }],
+      tranches: [{ id: "t1", vestDate: "2020-01-15", acquiredOn: null, priceAtAcquisition: null, shares: 5000, sharesExercised: 0, sharesSold: 0, strategy: null }],
     };
     const p = plan(g);
     const st = createEquityState([p], PSY);
@@ -227,10 +294,10 @@ describe("options the plan must not exercise", () => {
 
   it("books no cash for an option that is under water at its exercise year", () => {
     const g: EquityGrant = {
-      id: "g-uw", grantNumber: "NQ-UW", grantType: "nqso", grantYear: 2024, sharesGranted: 1000,
+      id: "g-uw", grantNumber: "NQ-UW", grantType: "nqso", grantDate: "2024-01-15", sharesGranted: 1000,
       has83bElection: false, fmvAtGrant: null, strikePrice: 100, strikeDiscountPct: null,
       expirationYear: 2034, strategy: null, plannedEvents: [],
-      tranches: [{ id: "t1", vestYear: 2027, shares: 1000, sharesExercised: 0, sharesSold: 0, strategy: null }],
+      tranches: [{ id: "t1", vestDate: "2027-01-15", acquiredOn: null, priceAtAcquisition: null, shares: 1000, sharesExercised: 0, sharesSold: 0, strategy: null }],
     };
     const p = plan(g, { pricePerShare: 50 }); // $50 share against a $100 strike
     const st = createEquityState([p], PSY);
