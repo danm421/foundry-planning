@@ -20,6 +20,10 @@ export interface GrantDisplay {
     shares: number;
     sharesExercised: number;
     sharesSold: number;
+    /** The real pre-plan acquisition of this row's already-acquired shares.
+     *  Null when the advisor has not entered it. */
+    acquiredOn: string | null;
+    priceAtAcquisition: number | null;
   }>;
   // Grant-level strategy overrides (null = inherit account default)
   exerciseTiming: string | null;

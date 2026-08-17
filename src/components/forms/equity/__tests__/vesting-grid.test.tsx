@@ -15,7 +15,10 @@ import VestingGrid, { type TrancheRow } from "../vesting-grid";
 import { summarizeGrant } from "../grant-state";
 
 function row(shares: string, sharesExercised: string, sharesSold: string): TrancheRow {
-  return { _key: "k1", vestDate: "2024-01-01", shares, sharesExercised, sharesSold };
+  return {
+    _key: "k1", vestDate: "2024-01-01", shares, sharesExercised, sharesSold,
+    acquiredOn: "", priceAtAcquisition: "",
+  };
 }
 
 /** The rendered per-row "Remaining" cell and the tfoot total, as displayed. */

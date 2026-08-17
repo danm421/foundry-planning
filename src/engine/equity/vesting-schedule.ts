@@ -28,6 +28,12 @@ export interface VestingScheduleRow {
   exercisable: number | null;        // options: max(0, vested - exercised); RSU: null
   exercised: number | null;          // options: Σ sharesExercised; RSU: null
   isoSplit: IsoSplit | null;         // ISO with exercised > 0
+  /** True when this grant holds shares acquired BEFORE the plan began whose
+   *  acquisition date or price the advisor has not entered, so at least one
+   *  figure on this row comes from the conservative fallback rather than a
+   *  recorded fact. The screen says so — an unlabelled guess is the defect G8
+   *  removes, not the fallback itself. */
+  hasEstimatedAcquisition: boolean;
   sold: number;                      // Σ sharesSold (actual, to date)
   futureByYear: number[];            // aligned to model.yearColumns
   futurePlus: number;                // shares vesting beyond the last discrete column
@@ -143,6 +149,7 @@ function buildRow(plan: StockOptionPlan, grant: EquityGrant, ctx: RowCtx): Vesti
     exercisable: isOption ? Math.max(0, vested - exercisedTotal) : null,
     exercised: isOption ? exercisedTotal : null,
     isoSplit: isoSplitFor(grant, asOfYear),
+    hasEstimatedAcquisition: hasEstimatedAcquisition(grant, planStartYear),
     sold: soldTotal,
     futureByYear,
     futurePlus,
@@ -177,6 +184,42 @@ function plannedStrikes(plan: StockOptionPlan, grant: EquityGrant, planStartYear
   }
   if (found.size === 0) return [resolveStrikePrice(grant, fmvAt(planStartYear))];
   return [...found].sort((a, b) => a - b);
+}
+
+/** Does any figure on this grant rest on the blank-acquisition fallback?
+ *
+ *  `timeline.ts` falls back to the plan start date at no price — held zero days,
+ *  basis floored — for shares acquired before the plan whose facts the advisor
+ *  has not entered. That answer is deliberately conservative and correct; saying
+ *  nothing about it is what misleads, because a guess printed plainly reads
+ *  exactly like a recorded fact.
+ *
+ *  The condition is `seed_held`'s, verbatim, because `seed_held` is the ONLY
+ *  action the fallback touches. A row vesting in the future is acquired on its
+ *  vest date by `acquire_rsu` and guesses nothing — marking it would put the
+ *  warning on nearly every RSU grant in the book and teach advisors to ignore
+ *  it. Audit F1/F2. */
+function hasEstimatedAcquisition(grant: EquityGrant, planStartYear: number): boolean {
+  const missing = (t: { acquiredOn: string | null; priceAtAcquisition: number | null }) =>
+    t.acquiredOn == null || t.priceAtAcquisition == null;
+
+  // 83(b) acquires the WHOLE grant at the grant date, and the timeline seeds it
+  // from the first row (or from nothing at all, when the grant has no rows).
+  if (grant.grantType === "rsu" && grant.has83bElection) {
+    if (yearOf(grant.grantDate) >= planStartYear) return false;
+    const sold = grant.tranches.reduce((s, t) => s + t.sharesSold, 0);
+    if (grant.sharesGranted - sold <= 0) return false;
+    const t0 = grant.tranches[0];
+    return t0 == null || missing(t0);
+  }
+
+  return grant.tranches.some((t) => {
+    const seeded =
+      grant.grantType === "rsu"
+        ? yearOf(t.vestDate) < planStartYear && t.shares - t.sharesSold > 0
+        : t.sharesExercised - t.sharesSold > 0;
+    return seeded && missing(t);
+  });
 }
 
 /** ISO qualified/holding split for shares the client has ALREADY exercised.

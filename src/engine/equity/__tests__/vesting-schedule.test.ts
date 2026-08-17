@@ -363,6 +363,140 @@ describe("buildVestingSchedule — ISO qualification", () => {
   });
 });
 
+// ── Audit F1/F2 ──────────────────────────────────────────────────────────────
+// The acquisition facts are optional, and `timeline.ts` falls back to the plan
+// start date at a price of nothing when they are missing. The fallback is the
+// right answer; SILENCE about it is not, because a conservative guess printed
+// with no marker reads exactly like a recorded fact.
+describe("buildVestingSchedule — the estimated-acquisition marker", () => {
+  /** One ISO grant, exercised before the plan, with whatever facts are given. */
+  function exercisedIso(t: { acquiredOn?: string | null; priceAtAcquisition?: number | null }): StockOptionPlan {
+    return basePlan({
+      accountId: "acct-est",
+      grants: [{
+        id: "g-est", grantNumber: "EST-1", grantType: "iso", grantDate: "2022-03-01",
+        sharesGranted: 1000, has83bElection: false, fmvAtGrant: null,
+        strikePrice: 12, strikeDiscountPct: null, expirationYear: 2032,
+        strategy: { ...EMPTY_STRATEGY },
+        tranches: [{
+          id: "e1", vestDate: "2023-03-01", shares: 1000, sharesExercised: 1000, sharesSold: 0,
+          acquiredOn: t.acquiredOn ?? null, priceAtAcquisition: t.priceAtAcquisition ?? null,
+          strategy: null,
+        }],
+        plannedEvents: [],
+      }],
+    });
+  }
+  /** An RSU grant whose every row vests in 2027-2028 — all AFTER the 2026 plan
+   *  start, so nothing on it is seeded and nothing is guessed. */
+  function futureRsu(): StockOptionPlan {
+    return basePlan({
+      accountId: "acct-est-rsu",
+      grants: [{
+        id: "g-est-rsu", grantNumber: "EST-RSU", grantType: "rsu", grantDate: "2026-01-15",
+        sharesGranted: 2000, has83bElection: false, fmvAtGrant: null,
+        strikePrice: null, strikeDiscountPct: null, expirationYear: null,
+        strategy: { ...EMPTY_STRATEGY },
+        tranches: [
+          { id: "r1", vestDate: "2027-01-15", shares: 1000, sharesExercised: 0, sharesSold: 0, acquiredOn: null, priceAtAcquisition: null, strategy: null },
+          { id: "r2", vestDate: "2028-01-15", shares: 1000, sharesExercised: 0, sharesSold: 0, acquiredOn: null, priceAtAcquisition: null, strategy: null },
+        ],
+        plannedEvents: [],
+      }],
+    });
+  }
+  const flag = (plan: StockOptionPlan) =>
+    buildVestingSchedule([plan], { asOfYear: 2026, planStartYear: 2026 }).rows[0].hasEstimatedAcquisition;
+
+  it("is false when both facts are recorded", () => {
+    expect(flag(exercisedIso({ acquiredOn: "2023-04-01", priceAtAcquisition: 30 }))).toBe(false);
+  });
+
+  it("is true when the date is missing", () => {
+    expect(flag(exercisedIso({ priceAtAcquisition: 30 }))).toBe(true);
+  });
+
+  it("is true when the date is there but the price is not", () => {
+    // The price is not decoration: basis derives from it, and with no anchor
+    // the engine floors basis at the strike — the largest taxable gain.
+    expect(flag(exercisedIso({ acquiredOn: "2023-04-01" }))).toBe(true);
+  });
+
+  it("is false for an option row that has exercised nothing", () => {
+    expect(flag(nqsoPlan())).toBe(false);
+  });
+
+  it("is false for an option row whose exercised shares were all sold", () => {
+    // Nothing is seeded, so nothing is guessed — the disposal already happened.
+    const p = exercisedIso({});
+    p.grants[0].tranches[0].sharesSold = 1000;
+    expect(flag(p)).toBe(false);
+  });
+
+  it("is false for RSU shares that have not vested yet", () => {
+    // The plan's own text marks any RSU row carrying shares, which would flag
+    // nearly every RSU grant in the book. A row vesting in 2027 acquires its
+    // shares on its vest date — `acquire_rsu`, not `seed_held` — so no figure
+    // on it comes from the fallback and there is nothing to warn about.
+    expect(flag(futureRsu())).toBe(false);
+  });
+
+  it("is true for RSU shares vested before the plan with no acquisition entered", () => {
+    // The same rows, read from a later plan start: they are now pre-plan, are
+    // seeded from stored facts, and have none. This is the control that proves
+    // the test above is measuring the vest date and not a dead flag.
+    const row = buildVestingSchedule([futureRsu()], { asOfYear: 2030, planStartYear: 2030 }).rows[0];
+    expect(row.hasEstimatedAcquisition).toBe(true);
+  });
+
+  /** An 83(b) grant DATED before the plan whose rows all vest after it. The
+   *  per-row rule reads every row as future and finds nothing; the engine seeds
+   *  the whole grant off `tranches[0]` because the election acquired it all at
+   *  the grant date. Only the 83(b) branch can tell these apart. */
+  function preplan83b(): StockOptionPlan {
+    return basePlan({
+      accountId: "acct-83b-est",
+      grants: [{
+        id: "g-83b-est", grantNumber: "83B-1", grantType: "rsu", grantDate: "2025-01-15",
+        sharesGranted: 2000, has83bElection: true, fmvAtGrant: 10,
+        strikePrice: null, strikeDiscountPct: null, expirationYear: null,
+        strategy: { ...EMPTY_STRATEGY },
+        tranches: [
+          { id: "b1", vestDate: "2026-01-15", shares: 1000, sharesExercised: 0, sharesSold: 0, acquiredOn: null, priceAtAcquisition: null, strategy: null },
+          { id: "b2", vestDate: "2027-01-15", shares: 1000, sharesExercised: 0, sharesSold: 0, acquiredOn: null, priceAtAcquisition: null, strategy: null },
+        ],
+        plannedEvents: [],
+      }],
+    });
+  }
+
+  it("is true for a pre-plan 83(b) grant with no acquisition entered", () => {
+    expect(flag(preplan83b())).toBe(true);
+  });
+
+  it("clears once the 83(b) grant's first row carries both facts", () => {
+    const plan = preplan83b();
+    plan.grants[0].tranches[0].acquiredOn = "2025-01-15";
+    plan.grants[0].tranches[0].priceAtAcquisition = 10;
+    expect(flag(plan)).toBe(false);
+  });
+
+  it("is true for an 83(b) grant with no rows at all to hold the facts", () => {
+    // Permitted by the validator and handled by the timeline with a synthetic
+    // row, so it is seeded — and there is nowhere on screen to enter the date.
+    const plan = preplan83b();
+    plan.grants[0].tranches = [];
+    expect(flag(plan)).toBe(true);
+  });
+
+  it("is false for an 83(b) grant made after the plan started", () => {
+    // Acquired inside the projection, so the plan models it and guesses nothing.
+    const plan = preplan83b();
+    plan.grants[0].grantDate = "2026-06-01";
+    expect(flag(plan)).toBe(false);
+  });
+});
+
 describe("buildVestingSchedule — edge cases", () => {
   it("treats an 83(b) RSU as fully vested with no future columns", () => {
     const plan = basePlan({

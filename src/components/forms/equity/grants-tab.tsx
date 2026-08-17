@@ -84,6 +84,8 @@ function parseGrant(raw: Record<string, unknown>): GrantDisplay {
         shares: parseFloat(String(tr.shares ?? "0")),
         sharesExercised: parseFloat(String(tr.sharesExercised ?? "0")),
         sharesSold: parseFloat(String(tr.sharesSold ?? "0")),
+        acquiredOn: tr.acquiredOn ? String(tr.acquiredOn) : null,
+        priceAtAcquisition: parseNum(tr.priceAtAcquisition),
       };
     });
 
@@ -166,6 +168,21 @@ function validateEditor(state: GrantEditorState): string | null {
         ? `Tranche ${i + 1}: sold shares cannot exceed the row's shares.`
         : `Tranche ${i + 1}: sold shares cannot exceed the exercised shares.`;
     }
+    // The acquisition facts have to be coherent, or the engine reads half a
+    // fact. These three sentences are the server's, word for word, from rule (f)
+    // in `lib/schemas/stock-options.ts` — a client message that differs from the
+    // server's reads as two different bugs. Audit F1/F2.
+    if (row.priceAtAcquisition && !row.acquiredOn) {
+      return `Tranche ${i + 1}: An acquisition date is required when a price at acquisition is given.`;
+    }
+    // The inputs disappear when a row drops to zero acquired shares, so a date
+    // typed earlier survives out of sight and only the server would catch it.
+    if (row.acquiredOn && acquired <= 0) {
+      return `Tranche ${i + 1}: This row has no acquired shares, so it has no acquisition to date.`;
+    }
+    if (row.acquiredOn && state.grantDate && row.acquiredOn < state.grantDate) {
+      return `Tranche ${i + 1}: Shares cannot be acquired before the grant date.`;
+    }
   }
   // The vesting rows ARE the grant as far as the plan is concerned — the engine
   // builds its timeline from them and never reads "Shares Granted". Nothing
@@ -235,6 +252,10 @@ function buildBody(state: GrantEditorState) {
         shares: parseFloat(r.shares) || 0,
         sharesExercised: parseFloat(r.sharesExercised) || 0,
         sharesSold: parseFloat(r.sharesSold) || 0,
+        // Blank means "not entered", which is a null the engine falls back
+        // from — never a zero price or an empty date string.
+        acquiredOn: r.acquiredOn || null,
+        priceAtAcquisition: r.priceAtAcquisition ? parseFloat(r.priceAtAcquisition) : null,
       })),
     // Grant-level strategy overrides
     exerciseTiming,
@@ -676,6 +697,8 @@ export default function GrantsTab({
       shares: String(t.shares),
       sharesExercised: String(t.sharesExercised),
       sharesSold: String(t.sharesSold),
+      acquiredOn: t.acquiredOn ?? "",
+      priceAtAcquisition: t.priceAtAcquisition != null ? String(t.priceAtAcquisition) : "",
       // Saved tranches are locked so a later auto-fill divides only new rows.
       sharesEdited: true,
     }));

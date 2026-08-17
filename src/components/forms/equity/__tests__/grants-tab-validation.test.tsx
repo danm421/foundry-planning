@@ -227,6 +227,129 @@ describe("Grant editor — the rows must add up to the grant (F39/F34)", () => {
   });
 });
 
+describe("Grant editor — the real acquisition date and price (G8 F1/F2)", () => {
+  // "Acquired date, row 1" / "Price at acquisition, row 1". Anchored so the two
+  // never match each other, and case-insensitive — several labels in this app
+  // are CSS-uppercased and a case-sensitive matcher has produced three false
+  // "missing feature" results.
+  const acquiredInputs = () => screen.queryAllByLabelText(/^acquired date/i);
+  const priceInputs = () => screen.queryAllByLabelText(/^price at acquisition/i);
+
+  /** The POST the editor issued, parsed. Fails loudly if it never issued one. */
+  function savedBody(): { tranches: Record<string, unknown>[] } {
+    const post = fetchMock.mock.calls.find(
+      ([, init]) => (init as RequestInit | undefined)?.method === "POST",
+    );
+    expect(post, "the editor must have issued a POST").toBeDefined();
+    return JSON.parse(String((post![1] as RequestInit).body));
+  }
+
+  it("offers the two inputs only on a row that has acquired shares", async () => {
+    await openValidNqso();
+    // The control: the column exists on every row, so a missing INPUT means the
+    // row has nothing acquired — not that the feature failed to render.
+    expect(screen.getByText(/^acquired$/i)).toBeInTheDocument();
+    expect(screen.getByText(/^price then$/i)).toBeInTheDocument();
+    expect(acquiredInputs()).toHaveLength(0);
+    expect(priceInputs()).toHaveLength(0);
+
+    await act(async () => { change(rowNum("exercised"), "100"); });
+
+    expect(acquiredInputs()).toHaveLength(1);
+    expect(priceInputs()).toHaveLength(1);
+  });
+
+  it("sends the acquisition date and the price in the save body", async () => {
+    await openValidNqso();
+    await act(async () => { change(rowNum("exercised"), "1000"); });
+    await act(async () => { change(acquiredInputs()[0], "2025-11-04"); });
+    await act(async () => { change(priceInputs()[0], "42.5"); });
+
+    expect(saveBtn()).toBeEnabled();
+    await act(async () => { fireEvent.click(saveBtn()); });
+
+    expect(savedBody().tranches[0]).toMatchObject({
+      acquiredOn: "2025-11-04",
+      priceAtAcquisition: 42.5,
+    });
+  });
+
+  it("sends nulls — not blanks — when the advisor has not entered the facts", async () => {
+    await openValidNqso();
+    await act(async () => { change(rowNum("exercised"), "1000"); });
+
+    expect(saveBtn()).toBeEnabled();
+    await act(async () => { fireEvent.click(saveBtn()); });
+
+    const t = savedBody().tranches[0];
+    expect(t.acquiredOn).toBeNull();
+    expect(t.priceAtAcquisition).toBeNull();
+  });
+
+  it("refuses a price with no date", async () => {
+    await openValidNqso();
+    await act(async () => { change(rowNum("exercised"), "1000"); });
+    expect(saveBtn()).toBeEnabled();
+
+    await act(async () => { change(priceInputs()[0], "42.5"); });
+
+    expect(saveBtn()).toBeDisabled();
+    expect(err()).toMatch(/acquisition date is required when a price at acquisition is given/i);
+  });
+
+  it("refuses a date left behind on a row that no longer acquires anything", async () => {
+    // The inputs hide when the row drops to zero acquired shares, so the date
+    // survives out of sight. The server rejects it; the advisor must see why
+    // without a round trip.
+    await openValidNqso();
+    await act(async () => { change(rowNum("exercised"), "1000"); });
+    await act(async () => { change(acquiredInputs()[0], "2025-11-04"); });
+    expect(saveBtn()).toBeEnabled();
+
+    await act(async () => { change(rowNum("exercised"), "0"); });
+
+    expect(acquiredInputs()).toHaveLength(0);
+    expect(saveBtn()).toBeDisabled();
+    expect(err()).toMatch(/no acquired shares, so it has no acquisition to date/i);
+  });
+
+  it("refuses an acquisition before the grant date", async () => {
+    await openValidNqso();
+    await act(async () => { change(rowNum("exercised"), "1000"); });
+    await act(async () => { change(acquiredInputs()[0], "2025-11-04"); });
+    expect(saveBtn()).toBeEnabled();
+
+    // The grant is dated 2025-01-01.
+    await act(async () => { change(acquiredInputs()[0], "2024-11-04"); });
+
+    expect(saveBtn()).toBeDisabled();
+    expect(err()).toMatch(/cannot be acquired before the grant date/i);
+  });
+
+  it("reloads a stored acquisition into the editor instead of dropping it", async () => {
+    const GRANT_WITH_ACQUISITION = {
+      id: "grant-acq", grantNumber: "NQ-A", grantType: "nqso",
+      grantDate: "2025-01-01", sharesGranted: "1000", has83bElection: false,
+      fmvAtGrant: null, strikePrice: "10", strikeDiscountPct: null,
+      expirationDate: "2035-01-01", notes: null,
+      tranches: [{
+        id: "t-1", vestDate: "2025-06-01", shares: "1000",
+        sharesExercised: "1000", sharesSold: "0",
+        acquiredOn: "2025-11-04", priceAtAcquisition: "42.5",
+      }],
+      plannedEvents: [], exerciseTiming: null, exerciseYear: null,
+      sellTiming: null, sellYear: null, sellPercentPerYear: null, sellStartYear: null,
+    };
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ grants: [GRANT_WITH_ACQUISITION] }) });
+    render(<GrantsTab clientId="client-123" accountId="acct-so" scenarioActive={false} />);
+    await waitFor(() => expect(screen.getByText(/NQ-A/)).toBeInTheDocument());
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^Edit$/ })); });
+
+    expect((acquiredInputs()[0] as HTMLInputElement).value).toBe("2025-11-04");
+    expect((priceInputs()[0] as HTMLInputElement).value).toBe("42.5");
+  });
+});
+
 describe("Grant editor — impossible share entries (F41)", () => {
   it("starts enabled on a valid grant, then refuses more exercised than the row holds", async () => {
     await openValidNqso();
