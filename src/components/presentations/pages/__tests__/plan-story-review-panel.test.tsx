@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, within, act } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { PlanStoryReviewPanel } from "@/components/presentations/pages/plan-story/review-panel";
 import { MAX_PARAGRAPHS } from "@/lib/presentations/pages/plan-story/view-model";
@@ -1788,5 +1788,170 @@ describe("the whole story, read through", () => {
     const blank = chapter(CHAPTERS[1].title);
     expect(within(blank).queryByText(/needs a proposal/i)).toBeNull();
     expect(within(blank).getByText(/nothing written/i)).toBeTruthy();
+  });
+});
+
+/**
+ * ⭐⭐ Two answers in flight, arriving in the wrong order.
+ *
+ * Each of the panel's three reads is fired by an effect that re-runs when its
+ * own inputs move, and one of them — the staleness check — re-runs on a TONE or
+ * LENGTH change. That is a dropdown, moved several times in a few seconds,
+ * against a request measured at 4s warm and 23s cold, so two are in flight as a
+ * matter of routine and the server may answer them in either order. Nothing
+ * dev-only here: two real requests from two real clicks.
+ *
+ * The rule every test below pins is the same one: the answer to the request
+ * asked LAST wins, not the answer that ARRIVES last.
+ *
+ * ⚠️ The stakes differ by loader and the chapter-list case is not cosmetic — a
+ * losing `load` puts the scenario the advisor just LEFT into fourteen boxes, and
+ * a blur after typing PATCHes those words into the scenario they moved TO.
+ */
+describe("an answer that arrives after the one that replaced it", () => {
+  /**
+   * A fetch stub that hands nothing back until the test says so.
+   *
+   * Requests matching `held` are parked; every other read falls through to the
+   * ordinary payload so the panel still renders. The returned array collects one
+   * release function per parked request IN ASK ORDER, so calling `[1]` before
+   * `[0]` is a genuine out-of-order arrival rather than a simulated one.
+   */
+  function holdRequests(
+    held: (url: string) => boolean,
+    answer: (nth: number) => Response,
+  ): (() => void)[] {
+    const releases: (() => void)[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (init?.method === "PATCH" || init?.method === "POST") {
+          return new Response(JSON.stringify({ ok: true }), { status: 200 });
+        }
+        if (!held(url)) return answerRead(url);
+        const nth = releases.length;
+        return new Promise<Response>((resolve) => {
+          releases.push(() => resolve(answer(nth)));
+        });
+      }),
+    );
+    return releases;
+  }
+
+  /**
+   * Release one parked answer and let it land — or fail to.
+   *
+   * ⚠️ The yields are load-bearing, and they are what makes a LOSING answer's
+   * absence provable: the panel's chain is `await fetch` → `await res.json()` →
+   * `setState`, so a bare release returns before any of it has run and every
+   * assertion after it would pass on an unguarded panel too. Handing the
+   * microtask queue back inside `act` runs the whole chain and commits whatever
+   * it renders, so "nothing appeared" means nothing was going to.
+   */
+  async function land(release: () => void) {
+    await act(async () => {
+      release();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
+
+  const A = "Your plan, in one page";
+  const LEFT = "The base scenario's words.";
+  const MOVED_TO = "The retirement scenario's words.";
+
+  /**
+   * ⚠️⚠️ The data-corruption one. The losing answer is not a stale badge — it is
+   * fourteen textareas holding another scenario's prose, one blur away from
+   * being written into this scenario's rows as the advisor's own edit.
+   */
+  it("shows the chapters of the scenario asked for last, not the one that answered last", async () => {
+    const releases = holdRequests(
+      (url) => !isStaleUrl(url) && !isFactsUrl(url),
+      (nth) =>
+        new Response(
+          JSON.stringify({
+            scenarioId: "base",
+            chapters: [{ ...CHAPTERS[0], text: nth === 0 ? LEFT : MOVED_TO }],
+          }),
+          { status: 200 },
+        ),
+    );
+
+    const { rerender } = renderPanel();
+    await waitFor(() => expect(releases.length).toBe(1));
+    rerender({ scenarioId: "retire-at-62" });
+    await waitFor(() => expect(releases.length).toBe(2));
+
+    // The scenario the advisor moved TO answers first…
+    await land(releases[1]);
+    expect(screen.getByDisplayValue(MOVED_TO)).toBeTruthy();
+    // …and the one they LEFT answers after it.
+    await land(releases[0]);
+
+    expect(screen.queryByDisplayValue(LEFT)).toBeNull();
+    expect(screen.getByDisplayValue(MOVED_TO)).toBeTruthy();
+  });
+
+  /**
+   * The reachable one — a tone dropdown, twice. The silent direction is the
+   * dangerous one: the late answer says nothing is out of date, the badge comes
+   * down, and the advisor loses the only cue to regenerate before exporting.
+   */
+  it("shows the badges for the style asked for last, not the one that answered last", async () => {
+    const releases = holdRequests(isStaleUrl, (nth) =>
+      new Response(JSON.stringify({ stale: nth === 0 ? [] : ["planInOnePage"] }), {
+        status: 200,
+      }),
+    );
+
+    const { rerender } = renderPanel();
+    await screen.findByText(A);
+    await waitFor(() => expect(releases.length).toBe(1));
+    rerender({ chapterStyle: { planInOnePage: { tone: "direct", length: "short" } } });
+    await waitFor(() => expect(releases.length).toBe(2));
+
+    // The new style's answer arrives first: this chapter IS out of date under it.
+    await land(releases[1]);
+    expect(within(row(A)).getByText(/plan has changed since/i)).toBeTruthy();
+    // The style the advisor moved off answers late, saying the opposite.
+    await land(releases[0]);
+
+    expect(within(row(A)).getByText(/plan has changed since/i)).toBeTruthy();
+  });
+
+  // …and the disclosure, which is a claim about what a chapter was ALLOWED to
+  // quote. A losing answer here tells the advisor a chapter may use figures that
+  // were scoped to a different scenario entirely.
+  it("discloses the figures of the scenario asked for last, not the one that answered last", async () => {
+    const releases = holdRequests(isFactsUrl, (nth) =>
+      new Response(
+        JSON.stringify({
+          facts: {
+            planInOnePage: [
+              {
+                label: "The year you stop working",
+                display: nth === 0 ? "2035" : "2041",
+              },
+            ],
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const { rerender } = renderPanel();
+    await screen.findByText(A);
+    await waitFor(() => expect(releases.length).toBe(1));
+    rerender({ scenarioId: "retire-at-62" });
+    await waitFor(() => expect(releases.length).toBe(2));
+
+    await land(releases[1]);
+    expect(row(A).textContent).toContain("The year you stop working: 2041");
+    await land(releases[0]);
+
+    expect(row(A).textContent).toContain("The year you stop working: 2041");
+    expect(row(A).textContent).not.toContain("2035");
   });
 });

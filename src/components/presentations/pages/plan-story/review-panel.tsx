@@ -17,7 +17,7 @@
 //    drop rules at print time; re-spelling any of them here is how the two
 //    surfaces would start disagreeing about what the advisor approved.
 "use client";
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 // The same split the printed sheet uses, from a module whose own import closure
 // is one module — itself. See its header for why it is not `view-model.ts`.
 import { splitParagraphs } from "@/lib/presentations/pages/plan-story/paragraphs";
@@ -400,7 +400,41 @@ export function PlanStoryReviewPanel({
    */
   const [reading, setReading] = useState(false);
 
+  /**
+   * Which request's answer is allowed to reach the state — one counter per
+   * loader. Each callback below bumps its own on the way in and re-reads it
+   * before every `setState`, so the answer to the request asked LAST wins
+   * rather than whichever answer happens to arrive last.
+   *
+   * Not hypothetical. `loadOutOfDate` re-runs whenever the TONE or LENGTH moves
+   * (see its dependency list), which is a dropdown an advisor nudges several
+   * times in a few seconds against a check costing 4s warm and 23s cold — two
+   * are in flight routinely. The loser paints freshness computed for a style
+   * nobody is looking at any more, and the silent direction of that error is
+   * badges VANISHING that should be there, which takes away the only cue to
+   * regenerate before exporting. On `load` it is worse than display: the
+   * previous scenario's prose lands in fourteen boxes, and a blur after typing
+   * PATCHes it into the CURRENT scenario's rows.
+   *
+   * Three counters rather than one shared: a style change invalidates the
+   * staleness answer and nothing else, so a shared counter would make it throw
+   * away an in-flight chapter-list answer whose own inputs never moved — and
+   * that effect has no reason left to re-run, so the panel would simply stay
+   * empty.
+   *
+   * A counter rather than an `AbortController`: aborting rejects the fetch into
+   * these `catch` blocks, where `load`'s would raise "your chapters could not
+   * be loaded" over a panel that is loading them perfectly well, so every catch
+   * would need an `AbortError` exemption on top. The server work is not saved
+   * either — the expensive half is a story-context rebuild that does not watch
+   * the request signal.
+   */
+  const loadGeneration = useRef(0);
+  const outOfDateGeneration = useRef(0);
+  const factsGeneration = useRef(0);
+
   const load = useCallback(async () => {
+    const generation = ++loadGeneration.current;
     try {
       const res = await fetch(
         `/api/clients/${clientId}/plan-story?scenarioId=${encodeURIComponent(scenario)}` +
@@ -408,6 +442,7 @@ export function PlanStoryReviewPanel({
       );
       if (!res.ok) throw new Error(`GET plan-story ${res.status}`);
       const body = (await res.json()) as { chapters: ChapterRow[] };
+      if (generation !== loadGeneration.current) return;
       setRows(body.chapters);
       setLoaded(true);
       // Clears the PANEL's message only. A row's own failure is cleared by that
@@ -420,6 +455,10 @@ export function PlanStoryReviewPanel({
       // otherwise be an unhandled rejection over a panel showing nothing, no
       // reason, and a live Generate button.
       console.error("[plan-story] could not load chapters", err);
+      // Logged either way — a dropped request is a real event. But a SUPERSEDED
+      // request's failure is not this story's failure, and raising it here would
+      // leave the alarm standing over chapters that loaded fine.
+      if (generation !== loadGeneration.current) return;
       setPanelProblem(COULD_NOT_LOAD);
     }
     // `documentRole` belongs here as much as the scenario does: since 0240 the
@@ -436,6 +475,7 @@ export function PlanStoryReviewPanel({
    * "your chapters did not load".
    */
   const loadOutOfDate = useCallback(async () => {
+    const generation = ++outOfDateGeneration.current;
     try {
       const res = await fetch(
         `/api/clients/${clientId}/plan-story/stale?scenarioId=${encodeURIComponent(scenario)}` +
@@ -443,6 +483,7 @@ export function PlanStoryReviewPanel({
       );
       if (!res.ok) throw new Error(`GET plan-story/stale ${res.status}`);
       const body = (await res.json()) as { stale: string[] };
+      if (generation !== outOfDateGeneration.current) return;
       setOutOfDate(new Set(body.stale));
     } catch (err) {
       console.error("[plan-story] could not check which chapters are out of date", err);
@@ -472,6 +513,7 @@ export function PlanStoryReviewPanel({
    * showing that rather than a synthesized zero.
    */
   const loadFacts = useCallback(async () => {
+    const generation = ++factsGeneration.current;
     try {
       const res = await fetch(
         `/api/clients/${clientId}/plan-story/facts?scenarioId=${encodeURIComponent(scenario)}` +
@@ -489,6 +531,7 @@ export function PlanStoryReviewPanel({
       // are closer to "disclose nothing" than to "keep the advisor waiting
       // forever" — unlike a thrown request below, which never reaches this
       // line and so never sets it.
+      if (generation !== factsGeneration.current) return;
       setFacts(body.facts ?? {});
       setFactsLoaded(true);
     } catch (err) {
