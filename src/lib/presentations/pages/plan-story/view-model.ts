@@ -405,11 +405,26 @@ function retirementYearFrom(facts: Fact[]): number {
  * The chart this chapter prints, or null.
  *
  * Keyed on the CHAPTER, not the layout: the layout says a chart goes here, and
- * only the chapter says which one. It must stay in step with the chapter scopes
+ * only the chapter says which one.
+ *
+ * ⚠️⚠️ This list must stay in step with the chapter scopes
  * `build-facts.ts#chartFacts` gives the matching `chart.*` facts
- * (`PORTFOLIO_CHART_CHAPTERS`, `TAX_CHART_CHAPTERS`) — draw a chart on a chapter
- * those facts do not reach and Gate 8 asks the model to cite a figure it was
- * never shown, which no retry can satisfy.
+ * (`PORTFOLIO_CHART_CHAPTERS`, `TAX_CHART_CHAPTERS`), and the failure mode of
+ * drift is SILENCE rather than a rejection. `generate.ts:270` scopes the pack
+ * once with `factsForChapter` and `generate.ts:411` judges the draft against
+ * that same scoped array, so `chart-citation.ts:21-25` sees only the chapter's
+ * own facts and returns `[]` the moment none of them is a `chart.` one. Draw a
+ * chart on a chapter those facts do not reach and Gate 8 does not fire, does not
+ * retry, and says nothing: the sheet ships a picture the prose was never
+ * required to mention. Nothing else in the report notices — the gate's empty
+ * return is also the legitimate no-chart path, which is what makes the two
+ * indistinguishable from the outside.
+ *
+ * ⚠️ `whatsLeftForPeople` is already that shape: `chartFacts` emits `chart.*`
+ * facts for the portfolio and tax charts only, and none for the estate one. It
+ * is harmless in this plan because the loader passes `estateBars: null`, so the
+ * branch below never returns a chart — but the pairing is asymmetric TODAY, and
+ * the day estate bars start arriving is the day an ungated chart prints.
  *
  * An EMPTY array is null, never a chart: spec §7 — drop the chart, keep the
  * prose, and never print an axis with no bars on a client's page.

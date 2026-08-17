@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { isValidElement, type ReactElement } from "react";
+import { Svg } from "@react-pdf/renderer";
+import { PortfolioBarsPdf } from "@/components/presentations/pages/retirement-summary/chart-pdf";
 import { planStoryPage, type BuildDataContext } from "@/components/presentations/registry";
 import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
 import { PageFrame } from "@/components/presentations/shared/page-frame";
@@ -65,6 +67,31 @@ function pageFrames(node: unknown): ReactElement[] {
   const el = node as ReactElement<{ children?: unknown }>;
   if (el.type === PageFrame) return [el];
   return pageFrames(el.props.children);
+}
+
+/**
+ * Every `<Svg>` width in the tree, in document order.
+ *
+ * Walks like `textOf` rather than like `pageFrames` above: a chart is a
+ * component, so reaching its `Svg` means CALLING it.
+ *
+ * The identity check is against the IMPORT, not a string literal, so it cannot
+ * go stale against a spelling of a dependency's internals. The double cast is
+ * what that costs: `Svg` is DECLARED a component and is the string `"SVG"` at
+ * runtime (the same shape `textOf`'s note describes for `Text`), so tsc sees a
+ * comparison between `string` and a component type and calls it unintentional.
+ */
+function svgWidths(node: unknown): number[] {
+  if (Array.isArray(node)) return node.flatMap(svgWidths);
+  if (!isValidElement(node)) return [];
+  const el = node as ReactElement<{ children?: unknown; width?: number }>;
+  if (typeof el.type === "function") {
+    return svgWidths((el.type as (props: unknown) => unknown)(el.props));
+  }
+  if ((el.type as unknown) === (Svg as unknown)) {
+    return el.props.width == null ? [] : [el.props.width];
+  }
+  return svgWidths(el.props.children);
 }
 
 function render(data: PlanStoryPageData) {
@@ -538,6 +565,37 @@ describe("PlanStoryChapterPdf — the chart sheet", () => {
     const out = printed({ kind: "portfolioBars", bars: BARS, retirementYear: 2027 });
     expect(out).toContain("'26");
     expect(out.indexOf("'26")).toBeLessThan(out.indexOf(PROSE));
+  });
+
+  /**
+   * The one number this layout introduces, and the only guard on it.
+   *
+   * 478pt is the story sheet's measure: 612pt Letter, less `PageFrame`'s 43pt of
+   * page padding each side, less `chapter-pdf.tsx#styles.wrap`'s 24pt each side.
+   * `PortfolioBarsPdf` DEFAULTS to the summary page's 500 — drawn on this sheet
+   * that ends 22pt past the prose beneath it and hangs into the page margin,
+   * visibly out of line with everything else on a client's page.
+   *
+   * Nothing else in the suite can see it: the text walkers read strings, the
+   * real-PDF test reads the page-tree `/Count`, and Task 7's `pdftotext -bbox`
+   * measures HEIGHT. A width regression would ship silently.
+   */
+  it("draws the chart at the story sheet's measure, not the summary page's", () => {
+    const el = PlanStoryChapterPdf({
+      chapter: chapter({
+        layout: "chartWithProse",
+        chart: { kind: "portfolioBars", bars: BARS, retirementYear: 2027 },
+      }),
+      accent: FRAME.accent,
+      eyebrow: "Your Plan · Proposed",
+    });
+    expect(svgWidths(el)).toEqual([478]);
+  });
+
+  // …and the other half of that promise: the prop is OPTIONAL so the summary
+  // page, which passes none, keeps the width it has always drawn at.
+  it("leaves the summary page's own chart at 500", () => {
+    expect(svgWidths(PortfolioBarsPdf({ bars: BARS, retirementYear: 2027 }))).toEqual([500]);
   });
 
   it("keeps the prose when the household produced no chart", () => {
