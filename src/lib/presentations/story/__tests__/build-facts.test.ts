@@ -815,3 +815,52 @@ describe("the inflation assumption", () => {
     expect(fact?.raw).toBe(0);
   });
 });
+
+describe("chart facts", () => {
+  const charts = {
+    portfolio: [
+      { year: 2026, cash: 10_000, taxable: 20_000, retirement: 70_000, total: 100_000 },
+      { year: 2035, cash: 10_000, taxable: 40_000, retirement: 950_000, total: 1_000_000 },
+      { year: 2040, cash: 10_000, taxable: 30_000, retirement: 460_000, total: 500_000 },
+    ],
+    tax: [
+      { year: 2026, federalOrdinary: 10_000, capGains: 0, state: 2_000, total: 12_000 },
+      { year: 2035, federalOrdinary: 40_000, capGains: 5_000, state: 8_000, total: 53_000 },
+    ],
+    estate: null,
+  };
+
+  it("admits the peak the chart draws, and the year it happens", () => {
+    const facts = buildStoryFacts({ ...input, charts });
+    const peak = facts.find((f) => f.id === "chart.portfolio.peak");
+    const peakYear = facts.find((f) => f.id === "chart.portfolio.peakYear");
+    expect(peak?.raw).toBe(1_000_000);
+    expect(peak?.display).toBe("$1.0M");
+    expect(peakYear?.display).toBe("2035");
+  });
+
+  it("takes the ending balance from the LAST bar, not from the largest", () => {
+    const facts = buildStoryFacts({ ...input, charts });
+    expect(facts.find((f) => f.id === "chart.portfolio.atEnd")?.raw).toBe(500_000);
+  });
+
+  it("scopes every chart fact to the one chapter that draws it", () => {
+    const facts = buildStoryFacts({ ...input, charts });
+    for (const f of facts.filter((x) => x.id.startsWith("chart.portfolio."))) {
+      expect(f.chapters).toEqual(["willTheMoneyLast"]);
+    }
+    for (const f of facts.filter((x) => x.id.startsWith("chart.tax."))) {
+      expect(f.chapters).toEqual(["whatYoullPayInTax"]);
+    }
+  });
+
+  it("emits no chart facts at all when the context carries no charts", () => {
+    const facts = buildStoryFacts({ ...input, charts: undefined });
+    expect(facts.filter((f) => f.id.startsWith("chart."))).toEqual([]);
+  });
+
+  it("emits no portfolio facts from an empty bar array", () => {
+    const facts = buildStoryFacts({ ...input, charts: { portfolio: [], tax: [], estate: null } });
+    expect(facts.filter((f) => f.id.startsWith("chart."))).toEqual([]);
+  });
+});
