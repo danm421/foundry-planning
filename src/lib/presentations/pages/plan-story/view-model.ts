@@ -123,10 +123,9 @@ const TITLE = "Your Plan";
  * every page's signature, so the RENDER is what gives way and the invariant
  * becomes true by construction.
  *
- * All four numbers below are MEASURED, by rendering real PDFs and reading the
- * page count back out of the page-tree node. They are deliberately plain
- * ceilings rather than a fitted model of the layout — a model was tried, and the
- * measurements will not support one:
+ * Every number below is MEASURED, by rendering real PDFs. They are deliberately
+ * plain ceilings rather than a fitted model of the layout — a model was tried,
+ * and the measurements will not support one:
  *
  *   · five paragraphs of 81 words (405 words) occupy one sheet, while twelve
  *     paragraphs of 27 (324 words) overflow — a paragraph costs its own bottom
@@ -135,9 +134,15 @@ const TITLE = "Your Plan";
  *   · ⚠️ `PageFrame` gives its body `flex: 1`, so react-pdf may CLIP content
  *     past the available height instead of breaking to a second sheet. A
  *     rendered page count of 1 therefore does not prove the prose survived, only
- *     that it did not paginate, and there is no cheap instrument for the
- *     difference (react-pdf embeds a subsetted font, so the text cannot be read
- *     back out of the PDF).
+ *     that it did not paginate.
+ *
+ * Which instrument each ceiling was taken with matters, and they are not the
+ * same one. The ones above `BUDGET_WORDS_CHART` were read off the page-tree
+ * node's `/Count` — a bound a clipped sheet can satisfy, which is why they sit
+ * INSIDE what was observed rather than at it. The chart pair was read off the
+ * geometry itself: `pdftotext -bbox` gives every word's box back, so the lowest
+ * word on the sheet can be compared against the 720pt line where `PageFrame`
+ * reserves its footer.
  *
  * So each ceiling sits at or inside something actually observed to lay out, and
  * `plan-story-render.test.tsx` re-runs those cases every suite.
@@ -265,17 +270,42 @@ export const MAX_PARAGRAPHS = 8;
 /**
  * …and what the prose UNDER a chart may spend.
  *
- * ⚠️ NOT YET MEASURED — Task 7 replaces this. Do not ship this value.
+ * Half what a sheet carrying nothing above its prose gets, and the chart is the
+ * whole of the difference: the tallest of the three — the portfolio chart and
+ * the tax chart, each a 150pt `Svg` over a legend row — pushes the first line of
+ * prose 186pt down the sheet. (The estate chart is 62pt shorter and has room
+ * these two do not; the budget is one number for all three, so it is set for the
+ * tall pair.)
  *
- * It is a full sheet's budget standing in for a number nobody has taken yet, and
- * it is certainly too generous: the chart above the prose is 88pt (estate) to
- * 150pt (portfolio, tax) of `Svg` plus a legend row and its own bottom margin,
- * none of which the 300 was measured with. Every other ceiling in this file
- * names the pair it sits between ("300 words lay out, 360 overflow") because
- * that is what a ceiling here means; this one names none, which is the whole
- * point of the warning.
+ * ⚠️ Measured by RENDERING the sheet and reading the bottom of its lowest word
+ * back out with `pdftotext -bbox`, against the 720pt line where `PageFrame`
+ * reserves its footer — a 792pt page less the 72pt of bottom padding that band
+ * costs. A page COUNT cannot answer this question and must not be read as
+ * though it had: `PageFrame` gives its body `flex: 1`, so "one sheet" is what a
+ * sheet that fits and a sheet that clips both report.
+ *
+ * On the worst shape the two ceilings here allow — `MAX_PARAGRAPHS_CHART`
+ * paragraphs, all but the last one word past a line break and wasting the rest
+ * of it, with the trim note printed under them — 195 words lay out with their
+ * lowest word's foot at 712pt and 200 render onto a second sheet. This sits two
+ * lines inside that: 150 words come to 676pt.
  */
-const BUDGET_WORDS_CHART = SHEET_BUDGET_WORDS;
+export const BUDGET_WORDS_CHART = 150;
+
+/**
+ * …and how many PARAGRAPHS those words may be spread across.
+ *
+ * The word ceiling alone cannot describe this sheet — a paragraph costs its own
+ * bottom margin whether it holds four words or forty, which is the finding the
+ * note above `MAX_STRATEGY_CARDS` records — and here the chart has already spent
+ * 186pt before the first paragraph starts.
+ *
+ * Measured the same way, at the full word budget with the trim note printed: six
+ * paragraphs lay out with their lowest word at 705pt, and seven render onto a
+ * second sheet. Five is one paragraph inside that, and the layout's prompt asks
+ * the model for two.
+ */
+export const MAX_PARAGRAPHS_CHART = 5;
 
 /**
  * A `switch` with no `default`, so a seventh layout is a COMPILE error here
@@ -317,11 +347,9 @@ function proseParagraphCap(layout: ChapterLayout, cards: number): number {
     case "glossary":
       return MAX_PARAGRAPHS;
     case "chartWithProse":
-      // ⚠️ NOT YET MEASURED — Task 7 takes this alongside `BUDGET_WORDS_CHART`.
-      // `MAX_PARAGRAPHS` was measured on a sheet carrying nothing above its
-      // prose, and a paragraph costs its own bottom margin whether it holds four
-      // words or forty, so the word budget alone cannot describe this page.
-      return MAX_PARAGRAPHS;
+      // NOT `MAX_PARAGRAPHS`, which was measured on a sheet carrying nothing
+      // above its prose. See `MAX_PARAGRAPHS_CHART`.
+      return MAX_PARAGRAPHS_CHART;
     case "heroProse":
     case "strategyCards":
       return cards > 0 ? MAX_PARAGRAPHS_WITH_CARDS : MAX_PARAGRAPHS;
