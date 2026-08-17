@@ -9,6 +9,7 @@ import {
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
+import { assertAccountsInClient } from "@/lib/db-scoping";
 import { recordAudit } from "@/lib/audit";
 import { stockOptionAccountUpdateSchema } from "@/lib/schemas/stock-options";
 import { requireClientEditAccess } from "@/lib/clients/authz";
@@ -54,6 +55,15 @@ export async function PUT(
       );
     }
     const input = parsed.data;
+
+    // `destinationAccountId` is the account that receives sold or vested
+    // shares. The schema checks that it is a UUID and stops there — nothing
+    // checked that it belongs to THIS client, so a foreign id sent the whole
+    // position into a balance no report of this client's totals. Audit F50.
+    const destCheck = await assertAccountsInClient(id, [input.destinationAccountId]);
+    if (!destCheck.ok) {
+      return NextResponse.json({ error: destCheck.reason }, { status: 400 });
+    }
 
     // Look up FM ids for potential owner replacement.
     const fmRows = await db

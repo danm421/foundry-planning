@@ -229,11 +229,7 @@ function refineGrant(
       });
     }
   }
-  // (c) Shares flow vested → exercised → sold, so each bucket has to fit inside
-  // the one before it. `sharesExercised` and `sharesSold` were only checked for
-  // non-negativity, so a 1,000-share row could carry 10,000 exercised and the
-  // engine seeded all 10,000 as held stock. Audit F41.
-  // (d) The vesting rows ARE the grant as far as the projection is concerned:
+  // (c) The vesting rows ARE the grant as far as the projection is concerned:
   // `buildGrantTimeline` iterates the tranches and never reads `sharesGranted`.
   // Nothing tied the two together, so a 10,000-share grant with one 4,000-share
   // row vested $200,000 of $500,000 while the vesting-schedule report kept
@@ -259,9 +255,14 @@ function refineGrant(
       });
     }
   }
-  // (e) A timing choice and the field it depends on must arrive together, at
+  // (d) A timing choice and the field it depends on must arrive together, at
   // the grant level and on every tranche override. Audit F29/F40.
   addStrategyCompanionIssues(g, ctx, GRANT_STRATEGY_KEYS);
+
+  // (e) Shares flow vested → exercised → sold, so each bucket has to fit inside
+  // the one before it. `sharesExercised` and `sharesSold` were only checked for
+  // non-negativity, so a 1,000-share row could carry 10,000 exercised and the
+  // engine seeded all 10,000 as held stock. Audit F41.
   g.tranches.forEach((t, i) => {
     addStrategyCompanionIssues(t, ctx, GRANT_STRATEGY_KEYS, ["tranches", i]);
     const acquired = g.grantType === "rsu" ? t.shares : t.sharesExercised;
