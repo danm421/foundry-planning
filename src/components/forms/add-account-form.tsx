@@ -748,6 +748,20 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const canSave =
     name.trim().length > 0 && !educationBeneficiaryMissing && !equityStrategyIncomplete;
 
+  // ── An in-progress grant must not be thrown away (audit F42) ───────────────
+  // The grant editor saves through its own "Save Grant" button. The dialog's
+  // primary button saved the ACCOUNT and then closed the dialog, unmounting the
+  // editor and everything typed into it — a grant plus up to 48 hand-entered
+  // vesting rows, gone with no prompt and no error. Pressing Enter did the same.
+  //
+  // This deliberately does NOT feed `canSave`: that also gates the tab-switch
+  // autosave, and blocking it would strand the advisor on the Grants tab (the
+  // same trap G5 hit from the other direction). Only the dialog's own submit is
+  // held.
+  const [grantEditorOpen, setGrantEditorOpen] = useState(false);
+  const GRANT_EDITOR_OPEN_MSG =
+    "Finish the grant you're editing — Save Grant or Cancel — before saving the account.";
+
   // ── Equity is base-plan only (audit F14/F19) ────────────────────────────────
   // Stock options are the ONE account category whose writes skip the scenario
   // writer: both save paths below short-circuit and fetch the dedicated
@@ -768,10 +782,10 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   // server would 400.
   useEffect(() => {
     onSubmitStateChange?.({
-      canSubmit: !loading && canSave,
+      canSubmit: !loading && canSave && !grantEditorOpen,
       loading,
     });
-  }, [loading, canSave, onSubmitStateChange]);
+  }, [loading, canSave, grantEditorOpen, onSubmitStateChange]);
 
   useEffect(() => {
     onAutoSaveStateChange?.({ isDirty, canSave });
@@ -1233,6 +1247,13 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     // button. The inline field errors (e.g. missing 529 beneficiary) explain
     // what's blocking.
     if (!canSave) return;
+    // Saving here closes the dialog, which would discard the grant being typed.
+    // Enter-key submits bypass the disabled button, so this guard is the real
+    // one. Audit F42.
+    if (grantEditorOpen) {
+      setError(GRANT_EDITOR_OPEN_MSG);
+      return;
+    }
 
     // ── stock_options: bypass the generic accounts route ────────────────────
     if (category === "stock_options") {
@@ -2724,7 +2745,13 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             clientId={clientId}
             accountId={effectiveAccountId}
             scenarioActive={writer.scenarioActive}
+            onEditorOpenChange={setGrantEditorOpen}
           />
+          {grantEditorOpen && (
+            <p className="mt-3 text-xs text-amber-400" data-testid="grant-editor-open-hint">
+              {GRANT_EDITOR_OPEN_MSG}
+            </p>
+          )}
         </div>
       )}
 

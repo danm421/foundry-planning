@@ -16,6 +16,14 @@ interface GrantsTabProps {
    * Audit F14/F19; mirrors the Holdings tab.
    */
   scenarioActive: boolean;
+  /**
+   * Fires whenever the inline grant editor opens or closes. The parent dialog
+   * unmounts this whole tree when its own "Save Changes" succeeds, so a grant
+   * being typed — up to 48 hand-entered vesting rows — vanished with no prompt.
+   * The parent uses this to hold its primary button until the grant is saved or
+   * cancelled. Audit F42.
+   */
+  onEditorOpenChange?: (open: boolean) => void;
 }
 
 type GrantType = "rsu" | "nqso" | "iso";
@@ -582,7 +590,12 @@ function GrantEditor({
   );
 }
 
-export default function GrantsTab({ clientId, accountId, scenarioActive }: GrantsTabProps) {
+export default function GrantsTab({
+  clientId,
+  accountId,
+  scenarioActive,
+  onEditorOpenChange,
+}: GrantsTabProps) {
   const [grants, setGrants] = useState<GrantDisplay[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -620,6 +633,12 @@ export default function GrantsTab({ clientId, accountId, scenarioActive }: Grant
       void loadGrants();
     }
   }, [accountId, loadGrants]);
+
+  // Tell the parent dialog when a grant is mid-edit, so its "Save Changes"
+  // cannot close the dialog out from under it. Audit F42.
+  useEffect(() => {
+    onEditorOpenChange?.(editorOpen);
+  }, [editorOpen, onEditorOpenChange]);
 
   if (accountId == null) {
     return (
