@@ -844,6 +844,23 @@ describe("chart facts", () => {
     expect(facts.find((f) => f.id === "chart.portfolio.atEnd")?.raw).toBe(500_000);
   });
 
+  it("admits the retirement-year fact when a bar exists for that year", () => {
+    // 2026 is the fixture's own `input.planStartYear` and also its first
+    // portfolio bar — overriding just `retirementYear` to a year the chart
+    // actually carries reuses the file's real fixture rather than a second one.
+    const facts = buildStoryFacts({ ...input, retirementYear: 2026, charts });
+    const atRet = facts.find((f) => f.id === "chart.portfolio.atRetirement");
+    expect(atRet?.raw).toBe(100_000);
+    expect(atRet?.chapters).toEqual(["willTheMoneyLast"]);
+  });
+
+  it("omits the retirement-year fact when no bar matches that year", () => {
+    // `input.retirementYear` is 2041; the fixture's bars are 2026/2035/2040, so
+    // this exercises the `if (atRet)` branch's false path with no override.
+    const facts = buildStoryFacts({ ...input, charts });
+    expect(facts.map((f) => f.id)).not.toContain("chart.portfolio.atRetirement");
+  });
+
   it("scopes every chart fact to the one chapter that draws it", () => {
     const facts = buildStoryFacts({ ...input, charts });
     for (const f of facts.filter((x) => x.id.startsWith("chart.portfolio."))) {
