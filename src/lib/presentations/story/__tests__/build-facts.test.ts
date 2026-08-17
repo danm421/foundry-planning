@@ -10,6 +10,7 @@ import { buildStoryFacts, groupStrategies, type StoryFactsInput } from "../build
 import { factDisplaySet } from "../facts";
 import { extractFigures, validateFacts } from "../validate/facts";
 import { narrateWhatWeRecommend } from "../chapters/what-we-recommend";
+import { CHAPTERS } from "../chapters/registry";
 import { CHAPTER_IDS, factsForChapter, type StoryContext, type StoryStrategy } from "../types";
 
 const input: StoryFactsInput = {
@@ -827,7 +828,15 @@ describe("chart facts", () => {
       { year: 2026, federalOrdinary: 10_000, capGains: 0, state: 2_000, total: 12_000 },
       { year: 2035, federalOrdinary: 40_000, capGains: 5_000, state: 8_000, total: 53_000 },
     ],
-    estate: null,
+    // All three arrays carry bars, so the invariant at the end of this block is
+    // asked the interesting question. `view-model.ts#chartFor` returns an estate
+    // chart only when `estate` holds bars; left null, a red on the estate
+    // chapter would be ambiguous between "no figures for its chart" and "no
+    // chart at all". With bars, the picture really would print.
+    estate: [
+      { label: "Today", netToHeirs: 2_100_000, federal: 0, state: 0, probate: 60_000, ird: 0, debts: 480_000, total: 2_640_000 },
+      { label: "At the end", netToHeirs: 3_400_000, federal: 220_000, state: 90_000, probate: 110_000, ird: 140_000, debts: 0, total: 3_960_000 },
+    ],
   };
 
   it("admits the peak the chart draws, and the year it happens", () => {
@@ -879,5 +888,33 @@ describe("chart facts", () => {
   it("emits no portfolio facts from an empty bar array", () => {
     const facts = buildStoryFacts({ ...input, charts: { portfolio: [], tax: [], estate: null } });
     expect(facts.filter((f) => f.id.startsWith("chart."))).toEqual([]);
+  });
+
+  /**
+   * ⭐⭐ The one invariant that ties the picture to the pack, and the reason it
+   * is stated off the LAYOUT: `chapter-pdf.tsx` draws a chart only on a
+   * `chartWithProse` sheet, so the layout is what decides whether a chart
+   * reaches a client's page.
+   *
+   * Put a chapter on that layout without giving it `chart.` facts and every
+   * check downstream stays quiet. `registry.ts#OUTPUT_ASK` tells the chapter to
+   * "name at least one of its figures"; Gate 1 (`validate/facts.ts`) refuses any
+   * figure the model invents to obey; and Gate 8
+   * (`validate/chart-citation.ts`) returns no failure at all when the chapter
+   * owns no charted fact, so nothing reports the mismatch. The sheet ships a
+   * picture the prose was never able to explain.
+   *
+   * `chartFacts` above keeps its own chapter lists, separate from the ones
+   * `pages/plan-story/view-model.ts#chartFor` uses to pick the drawing. This
+   * fails the moment those two stop agreeing about which chapters print a chart.
+   */
+  it("gives every chapter that PRINTS a chart at least one of that chart's figures", () => {
+    const facts = buildStoryFacts({ ...input, charts });
+    const charted = CHAPTER_IDS.filter((id) => CHAPTERS[id].layout === "chartWithProse");
+    // Not a vacuous loop: the layout has to be in use, or the body never runs.
+    expect(charted.length).toBeGreaterThanOrEqual(2);
+    for (const id of charted) {
+      expect(factsForChapter(facts, id).some((f) => f.id.startsWith("chart.")), id).toBe(true);
+    }
   });
 });

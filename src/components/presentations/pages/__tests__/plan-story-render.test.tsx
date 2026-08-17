@@ -446,18 +446,18 @@ function twoUpAtTheBound(figures: number): PlanStoryPageData {
           goals: [],
           strategies: [],
           facts: Array.from({ length: figures }, (_, i) => ({
-            id: `outcome.n${i}`,
-            label: `Confidence, proposed plan ${i + 1}`,
-            display: "96.3%",
-            raw: 0.963,
-            chapters: ["willTheMoneyLast" as const],
+            id: `spend.n${i}`,
+            label: `What you could spend a year ${i + 1}`,
+            display: "$260K",
+            raw: 260_000,
+            chapters: ["whatYouCanSpend" as const],
           })),
         },
-        text: { willTheMoneyLast: LONG_PROSE },
+        text: { whatYouCanSpend: LONG_PROSE },
       },
       scenarioLabel: "Proposed",
     } as never,
-    onlyChapter("willTheMoneyLast"),
+    onlyChapter("whatYouCanSpend"),
   );
 }
 
@@ -478,7 +478,7 @@ describe("Plan Story — the twoUp layout, really rendered", () => {
   // the length a narrator actually writes passes through with nothing dropped.
   it("does not trim a twoUp chapter of the length the narrators write", async () => {
     const REAL =
-      "Your plan holds up in almost every run we tested — 96.3% of them, against 84% on the path you're on today.\n\nThat comes from the two changes we walked through: waiting on Social Security, and moving money into the Roth while your bracket is low.\n\nThe years that go wrong are the ones where the market falls early. Even then, you don't run out — you spend a little less in your eighties.";
+      "You can spend about $260K a year without running short, against $210K on the path you're on today.\n\nThat comes from the two changes we walked through: waiting on Social Security, and moving money into the Roth while your bracket is low.\n\nIt isn't a number to spend to the penny. It's the ceiling the plan can carry, and there's room under it in the years you want less.";
     const data = buildPlanStoryData(
       {
         planStory: {
@@ -491,11 +491,11 @@ describe("Plan Story — the twoUp layout, really rendered", () => {
             strategies: [],
             facts: [],
           },
-          text: { willTheMoneyLast: REAL },
+          text: { whatYouCanSpend: REAL },
         },
         scenarioLabel: "Proposed",
       } as never,
-      onlyChapter("willTheMoneyLast"),
+      onlyChapter("whatYouCanSpend"),
     );
     expect(data.chapters[0].overflowNote).toBe("");
     expect(data.chapters[0].paragraphs).toHaveLength(3);

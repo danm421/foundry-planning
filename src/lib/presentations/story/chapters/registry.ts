@@ -129,7 +129,7 @@ export const CHAPTERS: Record<ChapterId, ChapterDef> = {
   willTheMoneyLast: {
     id: "willTheMoneyLast",
     title: "Will the money last?",
-    layout: "twoUp",
+    layout: "chartWithProse",
     narrate: narrateWillTheMoneyLast,
     requiresProposal: true,
     coverage: false,
@@ -163,7 +163,7 @@ export const CHAPTERS: Record<ChapterId, ChapterDef> = {
   whatYoullPayInTax: {
     id: "whatYoullPayInTax",
     title: "What you'll pay in tax",
-    layout: "twoUp",
+    layout: "chartWithProse",
     narrate: narrateWhatYoullPayInTax,
     requiresProposal: true,
     coverage: true,
@@ -310,8 +310,8 @@ const OUTPUT_ASK: Record<ChapterLayout, string> = {
    * A twoUp sheet gives its prose 130 words against heroProse's 300 — not
    * because the sheet is fuller, but because the figure column takes 170pt plus
    * its gap out of the text measure, so the same words cost half again as many
-   * LINES (`pages/plan-story/view-model.ts#BUDGET_WORDS_TWO_UP`). Seven of the
-   * fourteen chapters print here, and asking all seven for a heroProse chapter's
+   * LINES (`pages/plan-story/view-model.ts#BUDGET_WORDS_TWO_UP`). Five of the
+   * fourteen chapters print here, and asking them for a heroProse chapter's
    * prose made the trim note their normal ending rather than their exception.
    *
    * ⚠️ The SHAPE, not the number. `prompts.ts` records the measured finding that
@@ -399,7 +399,7 @@ const LENGTH_MODIFIER: Record<ChapterLength, string> = {
  * asking for fewer sentences than a ceiling allows is coherent, and cannot make
  * the trim note fire.
  *
- * A `Record`, like `OUTPUT_ASK` itself, so a sixth layout has to ANSWER this
+ * A `Record`, like `OUTPUT_ASK` itself, so a seventh layout has to ANSWER this
  * rather than inherit an answer written for a different sheet.
  */
 const FIXED_SHAPE_ASK: Record<ChapterLayout, boolean> = {
