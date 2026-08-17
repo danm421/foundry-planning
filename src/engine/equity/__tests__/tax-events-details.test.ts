@@ -17,10 +17,10 @@ function plan(grants: EquityGrant[], over: Partial<StockOptionPlan> = {}): Stock
 
 function rsu(over: Partial<EquityGrant> = {}): EquityGrant {
   return {
-    id: "g-rsu", grantNumber: "RSU-09", grantType: "rsu", grantYear: 2026,
+    id: "g-rsu", grantNumber: "RSU-09", grantType: "rsu", grantDate: "2026-01-15",
     sharesGranted: 100, has83bElection: false, fmvAtGrant: null, strikePrice: null,
     strikeDiscountPct: null, expirationYear: null, strategy: null,
-    tranches: [{ id: "rt1", vestYear: 2027, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null }],
+    tranches: [{ id: "rt1", vestDate: "2027-01-15", shares: 100, sharesExercised: 0, sharesSold: 0, acquiredOn: null, priceAtAcquisition: null, strategy: null }],
     plannedEvents: [], ...over,
   };
 }

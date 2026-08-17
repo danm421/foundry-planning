@@ -1,15 +1,19 @@
 import type { StockOptionPlan, EquityGrant, GrantType } from "./types";
 import { createEquityState, computeEquityYear } from "./tax-events";
 import { resolveStrikePrice } from "./price-model";
+import { yearOf } from "./dates";
 
 export interface FutureActivityGrantYearRow {
   year: number;
   grantId: string;              // stable identity (grantNumber is display-only)
   owner: "client" | "spouse";
   planLabel: string;            // ticker ?? "—"
-  grantNumber: string;          // grantNumber ?? `${ticker} ${grantYear}`
+  grantNumber: string;          // grantNumber ?? `${ticker} ${grant year}`
   grantType: GrantType;
-  grantDate: string;            // grant year (only precision we have)
+  /** The grant's real date, `YYYY-MM-DD`. The column has always been headed
+   *  "Grant Date"; it used to print the grant YEAR, because the year was all the
+   *  database stored. G8 stores the date. */
+  grantDate: string;
   sharesVested: number;         // RSU vest shares this year
   sharesExercised: number;      // option exercise shares this year
   exercisePrice: number | null; // strike (options)
@@ -101,9 +105,9 @@ export function buildFutureActivity(
             grantId: d.grantId,
             owner: plan.owner,
             planLabel: plan.ticker ?? "—",
-            grantNumber: grant.grantNumber ?? `${plan.ticker ?? "—"} ${grant.grantYear}`,
+            grantNumber: grant.grantNumber ?? `${plan.ticker ?? "—"} ${yearOf(grant.grantDate)}`,
             grantType: grant.grantType,
-            grantDate: String(grant.grantYear),
+            grantDate: grant.grantDate,
             sharesVested: 0, sharesExercised: 0, exercisePrice: null, exerciseCost: 0,
             sharesSold: 0, hasSellToCover: false, salePrice: d.fmv, grossProceeds: 0,
             netProceeds: 0, expiredShares: 0, expiredUnderwater: false,

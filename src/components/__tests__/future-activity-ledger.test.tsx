@@ -16,7 +16,7 @@ const ZERO_SUB: FutureActivitySubtotal = {
 function row(over: Partial<FutureActivityGrantYearRow>): FutureActivityGrantYearRow {
   return {
     year: 2027, grantId: "g-rsu", owner: "client", planLabel: "ACME", grantNumber: "RSU-09",
-    grantType: "rsu", grantDate: "2026", sharesVested: 0, sharesExercised: 0,
+    grantType: "rsu", grantDate: "2026-01-15", sharesVested: 0, sharesExercised: 0,
     exercisePrice: null, exerciseCost: 0, sharesSold: 0, hasSellToCover: false,
     salePrice: 100, grossProceeds: 0, netProceeds: 0, expiredShares: 0,
     expiredUnderwater: false, expiredForfeitedValue: 0, taxImpact: null, ...over,
