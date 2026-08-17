@@ -95,7 +95,7 @@ const CHAPTER_OUT_OF_DATE =
 
 /**
  * What `story/generate.ts` stores in `error`, and what the advisor is told it
- * means. The keys are that module's two frozen constants (generate.ts:28, :32).
+ * means. The keys are that module's two frozen constants (generate.ts:33, :37).
  *
  * Matched by value rather than imported: `generate.ts` reaches Azure and Redis,
  * and this is a client component. Anything unrecognised renders as stored — so
@@ -818,9 +818,9 @@ export function PlanStoryReviewPanel({
             reason to be in this view rather than out of it.
 
             ⚠️⚠️ NO `aria-pressed`, and that is the opposite of what every other
-            toggle in this repo does — `transactions-list.tsx:302`
-            ("Unreviewed"), `ownership-editor.tsx:122` (a fixed `label` prop) and
-            `plaid-account-decision-row.tsx:237` ("Add as new") all hold one
+            toggle in this repo does — `portal/transactions-list.tsx:302`
+            ("Unreviewed"), `forms/ownership-editor.tsx:122` (a fixed `label` prop) and
+            `portal/plaid-account-decision-row.tsx:237` ("Add as new") all hold one
             label and let the attribute carry the state. Those are filters and
             choices. This one REPLACES the panel body, so it changes its label
             instead — and you pick one or the other. Both together announce "Back
