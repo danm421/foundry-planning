@@ -51,15 +51,22 @@ describe("stockOptionAccountUpdateSchema is partial", () => {
   });
 
   it("still round-trips an explicit strategy change", () => {
+    // The percentage travels with the timing: a `percent_per_year` body with no
+    // percentage is now rejected, because the engine reads a blank one as 0%
+    // and never sells a share (audit F40). This test is about the PARTIAL
+    // behaviour — that a two-field PATCH survives intact — so it sends a
+    // complete strategy.
     const result = stockOptionAccountUpdateSchema.safeParse({
       withholdingRate: 0.37,
       defaultSellTiming: "percent_per_year",
+      defaultSellPercentPerYear: 0.25,
     });
     expect(result.success).toBe(true);
     if (!result.success) return;
     expect(result.data).toEqual({
       withholdingRate: 0.37,
       defaultSellTiming: "percent_per_year",
+      defaultSellPercentPerYear: 0.25,
     });
   });
 

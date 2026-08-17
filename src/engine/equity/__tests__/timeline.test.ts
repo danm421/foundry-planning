@@ -159,3 +159,110 @@ describe("buildGrantTimeline — options that should never be exercised", () => 
     expect(sells.map((s) => [s.lotId, s.shares])).toEqual([["t1#seed", 400], ["t1#ex", 600]]);
   });
 });
+
+describe("buildGrantTimeline — planned sell events (F43/F48)", () => {
+  const HOLD = { exerciseTiming: "at_vest" as const, exerciseYear: null, sellTiming: "hold" as const, sellYear: null, sellPercentPerYear: null, sellStartYear: null };
+
+  /** Four 1,000-share RSU tranches, all vesting inside the plan. */
+  function fourRowRsu(plannedEvents: EquityGrant["plannedEvents"]): EquityGrant {
+    return {
+      id: "gpe", grantNumber: "RS-PE", grantType: "rsu", grantYear: 2025, sharesGranted: 4000,
+      has83bElection: false, fmvAtGrant: null, strikePrice: null, strikeDiscountPct: null,
+      expirationYear: null, strategy: null,
+      tranches: [2027, 2028, 2029, 2030].map((y, i) => ({
+        id: `t${i + 1}`, vestYear: y, shares: 1000, sharesExercised: 0, sharesSold: 0, strategy: null,
+      })),
+      plannedEvents,
+    };
+  }
+
+  const soldShares = (g: EquityGrant, acct = HOLD) =>
+    buildGrantTimeline(g, acct, PSY, FMV).filter((a) => a.kind === "sell").reduce((s, a) => s + a.shares, 0);
+
+  it("sells a grant-level share count ONCE across the grant, not once per row", () => {
+    // "Sell 1,000 shares in 2030" on a four-row grant sold 1,000 from every
+    // row — 4,000 shares, the entire position, $200,000 at $50 a share.
+    const g = fourRowRsu([{ year: 2030, action: "sell", shares: 1000, pct: null, trancheId: null }]);
+    expect(soldShares(g)).toBe(1000);
+  });
+
+  it("draws the budget from the earliest-vesting rows first", () => {
+    const g = fourRowRsu([{ year: 2030, action: "sell", shares: 2500, pct: null, trancheId: null }]);
+    const sells = buildGrantTimeline(g, HOLD, PSY, FMV).filter((a) => a.kind === "sell");
+    expect(sells.map((s) => [s.trancheId, s.shares])).toEqual([
+      ["t1", 1000], ["t2", 1000], ["t3", 500],
+    ]);
+  });
+
+  it("never sells more than the grant holds", () => {
+    const g = fourRowRsu([{ year: 2031, action: "sell", shares: 99_999, pct: null, trancheId: null }]);
+    expect(soldShares(g)).toBe(4000);
+  });
+
+  it("keeps each event's budget separate", () => {
+    const g = fourRowRsu([
+      { year: 2030, action: "sell", shares: 1000, pct: null, trancheId: null },
+      { year: 2031, action: "sell", shares: 1500, pct: null, trancheId: null },
+    ]);
+    expect(soldShares(g)).toBe(2500);
+  });
+
+  it("leaves a PERCENTAGE event per-row, where 25% of each row is 25% of the grant", () => {
+    const g = fourRowRsu([{ year: 2030, action: "sell", shares: null, pct: 0.25, trancheId: null }]);
+    expect(soldShares(g)).toBe(1000);
+    const sells = buildGrantTimeline(g, HOLD, PSY, FMV).filter((a) => a.kind === "sell");
+    expect(sells.map((s) => s.shares)).toEqual([250, 250, 250, 250]);
+  });
+
+  it("leaves a share-less, pct-less event per-row — it means 'sell this row'", () => {
+    const g = fourRowRsu([{ year: 2030, action: "sell", shares: null, pct: null, trancheId: null }]);
+    expect(soldShares(g)).toBe(4000);
+  });
+
+  it("fills the earliest event first, whatever order the events were stored in", () => {
+    // Draw order decides WHICH row satisfies WHICH event, and a sell can never
+    // precede the vest it came from. Two far-apart rows and two far-apart
+    // events, declared newest-first: the 2028 sale must come out of the row
+    // that vests in 2027, or it gets dragged forward to 2035.
+    const g: EquityGrant = {
+      id: "gord", grantNumber: "RS-ORD", grantType: "rsu", grantYear: 2025, sharesGranted: 2000,
+      has83bElection: false, fmvAtGrant: null, strikePrice: null, strikeDiscountPct: null,
+      expirationYear: null, strategy: null,
+      tranches: [
+        { id: "t1", vestYear: 2027, shares: 1000, sharesExercised: 0, sharesSold: 0, strategy: null },
+        { id: "t2", vestYear: 2035, shares: 1000, sharesExercised: 0, sharesSold: 0, strategy: null },
+      ],
+      plannedEvents: [
+        { year: 2036, action: "sell", shares: 1000, pct: null, trancheId: null },
+        { year: 2028, action: "sell", shares: 1000, pct: null, trancheId: null },
+      ],
+    };
+    const sells = buildGrantTimeline(g, HOLD, PSY, FMV).filter((a) => a.kind === "sell");
+    expect(sells.map((s) => [s.trancheId, s.year, s.shares])).toEqual([
+      ["t1", 2028, 1000],
+      ["t2", 2036, 1000],
+    ]);
+  });
+
+  it("leaves a TRANCHE-targeted share count alone — it already names one row", () => {
+    const g = fourRowRsu([{ year: 2030, action: "sell", shares: 600, pct: null, trancheId: "t2" }]);
+    const sells = buildGrantTimeline(g, HOLD, PSY, FMV).filter((a) => a.kind === "sell");
+    expect(sells.map((s) => [s.trancheId, s.shares])).toEqual([["t2", 600]]);
+  });
+
+  it("splits one budget across the two lots a single option row can hold", () => {
+    // 400 of 1,000 already exercised and held: the seeded lot and the lot the
+    // plan exercises are separate acquisitions on the same row, and the old
+    // code handed the full 600 to each.
+    const g: EquityGrant = {
+      id: "gpe2", grantNumber: "NQ-PE", grantType: "nqso", grantYear: 2024, sharesGranted: 1000,
+      has83bElection: false, fmvAtGrant: null, strikePrice: 10, strikeDiscountPct: null,
+      expirationYear: 2034, strategy: null,
+      tranches: [{ id: "t1", vestYear: 2025, shares: 1000, sharesExercised: 400, sharesSold: 0, strategy: null }],
+      plannedEvents: [{ year: 2030, action: "sell", shares: 600, pct: null, trancheId: null }],
+    };
+    const sells = buildGrantTimeline(g, HOLD, PSY, FMV).filter((a) => a.kind === "sell");
+    expect(sells.map((s) => [s.lotId, s.shares])).toEqual([["t1#seed", 400], ["t1#ex", 200]]);
+    expect(sells.reduce((s, a) => s + a.shares, 0)).toBe(600);
+  });
+});

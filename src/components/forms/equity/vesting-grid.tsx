@@ -108,11 +108,21 @@ function redistribute(rows: TrancheRow[], sharesGranted: string): TrancheRow[] {
   return next;
 }
 
-function computeRemaining(row: TrancheRow, isRsu: boolean): number {
+/** Shares this row still holds, exercised or not.
+ *
+ *  Sold shares are a SUBSET of exercised ones, which are a subset of the row's
+ *  shares (`grant-state.ts` and the engine's `timeline.ts` both partition a row
+ *  that way), so the live count is shares − sold. Subtracting the exercised
+ *  shares as well counted the sold ones twice: a 1,000 / 400 / 400 row printed
+ *  200 where the engine exercises 600 and the grant card directly below says
+ *  600 held. Audit F49.
+ *
+ *  Deliberately unclamped — a negative here is an impossible entry the advisor
+ *  needs to see, not a zero to hide behind. Audit F41. */
+function computeRemaining(row: TrancheRow): number {
   const shares = parseFloat(row.shares) || 0;
-  const exercised = isRsu ? 0 : parseFloat(row.sharesExercised) || 0;
   const sold = parseFloat(row.sharesSold) || 0;
-  return Math.max(0, shares - exercised - sold);
+  return shares - sold;
 }
 
 const inputCls =
@@ -152,7 +162,7 @@ export default function VestingGrid({ rows, onChange, grantType, sharesGranted, 
   const totalShares = rows.reduce((acc, r) => acc + (parseFloat(r.shares) || 0), 0);
   const totalExercised = isRsu ? 0 : rows.reduce((acc, r) => acc + (parseFloat(r.sharesExercised) || 0), 0);
   const totalSold = rows.reduce((acc, r) => acc + (parseFloat(r.sharesSold) || 0), 0);
-  const totalRemaining = rows.reduce((acc, r) => acc + computeRemaining(r, isRsu), 0);
+  const totalRemaining = rows.reduce((acc, r) => acc + computeRemaining(r), 0);
 
   function fmtNum(n: number): string {
     if (n === 0 && rows.length === 0) return "—";
@@ -189,7 +199,7 @@ export default function VestingGrid({ rows, onChange, grantType, sharesGranted, 
               </tr>
             )}
             {rows.map((row, i) => {
-              const remaining = computeRemaining(row, isRsu);
+              const remaining = computeRemaining(row);
               return (
                 <tr key={row._key} className="border-b border-gray-700/50 last:border-0">
                   <td className={tdCls + " pl-3"}>
@@ -232,7 +242,7 @@ export default function VestingGrid({ rows, onChange, grantType, sharesGranted, 
                       className={inputCls + " text-right"}
                     />
                   </td>
-                  <td className={tdCls + " text-gray-300 pr-2"}>
+                  <td className={tdCls + (remaining < 0 ? " text-red-400" : " text-gray-300") + " pr-2"}>
                     {remaining.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                   </td>
                   <td className={tdCls + " pr-3"}>

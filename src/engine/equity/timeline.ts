@@ -1,4 +1,4 @@
-import type { EquityGrant, EquityVestTranche } from "./types";
+import type { EquityGrant, EquityPlannedEvent, EquityVestTranche } from "./types";
 import { resolveStrategy, type ResolvedStrategy } from "./strategy";
 import { resolveStrikePrice } from "./price-model";
 
@@ -117,6 +117,47 @@ function sellActions(
   }
 }
 
+/** Allocate this grant's planned sells to one acquisition.
+ *
+ *  A grant-level planned event ("sell 1,000 shares in 2030", `trancheId` null)
+ *  names a share count for the WHOLE GRANT. It used to be re-read inside the
+ *  per-row loop, so a four-row grant sold 1,000 shares four times over — 4,000
+ *  shares against a 4,000-share grant, the entire position. `budget` carries
+ *  what is left of each such event across the grant, and every acquisition
+ *  draws from it in year order, capped by what that acquisition actually holds.
+ *  Audit F43/F48.
+ *
+ *  Percentage and share-less events stay per-row and are not budgeted: 25% of
+ *  each row IS 25% of the grant, and "no shares, no pct" means "sell this row".
+ */
+function drawPlannedSells(
+  events: { event: EquityPlannedEvent; key: number }[],
+  budget: Map<number, number>,
+  acquiredShares: number,
+  trancheShares: number,
+): { year: number; shares: number }[] {
+  let capacity = acquiredShares;
+  const out: { year: number; shares: number }[] = [];
+  for (const { event, key } of [...events].sort((a, b) => a.event.year - b.event.year)) {
+    const left = budget.get(key);
+    if (left == null) {
+      // Unbudgeted: a tranche-targeted event (it already names one row), or a
+      // grant-level percentage / bare event. Same reading as before.
+      out.push({
+        year: event.year,
+        shares: event.shares ?? (event.pct != null ? ROUND(trancheShares * event.pct) : trancheShares),
+      });
+      continue;
+    }
+    const take = ROUND(Math.min(left, capacity));
+    if (take <= 0) continue;
+    budget.set(key, ROUND(left - take));
+    capacity = ROUND(capacity - take);
+    out.push({ year: event.year, shares: take });
+  }
+  return out;
+}
+
 /** Build the full action timeline for one grant.
  *
  *  `fmvAt` supplies the projected share price for a given year, so an option
@@ -152,12 +193,21 @@ export function buildGrantTimeline(
     return out;
   }
 
+  // One budget per grant-level planned sell that names an explicit share
+  // count, drawn down as the rows below consume it. See `drawPlannedSells`.
+  const sellBudget = new Map<number, number>();
+  grant.plannedEvents.forEach((p, i) => {
+    if (p.action === "sell" && p.trancheId == null && p.shares != null) {
+      sellBudget.set(i, ROUND(p.shares));
+    }
+  });
+
   for (const tranche of grant.tranches) {
     const s = resolveStrategy(acct, grant.strategy, tranche.strategy);
     const plannedExerciseYears = grant.plannedEvents.filter((p) => p.action === "exercise" && (p.trancheId == null || p.trancheId === tranche.id)).map((p) => p.year);
-    const plannedSells = grant.plannedEvents
-      .filter((p) => p.action === "sell" && (p.trancheId == null || p.trancheId === tranche.id))
-      .map((p) => ({ year: p.year, shares: p.shares ?? (p.pct != null ? ROUND(tranche.shares * p.pct) : tranche.shares) }));
+    const sellEvents = grant.plannedEvents
+      .map((event, key) => ({ event, key }))
+      .filter(({ event }) => event.action === "sell" && (event.trancheId == null || event.trancheId === tranche.id));
 
     if (!isOption) {
       // RSU tranche: vest = acquisition.
@@ -165,10 +215,10 @@ export function buildGrantTimeline(
       if (tranche.vestYear < planStartYear) {
         const seed: EquityAction = { year: planStartYear, kind: "seed_held", grantId: grant.id, trancheId: tranche.id, lotId: seedLot(tranche.id), shares: remaining };
         if (remaining > 0) out.push(seed);
-        out.push(...sellActions(s, seed, plannedSells));
+        out.push(...sellActions(s, seed, drawPlannedSells(sellEvents, sellBudget, remaining, tranche.shares)));
       } else {
         const acq: EquityAction = { year: tranche.vestYear, kind: "acquire_rsu", grantId: grant.id, trancheId: tranche.id, lotId: acquireLot(tranche.id), shares: ROUND(tranche.shares) };
-        out.push(acq, ...sellActions(s, acq, plannedSells));
+        out.push(acq, ...sellActions(s, acq, drawPlannedSells(sellEvents, sellBudget, acq.shares, tranche.shares)));
       }
       continue;
     }
@@ -180,7 +230,7 @@ export function buildGrantTimeline(
     // Seed already-exercised-and-held shares as of planStartYear.
     if (alreadyExercisedHeld > 0) {
       const seed: EquityAction = { year: planStartYear, kind: "seed_held", grantId: grant.id, trancheId: tranche.id, lotId: seedLot(tranche.id), shares: alreadyExercisedHeld };
-      out.push(seed, ...sellActions(s, seed, plannedSells));
+      out.push(seed, ...sellActions(s, seed, drawPlannedSells(sellEvents, sellBudget, alreadyExercisedHeld, tranche.shares)));
     }
 
     if (unexercised <= 0) continue;
@@ -190,7 +240,7 @@ export function buildGrantTimeline(
 
     if (eYear != null) {
       const ex: EquityAction = { year: eYear, kind: "exercise", grantId: grant.id, trancheId: tranche.id, lotId: exerciseLot(tranche.id), shares: unexercised };
-      out.push(ex, ...sellActions(s, ex, plannedSells));
+      out.push(ex, ...sellActions(s, ex, drawPlannedSells(sellEvents, sellBudget, unexercised, tranche.shares)));
     } else if (expYear != null) {
       // No lot is ever created for an expiry — lotId is set only because the
       // field is required. Note this year can precede planStartYear (an option
