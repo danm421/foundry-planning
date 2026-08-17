@@ -827,24 +827,65 @@ function footerSlots(): Promise<Set<string>> {
   return framePrints;
 }
 
-/** How far down the sheet the chapter's own content actually reaches, and how
- *  many sheets it took. */
-async function bodyBottom(data: PlanStoryPageData): Promise<{ bottom: number; sheets: number }> {
+/**
+ * How far down the sheet the chapter's own content reaches, and how many sheets
+ * it took.
+ *
+ * ⚠️ `bottom` is NULL on any render but a one-sheet one, and that is deliberate
+ * rather than lazy — it is not a number this instrument can produce. The
+ * identity filter above learns the frame's footer words from a ONE-SHEET
+ * calibration, where the row reads "Page 1 of 1". The moment the document
+ * paginates that row reads "Page 1 of 2" and "Page 2 of 2": different glyphs,
+ * and different x positions with them (measured: "Page" at 531.32 on the
+ * calibration, 529.80 and 528.28 on the two sheets of a spilling render), so not
+ * one of its eight words matches a learned key and the whole row survives the
+ * filter on BOTH sheets. The maximum then comes back as 750 — the footer's own
+ * baseline — on every spilling render alike, when page 1's last prose word is
+ * near 698.
+ *
+ * Returning that number would be worse than returning nothing. Nothing here is
+ * currently wrong in the client's direction, because contamination only ever
+ * reads as "further down"; the hazard is the next person, who raises the budget,
+ * sees the fit case go red, and asks this how far over it went. 750 is 30pt past
+ * the disclaimer line and a budget re-derived from it would be too small — wrong
+ * in the client's direction, from an instrument that looked precise.
+ *
+ * Filtering to page 1 does not rescue it: page 1's own footer is what changes.
+ */
+async function bodyBottom(data: PlanStoryPageData): Promise<{ bottom: number | null; sheets: number }> {
   const frame = await footerSlots();
   const pdf = await renderToBuffer(<Document>{PlanStoryPagePdf({ data, ...FRAME })}</Document>);
+  const sheets = renderedPages(pdf);
+  if (sheets !== 1) return { bottom: null, sheets };
   const body = wordBoxes(pdf).filter((w) => !frame.has(w.key));
   // Nothing but the frame came back, so there is no geometry to compare and
   // `Math.max` would hand back -Infinity — which reads as "fits" and passes.
   if (body.length === 0) throw new Error("no chapter content in the rendered sheet");
-  return { bottom: Math.max(...body.map((w) => w.yMax)), sheets: renderedPages(pdf) };
+  return { bottom: Math.max(...body.map((w) => w.yMax)), sheets };
 }
 
-/** Both ways a sheet can fail to hold its prose. Every overflow measured on this
- *  layout broke to a second sheet — but `PageFrame`'s `flex: 1` body is why a
- *  count of 1 cannot be trusted to mean the rest, so the geometry is asked as
- *  well as the page tree. */
-function spilled({ bottom, sheets }: { bottom: number; sheets: number }): boolean {
-  return sheets > 1 || bottom > CONTENT_BOTTOM;
+/**
+ * Both ways a sheet can fail to hold its prose, each read by the instrument that
+ * can actually see it.
+ *
+ * Every overflow measured on this layout broke to a second sheet, and the page
+ * tree is what says so. `PageFrame`'s `flex: 1` body is why that alone cannot be
+ * trusted — a sheet that clipped instead of breaking still counts 1 — so the
+ * geometry answers for the one-sheet case, which per `bodyBottom` is the only
+ * case it HAS an answer for.
+ */
+function spilled({ bottom, sheets }: { bottom: number | null; sheets: number }): boolean {
+  if (sheets !== 1) return true;
+  return bottom !== null && bottom > CONTENT_BOTTOM;
+}
+
+/** …and the geometry on its own, for the case that has one. Throws rather than
+ *  returning null so a paginated render cannot reach a comparison as
+ *  `null <= 720`, which passes. */
+async function oneSheetBottom(data: PlanStoryPageData): Promise<number> {
+  const { bottom, sheets } = await bodyBottom(data);
+  if (bottom === null) throw new Error(`expected one sheet, rendered ${sheets}`);
+  return bottom;
 }
 
 /** The measuring stick the sheet budgets above are cut against, one paragraph's
@@ -912,10 +953,9 @@ function chartSheet(paragraphs: string[]): PlanStoryPageData {
  */
 describe("Plan Story — what a chart sheet's prose may spend", () => {
   it("keeps the worst prose the budget allows above the footer", async () => {
-    const { bottom, sheets } = await bodyBottom(
+    const bottom = await oneSheetBottom(
       chartSheet(wastefulProse(BUDGET_WORDS_CHART, MAX_PARAGRAPHS_CHART)),
     );
-    expect(sheets).toBe(1);
     expect(bottom).toBeLessThanOrEqual(CONTENT_BOTTOM);
   }, 60_000);
 

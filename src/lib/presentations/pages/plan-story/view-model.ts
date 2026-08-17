@@ -123,9 +123,14 @@ const TITLE = "Your Plan";
  * every page's signature, so the RENDER is what gives way and the invariant
  * becomes true by construction.
  *
- * Every number below is MEASURED, by rendering real PDFs. They are deliberately
- * plain ceilings rather than a fitted model of the layout — a model was tried,
- * and the measurements will not support one:
+ * Every number below sits at or inside a MEASURED bound, taken by rendering real
+ * PDFs. That is not the same as the sheet having CHOSEN it: `MAX_FIGURE_CARDS`
+ * stops at five on a sheet measured to hold eight, for a reason its own note
+ * gives. So a bound never licenses raising one of these on its own — read the
+ * constant's note first.
+ *
+ * They are deliberately plain ceilings rather than a fitted model of the layout
+ * — a model was tried, and the measurements will not support one:
  *
  *   · five paragraphs of 81 words (405 words) occupy one sheet, while twelve
  *     paragraphs of 27 (324 words) overflow — a paragraph costs its own bottom
