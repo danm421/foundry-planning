@@ -16,6 +16,7 @@ const side = (totalValue: number, mean: number, geo: number, sd: number, sharpe:
   },
   cma: { arithmeticMean: mean, geometricReturn: geo, stdDev: sd, sharpe },
   coveragePct: 1,
+  uncoveredTickers: [],
 });
 
 export const BUNDLE: InvestmentProposalBundle = {
@@ -42,7 +43,7 @@ export const BUNDLE: InvestmentProposalBundle = {
         taxableMarketValue: 185405, taxableCostBasis: 100000, realizedGain: 85405,
         effectiveRate: 0.432, rateSource: "engine", estimatedTax: 36911, notes: [],
       },
-      realizedWindow: { windowStart: "2016-08", windowEnd: "2026-07", nMonths: 120, insufficientHistory: false, shortHistory: false },
+      realizedWindow: { windowStart: "2016-08", windowEnd: "2026-07", nMonths: 120, insufficientHistory: false, shortHistory: false, coverageSuppressed: false },
       sourceUnresolvedTickers: [],
     },
     fees: {

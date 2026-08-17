@@ -11,6 +11,13 @@ import { Frame, S, usd, pct1, pct2, type SectionProps } from "./sections-overvie
 
 export function GrowthSection({ data, frame, accent }: SectionProps) {
   const b = data.snapshot?.backtest ?? null;
+  // Two different reasons produce a null backtest, and they are not
+  // interchangeable to an advisor reading this page. A SHORT window means the
+  // holdings have not existed together for long; SUPPRESSED coverage means the
+  // window is fine but too little of the money has any price history at all —
+  // often a large cash position. Printing the short-window sentence for a
+  // suppressed report names a cause that isn't true and points at the wrong fix.
+  const suppressed = data.snapshot?.compute.realizedWindow.coverageSuppressed ?? false;
   return (
     <Frame frame={frame}>
       <SectionHead
@@ -20,7 +27,9 @@ export function GrowthSection({ data, frame, accent }: SectionProps) {
       />
       {b === null ? (
         <Callout accent={accent}>
-          The two portfolios share too little price history to compare a realized growth path.
+          {suppressed
+            ? "Too little of the portfolio has price history to trace a realized growth path. Holdings without history — money-market and sweep positions are the usual case — cannot be back-tested, and the rest are not shown standing in for the whole account."
+            : "The two portfolios share too little price history to compare a realized growth path."}
         </Callout>
       ) : (
         <>

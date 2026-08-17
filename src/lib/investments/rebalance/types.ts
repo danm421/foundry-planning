@@ -27,6 +27,11 @@ export interface PortfolioSide {
   cma: RiskReturnStats;
   /** Share of totalValue covered by classified securities with price history (1 for a fund portfolio with full coverage). */
   coveragePct: number;
+  /** Tickers excluded from the realized series for want of price history. They
+   *  still carry their asset-class weight, so they count in the CMA stats and
+   *  the asset mix — only the backtest cannot see them. Naming them is what
+   *  turns a bare coverage percentage into something an advisor can act on. */
+  uncoveredTickers: string[];
 }
 
 /** Net buy/sell to move current → target, rolled up by asset class. */
@@ -55,6 +60,11 @@ export interface RealizedWindow {
   nMonths: number;
   insufficientHistory: boolean; // common window below MIN_MONTHS
   shortHistory: boolean; // below WARN_MONTHS
+  /** Either side's covered value fell below REALIZED_COVERAGE_MIN, so the
+   *  realized stats, backtest and stress windows are withheld. Distinct from
+   *  `insufficientHistory`: there the shared window is too SHORT, here the
+   *  series is long enough but describes too little of the money. */
+  coverageSuppressed: boolean;
 }
 
 export interface RebalanceComputeResult {

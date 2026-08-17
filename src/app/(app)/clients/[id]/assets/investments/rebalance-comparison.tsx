@@ -4,6 +4,7 @@ import { useState } from "react";
 import MoneyText from "@/components/money-text";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import type { RebalanceComputeResult } from "@/lib/investments/rebalance/types";
+import { REALIZED_COVERAGE_WARN } from "@/lib/investments/rebalance/panel-from-holdings";
 import type { ProposalSnapshot } from "@/lib/investments/proposals/types";
 import type { PortfolioStats } from "@/lib/portfolio-stats";
 import type { RiskReturnStats } from "@/lib/investments/portfolio-stats";
@@ -35,19 +36,54 @@ function deltaColor(delta: number | null | undefined, higherIsBetter: boolean): 
 
 // ── 1. Coverage banner ─────────────────────────────────────────────────────────
 
+/** Coverage for one side, plus the holdings the backtest can't see. Both sides
+ *  are shown: the proposed side can be the thin one, and while only the current
+ *  figure was on screen a target built from tickers with no history looked
+ *  fully measured. */
+function CoverageSide({
+  label,
+  coveragePct,
+  uncoveredTickers,
+}: {
+  label: string;
+  coveragePct: number;
+  uncoveredTickers: string[];
+}) {
+  const thin = coveragePct < REALIZED_COVERAGE_WARN;
+  return (
+    <span className="text-sm text-ink-2">
+      {label}{" "}
+      <span className={`font-semibold ${thin ? "text-warn" : "text-ink"}`}>
+        <MoneyText value={coveragePct} format="pct" />
+      </span>
+      {uncoveredTickers.length > 0 && (
+        <span className="text-ink-3"> · no history: {uncoveredTickers.join(", ")}</span>
+      )}
+    </span>
+  );
+}
+
 function CoverageBanner({ result }: { result: RebalanceComputeResult }) {
   const { realizedWindow } = result;
-  const coveragePct = result.current.coveragePct;
+  // Absent on proposals saved before these fields existed.
+  const currentUncovered = result.current.uncoveredTickers ?? [];
+  const proposedUncovered = result.proposed.uncoveredTickers ?? [];
 
   return (
     <SectionCard className="p-5">
-      <div className="flex flex-wrap items-baseline gap-x-6 gap-y-0.5">
-        <span className="text-sm text-ink-2">
-          <span className="font-semibold text-ink">
-            <MoneyText value={coveragePct} format="pct" />
-          </span>{" "}
-          of holdings value has price history
-        </span>
+      <p className="text-xs text-ink-3">Share of value with price history — the realized backtest can only see this much</p>
+
+      <div className="mt-1.5 flex flex-wrap items-baseline gap-x-6 gap-y-0.5">
+        <CoverageSide
+          label="Current"
+          coveragePct={result.current.coveragePct}
+          uncoveredTickers={currentUncovered}
+        />
+        <CoverageSide
+          label="Proposed"
+          coveragePct={result.proposed.coveragePct}
+          uncoveredTickers={proposedUncovered}
+        />
 
         {realizedWindow.windowStart && realizedWindow.windowEnd && (
           <span className="text-xs text-ink-3">
@@ -56,16 +92,33 @@ function CoverageBanner({ result }: { result: RebalanceComputeResult }) {
         )}
       </div>
 
-      {realizedWindow.insufficientHistory && (
+      {realizedWindow.coverageSuppressed ? (
+        <p className="mt-3 text-sm text-warn">
+          Too little of the portfolio has price history to back-test honestly, so the realized
+          stats, growth chart and stress tests are withheld. The forward-looking estimates below
+          are unaffected — they read asset-class weights, which every holding has.
+        </p>
+      ) : realizedWindow.insufficientHistory ? (
         <p className="mt-3 text-sm text-warn">
           Not enough shared price history (under 36 months) for a realized backtest — showing
           forward-looking CMA estimates only.
         </p>
-      )}
-      {!realizedWindow.insufficientHistory && realizedWindow.shortHistory && (
-        <p className="mt-3 text-sm text-warn">
-          Short shared history (under 60 months); realized stats are less reliable.
-        </p>
+      ) : (
+        <>
+          {realizedWindow.shortHistory && (
+            <p className="mt-3 text-sm text-warn">
+              Short shared history (under 60 months); realized stats are less reliable.
+            </p>
+          )}
+          {(result.current.coveragePct < REALIZED_COVERAGE_WARN ||
+            result.proposed.coveragePct < REALIZED_COVERAGE_WARN) && (
+            <p className="mt-3 text-sm text-warn">
+              Holdings without price history are left out of the realized stats and the rest
+              rescaled to 100%, so those figures describe only the covered share above — not the
+              whole portfolio.
+            </p>
+          )}
+        </>
       )}
     </SectionCard>
   );
@@ -308,7 +361,9 @@ function KpiPanel({ result }: { result: RebalanceComputeResult }) {
 
         {!hasRealized ? (
           <div className="rounded-md bg-card-2 px-3 py-3 text-[13px] text-ink-3">
-            Realized backtest requires 36+ months of shared price history. Showing CMA estimates only.
+            {result.realizedWindow.coverageSuppressed
+              ? "Withheld: too little of the portfolio has price history for a backtest to describe it. Showing CMA estimates only."
+              : "Realized backtest requires 36+ months of shared price history. Showing CMA estimates only."}
           </div>
         ) : (
           <table className="w-full">

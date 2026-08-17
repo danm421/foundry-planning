@@ -39,7 +39,9 @@ function compound(returns: readonly MonthlyReturn[], startValue: number): Backte
 export function buildBacktestSeries(
   aligned: AlignedWindows,
   startValue: number = DEFAULT_START_VALUE,
+  coverageSuppressed = false,
 ): BacktestSeries | null {
+  if (coverageSuppressed) return null;
   if (aligned.nMonths < MIN_MONTHS || !aligned.windowStart || !aligned.windowEnd) {
     return null;
   }
@@ -85,6 +87,7 @@ const cumulative = (rs: readonly MonthlyReturn[]): number =>
 export function buildStressWindows(
   aligned: AlignedWindows,
   totalValue: number,
+  coverageSuppressed = false,
 ): StressWindow[] {
   const cur = blendedMonthlyReturns(aligned.a);
   const prop = blendedMonthlyReturns(aligned.b);
@@ -95,13 +98,18 @@ export function buildStressWindows(
     const c = slice(cur);
     const p = slice(prop);
     const expected = monthSpan(w.start, w.end);
-    const available = c.length === expected && p.length === expected;
+    // Too little of the portfolio has price history for these blended returns
+    // to describe it. The window is reported unavailable for that reason rather
+    // than computed — a drawdown drawn from a quarter of the money is a real
+    // number about a portfolio the client does not hold.
+    const available = !coverageSuppressed && c.length === expected && p.length === expected;
 
     if (!available) {
       // The aligned series share an identical date set by construction, so
       // `c`'s coverage count speaks for both sides.
-      const unavailableReason =
-        c.length === 0
+      const unavailableReason = coverageSuppressed
+        ? "Too little of the portfolio has price history to show how it would have fared."
+        : c.length === 0
           ? "One or more holdings launched after this period."
           : "Full-period data isn't available for one or more holdings in this window, so the loss shown would understate what actually happened.";
       return {

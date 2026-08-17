@@ -1,6 +1,22 @@
 import type { MonthlyReturn } from "@/lib/cma-stats";
 import type { PortfolioHoldingSeries } from "@/lib/ticker-portfolio-service";
 
+/**
+ * Below this share of a side's value carrying price history, the realized
+ * block is withheld entirely. Mirrors `FEE_COVERAGE_MIN` — the fee blend
+ * already refuses to speak for a portfolio it can only half see, and a
+ * backtest has exactly the same problem.
+ *
+ * Lives here rather than in `assemble.ts` because this is the module that
+ * computes `coveragePct`, and because the client bundle imports the threshold
+ * for its warning copy — it should not have to pull the whole assembler in.
+ */
+export const REALIZED_COVERAGE_MIN = 0.5;
+
+/** Above the floor but below this, the UI prints the coverage figure alongside
+ *  the stats. Mirrors `FEE_COVERAGE_WARN`. */
+export const REALIZED_COVERAGE_WARN = 0.8;
+
 export interface HoldingForSeries {
   securityId: string | null;
   ticker: string; // displayTicker or fallback label
