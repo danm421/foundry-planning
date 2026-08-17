@@ -330,9 +330,12 @@ describe("buildChapterPrompt", () => {
     expect(twoUp).toContain("TWO short paragraphs");
     expect(twoUp).not.toContain("2 to 4 short paragraphs");
 
-    // A chart sheet holds two paragraphs too, and for the opposite reason: the
-    // chart is the page's subject and the prose explains it, so the ask names
-    // the chart rather than a figure column beside the text.
+    // A chart sheet's ASK is two paragraphs as well, and for the opposite
+    // reason: the chart is the page's subject and the prose explains it, so the
+    // sentence names the chart rather than a figure column beside the text.
+    // Two is what the model is asked for, NOT what the sheet holds —
+    // `view-model.ts#MAX_PARAGRAPHS_CHART` is five, measured at six laying out
+    // and seven spilling onto a second sheet.
     const chart = buildChapterPrompt("willTheMoneyLast", CTX, EMPTY_VOICE, DEFAULT_CHAPTER_STYLE, []).system;
     expect(chart).toContain("TWO short paragraphs");
     expect(chart).not.toContain("2 to 4 short paragraphs");
@@ -820,10 +823,13 @@ describe("tone and length", () => {
 /**
  * ⭐⭐ Fourteen prompts, hashed and pinned, so a chapter's stored `sourceHash`
  * cannot move by accident. `/api/clients/[id]/plan-story/stale` rebuilds each
- * chapter's hash and compares it to the one stored beside the prose, so any
- * character this module adds to a system prompt puts an out-of-date badge on
- * every already-generated copy of that chapter, in every report, until someone
- * regenerates it — overwriting whatever an advisor edited to do it.
+ * chapter's hash and compares it to the one stored beside the prose, so a system
+ * prompt that differs by one character puts an out-of-date badge on every
+ * already-generated copy of that chapter, in every report, until someone
+ * regenerates it. An advisor's own words survive that: `repo.ts` leaves
+ * `editedText` alone on a regeneration — deliberately, as the note over
+ * `upsertGeneratedChapter` says — and `resolveChapterText` still prints it ahead
+ * of the model's. What the badge costs is the regeneration, not their writing.
  *
  * ⚠️ TWELVE OF THESE ARE THE PRE-`style` VALUES; TWO ARE NOT.
  *

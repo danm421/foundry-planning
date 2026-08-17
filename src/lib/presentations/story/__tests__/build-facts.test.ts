@@ -904,9 +904,11 @@ describe("chart facts", () => {
    * owns no charted fact, so nothing reports the mismatch. The sheet ships a
    * picture the prose was never able to explain.
    *
-   * `chartFacts` above keeps its own chapter lists, separate from the ones
-   * `pages/plan-story/view-model.ts#chartFor` uses to pick the drawing. This
-   * fails the moment those two stop agreeing about which chapters print a chart.
+   * What it catches is drift between the LAYOUT and this file's own fact
+   * scopes, and it is red from either side: put a chapter on `chartWithProse`
+   * without giving it chart facts, or repoint one of the `*_CHART_CHAPTERS`
+   * lists above at a different chapter. Both were run, and each names the
+   * offending chapter in its failure message.
    */
   it("gives every chapter that PRINTS a chart at least one of that chart's figures", () => {
     const facts = buildStoryFacts({ ...input, charts });
