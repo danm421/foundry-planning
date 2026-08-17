@@ -291,21 +291,25 @@ describe("POST /api/story-voice/samples", () => {
 });
 
 describe("GET /api/story-voice/samples", () => {
+  /** One stored row, with whatever the test needs changed on it. */
+  function storedRow(over: Record<string, unknown> = {}) {
+    return {
+      id: SAMPLE,
+      firmId: FIRM,
+      advisorUserId: "",
+      text: "They own that amount.",
+      sourceChapterId: "whatWeRecommend",
+      sourceClientId: null,
+      enabled: true,
+      createdBy: USER,
+      createdAt: new Date("2026-08-14T00:00:00Z"),
+      updatedAt: new Date("2026-08-14T00:00:00Z"),
+      ...over,
+    };
+  }
+
   it("lists this advisor's samples and the firm's, scrubbed text and all", async () => {
-    mocks.listVoiceSamples.mockResolvedValue([
-      {
-        id: SAMPLE,
-        firmId: FIRM,
-        advisorUserId: "",
-        text: "They own that amount.",
-        sourceChapterId: "whatWeRecommend",
-        sourceClientId: null,
-        enabled: true,
-        createdBy: USER,
-        createdAt: new Date("2026-08-14T00:00:00Z"),
-        updatedAt: new Date("2026-08-14T00:00:00Z"),
-      },
-    ]);
+    mocks.listVoiceSamples.mockResolvedValue([storedRow()]);
     const res = await SAMPLES_GET();
     expect(mocks.listVoiceSamples).toHaveBeenCalledWith(FIRM, USER);
     expect(await res.json()).toEqual({
@@ -316,9 +320,27 @@ describe("GET /api/story-voice/samples", () => {
           sourceChapterId: "whatWeRecommend",
           enabled: true,
           firmDefault: true,
+          scrubbedAgainstAHousehold: false,
         },
       ],
     });
+  });
+
+  // The POST above resolves a household — and therefore runs the NAME passes —
+  // only when `sourceClientId` arrives. The panel says which of the two happened
+  // per row, so this flag is the fact that sentence rests on. Both directions,
+  // because a flag stuck true is exactly the false assurance this replaced.
+  it("marks a harvested row as scrubbed against its household", async () => {
+    mocks.listVoiceSamples.mockResolvedValue([storedRow({ sourceClientId: CLIENT })]);
+    const body = (await (await SAMPLES_GET()).json()) as {
+      samples: { scrubbedAgainstAHousehold: boolean }[];
+    };
+    expect(body.samples[0].scrubbedAgainstAHousehold).toBe(true);
+  });
+
+  it("never sends the source client id itself", async () => {
+    mocks.listVoiceSamples.mockResolvedValue([storedRow({ sourceClientId: CLIENT })]);
+    expect(JSON.stringify(await (await SAMPLES_GET()).json())).not.toContain(CLIENT);
   });
 });
 

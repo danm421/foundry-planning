@@ -26,8 +26,12 @@ interface Sample {
   sourceChapterId: string | null;
   enabled: boolean;
   firmDefault: boolean;
+  scrubbedAgainstAHousehold: boolean;
 }
 
+/** Defaults to the TYPED row — `sourceChapterId: null` and no household to scrub
+ *  names against — because that is the pair the route actually produces for a
+ *  sample written in the box. `over` supplies the harvested pair. */
 function sample(id: string, enabled: boolean, over: Partial<Sample> = {}): Sample {
   return {
     id,
@@ -35,6 +39,7 @@ function sample(id: string, enabled: boolean, over: Partial<Sample> = {}): Sampl
     sourceChapterId: null,
     enabled,
     firmDefault: false,
+    scrubbedAgainstAHousehold: false,
     ...over,
   };
 }
@@ -415,6 +420,54 @@ describe("what a row shows", () => {
     render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
     await screen.findByText(/into every chapter/);
     expect(within(row(1)).getByText(/Shared with your firm/)).toBeTruthy();
+  });
+});
+
+// ── What the scrubber did is a PER-ROW fact ──────────────────────────────────
+//
+// `POST /api/story-voice/samples` runs the name passes only when a
+// `sourceClientId` arrives; `saveDraft` sends none, so a sample typed in the box
+// is scrubbed against `{ firstNames: "", householdName: "" }` — figures out,
+// names untouched. One sentence over the whole list claimed names had been taken
+// out of every row, which is the panel's consent story for pasting a letter to a
+// client, and it was false on exactly the rows that need it to be true.
+
+describe("what the panel says the scrubber did", () => {
+  const HARVESTED = { scrubbedAgainstAHousehold: true, sourceChapterId: "planInOnePage" };
+
+  it("says names came out of a harvested row", async () => {
+    stub({ samples: [sample("a", true, HARVESTED)] });
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
+    await screen.findByText(/into every chapter/);
+    expect(within(row(1)).getByText(/Names and figures from the household/)).toBeTruthy();
+    expect(within(row(1)).queryByText(/Names were not/)).toBeNull();
+  });
+
+  it("says names did NOT come out of a row typed in the box", async () => {
+    stub({ samples: [sample("a", true)] });
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
+    await screen.findByText(/into every chapter/);
+    expect(within(row(1)).getByText(/Names were not/)).toBeTruthy();
+    expect(within(row(1)).queryByText(/Names and figures from the household/)).toBeNull();
+  });
+
+  it("does not claim over the whole list what is only true of some of it", async () => {
+    stub({ samples: [sample("harvested", true, HARVESTED), sample("typed", true)] });
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
+    await screen.findByText(/into every chapter/);
+    // Once, on the row it is true of — never over the pair.
+    expect(screen.getAllByText(/Names and figures from the household/)).toHaveLength(1);
+    expect(within(row(1)).getByText(/Names and figures from the household/)).toBeTruthy();
+    expect(within(row(2)).getByText(/Names were not/)).toBeTruthy();
+  });
+
+  it("warns before the paste, not only after it", async () => {
+    stub({ samples: [] });
+    render(<VoiceProfilePanel isAdmin={false} userId={ME} chapterTitles={CHAPTER_TITLES} />);
+    await screen.findByText(/No samples yet/);
+    // The box's own placeholder invites "a passage from a letter", which is
+    // where a client's name lives.
+    expect(screen.getByText(/take any client's name out yourself/)).toBeTruthy();
   });
 });
 

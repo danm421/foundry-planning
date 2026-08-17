@@ -36,6 +36,18 @@ export async function GET() {
         enabled: r.enabled,
         /** Shared with the firm, so the panel can say a colleague owns it. */
         firmDefault: r.advisorUserId === FIRM_DEFAULT_ADVISOR,
+        /**
+         * Did the NAME pass have a household to run against? The POST below
+         * resolves names only when `sourceClientId` arrives, so a row without
+         * one went through the figure pass alone. The panel says so per row —
+         * a blanket "names were taken out" over a list holding both kinds is
+         * false on half of it.
+         *
+         * The client id itself is deliberately NOT sent: which household a
+         * colleague's firm-shared sample came from is not this reader's to
+         * know, and the boolean is the whole of what the sentence needs.
+         */
+        scrubbedAgainstAHousehold: r.sourceClientId != null,
       })),
     });
   } catch (err) {

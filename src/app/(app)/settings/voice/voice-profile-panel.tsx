@@ -43,11 +43,17 @@ interface VoiceProfile {
 
 interface VoiceSample {
   id: string;
-  /** The STORED text — already scrubbed, and exactly what the model is sent. */
+  /** The STORED text — already through the scrubber, and exactly what the model
+   *  is sent. How MUCH of the scrubber it went through is
+   *  `scrubbedAgainstAHousehold` below. */
   text: string;
   sourceChapterId: string | null;
   enabled: boolean;
   firmDefault: boolean;
+  /** Did the scrubber have a household to take names out against? False for a
+   *  sample typed into the box below, and the two cases get different sentences
+   *  — see `SCRUB_TOOK_NAMES_OUT`. */
+  scrubbedAgainstAHousehold: boolean;
 }
 
 /**
@@ -108,6 +114,29 @@ const FIRM_ROW_IS_SHARED =
 /** The cap read off `resolveVoice`, not spelled again. See `sentIds` below. */
 const PAST_THE_CAP =
   `Switched on, but only the ${MAX_SAMPLES} newest switched-on samples are sent. This one isn't.`;
+
+/**
+ * What the scrubber actually did to THIS row, said on the row rather than over
+ * the list.
+ *
+ * `POST /api/story-voice/samples` resolves the source household's names only
+ * when a `sourceClientId` arrives with the text. Harvested from a chapter, one
+ * does; typed into the box below, none does — `saveDraft` posts `text` and
+ * `firmDefault` and nothing else — so the route scrubs against
+ * `{ firstNames: "", householdName: "" }`. `scrubSample` then runs its figure
+ * pass and skips both name passes, because there are no names to skip to.
+ *
+ * ⚠️ One sentence over the whole list said names had been taken out of all of
+ * them. It was the panel's entire consent story for pasting a letter to a
+ * client into the box, and on those rows it was false.
+ */
+const SCRUB_TOOK_NAMES_OUT =
+  "Names and figures from the household this came from were taken out when it was saved.";
+const SCRUB_TOOK_FIGURES_ONLY =
+  "Figures were taken out when this was saved. Names were not — this was typed here, not taken from a household, so there were no names to look for. Read it for a client's name before you switch it on.";
+/** The same fact said BEFORE the paste rather than after it. */
+const TYPING_IS_NOT_NAME_SCRUBBED =
+  "Figures are taken out of what you write here. Names are not — there's no household to check them against — so take any client's name out yourself first.";
 
 /** Switched on with nothing in it. `resolveVoice` drops a blank sample before it
  *  counts toward the cap (`resolve.ts#isSendable`), so this row is neither sent
@@ -473,10 +502,12 @@ export function VoiceProfilePanel({
         {/* Word-level, not byte-level. `prompts.ts#quoteAdvisorText` marks every line of a
             sample so that none of it can be read as an instruction, so the assistant
             sees these words inside a quote. The words themselves are what this
-            sentence promises, and nothing is added to them or taken from them. */}
+            sentence promises, and nothing is added to them or taken from them.
+
+            What the SCRUBBER did is said per row and not here: it differs row by
+            row, so the only sentence true of every row in the list is this one. */}
         <p className="max-w-prose text-sm text-ink-3">
-          These are the exact words the assistant receives. Names and figures from the household
-          it came from were taken out when it was saved.
+          These are the exact words the assistant receives.
         </p>
 
         {samplesProblem != null && (
@@ -568,6 +599,19 @@ export function VoiceProfilePanel({
                   {pastTheCap && <p className="text-xs text-warn">{PAST_THE_CAP}</p>}
                   {nothingToSend && <p className="text-xs text-warn">{NOTHING_TO_SEND}</p>}
 
+                  {/* Directly above the words it is about. A row the scrubber
+                      had no household for is the one an advisor has to read
+                      themselves, so it gets the warning colour. */}
+                  <p
+                    className={`max-w-prose text-xs ${
+                      sample.scrubbedAgainstAHousehold ? "text-ink-3" : "text-warn"
+                    }`}
+                  >
+                    {sample.scrubbedAgainstAHousehold
+                      ? SCRUB_TOOK_NAMES_OUT
+                      : SCRUB_TOOK_FIGURES_ONLY}
+                  </p>
+
                   <p className="whitespace-pre-wrap rounded border border-hair bg-card-2 p-2 text-sm leading-relaxed text-ink-2">
                     {sample.text}
                   </p>
@@ -636,6 +680,10 @@ export function VoiceProfilePanel({
               placeholder="A paragraph or two in your own words — a passage from a letter or a review you were happy with."
             />
           </label>
+          {/* The placeholder invites a letter to a client, which is exactly
+              where a client's name lives. Said here, before the paste, and
+              again on the row afterwards. */}
+          <p className="max-w-prose text-xs text-warn">{TYPING_IS_NOT_NAME_SCRUBBED}</p>
           {/* `storyVoiceSamplePostSchema.text` carries a floor, so this counter
               names it. The style note's does not. */}
           <CharacterCount length={draft.length} min={VOICE_TEXT_MIN} />
