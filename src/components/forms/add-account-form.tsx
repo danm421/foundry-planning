@@ -1989,7 +1989,14 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                   />
                 </div>
 
-                {/* Row 4: Sell to cover + auto-create destination */}
+                {/* Row 4: Sell to cover.
+                    "Auto-create destination account" used to sit here, ticked by
+                    default. Nothing in `src/engine/` has ever read the column, so
+                    every advisor was told the app would create a destination
+                    account for vested shares and it never did. The control is
+                    gone; `autoCreateDestination` stays in state, in the body and
+                    in the database, so a save cannot flip a stored value and the
+                    behaviour can be built later. Audit G4 F31. */}
                 <div className="flex flex-col justify-end gap-2">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -1999,17 +2006,6 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                       className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
                     />
                     <span className={fieldLabelClassName}>Sell to cover taxes</span>
-                  </label>
-                </div>
-                <div className="flex flex-col justify-end gap-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={autoCreateDestination}
-                      onChange={(e) => setAutoCreateDestination(e.target.checked)}
-                      className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
-                    />
-                    <span className={fieldLabelClassName}>Auto-create destination account</span>
                   </label>
                 </div>
 
