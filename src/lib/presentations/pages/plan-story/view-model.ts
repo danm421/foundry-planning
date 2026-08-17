@@ -421,10 +421,12 @@ function retirementYearFrom(facts: Fact[]): number {
  * indistinguishable from the outside.
  *
  * ⚠️ `whatsLeftForPeople` is already that shape: `chartFacts` emits `chart.*`
- * facts for the portfolio and tax charts only, and none for the estate one. It
- * is harmless in this plan because the loader passes `estateBars: null`, so the
- * branch below never returns a chart — but the pairing is asymmetric TODAY, and
- * the day estate bars start arriving is the day an ungated chart prints.
+ * facts for the portfolio and tax charts only, and none for the estate one. The
+ * estate branch below returns a chart only once something hands
+ * `StoryChartData.estate` real bars rather than the null that field documents as
+ * the ordinary answer for a deck with no estate report — so the mismatch costs
+ * nothing until something does, and the moment something does, the sheet prints
+ * a chart no gate will ever ask the prose to mention.
  *
  * An EMPTY array is null, never a chart: spec §7 — drop the chart, keep the
  * prose, and never print an axis with no bars on a client's page.
