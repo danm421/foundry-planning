@@ -7,7 +7,8 @@ export type GateId =
   | "voice"
   | "labels"
   | "register"
-  | "foreignName";
+  | "foreignName"
+  | "chartCitation";
 
 export interface GateFailure {
   gate: GateId;

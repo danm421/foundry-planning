@@ -19,6 +19,12 @@ describe("runGates", () => {
     expect(gates).toContain("readability");
     expect(gates).toContain("voice");
   });
+
+  it("runs the chart-citation gate as part of the full set", () => {
+    const chartFact = moneyFact("chart.portfolio.peak", "The most the plan ever holds", 2_100_000);
+    const failures = runGates("The plan holds up well over time.", [chartFact]);
+    expect(failures.some((f) => f.gate === "chartCitation")).toBe(true);
+  });
 });
 
 describe("runGates — the two register gates", () => {
