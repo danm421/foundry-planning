@@ -1709,6 +1709,13 @@
       "when": 1786800407415,
       "tag": "0243_bouncy_grim_reaper",
       "breakpoints": true
+    },
+    {
+      "idx": 244,
+      "version": "7",
+      "when": 1786989236402,
+      "tag": "0244_white_gertrude_yorkes",
+      "breakpoints": true
     }
   ]
 }

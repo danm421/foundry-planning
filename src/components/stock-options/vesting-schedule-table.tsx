@@ -27,6 +27,21 @@ function StrikeCell({ row }: { row: VestingScheduleRow }) {
   );
 }
 
+/** The plan is allowed to fall back when an acquisition was never entered; it is
+ *  not allowed to stay quiet about it. Without this the fallback prints exactly
+ *  like a recorded fact. Audit F1/F2. */
+function EstimatedMark({ row }: { row: VestingScheduleRow }) {
+  if (!row.hasEstimatedAcquisition) return null;
+  return (
+    <span
+      className="ml-1 text-warn"
+      title="No acquisition date or price entered for shares acquired before the plan — basis and holding period on this row are the plan's conservative estimate"
+    >
+      ≈
+    </span>
+  );
+}
+
 function ExercisedCell({ row }: { row: VestingScheduleRow }) {
   if (!row.isOption) return dash;
   const split = row.grantType === "iso" ? row.isoSplit : null;
@@ -95,7 +110,7 @@ export default function VestingScheduleTable({ model }: { model: VestingSchedule
             const cells = futureCells(r);
             return (
               <tr key={r.grantId}>
-                <td className={`${TD} ${L} font-medium`}>{r.label}</td>
+                <td className={`${TD} ${L} font-medium`}>{r.label}<EstimatedMark row={r} /></td>
                 <td className={TD}>{TYPE_LABEL[r.grantType] ?? r.grantType}</td>
                 <td className={TD}><StrikeCell row={r} /></td>
                 <td className={TD}>{r.expirationYear ?? dash}</td>
@@ -146,9 +161,16 @@ export default function VestingScheduleTable({ model }: { model: VestingSchedule
         off the share price shows a range, because the discount is taken in the year of exercise.
         ISO Exercised splits into <span className="text-good">✓ qual</span> (past the holding period — sells as LTCG)
         and <span className="text-warn">⧖ hold</span> (still in the window — selling now is a disqualifying disposition).
-        Holding periods are counted in whole years and assume these shares were exercised two years
-        before the plan begins — the same rule and the same assumption the plan&rsquo;s tax ledger uses,
-        so this badge and the Future Activity tab cannot disagree.
+        Holding periods run from the grant date and the exercise date on each row, tested against a
+        sale on 31 December — the same rule and the same dates the plan&rsquo;s tax ledger uses, so this
+        badge and the Future Activity tab cannot disagree. A row with no exercise date entered counts
+        as still holding.
+        {" "}
+        <span className="text-warn">≈</span> marks a grant holding shares acquired before the plan
+        whose acquisition date or price was never entered: the plan assumes the strike price on the
+        plan start date — the most conservative reading — so this grant&rsquo;s cost basis and
+        holding period are estimates. Enter them on the grant&rsquo;s vesting rows to replace the
+        estimate with the real figures.
       </p>
     </div>
   );

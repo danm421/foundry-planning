@@ -22,20 +22,20 @@ function plan(grants: EquityGrant[], strategy: EquityStrategy = HOLD, over: Part
 
 function rsu(over: Partial<EquityGrant> = {}): EquityGrant {
   return {
-    id: "g-rsu", grantNumber: "RSU-09", grantType: "rsu", grantYear: 2026,
+    id: "g-rsu", grantNumber: "RSU-09", grantType: "rsu", grantDate: "2026-01-15",
     sharesGranted: 100, has83bElection: false, fmvAtGrant: null, strikePrice: null,
     strikeDiscountPct: null, expirationYear: null, strategy: null,
-    tranches: [{ id: "rt1", vestYear: 2027, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null }],
+    tranches: [{ id: "rt1", vestDate: "2027-01-15", shares: 100, sharesExercised: 0, sharesSold: 0, acquiredOn: null, priceAtAcquisition: null, strategy: null }],
     plannedEvents: [], ...over,
   };
 }
 
 function nqso(over: Partial<EquityGrant> = {}): EquityGrant {
   return {
-    id: "g-nq", grantNumber: "NQSO-17", grantType: "nqso", grantYear: 2024,
+    id: "g-nq", grantNumber: "NQSO-17", grantType: "nqso", grantDate: "2024-01-15",
     sharesGranted: 100, has83bElection: false, fmvAtGrant: null, strikePrice: 20,
     strikeDiscountPct: null, expirationYear: 2031, strategy: null,
-    tranches: [{ id: "nt1", vestYear: 2027, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null }],
+    tranches: [{ id: "nt1", vestDate: "2027-01-15", shares: 100, sharesExercised: 0, sharesSold: 0, acquiredOn: null, priceAtAcquisition: null, strategy: null }],
     plannedEvents: [], ...over,
   };
 }
@@ -85,6 +85,24 @@ describe("buildFutureActivity — grant-level rows", () => {
     expect(r.exerciseCost).toBe(2000);          // 100 * 20
     expect(r.grossProceeds).toBe(0);            // held, nothing sold
     expect(r.netProceeds).toBe(-2000);          // − exercise cost
+  });
+
+  it("prints the grant's REAL date in the Grant Date column", () => {
+    // The column has always been headed "Grant Date" and the field has always
+    // been called `grantDate` — but it was built as `String(grant.grantYear)`,
+    // because the year was the only grant-time fact the database held. G8
+    // stores the date, so the column can finally show one.
+    const m = buildFutureActivity([plan([nqso({ grantDate: "2024-06-09" })], HOLD)], OPTS);
+    const r = m.groups.find((g) => g.year === 2027)!.rows[0];
+    expect(r.grantDate).toBe("2024-06-09");
+  });
+
+  it("still labels an unnumbered grant with the ticker and the grant YEAR", () => {
+    // The fallback label is a human handle ("ACME 2024"), not a date — a full
+    // ISO date there would read as a second Grant Date column.
+    const m = buildFutureActivity([plan([nqso({ grantNumber: null, grantDate: "2024-06-09" })], HOLD)], OPTS);
+    const r = m.groups.find((g) => g.year === 2027)!.rows[0];
+    expect(r.grantNumber).toBe("ACME 2024");
   });
 
   it("ISO exercise produces no sell-to-cover", () => {
@@ -140,8 +158,8 @@ describe("buildFutureActivity — grant-level rows", () => {
     const g = nqso({
       sharesGranted: 200, expirationYear: 2030,
       tranches: [
-        { id: "live", vestYear: 2027, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null },
-        { id: "late", vestYear: 2031, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null },
+        { id: "live", vestDate: "2027-01-15", shares: 100, sharesExercised: 0, sharesSold: 0, acquiredOn: null, priceAtAcquisition: null, strategy: null },
+        { id: "late", vestDate: "2031-01-15", shares: 100, sharesExercised: 0, sharesSold: 0, acquiredOn: null, priceAtAcquisition: null, strategy: null },
       ],
     });
     const m = buildFutureActivity([plan([g], SELL_NOW)], OPTS);
@@ -159,8 +177,8 @@ describe("buildFutureActivity — grant-level rows", () => {
     const g = rsu({
       sharesGranted: 200,
       tranches: [
-        { id: "rt1", vestYear: 2028, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null },
-        { id: "rt2", vestYear: 2032, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null },
+        { id: "rt1", vestDate: "2028-01-15", shares: 100, sharesExercised: 0, sharesSold: 0, acquiredOn: null, priceAtAcquisition: null, strategy: null },
+        { id: "rt2", vestDate: "2032-01-15", shares: 100, sharesExercised: 0, sharesSold: 0, acquiredOn: null, priceAtAcquisition: null, strategy: null },
       ],
     });
     const m = buildFutureActivity([plan([g], HOLD)], { asOfYear: 2026, planStartYear: 2026, planEndYear: 2030 });
@@ -185,7 +203,7 @@ describe("buildFutureActivity — grant-level rows", () => {
   it("reports empty groups + hasGrants flags correctly", () => {
     expect(buildFutureActivity([plan([], HOLD)], OPTS).hasGrants).toBe(false);
     expect(buildFutureActivity([], OPTS).groups).toEqual([]);
-    const held = rsu({ tranches: [{ id: "rt1", vestYear: 2020, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null }] });
+    const held = rsu({ tranches: [{ id: "rt1", vestDate: "2020-01-15", shares: 100, sharesExercised: 0, sharesSold: 0, acquiredOn: null, priceAtAcquisition: null, strategy: null }] });
     const m = buildFutureActivity([plan([held], HOLD)], OPTS);
     expect(m.groups).toEqual([]);
     expect(m.hasGrants).toBe(true);
@@ -207,8 +225,8 @@ describe("buildFutureActivity — tax impact join", () => {
     const twoVests = rsu({
       sharesGranted: 200,
       tranches: [
-        { id: "rt1", vestYear: 2027, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null },
-        { id: "rt2", vestYear: 2029, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null },
+        { id: "rt1", vestDate: "2027-01-15", shares: 100, sharesExercised: 0, sharesSold: 0, acquiredOn: null, priceAtAcquisition: null, strategy: null },
+        { id: "rt2", vestDate: "2029-01-15", shares: 100, sharesExercised: 0, sharesSold: 0, acquiredOn: null, priceAtAcquisition: null, strategy: null },
       ],
     });
     const taxByYear = new Map([[2027, 5000]]); // 2029 deliberately absent

@@ -3,11 +3,7 @@ import { resolveStrategy } from "./strategy";
 import { buildGrantTimeline, type EquityAction } from "./timeline";
 import { fmvCurve, resolveStrikePrice } from "./price-model";
 import { computeSellToCover } from "./withholding";
-import {
-  isQualifyingIsoDisposition,
-  isLongTermHolding,
-  assumedPrePlanAcquisitionYear,
-} from "./holding-period";
+import { isQualifyingIsoDisposition, isLongTermHolding } from "./holding-period";
 
 /** One acquired-and-held lot — per ACQUISITION EVENT, not per tranche: a row
  *  partly exercised before the plan holds two. */
@@ -16,10 +12,20 @@ interface Lot {
   trancheId: string;
   grantType: GrantType;
   shares: number;
-  basisPerShare: number;   // regular-tax basis (ISO = strike; RSU/NQSO = FMV at acquire)
-  acquisitionYear: number;
-  grantYear: number;
-  exerciseYear: number | null;   // options only
+  /** Regular-tax basis. DERIVED, never stored: ISO = strike, everything else =
+   *  price at acquisition. A stored basis alongside a stored strike and price
+   *  would be a third source of truth for a number the other two determine. */
+  basisPerShare: number;
+  /** AMT basis — FMV at exercise, for every type. Differs from `basisPerShare`
+   *  only for an ISO, which is exactly the point: the dual basis is what makes
+   *  an AMT charge a TIMING cost rather than a permanent one. Written here
+   *  because this is the only place that knows FMV at exercise; first READ by
+   *  G8 Plan 2 (audit F23). */
+  amtBasisPerShare: number;
+  /** Real dates. `exerciseDate` is null for an RSU — there is no exercise. */
+  acquisitionDate: string;
+  exerciseDate: string | null;
+  grantDate: string;
   strike: number;                // options only (for disqualifying bargain element)
   fmvAtExercise: number;         // options only
 }
@@ -101,16 +107,38 @@ export function computeEquityYear(plan: StockOptionPlan, state: EquityState, yea
     const key = lotKey(a);
 
     if (a.kind === "seed_held") {
-      // Already vested/exercised before the plan. Basis stepped to today (pre-plan gain
-      // was already taxed as W-2). ISO held lots keep strike basis when known.
-      const basisPerShare = grant.grantType === "iso" && grant.strikePrice != null ? grant.strikePrice : fmv(year);
+      // Already vested or exercised before the plan began. Every fact about the
+      // acquisition now comes from the DATABASE — `acquired_on` and
+      // `price_at_acquisition`, carried onto the action as `a.date` and
+      // `a.priceAtAcquisition`. Audit F1/F2/F3.
+      //
+      // The predecessor invented all three, and every invention lowered the
+      // client's tax: basis stepped to TODAY's FMV (erasing the whole pre-plan
+      // gain — a $100,000 position sold at plan start showed $0 of tax where
+      // ~$16,000 was owed), the acquisition back-dated two years (so every lot
+      // read long-term), and `grant.strikePrice ?? 0` read a discount-priced
+      // ISO's strike as ZERO, booking all its proceeds as W-2 wages.
+      const isRsu = grant.grantType === "rsu";
+      // FMV anchor, in order of what we actually know. It must NOT fall back to
+      // `fmv(year)`: a grant priced by DISCOUNT resolves its strike off whatever
+      // FMV it is handed, so today's higher price would mean a higher strike, a
+      // higher basis and LESS tax — the favourable direction this group removes.
+      // With no anchor the strike resolves to 0 and basis floors at 0, the
+      // largest taxable gain, which is the conservative default.
+      const anchor = a.priceAtAcquisition ?? grant.fmvAtGrant ?? null;
+      // `resolveStrikePrice` on EVERY path — the predecessor special-cased this
+      // one branch, which is what made F3 possible.
+      const strike = isRsu ? 0 : resolveStrikePrice(grant, anchor ?? 0);
+      const fmvAtAcq = anchor ?? strike;
+      const basisPerShare = grant.grantType === "iso" ? strike : fmvAtAcq;
       state.lots.set(key, {
         grantId: a.grantId, trancheId: a.trancheId, grantType: grant.grantType, shares: a.shares,
         basisPerShare,
-        acquisitionYear: assumedPrePlanAcquisitionYear(state.planStartYear),
-        grantYear: grant.grantYear,
-        exerciseYear: grant.grantType === "rsu" ? null : assumedPrePlanAcquisitionYear(state.planStartYear),
-        strike: grant.strikePrice ?? 0, fmvAtExercise: basisPerShare,
+        amtBasisPerShare: fmvAtAcq,
+        acquisitionDate: a.date,
+        exerciseDate: isRsu ? null : a.date,
+        grantDate: grant.grantDate,
+        strike, fmvAtExercise: fmvAtAcq,
       });
       res.acquisitions.push({ value: ROUND(a.shares * fmv(year)), basis: ROUND(a.shares * basisPerShare) });
       continue;
@@ -128,8 +156,14 @@ export function computeEquityYear(plan: StockOptionPlan, state: EquityState, yea
       const retained = cover.retained;
       state.lots.set(key, {
         grantId: a.grantId, trancheId: a.trancheId, grantType: "rsu", shares: retained,
-        basisPerShare: f, acquisitionYear: grant.has83bElection ? grant.grantYear : year, grantYear: grant.grantYear,
-        exerciseYear: null, strike: 0, fmvAtExercise: f,
+        basisPerShare: f, amtBasisPerShare: f,
+        // `a.date` is the grant date for an 83(b) grant and the vest date
+        // otherwise — timeline.ts owns that distinction, which is the whole
+        // effect of the election on the holding period.
+        acquisitionDate: a.date,
+        exerciseDate: null,
+        grantDate: grant.grantDate,
+        strike: 0, fmvAtExercise: f,
       });
       res.acquisitions.push({ value: ROUND(retained * fmv(year)), basis: ROUND(retained * f) });
       res.details.push({
@@ -162,8 +196,11 @@ export function computeEquityYear(plan: StockOptionPlan, state: EquityState, yea
       const basisPerShare = grant.grantType === "iso" ? strike : f;
       state.lots.set(key, {
         grantId: a.grantId, trancheId: a.trancheId, grantType: grant.grantType, shares: retained,
-        basisPerShare, acquisitionYear: year, grantYear: grant.grantYear,
-        exerciseYear: year, strike, fmvAtExercise: f,
+        basisPerShare, amtBasisPerShare: f,
+        acquisitionDate: a.date,
+        exerciseDate: a.date,
+        grantDate: grant.grantDate,
+        strike, fmvAtExercise: f,
       });
       res.acquisitions.push({ value: ROUND(retained * f), basis: ROUND(retained * basisPerShare) });
       res.details.push({
@@ -182,11 +219,11 @@ export function computeEquityYear(plan: StockOptionPlan, state: EquityState, yea
       res.sellProceeds += ROUND(shares * f);
       res.saleBasisRemoved += ROUND(shares * lot.basisPerShare);
 
-      if (lot.grantType === "iso" && lot.exerciseYear != null) {
+      if (lot.grantType === "iso" && lot.exerciseDate != null) {
         const qualifying = isQualifyingIsoDisposition({
-          grantYear: lot.grantYear,
-          exerciseYear: lot.exerciseYear,
-          dispositionYear: year,
+          grantDate: lot.grantDate,
+          exerciseDate: lot.exerciseDate,
+          dispositionDate: a.date,
         });
         if (qualifying) {
           // Signed — a qualifying ISO disposition below basis is a genuine
@@ -208,14 +245,16 @@ export function computeEquityYear(plan: StockOptionPlan, state: EquityState, yea
           // Residual vs stepped-up basis (strike + OI/share). Up → post-exercise appreciation;
           // flat-after-drop → 0; below strike → a true capital loss.
           const gain = ROUND(shares * (f - lot.strike) - shares * oiPerShare);
-          // A disqualifying disposition fails the holding-period test, so the residual is usually
-          // short-term. Same whole-year proxy as the non-ISO branch; acquisitionYear == exerciseYear.
-          const longTerm = isLongTermHolding(lot.exerciseYear, year);
+          // A disqualifying disposition fails at least one §422(a)(1) leg, but it
+          // can still clear the one-year §1222(3) test — failing the two-year
+          // GRANT leg alone leaves a long-term residual. Measured from the
+          // exercise date, which is when the stock itself was acquired.
+          const longTerm = isLongTermHolding(lot.exerciseDate, a.date);
           if (longTerm) res.capitalGains += gain; else res.stCapitalGains += gain;
         }
       } else {
         const gain = ROUND(shares * (f - lot.basisPerShare));
-        const longTerm = isLongTermHolding(lot.acquisitionYear, year);
+        const longTerm = isLongTermHolding(lot.acquisitionDate, a.date);
         if (longTerm) res.capitalGains += gain;
         else res.stCapitalGains += gain;
       }

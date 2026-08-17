@@ -127,7 +127,7 @@ const EQUITY_PLAN: StockOptionPlan = {
       id: "g-rsu",
       grantNumber: "RSU-1",
       grantType: "rsu",
-      grantYear: 2025,
+      grantDate: "2025-01-15",
       sharesGranted: SHARES,
       has83bElection: false,
       fmvAtGrant: null,
@@ -138,10 +138,12 @@ const EQUITY_PLAN: StockOptionPlan = {
       tranches: [
         {
           id: "t-rsu",
-          vestYear: VEST_YEAR,
+          vestDate: `${VEST_YEAR}-01-15`,
           shares: SHARES,
           sharesExercised: 0,
           sharesSold: 0,
+          acquiredOn: null,
+          priceAtAcquisition: null,
           strategy: null,
         },
       ],

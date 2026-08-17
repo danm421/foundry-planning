@@ -45,11 +45,11 @@ const RSU_HOLD: StockOptionPlan = {
   strategy: { exerciseTiming: "at_vest", exerciseYear: null, sellTiming: "hold", sellYear: null, sellPercentPerYear: null, sellStartYear: null },
   owner: "client",
   grants: [{
-    id: "g-rsu", grantNumber: "RSU-1", grantType: "rsu", grantYear: 2025,
+    id: "g-rsu", grantNumber: "RSU-1", grantType: "rsu", grantDate: "2025-01-15",
     sharesGranted: 200, has83bElection: false, fmvAtGrant: null, strikePrice: null,
     strikeDiscountPct: null, expirationYear: null,
     strategy: { sellTiming: "hold", sellYear: null },
-    tranches: [{ id: "t-2027", vestYear: 2027, shares: 200, sharesExercised: 0, sharesSold: 0, strategy: null }],
+    tranches: [{ id: "t-2027", vestDate: "2027-01-15", shares: 200, sharesExercised: 0, sharesSold: 0, acquiredOn: null, priceAtAcquisition: null, strategy: null }],
     plannedEvents: [],
   }],
 };

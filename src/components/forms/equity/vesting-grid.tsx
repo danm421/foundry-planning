@@ -11,6 +11,12 @@ export interface TrancheRow {
   shares: string;
   sharesExercised: string;
   sharesSold: string;
+  /** When the shares this row has ALREADY acquired were acquired, and the FMV
+   *  per share that day. Blank is allowed — an advisor may not have the client's
+   *  exercise confirmation yet — and the plan then falls back conservatively and
+   *  says on screen that the figures are estimated. See the hint below the grid. */
+  acquiredOn: string;
+  priceAtAcquisition: string;
   /** Client-only: true once the user types a share amount, which "locks" the
    *  row so auto-fill divides only the remaining shares across the other rows.
    *  Never sent to the API (buildBody picks fields explicitly). */
@@ -43,7 +49,10 @@ export function newTrancheKey(): string {
 }
 
 function emptyRow(): TrancheRow {
-  return { _key: newTrancheKey(), vestDate: "", shares: "", sharesExercised: "", sharesSold: "" };
+  return {
+    _key: newTrancheKey(), vestDate: "", shares: "", sharesExercised: "", sharesSold: "",
+    acquiredOn: "", priceAtAcquisition: "",
+  };
 }
 
 /** Add whole months to an ISO date, clamping the day to the target month's
@@ -125,6 +134,14 @@ function computeRemaining(row: TrancheRow): number {
   return shares - sold;
 }
 
+/** Shares this row has already acquired — the ones an acquisition date and
+ *  price describe. An RSU is acquired when it vests; an option only when it is
+ *  exercised. The same rule the server applies in `lib/schemas/stock-options.ts`,
+ *  so the grid offers the fields exactly where the API accepts them. */
+export function acquiredShares(row: TrancheRow, isRsu: boolean): number {
+  return parseFloat(isRsu ? row.shares : row.sharesExercised) || 0;
+}
+
 const inputCls =
   "rounded border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none w-full";
 const thCls = "border-b border-gray-600 pb-1.5 text-xs font-medium text-gray-400 text-right first:text-left";
@@ -176,13 +193,15 @@ export default function VestingGrid({ rows, onChange, grantType, sharesGranted, 
   return (
     <div className="space-y-2">
       <div className="overflow-x-auto rounded-md border border-gray-600 bg-gray-900">
-        <table className="w-full min-w-[480px] border-collapse text-xs">
+        <table className="w-full min-w-[640px] border-collapse text-xs">
           <thead>
             <tr className="border-b border-gray-600">
               <th className={thCls + " pl-3 w-36"}>Vest Date</th>
               <th className={thCls + " w-24"}>Shares</th>
               {!isRsu && <th className={thCls + " w-24"}>Exercised</th>}
               <th className={thCls + " w-24"}>Sold</th>
+              <th className={thCls + " w-36"}>Acquired</th>
+              <th className={thCls + " w-24"}>Price then</th>
               <th className={thCls + " w-24"}>Remaining</th>
               <th className={thCls + " w-10 pr-3"}></th>
             </tr>
@@ -191,7 +210,7 @@ export default function VestingGrid({ rows, onChange, grantType, sharesGranted, 
             {rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={isRsu ? 5 : 6}
+                  colSpan={isRsu ? 7 : 8}
                   className="px-3 py-3 text-center text-xs text-gray-500 italic"
                 >
                   No tranches yet. Add one below.
@@ -200,6 +219,10 @@ export default function VestingGrid({ rows, onChange, grantType, sharesGranted, 
             )}
             {rows.map((row, i) => {
               const remaining = computeRemaining(row);
+              // A row that has acquired nothing has no acquisition to describe.
+              // The cell keeps its place and shows a dash — a table whose column
+              // count changes per row is unreadable.
+              const showAcquisition = acquiredShares(row, isRsu) > 0;
               return (
                 <tr key={row._key} className="border-b border-gray-700/50 last:border-0">
                   <td className={tdCls + " pl-3"}>
@@ -242,6 +265,35 @@ export default function VestingGrid({ rows, onChange, grantType, sharesGranted, 
                       className={inputCls + " text-right"}
                     />
                   </td>
+                  <td className={tdCls}>
+                    {showAcquisition ? (
+                      <input
+                        type="date"
+                        aria-label={`Acquired date, row ${i + 1}`}
+                        value={row.acquiredOn}
+                        onChange={(e) => setRow(i, { acquiredOn: e.target.value })}
+                        className={inputCls}
+                      />
+                    ) : (
+                      <span className="text-gray-600">—</span>
+                    )}
+                  </td>
+                  <td className={tdCls}>
+                    {showAcquisition ? (
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.0001"
+                        aria-label={`Price at acquisition, row ${i + 1}`}
+                        value={row.priceAtAcquisition}
+                        onChange={(e) => setRow(i, { priceAtAcquisition: e.target.value })}
+                        placeholder="0.00"
+                        className={inputCls + " text-right"}
+                      />
+                    ) : (
+                      <span className="text-gray-600">—</span>
+                    )}
+                  </td>
                   <td className={tdCls + (remaining < 0 ? " text-red-400" : " text-gray-300") + " pr-2"}>
                     {remaining.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                   </td>
@@ -275,6 +327,7 @@ export default function VestingGrid({ rows, onChange, grantType, sharesGranted, 
                 <td className={tdCls + " font-medium text-gray-300"}>
                   {fmtNum(totalSold)}
                 </td>
+                <td colSpan={2} />
                 <td className={tdCls + " font-medium text-gray-300 pr-2"}>
                   {fmtNum(totalRemaining)}
                 </td>
@@ -284,6 +337,14 @@ export default function VestingGrid({ rows, onChange, grantType, sharesGranted, 
           )}
         </table>
       </div>
+      {rows.length > 0 && (
+        <p className="text-xs text-gray-500">
+          Acquired date and price then come off the client&apos;s exercise confirmation or
+          1099-B. Left blank, the plan assumes the shares were acquired at the strike price
+          on the plan start date — the most conservative reading — and marks the figures
+          estimated.
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildAccountRows, linkedSourceMapFrom } from "../load-account-rows";
 import type { AccountMeta } from "@/lib/scenario/account-meta";
+import type { StockOptionPlan } from "@/engine/equity/types";
 
 function meta(overrides: Partial<AccountMeta> & { id: string }): AccountMeta {
   return {
@@ -122,7 +123,11 @@ describe("linkedSourceMapFrom", () => {
  *  showed a real equity position as "$0" — the account's stored value never
  *  leaves "0" because the shares live in `stock_option_grants`. */
 describe("buildAccountRows — stock_options accounts", () => {
-  const equityPlan = {
+  // Typed, NOT `as never`. The cast this fixture used to carry hid a missing
+  // required field from `tsc` completely: when the engine moved from year
+  // integers to real dates, this fixture kept `grantYear`/`vestYear`, compiled
+  // clean, and crashed at run time inside `yearOf(undefined)`.
+  const equityPlan: StockOptionPlan = {
     accountId: "so-1",
     ticker: "TSLA",
     pricePerShare: 100,
@@ -145,7 +150,7 @@ describe("buildAccountRows — stock_options accounts", () => {
         id: "g1",
         grantNumber: "RS-1",
         grantType: "rsu",
-        grantYear: 2024,
+        grantDate: "2024-01-15",
         sharesGranted: 1000,
         has83bElection: false,
         fmvAtGrant: null,
@@ -153,13 +158,15 @@ describe("buildAccountRows — stock_options accounts", () => {
         strikeDiscountPct: null,
         expirationYear: null,
         strategy: null,
+        // Vests in 2030, nothing exercised — no pre-plan acquisition to record.
         tranches: [
-          { id: "t1", vestYear: 2030, shares: 1000, sharesExercised: 0, sharesSold: 0, strategy: null },
+          { id: "t1", vestDate: "2030-01-15", shares: 1000, sharesExercised: 0, sharesSold: 0,
+            acquiredOn: null, priceAtAcquisition: null, strategy: null },
         ],
         plannedEvents: [],
       },
     ],
-  } as never;
+  };
 
   const equityAccount = () =>
     engineAccount({ id: "so-1", name: "TSLA Options", category: "stock_options", subType: "rsu", value: 0 });

@@ -1,11 +1,26 @@
 import type { EquityGrant, EquityPlannedEvent, EquityVestTranche } from "./types";
 import { resolveStrategy, type ResolvedStrategy } from "./strategy";
 import { resolveStrikePrice } from "./price-model";
+import { anniversaryIn, endOfYear, yearOf } from "./dates";
 
 export type EquityActionKind = "seed_held" | "acquire_rsu" | "exercise" | "sell" | "expire";
 
 export interface EquityAction {
   year: number;
+  /** The calendar date this action happens on.
+   *
+   *  For an event the database RECORDS (a pre-plan acquisition with `acquiredOn`
+   *  set) this is the real date. For an event the plan MODELS it is this
+   *  module's stated convention: an exercise takes the vest date, or its
+   *  anniversary in a later chosen year; a sale takes 31 December of the sell
+   *  year; an unentered pre-plan acquisition takes the plan start date and is
+   *  therefore held zero days.
+   *
+   *  `year` stays because the projection is annual and every strategy field in
+   *  the database is a year integer. `date` is what the holding-period tests
+   *  read. They agree — `yearOf(date) === year` — for every kind EXCEPT
+   *  `seed_held`, which is MODELED in the first plan year but ACQUIRED earlier. */
+  date: string;
   kind: EquityActionKind;
   grantId: string;
   trancheId: string;
@@ -16,6 +31,11 @@ export interface EquityAction {
    *  came from. Unique within a grant. */
   lotId: string;
   shares: number;
+  /** FMV per share at acquisition, for a `seed_held` action ONLY — the stored
+   *  pre-plan fact `tax-events.ts` needs and cannot reach from the grant (it has
+   *  the grant, not the tranche). Null on every other kind, and null when the
+   *  advisor left the date blank, so a price can never half-apply. */
+  priceAtAcquisition?: number | null;
 }
 
 /** Lot ids for the (at most) two acquisition events a vesting row can produce. */
@@ -44,20 +64,21 @@ function exerciseYearFor(
   plannedExerciseYears: number[],
   fmvAt: (year: number) => number,
 ): number | null {
+  const vestYear = yearOf(tranche.vestDate);
   const want = ((): number | null => {
     switch (s.exerciseTiming) {
       case "at_vest":
-        return tranche.vestYear;
+        return vestYear;
       case "specific_year":
-        return s.exerciseYear != null ? Math.max(s.exerciseYear, tranche.vestYear) : tranche.vestYear;
+        return s.exerciseYear != null ? Math.max(s.exerciseYear, vestYear) : vestYear;
       case "year_before_expiration":
-        return grant.expirationYear != null ? grant.expirationYear - 1 : tranche.vestYear;
+        return grant.expirationYear != null ? grant.expirationYear - 1 : vestYear;
       case "manual":
         return plannedExerciseYears.length ? Math.min(...plannedExerciseYears) : null;
     }
   })();
   // Vested, or vested before the plan began.
-  if (want == null || want < Math.min(tranche.vestYear, planStartYear)) return null;
+  if (want == null || want < Math.min(vestYear, planStartYear)) return null;
   const year = Math.max(want, planStartYear);
   // Still alive in the year it would actually be exercised.
   if (grant.expirationYear != null && year > grant.expirationYear) return null;
@@ -79,6 +100,17 @@ function sellActions(
   const acquisitionYear = acq.year;
   const base = { grantId: acq.grantId, trancheId: acq.trancheId, lotId: acq.lotId } as const;
   if (heldShares <= 0) return [];
+  /** The date a MODELED sale happens on: 31 December of the sell year, floored at
+   *  the acquisition's own date. A plan that says "sell in 2030" names no day, and
+   *  31 December is the most probable reading — it also stops the predecessor's
+   *  whole-year rule from taxing a genuine 18-month hold as short-term.
+   *
+   *  The floor matters: without it a same-year sell would read as held from
+   *  31 December back to a March acquisition, i.e. a NEGATIVE holding period. */
+  const sellDate = (year: number): string => {
+    const eoy = endOfYear(Math.max(year, acquisitionYear));
+    return eoy > acq.date ? eoy : acq.date;
+  };
   // Manual escape hatch: explicit planned sell events always win over the strategy.
   if (plannedSells.length > 0) {
     let remaining = heldShares;
@@ -86,7 +118,8 @@ function sellActions(
     for (const ps of [...plannedSells].sort((a, b) => a.year - b.year)) {
       const shares = Math.min(ROUND(ps.shares), remaining);
       if (shares <= 0) continue;
-      out.push({ ...base, year: Math.max(ps.year, acquisitionYear), kind: "sell", shares });
+      const y = Math.max(ps.year, acquisitionYear);
+      out.push({ ...base, year: y, date: sellDate(y), kind: "sell", shares });
       remaining = ROUND(remaining - shares);
     }
     return out;
@@ -95,10 +128,10 @@ function sellActions(
     case "hold":
       return [];
     case "immediately":
-      return [{ ...base, year: acquisitionYear, kind: "sell", shares: ROUND(heldShares) }];
+      return [{ ...base, year: acquisitionYear, date: sellDate(acquisitionYear), kind: "sell", shares: ROUND(heldShares) }];
     case "hold_then_sell_year": {
-      const y = s.sellYear ?? acquisitionYear;
-      return [{ ...base, year: Math.max(y, acquisitionYear), kind: "sell", shares: ROUND(heldShares) }];
+      const y = Math.max(s.sellYear ?? acquisitionYear, acquisitionYear);
+      return [{ ...base, year: y, date: sellDate(y), kind: "sell", shares: ROUND(heldShares) }];
     }
     case "percent_per_year": {
       const pct = s.sellPercentPerYear ?? 0;
@@ -109,7 +142,7 @@ function sellActions(
       for (let y = start; y < start + SELL_HORIZON && remaining > 1e-6; y++) {
         const shares = y >= start + SELL_HORIZON - 1 ? remaining : ROUND(remaining * pct);
         if (shares <= 0) break;
-        out.push({ ...base, year: y, kind: "sell", shares });
+        out.push({ ...base, year: y, date: sellDate(y), kind: "sell", shares });
         remaining = ROUND(remaining - shares);
       }
       return out;
@@ -178,16 +211,19 @@ export function buildGrantTimeline(
 
   // 83(b) RSU: whole grant acquired at grant year, no per-tranche acquire.
   if (grant.grantType === "rsu" && grant.has83bElection) {
-    const t0 = grant.tranches[0] ?? { id: `${grant.id}-83b`, vestYear: grant.grantYear, shares: grant.sharesGranted, sharesExercised: 0, sharesSold: 0, strategy: null };
+    const t0 = grant.tranches[0] ?? { id: `${grant.id}-83b`, vestDate: grant.grantDate, shares: grant.sharesGranted, sharesExercised: 0, sharesSold: 0, acquiredOn: null, priceAtAcquisition: null, strategy: null };
     const sold = grant.tranches.reduce((s, t) => s + t.sharesSold, 0);
     const held = ROUND(grant.sharesGranted - sold);
     const s = resolveStrategy(acct, grant.strategy, t0.strategy);
-    if (grant.grantYear < planStartYear) {
-      const seed: EquityAction = { year: planStartYear, kind: "seed_held", grantId: grant.id, trancheId: t0.id, lotId: seedLot(t0.id), shares: held };
+    if (yearOf(grant.grantDate) < planStartYear) {
+      const seed: EquityAction = { year: planStartYear, date: t0.acquiredOn ?? `${planStartYear}-01-01`, kind: "seed_held", grantId: grant.id, trancheId: t0.id, lotId: seedLot(t0.id), shares: held, priceAtAcquisition: t0.acquiredOn ? t0.priceAtAcquisition : null };
       if (held > 0) out.push(seed);
       out.push(...sellActions(s, seed, []));
     } else {
-      const acq: EquityAction = { year: grant.grantYear, kind: "acquire_rsu", grantId: grant.id, trancheId: t0.id, lotId: acquireLot(t0.id), shares: ROUND(grant.sharesGranted) };
+      // An 83(b) election starts the holding period at GRANT, so that is the
+      // acquisition date — not the vest date, which is the whole point of the
+      // election.
+      const acq: EquityAction = { year: yearOf(grant.grantDate), date: grant.grantDate, kind: "acquire_rsu", grantId: grant.id, trancheId: t0.id, lotId: acquireLot(t0.id), shares: ROUND(grant.sharesGranted) };
       out.push(acq, ...sellActions(s, acq, []));
     }
     return out;
@@ -209,15 +245,22 @@ export function buildGrantTimeline(
       .map((event, key) => ({ event, key }))
       .filter(({ event }) => event.action === "sell" && (event.trancheId == null || event.trancheId === tranche.id));
 
+    // The stored pre-plan acquisition of THIS row. A blank date means the
+    // advisor has not entered one, and the fallback is deliberately the plan
+    // start date — held zero days, so short-term and never qualifying. The price
+    // is gated on the date so a half-entered fact can never apply. Audit F1/F2.
+    const seedDate = tranche.acquiredOn ?? `${planStartYear}-01-01`;
+    const seedPrice = tranche.acquiredOn ? tranche.priceAtAcquisition : null;
+
     if (!isOption) {
       // RSU tranche: vest = acquisition.
       const remaining = ROUND(tranche.shares - tranche.sharesSold);
-      if (tranche.vestYear < planStartYear) {
-        const seed: EquityAction = { year: planStartYear, kind: "seed_held", grantId: grant.id, trancheId: tranche.id, lotId: seedLot(tranche.id), shares: remaining };
+      if (yearOf(tranche.vestDate) < planStartYear) {
+        const seed: EquityAction = { year: planStartYear, date: seedDate, kind: "seed_held", grantId: grant.id, trancheId: tranche.id, lotId: seedLot(tranche.id), shares: remaining, priceAtAcquisition: seedPrice };
         if (remaining > 0) out.push(seed);
         out.push(...sellActions(s, seed, drawPlannedSells(sellEvents, sellBudget, remaining, tranche.shares)));
       } else {
-        const acq: EquityAction = { year: tranche.vestYear, kind: "acquire_rsu", grantId: grant.id, trancheId: tranche.id, lotId: acquireLot(tranche.id), shares: ROUND(tranche.shares) };
+        const acq: EquityAction = { year: yearOf(tranche.vestDate), date: tranche.vestDate, kind: "acquire_rsu", grantId: grant.id, trancheId: tranche.id, lotId: acquireLot(tranche.id), shares: ROUND(tranche.shares) };
         out.push(acq, ...sellActions(s, acq, drawPlannedSells(sellEvents, sellBudget, acq.shares, tranche.shares)));
       }
       continue;
@@ -229,7 +272,7 @@ export function buildGrantTimeline(
 
     // Seed already-exercised-and-held shares as of planStartYear.
     if (alreadyExercisedHeld > 0) {
-      const seed: EquityAction = { year: planStartYear, kind: "seed_held", grantId: grant.id, trancheId: tranche.id, lotId: seedLot(tranche.id), shares: alreadyExercisedHeld };
+      const seed: EquityAction = { year: planStartYear, date: seedDate, kind: "seed_held", grantId: grant.id, trancheId: tranche.id, lotId: seedLot(tranche.id), shares: alreadyExercisedHeld, priceAtAcquisition: seedPrice };
       out.push(seed, ...sellActions(s, seed, drawPlannedSells(sellEvents, sellBudget, alreadyExercisedHeld, tranche.shares)));
     }
 
@@ -239,7 +282,13 @@ export function buildGrantTimeline(
     const expYear = grant.expirationYear;
 
     if (eYear != null) {
-      const ex: EquityAction = { year: eYear, kind: "exercise", grantId: grant.id, trancheId: tranche.id, lotId: exerciseLot(tranche.id), shares: unexercised };
+      // A MODELED exercise: on the vest date when the plan exercises at vest,
+      // else that date's anniversary in the year the strategy chose. The plan
+      // names a year, never a day; the vest anniversary is the honest reading
+      // and keeps the exercise on the same calendar footing as the vest it came
+      // from.
+      const exDate = eYear === yearOf(tranche.vestDate) ? tranche.vestDate : anniversaryIn(tranche.vestDate, eYear);
+      const ex: EquityAction = { year: eYear, date: exDate, kind: "exercise", grantId: grant.id, trancheId: tranche.id, lotId: exerciseLot(tranche.id), shares: unexercised };
       out.push(ex, ...sellActions(s, ex, drawPlannedSells(sellEvents, sellBudget, unexercised, tranche.shares)));
     } else if (expYear != null) {
       // No lot is ever created for an expiry — lotId is set only because the
@@ -247,7 +296,7 @@ export function buildGrantTimeline(
       // that lapsed before the plan): inert for the tax ledger, which never runs
       // that year, but load-bearing for the balance sheet, which drains the
       // grant on it.
-      out.push({ year: expYear, kind: "expire", grantId: grant.id, trancheId: tranche.id, lotId: exerciseLot(tranche.id), shares: unexercised });
+      out.push({ year: expYear, date: endOfYear(expYear), kind: "expire", grantId: grant.id, trancheId: tranche.id, lotId: exerciseLot(tranche.id), shares: unexercised });
     }
   }
 

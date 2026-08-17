@@ -137,7 +137,7 @@ const EQUITY_PLAN: StockOptionPlan = {
       id: "g-rsu",
       grantNumber: "RSU-1",
       grantType: "rsu",
-      grantYear: 2025,
+      grantDate: "2025-01-15",
       sharesGranted: SHARES_PER_TRANCHE * 4,
       has83bElection: false,
       fmvAtGrant: null,
@@ -147,10 +147,12 @@ const EQUITY_PLAN: StockOptionPlan = {
       strategy: { sellTiming: "hold_then_sell_year", sellYear: RSU_SELL_YEAR },
       tranches: [2027, 2028, 2029, 2030].map((vestYear) => ({
         id: `t-rsu-${vestYear}`,
-        vestYear,
+        vestDate: `${vestYear}-01-15`,
         shares: SHARES_PER_TRANCHE,
         sharesExercised: 0,
         sharesSold: 0,
+        acquiredOn: null,
+        priceAtAcquisition: null,
         strategy: null,
       })),
       plannedEvents: [],
@@ -329,10 +331,10 @@ const HOLD: EquityStrategy = { ...SELL_NOW, sellTiming: "hold" };
 
 function grant(over: Partial<EquityGrant>): EquityGrant {
   return {
-    id: "g", grantNumber: "G", grantType: "rsu", grantYear: 2026, sharesGranted: 100,
+    id: "g", grantNumber: "G", grantType: "rsu", grantDate: "2026-01-15", sharesGranted: 100,
     has83bElection: false, fmvAtGrant: null, strikePrice: null, strikeDiscountPct: null,
     expirationYear: null, strategy: null,
-    tranches: [{ id: "t", vestYear: 2027, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null }],
+    tranches: [{ id: "t", vestDate: "2027-01-15", shares: 100, sharesExercised: 0, sharesSold: 0, acquiredOn: null, priceAtAcquisition: null, strategy: null }],
     plannedEvents: [], ...over,
   };
 }
@@ -379,21 +381,21 @@ describe("Future Activity reconciles with the real projection", () => {
         grant({
           id: "g-rsu", grantNumber: "RSU-1", grantType: "rsu", sharesGranted: 200,
           tranches: [
-            { id: "t-rsu-2027", vestYear: 2027, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null },
-            { id: "t-rsu-2030", vestYear: 2030, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null },
+            { id: "t-rsu-2027", vestDate: "2027-01-15", shares: 100, sharesExercised: 0, sharesSold: 0, acquiredOn: null, priceAtAcquisition: null, strategy: null },
+            { id: "t-rsu-2030", vestDate: "2030-01-15", shares: 100, sharesExercised: 0, sharesSold: 0, acquiredOn: null, priceAtAcquisition: null, strategy: null },
           ],
         }),
       ], SELL_NOW),
       // NQSO: cover proceeds net of strike land in 2027, the strategy sale in 2032.
       plan({ accountId: "nq", ticker: "ACME", destinationAccountId: null, autoCreateDestination: true },
-        [grant({ id: "g-nq", grantNumber: "NQSO-1", grantType: "nqso", grantYear: 2024, strikePrice: 30, expirationYear: 2034 })], SELL_LATER),
+        [grant({ id: "g-nq", grantNumber: "NQSO-1", grantType: "nqso", grantDate: "2024-01-15", strikePrice: 30, expirationYear: 2034 })], SELL_LATER),
       // ISO, hold: a strike outflow with NO proceeds. Vests in 2029, a year no
       // other plan touches, so that year's reconciliation is NEGATIVE — which a
       // positive-only fold would have hidden (audit F30/F38).
       plan({ accountId: "iso", ticker: "ACME", destinationAccountId: null, autoCreateDestination: true },
         [grant({
-          id: "g-iso", grantNumber: "ISO-1", grantType: "iso", grantYear: 2024, strikePrice: 25, expirationYear: 2034,
-          tranches: [{ id: "t-iso", vestYear: 2029, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null }],
+          id: "g-iso", grantNumber: "ISO-1", grantType: "iso", grantDate: "2024-01-15", strikePrice: 25, expirationYear: 2034,
+          tranches: [{ id: "t-iso", vestDate: "2029-01-15", shares: 100, sharesExercised: 0, sharesSold: 0, acquiredOn: null, priceAtAcquisition: null, strategy: null }],
         })], HOLD),
     ];
   }

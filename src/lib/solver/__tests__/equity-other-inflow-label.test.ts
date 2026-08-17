@@ -49,10 +49,12 @@ const EXERCISE_AND_HOLD: StockOptionPlan = {
   },
   owner: "client",
   grants: [{
-    id: "g", grantNumber: "ISO-1", grantType: "iso", grantYear: 2024, sharesGranted: 1000,
+    id: "g", grantNumber: "ISO-1", grantType: "iso", grantDate: "2024-01-15", sharesGranted: 1000,
     has83bElection: false, fmvAtGrant: null, strikePrice: 25, strikeDiscountPct: null,
     expirationYear: 2034, strategy: null,
-    tranches: [{ id: "t", vestYear: 2029, shares: 1000, sharesExercised: 0, sharesSold: 0, strategy: null }],
+    // Nothing exercised, so there is no pre-plan acquisition to record.
+    tranches: [{ id: "t", vestDate: "2029-01-15", shares: 1000, sharesExercised: 0, sharesSold: 0,
+      acquiredOn: null, priceAtAcquisition: null, strategy: null }],
     plannedEvents: [],
   }],
 };

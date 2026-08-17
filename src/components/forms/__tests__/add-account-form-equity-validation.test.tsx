@@ -153,6 +153,67 @@ describe("Account equity strategy — \"Manual\" exercise timing (F18/F33)", () 
   });
 });
 
+describe("Account equity strategy — the auto-create destination promise (G4 F31)", () => {
+  it("does not offer an auto-create destination checkbox — it has never done anything", async () => {
+    await renderEquityForm();
+    // Case-insensitive: this app CSS-uppercases several field labels, and a
+    // case-sensitive matcher has produced false "missing feature" results before.
+    expect(screen.queryByText(/auto-create destination/i)).toBeNull();
+    // The sibling checkbox in the same row IS real and must survive. Without
+    // this, the assertion above would pass on a form that rendered nothing.
+    expect(screen.getByText(/sell to cover/i)).toBeTruthy();
+  });
+
+  it("still round-trips the stored value, so a save cannot flip it", async () => {
+    // The column stays; only the control goes. A hidden control that resets the
+    // column on every save is worse than a visible one that does nothing.
+    fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).includes("stock-option-accounts") && !String(url).includes("grants")) {
+        return {
+          ok: true,
+          json: async () => ({
+            stockOptionAccounts: [{
+              account: { id: "acct-so" },
+              extension: {
+                ticker: "ACME", isPublic: true, pricePerShare: "50",
+                autoCreateDestination: false, sellToCover: true, withholdingRate: "0.22",
+                defaultExerciseTiming: "at_vest", defaultExerciseYear: null,
+                defaultSellTiming: "hold", defaultSellYear: null,
+                defaultSellPercentPerYear: null, defaultSellStartYear: null,
+              },
+            }],
+          }),
+        };
+      }
+      return { ok: true, json: async () => ({ id: "acct-so", grants: [] }) };
+    });
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="stock_options"
+        mode="edit"
+        initial={EQUITY_INITIAL}
+        familyMembers={[{ id: "fm-client", role: "client", firstName: "Alice" }]}
+        entities={[]}
+      />,
+    );
+    const sell = document.getElementById("equity-defaultSellTiming") as HTMLSelectElement;
+    await waitFor(() => expect(sell.value).toBe("hold"));
+
+    fetchMock.mockClear();
+    const form = document.getElementById("add-account-form") as HTMLFormElement;
+    await act(async () => { fireEvent.submit(form); });
+
+    const write = fetchMock.mock.calls.find(
+      ([, init]) => (init as RequestInit | undefined)?.method !== undefined
+        && (init as RequestInit).method !== "GET",
+    );
+    expect(write, "the form must have issued a write").toBeDefined();
+    const body = JSON.parse(String((write![1] as RequestInit).body));
+    expect(body.autoCreateDestination).toBe(false);
+  });
+});
+
 describe("Account equity strategy — a timing needs its companion (F29/F40)", () => {
   it("saves normally while the strategy is complete", async () => {
     // The control: without this, a test that asserts "no write" proves nothing.

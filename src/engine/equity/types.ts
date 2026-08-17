@@ -25,10 +25,25 @@ export interface EquityPlannedEvent {
 
 export interface EquityVestTranche {
   id: string;
-  vestYear: number;        // calendar year of vestDate
+  /** Real vest date, `YYYY-MM-DD`. The ONLY vesting-time field.
+   *
+   *  The year-based strategy layer (`sellYear`, `exerciseYear`, `sellStartYear`
+   *  are year integers in the database) reads `yearOf(vestDate)` at the point of
+   *  use. Storing a `vestYear` alongside would be two fields that must agree —
+   *  the same footgun this group removed for cost basis. */
+  vestDate: string;
   shares: number;
   sharesExercised: number; // actuals
   sharesSold: number;      // actuals
+  /** When the shares recorded in `sharesExercised` (options) or the
+   *  already-vested shares (RSU) were ACTUALLY acquired. Null = the advisor has
+   *  not entered it; `tax-events.ts` then falls back conservatively and the
+   *  screen says the figure is estimated. Audit F1/F2. */
+  acquiredOn: string | null;
+  /** FMV per share on `acquiredOn` — FMV at exercise for an option, FMV at vest
+   *  for an RSU. Basis is DERIVED from this (ISO = strike, otherwise this), so
+   *  there is never a second stored source of truth for basis. Audit F1. */
+  priceAtAcquisition: number | null;
   strategy?: EquityStrategy | null;
 }
 
@@ -36,7 +51,9 @@ export interface EquityGrant {
   id: string;
   grantNumber: string | null;
   grantType: GrantType;
-  grantYear: number;
+  /** Real grant date, `YYYY-MM-DD`. The §422(a)(1) two-year leg reads THIS, and
+   *  it is the only grant-time field — see the note on `vestDate`. */
+  grantDate: string;
   sharesGranted: number;
   has83bElection: boolean;
   fmvAtGrant?: number | null;

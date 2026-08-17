@@ -165,6 +165,12 @@ const trancheSchema = z.object({
   shares: z.number().nonnegative(),
   sharesExercised: z.number().nonnegative().optional().default(0),
   sharesSold: z.number().nonnegative().optional().default(0),
+  /** The REAL pre-plan acquisition of the shares this row has already acquired.
+   *  Optional — an advisor may not have the client's exercise confirmation yet —
+   *  and the engine's fallback for a blank is deliberately conservative rather
+   *  than favourable. Audit F1/F2. */
+  acquiredOn: isoDate.nullable().optional(),
+  priceAtAcquisition: z.number().nonnegative().nullable().optional(),
   ...strategyFields,
 });
 
@@ -281,6 +287,33 @@ function refineGrant(
           g.grantType === "rsu"
             ? "sharesSold cannot exceed the tranche's shares."
             : "sharesSold cannot exceed sharesExercised.",
+      });
+    }
+    // (f) The acquisition facts have to be coherent, or the engine reads half a
+    // fact. A price with no date cannot be used at all (the holding period is
+    // unanswerable), and a date on a row that acquired nothing describes an
+    // event that did not happen. Audit F1/F2.
+    if (t.priceAtAcquisition != null && t.acquiredOn == null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["tranches", i, "acquiredOn"],
+        message: "An acquisition date is required when a price at acquisition is given.",
+      });
+    }
+    if (t.acquiredOn != null && acquired <= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["tranches", i, "acquiredOn"],
+        message: "This row has no acquired shares, so it has no acquisition to date.",
+      });
+    }
+    // ISO dates compare correctly as plain strings — the same property that lets
+    // the engine's `dates.ts` stay on strings instead of `Date` objects.
+    if (t.acquiredOn != null && t.acquiredOn < g.grantDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["tranches", i, "acquiredOn"],
+        message: "Shares cannot be acquired before the grant date.",
       });
     }
   });

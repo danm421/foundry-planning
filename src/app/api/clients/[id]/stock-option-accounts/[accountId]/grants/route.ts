@@ -197,6 +197,11 @@ export async function POST(
                 shares: String(t.shares),
                 sharesExercised: String(t.sharesExercised),
                 sharesSold: String(t.sharesSold),
+                // The real pre-plan acquisition. Decimal columns take STRINGS in
+                // Drizzle — a raw number silently loses scale.
+                acquiredOn: t.acquiredOn ?? null,
+                priceAtAcquisition:
+                  t.priceAtAcquisition != null ? String(t.priceAtAcquisition) : null,
                 exerciseTiming: t.exerciseTiming ?? null,
                 exerciseYear: t.exerciseYear ?? null,
                 sellTiming: t.sellTiming ?? null,

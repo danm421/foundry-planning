@@ -273,3 +273,97 @@ describe("grant schema — shares must fit inside the bucket before them (F41)",
     expect(r.error.issues.map((i) => i.path.join("."))).toContain("tranches.1.sharesExercised");
   });
 });
+
+describe("tranche acquisition facts must be coherent (G8, audit F1/F2)", () => {
+  const NEED_DATE = "An acquisition date is required when a price at acquisition is given.";
+  const NO_SHARES = "This row has no acquired shares, so it has no acquisition to date.";
+  const BEFORE_GRANT = "Shares cannot be acquired before the grant date.";
+
+  it("accepts a date and a price, and carries BOTH VALUES through", () => {
+    // `nqsoGrant`'s grant date is 2025-01-01, so the acquisition must be AFTER
+    // it — the before-grant rule below is real and bites a careless fixture.
+    const r = grantCreateSchema.safeParse(nqsoGrant({
+      tranches: [{
+        vestDate: "2025-01-15", shares: 1000, sharesExercised: 1000, sharesSold: 0,
+        acquiredOn: "2025-11-04", priceAtAcquisition: 42.5,
+      }],
+    }));
+    expect(r.success).toBe(true);
+    if (!r.success) return;
+    // Assert the VALUES, never `success` alone. Zod strips unknown keys in
+    // silence, so a schema that had never heard of these two fields would parse
+    // this body happily and hand the route a pair of undefineds.
+    expect(r.data.tranches[0].acquiredOn).toBe("2025-11-04");
+    expect(r.data.tranches[0].priceAtAcquisition).toBe(42.5);
+  });
+
+  it("leaves both blank — the facts are optional and the engine falls back conservatively", () => {
+    const r = grantCreateSchema.safeParse(nqsoGrant({
+      tranches: [{ vestDate: "2024-01-15", shares: 1000, sharesExercised: 1000, sharesSold: 0 }],
+    }));
+    expect(r.success).toBe(true);
+    if (!r.success) return;
+    expect(r.data.tranches[0].acquiredOn ?? null).toBeNull();
+    expect(r.data.tranches[0].priceAtAcquisition ?? null).toBeNull();
+  });
+
+  it("rejects a price with no date — the price alone cannot be used", () => {
+    // Without a date the holding period is unanswerable, so the price cannot be
+    // applied to anything. Half a fact is worse than none.
+    expect(messages(nqsoGrant({
+      tranches: [{
+        vestDate: "2024-01-15", shares: 1000, sharesExercised: 1000, sharesSold: 0,
+        priceAtAcquisition: 42.5,
+      }],
+    }))).toContain(NEED_DATE);
+  });
+
+  it("rejects an acquisition date before the grant date", () => {
+    expect(messages(nqsoGrant({
+      grantDate: "2024-06-01",
+      tranches: [{
+        vestDate: "2025-01-15", shares: 1000, sharesExercised: 1000, sharesSold: 0,
+        acquiredOn: "2024-01-04", priceAtAcquisition: 42.5,
+      }],
+    }))).toContain(BEFORE_GRANT);
+  });
+
+  it("rejects an acquisition date on a row with zero acquired shares", () => {
+    // Nothing was acquired, so there is no acquisition to date. Accepting it
+    // would leave a fact on screen the engine never reads.
+    expect(messages(nqsoGrant({
+      tranches: [{
+        vestDate: "2025-01-15", shares: 1000, sharesExercised: 0, sharesSold: 0,
+        acquiredOn: "2025-11-04", priceAtAcquisition: 42.5,
+      }],
+    }))).toContain(NO_SHARES);
+  });
+
+  it("measures an RSU row against its shares, since RSUs never exercise", () => {
+    // An RSU row's vested shares ARE its acquisition, so a date on a row with
+    // shares is ordinary — the zero-shares rule must not fire on it.
+    const r = grantCreateSchema.safeParse(rsuGrant({
+      tranches: [{
+        vestDate: "2025-01-15", shares: 1000, sharesExercised: 0, sharesSold: 0,
+        acquiredOn: "2025-01-15", priceAtAcquisition: 30,
+      }],
+    }));
+    expect(r.success).toBe(true);
+  });
+
+  it("names the offending row", () => {
+    const r = grantCreateSchema.safeParse(nqsoGrant({
+      sharesGranted: 2000,
+      tranches: [
+        { vestDate: "2028-01-01", shares: 1000, sharesExercised: 0, sharesSold: 0 },
+        {
+          vestDate: "2029-01-01", shares: 1000, sharesExercised: 1000, sharesSold: 0,
+          priceAtAcquisition: 42.5,
+        },
+      ],
+    }));
+    expect(r.success).toBe(false);
+    if (r.success) return;
+    expect(r.error.issues.map((i) => i.path.join("."))).toContain("tranches.1.acquiredOn");
+  });
+});
