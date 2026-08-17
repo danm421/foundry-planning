@@ -44,8 +44,8 @@ const HEADING_LINE_RE = /^ {0,3}#{1,6}\s/u;
 /**
  * The floor below which a draft is not a chapter.
  *
- * The gates cannot supply this. All four judge what prose SAYS, so a draft with
- * nothing in it to bite on clears every one of them: `runGates` returns no
+ * The gates cannot supply this. Every one of them judges what prose SAYS, so a
+ * draft with nothing in it to bite on clears all of them: `runGates` returns no
  * failures for `"#"`, `"---"`, `"..."`, a bare code fence, or `"Hello."`.
  * Without a floor any of those renders as the client's chapter and is written to
  * a 30-day cache that `ai-cache.ts` cannot delete.
@@ -109,8 +109,8 @@ function firstNamesOf(ctx: StoryContext): string[] {
  * pack, one of the advisor's strategy labels, or one of the household's first
  * names?
  *
- * The cheapest available answer to the one question none of the four gates asks:
- * is this draft about the plan AT ALL. All four judge what prose says, so a
+ * The cheapest available answer to the one question none of the gates asks: is
+ * this draft about the plan AT ALL. Every gate judges what prose says, so a
  * refusal ("I'm sorry, I can't help with that. As an AI language model…") and an
  * echo of an injected instruction clear every one of them — no figures, short
  * plain sentences, no advice verbs, none of the AI tells — and are then stored as
@@ -194,12 +194,15 @@ export interface GenerateChapterArgs {
 }
 
 /**
- * Gate 3 is the only gate that can report the same thing twice: it maps over
- * sentences with no seen-set, so one offending sentence written in two
- * paragraphs yields two byte-identical failures. Gates 1, 2 and 4 are each
- * structurally incapable of it. Saying a rule twice adds nothing to the retry
- * prompt and reads as a defect in the review panel, so both are deduplicated
- * here rather than in the frozen gates.
+ * Gate 3 (`validateNoAdvice`) is the only gate that can report the same thing
+ * twice: it maps over sentences with no seen-set, so one offending sentence
+ * written in two paragraphs yields two byte-identical failures. Every other
+ * gate is structurally incapable of it — verified by reading each one, not
+ * assumed: facts and labels dedupe by a `Set`; readability, voice and register
+ * each run a fixed, bounded number of single-shot checks; foreignName returns
+ * at most one failure outright, however many names it finds. Saying a rule
+ * twice adds nothing to the retry prompt and reads as a defect in the review
+ * panel, so both are deduplicated here rather than in the frozen gates.
  */
 function dedupe(failures: GateFailure[]): GateFailure[] {
   const seen = new Set<string>();
@@ -268,7 +271,7 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
   const generate = args.deps?.generate ?? (async (s: string, u: string) => {
     const { content, finishReason } = await callAIExtractionWithMeta(s, u, MODEL);
     // A completion that did not finish is an outage by definition: what came
-    // back is half a chapter, and half a chapter clears all four gates and the
+    // back is half a chapter, and half a chapter clears every gate and the
     // substance floor alike. `finish_reason` is the only place that fact is
     // stated, and the `callAIExtraction` convenience wrapper throws it away.
     //
