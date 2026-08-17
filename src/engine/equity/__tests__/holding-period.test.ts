@@ -1,65 +1,75 @@
 /**
  * The ONE place the plan decides whether equity has been held long enough.
  *
- * These tests pin two separate things and it matters which is which:
- *   1. the RULE (whole-year, conservative) — deliberate, and G8 keeps it once
- *      the inputs are real dates;
- *   2. the PROXY's known legal divergence — characterization tests, explicitly
- *      named as wrong, so G8 cannot land without updating them.
+ * G8 replaced the whole-year proxy with the real statutory tests. The two cases
+ * G7 marked `KNOWN DIVERGENCE (audit F26/F27, fixed by G8)` now assert the
+ * legally correct answer — they are the reason this module exists.
  */
 import { describe, it, expect } from "vitest";
-import {
-  isQualifyingIsoDisposition,
-  isLongTermHolding,
-  assumedPrePlanAcquisitionYear,
-} from "../holding-period";
+import { isQualifyingIsoDisposition, isLongTermHolding } from "../holding-period";
 
-describe("isQualifyingIsoDisposition — IRC §422(a)(1) on whole years", () => {
-  // Both legs must clear. grant 2026, exercised 2027.
-  const at = (dispositionYear: number) =>
-    isQualifyingIsoDisposition({ grantYear: 2026, exerciseYear: 2027, dispositionYear });
+describe("isQualifyingIsoDisposition — IRC §422(a)(1) on real dates", () => {
+  // Granted 1 Feb 2026, exercised 1 Mar 2027.
+  const at = (dispositionDate: string) =>
+    isQualifyingIsoDisposition({
+      grantDate: "2026-02-01",
+      exerciseDate: "2027-03-01",
+      dispositionDate,
+    });
 
-  it("is false below the boundary and true at it", () => {
-    expect(at(2028)).toBe(false); // 2y from grant, 1y from exercise — neither leg certain
-    expect(at(2029)).toBe(true); // 3y from grant, 2y from exercise — both certain
-    expect(at(2030)).toBe(true);
+  it("was the F26/F27 divergence: a June-2028 sale IS qualifying", () => {
+    // >2y from grant (Feb 2028) and >1y from exercise (Mar 2028). The whole-year
+    // rule said false because 2028 − 2026 = 2. It is true.
+    expect(at("2028-06-01")).toBe(true);
   });
 
-  it("needs BOTH legs, not either", () => {
-    // Grant leg clears (4y), exercise leg does not (1y): exercised late.
-    expect(isQualifyingIsoDisposition({ grantYear: 2026, exerciseYear: 2029, dispositionYear: 2030 })).toBe(false);
-    // Exercise leg clears (3y), grant leg does not (2y): impossible in practice
-    // (exercise cannot precede grant) but the AND must still be an AND.
-    expect(isQualifyingIsoDisposition({ grantYear: 2026, exerciseYear: 2025, dispositionYear: 2028 })).toBe(false);
+  it("needs BOTH legs strictly cleared", () => {
+    expect(at("2028-01-31")).toBe(false); // grant leg not yet 2y
+    expect(at("2028-02-15")).toBe(false); // grant leg clear, exercise leg 11.5m
+    expect(at("2028-03-02")).toBe(true); // both cleared
   });
 
-  it("KNOWN DIVERGENCE (audit F26/F27, fixed by G8): calls a legally qualifying sale disqualifying", () => {
-    // Granted 1 Feb 2026, exercised 1 Mar 2027, sold 1 Dec 2029 is >2y from
-    // grant and >1y from exercise — a QUALIFYING disposition under §422(a)(1).
-    // Stored as (2026, 2027, 2029) the rule agrees. But move the sale to
-    // 1 Jun 2028: still >1y from exercise, and >2y from grant — still
-    // qualifying in law, and the plan says no, because 2028−2026 = 2.
-    expect(isQualifyingIsoDisposition({ grantYear: 2026, exerciseYear: 2027, dispositionYear: 2028 })).toBe(false);
+  it("is strict, not inclusive — exactly two years from grant is NOT more than two", () => {
+    expect(
+      isQualifyingIsoDisposition({
+        grantDate: "2026-02-01",
+        exerciseDate: "2026-02-01",
+        dispositionDate: "2028-02-01",
+      }),
+    ).toBe(false);
+    expect(
+      isQualifyingIsoDisposition({
+        grantDate: "2026-02-01",
+        exerciseDate: "2026-02-01",
+        dispositionDate: "2028-02-02",
+      }),
+    ).toBe(true);
+  });
+
+  it("fails when the exercise leg alone is short", () => {
+    expect(
+      isQualifyingIsoDisposition({
+        grantDate: "2026-02-01",
+        exerciseDate: "2029-10-01",
+        dispositionDate: "2030-01-01",
+      }),
+    ).toBe(false);
   });
 });
 
-describe("isLongTermHolding — the >1-year test on whole years", () => {
-  it("is false at a one-year gap and true at two", () => {
-    expect(isLongTermHolding(2027, 2027)).toBe(false);
-    expect(isLongTermHolding(2027, 2028)).toBe(false);
-    expect(isLongTermHolding(2027, 2029)).toBe(true);
+describe("isLongTermHolding — IRC §1222(3) on real dates", () => {
+  it("was the F26/F27 divergence: 13 months IS long-term", () => {
+    // Vest 1 Feb 2027, sell 1 Mar 2028. The whole-year rule taxed this short-term.
+    expect(isLongTermHolding("2027-02-01", "2028-03-01")).toBe(true);
   });
 
-  it("KNOWN DIVERGENCE (audit F26/F27, fixed by G8): 13 months reads as short-term", () => {
-    // Vest 1 Feb 2027, sell 1 Mar 2028 — 13 months, unambiguously long-term
-    // under §1222(3). Stored as (2027, 2028) the plan taxes it short-term.
-    expect(isLongTermHolding(2027, 2028)).toBe(false);
+  it("is strict at exactly one year", () => {
+    expect(isLongTermHolding("2027-02-01", "2028-02-01")).toBe(false);
+    expect(isLongTermHolding("2027-02-01", "2028-02-02")).toBe(true);
   });
-});
 
-describe("assumedPrePlanAcquisitionYear", () => {
-  it("is two years before the plan starts", () => {
-    expect(assumedPrePlanAcquisitionYear(2026)).toBe(2024);
-    expect(assumedPrePlanAcquisitionYear(2031)).toBe(2029);
+  it("is false for a same-day and a backwards sale", () => {
+    expect(isLongTermHolding("2027-02-01", "2027-02-01")).toBe(false);
+    expect(isLongTermHolding("2027-02-01", "2026-12-01")).toBe(false);
   });
 });
