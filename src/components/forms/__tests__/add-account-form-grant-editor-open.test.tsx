@@ -40,7 +40,7 @@ const EQUITY_INITIAL: AccountFormInitial = {
 
 let fetchMock: ReturnType<typeof vi.fn>;
 let submitState: { canSubmit: boolean; loading: boolean } | null;
-let onSuccess: ReturnType<typeof vi.fn>;
+let onSuccess: ReturnType<typeof vi.fn<() => void>>;
 
 function writeCalls() {
   return fetchMock.mock.calls
