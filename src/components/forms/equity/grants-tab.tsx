@@ -122,6 +122,22 @@ function validateEditor(state: GrantEditorState): string | null {
     if (!row.vestDate) return `Tranche ${i + 1}: vest date is required.`;
     const s = parseFloat(row.shares);
     if (isNaN(s) || s <= 0) return `Tranche ${i + 1}: shares must be a positive number.`;
+    // Shares flow vested → exercised → sold, so each bucket has to fit inside
+    // the one before it. Nothing enforced this: a 1,000-share row with 10,000
+    // in Exercised showed a "Remaining" of 0 (the old formula clamped the
+    // negative away) while the engine seeded all 10,000 as held shares — half a
+    // million dollars of stock conjured out of a typo. Audit F41.
+    const exercised = parseFloat(row.sharesExercised) || 0;
+    const sold = parseFloat(row.sharesSold) || 0;
+    if (state.grantType !== "rsu" && exercised > s) {
+      return `Tranche ${i + 1}: exercised shares cannot exceed the row's shares.`;
+    }
+    const acquired = state.grantType === "rsu" ? s : exercised;
+    if (sold > acquired) {
+      return state.grantType === "rsu"
+        ? `Tranche ${i + 1}: sold shares cannot exceed the row's shares.`
+        : `Tranche ${i + 1}: sold shares cannot exceed the exercised shares.`;
+    }
   }
   return null;
 }

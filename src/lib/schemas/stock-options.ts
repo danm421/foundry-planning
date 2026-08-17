@@ -138,6 +138,30 @@ export const grantCreateSchema = grantBase.superRefine((g, ctx) => {
       });
     }
   }
+  // (c) Shares flow vested → exercised → sold, so each bucket has to fit inside
+  // the one before it. `sharesExercised` and `sharesSold` were only checked for
+  // non-negativity, so a 1,000-share row could carry 10,000 exercised and the
+  // engine seeded all 10,000 as held stock. Audit F41.
+  g.tranches.forEach((t, i) => {
+    const acquired = g.grantType === "rsu" ? t.shares : t.sharesExercised;
+    if (g.grantType !== "rsu" && t.sharesExercised > t.shares) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["tranches", i, "sharesExercised"],
+        message: "sharesExercised cannot exceed the tranche's shares.",
+      });
+    }
+    if (t.sharesSold > acquired) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["tranches", i, "sharesSold"],
+        message:
+          g.grantType === "rsu"
+            ? "sharesSold cannot exceed the tranche's shares."
+            : "sharesSold cannot exceed sharesExercised.",
+      });
+    }
+  });
 });
 
 // PUT reuses the same full-replacement schema (not partial).
