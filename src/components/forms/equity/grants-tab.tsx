@@ -102,6 +102,26 @@ function parseGrant(raw: Record<string, unknown>): GrantDisplay {
   };
 }
 
+/** A timing choice and the field it depends on have to arrive together.
+ *
+ *  A blank companion never failed — it fell through to a default that inverted
+ *  the strategy. "Hold then sell in <blank>" liquidates the whole position in
+ *  the vest year, "Percent per year" with a blank percent never sells a share,
+ *  and "Specific year" with a blank year silently means "at vest". Audit
+ *  F29/F40; mirrors the rule in `lib/schemas/stock-options.ts`. */
+function strategyCompanionError(state: GrantEditorState): string | null {
+  if (state.exerciseTiming === "specific_year" && !state.exerciseYear) {
+    return "Exercise year is required when exercise timing is a specific year.";
+  }
+  if (state.sellTiming === "hold_then_sell_year" && !state.sellYear) {
+    return "Sell year is required when sell timing is hold-then-sell.";
+  }
+  if (state.sellTiming === "percent_per_year" && !(Number(state.sellPercentPerYear) > 0)) {
+    return "Sell % per year must be above zero.";
+  }
+  return null;
+}
+
 /** Build grant-type-specific validation errors client-side so the server never 400s. */
 function validateEditor(state: GrantEditorState): string | null {
   if (!state.grantDate) return "Grant date is required.";
@@ -160,7 +180,7 @@ function validateEditor(state: GrantEditorState): string | null {
       return `Vesting rows total ${rowSum.toLocaleString()} of ${shares.toLocaleString()} shares granted.`;
     }
   }
-  return null;
+  return strategyCompanionError(state);
 }
 
 /** Build the POST/PUT body from editor state. */

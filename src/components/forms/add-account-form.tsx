@@ -734,7 +734,19 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     category === "education_savings" &&
     !beneficiaryFamilyMemberId &&
     beneficiaryName.trim() === "";
-  const canSave = name.trim().length > 0 && !educationBeneficiaryMissing;
+  // A timing choice and the field it depends on have to arrive together. A
+  // blank companion never failed — it fell through to a default that inverted
+  // the strategy: "Hold, then sell in <blank>" liquidates the whole position in
+  // the vest year, "Sell <blank>% per year" never sells a share, and "Specific
+  // year" with a blank year silently means "at vest". Audit F29/F40; mirrors
+  // the rule in `lib/schemas/stock-options.ts`.
+  const equityStrategyIncomplete =
+    category === "stock_options" &&
+    ((defaultExerciseTiming === "specific_year" && !defaultExerciseYear) ||
+      (defaultSellTiming === "hold_then_sell_year" && !defaultSellYear) ||
+      (defaultSellTiming === "percent_per_year" && !(Number(defaultSellPercentPerYear) > 0)));
+  const canSave =
+    name.trim().length > 0 && !educationBeneficiaryMissing && !equityStrategyIncomplete;
 
   // ── Equity is base-plan only (audit F14/F19) ────────────────────────────────
   // Stock options are the ONE account category whose writes skip the scenario
@@ -2073,6 +2085,13 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                     </div>
                   )}
                 </div>
+
+                {equityStrategyIncomplete && (
+                  <p className="col-span-2 text-xs text-amber-400" data-testid="equity-strategy-incomplete">
+                    Fill in the year or percentage this timing depends on — left
+                    blank, the plan quietly does the opposite of what you picked.
+                  </p>
+                )}
               </fieldset>
             )}
 

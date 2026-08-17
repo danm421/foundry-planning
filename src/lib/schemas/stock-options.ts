@@ -40,7 +40,88 @@ const base = {
   defaultSellStartYear: z.number().int().gte(1900).lte(2200).nullable().optional(),
 };
 
-export const stockOptionAccountCreateSchema = z.object(base);
+/**
+ * A timing choice and the field it depends on have to arrive together.
+ *
+ * A blank companion never failed — it fell through to a default that inverted
+ * the strategy. Measured on the real engine: "hold, then sell in <blank>"
+ * liquidates the entire position in the vest year (`sellYear ?? acquisitionYear`
+ * in `timeline.ts`), and "sell <blank>% per year" emits no sell at all
+ * (`pct <= 0` returns an empty list), so the shares are held forever. A blank
+ * exercise year on "specific year" silently means "at vest". Audit F29/F40.
+ *
+ * `sellStartYear` is deliberately NOT required: blank falls back to the
+ * acquisition year, which is what "start selling once I have them" means.
+ */
+interface StrategyCompanionInput {
+  exerciseTiming?: string | null;
+  exerciseYear?: number | null;
+  sellTiming?: string | null;
+  sellYear?: number | null;
+  sellPercentPerYear?: number | null;
+}
+
+function addStrategyCompanionIssues(
+  v: StrategyCompanionInput,
+  ctx: z.RefinementCtx,
+  keys: { exerciseYear: string; sellYear: string; sellPercentPerYear: string },
+  at: (string | number)[] = [],
+): void {
+  if (v.exerciseTiming === "specific_year" && v.exerciseYear == null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [...at, keys.exerciseYear],
+      message: "An exercise year is required when exercise timing is a specific year.",
+    });
+  }
+  if (v.sellTiming === "hold_then_sell_year" && v.sellYear == null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [...at, keys.sellYear],
+      message: "A sell year is required when sell timing is hold-then-sell.",
+    });
+  }
+  if (v.sellTiming === "percent_per_year" && !(v.sellPercentPerYear != null && v.sellPercentPerYear > 0)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [...at, keys.sellPercentPerYear],
+      message: "A sell percentage above zero is required when sell timing is percent-per-year.",
+    });
+  }
+}
+
+const ACCOUNT_STRATEGY_KEYS = {
+  exerciseYear: "defaultExerciseYear",
+  sellYear: "defaultSellYear",
+  sellPercentPerYear: "defaultSellPercentPerYear",
+};
+
+const GRANT_STRATEGY_KEYS = {
+  exerciseYear: "exerciseYear",
+  sellYear: "sellYear",
+  sellPercentPerYear: "sellPercentPerYear",
+};
+
+/** Read an account's `default*` strategy fields as a plain strategy triplet. */
+function accountStrategy(a: {
+  defaultExerciseTiming?: string | null;
+  defaultExerciseYear?: number | null;
+  defaultSellTiming?: string | null;
+  defaultSellYear?: number | null;
+  defaultSellPercentPerYear?: number | null;
+}): StrategyCompanionInput {
+  return {
+    exerciseTiming: a.defaultExerciseTiming,
+    exerciseYear: a.defaultExerciseYear,
+    sellTiming: a.defaultSellTiming,
+    sellYear: a.defaultSellYear,
+    sellPercentPerYear: a.defaultSellPercentPerYear,
+  };
+}
+
+export const stockOptionAccountCreateSchema = z
+  .object(base)
+  .superRefine((a, ctx) => addStrategyCompanionIssues(accountStrategy(a), ctx, ACCOUNT_STRATEGY_KEYS));
 
 // `strictPartial`, not `.partial()` — Zod 4 keeps a `.default()` alive under
 // `.optional()`. Every strategy field here is `.optional().default(...)`, so
@@ -48,7 +129,12 @@ export const stockOptionAccountCreateSchema = z.object(base);
 // `input.X !== undefined` guards that an injected key always passes: a rename
 // alone would zero the share price, reset withholding to 22%, and revert the
 // account's exercise/sell strategy to at-vest/hold.
-export const stockOptionAccountUpdateSchema = strictPartial(z.object(base));
+// The companion rule fires only when the PATCH actually names a timing field —
+// an absent key is `undefined` and skips it, so a rename-only PATCH is
+// unaffected. The form always sends the whole strategy block.
+export const stockOptionAccountUpdateSchema = strictPartial(z.object(base)).superRefine((a, ctx) =>
+  addStrategyCompanionIssues(accountStrategy(a), ctx, ACCOUNT_STRATEGY_KEYS),
+);
 
 export type StockOptionAccountCreateInput = z.infer<typeof stockOptionAccountCreateSchema>;
 export type StockOptionAccountUpdateInput = z.infer<typeof stockOptionAccountUpdateSchema>;
@@ -168,7 +254,11 @@ export const grantCreateSchema = grantBase.superRefine((g, ctx) => {
       });
     }
   }
+  // (e) A timing choice and the field it depends on must arrive together, at
+  // the grant level and on every tranche override. Audit F29/F40.
+  addStrategyCompanionIssues(g, ctx, GRANT_STRATEGY_KEYS);
   g.tranches.forEach((t, i) => {
+    addStrategyCompanionIssues(t, ctx, GRANT_STRATEGY_KEYS, ["tranches", i]);
     const acquired = g.grantType === "rsu" ? t.shares : t.sharesExercised;
     if (g.grantType !== "rsu" && t.sharesExercised > t.shares) {
       ctx.addIssue({

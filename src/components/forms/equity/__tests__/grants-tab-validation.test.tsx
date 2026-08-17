@@ -61,6 +61,64 @@ function rowNum(which: "shares" | "exercised" | "sold"): HTMLInputElement {
   return { shares: nums[0], exercised: nums[1], sold: nums[2] }[which];
 }
 
+describe("Grant editor — a timing needs its companion field (F29/F40)", () => {
+  /** The one `<select>` offering `value`. Throws if the option is gone, so a
+   *  removed menu item fails loudly instead of quietly asserting nothing. */
+  function selectOffering(value: string): HTMLSelectElement {
+    const all = Array.from(document.querySelectorAll("select")) as HTMLSelectElement[];
+    const found = all.filter((s) => Array.from(s.options).some((o) => o.value === value));
+    if (found.length !== 1) throw new Error(`expected 1 <select> offering "${value}", found ${found.length}`);
+    return found[0];
+  }
+  const timingSelects = () => ({
+    exercise: selectOffering("year_before_expiration"),
+    sell: selectOffering("hold_then_sell_year"),
+  });
+
+  it("refuses hold-then-sell with a blank year", async () => {
+    await openValidNqso();
+    expect(saveBtn()).toBeEnabled();
+
+    await act(async () => { change(timingSelects().sell, "hold_then_sell_year"); });
+
+    expect(saveBtn()).toBeDisabled();
+    expect(err()).toMatch(/Sell year is required/i);
+
+    await act(async () => { change(screen.getByPlaceholderText("e.g. 2030"), "2032"); });
+    expect(saveBtn()).toBeEnabled();
+  });
+
+  it("refuses percent-per-year with a blank percentage", async () => {
+    await openValidNqso();
+    await act(async () => { change(timingSelects().sell, "percent_per_year"); });
+
+    expect(saveBtn()).toBeDisabled();
+    expect(err()).toMatch(/Sell % per year must be above zero/i);
+
+    await act(async () => { change(screen.getByPlaceholderText("e.g. 25"), "25"); });
+    expect(saveBtn()).toBeEnabled();
+  });
+
+  it("refuses a zero percentage, which is the same silence", async () => {
+    await openValidNqso();
+    await act(async () => { change(timingSelects().sell, "percent_per_year"); });
+    await act(async () => { change(screen.getByPlaceholderText("e.g. 25"), "0"); });
+
+    expect(saveBtn()).toBeDisabled();
+  });
+
+  it("refuses a specific exercise year with a blank year", async () => {
+    await openValidNqso();
+    await act(async () => { change(timingSelects().exercise, "specific_year"); });
+
+    expect(saveBtn()).toBeDisabled();
+    expect(err()).toMatch(/Exercise year is required/i);
+
+    await act(async () => { change(screen.getByPlaceholderText("e.g. 2028"), "2030"); });
+    expect(saveBtn()).toBeEnabled();
+  });
+});
+
 describe("Grant editor — the rows must add up to the grant (F39/F34)", () => {
   it("refuses to save a grant with no vesting rows", async () => {
     await openValidNqso();

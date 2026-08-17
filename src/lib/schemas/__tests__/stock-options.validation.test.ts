@@ -4,7 +4,11 @@
 // routes accept anything the schema lets through, and the projection engine
 // trusts what it reads. Each block below pins one audit finding.
 import { describe, it, expect } from "vitest";
-import { grantCreateSchema } from "../stock-options";
+import {
+  grantCreateSchema,
+  stockOptionAccountCreateSchema,
+  stockOptionAccountUpdateSchema,
+} from "../stock-options";
 
 /** A minimal valid RSU grant whose one row sums to the shares granted. */
 function rsuGrant(over: Record<string, unknown> = {}) {
@@ -35,6 +39,89 @@ function messages(input: unknown): string[] {
   const r = grantCreateSchema.safeParse(input);
   return r.success ? [] : r.error.issues.map((i) => i.message);
 }
+
+describe("strategy companions must arrive with their timing (F29/F40)", () => {
+  const SELL_YEAR = "A sell year is required when sell timing is hold-then-sell.";
+  const SELL_PCT = "A sell percentage above zero is required when sell timing is percent-per-year.";
+  const EX_YEAR = "An exercise year is required when exercise timing is a specific year.";
+
+  /** Every issue message from an account create body. */
+  function acctMessages(over: Record<string, unknown>): string[] {
+    const r = stockOptionAccountCreateSchema.safeParse({
+      name: "Acme Stock Options",
+      owner: "client",
+      ...over,
+    });
+    return r.success ? [] : r.error.issues.map((i) => i.message);
+  }
+
+  it("rejects an account default of hold-then-sell with no year", () => {
+    // Measured on the real engine: this liquidates the entire position in the
+    // VEST year — `sellYear ?? acquisitionYear` in timeline.ts — which is the
+    // opposite of what "hold, then sell in 2032" asks for.
+    expect(acctMessages({ defaultSellTiming: "hold_then_sell_year" })).toContain(SELL_YEAR);
+  });
+
+  it("rejects an account default of percent-per-year with no percentage", () => {
+    // Measured on the real engine: `pct <= 0` returns no sell actions at all,
+    // so "sell 25% per year" with a blank percent never sells a share.
+    expect(acctMessages({ defaultSellTiming: "percent_per_year" })).toContain(SELL_PCT);
+  });
+
+  it("rejects a zero percentage, which is the same silence", () => {
+    expect(
+      acctMessages({ defaultSellTiming: "percent_per_year", defaultSellPercentPerYear: 0 }),
+    ).toContain(SELL_PCT);
+  });
+
+  it("rejects a specific exercise year with no year", () => {
+    expect(acctMessages({ defaultExerciseTiming: "specific_year" })).toContain(EX_YEAR);
+  });
+
+  it("accepts each timing once its companion is filled in", () => {
+    expect(acctMessages({ defaultSellTiming: "hold_then_sell_year", defaultSellYear: 2032 })).toEqual([]);
+    expect(
+      acctMessages({ defaultSellTiming: "percent_per_year", defaultSellPercentPerYear: 0.25 }),
+    ).toEqual([]);
+    expect(
+      acctMessages({ defaultExerciseTiming: "specific_year", defaultExerciseYear: 2030 }),
+    ).toEqual([]);
+  });
+
+  it("leaves a start year optional — blank means 'as soon as I have them'", () => {
+    expect(
+      acctMessages({ defaultSellTiming: "percent_per_year", defaultSellPercentPerYear: 0.25 }),
+    ).toEqual([]);
+  });
+
+  it("applies the same rule to a PATCH that names a timing", () => {
+    const bad = stockOptionAccountUpdateSchema.safeParse({ defaultSellTiming: "hold_then_sell_year" });
+    expect(bad.success).toBe(false);
+    if (!bad.success) expect(bad.error.issues.map((i) => i.message)).toContain(SELL_YEAR);
+  });
+
+  it("leaves a PATCH that does not name a timing alone", () => {
+    // A rename must not have to resend the whole strategy block.
+    expect(stockOptionAccountUpdateSchema.safeParse({ name: "Renamed" }).success).toBe(true);
+  });
+
+  it("applies the rule at grant level", () => {
+    expect(messages(rsuGrant({ sellTiming: "hold_then_sell_year" }))).toContain(SELL_YEAR);
+    expect(messages(rsuGrant({ sellTiming: "percent_per_year" }))).toContain(SELL_PCT);
+    expect(messages(nqsoGrant({ exerciseTiming: "specific_year" }))).toContain(EX_YEAR);
+  });
+
+  it("applies the rule to a per-tranche override, and names the row", () => {
+    const r = grantCreateSchema.safeParse(rsuGrant({
+      tranches: [
+        { vestDate: "2028-01-01", shares: 1000, sharesExercised: 0, sharesSold: 0, sellTiming: "percent_per_year" },
+      ],
+    }));
+    expect(r.success).toBe(false);
+    if (r.success) return;
+    expect(r.error.issues.map((i) => i.path.join("."))).toContain("tranches.0.sellPercentPerYear");
+  });
+});
 
 describe("grant schema — the rows must add up to the grant (F39/F34)", () => {
   it("accepts rows that sum to sharesGranted", () => {
