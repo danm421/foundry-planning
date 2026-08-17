@@ -1,5 +1,6 @@
 import type { ChangeRow } from "@/lib/presentations/pages/scenario-changes/types";
 import type { Fact } from "./facts";
+import type { StoryChartData } from "./charts";
 
 /** The spec's fourteen-chapter arc, in DOCUMENT ORDER. `CHAPTER_IDS` is the
  *  order the report prints in, the order the review panel lists in, and the
@@ -198,6 +199,15 @@ export interface StoryContext {
    */
   goals: StoryGoal[];
   facts: Fact[];
+  /**
+   * The arrays the chart chapters draw — see `story/charts.ts`.
+   *
+   * Optional because a caller with no projection (the review panel's own
+   * fixtures, and every test that builds a context by hand) has nothing to put
+   * here, and a chapter whose chart is absent prints its prose alone. NOT a
+   * signal that the household is chartless: `charts.estate` carries that.
+   */
+  charts?: StoryChartData;
   /**
    * What each of them does next, for the one chapter that prints a list rather
    * than prose. Absent means none — a household with no agreed next steps gets
