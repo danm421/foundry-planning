@@ -17,7 +17,7 @@ vi.mock("@/lib/presentations/story/repo", async (importOriginal) => ({
   listStoryChapters: m.listStoryChapters,
 }));
 
-import { unreviewedStoryChapters } from "../export-gate";
+import { unreviewedStoryChapters, InvalidStoryOptionsError } from "../export-gate";
 
 const CLIENT = "c1a11111-2222-4333-8444-555555555555";
 
@@ -138,5 +138,21 @@ describe("unreviewedStoryChapters", () => {
     const [page] = await unreviewedStoryChapters(CLIENT, [noOptions]);
     expect(page.scenarioId).toBe("base");
     expect(page.documentRole).toBe("standalone");
+  });
+
+  // Finding 10: caller-supplied `page.options` is unvalidated by `BodySchema`
+  // (`runs/route.ts`), so a malformed blob used to reach `planStoryOptionsSchema
+  // .parse` here and throw an uncaught ZodError — a 500 for what is a 400-shaped
+  // client mistake. The gate now throws a typed error instead, so the route can
+  // tell the two apart.
+  it("throws InvalidStoryOptionsError, not a raw ZodError, for options that fail the schema", async () => {
+    const malformed = {
+      pageId: "planStory",
+      options: { documentRole: "not-a-real-role" },
+    } as unknown as PresentationPageDescriptor;
+    await expect(unreviewedStoryChapters(CLIENT, [malformed])).rejects.toBeInstanceOf(
+      InvalidStoryOptionsError,
+    );
+    expect(m.listStoryChapters).not.toHaveBeenCalled();
   });
 });

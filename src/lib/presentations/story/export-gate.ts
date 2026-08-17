@@ -7,6 +7,7 @@
 //
 // Reads storage ONLY. No projection, no model call — an export must never be
 // slower because of a check about it, the same rule `load-for-export.ts` states.
+import type { ZodIssue } from "zod";
 import { listStoryChapters, type DocumentRole } from "./repo";
 import { planStoryOptionsSchema, printedChapters } from "@/lib/presentations/pages/plan-story/options-schema";
 import type { PresentationPageDescriptor } from "@/lib/presentations/types";
@@ -17,6 +18,21 @@ export interface UnreviewedStoryPage {
   documentRole: DocumentRole;
   unreviewed: number;
   total: number;
+}
+
+// A caller-supplied `page.options` blob that fails `planStoryOptionsSchema` —
+// the request body's own shape says nothing about what a Plan Story page's
+// options must look like (`BodySchema` leaves `pages[].options` unvalidated).
+// Thrown instead of letting the ZodError escape, so the route can answer 400
+// instead of 500 for a client mistake.
+export class InvalidStoryOptionsError extends Error {
+  constructor(
+    public readonly pageId: string,
+    public readonly issues: ZodIssue[],
+  ) {
+    super(`Invalid options for Plan Story page "${pageId}"`);
+    this.name = "InvalidStoryOptionsError";
+  }
 }
 
 export async function unreviewedStoryChapters(
@@ -31,7 +47,11 @@ export async function unreviewedStoryChapters(
 
   return Promise.all(
     story.map(async (page) => {
-      const options = planStoryOptionsSchema.parse(page.options ?? {});
+      const parsed = planStoryOptionsSchema.safeParse(page.options ?? {});
+      if (!parsed.success) {
+        throw new InvalidStoryOptionsError(page.pageId, parsed.error.issues);
+      }
+      const options = parsed.data;
       // The SAME call the render makes. A second derivation of the print list is
       // how the page-count defect came back twice; here it would count chapters
       // the deck does not contain.

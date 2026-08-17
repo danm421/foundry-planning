@@ -23,7 +23,7 @@ import {
 } from "@/lib/presentations/ensure-ai-summaries";
 import { savePlanToVault } from "@/lib/crm/vault-plans";
 import { recordAudit } from "@/lib/audit";
-import { unreviewedStoryChapters } from "@/lib/presentations/story/export-gate";
+import { unreviewedStoryChapters, InvalidStoryOptionsError } from "@/lib/presentations/story/export-gate";
 import {
   ClientNotFoundError,
   ProjectionInputError,
@@ -249,6 +249,12 @@ export async function POST(
     // the async after() job catches its own and marks the run failed instead.
     if (err instanceof ClientNotFoundError) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (err instanceof InvalidStoryOptionsError) {
+      return NextResponse.json(
+        { error: err.message, issues: err.issues },
+        { status: 400 },
+      );
     }
     if (err instanceof ProjectionInputError) {
       return NextResponse.json(

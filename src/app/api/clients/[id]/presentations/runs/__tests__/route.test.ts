@@ -81,9 +81,10 @@ vi.mock("@/lib/audit", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/audit")>();
   return { ...actual, recordAudit: vi.fn().mockResolvedValue(undefined) };
 });
-vi.mock("@/lib/presentations/story/export-gate", () => ({
-  unreviewedStoryChapters: unreviewed,
-}));
+vi.mock("@/lib/presentations/story/export-gate", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/presentations/story/export-gate")>();
+  return { ...actual, unreviewedStoryChapters: unreviewed };
+});
 
 import { POST } from "../route";
 
