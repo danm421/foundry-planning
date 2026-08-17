@@ -95,13 +95,64 @@ describe("buildFutureActivity — grant-level rows", () => {
     expect(r.hasSellToCover).toBe(false);
   });
 
-  it("flags an unexercised expiry as an underwater row", () => {
+  // ── Audit F37 ────────────────────────────────────────────────────────────
+  // Every lapse used to set `underwater = true`, whatever the shares were
+  // worth. Moneyness was never computed, so an option lapsing $80/share IN THE
+  // MONEY — the whole point of the finding — read the same as a worthless one.
+
+  it("does NOT call an in-the-money lapse underwater, and reports what was forfeited", () => {
+    // FMV 100 flat, strike 20, and the plan is told to exercise in 2033 —
+    // past the 2030 expiry — so 100 shares worth $8,000 over strike lapse.
     const g = nqso({ expirationYear: 2030 });
+    const LATE: EquityStrategy = { ...HOLD, exerciseTiming: "specific_year", exerciseYear: 2033 };
+    const m = buildFutureActivity([plan([g], LATE)], OPTS);
+    const r = m.groups.find((grp) => grp.year === 2030)!.rows[0];
+    expect(r.expiredShares).toBe(100);
+    expect(r.expiredUnderwater).toBe(false);
+    expect(r.expiredForfeitedValue).toBeCloseTo(8000, 6); // 100 × (100 − 20)
+    expect(r.grossProceeds).toBe(0);
+  });
+
+  it("calls a genuinely out-of-the-money lapse underwater, with nothing forfeited", () => {
+    const g = nqso({ expirationYear: 2030, strikePrice: 250 }); // strike above the $100 FMV
     const m = buildFutureActivity([plan([g], MANUAL_NO_EVENTS)], OPTS);
     const r = m.groups.find((grp) => grp.year === 2030)!.rows[0];
-    expect(r.underwater).toBe(true);
     expect(r.expiredShares).toBe(100);
-    expect(r.grossProceeds).toBe(0);
+    expect(r.expiredUnderwater).toBe(true);
+    expect(r.expiredForfeitedValue).toBe(0);
+  });
+
+  it("carries expired shares into the year subtotal and the grand total", () => {
+    // The count was printed in the Sh. Sold cell and left out of that column's
+    // sum, so a row read 100 and its subtotal read a dash.
+    const g = nqso({ expirationYear: 2030 });
+    const m = buildFutureActivity([plan([g], MANUAL_NO_EVENTS)], OPTS);
+    const grp = m.groups.find((x) => x.year === 2030)!;
+    expect(grp.subtotal.expiredShares).toBe(100);
+    expect(m.totals.expiredShares).toBe(100);
+    expect(grp.subtotal.sharesSold).toBe(0); // expiries are NOT sales
+  });
+
+  it("keeps both a sale and a lapse when they land in the same grant-year", () => {
+    // One row exercises and sells in 2027; a second vests after the 2030
+    // expiry and lapses. Different years here, but the row shape has to carry
+    // both numbers independently — the old cell showed one or the other.
+    const g = nqso({
+      sharesGranted: 200, expirationYear: 2030,
+      tranches: [
+        { id: "live", vestYear: 2027, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null },
+        { id: "late", vestYear: 2031, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null },
+      ],
+    });
+    const m = buildFutureActivity([plan([g], SELL_NOW)], OPTS);
+    const sold = m.groups.find((x) => x.year === 2027)!.rows[0];
+    const lapsed = m.groups.find((x) => x.year === 2030)!.rows[0];
+    expect(sold.sharesSold).toBe(100);
+    expect(sold.expiredShares).toBe(0);
+    expect(lapsed.sharesSold).toBe(0);
+    expect(lapsed.expiredShares).toBe(100);
+    expect(m.totals.sharesSold).toBe(100);
+    expect(m.totals.expiredShares).toBe(100);
   });
 
   it("caps the horizon at planEndYear", () => {
