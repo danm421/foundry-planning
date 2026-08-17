@@ -1,5 +1,6 @@
 import type { StockOptionPlan, EquityGrant, GrantType } from "./types";
 import { createEquityState, computeEquityYear } from "./tax-events";
+import { resolveStrikePrice } from "./price-model";
 
 export interface FutureActivityGrantYearRow {
   year: number;
@@ -19,7 +20,16 @@ export interface FutureActivityGrantYearRow {
   grossProceeds: number;        // cover proceeds + strategy-sell proceeds
   netProceeds: number;          // grossProceeds − exerciseCost
   expiredShares: number;        // unexercised options that lapsed
-  underwater: boolean;          // any expiry this grant-year
+  /** True only when every share that lapsed this grant-year was genuinely OUT
+   *  OF THE MONEY. This used to be set by the mere fact of an expiry, so an
+   *  option lapsing $80/share in the money read "underwater" — audit F37. An
+   *  option lapses for reasons other than price: vesting after expiry, or a
+   *  strategy that asks to exercise in a year the grant no longer exists. */
+  expiredUnderwater: boolean;
+  /** Intrinsic value thrown away by the lapse: Σ shares × max(0, FMV − strike)
+   *  in the expiry year. Zero for a real underwater lapse — that is the whole
+   *  distinction. */
+  expiredForfeitedValue: number;
   taxImpact: number | null;     // always null — joint per-year figure, not split per grant
 }
 
@@ -28,6 +38,7 @@ export interface FutureActivitySubtotal {
   sharesExercised: number;
   exerciseCost: number;
   sharesSold: number;
+  expiredShares: number;
   grossProceeds: number;
   netProceeds: number;
   taxImpact: number | null;     // per-year additional tax (null when no counterfactual entry)
@@ -95,7 +106,8 @@ export function buildFutureActivity(
             grantDate: String(grant.grantYear),
             sharesVested: 0, sharesExercised: 0, exercisePrice: null, exerciseCost: 0,
             sharesSold: 0, hasSellToCover: false, salePrice: d.fmv, grossProceeds: 0,
-            netProceeds: 0, expiredShares: 0, underwater: false, taxImpact: null,
+            netProceeds: 0, expiredShares: 0, expiredUnderwater: false,
+            expiredForfeitedValue: 0, taxImpact: null,
           };
           rowByKey.set(key, row);
         }
@@ -108,10 +120,20 @@ export function buildFutureActivity(
             row.exercisePrice = d.exercisePrice;
             row.exerciseCost = ROUND(row.exerciseCost + d.exerciseCost);
             break;
-          case "expire":
+          case "expire": {
+            // Moneyness at the lapse year decides the label. `resolveStrikePrice`
+            // is what the engine would have charged to exercise that year, so
+            // this is the counterfactual the advisor cares about: what the
+            // client walked away from. Audit F37.
+            const strike = resolveStrikePrice(grant, d.fmv);
+            const intrinsic = Math.max(0, d.fmv - strike);
             row.expiredShares = ROUND(row.expiredShares + d.shares);
-            row.underwater = true;
+            row.expiredForfeitedValue = ROUND(row.expiredForfeitedValue + d.shares * intrinsic);
+            // "Underwater" has to hold for EVERY lapsed share in the row, so an
+            // in-the-money tranche cannot be hidden behind a worthless one.
+            row.expiredUnderwater = row.expiredForfeitedValue === 0;
             break;
+          }
         }
         if (d.kind === "sell") {
           row.sharesSold = ROUND(row.sharesSold + d.shares);
@@ -168,13 +190,14 @@ function compareRows(a: FutureActivityGrantYearRow, b: FutureActivityGrantYearRo
 function sumRows(rows: FutureActivityGrantYearRow[]): FutureActivitySubtotal {
   const s: FutureActivitySubtotal = {
     sharesVested: 0, sharesExercised: 0, exerciseCost: 0, sharesSold: 0,
-    grossProceeds: 0, netProceeds: 0, taxImpact: null,
+    expiredShares: 0, grossProceeds: 0, netProceeds: 0, taxImpact: null,
   };
   for (const r of rows) {
     s.sharesVested = ROUND(s.sharesVested + r.sharesVested);
     s.sharesExercised = ROUND(s.sharesExercised + r.sharesExercised);
     s.exerciseCost = ROUND(s.exerciseCost + r.exerciseCost);
     s.sharesSold = ROUND(s.sharesSold + r.sharesSold);
+    s.expiredShares = ROUND(s.expiredShares + r.expiredShares);
     s.grossProceeds = ROUND(s.grossProceeds + r.grossProceeds);
     s.netProceeds = ROUND(s.netProceeds + r.netProceeds);
   }

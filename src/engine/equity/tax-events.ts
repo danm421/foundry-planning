@@ -3,6 +3,11 @@ import { resolveStrategy } from "./strategy";
 import { buildGrantTimeline, type EquityAction } from "./timeline";
 import { fmvCurve, resolveStrikePrice } from "./price-model";
 import { computeSellToCover } from "./withholding";
+import {
+  isQualifyingIsoDisposition,
+  isLongTermHolding,
+  assumedPrePlanAcquisitionYear,
+} from "./holding-period";
 
 /** One acquired-and-held lot — per ACQUISITION EVENT, not per tranche: a row
  *  partly exercised before the plan holds two. */
@@ -101,8 +106,10 @@ export function computeEquityYear(plan: StockOptionPlan, state: EquityState, yea
       const basisPerShare = grant.grantType === "iso" && grant.strikePrice != null ? grant.strikePrice : fmv(year);
       state.lots.set(key, {
         grantId: a.grantId, trancheId: a.trancheId, grantType: grant.grantType, shares: a.shares,
-        basisPerShare, acquisitionYear: state.planStartYear - 2, grantYear: grant.grantYear,
-        exerciseYear: grant.grantType === "rsu" ? null : state.planStartYear - 2,
+        basisPerShare,
+        acquisitionYear: assumedPrePlanAcquisitionYear(state.planStartYear),
+        grantYear: grant.grantYear,
+        exerciseYear: grant.grantType === "rsu" ? null : assumedPrePlanAcquisitionYear(state.planStartYear),
         strike: grant.strikePrice ?? 0, fmvAtExercise: basisPerShare,
       });
       res.acquisitions.push({ value: ROUND(a.shares * fmv(year)), basis: ROUND(a.shares * basisPerShare) });
@@ -176,7 +183,11 @@ export function computeEquityYear(plan: StockOptionPlan, state: EquityState, yea
       res.saleBasisRemoved += ROUND(shares * lot.basisPerShare);
 
       if (lot.grantType === "iso" && lot.exerciseYear != null) {
-        const qualifying = year - lot.grantYear >= 3 && year - lot.exerciseYear >= 2;
+        const qualifying = isQualifyingIsoDisposition({
+          grantYear: lot.grantYear,
+          exerciseYear: lot.exerciseYear,
+          dispositionYear: year,
+        });
         if (qualifying) {
           // Signed — a qualifying ISO disposition below basis is a genuine
           // long-term capital loss. (The non-ISO branch below was already
@@ -199,12 +210,12 @@ export function computeEquityYear(plan: StockOptionPlan, state: EquityState, yea
           const gain = ROUND(shares * (f - lot.strike) - shares * oiPerShare);
           // A disqualifying disposition fails the holding-period test, so the residual is usually
           // short-term. Same whole-year proxy as the non-ISO branch; acquisitionYear == exerciseYear.
-          const longTerm = year - lot.exerciseYear >= 2;
+          const longTerm = isLongTermHolding(lot.exerciseYear, year);
           if (longTerm) res.capitalGains += gain; else res.stCapitalGains += gain;
         }
       } else {
         const gain = ROUND(shares * (f - lot.basisPerShare));
-        const longTerm = year - lot.acquisitionYear >= 2;
+        const longTerm = isLongTermHolding(lot.acquisitionYear, year);
         if (longTerm) res.capitalGains += gain;
         else res.stCapitalGains += gain;
       }

@@ -13,6 +13,20 @@ const TH = "px-2 py-1.5 text-right whitespace-nowrap text-[10px] font-bold upper
 const TD = "px-2 py-1 text-right whitespace-nowrap border-b border-hair";
 const L = "text-left";
 
+/** A grant priced by discount off FMV has a different strike in every year the
+ *  plan exercises it, so one number would be a lie — the range is the answer.
+ *  Audit F36. */
+function StrikeCell({ row }: { row: VestingScheduleRow }) {
+  if (row.strike == null) return dash;
+  const low = `$${row.strike.toFixed(2)}`;
+  if (row.strikeHigh == null) return <span>{low}</span>;
+  return (
+    <span className="whitespace-nowrap" title="Priced as a discount off FMV, so the strike differs in each exercise year">
+      {low}<span className="text-ink-3">–</span>${row.strikeHigh.toFixed(2)}
+    </span>
+  );
+}
+
 function ExercisedCell({ row }: { row: VestingScheduleRow }) {
   if (!row.isOption) return dash;
   const split = row.grantType === "iso" ? row.isoSplit : null;
@@ -83,7 +97,7 @@ export default function VestingScheduleTable({ model }: { model: VestingSchedule
               <tr key={r.grantId}>
                 <td className={`${TD} ${L} font-medium`}>{r.label}</td>
                 <td className={TD}>{TYPE_LABEL[r.grantType] ?? r.grantType}</td>
-                <td className={TD}>{r.strike != null ? `$${r.strike.toFixed(2)}` : dash}</td>
+                <td className={TD}><StrikeCell row={r} /></td>
                 <td className={TD}>{r.expirationYear ?? dash}</td>
                 <td className={TD}>{sh(r.granted)}</td>
                 <td className={`${TD} text-good`}>{sh(r.vested)}</td>
@@ -128,9 +142,13 @@ export default function VestingScheduleTable({ model }: { model: VestingSchedule
       </table>
       <p className="mt-2 text-[11px] text-ink-3">
         Vested = vested to date. Strike / Expires / Exercisable / Exercised apply to options only.
+        Strike is the price the plan will actually charge to exercise; a grant priced as a discount
+        off the share price shows a range, because the discount is taken in the year of exercise.
         ISO Exercised splits into <span className="text-good">✓ qual</span> (past the holding period — sells as LTCG)
         and <span className="text-warn">⧖ hold</span> (still in the window — selling now is a disqualifying disposition).
-        ISO split assumes shares were exercised at vest.
+        Holding periods are counted in whole years and assume these shares were exercised two years
+        before the plan begins — the same rule and the same assumption the plan&rsquo;s tax ledger uses,
+        so this badge and the Future Activity tab cannot disagree.
       </p>
     </div>
   );

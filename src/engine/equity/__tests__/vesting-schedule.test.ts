@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { buildVestingSchedule } from "../vesting-schedule";
+import { isQualifyingIsoDisposition, assumedPrePlanAcquisitionYear } from "../holding-period";
+import { createEquityState, computeEquityYear } from "../tax-events";
+import { buildFutureActivity } from "../future-activity";
 import type { StockOptionPlan } from "../types";
 
 const EMPTY_STRATEGY = {
@@ -120,6 +123,77 @@ describe("buildVestingSchedule — options (NQSO)", () => {
     const row = buildVestingSchedule([plan], { asOfYear: 2026, planStartYear: 2026 }).rows[0];
     expect(row.exercisable).toBe(0);
   });
+
+  it("an explicit strike is one number and carries no range", () => {
+    const row = buildVestingSchedule([nqsoPlan()], { asOfYear: 2026, planStartYear: 2026 }).rows[0];
+    expect(row.strike).toBe(25);
+    expect(row.strikeHigh).toBeNull();
+  });
+});
+
+// ── Audit F36 ────────────────────────────────────────────────────────────────
+// A grant priced by DISCOUNT has no strike until an exercise year is known:
+// resolveStrikePrice reads the discount off the FMV *in the exercise year*. The
+// schedule used to resolve it against the plan-start FMV while the Future
+// Activity ledger printed the engine's exercise-year number — $42.50 here
+// against $59.61 there, for the same grant.
+
+function discountPlan(vestYears: number[]): StockOptionPlan {
+  return basePlan({
+    accountId: "acct-disc",
+    pricePerShare: 50,
+    growthRate: 0.07,
+    strategy: { ...EMPTY_STRATEGY, exerciseTiming: "at_vest", sellTiming: "hold" },
+    grants: [{
+      id: "g-disc", grantNumber: "DISC-1", grantType: "nqso", grantYear: 2026,
+      sharesGranted: 1000 * vestYears.length, has83bElection: false, fmvAtGrant: null,
+      strikePrice: null, strikeDiscountPct: 0.15, expirationYear: 2040,
+      strategy: { ...EMPTY_STRATEGY },
+      tranches: vestYears.map((vestYear, i) => ({
+        id: `d${i}`, vestYear, shares: 1000, sharesExercised: 0, sharesSold: 0, strategy: null,
+      })),
+      plannedEvents: [],
+    }],
+  });
+}
+
+describe("buildVestingSchedule — discount-priced strike (F36)", () => {
+  it("prints the strike the ledger will actually charge, not today's", () => {
+    const p = discountPlan([2031]);
+    const row = buildVestingSchedule([p], { asOfYear: 2026, planStartYear: 2026 }).rows[0];
+    const ledger = buildFutureActivity([p], { asOfYear: 2026, planStartYear: 2026, planEndYear: 2040 })
+      .groups.flatMap((g) => g.rows).find((r) => r.sharesExercised > 0)!;
+
+    expect(ledger.exercisePrice).toBeCloseTo(59.61, 2); // 50 × 1.07^5 × 0.85
+    expect(row.strike).toBeCloseTo(ledger.exercisePrice!, 6);
+    expect(row.strikeHigh).toBeNull();
+    // …and it is NOT the old plan-start number, which is a full $17 lower.
+    expect(row.strike).not.toBeCloseTo(42.5, 2);
+  });
+
+  it("reports a range when the plan exercises across several years", () => {
+    const p = discountPlan([2028, 2031]);
+    const row = buildVestingSchedule([p], { asOfYear: 2026, planStartYear: 2026 }).rows[0];
+    const prices = buildFutureActivity([p], { asOfYear: 2026, planStartYear: 2026, planEndYear: 2040 })
+      .groups.flatMap((g) => g.rows).filter((r) => r.sharesExercised > 0).map((r) => r.exercisePrice!);
+
+    expect(prices).toHaveLength(2);
+    expect(row.strike).toBeCloseTo(Math.min(...prices), 6);
+    expect(row.strikeHigh).toBeCloseTo(Math.max(...prices), 6);
+    expect(row.strikeHigh!).toBeGreaterThan(row.strike!);
+  });
+
+  it("falls back to the plan-start price when the plan never exercises the grant", () => {
+    // Out of the money forever: a 0% discount makes strike == FMV every year,
+    // so exerciseYearFor refuses and there is no ledger number to agree with.
+    const p = discountPlan([2031]);
+    p.grants[0].strikeDiscountPct = 0;
+    const row = buildVestingSchedule([p], { asOfYear: 2026, planStartYear: 2026 }).rows[0];
+    expect(buildFutureActivity([p], { asOfYear: 2026, planStartYear: 2026, planEndYear: 2040 })
+      .groups.flatMap((g) => g.rows).filter((r) => r.sharesExercised > 0)).toHaveLength(0);
+    expect(row.strike).toBe(50);
+    expect(row.strikeHigh).toBeNull();
+  });
 });
 
 function isoPlan(): StockOptionPlan {
@@ -151,14 +225,68 @@ function isoPlan(): StockOptionPlan {
 }
 
 describe("buildVestingSchedule — ISO qualification", () => {
-  it("splits exercised ISO shares into qualified vs holding (at-vest assumption)", () => {
+  it("splits exercised ISO shares into qualified vs holding", () => {
     const model = buildVestingSchedule([isoPlan()], { asOfYear: 2026, planStartYear: 2026 });
     const [oldRow, newRow] = model.rows;
 
-    // old: qualifyYear = max(2021+2, 2022+1) = 2023 <= 2026 → all qualified
+    // Shares already exercised are seeded at assumedPrePlanAcquisitionYear
+    // (2024), so the exercise leg clears at once and the grant leg decides.
+    // old: 2026 − 2021 = 5 ≥ 3 → all qualified
     expect(oldRow.isoSplit).toEqual({ qualified: 3000, holding: 0 });
-    // new: qualifyYear = max(2025+2, 2025+1) = 2027 > 2026 → all holding
+    // new: 2026 − 2025 = 1 < 3 → all still in the window
     expect(newRow.isoSplit).toEqual({ qualified: 0, holding: 4000 });
+  });
+
+  it("turns qualified exactly where isQualifyingIsoDisposition does, not a year early", () => {
+    // The grant leg is the binding one: qualified from grantYear + 3.
+    // 2023 grant → qualified in 2026; 2024 grant → not until 2027. Before
+    // audit F17/F47 this screen used max(grantYear + 2, vestYear + 1) and
+    // flipped a full year sooner than the tax ledger.
+    const at = (grantYear: number, asOfYear: number) => {
+      const p = isoPlan();
+      p.grants = [p.grants[0]];
+      p.grants[0].grantYear = grantYear;
+      p.grants[0].tranches[0].vestYear = grantYear + 1;
+      return buildVestingSchedule([p], { asOfYear, planStartYear: 2026 }).rows[0].isoSplit;
+    };
+    expect(at(2023, 2026)).toEqual({ qualified: 3000, holding: 0 });
+    expect(at(2024, 2026)).toEqual({ qualified: 0, holding: 3000 });
+    // …and the same rule, called directly, agrees. If isoSplitFor ever stops
+    // routing through the shared helper this pair stops matching.
+    expect(isQualifyingIsoDisposition({
+      grantYear: 2023, exerciseYear: assumedPrePlanAcquisitionYear(2026), dispositionYear: 2026,
+    })).toBe(true);
+    expect(isQualifyingIsoDisposition({
+      grantYear: 2024, exerciseYear: assumedPrePlanAcquisitionYear(2026), dispositionYear: 2026,
+    })).toBe(false);
+  });
+
+  it("the badge matches the branch the tax ledger takes on the same grant", () => {
+    // The cross-surface check audit F17/F47 asked for: an ISO priced by
+    // discount has a real bargain element, so the ledger's two branches are
+    // distinguishable in dollars — qualified books capital gain, disqualifying
+    // books ordinary income.
+    const mk = (grantYear: number): StockOptionPlan => ({
+      ...basePlan({ accountId: "acct-x" }),
+      pricePerShare: 100,
+      growthRate: 0,
+      grants: [{
+        id: "g", grantNumber: "ISO", grantType: "iso", grantYear, sharesGranted: 1000,
+        has83bElection: false, fmvAtGrant: null, strikePrice: null, strikeDiscountPct: 0.15,
+        expirationYear: 2036, strategy: { sellTiming: "hold_then_sell_year", sellYear: 2026 },
+        tranches: [{ id: "t", vestYear: grantYear, shares: 1000, sharesExercised: 1000, sharesSold: 0, strategy: null }],
+        plannedEvents: [],
+      }],
+    });
+    for (const [grantYear, expectQualified] of [[2023, true], [2024, false]] as const) {
+      const p = mk(grantYear);
+      const badge = buildVestingSchedule([p], { asOfYear: 2026, planStartYear: 2026 }).rows[0].isoSplit;
+      const r = computeEquityYear(p, createEquityState([p], 2026), 2026);
+      expect(r.sellProceeds).toBeGreaterThan(0); // the sale really happened
+      expect((badge?.qualified ?? 0) > 0).toBe(expectQualified);
+      // Badge says qualified ⟺ ledger books no ordinary income on the sale.
+      expect(r.ordinaryIncome === 0).toBe(expectQualified);
+    }
   });
 
   it("returns null isoSplit for NQSO/RSU and for ISO with nothing exercised", () => {

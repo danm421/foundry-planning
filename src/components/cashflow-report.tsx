@@ -826,13 +826,18 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       techniqueIncomeIds.push(proceedsKey);
     }
 
-    // Equity-compensation sale proceeds. The engine emits
-    // bySource["equity-proceeds:<planAccountId>"] = net sale cash in sale years.
+    // Equity-compensation net cash. The engine emits
+    // bySource["equity-proceeds:<planAccountId>"] = the year's equity cash.
     // Register each plan so "Other Inflows" + the Level-1 drill surface it,
     // matching life-insurance-proceeds handling.
+    //
+    // NET, and SIGNED: an exercise-and-hold pays the strike out of pocket and
+    // receives nothing, so the figure is negative that year. "Equity Sale"
+    // named a transaction that had not happened — a $25,000 strike payment
+    // read as "Equity Sale: ACME −25,000".
     for (const plan of clientData.stockOptionPlans ?? []) {
       const proceedsKey = `equity-proceeds:${plan.accountId}`;
-      incomeNames[proceedsKey] = `Equity Sale: ${plan.ticker ?? plan.accountId}`;
+      incomeNames[proceedsKey] = `Equity Net Cash: ${plan.ticker ?? plan.accountId}`;
       techniqueIncomeIds.push(proceedsKey);
     }
   }

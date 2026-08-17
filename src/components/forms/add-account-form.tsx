@@ -2030,10 +2030,10 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                     {/* "Manual" drives the exercise from planned events, and no
                         screen can create one. Picked here, the engine exercises
                         nothing and every grant on this account lapses — a
-                        10,000-share NQSO $400,000 over its strike reports $0
-                        and reads "underwater". Offered only when a record
-                        already holds it, so opening an existing account never
-                        silently rewrites the value. Audit F18/F33. */}
+                        10,000-share NQSO $400,000 over its strike reports $0 of
+                        proceeds. Offered only when a record already holds it,
+                        so opening an existing account never silently rewrites
+                        the value. Audit F18/F33. */}
                     {defaultExerciseTiming === "manual" && (
                       <option value="manual">Manual (planned events — set via API)</option>
                     )}
