@@ -333,6 +333,22 @@ describe("loadStoryContext", () => {
     expect(ctx.facts.some((f) => f.id === "outcome.legacy.proposed")).toBe(false);
   });
 
+  it("puts the chart arrays and the chart facts on the context from ONE build", async () => {
+    const ctx = await loadStoryContext({
+      clientId: "c1",
+      firmId: "f1",
+      proposedRef: null,
+      scenarioLabel: "Base Case",
+      documentRole: "standalone",
+    });
+
+    const peak = ctx.facts.find((f) => f.id === "chart.portfolio.peak");
+    expect(ctx.charts?.portfolio.length).toBeGreaterThan(0);
+    // The fact's raw value must be the max of the array the renderer will
+    // draw — that identity is the whole point of building the bars once.
+    expect(peak?.raw).toBe(Math.max(...ctx.charts!.portfolio.map((b) => b.total)));
+  });
+
   it("takes this year's flow off the first projection year, tying out to Cash Flow", async () => {
     const ctx = await loadStoryContext({
       clientId: "c1",
@@ -784,6 +800,25 @@ describe("loadStoryContext", () => {
       // What the snapshot's own tree does say is still reported.
       expect(display(ctx, "outcome.legacy.proposed")).toBe("$2.6M");
       expect(ctx.hasProposal).toBe(true);
+    });
+
+    /**
+     * `willTheMoneyLast` prints under both `OUTCOME_CHAPTERS` and
+     * `PROPOSED_OUTCOME_CHAPTERS`, so on a deck carrying a proposal it already
+     * states the proposed plan's outcome — the chart it draws has to match.
+     * `outcome.legacy.base` stays the CURRENT plan's ending balance no matter
+     * what (`build-facts.ts`'s own rule), so the two figures below are
+     * required to differ; if the loader fed the chart builder the base years
+     * instead of the proposed ones, they would come out equal.
+     */
+    it("draws the chart from the PROPOSED plan's years, not the base plan's", async () => {
+      const ctx = await load();
+
+      // Base plan's 2065: $900K taxable + $100K cash + $1.0M retirement = $2.0M.
+      expect(display(ctx, "outcome.legacy.base")).toBe("$2.0M");
+      // Proposed plan's 2065: $1.2M taxable + $100K cash + $1.3M retirement = $2.6M.
+      expect(display(ctx, "chart.portfolio.atEnd")).toBe("$2.6M");
+      expect(ctx.charts?.portfolio[ctx.charts.portfolio.length - 1]?.total).toBe(2_600_000);
     });
 
     it("keeps the proposed plan's figures when only its Monte Carlo fails", async () => {

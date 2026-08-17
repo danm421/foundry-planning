@@ -54,6 +54,7 @@ import {
   type StoryCover,
   type StoryEstateTotals,
 } from "./build-facts";
+import { buildStoryCharts } from "./charts";
 import { loadStoryNextSteps } from "./load-next-steps";
 import { CHECKLIST_CHAPTERS } from "./chapters/registry";
 import type { ChapterId, StoryContext, StoryGoal, StoryStrategy, StoryHousehold } from "./types";
@@ -532,6 +533,25 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
   const proposedYears = proposed?.projection.years ?? [];
   const proposedLast = proposedYears[proposedYears.length - 1];
 
+  // Whichever plan `willTheMoneyLast` is stating — the proposed plan's years
+  // when the deck carries one, the base plan's otherwise. That chapter prints
+  // under both `OUTCOME_CHAPTERS` and `PROPOSED_OUTCOME_CHAPTERS`
+  // (`build-facts.ts`), so on a proposal deck it already states the proposed
+  // plan's outcome figures; drawing the base plan's bars here instead would
+  // put `chart.portfolio.atEnd` and `outcome.legacy.base` under two different
+  // labels for the same number.
+  //
+  // `estateBars: null` — the per-bar breakdown the estate chart needs lives
+  // only in the Estate Summary page's own view-model
+  // (`pages/estate-summary/view-model.ts`), not in the scalar pair
+  // `estateTotals` below reads off `summarizeHousehold`. Deriving it again
+  // here would be exactly the duplicate derivation `story/charts.ts`'s own
+  // header comment says this module exists to prevent.
+  const charts = buildStoryCharts({
+    years: proposed ? proposedYears : baseYears,
+    estateBars: null,
+  });
+
   // Household totals come from the balance-sheet view-model, not the projection
   // year — ProjectionYear carries portfolio buckets, not a balance sheet. Same
   // builder the Balance Sheet page and the on-screen report use, so a figure
@@ -690,6 +710,7 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
           saving: firstYear.totalExpenses - firstYear.expenses.total,
         }
       : null,
+    charts,
   });
 
   return {
@@ -700,6 +721,7 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
     strategies,
     goals,
     facts,
+    charts,
     nextSteps,
   };
 }
