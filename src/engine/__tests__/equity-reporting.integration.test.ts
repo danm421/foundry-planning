@@ -29,8 +29,6 @@ import type { StockOptionPlan, EquityGrant, EquityStrategy } from "../equity/typ
 import type { TaxYearParameters } from "../../lib/tax/types";
 import { LEGACY_FM_CLIENT } from "../ownership";
 import { TAX_YEAR_2026 } from "./_fixtures/tax-year-2026";
-import { createEquityState, computeEquityYear } from "../equity/tax-events";
-import { applyEquityYear } from "../equity/apply";
 import { buildFutureActivity } from "../equity/future-activity";
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -351,15 +349,33 @@ function plan(over: Partial<StockOptionPlan>, grants: EquityGrant[], strategy: E
 // distinct, later active year into the per-year mapping.
 const SELL_LATER: EquityStrategy = { ...SELL_NOW, sellTiming: "hold_then_sell_year", sellYear: 2032 };
 
-describe("Future Activity reconciles with the cash flow", () => {
-  it("Σ netProceeds per year == Σ netCashToChecking per year (RSU sell-all + NQSO + ISO)", () => {
-    const plans: StockOptionPlan[] = [
-      // RSU, sell-to-cover ON, sell-the-rest immediately. Exercises the
-      // cover-shares + same-year strategy-sell case: at each vest ≈22 of 100
-      // shares sell to cover withholding and the remaining ≈78 sell
-      // immediately in the SAME year. Two tranches (2027, 2030) put non-zero
-      // proceeds in two distinct years.
-      plan({ accountId: "rsu", ticker: "ACME" }, [
+/**
+ * Audit F45. The test that used to live here claimed the report agreed with the
+ * plan, and compared `buildFutureActivity` — which builds its rows by calling
+ * `createEquityState` + `computeEquityYear` — against a hand-rolled loop over
+ * `createEquityState` + `computeEquityYear`. Two rearrangements of one number
+ * stream. `runProjection` was never invoked, so nothing downstream of the
+ * equity module was under test at all: the whole path through `applyEquityYear`,
+ * `creditCash` and the income plumbing could have been deleted and it would
+ * still have passed.
+ *
+ * This runs the REAL projection and reconciles each year's ledger subtotal
+ * against the number the projection itself publishes as the plan's equity cash
+ * — `income.bySource["equity-proceeds:<accountId>"]`, the line the Cash Flow
+ * report renders under Other Inflows. That is the claim the ledger's own
+ * footnote makes ("reconciles with the cash flow"), and now the only way to
+ * pass it is for both sides to actually agree.
+ */
+describe("Future Activity reconciles with the real projection", () => {
+  // Three plans, exercising every leg that moves cash: sell-to-cover shares at
+  // an RSU vest, a strike paid out of pocket, and a strategy sale years later.
+  const ACCOUNTS = ["rsu", "nq", "iso"] as const;
+
+  function reconcilePlans(): StockOptionPlan[] {
+    return [
+      // RSU, sell-to-cover ON, sell-the-rest immediately: ≈22 of 100 shares
+      // cover withholding and ≈78 sell in the SAME year, twice (2027, 2030).
+      plan({ accountId: "rsu", ticker: "ACME", destinationAccountId: null, autoCreateDestination: true }, [
         grant({
           id: "g-rsu", grantNumber: "RSU-1", grantType: "rsu", sharesGranted: 200,
           tranches: [
@@ -368,40 +384,66 @@ describe("Future Activity reconciles with the cash flow", () => {
           ],
         }),
       ], SELL_NOW),
-      // NQSO, sell-to-cover ON, exercise at vest (2027) but HOLD then sell the
-      // retained shares in 2032 — cover proceeds (minus strike) land in 2027,
-      // the strategy sell lands in a distinct later year (2032).
-      plan({ accountId: "nq", ticker: "ACME" }, [grant({ id: "g-nq", grantNumber: "NQSO-1", grantType: "nqso", grantYear: 2024, strikePrice: 30, expirationYear: 2034 })], SELL_LATER),
-      // ISO, hold (no cover) — keeps the cross-type + ISO-no-cover coverage.
-      plan({ accountId: "iso", ticker: "ACME" }, [grant({ id: "g-iso", grantNumber: "ISO-1", grantType: "iso", grantYear: 2024, strikePrice: 25, expirationYear: 2034 })], HOLD),
+      // NQSO: cover proceeds net of strike land in 2027, the strategy sale in 2032.
+      plan({ accountId: "nq", ticker: "ACME", destinationAccountId: null, autoCreateDestination: true },
+        [grant({ id: "g-nq", grantNumber: "NQSO-1", grantType: "nqso", grantYear: 2024, strikePrice: 30, expirationYear: 2034 })], SELL_LATER),
+      // ISO, hold: a strike outflow with NO proceeds. Vests in 2029, a year no
+      // other plan touches, so that year's reconciliation is NEGATIVE — which a
+      // positive-only fold would have hidden (audit F30/F38).
+      plan({ accountId: "iso", ticker: "ACME", destinationAccountId: null, autoCreateDestination: true },
+        [grant({
+          id: "g-iso", grantNumber: "ISO-1", grantType: "iso", grantYear: 2024, strikePrice: 25, expirationYear: 2034,
+          tranches: [{ id: "t-iso", vestYear: 2029, shares: 100, sharesExercised: 0, sharesSold: 0, strategy: null }],
+        })], HOLD),
     ];
+  }
 
-    // Report side.
+  /** Per-year equity cash as the PROJECTION publishes it, summed over plans. */
+  function projectionCashByYear(plans: StockOptionPlan[]): Map<number, number> {
+    const years = runProjection(buildData({
+      stockOptionPlans: plans,
+      planSettings: { ...PLAN_SETTINGS, planEndYear: PEY },
+      client: { ...CLIENT, planEndAge: PEY - 1980 },
+    }));
+    const out = new Map<number, number>();
+    for (const y of years) {
+      let cash = 0;
+      for (const id of ACCOUNTS) cash += y.income.bySource[`equity-proceeds:${id}`] ?? 0;
+      if (cash !== 0) out.set(y.year, ROUND(cash));
+    }
+    return out;
+  }
+
+  it("every year's ledger subtotal equals the projection's own equity-proceeds line", () => {
+    const plans = reconcilePlans();
     const model = buildFutureActivity(plans, { asOfYear: PSY, planStartYear: PSY, planEndYear: PEY });
+
     const reportByYear = new Map<number, number>();
-    for (const g of model.groups) reportByYear.set(g.year, ROUND(g.subtotal.netProceeds));
-
-    // Engine side — fresh state, same construction. `balances`/`basis` only
-    // satisfy applyEquityYear's required signature; the asserted
-    // `netCashToChecking` value is computed solely from the year's sell /
-    // cover proceeds and strike outflow and never reads these maps, so no
-    // cross-year balance accumulation is in play here.
-    const state = createEquityState(plans, PSY);
-    const balances: Record<string, number> = {};
-    const basis: Record<string, number> = {};
-    const engineByYear = new Map<number, number>();
-    for (let year = PSY; year <= PEY; year++) {
-      let net = 0;
-      for (const p of plans) {
-        const res = computeEquityYear(p, state, year);
-        net += applyEquityYear(res, p.destinationAccountId ?? "dest", balances, basis).netCashToChecking;
-      }
-      engineByYear.set(year, ROUND(net));
+    for (const g of model.groups) {
+      if (ROUND(g.subtotal.netProceeds) !== 0) reportByYear.set(g.year, ROUND(g.subtotal.netProceeds));
     }
+    const planByYear = projectionCashByYear(plans);
 
-    const years = new Set([...reportByYear.keys(), ...engineByYear.keys()]);
-    for (const year of years) {
-      expect(reportByYear.get(year) ?? 0).toBeCloseTo(engineByYear.get(year) ?? 0, 6);
+    // Guard against a vacuous pass: both sides must actually carry years, and
+    // among them at least one negative (the exercise-and-hold strike outflow)
+    // and one positive, or the comparison proves nothing.
+    expect(reportByYear.size).toBeGreaterThanOrEqual(3);
+    expect([...reportByYear.values()].some((v) => v < 0)).toBe(true);
+    expect([...reportByYear.values()].some((v) => v > 0)).toBe(true);
+
+    for (const year of new Set([...reportByYear.keys(), ...planByYear.keys()])) {
+      expect(
+        reportByYear.get(year) ?? 0,
+        `equity cash mismatch in ${year}: ledger vs projection`,
+      ).toBeCloseTo(planByYear.get(year) ?? 0, 2);
     }
+  });
+
+  it("the grand total equals the projection's equity cash over the whole plan", () => {
+    const plans = reconcilePlans();
+    const model = buildFutureActivity(plans, { asOfYear: PSY, planStartYear: PSY, planEndYear: PEY });
+    const total = [...projectionCashByYear(plans).values()].reduce((s, v) => s + v, 0);
+    expect(total).not.toBeCloseTo(0, 2); // not a 0 == 0 pass
+    expect(model.totals.netProceeds).toBeCloseTo(total, 2);
   });
 });
