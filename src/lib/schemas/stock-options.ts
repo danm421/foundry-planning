@@ -142,6 +142,32 @@ export const grantCreateSchema = grantBase.superRefine((g, ctx) => {
   // the one before it. `sharesExercised` and `sharesSold` were only checked for
   // non-negativity, so a 1,000-share row could carry 10,000 exercised and the
   // engine seeded all 10,000 as held stock. Audit F41.
+  // (d) The vesting rows ARE the grant as far as the projection is concerned:
+  // `buildGrantTimeline` iterates the tranches and never reads `sharesGranted`.
+  // Nothing tied the two together, so a 10,000-share grant with one 4,000-share
+  // row vested $200,000 of $500,000 while the vesting-schedule report kept
+  // printing 10,000 granted / 10,000 unvested. Audit F39/F34.
+  //
+  // 83(b) is the one exception — the whole grant is acquired at the grant date,
+  // and both the timeline and the vesting schedule read `sharesGranted` there.
+  const wholeGrantAt83b = g.grantType === "rsu" && g.has83bElection;
+  if (g.tranches.length === 0 && !wholeGrantAt83b) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["tranches"],
+      message: "At least one vesting tranche is required — the projection is built from the tranches.",
+    });
+  }
+  if (g.tranches.length > 0) {
+    const rowSum = g.tranches.reduce((acc, t) => acc + t.shares, 0);
+    if (Math.abs(rowSum - g.sharesGranted) > 1e-6) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["tranches"],
+        message: `Vesting tranches total ${rowSum} of ${g.sharesGranted} shares granted.`,
+      });
+    }
+  }
   g.tranches.forEach((t, i) => {
     const acquired = g.grantType === "rsu" ? t.shares : t.sharesExercised;
     if (g.grantType !== "rsu" && t.sharesExercised > t.shares) {

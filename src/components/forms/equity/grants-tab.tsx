@@ -139,6 +139,27 @@ function validateEditor(state: GrantEditorState): string | null {
         : `Tranche ${i + 1}: sold shares cannot exceed the exercised shares.`;
     }
   }
+  // The vesting rows ARE the grant as far as the plan is concerned — the engine
+  // builds its timeline from them and never reads "Shares Granted". Nothing
+  // tied the two together, so a 10,000-share grant with one 4,000-share row
+  // vested $200,000 of $500,000 while the report kept printing 10,000, and a
+  // grant with no rows at all was worth nothing in the plan. Audit F39/F34.
+  const filled = state.tranches.filter(
+    (r) => r.vestDate || r.shares || r.sharesExercised || r.sharesSold,
+  );
+  // 83(b) is the one exception: the whole grant is acquired at the grant date,
+  // and both the timeline and the vesting schedule read `sharesGranted`
+  // directly rather than the rows.
+  const wholeGrantAt83b = state.grantType === "rsu" && state.has83bElection;
+  if (filled.length === 0 && !wholeGrantAt83b) {
+    return "Add at least one vesting row — the plan builds this grant from the rows, not from Shares Granted.";
+  }
+  if (filled.length > 0) {
+    const rowSum = filled.reduce((acc, r) => acc + (parseFloat(r.shares) || 0), 0);
+    if (Math.abs(rowSum - shares) > 1e-6) {
+      return `Vesting rows total ${rowSum.toLocaleString()} of ${shares.toLocaleString()} shares granted.`;
+    }
+  }
   return null;
 }
 

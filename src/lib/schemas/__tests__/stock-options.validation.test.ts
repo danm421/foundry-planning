@@ -36,6 +36,65 @@ function messages(input: unknown): string[] {
   return r.success ? [] : r.error.issues.map((i) => i.message);
 }
 
+describe("grant schema — the rows must add up to the grant (F39/F34)", () => {
+  it("accepts rows that sum to sharesGranted", () => {
+    expect(grantCreateSchema.safeParse(rsuGrant({
+      sharesGranted: 10000,
+      tranches: [
+        { vestDate: "2028-01-01", shares: 4000, sharesExercised: 0, sharesSold: 0 },
+        { vestDate: "2029-01-01", shares: 6000, sharesExercised: 0, sharesSold: 0 },
+      ],
+    })).success).toBe(true);
+  });
+
+  it("rejects rows that fall short of sharesGranted", () => {
+    // The finding's case: 10,000 granted, one 4,000-share row. The plan vested
+    // $200,000 of $500,000 while the report still said 10,000 unvested.
+    expect(
+      messages(rsuGrant({
+        sharesGranted: 10000,
+        tranches: [{ vestDate: "2028-01-01", shares: 4000, sharesExercised: 0, sharesSold: 0 }],
+      })),
+    ).toContain("Vesting tranches total 4000 of 10000 shares granted.");
+  });
+
+  it("rejects rows that overshoot sharesGranted", () => {
+    expect(
+      messages(rsuGrant({
+        sharesGranted: 1000,
+        tranches: [{ vestDate: "2028-01-01", shares: 4000, sharesExercised: 0, sharesSold: 0 }],
+      })),
+    ).toContain("Vesting tranches total 4000 of 1000 shares granted.");
+  });
+
+  it("rejects a grant with no vesting rows at all", () => {
+    // Worth $0 in the plan while the report still shows every share.
+    expect(messages(rsuGrant({ sharesGranted: 10000, tranches: [] }))).toContain(
+      "At least one vesting tranche is required — the projection is built from the tranches.",
+    );
+  });
+
+  it("still allows an 83(b) RSU with no rows, which the engine acquires whole", () => {
+    expect(grantCreateSchema.safeParse(rsuGrant({
+      has83bElection: true,
+      fmvAtGrant: 12.5,
+      sharesGranted: 10000,
+      tranches: [],
+    })).success).toBe(true);
+  });
+
+  it("but still makes an 83(b) grant's rows add up when it has them", () => {
+    expect(
+      messages(rsuGrant({
+        has83bElection: true,
+        fmvAtGrant: 12.5,
+        sharesGranted: 10000,
+        tranches: [{ vestDate: "2028-01-01", shares: 4000, sharesExercised: 0, sharesSold: 0 }],
+      })),
+    ).toContain("Vesting tranches total 4000 of 10000 shares granted.");
+  });
+});
+
 describe("grant schema — shares must fit inside the bucket before them (F41)", () => {
   it("accepts a correctly nested option row", () => {
     expect(grantCreateSchema.safeParse(nqsoGrant({

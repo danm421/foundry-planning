@@ -61,6 +61,45 @@ function rowNum(which: "shares" | "exercised" | "sold"): HTMLInputElement {
   return { shares: nums[0], exercised: nums[1], sold: nums[2] }[which];
 }
 
+describe("Grant editor — the rows must add up to the grant (F39/F34)", () => {
+  it("refuses to save a grant with no vesting rows", async () => {
+    await openValidNqso();
+    expect(saveBtn()).toBeEnabled();
+
+    // Remove the only row.
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Remove tranche/ })); });
+
+    expect(saveBtn()).toBeDisabled();
+    expect(err()).toMatch(/at least one vesting row/i);
+  });
+
+  it("refuses rows that do not sum to Shares Granted", async () => {
+    await openValidNqso();
+    expect(saveBtn()).toBeEnabled();
+
+    // 1,000 granted, one 400-share row: the plan would vest 400 while the
+    // report kept printing 1,000.
+    await act(async () => { change(rowNum("shares"), "400"); });
+
+    expect(saveBtn()).toBeDisabled();
+    expect(err()).toMatch(/Vesting rows total 400 of 1,000 shares granted/i);
+  });
+
+  it("accepts rows that sum across several tranches", async () => {
+    await openValidNqso();
+    await act(async () => { change(rowNum("shares"), "600"); });
+    expect(saveBtn()).toBeDisabled();
+
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Add vest tranche/ })); });
+    const dates = Array.from(document.querySelectorAll('table input[type="date"]')) as HTMLInputElement[];
+    const nums = Array.from(document.querySelectorAll('table input[type="number"]')) as HTMLInputElement[];
+    await act(async () => { change(dates[1], "2029-01-01"); });
+    await act(async () => { change(nums[3], "400"); });
+
+    expect(saveBtn()).toBeEnabled();
+  });
+});
+
 describe("Grant editor — impossible share entries (F41)", () => {
   it("starts enabled on a valid grant, then refuses more exercised than the row holds", async () => {
     await openValidNqso();
