@@ -25,10 +25,24 @@ export interface EquityPlannedEvent {
 
 export interface EquityVestTranche {
   id: string;
-  vestYear: number;        // calendar year of vestDate
+  /** Real vest date, `YYYY-MM-DD`. The holding-period tests read THIS. */
+  vestDate: string;
+  /** Calendar year of `vestDate`. Kept because the strategy layer is year-based
+   *  end to end (`sellYear`, `exerciseYear`, `sellStartYear` are year integers in
+   *  the database). Derived from `vestDate`, never independently set. */
+  vestYear: number;
   shares: number;
   sharesExercised: number; // actuals
   sharesSold: number;      // actuals
+  /** When the shares recorded in `sharesExercised` (options) or the
+   *  already-vested shares (RSU) were ACTUALLY acquired. Null = the advisor has
+   *  not entered it; `tax-events.ts` then falls back conservatively and the
+   *  screen says the figure is estimated. Audit F1/F2. */
+  acquiredOn: string | null;
+  /** FMV per share on `acquiredOn` — FMV at exercise for an option, FMV at vest
+   *  for an RSU. Basis is DERIVED from this (ISO = strike, otherwise this), so
+   *  there is never a second stored source of truth for basis. Audit F1. */
+  priceAtAcquisition: number | null;
   strategy?: EquityStrategy | null;
 }
 
@@ -36,6 +50,9 @@ export interface EquityGrant {
   id: string;
   grantNumber: string | null;
   grantType: GrantType;
+  /** Real grant date, `YYYY-MM-DD`. The §422(a)(1) two-year leg reads THIS. */
+  grantDate: string;
+  /** Calendar year of `grantDate`. Kept for the year-based strategy layer. */
   grantYear: number;
   sharesGranted: number;
   has83bElection: boolean;
