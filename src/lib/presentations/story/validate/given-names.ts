@@ -51,11 +51,14 @@
 //   idioms             Sam (Uncle Sam) · Peter / Paul (robbing one to pay the
 //                      other) · Riley (the life of)
 //
-// Two entries sit inside classes this list names and are IN anyway, because the
+// Entries sit inside classes this list names and are IN anyway, because the
 // test is about the word as a money chapter would write it, not about the
 // category: `heather` (the plant is never capitalised in one) and `jordan` (the
 // country, which a US household's plan has no occasion to name — unlike Virginia
-// or Georgia, which state-tax prose names constantly, and which are out).
+// or Georgia, which state-tax prose names constantly, and which are out). `chad`
+// is the same shape, for the same reason — see its own comment below rather
+// than restating the argument here, which is how this list's count of them
+// went stale before.
 //
 // ⚠️ That list is the second pass, not the first. The first version of this file
 // applied the test to the common-names groups and NOT to the app-fixture group,
@@ -280,9 +283,12 @@ const COMMON_US_GIVEN_NAMES = [
   "calvin",
   "carl",
   // Dropped in an earlier round on "hanging chad", then RESTORED: that phrase is
-  // lower case, and this gate only ever sees a capital. No collision line could
-  // be written for it, and by the rule above an entry whose exclusion cannot be
-  // demonstrated is an opinion rather than a curation.
+  // lower case, and this gate only ever sees a capital, so no collision line
+  // could be written for it. The rule this restores by lives in
+  // `foreign-names.test.ts` — "a drop with no covering line is an opinion, not
+  // curation" — not this file's own "when an entry is arguable it is left out"
+  // default near the top: that default governs new entries; this one governs
+  // undoing a drop that never had a real collision behind it.
   "chad",
   "christopher",
   "clarence",
