@@ -61,6 +61,75 @@ function rowNum(which: "shares" | "exercised" | "sold"): HTMLInputElement {
   return { shares: nums[0], exercised: nums[1], sold: nums[2] }[which];
 }
 
+describe("Grant editor — \"Manual\" exercise timing (F18/F33)", () => {
+  const GRANT_WITH_MANUAL = {
+    id: "grant-manual",
+    grantNumber: "NQ-M",
+    grantType: "nqso",
+    grantDate: "2025-01-01",
+    sharesGranted: "1000",
+    has83bElection: false,
+    fmvAtGrant: null,
+    strikePrice: "10",
+    strikeDiscountPct: null,
+    expirationDate: "2035-01-01",
+    notes: null,
+    tranches: [{ id: "t-1", vestDate: "2028-01-01", shares: "1000", sharesExercised: "0", sharesSold: "0" }],
+    plannedEvents: [],
+    exerciseTiming: "manual",
+    exerciseYear: null,
+    sellTiming: null,
+    sellYear: null,
+    sellPercentPerYear: null,
+    sellStartYear: null,
+  };
+
+  it("is not offered on a new grant", async () => {
+    await openValidNqso();
+    // The exercise-timing select is the one carrying "year_before_expiration".
+    const all = Array.from(document.querySelectorAll("select")) as HTMLSelectElement[];
+    const exercise = all.find((s) => Array.from(s.options).some((o) => o.value === "year_before_expiration"))!;
+
+    // The control: the menu is present and populated, so a missing "manual"
+    // means it was removed rather than that nothing rendered.
+    expect(Array.from(exercise.options).map((o) => o.value)).toEqual([
+      "", "at_vest", "specific_year", "year_before_expiration",
+    ]);
+  });
+
+  it("is still offered on a grant that already holds it, so a save cannot rewrite it", async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ grants: [GRANT_WITH_MANUAL] }) });
+    render(<GrantsTab clientId="client-123" accountId="acct-so" scenarioActive={false} />);
+    await waitFor(() => expect(screen.getByText(/NQ-M/)).toBeInTheDocument());
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^Edit$/ })); });
+
+    const all = Array.from(document.querySelectorAll("select")) as HTMLSelectElement[];
+    const exercise = all.find((s) => Array.from(s.options).some((o) => o.value === "year_before_expiration"))!;
+    expect(Array.from(exercise.options).map((o) => o.value)).toContain("manual");
+    expect(exercise.value).toBe("manual");
+  });
+
+  it("does not send plannedEvents on save, so stored events survive", async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ grants: [GRANT_WITH_MANUAL] }) });
+    render(<GrantsTab clientId="client-123" accountId="acct-so" scenarioActive={false} />);
+    await waitFor(() => expect(screen.getByText(/NQ-M/)).toBeInTheDocument());
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^Edit$/ })); });
+
+    expect(saveBtn()).toBeEnabled();
+    await act(async () => { fireEvent.click(saveBtn()); });
+
+    const put = fetchMock.mock.calls.find(
+      ([, init]) => (init as RequestInit | undefined)?.method === "PUT",
+    );
+    expect(put, "the editor must have issued a PUT").toBeDefined();
+    const body = JSON.parse(String((put![1] as RequestInit).body));
+    // Absent, not empty — the route reads absent as "leave them alone".
+    expect("plannedEvents" in body).toBe(false);
+    // And the rest of the grant still travels.
+    expect(body.sharesGranted).toBe(1000);
+  });
+});
+
 describe("Grant editor — a timing needs its companion field (F29/F40)", () => {
   /** The one `<select>` offering `value`. Throws if the option is gone, so a
    *  removed menu item fails loudly instead of quietly asserting nothing. */

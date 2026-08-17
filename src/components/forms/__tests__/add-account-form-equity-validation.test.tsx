@@ -105,6 +105,54 @@ async function submitAndCountWrites() {
   return writeCalls();
 }
 
+describe("Account equity strategy — \"Manual\" exercise timing (F18/F33)", () => {
+  it("is not offered", async () => {
+    await renderEquityForm();
+    const ex = document.getElementById("equity-defaultExerciseTiming") as HTMLSelectElement;
+    // Listing every option is the control: an empty or unrendered select would
+    // also "not contain manual".
+    expect(Array.from(ex.options).map((o) => o.value)).toEqual([
+      "at_vest", "specific_year", "year_before_expiration",
+    ]);
+  });
+
+  it("is still offered on an account that already holds it", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).includes("stock-option-accounts")) {
+        return {
+          ok: true,
+          json: async () => ({
+            stockOptionAccounts: [{
+              account: { id: "acct-so" },
+              extension: {
+                ticker: "ACME", isPublic: true, pricePerShare: "50",
+                autoCreateDestination: true, sellToCover: true, withholdingRate: "0.22",
+                defaultExerciseTiming: "manual", defaultExerciseYear: null,
+                defaultSellTiming: "hold", defaultSellYear: null,
+                defaultSellPercentPerYear: null, defaultSellStartYear: null,
+              },
+            }],
+          }),
+        };
+      }
+      return { ok: true, json: async () => ({ id: "acct-so", grants: [] }) };
+    });
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="stock_options"
+        mode="edit"
+        initial={EQUITY_INITIAL}
+        familyMembers={[{ id: "fm-client", role: "client", firstName: "Alice" }]}
+        entities={[]}
+      />,
+    );
+    const ex = document.getElementById("equity-defaultExerciseTiming") as HTMLSelectElement;
+    await waitFor(() => expect(ex.value).toBe("manual"));
+    expect(Array.from(ex.options).map((o) => o.value)).toContain("manual");
+  });
+});
+
 describe("Account equity strategy — a timing needs its companion (F29/F40)", () => {
   it("saves normally while the strategy is complete", async () => {
     // The control: without this, a test that asserts "no write" proves nothing.

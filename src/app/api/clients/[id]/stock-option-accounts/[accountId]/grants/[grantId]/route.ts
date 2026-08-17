@@ -162,22 +162,39 @@ export async function PUT(
 
       // 3. Replace planned events: delete existing, reinsert from input.
       // v1: planned events are grant-level; tranche targeting deferred.
-      await tx.delete(stockOptionPlannedEvents).where(eq(stockOptionPlannedEvents.grantId, grantId));
-      const insertedEvents = input.plannedEvents.length > 0
-        ? await tx
-            .insert(stockOptionPlannedEvents)
-            .values(
-              input.plannedEvents.map((e) => ({
-                grantId,
-                trancheId: null,
-                year: e.year,
-                action: e.action,
-                shares: e.shares != null ? String(e.shares) : null,
-                pct: e.pct != null ? String(e.pct) : null,
-              })),
-            )
-            .returning()
-        : [];
+      //
+      // An ABSENT `plannedEvents` key means "leave them alone". The grant
+      // editor has no screen for planned events but used to send an empty list
+      // on every save, so the route deleted any that existed — and a grant on
+      // "manual" exercise timing depends entirely on them. Audit F18/F33.
+      const events = input.plannedEvents;
+      let insertedEvents;
+      if (events === undefined) {
+        // Untouched — echo back what is stored so the response still describes
+        // the whole grant.
+        insertedEvents = await tx
+          .select()
+          .from(stockOptionPlannedEvents)
+          .where(eq(stockOptionPlannedEvents.grantId, grantId));
+      } else {
+        await tx.delete(stockOptionPlannedEvents).where(eq(stockOptionPlannedEvents.grantId, grantId));
+        insertedEvents =
+          events.length > 0
+            ? await tx
+                .insert(stockOptionPlannedEvents)
+                .values(
+                  events.map((e) => ({
+                    grantId,
+                    trancheId: null,
+                    year: e.year,
+                    action: e.action,
+                    shares: e.shares != null ? String(e.shares) : null,
+                    pct: e.pct != null ? String(e.pct) : null,
+                  })),
+                )
+                .returning()
+            : [];
+      }
 
       return { grant: updatedGrant, tranches: insertedTranches, plannedEvents: insertedEvents };
     });

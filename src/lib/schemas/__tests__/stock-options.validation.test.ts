@@ -6,6 +6,7 @@
 import { describe, it, expect } from "vitest";
 import {
   grantCreateSchema,
+  grantUpdateSchema,
   stockOptionAccountCreateSchema,
   stockOptionAccountUpdateSchema,
 } from "../stock-options";
@@ -39,6 +40,45 @@ function messages(input: unknown): string[] {
   const r = grantCreateSchema.safeParse(input);
   return r.success ? [] : r.error.issues.map((i) => i.message);
 }
+
+describe("grant PUT — an absent plannedEvents key leaves them alone (F18/F33)", () => {
+  it("parses to undefined when the key is omitted, not to an empty list", () => {
+    // The distinction the route depends on. `.optional().default([])` would
+    // hand the route `[]`, and it would delete every stored event.
+    const r = grantUpdateSchema.safeParse(rsuGrant());
+    expect(r.success).toBe(true);
+    if (!r.success) return;
+    expect(r.data.plannedEvents).toBeUndefined();
+  });
+
+  it("still carries an explicit list through", () => {
+    const r = grantUpdateSchema.safeParse(
+      rsuGrant({ plannedEvents: [{ year: 2030, action: "sell", shares: 500 }] }),
+    );
+    expect(r.success).toBe(true);
+    if (!r.success) return;
+    expect(r.data.plannedEvents).toEqual([{ year: 2030, action: "sell", shares: 500 }]);
+  });
+
+  it("still carries an explicit empty list, which means 'clear them'", () => {
+    const r = grantUpdateSchema.safeParse(rsuGrant({ plannedEvents: [] }));
+    expect(r.success).toBe(true);
+    if (!r.success) return;
+    expect(r.data.plannedEvents).toEqual([]);
+  });
+
+  it("keeps defaulting to [] on CREATE, where there is nothing to preserve", () => {
+    const r = grantCreateSchema.safeParse(rsuGrant());
+    expect(r.success).toBe(true);
+    if (!r.success) return;
+    expect(r.data.plannedEvents).toEqual([]);
+  });
+
+  it("applies every other grant rule to the update schema too", () => {
+    const r = grantUpdateSchema.safeParse(rsuGrant({ sharesGranted: 10000 }));
+    expect(r.success).toBe(false);
+  });
+});
 
 describe("strategy companions must arrive with their timing (F29/F40)", () => {
   const SELL_YEAR = "A sell year is required when sell timing is hold-then-sell.";

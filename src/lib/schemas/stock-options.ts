@@ -198,7 +198,12 @@ const grantBase = z.object({
   plannedEvents: z.array(plannedEventSchema).optional().default([]),
 });
 
-export const grantCreateSchema = grantBase.superRefine((g, ctx) => {
+/** Everything a grant body has to satisfy beyond field-level types. Shared by
+ *  create and update, which differ only in how they treat `plannedEvents`. */
+function refineGrant(
+  g: Omit<z.infer<typeof grantBase>, "plannedEvents">,
+  ctx: z.RefinementCtx,
+): void {
   // (a) fmvAtGrant required when has83bElection is true
   if (g.has83bElection && g.fmvAtGrant == null) {
     ctx.addIssue({
@@ -278,10 +283,23 @@ export const grantCreateSchema = grantBase.superRefine((g, ctx) => {
       });
     }
   });
-});
+}
 
-// PUT reuses the same full-replacement schema (not partial).
-export const grantUpdateSchema = grantCreateSchema;
+export const grantCreateSchema = grantBase.superRefine(refineGrant);
+
+/**
+ * PUT is a full replacement for everything the editor sends — but an ABSENT
+ * `plannedEvents` key means "leave them alone", not "delete them all".
+ *
+ * The grant editor cannot create planned events (no screen does), yet it sent
+ * `plannedEvents: []` on every save and the route replaced the stored list with
+ * it. Any event created through the API was wiped by the next visit to the
+ * editor — and a grant on "manual" exercise timing depends entirely on those
+ * events, so the whole grant was abandoned. Audit F18/F33.
+ */
+export const grantUpdateSchema = grantBase
+  .extend({ plannedEvents: z.array(plannedEventSchema).optional() })
+  .superRefine(refineGrant);
 
 export type GrantCreateInput = z.infer<typeof grantCreateSchema>;
 export type GrantUpdateInput = z.infer<typeof grantUpdateSchema>;

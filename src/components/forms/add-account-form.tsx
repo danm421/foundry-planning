@@ -2006,7 +2006,16 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                     <option value="at_vest">At vest</option>
                     <option value="specific_year">Specific year</option>
                     <option value="year_before_expiration">Year before expiration</option>
-                    <option value="manual">Manual</option>
+                    {/* "Manual" drives the exercise from planned events, and no
+                        screen can create one. Picked here, the engine exercises
+                        nothing and every grant on this account lapses — a
+                        10,000-share NQSO $400,000 over its strike reports $0
+                        and reads "underwater". Offered only when a record
+                        already holds it, so opening an existing account never
+                        silently rewrites the value. Audit F18/F33. */}
+                    {defaultExerciseTiming === "manual" && (
+                      <option value="manual">Manual (planned events — set via API)</option>
+                    )}
                   </select>
                   {defaultExerciseTiming === "specific_year" && (
                     <div className="mt-2">
