@@ -1,6 +1,8 @@
 import type { StockOptionPlan, EquityGrant, GrantType } from "./types";
 import { projectFmv, resolveStrikePrice } from "./price-model";
 import { isQualifyingIsoDisposition, assumedPrePlanAcquisitionYear } from "./holding-period";
+import { buildGrantTimeline } from "./timeline";
+import { resolveStrategy } from "./strategy";
 
 export interface IsoSplit {
   qualified: number; // exercised ISO shares past the holding period (LTCG-eligible)
@@ -12,7 +14,13 @@ export interface VestingScheduleRow {
   label: string;
   grantType: GrantType;
   isOption: boolean;                 // grantType !== "rsu"
-  strike: number | null;             // per-share strike (options only)
+  /** Per-share strike the plan will actually charge (options only). See
+   *  `plannedStrikes` — the lowest, when the plan charges more than one. */
+  strike: number | null;
+  /** The highest strike, set ONLY when a discount-priced grant resolves to more
+   *  than one — the column then reads as a range. Null for every ordinary
+   *  grant, which has a single strike written on it. */
+  strikeHigh: number | null;
   expirationYear: number | null;     // options only
   granted: number;
   vested: number;                    // vestYear < asOfYear (or whole grant if 83(b))
@@ -118,13 +126,15 @@ function buildRow(plan: StockOptionPlan, grant: EquityGrant, ctx: RowCtx): Vesti
 
   const exercisedTotal = grant.tranches.reduce((s, t) => s + t.sharesExercised, 0);
   const soldTotal = grant.tranches.reduce((s, t) => s + t.sharesSold, 0);
+  const strikes = isOption ? plannedStrikes(plan, grant, planStartYear) : [];
 
   return {
     grantId: grant.id,
     label: grant.grantNumber ?? `${plan.ticker ?? "—"} ${grant.grantYear}`,
     grantType: grant.grantType,
     isOption,
-    strike: isOption ? resolveStrikePrice(grant, projectFmv(plan.pricePerShare, plan.growthRate, planStartYear, planStartYear)) : null,
+    strike: isOption ? strikes[0] : null,
+    strikeHigh: isOption && strikes.length > 1 ? strikes[strikes.length - 1] : null,
     expirationYear: grant.expirationYear ?? null,
     granted: grant.sharesGranted,
     vested,
@@ -138,6 +148,33 @@ function buildRow(plan: StockOptionPlan, grant: EquityGrant, ctx: RowCtx): Vesti
     estValueByYear,
     estValuePlus,
   };
+}
+
+/** The strike(s) the plan will actually charge for this option grant, ascending
+ *  and de-duplicated.
+ *
+ *  A grant with a strike written on it has one, and this is a formality. A
+ *  grant priced by DISCOUNT has none until an exercise year is known —
+ *  `resolveStrikePrice` reads the discount off the FMV *in the exercise year*
+ *  (schema.ts: "a % off FMV in the exercise year") — so the honest answer is
+ *  whatever the engine is about to charge. We ask the engine: `buildGrantTimeline`
+ *  is the same function the tax ledger runs, so the Strike column and the
+ *  ledger's Ex. Price cannot disagree. They used to differ by $17 on the same
+ *  grant, because this column resolved the discount against the plan-start
+ *  price. Audit F36.
+ *
+ *  A grant the plan never exercises (out of the money, lapsed, or vesting past
+ *  expiry) has no exercise year at all. There is no ledger row to contradict,
+ *  so it falls back to the plan-start resolution rather than showing nothing. */
+function plannedStrikes(plan: StockOptionPlan, grant: EquityGrant, planStartYear: number): number[] {
+  const fmvAt = (year: number) => projectFmv(plan.pricePerShare, plan.growthRate, year, planStartYear);
+  const acct = resolveStrategy(plan.strategy, null, null); // exactly what createEquityState does
+  const found = new Set<number>();
+  for (const a of buildGrantTimeline(grant, acct, planStartYear, fmvAt)) {
+    if (a.kind === "exercise") found.add(resolveStrikePrice(grant, fmvAt(a.year)));
+  }
+  if (found.size === 0) return [resolveStrikePrice(grant, fmvAt(planStartYear))];
+  return [...found].sort((a, b) => a - b);
 }
 
 /** ISO qualified/holding split for shares the client has ALREADY exercised.

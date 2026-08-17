@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildVestingSchedule } from "../vesting-schedule";
 import { isQualifyingIsoDisposition, assumedPrePlanAcquisitionYear } from "../holding-period";
 import { createEquityState, computeEquityYear } from "../tax-events";
+import { buildFutureActivity } from "../future-activity";
 import type { StockOptionPlan } from "../types";
 
 const EMPTY_STRATEGY = {
@@ -121,6 +122,77 @@ describe("buildVestingSchedule — options (NQSO)", () => {
     plan.grants[0].tranches[0].sharesExercised = 9999; // nonsense > vested
     const row = buildVestingSchedule([plan], { asOfYear: 2026, planStartYear: 2026 }).rows[0];
     expect(row.exercisable).toBe(0);
+  });
+
+  it("an explicit strike is one number and carries no range", () => {
+    const row = buildVestingSchedule([nqsoPlan()], { asOfYear: 2026, planStartYear: 2026 }).rows[0];
+    expect(row.strike).toBe(25);
+    expect(row.strikeHigh).toBeNull();
+  });
+});
+
+// ── Audit F36 ────────────────────────────────────────────────────────────────
+// A grant priced by DISCOUNT has no strike until an exercise year is known:
+// resolveStrikePrice reads the discount off the FMV *in the exercise year*. The
+// schedule used to resolve it against the plan-start FMV while the Future
+// Activity ledger printed the engine's exercise-year number — $42.50 here
+// against $59.61 there, for the same grant.
+
+function discountPlan(vestYears: number[]): StockOptionPlan {
+  return basePlan({
+    accountId: "acct-disc",
+    pricePerShare: 50,
+    growthRate: 0.07,
+    strategy: { ...EMPTY_STRATEGY, exerciseTiming: "at_vest", sellTiming: "hold" },
+    grants: [{
+      id: "g-disc", grantNumber: "DISC-1", grantType: "nqso", grantYear: 2026,
+      sharesGranted: 1000 * vestYears.length, has83bElection: false, fmvAtGrant: null,
+      strikePrice: null, strikeDiscountPct: 0.15, expirationYear: 2040,
+      strategy: { ...EMPTY_STRATEGY },
+      tranches: vestYears.map((vestYear, i) => ({
+        id: `d${i}`, vestYear, shares: 1000, sharesExercised: 0, sharesSold: 0, strategy: null,
+      })),
+      plannedEvents: [],
+    }],
+  });
+}
+
+describe("buildVestingSchedule — discount-priced strike (F36)", () => {
+  it("prints the strike the ledger will actually charge, not today's", () => {
+    const p = discountPlan([2031]);
+    const row = buildVestingSchedule([p], { asOfYear: 2026, planStartYear: 2026 }).rows[0];
+    const ledger = buildFutureActivity([p], { asOfYear: 2026, planStartYear: 2026, planEndYear: 2040 })
+      .groups.flatMap((g) => g.rows).find((r) => r.sharesExercised > 0)!;
+
+    expect(ledger.exercisePrice).toBeCloseTo(59.61, 2); // 50 × 1.07^5 × 0.85
+    expect(row.strike).toBeCloseTo(ledger.exercisePrice!, 6);
+    expect(row.strikeHigh).toBeNull();
+    // …and it is NOT the old plan-start number, which is a full $17 lower.
+    expect(row.strike).not.toBeCloseTo(42.5, 2);
+  });
+
+  it("reports a range when the plan exercises across several years", () => {
+    const p = discountPlan([2028, 2031]);
+    const row = buildVestingSchedule([p], { asOfYear: 2026, planStartYear: 2026 }).rows[0];
+    const prices = buildFutureActivity([p], { asOfYear: 2026, planStartYear: 2026, planEndYear: 2040 })
+      .groups.flatMap((g) => g.rows).filter((r) => r.sharesExercised > 0).map((r) => r.exercisePrice!);
+
+    expect(prices).toHaveLength(2);
+    expect(row.strike).toBeCloseTo(Math.min(...prices), 6);
+    expect(row.strikeHigh).toBeCloseTo(Math.max(...prices), 6);
+    expect(row.strikeHigh!).toBeGreaterThan(row.strike!);
+  });
+
+  it("falls back to the plan-start price when the plan never exercises the grant", () => {
+    // Out of the money forever: a 0% discount makes strike == FMV every year,
+    // so exerciseYearFor refuses and there is no ledger number to agree with.
+    const p = discountPlan([2031]);
+    p.grants[0].strikeDiscountPct = 0;
+    const row = buildVestingSchedule([p], { asOfYear: 2026, planStartYear: 2026 }).rows[0];
+    expect(buildFutureActivity([p], { asOfYear: 2026, planStartYear: 2026, planEndYear: 2040 })
+      .groups.flatMap((g) => g.rows).filter((r) => r.sharesExercised > 0)).toHaveLength(0);
+    expect(row.strike).toBe(50);
+    expect(row.strikeHigh).toBeNull();
   });
 });
 
