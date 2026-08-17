@@ -65,6 +65,8 @@ type TrancheRow = Pick<
   | "shares"
   | "sharesExercised"
   | "sharesSold"
+  | "acquiredOn"
+  | "priceAtAcquisition"
   | "exerciseTiming"
   | "exerciseYear"
   | "sellTiming"
@@ -145,7 +147,7 @@ export function assembleStockOptionPlans(input: AssembleInput): StockOptionPlan[
         id: g.id,
         grantNumber: g.grantNumber,
         grantType: g.grantType,
-        grantYear: yearOf(g.grantDate),
+        grantDate: g.grantDate,
         sharesGranted: num(g.sharesGranted),
         has83bElection: g.has83bElection,
         fmvAtGrant: numN(g.fmvAtGrant),
@@ -157,10 +159,15 @@ export function assembleStockOptionPlans(input: AssembleInput): StockOptionPlan[
           .sort((a, b) => a.sortOrder - b.sortOrder)
           .map((t) => ({
             id: t.id,
-            vestYear: yearOf(t.vestDate),
+            vestDate: t.vestDate,
             shares: num(t.shares),
             sharesExercised: num(t.sharesExercised),
             sharesSold: num(t.sharesSold),
+            // The real pre-plan acquisition, or null. Never a substitute — the
+            // engine's fallback for a blank is deliberately conservative, and
+            // inventing a date here would put it back where G8 removed it.
+            acquiredOn: t.acquiredOn,
+            priceAtAcquisition: numN(t.priceAtAcquisition),
             strategy: strategyFrom(t),
           })),
         plannedEvents: (plannedByGrant.get(g.id) ?? []).map((p) => ({
@@ -242,6 +249,8 @@ export async function loadStockOptionPlans(
           shares: stockOptionVestTranches.shares,
           sharesExercised: stockOptionVestTranches.sharesExercised,
           sharesSold: stockOptionVestTranches.sharesSold,
+          acquiredOn: stockOptionVestTranches.acquiredOn,
+          priceAtAcquisition: stockOptionVestTranches.priceAtAcquisition,
           exerciseTiming: stockOptionVestTranches.exerciseTiming,
           exerciseYear: stockOptionVestTranches.exerciseYear,
           sellTiming: stockOptionVestTranches.sellTiming,

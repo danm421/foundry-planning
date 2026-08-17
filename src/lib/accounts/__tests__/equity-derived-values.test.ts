@@ -12,7 +12,7 @@ const rsuGrant: EquityGrant = {
   id: "g1",
   grantNumber: "RS-1",
   grantType: "rsu",
-  grantYear: 2024,
+  grantDate: "2024-01-15",
   sharesGranted: 1000,
   has83bElection: false,
   fmvAtGrant: null,
@@ -20,7 +20,11 @@ const rsuGrant: EquityGrant = {
   strikeDiscountPct: null,
   expirationYear: null,
   strategy: null,
-  tranches: [{ id: "t1", vestYear: 2030, shares: 1000, sharesExercised: 0, sharesSold: 0, strategy: null }],
+  // Nothing exercised, so there is no pre-plan acquisition to record.
+  tranches: [{
+    id: "t1", vestDate: "2030-01-15", shares: 1000, sharesExercised: 0, sharesSold: 0,
+    acquiredOn: null, priceAtAcquisition: null, strategy: null,
+  }],
   plannedEvents: [],
 };
 
