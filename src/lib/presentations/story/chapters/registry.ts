@@ -17,7 +17,13 @@ import { narrateHealthCareCosts } from "./health-care-costs";
 import { narrateWhatHappensNext } from "./what-happens-next";
 import { narrateThingsToKnow } from "./things-to-know";
 
-export type ChapterLayout = "heroProse" | "twoUp" | "strategyCards" | "checklist" | "glossary";
+export type ChapterLayout =
+  | "heroProse"
+  | "twoUp"
+  | "strategyCards"
+  | "checklist"
+  | "glossary"
+  | "chartWithProse";
 
 export interface ChapterDef {
   id: ChapterId;
@@ -325,6 +331,21 @@ const OUTPUT_ASK: Record<ChapterLayout, string> = {
   // glossary is most of this sheet.
   glossary:
     "Output: clean Markdown, ONE or TWO short paragraphs, no headings, no preamble. Do not explain the technical terms themselves — the plain-English list of them is printed under your text by the page layout.",
+  /**
+   * The mirror of `twoUp` above, and deliberately its opposite.
+   *
+   * A twoUp sheet prints a column of figures and tells the model not to repeat
+   * them: the cards already say those numbers, so prose that lists them again
+   * spends the sheet twice. A chart says nothing in words — it is a shape — so
+   * the numbers behind it reach the client ONLY if the prose says them, and
+   * `validate/chart-citation.ts` refuses a draft that does not.
+   *
+   * ⚠️ No word count, for the reason this file documents twice already: a number
+   * here is an anchor the model writes past by about five words. The shape is
+   * the instruction; `BUDGET_WORDS_CHART` is the backstop.
+   */
+  chartWithProse:
+    "Output: clean Markdown, TWO short paragraphs, no headings, no preamble. A chart is printed above your text — say what it shows, and name at least one of its figures in your own sentence.",
 };
 
 /**
@@ -387,6 +408,10 @@ const FIXED_SHAPE_ASK: Record<ChapterLayout, boolean> = {
   strategyCards: false,
   checklist: true,
   glossary: true,
+  // The prose IS the argument on this sheet, not a lead-in to a printed list —
+  // unlike `checklist` and `glossary`, whose real content is the list under
+  // them. So the advisor's `full` setting applies normally.
+  chartWithProse: false,
 };
 
 /** ⚠️ `length` is REQUIRED. It was defaulted, which made the one argument in

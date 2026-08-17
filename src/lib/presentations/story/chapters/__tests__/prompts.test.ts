@@ -586,6 +586,31 @@ describe("buildChapterPrompt — figures another chapter owns", () => {
   });
 });
 
+/**
+ * ⭐ A chart fact carries a `chapters` scope (`build-facts.ts#PORTFOLIO_CHART_CHAPTERS`
+ * gives `chart.portfolio.peak` exactly `["willTheMoneyLast"]`) and no `primary`
+ * — so `buildChapterPrompt`'s `mine`/`elsewhere` split, which reads `primary`
+ * and not `chapters`, puts it in `mine` and prints it under the same "figures
+ * you may use" heading every other owned figure gets. Gate 8
+ * (`validate/chart-citation.ts`) requires the prose to name one of these; this
+ * is what proves the prompt actually hands the model the figure to name.
+ */
+describe("buildChapterPrompt — the charted figures reach the model", () => {
+  it("shows chart.portfolio.peak's figure in willTheMoneyLast's prompt", () => {
+    const chartFact = moneyFact("chart.portfolio.peak", "The most the plan ever holds", 3_400_000, [
+      "willTheMoneyLast",
+    ]);
+    const { user } = buildChapterPrompt(
+      "willTheMoneyLast",
+      { ...CTX, facts: [...CTX.facts, chartFact] },
+      EMPTY_VOICE,
+      DEFAULT_CHAPTER_STYLE,
+      [],
+    );
+    expect(user).toContain(chartFact.display);
+  });
+});
+
 describe("the register rules", () => {
   it("tells the model the fact labels are not English", () => {
     const { system } = buildChapterPrompt("whatYouHave", CTX, EMPTY_VOICE, DEFAULT_CHAPTER_STYLE, []);
