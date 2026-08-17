@@ -3,8 +3,13 @@
 // decides what renders and supplies the deterministic fallback for anything that
 // was never generated.
 import type { BuildDataContext } from "@/components/presentations/registry";
+import type { EstateSummaryChartBar } from "@/lib/presentations/pages/estate-summary/view-model";
+import { fmtUsdCompact } from "@/lib/presentations/pages/retirement-comparison/format";
+import type { PortfolioBar } from "@/lib/presentations/pages/retirement-summary/aggregate";
+import type { TaxYearBar } from "@/lib/presentations/pages/tax-summary/aggregate";
 import { CHAPTERS, type ChapterLayout } from "@/lib/presentations/story/chapters/registry";
 import { quotableDetail, usableName } from "@/lib/presentations/story/chapters/what-we-recommend";
+import type { StoryChartData } from "@/lib/presentations/story/charts";
 import type { Fact } from "@/lib/presentations/story/facts";
 import { GLOSSARY, type GlossaryTerm } from "@/lib/presentations/story/glossary";
 import {
@@ -19,6 +24,21 @@ import { printedChapters, type PlanStoryOptions } from "./options-schema";
 // `./options-schema` are the two modules that would genuinely be new there; see
 // `paragraphs.ts` for the rest of the count.
 import { splitParagraphs } from "./paragraphs";
+
+/**
+ * The chart printed above a `chartWithProse` chapter's prose.
+ *
+ * A discriminated union rather than a bag of optional arrays, so
+ * `chapter-chart-pdf.tsx` can `switch` with no `default` and a fourth chart is
+ * a compile error there rather than a blank space on a client's page.
+ *
+ * Each variant carries THE ARRAY, passed through from `StoryContext.charts` —
+ * never a copy and never a re-derivation. `story/charts.ts` says why.
+ */
+export type PlanStoryChart =
+  | { kind: "portfolioBars"; bars: PortfolioBar[]; retirementYear: number }
+  | { kind: "taxBars"; bars: TaxYearBar[] }
+  | { kind: "estateBars"; bars: EstateSummaryChartBar[]; totals: string[] };
 
 export interface PlanStoryChapterView {
   chapterId: ChapterId;
@@ -49,6 +69,15 @@ export interface PlanStoryChapterView {
    * generated. Same shape as `steps` and `figures`, for the same reason.
    */
   glossary: GlossaryTerm[];
+  /**
+   * The chart printed above a `chartWithProse` chapter's prose.
+   *
+   * Null when this layout prints no chart, or when the household's data produced
+   * none — see spec §7. The two are deliberately the same value: a chapter whose
+   * arrays came back empty prints its prose alone rather than an empty axis, and
+   * the renderer has one question to ask rather than two.
+   */
+  chart: PlanStoryChart | null;
   /** The client-facing sentence that replaces what a sheet could not hold.
    *  "" means nothing was dropped. */
   overflowNote: string;
@@ -234,8 +263,23 @@ export const BUDGET_WORDS_GLOSSARY = 90;
 export const MAX_PARAGRAPHS = 8;
 
 /**
- * A `switch` with no `default`, so a sixth layout is a COMPILE error here rather
- * than a silent 300-word budget.
+ * …and what the prose UNDER a chart may spend.
+ *
+ * ⚠️ NOT YET MEASURED — Task 7 replaces this. Do not ship this value.
+ *
+ * It is a full sheet's budget standing in for a number nobody has taken yet, and
+ * it is certainly too generous: the chart above the prose is 88pt (estate) to
+ * 150pt (portfolio, tax) of `Svg` plus a legend row and its own bottom margin,
+ * none of which the 300 was measured with. Every other ceiling in this file
+ * names the pair it sits between ("300 words lay out, 360 overflow") because
+ * that is what a ceiling here means; this one names none, which is the whole
+ * point of the warning.
+ */
+const BUDGET_WORDS_CHART = SHEET_BUDGET_WORDS;
+
+/**
+ * A `switch` with no `default`, so a seventh layout is a COMPILE error here
+ * rather than a silent 300-word budget.
  *
  * That default is the one this file exists to prevent: a layout printing
  * something under its prose, handed a full sheet's words, renders onto a second
@@ -252,6 +296,8 @@ function proseBudgetWords(layout: ChapterLayout, cards: number): number {
       return BUDGET_WORDS_CHECKLIST;
     case "glossary":
       return BUDGET_WORDS_GLOSSARY;
+    case "chartWithProse":
+      return BUDGET_WORDS_CHART;
     case "heroProse":
     case "strategyCards":
       return cards > 0 ? BUDGET_WORDS_WITH_CARDS : SHEET_BUDGET_WORDS;
@@ -269,6 +315,12 @@ function proseParagraphCap(layout: ChapterLayout, cards: number): number {
     case "twoUp":
     case "checklist":
     case "glossary":
+      return MAX_PARAGRAPHS;
+    case "chartWithProse":
+      // ⚠️ NOT YET MEASURED — Task 7 takes this alongside `BUDGET_WORDS_CHART`.
+      // `MAX_PARAGRAPHS` was measured on a sheet carrying nothing above its
+      // prose, and a paragraph costs its own bottom margin whether it holds four
+      // words or forty, so the word budget alone cannot describe this page.
       return MAX_PARAGRAPHS;
     case "heroProse":
     case "strategyCards":
@@ -328,6 +380,71 @@ function figuresFor(facts: Fact[]): PlanStoryChapterView["figures"] {
     .filter((f) => !f.id.startsWith("quoted."))
     .slice(0, MAX_FIGURE_CARDS)
     .map((f) => ({ label: f.label, value: f.display }));
+}
+
+/**
+ * The year the portfolio chart draws its retirement marker on.
+ *
+ * Read back off the fact pack rather than threaded in separately, because the
+ * pack is the only place this builder can reach it and re-deriving it would mean
+ * a second `DOB year + retirementAge` (`load-context.ts`) that agrees today.
+ * `build-facts.ts` emits `plan.retirementYear` with NO `chapters` scope, so it
+ * survives `factsForChapter` onto every chapter.
+ *
+ * Zero when the pack has none, which is the already-retired household:
+ * `build-facts.ts` only emits the fact when the retirement year is at or after
+ * the plan's start year. No bar carries year 0, so the chart draws no marker —
+ * the same answer `chartFacts` gives when it drops `chart.portfolio.atRetirement`
+ * for that household.
+ */
+function retirementYearFrom(facts: Fact[]): number {
+  return facts.find((f) => f.id === "plan.retirementYear")?.raw ?? 0;
+}
+
+/**
+ * The chart this chapter prints, or null.
+ *
+ * Keyed on the CHAPTER, not the layout: the layout says a chart goes here, and
+ * only the chapter says which one. It must stay in step with the chapter scopes
+ * `build-facts.ts#chartFacts` gives the matching `chart.*` facts
+ * (`PORTFOLIO_CHART_CHAPTERS`, `TAX_CHART_CHAPTERS`) — draw a chart on a chapter
+ * those facts do not reach and Gate 8 asks the model to cite a figure it was
+ * never shown, which no retry can satisfy.
+ *
+ * An EMPTY array is null, never a chart: spec §7 — drop the chart, keep the
+ * prose, and never print an axis with no bars on a client's page.
+ */
+function chartFor(chapterId: ChapterId, charts: StoryChartData | undefined, facts: Fact[]): PlanStoryChart | null {
+  if (!charts) return null;
+  switch (chapterId) {
+    case "willTheMoneyLast":
+      return charts.portfolio.length > 0
+        ? {
+            kind: "portfolioBars",
+            bars: charts.portfolio,
+            retirementYear: retirementYearFrom(facts),
+          }
+        : null;
+    case "whatYoullPayInTax":
+      return charts.tax.length > 0 ? { kind: "taxBars", bars: charts.tax } : null;
+    case "whatsLeftForPeople":
+      // The one chart of the three that prints money under its bars, so the
+      // labels are pre-formatted HERE and threaded in. Its own `fmtUsd`
+      // (`pages/estate-summary/aggregate.ts`) renders thousands with a lowercase
+      // k — "$850k" — where `moneyFact` formats every figure in the pack with
+      // `fmtUsdCompact`'s uppercase K. Left to the component, one sheet would
+      // print two spellings of one number. `validate/facts.ts#figureKey`
+      // uppercases before comparing, so Gate 1 could never have caught it.
+      return charts.estate && charts.estate.length > 0
+        ? {
+            kind: "estateBars",
+            bars: charts.estate,
+            totals: charts.estate.map((b) => fmtUsdCompact(b.total)),
+          }
+        : null;
+    default:
+      return null;
+  }
 }
 
 /**
@@ -549,6 +666,7 @@ export function buildPlanStoryData(
       figures,
       steps,
       glossary,
+      chart: chartFor(chapterId, input.story.charts, facts),
       // ONE note, whichever bound bit. They all mean the same thing to the
       // reader — there is more, and the advisor will cover it — and two notes on
       // one sheet would be the overflow these caps exist to prevent. The counted

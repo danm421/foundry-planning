@@ -12,7 +12,27 @@ const SEGMENTS: Array<{ key: keyof EstateSummaryChartBar; label: string; color: 
   { key: "debts", label: "Debts", color: PRESENTATION_THEME.ink3 },
 ];
 
-export function EstateSummaryChartPdf({ bars }: { bars: EstateSummaryChartBar[] }) {
+export function EstateSummaryChartPdf({
+  bars,
+  totals,
+}: {
+  bars: EstateSummaryChartBar[];
+  /**
+   * Pre-formatted bar totals, one per bar, in the order `bars` is given.
+   *
+   * This is the only chart in the deck that prints money, and the Plan Story
+   * needs that string to be the one the fact pack spells: `fmtUsd` below renders
+   * thousands with a lowercase k ("$850k") where the pack's `fmtUsdCompact` uses
+   * an uppercase K ("$850K"), so a story sheet would otherwise print two
+   * spellings of one number — the chart's and the prose's.
+   *
+   * Optional, and resolved PER INDEX rather than all-or-nothing, so a short or
+   * absent array falls back to this component's own formatting instead of
+   * blanking a bar's label. Every existing caller passes nothing and renders
+   * exactly as it did before.
+   */
+  totals?: string[];
+}) {
   const width = 300;
   const height = 88;
   const barWidth = 54;
@@ -59,7 +79,7 @@ export function EstateSummaryChartPdf({ bars }: { bars: EstateSummaryChartBar[] 
                 textAnchor="middle"
                 style={{ fontSize: 7, fill: PRESENTATION_THEME.ink2 }}
               >
-                {fmtUsd(b.total)}
+                {totals?.[i] ?? fmtUsd(b.total)}
               </SvgText>
             </G>
           );

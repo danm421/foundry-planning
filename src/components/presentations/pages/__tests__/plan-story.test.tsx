@@ -81,6 +81,7 @@ function chapter(over: Partial<PlanStoryChapterView> = {}): PlanStoryChapterView
     figures: [],
     steps: [],
     glossary: [],
+    chart: null,
     overflowNote: "",
     ...over,
   };
@@ -501,5 +502,64 @@ describe("PlanStoryChapterPdf — the glossary layout", () => {
   // …and nothing to label when the cap or an empty module leaves no terms.
   it("prints no label over an empty list", () => {
     expect(printed({ glossary: [] })).not.toContain("IN PLAIN ENGLISH");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The chartWithProse sheet. No chapter carries this layout until the registry
+// flip, so the fixture names it directly — the renderer branches on `layout`,
+// which is the thing under test here.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("PlanStoryChapterPdf — the chart sheet", () => {
+  const PROSE = "The plan peaks at $3.1M and still holds $1.8M at the end.";
+
+  function printed(chart: PlanStoryChapterView["chart"]): string[] {
+    return textOf(
+      PlanStoryChapterPdf({
+        chapter: chapter({
+          chapterId: "willTheMoneyLast",
+          title: "Will the money last?",
+          layout: "chartWithProse",
+          paragraphs: [PROSE],
+          chart,
+        }),
+        accent: FRAME.accent,
+        eyebrow: "Your Plan · Proposed",
+      }),
+    );
+  }
+
+  const BARS = [
+    { year: 2026, cash: 1, taxable: 2, retirement: 3, total: 6 },
+    { year: 2027, cash: 1, taxable: 2, retirement: 4, total: 7 },
+  ];
+
+  it("prints the chart above the prose — it is the page's subject", () => {
+    const out = printed({ kind: "portfolioBars", bars: BARS, retirementYear: 2027 });
+    expect(out).toContain("'26");
+    expect(out.indexOf("'26")).toBeLessThan(out.indexOf(PROSE));
+  });
+
+  it("keeps the prose when the household produced no chart", () => {
+    // Spec §7: drop the chart, never the paragraph — and never an empty axis.
+    const out = printed(null);
+    expect(out).toContain(PROSE);
+    expect(out).not.toContain("'26");
+  });
+
+  it("prints the estate chart's money in the spelling the fact pack uses", () => {
+    // `EstateSummaryChartPdf`'s own `fmtUsd` writes thousands as "$850k"; every
+    // figure in the pack — and so the prose beside this chart — is formatted by
+    // `fmtUsdCompact` as "$850K". Two spellings of one number on one sheet is
+    // what the optional `totals` prop exists to close.
+    const out = printed({
+      kind: "estateBars",
+      bars: [
+        { label: "Today", netToHeirs: 850_000, federal: 0, state: 0, probate: 0, ird: 0, debts: 0, total: 850_000 },
+      ],
+      totals: ["$850K"],
+    });
+    expect(out).toContain("$850K");
+    expect(out).not.toContain("$850k");
   });
 });

@@ -83,6 +83,7 @@ const REALISTIC: PlanStoryPageData = {
       figures: [],
       steps: [],
       glossary: [],
+      chart: null,
       overflowNote: "",
     },
     {
@@ -104,6 +105,7 @@ const REALISTIC: PlanStoryPageData = {
       ],
       steps: [],
       glossary: [],
+      chart: null,
       overflowNote: "",
     },
     {
@@ -118,6 +120,7 @@ const REALISTIC: PlanStoryPageData = {
       figures: [],
       steps: [],
       glossary: [],
+      chart: null,
       overflowNote: "",
     },
     {
@@ -136,6 +139,7 @@ const REALISTIC: PlanStoryPageData = {
       figures: [],
       steps: [],
       glossary: [],
+      chart: null,
       overflowNote: "",
     },
   ],
@@ -169,6 +173,7 @@ function worstCase(cards: number, words: number, overflowNote = ""): PlanStoryPa
         figures: [],
         steps: [],
         glossary: [],
+        chart: null,
         overflowNote,
       },
     ],
@@ -261,6 +266,7 @@ function cardsPlusShortParagraphs(cards: number, paragraphs: number): PlanStoryP
         figures: [],
         steps: [],
         glossary: [],
+        chart: null,
         overflowNote: "…and 7 more changes we'll walk through together.",
       },
     ],
@@ -604,6 +610,7 @@ function sheetAtTheBound(terms: number): PlanStoryPageData {
         figures: [],
         steps: [],
         glossary: [...GLOSSARY, ...spare].slice(0, terms),
+        chart: null,
         overflowNote: "…and three more terms we'll walk through together.",
       },
     ],
@@ -654,5 +661,98 @@ describe("Plan Story — the glossary sheet, really rendered", () => {
    */
   it("spills at one term past the cap, which is why the cap is where it is", async () => {
     expect(await pagesOf(sheetAtTheBound(MAX_GLOSSARY_TERMS + 1))).toBeGreaterThan(1);
+  }, 30_000);
+});
+
+/**
+ * The chart sheets, through the real layout engine.
+ *
+ * The tree-walk tests in `plan-story.test.tsx` prove the chart is placed above
+ * the prose and prints the right strings; only a render proves react-pdf can lay
+ * its `Svg` out on a story sheet at all — an unhandled primitive or an
+ * unregistered font throws here and nowhere else.
+ *
+ * ⚠️ NOT a fit check, and must not be read as one. `PageFrame` gives its body
+ * `flex: 1`, so react-pdf draws past the available height rather than breaking:
+ * a count of 3 says these three sheets did not paginate, not that their content
+ * stayed above the footer. `BUDGET_WORDS_CHART` is unmeasured for exactly that
+ * reason, and Task 7 measures it with `pdftotext -bbox`.
+ */
+const CHART_SHEETS: PlanStoryPageData = {
+  title: "Your Plan",
+  subtitle: "Proposed",
+  isEmpty: false,
+  emptyMessage: "",
+  chapters: [
+    {
+      chapterId: "willTheMoneyLast",
+      title: "Will the money last?",
+      layout: "chartWithProse",
+      paragraphs: ["The plan peaks at $3.1M in 2044 and still holds $1.8M in the last year we model."],
+      strategies: [],
+      figures: [],
+      steps: [],
+      glossary: [],
+      chart: {
+        kind: "portfolioBars",
+        // A full horizon, so the widest chart on the deck is drawn at the story
+        // sheet's 478pt rather than the summary page's 500.
+        bars: Array.from({ length: 40 }, (_, i) => ({
+          year: 2026 + i,
+          cash: 120_000,
+          taxable: 900_000 + i * 20_000,
+          retirement: 1_400_000 + i * 30_000,
+          total: 2_420_000 + i * 50_000,
+        })),
+        retirementYear: 2041,
+      },
+      overflowNote: "",
+    },
+    {
+      chapterId: "whatYoullPayInTax",
+      title: "What you'll pay in tax",
+      layout: "chartWithProse",
+      paragraphs: ["The heaviest year is 2044, at $96K."],
+      strategies: [],
+      figures: [],
+      steps: [],
+      glossary: [],
+      chart: {
+        kind: "taxBars",
+        bars: Array.from({ length: 40 }, (_, i) => ({
+          year: 2026 + i,
+          federalOrdinary: 40_000 + i * 500,
+          capGains: 8_000,
+          state: 12_000,
+          total: 60_000 + i * 500,
+        })),
+      },
+      overflowNote: "",
+    },
+    {
+      chapterId: "whatsLeftForPeople",
+      title: "What's left for the people you care about",
+      layout: "chartWithProse",
+      paragraphs: ["$2.1M reaches the people you named, after tax and costs."],
+      strategies: [],
+      figures: [],
+      steps: [],
+      glossary: [],
+      chart: {
+        kind: "estateBars",
+        bars: [
+          { label: "Today", netToHeirs: 2_100_000, federal: 0, state: 0, probate: 60_000, ird: 0, debts: 480_000, total: 2_640_000 },
+          { label: "At the end", netToHeirs: 3_400_000, federal: 220_000, state: 90_000, probate: 110_000, ird: 140_000, debts: 0, total: 3_960_000 },
+        ],
+        totals: ["$2.6M", "$4.0M"],
+      },
+      overflowNote: "",
+    },
+  ],
+};
+
+describe("Plan Story — the chart sheets, really rendered", () => {
+  it("lays out one sheet per chart chapter", async () => {
+    expect(await pagesOf(CHART_SHEETS)).toBe(CHART_SHEETS.chapters.length);
   }, 30_000);
 });

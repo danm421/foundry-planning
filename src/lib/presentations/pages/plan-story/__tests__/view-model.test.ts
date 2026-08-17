@@ -1162,3 +1162,95 @@ describe("checklist steps", () => {
     );
   });
 });
+
+describe("a chartWithProse chapter", () => {
+  const WITH_LAST: PlanStoryOptions = {
+    ...PROPOSED,
+    sections: { ...PROPOSED.sections, willTheMoneyLast: true },
+  };
+
+  function bar(year: number, total: number) {
+    return { year, cash: total / 3, taxable: total / 3, retirement: total / 3, total };
+  }
+
+  function chapterWith(over: Partial<StoryContext>, id: ChapterId = "willTheMoneyLast") {
+    const data = buildPlanStoryData(deckCtx(input({ hasProposal: true, ...over })), WITH_LAST);
+    return data.chapters.find((c) => c.chapterId === id)!;
+  }
+
+  it("hands the renderer the same portfolio array the facts came from", () => {
+    const bars = [{ year: 2026, cash: 1, taxable: 2, retirement: 3, total: 6 }];
+    const chapter = chapterWith({ charts: { portfolio: bars, tax: [], estate: null } });
+    expect(chapter.chart).toEqual({
+      kind: "portfolioBars",
+      bars,
+      retirementYear: expect.any(Number),
+    });
+    // …and the SAME array, not a deep-equal copy. `story/charts.ts` builds the
+    // bars once so the fact pack and the drawing cannot disagree about a number;
+    // a copy here would be a second array that happens to match today.
+    expect((chapter.chart as { bars: unknown }).bars).toBe(bars);
+  });
+
+  it("marks the retirement year the fact pack names, not one of its own", () => {
+    // Without this the marker could be a constant and every assertion above
+    // would still pass. `plan.retirementYear` is emitted unscoped by
+    // `build-facts.ts`, so it reaches this chapter.
+    const chapter = chapterWith({
+      charts: { portfolio: [bar(2035, 900)], tax: [], estate: null },
+      facts: [{ id: "plan.retirementYear", label: "The year you stop working", display: "2035", raw: 2035 }],
+    });
+    expect(chapter.chart).toEqual({ kind: "portfolioBars", bars: [bar(2035, 900)], retirementYear: 2035 });
+  });
+
+  it("prints no chart, and keeps the prose, when the context carries none", () => {
+    const chapter = chapterWith({ charts: undefined });
+    expect(chapter.chart).toBeNull();
+    expect(chapter.paragraphs.length).toBeGreaterThan(0);
+  });
+
+  it("prints no chart, and keeps the prose, when the household's arrays are empty", () => {
+    // Spec §7: drop the chart, never print an empty frame.
+    const chapter = chapterWith({ charts: { portfolio: [], tax: [], estate: null } });
+    expect(chapter.chart).toBeNull();
+    expect(chapter.paragraphs.length).toBeGreaterThan(0);
+  });
+
+  it("prints no figure cards — the chart replaced them", () => {
+    const chapter = chapterWith({
+      charts: { portfolio: [{ year: 2026, cash: 1, taxable: 2, retirement: 3, total: 6 }], tax: [], estate: null },
+    });
+    expect(chapter.figures).toEqual([]);
+  });
+
+  it("draws the tax chart on the tax chapter and nothing on a chapter with no chart", () => {
+    const tax = [{ year: 2026, federalOrdinary: 4, capGains: 1, state: 1, total: 6 }];
+    const data = buildPlanStoryData(
+      deckCtx(input({ hasProposal: true, charts: { portfolio: [], tax, estate: null } })),
+      PROPOSED,
+    );
+    expect(data.chapters.find((c) => c.chapterId === "whatYoullPayInTax")!.chart).toEqual({
+      kind: "taxBars",
+      bars: tax,
+    });
+    expect(data.chapters.find((c) => c.chapterId === "whatYouHave")!.chart).toBeNull();
+  });
+
+  it("pre-formats the estate bar totals the way the fact pack spells them", () => {
+    // The estate chart is the only one of the three that prints money, and its
+    // own `fmtUsd` renders thousands with a lowercase k while `moneyFact` uses
+    // `fmtUsdCompact`'s uppercase K. Two spellings of one number on one sheet.
+    const estate = [
+      { label: "Today", netToHeirs: 850_000, federal: 0, state: 0, probate: 0, ird: 0, debts: 0, total: 850_000 },
+    ];
+    const data = buildPlanStoryData(
+      deckCtx(input({ hasProposal: true, charts: { portfolio: [], tax: [], estate } })),
+      PROPOSED,
+    );
+    expect(data.chapters.find((c) => c.chapterId === "whatsLeftForPeople")!.chart).toEqual({
+      kind: "estateBars",
+      bars: estate,
+      totals: ["$850K"],
+    });
+  });
+});
