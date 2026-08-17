@@ -338,3 +338,27 @@ describe("splitParagraphs — a *-or-_-spelled horizontal rule drops whole, like
     expect(splitParagraphs("*text*")).toEqual(["text"]);
   });
 });
+
+describe("splitParagraphs — a leading list-item marker strips, like a heading does", () => {
+  // The old blanket [*_`] strip removed a leading "*" as a side effect
+  // (each character deleted, then re-joined). Once the strip became
+  // syntax-aware it stopped, so "* Retirement at 65" started reaching the
+  // page where prod printed "Retirement at 65". "-" and "+" were never
+  // stripped either way. Finding 9 closes all three with one rule.
+  it.each([
+    ["* Retirement at 65", "Retirement at 65"],
+    ["- Retirement at 65", "Retirement at 65"],
+    ["+ Retirement at 65", "Retirement at 65"],
+  ])("strips the leading marker from %s", (input, expected) => {
+    expect(splitParagraphs(input)).toEqual([expected]);
+  });
+
+  it("leaves a mid-sentence * or - alone — LIST_MARKER_RE is anchored to the line start", () => {
+    expect(splitParagraphs("Ages 20 - 30 are the growth years.")).toEqual([
+      "Ages 20 - 30 are the growth years.",
+    ]);
+    expect(splitParagraphs("Costs run $2 * 3 factors higher.")).toEqual([
+      "Costs run $2 * 3 factors higher.",
+    ]);
+  });
+});

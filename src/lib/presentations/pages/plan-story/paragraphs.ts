@@ -53,6 +53,19 @@ const STAR_OR_UNDERSCORE_RULE_RE = /^\s{0,3}(?:(?:\*\s*){3,}|(?:_\s*){3,})$/u;
  *  unaffected: that line has other content and never matches this. */
 const BACKTICK_ONLY_LINE_RE = /^\s*`+\s*$/u;
 
+/** A `-`/`*`/`+`-spelled list item's leading marker (CommonMark: 0-3 leading
+ *  spaces, the marker character, then at least one space). The old blanket
+ *  `[*_`]` strip removed a leading `*` as a side effect (each character
+ *  deleted, same mechanism `STAR_OR_UNDERSCORE_RULE_RE`'s docblock above
+ *  describes); once the strip became syntax-aware that stopped, and
+ *  `"* Retirement at 65"` started reaching the page instead of
+ *  `"Retirement at 65"` — measured against prod. `-` and `+` were never
+ *  stripped either way; this closes all three the same way, in one rule,
+ *  rather than special-casing `*` back to its old accidental behaviour.
+ *  Anchored at the line start, so a mid-sentence `-` or `*` (`"A * gap"`,
+ *  `"20 - 30 years"`) is never touched. */
+const LIST_MARKER_RE = /^\s{0,3}[-*+]\s+/u;
+
 /**
  * Markdown syntax, removed before it reaches the page.
  *
@@ -72,13 +85,13 @@ function stripMarkdown(paragraph: string): string {
         !BACKTICK_ONLY_LINE_RE.test(line),
     )
     .map((line) => {
-      const withoutHeading = line.replace(/^ {0,3}#{1,6}\s+/u, "");
+      const withoutPrefix = line.replace(/^ {0,3}#{1,6}\s+/u, "").replace(LIST_MARKER_RE, "");
       const withoutPipes = isTableRow(line)
-        ? withoutHeading
+        ? withoutPrefix
             .replace(/^\s*\|/u, "") // a table row's outer pipes…
             .replace(/\|\s*$/u, "")
             .replace(/\s*\|\s*/gu, " · ") // …and the separators between its cells
-        : withoutHeading;
+        : withoutPrefix;
       return stripEmphasis(withoutPipes).trim();
     })
     .filter(Boolean)
