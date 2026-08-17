@@ -2534,6 +2534,22 @@ export const stockOptionVestTranches = pgTable("stock_option_vest_tranches", {
   // Actuals (already happened, entered by the advisor).
   sharesExercised: decimal("shares_exercised", { precision: 18, scale: 6 }).notNull().default("0"),
   sharesSold: decimal("shares_sold", { precision: 18, scale: 6 }).notNull().default("0"),
+  // When those shares were ACTUALLY acquired, and what the stock was worth that
+  // day — the exercise date and FMV at exercise for an option, the vest date and
+  // FMV at vest for an RSU. Null = the advisor has not entered it; the engine
+  // then falls back conservatively (basis floored at strike, held zero days) and
+  // the screen marks the figure estimated.
+  //
+  // The database used to store share COUNTS only, so every one of these facts
+  // was invented at run time in the direction that lowered the client's tax:
+  // basis stepped to today's price, exercise date faked two years before the
+  // plan. Audit F1/F2.
+  //
+  // Scoped to the PRE-PLAN acquisition of this row. A row can hold two lots —
+  // shares acquired before the plan and shares the plan acquires later — and the
+  // second is computed from the projection, not stored.
+  acquiredOn: date("acquired_on"),
+  priceAtAcquisition: decimal("price_at_acquisition", { precision: 15, scale: 4 }),
   // Tranche-level strategy override (null = inherit grant/account).
   exerciseTiming: equityExerciseTimingEnum("exercise_timing"),
   exerciseYear: integer("exercise_year"),
