@@ -41,6 +41,12 @@ export const config: VercelConfig = {
       path: "/api/cron/refresh-ticker-portfolios",
       schedule: "0 10 1 * *",
     },
+    // Monthly, two hours after the ticker-portfolio refresh. Covers the
+    // securities clients actually HOLD, which that job does not walk.
+    {
+      path: "/api/cron/refresh-security-price-history",
+      schedule: "0 12 1 * *",
+    },
     {
       path: "/api/cron/integration-sync",
       schedule: "0 7 * * *",

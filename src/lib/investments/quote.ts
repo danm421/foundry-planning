@@ -21,14 +21,47 @@ const EODHD_REALTIME_BASE = "https://eodhd.com/api/real-time";
 // chunks modest so one failing chunk can't sink a large refresh.
 const BATCH_SIZE = 50;
 
+/**
+ * Bare tickers whose primary listing is NOT in the US, mapped to their
+ * USD-denominated ADR line.
+ *
+ * Why an ADR and not the home exchange: EODHD's `adjusted_close` is quoted in
+ * the listing's own currency, so `CRDA.LSE` would feed GBP returns and
+ * `IMCD.AS` EUR returns into a portfolio whose every other holding is in USD.
+ * The backtest would then report a currency move as an investment result. The
+ * ADR is the same economic exposure already translated to USD, which is also
+ * what the client's statement shows — our `securities` rows literally name
+ * several of these "… ADR".
+ *
+ * Each entry was resolved against EODHD's own search endpoint (name match) and
+ * verified to clear the history gates the backfill enforces (≥36 monthly
+ * returns, ≥95% dense). Kept deliberately short and explicit rather than
+ * derived: a wrong guess here silently attributes another company's history to
+ * a client's holding.
+ *
+ * Left unmapped on purpose:
+ *   CRDA (Croda) — the only USD line, COIHY, is 90.6% dense and fails the gate,
+ *   so it stays honestly uncovered rather than gappy.
+ */
+const TICKER_TO_EODHD_SYMBOL: Readonly<Record<string, string>> = {
+  ABB: "ABBNY.US", // ABB Ltd — no ABB.US exists; ABB.ST is SEK
+  DPLM: "DPLMF.US", // Diploma PLC — DPLM.LSE is GBP
+  EXPN: "EXPGY.US", // Experian PLC — EXPN.LSE is GBP
+  IMCD: "IMCDY.US", // IMCD N.V. — IMCD.AS is EUR
+  WKL: "WTKWY.US", // Wolters Kluwer — WKL.US is a dead, unrelated same-code line
+};
+
 /** Canonical EODHD symbol (UPPERCASE): bare US ticker → `VTI.US`; a US class
- *  share dot → dash (`BRK.B` → `BRK-B.US`); an existing exchange suffix
+ *  share dot → dash (`BRK.B` → `BRK-B.US`); a bare ticker with no US listing →
+ *  its USD ADR (see `TICKER_TO_EODHD_SYMBOL`); an existing exchange suffix
  *  (foreign) passes through (`BMW.XETRA`) and generally won't resolve — fail-soft. */
 export function eodhdSymbol(ticker: string): string {
   const t = ticker.trim().toUpperCase();
   if (/^[A-Z]+\.[A-Z]$/.test(t)) return `${t.replace(".", "-")}.US`;
+  // An explicit suffix is a deliberate choice by whoever typed it — the ADR
+  // redirect applies only to the bare form.
   if (t.includes(".")) return t;
-  return `${t}.US`;
+  return TICKER_TO_EODHD_SYMBOL[t] ?? `${t}.US`;
 }
 
 interface RealtimeRow {

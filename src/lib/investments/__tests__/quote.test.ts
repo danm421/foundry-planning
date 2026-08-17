@@ -27,6 +27,25 @@ describe("eodhdSymbol", () => {
   it("passes a foreign exchange suffix through (upper-cased)", () => {
     expect(eodhdSymbol("BMW.XETRA")).toBe("BMW.XETRA");
   });
+
+  it("redirects a foreign primary listing to its USD ADR line", () => {
+    // Bare `ABB`/`WKL` have no `.US` listing at all, so the default `.US`
+    // suffix returns nothing (or, for WKL, a dead same-code instrument).
+    expect(eodhdSymbol("ABB")).toBe("ABBNY.US");
+    expect(eodhdSymbol("WKL")).toBe("WTKWY.US");
+    expect(eodhdSymbol("imcd")).toBe("IMCDY.US");
+  });
+
+  it("leaves an explicit exchange suffix alone even for a mapped ticker", () => {
+    // The map keys bare tickers only — someone who typed the Amsterdam line
+    // meant it, and must not be silently rerouted to the ADR.
+    expect(eodhdSymbol("IMCD.AS")).toBe("IMCD.AS");
+  });
+
+  it("does not touch tickers that resolve correctly on .US", () => {
+    expect(eodhdSymbol("VTI")).toBe("VTI.US");
+    expect(eodhdSymbol("ASM")).toBe("ASM.US"); // genuinely US-listed
+  });
 });
 
 describe("fetchEodClose (single)", () => {
