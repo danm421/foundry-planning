@@ -4,7 +4,7 @@ import { calcFederalTax, calcMarginalRate, findMarginalTier } from "./federal";
 import { calcCapGainsTax } from "./capGains";
 import { calcAmtTentative, calcAmtAdditional } from "./amt";
 import { calcNiit } from "./niit";
-import { calcFica, calcAdditionalMedicare } from "./fica";
+import { calcFica, calcAdditionalMedicare, ficaWagesOf } from "./fica";
 import { calcQbiDeduction } from "./qbi";
 import { calcTaxableSocialSecurity } from "./ssTaxability";
 import { computeStateIncomeTax } from "./state-income";
@@ -35,6 +35,10 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
   const capitalLossDeduction = netting.capitalLossDeduction;
 
   const earnedIncome = input.earnedIncome;
+  // Used ONLY by the two payroll-tax calls below, so the exempt leg still
+  // bracket-taxes, still lands in AGI, and still counts as earned income for
+  // the credit layer.
+  const ficaWages = ficaWagesOf(earnedIncome, input.ficaExemptEarnedIncome);
   const interestIncome = input.interestIncome ?? 0;
   // Ordinary bucket for bracket tax = non-qual div + RMDs/IRA dists + interest
   // + net STCG (ST gains taxed as ordinary). Interest is tracked separately
@@ -205,7 +209,7 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
 
   // 12. FICA + Additional Medicare
   const ficaResult = calcFica({
-    earnedIncome,
+    earnedIncome: ficaWages,
     ssTaxRate: p.ssTaxRate,
     ssWageBase: p.ssWageBase,
     medicareTaxRate: p.medicareTaxRate,
@@ -214,7 +218,9 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
                               : fs === "married_separate" ? p.addlMedicareThreshold.mfs
                               : p.addlMedicareThreshold.single;
   const additionalMedicare = calcAdditionalMedicare({
-    earnedIncome,
+    // §3101(b)(2) rides on the same §3121(a) "wages" definition as FICA, so the
+    // exempt leg is out of this base too.
+    earnedIncome: ficaWages,
     threshold: addlMedicareThreshold,
     rate: p.addlMedicareRate,
   });

@@ -10,7 +10,7 @@ import type {
 
 const ZERO_SUB: FutureActivitySubtotal = {
   sharesVested: 0, sharesExercised: 0, exerciseCost: 0, sharesSold: 0,
-  grossProceeds: 0, netProceeds: 0, taxImpact: null,
+  expiredShares: 0, grossProceeds: 0, netProceeds: 0, taxImpact: null,
 };
 
 function row(over: Partial<FutureActivityGrantYearRow>): FutureActivityGrantYearRow {
@@ -19,7 +19,7 @@ function row(over: Partial<FutureActivityGrantYearRow>): FutureActivityGrantYear
     grantType: "rsu", grantDate: "2026", sharesVested: 0, sharesExercised: 0,
     exercisePrice: null, exerciseCost: 0, sharesSold: 0, hasSellToCover: false,
     salePrice: 100, grossProceeds: 0, netProceeds: 0, expiredShares: 0,
-    underwater: false, taxImpact: null, ...over,
+    expiredUnderwater: false, expiredForfeitedValue: 0, taxImpact: null, ...over,
   };
 }
 
@@ -58,10 +58,38 @@ describe("FutureActivityLedger", () => {
     expect(screen.getByText(/No planned activity/i)).toBeTruthy();
   });
 
-  it("flags an underwater expiry row", () => {
-    const r = row({ grantType: "nqso", grantNumber: "NQSO-17", expiredShares: 500, underwater: true });
-    const m = model({ groups: [{ year: 2030, rows: [r], subtotal: ZERO_SUB }] });
+  // ── Audit F37 ──────────────────────────────────────────────────────────────
+
+  it("marks a genuinely out-of-the-money lapse underwater", () => {
+    const r = row({ grantType: "nqso", grantNumber: "NQSO-17", expiredShares: 500, expiredUnderwater: true });
+    const m = model({ groups: [{ year: 2030, rows: [r], subtotal: { ...ZERO_SUB, expiredShares: 500 } }] });
     render(<FutureActivityLedger model={m} />);
-    expect(screen.getByText(/underwater/i)).toBeTruthy();
+    // Twice: the row's tag and the footnote legend.
+    expect(screen.getAllByText(/underwater/i).length).toBe(2);
+    expect(screen.queryByText(/forfeited/i)).toBeNull();
+  });
+
+  it("names the value given up when an IN-THE-MONEY option lapses", () => {
+    const r = row({
+      grantType: "nqso", grantNumber: "NQSO-17", expiredShares: 1000,
+      expiredUnderwater: false, expiredForfeitedValue: 90_000,
+    });
+    const m = model({ groups: [{ year: 2030, rows: [r], subtotal: { ...ZERO_SUB, expiredShares: 1000 } }] });
+    render(<FutureActivityLedger model={m} />);
+    expect(screen.getByText(/\$90K forfeited/i)).toBeTruthy();
+    // The old cell called this "underwater"; only the footnote legend may now.
+    expect(screen.getAllByText(/underwater/i).length).toBe(1);
+  });
+
+  it("shows sold and expired shares in their own columns, and both add up", () => {
+    // The count used to sit in the Sh. Sold cell, excluded from that column's
+    // subtotal — so the row read 1,000 and the subtotal read a dash. And a row
+    // with a sale could not show a lapse at all.
+    const r = row({ grantType: "nqso", grantNumber: "NQSO-17", sharesSold: 400, expiredShares: 1000, expiredUnderwater: true });
+    const sub = { ...ZERO_SUB, sharesSold: 400, expiredShares: 1000 };
+    render(<FutureActivityLedger model={model({ groups: [{ year: 2030, rows: [r], subtotal: sub }], totals: sub })} />);
+    // 400 on the row, the year subtotal and the grand total.
+    expect(screen.getAllByText("400").length).toBe(3);
+    expect(screen.getAllByText("1,000").length).toBe(3);
   });
 });

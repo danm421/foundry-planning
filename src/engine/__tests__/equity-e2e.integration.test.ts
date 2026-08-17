@@ -282,9 +282,16 @@ describe("equity compensation — end-to-end projection", () => {
 
     // Year 2026 (pre-vest): all 6,000 shares are still unacquired. RSU at FMV,
     // ISO at intrinsic (FMV − strike). Destination is empty.
+    //
+    // Priced at the year-END share price — fmv(2027), not fmv(2026) — because
+    // this is a BALANCE, and the growth loop above stamps every other account
+    // grown through year-end. Pricing it at the year-start FMV made the shares
+    // pick up a full year of growth the moment they moved into the destination
+    // account (which the growth loop does grow), stepping net worth up with no
+    // economic event.
     const y2026 = byYear.get(2026)!;
     const expectedUnacquired2026 =
-      RSU_SHARES * fmv(2026) + ISO_SHARES * Math.max(0, fmv(2026) - ISO_STRIKE);
+      RSU_SHARES * fmv(2027) + ISO_SHARES * Math.max(0, fmv(2027) - ISO_STRIKE);
     expect(y2026.portfolioAssets.stockOptions[SO_ACCOUNT_ID]).toBeCloseTo(
       expectedUnacquired2026,
       0,
@@ -315,5 +322,47 @@ describe("equity compensation — end-to-end projection", () => {
     // (RSU income + ISO shares acquired by paying strike), not a double-count.
     expect(yExercise.portfolioAssets.stockOptionsTotal).toBeCloseTo(0, 6);
     expect(yExercise.portfolioAssets.taxable[DEST_ID]).toBeGreaterThan(0);
+  });
+});
+
+describe("equity compensation — disqualifying ISO income is not payroll wages", () => {
+  // IRC §3121(a)(22) excludes remuneration on a disposition of ISO stock from
+  // FICA "wages". It stays fully taxable Form W-2 box 1 income, so it must show
+  // up in the earned-income base and NOT in Social Security / Medicare.
+  //
+  // One ISO grant, exercised at vest in 2028 and sold the same year (cashless
+  // exercise-and-sell). 5,000 shares, FMV 121, strike 10 → the whole $555,000
+  // bargain element is a disqualifying disposition.
+  const DISQUALIFYING_ISO: StockOptionPlan = {
+    ...EQUITY_PLAN,
+    grants: [
+      {
+        ...EQUITY_PLAN.grants[1], // the ISO grant
+        strategy: { exerciseTiming: "at_vest", sellTiming: "immediately" },
+      },
+    ],
+  };
+
+  const baseline = runProjection(buildData({ stockOptionPlans: [] }));
+  const withIso = runProjection(buildData({ stockOptionPlans: [DISQUALIFYING_ISO] }));
+  const yBase = baseline.find((y) => y.year === ISO_EXERCISE_YEAR)!;
+  const yIso = withIso.find((y) => y.year === ISO_EXERCISE_YEAR)!;
+
+  const expectedOi = ISO_SHARES * (fmv(ISO_EXERCISE_YEAR) - ISO_STRIKE); // 555,000
+
+  it("books the whole bargain element as earned income", () => {
+    expect(yIso.taxDetail!.earnedIncome - yBase.taxDetail!.earnedIncome).toBeCloseTo(expectedOi, 2);
+    expect(yIso.taxDetail!.ficaExemptEarnedIncome).toBeCloseTo(expectedOi, 2);
+  });
+
+  it("charges no payroll tax on it — FICA matches the no-equity baseline", () => {
+    expect(yIso.taxResult!.flow.fica).toBeCloseTo(yBase.taxResult!.flow.fica, 2);
+    expect(yIso.taxResult!.flow.additionalMedicare)
+      .toBeCloseTo(yBase.taxResult!.flow.additionalMedicare, 2);
+  });
+
+  it("still taxes it as income — the bracket tax rises", () => {
+    expect(yIso.taxResult!.flow.regularFederalIncomeTax)
+      .toBeGreaterThan(yBase.taxResult!.flow.regularFederalIncomeTax);
   });
 });

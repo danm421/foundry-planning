@@ -263,6 +263,11 @@ const RETIREMENT_SUB_TYPES = new Set(["traditional_ira", "roth_ira", "401k", "40
 // account first so the tab is immediately usable — no save + reopen.
 const RECORD_DEPENDENT_TABS = new Set(["holdings", "grants", "beneficiaries"]);
 
+/** Shown — and returned as the save error — when the equity editor is opened
+ *  inside a scenario. See `equityScenarioBlocked` below for why. */
+const EQUITY_SCENARIO_BLOCKED_MSG =
+  "Stock options are edited on the base plan. Switch out of this scenario to change grants, pricing or sell timing.";
+
 const DEFAULT_NAME_BY_CATEGORY: Record<AccountCategory, string> = {
   taxable: "Taxable Account",
   cash: "Cash Account",
@@ -729,7 +734,46 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     category === "education_savings" &&
     !beneficiaryFamilyMemberId &&
     beneficiaryName.trim() === "";
-  const canSave = name.trim().length > 0 && !educationBeneficiaryMissing;
+  // A timing choice and the field it depends on have to arrive together. A
+  // blank companion never failed — it fell through to a default that inverted
+  // the strategy: "Hold, then sell in <blank>" liquidates the whole position in
+  // the vest year, "Sell <blank>% per year" never sells a share, and "Specific
+  // year" with a blank year silently means "at vest". Audit F29/F40; mirrors
+  // the rule in `lib/schemas/stock-options.ts`.
+  const equityStrategyIncomplete =
+    category === "stock_options" &&
+    ((defaultExerciseTiming === "specific_year" && !defaultExerciseYear) ||
+      (defaultSellTiming === "hold_then_sell_year" && !defaultSellYear) ||
+      (defaultSellTiming === "percent_per_year" && !(Number(defaultSellPercentPerYear) > 0)));
+  const canSave =
+    name.trim().length > 0 && !educationBeneficiaryMissing && !equityStrategyIncomplete;
+
+  // ── An in-progress grant must not be thrown away (audit F42) ───────────────
+  // The grant editor saves through its own "Save Grant" button. The dialog's
+  // primary button saved the ACCOUNT and then closed the dialog, unmounting the
+  // editor and everything typed into it — a grant plus up to 48 hand-entered
+  // vesting rows, gone with no prompt and no error. Pressing Enter did the same.
+  //
+  // This deliberately does NOT feed `canSave`: that also gates the tab-switch
+  // autosave, and blocking it would strand the advisor on the Grants tab (the
+  // same trap G5 hit from the other direction). Only the dialog's own submit is
+  // held.
+  const [grantEditorOpen, setGrantEditorOpen] = useState(false);
+  const GRANT_EDITOR_OPEN_MSG =
+    "Finish the grant you're editing — Save Grant or Cancel — before saving the account.";
+
+  // ── Equity is base-plan only (audit F14/F19) ────────────────────────────────
+  // Stock options are the ONE account category whose writes skip the scenario
+  // writer: both save paths below short-circuit and fetch the dedicated
+  // /stock-option-accounts routes, which resolve the BASE-case scenario id
+  // server-side. So an edit made while viewing "Retire at 55" rewrote the base
+  // plan — and therefore every other scenario and every saved presentation —
+  // with no scenario_change row in the Changes panel and no undo.
+  //
+  // Until equity edits become change rows (needs new targetKinds for the plan,
+  // its grants and its tranches), the editor is blocked in scenario mode rather
+  // than left to silently mutate base data. Same posture as the Holdings tab.
+  const equityScenarioBlocked = category === "stock_options" && writer.scenarioActive;
 
   // Lift submit-button state into the parent dialog so DialogShell can drive
   // the footer primary button's disabled/loading visuals. Gated on the same
@@ -738,10 +782,10 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   // server would 400.
   useEffect(() => {
     onSubmitStateChange?.({
-      canSubmit: !loading && canSave,
+      canSubmit: !loading && canSave && !grantEditorOpen,
       loading,
     });
-  }, [loading, canSave, onSubmitStateChange]);
+  }, [loading, canSave, grantEditorOpen, onSubmitStateChange]);
 
   useEffect(() => {
     onAutoSaveStateChange?.({ isDirty, canSave });
@@ -1002,6 +1046,10 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
 
     // ── stock_options: bypass the generic accounts route ────────────────────
     if (category === "stock_options") {
+      if (equityScenarioBlocked) {
+        setError(EQUITY_SCENARIO_BLOCKED_MSG);
+        return { ok: false, error: EQUITY_SCENARIO_BLOCKED_MSG };
+      }
       setLoading(true);
       setError(null);
       try {
@@ -1176,7 +1224,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       setLoading(false);
     }
   }, [
-    canSave, subType, category, realEstateGrowthRatePct, growthSource, growthRatePct,
+    canSave, equityScenarioBlocked, subType, category, realEstateGrowthRatePct, growthSource, growthRatePct,
     usesGrowthDropdown, name, owners, titlingType, parentBusinessId, accountValue, accountBasis, accountRothValue,
     rmdEnabled, countsTowardAum, priorYearEndValue, realEstateGrowthSource, modelPortfolioId, tickerPortfolioId, deriveFromHoldings,
     turnoverPct, overridePctOi, overridePctLtCg, overridePctQdiv, overridePctTaxExempt,
@@ -1199,9 +1247,20 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     // button. The inline field errors (e.g. missing 529 beneficiary) explain
     // what's blocking.
     if (!canSave) return;
+    // Saving here closes the dialog, which would discard the grant being typed.
+    // Enter-key submits bypass the disabled button, so this guard is the real
+    // one. Audit F42.
+    if (grantEditorOpen) {
+      setError(GRANT_EDITOR_OPEN_MSG);
+      return;
+    }
 
     // ── stock_options: bypass the generic accounts route ────────────────────
     if (category === "stock_options") {
+      if (equityScenarioBlocked) {
+        setError(EQUITY_SCENARIO_BLOCKED_MSG);
+        return;
+      }
       setLoading(true);
       setError(null);
       try {
@@ -1464,7 +1523,13 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
 
   // ── In-form tab autosave ─────────────────────────────────────────────────────
   const accountAutoSave = useTabAutoSave({
-    isDirty,
+    // A blocked equity form reports itself CLEAN so tab switching still works.
+    // Without this the advisor is stranded: edit-mode seeding marks the form
+    // dirty, every tab click runs the autosave, the autosave refuses, and the
+    // Grants and Beneficiaries tabs become unreachable inside a scenario. There
+    // is nothing to lose by "discarding" — the fields are disabled, so the only
+    // dirt is the seeding itself.
+    isDirty: isDirty && !equityScenarioBlocked,
     canSave,
     saveAsync: saveAsyncImpl,
   });
@@ -1858,7 +1923,15 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
 
             {/* ── Stock Options equity fields — only visible for stock_options ── */}
             {category === "stock_options" && (
-              <>
+              /* `display: contents` keeps the fieldset out of the grid's box
+                 model, so the fields below lay out exactly as they did while
+                 the single `disabled` attribute reaches every control inside. */
+              <fieldset className="contents" disabled={equityScenarioBlocked}>
+                {equityScenarioBlocked && (
+                  <p className="col-span-2 rounded-md border border-gray-700 bg-gray-800/60 px-3 py-3 text-sm text-gray-400">
+                    {EQUITY_SCENARIO_BLOCKED_MSG}
+                  </p>
+                )}
                 {/* Row 1: Ticker + Public flag */}
                 <div>
                   <label className={fieldLabelClassName} htmlFor="equity-ticker">
@@ -1954,7 +2027,16 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                     <option value="at_vest">At vest</option>
                     <option value="specific_year">Specific year</option>
                     <option value="year_before_expiration">Year before expiration</option>
-                    <option value="manual">Manual</option>
+                    {/* "Manual" drives the exercise from planned events, and no
+                        screen can create one. Picked here, the engine exercises
+                        nothing and every grant on this account lapses — a
+                        10,000-share NQSO $400,000 over its strike reports $0 of
+                        proceeds. Offered only when a record already holds it,
+                        so opening an existing account never silently rewrites
+                        the value. Audit F18/F33. */}
+                    {defaultExerciseTiming === "manual" && (
+                      <option value="manual">Manual (planned events — set via API)</option>
+                    )}
                   </select>
                   {defaultExerciseTiming === "specific_year" && (
                     <div className="mt-2">
@@ -2033,7 +2115,14 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                     </div>
                   )}
                 </div>
-              </>
+
+                {equityStrategyIncomplete && (
+                  <p className="col-span-2 text-xs text-amber-400" data-testid="equity-strategy-incomplete">
+                    Fill in the year or percentage this timing depends on — left
+                    blank, the plan quietly does the opposite of what you picked.
+                  </p>
+                )}
+              </fieldset>
             )}
 
             {category !== "stock_options" && (
@@ -2652,7 +2741,17 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       {/* Grants tab — stock options only (Task 18) */}
       {!lockTab && category === "stock_options" && (
         <div className={activeTab === "grants" ? "" : "hidden"}>
-          <GrantsTab clientId={clientId} accountId={effectiveAccountId} />
+          <GrantsTab
+            clientId={clientId}
+            accountId={effectiveAccountId}
+            scenarioActive={writer.scenarioActive}
+            onEditorOpenChange={setGrantEditorOpen}
+          />
+          {grantEditorOpen && (
+            <p className="mt-3 text-xs text-amber-400" data-testid="grant-editor-open-hint">
+              {GRANT_EDITOR_OPEN_MSG}
+            </p>
+          )}
         </div>
       )}
 

@@ -1,3 +1,17 @@
+/** Earned income actually subject to FICA: box 1 wages less the slice IRC
+ *  §3121(a) excludes from "wages" — today, income from a disqualifying
+ *  disposition of ISO stock (§3121(a)(22)).
+ *
+ *  One definition on purpose. The wage side (calcFica / calcAdditionalMedicare)
+ *  and the SE side (calcSeca / calcSeAdditionalMedicare `ficaSsWages`) are two
+ *  halves of ONE §3121 wage base — the whole point of threading wages into the
+ *  SE calls is that the wage-base cap and the surtax threshold are consumed
+ *  exactly once across both. Deriving that figure twice would make the
+ *  agreement a coincidence instead of a definition. */
+export function ficaWagesOf(earnedIncome: number, ficaExemptEarnedIncome = 0): number {
+  return Math.max(0, earnedIncome - ficaExemptEarnedIncome);
+}
+
 export interface FicaInput {
   earnedIncome: number;
   ssTaxRate: number;

@@ -1,10 +1,16 @@
 import type { StockOptionPlan, EquityGrant, GrantType } from "./types";
 import { resolveStrategy } from "./strategy";
 import { buildGrantTimeline, type EquityAction } from "./timeline";
-import { projectFmv, resolveStrikePrice } from "./price-model";
+import { fmvCurve, resolveStrikePrice } from "./price-model";
 import { computeSellToCover } from "./withholding";
+import {
+  isQualifyingIsoDisposition,
+  isLongTermHolding,
+  assumedPrePlanAcquisitionYear,
+} from "./holding-period";
 
-/** One acquired-and-held lot (per tranche). */
+/** One acquired-and-held lot — per ACQUISITION EVENT, not per tranche: a row
+ *  partly exercised before the plan holds two. */
 interface Lot {
   grantId: string;
   trancheId: string;
@@ -21,12 +27,13 @@ interface Lot {
 export interface EquityState {
   planStartYear: number;
   actionsByYear: Map<string, Map<number, EquityAction[]>>; // accountId → year → actions
-  lots: Map<string, Lot>;        // key = `${grantId}:${trancheId}`
+  lots: Map<string, Lot>;        // key = `${grantId}:${lotId}` — see lotKey
   grantsById: Map<string, EquityGrant>;
 }
 
 export interface EquityYearResult {
-  ordinaryIncome: number;   // W-2 wages (FICA-bearing)
+  ordinaryIncome: number;   // W-2 box 1 income (RSU vest, NQSO spread, disqualifying ISO)
+  ficaExemptOrdinaryIncome: number; // subset of ordinaryIncome, no FICA (§3121(a)(22))
   isoSpread: number;        // AMT preference
   capitalGains: number;     // long-term
   stCapitalGains: number;   // short-term
@@ -54,17 +61,20 @@ export interface EquityYearDetail {
 }
 
 const ROUND = (n: number) => Math.round(n * 1e6) / 1e6;
-const lotKey = (a: { grantId: string; trancheId: string }) => `${a.grantId}:${a.trancheId}`;
+/** Keyed by acquisition event: keying by vesting row alone made the second
+ *  `lots.set` overwrite the first and stranded the difference. */
+const lotKey = (a: { grantId: string; lotId: string }) => `${a.grantId}:${a.lotId}`;
 
 export function createEquityState(plans: StockOptionPlan[], planStartYear: number): EquityState {
   const actionsByYear = new Map<string, Map<number, EquityAction[]>>();
   const grantsById = new Map<string, EquityGrant>();
   for (const p of plans) {
     const acctStrategy = resolveStrategy(p.strategy, null, null);
+    const fmvAt = fmvCurve(p, planStartYear);
     const byYear = new Map<number, EquityAction[]>();
     for (const g of p.grants) {
       grantsById.set(g.id, g);
-      for (const a of buildGrantTimeline(g, acctStrategy, planStartYear)) {
+      for (const a of buildGrantTimeline(g, acctStrategy, planStartYear, fmvAt)) {
         (byYear.get(a.year) ?? byYear.set(a.year, []).get(a.year)!).push(a);
       }
     }
@@ -74,13 +84,13 @@ export function createEquityState(plans: StockOptionPlan[], planStartYear: numbe
 }
 
 function emptyResult(): EquityYearResult {
-  return { ordinaryIncome: 0, isoSpread: 0, capitalGains: 0, stCapitalGains: 0, strikeCashOutflow: 0, sellProceeds: 0, sellToCoverProceeds: 0, acquisitions: [], saleBasisRemoved: 0, details: [] };
+  return { ordinaryIncome: 0, ficaExemptOrdinaryIncome: 0, isoSpread: 0, capitalGains: 0, stCapitalGains: 0, strikeCashOutflow: 0, sellProceeds: 0, sellToCoverProceeds: 0, acquisitions: [], saleBasisRemoved: 0, details: [] };
 }
 
 export function computeEquityYear(plan: StockOptionPlan, state: EquityState, year: number): EquityYearResult {
   const res = emptyResult();
   const actions = state.actionsByYear.get(plan.accountId)?.get(year) ?? [];
-  const fmv = (y: number) => projectFmv(plan.pricePerShare, plan.growthRate, y, state.planStartYear);
+  const fmv = fmvCurve(plan, state.planStartYear);
 
   // Process acquisitions/exercises BEFORE sells in the same year (cashless/sell-to-cover).
   const order: Record<string, number> = { seed_held: 0, acquire_rsu: 1, exercise: 2, sell: 3, expire: 4 };
@@ -96,8 +106,10 @@ export function computeEquityYear(plan: StockOptionPlan, state: EquityState, yea
       const basisPerShare = grant.grantType === "iso" && grant.strikePrice != null ? grant.strikePrice : fmv(year);
       state.lots.set(key, {
         grantId: a.grantId, trancheId: a.trancheId, grantType: grant.grantType, shares: a.shares,
-        basisPerShare, acquisitionYear: state.planStartYear - 2, grantYear: grant.grantYear,
-        exerciseYear: grant.grantType === "rsu" ? null : state.planStartYear - 2,
+        basisPerShare,
+        acquisitionYear: assumedPrePlanAcquisitionYear(state.planStartYear),
+        grantYear: grant.grantYear,
+        exerciseYear: grant.grantType === "rsu" ? null : assumedPrePlanAcquisitionYear(state.planStartYear),
         strike: grant.strikePrice ?? 0, fmvAtExercise: basisPerShare,
       });
       res.acquisitions.push({ value: ROUND(a.shares * fmv(year)), basis: ROUND(a.shares * basisPerShare) });
@@ -171,7 +183,11 @@ export function computeEquityYear(plan: StockOptionPlan, state: EquityState, yea
       res.saleBasisRemoved += ROUND(shares * lot.basisPerShare);
 
       if (lot.grantType === "iso" && lot.exerciseYear != null) {
-        const qualifying = year - lot.grantYear >= 3 && year - lot.exerciseYear >= 2;
+        const qualifying = isQualifyingIsoDisposition({
+          grantYear: lot.grantYear,
+          exerciseYear: lot.exerciseYear,
+          dispositionYear: year,
+        });
         if (qualifying) {
           // Signed — a qualifying ISO disposition below basis is a genuine
           // long-term capital loss. (The non-ISO branch below was already
@@ -182,18 +198,24 @@ export function computeEquityYear(plan: StockOptionPlan, state: EquityState, yea
           // LESSER of the exercise-date bargain element or the actual gain on sale. A drop after
           // exercise caps OI at (salePrice − strike) and is NOT a separate capital loss.
           const oiPerShare = Math.min(Math.max(0, lot.fmvAtExercise - lot.strike), Math.max(0, f - lot.strike));
-          res.ordinaryIncome += ROUND(shares * oiPerShare);
+          const oi = ROUND(shares * oiPerShare);
+          res.ordinaryIncome += oi;
+          // Box 1 income, but NOT §3121(a) wages — IRC §3121(a)(22) excludes
+          // remuneration on a disposition of ISO/ESPP stock from FICA. This is
+          // the ONLY equity leg that is exempt: RSU vests and NQSO spreads above
+          // are ordinary payroll wages.
+          res.ficaExemptOrdinaryIncome += oi;
           // Residual vs stepped-up basis (strike + OI/share). Up → post-exercise appreciation;
           // flat-after-drop → 0; below strike → a true capital loss.
           const gain = ROUND(shares * (f - lot.strike) - shares * oiPerShare);
           // A disqualifying disposition fails the holding-period test, so the residual is usually
           // short-term. Same whole-year proxy as the non-ISO branch; acquisitionYear == exerciseYear.
-          const longTerm = year - lot.exerciseYear >= 2;
+          const longTerm = isLongTermHolding(lot.exerciseYear, year);
           if (longTerm) res.capitalGains += gain; else res.stCapitalGains += gain;
         }
       } else {
         const gain = ROUND(shares * (f - lot.basisPerShare));
-        const longTerm = year - lot.acquisitionYear >= 2;
+        const longTerm = isLongTermHolding(lot.acquisitionYear, year);
         if (longTerm) res.capitalGains += gain;
         else res.stCapitalGains += gain;
       }

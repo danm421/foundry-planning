@@ -11,6 +11,13 @@ import { Frame, S, usd, pct1, pct2, type SectionProps } from "./sections-overvie
 
 export function GrowthSection({ data, frame, accent }: SectionProps) {
   const b = data.snapshot?.backtest ?? null;
+  // Two different reasons produce a null backtest, and they are not
+  // interchangeable to an advisor reading this page. A SHORT window means the
+  // holdings have not existed together for long; SUPPRESSED coverage means the
+  // window is fine but too little of the money has any price history at all —
+  // often a large cash position. Printing the short-window sentence for a
+  // suppressed report names a cause that isn't true and points at the wrong fix.
+  const suppressed = data.snapshot?.compute.realizedWindow.coverageSuppressed ?? false;
   return (
     <Frame frame={frame}>
       <SectionHead
@@ -20,7 +27,9 @@ export function GrowthSection({ data, frame, accent }: SectionProps) {
       />
       {b === null ? (
         <Callout accent={accent}>
-          The two portfolios share too little price history to compare a realized growth path.
+          {suppressed
+            ? "Too little of the portfolio has price history to trace a realized growth path. Holdings without history — money-market and sweep positions are the usual case — cannot be back-tested, and the rest are not shown standing in for the whole account."
+            : "The two portfolios share too little price history to compare a realized growth path."}
         </Callout>
       ) : (
         <>
@@ -49,21 +58,29 @@ export function GrowthSection({ data, frame, accent }: SectionProps) {
 }
 
 export function StressSection({ data, frame, accent }: SectionProps) {
+  const rows = data.stress.available;
+  // Coverage suppression makes every window unavailable at once, so the
+  // all-empty sheet stopped being a rarity. Two things then misread: a subtitle
+  // promising a comparison the sheet does not contain, and a header row
+  // labelling five columns with nothing under them. Same rule as GrowthSection.
+  const suppressed = data.snapshot?.compute.realizedWindow.coverageSuppressed ?? false;
   return (
     <Frame frame={frame}>
       <SectionHead
         title="Stress test"
-        subtitle="How each portfolio behaved in past declines"
+        subtitle={rows.length > 0 ? "How each portfolio behaved in past declines" : "Not available"}
         accent={accent}
       />
-      <View style={S.row}>
-        <Text style={[S.headCell, { flex: 2 }]}>Window</Text>
-        <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Current</Text>
-        <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Proposed</Text>
-        <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Current $</Text>
-        <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Proposed $</Text>
-      </View>
-      {data.stress.available.map((w) => (
+      {rows.length > 0 && (
+        <View style={S.row}>
+          <Text style={[S.headCell, { flex: 2 }]}>Window</Text>
+          <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Current</Text>
+          <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Proposed</Text>
+          <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Current $</Text>
+          <Text style={[S.headCell, { flex: 1, textAlign: "right" }]}>Proposed $</Text>
+        </View>
+      )}
+      {rows.map((w) => (
         <View key={w.key} style={S.row}>
           <Text style={S.rowName}>{`${w.label} (${w.start} – ${w.end})`}</Text>
           <Text style={S.rowNum}>{pct1(w.currentReturn)}</Text>
@@ -72,10 +89,19 @@ export function StressSection({ data, frame, accent }: SectionProps) {
           <Text style={S.rowNum}>{usd(w.proposedDollars)}</Text>
         </View>
       ))}
-      {/* A window that silently vanished reads as "no loss". Name it and say why. */}
-      {data.stress.unavailable.map((u) => (
-        <Text key={u.label} style={S.note}>{`${u.label}: ${u.reason}`}</Text>
-      ))}
+      {suppressed ? (
+        // One cause, not three. Repeating the identical sentence per window
+        // reads as three separate problems with the portfolio.
+        <Callout accent={accent}>
+          Too little of the portfolio has price history to show how it would have fared in past
+          declines.
+        </Callout>
+      ) : (
+        // A window that silently vanished reads as "no loss". Name it and say why.
+        data.stress.unavailable.map((u) => (
+          <Text key={u.label} style={S.note}>{`${u.label}: ${u.reason}`}</Text>
+        ))
+      )}
     </Frame>
   );
 }

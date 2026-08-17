@@ -11,6 +11,7 @@ const compute: RebalanceComputeResult = {
     realized: null,
     cma: { arithmeticMean: 0.065, geometricReturn: 0.058, stdDev: 0.14, sharpe: 0.3 },
     coveragePct: 1,
+    uncoveredTickers: [],
   },
   proposed: {
     totalValue: 1_000_000,
@@ -18,6 +19,7 @@ const compute: RebalanceComputeResult = {
     realized: null,
     cma: { arithmeticMean: 0.07, geometricReturn: 0.064, stdDev: 0.115, sharpe: 0.42 },
     coveragePct: 1,
+    uncoveredTickers: [],
   },
   assetMixDelta: [],
   tradeSummary: [],
@@ -36,9 +38,17 @@ const compute: RebalanceComputeResult = {
     nMonths: 0,
     insufficientHistory: true,
     shortHistory: false,
+    coverageSuppressed: false,
   },
   sourceUnresolvedTickers: [],
 };
+
+/** 40 monthly returns from 2020-01, dated `YYYY-MM-01` as the loader emits them. */
+const months = (r: number) =>
+  Array.from({ length: 40 }, (_, i) => ({
+    date: `${2020 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, "0")}-01`,
+    r,
+  }));
 
 const baseInput = {
   compute,
@@ -83,6 +93,66 @@ describe("buildProposalSnapshot", () => {
   it("builds the cone off each side's own assumptions", () => {
     const s = buildProposalSnapshot(baseInput);
     expect(s.outcomes.proposed[0].p50).toBeGreaterThan(s.outcomes.current[0].p50);
+  });
+});
+
+/**
+ * The growth chart and the stress table are drawn from the SAME renormalized
+ * series as the realized stats, so a coverage shortfall has to reach them too.
+ * Nulling `realized` alone would leave "your portfolio fell 20.5% in COVID" on
+ * screen describing a quarter of the money.
+ */
+describe("buildProposalSnapshot — coverage suppression", () => {
+  // A 40-month window on both sides: long enough that nothing here can be
+  // explained by insufficient history. Only coverage is in question.
+  const longAligned = {
+    a: [{ ticker: "VTI", weight: 1, returns: months(0.01) }],
+    b: [{ ticker: "AGG", weight: 1, returns: months(0.002) }],
+    windowStart: "2020-01-01",
+    windowEnd: "2023-04-01",
+    nMonths: 40,
+  };
+
+  const suppressedInput = {
+    ...baseInput,
+    aligned: longAligned,
+    compute: {
+      ...compute,
+      current: { ...compute.current, coveragePct: 0.28, uncoveredTickers: ["SPAXX", "TSLA"] },
+      realizedWindow: {
+        ...compute.realizedWindow,
+        nMonths: 40,
+        insufficientHistory: false,
+        coverageSuppressed: true,
+      },
+    },
+  };
+
+  it("withholds the backtest chart", () => {
+    expect(buildProposalSnapshot(suppressedInput).backtest).toBeNull();
+  });
+
+  it("marks every stress window unavailable, and says why", () => {
+    const s = buildProposalSnapshot(suppressedInput);
+    expect(s.stress).toHaveLength(3);
+    expect(s.stress.every((w) => !w.available)).toBe(true);
+    // The reason must name coverage — "launched after this period" would send
+    // an advisor looking for the wrong problem.
+    expect(s.stress.every((w) => /price history/i.test(w.unavailableReason ?? ""))).toBe(true);
+  });
+
+  it("draws the chart and the stress windows when coverage is fine", () => {
+    const ok = {
+      ...suppressedInput,
+      compute: {
+        ...suppressedInput.compute,
+        current: { ...compute.current, coveragePct: 1, uncoveredTickers: [] },
+        realizedWindow: { ...suppressedInput.compute.realizedWindow, coverageSuppressed: false },
+      },
+    };
+    const s = buildProposalSnapshot(ok);
+    expect(s.backtest).not.toBeNull();
+    expect(s.stress.some((w) => w.available)).toBe(true);
   });
 });
 

@@ -40,7 +40,88 @@ const base = {
   defaultSellStartYear: z.number().int().gte(1900).lte(2200).nullable().optional(),
 };
 
-export const stockOptionAccountCreateSchema = z.object(base);
+/**
+ * A timing choice and the field it depends on have to arrive together.
+ *
+ * A blank companion never failed — it fell through to a default that inverted
+ * the strategy. Measured on the real engine: "hold, then sell in <blank>"
+ * liquidates the entire position in the vest year (`sellYear ?? acquisitionYear`
+ * in `timeline.ts`), and "sell <blank>% per year" emits no sell at all
+ * (`pct <= 0` returns an empty list), so the shares are held forever. A blank
+ * exercise year on "specific year" silently means "at vest". Audit F29/F40.
+ *
+ * `sellStartYear` is deliberately NOT required: blank falls back to the
+ * acquisition year, which is what "start selling once I have them" means.
+ */
+interface StrategyCompanionInput {
+  exerciseTiming?: string | null;
+  exerciseYear?: number | null;
+  sellTiming?: string | null;
+  sellYear?: number | null;
+  sellPercentPerYear?: number | null;
+}
+
+function addStrategyCompanionIssues(
+  v: StrategyCompanionInput,
+  ctx: z.RefinementCtx,
+  keys: { exerciseYear: string; sellYear: string; sellPercentPerYear: string },
+  at: (string | number)[] = [],
+): void {
+  if (v.exerciseTiming === "specific_year" && v.exerciseYear == null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [...at, keys.exerciseYear],
+      message: "An exercise year is required when exercise timing is a specific year.",
+    });
+  }
+  if (v.sellTiming === "hold_then_sell_year" && v.sellYear == null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [...at, keys.sellYear],
+      message: "A sell year is required when sell timing is hold-then-sell.",
+    });
+  }
+  if (v.sellTiming === "percent_per_year" && !(v.sellPercentPerYear != null && v.sellPercentPerYear > 0)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [...at, keys.sellPercentPerYear],
+      message: "A sell percentage above zero is required when sell timing is percent-per-year.",
+    });
+  }
+}
+
+const ACCOUNT_STRATEGY_KEYS = {
+  exerciseYear: "defaultExerciseYear",
+  sellYear: "defaultSellYear",
+  sellPercentPerYear: "defaultSellPercentPerYear",
+};
+
+const GRANT_STRATEGY_KEYS = {
+  exerciseYear: "exerciseYear",
+  sellYear: "sellYear",
+  sellPercentPerYear: "sellPercentPerYear",
+};
+
+/** Read an account's `default*` strategy fields as a plain strategy triplet. */
+function accountStrategy(a: {
+  defaultExerciseTiming?: string | null;
+  defaultExerciseYear?: number | null;
+  defaultSellTiming?: string | null;
+  defaultSellYear?: number | null;
+  defaultSellPercentPerYear?: number | null;
+}): StrategyCompanionInput {
+  return {
+    exerciseTiming: a.defaultExerciseTiming,
+    exerciseYear: a.defaultExerciseYear,
+    sellTiming: a.defaultSellTiming,
+    sellYear: a.defaultSellYear,
+    sellPercentPerYear: a.defaultSellPercentPerYear,
+  };
+}
+
+export const stockOptionAccountCreateSchema = z
+  .object(base)
+  .superRefine((a, ctx) => addStrategyCompanionIssues(accountStrategy(a), ctx, ACCOUNT_STRATEGY_KEYS));
 
 // `strictPartial`, not `.partial()` — Zod 4 keeps a `.default()` alive under
 // `.optional()`. Every strategy field here is `.optional().default(...)`, so
@@ -48,7 +129,12 @@ export const stockOptionAccountCreateSchema = z.object(base);
 // `input.X !== undefined` guards that an injected key always passes: a rename
 // alone would zero the share price, reset withholding to 22%, and revert the
 // account's exercise/sell strategy to at-vest/hold.
-export const stockOptionAccountUpdateSchema = strictPartial(z.object(base));
+// The companion rule fires only when the PATCH actually names a timing field —
+// an absent key is `undefined` and skips it, so a rename-only PATCH is
+// unaffected. The form always sends the whole strategy block.
+export const stockOptionAccountUpdateSchema = strictPartial(z.object(base)).superRefine((a, ctx) =>
+  addStrategyCompanionIssues(accountStrategy(a), ctx, ACCOUNT_STRATEGY_KEYS),
+);
 
 export type StockOptionAccountCreateInput = z.infer<typeof stockOptionAccountCreateSchema>;
 export type StockOptionAccountUpdateInput = z.infer<typeof stockOptionAccountUpdateSchema>;
@@ -112,7 +198,12 @@ const grantBase = z.object({
   plannedEvents: z.array(plannedEventSchema).optional().default([]),
 });
 
-export const grantCreateSchema = grantBase.superRefine((g, ctx) => {
+/** Everything a grant body has to satisfy beyond field-level types. Shared by
+ *  create and update, which differ only in how they treat `plannedEvents`. */
+function refineGrant(
+  g: Omit<z.infer<typeof grantBase>, "plannedEvents">,
+  ctx: z.RefinementCtx,
+): void {
   // (a) fmvAtGrant required when has83bElection is true
   if (g.has83bElection && g.fmvAtGrant == null) {
     ctx.addIssue({
@@ -138,10 +229,78 @@ export const grantCreateSchema = grantBase.superRefine((g, ctx) => {
       });
     }
   }
-});
+  // (c) The vesting rows ARE the grant as far as the projection is concerned:
+  // `buildGrantTimeline` iterates the tranches and never reads `sharesGranted`.
+  // Nothing tied the two together, so a 10,000-share grant with one 4,000-share
+  // row vested $200,000 of $500,000 while the vesting-schedule report kept
+  // printing 10,000 granted / 10,000 unvested. Audit F39/F34.
+  //
+  // 83(b) is the one exception — the whole grant is acquired at the grant date,
+  // and both the timeline and the vesting schedule read `sharesGranted` there.
+  const wholeGrantAt83b = g.grantType === "rsu" && g.has83bElection;
+  if (g.tranches.length === 0 && !wholeGrantAt83b) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["tranches"],
+      message: "At least one vesting tranche is required — the projection is built from the tranches.",
+    });
+  }
+  if (g.tranches.length > 0) {
+    const rowSum = g.tranches.reduce((acc, t) => acc + t.shares, 0);
+    if (Math.abs(rowSum - g.sharesGranted) > 1e-6) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["tranches"],
+        message: `Vesting tranches total ${rowSum} of ${g.sharesGranted} shares granted.`,
+      });
+    }
+  }
+  // (d) A timing choice and the field it depends on must arrive together, at
+  // the grant level and on every tranche override. Audit F29/F40.
+  addStrategyCompanionIssues(g, ctx, GRANT_STRATEGY_KEYS);
 
-// PUT reuses the same full-replacement schema (not partial).
-export const grantUpdateSchema = grantCreateSchema;
+  // (e) Shares flow vested → exercised → sold, so each bucket has to fit inside
+  // the one before it. `sharesExercised` and `sharesSold` were only checked for
+  // non-negativity, so a 1,000-share row could carry 10,000 exercised and the
+  // engine seeded all 10,000 as held stock. Audit F41.
+  g.tranches.forEach((t, i) => {
+    addStrategyCompanionIssues(t, ctx, GRANT_STRATEGY_KEYS, ["tranches", i]);
+    const acquired = g.grantType === "rsu" ? t.shares : t.sharesExercised;
+    if (g.grantType !== "rsu" && t.sharesExercised > t.shares) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["tranches", i, "sharesExercised"],
+        message: "sharesExercised cannot exceed the tranche's shares.",
+      });
+    }
+    if (t.sharesSold > acquired) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["tranches", i, "sharesSold"],
+        message:
+          g.grantType === "rsu"
+            ? "sharesSold cannot exceed the tranche's shares."
+            : "sharesSold cannot exceed sharesExercised.",
+      });
+    }
+  });
+}
+
+export const grantCreateSchema = grantBase.superRefine(refineGrant);
+
+/**
+ * PUT is a full replacement for everything the editor sends — but an ABSENT
+ * `plannedEvents` key means "leave them alone", not "delete them all".
+ *
+ * The grant editor cannot create planned events (no screen does), yet it sent
+ * `plannedEvents: []` on every save and the route replaced the stored list with
+ * it. Any event created through the API was wiped by the next visit to the
+ * editor — and a grant on "manual" exercise timing depends entirely on those
+ * events, so the whole grant was abandoned. Audit F18/F33.
+ */
+export const grantUpdateSchema = grantBase
+  .extend({ plannedEvents: z.array(plannedEventSchema).optional() })
+  .superRefine(refineGrant);
 
 export type GrantCreateInput = z.infer<typeof grantCreateSchema>;
 export type GrantUpdateInput = z.infer<typeof grantUpdateSchema>;

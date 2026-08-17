@@ -49,6 +49,8 @@ describe("buildAccountRows", () => {
         ["acct-1", meta({ id: "acct-1", growthSource: "model_portfolio", modelPortfolioId: "mp-7" })],
       ]),
       linkedSourceById: new Map(),
+      stockOptionPlans: [],
+      planStartYear: 2026,
     });
 
     expect(rows[0].growthSource).toBe("model_portfolio");
@@ -61,6 +63,8 @@ describe("buildAccountRows", () => {
       familyMembers: [],
       accountMetaById: new Map(),
       linkedSourceById: new Map(),
+      stockOptionPlans: [],
+      planStartYear: 2026,
     });
 
     expect(rows[0].growthSource).toBe("default");
@@ -73,6 +77,8 @@ describe("buildAccountRows", () => {
       familyMembers: [],
       accountMetaById: new Map(),
       linkedSourceById: new Map(),
+      stockOptionPlans: [],
+      planStartYear: 2026,
     });
 
     expect(rows[0].growthRate).toBe("0.062");
@@ -90,6 +96,8 @@ describe("buildAccountRows", () => {
       familyMembers: [{ id: "fm-kid", role: "child", firstName: "Kelly", lastName: "Cooper" }],
       accountMetaById: new Map(),
       linkedSourceById: new Map(),
+      stockOptionPlans: [],
+      planStartYear: 2026,
     });
 
     expect(rows[0].beneficiaryDisplayName).toBe("Kelly Cooper");
@@ -107,5 +115,78 @@ describe("linkedSourceMapFrom", () => {
     expect(map.get("a")).toBe("plaid");
     expect(map.get("b")).toBe("orion");
     expect(map.has("c")).toBe(false);
+  });
+});
+
+/** The Net Worth page and the Map's row map are both built here, and both
+ *  showed a real equity position as "$0" — the account's stored value never
+ *  leaves "0" because the shares live in `stock_option_grants`. */
+describe("buildAccountRows — stock_options accounts", () => {
+  const equityPlan = {
+    accountId: "so-1",
+    ticker: "TSLA",
+    pricePerShare: 100,
+    growthRate: 0,
+    destinationAccountId: null,
+    autoCreateDestination: true,
+    sellToCover: false,
+    withholdingRate: 0.22,
+    strategy: {
+      exerciseTiming: "at_vest",
+      exerciseYear: null,
+      sellTiming: "hold",
+      sellYear: null,
+      sellPercentPerYear: null,
+      sellStartYear: null,
+    },
+    owner: "client",
+    grants: [
+      {
+        id: "g1",
+        grantNumber: "RS-1",
+        grantType: "rsu",
+        grantYear: 2024,
+        sharesGranted: 1000,
+        has83bElection: false,
+        fmvAtGrant: null,
+        strikePrice: null,
+        strikeDiscountPct: null,
+        expirationYear: null,
+        strategy: null,
+        tranches: [
+          { id: "t1", vestYear: 2030, shares: 1000, sharesExercised: 0, sharesSold: 0, strategy: null },
+        ],
+        plannedEvents: [],
+      },
+    ],
+  } as never;
+
+  const equityAccount = () =>
+    engineAccount({ id: "so-1", name: "TSLA Options", category: "stock_options", subType: "rsu", value: 0 });
+
+  it("renders the value of the shares still under grant, not the stored 0", () => {
+    const rows = buildAccountRows({
+      accounts: [equityAccount()],
+      familyMembers: [],
+      accountMetaById: new Map(),
+      linkedSourceById: new Map(),
+      stockOptionPlans: [equityPlan],
+      planStartYear: 2026,
+    });
+
+    expect(rows[0].value).toBe("100000");
+  });
+
+  it("leaves every other account's value alone", () => {
+    const rows = buildAccountRows({
+      accounts: [engineAccount(), equityAccount()],
+      familyMembers: [],
+      accountMetaById: new Map(),
+      linkedSourceById: new Map(),
+      stockOptionPlans: [equityPlan],
+      planStartYear: 2026,
+    });
+
+    expect(rows[0].value).toBe("400000");
   });
 });

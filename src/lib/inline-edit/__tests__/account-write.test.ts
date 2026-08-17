@@ -359,3 +359,41 @@ describe("patchFromGrowthSelection", () => {
     expect(patchFromGrowthSelection("custom")).not.toHaveProperty("growthRate");
   });
 });
+
+/** A stock_options row's `value` is DERIVED for display (the account's stored
+ *  value is a permanent "0"; the shares live in the grants table). The scenario
+ *  writer copies the whole view row, so without this strip, editing any other
+ *  field on an equity row — its name, its growth rate — would quietly persist
+ *  the derived number as data and the position would stop tracking its grants. */
+describe("buildScenarioDesiredFields — derived equity values", () => {
+  const equityRow = (overrides: Partial<AccountRow> = {}) =>
+    row({ id: "so-1", name: "TSLA Options", category: "stock_options", subType: "rsu",
+      value: "42000", ...overrides });
+
+  it("never writes a stock_options row's derived value back", () => {
+    // Editing a DIFFERENT field is the real failure path: the scenario writer
+    // copies the whole view row, so the derived value rode along on every edit.
+    const fields = buildScenarioDesiredFields(equityRow(), { growthRate: "0.09" });
+    expect(fields).not.toHaveProperty("value");
+    expect(fields.growthRate).toBe("0.09");
+  });
+
+  it("strips it even when the value is what the caller tried to patch", () => {
+    // The Net Worth value cell is read-only on equity rows, so this cannot come
+    // from the UI — but `buildScenarioDesiredFields` is the last gate before the
+    // write, and a derived number must not become data through any caller.
+    const fields = buildScenarioDesiredFields(equityRow(), { value: "999999" });
+    expect(fields).not.toHaveProperty("value");
+  });
+
+  it("still writes value for every other category", () => {
+    // Guards the strip against being widened to all accounts: `value` is a real,
+    // advisor-entered field everywhere except stock_options.
+    expect(buildScenarioDesiredFields(row(), { value: "500000" }).value).toBe("500000");
+    // And it still rides along on an unrelated edit, which is the behaviour the
+    // strip above removes for equity rows only.
+    expect(
+      buildScenarioDesiredFields(row({ category: "real_estate" }), { growthRate: "0.04" }).value,
+    ).toBe("400000");
+  });
+});

@@ -3,6 +3,8 @@ import {
   calcPayment,
   calcTerm,
   calcRate,
+  calcInterestOnlyPayment,
+  isInterestOnlyPayment,
   calcOriginalBalance,
   computeAmortizationSchedule,
 } from "../loan-math";
@@ -53,6 +55,49 @@ describe("calcRate", () => {
     // Payment less than any positive-rate amortization of this balance/term
     const rate = calcRate(1000000, 12, 1);
     expect(rate).toBeNull();
+  });
+});
+
+describe("calcInterestOnlyPayment", () => {
+  it("returns one month of accrued interest", () => {
+    // $500,000 at 6% → 500000 × 0.06 / 12
+    expect(calcInterestOnlyPayment(500000, 0.06)).toBeCloseTo(2500, 2);
+  });
+
+  it("returns 0 when there is no balance or no rate to accrue", () => {
+    expect(calcInterestOnlyPayment(0, 0.06)).toBe(0);
+    expect(calcInterestOnlyPayment(500000, 0)).toBe(0);
+  });
+});
+
+describe("isInterestOnlyPayment", () => {
+  it("recognizes a payment stored as accrued interest rounded to cents", () => {
+    // 500000 × 0.065 / 12 = 2708.333…, stored as 2708.33
+    expect(isInterestOnlyPayment(500000, 0.065, 2708.33)).toBe(true);
+  });
+
+  it("rejects an amortizing payment", () => {
+    expect(isInterestOnlyPayment(300000, 0.065, 1896.2)).toBe(false);
+  });
+
+  it("rejects a zero-rate loan whose payment is also zero", () => {
+    expect(isInterestOnlyPayment(300000, 0, 0)).toBe(false);
+  });
+});
+
+describe("computeAmortizationSchedule — interest-only payment", () => {
+  it("holds the balance flat and balloons the principal at maturity", () => {
+    const payment = calcInterestOnlyPayment(500000, 0.06); // 2500/mo
+    const rows = computeAmortizationSchedule(500000, 0.06, payment, 2026, 60);
+
+    expect(rows).toHaveLength(5);
+    expect(rows[0].principal).toBeCloseTo(0, 2);
+    expect(rows[0].interest).toBeCloseTo(30000, 2);
+    expect(rows[0].endingBalance).toBeCloseTo(500000, 2);
+
+    const last = rows[rows.length - 1];
+    expect(last.principal).toBeCloseTo(500000, 2);
+    expect(last.endingBalance).toBe(0);
   });
 });
 

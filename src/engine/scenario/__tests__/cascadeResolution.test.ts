@@ -2,6 +2,7 @@
 import { describe, it, expect } from "vitest";
 import { resolveCascades } from "../cascadeResolution";
 import type { ClientData, Account, Transfer, SavingsRule, BeneficiaryRef, Will } from "@/engine/types";
+import type { StockOptionPlan } from "@/engine/equity/types";
 import type { TargetKind } from "../types";
 
 const tree = (overrides: Partial<ClientData> = {}): ClientData => ({
@@ -68,6 +69,68 @@ describe("resolveCascades — accounts → savings_rules", () => {
     expect(t.savingsRules).toEqual([]);
     expect(warnings).toHaveLength(1);
     expect(warnings[0].kind).toBe("savings_rule_dropped");
+  });
+});
+
+describe("resolveCascades — accounts → stockOptionPlans", () => {
+  const plan = (accountId: string, over: Partial<StockOptionPlan> = {}): StockOptionPlan => ({
+    accountId,
+    ticker: "ACME",
+    pricePerShare: 50,
+    growthRate: 0,
+    destinationAccountId: null,
+    autoCreateDestination: true,
+    sellToCover: false,
+    withholdingRate: 0,
+    strategy: {},
+    owner: "client",
+    grants: [],
+    ...over,
+  });
+
+  it("drops the equity plan whose stock_options account was removed", () => {
+    const t: ClientData = tree({ stockOptionPlans: [plan("a-removed")] });
+    const removed = [{ kind: "account" as TargetKind, id: "a-removed", causedByChangeId: "ch1" }];
+    const warnings = resolveCascades(t, removed);
+    expect(t.stockOptionPlans).toEqual([]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].kind).toBe("equity_plan_dropped");
+    expect(warnings[0].causedByChangeId).toBe("ch1");
+    // The label has to name the ticker — an advisor reading the Changes panel
+    // needs to know WHICH company's equity stopped, not just "a plan".
+    expect(warnings[0].affectedEntityLabel).toContain("ACME");
+  });
+
+  it("keeps equity plans on accounts that were not removed", () => {
+    const t: ClientData = tree({
+      stockOptionPlans: [plan("a-keep"), plan("a-removed", { ticker: "GONE" })],
+    });
+    const removed = [{ kind: "account" as TargetKind, id: "a-removed", causedByChangeId: "ch1" }];
+    const warnings = resolveCascades(t, removed);
+    expect(t.stockOptionPlans!.map((p) => p.accountId)).toEqual(["a-keep"]);
+    expect(warnings.filter((w) => w.kind === "equity_plan_dropped")).toHaveLength(1);
+  });
+
+  it("clears a destinationAccountId that was removed without dropping the plan", () => {
+    // The equity account survives; only the brokerage it delivers shares into
+    // was removed. Leaving the id dangling would have the projection write
+    // balances onto an account the scenario deleted, so null it out and let the
+    // engine mint its own destination.
+    const t: ClientData = tree({
+      stockOptionPlans: [plan("a-keep", { destinationAccountId: "a-removed" })],
+    });
+    const removed = [{ kind: "account" as TargetKind, id: "a-removed", causedByChangeId: "ch1" }];
+    const warnings = resolveCascades(t, removed);
+    expect(t.stockOptionPlans).toHaveLength(1);
+    expect(t.stockOptionPlans![0].destinationAccountId).toBeNull();
+    expect(warnings.map((w) => w.kind)).toContain("equity_destination_cleared");
+  });
+
+  it("is a no-op when nothing was removed", () => {
+    const t: ClientData = tree({ stockOptionPlans: [plan("a-keep")] });
+    const warnings = resolveCascades(t, []);
+    expect(t.stockOptionPlans).toHaveLength(1);
+    expect(warnings).toEqual([]);
   });
 });
 

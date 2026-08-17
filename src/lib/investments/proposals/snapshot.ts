@@ -28,6 +28,9 @@ export interface BuildProposalSnapshotInput {
 /** Assemble the frozen artifact. Pure — every input is already resolved. */
 export function buildProposalSnapshot(input: BuildProposalSnapshotInput): ProposalSnapshot {
   const totalValue = input.compute.current.totalValue;
+  // Absent on a snapshot saved before the flag existed — those were computed
+  // without the guard, so the old (permissive) behaviour is the honest default.
+  const coverageSuppressed = input.compute.realizedWindow.coverageSuppressed ?? false;
 
   const fees = buildFeeComparison({
     totalValue,
@@ -59,8 +62,10 @@ export function buildProposalSnapshot(input: BuildProposalSnapshotInput): Propos
       proposedVolatility: input.compute.proposed.cma.stdDev,
       rungs: input.rungs,
     }),
-    backtest: buildBacktestSeries(input.aligned),
-    stress: buildStressWindows(input.aligned, totalValue),
+    // The chart and the stress table read the same renormalized series as the
+    // realized stats, so they inherit the same coverage verdict.
+    backtest: buildBacktestSeries(input.aligned, undefined, coverageSuppressed),
+    stress: buildStressWindows(input.aligned, totalValue, coverageSuppressed),
     outcomes: buildOutcomeCone({
       startValue: totalValue,
       current: {

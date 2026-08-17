@@ -5,6 +5,15 @@ export function projectFmv(basePrice: number, growthRate: number, year: number, 
   return basePrice * (1 + growthRate) ** fwd;
 }
 
+/** A plan's price curve: year → projected FMV per share. One definition so the
+ *  price that DECIDES an exercise cannot drift from the price that BOOKS it. */
+export function fmvCurve(
+  plan: { pricePerShare: number; growthRate: number },
+  planStartYear: number,
+): (year: number) => number {
+  return (year) => projectFmv(plan.pricePerShare, plan.growthRate, year, planStartYear);
+}
+
 /** Resolve the per-share strike. Explicit strike wins; else a discount off the
  *  exercise-year FMV; else 0 (RSUs have no strike). */
 export function resolveStrikePrice(

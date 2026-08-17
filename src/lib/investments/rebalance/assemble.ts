@@ -4,7 +4,7 @@ import { rollupHoldings, type HoldingInput } from "@/lib/investments/holdings-ro
 import type { AssetClassWeight } from "@/lib/investments/benchmarks";
 import type { MonthlyReturn } from "@/lib/cma-stats";
 import type { CorrelationRow } from "@/engine/monteCarlo/correlation-matrix";
-import { buildHoldingSeries } from "./panel-from-holdings";
+import { buildHoldingSeries, REALIZED_COVERAGE_MIN } from "./panel-from-holdings";
 import { alignToCommonWindow, type AlignedWindows } from "./common-window";
 import { toNamedWeights, buildAssetMixDelta, buildTradeSummary } from "./comparison";
 import { estimateRealizedGain, deriveEffectiveLtcgRate, estimateRebalanceTax } from "./tax-estimate";
@@ -154,8 +154,21 @@ export function assembleRebalanceResult(input: RebalanceInputs): RebalanceComput
   const aligned = alignToCommonWindow(curBuilt.series, tgtBuilt.series);
   const insufficient = aligned.nMonths < MIN_MONTHS;
 
-  const curPanel = insufficient ? null : computePortfolioPanel(aligned.a, input.riskFreeRate);
-  const tgtPanel = insufficient ? null : computePortfolioPanel(aligned.b, input.riskFreeRate);
+  // A side's realized series covers only the holdings that HAVE price history,
+  // renormalized to 100% — so at 28% coverage the "current portfolio" line is
+  // really a few surviving tickers standing in for the whole account. Withhold
+  // rather than caveat: this reads as the client's own track record, and a
+  // footnote does not undo a number someone has already looked at.
+  //
+  // Suppressing BOTH sides on either side's shortfall is deliberate. Half a
+  // comparison is not a comparison, and leaving the well-covered side on screen
+  // invites reading it as the answer.
+  const coverageSuppressed =
+    curBuilt.coveragePct < REALIZED_COVERAGE_MIN || tgtBuilt.coveragePct < REALIZED_COVERAGE_MIN;
+  const noRealized = insufficient || coverageSuppressed;
+
+  const curPanel = noRealized ? null : computePortfolioPanel(aligned.a, input.riskFreeRate);
+  const tgtPanel = noRealized ? null : computePortfolioPanel(aligned.b, input.riskFreeRate);
 
   const current: PortfolioSide = {
     totalValue,
@@ -163,6 +176,7 @@ export function assembleRebalanceResult(input: RebalanceInputs): RebalanceComput
     realized: curPanel && !curPanel.insufficientHistory ? curPanel.stats : null,
     cma: currentCma,
     coveragePct: curBuilt.coveragePct,
+    uncoveredTickers: curBuilt.uncoveredTickers,
   };
   const proposed: PortfolioSide = {
     totalValue,
@@ -170,6 +184,7 @@ export function assembleRebalanceResult(input: RebalanceInputs): RebalanceComput
     realized: tgtPanel && !tgtPanel.insufficientHistory ? tgtPanel.stats : null,
     cma: targetCma,
     coveragePct: tgtBuilt.coveragePct,
+    uncoveredTickers: tgtBuilt.uncoveredTickers,
   };
 
   // --- tax ---
@@ -199,6 +214,7 @@ export function assembleRebalanceResult(input: RebalanceInputs): RebalanceComput
       nMonths: aligned.nMonths,
       insufficientHistory: insufficient,
       shortHistory: !insufficient && aligned.nMonths < WARN_MONTHS,
+      coverageSuppressed,
     },
     sourceUnresolvedTickers: input.sourceUnresolvedTickers ?? [],
   };

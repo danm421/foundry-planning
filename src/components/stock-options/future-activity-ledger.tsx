@@ -28,7 +28,25 @@ const afterTaxCell = (netProceeds: number, taxImpact: number | null): React.Reac
 const TH = "px-2 py-1.5 text-right whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.04em] text-ink-2";
 const TD = "px-2 py-1.5 text-right whitespace-nowrap border-b border-hair";
 const L = "text-left";
-const COLS = 15;
+const COLS = 16;
+
+/** Lapsed options. They used to borrow the "Sh. Sold" cell — which meant the
+ *  count sat in a column that excluded it from its own subtotal, and a
+ *  grant-year with both a sale and a lapse could only show one of them. They
+ *  also all read "underwater", whatever the shares were worth. Audit F37. */
+function ExpiredCell({ row }: { row: FutureActivityGrantYearRow }) {
+  if (Math.round(row.expiredShares) === 0) return dash;
+  return (
+    <span className="flex flex-col items-end leading-tight">
+      <span className="text-warn">{Math.round(row.expiredShares).toLocaleString("en-US")}</span>
+      <span className="text-[9px] text-ink-3">
+        {row.expiredUnderwater
+          ? "underwater"
+          : <span className="text-crit">{formatCompact(row.expiredForfeitedValue)} forfeited</span>}
+      </span>
+    </span>
+  );
+}
 
 export default function FutureActivityLedger({ model }: { model: FutureActivityModel }) {
   if (!model.hasGrants) {
@@ -61,6 +79,7 @@ export default function FutureActivityLedger({ model }: { model: FutureActivityM
             <th className={TH}>Ex. Price</th>
             <th className={TH}>Ex. Cost</th>
             <th className={TH}>Sh. Sold</th>
+            <th className={TH}>Expired</th>
             <th className={TH}>Sale $</th>
             <th className={TH}>Gross Proceeds</th>
             <th className={TH}>Net Proceeds</th>
@@ -81,6 +100,7 @@ export default function FutureActivityLedger({ model }: { model: FutureActivityM
             <td className={`${TD} border-t-2 border-hair-2`}></td>
             <td className={`${TD} border-t-2 border-hair-2`}>{moneyTone(-model.totals.exerciseCost, "neg")}</td>
             <td className={`${TD} border-t-2 border-hair-2`}>{sh(model.totals.sharesSold)}</td>
+            <td className={`${TD} border-t-2 border-hair-2 text-warn`}>{sh(model.totals.expiredShares)}</td>
             <td className={`${TD} border-t-2 border-hair-2`}></td>
             <td className={`${TD} border-t-2 border-hair-2`}>{money(model.totals.grossProceeds)}</td>
             <td className={`${TD} border-t-2 border-hair-2`}>{moneyTone(model.totals.netProceeds)}</td>
@@ -95,6 +115,9 @@ export default function FutureActivityLedger({ model }: { model: FutureActivityM
         withholding at vest/exercise (tagged <span className="text-accent-ink font-semibold">cover</span>)
         plus strategy sells; <span className="text-ink-2 font-semibold">Net Proceeds</span> = gross
         proceeds − exercise cost and reconciles with the cash flow.{" "}
+        <span className="text-ink-2 font-semibold">Expired</span> is options that lapsed unexercised —
+        marked <span className="text-warn">underwater</span> when the share price never reached the
+        strike, and otherwise showing the intrinsic value given up.{" "}
         <span className="text-ink-2 font-semibold">Tax Impact</span> is the additional tax the plan
         incurs that year from equity comp (income + capital gains + payroll + state, from the Tax Impact
         report) — a joint per-year figure, so it shows on the year subtotals and total only, not per grant.{" "}
@@ -129,17 +152,14 @@ function YearGroup({ year, rows, subtotal }: { year: number; rows: FutureActivit
           <td className={TD}>{r.exercisePrice === null ? dash : `$${r.exercisePrice.toFixed(2)}`}</td>
           <td className={TD}>{moneyTone(-r.exerciseCost, "neg")}</td>
           <td className={TD}>
-            {r.underwater && r.sharesSold === 0 ? (
-              <span className="text-warn text-[11px]">{sh(r.expiredShares)} · underwater ⚠</span>
-            ) : (
-              <span className="inline-flex items-center justify-end gap-1">
-                {sh(r.sharesSold)}
-                {r.hasSellToCover && (
-                  <span className="rounded bg-accent-wash px-1 text-[9px] font-semibold text-accent-ink">cover</span>
-                )}
-              </span>
-            )}
+            <span className="inline-flex items-center justify-end gap-1">
+              {sh(r.sharesSold)}
+              {r.hasSellToCover && (
+                <span className="rounded bg-accent-wash px-1 text-[9px] font-semibold text-accent-ink">cover</span>
+              )}
+            </span>
           </td>
+          <td className={TD}><ExpiredCell row={r} /></td>
           <td className={TD}>{r.salePrice === 0 ? dash : `$${r.salePrice.toFixed(2)}`}</td>
           <td className={TD}>{money(r.grossProceeds)}</td>
           <td className={TD}>{moneyTone(r.netProceeds)}</td>
@@ -161,6 +181,7 @@ function SubtotalRow({ label, s }: { label: string; s: FutureActivitySubtotal })
       <td className={TD}></td>
       <td className={TD}>{moneyTone(-s.exerciseCost, "neg")}</td>
       <td className={TD}>{sh(s.sharesSold)}</td>
+      <td className={`${TD} text-warn`}>{sh(s.expiredShares)}</td>
       <td className={TD}></td>
       <td className={TD}>{money(s.grossProceeds)}</td>
       <td className={TD}>{moneyTone(s.netProceeds)}</td>

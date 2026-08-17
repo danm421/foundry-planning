@@ -207,6 +207,9 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
     ? calculateTaxYearBracket({
         year, filingStatus,
         earnedIncome: taxDetail.earnedIncome,
+        // Netted out of FICA / Additional Medicare only — still bracket-taxed,
+        // still in AGI, still earned income for the credit layer.
+        ficaExemptEarnedIncome: taxDetail.ficaExemptEarnedIncome,
         ordinaryIncome: Math.max(0, taxDetail.ordinaryIncome - interestIncomeForTax),
         interestIncome: interestIncomeForTax,
         qualifiedDividends: taxDetail.dividends,

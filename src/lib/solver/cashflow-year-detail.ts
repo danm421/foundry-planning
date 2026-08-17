@@ -79,9 +79,13 @@ export function buildNameMaps(clientData: ClientData) {
       otherInflowNames[`life-insurance-proceeds:${acc.id}`] = `Life Insurance: ${acc.name}`;
     }
   }
+  // NET cash, not sale proceeds: an exercise-and-hold pays the strike and
+  // receives nothing, so this line is NEGATIVE in that year. Calling it a
+  // "sale" described a transaction that never happened — a $25,000 strike
+  // payment read as "Equity Sale: ACME −25,000" under Other Inflows.
   for (const plan of clientData.stockOptionPlans ?? []) {
     otherInflowNames[`equity-proceeds:${plan.accountId}`] =
-      `Equity Sale: ${plan.ticker ?? plan.accountId}`;
+      `Equity Net Cash: ${plan.ticker ?? plan.accountId}`;
   }
 
   const expenseTypeById: Record<string, string> = {};

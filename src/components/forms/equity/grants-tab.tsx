@@ -7,6 +7,23 @@ import VestingGrid, { type TrancheRow, newTrancheKey } from "./vesting-grid";
 interface GrantsTabProps {
   clientId: string;
   accountId: string | null;
+  /**
+   * True when `?scenario=<id>` is set. Grant writes go straight to the
+   * base-case `/stock-option-accounts/.../grants` routes (there is no
+   * grant targetKind for the scenario writer), so a what-if edit here would
+   * permanently rewrite the base plan with no Changes-panel row and no undo.
+   * The list stays visible and readable; only the writes are blocked.
+   * Audit F14/F19; mirrors the Holdings tab.
+   */
+  scenarioActive: boolean;
+  /**
+   * Fires whenever the inline grant editor opens or closes. The parent dialog
+   * unmounts this whole tree when its own "Save Changes" succeeds, so a grant
+   * being typed — up to 48 hand-entered vesting rows — vanished with no prompt.
+   * The parent uses this to hold its primary button until the grant is saved or
+   * cancelled. Audit F42.
+   */
+  onEditorOpenChange?: (open: boolean) => void;
 }
 
 type GrantType = "rsu" | "nqso" | "iso";
@@ -93,6 +110,26 @@ function parseGrant(raw: Record<string, unknown>): GrantDisplay {
   };
 }
 
+/** A timing choice and the field it depends on have to arrive together.
+ *
+ *  A blank companion never failed — it fell through to a default that inverted
+ *  the strategy. "Hold then sell in <blank>" liquidates the whole position in
+ *  the vest year, "Percent per year" with a blank percent never sells a share,
+ *  and "Specific year" with a blank year silently means "at vest". Audit
+ *  F29/F40; mirrors the rule in `lib/schemas/stock-options.ts`. */
+function strategyCompanionError(state: GrantEditorState): string | null {
+  if (state.exerciseTiming === "specific_year" && !state.exerciseYear) {
+    return "Exercise year is required when exercise timing is a specific year.";
+  }
+  if (state.sellTiming === "hold_then_sell_year" && !state.sellYear) {
+    return "Sell year is required when sell timing is hold-then-sell.";
+  }
+  if (state.sellTiming === "percent_per_year" && !(Number(state.sellPercentPerYear) > 0)) {
+    return "Sell % per year must be above zero.";
+  }
+  return null;
+}
+
 /** Build grant-type-specific validation errors client-side so the server never 400s. */
 function validateEditor(state: GrantEditorState): string | null {
   if (!state.grantDate) return "Grant date is required.";
@@ -113,8 +150,45 @@ function validateEditor(state: GrantEditorState): string | null {
     if (!row.vestDate) return `Tranche ${i + 1}: vest date is required.`;
     const s = parseFloat(row.shares);
     if (isNaN(s) || s <= 0) return `Tranche ${i + 1}: shares must be a positive number.`;
+    // Shares flow vested → exercised → sold, so each bucket has to fit inside
+    // the one before it. Nothing enforced this: a 1,000-share row with 10,000
+    // in Exercised showed a "Remaining" of 0 (the old formula clamped the
+    // negative away) while the engine seeded all 10,000 as held shares — half a
+    // million dollars of stock conjured out of a typo. Audit F41.
+    const exercised = parseFloat(row.sharesExercised) || 0;
+    const sold = parseFloat(row.sharesSold) || 0;
+    if (state.grantType !== "rsu" && exercised > s) {
+      return `Tranche ${i + 1}: exercised shares cannot exceed the row's shares.`;
+    }
+    const acquired = state.grantType === "rsu" ? s : exercised;
+    if (sold > acquired) {
+      return state.grantType === "rsu"
+        ? `Tranche ${i + 1}: sold shares cannot exceed the row's shares.`
+        : `Tranche ${i + 1}: sold shares cannot exceed the exercised shares.`;
+    }
   }
-  return null;
+  // The vesting rows ARE the grant as far as the plan is concerned — the engine
+  // builds its timeline from them and never reads "Shares Granted". Nothing
+  // tied the two together, so a 10,000-share grant with one 4,000-share row
+  // vested $200,000 of $500,000 while the report kept printing 10,000, and a
+  // grant with no rows at all was worth nothing in the plan. Audit F39/F34.
+  const filled = state.tranches.filter(
+    (r) => r.vestDate || r.shares || r.sharesExercised || r.sharesSold,
+  );
+  // 83(b) is the one exception: the whole grant is acquired at the grant date,
+  // and both the timeline and the vesting schedule read `sharesGranted`
+  // directly rather than the rows.
+  const wholeGrantAt83b = state.grantType === "rsu" && state.has83bElection;
+  if (filled.length === 0 && !wholeGrantAt83b) {
+    return "Add at least one vesting row — the plan builds this grant from the rows, not from Shares Granted.";
+  }
+  if (filled.length > 0) {
+    const rowSum = filled.reduce((acc, r) => acc + (parseFloat(r.shares) || 0), 0);
+    if (Math.abs(rowSum - shares) > 1e-6) {
+      return `Vesting rows total ${rowSum.toLocaleString()} of ${shares.toLocaleString()} shares granted.`;
+    }
+  }
+  return strategyCompanionError(state);
 }
 
 /** Build the POST/PUT body from editor state. */
@@ -169,7 +243,11 @@ function buildBody(state: GrantEditorState) {
     sellYear,
     sellPercentPerYear,
     sellStartYear,
-    plannedEvents: [],
+    // `plannedEvents` is deliberately ABSENT, not empty. This editor has no
+    // screen for planned events, and the PUT route reads an absent key as
+    // "leave them alone". Sending `[]` deleted every event created through the
+    // API, which is what abandoned a grant on "manual" exercise timing.
+    // Audit F18/F33.
   };
 }
 
@@ -387,7 +465,16 @@ function GrantEditor({
                 <option value="at_vest">At vest</option>
                 <option value="specific_year">Specific year</option>
                 <option value="year_before_expiration">Year before expiration</option>
-                <option value="manual">Manual</option>
+                {/* "Manual" drives the exercise from planned events, and no
+                    screen can create one. Picked here, the engine exercises
+                    nothing and the whole grant lapses — a 10,000-share NQSO
+                    $400,000 over its strike reports $0 of proceeds.
+                    Offered only when a record already holds it, so opening an
+                    existing grant never silently rewrites the value.
+                    Audit F18/F33. */}
+                {state.exerciseTiming === "manual" && (
+                  <option value="manual">Manual (planned events — set via API)</option>
+                )}
               </select>
             </div>
             {state.exerciseTiming === "specific_year" && (
@@ -503,7 +590,12 @@ function GrantEditor({
   );
 }
 
-export default function GrantsTab({ clientId, accountId }: GrantsTabProps) {
+export default function GrantsTab({
+  clientId,
+  accountId,
+  scenarioActive,
+  onEditorOpenChange,
+}: GrantsTabProps) {
   const [grants, setGrants] = useState<GrantDisplay[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -541,6 +633,12 @@ export default function GrantsTab({ clientId, accountId }: GrantsTabProps) {
       void loadGrants();
     }
   }, [accountId, loadGrants]);
+
+  // Tell the parent dialog when a grant is mid-edit, so its "Save Changes"
+  // cannot close the dialog out from under it. Audit F42.
+  useEffect(() => {
+    onEditorOpenChange?.(editorOpen);
+  }, [editorOpen, onEditorOpenChange]);
 
   if (accountId == null) {
     return (
@@ -615,7 +713,7 @@ export default function GrantsTab({ clientId, accountId }: GrantsTabProps) {
   }
 
   async function handleSave(state: GrantEditorState) {
-    if (!grantsUrl) return;
+    if (!grantsUrl || scenarioActive) return;
     setSaving(true);
     setSaveError(null);
     try {
@@ -642,7 +740,7 @@ export default function GrantsTab({ clientId, accountId }: GrantsTabProps) {
   }
 
   async function handleDelete(grantId: string) {
-    if (!grantsUrl) return;
+    if (!grantsUrl || scenarioActive) return;
     setDeletingId(grantId);
     setLoadError(null);
     try {
@@ -660,6 +758,13 @@ export default function GrantsTab({ clientId, accountId }: GrantsTabProps) {
 
   return (
     <div className="space-y-4">
+      {scenarioActive && (
+        <p className="rounded-md border border-gray-700 bg-gray-800/60 px-3 py-3 text-sm text-gray-400">
+          Grants are edited on the base plan. Switch out of this scenario to add
+          or change grants.
+        </p>
+      )}
+
       {loadError && (
         <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{loadError}</p>
       )}
@@ -681,6 +786,7 @@ export default function GrantsTab({ clientId, accountId }: GrantsTabProps) {
             <GrantCard
               key={grant.id}
               grant={grant}
+              readOnly={scenarioActive}
               onEdit={() => openEditEditor(grant)}
               onDelete={() => {
                 if (deletingId === grant.id) return;
@@ -703,8 +809,9 @@ export default function GrantsTab({ clientId, accountId }: GrantsTabProps) {
         />
       )}
 
-      {/* Add grant button — hidden when editor is open */}
-      {!editorOpen && (
+      {/* Add grant button — hidden when the editor is open, and while a
+          scenario is active (grant writes are base-plan only). */}
+      {!editorOpen && !scenarioActive && (
         <button
           type="button"
           onClick={openAddEditor}

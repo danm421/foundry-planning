@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { assembleRebalanceResult, type RebalanceInputs } from "./assemble";
+import { REALIZED_COVERAGE_MIN } from "./panel-from-holdings";
 import type { MonthlyReturn } from "@/lib/cma-stats";
 
 const series = (vals: number[]): MonthlyReturn[] =>
@@ -76,5 +77,83 @@ describe("assembleRebalanceResult", () => {
     expect(out.realizedWindow.insufficientHistory).toBe(true);
     expect(out.current.realized).toBeNull();
     expect(out.proposed.realized).toBeNull();
+  });
+});
+
+/**
+ * Holdings with no price history are dropped from the realized series and the
+ * survivors renormalized to 100%, so a thinly-covered side reports stats for a
+ * portfolio nobody owns. These pin the guard that stops that reaching a client.
+ */
+describe("assembleRebalanceResult — realized coverage", () => {
+  /** Adds an uncovered holding worth `value` to the current side. */
+  const withUncoveredCurrent = (value: number): RebalanceInputs => {
+    const inputs = baseInputs();
+    inputs.currentHoldings = [
+      ...inputs.currentHoldings,
+      {
+        id: "h2",
+        securityId: "cash",
+        ticker: "SPAXX",
+        shares: value,
+        price: 1,
+        marketValue: value,
+        costBasis: value,
+        isTaxable: true,
+        securityWeights: [{ slug: "us_large_cap", weight: 1 }],
+        overrides: [],
+      },
+    ];
+    return inputs; // "cash" has no entry in currentReturnsBySecurity
+  };
+
+  it("reports the excluded tickers on each side", () => {
+    const out = assembleRebalanceResult(withUncoveredCurrent(1000));
+    expect(out.current.uncoveredTickers).toEqual(["SPAXX"]);
+    expect(out.proposed.uncoveredTickers).toEqual([]);
+  });
+
+  it("keeps realized stats when coverage clears the floor", () => {
+    // 10,000 covered of 11,000 → 90.9%
+    const out = assembleRebalanceResult(withUncoveredCurrent(1000));
+    expect(out.current.coveragePct).toBeGreaterThan(REALIZED_COVERAGE_MIN);
+    expect(out.realizedWindow.coverageSuppressed).toBe(false);
+    expect(out.current.realized).not.toBeNull();
+  });
+
+  it("suppresses BOTH sides when the current side is under-covered", () => {
+    // 10,000 covered of 40,000 → 25%, below the 50% floor
+    const out = assembleRebalanceResult(withUncoveredCurrent(30000));
+    expect(out.current.coveragePct).toBeLessThan(REALIZED_COVERAGE_MIN);
+    expect(out.realizedWindow.coverageSuppressed).toBe(true);
+    expect(out.current.realized).toBeNull();
+    // The proposed side is fully covered, but a one-sided comparison is not a
+    // comparison — withholding only the thin side would invite reading the
+    // survivor as the answer.
+    expect(out.proposed.realized).toBeNull();
+  });
+
+  it("suppresses when the PROPOSED side is under-covered", () => {
+    // The case the UI could never surface: it only ever showed current coverage.
+    const inputs = baseInputs();
+    inputs.targetHoldings = [
+      { securityId: "agg", ticker: "AGG", weight: 0.2 },
+      { securityId: "vt", ticker: "VT", weight: 0.8 }, // no returns loaded
+    ];
+    const out = assembleRebalanceResult(inputs);
+    expect(out.proposed.coveragePct).toBeCloseTo(0.2, 6);
+    expect(out.proposed.uncoveredTickers).toEqual(["VT"]);
+    expect(out.realizedWindow.coverageSuppressed).toBe(true);
+    expect(out.current.realized).toBeNull();
+    expect(out.proposed.realized).toBeNull();
+  });
+
+  it("leaves the forward-looking CMA stats untouched when coverage is suppressed", () => {
+    // CMA reads asset-class weights, not price history — an uncovered holding
+    // still carries its allocation, so those numbers stay valid and shown.
+    const out = assembleRebalanceResult(withUncoveredCurrent(30000));
+    expect(out.realizedWindow.coverageSuppressed).toBe(true);
+    expect(out.current.cma.geometricReturn).toBeCloseTo(0.1, 6);
+    expect(out.proposed.cma.geometricReturn).toBeCloseTo(0.03, 6);
   });
 });

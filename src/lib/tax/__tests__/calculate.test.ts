@@ -1194,3 +1194,51 @@ describe("calculateTaxYear — the clamp base creditsInOtherFromFlow relies on",
     expect({ taxCredits: result.flow.taxCredits, subpartA }).toEqual({ taxCredits: 780, subpartA: 780 });
   });
 });
+
+describe("calculateTaxYear — FICA-exempt wages (IRC §3121(a)(22))", () => {
+  // Income from a disqualifying disposition of ISO/ESPP stock is W-2 box 1
+  // wages for INCOME tax, but §3121(a)(22) excludes it from "wages" for FICA —
+  // so it belongs in the earned-income base and out of Social Security and
+  // Medicare. Additional Medicare (§3101(b)(2)) rides on the same §3121(a)
+  // definition, so it is excluded too.
+  //
+  // MFJ, $100,000 of salary + $100,000 of disqualifying-ISO income. The wage
+  // leg alone sits under the $184,500 Social Security wage base, so it costs a
+  // clean 7.65%; counting both legs pushes past the base.
+  const withExempt = calculateTaxYear(makeInput({
+    earnedIncome: 200_000,
+    ficaExemptEarnedIncome: 100_000,
+  }));
+  const allWages = calculateTaxYear(makeInput({
+    earnedIncome: 200_000,
+  }));
+
+  it("charges FICA on the wage leg only", () => {
+    expect(withExempt.flow.fica).toBeCloseTo(100_000 * 0.062 + 100_000 * 0.0145, 2); // 7,650
+    // SS capped at the 184,500 wage base; Medicare is uncapped.
+    expect(allWages.flow.fica).toBeCloseTo(184_500 * 0.062 + 200_000 * 0.0145, 2);   // 14,339
+  });
+
+  it("keeps the exempt leg in the income-tax base — it is still box 1 wages", () => {
+    expect(withExempt.income.earnedIncome).toBe(200_000);
+    expect(withExempt.flow.adjustedGrossIncome).toBe(allWages.flow.adjustedGrossIncome);
+    expect(withExempt.flow.regularFederalIncomeTax).toBe(allWages.flow.regularFederalIncomeTax);
+  });
+
+  it("keeps the exempt leg out of the Additional Medicare surtax base", () => {
+    // $300,000 of wages, $100,000 of it exempt → only $200,000 counts, which is
+    // under the $250,000 MFJ threshold, so the 0.9% surtax is zero.
+    const r = calculateTaxYear(makeInput({
+      earnedIncome: 300_000,
+      ficaExemptEarnedIncome: 100_000,
+    }));
+    expect(r.flow.additionalMedicare).toBe(0);
+    expect(calculateTaxYear(makeInput({ earnedIncome: 300_000 })).flow.additionalMedicare)
+      .toBeCloseTo(50_000 * 0.009, 2); // 450
+  });
+
+  it("defaults to treating all earned income as wages", () => {
+    expect(calculateTaxYear(makeInput({ earnedIncome: 200_000 })).flow.fica)
+      .toBeCloseTo(184_500 * 0.062 + 200_000 * 0.0145, 2);
+  });
+});
