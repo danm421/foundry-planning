@@ -25,12 +25,13 @@ export interface EquityPlannedEvent {
 
 export interface EquityVestTranche {
   id: string;
-  /** Real vest date, `YYYY-MM-DD`. The holding-period tests read THIS. */
+  /** Real vest date, `YYYY-MM-DD`. The ONLY vesting-time field.
+   *
+   *  The year-based strategy layer (`sellYear`, `exerciseYear`, `sellStartYear`
+   *  are year integers in the database) reads `yearOf(vestDate)` at the point of
+   *  use. Storing a `vestYear` alongside would be two fields that must agree —
+   *  the same footgun this group removed for cost basis. */
   vestDate: string;
-  /** Calendar year of `vestDate`. Kept because the strategy layer is year-based
-   *  end to end (`sellYear`, `exerciseYear`, `sellStartYear` are year integers in
-   *  the database). Derived from `vestDate`, never independently set. */
-  vestYear: number;
   shares: number;
   sharesExercised: number; // actuals
   sharesSold: number;      // actuals
@@ -50,10 +51,9 @@ export interface EquityGrant {
   id: string;
   grantNumber: string | null;
   grantType: GrantType;
-  /** Real grant date, `YYYY-MM-DD`. The §422(a)(1) two-year leg reads THIS. */
+  /** Real grant date, `YYYY-MM-DD`. The §422(a)(1) two-year leg reads THIS, and
+   *  it is the only grant-time field — see the note on `vestDate`. */
   grantDate: string;
-  /** Calendar year of `grantDate`. Kept for the year-based strategy layer. */
-  grantYear: number;
   sharesGranted: number;
   has83bElection: boolean;
   fmvAtGrant?: number | null;
