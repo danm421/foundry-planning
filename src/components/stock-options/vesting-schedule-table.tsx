@@ -130,7 +130,9 @@ export default function VestingScheduleTable({ model }: { model: VestingSchedule
         Vested = vested to date. Strike / Expires / Exercisable / Exercised apply to options only.
         ISO Exercised splits into <span className="text-good">✓ qual</span> (past the holding period — sells as LTCG)
         and <span className="text-warn">⧖ hold</span> (still in the window — selling now is a disqualifying disposition).
-        ISO split assumes shares were exercised at vest.
+        Holding periods are counted in whole years and assume these shares were exercised two years
+        before the plan begins — the same rule and the same assumption the plan&rsquo;s tax ledger uses,
+        so this badge and the Future Activity tab cannot disagree.
       </p>
     </div>
   );

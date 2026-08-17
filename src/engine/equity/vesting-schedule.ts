@@ -1,5 +1,6 @@
 import type { StockOptionPlan, EquityGrant, GrantType } from "./types";
 import { projectFmv, resolveStrikePrice } from "./price-model";
+import { isQualifyingIsoDisposition, assumedPrePlanAcquisitionYear } from "./holding-period";
 
 export interface IsoSplit {
   qualified: number; // exercised ISO shares past the holding period (LTCG-eligible)
@@ -129,7 +130,7 @@ function buildRow(plan: StockOptionPlan, grant: EquityGrant, ctx: RowCtx): Vesti
     vested,
     exercisable: isOption ? Math.max(0, vested - exercisedTotal) : null,
     exercised: isOption ? exercisedTotal : null,
-    isoSplit: isoSplitFor(grant, asOfYear),
+    isoSplit: isoSplitFor(grant, asOfYear, planStartYear),
     sold: soldTotal,
     futureByYear,
     futurePlus,
@@ -139,19 +140,33 @@ function buildRow(plan: StockOptionPlan, grant: EquityGrant, ctx: RowCtx): Vesti
   };
 }
 
-/** ISO qualified/holding split for exercised shares.
- *  Qualifying disposition needs held ≥2y from grant AND ≥1y from exercise.
- *  We lack actual exercise dates (tranches store counts only), so we assume
- *  exercise happened at the tranche vest year → qualifyYear = max(grantYear+2, vestYear+1).
- *  An exercised tranche's shares are "qualified" once asOfYear ≥ qualifyYear. */
-function isoSplitFor(grant: EquityGrant, asOfYear: number): IsoSplit | null {
+/** ISO qualified/holding split for shares the client has ALREADY exercised.
+ *
+ *  Answers exactly the question the tax ledger answers when those shares are
+ *  sold — through the same `isQualifyingIsoDisposition`, on the same assumed
+ *  exercise year — so the badge cannot promise a treatment the plan will not
+ *  give. It used to ask `max(grantYear + 2, vestYear + 1)`, a full year looser
+ *  than the ledger's rule, and to assume exercise happened at vest while the
+ *  ledger assumed two years before the plan: a 2024 ISO read "qualified" on
+ *  this screen while a 2026 sale took the disqualifying path. Audit F17/F47.
+ *
+ *  ⚠️ Both the rule and the exercise year are approximations the database
+ *  forces (see `holding-period.ts`). G8 replaces them with real dates. */
+function isoSplitFor(grant: EquityGrant, asOfYear: number, planStartYear: number): IsoSplit | null {
   if (grant.grantType !== "iso") return null;
+  // These shares were exercised before the plan began; the ledger seeds them at
+  // `assumedPrePlanAcquisitionYear` and so must this.
+  const exerciseYear = assumedPrePlanAcquisitionYear(planStartYear);
   let qualified = 0;
   let holding = 0;
   for (const t of grant.tranches) {
     if (t.sharesExercised <= 0) continue;
-    const qualifyYear = Math.max(grant.grantYear + 2, t.vestYear + 1);
-    if (asOfYear >= qualifyYear) qualified += t.sharesExercised;
+    const isQualified = isQualifyingIsoDisposition({
+      grantYear: grant.grantYear,
+      exerciseYear,
+      dispositionYear: asOfYear,
+    });
+    if (isQualified) qualified += t.sharesExercised;
     else holding += t.sharesExercised;
   }
   if (qualified + holding === 0) return null;

@@ -68,6 +68,16 @@ describe("ISO exercise + AMT", () => {
 });
 
 describe("ISO disqualifying disposition", () => {
+  // ⚠️ Which side of the line a sale falls on is decided by `holding-period.ts`,
+  // NOT by these tests. That module reads whole years because whole years are
+  // all the database stores, and it says so at length: `>= 3` from grant and
+  // `>= 2` from exercise are the CONSERVATIVE readings of "more than 2 years"
+  // and "more than 1 year", and they over-tax the ambiguous middle. Audit
+  // F26/F27/F46. The cases below therefore pin the FORMULA — lesser-of, the
+  // residual, the long/short split — and take the boundary as given; the
+  // boundary's own legal divergence is characterized in holding-period.test.ts,
+  // which is the file G8 has to update.
+  //
   // Exercise in 2027 @ strike 10, fmvAtExercise 100, 100 shares, then drive the sale price by
   // overriding lot fields + plan.pricePerShare so the exact f-per-share is deterministic.
   function exerciseAndPrep(grantOver: Partial<EquityGrant>, sellYear: number) {
@@ -95,8 +105,8 @@ describe("ISO disqualifying disposition", () => {
   });
 
   it("caps OI at the actual sale gain and books NO cap gain/loss when price falls but stays above strike", () => {
-    // grant 2027 so 2029 sale fails the 3yr-from-grant test (disqualifying) but passes the
-    // 2yr-from-exercise proxy → long-term residual. f = 60.
+    // grant 2027 so the 2029 sale fails the grant leg (disqualifying) but clears the
+    // exercise leg → long-term residual. f = 60.
     // OI = lesser(spread 90, sale gain 50) = 50/sh → 5,000. residual = 0.
     const { p, st } = exerciseAndPrep({ grantYear: 2027 }, 2029);
     p.pricePerShare = 60; p.growthRate = 0;
@@ -113,7 +123,7 @@ describe("ISO disqualifying disposition", () => {
     p.pricePerShare = 5; p.growthRate = 0;
     const r = computeEquityYear(p, st, 2029);
     expect(r.ordinaryIncome).toBeCloseTo(0, 2);
-    expect(r.capitalGains).toBeCloseTo(-500, 2); // 2029−2027 ≥2yr → long-term
+    expect(r.capitalGains).toBeCloseTo(-500, 2); // clears the exercise leg → long-term
     expect(r.stCapitalGains).toBeCloseTo(0, 2);
   });
 
@@ -124,7 +134,7 @@ describe("ISO disqualifying disposition", () => {
     p.pricePerShare = 150; p.growthRate = 0;
     const r = computeEquityYear(p, st, 2028);
     expect(r.ordinaryIncome).toBeCloseTo(9000, 2);
-    expect(r.stCapitalGains).toBeCloseTo(5000, 2); // held <2yr → short-term
+    expect(r.stCapitalGains).toBeCloseTo(5000, 2); // fails the exercise leg → short-term
     expect(r.capitalGains).toBeCloseTo(0, 2);
   });
 });
