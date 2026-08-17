@@ -113,17 +113,25 @@ const TERM_OF_ART = String.raw`(?<![$\p{N},.])(?:(?:529|1031|1040|1099)(?![\p{N}
  * `validate/facts.ts#extractFigures` on purpose — that one decides what a MODEL
  * may quote from a pack we control, this one decides what leaves a household.
  *
- * Both ends are closed against welding the stand-in to a neighbouring word, and
- * both were found by reading output rather than by an assertion:
+ * The TRAILING end is closed against welding the stand-in to a neighbouring
+ * word, found by reading output rather than by an assertion: the whitespace in
+ * `(?:\s*(?:[KMB]\b|%))?` sits INSIDE the magnitude group ("96 %") — outside,
+ * it is eaten even when no magnitude follows, so "in 2035 and" came out as "in
+ * that amountand". `\p{L}*` takes any letters glued to the digits, so an
+ * ordinal or a decade goes whole — "January 1st" and "the mid-2030s" came out
+ * as "that amountst" and "that amounts" before it, and it also guarantees the
+ * character after a match is never a letter, which is what makes the weld
+ * impossible rather than merely unobserved.
  *
- *   LEADING   the whitespace sits INSIDE the magnitude group ("96 %"). Outside,
- *             it is eaten even when no magnitude follows, so "in 2035 and" came
- *             out as "in that amountand".
- *   TRAILING  `\p{L}*` takes any letters glued to the digits, so an ordinal or a
- *             decade goes whole — "January 1st" and "the mid-2030s" came out as
- *             "that amountst" and "that amounts". It also guarantees the
- *             character after a match is never a letter, which is what makes the
- *             weld impossible rather than merely unobserved.
+ * ⚠️ The LEADING end is NOT closed — there is no `(?<!\p{L})` guard — and this
+ * is a known, accepted gap, not an oversight: a digit run stuck directly onto
+ * a preceding letter still welds. Measured: `"Q3 was fine."` → `"Qthat amount
+ * was fine."`, `"COVID19 changed things."` → `"COVIDthat amount changed
+ * things."`, `"Room B12 upstairs."` → `"Room Bthat amount upstairs."`. Closing
+ * it is a behaviour change — a token like `"Q3"` would then survive whole as a
+ * figure-bearing one, leaking a real digit instead of welding a stand-in to a
+ * letter — so it needs its own tests and is deliberately left open here,
+ * logged as future-work (P2 E7 L4).
  *
  * A comma only counts as a thousands separator when digits follow it. Written
  * `[\d,]*`, it also swallows the comma ENDING a clause — "Work ends in 2035, and
