@@ -4,10 +4,20 @@ import { z } from "zod";
 import { CHAPTER_IDS } from "@/lib/presentations/story/types";
 
 /**
- * The bound BOTH voice texts carry, and the reason is the same one twice: every
- * character here is spent in the system prompt of all fourteen chapters, four
- * samples plus the note at a time. It is what keeps a generation affordable, and
- * it is a bound on two otherwise unlimited writes to `text` columns.
+ * The bound BOTH voice texts carry at SUBMISSION — this schema validates what
+ * the advisor sends, not what ends up stored. It is a bound on two otherwise
+ * unlimited writes to `text` columns, and the reason is the same one twice:
+ * every character is spent in the system prompt of all fourteen chapters, four
+ * samples plus the note at a time. It is what keeps a generation affordable.
+ *
+ * ⚠️ For a SAMPLE (not the style note), the STORED value can run longer than
+ * this: `voice/scrub.ts` replaces every figure with a longer stand-in word
+ * ("$1,200" → "that amount"), so scrubbing GROWS the string. Measured on a
+ * realistic worst case (a 2,000-character sample of nothing but figures,
+ * `"We move $1,200 a month at 6.5% from 2026 to 2035."` repeated): stores at
+ * 2,799 characters, +40%. Four such samples in one chapter's system prompt is
+ * ~11,200 characters, not 8,000. The style note is not scrubbed, so its
+ * stored length does equal what was submitted.
  *
  * 2,000 characters is roughly three paragraphs of guidance, and — at the
  * 6.3-6.9 characters per word this document's own prose runs to — about 290-315
@@ -17,7 +27,7 @@ import { CHAPTER_IDS } from "@/lib/presentations/story/types";
  * 300-word chapter of short words fits; one of long words runs about seventy
  * characters over and is refused. Room for a typical chapter, not a promise
  * about every one — `db/schema.ts` hedges it as "about one long chapter", and
- * that is the accurate reading.
+ * that is the accurate reading of what was SUBMITTED, not what ends up stored.
  *
  * ⚠️ It is FAR below the 20,000 an advisor may write into a chapter
  * (`planStoryChapterPatchSchema.editedText`), so a harvest of a long edited
