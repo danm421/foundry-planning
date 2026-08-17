@@ -350,6 +350,10 @@ describe("PlanStoryChapterPdf — a strategy card whose WHAT was refused", () =>
   it("prints no heading when there is nothing left to introduce", () => {
     const out = printed({ name: "Save more", what: "", detail: "" });
     expect(out).not.toContain("WHAT WE'D DO");
+    // `detail` is also "" here, so its own heading has to be suppressed the
+    // same way `what`'s is — the pairing `chapter-pdf.tsx:266` states in its
+    // comment ("Conditional for the same reason 'what it does' below is").
+    expect(out).not.toContain("WHAT IT DOES");
     // …and the card is still a card: its name survives the refusal.
     expect(out).toContain("Save more");
   });
