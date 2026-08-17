@@ -9,6 +9,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { PlanStoryChapterRow } from "@/db/schema";
 import type { StoryContext } from "@/lib/presentations/story/types";
+import { GATE_VERSION } from "@/lib/presentations/story/validate";
 
 const m = vi.hoisted(() => ({
   loadStoryContext: vi.fn(),
@@ -72,8 +73,12 @@ const row = (over: Partial<PlanStoryChapterRow>): PlanStoryChapterRow => ({
   documentRole: "standalone",
   chapterId: "planInOnePage",
   generatedText: null,
+  generatedAt: null,
+  generatedByUserId: null,
   editedText: null,
+  editedAt: null,
   sourceHash: null,
+  gateVersion: GATE_VERSION,
   aiSuppressed: false,
   error: null,
   reviewedAt: null,

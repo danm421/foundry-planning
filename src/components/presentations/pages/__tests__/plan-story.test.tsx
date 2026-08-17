@@ -316,6 +316,72 @@ describe("PlanStoryChapterPdf — the twoUp layout", () => {
   });
 });
 
+describe("PlanStoryChapterPdf — a strategy card whose WHAT was refused", () => {
+  const CARDS = chapter({
+    chapterId: "whatWeRecommend",
+    title: "What we're recommending, and why",
+    layout: "strategyCards",
+    paragraphs: ["Two changes."],
+  });
+
+  function printed(strategy: PlanStoryChapterView["strategies"][number]): string[] {
+    return textOf(
+      PlanStoryChapterPdf({
+        chapter: { ...CARDS, strategies: [strategy] },
+        accent: FRAME.accent,
+        eyebrow: "Your Plan · Proposed",
+      }),
+    );
+  }
+
+  it("prints the heading over the words it introduces", () => {
+    const out = printed({ name: "Save more", what: "Teresa's 401(k)", detail: "" });
+    expect(out).toContain("WHAT WE'D DO");
+    expect(out).toContain("Teresa's 401(k)");
+  });
+
+  /**
+   * `buildPlanStoryData` hands back `what: ""` when every row's `what` carried a
+   * figure the fact pack does not hold — a savings rule's derived name, in the
+   * changes table's own rounding. A heading printed over the resulting blank
+   * reads to a client as a rendering failure rather than as a withheld figure,
+   * so the heading goes with it. The same rule "what it does" already keeps.
+   */
+  it("prints no heading when there is nothing left to introduce", () => {
+    const out = printed({ name: "Save more", what: "", detail: "" });
+    expect(out).not.toContain("WHAT WE'D DO");
+    // `detail` is also "" here, so its own heading has to be suppressed the
+    // same way `what`'s is — the pairing `chapter-pdf.tsx:266` states in its
+    // comment ("Conditional for the same reason 'what it does' below is").
+    expect(out).not.toContain("WHAT IT DOES");
+    // …and the card is still a card: its name survives the refusal.
+    expect(out).toContain("Save more");
+  });
+
+  /**
+   * ⚠️ The MODAL outcome of the `what` refusal, and it is not "a card that lost
+   * one line". For an ungrouped savings-rule EDIT the strategy's name is the
+   * derived target name too (`build-facts.ts#nameFromRow`), so `usableName`
+   * blanks it for its `·` while `quotableDetail` refuses the identical string as
+   * `what` — and the edit's own `detail[0]` is `"on <account>"`, which carries no
+   * figure and grounds. What a client actually gets is a bordered box with a
+   * blank name line and one line under it.
+   *
+   * The nameless half predates this plan (`usableName` and the unconditional
+   * name `<Text>` are both at the merge-base); this pins the whole shape so the
+   * cost is written down where someone changing either half will see it.
+   */
+  it("draws a blank name line and only WHAT IT DOES for the composite refusal", () => {
+    const out = printed({ name: "", what: "", detail: "on 401(k)" });
+    expect(out).not.toContain("WHAT WE'D DO");
+    expect(out).toContain("WHAT IT DOES");
+    expect(out).toContain("on 401(k)");
+    // The blank name line is DRAWN — the card is not empty, so nothing filters
+    // it, and `textOf` collects the "" its name `<Text>` emits.
+    expect(out).toContain("");
+  });
+});
+
 describe("PlanStoryChapterPdf — the checklist layout", () => {
   const STEPS = [
     { text: "Open the Roth account and fund it for this year.", owner: "Cooper", when: "Before 15 April" },

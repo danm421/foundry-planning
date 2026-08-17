@@ -1,6 +1,13 @@
 import type { Fact } from "../facts";
 
-export type GateId = "facts" | "readability" | "advice" | "voice" | "labels" | "register";
+export type GateId =
+  | "facts"
+  | "readability"
+  | "advice"
+  | "voice"
+  | "labels"
+  | "register"
+  | "foreignName";
 
 export interface GateFailure {
   gate: GateId;

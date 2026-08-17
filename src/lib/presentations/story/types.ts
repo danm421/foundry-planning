@@ -54,6 +54,77 @@ export function isChapterId(value: string): value is ChapterId {
   return (CHAPTER_IDS as readonly string[]).includes(value);
 }
 
+/**
+ * The register one chapter is written in, chosen by the advisor per chapter.
+ *
+ * A closed list, and the ONE spelling of it: `options-schema.ts` builds the only
+ * `z.enum` over it — the schema the saved deck, the generate body and the
+ * staleness query are all validated against — and `prompts.ts` keys a `Record` on
+ * the type. So a fourth tone cannot be accepted on one path and refused on
+ * another, and cannot reach the prompt without a line to write it in: the
+ * compiler asks for one.
+ */
+export const CHAPTER_TONES = ["warm", "plain", "direct"] as const;
+export type ChapterTone = (typeof CHAPTER_TONES)[number];
+
+/** How much prose to ask for. One list, read by the schemas and by the modifier
+ *  `registry.ts` keys on it — the same rule as the tones above. */
+export const CHAPTER_LENGTHS = ["short", "standard", "full"] as const;
+export type ChapterLength = (typeof CHAPTER_LENGTHS)[number];
+
+export interface ChapterStyle {
+  tone: ChapterTone;
+  length: ChapterLength;
+}
+
+/**
+ * What a chapter is written in when nobody has said otherwise.
+ *
+ * ⚠️ Both values are load-bearing, not arbitrary. `TONE_LINE.warm` is the exact
+ * sentence the system prompt carried before this setting existed and
+ * `LENGTH_MODIFIER.standard` is the empty string, so a default-style prompt is
+ * BYTE-IDENTICAL to the pre-setting one — which is what lets a chapter already
+ * generated keep its stored `sourceHash` instead of reading stale on the deploy
+ * that adds the setting. `chapters/__tests__/prompts.test.ts` pins that against
+ * fourteen hashes recorded before the change.
+ *
+ * ⚠️ ONE EXCEPTION, and it is not the style's: `chapters/prompts.ts#singleLine`
+ * NORMALISES the household name fields. A record whose `firstNames` or
+ * `householdName` is PADDED with whitespace, or carries a CR or LF ANYWHERE,
+ * hashes differently across this deploy and reads stale once, clearing on the
+ * next generation. Internal spacing that is neither — a double space, a tab, a
+ * U+2028 — is left exactly as stored and moves nothing.
+ *
+ * Measured, not reasoned, and in the direction the deploy runs: with
+ * `firstNames = "  Alan and Teresa  "` the prompts differ in both halves, and
+ * the hash the run STORED (`62ce3f36…`) is rebuilt as `b54b08f3…` — which is the
+ * hash a clean name has always produced, since the trim makes the two records
+ * agree. A name already clean — every fixture, and the ordinary record — is
+ * byte-identical.
+ */
+export const DEFAULT_CHAPTER_STYLE: ChapterStyle = { tone: "warm", length: "standard" };
+
+/**
+ * One partial style map, filled out to every chapter.
+ *
+ * ⭐ ONE spelling, called by BOTH sides of the staleness comparison. The two
+ * sides read the map off different transports and cannot share one — the
+ * generate route takes a JSON body, the staleness route a GET query — but a
+ * chapter the advisor never touched has to resolve to the same style on both, or
+ * the hash the run stored is not the hash the check rebuilds and the chapter
+ * reads permanently out of date with nothing able to clear it.
+ *
+ * Each gap is filled with a COPY, so the fourteen keys cannot alias one mutable
+ * object; `options-schema.ts` copies its own default map for the same reason.
+ */
+export function resolveChapterStyles(
+  partial: Partial<Record<ChapterId, ChapterStyle>> | undefined,
+): Record<ChapterId, ChapterStyle> {
+  return Object.fromEntries(
+    CHAPTER_IDS.map((id) => [id, partial?.[id] ?? { ...DEFAULT_CHAPTER_STYLE }]),
+  ) as Record<ChapterId, ChapterStyle>;
+}
+
 export interface StoryHousehold {
   /** "Alan and Teresa" — used sparingly in the prose. */
   firstNames: string;

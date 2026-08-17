@@ -3,10 +3,20 @@ import { db } from "@/db";
 import { crmHouseholds, clients, crmHouseholdDocuments, generationRuns } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { savePlanToVault } from "@/lib/crm/vault-plans";
+import { recordAudit } from "@/lib/audit";
+import { renderPresentationPdf } from "@/components/presentations/render-presentation-pdf";
 
 // Capture after() callbacks so the test can await the background work
 // deterministically instead of racing the real DB.
-const { afterTasks } = vi.hoisted(() => ({ afterTasks: [] as Array<Promise<unknown>> }));
+const { afterTasks, unreviewed } = vi.hoisted(() => ({
+  afterTasks: [] as Array<Promise<unknown>>,
+  // The soft gate's one DB read, mocked here rather than seeded through real
+  // `plan_story_chapters` rows — this suite is about the ROUTE's wiring
+  // (audits when told to, stays soft either way), not about the gate's own
+  // counting, which `export-gate.test.ts` already covers against the real
+  // options schema (`planStoryOptionsSchema`) and `printedChapters`.
+  unreviewed: vi.fn(),
+}));
 
 vi.mock("@/lib/db-helpers", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/db-helpers")>();
@@ -67,6 +77,14 @@ vi.mock("@/components/presentations/render-presentation-pdf", async (importOrigi
 vi.mock("@/lib/crm/vault-plans", () => ({
   savePlanToVault: vi.fn(),
 }));
+vi.mock("@/lib/audit", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/audit")>();
+  return { ...actual, recordAudit: vi.fn().mockResolvedValue(undefined) };
+});
+vi.mock("@/lib/presentations/story/export-gate", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/presentations/story/export-gate")>();
+  return { ...actual, unreviewedStoryChapters: unreviewed };
+});
 
 import { POST } from "../route";
 
@@ -91,6 +109,12 @@ beforeEach(async () => {
   documentId = d.id;
   vi.mocked(savePlanToVault).mockClear();
   vi.mocked(savePlanToVault).mockResolvedValue({ id: documentId } as never);
+  vi.mocked(recordAudit).mockClear();
+  // Default: no story page in the deck, so the gate has nothing to report —
+  // matches `unreviewedStoryChapters`'s own real behaviour for a deck that
+  // never mentions "planStory".
+  unreviewed.mockReset();
+  unreviewed.mockResolvedValue([]);
 });
 
 function req(body: unknown, query = "") {
@@ -150,5 +174,117 @@ describe("POST presentations/runs", () => {
       params: Promise.resolve({ id: "00000000-0000-0000-0000-000000000000" }),
     });
     expect(res.status).toBe(403);
+  });
+});
+
+// The spec's decision: "A soft, audited export gate on unreviewed chapters
+// rather than a hard block." These tests are about the ROUTE's wiring only —
+// that it never refuses an export over the count, that it audits the count
+// when there's something to audit, and that it stays silent when there isn't.
+// `unreviewedStoryChapters` itself, and its counting rules, are
+// `export-gate.test.ts`'s job.
+describe("POST /presentations/runs — the soft gate", () => {
+  const storyBody = {
+    scenarioId: null,
+    pages: [{ pageId: "planStory", options: {} }],
+  };
+  // Reused across every test below rather than repeated per-`it` — one
+  // shape, so the fixture cannot drift between the tests that read it.
+  const EIGHT_OF_TWELVE = {
+    pageId: "planStory",
+    scenarioId: "base",
+    documentRole: "standalone",
+    unreviewed: 8,
+    total: 12,
+  };
+
+  it("exports anyway, because the gate is soft", async () => {
+    unreviewed.mockResolvedValue([EIGHT_OF_TWELVE]);
+    const res = await POST(req(storyBody), { params: Promise.resolve({ id: clientId }) });
+    expect(res.status).toBe(202);
+  });
+
+  it("puts the count on the JSON response, so the launcher can warn before the file exists", async () => {
+    unreviewed.mockResolvedValue([EIGHT_OF_TWELVE]);
+    const res = await POST(req(storyBody), { params: Promise.resolve({ id: clientId }) });
+    const json = await res.json();
+    expect(json.storyReview).toEqual([EIGHT_OF_TWELVE]);
+  });
+
+  it("audits the unreviewed count, which is what makes it a gate at all", async () => {
+    unreviewed.mockResolvedValue([EIGHT_OF_TWELVE]);
+    await POST(req(storyBody), { params: Promise.resolve({ id: clientId }) });
+    // The write is filed from inside after() — see route.ts's own comment on
+    // why: an audited row means "this happened", so it fires beside
+    // `presentations.export_pdf`, after the render lands, not ahead of it.
+    await Promise.all(afterTasks);
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "plan_story.exported_unreviewed",
+        metadata: expect.objectContaining({ unreviewed: 8, total: 12 }),
+      }),
+    );
+  });
+
+  it("files NO such row when every chapter has been read", async () => {
+    unreviewed.mockResolvedValue([{ ...EIGHT_OF_TWELVE, unreviewed: 0 }]);
+    await POST(req(storyBody), { params: Promise.resolve({ id: clientId }) });
+    await Promise.all(afterTasks);
+    // Positive control: the export itself still ran and audited normally —
+    // proves the assertion below is "the gate stayed silent", not "nothing
+    // ran" or "the request failed before any audit call was reachable".
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "presentations.export_pdf" }),
+    );
+    expect(recordAudit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "plan_story.exported_unreviewed" }),
+    );
+  });
+
+  it("audits on the download=1 branch too — the audit is what carries the compliance weight on both paths", async () => {
+    unreviewed.mockResolvedValue([EIGHT_OF_TWELVE]);
+    const res = await POST(req(storyBody, "?download=1"), {
+      params: Promise.resolve({ id: clientId }),
+    });
+    // Soft: the download still lands...
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/pdf");
+    // ...but the row is filed anyway (synchronously — this branch has no
+    // after() of its own), on the branch whose response cannot carry a
+    // `storyReview` payload (it IS the file).
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "plan_story.exported_unreviewed",
+        metadata: expect.objectContaining({ unreviewed: 8, total: 12 }),
+      }),
+    );
+  });
+
+  it("never audits an export that fails before it renders — 'audited' means it happened", async () => {
+    unreviewed.mockResolvedValue([EIGHT_OF_TWELVE]);
+    vi.mocked(renderPresentationPdf).mockRejectedValueOnce(new Error("render blew up"));
+    const res = await POST(req(storyBody), { params: Promise.resolve({ id: clientId }) });
+    expect(res.status).toBe(202); // createQueuedRun already ran; the failure is in after()
+    await Promise.all(afterTasks);
+    expect(recordAudit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "plan_story.exported_unreviewed" }),
+    );
+  });
+
+  // The twin of the test above, for the OTHER branch: the ordering guarantee
+  // (audit only after a render lands) is a claim about the route, not about
+  // one branch of it, and the two branches call `auditUnreviewedStory` from
+  // two different places in the file — each needs its own failing-render
+  // case to be pinned rather than assumed from the other's.
+  it("never audits an export that fails before it renders, on the download=1 branch too", async () => {
+    unreviewed.mockResolvedValue([EIGHT_OF_TWELVE]);
+    vi.mocked(renderPresentationPdf).mockRejectedValueOnce(new Error("render blew up"));
+    const res = await POST(req(storyBody, "?download=1"), {
+      params: Promise.resolve({ id: clientId }),
+    });
+    expect(res.status).toBe(500); // no try/catch of its own on this branch — the outer catch
+    expect(recordAudit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "plan_story.exported_unreviewed" }),
+    );
   });
 });

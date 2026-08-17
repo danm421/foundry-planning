@@ -11,11 +11,15 @@ import type { NextRequest } from "next/server";
  * them, WITH WHICH CLIENT ID, and before which write — never that a gate itself
  * decides correctly.
  *
- * The client-id half is load-bearing rather than tidy. Both write paths are
- * upserts, so an authorized-but-different client id does not harmlessly match
- * zero rows — it CREATES one. "The gate rejects" tests cannot see that: a
- * rejected gate rejects for everybody, and says nothing about who was checked.
- * So every route below asserts the argument as well as the call, and
+ * The client-id half is load-bearing rather than tidy. Two of the three repo
+ * writers the PATCH handler calls (`updateChapterText`, `markChapterReviewed`)
+ * are upserts, so an authorized-but-different client id does not harmlessly
+ * match zero rows — it CREATES one. The third, `clearChapterReviewed`, is a
+ * plain UPDATE, where the same mistake fails differently: it matches nothing
+ * and silently no-ops, which reads as an un-review that landed when nothing
+ * changed. Either way "the gate rejects" tests cannot see it: a rejected gate
+ * rejects for everybody, and says nothing about who was checked. So every
+ * route below asserts the argument as well as the call, and
  * `requireActiveSubscriptionForFirm` — whose return is void and discarded, so
  * tsc cannot see its removal — is pinned by order as well.
  *
@@ -37,10 +41,14 @@ const mocks = vi.hoisted(() => ({
   requireActiveSubscriptionForFirm: vi.fn(),
   recordAudit: vi.fn(),
   listStoryChapters: vi.fn(),
+  loadStoryChapter: vi.fn(),
   updateChapterText: vi.fn(),
   markChapterReviewed: vi.fn(),
+  clearChapterReviewed: vi.fn(),
   upsertGeneratedChapter: vi.fn(),
   loadStoryContext: vi.fn(),
+  loadVoiceProfile: vi.fn(),
+  listVoiceSamples: vi.fn(),
   generateChapter: vi.fn(),
   checkPlanStoryRateLimit: vi.fn(),
   /** What `select ... from scenarios where id = ? and client_id = ?` returns. */
@@ -90,14 +98,37 @@ vi.mock("@/lib/presentations/story/repo", async () => {
   return {
     ...actual,
     listStoryChapters: mocks.listStoryChapters,
+    // A READER, unlike the three below it — but mocked for the same reason: it
+    // goes to the database. `hasNewerGeneration` stays REAL, so the accept
+    // guard's decision is exercised rather than restated.
+    loadStoryChapter: mocks.loadStoryChapter,
     updateChapterText: mocks.updateChapterText,
     markChapterReviewed: mocks.markChapterReviewed,
+    clearChapterReviewed: mocks.clearChapterReviewed,
     upsertGeneratedChapter: mocks.upsertGeneratedChapter,
   };
 });
 
 vi.mock("@/lib/presentations/story/load-context", () => ({
   loadStoryContext: mocks.loadStoryContext,
+}));
+
+// The other half of `loadStoryRun`. Both readers go to the database, and the
+// `@/db` stub above answers only the scenario lookup — so they are replaced
+// here for the same reason `loadStoryContext` is: this file tests the routes,
+// not the voice tables. `resolveVoice` still runs for real, which is what makes
+// the hashes below the ones a run would store.
+//
+// ⚠️⚠️ They are spies as well as stubs, and each route asserts the IDENTITY it
+// asked them for. `loadStoryRun` takes `firmId` and `advisorUserId` as two
+// plain strings, so handing it the client id, the org id or the other route's
+// firm compiles perfectly — and the two routes would then resolve different
+// voices, hash differently, and flag every chapter of every report out of date
+// forever. `run-context.test.ts` pins the HELPER; only this file can pin what
+// the routes feed it.
+vi.mock("@/lib/presentations/story/voice/repo", () => ({
+  loadVoiceProfile: mocks.loadVoiceProfile,
+  listVoiceSamples: mocks.listVoiceSamples,
 }));
 
 vi.mock("@/lib/presentations/story/generate", () => ({
@@ -116,12 +147,15 @@ vi.mock("@/lib/rate-limit", async () => {
 import { ForbiddenError } from "@/lib/authz";
 import { GET } from "../route";
 import { GET as GET_STALE } from "../stale/route";
+import { GET as GET_FACTS } from "../facts/route";
 import { POST } from "../generate/route";
 import { PATCH } from "../[chapterId]/route";
 import { chapterSourceHash } from "@/lib/presentations/story/chapters/prompts";
+import { EMPTY_VOICE } from "@/lib/presentations/story/voice/resolve";
+import { GATE_VERSION } from "@/lib/presentations/story/validate";
 
 import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
-import { CHAPTER_IDS } from "@/lib/presentations/story/types";
+import { CHAPTER_IDS, DEFAULT_CHAPTER_STYLE } from "@/lib/presentations/story/types";
 import type { StoryContext } from "@/lib/presentations/story/types";
 
 /**
@@ -184,19 +218,44 @@ const jsonReq = (body: unknown): NextRequest =>
 const chapterRow = (over: Partial<Record<string, unknown>> = {}) => ({
   chapterId: "planInOnePage",
   generatedText: null,
+  generatedAt: null,
+  generatedByUserId: null,
   editedText: null,
+  editedAt: null,
   sourceHash: null,
+  // Defaulted at the CURRENT version, not the column's own `.default(1)` —
+  // otherwise every existing fixture in this file that sets a real hash newly
+  // reports stale, for a dimension it is not testing.
+  gateVersion: GATE_VERSION,
   aiSuppressed: false,
   error: null,
   reviewedAt: null,
   ...over,
 });
 
+/** An edited chapter the model has since rewritten — the state the panel has to
+ *  announce, and the one confirmed live on a real household. */
+const EDITED_AT = new Date("2026-08-14T11:00:00.000Z");
+const REWRITTEN_AT = new Date("2026-08-14T12:00:00.000Z");
+
+/** The row "Use the new version instead" is legitimately pressed on: the
+ *  advisor's words, with a newer generation stored behind them. */
+const shadowedRow = () =>
+  chapterRow({
+    generatedText: "The model's rewrite.",
+    generatedAt: REWRITTEN_AT,
+    editedText: "My words.",
+    editedAt: EDITED_AT,
+  });
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.scenarioRows = [];
   mocks.requireOrgId.mockResolvedValue("org_1");
   mocks.requireOrgAndUser.mockResolvedValue({ orgId: "org_1", userId: "user_1" });
+  // No stored voice, so every hash below is the empty-voice one.
+  mocks.loadVoiceProfile.mockResolvedValue(null);
+  mocks.listVoiceSamples.mockResolvedValue([]);
   mocks.verifyClientAccess.mockResolvedValue({
     ok: true,
     permission: "edit",
@@ -216,8 +275,12 @@ beforeEach(() => {
   });
   mocks.recordAudit.mockResolvedValue(undefined);
   mocks.listStoryChapters.mockResolvedValue([]);
+  // The ordinary state for the accept path: a rewrite really is being
+  // withheld. Every refusal case below overrides it.
+  mocks.loadStoryChapter.mockResolvedValue(shadowedRow());
   mocks.updateChapterText.mockResolvedValue(undefined);
   mocks.markChapterReviewed.mockResolvedValue(undefined);
+  mocks.clearChapterReviewed.mockResolvedValue(undefined);
   mocks.upsertGeneratedChapter.mockResolvedValue(undefined);
   // Identity-preserving: the loader echoes the document role it was handed, so
   // the value the ROUTE derived is observable at `generateChapter`, which is the
@@ -303,6 +366,69 @@ describe("GET /api/clients/[id]/plan-story", () => {
       error: "The writing assistant was unavailable.",
       reviewed: true,
     });
+  });
+
+  /**
+   * ⭐⭐ The rewrite that is stored and invisible.
+   *
+   * Confirmed live: after one Regenerate over an edited chapter the row reads
+   * `generated: true, edited: true` and `text` is still the advisor's sentence.
+   * The advisor is looking at a button whose failure message is "The words on
+   * screen are unchanged — try again", so the success and the failure are the
+   * same picture. The list has to hand the panel the prose it is withholding.
+   *
+   * Kills: dropping the field (the banner can never render); sending
+   * `generatedText` unconditionally (every generated chapter would claim to be
+   * shadowing an edit).
+   */
+  it("hands the panel the model's newer words when they are being withheld", async () => {
+    mocks.listStoryChapters.mockResolvedValue([
+      chapterRow({
+        generatedText: "The model's rewrite.",
+        generatedAt: REWRITTEN_AT,
+        editedText: "My words.",
+        editedAt: EDITED_AT,
+      }),
+    ]);
+    const res = await GET(req("http://x/?scenarioId=base"), {
+      params: Promise.resolve({ id: CLIENT_ID }),
+    });
+    const body = await res.json();
+    // What PRINTS is unchanged — the advisor's words still win — and that is
+    // exactly why the other field has to exist.
+    expect(body.chapters[0]).toMatchObject({
+      text: "My words.",
+      edited: true,
+      newerGeneratedText: "The model's rewrite.",
+    });
+  });
+
+  // …and the ordinary edited chapter, where the advisor wrote last. Nothing is
+  // being withheld, so there is nothing to announce and nothing to offer.
+  it("says nothing is withheld when the advisor wrote last", async () => {
+    mocks.listStoryChapters.mockResolvedValue([
+      chapterRow({
+        generatedText: "The model's older draft.",
+        generatedAt: EDITED_AT,
+        editedText: "My words.",
+        editedAt: REWRITTEN_AT,
+      }),
+    ]);
+    const res = await GET(req("http://x/?scenarioId=base"), {
+      params: Promise.resolve({ id: CLIENT_ID }),
+    });
+    const body = await res.json();
+    expect(body.chapters[0].newerGeneratedText).toBeNull();
+  });
+
+  // A chapter with no row at all. The projection runs for all fourteen, so the
+  // field has to answer for the thirteen that were never written too.
+  it("answers the field for a chapter that has never been written", async () => {
+    const res = await GET(req("http://x/?scenarioId=base"), {
+      params: Promise.resolve({ id: CLIENT_ID }),
+    });
+    const body = await res.json();
+    expect(body.chapters[0].newerGeneratedText).toBeNull();
   });
 
   /**
@@ -413,7 +539,7 @@ describe("GET /api/clients/[id]/plan-story/stale", () => {
     GET_STALE(req(`http://x/${query}`), { params: Promise.resolve({ id: CLIENT_ID }) });
 
   /** The hash a generation run against `NO_FACTS` would have stored. */
-  const FRESH = chapterSourceHash("planInOnePage", NO_FACTS, []);
+  const FRESH = chapterSourceHash("planInOnePage", NO_FACTS, EMPTY_VOICE, DEFAULT_CHAPTER_STYLE);
 
   beforeEach(() => {
     mocks.loadStoryContext.mockResolvedValue(NO_FACTS);
@@ -449,7 +575,7 @@ describe("GET /api/clients/[id]/plan-story/stale", () => {
   it("names the chapter whose stored hash no longer matches the plan", async () => {
     mocks.listStoryChapters.mockResolvedValue([
       chapterRow({ chapterId: "planInOnePage", sourceHash: "written-against-an-older-plan" }),
-      chapterRow({ chapterId: "whatYouHave", sourceHash: chapterSourceHash("whatYouHave", NO_FACTS, []) }),
+      chapterRow({ chapterId: "whatYouHave", sourceHash: chapterSourceHash("whatYouHave", NO_FACTS, EMPTY_VOICE, DEFAULT_CHAPTER_STYLE) }),
     ]);
     const res = await stale("?scenarioId=base");
     expect(await res.json()).toMatchObject({ stale: ["planInOnePage"] });
@@ -462,6 +588,170 @@ describe("GET /api/clients/[id]/plan-story/stale", () => {
       chapterRow({ chapterId: "planInOnePage", sourceHash: FRESH }),
     ]);
     expect((await (await stale("?scenarioId=base")).json()).stale).toEqual([]);
+  });
+
+  /**
+   * The other staleness key. `sourceHash` catches the plan moving; this
+   * catches a gate being added or tightened after the chapter was already
+   * written and cached — which nothing could reach before, because
+   * `ai-cache.ts` holds an answer for 30 days with no way to delete it.
+   */
+  it("names a chapter written under an older gate set, even with a matching hash", async () => {
+    mocks.listStoryChapters.mockResolvedValue([
+      chapterRow({ chapterId: "planInOnePage", sourceHash: FRESH, gateVersion: GATE_VERSION - 1 }),
+    ]);
+    const res = await stale("?scenarioId=base");
+    expect(await res.json()).toMatchObject({ stale: ["planInOnePage"] });
+  });
+
+  // …and the other direction, so bumping `GATE_VERSION` is not a way to report
+  // every chapter of every report permanently stale.
+  it("reports a chapter written under the current gate set as fresh", async () => {
+    mocks.listStoryChapters.mockResolvedValue([
+      chapterRow({ chapterId: "planInOnePage", sourceHash: FRESH, gateVersion: GATE_VERSION }),
+    ]);
+    const res = await stale("?scenarioId=base");
+    expect(await res.json()).toMatchObject({ stale: [] });
+  });
+
+  /**
+   * ⚠️⚠️ Kills: rebuilding the voice for the wrong identity. `advisorUserId: id`
+   * — the CLIENT id — type-checks, and every other assertion in this file
+   * survives it, because a wrong-but-consistent identity still resolves SOME
+   * voice. It only shows up against the other route, as a hash that never
+   * matches: the badge would then be on for every chapter of every report, with
+   * regenerating unable to clear it.
+   *
+   * ⚠️ The CALLER here because the row below says nobody generated it — see the
+   * backfill case in the block underneath, which is what that means.
+   */
+  it("resolves the voice for the calling advisor at this client's firm", async () => {
+    mocks.listStoryChapters.mockResolvedValue([chapterRow({ sourceHash: FRESH })]);
+    await stale("?scenarioId=base");
+    expect(mocks.loadVoiceProfile).toHaveBeenCalledWith("firm_1", "user_1");
+    expect(mocks.listVoiceSamples).toHaveBeenCalledWith("firm_1", "user_1");
+  });
+
+  /**
+   * ⭐⭐ WHOSE voice the stored hash is rebuilt in — the writer's, not the
+   * reader's.
+   *
+   * The badge answers "have the inputs THIS CHAPTER was written from changed",
+   * and the voice is one of those inputs. Rebuilt in the caller's voice it
+   * answers a different question — "would I get something different if I
+   * regenerated this" — so a colleague opening a report a partner wrote in
+   * their own personal voice sees an out-of-date badge on all fourteen
+   * chapters, and regenerating is the only thing that clears it, which
+   * overwrites the partner's prose to do so.
+   */
+  describe("whose voice the stored hash is rebuilt in", () => {
+    /** The same hash, in a SECOND advisor's voice — a personal style note is
+     *  all it takes for two people at one firm to write different prompts. */
+    const OTHER_VOICE = { styleNote: "Short sentences. No adverbs.", samples: [] };
+    const OTHER_HASH = chapterSourceHash(
+      "planInOnePage",
+      NO_FACTS,
+      OTHER_VOICE,
+      DEFAULT_CHAPTER_STYLE,
+    );
+
+    /** `loadVoiceProfile` answering per advisor, so the two resolve differently.
+     *  `resolveVoice` still runs for real over what this returns. */
+    function voiceOf(styleNotes: Record<string, string>) {
+      mocks.loadVoiceProfile.mockImplementation(async (firmId: string, userId: string) =>
+        styleNotes[userId] != null
+          ? { firmId, advisorUserId: userId, styleNote: styleNotes[userId] }
+          : null,
+      );
+    }
+
+    /**
+     * ⚠️⚠️ Kills: `advisorUserId: userId` at the load — today's code. The row
+     * was written by `user_2` in `user_2`'s voice, and the caller is `user_1`
+     * with no voice at all: rebuilt as the caller, the hash is the EMPTY-voice
+     * one, misses, and the chapter reads out of date.
+     */
+    it("rebuilds it in the voice of the advisor who generated the chapter", async () => {
+      voiceOf({ user_2: OTHER_VOICE.styleNote });
+      mocks.listStoryChapters.mockResolvedValue([
+        chapterRow({ chapterId: "planInOnePage", sourceHash: OTHER_HASH, generatedByUserId: "user_2" }),
+      ]);
+      const res = await stale("?scenarioId=base");
+      expect(res.status).toBe(200);
+      expect((await res.json()).stale).toEqual([]);
+      expect(mocks.loadVoiceProfile).toHaveBeenCalledWith("firm_1", "user_2");
+      expect(mocks.listVoiceSamples).toHaveBeenCalledWith("firm_1", "user_2");
+    });
+
+    /**
+     * ⚠️⚠️ BACKFILL. Every row written before `generated_by_user_id` existed
+     * carries NULL, and who generated it is unknowable. Falling back to the
+     * CALLER reproduces today's behaviour exactly — so no existing report's
+     * badges move on deploy — and the row self-heals the next time it is
+     * generated. A firm default instead would flip the answer for every
+     * existing personal-voice row, for nothing.
+     */
+    it("falls back to the caller's voice for a row that does not say who wrote it", async () => {
+      voiceOf({ user_1: OTHER_VOICE.styleNote });
+      mocks.listStoryChapters.mockResolvedValue([
+        chapterRow({ chapterId: "planInOnePage", sourceHash: OTHER_HASH, generatedByUserId: null }),
+      ]);
+      const res = await stale("?scenarioId=base");
+      expect((await res.json()).stale).toEqual([]);
+      expect(mocks.loadVoiceProfile).toHaveBeenCalledWith("firm_1", "user_1");
+      expect(mocks.loadVoiceProfile).not.toHaveBeenCalledWith("firm_1", null);
+    });
+
+    /**
+     * ⭐ Per ROW, not per run — and one query per DISTINCT advisor, not per
+     * chapter.
+     *
+     * A partner generates the whole story and a colleague regenerates two
+     * chapters: those chapters are now in a different voice from the other
+     * twelve, and one voice for the run gets one of the two groups wrong
+     * whichever it picks. The count is the other half — resolving inside the
+     * per-chapter loop would be fourteen round trips to answer a question with
+     * two answers.
+     */
+    it("resolves one voice per distinct writer, however many chapters they wrote", async () => {
+      voiceOf({ user_2: OTHER_VOICE.styleNote });
+      const byUser2 = ["planInOnePage", "whatYouHave", "whereTheMoneyGoes"] as const;
+      mocks.listStoryChapters.mockResolvedValue(
+        byUser2.map((chapterId) =>
+          chapterRow({
+            chapterId,
+            sourceHash: chapterSourceHash(chapterId, NO_FACTS, OTHER_VOICE, DEFAULT_CHAPTER_STYLE),
+            generatedByUserId: "user_2",
+          }),
+        ),
+      );
+      const res = await stale("?scenarioId=base");
+      // Every one of the three is fresh, so all three really were hashed in
+      // `user_2`'s voice rather than one of them happening to match.
+      expect((await res.json()).stale).toEqual([]);
+      // The caller's, resolved once by the run, plus `user_2`'s. NOT three.
+      expect(mocks.loadVoiceProfile).toHaveBeenCalledTimes(2);
+      expect(mocks.listVoiceSamples).toHaveBeenCalledTimes(2);
+    });
+
+    /**
+     * …and the two groups really do get different voices. Both chapters are
+     * stored with the hash their OWN writer would produce; a route that picked
+     * one voice for the run flags whichever group it did not pick.
+     */
+    it("hashes two writers' chapters against their own voices in one pass", async () => {
+      voiceOf({ user_2: OTHER_VOICE.styleNote });
+      mocks.listStoryChapters.mockResolvedValue([
+        chapterRow({ chapterId: "planInOnePage", sourceHash: OTHER_HASH, generatedByUserId: "user_2" }),
+        chapterRow({
+          chapterId: "whatYouHave",
+          sourceHash: chapterSourceHash("whatYouHave", NO_FACTS, EMPTY_VOICE, DEFAULT_CHAPTER_STYLE),
+          generatedByUserId: "user_1",
+        }),
+      ]);
+      const res = await stale("?scenarioId=base");
+      expect((await res.json()).stale).toEqual([]);
+    });
   });
 
   // Kills: rebuilding the context from a different scenario than the rows were
@@ -497,6 +787,185 @@ describe("GET /api/clients/[id]/plan-story/stale", () => {
     const res = await stale("?scenarioId=base&documentRole=whatever");
     expect(res.status).toBe(400);
     expect(mocks.listStoryChapters).not.toHaveBeenCalled();
+  });
+
+  /**
+   * ⭐⭐ The advisor's per-chapter tone and length, which are the second input to
+   * the hash and — unlike the voice — do NOT come off the run. They travel on
+   * the request, so this route has to be told them, in a spelling the generate
+   * route's body resolves to the same value.
+   *
+   * Both directions, because each kills a different defect and PASSES for the
+   * other. A route that ignores the parameter hashes everything at the default:
+   * it fails the first and passes the second. A hash that ignores its style
+   * argument puts both sides on the same wrong value: it passes the first and
+   * fails the second — measured, that is what this file reported before the
+   * argument existed.
+   */
+  const STYLED = { tone: "direct", length: "full" } as const;
+  const STYLED_HASH = chapterSourceHash("planInOnePage", NO_FACTS, EMPTY_VOICE, STYLED);
+
+  it("reports a chapter fresh when the panel sends the style the run was written in", async () => {
+    mocks.listStoryChapters.mockResolvedValue([
+      chapterRow({ chapterId: "planInOnePage", sourceHash: STYLED_HASH }),
+    ]);
+    const res = await stale("?scenarioId=base&style=planInOnePage:direct:full");
+    expect(res.status).toBe(200);
+    expect((await res.json()).stale).toEqual([]);
+  });
+
+  it("reports it stale once the advisor has changed the tone", async () => {
+    mocks.listStoryChapters.mockResolvedValue([
+      chapterRow({ chapterId: "planInOnePage", sourceHash: STYLED_HASH }),
+    ]);
+    const res = await stale("?scenarioId=base&style=planInOnePage:warm:full");
+    expect((await res.json()).stale).toEqual(["planInOnePage"]);
+  });
+
+  // A chapter the advisor never touched is absent from the query, and both
+  // sides have to fill that gap the same way — `resolveChapterStyles`, once.
+  it("falls back to the default style for a chapter the panel did not name", async () => {
+    mocks.listStoryChapters.mockResolvedValue([
+      chapterRow({ chapterId: "planInOnePage", sourceHash: FRESH }),
+    ]);
+    const res = await stale("?scenarioId=base&style=whatYouHave:direct:full");
+    expect((await res.json()).stale).toEqual([]);
+  });
+
+  // Kills: parsing the parameter loosely. An unreadable style is a caller bug,
+  // and guessing one answers about the wrong prompt — the same rule
+  // `documentRole` above follows, for the same reason.
+  it.each([
+    ["an unknown tone", "planInOnePage:shouty:full"],
+    ["an unknown length", "planInOnePage:warm:epic"],
+    ["an unknown chapter", "noSuchChapter:warm:full"],
+    ["a missing field", "planInOnePage:warm"],
+  ])("refuses a style parameter carrying %s", async (_label, param) => {
+    const res = await stale(`?scenarioId=base&style=${param}`);
+    expect(res.status).toBe(400);
+    expect(mocks.loadStoryContext).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The disclosure endpoint — which figures a chapter was allowed to use. Its
+ * own request, for the reason the staleness route above is: answering it
+ * costs a whole story context, 23.2s cold and 4.0s warm, and the chapter list
+ * is reread after every save.
+ *
+ * Unlike the staleness route, this one does not compare a stored hash against
+ * anything, so it has no per-writer voice resolution to prove: `ctx.facts`
+ * reads plan projections, not voice, and `factsForChapter` filters by chapter
+ * id alone.
+ */
+describe("GET /api/clients/[id]/plan-story/facts", () => {
+  const facts = (query: string) =>
+    GET_FACTS(req(`http://x/${query}`), { params: Promise.resolve({ id: CLIENT_ID }) });
+
+  /** Unscoped — a plan-level total, and true for every chapter it reaches. */
+  const YEAR_FACT = {
+    id: "plan.retirementYear",
+    label: "The year you stop working",
+    display: "2035",
+    raw: 2035,
+  };
+  /** Scoped to one chapter, so it must NOT reach `planInOnePage`. */
+  const SCOPED_FACT = {
+    id: "estate.net.base",
+    label: "What reaches your heirs, current plan",
+    display: "$9.2M",
+    raw: 9_200_000,
+    chapters: ["whatsLeftForPeople"],
+  };
+
+  beforeEach(() => {
+    mocks.loadStoryContext.mockResolvedValue({
+      ...NO_FACTS,
+      facts: [YEAR_FACT, SCOPED_FACT],
+    });
+  });
+
+  // Kills: dropping the `!access.ok` early return from the one read that then
+  // goes on to project another firm's fact pack.
+  it("404s when the caller cannot see the client", async () => {
+    mocks.verifyClientAccess.mockResolvedValue({ ok: false });
+    const res = await facts("?scenarioId=base");
+    expect(res.status).toBe(404);
+    expect(mocks.loadStoryContext).not.toHaveBeenCalled();
+  });
+
+  // The exact case the brief names: an unscoped, plan-level fact reaches the
+  // chapter under test.
+  it("lists a plan-level figure for a chapter, label and display exactly as stored", async () => {
+    const res = await facts("?scenarioId=base&documentRole=standalone");
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.facts.planInOnePage).toContainEqual({
+      label: "The year you stop working",
+      display: "2035",
+    });
+  });
+
+  // Kills: sending the whole pack to every chapter regardless of `chapters` —
+  // exactly the leak `factsForChapter` exists to prevent, and the reason this
+  // route reuses it rather than re-deriving the filter.
+  it("withholds a figure scoped to a different chapter", async () => {
+    const res = await facts("?scenarioId=base&documentRole=standalone");
+    const body = await res.json();
+    expect(body.facts.planInOnePage).not.toContainEqual(
+      expect.objectContaining({ label: "What reaches your heirs, current plan" }),
+    );
+    expect(body.facts.whatsLeftForPeople).toContainEqual({
+      label: "What reaches your heirs, current plan",
+      display: "$9.2M",
+    });
+  });
+
+  // Kills: forwarding the whole `Fact` object. `raw` and `id` are internal —
+  // sending them is the first step toward a chapter that quotes a figure the
+  // gate never checked.
+  it("sends only the label and display, never the raw number or the id", async () => {
+    const res = await facts("?scenarioId=base&documentRole=standalone");
+    const body = await res.json();
+    expect(body.facts.planInOnePage).toContainEqual({
+      label: "The year you stop working",
+      display: "2035",
+    });
+    expect(body.facts.planInOnePage[0]).not.toHaveProperty("raw");
+    expect(body.facts.planInOnePage[0]).not.toHaveProperty("id");
+  });
+
+  // Every chapter answers, including ones with no facts scoped to them at all
+  // — the panel shows the disclosure beside every row, not just the ones with
+  // something to say.
+  it("answers every chapter in the arc, even one with nothing scoped to it", async () => {
+    const res = await facts("?scenarioId=base&documentRole=standalone");
+    const body = await res.json();
+    expect(Object.keys(body.facts)).toEqual(CHAPTER_IDS);
+  });
+
+  it("refuses an unrecognised role rather than defaulting", async () => {
+    const res = await facts("?scenarioId=base&documentRole=whatever");
+    expect(res.status).toBe(400);
+    expect(mocks.loadStoryContext).not.toHaveBeenCalled();
+  });
+
+  // Same rule as the staleness route: this endpoint LOADS the scenario rather
+  // than merely reading rows, and a snapshot degrades to a proposal nothing
+  // was actually written from.
+  it("refuses a snapshot ref rather than loading a degraded plan", async () => {
+    const res = await facts("?scenarioId=snap:abc");
+    expect(res.status).toBe(400);
+    expect(mocks.loadStoryContext).not.toHaveBeenCalled();
+  });
+
+  // `loadStoryRun` requires an advisor id; facts do not depend on voice, so
+  // this is the caller's own — never a second per-writer resolution the way
+  // the staleness route makes.
+  it("resolves the calling advisor's voice, the only identity loadStoryRun requires", async () => {
+    await facts("?scenarioId=base");
+    expect(mocks.loadVoiceProfile).toHaveBeenCalledWith("firm_1", "user_1");
+    expect(mocks.loadVoiceProfile).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -597,6 +1066,204 @@ describe("PATCH /api/clients/[id]/plan-story/[chapterId]", () => {
     expect(mocks.markChapterReviewed).not.toHaveBeenCalled();
   });
 
+  /**
+   * The advisor's undo: nothing could clear `reviewedAt` before this task, so
+   * a mis-click on Mark reviewed could only be worked around by Regenerate —
+   * which spends a model call to answer a question that was never about the
+   * words.
+   */
+  describe("un-reviewing a chapter", () => {
+    it("clears the review without touching the words", async () => {
+      const res = await patch({ scenarioId: "base", documentRole: "standalone", reviewed: false });
+      expect(res.status).toBe(200);
+      expect(mocks.clearChapterReviewed).toHaveBeenCalledWith({
+        clientId: CLIENT_ID,
+        scenarioId: "base",
+        documentRole: "standalone",
+        chapterId: "planInOnePage",
+      });
+      expect(mocks.updateChapterText).not.toHaveBeenCalled();
+      expect(mocks.markChapterReviewed).not.toHaveBeenCalled();
+    });
+
+    it("audits an un-review as its own action, not as a review", async () => {
+      await patch({ scenarioId: "base", documentRole: "standalone", reviewed: false });
+      expect(mocks.recordAudit).toHaveBeenCalledWith({
+        action: "plan_story.chapter_unreviewed",
+        resourceType: "plan_story_chapter",
+        resourceId: "planInOnePage",
+        clientId: CLIENT_ID,
+        firmId: "firm_1",
+        metadata: { scenarioId: "base", documentRole: "standalone" },
+      });
+    });
+
+    // Kills: `clearChapterReviewed({… scenarioId: "base" …})` hardcoded — the
+    // same defect the reviewed:true test above this guards against, on the
+    // sibling write.
+    it("un-reviews the scenario the advisor is looking at, not a hardcoded base", async () => {
+      mocks.scenarioRows = [{ id: SCENARIO_ID }];
+      await patch({ scenarioId: SCENARIO_ID, documentRole: "standalone", reviewed: false });
+      expect(mocks.clearChapterReviewed).toHaveBeenCalledWith(
+        expect.objectContaining({ clientId: CLIENT_ID, scenarioId: SCENARIO_ID }),
+      );
+    });
+
+    // Kills: a truthiness test on the flag that reads `false` the same as
+    // absent — the exact bug this task exists to fix. Before the guard change
+    // this body 400ed with nothing written.
+    it("does not fall through to the nothing-to-change guard", async () => {
+      const res = await patch({ scenarioId: "base", documentRole: "standalone", reviewed: false });
+      expect(res.status).not.toBe(400);
+    });
+  });
+
+  /**
+   * ⭐⭐ "Use the new version instead" — the click that lets the model's newer
+   * words through, and the ONLY thing in this feature that discards an
+   * advisor's writing.
+   */
+  describe("taking the model's newer version", () => {
+    it("drops the advisor's edit so the model's newer words render", async () => {
+      const res = await patch({
+        scenarioId: "base",
+        documentRole: "standalone",
+        acceptGenerated: true,
+      });
+      expect(res.status).toBe(200);
+      // The empty string is already the documented "drop my version" — reusing
+      // the shipped path rather than adding a delete, so the render precedence
+      // has one spelling and `generatedText` stays revertible.
+      expect(mocks.updateChapterText).toHaveBeenCalledWith({
+        clientId: CLIENT_ID,
+        scenarioId: "base",
+        documentRole: "standalone",
+        chapterId: "planInOnePage",
+        editedText: "",
+      });
+    });
+
+    // Kills: auditing it as an ordinary edit, or not at all. This is the one
+    // action in the feature that throws away words a human wrote, so the row
+    // that records it has to say which action it was.
+    it("audits it under its own action, because it discards an advisor's writing", async () => {
+      await patch({ scenarioId: "base", documentRole: "standalone", acceptGenerated: true });
+      expect(mocks.recordAudit).toHaveBeenCalledWith({
+        action: "plan_story.generated_accepted",
+        resourceType: "plan_story_chapter",
+        resourceId: "planInOnePage",
+        clientId: CLIENT_ID,
+        firmId: "firm_1",
+        metadata: { scenarioId: "base", documentRole: "standalone" },
+      });
+    });
+
+    /**
+     * ⚠️ Two contradictory instructions in one body — "store these words" and
+     * "throw my words away". Silently resolving them would resolve them
+     * LOSSILY, since the accept writes an empty string over whatever the same
+     * request just saved. A caller sending both is a caller bug.
+     */
+    it("refuses a body that both saves an edit and discards one", async () => {
+      const res = await patch({
+        scenarioId: "base",
+        documentRole: "standalone",
+        editedText: "My words.",
+        acceptGenerated: true,
+      });
+      expect(res.status).toBe(400);
+      expect(mocks.updateChapterText).not.toHaveBeenCalled();
+      expect(mocks.recordAudit).not.toHaveBeenCalled();
+    });
+
+    /**
+     * ⚠️⚠️ CHECKED AGAINST THE ROW IT CLAIMS TO BE ACCEPTING.
+     *
+     * The panel's payload says "accept", but the banner behind it was rendered
+     * from a chapter list that may be minutes old. An advisor with the report
+     * open in two tabs can save a fresh edit in one and then press this button
+     * in the other — and without the read, the route discards writing that was
+     * never shadowed and reverts the chapter to OLDER model prose.
+     *
+     * Decision 1 is not broken either way (the click is explicit and audited),
+     * but the button's own sentence — "the assistant rewrote this after you
+     * edited it" — stops being true, and a control that lies about what it is
+     * doing is the thing this whole task exists to fix.
+     */
+    it("refuses when the row is not actually shadowing a newer generation", async () => {
+      // The advisor wrote LAST — what the second tab just did.
+      mocks.loadStoryChapter.mockResolvedValue(
+        chapterRow({
+          generatedText: "The model's older draft.",
+          generatedAt: EDITED_AT,
+          editedText: "My fresh words.",
+          editedAt: REWRITTEN_AT,
+        }),
+      );
+      const res = await patch({
+        scenarioId: "base",
+        documentRole: "standalone",
+        acceptGenerated: true,
+      });
+      expect(res.status).toBe(409);
+      expect(mocks.updateChapterText).not.toHaveBeenCalled();
+      expect(mocks.recordAudit).not.toHaveBeenCalled();
+    });
+
+    // …and the same for a chapter with no row at all, which is an ordinary
+    // state here: the panel lists every chapter whether one was ever written.
+    it("refuses when there is no row behind the click", async () => {
+      mocks.loadStoryChapter.mockResolvedValue(null);
+      const res = await patch({
+        scenarioId: "base",
+        documentRole: "standalone",
+        acceptGenerated: true,
+      });
+      expect(res.status).toBe(409);
+      expect(mocks.updateChapterText).not.toHaveBeenCalled();
+      expect(mocks.recordAudit).not.toHaveBeenCalled();
+    });
+
+    // Kills: reading a different row than the one being written. The four-part
+    // key is what makes the guard about THIS chapter of THIS report.
+    it("reads the same row it writes", async () => {
+      await patch({ scenarioId: "base", documentRole: "standalone", acceptGenerated: true });
+      expect(mocks.loadStoryChapter).toHaveBeenCalledWith({
+        clientId: CLIENT_ID,
+        scenarioId: "base",
+        documentRole: "standalone",
+        chapterId: "planInOnePage",
+      });
+      expect(mocks.loadStoryChapter.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.updateChapterText.mock.invocationCallOrder[0],
+      );
+    });
+
+    // …and the read never happens for the write paths that do not discard
+    // anything. An edit, a review and its undo are the per-keystroke and
+    // per-click paths; none of them may grow a lookup because this one needed
+    // one.
+    it("does not read the row for an ordinary edit, review, or un-review", async () => {
+      await patch({ scenarioId: "base", documentRole: "standalone", editedText: "hi" });
+      await patch({ scenarioId: "base", documentRole: "standalone", reviewed: true });
+      await patch({ scenarioId: "base", documentRole: "standalone", reviewed: false });
+      expect(mocks.loadStoryChapter).not.toHaveBeenCalled();
+    });
+
+    // Kills: a truthiness test on the flag. `false` is a caller saying "no",
+    // which changes nothing — and a body that changes nothing is a 400 for the
+    // reason the test above this describe gives.
+    it("treats an explicit false as nothing to do", async () => {
+      const res = await patch({
+        scenarioId: "base",
+        documentRole: "standalone",
+        acceptGenerated: false,
+      });
+      expect(res.status).toBe(400);
+      expect(mocks.updateChapterText).not.toHaveBeenCalled();
+    });
+  });
+
   // Kills: deleting `requireActiveSubscriptionForFirm`, or moving it after the
   // write. Its return is void and discarded, so tsc cannot see its removal and
   // no other test in this file touches it.
@@ -691,6 +1358,100 @@ describe("POST /api/clients/[id]/plan-story/generate", () => {
       }),
       { params: Promise.resolve({ id: CLIENT_ID }) },
     );
+
+  /**
+   * ⚠️⚠️ The same identity, asked for the same way as the staleness route asks
+   * — which is the whole reason `StoryRun` carries the voice at all. Written as
+   * two separate assertions in two separate describes rather than one shared
+   * helper, because what has to agree is what each ROUTE passes, and a helper
+   * both call would agree with itself no matter what the routes did.
+   *
+   * Kills: `advisorUserId: id`. It type-checks (both are `string`), the whole
+   * suite stays green without this, and in production the generate side writes
+   * hashes the staleness side can never reproduce.
+   */
+  it("writes in the voice of the calling advisor at this client's firm", async () => {
+    await post({ scenarioId: "base", documentRole: "standalone" });
+    expect(mocks.loadVoiceProfile).toHaveBeenCalledWith("firm_1", "user_1");
+    expect(mocks.listVoiceSamples).toHaveBeenCalledWith("firm_1", "user_1");
+  });
+
+  /**
+   * ⚠️⚠️ …and STORES whose voice that was, on every row it writes.
+   *
+   * The freshness check rebuilds each chapter's hash and the voice is one of
+   * the inputs, so a row that does not say who wrote it can only be rebuilt in
+   * the READER's voice. Without this stamp the fix in the staleness route has
+   * nothing to read, and a colleague opening the report sees every chapter
+   * badged out of date.
+   *
+   * Kills: stamping the org id, the client id, or nothing at all.
+   */
+  it("stamps the advisor whose voice each chapter was written in", async () => {
+    await post({ scenarioId: "base", documentRole: "standalone" });
+    expect(mocks.upsertGeneratedChapter).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: CLIENT_ID, generatedByUserId: "user_1" }),
+    );
+    // Every row, not just the first — `BASE_ONLY.length` of them for this
+    // story, counted off the real registry rather than written down here.
+    expect(mocks.upsertGeneratedChapter.mock.calls).toHaveLength(BASE_ONLY.length);
+    for (const call of mocks.upsertGeneratedChapter.mock.calls) {
+      expect((call[0] as { generatedByUserId: string }).generatedByUserId).toBe("user_1");
+    }
+  });
+
+  /**
+   * ⭐ The generating half of the tone comparison. The style the panel sent has
+   * to reach `generateChapter` PER CHAPTER, and every chapter the panel did not
+   * name has to fall back the same way the staleness route fills its gaps —
+   * `resolveChapterStyles`, one spelling, both sides.
+   *
+   * Kills: a route that accepts `chapterStyle` and drops it. It answers 200, the
+   * prose comes back in the wrong register, and the hashes it stores are ones
+   * the staleness check can never reproduce.
+   */
+  it("writes each chapter in the style the panel sent, and the default for the rest", async () => {
+    await post({
+      scenarioId: "base",
+      documentRole: "standalone",
+      chapterStyle: { planInOnePage: { tone: "direct", length: "full" } },
+    });
+    const styleFor = (chapterId: string) =>
+      mocks.generateChapter.mock.calls
+        .map((call) => call[0] as { chapterId: string; style: unknown })
+        .find((args) => args.chapterId === chapterId)?.style;
+    expect(styleFor("planInOnePage")).toEqual({ tone: "direct", length: "full" });
+    expect(styleFor("whatYouHave")).toEqual({ tone: "warm", length: "standard" });
+  });
+
+  /**
+   * The ordinary payload is PARTIAL — the panel sends only the chapters an
+   * advisor has restyled.
+   *
+   * ⚠️ Kills: any schema that demands all fourteen keys — a 400 on every
+   * Regenerate the moment one tone changes, and invisible until then, because an
+   * ABSENT field passes on its `.default({})` whatever shape the map has.
+   */
+  it("accepts a style map naming a single chapter", async () => {
+    const res = await post({
+      scenarioId: "base",
+      documentRole: "standalone",
+      chapterStyle: { planInOnePage: { tone: "plain", length: "short" } },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  // …and still refuses a chapter id this build does not know, for the reason
+  // `chapterId` itself is an enum: storage holds `chapter_id` as free text.
+  it("refuses a style map naming a chapter that does not exist", async () => {
+    const res = await post({
+      scenarioId: "base",
+      documentRole: "standalone",
+      chapterStyle: { noSuchChapter: { tone: "plain", length: "short" } },
+    });
+    expect(res.status).toBe(400);
+    expect(mocks.generateChapter).not.toHaveBeenCalled();
+  });
 
   // Kills: removing the `requiresProposal` filter — a base-only story would
   // publish a recommendation chapter with nothing to recommend.

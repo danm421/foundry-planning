@@ -1,0 +1,1 @@
+ALTER TABLE "plan_story_chapters" ADD COLUMN "gate_version" integer DEFAULT 1 NOT NULL;

@@ -5,6 +5,7 @@ import { authErrorResponse } from "@/lib/authz";
 import {
   listStoryChapters,
   resolveChapterText,
+  hasNewerGeneration,
   isDocumentRole,
   type DocumentRole,
 } from "@/lib/presentations/story/repo";
@@ -73,6 +74,18 @@ export async function GET(
         // blank reason.
         error: row?.error ?? null,
         reviewed: row?.reviewedAt != null,
+        /**
+         * The model's rewrite, WHEN it is newer than the advisor's edit and so
+         * is stored without being what prints — null otherwise.
+         *
+         * Sent as the prose rather than as a flag because the panel shows it:
+         * the advisor is being asked whether to discard their own words for
+         * these, and a click that says "use the new version" without showing
+         * the new version is not a click they can make. `text` above is
+         * unchanged and still the advisor's, which is the whole point — nothing
+         * here overwrites their words.
+         */
+        newerGeneratedText: row && hasNewerGeneration(row) ? row.generatedText : null,
         /**
          * Could a generation write this chapter for this story at all? False for
          * the five chapters that need a proposal when the report is base-only.

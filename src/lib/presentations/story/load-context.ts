@@ -10,6 +10,9 @@
 // Monte Carlo failure is non-fatal: the confidence facts are simply absent,
 // which the narratives and prompts already handle. It is never zeroed — a 0%
 // confidence figure printed in a client document would be a lie.
+import { and, eq } from "drizzle-orm";
+import { db } from "@/db";
+import { clients, crmHouseholdContacts } from "@/db/schema";
 import { loadEffectiveTreeForRef } from "@/lib/scenario/loader";
 import { resolveScenarioRef } from "@/lib/scenario/presentation-refs";
 import { runProjectionWithEvents } from "@/engine/projection";
@@ -53,7 +56,77 @@ import {
 } from "./build-facts";
 import { loadStoryNextSteps } from "./load-next-steps";
 import { CHECKLIST_CHAPTERS } from "./chapters/registry";
-import type { ChapterId, StoryContext, StoryGoal, StoryStrategy } from "./types";
+import type { ChapterId, StoryContext, StoryGoal, StoryStrategy, StoryHousehold } from "./types";
+
+/**
+ * The ONE spelling of how this document names a household. Every chapter's
+ * framing, and every name the scrubber has to take back OUT of a harvested
+ * sample, comes from here — so the two cannot disagree about what "the Sample
+ * household" is, which is the disagreement that would leave a real surname
+ * sitting in another household's prompt.
+ *
+ * ⚠️ It carries a known hole rather than fixing it, because the SAMPLES have to
+ * be scrubbed against exactly what the chapters said: a client with no first
+ * name and no surname on file gets `firstNames: "the household"` and
+ * `householdName: "the the household household"`. Improving it here without
+ * improving what the shipped chapters say would break the match.
+ */
+export function composeStoryHousehold(client: {
+  firstName: string;
+  lastName?: string | null;
+  spouseName?: string | null;
+}): StoryHousehold {
+  const firstName = client.firstName || "the household";
+  return {
+    firstNames: client.spouseName ? `${firstName} and ${client.spouseName}` : firstName,
+    householdName: `the ${client.lastName ?? firstName} household`,
+  };
+}
+
+/**
+ * The same two strings, for a caller that has a client id and no projection.
+ *
+ * `loadStoryContext` below reads them off the effective tree it already loaded;
+ * that load is measured in SECONDS, and the samples route only needs the names.
+ * So this goes to the one place the names actually live: `crm_household_contacts`,
+ * primary and spouse BY ROLE. There is no name column on `clients` at all — the
+ * CRM contacts are the sole source of identity, which is exactly how
+ * `load-client-data.ts:156-158` builds `ClientData.client`. Following any other
+ * route to a name would be inventing a second source for the scrubber to
+ * disagree with the chapters about.
+ *
+ * Throws rather than returning blanks when the client or its primary contact is
+ * missing — the same condition `load-client-data.ts` throws on. A caller that
+ * cannot learn the names must not go on to store text it cannot scrub.
+ */
+export async function loadStoryHousehold(
+  clientId: string,
+  firmId: string,
+): Promise<StoryHousehold> {
+  const [client] = await db
+    .select({ crmHouseholdId: clients.crmHouseholdId })
+    .from(clients)
+    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
+  if (!client) throw new Error(`Client ${clientId} not found in firm ${firmId}`);
+
+  const contacts = await db
+    .select({
+      role: crmHouseholdContacts.role,
+      firstName: crmHouseholdContacts.firstName,
+      lastName: crmHouseholdContacts.lastName,
+    })
+    .from(crmHouseholdContacts)
+    .where(eq(crmHouseholdContacts.householdId, client.crmHouseholdId));
+  const primary = contacts.find((c) => c.role === "primary");
+  if (!primary) throw new Error(`Client ${clientId} has no primary CRM contact`);
+  const spouse = contacts.find((c) => c.role === "spouse");
+
+  return composeStoryHousehold({
+    firstName: primary.firstName,
+    lastName: primary.lastName,
+    spouseName: spouse?.firstName,
+  });
+}
 
 export interface LoadStoryContextArgs {
   clientId: string;
@@ -444,9 +517,14 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
   ]);
 
   const client = base.effectiveTree.client;
+  // The household pair is COMPOSED, not spelled out again — `loadStoryHousehold`
+  // hands the samples route the identical two strings. It stays composed from the
+  // tree rather than calling that helper because the tree is already in hand
+  // here: the names are on it, and a second read would be two queries for
+  // something this function has already paid for.
+  const { firstNames, householdName } = composeStoryHousehold(client);
+  /** The estate report's `clientName` — one person, not the pair above. */
   const firstName = client.firstName || "the household";
-  const firstNames = client.spouseName ? `${firstName} and ${client.spouseName}` : firstName;
-  const householdName = `the ${client.lastName ?? firstName} household`;
 
   const baseYears = base.projection.years;
   const firstYear = baseYears[0];

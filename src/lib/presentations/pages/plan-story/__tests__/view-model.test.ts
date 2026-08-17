@@ -428,6 +428,149 @@ describe("buildPlanStoryData — strategy cards", () => {
     expect(data.chapters.find((c) => c.chapterId === "whatWeRecommend")!.strategies[0].detail).toBe("");
   });
 
+  /**
+   * ⚠️ `ChangeRow.what` is NOT always text a person typed, which is what the
+   * card's missing check rested on.
+   *
+   * A savings rule has no `name` column (`engine/types.ts#SavingsRule`), so
+   * `describeChangeTarget` (`lib/scenario/describe-change-target.ts`) BUILDS one
+   * out of the account plus a formatted basis — "401(k) · $15k/yr" and
+   * "401(k) · 6% of salary" are both pinned in `describe-change-target.test.ts`
+   * — and `describe/kinds/savings.ts` puts that string straight into `what`.
+   *
+   * So the card's "what we'd do" line printed a figure in the changes table's
+   * own rounding and case, with no fact-pack check: the one thing the card's
+   * other two fields (`name` via `usableName`, `detail` via `quotableDetail`)
+   * both have. Same rule as the detail beside it — an ungrounded figure leaves
+   * the line out rather than borrowing a number.
+   */
+  it("drops a row's WHAT whose figure the fact pack does not hold", () => {
+    const data = buildPlanStoryData(
+      deckCtx(
+        input({
+          hasProposal: true,
+          facts: [],
+          strategies: [{ name: "Save more", rows: [row({ what: "401(k) · $15k/yr" })] }],
+        }),
+      ),
+      PROPOSED,
+    );
+    expect(data.chapters.find((c) => c.chapterId === "whatWeRecommend")!.strategies[0].what).toBe("");
+  });
+
+  // …and the must-PASS direction: a figure the pack holds, in the pack's own
+  // spelling, still reaches the card. Without this the rule above is satisfied
+  // by a `what` that is always "".
+  it("keeps a WHAT whose figure the pack holds in that spelling", () => {
+    const data = buildPlanStoryData(
+      deckCtx(
+        input({
+          hasProposal: true,
+          facts: [quoted("$15k")],
+          strategies: [{ name: "Save more", rows: [row({ what: "401(k) · $15k/yr" })] }],
+        }),
+      ),
+      PROPOSED,
+    );
+    expect(data.chapters.find((c) => c.chapterId === "whatWeRecommend")!.strategies[0].what).toBe(
+      "401(k) · $15k/yr",
+    );
+  });
+
+  // Per ROW, not per card: one refused row must not silence the ones beside it,
+  // and a card that kept the whole join whenever any row was clean would be the
+  // same leak with an extra step.
+  it("refuses only the offending row and keeps the rest of the join", () => {
+    const data = buildPlanStoryData(
+      deckCtx(
+        input({
+          hasProposal: true,
+          facts: [],
+          strategies: [
+            {
+              name: "Save more",
+              rows: [row(), row({ what: "401(k) · 6% of salary" }), row({ what: "Teresa's 401(k)" })],
+            },
+          ],
+        }),
+      ),
+      PROPOSED,
+    );
+    expect(data.chapters.find((c) => c.chapterId === "whatWeRecommend")!.strategies[0].what).toBe(
+      "Alan's Social Security, Teresa's 401(k)",
+    );
+  });
+
+  /**
+   * ⚠️ THE SHAPE THIS REFUSAL ACTUALLY PRODUCES, end to end.
+   *
+   * An ungrouped savings-rule EDIT. `describeChangeTarget` builds
+   * "401(k) · $15k/yr" because the rule has no name of its own;
+   * `build-facts.ts#nameFromRow` reads that same string back as the strategy's
+   * name because the change has no toggle group; `describe/kinds/savings.ts`
+   * writes "on <account>" as the edit's first detail segment. So `usableName`
+   * blanks the name for its `·`, `quotableDetail` refuses the identical string as
+   * `what` for its "$15k", and the detail — which carries no figure — grounds and
+   * prints.
+   *
+   * The card a client gets is therefore NAMELESS with one line, not a named card
+   * that lost its "what we'd do". The nameless half predates this refusal
+   * (`usableName` is at the merge-base); this pins the composite so the real
+   * cost is stated where it happens.
+   */
+  it("blanks the name and the what of an ungrouped savings-rule edit, keeping its detail", () => {
+    const data = buildPlanStoryData(
+      deckCtx(
+        input({
+          hasProposal: true,
+          facts: [],
+          strategies: [
+            {
+              name: "401(k) · $15k/yr",
+              rows: [row({ what: "401(k) · $15k/yr", detail: ["on 401(k)"] })],
+            },
+          ],
+        }),
+      ),
+      PROPOSED,
+    );
+    expect(data.chapters.find((c) => c.chapterId === "whatWeRecommend")!.strategies).toEqual([
+      { name: "", what: "", detail: "on 401(k)" },
+    ]);
+  });
+
+  /**
+   * A card whose three fields were ALL refused is dropped HERE, before the
+   * `MAX_STRATEGY_CARDS` slice — not in the renderer, which is where it was
+   * first written and where it cost three measured things: the empty card took a
+   * slot and displaced a real one, `proseBudgetWords` trimmed prose to make room
+   * for a box never drawn, and the card fell out of the overflow note so a change
+   * was announced by nothing.
+   *
+   * Five strategies with the empty one FIRST: all four real cards must print
+   * (displacement), and the note must still count the fifth (announcement).
+   */
+  it("drops an empty card before the slice, and still counts it in the overflow note", () => {
+    const empty = {
+      name: "401(k) · $15k/yr",
+      rows: [row({ what: "401(k) · $15k/yr", detail: ["Annual amount: $15k → $20k"] })],
+    };
+    const real = (n: string) => ({ name: n, rows: [row({ what: `${n} row`, detail: [] })] });
+    const data = buildPlanStoryData(
+      deckCtx(
+        input({
+          hasProposal: true,
+          facts: [],
+          strategies: [empty, real("One"), real("Two"), real("Three"), real("Four")],
+        }),
+      ),
+      PROPOSED,
+    );
+    const chapter = data.chapters.find((c) => c.chapterId === "whatWeRecommend")!;
+    expect(chapter.strategies.map((s) => s.name)).toEqual(["One", "Two", "Three", "Four"]);
+    expect(chapter.overflowNote).toBe("…and one more change we'll walk through together.");
+  });
+
   it("gives a prose chapter no cards, however many strategies the plan has", () => {
     const data = buildPlanStoryData(
       deckCtx(input({ hasProposal: true, strategies })),
@@ -524,6 +667,7 @@ describe("the estimate and the render agree", () => {
             documentRole: "standalone",
             scenarioId,
             sections,
+            chapterStyle: PLAN_STORY_OPTIONS_DEFAULT.chapterStyle,
           };
           // The export loader derives both from the same rule, so the fixture
           // does too — anything else would test a state production cannot reach.

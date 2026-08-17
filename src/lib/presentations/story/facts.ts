@@ -33,6 +33,34 @@ export interface Fact {
    * `types.ts#factsForChapter`, never by hand.
    */
   chapters?: readonly ChapterId[];
+  /**
+   * The one chapter this figure BELONGS to, when a client should meet it in a
+   * particular place rather than wherever it happens to fit.
+   *
+   * Distinct from `chapters`, and the difference is the whole point. `chapters`
+   * decides what a chapter may SAY, and getting it wrong puts a proposed rental
+   * sale price inside a chapter about today's balance sheet. `primary` decides
+   * only where a figure is EMPHASISED: `factsForChapter` ignores it entirely, and
+   * `chapters/prompts.ts` prints an unowned figure under a second heading rather
+   * than dropping it — so what the model is SHOWN stays equal to what Gate 1
+   * allows, which is the rule `types.ts#factsForChapter` states. All that moves
+   * is which of the two lists a figure is on.
+   *
+   * ⚠️ It must name a chapter the fact can actually reach — a member of its own
+   * `chapters` when it has one — and it does nothing at all when that scope holds
+   * a single chapter, since the only chapter that sees the fact is then the one
+   * that owns it. `__tests__/build-facts.test.ts` sweeps every emitted fact for
+   * both, because neither is checked at runtime.
+   *
+   * Why it exists, measured on a live-model checkpoint run 2026-08-14: the two
+   * facts `build-facts.ts` emits with no `chapters` — the retirement year and the
+   * horizon's last year — reached all fourteen chapters, and the report named
+   * them in 12 of 14. "2035 is when work income stops" opened a paragraph in 7 of
+   * 14, and 22 of 48 paragraphs opened with the shape `<figure> is <what it is>`.
+   * Fourteen chapters handed the same numbers wrote the same numbers, which read
+   * as one template repeated whatever voice was layered over it.
+   */
+  primary?: ChapterId;
 }
 
 /**
@@ -62,13 +90,27 @@ export function pctFact(
   return { id, label, display, raw, ...(chapters ? { chapters } : {}) };
 }
 
+/**
+ * `primary` is here and on none of the other three factories, because the only
+ * two facts that carry one are years — see `build-facts.ts`. The others take the
+ * parameter when a figure actually needs one; an argument nothing passes is an
+ * argument nothing checks.
+ */
 export function yearFact(
   id: string,
   label: string,
   raw: number,
   chapters?: readonly ChapterId[],
+  primary?: ChapterId,
 ): Fact {
-  return { id, label, display: String(Math.round(raw)), raw, ...(chapters ? { chapters } : {}) };
+  return {
+    id,
+    label,
+    display: String(Math.round(raw)),
+    raw,
+    ...(chapters ? { chapters } : {}),
+    ...(primary ? { primary } : {}),
+  };
 }
 
 /**
