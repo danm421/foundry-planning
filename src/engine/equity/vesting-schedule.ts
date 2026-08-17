@@ -1,8 +1,9 @@
 import type { StockOptionPlan, EquityGrant, GrantType } from "./types";
 import { projectFmv, resolveStrikePrice } from "./price-model";
-import { isQualifyingIsoDisposition, assumedPrePlanAcquisitionYear } from "./holding-period";
+import { isQualifyingIsoDisposition } from "./holding-period";
 import { buildGrantTimeline } from "./timeline";
 import { resolveStrategy } from "./strategy";
+import { endOfYear, yearOf } from "./dates";
 
 export interface IsoSplit {
   qualified: number; // exercised ISO shares past the holding period (LTCG-eligible)
@@ -108,13 +109,14 @@ function buildRow(plan: StockOptionPlan, grant: EquityGrant, ctx: RowCtx): Vesti
     vested = grant.sharesGranted;
   } else {
     for (const t of grant.tranches) {
-      if (t.vestYear < asOfYear) {
+      const vestYear = yearOf(t.vestDate);
+      if (vestYear < asOfYear) {
         vested += t.shares;
         continue;
       }
-      const val = t.shares * perShareValue(t.vestYear);
-      if (t.vestYear <= lastDiscrete) {
-        const idx = t.vestYear - asOfYear;
+      const val = t.shares * perShareValue(vestYear);
+      if (vestYear <= lastDiscrete) {
+        const idx = vestYear - asOfYear;
         futureByYear[idx] += t.shares;
         estValueByYear[idx] += val;
       } else {
@@ -130,7 +132,7 @@ function buildRow(plan: StockOptionPlan, grant: EquityGrant, ctx: RowCtx): Vesti
 
   return {
     grantId: grant.id,
-    label: grant.grantNumber ?? `${plan.ticker ?? "—"} ${grant.grantYear}`,
+    label: grant.grantNumber ?? `${plan.ticker ?? "—"} ${yearOf(grant.grantDate)}`,
     grantType: grant.grantType,
     isOption,
     strike: isOption ? strikes[0] : null,
@@ -140,7 +142,7 @@ function buildRow(plan: StockOptionPlan, grant: EquityGrant, ctx: RowCtx): Vesti
     vested,
     exercisable: isOption ? Math.max(0, vested - exercisedTotal) : null,
     exercised: isOption ? exercisedTotal : null,
-    isoSplit: isoSplitFor(grant, asOfYear, planStartYear),
+    isoSplit: isoSplitFor(grant, asOfYear),
     sold: soldTotal,
     futureByYear,
     futurePlus,
@@ -180,29 +182,30 @@ function plannedStrikes(plan: StockOptionPlan, grant: EquityGrant, planStartYear
 /** ISO qualified/holding split for shares the client has ALREADY exercised.
  *
  *  Answers exactly the question the tax ledger answers when those shares are
- *  sold — through the same `isQualifyingIsoDisposition`, on the same assumed
- *  exercise year — so the badge cannot promise a treatment the plan will not
- *  give. It used to ask `max(grantYear + 2, vestYear + 1)`, a full year looser
- *  than the ledger's rule, and to assume exercise happened at vest while the
- *  ledger assumed two years before the plan: a 2024 ISO read "qualified" on
- *  this screen while a 2026 sale took the disqualifying path. Audit F17/F47.
+ *  sold — the same `isQualifyingIsoDisposition`, the same stored exercise date,
+ *  and 31 December of the as-of year for the sale, which is the day the ledger
+ *  dates a modeled sale on. So the badge cannot promise a treatment the plan
+ *  will not give. Audit F17/F47.
  *
- *  ⚠️ Both the rule and the exercise year are approximations the database
- *  forces (see `holding-period.ts`). G8 replaces them with real dates. */
-function isoSplitFor(grant: EquityGrant, asOfYear: number, planStartYear: number): IsoSplit | null {
+ *  Per ROW, not per grant: two rows of one grant exercised eighteen months
+ *  apart are genuinely in different buckets. Before G8 the exercise date was an
+ *  assumption shared by every row, so the whole loop was invariant and one
+ *  bucket was always zero. */
+function isoSplitFor(grant: EquityGrant, asOfYear: number): IsoSplit | null {
   if (grant.grantType !== "iso") return null;
-  // These shares were exercised before the plan began; the ledger seeds them at
-  // `assumedPrePlanAcquisitionYear` and so must this.
-  const exerciseYear = assumedPrePlanAcquisitionYear(planStartYear);
   let qualified = 0;
   let holding = 0;
   for (const t of grant.tranches) {
     if (t.sharesExercised <= 0) continue;
-    const isQualified = isQualifyingIsoDisposition({
-      grantYear: grant.grantYear,
-      exerciseYear,
-      dispositionYear: asOfYear,
-    });
+    // No stored exercise date ⇒ the exercise leg cannot be shown to be clear.
+    // Conservative: it counts as still holding. Never assume a date.
+    const isQualified =
+      t.acquiredOn != null &&
+      isQualifyingIsoDisposition({
+        grantDate: grant.grantDate,
+        exerciseDate: t.acquiredOn,
+        dispositionDate: endOfYear(asOfYear),
+      });
     if (isQualified) qualified += t.sharesExercised;
     else holding += t.sharesExercised;
   }

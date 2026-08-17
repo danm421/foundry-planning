@@ -146,9 +146,10 @@ export default function VestingScheduleTable({ model }: { model: VestingSchedule
         off the share price shows a range, because the discount is taken in the year of exercise.
         ISO Exercised splits into <span className="text-good">✓ qual</span> (past the holding period — sells as LTCG)
         and <span className="text-warn">⧖ hold</span> (still in the window — selling now is a disqualifying disposition).
-        Holding periods are counted in whole years and assume these shares were exercised two years
-        before the plan begins — the same rule and the same assumption the plan&rsquo;s tax ledger uses,
-        so this badge and the Future Activity tab cannot disagree.
+        Holding periods run from the grant date and the exercise date on each row, tested against a
+        sale on 31 December — the same rule and the same dates the plan&rsquo;s tax ledger uses, so this
+        badge and the Future Activity tab cannot disagree. A row with no exercise date entered counts
+        as still holding.
       </p>
     </div>
   );
