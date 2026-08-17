@@ -1,7 +1,7 @@
 // The chapter list, and everything the rest of the report needs to know about a
 // chapter without importing it: its heading, the layout that prints it, the
 // AI-off narrator, and the one line that tells the model what it is for.
-import { CHAPTER_IDS, type ChapterId, type StoryContext } from "../types";
+import { CHAPTER_IDS, type ChapterId, type ChapterLength, type StoryContext } from "../types";
 import { narratePlanInOnePage } from "./plan-in-one-page";
 import { narrateWhatWerePlanningFor } from "./what-were-planning-for";
 import { narrateWhereTheMoneyGoes } from "./where-the-money-goes";
@@ -327,6 +327,96 @@ const OUTPUT_ASK: Record<ChapterLayout, string> = {
     "Output: clean Markdown, ONE or TWO short paragraphs, no headings, no preamble. Do not explain the technical terms themselves — the plain-English list of them is printed under your text by the page layout.",
 };
 
-export function chapterOutputAsk(chapterId: ChapterId): string {
-  return OUTPUT_ASK[CHAPTERS[chapterId].layout];
+/**
+ * How the ask MOVES with the advisor's length setting.
+ *
+ * Concatenated onto the layout's own sentence rather than replacing it, so the
+ * layout keeps naming the SHAPE and the advisor only names the amount.
+ *
+ * ⚠️ That is not on its own enough, and the first version of this Record proved
+ * it. A modifier can contradict the sentence it lands on: `full` on a checklist
+ * chapter read "…ONE short paragraph of at most two sentences … Use the whole
+ * space you have; this chapter carries more than one idea." Concatenation was
+ * never the safeguard — `FIXED_SHAPE_ASK` below is.
+ *
+ * ⚠️ CONCATENATED on the SAME line — never added as a separate entry in
+ * `prompts.ts#systemParts`. That prompt is one instruction per line and a
+ * chapter's ask is one instruction; a second line would read as a second rule.
+ *
+ * ⚠️ No numbers, for the reason `prompts.ts` documents at length: a word count
+ * in this prompt is an anchor the model writes past by about five words.
+ *
+ * `standard` is the EMPTY string, and that is load-bearing rather than tidy: it
+ * makes a default-style prompt byte-identical to the one that existed before
+ * this setting (for a household whose name fields carry no padding and no CR or
+ * LF — `chapters/prompts.ts#singleLine` has the measurement), so no chapter
+ * already generated reads stale on the deploy that adds it. See
+ * `types.ts#DEFAULT_CHAPTER_STYLE`.
+ */
+const LENGTH_MODIFIER: Record<ChapterLength, string> = {
+  short: " Keep it to the fewest sentences that still answer the brief.",
+  standard: "",
+  full: " Use the whole space you have; this chapter carries more than one idea.",
+};
+
+/**
+ * Which layouts' asks name a FIXED SHAPE — a ceiling in sentences or paragraphs
+ * that the prose must sit inside because the sheet's real content is the LIST
+ * printed under it.
+ *
+ * `checklist` and `glossary` are those two, and `view-model.ts` is why: they get
+ * 35 and 90 words against a full sheet's 300, then print
+ * "…there's more here than fits this page" over whatever they drop. A chapter
+ * asked for more prose than its sheet holds makes that note its normal ending
+ * rather than its exception — the defect `OUTPUT_ASK` above and `view-model.ts`
+ * were written to close (Wave A, Task 3), which a length modifier applied
+ * blindly re-opens on exactly these two chapters.
+ *
+ * So `full` is not SOFTENED for them, it is not applied: `chapterOutputAsk`
+ * hands back the layout's own sentence unchanged, and there is no wording left
+ * for a model to weigh against the ceiling the layout set. `short` still applies —
+ * asking for fewer sentences than a ceiling allows is coherent, and cannot make
+ * the trim note fire.
+ *
+ * A `Record`, like `OUTPUT_ASK` itself, so a sixth layout has to ANSWER this
+ * rather than inherit an answer written for a different sheet.
+ */
+const FIXED_SHAPE_ASK: Record<ChapterLayout, boolean> = {
+  heroProse: false,
+  twoUp: false,
+  strategyCards: false,
+  checklist: true,
+  glossary: true,
+};
+
+/** ⚠️ `length` is REQUIRED. It was defaulted, which made the one argument in
+ *  this threading whose omission the compiler could not see. */
+export function chapterOutputAsk(chapterId: ChapterId, length: ChapterLength): string {
+  const layout = CHAPTERS[chapterId].layout;
+  const suppressed = length === "full" && FIXED_SHAPE_ASK[layout];
+  return OUTPUT_ASK[layout] + (suppressed ? "" : LENGTH_MODIFIER[length]);
+}
+
+/**
+ * Is `full` a SILENT NO-OP on this chapter?
+ *
+ * True for exactly the layouts `FIXED_SHAPE_ASK` marks, so it cannot drift from
+ * the suppression `chapterOutputAsk` actually performs — the same rule
+ * `chapterEnumerates` follows above, and for the same reason: a second copy of
+ * `layout === "checklist"` is how the answer starts disagreeing with itself.
+ *
+ * The review panel is the caller. Suppression happens BEFORE the prompt is
+ * built, so a chapter set to `full` here produces a prompt and a `sourceHash`
+ * byte-identical to `standard` — the advisor changes the setting, presses
+ * Regenerate, waits, and reads the same prose back. Unannotated, that is
+ * indistinguishable from the model ignoring them.
+ *
+ * ⚠️ An annotation, never a disabled or missing option: the report-level
+ * control sets all fourteen chapters at once, so these two legitimately HOLD
+ * `full`, and a `<select>` whose value is absent from its options renders a
+ * DIFFERENT option as selected. `short` still applies here, so the control has
+ * real work to do either way.
+ */
+export function chapterIgnoresFullLength(chapterId: ChapterId): boolean {
+  return FIXED_SHAPE_ASK[CHAPTERS[chapterId].layout];
 }

@@ -13,8 +13,14 @@ import {
 } from "@/lib/presentations/ai-cache";
 import { buildChapterPrompt, chapterSourceHash } from "./chapters/prompts";
 import { CHAPTERS, chapterEnumerates } from "./chapters/registry";
-import { runGates, type GateFailure } from "./validate";
-import { factsForChapter, type ChapterId, type StoryContext } from "./types";
+import { runGates, GATE_VERSION, type GateFailure } from "./validate";
+import {
+  factsForChapter,
+  type ChapterId,
+  type ChapterStyle,
+  type StoryContext,
+} from "./types";
+import type { StoryVoice } from "./voice/resolve";
 
 /** Pinned explicitly rather than through AZURE_ANALYSIS_MODEL, matching the
  *  shipped comparison generator (pages/retirement-comparison/generate-ai.ts).
@@ -38,8 +44,8 @@ const HEADING_LINE_RE = /^ {0,3}#{1,6}\s/u;
 /**
  * The floor below which a draft is not a chapter.
  *
- * The gates cannot supply this. All four judge what prose SAYS, so a draft with
- * nothing in it to bite on clears every one of them: `runGates` returns no
+ * The gates cannot supply this. Every one of them judges what prose SAYS, so a
+ * draft with nothing in it to bite on clears all of them: `runGates` returns no
  * failures for `"#"`, `"---"`, `"..."`, a bare code fence, or `"Hello."`.
  * Without a floor any of those renders as the client's chapter and is written to
  * a 30-day cache that `ai-cache.ts` cannot delete.
@@ -103,8 +109,8 @@ function firstNamesOf(ctx: StoryContext): string[] {
  * pack, one of the advisor's strategy labels, or one of the household's first
  * names?
  *
- * The cheapest available answer to the one question none of the four gates asks:
- * is this draft about the plan AT ALL. All four judge what prose says, so a
+ * The cheapest available answer to the one question none of the gates asks: is
+ * this draft about the plan AT ALL. Every gate judges what prose says, so a
  * refusal ("I'm sorry, I can't help with that. As an AI language model…") and an
  * echo of an injected instruction clear every one of them — no figures, short
  * plain sentences, no advice verbs, none of the AI tells — and are then stored as
@@ -131,6 +137,18 @@ export interface GeneratedChapter {
   markdown: string;
   /** SHA-256 of the first-attempt prompt — the staleness key. */
   sourceHash: string;
+  /**
+   * `GATE_VERSION` this chapter's stored words were judged against — the
+   * other staleness key, beside `sourceHash`. True by measurement on the two
+   * paths that publish a model draft: both call `runGates` on exactly the
+   * text being returned and only return it once that call is empty.
+   *
+   * ⚠️ NOT true on the `fallback` path below. The stored markdown there is the
+   * deterministic narrative, which no gate ever judges — the gates judged the
+   * model draft that got rejected. Stamped there anyway so a suppressed
+   * chapter is not invisible to a later tightening either.
+   */
+  gateVersion: number;
   /** True when the gates rejected both attempts (or the call failed) and the
    *  deterministic narrative is what rendered. */
   aiSuppressed: boolean;
@@ -138,9 +156,9 @@ export interface GeneratedChapter {
   failures: GateFailure[];
   /**
    * Set instead of `failures` when the model never produced a draft. An outage
-   * is not a gate finding: `GateId` has four values and none of them is "the
-   * assistant was down", so filing one under `facts` would tell the advisor the
-   * model wrote a figure it never wrote.
+   * is not a gate finding: none of `GateId`'s values is "the assistant was
+   * down", so filing one under `facts` would tell the advisor the model wrote
+   * a figure it never wrote.
    */
   error: string | null;
   generatedAt: string;
@@ -157,19 +175,34 @@ export interface GenerateChapterArgs {
   clientId: string;
   chapterId: ChapterId;
   ctx: StoryContext;
-  voiceSamples: string[];
+  /** Resolved once for the whole run (`run-context.ts`), because it is an input
+   *  to the `sourceHash` this returns. */
+  voice: StoryVoice;
+  /**
+   * The register and length THIS chapter is written in — the advisor's per-row
+   * setting, resolved by the route through `resolveChapterStyles`.
+   *
+   * Required, not defaulted, for the same reason `voice` is: it is an input to
+   * the `sourceHash` this returns, and a caller that quietly fell back to the
+   * default would store hashes the staleness route — which was told the real
+   * style — can never reproduce.
+   */
+  style: ChapterStyle;
   /** Bypass the cache and force a fresh call — the panel's Regenerate action. */
   force?: boolean;
   deps?: GenerateChapterDeps;
 }
 
 /**
- * Gate 3 is the only gate that can report the same thing twice: it maps over
- * sentences with no seen-set, so one offending sentence written in two
- * paragraphs yields two byte-identical failures. Gates 1, 2 and 4 are each
- * structurally incapable of it. Saying a rule twice adds nothing to the retry
- * prompt and reads as a defect in the review panel, so both are deduplicated
- * here rather than in the frozen gates.
+ * Gate 3 (`validateNoAdvice`) is the only gate that can report the same thing
+ * twice: it maps over sentences with no seen-set, so one offending sentence
+ * written in two paragraphs yields two byte-identical failures. Every other
+ * gate is structurally incapable of it — verified by reading each one, not
+ * assumed: facts and labels dedupe by a `Set`; readability, voice and register
+ * each run a fixed, bounded number of single-shot checks; foreignName returns
+ * at most one failure outright, however many names it finds. Saying a rule
+ * twice adds nothing to the retry prompt and reads as a defect in the review
+ * panel, so both are deduplicated here rather than in the frozen gates.
  */
 function dedupe(failures: GateFailure[]): GateFailure[] {
   const seen = new Set<string>();
@@ -221,7 +254,7 @@ function retryNotes(failures: GateFailure[]): GateFailure[] {
 }
 
 export async function generateChapter(args: GenerateChapterArgs): Promise<GeneratedChapter> {
-  const { clientId, chapterId, voiceSamples } = args;
+  const { clientId, chapterId, voice, style } = args;
   /**
    * Scope the pack to this chapter ONCE, here, and let everything below read the
    * result: the prompt the model is shown, the gate that judges what it wrote,
@@ -238,7 +271,7 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
   const generate = args.deps?.generate ?? (async (s: string, u: string) => {
     const { content, finishReason } = await callAIExtractionWithMeta(s, u, MODEL);
     // A completion that did not finish is an outage by definition: what came
-    // back is half a chapter, and half a chapter clears all four gates and the
+    // back is half a chapter, and half a chapter clears every gate and the
     // substance floor alike. `finish_reason` is the only place that fact is
     // stated, and the `callAIExtraction` convenience wrapper throws it away.
     //
@@ -256,11 +289,11 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
   const getCached = args.deps?.getCached ?? getCachedAnalysis;
   const setCached = args.deps?.setCached ?? setCachedAnalysis;
 
-  const first = buildChapterPrompt(chapterId, ctx, voiceSamples, []);
+  const first = buildChapterPrompt(chapterId, ctx, voice, style, []);
   // Not `hashAiRequest(first)`, though it is the same value: the staleness route
   // has to rebuild this hash from a context it loads itself, so the expression
   // lives in ONE place both sides call (`chapters/prompts.ts`).
-  const sourceHash = chapterSourceHash(chapterId, ctx, voiceSamples);
+  const sourceHash = chapterSourceHash(chapterId, ctx, voice, style);
 
   const narrative = CHAPTERS[chapterId].narrate(ctx).join("\n\n");
   /**
@@ -283,12 +316,34 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
     chapterId,
     markdown: narrative,
     sourceHash,
+    gateVersion: GATE_VERSION,
     aiSuppressed: true,
     failures,
     error,
     generatedAt: new Date().toISOString(),
     cached: false,
   });
+
+  /**
+   * Two gate rules move for a chapter that has to name every strategy or every
+   * account — see `validate/index.ts#GateOptions.enumerates`. The SAME predicate
+   * `buildChapterPrompt` reads, so what the model is told and what it is judged
+   * against cannot come apart.
+   *
+   * Computed here, ahead of the cache read below, rather than beside the
+   * generation attempts further down — a cache hit needs it too, to re-gate
+   * what it is about to serve.
+   */
+  const gateOpts = {
+    firstNames: firstNamesOf(ctx),
+    enumerates: chapterEnumerates(chapterId),
+    // Gate 7 reports a name that is not this household's, and a goal or a
+    // strategy label is where a household names somebody who is not one of the
+    // two adults — a child, a parent, a beneficiary. Both are typed by hand and
+    // both reach the prose, so without this the gate rejects a chapter for
+    // quoting the client's own words.
+    householdText: [...ctx.goals.map((g) => g.name), ...ctx.strategies.map((s) => s.name)],
+  };
 
   if (!args.force) {
     // `ai-cache.ts` casts whatever Redis returns to `AiCacheValue` without
@@ -302,15 +357,28 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
       // A hit with no chapter in it is not a hit. The same floor as the write
       // path, applied in both directions, so an entry left by an older deploy
       // heals on the next render instead of serving a stub for its 30-day TTL.
-      // Not re-validation: the gates are deliberately NOT re-run on a hit.
       const cachedMarkdown = typeof hit?.markdown === "string" ? hit.markdown : "";
       // Both floors, applied in both directions. A refusal that was cached before
       // this rule existed heals on the next render instead of being served for
       // its 30-day TTL — which matters more here than for a stub, because `force`
       // is the only other escape and no UI sends it.
-      if (hit && hasSubstance(cachedMarkdown) && aboutThePlan(cachedMarkdown)) {
+      //
+      // …and the current gates, for real this time. A hit is text a PAST run
+      // judged, possibly under an older gate set — `GATE_VERSION`'s entire job
+      // (Task 13) is to let a tightening reach it, and a plain re-stamp on the
+      // assumption it would still pass cannot do that. So the hit is actually
+      // re-checked against the gates as they stand NOW. A hit that fails is
+      // treated as a MISS below — it falls through to a fresh model call —
+      // which is what "a tightening reaches text already written" has to
+      // mean: the words a new gate would reject are not served again.
+      if (
+        hit &&
+        hasSubstance(cachedMarkdown) &&
+        aboutThePlan(cachedMarkdown) &&
+        runGates(cachedMarkdown, ctx.facts, gateOpts).length === 0
+      ) {
         return {
-          chapterId, markdown: cachedMarkdown, sourceHash, aiSuppressed: false,
+          chapterId, markdown: cachedMarkdown, sourceHash, gateVersion: GATE_VERSION, aiSuppressed: false,
           failures: [], error: null, generatedAt: hit.generatedAt, cached: true,
         };
       }
@@ -337,21 +405,13 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
   // move.
   let firstFailures: GateFailure[] = [];
 
-  /**
-   * Two gate rules move for a chapter that has to name every strategy or every
-   * account — see `validate/index.ts#GateOptions.enumerates`. The SAME predicate
-   * `buildChapterPrompt` reads, so what the model is told and what it is judged
-   * against cannot come apart.
-   */
-  const gateOpts = { firstNames: firstNamesOf(ctx), enumerates: chapterEnumerates(chapterId) };
-
   try {
     const attempt1 = await draft(first);
     let markdown = attempt1;
     firstFailures = runGates(attempt1, ctx.facts, gateOpts);
 
     if (firstFailures.length > 0) {
-      const retry = buildChapterPrompt(chapterId, ctx, voiceSamples, retryNotes(firstFailures));
+      const retry = buildChapterPrompt(chapterId, ctx, voice, style, retryNotes(firstFailures));
       const attempt2 = await draft(retry);
       const retryFailures = dedupe(runGates(attempt2, ctx.facts, gateOpts));
       if (retryFailures.length > 0) return fallback(retryFailures);
@@ -379,7 +439,7 @@ export async function generateChapter(args: GenerateChapterArgs): Promise<Genera
       console.warn("[plan-story] cache write failed (non-fatal)", chapterId, err);
     }
     return {
-      chapterId, markdown, sourceHash, aiSuppressed: false,
+      chapterId, markdown, sourceHash, gateVersion: GATE_VERSION, aiSuppressed: false,
       failures: [], error: null, generatedAt, cached: false,
     };
   } catch (err) {

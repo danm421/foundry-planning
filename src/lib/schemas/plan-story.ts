@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { chapterStyleSchema } from "@/lib/presentations/pages/plan-story/options-schema";
 import { CHAPTER_IDS } from "@/lib/presentations/story/types";
 
 /** Literal "base" or a scenario id. Whether the caller may actually key a story
@@ -23,13 +24,15 @@ const scenarioId = z.string().min(1).max(64).optional();
 const documentRole = z.enum(["standalone", "frontMatter"]);
 
 /**
- * One chapter's two advisor actions. Both fields are optional so a single PATCH
- * can save an edit, mark it reviewed, or do both — but a body carrying neither
- * is rejected by the route, since it would otherwise answer a no-op exactly
- * like a saved edit.
+ * One chapter's advisor actions. Every field is optional, and a single PATCH
+ * may set any number of them — but a body carrying none of them is rejected
+ * by the route, since it would otherwise answer a no-op exactly like a saved
+ * edit. Not every combination, though: `editedText` together with
+ * `acceptGenerated` is refused rather than resolved — see that field below.
  *
  * An empty `editedText` is meaningful: it drops the advisor's version and lets
- * the model's words render again.
+ * the model's words render again. `reviewed: false` is the same idea applied
+ * to review — see the field below.
  */
 export const planStoryChapterPatchSchema = z
   .object({
@@ -39,7 +42,30 @@ export const planStoryChapterPatchSchema = z
     // longest one the narrators produce — headroom for an advisor who writes
     // long, and a bound on an otherwise unlimited write to a text column.
     editedText: z.string().max(20000).optional(),
+    /**
+     * `true` marks the chapter reviewed. `false` clears that mark — the
+     * advisor's undo for a mis-click, or a second look that changes their
+     * mind — and reads the same way `editedText`'s empty string does above: a
+     * PRESENT value, even a falsy one, is an instruction. `undefined` is the
+     * only value that means "leave review alone", which is what the route's
+     * guard checks for.
+     */
     reviewed: z.boolean().optional(),
+    /**
+     * "Use the new version instead" — let a rewrite the advisor's own words are
+     * standing in front of through.
+     *
+     * A flag rather than the text itself, deliberately: the words are already
+     * stored in `generated_text`, and taking them off the request would let a
+     * caller write anything into a chapter under the model's name. What this
+     * says is only WHICH of the two stored versions prints, which the route
+     * spells as clearing the edit.
+     *
+     * ⚠️ The only field in this feature that discards writing a human did, so
+     * it is the one that must never be inferred — the route audits it under its
+     * own action, and the panel puts it behind a click that says what it does.
+     */
+    acceptGenerated: z.boolean().optional(),
   })
   .strict();
 
@@ -62,6 +88,33 @@ export const planStoryGenerateSchema = z
     chapterId: z.enum(CHAPTER_IDS).optional(),
     /** The panel's Regenerate action — bypass the 30-day AI cache. */
     force: z.boolean().optional(),
+    /**
+     * How each chapter should be written — the deck's own per-chapter tone and
+     * length, sent as saved. An input to every chapter's stored `sourceHash`, so
+     * the staleness route takes the same map (as repeated query parameters, this
+     * being a GET) and both fill their gaps through `resolveChapterStyles`.
+     *
+     * ⚠️ `partialRecord`, not `record`. The ordinary payload is PARTIAL — the
+     * panel sends only the chapters an advisor has restyled — and `z.record`
+     * over an enum key is EXHAUSTIVE in Zod 4, wanting all fourteen. Measured
+     * both ways: it accepts a one-chapter map TODAY only because
+     * `chapterStyleSchema` carries its own `.default`, which quietly fills the
+     * other thirteen. That is a property of the ENTRY, not of the map — with a
+     * non-defaulting entry the same expression fails a one-chapter map with
+     * thirteen "expected object, received undefined" issues, while an ABSENT
+     * field still passes on `.default({})`, so the break would not show until an
+     * advisor changed a single tone. `partialRecord` says what is meant and does
+     * not rest on the entry.
+     *
+     * Still an enum over the real id list, for the reason `chapterId` above is
+     * one: an unknown key is a caller bug, and this map decides what a paid model
+     * call is written in.
+     *
+     * The entry is the PAGE's schema, imported rather than restated: the panel
+     * sends what the deck stored, so a second spelling could accept a tone the
+     * deck cannot store, or refuse one it can.
+     */
+    chapterStyle: z.partialRecord(z.enum(CHAPTER_IDS), chapterStyleSchema).default({}),
   })
   .strict();
 

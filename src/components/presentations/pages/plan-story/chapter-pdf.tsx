@@ -253,8 +253,16 @@ export function PlanStoryChapterPdf({
       {cards.map((s, i) => (
         <View key={i} style={styles.card}>
           <Text style={styles.cardName}>{s.name}</Text>
-          <Text style={styles.cardLabel}>WHAT WE&apos;D DO</Text>
-          <Text style={styles.cardText}>{s.what}</Text>
+          {/* Conditional for the same reason "what it does" below is: the
+              view-model refuses a `what` whose figures the fact pack does not
+              hold, and a heading over an empty line reads as a rendering
+              failure rather than as a withheld figure. */}
+          {s.what.length > 0 && (
+            <>
+              <Text style={styles.cardLabel}>WHAT WE&apos;D DO</Text>
+              <Text style={styles.cardText}>{s.what}</Text>
+            </>
+          )}
           {s.detail.length > 0 && (
             <>
               <Text style={[styles.cardLabel, { marginTop: 6 }]}>WHAT IT DOES</Text>

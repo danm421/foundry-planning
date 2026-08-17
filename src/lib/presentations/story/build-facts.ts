@@ -334,6 +334,38 @@ const MEDICARE_CHAPTERS: readonly ChapterId[] = ["healthCareCosts"];
 const ASSUMPTION_CHAPTERS: readonly ChapterId[] = ["thingsToKnow"];
 
 /**
+ * The home chapter for the plan's two YEARS — the only two facts this file emits
+ * with no `chapters` at all.
+ *
+ * That absence is the right scope and stays: a horizon is context for any chapter
+ * that mentions time, and Gate 1 would reject a chapter for a year it could not
+ * see. What it also did was hand every one of the fourteen the same two numbers
+ * under "the only figures you may use", and a live-model checkpoint run
+ * (2026-08-14) measured what that costs: the report named "work ends in 2035" and
+ * "through 2070" in 12 of 14 chapters, "2035 is when work income stops" opened a
+ * paragraph in 7 of 14, and 22 of 48 paragraphs opened with the shape `<figure>
+ * is <what it is>`. The advisor's voice, the exemplars and the tone controls were
+ * all invisible underneath that.
+ *
+ * `whatWerePlanningFor` because it is the chapter about what these two years are
+ * FOR — the household's goals and the span the plan covers. `primary` changes
+ * nothing about who may print them (`factsForChapter` never reads it) and nothing
+ * about the figure cards (`view-model.ts#figuresFor` reads the scoped pack, not
+ * this); it changes only how `chapters/prompts.ts` lists them.
+ *
+ * ⚠️ Deliberately the ONLY two assignments. Every other fact here is already
+ * scoped to between one and three chapters, and a `primary` on those is either a
+ * no-op or actively harmful. On a single-chapter scope — every scope constant
+ * above except `OUTCOME_CHAPTERS` and `PROPOSED_OUTCOME_CHAPTERS` — nothing can
+ * read it, because the only chapter that sees the fact is the one that owns it.
+ * On those two, any owner but `planInOnePage` demotes confidence or legacy to
+ * another page's figure ON the headline page — whose whole job is to state them
+ * as the punchline (see `OUTCOME_CHAPTERS` above) — and naming `planInOnePage`
+ * itself demotes them on the two chapters that are ABOUT them.
+ */
+const PLAN_YEAR_HOME: ChapterId = "whatWerePlanningFor";
+
+/**
  * The estate pair, both plans, in COMPARISON order — both nets, then both costs.
  *
  * The labels are written as captions rather than as notes to the model, because
@@ -495,7 +527,9 @@ export function buildStoryFacts(input: StoryFactsInput): Fact[] {
     ...lifetimeTaxFacts(input.lifetimeTax),
     ...coverFacts(input.cover),
     ...medicareFacts(input.medicare),
-    yearFact("plan.endOfLifeYear", "The last year we plan to", input.endOfLifeYear),
+    // No `chapters` — every chapter may print it — and a `primary` naming the one
+    // chapter that should introduce it. See `PLAN_YEAR_HOME`.
+    yearFact("plan.endOfLifeYear", "The last year we plan to", input.endOfLifeYear, undefined, PLAN_YEAR_HOME),
     // A SETTING, not an outcome, so it is always here — see the input's own
     // note on why zero is emitted rather than dropped.
     pctFact("plan.inflationRate", "Prices rise each year by", input.inflationRate, ASSUMPTION_CHAPTERS),
@@ -514,7 +548,9 @@ export function buildStoryFacts(input: StoryFactsInput): Fact[] {
    * the chapters in this report has anything to say about it.
    */
   if (input.retirementYear >= input.planStartYear) {
-    facts.push(yearFact("plan.retirementYear", "The year you stop working", input.retirementYear));
+    facts.push(
+      yearFact("plan.retirementYear", "The year you stop working", input.retirementYear, undefined, PLAN_YEAR_HOME),
+    );
   }
 
   if (input.baseSuccess != null) {

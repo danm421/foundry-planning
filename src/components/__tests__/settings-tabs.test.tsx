@@ -94,7 +94,7 @@ describe("SettingsTabs — Branding tab", () => {
       const labels = Array.from(container.querySelectorAll("a")).map((a) =>
         a.textContent?.trim(),
       );
-      expect(labels).toEqual(["Team", "Sharing", "Branding"]);
+      expect(labels).toEqual(["Team", "Sharing", "Branding", "Voice"]);
     },
   );
 });

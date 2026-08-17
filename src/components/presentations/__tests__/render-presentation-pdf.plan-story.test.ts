@@ -100,6 +100,7 @@ const storyOptions = (over: Partial<PlanStoryOptions> = {}): PlanStoryOptions =>
   documentRole: "standalone",
   scenarioId: "",
   sections: PLAN_STORY_OPTIONS_DEFAULT.sections,
+  chapterStyle: PLAN_STORY_OPTIONS_DEFAULT.chapterStyle,
   ...over,
 });
 

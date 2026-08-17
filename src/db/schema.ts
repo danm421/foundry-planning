@@ -3169,10 +3169,57 @@ export const planStoryChapters = pgTable(
     chapterId: text("chapter_id").notNull(),
     /** Last model output, kept untouched so an advisor can revert to it. */
     generatedText: text("generated_text"),
+    /**
+     * When `generatedText` last actually CHANGED — not when a run last touched
+     * the row. Held still by a cache hit that reproduces the stored chapter
+     * word for word, the same condition `reviewedAt` is cleared under.
+     *
+     * ⚠️ NOT `updatedAt`, and the difference is the whole point. `updatedAt`
+     * moves on every write this table has, including `markChapterReviewed` —
+     * so "is the model's version newer than the advisor's" asked against it
+     * answers YES for the ordinary flow of editing a chapter and then marking
+     * it reviewed, and offers to throw the advisor's writing away over it.
+     */
+    generatedAt: timestamp("generated_at"),
+    /**
+     * Whose voice this chapter was written in — the Clerk user id of the
+     * advisor whose generation stored the words and the `sourceHash` beside
+     * them. Null on every row written before this column existed.
+     *
+     * ⚠️ Load-bearing for the out-of-date badge, not provenance trivia. The
+     * stored hash is built from a VOICE, and the freshness check rebuilds it;
+     * rebuilding it in the reader's voice instead of the writer's answers
+     * "would I get something different if I regenerated this" rather than
+     * "have the inputs this chapter was written from changed" — so a colleague
+     * opening a report written in another advisor's personal voice sees a
+     * stale badge on every chapter, with nothing they can do to clear it.
+     */
+    generatedByUserId: text("generated_by_user_id"),
     /** The advisor's version. Null until edited; wins at render time. */
     editedText: text("edited_text"),
+    /**
+     * When `editedText` was last written. Distinct from `updatedAt`, which
+     * moves on every write including the model's — without this, "is the
+     * generated text newer than the advisor's" is unanswerable.
+     */
+    editedAt: timestamp("edited_at"),
     /** Prompt hash at generation — the staleness key. */
     sourceHash: text("source_hash"),
+    /**
+     * `GATE_VERSION` (`validate/index.ts`) at generation — the OTHER staleness
+     * key, beside `sourceHash`. `sourceHash` catches the plan moving; this
+     * catches a gate being added or tightened after the words were already
+     * written and cached, which nothing else can reach.
+     *
+     * ⚠️ `.default(1)` reports every GENERATED row out of date the moment
+     * `GATE_VERSION` passes 1 — every stored chapter that has actually been
+     * generated, in every firm, at once. (A row with no `sourceHash` — never
+     * generated, or written only by `updateChapterText` / `markChapterReviewed`
+     * — stays fresh; see `isChapterStale`.) That is intended, not a migration
+     * accident: see the constant's own docblock. It clears on one regenerate
+     * per chapter.
+     */
+    gateVersion: integer("gate_version").notNull().default(1),
     /** True when the gates rejected the model and the fallback was stored. */
     aiSuppressed: boolean("ai_suppressed").notNull().default(false),
     /**
@@ -3201,6 +3248,92 @@ export const planStoryChapters = pgTable(
 
 export type PlanStoryChapterRow = InferSelectModel<typeof planStoryChapters>;
 export type NewPlanStoryChapterRow = InferInsertModel<typeof planStoryChapters>;
+
+/**
+ * The voice a firm's — or one advisor's — Plan Story chapters are written in.
+ *
+ * ⚠️ `advisorUserId` is NOT NULL with "" meaning THE FIRM DEFAULT, deliberately.
+ * A nullable column would be the obvious spelling and is wrong: Postgres treats
+ * every NULL as distinct in a unique index, so two firm-default rows would both
+ * insert cleanly and `loadVoiceProfile` would return whichever the planner
+ * happened to hand back.
+ */
+export const storyVoiceProfiles = pgTable(
+  "story_voice_profiles",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    /** Clerk org id. Text, no FK — the crm_* convention. */
+    firmId: text("firm_id").notNull(),
+    /** Clerk user id, or "" for the firm default. See the note above. */
+    advisorUserId: text("advisor_user_id").notNull().default(""),
+    /**
+     * The advisor's own description of how they write, in their words. Sent to
+     * the model as an instruction, so it is meant to stay short — around 2,000
+     * characters, about three paragraphs, is already more guidance than a
+     * system prompt can absorb. That bound is NOT enforced here: this is a
+     * plain `text` column with no length limit and no CHECK. The bound is held
+     * by the writing route's Zod schema instead — `storyVoiceProfilePutSchema`
+     * in `lib/schemas/story-voice.ts`, behind `PUT /api/story-voice`.
+     */
+    styleNote: text("style_note").notNull().default(""),
+    updatedBy: text("updated_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("story_voice_profiles_firm_advisor_uq").on(t.firmId, t.advisorUserId)],
+);
+
+/**
+ * Samples of the advisor's own writing the model is asked to match.
+ *
+ * ⚠️⚠️ EVERY ROW HERE IS SENT TO THE MODEL ON SOMEBODY ELSE'S REPORT. A sample
+ * harvested from the Cooper household is an input to the Warner household's
+ * prompt — that is the entire point of an exemplar, and it is also a
+ * cross-client leak vector the five shipped gates do not see. Gate 1 rejects a
+ * FIGURE that is not in this household's pack, so a leaked dollar cannot print;
+ * nothing rejected a leaked NAME until Gate 7 (`validate/foreign-names.ts`).
+ *
+ * This table and its repo do NOT validate `text` — that is a contract on the
+ * CALLER, not an invariant this schema enforces today. The only writer is
+ * `POST /api/story-voice/samples`, which runs the scrubber (`voice/scrub.ts`)
+ * on the way in; `insertVoiceSample` is called from that handler and nowhere
+ * else, and the samples PATCH route deliberately has no `text` field. Storing
+ * the advisor's raw writing and scrubbing on read was considered and rejected:
+ * a row would then sit in this table, readable into another household's
+ * prompt, for however long it took to get around to scrubbing it — with the
+ * Cooper name in it the whole time.
+ *
+ * `enabled` starts FALSE and IS enforced here, by the column default — an
+ * advisor turns a sample on deliberately.
+ */
+export const storyVoiceSamples = pgTable(
+  "story_voice_samples",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id").notNull(),
+    advisorUserId: text("advisor_user_id").notNull().default(""),
+    /** Already scrubbed. Unbounded here; the writing route caps the SUBMITTED
+     *  text at 2,000 characters — about one long chapter — because four of
+     *  these enter the system prompt of every chapter. The stored value can
+     *  run longer than that cap: scrubbing replaces a figure with a longer
+     *  stand-in word, measured at up to +40% on a figure-dense sample. See
+     *  `lib/schemas/story-voice.ts`. */
+    text: text("text").notNull(),
+    /** Where it came from, for the advisor's own recognition in the list. Null
+     *  for a sample they typed rather than harvested. */
+    sourceChapterId: text("source_chapter_id"),
+    sourceClientId: uuid("source_client_id").references(() => clients.id, { onDelete: "set null" }),
+    /** Off until the advisor turns it on. Never defaulted true. */
+    enabled: boolean("enabled").notNull().default(false),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("story_voice_samples_firm_advisor_idx").on(t.firmId, t.advisorUserId)],
+);
+
+export type StoryVoiceProfileRow = InferSelectModel<typeof storyVoiceProfiles>;
+export type StoryVoiceSampleRow = InferSelectModel<typeof storyVoiceSamples>;
 
 export const withdrawalStrategies = pgTable("withdrawal_strategies", {
   id: uuid("id").defaultRandom().primaryKey(),

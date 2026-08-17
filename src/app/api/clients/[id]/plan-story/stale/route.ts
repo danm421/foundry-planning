@@ -13,7 +13,7 @@
 // then flag every chapter of every report out of date — a badge that is always
 // on is worse than no badge, because the advisor learns to ignore it.
 import { NextRequest, NextResponse } from "next/server";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import { authErrorResponse } from "@/lib/authz";
 import {
@@ -23,9 +23,16 @@ import {
   type DocumentRole,
 } from "@/lib/presentations/story/repo";
 import { resolveStoryScenarioId } from "@/lib/presentations/story/scenario-scope";
-import { loadStoryRun } from "@/lib/presentations/story/run-context";
+import { loadStoryRun, loadAdvisorVoice } from "@/lib/presentations/story/run-context";
+import type { StoryVoice } from "@/lib/presentations/story/voice/resolve";
 import { chapterSourceHash } from "@/lib/presentations/story/chapters/prompts";
-import { isChapterId } from "@/lib/presentations/story/types";
+import { chapterStyleSchema } from "@/lib/presentations/pages/plan-story/options-schema";
+import {
+  isChapterId,
+  resolveChapterStyles,
+  type ChapterId,
+  type ChapterStyle,
+} from "@/lib/presentations/story/types";
 
 export const dynamic = "force-dynamic";
 // Two projections, a Monte Carlo read and a balance sheet, and on a proposal two
@@ -34,12 +41,48 @@ export const dynamic = "force-dynamic";
 // and saying so here keeps the two facts together.
 export const maxDuration = 300;
 
+/**
+ * The advisor's per-chapter tone and length, read off REPEATED FLAT parameters:
+ * `?style=planInOnePage:direct:full&style=thingsToKnow:plain:short`.
+ *
+ * Null means one of them was unreadable, which is a 400 — the same rule
+ * `documentRole` follows below, and for the same reason: a guessed style rebuilds
+ * a different prompt from the one the run was written from, so every chapter
+ * would read stale with nothing able to clear it.
+ *
+ * Flat rather than a JSON blob, matching every other query parameter this app
+ * has: there is no JSON-encoded query parameter anywhere in `src/`, an
+ * unguarded `JSON.parse` on query input throws into this route's `catch` and is
+ * answered 500 where a caller error is a 400, and this form reads in a log.
+ *
+ * What a valid style IS comes from `chapterStyleSchema` — the same object the
+ * saved deck and the generate body are validated against, so the three cannot
+ * drift into accepting different tones. The explicit three-part check is what
+ * keeps its per-field defaults from filling in a half-written parameter.
+ */
+function parseChapterStyles(values: string[]): Partial<Record<ChapterId, ChapterStyle>> | null {
+  const styles: Partial<Record<ChapterId, ChapterStyle>> = {};
+  for (const value of values) {
+    const parts = value.split(":");
+    if (parts.length !== 3) return null;
+    const [chapterId, tone, length] = parts;
+    if (!isChapterId(chapterId)) return null;
+    const parsed = chapterStyleSchema.safeParse({ tone, length });
+    if (!parsed.success) return null;
+    styles[chapterId] = parsed.data;
+  }
+  return styles;
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    await requireOrgId();
+    // The org check is the gate; the user id is needed as well because a
+    // chapter that does not say who generated it is rebuilt in the CALLER's
+    // voice — see the fallback below.
+    const { userId } = await requireOrgAndUser();
     const { id } = await params;
     const access = await verifyClientAccess(id);
     if (!access.ok) {
@@ -56,6 +99,16 @@ export async function GET(
     }
     const documentRole: DocumentRole = roleParam ?? "standalone";
 
+    // Absent is the ordinary case — a panel where the advisor has changed no
+    // tone — and means every chapter at the default. Resolved through the same
+    // helper the generate route fills ITS gaps with, because a chapter neither
+    // side was told about has to reach the same style on both.
+    const requested = parseChapterStyles(url.searchParams.getAll("style"));
+    if (requested === null) {
+      return NextResponse.json({ error: "Unreadable style" }, { status: 400 });
+    }
+    const chapterStyles = resolveChapterStyles(requested);
+
     // Resolved, not taken on trust — unlike the chapter list, which only reads
     // rows. This one goes on to LOAD a scenario, and `loadStoryContext` degrades
     // a snapshot ref to a proposal with no strategies, which would hash
@@ -71,7 +124,20 @@ export async function GET(
     // the narrowing has to survive into the hash call below.
     const generated = rows.flatMap((r) =>
       r.sourceHash != null && isChapterId(r.chapterId)
-        ? [{ chapterId: r.chapterId, sourceHash: r.sourceHash }]
+        ? [
+            {
+              chapterId: r.chapterId,
+              sourceHash: r.sourceHash,
+              // Whose voice this chapter's stored hash was built from. Null on
+              // every row written before the column existed.
+              generatedByUserId: r.generatedByUserId,
+              // The gate set this row was written under — `isChapterStale`
+              // compares it to `GATE_VERSION` beside the hash, so a gate
+              // tightening can flag a chapter the plan-shape check alone would
+              // call fresh.
+              gateVersion: r.gateVersion,
+            },
+          ]
         : [],
     );
     // Nothing generated, nothing that can be stale — and no reason to spend
@@ -81,13 +147,47 @@ export async function GET(
       return NextResponse.json({ scenarioId, documentRole, stale: [] });
     }
 
-    const { ctx, candidates, voiceSamples } = await loadStoryRun({
+    const { ctx, candidates, voice } = await loadStoryRun({
       clientId: id,
       firmId: access.firmId,
+      advisorUserId: userId,
       scenarioId,
       documentRole,
     });
     const inThisRun = new Set(candidates);
+
+    /**
+     * ⚠️⚠️ A voice PER GENERATING ADVISOR, not one for the run.
+     *
+     * The badge answers "have the inputs THIS CHAPTER was written from
+     * changed", and the voice is one of those inputs. Rebuilt in the caller's
+     * voice it answers "would I get something different if I regenerated this"
+     * instead — so a colleague opening a report a partner wrote in their own
+     * personal voice reads an out-of-date badge on all fourteen chapters, and
+     * the only thing that clears it is regenerating, which overwrites the
+     * partner's prose to do it.
+     *
+     * Per ROW rather than per run because two advisors really can share a
+     * report: one generates the story, another rewrites two chapters, and
+     * those two are now in a different voice from the other twelve.
+     *
+     * ⚠️ One read per DISTINCT writer — in practice one, and usually zero
+     * extra, since the run above already resolved the caller. Resolving inside
+     * the filter below would be fourteen round trips to answer a question with
+     * one or two answers.
+     */
+    const voices = new Map<string, StoryVoice>([[userId, voice]]);
+    const writers = [
+      ...new Set(
+        generated.flatMap((r) =>
+          r.generatedByUserId != null && !voices.has(r.generatedByUserId)
+            ? [r.generatedByUserId]
+            : [],
+        ),
+      ),
+    ];
+    const resolved = await Promise.all(writers.map((w) => loadAdvisorVoice(access.firmId, w)));
+    writers.forEach((w, i) => voices.set(w, resolved[i]));
 
     const stale = generated
       // A stored row for a chapter this run would not load facts for. Rare but
@@ -97,7 +197,19 @@ export async function GET(
       // its own facts matches nothing any run ever wrote — a stale badge nobody
       // can clear by regenerating.
       .filter((r) => inThisRun.has(r.chapterId))
-      .filter((r) => isChapterStale(r, chapterSourceHash(r.chapterId, ctx, voiceSamples)))
+      .filter((r) => {
+        // A row that does not say who wrote it is compared against the
+        // CALLER's voice, which is exactly what every row did before the
+        // column existed — so no existing report's badges move on deploy, and
+        // the row starts answering for itself the next time it is generated. A
+        // firm default here would flip the answer for every existing
+        // personal-voice row, and buy nothing.
+        const writer = voices.get(r.generatedByUserId ?? userId) ?? voice;
+        return isChapterStale(
+          r,
+          chapterSourceHash(r.chapterId, ctx, writer, chapterStyles[r.chapterId]),
+        );
+      })
       .map((r) => r.chapterId);
 
     return NextResponse.json({ scenarioId, documentRole, stale });

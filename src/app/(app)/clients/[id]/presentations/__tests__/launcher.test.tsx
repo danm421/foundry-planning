@@ -216,5 +216,57 @@ describe("PresentationsLauncher", () => {
     });
     // success notice is specific to the generate flow (not the "Recent runs" panel heading)
     await screen.findByText(/Generating your presentation/i);
+    // The default mocked /presentations/runs response (above) carries no
+    // storyReview — no deck here has a Plan Story page, so the soft gate has
+    // nothing to warn about.
+    expect(screen.queryByText(/haven't been reviewed yet/i)).not.toBeInTheDocument();
+  });
+
+  // The soft export gate (Task 16). The 202 response `handleGenerate` already
+  // reads is the only place in production that both (a) knows the unreviewed
+  // count and (b) fires before the file exists — see the ruling recorded
+  // against Task 16's report: the preview dialog fetches `export-pdf`, which
+  // streams a PDF and can never carry this, so it cannot be the surface.
+  it("surfaces the soft gate's warning in the run-progress notice when chapters are unreviewed", async () => {
+    global.fetch = vi.fn(async (url: string) => {
+      if (String(url).includes("/presentations/runs") && !String(url).includes("download=1")) {
+        return new Response(
+          JSON.stringify({
+            runId: "r1",
+            storyReview: [
+              { pageId: "planStory", scenarioId: "base", documentRole: "standalone", unreviewed: 8, total: 12 },
+            ],
+          }),
+          { status: 202 },
+        );
+      }
+      if (String(url).includes("/generation-runs")) {
+        return new Response(JSON.stringify({ householdId: "hh-test", runs: [] }), { status: 200 });
+      }
+      if (url === "/api/presentation-templates") {
+        return new Response(
+          JSON.stringify({ shared: [], mine: [], builtIn: [], builtInHidden: [] }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }) as never;
+
+    render(
+      <PresentationsLauncher
+        clientId="c1"
+        currentUserId="me"
+        clientLastName="Sample"
+        householdId="hh-test"
+        scenarios={[]}
+        snapshots={[]}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
+        investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Generate PDF/i }));
+    // The export still ran (soft — never blocked) AND the warning is shown.
+    await screen.findByText(/Generating your presentation/i);
+    await screen.findByText(/8 of 12 Plan Story chapters haven't been reviewed yet\./i);
   });
 });

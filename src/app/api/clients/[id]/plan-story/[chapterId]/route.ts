@@ -6,7 +6,13 @@ import { recordAudit } from "@/lib/audit";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 import { parseBody } from "@/lib/schemas/common";
 import { planStoryChapterPatchSchema } from "@/lib/schemas/plan-story";
-import { updateChapterText, markChapterReviewed } from "@/lib/presentations/story/repo";
+import {
+  updateChapterText,
+  markChapterReviewed,
+  clearChapterReviewed,
+  loadStoryChapter,
+  hasNewerGeneration,
+} from "@/lib/presentations/story/repo";
 import { resolveStoryScenarioId } from "@/lib/presentations/story/scenario-scope";
 import { CHAPTER_IDS, type ChapterId } from "@/lib/presentations/story/types";
 
@@ -17,13 +23,40 @@ function isChapterId(v: unknown): v is ChapterId {
 }
 
 /**
- * The advisor's two write actions on one chapter: replace its words, and say
- * they stand behind them.
+ * The advisor's four write actions on one chapter: replace its words, say they
+ * stand behind them, take that back, and let a rewrite their own version was
+ * standing in front of through.
  *
- * Both repo calls are upserts, so each one either stores the write or throws —
- * there is no zero-row outcome to check for, and no chapter that "has no row
- * yet" to 404 on. That makes `requireClientEditAccess` the sole barrier in
- * front of them, which is why it runs before either.
+ * ⚠️ Everything below is about this handler's calls into `story/repo`, and
+ * about those ONLY. It is not a claim about the handler as a whole, which
+ * reads other things and can fail for other reasons — `resolveStoryScenarioId`
+ * further down is a scenario lookup with a 404 of its own, and
+ * `requireClientEditAccess` ahead of it is a database read too.
+ *
+ * Five of those repo calls touch storage. Four are the WRITERS —
+ * `updateChapterText` for an edit and again for an accept, plus
+ * `markChapterReviewed` and `clearChapterReviewed`. The first three are
+ * upserts, so each either stores the write or throws, with no zero-row outcome
+ * to check and no "this chapter has no row yet" 404: the panel offers every
+ * chapter whether one was ever generated or not, so writing one from scratch is
+ * a first-class path rather than an edge case. `clearChapterReviewed` is the
+ * one exception — a plain UPDATE, deliberately: a chapter with no row was never
+ * reviewed, so a zero-row result there is not a failure to surface, just
+ * nothing to clear.
+ *
+ * The fifth, `loadStoryChapter`, is a read, and the accept path is the only one
+ * that makes it — the edit and both review paths reach `story/repo` without
+ * reading, which a test pins. It is not an authorization check: it is scoped on
+ * the same already-authorized clientId as the writers, and its job is to
+ * confirm the row really is shadowing a newer generation before the accept
+ * throws the advisor's version away. Its miss answers 409, because the row
+ * moved under a click that was correct when it was made.
+ *
+ * (`hasNewerGeneration`, imported from the same module, is pure and touches
+ * nothing.)
+ *
+ * `requireClientEditAccess` is what stands between a caller and another
+ * client's chapter row, which is why it runs ahead of all five.
  */
 export async function PATCH(
   request: NextRequest,
@@ -43,12 +76,29 @@ export async function PATCH(
     // `undefined` = the field was absent. An empty string is a real instruction
     // — "drop my edit and let the model's words render again" — so the two
     // cannot be collapsed into a truthiness test.
-    const { editedText, reviewed, documentRole } = parsed.data;
+    const { editedText, reviewed, documentRole, acceptGenerated } = parsed.data;
     // Reported rather than answered with a cheerful `{ ok: true }`: a panel bug
-    // that sends neither field would otherwise look exactly like a saved edit.
-    if (editedText === undefined && reviewed !== true) {
+    // that sends no field at all would otherwise look exactly like a saved edit.
+    // `reviewed === undefined`, not `!== true`: an explicit `false` is the
+    // advisor's undo, and it must count as something to do rather than fall
+    // through to this 400 the way an absent field does.
+    if (editedText === undefined && reviewed === undefined && acceptGenerated !== true) {
       return NextResponse.json(
-        { error: "Nothing to update — send editedText or reviewed" },
+        { error: "Nothing to update — send editedText, reviewed or acceptGenerated" },
+        { status: 400 },
+      );
+    }
+    /**
+     * ⚠️ Two contradictory instructions in one body: "store these words" and
+     * "throw my words away". Resolving them silently resolves them LOSSILY —
+     * the accept writes an empty string over whatever the same request just
+     * saved — and this is the one path in the feature that destroys advisor
+     * writing, so it may not run as a side effect of a request that also meant
+     * to keep some. A caller sending both is a caller bug, and a 400 says so.
+     */
+    if (editedText !== undefined && acceptGenerated === true) {
+      return NextResponse.json(
+        { error: "Send either editedText or acceptGenerated, not both" },
         { status: 400 },
       );
     }
@@ -74,10 +124,76 @@ export async function PATCH(
       });
     }
 
+    /**
+     * The advisor has read the rewrite their own words were standing in front
+     * of, and chosen it.
+     *
+     * `editedText: ""` rather than a delete: the empty string is ALREADY the
+     * documented "drop my version and let the model's words render again"
+     * (`schemas/plan-story.ts`), so this reuses a shipped path instead of
+     * adding a second way to say the same thing — and `generatedText` is
+     * untouched either way, so nothing about it is irreversible except the
+     * advisor's own sentences, which is what the click is for.
+     */
+    if (acceptGenerated === true) {
+      /**
+       * ⚠️⚠️ WHY THE READ ABOVE EARNS ITS PLACE ON THIS PATH ALONE.
+       *
+       * The banner this click comes from was rendered off a chapter list that
+       * can be minutes old: an advisor with the report open in two tabs can
+       * save a fresh edit in one and press this in the other, and an unchecked
+       * accept would then discard writing nothing had shadowed and revert the
+       * chapter to OLDER model prose.
+       *
+       * The click stays explicit and audited either way, so this is not what
+       * keeps Decision 1 true. It is what keeps the button's own sentence true
+       * — "the assistant rewrote this chapter after you edited it" — and a
+       * control that lies about what it is about to do is the defect this whole
+       * task exists to fix.
+       *
+       * 409 rather than 400: the request was well formed and was right when it
+       * was made. The row moved underneath it.
+       */
+      const row = await loadStoryChapter({ clientId: id, scenarioId, documentRole, chapterId });
+      if (row == null || !hasNewerGeneration(row)) {
+        return NextResponse.json(
+          { error: "This chapter has no newer version to switch to — reload and look again." },
+          { status: 409 },
+        );
+      }
+      await updateChapterText({ clientId: id, scenarioId, documentRole, chapterId, editedText: "" });
+      await recordAudit({
+        action: "plan_story.generated_accepted",
+        resourceType: "plan_story_chapter",
+        resourceId: chapterId,
+        clientId: id,
+        firmId,
+        metadata: crossFirmAuditMeta({ access }, callerOrg, { scenarioId, documentRole }),
+      });
+    }
+
     if (reviewed === true) {
       await markChapterReviewed({ clientId: id, scenarioId, documentRole, chapterId, userId });
       await recordAudit({
         action: "plan_story.chapter_reviewed",
+        resourceType: "plan_story_chapter",
+        resourceId: chapterId,
+        clientId: id,
+        firmId,
+        metadata: crossFirmAuditMeta({ access }, callerOrg, { scenarioId, documentRole }),
+      });
+    }
+
+    /**
+     * The advisor's undo: a mis-click on Mark reviewed, or a second look that
+     * changes their mind. `clearChapterReviewed` is a plain UPDATE — a chapter
+     * that was never reviewed has no row to update, so there is nothing here
+     * for the request to throw away, unlike `acceptGenerated` above.
+     */
+    if (reviewed === false) {
+      await clearChapterReviewed({ clientId: id, scenarioId, documentRole, chapterId });
+      await recordAudit({
+        action: "plan_story.chapter_unreviewed",
         resourceType: "plan_story_chapter",
         resourceId: chapterId,
         clientId: id,

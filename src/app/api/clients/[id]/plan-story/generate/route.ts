@@ -2,7 +2,7 @@
 // waits once, ahead of the meeting; the PDF export then makes no LLM calls at
 // all. maxDuration matches the presentation runs route for the same reason.
 import { NextRequest, NextResponse } from "next/server";
-import { requireOrgId } from "@/lib/db-helpers";
+import { requireOrgAndUser } from "@/lib/db-helpers";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { checkPlanStoryRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
@@ -15,6 +15,7 @@ import { generateChapter } from "@/lib/presentations/story/generate";
 import { upsertGeneratedChapter } from "@/lib/presentations/story/repo";
 import { resolveStoryScenarioId } from "@/lib/presentations/story/scenario-scope";
 import { CHAPTERS, storyCandidates } from "@/lib/presentations/story/chapters/registry";
+import { resolveChapterStyles } from "@/lib/presentations/story/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 800;
@@ -29,7 +30,9 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const callerOrg = await requireOrgId();
+    // The user id as well as the org: whose VOICE this run is written in is the
+    // acting advisor's, and it is an input to every chapter's stored hash.
+    const { orgId: callerOrg, userId } = await requireOrgAndUser();
     const { firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
 
@@ -47,6 +50,15 @@ export async function POST(
     const { documentRole } = parsed.data;
     /** One chapter, from the panel's Regenerate. Absent means the whole story. */
     const requested = parsed.data.chapterId;
+    /**
+     * Every chapter's register and length, gaps filled with the default.
+     *
+     * Resolved HERE rather than per chapter below, and through the same helper
+     * the staleness route calls: a chapter the advisor never touched has to
+     * resolve to the same style on both sides, or the hash this run stores is
+     * not the hash the check rebuilds and the chapter reads permanently stale.
+     */
+    const chapterStyles = resolveChapterStyles(parsed.data.chapterStyle);
 
     // A chapter this story could never narrate — a recommendation on a base-only
     // report — is refused here, before anything is spent. `storyCandidates` is
@@ -96,9 +108,10 @@ export async function POST(
     // stored hash, and a chapter that reads permanently out of date with
     // nothing able to clear it. Scoping this is a real saving and its own
     // change; it is not free.
-    const { ctx, candidates, voiceSamples } = await loadStoryRun({
+    const { ctx, candidates, voice } = await loadStoryRun({
       clientId: id,
       firmId,
+      advisorUserId: userId,
       scenarioId,
       documentRole,
     });
@@ -163,10 +176,13 @@ export async function POST(
           clientId: id,
           chapterId,
           ctx,
-          // From the run, not a literal: they are an input to the stored
+          // From the run, not a literal: it is an input to the stored
           // `sourceHash`, and the staleness route rebuilds that hash from the
           // same object (`run-context.ts`).
-          voiceSamples,
+          voice,
+          // …and the second hash input, which does NOT come off the run: style
+          // is per-chapter and travels on this request.
+          style: chapterStyles[chapterId],
           force: parsed.data.force ?? false,
         }),
       ),
@@ -202,7 +218,18 @@ export async function POST(
     });
 
     await Promise.all(
-      generated.map((chapter) => upsertGeneratedChapter({ clientId: id, scenarioId, documentRole, chapter })),
+      generated.map((chapter) =>
+        upsertGeneratedChapter({
+          clientId: id,
+          scenarioId,
+          documentRole,
+          chapter,
+          // The SAME id the run resolved its voice from, stored beside the hash
+          // that voice produced. The staleness route rebuilds each chapter's
+          // hash from whoever wrote it, and can only do that if the row says.
+          generatedByUserId: userId,
+        }),
+      ),
     );
 
     return NextResponse.json({

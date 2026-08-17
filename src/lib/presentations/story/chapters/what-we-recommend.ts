@@ -109,6 +109,13 @@ function usableDetail(detail: string | undefined): string | null {
  * point of printing". A second printing point that skipped the refusal would put
  * the changes table's own rounding and case straight onto a client's page — the
  * exact leak this module exists to stop — so both call it.
+ *
+ * ⚠️ The cards call it on `what` as well as on `detail`, and the argument is the
+ * same one: `what` is not the advisor's typing either. A savings rule has no
+ * name of its own, so `lib/scenario/describe-change-target.ts` builds one out of
+ * the account plus a formatted basis, and `describe/kinds/savings.ts` writes that
+ * string into `what`. Nothing about this function is specific to `detail` — it
+ * asks whether a string the changes table wrote is safe to print here.
  */
 export function quotableDetail(detail: string | undefined, facts: Fact[]): string | null {
   const clause = usableDetail(detail);
