@@ -47,6 +47,29 @@ function movement(ctx: StoryContext): string | null {
   return `The changes we're proposing ${up ? "lift" : "lower"} that to about ${proposed.display}.`;
 }
 
+/**
+ * What time does to the whole estate, in one sentence — base decks only, where
+ * the chart's two bars are today and the end of the plan.
+ *
+ * Equal DISPLAYS mean neither, whatever `raw` does: $4.04M and $4.06M both
+ * print "$4.1M", and "smaller" between two identical figures is a claim the
+ * picture beside it refutes. Direction comes off `raw` only once the two read
+ * differently — the same rule `movement` above follows.
+ *
+ * ⚠️ NOT always smaller. An estate that keeps compounding past what the plan
+ * spends grows, and this chapter cannot see which it will be.
+ */
+function overTheYears(ctx: StoryContext): string | null {
+  const today = findFact(ctx, "chart.estate.grossToday");
+  const end = findFact(ctx, "chart.estate.grossEndOfLife");
+  if (!today || !end) return null;
+  if (today.display === end.display) {
+    return `The whole estate is about ${today.display} today, and about the same at the end of the plan.`;
+  }
+  const grows = (end.raw ?? 0) > (today.raw ?? 0);
+  return `The whole estate is about ${today.display} today and about ${end.display} by the end of the plan — ${grows ? "larger" : "smaller"}, before anything comes out of it.`;
+}
+
 export function narrateWhatsLeftForPeople(ctx: StoryContext): string[] {
   const base = factDisplay(ctx, "estate.net.base");
   const proposed = factDisplay(ctx, "estate.net.proposed");
@@ -66,6 +89,12 @@ export function narrateWhatsLeftForPeople(ctx: StoryContext): string[] {
 
   const move = leadsOnBase ? movement(ctx) : null;
   if (move) paragraphs.push(move);
+
+  // Base decks only: `move` is null without a proposed figure, and the two
+  // gross facts exist only when the chart drew the today pair. Never both —
+  // the two pairings are the two deck kinds (see `build-facts.ts`).
+  const overTime = move ? null : overTheYears(ctx);
+  if (overTime) paragraphs.push(overTime);
 
   // The cost of the plan we just named, never the other one's — the two are a
   // pair of cards side by side, and a sentence that silently swapped sides
