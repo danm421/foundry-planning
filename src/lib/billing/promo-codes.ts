@@ -1,0 +1,251 @@
+import type Stripe from "stripe";
+import { getStripe } from "./stripe-client";
+
+/**
+ * Promo codes for the public checkout flow.
+ *
+ * Stripe is the single source of truth — there is no local mirror table, so the
+ * ops list can never drift from what a buyer actually gets, and redemption
+ * counting is Stripe's job rather than ours. A code Dan creates by hand in the
+ * Stripe dashboard shows up in the ops list too.
+ *
+ * The two Stripe objects behind one "promo code":
+ *   Coupon         — the discount itself (how much, for how long)
+ *   PromotionCode  — the string a buyer types at checkout, pointing at a coupon
+ *
+ * Buyers reach this via `allow_promotion_codes: true` on the Checkout session,
+ * which lives in the storefront repo (foundry-finance-storefront).
+ */
+
+// Foundry prices are USD-only (see docs/stripe-price-setup-checklist.md).
+const CURRENCY = "usd";
+const MAX_YEARS = 5;
+
+export type PromoDiscount =
+  | { kind: "percent"; percentOff: number }
+  | { kind: "amount"; amountOffCents: number };
+
+export type CreatePromoInput = {
+  /** Internal label; Stripe shows it on the buyer's invoice line. */
+  name: string;
+  discount: PromoDiscount;
+  /** Whole years the discount stays on the subscription. */
+  years: number;
+  /** How many buyers can redeem this code, in total. */
+  maxRedemptions: number;
+  /** Customer-facing string. Blank → Stripe generates one. */
+  code?: string | null;
+  /** After this date the code stops working (redemption cutoff, not discount length). */
+  expiresAt?: Date | null;
+  /** Restrict to customers with no prior successful payment. */
+  firstTimeOnly?: boolean;
+};
+
+/**
+ * Stripe accepts only `a-z A-Z 0-9 -` in a promotion code, and matches it
+ * case-insensitively. Uppercase and drop everything else so what ops types
+ * ("founder 25") becomes what the buyer types ("FOUNDER25").
+ */
+export function normalizePromoCode(input: string | null | undefined): string | null {
+  if (!input) return null;
+  const cleaned = input.trim().toUpperCase().replace(/[^A-Z0-9-]/g, "");
+  return cleaned || null;
+}
+
+function assertValid(input: CreatePromoInput): void {
+  if (!input.name.trim()) {
+    throw new Error("Give the promo code a name — it appears on the buyer's invoice.");
+  }
+  if (!Number.isInteger(input.years) || input.years < 1 || input.years > MAX_YEARS) {
+    throw new Error(`Discount length must be a whole number of years between 1 and ${MAX_YEARS}.`);
+  }
+  if (!Number.isInteger(input.maxRedemptions) || input.maxRedemptions < 1) {
+    throw new Error("The code has to be usable by at least 1 person.");
+  }
+  if (input.discount.kind === "percent") {
+    const p = input.discount.percentOff;
+    if (!(p > 0 && p <= 100)) {
+      throw new Error("Percent off must be between 1 and 100.");
+    }
+  } else if (!(input.discount.amountOffCents > 0)) {
+    throw new Error("Dollar amount off must be greater than $0.");
+  }
+}
+
+/**
+ * The discount half. One coupon has to serve both Foundry prices, and Stripe
+ * measures a coupon only in months, so "N years" becomes N*12 months in effect.
+ *
+ * On the $199/mo plan that is unambiguous: 12 months → 12 discounted invoices.
+ * On the $1,990/yr plan the renewal invoice falls on the same day the discount
+ * lapses, and which side of that boundary Stripe lands on is NOT verified here
+ * — confirm against a test-mode annual subscription before selling an annual
+ * promo, because the failure mode is a second year sold at the discount.
+ */
+export function buildCouponParams(input: CreatePromoInput): Stripe.CouponCreateParams {
+  assertValid(input);
+  const amount =
+    input.discount.kind === "percent"
+      ? { percent_off: input.discount.percentOff }
+      : { amount_off: input.discount.amountOffCents, currency: CURRENCY };
+  return {
+    name: input.name.trim(),
+    duration: "repeating",
+    duration_in_months: input.years * 12,
+    // Also capped on the promotion code below. Setting it here too means the
+    // discount can't outrun its limit even if the coupon is ever applied by
+    // hand in the Stripe dashboard.
+    max_redemptions: input.maxRedemptions,
+    metadata: { source: "foundry_ops", years: String(input.years) },
+    ...amount,
+  };
+}
+
+/** The buyer-facing half: the string typed at checkout, plus its limits. */
+export function buildPromotionCodeParams(
+  couponId: string,
+  input: CreatePromoInput,
+): Stripe.PromotionCodeCreateParams {
+  assertValid(input);
+  const code = normalizePromoCode(input.code);
+  return {
+    promotion: { type: "coupon", coupon: couponId },
+    ...(code ? { code } : {}),
+    max_redemptions: input.maxRedemptions,
+    ...(input.expiresAt ? { expires_at: Math.floor(input.expiresAt.getTime() / 1000) } : {}),
+    ...(input.firstTimeOnly ? { restrictions: { first_time_transaction: true } } : {}),
+    metadata: { source: "foundry_ops" },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Read model
+// ---------------------------------------------------------------------------
+
+export type PromoCodeStatus = "active" | "expired" | "used up" | "inactive";
+
+export type PromoCodeRow = {
+  id: string;
+  code: string;
+  name: string | null;
+  discountLabel: string;
+  durationLabel: string;
+  maxRedemptions: number | null;
+  timesRedeemed: number;
+  status: PromoCodeStatus;
+  firstTimeOnly: boolean;
+  expiresAt: string | null;
+};
+
+function discountLabel(c: Stripe.Coupon): string {
+  if (c.percent_off != null) return `${c.percent_off}% off`;
+  if (c.amount_off != null) {
+    return `${new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: (c.currency ?? CURRENCY).toUpperCase(),
+    }).format(c.amount_off / 100)} off`;
+  }
+  return "—";
+}
+
+function durationLabel(c: Stripe.Coupon): string {
+  if (c.duration === "forever") return "Forever";
+  if (c.duration === "once") return "First invoice";
+  const months = c.duration_in_months;
+  if (!months) return "—";
+  if (months % 12 !== 0) return `${months} month${months === 1 ? "" : "s"}`;
+  const years = months / 12;
+  return `${years} year${years === 1 ? "" : "s"}`;
+}
+
+function deriveStatus(p: Stripe.PromotionCode): PromoCodeStatus {
+  if (!p.active) return "inactive";
+  if (p.expires_at != null && p.expires_at * 1000 <= Date.now()) return "expired";
+  if (p.max_redemptions != null && p.times_redeemed >= p.max_redemptions) return "used up";
+  return "active";
+}
+
+/**
+ * Flatten a Stripe promotion code (coupon expanded) into a serializable row for
+ * the ops table. An unexpanded coupon comes back as a bare id string — that
+ * renders as "—" rather than throwing, so one odd row can't blank the page.
+ */
+export function toPromoCodeRow(p: Stripe.PromotionCode): PromoCodeRow {
+  const coupon = p.promotion?.coupon;
+  const expanded = coupon && typeof coupon === "object" ? coupon : null;
+  return {
+    id: p.id,
+    code: p.code,
+    name: expanded?.name ?? null,
+    discountLabel: expanded ? discountLabel(expanded) : "—",
+    durationLabel: expanded ? durationLabel(expanded) : "—",
+    maxRedemptions: p.max_redemptions,
+    timesRedeemed: p.times_redeemed,
+    status: deriveStatus(p),
+    firstTimeOnly: p.restrictions?.first_time_transaction ?? false,
+    expiresAt: p.expires_at == null ? null : new Date(p.expires_at * 1000).toISOString(),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Stripe operations
+// ---------------------------------------------------------------------------
+
+/**
+ * Create the coupon, then the code that points at it.
+ *
+ * Two failure modes, handled differently. A bad form fails in
+ * `buildCouponParams` before any Stripe call. A Stripe-side rejection of the
+ * second call — a duplicate code is the common one — happens with the coupon
+ * already created, so we delete it on the way out; otherwise retyping the code
+ * would litter the account with dangling coupons.
+ */
+export async function createPromoCode(
+  input: CreatePromoInput,
+): Promise<{ id: string; code: string }> {
+  const couponParams = buildCouponParams(input);
+  const stripe = getStripe();
+  const coupon = await stripe.coupons.create(couponParams);
+  try {
+    const promo = await stripe.promotionCodes.create(buildPromotionCodeParams(coupon.id, input));
+    return { id: promo.id, code: promo.code };
+  } catch (err) {
+    // Best-effort cleanup: the original error is what the operator needs to
+    // see, so a failed delete must not replace it.
+    await stripe.coupons.del(coupon.id).catch(() => {});
+    throw err;
+  }
+}
+
+/** Stripe's per-page maximum. */
+const LIST_LIMIT = 100;
+
+/**
+ * Promo codes in the Stripe account, newest first (Stripe's list order).
+ *
+ * Returns one page. `truncated` is the point of the wrapper: a silently capped
+ * list looks identical to a complete one, and an operator who can't find a code
+ * they made will make a second one — which Stripe then rejects as a duplicate.
+ */
+export async function listPromoCodes(): Promise<{
+  rows: PromoCodeRow[];
+  truncated: boolean;
+}> {
+  const stripe = getStripe();
+  const res = await stripe.promotionCodes.list({
+    limit: LIST_LIMIT,
+    expand: ["data.promotion.coupon"],
+  });
+  return { rows: res.data.map(toPromoCodeRow), truncated: res.has_more === true };
+}
+
+/**
+ * Stop a code being redeemed. Stripe has no delete for promotion codes, and
+ * deactivating is the right shape anyway — buyers who already redeemed keep
+ * their discount.
+ */
+export async function deactivatePromoCode(id: string): Promise<void> {
+  if (!id) throw new Error("Missing promo code id.");
+  const stripe = getStripe();
+  await stripe.promotionCodes.update(id, { active: false });
+}

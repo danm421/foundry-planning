@@ -269,6 +269,10 @@ export type AuditAction =
   | "beta_code.redeemed"
   | "beta_code.minted"
   | "beta_code.revoked"
+  // Checkout discounts. The objects live in Stripe; these rows are the only
+  // record of which operator created or killed one, and on what terms.
+  | "promo_code.created"
+  | "promo_code.deactivated"
   | "firm.branding_logo_changed"
   | "firm.branding_favicon_changed"
   | "firm.branding_color_changed"

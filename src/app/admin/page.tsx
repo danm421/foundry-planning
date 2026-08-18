@@ -6,6 +6,7 @@ export const dynamic = "force-dynamic";
 const LINKS = [
   { href: "/admin/orgs", title: "Organizations", desc: "Browse orgs, billing state, and detail." },
   { href: "/admin/beta-codes", title: "Beta codes", desc: "Mint and revoke founder access codes." },
+  { href: "/admin/promo-codes", title: "Promo codes", desc: "Create checkout discounts and see who used them." },
 ];
 
 const SUPERADMIN_LINKS = [
