@@ -17,8 +17,12 @@ export interface StoryChartData {
   /** Tax paid per projection year, for `whatYoullPayInTax`. */
   tax: TaxYearBar[];
   /**
-   * The estate's today-vs-end-of-life bars, for `whatsLeftForPeople` — or null
-   * when the deck has no estate report to take them from.
+   * The estate's current-plan-vs-proposed-plan bars, both at end of life, for
+   * `whatsLeftForPeople` — or null when the deck cannot draw the pair.
+   *
+   * ⚠️ NOT today vs end of life, which is what the Estate Summary page draws
+   * from the same component. This chapter argues what the changes do to what
+   * reaches the heirs, so its picture compares the two plans.
    *
    * Null rather than an empty array, and the distinction is the one the whole
    * report makes elsewhere: an absent estate and an estate worth nothing are
@@ -30,12 +34,15 @@ export interface StoryChartData {
 export interface BuildStoryChartsInput {
   years: ProjectionYear[];
   /**
-   * Taken from the estate page's own view-model rather than rebuilt here.
+   * Built by the caller from the household summaries it already holds, rather
+   * than rebuilt here.
    *
-   * `pages/estate-summary/view-model.ts` builds these through
-   * `buildEstateTransferReportData` and `summarizeHousehold`; reproducing that
-   * chain would be a second derivation of the same two bars, which is exactly what
-   * this module exists to prevent. Null when the caller has no estate data.
+   * `load-context.ts` runs `summarizeHousehold` over each plan's end-of-life
+   * estate report for the fact pack, and stacks the bars from those same two
+   * objects through `pages/estate-summary/view-model.ts#estateChartBar` — the
+   * one mapping the Estate Summary page uses too. Rebuilding either the reports
+   * or the mapping here would be the duplicate derivation this module exists to
+   * prevent. Null when the caller cannot produce both bars.
    */
   estateBars: EstateSummaryChartBar[] | null;
 }
