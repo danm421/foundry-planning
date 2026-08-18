@@ -71,13 +71,6 @@ function assertValid(input: CreatePromoInput): void {
   if (!Number.isInteger(input.maxRedemptions) || input.maxRedemptions < 1) {
     throw new Error("The code has to be usable by at least 1 person.");
   }
-  // Deliberately its own message. An empty selection and an unreadable price
-  // list both leave nothing to check the discount against, but one is the
-  // operator ticking nothing and the other is Stripe being down — reporting the
-  // second for the first sends someone hunting an outage that isn't there.
-  if (input.productIds.length === 0) {
-    throw new Error("Pick at least one plan for this code to apply to.");
-  }
   if (input.discount.kind === "percent") {
     const p = input.discount.percentOff;
     // 100% bills $0 whatever the prices are, so it is rejected here rather than
@@ -243,7 +236,6 @@ const PLAN_LABELS = {
   seatMonthly: "Monthly",
   seatAnnual: "Annual",
   seatFoundingAnnual: "Founding annual",
-  aiImportMonthly: "AI Import",
 } as const satisfies Record<keyof PriceCatalog, string>;
 
 /**
@@ -298,10 +290,19 @@ export async function createPromoCode(
   // but this action is reachable without it. Checked against the plans the
   // coupon can actually reach — that is what lets "$200 off annual" through
   // while leaving monthly, which it cannot touch, out of the arithmetic.
-  const inScope = plansInProducts(await listPlanPrices(), input.productIds);
+  //
+  // Three ways this can have nothing to measure, and they are told apart in
+  // this order deliberately. Reading the prices comes FIRST so that a Stripe
+  // outage reports itself, rather than the operator being told to tick a plan
+  // on a form that is showing none because the read failed.
+  const plans = await listPlanPrices();
+  if (input.productIds.length === 0) {
+    throw new Error("Pick at least one plan for this code to apply to.");
+  }
+  const inScope = plansInProducts(plans, input.productIds);
   if (inScope.length === 0) {
-    // Not the same as "no prices": the selection named products that no longer
-    // exist in the catalog, so the form is showing a stale list.
+    // Prices read fine and something was ticked, so the selection names products
+    // the catalog no longer has — the form is showing a stale list.
     throw new Error(
       "None of the selected plans are in the current price list. Reload the page and choose again.",
     );

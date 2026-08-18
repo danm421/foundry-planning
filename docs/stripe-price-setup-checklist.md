@@ -1,11 +1,11 @@
 # Stripe Price Setup — Manual Checklist
 
-The pricing spec locks four prices. This checklist captures them so a future
+The pricing spec locks three seat prices. This checklist captures them so a future
 us (or an auditor) can replay the dashboard config from scratch.
 
 Run this in **test mode first**, copy the price IDs into Vercel envs, and
 verify webhook + checkout flow before flipping to **live mode**. The same
-four prices need to exist in both modes.
+three prices need to exist in both modes.
 
 ## Products + prices
 
@@ -25,7 +25,12 @@ plan it bills.
 | `Foundry seat — billed monthly` | $199.00 USD | month | `seat_monthly` | yes | kind=seat |
 | `Foundry seat — billed annually` | $1,990.00 USD | year | `seat_annual` | yes | kind=seat |
 | `Foundry seat — founding rate, billed annually` | $1,788.00 USD | year | `seat_founding_annual` | **internal only** | kind=seat, founding=true |
-| `AI Import` | $99.00 USD | month | `ai_import_monthly` | yes | kind=addon, addon_key=ai_import |
+
+AI import is **not** on this list any more: it ships with every seat as a base
+entitlement, and `docs/bundle-ai-into-plan-runbook.md` archives the standalone
+product and price. Nothing bills it, so it is deliberately outside the price
+catalog and outside the promo guard — putting it back would drop the ceiling on
+every all-plans dollar discount to $98.99 to protect a price no one can buy.
 
 ⚠️ **Do not add a second price to any of these products.** The ops promo form
 groups its plan checkboxes by product and will take every plan under a ticked
@@ -40,18 +45,13 @@ After creating each price, copy its ID (`price_…`) and set in Vercel:
 STRIPE_PRICE_ID_SEAT_MONTHLY              ← seat_monthly
 STRIPE_PRICE_ID_SEAT_ANNUAL               ← seat_annual
 STRIPE_PRICE_ID_SEAT_FOUNDING_ANNUAL      ← seat_founding_annual
-STRIPE_PRICE_ID_AI_IMPORT_MONTHLY         ← ai_import_monthly
 ```
 
 Set in **all three Vercel environments** (Development, Preview, Production)
 with separate values for test-mode (Dev/Preview) vs live-mode (Production), and
-in **both repos** — `foundry-planning` reads all four, the storefront reads the
+in **both repos** — `foundry-planning` reads all three, the storefront reads the
 two public seat prices.
 
-⚠️ `STRIPE_PRICE_ID_AI_IMPORT_MONTHLY` is now required by `getPriceCatalog()`,
-which every billing caller goes through — not just promo codes. A deploy missing
-it fails loudly at the first catalog read rather than only when someone makes a
-code.
 
 ## Migrating an existing account off the single-product shape
 
@@ -78,7 +78,7 @@ After setting envs, deploy + run:
 vercel env pull .env.local
 node -e "require('./src/lib/billing/price-catalog').getPriceCatalog()"
 ```
-Should print all four IDs without throwing.
+Should print all three IDs without throwing.
 
 ## Stripe Tax
 

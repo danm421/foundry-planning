@@ -39,26 +39,24 @@ import {
 } from "../promo-codes";
 import { __resetPriceCatalogForTests } from "../price-catalog";
 
-// The real Foundry seat prices. The monthly one is what makes a flat discount
-// dangerous: it is an order of magnitude below the annual price, so a discount
-// sized for the annual plan wipes it out entirely.
-// One Stripe product per price — the split that lets a coupon be aimed at an
-// interval. `product` comes back as a bare id unless the call expands it, and
-// that id is the only thing `applies_to` accepts.
+// The real Foundry seat prices, one Stripe product each — the split that lets a
+// coupon be aimed at an interval. The monthly price is what makes a flat
+// discount dangerous: it is an order of magnitude below the annual price, so a
+// discount sized for the annual plan wipes it out entirely. `product` comes back
+// as a bare id unless the call expands it, and that id is the only thing
+// `applies_to` accepts.
 const PRICES = {
   price_seat_monthly: { unit_amount: 19_900, product: "prod_seat_monthly" },
   price_seat_annual: { unit_amount: 199_000, product: "prod_seat_annual" },
   price_seat_founding: { unit_amount: 178_800, product: "prod_seat_founding" },
-  price_ai_import: { unit_amount: 9_900, product: "prod_ai_import" },
 } as const;
 
 const P_MONTHLY = "prod_seat_monthly";
 const P_ANNUAL = "prod_seat_annual";
 const P_FOUNDING = "prod_seat_founding";
-const P_AI = "prod_ai_import";
 
 /** Everything selected — what the form submits by default. */
-const ALL_PRODUCTS = [P_MONTHLY, P_ANNUAL, P_FOUNDING, P_AI];
+const ALL_PRODUCTS = [P_MONTHLY, P_ANNUAL, P_FOUNDING];
 
 beforeEach(() => {
   h.couponCreate.mockReset().mockResolvedValue({ id: "coupon_1" });
@@ -73,7 +71,6 @@ beforeEach(() => {
   process.env.STRIPE_PRICE_ID_SEAT_MONTHLY = "price_seat_monthly";
   process.env.STRIPE_PRICE_ID_SEAT_ANNUAL = "price_seat_annual";
   process.env.STRIPE_PRICE_ID_SEAT_FOUNDING_ANNUAL = "price_seat_founding";
-  process.env.STRIPE_PRICE_ID_AI_IMPORT_MONTHLY = "price_ai_import";
   __resetPriceCatalogForTests();
 });
 
@@ -396,22 +393,11 @@ describe("createPromoCode", () => {
 
   it("allows a flat discount that still leaves the cheapest plan something to pay", async () => {
     await expect(
-      createPromoCode({ ...input, discount: { kind: "amount", amountOffCents: 9_899 } }),
+      createPromoCode({ ...input, discount: { kind: "amount", amountOffCents: 19_899 } }),
     ).resolves.toEqual({ id: "promo_1", code: "FOUNDER25" });
     expect(h.couponCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ amount_off: 9_899, currency: "usd" }),
+      expect.objectContaining({ amount_off: 19_899, currency: "usd" }),
     );
-  });
-
-  // The AI Import add-on ($99) is the cheapest thing in the catalog, so with
-  // everything selected it — not the $199 monthly seat — sets the ceiling. This
-  // is the whole reason it was brought into the catalog: nothing bills it yet,
-  // but a code made today outlives that and would zero it on day one.
-  it("lets the cheapest plan set the ceiling even when it is the add-on", async () => {
-    await expect(
-      createPromoCode({ ...input, discount: { kind: "amount", amountOffCents: 15_000 } }),
-    ).rejects.toThrow(/AI Import/);
-    expect(h.couponCreate).not.toHaveBeenCalled();
   });
 
   it("allows 99% off, which leaves a cent on every plan", async () => {
@@ -502,7 +488,6 @@ describe("listPlanPrices", () => {
         unitAmountCents: 178_800,
         productId: P_FOUNDING,
       },
-      { key: "aiImportMonthly", label: "AI Import", unitAmountCents: 9_900, productId: P_AI },
     ]);
   });
 
@@ -576,7 +561,15 @@ describe("targeting", () => {
     await expect(createPromoCode({ ...input, productIds: [] })).rejects.toThrow(
       /at least one plan/i,
     );
-    expect(h.priceRetrieve).not.toHaveBeenCalled();
+    expect(h.couponCreate).not.toHaveBeenCalled();
+  });
+
+  // …and the other way round: when the prices genuinely cannot be read, the
+  // operator gets the outage rather than being told to tick a plan on a form
+  // that is showing none precisely because the read failed.
+  it("reports a price-read failure ahead of an empty selection", async () => {
+    h.priceRetrieve.mockRejectedValue(new Error("Expired API Key provided"));
+    await expect(createPromoCode({ ...input, productIds: [] })).rejects.toThrow(/Expired API Key/);
     expect(h.couponCreate).not.toHaveBeenCalled();
   });
 

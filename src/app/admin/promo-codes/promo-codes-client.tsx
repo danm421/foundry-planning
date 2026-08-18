@@ -11,10 +11,9 @@ import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { createPromoCodeAction, deactivatePromoCodeAction } from "./actions";
 import type { PromoCodeRow, PromoCodeStatus } from "@/lib/billing/promo-codes";
 import {
+  applyDiscountCents,
   cheapestPlanCents,
   formatUsd,
-  plansInProducts,
-  previewDiscount,
   type PromoDiscount,
   type PlanPrice,
 } from "@/lib/billing/promo-discount-math";
@@ -119,28 +118,32 @@ export default function PromoCodesClient({
   // The typed discount, or null while the field is blank or nonsense.
   const discount = parseDiscount(discountKind, percentOff, amountOffDollars);
 
+  // The single place membership is decided, so the price list, the dollars cap
+  // and the submit guard cannot come to disagree about what this code reaches.
   const selected = new Set(selectedProducts);
+
   // Every plan, priced, and marked with whether this code can reach it. Plans
   // out of scope stay on the list rather than disappearing: the mistake that
   // started all this was a plan nobody remembered, so what a code *excludes*
   // has to be as visible as what it covers.
-  const planRows = (
-    discount ? previewDiscount(discount, plans) : plans.map((p) => ({ ...p, afterCents: null }))
-  ).map((p) => ({ ...p, inScope: selected.has(p.productId) }));
+  const planRows = plans.map((plan) => ({
+    ...plan,
+    inScope: selected.has(plan.productId),
+    afterCents: discount ? applyDiscountCents(discount, plan.unitAmountCents) : null,
+  }));
 
+  const inScope = planRows.filter((r) => r.inScope);
   // Only a plan the coupon can actually reach can be zeroed by it.
-  const freePlans = planRows.filter((r) => r.inScope && r.afterCents !== null && r.afterCents <= 0);
+  const freePlans = inScope.filter((r) => r.afterCents !== null && r.afterCents <= 0);
 
   // A cent under the cheapest plan *in scope* is the largest dollars-off that
   // still leaves every reachable plan something to pay. Scoped, so narrowing the
   // selection raises the cap instead of quoting a limit the server won't apply.
-  const scopedPlans = plansInProducts(plans, selectedProducts);
-  const maxDollarsOff =
-    scopedPlans.length > 0 ? (cheapestPlanCents(scopedPlans) - 1) / 100 : undefined;
+  const maxDollarsOff = inScope.length > 0 ? (cheapestPlanCents(inScope) - 1) / 100 : undefined;
 
   // With no prices there is nothing to tick, so an empty selection is not the
   // operator's doing and blocking on it would hide the real Stripe error.
-  const nothingSelected = plans.length > 0 && selectedProducts.length === 0;
+  const nothingSelected = plans.length > 0 && inScope.length === 0;
 
   function toggleProduct(productId: string) {
     setSelectedProducts((prev) =>
@@ -398,20 +401,18 @@ export default function PromoCodesClient({
                         <span className={p.inScope ? "text-ink-3" : "text-ink-4"}>
                           {formatUsd(p.unitAmountCents)}
                         </span>
-                        {p.inScope && p.afterCents !== null ? (
+                        {!p.inScope ? (
+                          <span className="ml-1.5 text-ink-4">not included</span>
+                        ) : p.afterCents !== null ? (
                           <>
                             <span className="mx-1.5 text-ink-4">→</span>
                             <span
-                              className={
-                                p.afterCents <= 0 ? "font-medium text-crit" : "text-ink"
-                              }
+                              className={p.afterCents <= 0 ? "font-medium text-crit" : "text-ink"}
                             >
                               {formatUsd(p.afterCents)}
                             </span>
                           </>
-                        ) : (
-                          !p.inScope && <span className="ml-1.5 text-ink-4">not included</span>
-                        )}
+                        ) : null}
                       </span>
                     </label>
                   </li>
