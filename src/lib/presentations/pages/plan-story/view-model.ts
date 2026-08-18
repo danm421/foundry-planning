@@ -442,24 +442,27 @@ function retirementYearFrom(facts: Fact[]): number {
  *
  * ⚠️⚠️ This list must stay in step with the chapter scopes
  * `build-facts.ts#chartFacts` gives the matching `chart.*` facts
- * (`PORTFOLIO_CHART_CHAPTERS`, `TAX_CHART_CHAPTERS`), and the failure mode of
- * drift is SILENCE rather than a rejection. `generate.ts:270` scopes the pack
- * once with `factsForChapter` and `generate.ts:411` judges the draft against
- * that same scoped array, so `chart-citation.ts:21-25` sees only the chapter's
- * own facts and returns `[]` the moment none of them is a `chart.` one. Draw a
+ * (`PORTFOLIO_CHART_CHAPTERS`, `TAX_CHART_CHAPTERS`, `ESTATE_CHART_CHAPTERS`),
+ * and the failure mode of drift is SILENCE rather than a rejection.
+ * `generate.ts:270` scopes the pack once with `factsForChapter` and
+ * `generate.ts:411` judges the draft against that same scoped array, so
+ * `chart-citation.ts:21-25` sees only the chapter's own facts and returns `[]`
+ * the moment none of them is a `chart.` one. Draw a
  * chart on a chapter those facts do not reach and Gate 8 does not fire, does not
  * retry, and says nothing: the sheet ships a picture the prose was never
  * required to mention. Nothing else in the report notices — the gate's empty
  * return is also the legitimate no-chart path, which is what makes the two
  * indistinguishable from the outside.
  *
- * ⚠️ `whatsLeftForPeople` is already that shape: `chartFacts` emits `chart.*`
- * facts for the portfolio and tax charts only, and none for the estate one. The
- * estate branch below returns a chart only once something hands
- * `StoryChartData.estate` real bars rather than the null that field documents as
- * the ordinary answer for a deck with no estate report — so the mismatch costs
- * nothing until something does, and the moment something does, the sheet prints
- * a chart no gate will ever ask the prose to mention.
+ * ⚠️ `whatsLeftForPeople` is in step, and the tie is tighter than a shared
+ * chapter list: `chartFacts` emits its `chart.estate.*` pair off the SAME
+ * `charts.estate` bars the branch below draws, so the picture and the permission
+ * to describe it appear and disappear together. It also NAMES that pair off
+ * `charts.estate.comparison` rather than off the bars' position, because the two
+ * pairings put different meanings in the same two slots — a proposal deck's two
+ * plans, a base-only deck's two moments in time. Change what this branch draws
+ * without changing what that one names and the gate still fires, but on a figure
+ * whose label says something it is not, which is the worse failure of the two.
  *
  * An EMPTY array is null, never a chart: spec §7 — drop the chart, keep the
  * prose, and never print an axis with no bars on a client's page.

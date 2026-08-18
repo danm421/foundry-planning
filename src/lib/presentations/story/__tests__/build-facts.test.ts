@@ -7,7 +7,9 @@ import {
   EMPTY_RESOLVE_DATA,
 } from "@/lib/presentations/pages/scenario-changes/describe/resolve";
 import { fmtUsdCompact } from "@/lib/presentations/pages/retirement-comparison/format";
+import type { EstateSummaryChartBar } from "@/lib/presentations/pages/estate-summary/view-model";
 import { buildStoryFacts, groupStrategies, type StoryFactsInput } from "../build-facts";
+import type { StoryChartData } from "../charts";
 import { factDisplaySet } from "../facts";
 import { extractFigures, validateFacts } from "../validate/facts";
 import { narrateWhatWeRecommend } from "../chapters/what-we-recommend";
@@ -880,6 +882,76 @@ describe("chart facts", () => {
     expect(facts.find((f) => f.id === "chart.estate.grossProposed")?.raw).toBe(3_960_000);
   });
 
+  /**
+   * The two bars are the same two SLOTS on both kinds of deck, and only
+   * `comparison` says what they mean — so the fixture varies exactly that.
+   */
+  const estateBar = (label: string, total: number): EstateSummaryChartBar => ({
+    label,
+    netToHeirs: total,
+    federal: 0,
+    state: 0,
+    probate: 0,
+    ird: 0,
+    debts: 0,
+    total,
+  });
+
+  const estateChart = (
+    comparison: "planVsPlan" | "todayVsEndOfLife",
+    firstTotal: number,
+    secondTotal: number,
+  ): StoryChartData => ({
+    portfolio: [],
+    tax: [],
+    estate: {
+      comparison,
+      bars: [estateBar("first", firstTotal), estateBar("second", secondTotal)],
+    },
+  });
+
+  it("names the estate chart's figures for the comparison the chart actually draws", () => {
+    const idsOf = (facts: ReturnType<typeof buildStoryFacts>) => facts.map((f) => f.id);
+    const labelOf = (facts: ReturnType<typeof buildStoryFacts>, id: string) =>
+      facts.find((f) => f.id === id)?.label;
+
+    const base = buildStoryFacts({
+      ...input,
+      charts: estateChart("todayVsEndOfLife", 4_050_000, 4_550_000),
+    });
+
+    expect(idsOf(base)).toContain("chart.estate.grossToday");
+    expect(idsOf(base)).toContain("chart.estate.grossEndOfLife");
+    expect(idsOf(base)).not.toContain("chart.estate.grossBase");
+    expect(idsOf(base)).not.toContain("chart.estate.grossProposed");
+    expect(base.find((f) => f.id === "chart.estate.grossToday")?.raw).toBe(4_050_000);
+    expect(base.find((f) => f.id === "chart.estate.grossEndOfLife")?.raw).toBe(4_550_000);
+
+    // The label is the whole defence: three dollar figures about one estate sit
+    // in this pack, and only the label says which is which.
+    expect(labelOf(base, "chart.estate.grossToday")).toMatch(/today/i);
+    expect(labelOf(base, "chart.estate.grossEndOfLife")).toMatch(/end of the plan/i);
+
+    const proposal = buildStoryFacts({
+      ...input,
+      charts: estateChart("planVsPlan", 4_050_000, 4_550_000),
+    });
+    expect(idsOf(proposal)).toContain("chart.estate.grossBase");
+    expect(idsOf(proposal)).toContain("chart.estate.grossProposed");
+    expect(idsOf(proposal)).not.toContain("chart.estate.grossToday");
+    expect(idsOf(proposal)).not.toContain("chart.estate.grossEndOfLife");
+  });
+
+  it("scopes both base-deck estate chart facts to the chapter that draws them", () => {
+    const facts = buildStoryFacts({
+      ...input,
+      charts: estateChart("todayVsEndOfLife", 4_050_000, 4_550_000),
+    });
+    for (const id of ["chart.estate.grossToday", "chart.estate.grossEndOfLife"]) {
+      expect(facts.find((f) => f.id === id)?.chapters, id).toEqual(["whatsLeftForPeople"]);
+    }
+  });
+
   it("spells the estate bar's caption and the prose's figure the same way", () => {
     // `pages/plan-story/view-model.ts#chartFor` captions each bar with
     // `fmtUsdCompact(b.total)`, and `moneyFact` formats with the same function.
@@ -999,14 +1071,29 @@ describe("chart facts", () => {
    * without giving it chart facts, or repoint one of the `*_CHART_CHAPTERS`
    * lists above at a different chapter. Both were run, and each names the
    * offending chapter in its failure message.
+   *
+   * ⚠️ Run over BOTH estate comparisons, because the estate chapter's figures
+   * are named off `charts.estate.comparison` and a pairing that emitted nothing
+   * would leave that chapter drawing an uncitable picture on ONE kind of deck.
+   * A `planVsPlan`-only fixture cannot see that: breaking just the
+   * `todayVsEndOfLife` arm was probed against the single-fixture version of this
+   * test and it stayed GREEN.
    */
   it("gives every chapter that PRINTS a chart at least one of that chart's figures", () => {
-    const facts = buildStoryFacts({ ...input, charts });
     const charted = CHAPTER_IDS.filter((id) => CHAPTERS[id].layout === "chartWithProse");
     // Not a vacuous loop: the layout has to be in use, or the body never runs.
     expect(charted.length).toBeGreaterThanOrEqual(2);
-    for (const id of charted) {
-      expect(factsForChapter(facts, id).some((f) => f.id.startsWith("chart.")), id).toBe(true);
+    for (const comparison of ["planVsPlan", "todayVsEndOfLife"] as const) {
+      const facts = buildStoryFacts({
+        ...input,
+        charts: { ...charts, estate: { ...charts.estate, comparison } },
+      });
+      for (const id of charted) {
+        expect(
+          factsForChapter(facts, id).some((f) => f.id.startsWith("chart.")),
+          `${id} (${comparison})`,
+        ).toBe(true);
+      }
     }
   });
 });

@@ -2,7 +2,7 @@
 // described scenario changes into named strategies. No IO, no clock — the
 // caller (load-context.ts) owns both.
 import type { ChangeRow } from "@/lib/presentations/pages/scenario-changes/types";
-import type { StoryChartData } from "./charts";
+import type { StoryChartData, StoryEstateChart } from "./charts";
 import { hasAccountingNegative, moneyFact, pctFact, quotedFact, yearFact, type Fact } from "./facts";
 import type { ChapterId, StoryGoal, StoryStrategy } from "./types";
 import { extractFigures } from "./validate/facts";
@@ -603,29 +603,54 @@ function chartFacts(charts: StoryChartData | undefined, retirementYear: number):
   // fact — so nothing downstream would report it. The picture and the
   // permission to describe it have to appear and disappear together.
   //
-  // Read by position, not searched by label: the labels are display text, and
-  // matching on them would be a second place that has to keep "Current plan"
+  // ⚠️⚠️ Named for the COMPARISON, not for the slot. The two pairings put
+  // different meanings in the same two positions
+  // (`charts.ts#StoryEstateChart.comparison`): a proposal deck's bars are two
+  // plans at end of life, a base-only deck's are one plan at two moments. A name
+  // fixed to the position would hand the model today's estate described as the
+  // current plan on every base-only deck — and `validate/chart-citation.ts` then
+  // REQUIRES the prose to quote one of them, so the mislabelled figure is the
+  // one the client reads.
+  //
+  // Still read by position, and the pairing is taken from the key the chart
+  // carries — never searched for by bar label: those labels are display text,
+  // and matching on them would be a second place that has to keep "Current plan"
   // spelled the way `load-context.ts` spells it.
-  const [currentEstate, proposedEstate] = charts.estate?.bars ?? [];
-  if (currentEstate) {
-    facts.push(
-      moneyFact(
-        "chart.estate.grossBase",
-        "The whole estate before anything comes out, current plan",
-        currentEstate.total,
-        ESTATE_CHART_CHAPTERS,
-      ),
-    );
-  }
-  if (proposedEstate) {
-    facts.push(
-      moneyFact(
-        "chart.estate.grossProposed",
-        "The whole estate before anything comes out, proposed plan",
-        proposedEstate.total,
-        ESTATE_CHART_CHAPTERS,
-      ),
-    );
+  const ESTATE_FIGURE_NAMES: Record<
+    StoryEstateChart["comparison"],
+    readonly [{ id: string; label: string }, { id: string; label: string }]
+  > = {
+    planVsPlan: [
+      {
+        id: "chart.estate.grossBase",
+        label: "The whole estate before anything comes out, current plan",
+      },
+      {
+        id: "chart.estate.grossProposed",
+        label: "The whole estate before anything comes out, proposed plan",
+      },
+    ],
+    todayVsEndOfLife: [
+      {
+        id: "chart.estate.grossToday",
+        label: "The whole estate as it stands today, before anything comes out",
+      },
+      {
+        id: "chart.estate.grossEndOfLife",
+        label: "The whole estate at the end of the plan, before anything comes out",
+      },
+    ],
+  };
+
+  if (charts.estate) {
+    const [firstName, secondName] = ESTATE_FIGURE_NAMES[charts.estate.comparison];
+    const [firstBar, secondBar] = charts.estate.bars;
+    if (firstBar) {
+      facts.push(moneyFact(firstName.id, firstName.label, firstBar.total, ESTATE_CHART_CHAPTERS));
+    }
+    if (secondBar) {
+      facts.push(moneyFact(secondName.id, secondName.label, secondBar.total, ESTATE_CHART_CHAPTERS));
+    }
   }
 
   return facts;
