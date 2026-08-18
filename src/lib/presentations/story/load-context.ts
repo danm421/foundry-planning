@@ -31,7 +31,11 @@ import { buildViewModelInputs } from "@/lib/balance-sheet/build-view-model-input
 import { mergeSyntheticAccounts } from "@/lib/balance-sheet/merge-synthetic-accounts";
 import { buildMapBoards } from "@/lib/household-map/build-boards";
 import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
-import { summarizeHousehold } from "@/lib/presentations/pages/estate-summary/aggregate";
+import {
+  summarizeHousehold,
+  type EstateSummaryHousehold,
+} from "@/lib/presentations/pages/estate-summary/aggregate";
+import { estateChartBar } from "@/lib/presentations/pages/estate-summary/view-model";
 import { ESTATE_SUMMARY_OPTIONS_DEFAULT } from "@/lib/presentations/pages/estate-summary/options-schema";
 import { computeLifetimeTotals } from "@/lib/presentations/pages/tax-summary/aggregate";
 import { buildMedicareBars, computeKpis } from "@/lib/presentations/pages/medicare-summary/aggregate";
@@ -344,11 +348,17 @@ async function maxSpendFor(clientId: string, firmId: string, ref: string): Promi
  *
  * Null for an empty report, never zeroes: no estate on file and an estate worth
  * nothing are different statements, and only the first is honest to print.
+ *
+ * The whole household summary comes back beside the pair, because the estate
+ * chapter's chart stacks a bar out of the same object: its green segment IS
+ * `net` and its four tax-and-cost segments sum to `cost`. Returning the
+ * household rather than re-deriving it at the bar site keeps one
+ * `summarizeHousehold` call behind both the picture and the paragraph.
  */
-function estateTotals(
+function estateAtEndOfLife(
   projected: Projected,
   ownerNames: { clientName: string; spouseName: string | null },
-): StoryEstateTotals | null {
+): { totals: StoryEstateTotals; household: EstateSummaryHousehold } | null {
   const report = buildEstateTransferReportData({
     projection: projected.projection,
     asOf: { kind: "split" },
@@ -358,7 +368,10 @@ function estateTotals(
   });
   if (report.isEmpty) return null;
   const household = summarizeHousehold(report);
-  return { net: household.netToHeirs, cost: household.taxAndCosts };
+  return {
+    totals: { net: household.netToHeirs, cost: household.taxAndCosts },
+    household,
+  };
 }
 
 /**
@@ -533,6 +546,34 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
   const proposedYears = proposed?.projection.years ?? [];
   const proposedLast = proposedYears[proposedYears.length - 1];
 
+  // Both plans' end-of-life estates, computed ONCE and read twice — by the
+  // chart's bars just below and by the fact pack further down. The names only
+  // label the report's own death sections, which nothing here reads; the
+  // figures taken off it are household totals.
+  const estateOwnerNames = { clientName: firstName, spouseName: client.spouseName ?? null };
+  const baseEstate = estateAtEndOfLife(base, estateOwnerNames);
+  const proposedEstate = proposed ? estateAtEndOfLife(proposed, estateOwnerNames) : null;
+
+  // The estate chart compares the CURRENT plan against the PROPOSED plan, both
+  // at end of life — not today against end of life, which is what the Estate
+  // Summary page's own copy of this chart draws.
+  //
+  // That is what the chapter already argues: its registry `brief` is "what the
+  // changes do to it", and `requiresProposal` means it never prints without a
+  // proposal. It also costs nothing, because both households are already in
+  // hand above for the fact pack — a today bar would be a second
+  // `buildEstateTransferReportData` inside an already slow loader.
+  //
+  // Both bars or none. One bar is not a comparison, and `chartFor` returns null
+  // for a null array, so the chapter keeps its prose and prints no empty frame.
+  const estateBars =
+    baseEstate && proposedEstate
+      ? [
+          estateChartBar("Current plan", baseEstate.household),
+          estateChartBar("Proposed plan", proposedEstate.household),
+        ]
+      : null;
+
   // Whichever plan `willTheMoneyLast` is stating — the proposed plan's years
   // when the deck carries one, the base plan's otherwise. That chapter prints
   // under both `OUTCOME_CHAPTERS` and `PROPOSED_OUTCOME_CHAPTERS`
@@ -540,16 +581,9 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
   // plan's outcome figures; drawing the base plan's bars here instead would
   // put `chart.portfolio.atEnd` and `outcome.legacy.base` under two different
   // labels for the same number.
-  //
-  // `estateBars: null` — the per-bar breakdown the estate chart needs lives
-  // only in the Estate Summary page's own view-model
-  // (`pages/estate-summary/view-model.ts`), not in the scalar pair
-  // `estateTotals` below reads off `summarizeHousehold`. Deriving it again
-  // here would be exactly the duplicate derivation `story/charts.ts`'s own
-  // header comment says this module exists to prevent.
   const charts = buildStoryCharts({
     years: proposed ? proposedYears : baseYears,
-    estateBars: null,
+    estateBars,
   });
 
   // Household totals come from the balance-sheet view-model, not the projection
@@ -681,13 +715,10 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
      */
     shortfallYear: firstShortfallYear(baseYears),
     maxSpend: { base: baseSpend, proposed: proposedSpend },
-    // The names only label the report's own death sections, which nothing here
-    // reads — the two figures taken off it are household totals.
+    // Off the same two summaries the chart's bars were stacked from, above.
     estate: {
-      base: estateTotals(base, { clientName: firstName, spouseName: client.spouseName ?? null }),
-      proposed: proposed
-        ? estateTotals(proposed, { clientName: firstName, spouseName: client.spouseName ?? null })
-        : null,
+      base: baseEstate?.totals ?? null,
+      proposed: proposedEstate?.totals ?? null,
     },
     // No proposal means no proposed years, which is already null by the rule
     // above rather than by a second check here.

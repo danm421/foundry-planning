@@ -46,7 +46,15 @@ export interface EstateSummaryPageData {
   narrative: string[];
 }
 
-function bar(label: string, h: EstateSummaryHousehold): EstateSummaryChartBar {
+/**
+ * One stacked bar, from one plan's household summary.
+ *
+ * Exported because the Plan Story's estate chapter draws bars from the same
+ * `summarizeHousehold` output this page does (`story/load-context.ts`). A second
+ * mapping of household → bar is how a segment starts meaning one thing on this
+ * page and another in the story, inside one PDF.
+ */
+export function estateChartBar(label: string, h: EstateSummaryHousehold): EstateSummaryChartBar {
   return {
     label,
     netToHeirs: h.netToHeirs,
@@ -111,7 +119,7 @@ export function buildEstateSummaryData(
       shrinkageToday: shrink(today),
       shrinkageEol: shrink(eol),
     },
-    chart: [bar("Today", today), bar("End of Life", eol)],
+    chart: [estateChartBar("Today", today), estateChartBar("End of Life", eol)],
     todayRows,
     eolRows,
     heirs,

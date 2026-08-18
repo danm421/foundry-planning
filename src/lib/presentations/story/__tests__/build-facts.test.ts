@@ -6,6 +6,7 @@ import {
   buildResolveContext,
   EMPTY_RESOLVE_DATA,
 } from "@/lib/presentations/pages/scenario-changes/describe/resolve";
+import { fmtUsdCompact } from "@/lib/presentations/pages/retirement-comparison/format";
 import { buildStoryFacts, groupStrategies, type StoryFactsInput } from "../build-facts";
 import { factDisplaySet } from "../facts";
 import { extractFigures, validateFacts } from "../validate/facts";
@@ -834,8 +835,8 @@ describe("chart facts", () => {
     // chapter would be ambiguous between "no figures for its chart" and "no
     // chart at all". With bars, the picture really would print.
     estate: [
-      { label: "Today", netToHeirs: 2_100_000, federal: 0, state: 0, probate: 60_000, ird: 0, debts: 480_000, total: 2_640_000 },
-      { label: "At the end", netToHeirs: 3_400_000, federal: 220_000, state: 90_000, probate: 110_000, ird: 140_000, debts: 0, total: 3_960_000 },
+      { label: "Current plan", netToHeirs: 2_100_000, federal: 0, state: 0, probate: 60_000, ird: 0, debts: 480_000, total: 2_640_000 },
+      { label: "Proposed plan", netToHeirs: 3_400_000, federal: 220_000, state: 90_000, probate: 110_000, ird: 140_000, debts: 0, total: 3_960_000 },
     ],
   };
 
@@ -870,6 +871,89 @@ describe("chart facts", () => {
     expect(facts.map((f) => f.id)).not.toContain("chart.portfolio.atRetirement");
   });
 
+  it("admits each estate bar's whole-estate total, one fact per bar", () => {
+    const facts = buildStoryFacts({ ...input, charts });
+    expect(facts.find((f) => f.id === "chart.estate.grossBase")?.raw).toBe(2_640_000);
+    expect(facts.find((f) => f.id === "chart.estate.grossProposed")?.raw).toBe(3_960_000);
+  });
+
+  it("spells the estate bar's caption and the prose's figure the same way", () => {
+    // `pages/plan-story/view-model.ts#chartFor` captions each bar with
+    // `fmtUsdCompact(b.total)`, and `moneyFact` formats with the same function.
+    // Pinned as an identity rather than a literal: if either side changes
+    // formatter, one sheet prints two spellings of one number — and Gate 1 could
+    // never catch it, because `validate/facts.ts#figureKey` uppercases first, so
+    // "$2.6M" and "$2.6m" collapse to one key.
+    const facts = buildStoryFacts({ ...input, charts });
+    const gross = facts.find((f) => f.id === "chart.estate.grossBase")!;
+    expect(gross.display).toBe(fmtUsdCompact(charts.estate[0]!.total));
+  });
+
+  it("does not confuse the whole estate with what reaches the heirs", () => {
+    // The footgun this chapter is most exposed to. `estate.net.base`,
+    // `estate.cost.base` and `chart.estate.grossBase` are three dollar figures
+    // about ONE estate at ONE moment, and the third is the one the other two
+    // come out of. Only the label says so.
+    // The estate figures have to be PRESENT for the collision to be possible at
+    // all — the file's base fixture carries none, which would make this pass
+    // vacuously.
+    const facts = buildStoryFacts({
+      ...input,
+      charts,
+      estate: { base: { net: 3_100_000, cost: 700_000 }, proposed: { net: 3_900_000, cost: 400_000 } },
+    });
+    const labelOf = (id: string) => facts.find((f) => f.id === id)?.label;
+    const labels = ["estate.net.base", "estate.cost.base", "chart.estate.grossBase"].map(labelOf);
+    expect(labels.every((l) => l != null)).toBe(true);
+    expect(new Set(labels).size).toBe(3);
+    expect(labelOf("chart.estate.grossBase")).toMatch(/whole estate/i);
+  });
+
+  it("keeps chart.estate.* out of the predicate that asks whether an estate exists", () => {
+    // `registry.ts#whatsLeftForPeople.available` is
+    // `ctx.facts.some(f => f.id.startsWith("estate."))`. A chart fact must never
+    // satisfy it — that predicate means "this household has an estate on file",
+    // not "this household has a chart". The `chart.` prefix is what keeps the
+    // two apart, and this is the test that says so out loud.
+    const facts = buildStoryFacts({
+      ...input,
+      charts,
+      estate: { base: null, proposed: null },
+    });
+    expect(facts.some((f) => f.id.startsWith("estate."))).toBe(false);
+    expect(facts.some((f) => f.id.startsWith("chart.estate."))).toBe(true);
+  });
+
+  it("emits no estate chart facts when there are no bars", () => {
+    const facts = buildStoryFacts({ ...input, charts: { ...charts, estate: null } });
+    expect(facts.filter((f) => f.id.startsWith("chart.estate."))).toEqual([]);
+    // …and the other two charts are untouched by the estate's absence.
+    expect(facts.some((f) => f.id === "chart.portfolio.peak")).toBe(true);
+  });
+
+  /**
+   * ⚠️ The picture and the permission to write about it must appear and
+   * disappear TOGETHER — spec §7's rule, and the reason it is a rule is that the
+   * two live in different modules.
+   *
+   * `pages/plan-story/view-model.ts#chartFor` draws the estate chart on
+   * `charts.estate.length > 0`. If this file instead demanded a PAIR, a
+   * one-element array would print a chart with no citable figure — and Gate 8
+   * stays silent for a chapter that owns no `chart.` fact, so nothing would
+   * report it. The sweep at the end of this block cannot catch it either: its
+   * fixture carries two bars.
+   *
+   * `load-context.ts` builds both bars or null, so this is unreachable today.
+   * It is pinned because the disagreement, not the reachability, is the defect.
+   */
+  it("admits a figure for a lone estate bar, because the chart would still draw one", () => {
+    const oneBar = { ...charts, estate: [charts.estate[0]!] };
+    const facts = buildStoryFacts({ ...input, charts: oneBar });
+    expect(facts.find((f) => f.id === "chart.estate.grossBase")?.raw).toBe(2_640_000);
+    // …and nothing invented for the bar that is not there.
+    expect(facts.some((f) => f.id === "chart.estate.grossProposed")).toBe(false);
+  });
+
   it("scopes every chart fact to the one chapter that draws it", () => {
     const facts = buildStoryFacts({ ...input, charts });
     for (const f of facts.filter((x) => x.id.startsWith("chart.portfolio."))) {
@@ -877,6 +961,9 @@ describe("chart facts", () => {
     }
     for (const f of facts.filter((x) => x.id.startsWith("chart.tax."))) {
       expect(f.chapters).toEqual(["whatYoullPayInTax"]);
+    }
+    for (const f of facts.filter((x) => x.id.startsWith("chart.estate."))) {
+      expect(f.chapters).toEqual(["whatsLeftForPeople"]);
     }
   });
 

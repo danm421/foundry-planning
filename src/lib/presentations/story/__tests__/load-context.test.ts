@@ -730,6 +730,73 @@ describe("loadStoryContext", () => {
       expect(fx.estateCalls.every((c) => c.ordering === "primaryFirst")).toBe(true);
     });
 
+    it("draws the estate chart as current plan against proposed plan, at end of life", async () => {
+      fx.estate = {
+        base: estateReport(3_100_000, 500_000, 200_000),
+        "sc-1": estateReport(3_900_000, 300_000, 100_000),
+      };
+      const ctx = await load();
+
+      expect(ctx.charts?.estate?.map((b) => b.label)).toEqual(["Current plan", "Proposed plan"]);
+      // Current plan first, because the prose leads on it and moves FROM it
+      // (`chapters/whats-left-for-people.ts`). A reversed pair would put the
+      // paragraph's "from" on the right of the picture's "to".
+      expect(ctx.charts!.estate![0]!.netToHeirs).toBe(3_100_000);
+      expect(ctx.charts!.estate![1]!.netToHeirs).toBe(3_900_000);
+      // The bar's height is the WHOLE estate: net to heirs, plus the estate tax
+      // and probate above, plus the fixture's $250K of debts. Not `taxAndCosts`,
+      // which is four of the six segments.
+      expect(ctx.charts!.estate![0]!.total).toBe(4_050_000);
+      expect(ctx.charts!.estate![1]!.total).toBe(4_550_000);
+    });
+
+    it("builds NO third estate report for the chart — the bars come off the two it already had", async () => {
+      // The whole reason this comparison was chosen over today-vs-end-of-life. A
+      // third call here is one more `buildEstateTransferReportData` inside a
+      // loader that already takes ~23s cold, and it would mean the bars were
+      // derived a second time rather than kept.
+      fx.estate = {
+        base: estateReport(3_100_000, 500_000, 200_000),
+        "sc-1": estateReport(3_900_000, 300_000, 100_000),
+      };
+      const ctx = await load();
+
+      expect(ctx.charts?.estate).toHaveLength(2);
+      expect(fx.estateCalls).toHaveLength(2);
+      expect(fx.estateCalls.every((c) => c.asOf.kind === "split")).toBe(true);
+    });
+
+    it("draws no estate chart when there is no proposal to compare against", async () => {
+      // A comparison chart with one bar is not a comparison. `chartFor` returns
+      // null for a null array, so the chapter keeps its prose and prints no
+      // empty frame. This chapter is `requiresProposal` and so never prints on
+      // a base-only deck anyway — the null is the belt to that braces.
+      fx.estate = { base: estateReport(3_100_000, 500_000, 200_000) };
+      const ctx = await loadStoryContext({
+        clientId: "c1",
+        firmId: "f1",
+        proposedRef: null,
+        scenarioLabel: "Base Case",
+        documentRole: "frontMatter",
+      });
+
+      expect(ctx.charts?.estate).toBeNull();
+      // …and the base plan's own figures still reach the pack.
+      expect(ctx.facts.some((f) => f.id === "estate.net.base")).toBe(true);
+    });
+
+    it("draws no estate chart when the proposed estate report is empty", async () => {
+      // Half a comparison is not a comparison either, and this is the path that
+      // reaches a real household: an estate on file today, a scenario that
+      // empties it. A missing `fx.estate` entry comes back `isEmpty`.
+      fx.estate = { base: estateReport(3_100_000, 500_000, 200_000) };
+      const ctx = await load();
+
+      expect(ctx.charts?.estate).toBeNull();
+      expect(ctx.facts.some((f) => f.id === "estate.net.base")).toBe(true);
+      expect(ctx.facts.some((f) => f.id === "estate.net.proposed")).toBe(false);
+    });
+
     it("omits the estate figures for a household with nothing on file", async () => {
       // Every report comes back `isEmpty`. Absent, never $0 — "nothing reaches
       // your heirs" is a different statement from "we have no estate on file".
