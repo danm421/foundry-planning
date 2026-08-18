@@ -329,6 +329,8 @@ const TAX_CHAPTERS: readonly ChapterId[] = ["whatYoullPayInTax"];
 const PORTFOLIO_CHART_CHAPTERS: readonly ChapterId[] = ["willTheMoneyLast"];
 /** …chapter 10's. */
 const TAX_CHART_CHAPTERS: readonly ChapterId[] = ["whatYoullPayInTax"];
+/** …and chapter 11's, the only one that compares the two plans' estates. */
+const ESTATE_CHART_CHAPTERS: readonly ChapterId[] = ["whatsLeftForPeople"];
 /** What their life cover would do for the survivor. Exported for the same
  *  reason as `SPEND_CHAPTERS` above — the loader's gate reads it. */
 export const COVER_CHAPTERS: readonly ChapterId[] = ["protectingYourFamily"];
@@ -520,6 +522,13 @@ function goalYearFacts(goals: StoryGoal[]): Fact[] {
  * whichever scenario the deck is drawing. On a proposed-scenario deck those are
  * two different numbers that both mean "what's left at the end", and a label is
  * all the model has to tell them apart.
+ *
+ * The estate chapter is the sharpest case, because there the near-twins sit in
+ * the same pack at the same moment: `estate.net.base` ("What reaches your
+ * heirs"), `estate.cost.base` ("Tax and costs on the estate") and
+ * `chart.estate.grossBase` ("The whole estate before anything comes out") are
+ * three dollar figures about one estate at end of life, and the third is the
+ * one the other two come out of. Only the label says so.
  */
 function chartFacts(charts: StoryChartData | undefined, retirementYear: number): Fact[] {
   if (!charts) return [];
@@ -576,6 +585,32 @@ function chartFacts(charts: StoryChartData | undefined, retirementYear: number):
       moneyFact("chart.tax.peak", "The most tax paid in any one year", peak.total, TAX_CHART_CHAPTERS),
       yearFact("chart.tax.peakYear", "The year the tax bill is highest", peak.year, TAX_CHART_CHAPTERS),
     );
+  }
+
+  if (charts.estate) {
+    // Read by position, not searched by label: the labels are display text, and
+    // matching on them would be a second place that has to keep "Current plan"
+    // spelled the way `load-context.ts` spells it. That loader builds the pair
+    // together or not at all, so a first bar implies a second — but the pair is
+    // still destructured and checked, because this module must not depend on a
+    // promise made in another one.
+    const [current, proposed] = charts.estate;
+    if (current && proposed) {
+      facts.push(
+        moneyFact(
+          "chart.estate.grossBase",
+          "The whole estate before anything comes out, current plan",
+          current.total,
+          ESTATE_CHART_CHAPTERS,
+        ),
+        moneyFact(
+          "chart.estate.grossProposed",
+          "The whole estate before anything comes out, proposed plan",
+          proposed.total,
+          ESTATE_CHART_CHAPTERS,
+        ),
+      );
+    }
   }
 
   return facts;
