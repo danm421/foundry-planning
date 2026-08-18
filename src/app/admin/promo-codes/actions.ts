@@ -48,6 +48,13 @@ export async function createPromoCodeAction(input: unknown): Promise<CreateResul
   if (!parsed.success) return { ok: false, error: "Check the form values and try again." };
   const v = parsed.data;
 
+  // Stripe rejects a redemption cutoff in the past. Say so in our own words —
+  // its message names a unix timestamp, which is not something to hand back.
+  const expiry = v.expiresAt ? new Date(`${v.expiresAt}T23:59:59Z`) : null;
+  if (expiry && expiry.getTime() <= Date.now()) {
+    return { ok: false, error: "The last day to redeem has to be in the future." };
+  }
+
   const discount =
     v.discountKind === "percent"
       ? ({ kind: "percent", percentOff: v.percentOff! } as const)
@@ -62,7 +69,7 @@ export async function createPromoCodeAction(input: unknown): Promise<CreateResul
       discount,
       years: v.years,
       maxRedemptions: v.maxRedemptions,
-      expiresAt: v.expiresAt ? new Date(`${v.expiresAt}T23:59:59Z`) : null,
+      expiresAt: expiry,
       firstTimeOnly: v.firstTimeOnly ?? false,
     });
   } catch (err) {

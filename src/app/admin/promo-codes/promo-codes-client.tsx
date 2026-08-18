@@ -173,7 +173,9 @@ export default function PromoCodesClient({
       header: "",
       cell: (c) => {
         const r = c.row.original;
-        if (r.status === "inactive") return null;
+        // Only a live code can be switched off. Sold-out, expired and
+        // already-off codes have nothing left to stop.
+        if (r.status !== "active") return null;
         return (
           <button
             onClick={() => onDeactivate(r)}
@@ -321,6 +323,8 @@ export default function PromoCodesClient({
               <input
                 id="promo-expires"
                 type="date"
+                // Stripe rejects a cutoff in the past; don't offer one.
+                min={new Date().toISOString().slice(0, 10)}
                 value={expiresAt}
                 onChange={(e) => setExpiresAt(e.target.value)}
                 className={`${INPUT} tabular`}

@@ -76,11 +76,18 @@ function assertValid(input: CreatePromoInput): void {
  * The discount half. One coupon has to serve both Foundry prices, and Stripe
  * measures a coupon only in months, so "N years" becomes N*12 months in effect.
  *
- * On the $199/mo plan that is unambiguous: 12 months → 12 discounted invoices.
- * On the $1,990/yr plan the renewal invoice falls on the same day the discount
- * lapses, and which side of that boundary Stripe lands on is NOT verified here
- * — confirm against a test-mode annual subscription before selling an annual
- * promo, because the failure mode is a second year sold at the discount.
+ * Monthly ($199/mo): the discount window opens at signup and the first invoice
+ * lands when the 14-day trial ends, so one year covers the invoices at day 14
+ * through month 11.5 — 12 of them — and month 12.5 renews at full price.
+ *
+ * Annual ($1,990/yr): the renewal invoice lands 14 days AFTER the window
+ * closes, for the same reason — the trial pushes the whole billing cycle out.
+ * That 14-day margin is what keeps year two at full price, so it does not
+ * depend on how Stripe rounds a discount that ends exactly on a renewal.
+ *
+ * The margin is inherited from `trial_period_days: 14` in the storefront's
+ * checkout params. Drop the trial to zero and the annual renewal lands exactly
+ * on the boundary, where the rounding question becomes real again.
  */
 export function buildCouponParams(input: CreatePromoInput): Stripe.CouponCreateParams {
   assertValid(input);
@@ -158,10 +165,18 @@ function durationLabel(c: Stripe.Coupon): string {
   return `${years} year${years === 1 ? "" : "s"}`;
 }
 
+/**
+ * Order matters. Stripe documents that "a promotion code is only active if the
+ * coupon is also valid", and a coupon stops being valid once it hits its
+ * redemption cap or expiry — so a sold-out code arrives with `active: false`.
+ * Checking `active` first would label every sold-out code "inactive", which
+ * reads as "somebody switched this off" instead of "this worked". Test the
+ * specific reasons first and let `inactive` mean only a deliberate shut-off.
+ */
 function deriveStatus(p: Stripe.PromotionCode): PromoCodeStatus {
-  if (!p.active) return "inactive";
-  if (p.expires_at != null && p.expires_at * 1000 <= Date.now()) return "expired";
   if (p.max_redemptions != null && p.times_redeemed >= p.max_redemptions) return "used up";
+  if (p.expires_at != null && p.expires_at * 1000 <= Date.now()) return "expired";
+  if (!p.active) return "inactive";
   return "active";
 }
 
@@ -221,6 +236,15 @@ export async function createPromoCode(
 const LIST_LIMIT = 100;
 
 /**
+ * The coupon holds the discount and the duration, so we ask Stripe to inline it
+ * rather than issuing one request per code. This is the only Stripe detail in
+ * this file that isn't pinned down by the SDK's own types, so the call below
+ * retries without it instead of letting a rejected expand blank the page —
+ * rows then show "—" for discount and length, which is degraded but readable.
+ */
+const COUPON_EXPAND = "data.promotion.coupon";
+
+/**
  * Promo codes in the Stripe account, newest first (Stripe's list order).
  *
  * Returns one page. `truncated` is the point of the wrapper: a silently capped
@@ -232,10 +256,14 @@ export async function listPromoCodes(): Promise<{
   truncated: boolean;
 }> {
   const stripe = getStripe();
-  const res = await stripe.promotionCodes.list({
-    limit: LIST_LIMIT,
-    expand: ["data.promotion.coupon"],
-  });
+  let res;
+  try {
+    res = await stripe.promotionCodes.list({ limit: LIST_LIMIT, expand: [COUPON_EXPAND] });
+  } catch {
+    // Retry bare. A real auth/network failure fails again here, and that second
+    // error is the one that propagates — the operator still sees the true cause.
+    res = await stripe.promotionCodes.list({ limit: LIST_LIMIT });
+  }
   return { rows: res.data.map(toPromoCodeRow), truncated: res.has_more === true };
 }
 

@@ -91,6 +91,12 @@ describe("createPromoCodeAction", () => {
     expect(arg.expiresAt.toISOString()).toBe("2027-03-01T23:59:59.000Z");
   });
 
+  it("rejects a redemption cutoff in the past before calling Stripe", async () => {
+    const res = await createPromoCodeAction({ ...validForm, expiresAt: "2020-01-01" });
+    expect(res).toEqual({ ok: false, error: "The last day to redeem has to be in the future." });
+    expect(mockCreatePromoCode).not.toHaveBeenCalled();
+  });
+
   it("never audits a secret-free payload it did not create", async () => {
     mockCreatePromoCode.mockRejectedValue(new Error("Stripe said no"));
     const res = await createPromoCodeAction(validForm);

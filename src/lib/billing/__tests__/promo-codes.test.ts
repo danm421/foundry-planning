@@ -260,9 +260,22 @@ describe("toPromoCodeRow", () => {
     expect(toPromoCodeRow(stripePromo({ max_redemptions: 5, times_redeemed: 5 })).status).toBe("used up");
   });
 
+  // Stripe returns a sold-out code with active:false, because its coupon is no
+  // longer valid. "Used up" is the honest label; "inactive" would read as a
+  // deliberate shut-off and hide that the code did its job.
+  it("still says used up when Stripe has already flipped active off", () => {
+    const soldOut = stripePromo({ max_redemptions: 5, times_redeemed: 5, active: false });
+    expect(toPromoCodeRow(soldOut).status).toBe("used up");
+  });
+
   it("marks a past expiry as expired", () => {
     const past = Math.floor(Date.now() / 1000) - 60;
     expect(toPromoCodeRow(stripePromo({ expires_at: past })).status).toBe("expired");
+  });
+
+  it("still says expired when Stripe has already flipped active off", () => {
+    const past = Math.floor(Date.now() / 1000) - 60;
+    expect(toPromoCodeRow(stripePromo({ expires_at: past, active: false })).status).toBe("expired");
   });
 
   it("marks a deactivated code inactive", () => {
@@ -356,6 +369,21 @@ describe("listPromoCodes", () => {
   it("reports a capped list rather than passing it off as complete", async () => {
     h.promoList.mockResolvedValue({ data: [stripePromo()], has_more: true });
     expect((await listPromoCodes()).truncated).toBe(true);
+  });
+
+  it("falls back to a bare list when Stripe rejects the expand path", async () => {
+    h.promoList
+      .mockRejectedValueOnce(new Error("This property cannot be expanded (promotion.coupon)."))
+      .mockResolvedValueOnce({ data: [stripePromo()], has_more: false });
+    const res = await listPromoCodes();
+    expect(res.rows.map((r) => r.code)).toEqual(["FOUNDER25"]);
+    // Second call carries no expand.
+    expect(h.promoList.mock.calls[1][0]).not.toHaveProperty("expand");
+  });
+
+  it("surfaces the real error when the bare retry fails too", async () => {
+    h.promoList.mockRejectedValue(new Error("Expired API Key provided"));
+    await expect(listPromoCodes()).rejects.toThrow(/Expired API Key/);
   });
 });
 

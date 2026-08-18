@@ -154,16 +154,20 @@ describe("PromoCodesClient", () => {
     await waitFor(() => expect(deactivatePromoCodeAction).toHaveBeenCalledWith("promo_1"));
   });
 
-  it("offers no deactivate button for an already-inactive code", () => {
-    render(
-      <PromoCodesClient
-        initialCodes={[makeRow({ status: "inactive" })]}
-        truncated={false}
-        loadError={null}
-      />,
-    );
-    expect(screen.queryByRole("button", { name: /Deactivate/ })).not.toBeInTheDocument();
-  });
+  // Only a live code can be switched off; the rest have nothing left to stop.
+  it.each(["inactive", "used up", "expired"] as const)(
+    "offers no deactivate button for a %s code",
+    (status) => {
+      render(
+        <PromoCodesClient
+          initialCodes={[makeRow({ status })]}
+          truncated={false}
+          loadError={null}
+        />,
+      );
+      expect(screen.queryByRole("button", { name: /Deactivate/ })).not.toBeInTheDocument();
+    },
+  );
 
   it("says the list failed rather than implying there are no codes", () => {
     render(<PromoCodesClient initialCodes={[]} truncated={false} loadError="Stripe unreachable" />);
