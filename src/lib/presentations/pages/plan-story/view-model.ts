@@ -3,8 +3,13 @@
 // decides what renders and supplies the deterministic fallback for anything that
 // was never generated.
 import type { BuildDataContext } from "@/components/presentations/registry";
+import type { EstateSummaryChartBar } from "@/lib/presentations/pages/estate-summary/view-model";
+import { fmtUsdCompact } from "@/lib/presentations/pages/retirement-comparison/format";
+import type { PortfolioBar } from "@/lib/presentations/pages/retirement-summary/aggregate";
+import type { TaxYearBar } from "@/lib/presentations/pages/tax-summary/aggregate";
 import { CHAPTERS, type ChapterLayout } from "@/lib/presentations/story/chapters/registry";
 import { quotableDetail, usableName } from "@/lib/presentations/story/chapters/what-we-recommend";
+import type { StoryChartData } from "@/lib/presentations/story/charts";
 import type { Fact } from "@/lib/presentations/story/facts";
 import { GLOSSARY, type GlossaryTerm } from "@/lib/presentations/story/glossary";
 import {
@@ -19,6 +24,21 @@ import { printedChapters, type PlanStoryOptions } from "./options-schema";
 // `./options-schema` are the two modules that would genuinely be new there; see
 // `paragraphs.ts` for the rest of the count.
 import { splitParagraphs } from "./paragraphs";
+
+/**
+ * The chart printed above a `chartWithProse` chapter's prose.
+ *
+ * A discriminated union rather than a bag of optional arrays, so
+ * `chapter-chart-pdf.tsx` can `switch` with no `default` and a fourth chart is
+ * a compile error there rather than a blank space on a client's page.
+ *
+ * Each variant carries THE ARRAY, passed through from `StoryContext.charts` —
+ * never a copy and never a re-derivation. `story/charts.ts` says why.
+ */
+export type PlanStoryChart =
+  | { kind: "portfolioBars"; bars: PortfolioBar[]; retirementYear: number }
+  | { kind: "taxBars"; bars: TaxYearBar[] }
+  | { kind: "estateBars"; bars: EstateSummaryChartBar[]; totals: string[] };
 
 export interface PlanStoryChapterView {
   chapterId: ChapterId;
@@ -49,6 +69,15 @@ export interface PlanStoryChapterView {
    * generated. Same shape as `steps` and `figures`, for the same reason.
    */
   glossary: GlossaryTerm[];
+  /**
+   * The chart printed above a `chartWithProse` chapter's prose.
+   *
+   * Null when this layout prints no chart, or when the household's data produced
+   * none — see spec §7. The two are deliberately the same value: a chapter whose
+   * arrays came back empty prints its prose alone rather than an empty axis, and
+   * the renderer has one question to ask rather than two.
+   */
+  chart: PlanStoryChart | null;
   /** The client-facing sentence that replaces what a sheet could not hold.
    *  "" means nothing was dropped. */
   overflowNote: string;
@@ -94,10 +123,14 @@ const TITLE = "Your Plan";
  * every page's signature, so the RENDER is what gives way and the invariant
  * becomes true by construction.
  *
- * All four numbers below are MEASURED, by rendering real PDFs and reading the
- * page count back out of the page-tree node. They are deliberately plain
- * ceilings rather than a fitted model of the layout — a model was tried, and the
- * measurements will not support one:
+ * Every number below sits at or inside a MEASURED bound, taken by rendering real
+ * PDFs. That is not the same as the sheet having CHOSEN it: `MAX_FIGURE_CARDS`
+ * stops at five on a sheet measured to hold eight, for a reason its own note
+ * gives. So a bound never licenses raising one of these on its own — read the
+ * constant's note first.
+ *
+ * They are deliberately plain ceilings rather than a fitted model of the layout
+ * — a model was tried, and the measurements will not support one:
  *
  *   · five paragraphs of 81 words (405 words) occupy one sheet, while twelve
  *     paragraphs of 27 (324 words) overflow — a paragraph costs its own bottom
@@ -106,9 +139,15 @@ const TITLE = "Your Plan";
  *   · ⚠️ `PageFrame` gives its body `flex: 1`, so react-pdf may CLIP content
  *     past the available height instead of breaking to a second sheet. A
  *     rendered page count of 1 therefore does not prove the prose survived, only
- *     that it did not paginate, and there is no cheap instrument for the
- *     difference (react-pdf embeds a subsetted font, so the text cannot be read
- *     back out of the PDF).
+ *     that it did not paginate.
+ *
+ * Which instrument each ceiling was taken with matters, and they are not the
+ * same one. The ones above `BUDGET_WORDS_CHART` were read off the page-tree
+ * node's `/Count` — a bound a clipped sheet can satisfy, which is why they sit
+ * INSIDE what was observed rather than at it. The chart pair was read off the
+ * geometry itself: `pdftotext -bbox` gives every word's box back, so the lowest
+ * word on the sheet can be compared against the 720pt line where `PageFrame`
+ * reserves its footer.
  *
  * So each ceiling sits at or inside something actually observed to lay out, and
  * `plan-story-render.test.tsx` re-runs those cases every suite.
@@ -234,8 +273,48 @@ export const BUDGET_WORDS_GLOSSARY = 90;
 export const MAX_PARAGRAPHS = 8;
 
 /**
- * A `switch` with no `default`, so a sixth layout is a COMPILE error here rather
- * than a silent 300-word budget.
+ * …and what the prose UNDER a chart may spend.
+ *
+ * Half what a sheet carrying nothing above its prose gets, and the chart is the
+ * whole of the difference: the tallest of the three — the portfolio chart and
+ * the tax chart, each a 150pt `Svg` over a legend row — pushes the first line of
+ * prose 186pt down the sheet. (The estate chart is 62pt shorter and has room
+ * these two do not; the budget is one number for all three, so it is set for the
+ * tall pair.)
+ *
+ * ⚠️ Measured by RENDERING the sheet and reading the bottom of its lowest word
+ * back out with `pdftotext -bbox`, against the 720pt line where `PageFrame`
+ * reserves its footer — a 792pt page less the 72pt of bottom padding that band
+ * costs. A page COUNT cannot answer this question and must not be read as
+ * though it had: `PageFrame` gives its body `flex: 1`, so "one sheet" is what a
+ * sheet that fits and a sheet that clips both report.
+ *
+ * On the worst shape the two ceilings here allow — `MAX_PARAGRAPHS_CHART`
+ * paragraphs, all but the last one word past a line break and wasting the rest
+ * of it, with the trim note printed under them — 195 words lay out with their
+ * lowest word's foot at 712pt and 200 render onto a second sheet. This sits two
+ * lines inside that: 150 words come to 676pt.
+ */
+export const BUDGET_WORDS_CHART = 150;
+
+/**
+ * …and how many PARAGRAPHS those words may be spread across.
+ *
+ * The word ceiling alone cannot describe this sheet — a paragraph costs its own
+ * bottom margin whether it holds four words or forty, which is the finding the
+ * note above `MAX_STRATEGY_CARDS` records — and here the chart has already spent
+ * 186pt before the first paragraph starts.
+ *
+ * Measured the same way, at the full word budget with the trim note printed: six
+ * paragraphs lay out with their lowest word at 705pt, and seven render onto a
+ * second sheet. Five is one paragraph inside that, and the layout's prompt asks
+ * the model for two.
+ */
+export const MAX_PARAGRAPHS_CHART = 5;
+
+/**
+ * A `switch` with no `default`, so a seventh layout is a COMPILE error here
+ * rather than a silent 300-word budget.
  *
  * That default is the one this file exists to prevent: a layout printing
  * something under its prose, handed a full sheet's words, renders onto a second
@@ -252,6 +331,8 @@ function proseBudgetWords(layout: ChapterLayout, cards: number): number {
       return BUDGET_WORDS_CHECKLIST;
     case "glossary":
       return BUDGET_WORDS_GLOSSARY;
+    case "chartWithProse":
+      return BUDGET_WORDS_CHART;
     case "heroProse":
     case "strategyCards":
       return cards > 0 ? BUDGET_WORDS_WITH_CARDS : SHEET_BUDGET_WORDS;
@@ -270,6 +351,10 @@ function proseParagraphCap(layout: ChapterLayout, cards: number): number {
     case "checklist":
     case "glossary":
       return MAX_PARAGRAPHS;
+    case "chartWithProse":
+      // NOT `MAX_PARAGRAPHS`, which was measured on a sheet carrying nothing
+      // above its prose. See `MAX_PARAGRAPHS_CHART`.
+      return MAX_PARAGRAPHS_CHART;
     case "heroProse":
     case "strategyCards":
       return cards > 0 ? MAX_PARAGRAPHS_WITH_CARDS : MAX_PARAGRAPHS;
@@ -328,6 +413,88 @@ function figuresFor(facts: Fact[]): PlanStoryChapterView["figures"] {
     .filter((f) => !f.id.startsWith("quoted."))
     .slice(0, MAX_FIGURE_CARDS)
     .map((f) => ({ label: f.label, value: f.display }));
+}
+
+/**
+ * The year the portfolio chart draws its retirement marker on.
+ *
+ * Read back off the fact pack rather than threaded in separately, because the
+ * pack is the only place this builder can reach it and re-deriving it would mean
+ * a second `DOB year + retirementAge` (`load-context.ts`) that agrees today.
+ * `build-facts.ts` emits `plan.retirementYear` with NO `chapters` scope, so it
+ * survives `factsForChapter` onto every chapter.
+ *
+ * Zero when the pack has none, which is the already-retired household:
+ * `build-facts.ts` only emits the fact when the retirement year is at or after
+ * the plan's start year. No bar carries year 0, so the chart draws no marker —
+ * the same answer `chartFacts` gives when it drops `chart.portfolio.atRetirement`
+ * for that household.
+ */
+function retirementYearFrom(facts: Fact[]): number {
+  return facts.find((f) => f.id === "plan.retirementYear")?.raw ?? 0;
+}
+
+/**
+ * The chart this chapter prints, or null.
+ *
+ * Keyed on the CHAPTER, not the layout: the layout says a chart goes here, and
+ * only the chapter says which one.
+ *
+ * ⚠️⚠️ This list must stay in step with the chapter scopes
+ * `build-facts.ts#chartFacts` gives the matching `chart.*` facts
+ * (`PORTFOLIO_CHART_CHAPTERS`, `TAX_CHART_CHAPTERS`), and the failure mode of
+ * drift is SILENCE rather than a rejection. `generate.ts:270` scopes the pack
+ * once with `factsForChapter` and `generate.ts:411` judges the draft against
+ * that same scoped array, so `chart-citation.ts:21-25` sees only the chapter's
+ * own facts and returns `[]` the moment none of them is a `chart.` one. Draw a
+ * chart on a chapter those facts do not reach and Gate 8 does not fire, does not
+ * retry, and says nothing: the sheet ships a picture the prose was never
+ * required to mention. Nothing else in the report notices — the gate's empty
+ * return is also the legitimate no-chart path, which is what makes the two
+ * indistinguishable from the outside.
+ *
+ * ⚠️ `whatsLeftForPeople` is already that shape: `chartFacts` emits `chart.*`
+ * facts for the portfolio and tax charts only, and none for the estate one. The
+ * estate branch below returns a chart only once something hands
+ * `StoryChartData.estate` real bars rather than the null that field documents as
+ * the ordinary answer for a deck with no estate report — so the mismatch costs
+ * nothing until something does, and the moment something does, the sheet prints
+ * a chart no gate will ever ask the prose to mention.
+ *
+ * An EMPTY array is null, never a chart: spec §7 — drop the chart, keep the
+ * prose, and never print an axis with no bars on a client's page.
+ */
+function chartFor(chapterId: ChapterId, charts: StoryChartData | undefined, facts: Fact[]): PlanStoryChart | null {
+  if (!charts) return null;
+  switch (chapterId) {
+    case "willTheMoneyLast":
+      return charts.portfolio.length > 0
+        ? {
+            kind: "portfolioBars",
+            bars: charts.portfolio,
+            retirementYear: retirementYearFrom(facts),
+          }
+        : null;
+    case "whatYoullPayInTax":
+      return charts.tax.length > 0 ? { kind: "taxBars", bars: charts.tax } : null;
+    case "whatsLeftForPeople":
+      // The one chart of the three that prints money under its bars, so the
+      // labels are pre-formatted HERE and threaded in. Its own `fmtUsd`
+      // (`pages/estate-summary/aggregate.ts`) renders thousands with a lowercase
+      // k — "$850k" — where `moneyFact` formats every figure in the pack with
+      // `fmtUsdCompact`'s uppercase K. Left to the component, one sheet would
+      // print two spellings of one number. `validate/facts.ts#figureKey`
+      // uppercases before comparing, so Gate 1 could never have caught it.
+      return charts.estate && charts.estate.length > 0
+        ? {
+            kind: "estateBars",
+            bars: charts.estate,
+            totals: charts.estate.map((b) => fmtUsdCompact(b.total)),
+          }
+        : null;
+    default:
+      return null;
+  }
 }
 
 /**
@@ -549,6 +716,7 @@ export function buildPlanStoryData(
       figures,
       steps,
       glossary,
+      chart: chartFor(chapterId, input.story.charts, facts),
       // ONE note, whichever bound bit. They all mean the same thing to the
       // reader — there is more, and the advisor will cover it — and two notes on
       // one sheet would be the overflow these caps exist to prevent. The counted

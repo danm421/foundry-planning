@@ -10,6 +10,7 @@ import { buildStoryFacts, groupStrategies, type StoryFactsInput } from "../build
 import { factDisplaySet } from "../facts";
 import { extractFigures, validateFacts } from "../validate/facts";
 import { narrateWhatWeRecommend } from "../chapters/what-we-recommend";
+import { CHAPTERS } from "../chapters/registry";
 import { CHAPTER_IDS, factsForChapter, type StoryContext, type StoryStrategy } from "../types";
 
 const input: StoryFactsInput = {
@@ -813,5 +814,109 @@ describe("the inflation assumption", () => {
       (f) => f.id === "plan.inflationRate",
     );
     expect(fact?.raw).toBe(0);
+  });
+});
+
+describe("chart facts", () => {
+  const charts = {
+    portfolio: [
+      { year: 2026, cash: 10_000, taxable: 20_000, retirement: 70_000, total: 100_000 },
+      { year: 2035, cash: 10_000, taxable: 40_000, retirement: 950_000, total: 1_000_000 },
+      { year: 2040, cash: 10_000, taxable: 30_000, retirement: 460_000, total: 500_000 },
+    ],
+    tax: [
+      { year: 2026, federalOrdinary: 10_000, capGains: 0, state: 2_000, total: 12_000 },
+      { year: 2035, federalOrdinary: 40_000, capGains: 5_000, state: 8_000, total: 53_000 },
+    ],
+    // All three arrays carry bars, so the invariant at the end of this block is
+    // asked the interesting question. `view-model.ts#chartFor` returns an estate
+    // chart only when `estate` holds bars; left null, a red on the estate
+    // chapter would be ambiguous between "no figures for its chart" and "no
+    // chart at all". With bars, the picture really would print.
+    estate: [
+      { label: "Today", netToHeirs: 2_100_000, federal: 0, state: 0, probate: 60_000, ird: 0, debts: 480_000, total: 2_640_000 },
+      { label: "At the end", netToHeirs: 3_400_000, federal: 220_000, state: 90_000, probate: 110_000, ird: 140_000, debts: 0, total: 3_960_000 },
+    ],
+  };
+
+  it("admits the peak the chart draws, and the year it happens", () => {
+    const facts = buildStoryFacts({ ...input, charts });
+    const peak = facts.find((f) => f.id === "chart.portfolio.peak");
+    const peakYear = facts.find((f) => f.id === "chart.portfolio.peakYear");
+    expect(peak?.raw).toBe(1_000_000);
+    expect(peak?.display).toBe("$1.0M");
+    expect(peakYear?.display).toBe("2035");
+  });
+
+  it("takes the ending balance from the LAST bar, not from the largest", () => {
+    const facts = buildStoryFacts({ ...input, charts });
+    expect(facts.find((f) => f.id === "chart.portfolio.atEnd")?.raw).toBe(500_000);
+  });
+
+  it("admits the retirement-year fact when a bar exists for that year", () => {
+    // 2026 is the fixture's own `input.planStartYear` and also its first
+    // portfolio bar — overriding just `retirementYear` to a year the chart
+    // actually carries reuses the file's real fixture rather than a second one.
+    const facts = buildStoryFacts({ ...input, retirementYear: 2026, charts });
+    const atRet = facts.find((f) => f.id === "chart.portfolio.atRetirement");
+    expect(atRet?.raw).toBe(100_000);
+    expect(atRet?.chapters).toEqual(["willTheMoneyLast"]);
+  });
+
+  it("omits the retirement-year fact when no bar matches that year", () => {
+    // `input.retirementYear` is 2041; the fixture's bars are 2026/2035/2040, so
+    // this exercises the `if (atRet)` branch's false path with no override.
+    const facts = buildStoryFacts({ ...input, charts });
+    expect(facts.map((f) => f.id)).not.toContain("chart.portfolio.atRetirement");
+  });
+
+  it("scopes every chart fact to the one chapter that draws it", () => {
+    const facts = buildStoryFacts({ ...input, charts });
+    for (const f of facts.filter((x) => x.id.startsWith("chart.portfolio."))) {
+      expect(f.chapters).toEqual(["willTheMoneyLast"]);
+    }
+    for (const f of facts.filter((x) => x.id.startsWith("chart.tax."))) {
+      expect(f.chapters).toEqual(["whatYoullPayInTax"]);
+    }
+  });
+
+  it("emits no chart facts at all when the context carries no charts", () => {
+    const facts = buildStoryFacts({ ...input, charts: undefined });
+    expect(facts.filter((f) => f.id.startsWith("chart."))).toEqual([]);
+  });
+
+  it("emits no portfolio facts from an empty bar array", () => {
+    const facts = buildStoryFacts({ ...input, charts: { portfolio: [], tax: [], estate: null } });
+    expect(facts.filter((f) => f.id.startsWith("chart."))).toEqual([]);
+  });
+
+  /**
+   * ⭐⭐ The one invariant that ties the picture to the pack, and the reason it
+   * is stated off the LAYOUT: `chapter-pdf.tsx` draws a chart only on a
+   * `chartWithProse` sheet, so the layout is what decides whether a chart
+   * reaches a client's page.
+   *
+   * Put a chapter on that layout without giving it `chart.` facts and every
+   * check downstream stays quiet. `registry.ts#OUTPUT_ASK` tells the chapter to
+   * "name at least one of its figures"; Gate 1 (`validate/facts.ts`) refuses any
+   * figure the model invents to obey; and Gate 8
+   * (`validate/chart-citation.ts`) returns no failure at all when the chapter
+   * owns no charted fact, so nothing reports the mismatch. The sheet ships a
+   * picture the prose was never able to explain.
+   *
+   * What it catches is drift between the LAYOUT and this file's own fact
+   * scopes, and it is red from either side: put a chapter on `chartWithProse`
+   * without giving it chart facts, or repoint one of the `*_CHART_CHAPTERS`
+   * lists above at a different chapter. Both were run, and each names the
+   * offending chapter in its failure message.
+   */
+  it("gives every chapter that PRINTS a chart at least one of that chart's figures", () => {
+    const facts = buildStoryFacts({ ...input, charts });
+    const charted = CHAPTER_IDS.filter((id) => CHAPTERS[id].layout === "chartWithProse");
+    // Not a vacuous loop: the layout has to be in use, or the body never runs.
+    expect(charted.length).toBeGreaterThanOrEqual(2);
+    for (const id of charted) {
+      expect(factsForChapter(facts, id).some((f) => f.id.startsWith("chart.")), id).toBe(true);
+    }
   });
 });

@@ -6,6 +6,7 @@ import { View, Text, StyleSheet } from "@react-pdf/renderer";
 import { PRESENTATION_THEME } from "@/lib/presentations/theme";
 import type { SectionAccent } from "@/lib/presentations/theme";
 import type { PlanStoryChapterView } from "@/lib/presentations/pages/plan-story/view-model";
+import { PlanStoryChapterChartPdf } from "./chapter-chart-pdf";
 
 /** The text measure this page reads at — every full-width run of words on the
  *  sheet, prose and glossary alike, stops at the same line length. */
@@ -171,6 +172,24 @@ export function PlanStoryChapterPdf({
   // not choose. The layout still reads its OWN collection only, so a chapter
   // carrying stale strategies from another layout prints none of them.
   const cards = chapter.layout === "strategyCards" ? chapter.strategies : [];
+
+  if (chapter.layout === "chartWithProse") {
+    return (
+      <View style={styles.wrap}>
+        <ChapterHead title={chapter.title} accent={accent} eyebrow={eyebrow} />
+        {/* The chart FIRST: it is the page's subject and the prose explains it.
+            No `flexWrap` row here — react-pdf cannot split one across sheets, and
+            a full-width chart above full-measure prose needs no row at all. */}
+        {chapter.chart && (
+          <View style={{ marginBottom: 14 }}>
+            <PlanStoryChapterChartPdf chart={chapter.chart} />
+          </View>
+        )}
+        <Paragraphs paragraphs={chapter.paragraphs} />
+        <OverflowNote note={chapter.overflowNote} />
+      </View>
+    );
+  }
 
   if (chapter.layout === "twoUp") {
     return (

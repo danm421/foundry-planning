@@ -114,15 +114,28 @@ describe("the chapter registry", () => {
   });
 
   // Hand-written on purpose, and it is the RENDERER's list: `chapter-pdf.tsx`
-  // branches on three of these and falls through to the prose sheet for the
-  // rest, so a sixth layout added here would print as `heroProse` — with its
-  // own collection, whatever it is, silently absent from a client's page.
-  it("uses only the five layouts the PDF knows how to print", () => {
+  // gives four of these a branch of their own — `chartWithProse`, `twoUp`,
+  // `glossary` and `checklist` — and serves the remaining two from one
+  // fall-through, which prints the prose plus the strategy cards for whichever
+  // of the two carries any. A SEVENTH layout added here would land on that
+  // fall-through and print as a bare prose sheet, with its own collection,
+  // whatever it is, silently absent from a client's page.
+  it("uses only the six layouts the PDF knows how to print", () => {
     for (const id of CHAPTER_IDS) {
-      expect(["heroProse", "twoUp", "strategyCards", "checklist", "glossary"]).toContain(
-        CHAPTERS[id].layout,
-      );
+      expect([
+        "heroProse",
+        "twoUp",
+        "strategyCards",
+        "checklist",
+        "glossary",
+        "chartWithProse",
+      ]).toContain(CHAPTERS[id].layout);
     }
+  });
+
+  it("prints the two chart chapters on the chartWithProse layout", () => {
+    expect(CHAPTERS.willTheMoneyLast.layout).toBe("chartWithProse");
+    expect(CHAPTERS.whatYoullPayInTax.layout).toBe("chartWithProse");
   });
 
   /**

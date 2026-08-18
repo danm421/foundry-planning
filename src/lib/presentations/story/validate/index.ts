@@ -7,6 +7,7 @@ import { validateReadability, validateReadabilityEnumerating, validateNoAdvice }
 import { validateVoice, validateVoiceEnumerating } from "./voice";
 import { validateLabels, registerGate } from "./register";
 import { foreignNamesGate } from "./foreign-names";
+import { chartCitationGate } from "./chart-citation";
 import type { GateFailure, Validator } from "./types";
 
 export type { GateFailure, GateId, Validator } from "./types";
@@ -70,6 +71,7 @@ export function runGates(markdown: string, facts: Fact[], opts: GateOptions = {}
     ...gatesFor(opts.enumerates ?? false),
     registerGate(names),
     foreignNamesGate(names, opts.householdText ?? []),
+    chartCitationGate,
   ];
   return gates.flatMap((gate) => gate(markdown, facts));
 }
@@ -92,5 +94,7 @@ export function runGates(markdown: string, facts: Fact[], opts: GateOptions = {}
  * 1  `GateId` at this plan's merge-base (`151fee59c`) — six gates: facts,
  *    readability, advice, voice, labels, register.
  * 2  This plan's Task 5 adds `foreignName` as a seventh gate (`foreign-names.ts`).
+ * 3  Adds `chartCitation` as an eighth gate (`chart-citation.ts`): a chapter
+ *    printing a chart must name one of that chart's figures.
  */
-export const GATE_VERSION = 2;
+export const GATE_VERSION = 3;

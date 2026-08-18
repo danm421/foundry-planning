@@ -2,6 +2,7 @@
 // described scenario changes into named strategies. No IO, no clock — the
 // caller (load-context.ts) owns both.
 import type { ChangeRow } from "@/lib/presentations/pages/scenario-changes/types";
+import type { StoryChartData } from "./charts";
 import { hasAccountingNegative, moneyFact, pctFact, quotedFact, yearFact, type Fact } from "./facts";
 import type { ChapterId, StoryGoal, StoryStrategy } from "./types";
 import { extractFigures } from "./validate/facts";
@@ -119,6 +120,14 @@ export interface StoryFactsInput {
    * printing "prices rise about 0% a year".
    */
   inflationRate: number;
+  /**
+   * The arrays the chart chapters draw, or undefined for a caller with no
+   * projection behind it.
+   *
+   * Every fact derived from these is derived from THIS array and never
+   * recomputed from `years` alongside it — see `story/charts.ts` for why.
+   */
+  charts?: StoryChartData;
 }
 
 /**
@@ -316,6 +325,10 @@ const FLOW_CHAPTERS: readonly ChapterId[] = ["whereTheMoneyGoes"];
 const ESTATE_CHAPTERS: readonly ChapterId[] = ["whatsLeftForPeople"];
 /** …and what the household pays in income tax over the life of the plan. */
 const TAX_CHAPTERS: readonly ChapterId[] = ["whatYoullPayInTax"];
+/** The chart on chapter 7, and the only chapter its figures mean anything on. */
+const PORTFOLIO_CHART_CHAPTERS: readonly ChapterId[] = ["willTheMoneyLast"];
+/** …chapter 10's. */
+const TAX_CHART_CHAPTERS: readonly ChapterId[] = ["whatYoullPayInTax"];
 /** What their life cover would do for the survivor. Exported for the same
  *  reason as `SPEND_CHAPTERS` above — the loader's gate reads it. */
 export const COVER_CHAPTERS: readonly ChapterId[] = ["protectingYourFamily"];
@@ -493,6 +506,81 @@ function goalYearFacts(goals: StoryGoal[]): Fact[] {
   );
 }
 
+/**
+ * The figures a chart actually draws, admitted so the prose can be REQUIRED to
+ * name one of them (`validate/chart-citation.ts`).
+ *
+ * Every id begins `chart.`, which is how that gate finds them — the same
+ * prefix-as-scope convention `available` already uses on `estate.`, `tax.` and
+ * `cover.`.
+ *
+ * ⚠️ Labels have to distinguish these from their near-twins in the same pack.
+ * `outcome.legacy.base` is "Left at the end, current plan" — specifically the
+ * CURRENT plan's — while `chart.portfolio.atEnd` is the ending balance of
+ * whichever scenario the deck is drawing. On a proposed-scenario deck those are
+ * two different numbers that both mean "what's left at the end", and a label is
+ * all the model has to tell them apart.
+ */
+function chartFacts(charts: StoryChartData | undefined, retirementYear: number): Fact[] {
+  if (!charts) return [];
+  const facts: Fact[] = [];
+
+  if (charts.portfolio.length > 0) {
+    const bars = charts.portfolio;
+    const last = bars[bars.length - 1]!;
+    // `reduce`, not a sort: sorting would reorder the array the chart draws.
+    const peak = bars.reduce((hi, b) => (b.total > hi.total ? b : hi), bars[0]!);
+    facts.push(
+      moneyFact(
+        "chart.portfolio.atEnd",
+        "What the plan is holding in the last year on the chart",
+        last.total,
+        PORTFOLIO_CHART_CHAPTERS,
+      ),
+      moneyFact(
+        "chart.portfolio.peak",
+        "The most the plan ever holds",
+        peak.total,
+        PORTFOLIO_CHART_CHAPTERS,
+      ),
+      yearFact(
+        "chart.portfolio.peakYear",
+        "The year the plan is at its largest",
+        peak.year,
+        PORTFOLIO_CHART_CHAPTERS,
+      ),
+    );
+
+    // `chart.portfolio.atRetirement` is deliberately conditional: an
+    // already-retired household carries a `retirementYear` the projection does
+    // not contain — the same root cause `plan.retirementYear` is guarded
+    // against below, though by a different check — and there is then no bar to
+    // point this one at.
+    const atRet = bars.find((b) => b.year === retirementYear);
+    if (atRet) {
+      facts.push(
+        moneyFact(
+          "chart.portfolio.atRetirement",
+          "What the plan is holding the year work stops",
+          atRet.total,
+          PORTFOLIO_CHART_CHAPTERS,
+        ),
+      );
+    }
+  }
+
+  if (charts.tax.length > 0) {
+    const bars = charts.tax;
+    const peak = bars.reduce((hi, b) => (b.total > hi.total ? b : hi), bars[0]!);
+    facts.push(
+      moneyFact("chart.tax.peak", "The most tax paid in any one year", peak.total, TAX_CHART_CHAPTERS),
+      yearFact("chart.tax.peakYear", "The year the tax bill is highest", peak.year, TAX_CHART_CHAPTERS),
+    );
+  }
+
+  return facts;
+}
+
 export function buildStoryFacts(input: StoryFactsInput): Fact[] {
   const facts: Fact[] = [
     moneyFact("today.assets", "What you own", input.todayAssets, BALANCE_SHEET_CHAPTERS),
@@ -580,6 +668,7 @@ export function buildStoryFacts(input: StoryFactsInput): Fact[] {
   }
 
   facts.push(...goalYearFacts(input.goals));
+  facts.push(...chartFacts(input.charts, input.retirementYear));
 
   /**
    * This year's flow. Three figures and deliberately NOT a fourth.

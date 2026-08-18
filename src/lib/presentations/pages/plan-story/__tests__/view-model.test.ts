@@ -1007,58 +1007,58 @@ describe("twoUp figures", () => {
   /** A twoUp chapter that needs a proposal, with its prose coming from storage
    *  exactly as the export loader supplies it — so the case is about the FIGURE
    *  COLUMN and not about the paragraph beside it. */
-  const WITH_LAST: PlanStoryOptions = {
+  const WITH_SPEND: PlanStoryOptions = {
     ...PROPOSED,
-    sections: { ...PROPOSED.sections, willTheMoneyLast: true },
+    sections: { ...PROPOSED.sections, whatYouCanSpend: true },
   };
-  const STORED = { willTheMoneyLast: "Your plan holds up in almost every run we tested." };
+  const STORED = { whatYouCanSpend: "You can spend more a year than the plan you're on allows." };
 
   function fact(id: string, label: string, display: string, chapters?: ChapterId[]): Fact {
     return { id, label, display, raw: null, ...(chapters ? { chapters } : {}) };
   }
 
-  const CONFIDENCE = fact("outcome.confidence.proposed", "Confidence, proposed plan", "96.3%", [
-    "willTheMoneyLast",
+  const SPEND = fact("spend.proposed", "What you could spend a year, proposed plan", "$260K", [
+    "whatYouCanSpend",
   ]);
 
-  function chapterWith(facts: Fact[], id: ChapterId = "willTheMoneyLast"): PlanStoryChapterView {
-    const data = buildPlanStoryData(deckCtx(input({ hasProposal: true, facts }, STORED)), WITH_LAST);
+  function chapterWith(facts: Fact[], id: ChapterId = "whatYouCanSpend"): PlanStoryChapterView {
+    const data = buildPlanStoryData(deckCtx(input({ hasProposal: true, facts }, STORED)), WITH_SPEND);
     return data.chapters.find((c) => c.chapterId === id)!;
   }
 
   it("carries the chapter's own facts as labelled figures", () => {
-    const chapter = chapterWith([CONFIDENCE]);
+    const chapter = chapterWith([SPEND]);
     expect(chapter.layout).toBe("twoUp");
-    expect(chapter.figures.map((f) => f.value)).toContain("96.3%");
+    expect(chapter.figures.map((f) => f.value)).toContain("$260K");
   });
 
   it("uses the fact's own label, so a figure card and the prose cannot disagree", () => {
     // The same two strings the prompt showed the model. A card built from a
     // second formatting of the same number is how a page ends up printing
-    // "96.3%" beside prose that says "96%".
-    const card = chapterWith([CONFIDENCE]).figures.find((f) => f.value === "96.3%")!;
-    expect(card.label).toBe("Confidence, proposed plan");
+    // "$260K" beside prose that says "$260,000".
+    const card = chapterWith([SPEND]).figures.find((f) => f.value === "$260K")!;
+    expect(card.label).toBe("What you could spend a year, proposed plan");
   });
 
   it("prints only the figures scoped to this chapter", () => {
     // Task 5's scoping is what makes the column readable: unscoped, every
     // chapter's card stack would carry the whole pack's headline figures.
     const elsewhere = fact("today.assets", "What you own", "$2M", ["whatYouHave"]);
-    const chapter = chapterWith([CONFIDENCE, elsewhere]);
-    expect(chapter.figures.map((f) => f.value)).toEqual(["96.3%"]);
+    const chapter = chapterWith([SPEND, elsewhere]);
+    expect(chapter.figures.map((f) => f.value)).toEqual(["$260K"]);
   });
 
   it("leaves out a quoted figure — it is one change's wording, not a headline", () => {
     const quoted = fact("quoted.$850k", 'Sell the rental — from "…$850k sale"', "$850k", [
-      "willTheMoneyLast",
+      "whatYouCanSpend",
     ]);
-    const chapter = chapterWith([CONFIDENCE, quoted]);
-    expect(chapter.figures.map((f) => f.value)).toEqual(["96.3%"]);
+    const chapter = chapterWith([SPEND, quoted]);
+    expect(chapter.figures.map((f) => f.value)).toEqual(["$260K"]);
   });
 
   it("caps the figures so the column cannot overflow the sheet", () => {
     const many = Array.from({ length: MAX_FIGURE_CARDS + 3 }, (_, i) =>
-      fact(`outcome.n${i}`, `Figure ${i}`, `${i}%`, ["willTheMoneyLast"]),
+      fact(`outcome.n${i}`, `Figure ${i}`, `${i}%`, ["whatYouCanSpend"]),
     );
     expect(chapterWith(many).figures).toHaveLength(MAX_FIGURE_CARDS);
   });
@@ -1072,10 +1072,10 @@ describe("twoUp figures", () => {
     const FORTY = Array.from({ length: 40 }, (_, i) => `word${i}`).join(" ");
     const long = Array.from({ length: 5 }, () => FORTY).join("\n\n");
     const data = buildPlanStoryData(
-      deckCtx(input({ hasProposal: true }, { willTheMoneyLast: long, whatYouHave: long })),
-      WITH_LAST,
+      deckCtx(input({ hasProposal: true }, { whatYouCanSpend: long, whatYouHave: long })),
+      WITH_SPEND,
     );
-    const twoUp = data.chapters.find((c) => c.chapterId === "willTheMoneyLast")!;
+    const twoUp = data.chapters.find((c) => c.chapterId === "whatYouCanSpend")!;
     const hero = data.chapters.find((c) => c.chapterId === "whatYouHave")!;
     expect(hero.paragraphs).toHaveLength(5);
     expect(hero.overflowNote).toBe("");
@@ -1085,8 +1085,8 @@ describe("twoUp figures", () => {
 
   it("is empty for every other layout", () => {
     const data = buildPlanStoryData(
-      deckCtx(input({ hasProposal: true, facts: [CONFIDENCE] }, STORED)),
-      WITH_LAST,
+      deckCtx(input({ hasProposal: true, facts: [SPEND] }, STORED)),
+      WITH_SPEND,
     );
     expect(data.chapters.find((c) => c.chapterId === "whatYouHave")!.figures).toEqual([]);
     expect(data.chapters.find((c) => c.chapterId === "whatWeRecommend")!.figures).toEqual([]);
@@ -1160,5 +1160,103 @@ describe("checklist steps", () => {
     expect(list.overflowNote).toBe(
       "…there's more here than fits this page — we'll walk through the rest together.",
     );
+  });
+});
+
+describe("a chartWithProse chapter", () => {
+  const WITH_LAST: PlanStoryOptions = {
+    ...PROPOSED,
+    sections: { ...PROPOSED.sections, willTheMoneyLast: true },
+  };
+
+  function bar(year: number, total: number) {
+    return { year, cash: total / 3, taxable: total / 3, retirement: total / 3, total };
+  }
+
+  function chapterWith(over: Partial<StoryContext>, id: ChapterId = "willTheMoneyLast") {
+    const data = buildPlanStoryData(deckCtx(input({ hasProposal: true, ...over })), WITH_LAST);
+    return data.chapters.find((c) => c.chapterId === id)!;
+  }
+
+  it("hands the renderer the same portfolio array the facts came from", () => {
+    const bars = [{ year: 2026, cash: 1, taxable: 2, retirement: 3, total: 6 }];
+    const chapter = chapterWith({ charts: { portfolio: bars, tax: [], estate: null } });
+    expect(chapter.chart).toEqual({
+      kind: "portfolioBars",
+      bars,
+      retirementYear: expect.any(Number),
+    });
+    // …and the SAME array, not a deep-equal copy. `story/charts.ts` builds the
+    // bars once so the fact pack and the drawing cannot disagree about a number;
+    // a copy here would be a second array that happens to match today.
+    expect((chapter.chart as { bars: unknown }).bars).toBe(bars);
+  });
+
+  it("marks the retirement year the fact pack names, not one of its own", () => {
+    // Without this the marker could be a constant and every assertion above
+    // would still pass. `plan.retirementYear` is emitted unscoped by
+    // `build-facts.ts`, so it reaches this chapter.
+    const chapter = chapterWith({
+      charts: { portfolio: [bar(2035, 900)], tax: [], estate: null },
+      facts: [{ id: "plan.retirementYear", label: "The year you stop working", display: "2035", raw: 2035 }],
+    });
+    expect(chapter.chart).toEqual({ kind: "portfolioBars", bars: [bar(2035, 900)], retirementYear: 2035 });
+  });
+
+  it("prints no chart, and keeps the prose, when the context carries none", () => {
+    const chapter = chapterWith({ charts: undefined });
+    expect(chapter.chart).toBeNull();
+    expect(chapter.paragraphs.length).toBeGreaterThan(0);
+  });
+
+  it("prints no chart, and keeps the prose, when the household's arrays are empty", () => {
+    // Spec §7: drop the chart, never print an empty frame.
+    const chapter = chapterWith({ charts: { portfolio: [], tax: [], estate: null } });
+    expect(chapter.chart).toBeNull();
+    expect(chapter.paragraphs.length).toBeGreaterThan(0);
+  });
+
+  it("prints no figure cards — the chart replaced them", () => {
+    // The pack carries a figure this chapter OWNS, or the assertion below would
+    // hold for a chapter that simply had nothing to print. `build-facts.ts`
+    // scopes `chart.portfolio.peak` to `willTheMoneyLast`, so this is the fact a
+    // real pack for this chapter actually arrives with — and on the twoUp layout
+    // it prints as a card. The layout is what empties the column.
+    const chapter = chapterWith({
+      charts: { portfolio: [{ year: 2026, cash: 1, taxable: 2, retirement: 3, total: 6 }], tax: [], estate: null },
+      facts: [money("chart.portfolio.peak", "$1.0M", 1_000_000, ["willTheMoneyLast"])],
+    });
+    expect(chapter.figures).toEqual([]);
+  });
+
+  it("draws the tax chart on the tax chapter and nothing on a chapter with no chart", () => {
+    const tax = [{ year: 2026, federalOrdinary: 4, capGains: 1, state: 1, total: 6 }];
+    const data = buildPlanStoryData(
+      deckCtx(input({ hasProposal: true, charts: { portfolio: [], tax, estate: null } })),
+      PROPOSED,
+    );
+    expect(data.chapters.find((c) => c.chapterId === "whatYoullPayInTax")!.chart).toEqual({
+      kind: "taxBars",
+      bars: tax,
+    });
+    expect(data.chapters.find((c) => c.chapterId === "whatYouHave")!.chart).toBeNull();
+  });
+
+  it("pre-formats the estate bar totals the way the fact pack spells them", () => {
+    // The estate chart is the only one of the three that prints money, and its
+    // own `fmtUsd` renders thousands with a lowercase k while `moneyFact` uses
+    // `fmtUsdCompact`'s uppercase K. Two spellings of one number on one sheet.
+    const estate = [
+      { label: "Today", netToHeirs: 850_000, federal: 0, state: 0, probate: 0, ird: 0, debts: 0, total: 850_000 },
+    ];
+    const data = buildPlanStoryData(
+      deckCtx(input({ hasProposal: true, charts: { portfolio: [], tax: [], estate } })),
+      PROPOSED,
+    );
+    expect(data.chapters.find((c) => c.chapterId === "whatsLeftForPeople")!.chart).toEqual({
+      kind: "estateBars",
+      bars: estate,
+      totals: ["$850K"],
+    });
   });
 });

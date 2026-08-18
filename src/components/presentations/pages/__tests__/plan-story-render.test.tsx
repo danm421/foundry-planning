@@ -11,6 +11,10 @@
 //      `title`'s 600 is a house-style choice no test can hold it to.
 import { describe, it, expect } from "vitest";
 import { renderToBuffer, Document } from "@react-pdf/renderer";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { ensureFontsRegistered } from "@/components/presentations/shared/fonts";
 import { DEFAULT_ACCENT } from "@/lib/presentations/theme";
 import { estimatePlanStoryPageCount } from "@/lib/presentations/pages/plan-story/estimate-page-count";
@@ -18,10 +22,12 @@ import { PLAN_STORY_OPTIONS_DEFAULT, type PlanStoryOptions } from "@/lib/present
 import { CHAPTER_IDS, type ChapterId } from "@/lib/presentations/story/types";
 import {
   buildPlanStoryData,
+  BUDGET_WORDS_CHART,
   BUDGET_WORDS_GLOSSARY,
   MAX_FIGURE_CARDS,
   MAX_GLOSSARY_TERMS,
   MAX_PARAGRAPHS,
+  MAX_PARAGRAPHS_CHART,
   MAX_PARAGRAPHS_WITH_CARDS,
   MAX_STEPS,
   MAX_STRATEGY_CARDS,
@@ -83,6 +89,7 @@ const REALISTIC: PlanStoryPageData = {
       figures: [],
       steps: [],
       glossary: [],
+      chart: null,
       overflowNote: "",
     },
     {
@@ -104,6 +111,7 @@ const REALISTIC: PlanStoryPageData = {
       ],
       steps: [],
       glossary: [],
+      chart: null,
       overflowNote: "",
     },
     {
@@ -118,6 +126,7 @@ const REALISTIC: PlanStoryPageData = {
       figures: [],
       steps: [],
       glossary: [],
+      chart: null,
       overflowNote: "",
     },
     {
@@ -136,6 +145,7 @@ const REALISTIC: PlanStoryPageData = {
       figures: [],
       steps: [],
       glossary: [],
+      chart: null,
       overflowNote: "",
     },
   ],
@@ -169,6 +179,7 @@ function worstCase(cards: number, words: number, overflowNote = ""): PlanStoryPa
         figures: [],
         steps: [],
         glossary: [],
+        chart: null,
         overflowNote,
       },
     ],
@@ -261,6 +272,7 @@ function cardsPlusShortParagraphs(cards: number, paragraphs: number): PlanStoryP
         figures: [],
         steps: [],
         glossary: [],
+        chart: null,
         overflowNote: "…and 7 more changes we'll walk through together.",
       },
     ],
@@ -434,18 +446,18 @@ function twoUpAtTheBound(figures: number): PlanStoryPageData {
           goals: [],
           strategies: [],
           facts: Array.from({ length: figures }, (_, i) => ({
-            id: `outcome.n${i}`,
-            label: `Confidence, proposed plan ${i + 1}`,
-            display: "96.3%",
-            raw: 0.963,
-            chapters: ["willTheMoneyLast" as const],
+            id: `spend.n${i}`,
+            label: `What you could spend a year ${i + 1}`,
+            display: "$260K",
+            raw: 260_000,
+            chapters: ["whatYouCanSpend" as const],
           })),
         },
-        text: { willTheMoneyLast: LONG_PROSE },
+        text: { whatYouCanSpend: LONG_PROSE },
       },
       scenarioLabel: "Proposed",
     } as never,
-    onlyChapter("willTheMoneyLast"),
+    onlyChapter("whatYouCanSpend"),
   );
 }
 
@@ -466,7 +478,7 @@ describe("Plan Story — the twoUp layout, really rendered", () => {
   // the length a narrator actually writes passes through with nothing dropped.
   it("does not trim a twoUp chapter of the length the narrators write", async () => {
     const REAL =
-      "Your plan holds up in almost every run we tested — 96.3% of them, against 84% on the path you're on today.\n\nThat comes from the two changes we walked through: waiting on Social Security, and moving money into the Roth while your bracket is low.\n\nThe years that go wrong are the ones where the market falls early. Even then, you don't run out — you spend a little less in your eighties.";
+      "You can spend about $260K a year without running short, against $210K on the path you're on today.\n\nThat comes from the two changes we walked through: waiting on Social Security, and moving money into the Roth while your bracket is low.\n\nIt isn't a number to spend to the penny. It's the ceiling the plan can carry, and there's room under it in the years you want less.";
     const data = buildPlanStoryData(
       {
         planStory: {
@@ -479,11 +491,11 @@ describe("Plan Story — the twoUp layout, really rendered", () => {
             strategies: [],
             facts: [],
           },
-          text: { willTheMoneyLast: REAL },
+          text: { whatYouCanSpend: REAL },
         },
         scenarioLabel: "Proposed",
       } as never,
-      onlyChapter("willTheMoneyLast"),
+      onlyChapter("whatYouCanSpend"),
     );
     expect(data.chapters[0].overflowNote).toBe("");
     expect(data.chapters[0].paragraphs).toHaveLength(3);
@@ -604,6 +616,7 @@ function sheetAtTheBound(terms: number): PlanStoryPageData {
         figures: [],
         steps: [],
         glossary: [...GLOSSARY, ...spare].slice(0, terms),
+        chart: null,
         overflowNote: "…and three more terms we'll walk through together.",
       },
     ],
@@ -655,4 +668,308 @@ describe("Plan Story — the glossary sheet, really rendered", () => {
   it("spills at one term past the cap, which is why the cap is where it is", async () => {
     expect(await pagesOf(sheetAtTheBound(MAX_GLOSSARY_TERMS + 1))).toBeGreaterThan(1);
   }, 30_000);
+});
+
+/**
+ * The chart sheets, through the real layout engine.
+ *
+ * The tree-walk tests in `plan-story.test.tsx` prove the chart is placed above
+ * the prose and prints the right strings; only a render proves react-pdf can lay
+ * its `Svg` out on a story sheet at all — an unhandled primitive or an
+ * unregistered font throws here and nowhere else.
+ *
+ * ⚠️ NOT a fit check, and must not be read as one. `PageFrame` gives its body
+ * `flex: 1`, so react-pdf may draw past the available height rather than
+ * breaking: a count of 3 says these three sheets did not paginate, not that
+ * their content stayed above the footer. That question is a different
+ * instrument's, and `bodyBottom` below is it.
+ */
+const CHART_SHEETS: PlanStoryPageData = {
+  title: "Your Plan",
+  subtitle: "Proposed",
+  isEmpty: false,
+  emptyMessage: "",
+  chapters: [
+    {
+      chapterId: "willTheMoneyLast",
+      title: "Will the money last?",
+      layout: "chartWithProse",
+      paragraphs: ["The plan peaks at $3.1M in 2044 and still holds $1.8M in the last year we model."],
+      strategies: [],
+      figures: [],
+      steps: [],
+      glossary: [],
+      chart: {
+        kind: "portfolioBars",
+        // A full horizon, so the widest chart on the deck is drawn at the story
+        // sheet's 478pt rather than the summary page's 500.
+        bars: Array.from({ length: 40 }, (_, i) => ({
+          year: 2026 + i,
+          cash: 120_000,
+          taxable: 900_000 + i * 20_000,
+          retirement: 1_400_000 + i * 30_000,
+          total: 2_420_000 + i * 50_000,
+        })),
+        retirementYear: 2041,
+      },
+      overflowNote: "",
+    },
+    {
+      chapterId: "whatYoullPayInTax",
+      title: "What you'll pay in tax",
+      layout: "chartWithProse",
+      paragraphs: ["The heaviest year is 2044, at $96K."],
+      strategies: [],
+      figures: [],
+      steps: [],
+      glossary: [],
+      chart: {
+        kind: "taxBars",
+        bars: Array.from({ length: 40 }, (_, i) => ({
+          year: 2026 + i,
+          federalOrdinary: 40_000 + i * 500,
+          capGains: 8_000,
+          state: 12_000,
+          total: 60_000 + i * 500,
+        })),
+      },
+      overflowNote: "",
+    },
+    {
+      chapterId: "whatsLeftForPeople",
+      title: "What's left for the people you care about",
+      layout: "chartWithProse",
+      paragraphs: ["$2.1M reaches the people you named, after tax and costs."],
+      strategies: [],
+      figures: [],
+      steps: [],
+      glossary: [],
+      chart: {
+        kind: "estateBars",
+        bars: [
+          { label: "Today", netToHeirs: 2_100_000, federal: 0, state: 0, probate: 60_000, ird: 0, debts: 480_000, total: 2_640_000 },
+          { label: "At the end", netToHeirs: 3_400_000, federal: 220_000, state: 90_000, probate: 110_000, ird: 140_000, debts: 0, total: 3_960_000 },
+        ],
+        totals: ["$2.6M", "$4.0M"],
+      },
+      overflowNote: "",
+    },
+  ],
+};
+
+describe("Plan Story — the chart sheets, really rendered", () => {
+  it("lays out one sheet per chart chapter", async () => {
+    expect(await pagesOf(CHART_SHEETS)).toBe(CHART_SHEETS.chapters.length);
+  }, 30_000);
+});
+
+/**
+ * Where `PageFrame` stops letting content print: a 792pt Letter page less the
+ * 72pt of `paddingBottom` that reserves the footer band (`shared/page-frame.tsx`
+ * — the footer itself is absolutely positioned at `bottom: 42` and takes no
+ * space in the flow, so that padding is the only thing holding content out of
+ * it). A word whose foot sits below this line is printing over the disclaimer.
+ */
+const CONTENT_BOTTOM = 720;
+
+/**
+ * Every word in the rendered PDF, with the box it occupies, via
+ * `pdftotext -bbox`. Requires poppler on PATH (`brew install poppler`) and says
+ * so if it is missing — a measurement that quietly skips itself is worse than
+ * one that is absent, because the suite goes on reporting green.
+ */
+function wordBoxes(pdf: Buffer): Array<{ key: string; yMax: number; yMin: number }> {
+  const dir = mkdtempSync(join(tmpdir(), "plan-story-bbox-"));
+  const file = join(dir, "sheet.pdf");
+  try {
+    writeFileSync(file, pdf);
+    let xhtml: string;
+    try {
+      xhtml = execFileSync("pdftotext", ["-bbox", file, "-"], { encoding: "utf8" });
+    } catch (cause) {
+      throw new Error(
+        "this measurement needs `pdftotext` (poppler) on PATH — `brew install poppler`",
+        { cause },
+      );
+    }
+    const out: Array<{ key: string; yMax: number; yMin: number }> = [];
+    for (const line of xhtml.split("\n")) {
+      const w = /<word xMin="([\d.-]+)" yMin="([\d.-]+)" xMax="([\d.-]+)" yMax="([\d.-]+)">(.*)<\/word>/.exec(line);
+      if (w) out.push({ key: `${w[5]}|${w[1]}|${w[2]}`, yMin: Number(w[2]), yMax: Number(w[4]) });
+    }
+    return out;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * The words the FRAME itself prints inside the reserved band — the disclaimer
+ * and the page-number row — keyed by glyph and position.
+ *
+ * Taken from a render of the same frame with a chart and no prose under it, so
+ * they can be subtracted from a measured sheet by IDENTITY rather than by
+ * height. A height rule would have to say "ignore everything below 720", and
+ * everything below 720 is exactly what this measurement exists to find.
+ */
+let framePrints: Promise<Set<string>> | null = null;
+function footerSlots(): Promise<Set<string>> {
+  framePrints ??= (async () =>
+    new Set(
+      wordBoxes(
+        await renderToBuffer(
+          <Document>{PlanStoryPagePdf({ data: chartSheet([]), ...FRAME })}</Document>,
+        ),
+      )
+        .filter((w) => w.yMin > CONTENT_BOTTOM)
+        .map((w) => w.key),
+    ))();
+  return framePrints;
+}
+
+/**
+ * How far down the sheet the chapter's own content reaches, and how many sheets
+ * it took.
+ *
+ * ⚠️ `bottom` is NULL on any render but a one-sheet one, and that is deliberate
+ * rather than lazy — it is not a number this instrument can produce. The
+ * identity filter above learns the frame's footer words from a ONE-SHEET
+ * calibration, where the row reads "Page 1 of 1". The moment the document
+ * paginates that row reads "Page 1 of 2" and "Page 2 of 2": different glyphs,
+ * and different x positions with them (measured: "Page" at 531.32 on the
+ * calibration, 529.80 and 528.28 on the two sheets of a spilling render), so not
+ * one of its eight words matches a learned key and the whole row survives the
+ * filter on BOTH sheets. The maximum then comes back as 750 — the footer's own
+ * baseline — on every spilling render alike, when page 1's last prose word is
+ * near 698.
+ *
+ * Returning that number would be worse than returning nothing. Nothing here is
+ * currently wrong in the client's direction, because contamination only ever
+ * reads as "further down"; the hazard is the next person, who raises the budget,
+ * sees the fit case go red, and asks this how far over it went. 750 is 30pt past
+ * the disclaimer line and a budget re-derived from it would be too small — wrong
+ * in the client's direction, from an instrument that looked precise.
+ *
+ * Filtering to page 1 does not rescue it: page 1's own footer is what changes.
+ */
+async function bodyBottom(data: PlanStoryPageData): Promise<{ bottom: number | null; sheets: number }> {
+  const frame = await footerSlots();
+  const pdf = await renderToBuffer(<Document>{PlanStoryPagePdf({ data, ...FRAME })}</Document>);
+  const sheets = renderedPages(pdf);
+  if (sheets !== 1) return { bottom: null, sheets };
+  const body = wordBoxes(pdf).filter((w) => !frame.has(w.key));
+  // Nothing but the frame came back, so there is no geometry to compare and
+  // `Math.max` would hand back -Infinity — which reads as "fits" and passes.
+  if (body.length === 0) throw new Error("no chapter content in the rendered sheet");
+  return { bottom: Math.max(...body.map((w) => w.yMax)), sheets };
+}
+
+/**
+ * Both ways a sheet can fail to hold its prose, each read by the instrument that
+ * can actually see it.
+ *
+ * Every overflow measured on this layout broke to a second sheet, and the page
+ * tree is what says so. `PageFrame`'s `flex: 1` body is why that alone cannot be
+ * trusted — a sheet that clipped instead of breaking still counts 1 — so the
+ * geometry answers for the one-sheet case, which per `bodyBottom` is the only
+ * case it HAS an answer for.
+ */
+function spilled({ bottom, sheets }: { bottom: number | null; sheets: number }): boolean {
+  if (sheets !== 1) return true;
+  return bottom !== null && bottom > CONTENT_BOTTOM;
+}
+
+/** …and the geometry on its own, for the case that has one. Throws rather than
+ *  returning null so a paginated render cannot reach a comparison as
+ *  `null <= 720`, which passes. */
+async function oneSheetBottom(data: PlanStoryPageData): Promise<number> {
+  const { bottom, sheets } = await bodyBottom(data);
+  if (bottom === null) throw new Error(`expected one sheet, rendered ${sheets}`);
+  return bottom;
+}
+
+/** The measuring stick the sheet budgets above are cut against, one paragraph's
+ *  worth at a time. A line of this sheet's prose holds 15 of these words, so a
+ *  paragraph of 16 pays for two lines and wastes most of the second. */
+const STICK =
+  "Your plan holds through the years we modelled and leaves room to spare for the things you told us matter most to you now and later on.".split(
+    /\s+/u,
+  );
+const WASTEFUL_PARAGRAPH = 16;
+
+/**
+ * The most expensive way to spend `words` across `paragraphs` — every paragraph
+ * but the last runs one word past a line break and pays for a line it barely
+ * uses, and the remainder piles into the last one.
+ *
+ * This is a shape the view model really emits: `capParagraphs` bounds the word
+ * count and the paragraph count independently, so an advisor edit of several
+ * one-line asides followed by a long closing paragraph arrives exactly like
+ * this.
+ */
+function wastefulProse(words: number, paragraphs: number): string[] {
+  const paragraph = (n: number) =>
+    Array.from({ length: n }, (_, i) => STICK[i % STICK.length]).join(" ") + ".";
+  const spent = WASTEFUL_PARAGRAPH * (paragraphs - 1);
+  return [...Array.from({ length: paragraphs - 1 }, () => paragraph(WASTEFUL_PARAGRAPH)), paragraph(words - spent)];
+}
+
+/** One `chartWithProse` sheet carrying the tallest chart of the three — the
+ *  portfolio chart, 150pt of `Svg` over a legend row, which the tax chart
+ *  matches to the point and the estate chart sits 62pt inside — and the trim
+ *  note, which is what prints whenever the budget under it actually binds. */
+function chartSheet(paragraphs: string[]): PlanStoryPageData {
+  return {
+    title: "Your Plan",
+    subtitle: "Proposed",
+    isEmpty: false,
+    emptyMessage: "",
+    chapters: [
+      {
+        chapterId: "willTheMoneyLast",
+        title: "Will the money last?",
+        layout: "chartWithProse",
+        paragraphs,
+        strategies: [],
+        figures: [],
+        steps: [],
+        glossary: [],
+        chart: CHART_SHEETS.chapters[0].chart,
+        overflowNote: "…there's more here than fits this page — we'll walk through the rest together.",
+      },
+    ],
+  };
+}
+
+/**
+ * The measurement `BUDGET_WORDS_CHART` and `MAX_PARAGRAPHS_CHART` were set from,
+ * re-run every suite.
+ *
+ * ⚠️ These read the rendered GEOMETRY, not a page count and not a word count.
+ * A page count cannot see a sheet that clipped rather than paginated, and an
+ * assertion that the view model's trimmed prose respects the view model's own
+ * budget is a constant compared with itself — it can never fail, whatever the
+ * sheet does.
+ */
+describe("Plan Story — what a chart sheet's prose may spend", () => {
+  it("keeps the worst prose the budget allows above the footer", async () => {
+    const bottom = await oneSheetBottom(
+      chartSheet(wastefulProse(BUDGET_WORDS_CHART, MAX_PARAGRAPHS_CHART)),
+    );
+    expect(bottom).toBeLessThanOrEqual(CONTENT_BOTTOM);
+  }, 60_000);
+
+  // …and the other direction on each bound separately, so neither is pinned as
+  // a floor a later edit could quietly raise. Both numbers are the measured
+  // ones: at five paragraphs 195 words lay out and 200 do not; at 150 words six
+  // paragraphs lay out and seven do not.
+  it("spills at 200 words, which is why the word budget is where it is", async () => {
+    const measured = await bodyBottom(chartSheet(wastefulProse(200, 5)));
+    expect(spilled(measured), `measured ${JSON.stringify(measured)}`).toBe(true);
+  }, 60_000);
+
+  it("spills at seven paragraphs, which is why the paragraph cap is where it is", async () => {
+    const measured = await bodyBottom(chartSheet(wastefulProse(150, 7)));
+    expect(spilled(measured), `measured ${JSON.stringify(measured)}`).toBe(true);
+  }, 60_000);
 });

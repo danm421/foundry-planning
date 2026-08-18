@@ -10,12 +10,29 @@ const PORTFOLIO_SEGMENTS: Array<{ key: keyof PortfolioBar; label: string; color:
   { key: "retirement", label: "Retirement", color: dataLight.orange },
 ];
 
-/** Stacked portfolio bars over time. Width matches the panel's available
- *  content width on a portrait Letter page (612 − 86 page padding − 20 panel
- *  padding ≈ 506pt; 500 leaves a small safety margin). Markers at the
- *  retirement year. */
-export function PortfolioBarsPdf({ bars, retirementYear }: { bars: PortfolioBar[]; retirementYear: number }) {
-  const width = 500;
+/** Stacked portfolio bars over time, with markers at the retirement year. Drawn
+ *  at whatever width the calling page has — see the `width` prop. */
+export function PortfolioBarsPdf({
+  bars,
+  retirementYear,
+  width = 500,
+}: {
+  bars: PortfolioBar[];
+  retirementYear: number;
+  /**
+   * Defaulted to the 500 this chart has always used, which is the summary page's
+   * own measure: a portrait Letter page is 612pt, `PageFrame` takes 43pt of
+   * padding each side (`shared/page-frame.tsx`) leaving 526pt, and this page
+   * wraps its charts in a panel of 10pt padding plus a 1pt border each side
+   * (`retirement-summary/page-pdf.tsx#s.panel`) leaving 504pt. 500 keeps a small
+   * safety margin inside that.
+   *
+   * The Plan Story sheet is NARROWER — `plan-story/chapter-pdf.tsx#styles.wrap`
+   * takes 24pt each side of the same 526pt frame, leaving 478pt — so the story
+   * passes its own value. Optional so the summary page is untouched.
+   */
+  width?: number;
+}) {
   const height = 150;
   const leftPad = 6;
   const plotH = height - 22;

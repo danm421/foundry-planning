@@ -25,6 +25,7 @@ npx drizzle-kit generate | migrate    # src/db/schema.ts is the source of truth
 - **Org scoping.** Every mutation goes through `authz.ts` / `db-scoping.ts` and is audited via `audit.ts`. Never write ad-hoc queries that bypass scoping.
 - **Live-DB scripts must be `*.local.ts`** — that suffix is gitignored. Committed scripts next to them omit it.
 - **Rate limiting fails closed** — the extract endpoint needs Upstash env vars; don't try to run it without them.
+- **`pdftotext` (poppler) is a test prerequisite** — `plan-story-render.test.tsx` measures real PDF geometry with it (`brew install poppler`). It fails with that instruction rather than silently; CI never runs vitest, so only local runs are affected.
 - **CSP is report-only** (`next.config.ts`); violations flow to `/api/csp-report`. Don't flip to enforcing until that endpoint is quiet.
 - **DB inspection → Neon MCP** (`mcp__Neon__run_sql`), not ad-hoc psql. Use MCP to *inspect and test*; author migrations with drizzle-kit.
 - `src/components/` is flat — one concern per file.

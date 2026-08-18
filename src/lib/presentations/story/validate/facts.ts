@@ -113,6 +113,19 @@ export function extractFigures(markdown: string): string[] {
   return normalizeFigures(markdown).match(FIGURE_RE) ?? [];
 }
 
+/**
+ * Does `markdown` name this exact figure?
+ *
+ * Exported so Gate 8 can ask the question without a second copy of the
+ * extraction or of `figureKey`. Both stay private: a gate that normalised
+ * figures its own way would accept a spelling Gate 1 rejects, which is how one
+ * gate starts licensing what another forbids.
+ */
+export function citesFigure(markdown: string, display: string): boolean {
+  const want = figureKey(normalizeFigures(display));
+  return extractFigures(markdown).some((f) => figureKey(f) === want);
+}
+
 export function validateFacts(markdown: string, facts: Fact[]): GateFailure[] {
   const allowed = new Set([...factDisplaySet(facts)].map((d) => figureKey(normalizeFigures(d))));
   const seen = new Set<string>();

@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { isValidElement, type ReactElement } from "react";
+import { Svg } from "@react-pdf/renderer";
+import { PortfolioBarsPdf } from "@/components/presentations/pages/retirement-summary/chart-pdf";
 import { planStoryPage, type BuildDataContext } from "@/components/presentations/registry";
 import { CHAPTERS } from "@/lib/presentations/story/chapters/registry";
 import { PageFrame } from "@/components/presentations/shared/page-frame";
@@ -67,6 +69,31 @@ function pageFrames(node: unknown): ReactElement[] {
   return pageFrames(el.props.children);
 }
 
+/**
+ * Every `<Svg>` width in the tree, in document order.
+ *
+ * Walks like `textOf` rather than like `pageFrames` above: a chart is a
+ * component, so reaching its `Svg` means CALLING it.
+ *
+ * The identity check is against the IMPORT, not a string literal, so it cannot
+ * go stale against a spelling of a dependency's internals. The double cast is
+ * what that costs: `Svg` is DECLARED a component and is the string `"SVG"` at
+ * runtime (the same shape `textOf`'s note describes for `Text`), so tsc sees a
+ * comparison between `string` and a component type and calls it unintentional.
+ */
+function svgWidths(node: unknown): number[] {
+  if (Array.isArray(node)) return node.flatMap(svgWidths);
+  if (!isValidElement(node)) return [];
+  const el = node as ReactElement<{ children?: unknown; width?: number }>;
+  if (typeof el.type === "function") {
+    return svgWidths((el.type as (props: unknown) => unknown)(el.props));
+  }
+  if ((el.type as unknown) === (Svg as unknown)) {
+    return el.props.width == null ? [] : [el.props.width];
+  }
+  return svgWidths(el.props.children);
+}
+
 function render(data: PlanStoryPageData) {
   return PlanStoryPagePdf({ data, ...FRAME });
 }
@@ -81,6 +108,7 @@ function chapter(over: Partial<PlanStoryChapterView> = {}): PlanStoryChapterView
     figures: [],
     steps: [],
     glossary: [],
+    chart: null,
     overflowNote: "",
     ...over,
   };
@@ -501,5 +529,95 @@ describe("PlanStoryChapterPdf — the glossary layout", () => {
   // …and nothing to label when the cap or an empty module leaves no terms.
   it("prints no label over an empty list", () => {
     expect(printed({ glossary: [] })).not.toContain("IN PLAIN ENGLISH");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The chartWithProse sheet. No chapter carries this layout until the registry
+// flip, so the fixture names it directly — the renderer branches on `layout`,
+// which is the thing under test here.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("PlanStoryChapterPdf — the chart sheet", () => {
+  const PROSE = "The plan peaks at $3.1M and still holds $1.8M at the end.";
+
+  function printed(chart: PlanStoryChapterView["chart"]): string[] {
+    return textOf(
+      PlanStoryChapterPdf({
+        chapter: chapter({
+          chapterId: "willTheMoneyLast",
+          title: "Will the money last?",
+          layout: "chartWithProse",
+          paragraphs: [PROSE],
+          chart,
+        }),
+        accent: FRAME.accent,
+        eyebrow: "Your Plan · Proposed",
+      }),
+    );
+  }
+
+  const BARS = [
+    { year: 2026, cash: 1, taxable: 2, retirement: 3, total: 6 },
+    { year: 2027, cash: 1, taxable: 2, retirement: 4, total: 7 },
+  ];
+
+  it("prints the chart above the prose — it is the page's subject", () => {
+    const out = printed({ kind: "portfolioBars", bars: BARS, retirementYear: 2027 });
+    expect(out).toContain("'26");
+    expect(out.indexOf("'26")).toBeLessThan(out.indexOf(PROSE));
+  });
+
+  /**
+   * The one number this layout introduces, and the only guard on it.
+   *
+   * 478pt is the story sheet's measure: 612pt Letter, less `PageFrame`'s 43pt of
+   * page padding each side, less `chapter-pdf.tsx#styles.wrap`'s 24pt each side.
+   * `PortfolioBarsPdf` DEFAULTS to the summary page's 500 — drawn on this sheet
+   * that ends 22pt past the prose beneath it and hangs into the page margin,
+   * visibly out of line with everything else on a client's page.
+   *
+   * Nothing else in the suite can see it: the text walkers read strings, the
+   * real-PDF test reads the page-tree `/Count`, and Task 7's `pdftotext -bbox`
+   * measures HEIGHT. A width regression would ship silently.
+   */
+  it("draws the chart at the story sheet's measure, not the summary page's", () => {
+    const el = PlanStoryChapterPdf({
+      chapter: chapter({
+        layout: "chartWithProse",
+        chart: { kind: "portfolioBars", bars: BARS, retirementYear: 2027 },
+      }),
+      accent: FRAME.accent,
+      eyebrow: "Your Plan · Proposed",
+    });
+    expect(svgWidths(el)).toEqual([478]);
+  });
+
+  // …and the other half of that promise: the prop is OPTIONAL so the summary
+  // page, which passes none, keeps the width it has always drawn at.
+  it("leaves the summary page's own chart at 500", () => {
+    expect(svgWidths(PortfolioBarsPdf({ bars: BARS, retirementYear: 2027 }))).toEqual([500]);
+  });
+
+  it("keeps the prose when the household produced no chart", () => {
+    // Spec §7: drop the chart, never the paragraph — and never an empty axis.
+    const out = printed(null);
+    expect(out).toContain(PROSE);
+    expect(out).not.toContain("'26");
+  });
+
+  it("prints the estate chart's money in the spelling the fact pack uses", () => {
+    // `EstateSummaryChartPdf`'s own `fmtUsd` writes thousands as "$850k"; every
+    // figure in the pack — and so the prose beside this chart — is formatted by
+    // `fmtUsdCompact` as "$850K". Two spellings of one number on one sheet is
+    // what the optional `totals` prop exists to close.
+    const out = printed({
+      kind: "estateBars",
+      bars: [
+        { label: "Today", netToHeirs: 850_000, federal: 0, state: 0, probate: 0, ird: 0, debts: 0, total: 850_000 },
+      ],
+      totals: ["$850K"],
+    });
+    expect(out).toContain("$850K");
+    expect(out).not.toContain("$850k");
   });
 });
