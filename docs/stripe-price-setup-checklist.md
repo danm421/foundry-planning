@@ -58,7 +58,19 @@ two public seat prices.
 Annual and founding-annual originally sat under the monthly product. To split
 them without disturbing anyone already paying:
 
-1. Create the new products + prices above.
+1. Create the new products + prices above:
+
+   ```bash
+   npx tsx scripts/setup-stripe-plan-products.ts            # shows the plan
+   npx tsx scripts/setup-stripe-plan-products.ts --apply    # creates it
+   ```
+
+   It clones each new price from the live one rather than re-typing the amount,
+   so the split cannot change what anyone is charged. It reports without
+   creating anything until `--apply`, refuses a live key unless `--live` is also
+   passed, and is safe to re-run — it reuses a product it already made instead
+   of creating a second one. It prints steps 2–4 below with the real IDs filled
+   in.
 2. Repoint `STRIPE_PRICE_ID_SEAT_ANNUAL` and `_FOUNDING_ANNUAL` at the new
    prices, test mode first.
 3. **Archive the old annual and founding-annual prices.** ⚠️ Skipping this is a
