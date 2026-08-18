@@ -457,6 +457,23 @@ export function buildChapterPrompt(
       ? ["", "Your last attempt broke these rules. Fix all of them:", ...retryFailures.map((f) => `- ${f.message}`)]
       : [];
 
+  // The brief is written FOR the model — see the 2026-08-12 read below — and a
+  // base-only deck gets the chapter's `briefBase` where it has one. A brief
+  // naming "the changes" on a deck that has none is an instruction to describe
+  // something absent.
+  const brief = ctx.hasProposal ? def.brief : (def.briefBase ?? def.brief);
+
+  // Says what does NOT exist, which no per-chapter brief can: a brief only
+  // governs its own chapter, and the model has the whole fact pack.
+  //
+  // ⚠️ EMPTY ARRAY on a proposal deck, never `[""]` — an extra blank line joined
+  // into `user` changes the prompt's bytes and moves `chapterSourceHash`, which
+  // is exactly the fourteen pins in `__tests__/prompts.test.ts` this branch must
+  // never touch.
+  const noProposalBlock = ctx.hasProposal
+    ? []
+    : ["", "This report presents the client's current plan only. There are no proposed changes — do not refer to any."];
+
   const user = [
     `Household: ${householdName} — ${firstNames}.`,
     `Plan being presented: "${ctx.scenarioLabel}".`,
@@ -466,7 +483,8 @@ export function buildChapterPrompt(
     // onto the client's page as "This page is the punchline." Gate 6a rejects
     // that, but a rejection costs the chapter's single retry; saying whose words
     // these are, at the point they are handed over, costs nothing.
-    `This chapter — "${def.title}". Your brief for it, which the client never sees: ${def.brief}`,
+    `This chapter — "${def.title}". Your brief for it, which the client never sees: ${brief}`,
+    ...noProposalBlock,
     "",
     ...factBlock,
     ...coveredBlock,
