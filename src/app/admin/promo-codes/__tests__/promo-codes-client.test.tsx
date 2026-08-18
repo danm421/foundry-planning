@@ -15,7 +15,7 @@ import type { ComponentProps } from "react";
 import PromoCodesClient from "../promo-codes-client";
 import { createPromoCodeAction, deactivatePromoCodeAction } from "../actions";
 import type { PromoCodeRow } from "@/lib/billing/promo-codes";
-import type { SeatPlanPrice } from "@/lib/billing/promo-discount-math";
+import type { PlanPrice } from "@/lib/billing/promo-discount-math";
 
 function makeRow(over: Partial<PromoCodeRow> = {}): PromoCodeRow {
   return {
@@ -35,9 +35,9 @@ function makeRow(over: Partial<PromoCodeRow> = {}): PromoCodeRow {
 
 // The real Foundry prices. The gap between them is what makes a flat discount
 // sized for the annual plan wipe out the monthly one.
-const PLANS: SeatPlanPrice[] = [
-  { key: "seatMonthly", label: "Monthly", unitAmountCents: 19_900 },
-  { key: "seatAnnual", label: "Annual", unitAmountCents: 199_000 },
+const PLANS: PlanPrice[] = [
+  { key: "seatMonthly", label: "Monthly", unitAmountCents: 19_900, productId: "prod_monthly" },
+  { key: "seatAnnual", label: "Annual", unitAmountCents: 199_000, productId: "prod_annual" },
 ];
 
 function renderClient(over: Partial<ComponentProps<typeof PromoCodesClient>> = {}) {
@@ -242,7 +242,86 @@ describe("PromoCodesClient", () => {
   // form — it just stops showing the numbers.
   it("drops the preview when the prices are unavailable, without blocking the form", () => {
     renderClient({ plans: [] });
-    expect(screen.queryByText(/What buyers would pay/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Applies to/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Create code/ })).toBeEnabled();
+  });
+});
+
+describe("PromoCodesClient targeting", () => {
+  const monthlyBox = () => screen.getByRole("checkbox", { name: /Monthly/ });
+  const annualBox = () => screen.getByRole("checkbox", { name: /Annual/ });
+  const createBtn = () => screen.getByRole("button", { name: /Create code/ });
+
+  it("covers every plan until told otherwise", () => {
+    renderClient();
+    expect(monthlyBox()).toBeChecked();
+    expect(annualBox()).toBeChecked();
+  });
+
+  // An excluded plan stays on the list. The bug that started this was a plan
+  // nobody remembered was included, so a plan silently vanishing when unticked
+  // would trade one invisible plan for another.
+  it("keeps an unticked plan visible and marks it not included", async () => {
+    const user = userEvent.setup();
+    renderClient();
+    await user.click(monthlyBox());
+
+    expect(monthlyBox()).not.toBeChecked();
+    expect(screen.getByText(/not included/)).toBeInTheDocument();
+    // Priced at 25% off, the annual plan still shows its discount…
+    expect(screen.getByText("$1,492.50")).toBeInTheDocument();
+    // …while the monthly plan no longer shows one.
+    expect(screen.queryByText("$149.25")).not.toBeInTheDocument();
+  });
+
+  // The capability the whole Stripe split exists to restore.
+  it("accepts $200 off once the plan it would empty is out of scope", async () => {
+    const user = userEvent.setup();
+    renderClient();
+
+    await user.selectOptions(screen.getByLabelText(/Discount type/), "amount");
+    const amount = screen.getByLabelText(/Dollars off/);
+    await user.clear(amount);
+    await user.type(amount, "200");
+    expect(createBtn()).toBeDisabled();
+
+    await user.click(monthlyBox());
+
+    expect(screen.queryByText(/would pay nothing/)).not.toBeInTheDocument();
+    expect(createBtn()).toBeEnabled();
+  });
+
+  it("raises the dollars cap to the cheapest plan still in scope", async () => {
+    const user = userEvent.setup();
+    renderClient();
+    await user.selectOptions(screen.getByLabelText(/Discount type/), "amount");
+    expect(screen.getByLabelText(/Dollars off/)).toHaveAttribute("max", "198.99");
+
+    await user.click(monthlyBox());
+    // A cent under the $1,990 annual plan, now that it is the cheapest in scope.
+    expect(screen.getByLabelText(/Dollars off/)).toHaveAttribute("max", "1989.99");
+  });
+
+  it("refuses to submit a code that covers no plan at all", async () => {
+    const user = userEvent.setup();
+    renderClient();
+    await user.click(monthlyBox());
+    await user.click(annualBox());
+
+    expect(screen.getByText(/Pick at least one plan/)).toBeInTheDocument();
+    expect(createBtn()).toBeDisabled();
+  });
+
+  it("sends only the ticked products to the action", async () => {
+    const user = userEvent.setup();
+    renderClient();
+    await user.type(screen.getByLabelText(/^Name/), "Annual only");
+    await user.click(monthlyBox());
+    await user.click(createBtn());
+
+    await waitFor(() => expect(createPromoCodeAction).toHaveBeenCalled());
+    expect(createPromoCodeAction).toHaveBeenCalledWith(
+      expect.objectContaining({ productIds: ["prod_annual"] }),
+    );
   });
 });

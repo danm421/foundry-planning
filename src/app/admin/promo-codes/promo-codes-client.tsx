@@ -13,9 +13,10 @@ import type { PromoCodeRow, PromoCodeStatus } from "@/lib/billing/promo-codes";
 import {
   cheapestPlanCents,
   formatUsd,
+  plansInProducts,
   previewDiscount,
   type PromoDiscount,
-  type SeatPlanPrice,
+  type PlanPrice,
 } from "@/lib/billing/promo-discount-math";
 
 const STATUS_STYLE: Record<PromoCodeStatus, string> = {
@@ -92,7 +93,7 @@ export default function PromoCodesClient({
   initialCodes: PromoCodeRow[];
   truncated: boolean;
   loadError: string | null;
-  plans: SeatPlanPrice[];
+  plans: PlanPrice[];
 }) {
   const [pending, startTransition] = useTransition();
   const [created, setCreated] = useState<string | null>(null);
@@ -107,18 +108,45 @@ export default function PromoCodesClient({
   const [maxRedemptions, setMaxRedemptions] = useState(25);
   const [expiresAt, setExpiresAt] = useState("");
   const [firstTimeOnly, setFirstTimeOnly] = useState(true);
+  // Products, not plan keys — a coupon can only be aimed at a product, so
+  // holding the selection in the same unit means the form can never offer a
+  // split Stripe would not honour. Everything is on by default, which is what
+  // codes did before targeting existed.
+  const [selectedProducts, setSelectedProducts] = useState<string[]>(() => [
+    ...new Set(plans.map((p) => p.productId)),
+  ]);
 
   // The typed discount, or null while the field is blank or nonsense.
   const discount = parseDiscount(discountKind, percentOff, amountOffDollars);
 
-  // The same maths the server enforces, run as you type — so a discount that
-  // would hand out free months is visible before the code exists rather than
-  // after someone redeems it.
-  const preview = discount && plans.length > 0 ? previewDiscount(discount, plans) : [];
-  const freePlans = preview.filter((p) => p.afterCents <= 0);
-  // A cent under the cheapest plan is the largest dollars-off that still leaves
-  // every plan something to pay.
-  const maxDollarsOff = plans.length > 0 ? (cheapestPlanCents(plans) - 1) / 100 : undefined;
+  const selected = new Set(selectedProducts);
+  // Every plan, priced, and marked with whether this code can reach it. Plans
+  // out of scope stay on the list rather than disappearing: the mistake that
+  // started all this was a plan nobody remembered, so what a code *excludes*
+  // has to be as visible as what it covers.
+  const planRows = (
+    discount ? previewDiscount(discount, plans) : plans.map((p) => ({ ...p, afterCents: null }))
+  ).map((p) => ({ ...p, inScope: selected.has(p.productId) }));
+
+  // Only a plan the coupon can actually reach can be zeroed by it.
+  const freePlans = planRows.filter((r) => r.inScope && r.afterCents !== null && r.afterCents <= 0);
+
+  // A cent under the cheapest plan *in scope* is the largest dollars-off that
+  // still leaves every reachable plan something to pay. Scoped, so narrowing the
+  // selection raises the cap instead of quoting a limit the server won't apply.
+  const scopedPlans = plansInProducts(plans, selectedProducts);
+  const maxDollarsOff =
+    scopedPlans.length > 0 ? (cheapestPlanCents(scopedPlans) - 1) / 100 : undefined;
+
+  // With no prices there is nothing to tick, so an empty selection is not the
+  // operator's doing and blocking on it would hide the real Stripe error.
+  const nothingSelected = plans.length > 0 && selectedProducts.length === 0;
+
+  function toggleProduct(productId: string) {
+    setSelectedProducts((prev) =>
+      prev.includes(productId) ? prev.filter((id) => id !== productId) : [...prev, productId],
+    );
+  }
 
   function onCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -135,6 +163,7 @@ export default function PromoCodesClient({
         maxRedemptions,
         expiresAt: expiresAt || null,
         firstTimeOnly,
+        productIds: selectedProducts,
       });
       if (res.ok) {
         setCreated(res.code);
@@ -347,22 +376,44 @@ export default function PromoCodesClient({
             </Field>
           </div>
 
-          {preview.length > 0 && (
+          {planRows.length > 0 && (
             <div className="mt-4 rounded border border-hair bg-card-2 p-3">
               <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-3">
-                What buyers would pay
+                Applies to
               </p>
               <ul className="flex flex-col gap-1">
-                {preview.map((p) => (
-                  <li key={p.key} className="flex items-baseline justify-between gap-4 text-sm">
-                    <span className="text-ink-2">{p.label}</span>
-                    <span className="tabular text-xs">
-                      <span className="text-ink-3">{formatUsd(p.unitAmountCents)}</span>
-                      <span className="mx-1.5 text-ink-4">→</span>
-                      <span className={p.afterCents <= 0 ? "font-medium text-crit" : "text-ink"}>
-                        {formatUsd(p.afterCents)}
+                {planRows.map((p) => (
+                  <li key={p.key}>
+                    <label className="flex cursor-pointer items-baseline justify-between gap-4 text-sm">
+                      <span className="flex items-baseline gap-2">
+                        <input
+                          type="checkbox"
+                          checked={p.inScope}
+                          onChange={() => toggleProduct(p.productId)}
+                          className="accent-accent"
+                        />
+                        <span className={p.inScope ? "text-ink-2" : "text-ink-4"}>{p.label}</span>
                       </span>
-                    </span>
+                      <span className="tabular text-xs">
+                        <span className={p.inScope ? "text-ink-3" : "text-ink-4"}>
+                          {formatUsd(p.unitAmountCents)}
+                        </span>
+                        {p.inScope && p.afterCents !== null ? (
+                          <>
+                            <span className="mx-1.5 text-ink-4">→</span>
+                            <span
+                              className={
+                                p.afterCents <= 0 ? "font-medium text-crit" : "text-ink"
+                              }
+                            >
+                              {formatUsd(p.afterCents)}
+                            </span>
+                          </>
+                        ) : (
+                          !p.inScope && <span className="ml-1.5 text-ink-4">not included</span>
+                        )}
+                      </span>
+                    </label>
                   </li>
                 ))}
               </ul>
@@ -370,8 +421,13 @@ export default function PromoCodesClient({
                 <p className="mt-2.5 text-xs text-crit">
                   This discount is bigger than the{" "}
                   {freePlans.map((p) => p.label).join(" and ")} plan, so those buyers would pay
-                  nothing. Lower it, or switch to a percentage — a percentage scales with whichever
-                  plan they pick.
+                  nothing. Lower it, untick that plan, or switch to a percentage — a percentage
+                  scales with whichever plan they pick.
+                </p>
+              )}
+              {nothingSelected && (
+                <p className="mt-2.5 text-xs text-crit">
+                  Pick at least one plan. A code that applies to nothing discounts nothing.
                 </p>
               )}
             </div>
@@ -428,9 +484,10 @@ export default function PromoCodesClient({
           <div className="mt-5 flex items-center gap-3">
             <button
               type="submit"
-              // A code that bills a plan $0 is refused server-side anyway; this
-              // stops the round trip and points at the field instead.
-              disabled={pending || freePlans.length > 0}
+              // A code that bills a plan $0 — or covers no plan at all — is
+              // refused server-side anyway; this stops the round trip and points
+              // at the field instead.
+              disabled={pending || freePlans.length > 0 || nothingSelected}
               // shrink-0: a long Stripe error alongside it must not wrap the label.
               className="shrink-0 rounded bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
             >

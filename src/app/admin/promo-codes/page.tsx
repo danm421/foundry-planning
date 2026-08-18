@@ -1,5 +1,5 @@
-import { listPromoCodes, listSeatPlanPrices, type PromoCodeRow } from "@/lib/billing/promo-codes";
-import type { SeatPlanPrice } from "@/lib/billing/promo-discount-math";
+import { listPromoCodes, listPlanPrices, type PromoCodeRow } from "@/lib/billing/promo-codes";
+import type { PlanPrice } from "@/lib/billing/promo-discount-math";
 import PromoCodesClient from "./promo-codes-client";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ export default async function PromoCodesPage() {
   // (node-environment-extensions/process-error-handlers.js), so the page still
   // renders — but the log reads like a fault when it is a case handled by design.
   const codesRead = listPromoCodes();
-  const pricesRead = listSeatPlanPrices().catch((): SeatPlanPrice[] => []);
+  const pricesRead = listPlanPrices().catch((): PlanPrice[] => []);
 
   let codes: PromoCodeRow[] = [];
   let truncated = false;

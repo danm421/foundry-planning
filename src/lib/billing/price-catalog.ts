@@ -12,9 +12,17 @@ export type PriceCatalog = {
   seatMonthly: string;
   seatAnnual: string;
   seatFoundingAnnual: string;
+  /**
+   * The AI Import add-on. Nothing bills it yet — access is a Clerk entitlement
+   * granted by beta codes — but it is carried here so the promo-code guard can
+   * see it. A discount is checked against every price in this catalog, so the
+   * day the $99 line does reach an invoice it is already covered rather than
+   * being the one plan a "$150 off" code could quietly zero.
+   */
+  aiImportMonthly: string;
 };
 
-export type PriceKind = "seat";
+export type PriceKind = "seat" | "addon";
 
 let cached: PriceCatalog | null = null;
 
@@ -22,6 +30,7 @@ const ENV_TO_KEY = {
   STRIPE_PRICE_ID_SEAT_MONTHLY: "seatMonthly",
   STRIPE_PRICE_ID_SEAT_ANNUAL: "seatAnnual",
   STRIPE_PRICE_ID_SEAT_FOUNDING_ANNUAL: "seatFoundingAnnual",
+  STRIPE_PRICE_ID_AI_IMPORT_MONTHLY: "aiImportMonthly",
 } as const satisfies Record<string, keyof PriceCatalog>;
 
 export function getPriceCatalog(): PriceCatalog {
@@ -51,6 +60,7 @@ export function priceKindFor(priceId: string): PriceKind | null {
   if (priceId === c.seatMonthly) return "seat";
   if (priceId === c.seatAnnual) return "seat";
   if (priceId === c.seatFoundingAnnual) return "seat";
+  if (priceId === c.aiImportMonthly) return "addon";
   return null;
 }
 

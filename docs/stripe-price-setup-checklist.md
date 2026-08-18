@@ -9,22 +9,28 @@ four prices need to exist in both modes.
 
 ## Products + prices
 
-Create one Product per kind. Under each product, create the listed Price
-objects.
+**One Product per price. This is load-bearing, not tidiness.**
 
-### Product: "Foundry seat"
+A promo coupon's `applies_to` accepts **product IDs only** — never prices, never
+intervals. So two prices sharing a product can never be discounted apart. When
+all three seat prices lived under a single "Foundry seat" product, a "$200 off"
+code meant for the annual plan also applied to the $199/mo plan and billed it
+**$0 for twelve months**. Splitting them is what makes an interval targetable.
 
-| Price | Amount | Interval | Nickname | Public? | Metadata |
+The product name is what the buyer sees on their receipt, so each one names the
+plan it bills.
+
+| Product (on the receipt) | Amount | Interval | Nickname | Public? | Metadata |
 |---|---|---|---|---|---|
-| Monthly | $199.00 USD | month | `seat_monthly` | yes | kind=seat |
-| Annual | $1,990.00 USD | year | `seat_annual` | yes | kind=seat |
-| Founding annual | $1,788.00 USD | year | `seat_founding_annual` | **internal only** | kind=seat, founding=true |
+| `Foundry seat — billed monthly` | $199.00 USD | month | `seat_monthly` | yes | kind=seat |
+| `Foundry seat — billed annually` | $1,990.00 USD | year | `seat_annual` | yes | kind=seat |
+| `Foundry seat — founding rate, billed annually` | $1,788.00 USD | year | `seat_founding_annual` | **internal only** | kind=seat, founding=true |
+| `AI Import` | $99.00 USD | month | `ai_import_monthly` | yes | kind=addon, addon_key=ai_import |
 
-### Product: "AI Import"
-
-| Price | Amount | Interval | Nickname | Public? | Metadata |
-|---|---|---|---|---|---|
-| Monthly | $99.00 USD | month | `ai_import_monthly` | yes | kind=addon, addon_key=ai_import |
+⚠️ **Do not add a second price to any of these products.** The ops promo form
+groups its plan checkboxes by product and will take every plan under a ticked
+one — correctly, since Stripe cannot split them, but the operator loses the
+ability to aim at one of the pair.
 
 ## Env-var mapping
 
@@ -38,7 +44,32 @@ STRIPE_PRICE_ID_AI_IMPORT_MONTHLY         ← ai_import_monthly
 ```
 
 Set in **all three Vercel environments** (Development, Preview, Production)
-with separate values for test-mode (Dev/Preview) vs live-mode (Production).
+with separate values for test-mode (Dev/Preview) vs live-mode (Production), and
+in **both repos** — `foundry-planning` reads all four, the storefront reads the
+two public seat prices.
+
+⚠️ `STRIPE_PRICE_ID_AI_IMPORT_MONTHLY` is now required by `getPriceCatalog()`,
+which every billing caller goes through — not just promo codes. A deploy missing
+it fails loudly at the first catalog read rather than only when someone makes a
+code.
+
+## Migrating an existing account off the single-product shape
+
+Annual and founding-annual originally sat under the monthly product. To split
+them without disturbing anyone already paying:
+
+1. Create the new products + prices above.
+2. Repoint `STRIPE_PRICE_ID_SEAT_ANNUAL` and `_FOUNDING_ANNUAL` at the new
+   prices, test mode first.
+3. **Archive the old annual and founding-annual prices.** ⚠️ Skipping this is a
+   live hazard, not housekeeping: the old prices stay under the *monthly*
+   product, so a later "monthly only" coupon would silently discount every
+   legacy annual subscriber too. Stripe cannot move a price between products, so
+   archiving is the only thing that stops new use of them.
+4. Rename the monthly product to `Foundry seat — billed monthly`.
+
+Existing subscriptions keep billing on the price object they were created with,
+which is intended — nobody's rate changes.
 
 ## Verification
 
