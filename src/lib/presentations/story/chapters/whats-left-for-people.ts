@@ -51,8 +51,8 @@ function movement(ctx: StoryContext): string | null {
  * What time does to the whole estate, in one sentence — base decks only, where
  * the chart's two bars are today and the end of the plan.
  *
- * Equal DISPLAYS mean neither, whatever `raw` does: $4.04M and $4.06M both
- * print "$4.1M", and "smaller" between two identical figures is a claim the
+ * Equal DISPLAYS mean neither, whatever `raw` does: $4.01M and $4.04M both
+ * print "$4.0M", and "smaller" between two identical figures is a claim the
  * picture beside it refutes. Direction comes off `raw` only once the two read
  * differently — the same rule `movement` above follows.
  *

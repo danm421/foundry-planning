@@ -216,11 +216,31 @@ describe("narrateWhatsLeftForPeople", () => {
   });
 
   it("says nothing about how the estate moves when only one gross figure is on the pack", () => {
-    // The chart draws both bars or neither — see `build-facts.ts`'s note on
-    // `ESTATE_FIGURE_NAMES` — but the chapter still has to survive a pack that
-    // only carries one, without inventing the other half of a comparison.
+    // The chart draws both bars or neither — see `load-context.ts:575-577`
+    // ("Both bars or none, on either deck. One bar is not a comparison...") —
+    // but the chapter still has to survive a pack that only carries one,
+    // without inventing the other half of a comparison.
     const onlyToday = textOf(ctxWith([net("base", 5_000_000), cost("base", 700_000), grossToday(4_100_000)]));
     expect(onlyToday).not.toMatch(/end of the plan/i);
+  });
+
+  it("prints the proposal's own sentence, never the base-only one, on a pack that somehow carries both fact families", () => {
+    // `load-context.ts:575-577` and the `ESTATE_FIGURE_NAMES` comment in
+    // `build-facts.ts` (~line 606) both keep a real pack from ever holding
+    // `estate.net.proposed` alongside `chart.estate.grossToday` — the two
+    // pairings are the two deck kinds, never both. But that is an invariant
+    // upheld elsewhere, not by this file, so the `move ? null :` guard here
+    // is tested directly rather than trusted to a loader this suite does not
+    // exercise.
+    const both = ctxWith([
+      net("base", 3_100_000),
+      net("proposed", 3_900_000),
+      grossToday(4_100_000),
+      grossEndOfLife(3_000_000),
+    ]);
+    const text = textOf(both);
+    expect(text).toMatch(/changes we're proposing/i);
+    expect(text).not.toMatch(/the whole estate/i);
   });
 
   it("leaves a proposal deck's prose unchanged", () => {
