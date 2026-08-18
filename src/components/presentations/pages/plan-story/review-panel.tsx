@@ -157,9 +157,8 @@ const WHOLE_STORY = "The whole story";
  * write, and "yet" there is a promise it cannot keep — the advisor would wait
  * for prose that has nothing to come from. Told apart by `candidate`, the flag
  * the Regenerate button already branches on further down: `storyCandidates`
- * (`chapters/registry.ts`) clears it on the five `requiresProposal` chapters —
- * `whatWeRecommend`, `willTheMoneyLast`, `whatYouCanSpend`, `whatsLeftForPeople`
- * and `whatYoullPayInTax` — whenever the story is base-only.
+ * (`chapters/registry.ts`) clears it on the two `requiresProposal` chapters —
+ * `whatWeRecommend` and `whatYouCanSpend` — whenever the story is base-only.
  *
  * ⚠️ Deliberately NOT `statusLabel`'s "Not generated yet". That answers a
  * different question: a chapter the advisor generated and then emptied is
@@ -767,7 +766,7 @@ export function PlanStoryReviewPanel({
   /**
    * One row's two settings.
    *
-   * On EVERY row, including the five proposal chapters a base-only story can
+   * On EVERY row, including the two proposal chapters a base-only story can
    * never rewrite — those have no Regenerate button, but they still print, and
    * the style is what decides how they read. Nothing here is disabled by a run
    * in flight either: changing a tone writes to the report's options, not to the
@@ -1055,7 +1054,7 @@ export function PlanStoryReviewPanel({
                   enough that a second click is the natural thing to do.
 
                   Absent entirely — not greyed — on a row this story could never
-                  write: the five proposal chapters of a base-only report. Nothing
+                  write: the two proposal chapters of a base-only report. Nothing
                   the advisor can do makes it work, so a button whose only function
                   is to explain itself is not offered. The rest of the row stays
                   live: the box still takes their own words, and those still print. */}

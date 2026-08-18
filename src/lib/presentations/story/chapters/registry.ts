@@ -32,7 +32,18 @@ export interface ChapterDef {
   layout: ChapterLayout;
   /** The AI-off fallback. Never returns an empty array for a valid context. */
   narrate: (ctx: StoryContext) => string[];
-  /** Hidden when there is no proposed scenario. */
+  /**
+   * Does this chapter have NOTHING to say without a proposal?
+   *
+   * True only for the two chapters whose entire subject is what the changes
+   * move — `whatWeRecommend` and `whatYouCanSpend`. `printedChapters` drops
+   * them from a base-only deck and `storyCandidates` refuses to generate them.
+   *
+   * ⚠️ NOT "this chapter mentions the proposal". The three charted chapters
+   * compare the two plans when there is one and state the current plan alone
+   * when there is not — see each one's `briefBase` and its narrator's base
+   * branch. They print on both kinds of deck.
+   */
   requiresProposal: boolean;
   /**
    * A per-area chapter rather than a spine chapter. Coverage chapters are the
@@ -131,7 +142,7 @@ export const CHAPTERS: Record<ChapterId, ChapterDef> = {
     title: "Will the money last?",
     layout: "chartWithProse",
     narrate: narrateWillTheMoneyLast,
-    requiresProposal: true,
+    requiresProposal: false,
     coverage: false,
     brief:
       "How the plan held up across the runs we tested, what the changes did to that confidence, and what it means for them in plain terms.",
@@ -151,7 +162,7 @@ export const CHAPTERS: Record<ChapterId, ChapterDef> = {
     title: "What's left for the people you care about",
     layout: "chartWithProse",
     narrate: narrateWhatsLeftForPeople,
-    requiresProposal: true,
+    requiresProposal: false,
     coverage: true,
     // A coverage chapter with nothing to cover. Read by the GENERATE route to
     // skip a model call, never by `printedChapters` — the sheet stays reserved
@@ -165,7 +176,7 @@ export const CHAPTERS: Record<ChapterId, ChapterDef> = {
     title: "What you'll pay in tax",
     layout: "chartWithProse",
     narrate: narrateWhatYoullPayInTax,
-    requiresProposal: true,
+    requiresProposal: false,
     coverage: true,
     available: (ctx) => ctx.facts.some((f) => f.id.startsWith("tax.")),
     brief: "What they pay in tax over the life of the plan, and where the changes save it.",

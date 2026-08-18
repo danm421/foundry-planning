@@ -46,15 +46,9 @@ describe("the chapter registry", () => {
     expect(Object.keys(CHAPTERS)).toHaveLength(CHAPTER_IDS.length);
   });
 
-  it("marks the five comparison chapters as needing a proposal", () => {
+  it("marks only the two comparison chapters as needing a proposal", () => {
     const needing = CHAPTER_IDS.filter((id) => CHAPTERS[id].requiresProposal);
-    expect(needing).toEqual([
-      "whatWeRecommend",
-      "willTheMoneyLast",
-      "whatYouCanSpend",
-      "whatsLeftForPeople",
-      "whatYoullPayInTax",
-    ]);
+    expect(needing).toEqual(["whatWeRecommend", "whatYouCanSpend"]);
   });
 
   it("marks the four per-area chapters as coverage", () => {

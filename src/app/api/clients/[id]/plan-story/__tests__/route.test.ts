@@ -454,7 +454,7 @@ describe("GET /api/clients/[id]/plan-story", () => {
     for (const id of CHAPTER_IDS) {
       expect(byId.get(id)).toBe(!CHAPTERS[id].requiresProposal);
     }
-    // …and the five are really there: an assertion that holds because every
+    // …and the two are really there: an assertion that holds because every
     // chapter is writable proves nothing about the flag.
     expect(CHAPTER_IDS.filter((id) => CHAPTERS[id].requiresProposal).length).toBeGreaterThan(0);
   });

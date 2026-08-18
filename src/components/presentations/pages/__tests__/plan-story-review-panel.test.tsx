@@ -878,7 +878,7 @@ describe("PlanStoryReviewPanel", () => {
     });
 
     /**
-     * ⭐ The rows a base-only report can only refuse — the five proposal
+     * ⭐ The rows a base-only report can only refuse — the two proposal
      * chapters. There is nothing the advisor can do to make the button work, so
      * it is not offered rather than offered and answered with an error.
      */
@@ -1556,7 +1556,7 @@ describe("the advisor's tone and length", () => {
   });
 
   /**
-   * The five proposal chapters of a base-only report have no Regenerate button
+   * The two proposal chapters of a base-only report have no Regenerate button
    * at all. They still PRINT, and the advisor still exports them — so the style
    * that decides how they read has to be settable on them.
    */
@@ -1738,7 +1738,7 @@ describe("the whole story, read through", () => {
   });
 
   /**
-   * Five of the fourteen chapters can never be written for a base-only report,
+   * Two of the fourteen chapters can never be written for a base-only report,
    * and a chapter can be emptied on purpose. A heading with nothing under it
    * reads as a rendering failure — it has to say which it is.
    */
@@ -1749,9 +1749,8 @@ describe("the whole story, read through", () => {
   });
 
   /**
-   * ⚠️⚠️ …and "yet" is a promise this report cannot keep on the five chapters
-   * that need a proposal to recommend — `whatWeRecommend`, `willTheMoneyLast`,
-   * `whatYouCanSpend`, `whatsLeftForPeople`, `whatYoullPayInTax`
+   * ⚠️⚠️ …and "yet" is a promise this report cannot keep on the two chapters
+   * that need a proposal to recommend — `whatWeRecommend` and `whatYouCanSpend`
    * (`requiresProposal` in `chapters/registry.ts`). On a base-only story
    * `storyCandidates` marks every one of them `candidate: false`, nothing the
    * advisor does writes them, and `printedChapters` drops them from the report

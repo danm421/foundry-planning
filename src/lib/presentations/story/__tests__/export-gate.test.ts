@@ -42,10 +42,10 @@ const row = (over: Partial<PlanStoryChapterRow> & { chapterId: string }): PlanSt
   ...over,
 });
 
-// A scenario is set (so all fourteen chapters are eligible — none of the five
+// A scenario is set (so all fourteen chapters are eligible — none of the two
 // `requiresProposal` chapters are dropped) and two of the fourteen `sections`
 // are switched off — twelve print. Measured, not assumed: a base-only story
-// (no scenario) prints NINE, never fourteen — see `STORY_PAGE_ALL_ON` below.
+// (no scenario) prints TWELVE, never fourteen — see `STORY_PAGE_ALL_ON` below.
 const STORY_PAGE_WITH_TWELVE_SECTIONS = {
   pageId: "planStory",
   options: {
@@ -70,8 +70,8 @@ const REVIEWED_FOUR = [
   row({ chapterId: "thePathYoureOn" }), // generated, present, never reviewed
 ];
 
-// Every default option, untouched. Base-only (no scenario), so the five
-// `requiresProposal` chapters don't print — measured at NINE, not fourteen.
+// Every default option, untouched. Base-only (no scenario), so the two
+// `requiresProposal` chapters don't print — measured at TWELVE, not fourteen.
 const STORY_PAGE_ALL_ON = {
   pageId: "planStory",
   options: {},
@@ -115,7 +115,7 @@ describe("unreviewedStoryChapters", () => {
     expect(page.unreviewed).toBe(page.total);
     // Pinned to the measured base-only count, not "every chapter that exists" —
     // an implementation that fell back to CHAPTER_IDS.length would read 14 here.
-    expect(page.total).toBe(9);
+    expect(page.total).toBe(12);
   });
 
   it("counts each document role separately, so a brief and a full story do not share a count", async () => {
