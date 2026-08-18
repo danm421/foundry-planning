@@ -10,6 +10,13 @@ import {
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { createPromoCodeAction, deactivatePromoCodeAction } from "./actions";
 import type { PromoCodeRow, PromoCodeStatus } from "@/lib/billing/promo-codes";
+import {
+  cheapestPlanCents,
+  formatUsd,
+  previewDiscount,
+  type PromoDiscount,
+  type SeatPlanPrice,
+} from "@/lib/billing/promo-discount-math";
 
 const STATUS_STYLE: Record<PromoCodeStatus, string> = {
   active: "bg-good/15 text-good",
@@ -28,6 +35,23 @@ function fmt(iso: string | null) {
     month: "short",
     day: "numeric",
   });
+}
+
+/**
+ * The discount the form currently describes, or null while the field is empty
+ * or not a number — there is nothing to price against until it is one.
+ */
+function parseDiscount(
+  kind: "percent" | "amount",
+  percentOff: string,
+  amountOffDollars: string,
+): PromoDiscount | null {
+  if (kind === "percent") {
+    const p = Number(percentOff);
+    return Number.isFinite(p) && p > 0 ? { kind: "percent", percentOff: p } : null;
+  }
+  const d = Number(amountOffDollars);
+  return Number.isFinite(d) && d > 0 ? { kind: "amount", amountOffCents: Math.round(d * 100) } : null;
 }
 
 /**
@@ -63,10 +87,12 @@ export default function PromoCodesClient({
   initialCodes,
   truncated,
   loadError,
+  plans,
 }: {
   initialCodes: PromoCodeRow[];
   truncated: boolean;
   loadError: string | null;
+  plans: SeatPlanPrice[];
 }) {
   const [pending, startTransition] = useTransition();
   const [created, setCreated] = useState<string | null>(null);
@@ -81,6 +107,18 @@ export default function PromoCodesClient({
   const [maxRedemptions, setMaxRedemptions] = useState(25);
   const [expiresAt, setExpiresAt] = useState("");
   const [firstTimeOnly, setFirstTimeOnly] = useState(true);
+
+  // The typed discount, or null while the field is blank or nonsense.
+  const discount = parseDiscount(discountKind, percentOff, amountOffDollars);
+
+  // The same maths the server enforces, run as you type — so a discount that
+  // would hand out free months is visible before the code exists rather than
+  // after someone redeems it.
+  const preview = discount && plans.length > 0 ? previewDiscount(discount, plans) : [];
+  const freePlans = preview.filter((p) => p.afterCents <= 0);
+  // A cent under the cheapest plan is the largest dollars-off that still leaves
+  // every plan something to pay.
+  const maxDollarsOff = plans.length > 0 ? (cheapestPlanCents(plans) - 1) / 100 : undefined;
 
   function onCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -255,23 +293,33 @@ export default function PromoCodesClient({
               </select>
             </Field>
             {discountKind === "percent" ? (
-              <Field id="promo-percent" label="Percent off">
+              <Field
+                id="promo-percent"
+                label="Percent off"
+                help="A percentage scales with whichever plan the buyer is on, so it can never wipe out the whole price."
+              >
                 <input
                   id="promo-percent"
                   type="number"
                   min={1}
-                  max={100}
+                  // 100% would bill $0 on every plan.
+                  max={99}
                   value={percentOff}
                   onChange={(e) => setPercentOff(e.target.value)}
                   className={`${INPUT} tabular`}
                 />
               </Field>
             ) : (
-              <Field id="promo-amount" label="Dollars off">
+              <Field
+                id="promo-amount"
+                label="Dollars off"
+                help="A flat amount comes off whichever plan the buyer picks — including the cheapest one. It has to stay under that plan's price, or the code bills $0."
+              >
                 <input
                   id="promo-amount"
                   type="number"
                   min={1}
+                  max={maxDollarsOff}
                   step="0.01"
                   value={amountOffDollars}
                   onChange={(e) => setAmountOffDollars(e.target.value)}
@@ -298,6 +346,36 @@ export default function PromoCodesClient({
               </select>
             </Field>
           </div>
+
+          {preview.length > 0 && (
+            <div className="mt-4 rounded border border-hair bg-card-2 p-3">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-3">
+                What buyers would pay
+              </p>
+              <ul className="flex flex-col gap-1">
+                {preview.map((p) => (
+                  <li key={p.key} className="flex items-baseline justify-between gap-4 text-sm">
+                    <span className="text-ink-2">{p.label}</span>
+                    <span className="tabular text-xs">
+                      <span className="text-ink-3">{formatUsd(p.unitAmountCents)}</span>
+                      <span className="mx-1.5 text-ink-4">→</span>
+                      <span className={p.afterCents <= 0 ? "font-medium text-crit" : "text-ink"}>
+                        {formatUsd(p.afterCents)}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {freePlans.length > 0 && (
+                <p className="mt-2.5 text-xs text-crit">
+                  This discount is bigger than the{" "}
+                  {freePlans.map((p) => p.label).join(" and ")} plan, so those buyers would pay
+                  nothing. Lower it, or switch to a percentage — a percentage scales with whichever
+                  plan they pick.
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field
@@ -350,7 +428,9 @@ export default function PromoCodesClient({
           <div className="mt-5 flex items-center gap-3">
             <button
               type="submit"
-              disabled={pending}
+              // A code that bills a plan $0 is refused server-side anyway; this
+              // stops the round trip and points at the field instead.
+              disabled={pending || freePlans.length > 0}
               // shrink-0: a long Stripe error alongside it must not wrap the label.
               className="shrink-0 rounded bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-ink disabled:opacity-50"
             >

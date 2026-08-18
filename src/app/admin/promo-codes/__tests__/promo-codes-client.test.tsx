@@ -11,9 +11,11 @@ vi.mock("../actions", () => ({
   deactivatePromoCodeAction: vi.fn(async () => ({ ok: true })),
 }));
 
+import type { ComponentProps } from "react";
 import PromoCodesClient from "../promo-codes-client";
 import { createPromoCodeAction, deactivatePromoCodeAction } from "../actions";
 import type { PromoCodeRow } from "@/lib/billing/promo-codes";
+import type { SeatPlanPrice } from "@/lib/billing/promo-discount-math";
 
 function makeRow(over: Partial<PromoCodeRow> = {}): PromoCodeRow {
   return {
@@ -31,6 +33,25 @@ function makeRow(over: Partial<PromoCodeRow> = {}): PromoCodeRow {
   };
 }
 
+// The real Foundry prices. The gap between them is what makes a flat discount
+// sized for the annual plan wipe out the monthly one.
+const PLANS: SeatPlanPrice[] = [
+  { key: "seatMonthly", label: "Monthly", unitAmountCents: 19_900 },
+  { key: "seatAnnual", label: "Annual", unitAmountCents: 199_000 },
+];
+
+function renderClient(over: Partial<ComponentProps<typeof PromoCodesClient>> = {}) {
+  return render(
+    <PromoCodesClient
+      initialCodes={[]}
+      truncated={false}
+      loadError={null}
+      plans={PLANS}
+      {...over}
+    />,
+  );
+}
+
 describe("PromoCodesClient", () => {
   beforeEach(() => {
     vi.mocked(createPromoCodeAction).mockClear().mockResolvedValue({ ok: true, code: "FOUNDER25" });
@@ -40,7 +61,7 @@ describe("PromoCodesClient", () => {
 
   it("submits the form as a percent discount by default", async () => {
     const user = userEvent.setup();
-    render(<PromoCodesClient initialCodes={[]} truncated={false} loadError={null} />);
+    renderClient();
 
     await user.type(screen.getByPlaceholderText("Founder 25"), "Founder 25");
     await user.type(screen.getByPlaceholderText("FOUNDER25"), "FOUNDER25");
@@ -62,7 +83,7 @@ describe("PromoCodesClient", () => {
 
   it("sends dollars instead of a percent once the type is switched", async () => {
     const user = userEvent.setup();
-    render(<PromoCodesClient initialCodes={[]} truncated={false} loadError={null} />);
+    renderClient();
 
     await user.type(screen.getByPlaceholderText("Founder 25"), "Fifty off");
     await user.selectOptions(screen.getByLabelText(/Discount type/), "amount");
@@ -76,7 +97,7 @@ describe("PromoCodesClient", () => {
 
   it("sends the chosen number of years", async () => {
     const user = userEvent.setup();
-    render(<PromoCodesClient initialCodes={[]} truncated={false} loadError={null} />);
+    renderClient();
 
     await user.type(screen.getByPlaceholderText("Founder 25"), "Two years");
     await user.selectOptions(screen.getByLabelText(/Lasts/), "2");
@@ -88,7 +109,7 @@ describe("PromoCodesClient", () => {
 
   it("shows the code after it is created", async () => {
     const user = userEvent.setup();
-    render(<PromoCodesClient initialCodes={[]} truncated={false} loadError={null} />);
+    renderClient();
 
     await user.type(screen.getByPlaceholderText("Founder 25"), "Founder 25");
     await user.click(screen.getByRole("button", { name: /Create code/ }));
@@ -99,7 +120,7 @@ describe("PromoCodesClient", () => {
   it("surfaces a failure instead of claiming the code was created", async () => {
     vi.mocked(createPromoCodeAction).mockResolvedValue({ ok: false, error: "Code already exists." });
     const user = userEvent.setup();
-    render(<PromoCodesClient initialCodes={[]} truncated={false} loadError={null} />);
+    renderClient();
 
     await user.type(screen.getByPlaceholderText("Founder 25"), "Dupe");
     await user.click(screen.getByRole("button", { name: /Create code/ }));
@@ -109,7 +130,7 @@ describe("PromoCodesClient", () => {
   });
 
   it("lists each code with its discount, length and usage", () => {
-    render(<PromoCodesClient initialCodes={[makeRow()]} truncated={false} loadError={null} />);
+    renderClient({ initialCodes: [makeRow()] });
 
     const table = within(screen.getByRole("table"));
     expect(table.getByText("FOUNDER25")).toBeInTheDocument();
@@ -119,35 +140,23 @@ describe("PromoCodesClient", () => {
   });
 
   it("shows an unlimited code's usage without a ceiling", () => {
-    render(
-      <PromoCodesClient
-        initialCodes={[makeRow({ maxRedemptions: null, timesRedeemed: 7 })]}
-        truncated={false}
-        loadError={null}
-      />,
-    );
+    renderClient({ initialCodes: [makeRow({ maxRedemptions: null, timesRedeemed: 7 })] });
     expect(within(screen.getByRole("table")).getByText("7 / ∞")).toBeInTheDocument();
   });
 
   it("flags a new-customers-only code in the list", () => {
-    render(
-      <PromoCodesClient
-        initialCodes={[makeRow({ firstTimeOnly: true })]}
-        truncated={false}
-        loadError={null}
-      />,
-    );
+    renderClient({ initialCodes: [makeRow({ firstTimeOnly: true })] });
     expect(within(screen.getByRole("table")).getByText("New only")).toBeInTheDocument();
   });
 
   it("leaves an unrestricted code unflagged", () => {
-    render(<PromoCodesClient initialCodes={[makeRow()]} truncated={false} loadError={null} />);
+    renderClient({ initialCodes: [makeRow()] });
     expect(screen.queryByText("New only")).not.toBeInTheDocument();
   });
 
   it("deactivates a code through the action", async () => {
     const user = userEvent.setup();
-    render(<PromoCodesClient initialCodes={[makeRow()]} truncated={false} loadError={null} />);
+    renderClient({ initialCodes: [makeRow()] });
 
     await user.click(screen.getByRole("button", { name: /Deactivate/ }));
 
@@ -158,33 +167,82 @@ describe("PromoCodesClient", () => {
   it.each(["inactive", "used up", "expired"] as const)(
     "offers no deactivate button for a %s code",
     (status) => {
-      render(
-        <PromoCodesClient
-          initialCodes={[makeRow({ status })]}
-          truncated={false}
-          loadError={null}
-        />,
-      );
+      renderClient({ initialCodes: [makeRow({ status })] });
       expect(screen.queryByRole("button", { name: /Deactivate/ })).not.toBeInTheDocument();
     },
   );
 
   it("says the list failed rather than implying there are no codes", () => {
-    render(<PromoCodesClient initialCodes={[]} truncated={false} loadError="Stripe unreachable" />);
+    renderClient({ loadError: "Stripe unreachable" });
     expect(screen.getByText(/Stripe unreachable/)).toBeInTheDocument();
     expect(screen.getByText("Codes could not be loaded.")).toBeInTheDocument();
     expect(screen.queryByText("No promo codes yet.")).not.toBeInTheDocument();
   });
 
   it("says the list is capped rather than passing it off as complete", () => {
-    render(<PromoCodesClient initialCodes={[makeRow()]} truncated loadError={null} />);
+    renderClient({ initialCodes: [makeRow()], truncated: true });
     expect(screen.getByText(/more exist in Stripe than shown here/)).toBeInTheDocument();
     expect(screen.getByText(/Newest codes/)).toBeInTheDocument();
   });
 
   it("calls the list complete when nothing was dropped", () => {
-    render(<PromoCodesClient initialCodes={[makeRow()]} truncated={false} loadError={null} />);
+    renderClient({ initialCodes: [makeRow()] });
     expect(screen.getByText(/All codes/)).toBeInTheDocument();
     expect(screen.queryByText(/more exist in Stripe/)).not.toBeInTheDocument();
+  });
+
+  it("previews what each plan would bill before the code exists", () => {
+    renderClient();
+    // The default 25% off, priced against both plans.
+    expect(screen.getByText("$149.25")).toBeInTheDocument();
+    expect(screen.getByText("$1,492.50")).toBeInTheDocument();
+  });
+
+  // The case that shipped: a discount sized for the annual plan, which the
+  // monthly plan is smaller than.
+  it("shows a flat discount emptying the monthly plan and refuses to submit it", async () => {
+    const user = userEvent.setup();
+    renderClient();
+
+    await user.selectOptions(screen.getByLabelText(/Discount type/), "amount");
+    const amount = screen.getByLabelText(/Dollars off/);
+    await user.clear(amount);
+    await user.type(amount, "200");
+
+    expect(screen.getByText("$0.00")).toBeInTheDocument();
+    expect(screen.getByText(/would pay nothing/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Create code/ })).toBeDisabled();
+  });
+
+  it("takes the same discount once it is under the cheapest plan", async () => {
+    const user = userEvent.setup();
+    renderClient();
+
+    await user.selectOptions(screen.getByLabelText(/Discount type/), "amount");
+    const amount = screen.getByLabelText(/Dollars off/);
+    await user.clear(amount);
+    await user.type(amount, "150");
+
+    expect(screen.queryByText(/would pay nothing/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Create code/ })).toBeEnabled();
+  });
+
+  it("caps both inputs where they would start zeroing a plan", async () => {
+    const user = userEvent.setup();
+    renderClient();
+
+    expect(screen.getByLabelText(/Percent off/)).toHaveAttribute("max", "99");
+    await user.selectOptions(screen.getByLabelText(/Discount type/), "amount");
+    // A cent under the $199 monthly plan.
+    expect(screen.getByLabelText(/Dollars off/)).toHaveAttribute("max", "198.99");
+  });
+
+  // Prices are only needed to preview. The server refuses a zeroing discount
+  // whatever the form managed to show, so a Stripe hiccup must not lock the
+  // form — it just stops showing the numbers.
+  it("drops the preview when the prices are unavailable, without blocking the form", () => {
+    renderClient({ plans: [] });
+    expect(screen.queryByText(/What buyers would pay/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Create code/ })).toBeEnabled();
   });
 });

@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   promoCreate: vi.fn(),
   promoList: vi.fn(),
   promoUpdate: vi.fn(),
+  priceRetrieve: vi.fn(),
 }));
 
 vi.mock("@/lib/billing/stripe-client", () => ({
@@ -20,6 +21,9 @@ vi.mock("@/lib/billing/stripe-client", () => ({
       list: (...a: unknown[]) => h.promoList(...a),
       update: (...a: unknown[]) => h.promoUpdate(...a),
     },
+    prices: {
+      retrieve: (...a: unknown[]) => h.priceRetrieve(...a),
+    },
   }),
 }));
 
@@ -30,8 +34,19 @@ import {
   toPromoCodeRow,
   createPromoCode,
   listPromoCodes,
+  listSeatPlanPrices,
   deactivatePromoCode,
 } from "../promo-codes";
+import { __resetPriceCatalogForTests } from "../price-catalog";
+
+// The real Foundry seat prices. The monthly one is what makes a flat discount
+// dangerous: it is an order of magnitude below the annual price, so a discount
+// sized for the annual plan wipes it out entirely.
+const PRICE_IDS = {
+  price_seat_monthly: 19_900,
+  price_seat_annual: 199_000,
+  price_seat_founding: 178_800,
+} as const;
 
 beforeEach(() => {
   h.couponCreate.mockReset().mockResolvedValue({ id: "coupon_1" });
@@ -39,6 +54,14 @@ beforeEach(() => {
   h.promoCreate.mockReset().mockResolvedValue({ id: "promo_1", code: "FOUNDER25" });
   h.promoList.mockReset().mockResolvedValue({ data: [], has_more: false });
   h.promoUpdate.mockReset().mockResolvedValue({ id: "promo_1", active: false });
+  h.priceRetrieve.mockReset().mockImplementation((id: keyof typeof PRICE_IDS) =>
+    Promise.resolve({ id, object: "price", unit_amount: PRICE_IDS[id] }),
+  );
+
+  process.env.STRIPE_PRICE_ID_SEAT_MONTHLY = "price_seat_monthly";
+  process.env.STRIPE_PRICE_ID_SEAT_ANNUAL = "price_seat_annual";
+  process.env.STRIPE_PRICE_ID_SEAT_FOUNDING_ANNUAL = "price_seat_founding";
+  __resetPriceCatalogForTests();
 });
 
 // Fixtures match the real Stripe object shapes, so a field the SDK renames or
@@ -142,9 +165,12 @@ describe("buildCouponParams", () => {
     expect(buildCouponParams(base).max_redemptions).toBe(25);
   });
 
-  it("rejects a percent outside 1-100", () => {
-    expect(() => buildCouponParams({ ...base, discount: { kind: "percent", percentOff: 0 } })).toThrow(/between 1 and 100/);
-    expect(() => buildCouponParams({ ...base, discount: { kind: "percent", percentOff: 101 } })).toThrow(/between 1 and 100/);
+  // 100 is out of range, not the top of it: a full discount bills $0 on every
+  // plan, whatever the plans cost.
+  it("rejects a percent outside 1-99", () => {
+    expect(() => buildCouponParams({ ...base, discount: { kind: "percent", percentOff: 0 } })).toThrow(/between 1 and 99/);
+    expect(() => buildCouponParams({ ...base, discount: { kind: "percent", percentOff: 100 } })).toThrow(/between 1 and 99/);
+    expect(() => buildCouponParams({ ...base, discount: { kind: "percent", percentOff: 101 } })).toThrow(/between 1 and 99/);
   });
 
   it("rejects a non-positive dollar amount", () => {
@@ -330,6 +356,51 @@ describe("createPromoCode", () => {
     expect(h.promoCreate).not.toHaveBeenCalled();
   });
 
+  // The bug this guard exists for. A "$200 off" code aimed at the $1,990 annual
+  // plan also lands on the $199 monthly one, where $200 is more than the whole
+  // price — so every monthly invoice bills $0. Paired with the default one-year
+  // duration that is twelve free months per redemption.
+  it("refuses a flat discount that would bill the monthly plan $0", async () => {
+    await expect(
+      createPromoCode({ ...input, discount: { kind: "amount", amountOffCents: 20_000 } }),
+    ).rejects.toThrow(/Monthly/);
+    expect(h.couponCreate).not.toHaveBeenCalled();
+    expect(h.promoCreate).not.toHaveBeenCalled();
+  });
+
+  // 100% needs no prices to be wrong, so it must not depend on reaching Stripe
+  // to say so — otherwise an outage turns a clear refusal into a network error.
+  it("refuses 100% off without reading prices at all", async () => {
+    await expect(
+      createPromoCode({ ...input, discount: { kind: "percent", percentOff: 100 } }),
+    ).rejects.toThrow(/between 1 and 99/);
+    expect(h.priceRetrieve).not.toHaveBeenCalled();
+    expect(h.couponCreate).not.toHaveBeenCalled();
+  });
+
+  it("allows a flat discount that still leaves the cheapest plan something to pay", async () => {
+    await expect(
+      createPromoCode({ ...input, discount: { kind: "amount", amountOffCents: 19_899 } }),
+    ).resolves.toEqual({ id: "promo_1", code: "FOUNDER25" });
+    expect(h.couponCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ amount_off: 19_899, currency: "usd" }),
+    );
+  });
+
+  it("allows 99% off, which leaves a cent on every plan", async () => {
+    await expect(
+      createPromoCode({ ...input, discount: { kind: "percent", percentOff: 99 } }),
+    ).resolves.toBeTruthy();
+  });
+
+  // The check is only as good as the prices behind it, so a failure to read them
+  // must stop the write rather than fall back to an assumed floor.
+  it("refuses to create anything when the prices can't be read", async () => {
+    h.priceRetrieve.mockRejectedValue(new Error("Expired API Key provided"));
+    await expect(createPromoCode(input)).rejects.toThrow(/Expired API Key/);
+    expect(h.couponCreate).not.toHaveBeenCalled();
+  });
+
   it("deletes the coupon when the code fails, so a duplicate leaves no orphan", async () => {
     h.promoCreate.mockRejectedValue(new Error("The promotion code `FOUNDER25` already exists."));
     await expect(createPromoCode(input)).rejects.toThrow(/already exists/);
@@ -384,6 +455,26 @@ describe("listPromoCodes", () => {
   it("surfaces the real error when the bare retry fails too", async () => {
     h.promoList.mockRejectedValue(new Error("Expired API Key provided"));
     await expect(listPromoCodes()).rejects.toThrow(/Expired API Key/);
+  });
+});
+
+describe("listSeatPlanPrices", () => {
+  it("prices every seat plan a discount could land on", async () => {
+    const plans = await listSeatPlanPrices();
+    expect(plans).toEqual([
+      { key: "seatMonthly", label: "Monthly", unitAmountCents: 19_900 },
+      { key: "seatAnnual", label: "Annual", unitAmountCents: 199_000 },
+      { key: "seatFoundingAnnual", label: "Founding annual", unitAmountCents: 178_800 },
+    ]);
+  });
+
+  // Tiered pricing has no single per-unit figure. Dropping such a plan from the
+  // list would leave a flat discount unchecked against exactly that plan.
+  it("refuses a plan with no flat amount rather than skipping it", async () => {
+    h.priceRetrieve.mockImplementation((id: string) =>
+      Promise.resolve({ id, object: "price", unit_amount: id === "price_seat_monthly" ? null : 199_000 }),
+    );
+    await expect(listSeatPlanPrices()).rejects.toThrow(/Monthly price has no flat amount/);
   });
 });
 

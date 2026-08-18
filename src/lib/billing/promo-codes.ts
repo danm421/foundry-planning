@@ -1,5 +1,11 @@
 import type Stripe from "stripe";
 import { getStripe } from "./stripe-client";
+import { getPriceCatalog, type PriceCatalog } from "./price-catalog";
+import {
+  assertDiscountLeavesSomethingToPay,
+  type PromoDiscount,
+  type SeatPlanPrice,
+} from "./promo-discount-math";
 
 /**
  * Promo codes for the public checkout flow.
@@ -20,10 +26,6 @@ import { getStripe } from "./stripe-client";
 // Foundry prices are USD-only (see docs/stripe-price-setup-checklist.md).
 const CURRENCY = "usd";
 const MAX_YEARS = 5;
-
-export type PromoDiscount =
-  | { kind: "percent"; percentOff: number }
-  | { kind: "amount"; amountOffCents: number };
 
 export type CreatePromoInput = {
   /** Internal label; Stripe shows it on the buyer's invoice line. */
@@ -64,8 +66,11 @@ function assertValid(input: CreatePromoInput): void {
   }
   if (input.discount.kind === "percent") {
     const p = input.discount.percentOff;
-    if (!(p > 0 && p <= 100)) {
-      throw new Error("Percent off must be between 1 and 100.");
+    // 100% bills $0 whatever the prices are, so it is rejected here rather than
+    // by the price check below: it needs no Stripe round trip to know, and the
+    // operator still gets the real reason when Stripe is unreachable.
+    if (!(p > 0 && p < 100)) {
+      throw new Error("Percent off must be between 1 and 99.");
     }
   } else if (!(input.discount.amountOffCents > 0)) {
     throw new Error("Dollar amount off must be greater than $0.");
@@ -207,18 +212,65 @@ export function toPromoCodeRow(p: Stripe.PromotionCode): PromoCodeRow {
 // ---------------------------------------------------------------------------
 
 /**
+ * What each seat price is called on the ops form.
+ *
+ * `satisfies` is load-bearing, not decoration: without it a price added to the
+ * catalog and forgotten here would compile clean and simply drop out of the
+ * discount check, so the guard would quietly stop covering a plan. With it, the
+ * omission is a typecheck failure. Coverage must not be decided by whether
+ * someone remembered to write a label.
+ */
+const SEAT_PLAN_LABELS = {
+  seatMonthly: "Monthly",
+  seatAnnual: "Annual",
+  seatFoundingAnnual: "Founding annual",
+} as const satisfies Record<keyof PriceCatalog, string>;
+
+/**
+ * Every seat price a discount could land on, priced from Stripe.
+ *
+ * Read live rather than hardcoded: this is what the "can't bill $0" check
+ * measures against, and a floor copied into the code here would keep passing
+ * quietly the day a price changes.
+ */
+export async function listSeatPlanPrices(): Promise<SeatPlanPrice[]> {
+  const catalog = getPriceCatalog();
+  const stripe = getStripe();
+  const entries = Object.entries(SEAT_PLAN_LABELS) as [
+    keyof typeof SEAT_PLAN_LABELS,
+    string,
+  ][];
+  return Promise.all(
+    entries.map(async ([key, label]) => {
+      const price = await stripe.prices.retrieve(catalog[key]);
+      if (price.unit_amount == null) {
+        // Tiered or metered pricing has no single per-unit figure to compare a
+        // flat discount against. Refuse rather than skip the plan — skipping
+        // would let a discount through unchecked on exactly that plan.
+        throw new Error(`The ${label} price has no flat amount, so a discount can't be checked against it.`);
+      }
+      return { key, label, unitAmountCents: price.unit_amount };
+    }),
+  );
+}
+
+/**
  * Create the coupon, then the code that points at it.
  *
- * Two failure modes, handled differently. A bad form fails in
- * `buildCouponParams` before any Stripe call. A Stripe-side rejection of the
- * second call — a duplicate code is the common one — happens with the coupon
- * already created, so we delete it on the way out; otherwise retyping the code
- * would litter the account with dangling coupons.
+ * Three failure modes, handled differently. A bad form fails in
+ * `buildCouponParams` before any Stripe call. A discount big enough to bill a
+ * plan $0 fails next, after reading prices but still before any write. A
+ * Stripe-side rejection of the final call — a duplicate code is the common one
+ * — happens with the coupon already created, so we delete it on the way out;
+ * otherwise retyping the code would litter the account with dangling coupons.
  */
 export async function createPromoCode(
   input: CreatePromoInput,
 ): Promise<{ id: string; code: string }> {
   const couponParams = buildCouponParams(input);
+  // The money guarantee, enforced server-side: the form caps the inputs too,
+  // but this action is reachable without it.
+  assertDiscountLeavesSomethingToPay(input.discount, await listSeatPlanPrices());
   const stripe = getStripe();
   const coupon = await stripe.coupons.create(couponParams);
   try {

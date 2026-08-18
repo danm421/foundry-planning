@@ -21,7 +21,8 @@ const CreateInput = z
       .optional()
       .transform((v) => v || null),
     discountKind: z.enum(["percent", "amount"]),
-    percentOff: z.coerce.number().positive().max(100).nullable().optional(),
+    // Under 100, not up to it: 100% off bills $0 on every plan.
+    percentOff: z.coerce.number().positive().lt(100).nullable().optional(),
     amountOffDollars: z.coerce.number().positive().nullable().optional(),
     years: z.coerce.number().int().min(1).max(5),
     maxRedemptions: z.coerce.number().int().min(1).max(10_000),
