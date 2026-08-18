@@ -53,7 +53,7 @@ const ON_BY_DEFAULT: ChapterId[] = [
 /** What the shipped default actually PRINTS: every chapter, less the ones with
  *  nothing to recommend on a base-only story.
  *
- *  Derived rather than spelled out a second time — the alternative was nine
+ *  Derived rather than spelled out a second time — the alternative was twelve
  *  literal expectations that all restate the same fact and all have to be
  *  edited together, which is how one of them ends up saying something else. */
 const DEFAULT_BASE_ONLY = ON_BY_DEFAULT.filter((id) => !CHAPTERS[id].requiresProposal);

@@ -1084,6 +1084,10 @@ describe("chart facts", () => {
     // Not a vacuous loop: the layout has to be in use, or the body never runs.
     expect(charted.length).toBeGreaterThanOrEqual(2);
     for (const comparison of ["planVsPlan", "todayVsEndOfLife"] as const) {
+      // The bars stay labelled "Current plan"/"Proposed plan" even under
+      // `todayVsEndOfLife`, a shape `load-context.ts` never actually produces
+      // (it labels that pairing "Today"/"End of Life"). Deliberately
+      // irrelevant here: this test reads only fact ids, never the labels.
       const facts = buildStoryFacts({
         ...input,
         charts: { ...charts, estate: { ...charts.estate, comparison } },

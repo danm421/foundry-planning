@@ -166,9 +166,11 @@ describe("narrateWhatsLeftForPeople", () => {
     }
   });
 
-  it.each(PACKS)("fits the twoUp prose budget on %s", (_label, pack) => {
-    // The figure column takes a third of the text measure, so this layout gets
-    // 130 words rather than heroProse's 300. A narrator over the budget is
+  it.each(PACKS)("stays within a tighter-than-required chartWithProse budget on %s", (_label, pack) => {
+    // This chapter renders under `chartWithProse`, whose real ceiling is
+    // `BUDGET_WORDS_CHART` — 150 words. 130 here is a deliberately tighter
+    // LOCAL bound, not a claim about what the layout allows, so a narrator
+    // that grows toward the real ceiling still has headroom before it is
     // trimmed mid-chapter with an italic aside the advisor never asked for.
     for (const role of ["standalone", "frontMatter"] as const) {
       const words = textOf({ ...pack, documentRole: role }).split(/\s+/u).filter(Boolean).length;
@@ -178,7 +180,7 @@ describe("narrateWhatsLeftForPeople", () => {
 
   it.each(PACKS)("clears every gate on %s, in both registers", (_label, pack) => {
     // Every branch, both roles. Gate 4's rhythm rule is what this catches: a
-    // twoUp chapter is four or five sentences, so one branch landing on an even
+    // chapter this short is four or five sentences, so one branch landing on an even
     // cadence is a real and easy failure — chapter 6's did, at 0.113 against a
     // floor of 0.122.
     for (const role of ["standalone", "frontMatter"] as const) {

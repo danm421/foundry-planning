@@ -42,8 +42,8 @@ const row = (over: Partial<PlanStoryChapterRow> & { chapterId: string }): PlanSt
   ...over,
 });
 
-// A scenario is set (so all fourteen chapters are eligible — none of the two
-// `requiresProposal` chapters are dropped) and two of the fourteen `sections`
+// A scenario is set (so all fourteen chapters are eligible — neither of the
+// two `requiresProposal` chapters is dropped) and two of the fourteen `sections`
 // are switched off — twelve print. Measured, not assumed: a base-only story
 // (no scenario) prints TWELVE, never fourteen — see `STORY_PAGE_ALL_ON` below.
 const STORY_PAGE_WITH_TWELVE_SECTIONS = {

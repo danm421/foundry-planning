@@ -594,7 +594,7 @@ function chartFacts(charts: StoryChartData | undefined, retirementYear: number):
   }
 
   // One fact per bar PRESENT, on the same condition `chartFor` draws on — a
-  // non-empty array — and never on a pair.
+  // non-empty `bars` array on the `charts.estate` object — and never on a pair.
   //
   // ⚠️ `pages/plan-story/view-model.ts#chartFor` prints the estate chart when
   // `charts.estate.bars.length > 0`. Demanding both bars here would let a

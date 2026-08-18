@@ -6,8 +6,11 @@
 // a blank. `printedChapters` cannot see the data (see `options-schema.ts`), so
 // the honest sentence is the chapter's job, not the print list's.
 //
-// `twoUp`, so the prose budget is 130 words and the four estate figures print as
-// cards beside it. See `will-the-money-last.ts` for what that costs in rhythm.
+// `chartWithProse` (`registry.ts:175`), so the prose budget is
+// `BUDGET_WORDS_CHART` — 150 words (`view-model.ts:298`) — and the chapter
+// prints no figure cards at all: `figures` is only ever built for a `twoUp`
+// chapter (`view-model.ts:694`). See `will-the-money-last.ts` for what a
+// tighter, card-backed budget costs in rhythm.
 import { factDisplay, findFact, type StoryContext } from "../types";
 
 const NOTHING_KNOWN =
@@ -58,6 +61,12 @@ function movement(ctx: StoryContext): string | null {
  *
  * ⚠️ NOT always smaller. An estate that keeps compounding past what the plan
  * spends grows, and this chapter cannot see which it will be.
+ *
+ * A base deck that reaches every optional line prints exactly
+ * `MAX_PARAGRAPHS_CHART`'s ceiling of 5 paragraphs (`view-model.ts:313`),
+ * spending the last of them on the closing sentence — a sixth would not
+ * silently vanish; it is trimmed and flagged with `PROSE_TRIMMED_NOTE`
+ * (`view-model.ts:707-711,736`).
  */
 function overTheYears(ctx: StoryContext): string | null {
   const today = findFact(ctx, "chart.estate.grossToday");
