@@ -831,21 +831,22 @@ describe("tone and length", () => {
  * `upsertGeneratedChapter` says — and `resolveChapterText` still prints it ahead
  * of the model's. What the badge costs is the regeneration, not their writing.
  *
- * ⚠️ TWELVE OF THESE ARE THE PRE-`style` VALUES; TWO ARE NOT.
+ * ⚠️ ELEVEN OF THESE ARE THE PRE-`style` VALUES; THREE ARE NOT.
  *
- * Twelve were computed at 6037c7ad0 — the commit BEFORE `style` reached
+ * Eleven were computed at 6037c7ad0 — the commit BEFORE `style` reached
  * `buildChapterPrompt` — and still hold, which is what made that setting free to
  * ship: at the DEFAULT style those prompts are byte-identical to the ones that
  * existed before the setting did.
  *
  * `willTheMoneyLast` and `whatYoullPayInTax` were RE-TAKEN when those two
- * chapters moved onto the `chartWithProse` layout. Their sheet changed — a chart
- * above full-measure prose instead of a figure column beside it — so
- * `OUTPUT_ASK` hands them a different sentence and their prompts genuinely
- * differ. An advisor's already-generated copies of those two chapters DO read
- * stale on that deploy, and that is the intended, one-off cost of the layout
- * change rather than a pin that drifted. Re-taking a hash for any other reason
- * is the defect this block exists to catch.
+ * chapters moved onto the `chartWithProse` layout, and `whatsLeftForPeople` when
+ * it followed them there. Their sheet changed — a chart above full-measure prose
+ * instead of a figure column beside it — so `OUTPUT_ASK` hands them a different
+ * sentence and their prompts genuinely differ. An advisor's already-generated
+ * copies of those three chapters DO read stale on that deploy, and that is the
+ * intended, one-off cost of the layout change rather than a pin that drifted.
+ * Re-taking a hash for any other reason is the defect this block exists to
+ * catch.
  *
  * ⚠️ …and all fourteen are for a household whose name fields are already clean,
  * which this fixture's are. `prompts.ts#singleLine` also normalises `firstNames`
@@ -880,7 +881,7 @@ describe("the default style preserves a clean household's stored hashes", () => 
     whatWeRecommend: "b766c0896f1930138958413acb1c3b911f119710e12e7f3bb5835539a1baacf1",
     willTheMoneyLast: "64a938c23ac8eee89d7bd502925e6613fd065609f8c7828ef39617623cea2471",
     whatYouCanSpend: "eb0bd87bb1e6e665209a31b12e2cf418526e86066ed146c06fd7b64efc469876",
-    whatsLeftForPeople: "bb089a527d8401b8fecfbaaf70b60a9b128431fe7c185aa19a7fb0092dc07fe3",
+    whatsLeftForPeople: "9a7bc846503b522dfad0b5cd98292b50ff96d6e088c4be4b4c9aad60e3abd283",
     whatYoullPayInTax: "792b1adc8594d91b5bf9301971af2f099983d9469d3997f42643e7428c90927a",
     protectingYourFamily: "2dccdb8b0029c2a20514f1aa5f3e8dcd028ba41bd4df51d4ead73dc88285b242",
     healthCareCosts: "ec905899f3a155be3be89c896d8a7c92e8fd317727486e4a5bef2fd7f2fe9775",

@@ -25,6 +25,38 @@ describe("runGates", () => {
     const failures = runGates("The plan holds up well over time.", [chartFact]);
     expect(failures.some((f) => f.gate === "chartCitation")).toBe(true);
   });
+
+  /**
+   * The estate chapter reaches this gate through the SAME `chart.` prefix, which
+   * is the only thing that carries a new chart chapter into it — the gate is
+   * layout-blind by design. Both directions, because a gate that fires on
+   * everything and a gate that fires on nothing are equally useless, and this
+   * one has a real no-chart path (a household whose estate bars are null).
+   */
+  it("requires the estate chapter's prose to name one of its chart's figures", () => {
+    const gross = moneyFact(
+      "chart.estate.grossBase",
+      "The whole estate before anything comes out, current plan",
+      2_640_000,
+      ["whatsLeftForPeople"],
+    );
+    const uncited = runGates("Your estate passes on well to the people you named.", [gross]);
+    expect(uncited.some((f) => f.gate === "chartCitation")).toBe(true);
+
+    const cited = runGates("The whole estate comes to about $2.6M before anything comes out.", [gross]);
+    expect(cited.some((f) => f.gate === "chartCitation")).toBe(false);
+  });
+
+  it("stays silent on an estate chapter whose household produced no bars", () => {
+    // The no-data path spec §7 names: `load-context.ts` hands over null bars, so
+    // no `chart.` fact exists, so there is nothing to cite. Demanding a citation
+    // here would fail every draft on exactly the households that have least.
+    const netOnly = moneyFact("estate.net.base", "What reaches your heirs, current plan", 3_100_000, [
+      "whatsLeftForPeople",
+    ]);
+    const failures = runGates("About $3.1M reaches the people you named.", [netOnly]);
+    expect(failures.some((f) => f.gate === "chartCitation")).toBe(false);
+  });
 });
 
 describe("runGates — the two register gates", () => {

@@ -133,9 +133,18 @@ describe("the chapter registry", () => {
     }
   });
 
-  it("prints the two chart chapters on the chartWithProse layout", () => {
+  it("prints the three chart chapters on the chartWithProse layout", () => {
     expect(CHAPTERS.willTheMoneyLast.layout).toBe("chartWithProse");
     expect(CHAPTERS.whatYoullPayInTax.layout).toBe("chartWithProse");
+    expect(CHAPTERS.whatsLeftForPeople.layout).toBe("chartWithProse");
+  });
+
+  it("does not count the estate chapter as enumerating", () => {
+    // `chartWithProse` is deliberately absent from `ENUMERATING_LAYOUTS`, which
+    // the compiler cannot enforce — the layout union is closed but that list is
+    // hand-written, so a sixth layout added to it silently changes what this
+    // chapter is asked for.
+    expect(chapterEnumerates("whatsLeftForPeople")).toBe(false);
   });
 
   /**

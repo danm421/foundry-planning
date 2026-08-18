@@ -149,7 +149,7 @@ export const CHAPTERS: Record<ChapterId, ChapterDef> = {
   whatsLeftForPeople: {
     id: "whatsLeftForPeople",
     title: "What's left for the people you care about",
-    layout: "twoUp",
+    layout: "chartWithProse",
     narrate: narrateWhatsLeftForPeople,
     requiresProposal: true,
     coverage: true,
