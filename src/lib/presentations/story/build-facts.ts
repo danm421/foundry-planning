@@ -587,30 +587,39 @@ function chartFacts(charts: StoryChartData | undefined, retirementYear: number):
     );
   }
 
-  if (charts.estate) {
-    // Read by position, not searched by label: the labels are display text, and
-    // matching on them would be a second place that has to keep "Current plan"
-    // spelled the way `load-context.ts` spells it. That loader builds the pair
-    // together or not at all, so a first bar implies a second — but the pair is
-    // still destructured and checked, because this module must not depend on a
-    // promise made in another one.
-    const [current, proposed] = charts.estate;
-    if (current && proposed) {
-      facts.push(
-        moneyFact(
-          "chart.estate.grossBase",
-          "The whole estate before anything comes out, current plan",
-          current.total,
-          ESTATE_CHART_CHAPTERS,
-        ),
-        moneyFact(
-          "chart.estate.grossProposed",
-          "The whole estate before anything comes out, proposed plan",
-          proposed.total,
-          ESTATE_CHART_CHAPTERS,
-        ),
-      );
-    }
+  // One fact per bar PRESENT, on the same condition `chartFor` draws on — a
+  // non-empty array — and never on a pair.
+  //
+  // ⚠️ `pages/plan-story/view-model.ts#chartFor` prints the estate chart when
+  // `charts.estate.length > 0`. Demanding both bars here would let a
+  // one-element array print a picture with no figure the prose is allowed to
+  // cite, and Gate 8 returns no failure for a chapter that owns no `chart.`
+  // fact — so nothing downstream would report it. The picture and the
+  // permission to describe it have to appear and disappear together.
+  //
+  // Read by position, not searched by label: the labels are display text, and
+  // matching on them would be a second place that has to keep "Current plan"
+  // spelled the way `load-context.ts` spells it.
+  const [currentEstate, proposedEstate] = charts.estate ?? [];
+  if (currentEstate) {
+    facts.push(
+      moneyFact(
+        "chart.estate.grossBase",
+        "The whole estate before anything comes out, current plan",
+        currentEstate.total,
+        ESTATE_CHART_CHAPTERS,
+      ),
+    );
+  }
+  if (proposedEstate) {
+    facts.push(
+      moneyFact(
+        "chart.estate.grossProposed",
+        "The whole estate before anything comes out, proposed plan",
+        proposedEstate.total,
+        ESTATE_CHART_CHAPTERS,
+      ),
+    );
   }
 
   return facts;

@@ -931,6 +931,29 @@ describe("chart facts", () => {
     expect(facts.some((f) => f.id === "chart.portfolio.peak")).toBe(true);
   });
 
+  /**
+   * ⚠️ The picture and the permission to write about it must appear and
+   * disappear TOGETHER — spec §7's rule, and the reason it is a rule is that the
+   * two live in different modules.
+   *
+   * `pages/plan-story/view-model.ts#chartFor` draws the estate chart on
+   * `charts.estate.length > 0`. If this file instead demanded a PAIR, a
+   * one-element array would print a chart with no citable figure — and Gate 8
+   * stays silent for a chapter that owns no `chart.` fact, so nothing would
+   * report it. The sweep at the end of this block cannot catch it either: its
+   * fixture carries two bars.
+   *
+   * `load-context.ts` builds both bars or null, so this is unreachable today.
+   * It is pinned because the disagreement, not the reachability, is the defect.
+   */
+  it("admits a figure for a lone estate bar, because the chart would still draw one", () => {
+    const oneBar = { ...charts, estate: [charts.estate[0]!] };
+    const facts = buildStoryFacts({ ...input, charts: oneBar });
+    expect(facts.find((f) => f.id === "chart.estate.grossBase")?.raw).toBe(2_640_000);
+    // …and nothing invented for the bar that is not there.
+    expect(facts.some((f) => f.id === "chart.estate.grossProposed")).toBe(false);
+  });
+
   it("scopes every chart fact to the one chapter that draws it", () => {
     const facts = buildStoryFacts({ ...input, charts });
     for (const f of facts.filter((x) => x.id.startsWith("chart.portfolio."))) {
