@@ -558,8 +558,11 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
   // makes two `buildEstateTransferReportData` calls and must keep making
   // exactly those two, inside a loader that already takes ~23s cold.
   //
-  // First, so a base deck's pair is reported today-then-end-of-life in the
-  // order the Estate Summary page builds it and the order the chart reads.
+  // First, so a base deck BUILDS its two reports in the order the Estate
+  // Summary page builds them (`pages/estate-summary/view-model.ts:77-90`) —
+  // today, then end of life. That is the call sequence only; the order the
+  // chart draws in is the array literal below, and swapping these two lines
+  // would not flip it.
   const todayEstate = proposed ? null : estateAt(base, { kind: "today" }, estateOwnerNames);
   const baseEstate = estateAt(base, { kind: "split" }, estateOwnerNames);
   const proposedEstate = proposed ? estateAt(proposed, { kind: "split" }, estateOwnerNames) : null;

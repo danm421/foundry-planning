@@ -50,13 +50,19 @@ export interface BuildStoryChartsInput {
    * Built by the caller from the household summaries it already holds, rather
    * than rebuilt here.
    *
-   * `load-context.ts` runs `summarizeHousehold` over each estate report it
-   * builds for the fact pack, and stacks the bars from those same objects
-   * through `pages/estate-summary/view-model.ts#estateChartBar` — the one
-   * mapping the Estate Summary page uses too. Rebuilding either the reports or
-   * the mapping here would be the duplicate derivation this module exists to
-   * prevent. It also picks WHICH pair the deck compares, and says so on the
-   * chart. Null when the caller cannot produce both bars.
+   * `load-context.ts` runs `summarizeHousehold` over every estate report it
+   * builds and stacks the bars off those same objects through
+   * `pages/estate-summary/view-model.ts#estateChartBar` — the one mapping the
+   * Estate Summary page uses too. Rebuilding either the reports or the mapping
+   * here would be the duplicate derivation this module exists to prevent.
+   *
+   * Most of those reports are the fact pack's, read a second time for the
+   * picture. A base-only deck's TODAY report is the exception: it is built for
+   * this chart alone and its totals never become facts, because the `estate.*`
+   * pack stays at end of life on every deck.
+   *
+   * The caller also picks WHICH pair the deck compares, and says so on the
+   * chart. Null when it cannot produce both bars.
    */
   estate: StoryEstateChart | null;
 }

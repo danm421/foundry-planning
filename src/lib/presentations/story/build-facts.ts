@@ -523,12 +523,18 @@ function goalYearFacts(goals: StoryGoal[]): Fact[] {
  * two different numbers that both mean "what's left at the end", and a label is
  * all the model has to tell them apart.
  *
- * The estate chapter is the sharpest case, because there the near-twins sit in
- * the same pack at the same moment: `estate.net.base` ("What reaches your
- * heirs"), `estate.cost.base` ("Tax and costs on the estate") and
- * `chart.estate.grossBase` ("The whole estate before anything comes out") are
- * three dollar figures about one estate at end of life, and the third is the
- * one the other two come out of. Only the label says so.
+ * The estate chapter is the sharpest case, because its near-twins are three
+ * dollar figures about one household's estate: what reaches the heirs, what the
+ * estate pays in tax and costs, and — off the chart — the whole estate before
+ * anything comes out. Only the labels tell them apart.
+ *
+ * ⚠️ And they are not all stated at the same MOMENT. The `estate.*` pair is end
+ * of life on every deck (`estateFacts` above). The chart's figures follow the
+ * chart's bars, and on a base-only deck those two bars are two points in TIME
+ * rather than two plans (`charts.ts#StoryEstateChart.comparison`) — so one of
+ * them is the estate as it stands today, which the end-of-life pair does not
+ * come out of. A label implying a single moment for all three would invite the
+ * model to subtract figures decades apart.
  */
 function chartFacts(charts: StoryChartData | undefined, retirementYear: number): Fact[] {
   if (!charts) return [];
