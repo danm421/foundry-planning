@@ -739,16 +739,20 @@ const CHART_SHEETS: PlanStoryPageData = {
       chapterId: "whatsLeftForPeople",
       title: "What's left for the people you care about",
       layout: "chartWithProse",
-      paragraphs: ["$2.1M reaches the people you named, after tax and costs."],
+      paragraphs: ["The whole estate comes to about $2.6M today, and $2.1M of it reaches the people you named."],
       strategies: [],
       figures: [],
       steps: [],
       glossary: [],
       chart: {
+        // Current plan against proposed plan, which is what `load-context.ts`
+        // builds and what this chapter's prose has always argued — NOT the Today
+        // vs End of Life pair the Estate Summary page draws from the same
+        // component.
         kind: "estateBars",
         bars: [
-          { label: "Today", netToHeirs: 2_100_000, federal: 0, state: 0, probate: 60_000, ird: 0, debts: 480_000, total: 2_640_000 },
-          { label: "At the end", netToHeirs: 3_400_000, federal: 220_000, state: 90_000, probate: 110_000, ird: 140_000, debts: 0, total: 3_960_000 },
+          { label: "Current plan", netToHeirs: 2_100_000, federal: 0, state: 0, probate: 60_000, ird: 0, debts: 480_000, total: 2_640_000 },
+          { label: "Proposed plan", netToHeirs: 3_400_000, federal: 220_000, state: 90_000, probate: 110_000, ird: 140_000, debts: 0, total: 3_960_000 },
         ],
         totals: ["$2.6M", "$4.0M"],
       },
@@ -942,6 +946,35 @@ function chartSheet(paragraphs: string[]): PlanStoryPageData {
 }
 
 /**
+ * The same worst case on the ESTATE chapter's own chart.
+ *
+ * `BUDGET_WORDS_CHART` is one number for all three layouts and was measured on
+ * the tall pair, so the estate sheet fits *by argument* — its chart is 88pt of
+ * `Svg` where theirs is 150. This renders it instead, because the argument is
+ * only as good as the two numbers it rests on, and this sheet is the one a
+ * client actually receives.
+ *
+ * Its legend is also the widest of the three — six segments against the tax
+ * chart's four — and a legend that wrapped to a second row would eat height no
+ * arithmetic about the `Svg` alone would predict.
+ */
+function estateChartSheet(paragraphs: string[]): PlanStoryPageData {
+  return {
+    title: "Your Plan",
+    subtitle: "Proposed",
+    isEmpty: false,
+    emptyMessage: "",
+    chapters: [
+      {
+        ...CHART_SHEETS.chapters[2],
+        paragraphs,
+        overflowNote: "…there's more here than fits this page — we'll walk through the rest together.",
+      },
+    ],
+  };
+}
+
+/**
  * The measurement `BUDGET_WORDS_CHART` and `MAX_PARAGRAPHS_CHART` were set from,
  * re-run every suite.
  *
@@ -971,5 +1004,15 @@ describe("Plan Story — what a chart sheet's prose may spend", () => {
   it("spills at seven paragraphs, which is why the paragraph cap is where it is", async () => {
     const measured = await bodyBottom(chartSheet(wastefulProse(150, 7)));
     expect(spilled(measured), `measured ${JSON.stringify(measured)}`).toBe(true);
+  }, 60_000);
+
+  // The estate chapter shares the budget above rather than getting its own, so
+  // the only question left for it is whether the shared number actually holds on
+  // its sheet. Measured, not argued from the 62pt of chart height it saves.
+  it("keeps the estate chapter's worst prose above the footer on its own chart", async () => {
+    const bottom = await oneSheetBottom(
+      estateChartSheet(wastefulProse(BUDGET_WORDS_CHART, MAX_PARAGRAPHS_CHART)),
+    );
+    expect(bottom).toBeLessThanOrEqual(CONTENT_BOTTOM);
   }, 60_000);
 });
