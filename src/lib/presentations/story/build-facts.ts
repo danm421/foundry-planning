@@ -591,7 +591,7 @@ function chartFacts(charts: StoryChartData | undefined, retirementYear: number):
   // non-empty array — and never on a pair.
   //
   // ⚠️ `pages/plan-story/view-model.ts#chartFor` prints the estate chart when
-  // `charts.estate.length > 0`. Demanding both bars here would let a
+  // `charts.estate.bars.length > 0`. Demanding both bars here would let a
   // one-element array print a picture with no figure the prose is allowed to
   // cite, and Gate 8 returns no failure for a chapter that owns no `chart.`
   // fact — so nothing downstream would report it. The picture and the
@@ -600,7 +600,7 @@ function chartFacts(charts: StoryChartData | undefined, retirementYear: number):
   // Read by position, not searched by label: the labels are display text, and
   // matching on them would be a second place that has to keep "Current plan"
   // spelled the way `load-context.ts` spells it.
-  const [currentEstate, proposedEstate] = charts.estate ?? [];
+  const [currentEstate, proposedEstate] = charts.estate?.bars ?? [];
   if (currentEstate) {
     facts.push(
       moneyFact(

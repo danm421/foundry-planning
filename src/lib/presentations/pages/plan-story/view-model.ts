@@ -485,11 +485,11 @@ function chartFor(chapterId: ChapterId, charts: StoryChartData | undefined, fact
       // `fmtUsdCompact`'s uppercase K. Left to the component, one sheet would
       // print two spellings of one number. `validate/facts.ts#figureKey`
       // uppercases before comparing, so Gate 1 could never have caught it.
-      return charts.estate && charts.estate.length > 0
+      return charts.estate && charts.estate.bars.length > 0
         ? {
             kind: "estateBars",
-            bars: charts.estate,
-            totals: charts.estate.map((b) => fmtUsdCompact(b.total)),
+            bars: charts.estate.bars,
+            totals: charts.estate.bars.map((b) => fmtUsdCompact(b.total)),
           }
         : null;
     default:

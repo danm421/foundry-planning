@@ -829,15 +829,18 @@ describe("chart facts", () => {
       { year: 2026, federalOrdinary: 10_000, capGains: 0, state: 2_000, total: 12_000 },
       { year: 2035, federalOrdinary: 40_000, capGains: 5_000, state: 8_000, total: 53_000 },
     ],
-    // All three arrays carry bars, so the invariant at the end of this block is
+    // All three charts carry bars, so the invariant at the end of this block is
     // asked the interesting question. `view-model.ts#chartFor` returns an estate
     // chart only when `estate` holds bars; left null, a red on the estate
     // chapter would be ambiguous between "no figures for its chart" and "no
     // chart at all". With bars, the picture really would print.
-    estate: [
-      { label: "Current plan", netToHeirs: 2_100_000, federal: 0, state: 0, probate: 60_000, ird: 0, debts: 480_000, total: 2_640_000 },
-      { label: "Proposed plan", netToHeirs: 3_400_000, federal: 220_000, state: 90_000, probate: 110_000, ird: 140_000, debts: 0, total: 3_960_000 },
-    ],
+    estate: {
+      comparison: "planVsPlan" as const,
+      bars: [
+        { label: "Current plan", netToHeirs: 2_100_000, federal: 0, state: 0, probate: 60_000, ird: 0, debts: 480_000, total: 2_640_000 },
+        { label: "Proposed plan", netToHeirs: 3_400_000, federal: 220_000, state: 90_000, probate: 110_000, ird: 140_000, debts: 0, total: 3_960_000 },
+      ],
+    },
   };
 
   it("admits the peak the chart draws, and the year it happens", () => {
@@ -886,7 +889,7 @@ describe("chart facts", () => {
     // "$2.6M" and "$2.6m" collapse to one key.
     const facts = buildStoryFacts({ ...input, charts });
     const gross = facts.find((f) => f.id === "chart.estate.grossBase")!;
-    expect(gross.display).toBe(fmtUsdCompact(charts.estate[0]!.total));
+    expect(gross.display).toBe(fmtUsdCompact(charts.estate.bars[0]!.total));
   });
 
   it("does not confuse the whole estate with what reaches the heirs", () => {
@@ -937,7 +940,7 @@ describe("chart facts", () => {
    * two live in different modules.
    *
    * `pages/plan-story/view-model.ts#chartFor` draws the estate chart on
-   * `charts.estate.length > 0`. If this file instead demanded a PAIR, a
+   * `charts.estate.bars.length > 0`. If this file instead demanded a PAIR, a
    * one-element array would print a chart with no citable figure — and Gate 8
    * stays silent for a chapter that owns no `chart.` fact, so nothing would
    * report it. The sweep at the end of this block cannot catch it either: its
@@ -947,7 +950,7 @@ describe("chart facts", () => {
    * It is pinned because the disagreement, not the reachability, is the defect.
    */
   it("admits a figure for a lone estate bar, because the chart would still draw one", () => {
-    const oneBar = { ...charts, estate: [charts.estate[0]!] };
+    const oneBar = { ...charts, estate: { ...charts.estate, bars: [charts.estate.bars[0]!] } };
     const facts = buildStoryFacts({ ...input, charts: oneBar });
     expect(facts.find((f) => f.id === "chart.estate.grossBase")?.raw).toBe(2_640_000);
     // …and nothing invented for the bar that is not there.
