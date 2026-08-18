@@ -748,8 +748,8 @@ const CHART_SHEETS: PlanStoryPageData = {
         // This is the PROPOSAL-DECK pairing: current plan against proposed
         // plan. The base deck draws a different pair from the same
         // component — Today vs End of Life — which `load-context.ts` builds
-        // for a base deck (`load-context.ts:588-596`) and this chapter's
-        // prose argues in that case (`whats-left-for-people.ts:62-71`).
+        // in the `todayVsEndOfLife` branch of its `estate` assignment, and
+        // which `overTheYears()` in `whats-left-for-people.ts` now argues.
         kind: "estateBars",
         bars: [
           { label: "Current plan", netToHeirs: 2_100_000, federal: 0, state: 0, probate: 60_000, ird: 0, debts: 480_000, total: 2_640_000 },
