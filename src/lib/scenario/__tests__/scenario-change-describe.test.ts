@@ -61,3 +61,30 @@ describe("describeChangeUnit — groups", () => {
     expect(describeChangeUnit(unit, targetNames)).toBe("2 changes: Cooper's Salary, Travel.");
   });
 });
+
+describe("describeChangeUnit — array-valued edits", () => {
+  const edit = (to: unknown[]) =>
+    describeChangeUnit(
+      {
+        kind: "single",
+        change: {
+          opType: "edit",
+          targetKind: "liability",
+          targetId: "liab-1",
+          payload: { extraPayments: { from: [], to } },
+          enabled: true,
+        } as never,
+      },
+      { "liability:liab-1": "Primary Mortgage" },
+    );
+
+  it("counts entries instead of printing [object Object]", () => {
+    const text = edit([{ id: "a" }, { id: "b" }, { id: "c" }]);
+    expect(text).toBe("Changed extraPayments on Primary Mortgage: none → 3 entries.");
+    expect(text).not.toContain("[object Object]");
+  });
+
+  it("uses the singular for one entry", () => {
+    expect(edit([{ id: "a" }])).toContain("→ 1 entry");
+  });
+});

@@ -11,6 +11,13 @@ function fmtVal(v: unknown): string {
     return String(v);
   }
   if (v == null) return "—";
+  // Array-valued fields (e.g. a liability's extraPayments) stringify to
+  // "[object Object]"; a count is the readable, honest summary. This string also
+  // feeds the retirement-comparison AI prompt.
+  if (Array.isArray(v)) {
+    if (v.length === 0) return "none";
+    return `${v.length} ${v.length === 1 ? "entry" : "entries"}`;
+  }
   return String(v);
 }
 

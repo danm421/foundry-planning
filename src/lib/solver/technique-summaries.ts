@@ -8,7 +8,7 @@ import type {
 } from "@/engine/types";
 import { USPS_STATE_NAMES } from "@/lib/usps-states";
 
-const usd = (n: number): string =>
+export const usd = (n: number): string =>
   n.toLocaleString("en-US", {
     style: "currency",
     currency: "USD",

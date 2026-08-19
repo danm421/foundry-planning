@@ -17,6 +17,7 @@ import {
   makeEntityCheckingAccount,
 } from "@/lib/entities/entity-checking";
 import { isRetirementLivingExpense, planLivingExpenseAmount } from "./living-expense";
+import { withDebtPaydown } from "./debt-paydown";
 import type { SolverMutation } from "./types";
 
 export function applyMutations(
@@ -270,6 +271,17 @@ export function applyMutations(
         const list = (result.relocations ?? []).filter((r) => r.id !== m.id);
         if (m.value !== null) list.push(m.value);
         result.relocations = list;
+        break;
+      }
+      case "debt-paydown": {
+        // Lowers to the engine's own extraPayments — the amortization schedule
+        // caps each one at the remaining balance and stops at payoff, so a
+        // paydown can never overpay a loan. withDebtPaydown() strips any
+        // previously-applied paydown first, so re-applying replaces rather than
+        // stacks, and advisor-entered extras are preserved.
+        result.liabilities = (result.liabilities ?? []).map((l) =>
+          l.id === m.liabilityId ? withDebtPaydown(l, m.value) : l,
+        );
         break;
       }
       case "account-upsert": {
