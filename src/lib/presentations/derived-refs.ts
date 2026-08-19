@@ -1,0 +1,67 @@
+// A presentation page may need "the base plan, but with one thing changed" — a
+// variant that exists nowhere in the database and that no advisor had to build
+// by hand. This module turns such a request into a built bundle: apply solver
+// mutations to an already-loaded tree, re-run the projection.
+//
+// Pure and framework-free. `deps` (applyMutations + runProjection) is injected
+// by the caller rather than defaulted here, so this module never value-imports
+// the engine or the solver — it is reached from "use client" launcher
+// components via the presentation registry, and a value import of the engine
+// would drag the whole projection into the browser bundle. The server-only
+// export route constructs the real deps and passes them in.
+
+import type { ClientData } from "@/engine/types";
+import type { ProjectionResult } from "@/engine";
+import type { SolverMutation } from "@/lib/solver/types";
+
+/** Mutations that can only be named once the source tree is known — e.g. a
+ *  per-account mutation whose account ids live in the tree. `requiredDerivedRefs`
+ *  sees only page options, so anything account-scoped MUST use this form. */
+export type MutationFactory = (source: ClientData) => SolverMutation[];
+
+export interface DerivedRefRequest {
+  /** Page-local key. Namespaced by `derivedKey` before it reaches bundlesByRef. */
+  key: string;
+  /** Raw ref to derive FROM: "base" | "<scenarioId>" | "snap:<id>". */
+  from: string;
+  /** Human label for this variant, printed wherever the page names it. */
+  label: string;
+  mutations: SolverMutation[] | MutationFactory;
+}
+
+export interface DerivedBundle {
+  clientData: ClientData;
+  projection: ProjectionResult;
+  scenarioLabel: string;
+}
+
+export interface DerivedDeps {
+  applyMutations: (data: ClientData, mutations: SolverMutation[]) => ClientData;
+  runProjection: (data: ClientData) => ProjectionResult;
+}
+
+/**
+ * Namespaced bundle key. Page-scoped on purpose: two pages that each want a
+ * "+3pp" variant must not share a cache slot, because their mutations may
+ * differ. The cost of the occasional duplicate projection is ~20ms; the cost of
+ * a silent collision is one page rendering another page's numbers.
+ */
+export function derivedKey(pageId: string, key: string): string {
+  return `derived:${pageId}:${key}`;
+}
+
+export function buildDerivedBundle(
+  sourceTree: ClientData,
+  req: DerivedRefRequest,
+  deps: DerivedDeps,
+): DerivedBundle {
+  const mutations = typeof req.mutations === "function"
+    ? req.mutations(sourceTree)
+    : req.mutations;
+  const clientData = deps.applyMutations(sourceTree, mutations);
+  return {
+    clientData,
+    projection: deps.runProjection(clientData),
+    scenarioLabel: req.label,
+  };
+}
