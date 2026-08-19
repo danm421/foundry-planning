@@ -72,6 +72,28 @@ export function toPercent(rate: number): number {
   return Math.round(rate * 100 * 10_000) / 10_000;
 }
 
+/**
+ * How a row's numbers spell themselves in their own boxes — the single source
+ * of truth for both ends of the raw-string map. The workspace SEEDS `rowRaw`
+ * with this (on load and on "Add a debt"); the list below falls back to it for
+ * a manual row that has no entry yet. Spelling the same field independently at
+ * each end is how a seeded value and a displayed one drift apart.
+ *
+ * Nullable in, zeroed out: a manual debt's own figures are never null, but the
+ * row type shares its shape with real debts, whose figures can be.
+ */
+export function rawInputsFor(d: {
+  balance: number;
+  annualRate: number | null;
+  minimumPayment: number | null;
+}): { balance: string; annualRate: string; minimumPayment: string } {
+  return {
+    balance: String(d.balance),
+    annualRate: String(toPercent(d.annualRate ?? 0)),
+    minimumPayment: String(d.minimumPayment ?? 0),
+  };
+}
+
 export function DebtPaydownDebts({
   rows,
   manualCount,
@@ -101,6 +123,9 @@ export function DebtPaydownDebts({
       <ul className="divide-y divide-hair">
         {rows.map((r) => {
           const usable = r.annualRate !== null && r.minimumPayment !== null;
+          // Read only by the manual branches below, where a row's own figure
+          // is the fallback until the client types over it.
+          const spelled = rawInputsFor(r);
           return (
             <li key={r.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-2.5">
               <input
@@ -131,7 +156,7 @@ export function DebtPaydownDebts({
                   // decimal point the client just typed (React restores the
                   // pre-"." digits on the next render, so "5." becomes "5"
                   // and the next keystroke appends onto the integer).
-                  value={rowRaw[r.id]?.balance ?? String(r.balance)}
+                  value={rowRaw[r.id]?.balance ?? spelled.balance}
                   onValueChange={(v) => edits.onBalance(r.id, v)}
                   aria-label={`Balance for ${r.name}`}
                   className={BALANCE_CLS}
@@ -145,7 +170,7 @@ export function DebtPaydownDebts({
                   className={RATE_CLS}
                   inputMode="decimal"
                   aria-label={`Interest rate for ${r.name}`}
-                  value={rowRaw[r.id]?.annualRate ?? String(toPercent(r.annualRate ?? 0))}
+                  value={rowRaw[r.id]?.annualRate ?? spelled.annualRate}
                   onChange={(e) => edits.onRate(r.id, e.target.value)}
                 />
               ) : r.rateUnknown ? (
@@ -174,7 +199,7 @@ export function DebtPaydownDebts({
 
               {r.manual ? (
                 <CurrencyInput
-                  value={rowRaw[r.id]?.minimumPayment ?? String(r.minimumPayment ?? 0)}
+                  value={rowRaw[r.id]?.minimumPayment ?? spelled.minimumPayment}
                   onValueChange={(v) => edits.onPayment(r.id, v)}
                   aria-label={`Monthly payment for ${r.name}`}
                   className={RATE_CLS}

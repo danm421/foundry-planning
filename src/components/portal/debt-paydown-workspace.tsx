@@ -7,6 +7,7 @@ import { DebtPaydownChart } from "@/components/portal/debt-paydown-chart";
 import { DebtPaydownSchedule } from "@/components/portal/debt-paydown-schedule";
 import {
   DebtPaydownDebts,
+  rawInputsFor,
   toPercent,
   type PaydownRow,
   type RowRawInputs,
@@ -16,6 +17,7 @@ import {
   comparePaydown,
   monthLabel,
   monthsUntil,
+  paydownChartIsEmpty,
   solveExtraForTarget,
   MAX_PAYDOWN_MONTHS,
   type PaydownDebt,
@@ -86,18 +88,6 @@ let manualIdCounter = 0;
 function parseAmount(raw: string): number {
   const n = Number(raw);
   return raw.trim() === "" || !Number.isFinite(n) ? 0 : n;
-}
-
-function rawInputsFor(d: { balance: number; annualRate: number; minimumPayment: number }): {
-  balance: string;
-  annualRate: string;
-  minimumPayment: string;
-} {
-  return {
-    balance: String(d.balance),
-    annualRate: String(toPercent(d.annualRate)),
-    minimumPayment: String(d.minimumPayment),
-  };
 }
 
 /**
@@ -393,8 +383,9 @@ export function DebtPaydownWorkspace({
   }
 
   const nothingUsable = selected.length === 0;
-  const chartEmpty =
-    Math.max(comparison.baseline.balanceSeries.length, comparison.plan.balanceSeries.length) < 2;
+  // Asked of the data, not of the component: `DebtPaydownChart` renders bare
+  // null in this case, so the words below have to come from here.
+  const chartEmpty = paydownChartIsEmpty(comparison);
 
   return (
     <div className="space-y-5 p-6 lg:p-10">

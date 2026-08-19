@@ -13,7 +13,12 @@ import {
 } from "chart.js";
 import { useThemeName, chartChrome, dataPalette } from "@/lib/chart-colors";
 import { fmtUsd } from "@/lib/portal/format";
-import { monthLabel, type PaydownComparison } from "@/lib/calculators/debt-paydown";
+import {
+  monthLabel,
+  paydownChartIsEmpty,
+  paydownChartPoints,
+  type PaydownComparison,
+} from "@/lib/calculators/debt-paydown";
 
 ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Tooltip, Legend);
 
@@ -39,8 +44,8 @@ export function DebtPaydownChart({
   const pal = dataPalette(theme);
 
   const { baseline, plan } = comparison;
-  const length = Math.max(baseline.balanceSeries.length, plan.balanceSeries.length);
-  if (length < 2) return null;
+  if (paydownChartIsEmpty(comparison)) return null;
+  const length = paydownChartPoints(comparison);
 
   const labels = Array.from({ length }, (_, i) => monthLabel(startYear, startMonth, i + 1));
   const pad = (series: number[]): (number | null)[] =>

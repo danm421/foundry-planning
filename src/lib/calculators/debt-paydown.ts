@@ -390,3 +390,24 @@ export function solveExtraForTarget(
     unreachable: false,
   };
 }
+
+/**
+ * Monthly points the balance chart plots — the longer of the two runs, since
+ * the shorter series is padded out to match it.
+ */
+export function paydownChartPoints(c: PaydownComparison): number {
+  return Math.max(c.baseline.balanceSeries.length, c.plan.balanceSeries.length);
+}
+
+/**
+ * A line needs two points. Below that the chart draws nothing at all, so its
+ * caller has to supply the words instead of framing an empty box.
+ *
+ * Lives here, next to the data it judges, rather than in the chart component:
+ * the caller has to ask the question BEFORE deciding to render the chart, and
+ * a rule spelled out in both places is one that drifts back into a bordered
+ * box with nothing going red.
+ */
+export function paydownChartIsEmpty(c: PaydownComparison): boolean {
+  return paydownChartPoints(c) < 2;
+}
