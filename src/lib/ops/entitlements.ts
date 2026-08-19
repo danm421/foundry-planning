@@ -9,6 +9,12 @@ import {
   type StripeItemView,
 } from "@/lib/billing/entitlements";
 import { recordAudit } from "@/lib/audit";
+import { collapseActiveOverrides, type ActiveOverride } from "@/lib/entitlements/overrides";
+
+// Re-exported from their new pure home so importers of this module — including
+// `ops/__tests__/entitlements.test.ts` — are unaffected by the move.
+export { collapseActiveOverrides } from "@/lib/entitlements/overrides";
+export type { OverrideRow, ActiveOverride } from "@/lib/entitlements/overrides";
 
 /** Capability keys the Entitlements tab can toggle (label/description drive the
  *  UI). The AI keys are base entitlements — on everywhere, so an override here
@@ -34,52 +40,7 @@ export const CAPABILITY_KEYS: CapabilityKey[] = [
   },
 ];
 
-/** A raw override row as loaded from the table (mode is DB `text`). */
-export type OverrideRow = {
-  entitlement: string;
-  mode: string;
-  reason: string;
-  setBy: string;
-  expiresAt: Date | null;
-  createdAt: Date;
-};
-
-/** The latest active override for an entitlement, with attribution for the UI. */
-export type ActiveOverride = {
-  entitlement: string;
-  mode: "grant" | "revoke";
-  reason: string;
-  setBy: string;
-  expiresAt: Date | null;
-  createdAt: Date;
-};
-
 const LIVE_SUB_STATUSES = ["trialing", "active", "past_due", "unpaid", "paused"];
-
-/**
- * Pure: keep only active rows (no expiry or future expiry), then the latest row
- * per entitlement by createdAt. `now` is a parameter so this is unit-testable.
- * Result is sorted by entitlement key for stable rendering.
- */
-export function collapseActiveOverrides(rows: OverrideRow[], now: Date): ActiveOverride[] {
-  const latest = new Map<string, OverrideRow>();
-  for (const r of rows) {
-    if (r.expiresAt !== null && r.expiresAt <= now) continue; // expired
-    if (r.mode !== "grant" && r.mode !== "revoke") continue; // defensive
-    const prev = latest.get(r.entitlement);
-    if (!prev || r.createdAt > prev.createdAt) latest.set(r.entitlement, r);
-  }
-  return Array.from(latest.values())
-    .map((r) => ({
-      entitlement: r.entitlement,
-      mode: r.mode as "grant" | "revoke",
-      reason: r.reason,
-      setBy: r.setBy,
-      expiresAt: r.expiresAt,
-      createdAt: r.createdAt,
-    }))
-    .sort((a, b) => a.entitlement.localeCompare(b.entitlement));
-}
 
 /** Load + collapse a firm's active overrides (full rows, for the UI). */
 export async function getActiveOverrides(firmId: string): Promise<ActiveOverride[]> {
