@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, within, fireEvent } from "@testing-library/react";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }),
@@ -44,10 +44,33 @@ function currentSlot(over: Partial<ExpenseRow>): ExpenseRow {
   } as ExpenseRow;
 }
 
+// An explicit plan start year: without `clientInfo` the view falls back to
+// `new Date().getFullYear()`, which would make every current-vs-retirement
+// assertion below silently change meaning at the next new year.
+const CLIENT_INFO = {
+  clientRetirementYear: 2040,
+  clientEndYear: 2075,
+  planStartYear: 2026,
+  planEndYear: 2075,
+};
+
+/** The seeded RETIREMENT living row: anchored to client_retirement, starting
+ *  well after plan start. */
+function retirementSlot(over: Partial<ExpenseRow> = {}): ExpenseRow {
+  return currentSlot({
+    id: "slot-retirement",
+    name: "Retirement Living Expenses",
+    startYear: 2040,
+    startYearRef: "client_retirement",
+    endYearRef: "plan_end",
+    ...over,
+  });
+}
+
 function renderView(expenses: ExpenseRow[]) {
   render(
     <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
-      <IncomeExpensesView {...BASE_PROPS} initialExpenses={expenses} />
+      <IncomeExpensesView {...BASE_PROPS} clientInfo={CLIENT_INFO} initialExpenses={expenses} />
     </ClientAccessProvider>,
   );
 }
@@ -98,5 +121,23 @@ describe("IncomeExpensesView — a living row that spends whatever's left", () =
     expect(
       screen.getByRole("button", { name: /Edit amount for Current Living Expenses/i }),
     ).toBeInTheDocument();
+  });
+
+  // --- the absorb toggle is offered on the CURRENT row only ------------------
+
+  it("offers the absorb toggle when editing the CURRENT living row", () => {
+    renderView([currentSlot({})]);
+    fireEvent.click(screen.getByRole("button", { name: "Edit Current Living Expenses" }));
+    expect(screen.getByText(/Spend whatever/)).toBeInTheDocument();
+  });
+
+  it("hides the absorb toggle when editing the RETIREMENT living row", () => {
+    // The solver's retirement living-expense lever has no absorb guard, so a
+    // retirement row that spent every leftover dollar would make the retirement
+    // solve flat and its answer meaningless. The write layer rejects it too —
+    // this is the affordance that stops the advisor reaching that 400 at all.
+    renderView([retirementSlot()]);
+    fireEvent.click(screen.getByRole("button", { name: "Edit Retirement Living Expenses" }));
+    expect(screen.queryByText(/Spend whatever/)).toBeNull();
   });
 });

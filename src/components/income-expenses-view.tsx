@@ -33,6 +33,7 @@ import { useClientAccess } from "./client-access-provider";
 import Row from "@/components/income-expenses/row";
 import Group from "@/components/income-expenses/group";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
+import { isRetirementLivingExpense } from "@/lib/solver/living-expense";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1185,6 +1186,21 @@ function ExpenseDialog({
     return resolved ?? currentYear + 20;
   });
 
+  // Only the CURRENT living row may spend the remaining cash flow; the write
+  // layer rejects the flag on a retirement row (ABSORB_RETIREMENT_ERROR in
+  // expenses-writes.ts) because the solver's retirement living-expense lever
+  // has no absorb guard. Derived from live dialog state, not from `editing`, so
+  // moving the start year onto retirement hides the checkbox immediately
+  // instead of letting the save come back 400.
+  const absorbEligible =
+    type === "living" &&
+    !isRetirementLivingExpense({ type, startYear, endYear, startYearRef }, planStartYear);
+  // One definition for "this row is actually absorbing": the checkbox, the
+  // amount label and the submitted payload must never disagree. A legacy row
+  // that stored the flag while retirement-shaped reads as NOT absorbing, so
+  // editing it clears the flag rather than re-submitting an unsaveable value.
+  const absorbActive = absorbEligible && absorbsRemaining;
+
   // Eligible education funding = household accounts (client/spouse) plus any
   // owned by the beneficiary. Recomputed as the "For" person changes.
   const householdMemberIds = (familyMembers ?? [])
@@ -1256,7 +1272,7 @@ function ExpenseDialog({
       forFamilyMemberId: type === "education" ? (forFamilyMemberId || null) : null,
       dedicatedAccountIds: type === "education" ? dedicatedAccountIds : [],
       isGoal: type === "education" ? true : isGoal,
-      absorbsRemainingCashFlow: type === "living" ? absorbsRemaining : false,
+      absorbsRemainingCashFlow: absorbActive,
     };
 
     try {
@@ -1444,7 +1460,7 @@ function ExpenseDialog({
             />
           </div>
 
-          {type === "living" && (
+          {absorbEligible && (
             <label className="flex items-center gap-2 text-sm text-ink-2">
               <input
                 type="checkbox"
@@ -1479,7 +1495,7 @@ function ExpenseDialog({
               <>
                 <div>
                   <label className="block text-sm font-medium text-gray-300" htmlFor="exp-amount">
-                    {absorbsRemaining && type === "living" ? (
+                    {absorbActive ? (
                       "Minimum annual spend ($)"
                     ) : (
                       <>Annual Amount ($) <span className="text-red-500">*</span></>
