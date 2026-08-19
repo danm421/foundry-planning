@@ -11,6 +11,17 @@ export interface PortalTab {
 }
 
 /**
+ * The pill's colour scheme. Exported because the account drawer's in-panel tabs
+ * wear the same pill at a different size — sharing the colours here is what
+ * keeps a restyle from landing on the section strips and missing the drawer.
+ */
+export function portalTabColors(active: boolean): string {
+  return active
+    ? "border-accent/50 bg-accent-wash font-medium text-accent-ink"
+    : "border-transparent text-ink-3 hover:text-ink";
+}
+
+/**
  * The portal's section-level tab strip — the pill row that sits under the
  * branding strip and above a section's content.
  *
@@ -46,11 +57,9 @@ export default function PortalTabStrip({
               key={tab.suffix || root}
               href={href}
               aria-current={active ? "page" : undefined}
-              className={`inline-flex min-h-[44px] items-center whitespace-nowrap rounded-full border px-3.5 text-[13px] transition-colors lg:min-h-[34px] ${
-                active
-                  ? "border-accent/50 bg-accent-wash font-medium text-accent-ink"
-                  : "border-transparent text-ink-3 hover:bg-card hover:text-ink"
-              }`}
+              className={`inline-flex min-h-[44px] items-center whitespace-nowrap rounded-full border px-3.5 text-[13px] transition-colors lg:min-h-[34px] ${portalTabColors(
+                active,
+              )} ${active ? "" : "hover:bg-card"}`}
             >
               {tab.label}
             </Link>

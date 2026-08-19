@@ -304,6 +304,15 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
             last4: a.last4,
             isPlaid: a.isPlaidLinked,
             ownerLabel: accountOwnerLabel(a.id),
+            // A bank account holds cash and nothing else, so it needs no
+            // positions query; anything else earns the tab only once the
+            // loader has seen a position in it.
+            holdingsTab:
+              a.category === "cash"
+                ? "cash"
+                : dto.holdingsAccountIds.includes(a.id)
+                  ? "positions"
+                  : null,
           }}
           onClose={closeDrill}
           busy={inFlight}

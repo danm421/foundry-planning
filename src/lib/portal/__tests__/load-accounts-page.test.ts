@@ -11,6 +11,7 @@ vi.mock("@/db/schema", () => ({
   liabilities: { _name: "liabilities" },
   liabilityOwners: { _name: "liabilityOwners" },
   plaidTransactions: { _name: "plaidTransactions" },
+  accountHoldings: { _name: "accountHoldings" },
 }));
 vi.mock("drizzle-orm", () => ({ and: (...a: unknown[]) => a, eq: (...a: unknown[]) => a, inArray: (...a: unknown[]) => a }));
 
@@ -37,6 +38,15 @@ let mockLiabilities: {
 let mockLiabilityOwners: { liabilityId: string; familyMemberId: string | null; entityId: string | null; percent: string }[] = [];
 let mockPlaidTransactions: unknown[] = [];
 let mockNoScenario = false;
+// One row per position; only the account id is selected.
+let mockHoldings: { accountId: string }[] = [];
+// The `clients` row the loader reads — edit switch plus the three feature switches.
+let mockClientRow: Record<string, boolean> = {
+  portalEditEnabled: true,
+  portalInvestmentsEnabled: true,
+  portalBudgetEnabled: true,
+  portalDocumentsEnabled: true,
+};
 
 vi.mock("@/db", () => ({
   db: {
@@ -44,7 +54,7 @@ vi.mock("@/db", () => ({
       from: (tbl: { _name: string }) => ({
         where: () => {
           if (tbl._name === "clients") {
-            return { limit: () => Promise.resolve([{ portalEditEnabled: true }]) };
+            return { limit: () => Promise.resolve([mockClientRow]) };
           }
           if (tbl._name === "scenarios") {
             return { limit: () => Promise.resolve(mockNoScenario ? [] : [{ id: "scenario-base" }]) };
@@ -77,6 +87,10 @@ vi.mock("@/db", () => ({
             const rows = mockPlaidTransactions;
             return { then: (resolve: (v: unknown) => unknown) => resolve(rows) };
           }
+          if (tbl._name === "accountHoldings") {
+            const rows = mockHoldings;
+            return { then: (resolve: (v: unknown) => unknown) => resolve(rows) };
+          }
           return { then: (resolve: (v: unknown) => unknown) => resolve([]) };
         },
       }),
@@ -101,6 +115,13 @@ beforeEach(() => {
   mockLiabilityOwners = [];
   mockPlaidTransactions = [];
   mockNoScenario = false;
+  mockHoldings = [];
+  mockClientRow = {
+    portalEditEnabled: true,
+    portalInvestmentsEnabled: true,
+    portalBudgetEnabled: true,
+    portalDocumentsEnabled: true,
+  };
 });
 
 import { loadAccountsPage } from "../load-accounts-page";
@@ -163,11 +184,27 @@ describe("loadAccountsPage", () => {
     expect(dto.debts[0]).toMatchObject({ id: "lib1", liabilityType: "credit_card", aprPercentage: 19.99 });
   });
 
+  it("flags the accounts holding a position, de-duped, so the drawer can offer a Holdings tab", async () => {
+    mockHoldings = [{ accountId: "a2" }, { accountId: "a2" }];
+    const dto = await loadAccountsPage("c1");
+    expect(dto.holdingsAccountIds).toEqual(["a2"]);
+  });
+
+  it("flags nothing when the advisor has switched Investments off", async () => {
+    // Same positions — the switch, not the data, is what empties the list. The
+    // tab and the route it reads are gated together.
+    mockHoldings = [{ accountId: "a2" }];
+    mockClientRow = { ...mockClientRow, portalInvestmentsEnabled: false };
+    const dto = await loadAccountsPage("c1");
+    expect(dto.holdingsAccountIds).toEqual([]);
+  });
+
   it("returns an empty DTO when the client has no base scenario", async () => {
     mockNoScenario = true;
     const dto = await loadAccountsPage("c1");
     expect(dto.assets).toEqual([]);
     expect(dto.debts).toEqual([]);
     expect(dto.netWorth).toEqual({ assets: 0, debt: 0, netWorth: 0 });
+    expect(dto.holdingsAccountIds).toEqual([]);
   });
 });

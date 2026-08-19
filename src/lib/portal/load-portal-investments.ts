@@ -14,9 +14,9 @@ import { loadEnrichedHoldings } from "@/lib/investments/load-enriched-holdings";
 import {
   rollupHoldings,
   firmSlugToAssetClassId,
-  holdingMarketValue,
   type HoldingInput,
 } from "@/lib/investments/holdings-rollup";
+import { toPortalHoldings } from "@/lib/portal/portal-holdings";
 import { loadInvestmentSeries } from "@/lib/investments/value-snapshots";
 import { isPortalVisibleAccount } from "@/lib/portal/account-visibility";
 import type { PortalInvestmentAccount, PortalInvestmentsData } from "@/lib/portal/contracts";
@@ -109,20 +109,7 @@ export async function loadPortalInvestments(
           name: nameById.get(x.assetClassId) ?? "Other",
           weight: x.weight,
         })),
-        holdings: rows
-          .map((h) => ({
-            ticker: h.displayTicker,
-            name: h.displayName ?? h.displayTicker ?? "—",
-            shares: Number(h.shares),
-            price: Number(h.price),
-            marketValue: holdingMarketValue({
-              marketValue: h.marketValue != null ? Number(h.marketValue) : null,
-              shares: Number(h.shares),
-              price: Number(h.price),
-            }),
-            costBasis: h.costBasis != null ? Number(h.costBasis) : null,
-          }))
-          .sort((x, y) => y.marketValue - x.marketValue),
+        holdings: toPortalHoldings(rows),
       };
     })
     .sort((x, y) => y.value - x.value);

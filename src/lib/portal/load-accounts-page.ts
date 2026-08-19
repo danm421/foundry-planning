@@ -1,6 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  accountHoldings,
   accounts,
   accountOwners,
   clients,
@@ -10,6 +11,8 @@ import {
   scenarios,
 } from "@/db/schema";
 import { isPortalVisibleAccount } from "@/lib/portal/account-visibility";
+import { portalFeatureColumns } from "@/lib/portal/load-features";
+import { toPortalFeatures } from "@/lib/portal/features";
 import { summarizeNetWorth } from "@/lib/portal/portal-networth";
 import { reconstructDailyNetWorth, type TrendPoint } from "@/lib/portal/networth-trend";
 import { loadPortalDebt, loadPortalTrendTransactions } from "@/lib/portal/load-portal-financials";
@@ -31,6 +34,13 @@ export interface AccountsPageDTO {
   trustEntities: { id: string; name: string }[];
   /** Keyed by account id. A plain record, not a Map — this crosses to a client component. */
   ownersByAccountId: Record<string, AccountsPageOwner[]>;
+  /**
+   * Accounts with at least one position, so the detail drawer knows to offer a
+   * Holdings tab without fetching every account's positions up front. Empty
+   * when the advisor has switched the Investments section off — the tab and the
+   * route it reads are gated together.
+   */
+  holdingsAccountIds: string[];
   editEnabled: boolean;
 }
 
@@ -41,11 +51,12 @@ export interface AccountsPageDTO {
  */
 export async function loadAccountsPage(clientId: string): Promise<AccountsPageDTO> {
   const [client] = await db
-    .select({ portalEditEnabled: clients.portalEditEnabled })
+    .select({ portalEditEnabled: clients.portalEditEnabled, ...portalFeatureColumns })
     .from(clients)
     .where(eq(clients.id, clientId))
     .limit(1);
   const editEnabled = client?.portalEditEnabled ?? false;
+  const investmentsEnabled = toPortalFeatures(client).investments;
 
   const [scenario] = await db
     .select({ id: scenarios.id })
@@ -80,6 +91,7 @@ export async function loadAccountsPage(clientId: string): Promise<AccountsPageDT
       familyMembers: fms,
       trustEntities,
       ownersByAccountId: {},
+      holdingsAccountIds: [],
       editEnabled,
     };
   }
@@ -141,6 +153,20 @@ export async function loadAccountsPage(clientId: string): Promise<AccountsPageDT
     });
   }
 
+  const holdingsAccountIds =
+    investmentsEnabled && accountIds.length
+      ? [
+          ...new Set(
+            (
+              await db
+                .select({ accountId: accountHoldings.accountId })
+                .from(accountHoldings)
+                .where(inArray(accountHoldings.accountId, accountIds))
+            ).map((r) => r.accountId),
+          ),
+        ]
+      : [];
+
   const debts = await loadPortalDebt(clientId, scenario.id);
   const totalAssets = assets.reduce((s, a) => s + a.value, 0);
   const debtTotal = debts.reduce((s, d) => s + d.balance, 0);
@@ -175,6 +201,7 @@ export async function loadAccountsPage(clientId: string): Promise<AccountsPageDT
     familyMembers: fms,
     trustEntities,
     ownersByAccountId,
+    holdingsAccountIds,
     editEnabled,
   };
 }

@@ -16,6 +16,15 @@ export function fmtUsd(n: number): string {
 }
 
 /**
+ * Share counts. Four decimals is the app's convention for a position (see the
+ * holdings presentation page) — fractional shares are real, and whole ones
+ * must not grow a trailing ".0000".
+ */
+export function fmtShares(n: number): string {
+  return n.toLocaleString("en-US", { maximumFractionDigits: 4 });
+}
+
+/**
  * Comma-group a raw numeric *string* for display in an editable amount field
  * ("2700" → "2,700"). Empty or non-numeric input is returned untouched so a
  * half-typed value ("2700.") survives. The caller keeps the raw string as state

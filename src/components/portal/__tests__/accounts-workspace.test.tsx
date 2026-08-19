@@ -10,7 +10,13 @@ vi.mock("../plaid-link-button-dynamic", () => ({ PlaidLinkButton: () => <button 
 vi.mock("../plaid-consent-notice", () => ({ PlaidConsentNotice: () => null }));
 vi.mock("../plaid-account-picker", () => ({ PlaidAccountPicker: () => null }));
 
-const portalFetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }));
+type FetchDouble = (
+  url: string,
+  init?: RequestInit,
+) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
+const defaultPortalFetch: FetchDouble = () =>
+  Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({} as unknown) });
+const portalFetch = vi.fn<FetchDouble>(defaultPortalFetch);
 vi.mock("../portal-mode-context", () => ({
   usePortalFetch: () => portalFetch,
   usePortalMode: () => ({ mode: "client", clientId: "c1" }),
@@ -34,12 +40,18 @@ function dto(over: Partial<AccountsPageDTO> = {}): AccountsPageDTO {
     familyMembers: [{ id: "fm1", firstName: "Pat", lastName: "Client", role: "client" }],
     trustEntities: [],
     ownersByAccountId: { a1: [{ familyMemberId: "fm1", entityId: null, percent: "1" }] },
+    holdingsAccountIds: ["a2"],
     editEnabled: true,
     ...over,
   };
 }
 
-beforeEach(() => portalFetch.mockClear());
+beforeEach(() => {
+  // mockClear keeps the last mockImplementation, so a test that stubs a
+  // response would silently answer every later test's fetches too.
+  portalFetch.mockReset();
+  portalFetch.mockImplementation(defaultPortalFetch);
+});
 
 /**
  * A rail row, scoped to the nav. An account card's accessible name carries its
@@ -87,7 +99,7 @@ describe("AccountsWorkspace", () => {
     fireEvent.click(getByText("Joint Checking"));
     // Detail replaces the list — the sibling account is gone.
     expect(container.textContent).not.toContain("Rollover IRA");
-    expect(container.textContent).toContain("Recent activity");
+    expect(getByRole("button", { name: "Activity" })).toBeTruthy();
     fireEvent.click(getByRole("button", { name: /Back/ }));
     expect(container.textContent).toContain("Rollover IRA");
   });
@@ -264,8 +276,8 @@ describe("AccountsWorkspace", () => {
 
     // The PUT never resolves during this test — the window it protects must
     // stay observable so a second click can't double-submit.
-    let resolveSave!: (v: { ok: boolean; json: () => Promise<Record<string, unknown>> }) => void;
-    const deferred = new Promise<{ ok: boolean; json: () => Promise<Record<string, unknown>> }>((resolve) => {
+    let resolveSave!: (v: { ok: boolean; status: number; json: () => Promise<Record<string, unknown>> }) => void;
+    const deferred = new Promise<{ ok: boolean; status: number; json: () => Promise<Record<string, unknown>> }>((resolve) => {
       resolveSave = resolve;
     });
     portalFetch.mockImplementationOnce(() => deferred);
@@ -279,7 +291,7 @@ describe("AccountsWorkspace", () => {
     expect(getByRole("button", { name: "Add Account or Loan" })).toBeDisabled();
 
     await act(async () => {
-      resolveSave({ ok: true, json: async () => ({}) });
+      resolveSave({ ok: true, status: 200, json: async () => ({}) });
     });
   });
 
@@ -289,8 +301,8 @@ describe("AccountsWorkspace", () => {
     fireEvent.click(getByText("Joint Checking"));
 
     // The DELETE never resolves during this test — same reasoning as the save case.
-    let resolveDelete!: (v: { ok: boolean; json: () => Promise<Record<string, unknown>> }) => void;
-    const deferred = new Promise<{ ok: boolean; json: () => Promise<Record<string, unknown>> }>((resolve) => {
+    let resolveDelete!: (v: { ok: boolean; status: number; json: () => Promise<Record<string, unknown>> }) => void;
+    const deferred = new Promise<{ ok: boolean; status: number; json: () => Promise<Record<string, unknown>> }>((resolve) => {
       resolveDelete = resolve;
     });
     portalFetch.mockImplementationOnce(() => deferred);
@@ -303,7 +315,136 @@ describe("AccountsWorkspace", () => {
     expect(getByRole("button", { name: "Add Account or Loan" })).toBeDisabled();
 
     await act(async () => {
-      resolveDelete({ ok: true, json: async () => ({}) });
+      resolveDelete({ ok: true, status: 200, json: async () => ({}) });
     });
+  });
+  // ---- Holdings tab ----
+
+  it("shows the account's positions under Holdings, largest-first from the route", async () => {
+    portalFetch.mockImplementation((url: string) =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve(
+            url.startsWith("/api/portal/accounts/a2/holdings")
+              ? {
+                  holdings: [
+                    { ticker: "VTI", name: "Vanguard Total Stock", shares: 500, price: 240, marketValue: 120_000, costBasis: 90_000 },
+                    { ticker: null, name: "Treasury 4.25% 2030", shares: 25_000, price: 99.5, marketValue: 24_875, costBasis: null },
+                  ],
+                }
+              : {},
+          ),
+      }),
+    );
+    const { getByText, getByRole } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(getByText("Rollover IRA"));
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Holdings" }));
+    });
+    const list = getByRole("list", { name: "Holdings" });
+    expect(list.textContent).toContain("VTI");
+    // The ticker takes the title line, so the name joins the share count below it.
+    expect(list.textContent).toContain("Vanguard Total Stock · 500 sh at $240");
+    expect(list.textContent).toContain("$120,000");
+    // Untickered positions fall back to their name and still print a value.
+    expect(list.textContent).toContain("Treasury 4.25% 2030");
+    // No ticker, so the name is not repeated under itself.
+    expect(list.textContent).toContain("25,000 sh at $100");
+    expect(list.textContent).not.toContain("Treasury 4.25% 2030 · ");
+    expect(list.textContent).toContain("$24,875");
+    expect(portalFetch).toHaveBeenCalledWith("/api/portal/accounts/a2/holdings");
+  });
+
+  it("lists a bank account as cash without asking the holdings route", async () => {
+    const { getByText, getByRole } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(getByText("Joint Checking"));
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Holdings" }));
+    });
+    const list = getByRole("list", { name: "Holdings" });
+    expect(list.textContent).toContain("Cash");
+    expect(list.textContent).toContain("$10,000");
+    // A checking account holds one thing; querying positions for it is waste.
+    const urls = (portalFetch.mock.calls as unknown as [string][]).map((c) => c[0]);
+    expect(urls.some((u) => u.includes("/holdings"))).toBe(false);
+  });
+
+  it("offers no Holdings tab for an account with nothing in it", () => {
+    // Same retirement account, but the loader saw no positions — e.g. the
+    // advisor switched the Investments section off.
+    const { getByText, queryByRole, container } = render(
+      <AccountsWorkspace dto={dto({ holdingsAccountIds: [] })} />,
+    );
+    fireEvent.click(getByText("Rollover IRA"));
+    expect(queryByRole("button", { name: "Holdings" })).toBeNull();
+    expect(container.textContent).toContain("Recent activity");
+  });
+
+  it("does not carry the Holdings tab over to the next account opened", async () => {
+    const { getByText, getByRole, queryByRole, container } = render(
+      <AccountsWorkspace dto={dto({ holdingsAccountIds: [] })} />,
+    );
+    // a1 is cash, so it has the tab; a2 now has neither positions nor cash.
+    fireEvent.click(getByText("Joint Checking"));
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Holdings" }));
+    });
+    fireEvent.click(getByRole("button", { name: /Back/ }));
+    fireEvent.click(getByText("Rollover IRA"));
+    expect(queryByRole("button", { name: "Holdings" })).toBeNull();
+    // Falls back to activity rather than rendering an empty body.
+    expect(container.textContent).toContain("Recent activity");
+  });
+  // ---- Activity states ----
+  // The three fallbacks the tab renders instead of a transaction list. Untested
+  // before the fetch was factored into one hook; pinned here so the shared hook
+  // cannot quietly lose a branch.
+
+  it("tells an advisor when the client keeps transactions private", async () => {
+    portalFetch.mockImplementation(() =>
+      Promise.resolve({ ok: false, status: 403, json: () => Promise.resolve({}) }),
+    );
+    const { getByText, container } = render(<AccountsWorkspace dto={dto()} />);
+    await act(async () => {
+      fireEvent.click(getByText("Joint Checking"));
+    });
+    expect(container.textContent).toContain("The client keeps transactions private.");
+  });
+
+  it("says so when recent activity fails to load for any other reason", async () => {
+    portalFetch.mockImplementation(() =>
+      Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) }),
+    );
+    const { getByText, container } = render(<AccountsWorkspace dto={dto()} />);
+    await act(async () => {
+      fireEvent.click(getByText("Joint Checking"));
+    });
+    expect(container.textContent).toContain("Couldn’t load recent activity.");
+    expect(container.textContent).not.toContain("private");
+  });
+
+  it("says so when holdings fail to load", async () => {
+    portalFetch.mockImplementation((url: string) =>
+      url.includes("/holdings")
+        ? Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) })
+        : defaultPortalFetch(url),
+    );
+    const { getByText, getByRole, container } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(getByText("Rollover IRA"));
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Holdings" }));
+    });
+    expect(container.textContent).toContain("Couldn’t load holdings.");
+  });
+
+  it("reports an empty account rather than an endless skeleton", async () => {
+    const { getByText, getByRole, container } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(getByText("Rollover IRA"));
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Holdings" }));
+    });
+    expect(container.textContent).toContain("No holdings for this account yet.");
   });
 });
