@@ -27,7 +27,7 @@ vi.mock("@/db/schema", () => ({
   clients: { _name: "clients" },
   crmHouseholdContacts: { _name: "crm_household_contacts" },
 }));
-vi.mock("drizzle-orm", () => ({ eq: (...a: unknown[]) => a, and: (...a: unknown[]) => a }));
+vi.mock("drizzle-orm", () => ({ eq: (...a: unknown[]) => a, and: (...a: unknown[]) => a, inArray: (...a: unknown[]) => a }));
 const intakePendingMock = vi.fn<() => Promise<boolean>>(() => Promise.resolve(false));
 vi.mock("@/lib/intake/queries", () => ({
   hasUnsubmittedPrefilledForm: () => intakePendingMock(),
@@ -64,6 +64,29 @@ beforeEach(() => {
   intakePendingMock.mockResolvedValue(false);
 });
 
+/** A `clients` row as the route selects it. The three portal feature columns
+ *  are NOT NULL default-true in the schema, so a realistic row always carries
+ *  them — a fixture that omitted them would let a dropped projection pass. */
+const clientRow = (over: Record<string, unknown> = {}) => ({
+  firmId: "firm-1",
+  advisorId: "adv-1",
+  crmHouseholdId: "hh-1",
+  portalEditEnabled: true,
+  portalInvestmentsEnabled: true,
+  portalBudgetEnabled: true,
+  portalDocumentsEnabled: true,
+  ...over,
+});
+
+const primaryContact = (over: Record<string, unknown> = {}) => ({
+  role: "primary",
+  firstName: "Casey",
+  lastName: "Cooper",
+  preferredName: null,
+  email: "casey@example.com",
+  ...over,
+});
+
 describe("GET /api/portal/me", () => {
   it("returns client identity + advisor-resolved firm branding for a bound client", async () => {
     // Advisor-distinct values (deliberately different from the beforeEach
@@ -75,8 +98,8 @@ describe("GET /api/portal/me", () => {
       firmName: "Advisor Brand",
       faviconUrl: null,
     });
-    selectQueue.push([{ firmId: "firm-1", advisorId: "adv-1", crmHouseholdId: "hh-1", portalEditEnabled: true }]);
-    selectQueue.push([{ firstName: "Casey", lastName: "Cooper", email: "casey@example.com" }]);
+    selectQueue.push([clientRow()]);
+    selectQueue.push([primaryContact()]);
     const res = await GET();
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -86,6 +109,8 @@ describe("GET /api/portal/me", () => {
       mode: "client",
       editEnabled: true,
       intakePending: false,
+      features: { investments: true, budget: true, documents: true },
+      greetingName: "Casey",
     });
     expect(brandingForClientMock).toHaveBeenCalledWith("firm-1", "adv-1");
     expect(firmNameMock).not.toHaveBeenCalled();
@@ -93,8 +118,8 @@ describe("GET /api/portal/me", () => {
 
   it("sets intakePending true when the client has an unsubmitted prefilled form", async () => {
     intakePendingMock.mockResolvedValue(true);
-    selectQueue.push([{ firmId: "firm-1", advisorId: "adv-1", crmHouseholdId: "hh-1", portalEditEnabled: true }]);
-    selectQueue.push([{ firstName: "Casey", lastName: "Cooper", email: "casey@example.com" }]);
+    selectQueue.push([clientRow()]);
+    selectQueue.push([primaryContact()]);
     const res = await GET();
     const body = await res.json();
     expect(body.intakePending).toBe(true);
@@ -102,7 +127,7 @@ describe("GET /api/portal/me", () => {
   });
 
   it("degrades gracefully with no primary contact and no branding anywhere", async () => {
-    selectQueue.push([{ firmId: "firm-1", advisorId: "adv-1", crmHouseholdId: "hh-1", portalEditEnabled: false }]);
+    selectQueue.push([clientRow({ portalEditEnabled: false })]);
     selectQueue.push([]); // no primary contact
     brandingForClientMock.mockResolvedValue(null); // no logo, advisor or firm
     getBrandingMock.mockResolvedValue(null);
@@ -122,8 +147,8 @@ describe("GET /api/portal/me", () => {
   // "Foundry Planning" default (which is what naively mapping
   // `branding?.firmName ?? <fallback>` would produce).
   it("resolves the firm's real name even when it has no logo anywhere", async () => {
-    selectQueue.push([{ firmId: "firm-nologo", advisorId: "adv-2", crmHouseholdId: "hh-2", portalEditEnabled: true }]);
-    selectQueue.push([{ firstName: "Jamie", lastName: "Client", email: "jamie@example.com" }]);
+    selectQueue.push([clientRow({ firmId: "firm-nologo", advisorId: "adv-2", crmHouseholdId: "hh-2" })]);
+    selectQueue.push([primaryContact({ firstName: "Jamie", lastName: "Client", email: "jamie@example.com" })]);
     brandingForClientMock.mockResolvedValue(null); // no advisor override, no firm logo
     getBrandingMock.mockResolvedValue({
       displayName: "Cached Meridian Wealth",
@@ -138,6 +163,79 @@ describe("GET /api/portal/me", () => {
 
     expect(body.firm).toEqual({ name: "Meridian Wealth Live", logoUrl: null });
     expect(firmNameMock).toHaveBeenCalledWith("firm-nologo", "Cached Meridian Wealth");
+  });
+
+  // The mobile app has no other way to learn a section was switched off: it
+  // builds its tab bar from this payload. Without the switches it would show
+  // Budget/Investments/Documents and then 403 on every fetch behind them —
+  // exactly the "mobile build that predates the switch" case that
+  // requirePortalFeature was written to catch.
+  it("carries the advisor's feature switches so a client can hide a switched-off section", async () => {
+    selectQueue.push([
+      clientRow({ portalInvestmentsEnabled: false, portalDocumentsEnabled: false }),
+    ]);
+    selectQueue.push([primaryContact()]);
+    const res = await GET();
+    const body = await res.json();
+    expect(body.features).toEqual({ investments: false, budget: true, documents: false });
+  });
+
+  // Each switch has to reach its own key. All three columns are boolean, so a
+  // cross-wired projection would typecheck clean and hide the wrong section.
+  it("maps each switch to its own key", async () => {
+    selectQueue.push([
+      clientRow({
+        portalInvestmentsEnabled: false,
+        portalBudgetEnabled: true,
+        portalDocumentsEnabled: true,
+      }),
+    ]);
+    selectQueue.push([primaryContact()]);
+    const bodyA = await (await GET()).json();
+    expect(bodyA.features).toEqual({ investments: false, budget: true, documents: true });
+
+    selectQueue.push([
+      clientRow({
+        portalInvestmentsEnabled: true,
+        portalBudgetEnabled: false,
+        portalDocumentsEnabled: true,
+      }),
+    ]);
+    selectQueue.push([primaryContact()]);
+    const bodyB = await (await GET()).json();
+    expect(bodyB.features).toEqual({ investments: true, budget: false, documents: true });
+  });
+
+  // The web portal's welcome line names the whole household ("John & Jane"),
+  // via portalGreetingName. The phone greeted the primary contact alone, so a
+  // two-person household saw a different name on each device.
+  it("greets both spouses, primary first", async () => {
+    selectQueue.push([clientRow()]);
+    selectQueue.push([
+      primaryContact({ firstName: "John", lastName: "Doe" }),
+      { role: "spouse", firstName: "Jane", lastName: "Doe", preferredName: null, email: null },
+    ]);
+    const body = await (await GET()).json();
+    expect(body.greetingName).toBe("John & Jane");
+    // displayName stays the primary contact's own full name — it identifies
+    // the signed-in client, which is a different question from who to greet.
+    expect(body.client.displayName).toBe("John Doe");
+  });
+
+  it("prefers a preferred name in the greeting", async () => {
+    selectQueue.push([clientRow()]);
+    selectQueue.push([
+      primaryContact({ firstName: "Katherine", lastName: "Doe", preferredName: "Kate" }),
+    ]);
+    const body = await (await GET()).json();
+    expect(body.greetingName).toBe("Kate");
+  });
+
+  it("greets nobody rather than a dangling separator when there is no contact", async () => {
+    selectQueue.push([clientRow()]);
+    selectQueue.push([]);
+    const body = await (await GET()).json();
+    expect(body.greetingName).toBe("");
   });
 
   it("propagates auth errors through authErrorResponse", async () => {
@@ -158,8 +256,8 @@ describe("GET /api/portal/me", () => {
 
   it("includes advisor mode in response when act-as advisor", async () => {
     resolveMock.mockResolvedValue({ clientId: "c1", mode: "advisor", clerkUserId: "adv" });
-    selectQueue.push([{ firmId: "firm-1", advisorId: "adv-1", crmHouseholdId: "hh-1" }]);
-    selectQueue.push([{ firstName: "Casey", lastName: "Cooper", email: "casey@example.com" }]);
+    selectQueue.push([clientRow({ portalEditEnabled: undefined })]);
+    selectQueue.push([primaryContact()]);
     const res = await GET();
     expect(res.status).toBe(200);
     const body = await res.json();

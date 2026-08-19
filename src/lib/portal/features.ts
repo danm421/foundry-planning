@@ -6,11 +6,30 @@
 // two navs, the Manage Portal toggles — can import it. The DB read lives in
 // `load-features.ts`.
 
+import type { PortalFeatureFlags } from "@/lib/portal/contracts";
+
 export const PORTAL_FEATURE_KEYS = ["investments", "budget", "documents"] as const;
 
 export type PortalFeatureKey = (typeof PORTAL_FEATURE_KEYS)[number];
 
 export type PortalFeatures = Record<PortalFeatureKey, boolean>;
+
+/**
+ * Compile-time parity between this module's `PortalFeatures` and the wire
+ * shape `PortalMeDTO.features` carries. contracts.ts cannot import this file
+ * (it is type-only for the mobile build, which has no `@/` mapping into the
+ * web src), so the shape is written twice and reconciled here: adding a key to
+ * PORTAL_FEATURE_KEYS without adding it to PortalFeatureFlags — or vice versa
+ * — stops compiling, rather than silently shipping a switch mobile can't see.
+ */
+type Expect<T extends true> = T;
+type Covers<A, B> = A extends B ? true : false;
+// Never referenced by design — the assertion *is* the instantiation, which
+// fails to compile when the two shapes diverge.
+/* eslint-disable @typescript-eslint/no-unused-vars */
+type _DomainCoversWire = Expect<Covers<PortalFeatures, PortalFeatureFlags>>;
+type _WireCoversDomain = Expect<Covers<PortalFeatureFlags, PortalFeatures>>;
+/* eslint-enable @typescript-eslint/no-unused-vars */
 
 /** Everything on — the pre-feature behavior, and the default for every column. */
 export const DEFAULT_PORTAL_FEATURES: PortalFeatures = {

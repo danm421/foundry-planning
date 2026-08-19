@@ -201,6 +201,31 @@ export interface PortalMeDTO {
   editEnabled: boolean;
   /** True when the client has an unsubmitted prefilled intake form (draft). Mobile gates the intake banner + More row on this. */
   intakePending: boolean;
+  /**
+   * The advisor's portal feature switches. Structurally identical to
+   * `PortalFeatures` in ./features.ts, restated here because this file must
+   * stay import-free for the mobile build; features.ts asserts the two shapes
+   * match, so adding a switch there without adding it here is a compile error.
+   *
+   * Mobile builds its tab bar and More list from this — without it the app
+   * would offer a switched-off section and then 403 on every fetch behind it.
+   */
+  features: PortalFeatureFlags;
+  /**
+   * Who the welcome line greets — the whole household, primary first
+   * ("John & Jane"), preferred names winning. Built by `portalGreetingName`,
+   * the same helper the web chrome uses, so both surfaces greet identically.
+   * `""` when the household has no greetable contact: render a nameless
+   * welcome, not a dangling separator.
+   */
+  greetingName: string;
+}
+
+/** Wire form of the advisor's portal feature switches — see PortalMeDTO.features. */
+export interface PortalFeatureFlags {
+  investments: boolean;
+  budget: boolean;
+  documents: boolean;
 }
 
 // ============================================================================

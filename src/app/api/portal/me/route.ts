@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, crmHouseholdContacts } from "@/db/schema";
 import { authErrorResponse } from "@/lib/authz";
@@ -8,6 +8,9 @@ import { getBranding } from "@/lib/branding/db";
 import { resolveFirmName } from "@/lib/branding/branding";
 import { resolveIntakeBrandingForClient } from "@/lib/branding/resolve-for-client";
 import { hasUnsubmittedPrefilledForm } from "@/lib/intake/queries";
+import { portalFeatureColumns } from "@/lib/portal/load-features";
+import { toPortalFeatures } from "@/lib/portal/features";
+import { portalGreetingName } from "@/lib/portal/greeting-name";
 import type { PortalMeDTO } from "@/lib/portal/contracts";
 
 export const dynamic = "force-dynamic";
@@ -22,31 +25,50 @@ export async function GET(): Promise<Response> {
         advisorId: clients.advisorId,
         crmHouseholdId: clients.crmHouseholdId,
         portalEditEnabled: clients.portalEditEnabled,
+        // Spread onto the row this already reads rather than calling
+        // `loadPortalFeatures` — React.cache() does not dedupe inside a route
+        // handler, so that would be a second round-trip for columns we are
+        // already selecting.
+        ...portalFeatureColumns,
       })
       .from(clients)
       .where(eq(clients.id, clientId))
       .limit(1);
     if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    // Display name/email from the household's primary contact — mirrors
-    // src/app/(portal)/portal/layout.tsx.
+    // Two separate questions, both answered off one read of the household's
+    // greetable contacts:
+    //   displayName/email — who is signed in (the primary contact alone),
+    //   greetingName      — who the welcome line names, which is the whole
+    //                       household ("John & Jane") exactly as the web
+    //                       chrome renders it via portalGreetingName. Greeting
+    //                       only the primary was why a two-person household
+    //                       saw a different name on the phone than on the web.
+    // Mirrors src/app/(portal)/portal/layout.tsx.
     let displayName = "";
     let email = "";
+    let greetingName = "";
     if (row.crmHouseholdId) {
-      const [primary] = await db
+      const contacts = await db
         .select({
+          role: crmHouseholdContacts.role,
           firstName: crmHouseholdContacts.firstName,
           lastName: crmHouseholdContacts.lastName,
+          preferredName: crmHouseholdContacts.preferredName,
           email: crmHouseholdContacts.email,
         })
         .from(crmHouseholdContacts)
         .where(
           and(
             eq(crmHouseholdContacts.householdId, row.crmHouseholdId),
-            eq(crmHouseholdContacts.role, "primary"),
+            inArray(crmHouseholdContacts.role, ["primary", "spouse"]),
           ),
         )
-        .limit(1);
+        // Roles are unique per household (one primary, one spouse), so this
+        // is at most two rows; portalGreetingName orders them, not the query.
+        .limit(2);
+      greetingName = portalGreetingName(contacts);
+      const primary = contacts.find((c) => c.role === "primary");
       if (primary) {
         displayName = `${primary.firstName} ${primary.lastName}`.trim();
         email = primary.email ?? "";
@@ -79,6 +101,8 @@ export async function GET(): Promise<Response> {
       mode,
       editEnabled: row.portalEditEnabled ?? false,
       intakePending,
+      features: toPortalFeatures(row),
+      greetingName,
     };
     return NextResponse.json(dto);
   } catch (err) {
