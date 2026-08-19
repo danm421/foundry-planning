@@ -7,6 +7,6 @@ export const scenarioChangesOptionsSchema = z.object({
 }) satisfies z.ZodType<ScenarioChangesOptions>;
 
 export const SCENARIO_CHANGES_OPTIONS_DEFAULT: ScenarioChangesOptions = {
-  title: "Scenario Changes",
+  title: "Plan Comparison",
   showExplanations: true,
 };

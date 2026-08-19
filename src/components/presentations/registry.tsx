@@ -1165,7 +1165,7 @@ export const entitiesBalanceSheetPage: PresentationPage<BalanceSheetPageData, Ba
 
 export const scenarioChangesPage: PresentationPage<ScenarioChangesPageData, ScenarioChangesOptions> = {
   id: "scenarioChanges",
-  title: "Scenario Changes",
+  title: "Plan Comparison",
   description: "Plain-English table of the edits made in this scenario vs the base plan.",
   category: "Comparison",
   defaultOptions: SCENARIO_CHANGES_OPTIONS_DEFAULT,

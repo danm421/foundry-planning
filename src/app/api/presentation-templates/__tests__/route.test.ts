@@ -54,6 +54,7 @@ describe("GET /api/presentation-templates", () => {
     const body = await res.json();
     expect(body.builtIn.map((t: { slug: string }) => t.slug)).toEqual([
       "foundation-plan",
+      "comparison-plan",
       "cash-flow-details",
     ]);
     expect(body.builtInHidden).toEqual([]);

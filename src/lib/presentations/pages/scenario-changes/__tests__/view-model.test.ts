@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildScenarioChangesData } from "../view-model";
+import { readFile } from "node:fs/promises";
+import { PRESENTATION_PAGES } from "@/components/presentations/registry";
 import { SCENARIO_CHANGES_OPTIONS_DEFAULT } from "../options-schema";
 import type { ScenarioChange } from "@/engine/scenario/types";
 
@@ -7,6 +9,25 @@ function ch(p: Partial<ScenarioChange>): ScenarioChange {
   return { id: "c", scenarioId: "s", opType: "edit", targetKind: "income", targetId: "i1",
     payload: {}, toggleGroupId: null, orderIndex: 0, ...p };
 }
+
+describe("scenario-changes naming", () => {
+  // The report is client-facing: "Scenario" is our internal word, not the
+  // advisor's. Pin the printed heading and the sheet's eyebrow together so a
+  // future edit can't rename one and leave the other contradicting it.
+  it("prints as Plan Comparison on the sheet heading and the eyebrow", async () => {
+    expect(SCENARIO_CHANGES_OPTIONS_DEFAULT.title).toBe("Plan Comparison");
+    const src = await readFile(
+      new URL("../../../../../components/presentations/pages/scenario-changes/page-pdf.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(src).toContain('eyebrow="PLAN COMPARISON"');
+  });
+
+  it("keeps the pageId stable so saved decks still resolve the report", () => {
+    expect(PRESENTATION_PAGES.scenarioChanges.id).toBe("scenarioChanges");
+    expect(PRESENTATION_PAGES.scenarioChanges.title).toBe("Plan Comparison");
+  });
+});
 
 describe("buildScenarioChangesData", () => {
   it("returns the empty state when no context is injected", () => {

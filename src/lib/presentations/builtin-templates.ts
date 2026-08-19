@@ -51,6 +51,22 @@ export const BUILTIN_TEMPLATES: readonly BuiltInTemplate[] = [
     ],
   },
   {
+    slug: "comparison-plan",
+    name: "Comparison Plan",
+    pages: [
+      page("cover", { title: "" }),
+      page("toc"),
+      page("clientProfile"),
+      // asOf:"today" is portable; year/portfolio come from defaults (no frozen 2026).
+      page("balanceSheet", { asOf: "today", includeOutOfEstate: false }),
+      // What we changed, then what those changes bought. scenarioId stays ""
+      // (portable) — the advisor picks the scenario inline in the launcher.
+      page("scenarioChanges"),
+      page("retirementComparison"),
+      page("taxComparison"),
+    ],
+  },
+  {
     slug: "cash-flow-details",
     name: "Cash Flow Details",
     pages: [
