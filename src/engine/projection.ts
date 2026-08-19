@@ -39,6 +39,7 @@ import { expandLinkedIncomes } from "./linked-income";
 import { computeExpenses } from "./expenses";
 import { computeLiabilities } from "./liabilities";
 import { isHeldFlatLiability } from "./liability-kind";
+import { scheduleEndYear } from "../lib/loan-math";
 import {
   buildLiabilitySchedule,
   buildLiabilitySchedules,
@@ -3940,7 +3941,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             id: l.id,
             isInterestDeductible: l.isInterestDeductible ?? false,
             startYear: l.startYear,
-            endYear: l.startYear + Math.ceil(l.termMonths / 12) - 1,
+            // Must be the SCHEDULE's window, not a second copy of it: a
+            // mid-year origination runs the term into a later calendar year
+            // than startYear + ceil(term/12) - 1, and the mismatch made the
+            // plan charge interest in a year it then refused to deduct.
+            endYear: scheduleEndYear(l.startYear, l.termMonths, l.startMonth),
           })),
           // Only the household share of mortgage interest counts toward the
           // household 1040 itemized deduction.

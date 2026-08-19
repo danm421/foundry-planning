@@ -4,6 +4,7 @@ import { buildClientData, basePlanSettings, baseClient, sampleExpenses, sampleAc
 import type { TaxYearParameters } from "../../lib/tax/types";
 import type { ClientData, ClientInfo, Account, PlanSettings } from "../types";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
+import { buildLiabilitySchedules } from "../liability-schedules";
 
 describe("runProjection", () => {
   it("returns one ProjectionYear per year in the plan range", () => {
@@ -639,6 +640,43 @@ describe("projection — bracket/flat tax routing", () => {
     // Mortgage balance 300k at 6.5% = ~$19,500 interest. With isInterestDeductible=true,
     // this should appear in below-line deductions.
     expect(firstYear.taxResult!.flow.belowLineDeductions).toBeGreaterThan(0);
+  });
+
+  it("still deducts a mid-year mortgage's interest in the final year it is charged", () => {
+    // The schedule's window and the deduction's window are two separate
+    // expressions. A mortgage originated in October makes only 3 payments in
+    // its first calendar year, so a 24-month term runs into a THIRD calendar
+    // year — and the deduction window has to reach that far too, or the plan
+    // charges interest it refuses to deduct.
+    const fixture = buildClientData({
+      planSettings: { ...basePlanSettings, taxEngineMode: "bracket", planStartYear: 2026, planEndYear: 2028 },
+      liabilities: [
+        {
+          id: "liab-oct-mortgage",
+          name: "October Mortgage",
+          balance: 300000,
+          interestRate: 0.065,
+          monthlyPayment: 13500,
+          startYear: 2026,
+          startMonth: 10,
+          termMonths: 24,
+          isInterestDeductible: true,
+          extraPayments: [],
+          owners: [],
+        },
+      ],
+    });
+    const years = runProjection({ ...fixture, taxYearRows: FIXTURE_TAX_PARAMS });
+
+    // The schedule really does run into 2028 and really does charge interest
+    // there — without this the deduction assertion below would be vacuous.
+    const schedule = buildLiabilitySchedules(fixture.liabilities).get("liab-oct-mortgage")!;
+    expect(schedule[schedule.length - 1].year).toBe(2028);
+    expect(schedule[schedule.length - 1].interest).toBeGreaterThan(0);
+
+    const finalYear = years.find((y) => y.year === 2028)!;
+    expect(finalYear.deductionBreakdown).toBeDefined();
+    expect(finalYear.deductionBreakdown!.belowLine.interestPaid).toBeGreaterThan(0);
   });
 
   it("derives property tax from real estate accounts into SALT pool", () => {
