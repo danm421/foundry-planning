@@ -1923,9 +1923,11 @@ export default function IncomeExpensesView({
     // edited in the dialog where its label explains what it is. `Row` ignores
     // `value` whenever `amount` AND `onSaveAmount` are both set, so both drop.
     const absorbing = Boolean(expense.absorbsRemainingCashFlow);
-    const floor = Number(expense.annualAmount);
-    const absorbValue =
-      floor > 0 ? `Whatever’s left · min ${fmt(expense.annualAmount)}` : "Whatever’s left";
+    const valueText = !absorbing
+      ? fmt(expense.annualAmount)
+      : Number(expense.annualAmount) > 0
+        ? `Whatever’s left · min ${fmt(expense.annualAmount)}`
+        : "Whatever’s left";
     return (
       <Row
         key={expense.id}
@@ -1980,7 +1982,7 @@ export default function IncomeExpensesView({
         onDelete={canEdit && !expense.isDefault ? () => setDeletingExpense(expense) : undefined}
         label={expense.name}
         meta={[entityName ?? businessName ?? null]}
-        value={absorbing ? absorbValue : fmt(expense.annualAmount)}
+        value={valueText}
         outOfEstate={Boolean(expense.ownerEntityId)}
       />
     );

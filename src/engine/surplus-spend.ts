@@ -24,6 +24,15 @@ export function effectiveSurplusSpendPct(
 }
 
 /**
+ * Whether `e` is a living row flagged to spend the household's remaining cash
+ * flow. The type check is half the rule — a flag on a non-living row is inert —
+ * so every consumer asks through here rather than re-spelling the pair.
+ */
+export function isAbsorbingLivingRow(e: Expense): boolean {
+  return e.type === "living" && e.absorbsRemainingCashFlow === true;
+}
+
+/**
  * The living-expense row, if any, that spends the household's entire remaining
  * cash flow in `year`.
  *
@@ -40,8 +49,7 @@ export function absorbingLivingRow(
 ): Expense | null {
   let winner: Expense | null = null;
   for (const e of expenses) {
-    if (e.type !== "living") continue;
-    if (e.absorbsRemainingCashFlow !== true) continue;
+    if (!isAbsorbingLivingRow(e)) continue;
     if (e.ownerEntityId != null || e.ownerAccountId != null) continue;
     if (!itemProrationGate(e, year, client).include) continue;
     if (winner == null || e.startYear < winner.startYear) winner = e;

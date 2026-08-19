@@ -43,6 +43,41 @@ function dedupeDedicatedIds(ids: string[] | undefined): string[] | undefined {
   return ids && [...new Set(ids)];
 }
 
+// Both write paths enforce the same two rules for `absorbsRemainingCashFlow`,
+// and Task 6's dialog surfaces these strings verbatim — so they live here once
+// rather than as two copies that can drift apart.
+const ABSORB_NON_LIVING_ERROR =
+  "Only living expenses can spend the remaining cash flow.";
+
+/**
+ * The at-most-one-absorbing-row-per-(client, scenario) rule. Pass
+ * `excludeExpenseId` on update: without it, re-saving the absorbing row would
+ * find itself and block the save forever.
+ */
+async function absorbingRowConflict(
+  clientId: string,
+  scenarioId: string,
+  excludeExpenseId?: string,
+): Promise<{ ok: false; status: number; error: string } | null> {
+  const [other] = await db
+    .select({ name: expenses.name })
+    .from(expenses)
+    .where(
+      and(
+        eq(expenses.clientId, clientId),
+        eq(expenses.scenarioId, scenarioId),
+        eq(expenses.absorbsRemainingCashFlow, true),
+        ...(excludeExpenseId ? [ne(expenses.id, excludeExpenseId)] : []),
+      ),
+    );
+  return other
+    ? writeError(
+        400,
+        `Another living expense ("${other.name}") already spends the remaining cash flow.`,
+      )
+    : null;
+}
+
 export async function createExpenseForClient(args: {
   clientId: string;
   firmId: string;
@@ -80,26 +115,10 @@ export async function createExpenseForClient(args: {
 
   // The flag only means anything on a living row; the engine's own filter
   // ignores it elsewhere, but a stored-but-inert flag is a lie the UI renders.
-  if (p.absorbsRemainingCashFlow && p.type !== "living") {
-    return writeError(400, "Only living expenses can spend the remaining cash flow.");
-  }
   if (p.absorbsRemainingCashFlow) {
-    const [existing] = await db
-      .select({ name: expenses.name })
-      .from(expenses)
-      .where(
-        and(
-          eq(expenses.clientId, clientId),
-          eq(expenses.scenarioId, scenarioId),
-          eq(expenses.absorbsRemainingCashFlow, true),
-        ),
-      );
-    if (existing) {
-      return writeError(
-        400,
-        `Another living expense ("${existing.name}") already spends the remaining cash flow.`,
-      );
-    }
+    if (p.type !== "living") return writeError(400, ABSORB_NON_LIVING_ERROR);
+    const conflict = await absorbingRowConflict(clientId, scenarioId);
+    if (conflict) return conflict;
   }
 
   const expense = await db.transaction(async (tx) => {
@@ -199,30 +218,13 @@ export async function updateExpenseForClient(args: {
     return writeError(400, "Default living-expense rows cannot change type.");
   }
   if (p.absorbsRemainingCashFlow) {
-    const effectiveType = p.type ?? target?.type;
-    if (effectiveType !== "living") {
-      return writeError(400, "Only living expenses can spend the remaining cash flow.");
+    // An omitted `type` keeps the stored one.
+    if ((p.type ?? target?.type) !== "living") {
+      return writeError(400, ABSORB_NON_LIVING_ERROR);
     }
     if (target) {
-      // `ne(expenses.id, expenseId)` is the whole guard: without it, re-saving
-      // the absorbing row blocks itself.
-      const [other] = await db
-        .select({ name: expenses.name })
-        .from(expenses)
-        .where(
-          and(
-            eq(expenses.clientId, clientId),
-            eq(expenses.scenarioId, target.scenarioId),
-            eq(expenses.absorbsRemainingCashFlow, true),
-            ne(expenses.id, expenseId),
-          ),
-        );
-      if (other) {
-        return writeError(
-          400,
-          `Another living expense ("${other.name}") already spends the remaining cash flow.`,
-        );
-      }
+      const conflict = await absorbingRowConflict(clientId, target.scenarioId, expenseId);
+      if (conflict) return conflict;
     }
   }
 
