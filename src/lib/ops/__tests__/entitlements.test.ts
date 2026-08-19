@@ -57,6 +57,16 @@ vi.mock("@clerk/nextjs/server", () => ({
           return Promise.resolve();
         },
       },
+      // Stubbed so a per-USER mirror would be OBSERVED here rather than
+      // crashing on a missing key — "never mirrored" is the spec guarantee
+      // that keeps a revoke from waiting on a session-token refresh, so the
+      // test must fail by assertion, not by TypeError.
+      users: {
+        updateUserMetadata: (id: string, p: unknown) => {
+          h.metadataWrites.push({ id, p });
+          return Promise.resolve();
+        },
+      },
     }),
 }));
 
@@ -146,6 +156,7 @@ describe("setEntitlementOverride", () => {
       setBy: "user_op",
     });
     expect(h.inserted[0]).toMatchObject({ firmId: "org_1", entitlement: "ai_copilot", mode: "grant", reason: "comp", setBy: "user_op" });
+    expect(h.insertedInto).toEqual(["overrides"]);
     // No live sub → items []; base AI is always seeded, and the ai_copilot grant
     // is idempotent against it, so the effective set is the full base set.
     expect(result).toEqual(["ai_copilot", "ai_forge", "ai_import"]);
