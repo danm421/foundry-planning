@@ -259,3 +259,103 @@ export function simulatePaydown(
     stalledDebtIds: stalled.map((l) => l.debt.id),
   };
 }
+
+export interface PaydownComparison {
+  /** Every minimum paid separately: no extra, no rolling. */
+  baseline: PaydownRun;
+  plan: PaydownRun;
+  /** baseline.totalInterest − plan.totalInterest. */
+  interestSaved: number;
+  /** baseline.monthsToDebtFree − plan.monthsToDebtFree. */
+  monthsSaved: number;
+  /** "YYYY-MM" the last dollar is paid under the plan. */
+  debtFreeMonth: string;
+}
+
+/**
+ * "YYYY-MM" of the `n`th month, counting the start month as month 1. Mirrors
+ * `payoffMonth()` in `@/lib/portal/loan-details` so a payoff date shown here
+ * and one shown on the Accounts screen mean the same thing.
+ */
+export function monthLabel(startYear: number, startMonth: number, n: number): string {
+  const zeroBased = startYear * 12 + (startMonth - 1) + Math.max(0, n - 1);
+  const year = Math.floor(zeroBased / 12);
+  const month = (zeroBased % 12) + 1;
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+/** The inverse: how many months from the start until "YYYY-MM", 1-based. */
+export function monthsUntil(startYear: number, startMonth: number, target: string): number {
+  const [y, m] = target.split("-").map(Number);
+  return y * 12 + (m - 1) - (startYear * 12 + (startMonth - 1)) + 1;
+}
+
+/**
+ * The plan against doing nothing. The baseline deliberately drops BOTH the
+ * extra payment and the rolling, so a household with two or more debts sees a
+ * real saving even at $0 extra — rolling a cleared debt's payment into the
+ * next one is itself the strategy, and it is the thing worth showing them.
+ */
+export function comparePaydown(
+  debts: PaydownDebt[],
+  opts: PaydownOptions,
+): PaydownComparison {
+  const baseline = simulatePaydown(debts, { ...opts, extraMonthly: 0, roll: false });
+  const plan = simulatePaydown(debts, { ...opts, roll: true });
+  return {
+    baseline,
+    plan,
+    interestSaved: baseline.totalInterest - plan.totalInterest,
+    monthsSaved: baseline.monthsToDebtFree - plan.monthsToDebtFree,
+    debtFreeMonth: monthLabel(opts.startYear, opts.startMonth, plan.monthsToDebtFree),
+  };
+}
+
+export interface GoalSeekResult {
+  /** The extra monthly payment needed, rounded up to the dollar. */
+  extraMonthly: number;
+  /** What that payment actually achieves. */
+  monthsToDebtFree: number;
+  /** True when no extra is needed — they finish by then already. */
+  alreadyOnTrack: boolean;
+}
+
+/**
+ * The payment that gets them done by `targetMonths`. Binary search over the
+ * same simulator: paying the whole balance as extra clears everything in month
+ * one, so the upper bound always satisfies the target and the bracket is
+ * always valid. ~60 runs, which is nothing — this happens between keystrokes.
+ */
+export function solveExtraForTarget(
+  debts: PaydownDebt[],
+  strategy: PaydownStrategy,
+  targetMonths: number,
+  startYear: number,
+  startMonth: number,
+): GoalSeekResult {
+  const run = (extraMonthly: number): PaydownRun =>
+    simulatePaydown(debts, { strategy, extraMonthly, startYear, startMonth });
+
+  const meets = (r: PaydownRun): boolean =>
+    !r.neverPaysOff && r.monthsToDebtFree <= targetMonths;
+
+  const zero = run(0);
+  if (meets(zero)) {
+    return { extraMonthly: 0, monthsToDebtFree: zero.monthsToDebtFree, alreadyOnTrack: true };
+  }
+
+  let lo = 0; // known insufficient
+  let hi = debts.reduce((sum, d) => sum + d.balance, 0) || 1; // known sufficient
+  for (let i = 0; i < 60 && hi - lo > 1; i++) {
+    const mid = (lo + hi) / 2;
+    if (meets(run(mid))) hi = mid;
+    else lo = mid;
+  }
+
+  const extraMonthly = Math.ceil(hi);
+  return {
+    extraMonthly,
+    monthsToDebtFree: run(extraMonthly).monthsToDebtFree,
+    alreadyOnTrack: false,
+  };
+}
