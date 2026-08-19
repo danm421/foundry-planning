@@ -186,7 +186,13 @@ function noteAnnualPaymentForReceivable(n: NoteReceivable): number {
   // extraPayments, asOfBalance back-calculation, and interest-only-balloon).
   const schedule = buildNoteReceivableSchedule(n);
   if (schedule.length === 0) return 0;
-  return Math.round(schedule[0].scheduledPayment);
+  // The card labels this figure "/ yr", so it has to quote a row that covers a
+  // whole year. A note originated mid-year collects only `13 - startMonth`
+  // payments in its origination row — the row after it is the first full
+  // calendar year. (Reading row 0 was safe only while the schedule modelled
+  // every note as starting in January.)
+  const firstFullYear = n.startMonth > 1 && schedule.length > 1 ? schedule[1] : schedule[0];
+  return Math.round(firstFullYear.scheduledPayment);
 }
 
 export function deriveTrustCardData(

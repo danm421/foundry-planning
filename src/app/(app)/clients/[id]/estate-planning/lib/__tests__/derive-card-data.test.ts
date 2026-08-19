@@ -330,6 +330,49 @@ describe("deriveTrustCardData", () => {
     expect(cards[0].linkedNotes[0].annualPayment).toBeLessThan(135_000);
   });
 
+  it("shows a full year of payments for a note originated mid-year", () => {
+    // The card labels this figure "/ yr". It used to read the schedule's first
+    // row, which was safe only while every note was modelled as originating in
+    // January. An October note's first row covers three months — quoting it as
+    // the annual payment understates the note by three quarters.
+    const tree = baseTree({
+      entities: [
+        {
+          id: "e1",
+          name: "Tom's IDGT",
+          entityType: "trust",
+          trustSubType: "idgt",
+          isIrrevocable: true,
+          grantor: "client",
+          includeInPortfolio: false,
+          isGrantor: true,
+        },
+      ] as unknown as ClientData["entities"],
+      notesReceivable: [
+        {
+          id: "n-oct",
+          name: "October sale-to-trust note",
+          faceValue: 1_000_000,
+          basis: 1_000_000,
+          interestRate: 0.05,
+          paymentType: "amortizing",
+          startYear: 2026,
+          startMonth: 10,
+          termMonths: 120,
+          linkedTrustEntityId: "e1",
+          toggleGroupId: null,
+          extraPayments: [],
+          owners: [{ kind: "family_member", familyMemberId: CLIENT_FM_ID, percent: 1 }],
+        },
+      ] as unknown as ClientData["notesReceivable"],
+    });
+    const cards = deriveTrustCardData(tree, 2026);
+    // 10-yr amortizing $1M @ 5% → ~$127k of payments in a full calendar year,
+    // whatever month the note happened to start in.
+    expect(cards[0].linkedNotes[0].annualPayment).toBeGreaterThan(120_000);
+    expect(cards[0].linkedNotes[0].annualPayment).toBeLessThan(135_000);
+  });
+
   it("does not surface notesReceivable linked to a different trust", () => {
     const tree = baseTree({
       entities: [

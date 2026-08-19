@@ -1,6 +1,8 @@
 import {
   calcOriginalBalance,
   computeAmortizationSchedule,
+  monthsInOriginationYear,
+  scheduleEndYear,
   type ScheduleExtraPayment,
 } from "@/lib/loan-math";
 import type { NoteReceivable, NoteScheduleRow, NoteScheduleMap } from "./types";
@@ -63,6 +65,12 @@ export function buildNoteReceivableSchedule(
     amount: ep.amount,
   }));
 
+  // startMonth is the note's own field, already read above to date the
+  // asOfBalance. Omitting it here modelled every note as originating in
+  // January: the origination year collected twelve payments instead of the
+  // `13 - startMonth` it really holds, and the schedule ran out of window
+  // before the term was up, so the routine's rounding-dust step dumped the
+  // unpaid remainder into the last year as one invented balloon.
   const raw = computeAmortizationSchedule(
     originalBalance,
     note.interestRate,
@@ -70,6 +78,7 @@ export function buildNoteReceivableSchedule(
     note.startYear,
     note.termMonths,
     extras,
+    note.startMonth,
   );
 
   return raw.map((r) => ({
@@ -86,15 +95,32 @@ export function buildNoteReceivableSchedule(
  * Interest-only with balloon at the end of the term. Each non-final year pays
  * only interest on the outstanding face value; the final year repays the full
  * principal plus that year's interest.
+ *
+ * A calendar year is charged only for the months of the term that fall inside
+ * it, so an October note accrues three months of interest in its first year
+ * and nine in its last — not twelve in each. The amortizing path has always
+ * prorated both ends, because it simulates month by month. Billing a flat
+ * twelve months per row also overcharged a January note whose term is not a
+ * whole number of years: a 30-month note was charged 36 months of interest. A
+ * January note with a whole-year term is unchanged.
  */
 function buildInterestOnlyBalloonSchedule(
   note: NoteReceivable,
 ): NoteScheduleRow[] {
   const rows: NoteScheduleRow[] = [];
-  const endYear = note.startYear + Math.ceil(note.termMonths / 12) - 1;
+  // Shared with computeAmortizationSchedule rather than hand-copied: this was
+  // the last remaining copy of that expression, and it had disagreed with the
+  // schedule's own window since scheduleEndYear started honouring startMonth.
+  const endYear = scheduleEndYear(note.startYear, note.termMonths, note.startMonth);
   let balance = note.faceValue;
+  let monthsRemaining = note.termMonths;
   for (let y = note.startYear; y <= endYear; y++) {
-    const interest = balance * note.interestRate;
+    const monthsThisYear = Math.min(
+      monthsRemaining,
+      y === note.startYear ? monthsInOriginationYear(note.startMonth) : 12,
+    );
+    monthsRemaining -= monthsThisYear;
+    const interest = balance * note.interestRate * (monthsThisYear / 12);
     const principal = y === endYear ? balance : 0;
     rows.push({
       year: y,
