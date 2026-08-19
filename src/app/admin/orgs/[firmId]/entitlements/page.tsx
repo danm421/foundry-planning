@@ -7,7 +7,11 @@ import {
   computeFirmEntitlements,
   getActiveOverrides,
 } from "@/lib/ops/entitlements";
+import { deriveUserEntitlements } from "@/lib/billing/entitlements";
+import { getActiveUserOverridesForFirm } from "@/lib/entitlements/user-overrides";
+import { listFirmMembers } from "@/lib/crm-tasks/members";
 import EntitlementsClient, { type EntitlementRow } from "./entitlements-client";
+import MemberEntitlements, { type MemberEntitlementRow } from "./member-entitlements";
 
 export const dynamic = "force-dynamic";
 
@@ -20,9 +24,11 @@ export default async function EntitlementsPage({
   const [firm] = await db.select().from(firms).where(eq(firms.firmId, firmId)).limit(1);
   if (!firm) notFound();
 
-  const [effective, overrides] = await Promise.all([
+  const [effective, overrides, members, userOverrides] = await Promise.all([
     computeFirmEntitlements(firmId),
     getActiveOverrides(firmId),
+    listFirmMembers(firmId),
+    getActiveUserOverridesForFirm(firmId),
   ]);
   const overrideByKey = new Map(overrides.map((o) => [o.entitlement, o]));
 
@@ -54,5 +60,35 @@ export default async function EntitlementsPage({
       createdAt: o.createdAt.toISOString(),
     }));
 
-  return <EntitlementsClient firmId={firmId} rows={[...known, ...extra]} />;
+  // Only capabilities flagged per-user get member controls — no dead UI for the
+  // firm-only AI keys, and it matches the gate in `toggleUserEntitlementAction`.
+  const perUserCaps = CAPABILITY_KEYS.filter((c) => c.perUser);
+  const memberRows: MemberEntitlementRow[] = members.map((m) => {
+    const theirs = userOverrides.get(m.userId) ?? [];
+    const eff = deriveUserEntitlements({ firmEntitlements: effective, overrides: theirs });
+    return {
+      userId: m.userId,
+      displayName: m.displayName,
+      email: m.email,
+      caps: perUserCaps.map((c) => {
+        const ov = theirs.find((o) => o.entitlement === c.key) ?? null;
+        return {
+          key: c.key,
+          label: c.label,
+          enabled: eff.includes(c.key),
+          overrideMode: ov?.mode ?? null,
+          reason: ov?.reason ?? null,
+          setBy: ov?.setBy ?? null,
+          createdAt: ov?.createdAt ? ov.createdAt.toISOString() : null,
+        };
+      }),
+    };
+  });
+
+  return (
+    <div className="space-y-8">
+      <EntitlementsClient firmId={firmId} rows={[...known, ...extra]} />
+      <MemberEntitlements firmId={firmId} rows={memberRows} />
+    </div>
+  );
 }
