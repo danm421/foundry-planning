@@ -13,7 +13,7 @@
 // {ok:true,...}.
 import { db } from "@/db";
 import { expenses } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
 import { verifyClientAccess } from "@/lib/clients/authz";
 import {
   assertAccountsInClient,
@@ -78,6 +78,30 @@ export async function createExpenseForClient(args: {
     if (!dedCheck.ok) return writeError(400, dedCheck.reason);
   }
 
+  // The flag only means anything on a living row; the engine's own filter
+  // ignores it elsewhere, but a stored-but-inert flag is a lie the UI renders.
+  if (p.absorbsRemainingCashFlow && p.type !== "living") {
+    return writeError(400, "Only living expenses can spend the remaining cash flow.");
+  }
+  if (p.absorbsRemainingCashFlow) {
+    const [existing] = await db
+      .select({ name: expenses.name })
+      .from(expenses)
+      .where(
+        and(
+          eq(expenses.clientId, clientId),
+          eq(expenses.scenarioId, scenarioId),
+          eq(expenses.absorbsRemainingCashFlow, true),
+        ),
+      );
+    if (existing) {
+      return writeError(
+        400,
+        `Another living expense ("${existing.name}") already spends the remaining cash flow.`,
+      );
+    }
+  }
+
   const expense = await db.transaction(async (tx) => {
     const [row] = await tx
       .insert(expenses)
@@ -108,6 +132,7 @@ export async function createExpenseForClient(args: {
         institutionName: p.institutionName ?? null,
         forFamilyMemberId: p.forFamilyMemberId ?? null,
         isGoal: p.isGoal ?? false,
+        absorbsRemainingCashFlow: p.absorbsRemainingCashFlow ?? false,
       })
       .returning();
     if (dedicatedAccountIds && dedicatedAccountIds.length > 0) {
@@ -155,13 +180,49 @@ export async function updateExpenseForClient(args: {
   // Protect the seeded current/retirement living-expense rows — their type is
   // fixed at "living" so the plan always carries pre- and post-retirement
   // spending. Other field edits (amount, growth, years) stay allowed.
-  if (p.type !== undefined) {
-    const [target] = await db
-      .select({ isDefault: expenses.isDefault, type: expenses.type })
+  //
+  // Effective type after this update: an omitted `type` keeps the stored one.
+  // Needed by BOTH the isDefault type guard below and the absorb guards, so one
+  // query serves all three.
+  let target: { isDefault: boolean; type: ExpenseType; scenarioId: string } | undefined;
+  if (p.type !== undefined || p.absorbsRemainingCashFlow !== undefined) {
+    [target] = await db
+      .select({
+        isDefault: expenses.isDefault,
+        type: expenses.type,
+        scenarioId: expenses.scenarioId,
+      })
       .from(expenses)
       .where(and(eq(expenses.id, expenseId), eq(expenses.clientId, clientId)));
-    if (target?.isDefault && p.type !== target.type) {
-      return writeError(400, "Default living-expense rows cannot change type.");
+  }
+  if (p.type !== undefined && target?.isDefault && p.type !== target.type) {
+    return writeError(400, "Default living-expense rows cannot change type.");
+  }
+  if (p.absorbsRemainingCashFlow) {
+    const effectiveType = p.type ?? target?.type;
+    if (effectiveType !== "living") {
+      return writeError(400, "Only living expenses can spend the remaining cash flow.");
+    }
+    if (target) {
+      // `ne(expenses.id, expenseId)` is the whole guard: without it, re-saving
+      // the absorbing row blocks itself.
+      const [other] = await db
+        .select({ name: expenses.name })
+        .from(expenses)
+        .where(
+          and(
+            eq(expenses.clientId, clientId),
+            eq(expenses.scenarioId, target.scenarioId),
+            eq(expenses.absorbsRemainingCashFlow, true),
+            ne(expenses.id, expenseId),
+          ),
+        );
+      if (other) {
+        return writeError(
+          400,
+          `Another living expense ("${other.name}") already spends the remaining cash flow.`,
+        );
+      }
     }
   }
 
@@ -227,6 +288,9 @@ export async function updateExpenseForClient(args: {
         ...(p.institutionName !== undefined && { institutionName: p.institutionName ?? null }),
         ...(p.forFamilyMemberId !== undefined && { forFamilyMemberId: p.forFamilyMemberId ?? null }),
         ...(p.isGoal !== undefined && { isGoal: p.isGoal }),
+        ...(p.absorbsRemainingCashFlow !== undefined && {
+          absorbsRemainingCashFlow: p.absorbsRemainingCashFlow,
+        }),
         updatedAt: new Date(),
       })
       .where(and(eq(expenses.id, expenseId), eq(expenses.clientId, clientId)))
