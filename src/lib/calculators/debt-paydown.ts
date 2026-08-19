@@ -268,8 +268,8 @@ export interface PaydownComparison {
   interestSaved: number;
   /** baseline.monthsToDebtFree − plan.monthsToDebtFree. */
   monthsSaved: number;
-  /** "YYYY-MM" the last dollar is paid under the plan. */
-  debtFreeMonth: string;
+  /** "YYYY-MM" the last dollar is paid under the plan, or null if it never is. */
+  debtFreeMonth: string | null;
 }
 
 /**
@@ -307,24 +307,39 @@ export function comparePaydown(
     plan,
     interestSaved: baseline.totalInterest - plan.totalInterest,
     monthsSaved: baseline.monthsToDebtFree - plan.monthsToDebtFree,
-    debtFreeMonth: monthLabel(opts.startYear, opts.startMonth, plan.monthsToDebtFree),
+    // A plan that never pays off has no real date — MAX_PAYDOWN_MONTHS
+    // rendered through monthLabel would read as a confident date ~50 years
+    // out, on the same screen that names the debt as never clearing.
+    debtFreeMonth: plan.neverPaysOff
+      ? null
+      : monthLabel(opts.startYear, opts.startMonth, plan.monthsToDebtFree),
   };
 }
 
 export interface GoalSeekResult {
-  /** The extra monthly payment needed, rounded up to the dollar. */
+  /** The extra monthly payment needed, rounded up to the dollar. Meaningless
+   *  (the whole remaining balance) when `unreachable` is true. */
   extraMonthly: number;
   /** What that payment actually achieves. */
   monthsToDebtFree: number;
   /** True when no extra is needed — they finish by then already. */
   alreadyOnTrack: boolean;
+  /** True when even paying the entire balance as extra cannot hit the target. */
+  unreachable: boolean;
 }
 
 /**
  * The payment that gets them done by `targetMonths`. Binary search over the
- * same simulator: paying the whole balance as extra clears everything in month
- * one, so the upper bound always satisfies the target and the bracket is
- * always valid. ~60 runs, which is nothing — this happens between keystrokes.
+ * same simulator, bracketed between $0 (already known insufficient — we'd
+ * have returned above) and the whole remaining balance paid as extra. That
+ * upper bound is NOT guaranteed to satisfy the target: a debt whose minimum
+ * does not cover its own monthly interest still burns a month or more just
+ * absorbing interest before the extra payment can touch principal, so the
+ * bracket's top is checked before searching. When even it fails, the target
+ * is unreachable and is reported as such rather than answered with a
+ * spurious payment — the same rule the $0 "already on track" case applies in
+ * the other direction. ~60 runs when reachable, which is nothing — this
+ * happens between keystrokes.
  */
 export function solveExtraForTarget(
   debts: PaydownDebt[],
@@ -341,11 +356,26 @@ export function solveExtraForTarget(
 
   const zero = run(0);
   if (meets(zero)) {
-    return { extraMonthly: 0, monthsToDebtFree: zero.monthsToDebtFree, alreadyOnTrack: true };
+    return {
+      extraMonthly: 0,
+      monthsToDebtFree: zero.monthsToDebtFree,
+      alreadyOnTrack: true,
+      unreachable: false,
+    };
   }
 
   let lo = 0; // known insufficient
-  let hi = debts.reduce((sum, d) => sum + d.balance, 0) || 1; // known sufficient
+  let hi = debts.reduce((sum, d) => sum + d.balance, 0) || 1; // upper bound to test
+  const hiRun = run(hi);
+  if (!meets(hiRun)) {
+    return {
+      extraMonthly: Math.ceil(hi),
+      monthsToDebtFree: hiRun.monthsToDebtFree,
+      alreadyOnTrack: false,
+      unreachable: true,
+    };
+  }
+
   for (let i = 0; i < 60 && hi - lo > 1; i++) {
     const mid = (lo + hi) / 2;
     if (meets(run(mid))) hi = mid;
@@ -357,5 +387,6 @@ export function solveExtraForTarget(
     extraMonthly,
     monthsToDebtFree: run(extraMonthly).monthsToDebtFree,
     alreadyOnTrack: false,
+    unreachable: false,
   };
 }

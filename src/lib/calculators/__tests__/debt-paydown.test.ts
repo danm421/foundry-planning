@@ -32,6 +32,9 @@ describe("simulatePaydown — one debt against the closed form", () => {
     expect(run.balanceSeries[0]).toBeCloseTo(10_000, 2);
     expect(run.balanceSeries.at(-1)).toBe(0);
     expect(run.perDebt[0].payoffMonth).toBe(60);
+    // Single debt, so per-debt interest is total interest — check it against
+    // the same closed form rather than just against run.totalInterest.
+    expect(run.perDebt[0].totalInterest).toBeCloseTo(payment * 60 - 10_000, 1);
     expect(run.neverPaysOff).toBe(false);
   });
 
@@ -57,6 +60,26 @@ describe("simulatePaydown — the rolling pool", () => {
     const base = baseline(debts);
     expect(plan.totalInterest).toBeLessThan(base.totalInterest);
     expect(plan.monthsToDebtFree).toBeLessThan(base.monthsToDebtFree);
+  });
+});
+
+describe("simulatePaydown — the pool from an overshot minimum", () => {
+  // 0% throughout so the arithmetic is exact. A's minimum ($50) overshoots
+  // its own $40 balance; the $10 it can't use has to roll into B THIS SAME
+  // month — a second pool source distinct from a debt cleared in an earlier
+  // month. Month 1: A pays 40 of its 50 minimum and clears, freeing $10;
+  // B pays its $10 minimum (990 left), then absorbs the freed $10 (980 left).
+  it("rolls the unused remainder of an overshooting minimum into the pool the same month", () => {
+    const run = simulatePaydown(
+      [
+        { id: "a", name: "A", balance: 40, annualRate: 0, minimumPayment: 50 },
+        { id: "b", name: "B", balance: 1_000, annualRate: 0, minimumPayment: 10 },
+      ],
+      { ...START, strategy: "avalanche", extraMonthly: 0 },
+    );
+
+    expect(run.perDebt.find((d) => d.id === "a")!.payoffMonth).toBe(1);
+    expect(run.balanceSeries[1]).toBeCloseTo(980, 6);
   });
 });
 
@@ -134,6 +157,21 @@ describe("simulatePaydown — the yearly rows", () => {
     expect(interest).toBeCloseTo(run.totalInterest, 2);
     expect(run.yearly.at(-1)!.endingBalance).toBe(0);
     expect(run.yearly[0].year).toBe(2026);
+
+    // perDebt totalInterest must foot to the same total the yearly rows do.
+    const perDebtInterest = run.perDebt.reduce((s, d) => s + d.totalInterest, 0);
+    expect(perDebtInterest).toBeCloseTo(run.totalInterest, 6);
+
+    // payment must foot to principal + interest for the same years, checked
+    // on the field itself rather than assumed from principal/interest alone.
+    const payment = run.yearly.reduce((s, y) => s + y.payment, 0);
+    expect(payment).toBeCloseTo(principal + interest, 2);
+
+    // Card (higher rate, smaller balance) clears inside year one under
+    // avalanche, so both debts are active in 2026 but only Auto remains by
+    // the final year.
+    expect(run.yearly[0].activeDebts).toBe(2);
+    expect(run.yearly.at(-1)!.activeDebts).toBe(1);
   });
 });
 

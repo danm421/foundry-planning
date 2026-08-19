@@ -51,6 +51,17 @@ describe("comparePaydown", () => {
     const b = comparePaydown(DEBTS, { ...START, strategy: "avalanche", extraMonthly: 900 });
     expect(a.baseline.totalInterest).toBeCloseTo(b.baseline.totalInterest, 6);
   });
+
+  it("gives no date when the plan never pays off", () => {
+    // $100/mo of interest against a $50 minimum: the plan itself stalls, so a
+    // debt-free date would be a confident number for a plan that has none.
+    const stalling: PaydownDebt[] = [
+      { id: "cc", name: "Visa", balance: 5_000, annualRate: 0.24, minimumPayment: 50 },
+    ];
+    const cmp = comparePaydown(stalling, { ...START, strategy: "avalanche", extraMonthly: 0 });
+    expect(cmp.plan.neverPaysOff).toBe(true);
+    expect(cmp.debtFreeMonth).toBeNull();
+  });
 });
 
 describe("solveExtraForTarget", () => {
@@ -64,6 +75,7 @@ describe("solveExtraForTarget", () => {
 
     const solved = solveExtraForTarget(DEBTS, "avalanche", target, 2026, 8);
     expect(solved.alreadyOnTrack).toBe(false);
+    expect(solved.unreachable).toBe(false);
     expect(solved.extraMonthly).toBeGreaterThan(0);
     expect(solved.monthsToDebtFree).toBeLessThanOrEqual(target);
 
@@ -81,6 +93,7 @@ describe("solveExtraForTarget", () => {
     const solved = solveExtraForTarget(DEBTS, "avalanche", 600, 2026, 8);
     expect(solved.alreadyOnTrack).toBe(true);
     expect(solved.extraMonthly).toBe(0);
+    expect(solved.unreachable).toBe(false);
   });
 
   it("still answers when a debt cannot be paid off on its minimum alone", () => {
@@ -89,6 +102,20 @@ describe("solveExtraForTarget", () => {
     ];
     const solved = solveExtraForTarget(stalling, "avalanche", 24, 2026, 8);
     expect(solved.alreadyOnTrack).toBe(false);
+    expect(solved.unreachable).toBe(false);
     expect(solved.monthsToDebtFree).toBeLessThanOrEqual(24);
+  });
+
+  it("reports unreachable when even the whole balance as extra cannot hit the target", () => {
+    // Paying the entire $5,000 balance as extra still leaves a real
+    // month-one interest charge to absorb first (see the doc comment on
+    // solveExtraForTarget): the debt clears in month 2, not month 1, so a
+    // 1-month target is provably out of reach no matter the payment.
+    const stalling: PaydownDebt[] = [
+      { id: "cc", name: "Visa", balance: 5_000, annualRate: 0.24, minimumPayment: 50 },
+    ];
+    const solved = solveExtraForTarget(stalling, "avalanche", 1, 2026, 8);
+    expect(solved.unreachable).toBe(true);
+    expect(solved.alreadyOnTrack).toBe(false);
   });
 });
