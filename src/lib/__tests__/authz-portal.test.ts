@@ -28,6 +28,7 @@ import {
   ForbiddenError,
 } from "@/lib/authz";
 import { UnauthorizedError } from "@/lib/db-helpers";
+import type { EntitlementOverride } from "@/lib/billing/entitlements";
 
 /** A bound portal user whose firm carries the given entitlements. */
 function bindPortalUser(entitlements: string[], advisorId = "u_advisor") {
@@ -102,9 +103,8 @@ describe("requireClientPortalAccess — client_portal entitlement gate", () => {
   });
 });
 
-type Override = { entitlement: string; mode: "grant" | "revoke" };
-const GRANT: Override[] = [{ entitlement: "client_portal", mode: "grant" }];
-const REVOKE: Override[] = [{ entitlement: "client_portal", mode: "revoke" }];
+const GRANT: EntitlementOverride[] = [{ entitlement: "client_portal", mode: "grant" }];
+const REVOKE: EntitlementOverride[] = [{ entitlement: "client_portal", mode: "revoke" }];
 
 /**
  * Hand the overrides to exactly ONE user id; every other id gets nothing and
@@ -112,7 +112,7 @@ const REVOKE: Override[] = [{ entitlement: "client_portal", mode: "revoke" }];
  * resolved against the client's own id instead of their advisor's would see an
  * empty list. `mockResolvedValue` answers for every id, so it proves nothing.
  */
-function overridesForOnly(clerkUserId: string, rows: Override[]) {
+function overridesForOnly(clerkUserId: string, rows: EntitlementOverride[]) {
   getActiveUserOverridesMock.mockImplementation(async (_f: string, u: string) =>
     u === clerkUserId ? rows : [],
   );
