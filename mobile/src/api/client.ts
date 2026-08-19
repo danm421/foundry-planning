@@ -57,7 +57,16 @@ export function createApiClient(opts: ApiClientOpts): ApiClient {
       },
     });
     if (res.status === 401) throw new UnauthorizedError();
-    if (res.status === 403) throw new ForbiddenError();
+    if (res.status === 403) {
+      // A section the advisor switched off answers 403 with its own wording
+      // ("Your advisor has not enabled Investments for this portal"), which is
+      // what the screen shows. Non-JSON 403s (a Clerk HTML redirect) have no
+      // reason to carry, so those keep the generic message.
+      const reason = (res.headers.get("content-type") ?? "").includes("application/json")
+        ? ((await res.json().catch(() => ({}))) as { error?: string }).error
+        : undefined;
+      throw new ForbiddenError(reason);
+    }
     const contentType = res.headers.get("content-type") ?? "";
     if (!contentType.includes("application/json")) throw new NonJsonResponseError(res.status);
     if (!res.ok) {

@@ -54,6 +54,36 @@ describe("createApiClient", () => {
     await expect(api403.get("/x")).rejects.toBeInstanceOf(ForbiddenError);
   });
 
+  // A switched-off portal section answers 403 with the advisor's own wording
+  // ("Your advisor has not enabled Investments for this portal"). Throwing a
+  // bare "forbidden" threw that away, leaving the screen nothing to say beyond
+  // a generic failure.
+  it("carries the server's reason on a 403", async () => {
+    const api = createApiClient({
+      baseUrl: "https://x",
+      getToken: async () => "t",
+      fetchFn: async () =>
+        jsonResponse({ error: "Your advisor has not enabled Investments for this portal" }, 403),
+    });
+    await expect(api.get("/x")).rejects.toThrow(
+      "Your advisor has not enabled Investments for this portal",
+    );
+  });
+
+  it("falls back to a generic reason when a 403 carries no JSON body", async () => {
+    const api = createApiClient({
+      baseUrl: "https://x",
+      getToken: async () => "t",
+      fetchFn: async () =>
+        new Response("<html>nope</html>", {
+          status: 403,
+          headers: { "content-type": "text/html" },
+        }),
+    });
+    await expect(api.get("/x")).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(api.get("/x")).rejects.toThrow("forbidden");
+  });
+
   it("throws NonJsonResponseError when middleware redirects to an HTML page", async () => {
     const api = createApiClient({
       baseUrl: "https://api.test",

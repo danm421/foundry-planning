@@ -44,7 +44,7 @@ describe("GET /api/portal/dashboard", () => {
     expect((await res.json()).toReview.count).toBe(3);
     expect(loadPrivacyMock).not.toHaveBeenCalled();
     expect(loadDashboardMock).toHaveBeenCalledWith("c1", expect.any(Date), ALL_ON, {
-      includeGoals: false,
+      includeGoals: true,
       budgetEnabled: true,
     });
   });
@@ -55,7 +55,7 @@ describe("GET /api/portal/dashboard", () => {
     loadFeaturesMock.mockResolvedValue({ investments: true, budget: false, documents: true });
     await GET();
     expect(loadDashboardMock).toHaveBeenCalledWith("c1", expect.any(Date), ALL_ON, {
-      includeGoals: false,
+      includeGoals: true,
       budgetEnabled: false,
     });
   });
@@ -68,7 +68,7 @@ describe("GET /api/portal/dashboard", () => {
       "c1",
       expect.any(Date),
       { ...ALL_ON, shareBudgets: false },
-      { includeGoals: false, budgetEnabled: true },
+      { includeGoals: true, budgetEnabled: true },
     );
   });
 

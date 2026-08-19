@@ -4,7 +4,9 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import type { PortalInvestmentsData } from "@contracts";
 import { useApi } from "@/api/context";
+import { ForbiddenError } from "@/api/client";
 import { fetchInvestments } from "@/api/portal";
+import { SectionOff } from "@/ui/section-off";
 import { formatMoney } from "@/ui/money";
 import { Tile } from "@/home/tiles";
 import { Sparkline } from "@/home/sparkline";
@@ -19,14 +21,19 @@ export default function Investments() {
   const router = useRouter();
   const [data, setData] = useState<PortalInvestmentsData | null>(null);
   const [error, setError] = useState(false);
+  const [off, setOff] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
       setError(false);
       setData(await fetchInvestments(api));
-    } catch {
-      setError(true);
+    } catch (e) {
+      // 403 here is the advisor's Investments switch, not a fault — the whole
+      // section is gone for this client, so say so instead of offering a retry
+      // that can only fail the same way.
+      if (e instanceof ForbiddenError) setOff(e.message);
+      else setError(true);
     }
   }, [api]);
 
@@ -53,7 +60,9 @@ export default function Investments() {
         <Text className="text-ink text-2xl font-semibold">Investments</Text>
       </View>
 
-      {data === null && !error ? (
+      {off !== null ? (
+        <SectionOff title="Investments" reason={off} />
+      ) : data === null && !error ? (
         <View className="py-24 items-center">
           <ActivityIndicator />
         </View>

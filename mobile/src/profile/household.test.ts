@@ -4,7 +4,8 @@
 // (toFields), the firstName-required Save gate (validateFields), and patch
 // diffing (householdPatch). Mirrors the API (src/app/api/portal/household/
 // route.ts): only changed roles present, only changed fields per role, ""
-// on a nullable field means "clear it" (-> null on the wire). firstName is
+// on a nullable field (email/phone) means "clear it" (-> null on the wire),
+// while the NOT NULL lastName clears to "". firstName is
 // NOT NULL in the DB and must never be emitted as "" or null — a blanked
 // firstName is simply excluded from the patch (the old value stands), and
 // validateFields is what blocks Save so that omission is never silent.
@@ -105,14 +106,29 @@ describe("householdPatch", () => {
     expect(result).toEqual({ primary: { phone: null } });
   });
 
-  it("clearing lastName and email together emits both as null", () => {
+  // lastName is NOT NULL in crm_household_contacts, unlike email/phone. The
+  // API rejects a null name outright ("Name cannot be cleared", 400) — see the
+  // name guard in src/app/api/portal/household/route.ts — so a cleared last
+  // name has to go over the wire as "", the same way the web portal sends it.
+  it("clearing lastName emits \"\" (NOT NULL column), while email clears to null", () => {
     const primary = contact({ id: "p1" });
     const editedPrimary = { ...(toFields(primary) as ContactFields), lastName: "", email: "" };
     const result = householdPatch(
       { primary, spouse: null },
       { primary: editedPrimary, spouse: null },
     );
-    expect(result).toEqual({ primary: { lastName: null, email: null } });
+    expect(result).toEqual({ primary: { lastName: "", email: null } });
+  });
+
+  it("never emits a null lastName, which the API 400s", () => {
+    const primary = contact({ id: "p1" });
+    const editedPrimary = { ...(toFields(primary) as ContactFields), lastName: "" };
+    const result = householdPatch(
+      { primary, spouse: null },
+      { primary: editedPrimary, spouse: null },
+    );
+    expect(result?.primary?.lastName).not.toBeNull();
+    expect(result?.primary?.lastName).toBe("");
   });
 
   it("spouse-only edit omits primary entirely", () => {
