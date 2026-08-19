@@ -25,6 +25,7 @@ import { NotSharedNotice } from "@/components/portal/not-shared-notice";
 import { PortalFeatureOffNotice } from "@/components/portal/feature-off-notice";
 import { PortalSettingsView } from "@/components/portal/portal-settings-view";
 import { CalculatorsScreen } from "@/components/portal/calculators-screen";
+import { DebtPaydownScreen } from "@/components/portal/debt-paydown-screen";
 import { loadPortalPrivacy } from "@/lib/portal/privacy";
 import { toPortalFeatures } from "@/lib/portal/features";
 import { portalGreetingName } from "@/lib/portal/greeting-name";
@@ -156,6 +157,10 @@ export default async function PortalPreviewPage({
     );
   } else if (path === "calculators") {
     section = <CalculatorsScreen basePath={basePath} />;
+  } else if (path === "calculators/debt-paydown") {
+    // requireClientPortalAccess 403s any session carrying an org, so the
+    // preview must never let this screen try to save on its own.
+    section = <DebtPaydownScreen clientId={id} readOnly />;
   } else {
     notFound();
   }
