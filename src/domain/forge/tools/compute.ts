@@ -59,6 +59,7 @@ const PAGES_NEEDING_UNLOADED_CONTEXT = new Set<string>([
   "lifeInsuranceSummary", // needs ctx.lifeInsurance
   "scenarioChanges",      // needs ctx.scenarioChanges — use list_scenarios
   "retirementComparison", // needs bundlesByRef — use compare_scenarios
+  "earlyYearsLadder",     // needs bundlesByRef — one derived plan per rung
 ]);
 
 // Loose result schemas for withOutputRetry: validate the essential shape but

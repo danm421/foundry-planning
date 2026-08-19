@@ -41,6 +41,7 @@ describe("registry — Cash Flow page", () => {
         "cashFlowSavings",
         "clientProfile",
         "cover",
+        "earlyYearsLadder",
         "earlyYearsStanding",
         "entitiesBalanceSheet",
         "entityCashFlow",

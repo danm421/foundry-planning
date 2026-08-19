@@ -352,6 +352,25 @@ import { estimateEarlyYearsStandingPageCount } from "@/lib/presentations/pages/e
 import { buildEarlyYearsStandingData } from "@/lib/presentations/pages/early-years-standing/view-model";
 import { EarlyYearsStandingPagePdf } from "./pages/early-years-standing/page-pdf";
 import { EarlyYearsStandingOptionsControl } from "./pages/early-years-standing/options-control";
+import {
+  EARLY_YEARS_LADDER_OPTIONS_DEFAULT,
+  type EarlyYearsLadderPageData,
+  type EarlyYearsLadderPageOptions,
+} from "@/lib/presentations/pages/early-years-ladder/types";
+import { earlyYearsLadderOptionsSchema } from "@/lib/presentations/pages/early-years-ladder/options-schema";
+import { summarizeEarlyYearsLadderOptions } from "@/lib/presentations/pages/early-years-ladder/summarize-options";
+import { estimateEarlyYearsLadderPageCount } from "@/lib/presentations/pages/early-years-ladder/estimate-page-count";
+import {
+  buildEarlyYearsLadderData,
+  rungKey,
+} from "@/lib/presentations/pages/early-years-ladder/view-model";
+import {
+  resolveRungs,
+  householdCurrentPercent,
+  ladderMutations,
+} from "@/lib/presentations/pages/early-years-ladder/rungs";
+import { EarlyYearsLadderPagePdf } from "./pages/early-years-ladder/page-pdf";
+import { EarlyYearsLadderOptionsControl } from "./pages/early-years-ladder/options-control";
 
 export const CATEGORY_ORDER = [
   "Framing",
@@ -1333,6 +1352,46 @@ export const earlyYearsStandingPage: PresentationPage<
   renderPdf: (input) => <EarlyYearsStandingPagePdf {...input} />,
 };
 
+export const earlyYearsLadderPage: PresentationPage<
+  EarlyYearsLadderPageData,
+  EarlyYearsLadderPageOptions
+> = {
+  id: "earlyYearsLadder",
+  title: "What Saving More Is Worth",
+  description:
+    "Grouped bars at three milestone ages under three savings rates — what raising the payroll contribution is worth, in today's dollars.",
+  category: "Early Years",
+  defaultOptions: EARLY_YEARS_LADDER_OPTIONS_DEFAULT,
+  optionsSchema: earlyYearsLadderOptionsSchema,
+  summarizeOptions: summarizeEarlyYearsLadderOptions,
+  estimatePageCount: () => estimateEarlyYearsLadderPageCount(),
+  OptionsControl: EarlyYearsLadderOptionsControl,
+  // Pinned to Base Case. `requiredScenarioRefs` is also what CAUSES the base
+  // bundle to be loaded — without it the rungs' `from: "base"` resolves to
+  // nothing and every bar goes missing.
+  supportsScenarioOverride: false,
+  requiredScenarioRefs: () => ["base"],
+  // One derived plan per rung: the base tree with a single deferral account
+  // moved so the household lands on that rung's rate. The mutations are a
+  // FACTORY because the account ids and the client's current rate live in the
+  // tree, and `requiredDerivedRefs` sees only page options.
+  requiredDerivedRefs: (o) => {
+    const steps = o.rungs.mode === "relative" ? o.rungs.offsets : o.rungs.percents;
+    return steps.map((step, i) => ({
+      key: rungKey(i),
+      from: "base",
+      label:
+        o.rungs.mode === "relative"
+          ? `${step >= 0 ? "+" : ""}${Math.round(step * 100)}pp`
+          : `${Math.round(step * 100)}%`,
+      mutations: (source: ClientData) =>
+        ladderMutations(source, resolveRungs(o.rungs, householdCurrentPercent(source))[i].percent),
+    }));
+  },
+  buildData: (ctx, options) => buildEarlyYearsLadderData(ctx, options),
+  renderPdf: (input) => <EarlyYearsLadderPagePdf {...input} />,
+};
+
 export const PRESENTATION_PAGES = {
   cover: coverPage,
   toc: tocPage,
@@ -1382,6 +1441,7 @@ export const PRESENTATION_PAGES = {
   retirementComparison: retirementComparisonPage,
   lifeInsuranceSummary: lifeInsuranceSummaryPage,
   earlyYearsStanding: earlyYearsStandingPage,
+  earlyYearsLadder: earlyYearsLadderPage,
 } as const;
 
 export type PresentationPageId = keyof typeof PRESENTATION_PAGES;
