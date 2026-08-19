@@ -1923,11 +1923,15 @@ export default function IncomeExpensesView({
     // edited in the dialog where its label explains what it is. `Row` ignores
     // `value` whenever `amount` AND `onSaveAmount` are both set, so both drop.
     const absorbing = Boolean(expense.absorbsRemainingCashFlow);
-    const valueText = !absorbing
-      ? fmt(expense.annualAmount)
-      : Number(expense.annualAmount) > 0
-        ? `Whatever’s left · min ${fmt(expense.annualAmount)}`
-        : "Whatever’s left";
+    // The value column is sized for a currency figure. "Whatever’s left" alone
+    // already crowds it, so the floor rides on the meta line under the name —
+    // appending it to the value squeezed the name column out of the row
+    // entirely and still clipped at the card edge.
+    const valueText = absorbing ? "Whatever’s left" : fmt(expense.annualAmount);
+    const floorMeta =
+      absorbing && Number(expense.annualAmount) > 0
+        ? `min ${fmt(expense.annualAmount)}`
+        : null;
     return (
       <Row
         key={expense.id}
@@ -1981,7 +1985,7 @@ export default function IncomeExpensesView({
         editMode={canEdit && expenseEdit}
         onDelete={canEdit && !expense.isDefault ? () => setDeletingExpense(expense) : undefined}
         label={expense.name}
-        meta={[entityName ?? businessName ?? null]}
+        meta={[entityName ?? businessName ?? null, floorMeta]}
         value={valueText}
         outOfEstate={Boolean(expense.ownerEntityId)}
       />

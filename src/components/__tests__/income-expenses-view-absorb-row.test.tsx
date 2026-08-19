@@ -67,11 +67,21 @@ describe("IncomeExpensesView — a living row that spends whatever's left", () =
     expect(within(row).queryByText("$0")).toBeNull();
   });
 
-  it("names the floor when one is set", () => {
+  it("names the floor on the meta line, keeping the value cell narrow", () => {
+    // The floor deliberately does NOT ride in the value cell: that column is
+    // sized for a currency figure, and a combined string squeezed the row's
+    // name out of the layout entirely (caught in the browser, not here).
     renderView([
       currentSlot({ absorbsRemainingCashFlow: true, annualAmount: "80000" }),
     ]);
-    expect(screen.getByText("Whatever’s left · min $80,000")).toBeInTheDocument();
+    expect(screen.getByText("Whatever’s left")).toBeInTheDocument();
+    expect(screen.getByText("min $80,000")).toBeInTheDocument();
+    expect(screen.queryByText("Whatever’s left · min $80,000")).toBeNull();
+  });
+
+  it("shows no floor meta when the floor is $0", () => {
+    renderView([currentSlot({ absorbsRemainingCashFlow: true })]);
+    expect(screen.queryByText(/^min \$/)).toBeNull();
   });
 
   it("drops the inline amount editor, so the floor is edited in the dialog", () => {
