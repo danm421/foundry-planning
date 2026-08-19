@@ -12,9 +12,15 @@ vi.mock("@/lib/portal/resolve-portal-client", () => ({
   resolvePortalClient: () => resolvePortalClientMock(),
 }));
 
+// The faithful shape: the real `authErrorResponse` (src/lib/authz.ts:346-348)
+// returns `{ status, body } | null`, never a `Response`. Mocking it that way
+// (rather than returning a `Response` directly) means the route's own
+// `if (r) return NextResponse.json(r.body, { status: r.status })` translation
+// is what's under test, matching every sibling route test
+// (liabilities/__tests__/route.test.ts:131-133).
+const authErrorResponseMock = vi.fn();
 vi.mock("@/lib/authz", () => ({
-  authErrorResponse: (e: unknown) =>
-    new Response(JSON.stringify({ error: (e as Error).message }), { status: 403 }),
+  authErrorResponse: (e: unknown) => authErrorResponseMock(e),
   ForbiddenError,
 }));
 
@@ -78,6 +84,10 @@ beforeEach(() => {
   resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client" });
   requirePortalActiveSubscriptionMock.mockResolvedValue(undefined);
   requirePortalFeatureMock.mockResolvedValue(undefined);
+  // Default: no error in flight, so a route that reaches the catch block
+  // unexpectedly rethrows instead of silently 403ing — matching the sibling
+  // convention (liabilities/__tests__/route.test.ts:99).
+  authErrorResponseMock.mockReturnValue(null);
 });
 
 describe("GET /api/portal/calculators/[key]", () => {
@@ -109,9 +119,22 @@ describe("GET /api/portal/calculators/[key]", () => {
   });
 
   it("403s when the advisor has switched Calculators off", async () => {
-    requirePortalFeatureMock.mockRejectedValue(new ForbiddenError("not enabled"));
+    const forbidden = new ForbiddenError("Your advisor has not enabled Calculators for this portal");
+    requirePortalFeatureMock.mockRejectedValue(forbidden);
+    authErrorResponseMock.mockReturnValue({ status: 403, body: { error: forbidden.message } });
     const res = await GET(new Request("http://localhost"), params("debt-paydown"));
     expect(res.status).toBe(403);
+    expect((await res.json()).error).toMatch(/advisor/i);
+  });
+
+  it("403s and reads nothing when the firm subscription is inactive", async () => {
+    const forbidden = new ForbiddenError("Active subscription required");
+    requirePortalActiveSubscriptionMock.mockRejectedValue(forbidden);
+    authErrorResponseMock.mockReturnValue({ status: 403, body: { error: forbidden.message } });
+    const res = await GET(new Request("http://localhost"), params("debt-paydown"));
+    expect(res.status).toBe(403);
+    // The subscription gate sits ahead of the feature gate — neither ran.
+    expect(requirePortalFeatureMock).not.toHaveBeenCalled();
   });
 });
 
@@ -128,11 +151,24 @@ describe("PUT /api/portal/calculators/[key]", () => {
     await PUT(put({ state: { ...VALID_STATE, clientId: "someone-else" } }), params("debt-paydown"));
     const written = valuesMock.mock.calls[0][0] as { state: Record<string, unknown> };
     expect(written.state).not.toHaveProperty("clientId");
+    // Guards the whole values() object, not just `state` — a top-level
+    // `...body` spread that smuggled an extra key in beside `state` would be
+    // invisible to the assertion above but not to this one.
+    expect(Object.keys(written).sort()).toEqual(["calculatorKey", "clientId", "state"]);
   });
 
   it("400s a bad payload without touching the table", async () => {
     const res = await PUT(put({ state: { strategy: "fastest" } }), params("debt-paydown"));
     expect(res.status).toBe(400);
+    expect(valuesMock).not.toHaveBeenCalled();
+  });
+
+  it("403s and writes nothing when the firm subscription is inactive", async () => {
+    const forbidden = new ForbiddenError("Active subscription required");
+    requirePortalActiveSubscriptionMock.mockRejectedValue(forbidden);
+    authErrorResponseMock.mockReturnValue({ status: 403, body: { error: forbidden.message } });
+    const res = await PUT(put({ state: VALID_STATE }), params("debt-paydown"));
+    expect(res.status).toBe(403);
     expect(valuesMock).not.toHaveBeenCalled();
   });
 

@@ -1,7 +1,10 @@
 // End-to-end proof that a switched-off section's endpoints answer 403 — real
 // `requirePortalFeature`, real `authErrorResponse`, real route handlers, with
-// only the caller identity and the DB stubbed. One route per switch, including
-// Documents, whose gate sits in the vault context rather than the handler.
+// only the caller identity and the DB stubbed. One route per switch — four in
+// total: Investments and Budget gate inline; Documents gates through the
+// vault context rather than the handler; Calculators gates inline too, but
+// its route also calls `requirePortalActiveSubscription` ahead of the feature
+// check, so that gate is stubbed out here to isolate the feature check.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/lib/portal/resolve-portal-client", () => ({
@@ -9,10 +12,15 @@ vi.mock("@/lib/portal/resolve-portal-client", () => ({
     Promise.resolve({ clientId: "c1", mode: "client", clerkUserId: "u1" }),
 }));
 
+vi.mock("@/lib/portal/require-portal-subscription", () => ({
+  requirePortalActiveSubscription: () => Promise.resolve(),
+}));
+
 let features = {
   portalInvestmentsEnabled: true,
   portalBudgetEnabled: true,
   portalDocumentsEnabled: true,
+  portalCalculatorsEnabled: true,
 };
 
 vi.mock("@/db/schema", () => ({
@@ -63,16 +71,23 @@ vi.mock("@/lib/portal/vault-documents", async () => {
 import { GET as investmentsGET } from "@/app/api/portal/investments/route";
 import { GET as budgetsGET } from "@/app/api/portal/budgets/route";
 import { GET as documentsGET } from "@/app/api/portal/documents/route";
+import { GET as calculatorsGET } from "@/app/api/portal/calculators/[key]/route";
 import { NextRequest } from "next/server";
 
 const docsReq = (): NextRequest =>
   new NextRequest("http://localhost/api/portal/documents");
+
+const calculatorsReq = (): [NextRequest, { params: Promise<{ key: string }> }] => [
+  new NextRequest("http://localhost/api/portal/calculators/debt-paydown"),
+  { params: Promise.resolve({ key: "debt-paydown" }) },
+];
 
 beforeEach(() => {
   features = {
     portalInvestmentsEnabled: true,
     portalBudgetEnabled: true,
     portalDocumentsEnabled: true,
+    portalCalculatorsEnabled: true,
   };
 });
 
@@ -94,6 +109,13 @@ describe("a switched-off section's API", () => {
     features.portalDocumentsEnabled = false;
     const res = await documentsGET(docsReq());
     expect(res.status).toBe(403);
+  });
+
+  it("403s GET /api/portal/calculators/debt-paydown", async () => {
+    features.portalCalculatorsEnabled = false;
+    const res = await calculatorsGET(...calculatorsReq());
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toMatch(/advisor/i);
   });
 
   // The switches are independent: turning one off must not close the others.
