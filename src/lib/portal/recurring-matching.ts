@@ -1,6 +1,6 @@
 // Pure recurring-transaction matching / prediction / period logic.
 // NO @/db, Next, or Plaid imports — unit-tested in plain vitest.
-import type { RecurringRowDTO, RecurringsDTO } from "@/lib/portal/contracts";
+import type { RecurringRowDTO, RecurringsDTO, RecurringSuggestionDTO } from "@/lib/portal/contracts";
 export type { RecurringRowDTO };
 export type RecurringsData = RecurringsDTO;
 
@@ -24,7 +24,13 @@ export type TxnMatchInput = {
   date: string; // YYYY-MM-DD
 };
 
-function patternMatches(r: RecurringLike, txn: TxnMatchInput): boolean {
+/** The single definition of "does this rule's text match this transaction".
+ *  Exported so suggestion candidates are tested against the same rule the
+ *  claim path will apply — a second copy of this expression would drift. */
+export function recurringPatternMatches(
+  r: { matchType: "exact" | "contains"; pattern: string },
+  txn: { merchantName: string | null; name: string },
+): boolean {
   const pat = r.pattern.trim().toLowerCase();
   if (!pat) return false;
   for (const f of [txn.merchantName, txn.name]) {
@@ -36,7 +42,7 @@ function patternMatches(r: RecurringLike, txn: TxnMatchInput): boolean {
 }
 
 export function matchesRecurring(r: RecurringLike, txn: TxnMatchInput): boolean {
-  if (!patternMatches(r, txn)) return false;
+  if (!recurringPatternMatches(r, txn)) return false;
   if (txn.amount < r.amountMin || txn.amount > r.amountMax) return false;
   // Period: monthly matches any month; annual matches any month too (period is
   // the year). Budget reservation is gated to the due month by
@@ -190,6 +196,7 @@ type AssembleInput = {
   month: string; // YYYY-MM
   today: string; // YYYY-MM-DD
   now: Date;
+  suggestions?: RecurringSuggestionDTO[];
 };
 
 export function assembleRecurringView(input: AssembleInput): RecurringsData {
@@ -244,7 +251,13 @@ export function assembleRecurringView(input: AssembleInput): RecurringsData {
     }
   }
 
-  return { recurrings, paidSoFar: round2(paidSoFar), leftToPay: round2(leftToPay), month };
+  return {
+    recurrings,
+    paidSoFar: round2(paidSoFar),
+    leftToPay: round2(leftToPay),
+    month,
+    suggestions: input.suggestions ?? [],
+  };
 }
 
 export function describeRules(r: {

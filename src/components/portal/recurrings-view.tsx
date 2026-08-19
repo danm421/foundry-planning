@@ -6,20 +6,20 @@ import { useRouter } from "next/navigation";
 import { RecurringCreateDialog } from "@/components/portal/recurring-create-dialog";
 import { RecurringDetailPanel } from "@/components/portal/recurring-detail-panel";
 import { RecurringProgressRing } from "@/components/portal/recurring-progress-ring";
+import { RecurringSuggestionsList } from "@/components/portal/recurring-suggestions-list";
 import { CategoryBadge } from "@/components/portal/category-badge";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
-import { fmtUsd } from "@/lib/portal/format";
+import { fmtRecurringDue, fmtUsd } from "@/lib/portal/format";
+import type { RecurringSuggestionDTO } from "@/lib/portal/contracts";
 import type { RecurringRowDTO, RecurringsData } from "@/lib/portal/recurring-matching";
 
 type CategoryRow = { id: string; name: string; kind: "group" | "category"; parentId: string | null };
 
 const STATE_ORDER: Record<RecurringRowDTO["state"], number> = { overdue: 0, due: 1, paid: 2 };
-const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-function dueLabel(r: RecurringRowDTO, month: string): string {
-  const mAbbr = MONTH_ABBR[Number(month.slice(5, 7)) - 1];
-  if (r.cadence === "monthly") return r.dueDay ? `${mAbbr} ${r.dueDay}` : "Anytime";
-  return r.dueMonth ? MONTH_ABBR[r.dueMonth - 1] : "Yearly";
+/** Dismissals are remembered on this device only — nothing is written server-side. */
+function dismissedStorageKey(clientId: string): string {
+  return `foundry.portal.recurring-suggestions.dismissed.${clientId}`;
 }
 
 function CheckIcon(): ReactElement {
@@ -34,23 +34,50 @@ export default function RecurringsView({
   data,
   categories,
   editEnabled,
+  clientId,
 }: {
   data: RecurringsData;
   categories: CategoryRow[];
   editEnabled: boolean;
+  clientId: string;
 }): ReactElement {
   const router = useRouter();
   const portalFetch = usePortalFetch();
   const [creating, setCreating] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<RecurringRowDTO | null>(null);
+  const [adding, setAdding] = useState<RecurringSuggestionDTO | null>(null);
+  const [dismissed, setDismissed] = useState<string[]>([]);
   const [detailEl, setDetailEl] = useState<HTMLElement | null>(null);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setDetailEl(document.getElementById("portal-detail"));
   }, []);
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(dismissedStorageKey(clientId));
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (raw) setDismissed(JSON.parse(raw) as string[]);
+    } catch {
+      // A blocked or corrupt store just means nothing has been dismissed.
+    }
+  }, [clientId]);
+
+  function dismissSuggestion(key: string): void {
+    const next = dismissed.includes(key) ? dismissed : [...dismissed, key];
+    setDismissed(next);
+    try {
+      window.localStorage.setItem(dismissedStorageKey(clientId), JSON.stringify(next));
+    } catch {
+      // Nothing to do — the suggestion stays hidden for this visit either way.
+    }
+  }
 
   const sorted = [...data.recurrings].sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state]);
+  // Accepting one means creating a rule, which the read-only portal cannot do.
+  const suggestions = editEnabled
+    ? data.suggestions.filter((s) => !dismissed.includes(s.key))
+    : [];
   const selected = sorted.find((r) => r.id === selectedId) ?? null;
 
   async function remove(id: string): Promise<void> {
@@ -98,7 +125,7 @@ export default function RecurringsView({
                   <span
                     className={`w-16 shrink-0 text-[12px] ${r.state === "overdue" ? "text-crit" : "text-ink-3"}`}
                   >
-                    {r.state === "overdue" ? "Overdue" : dueLabel(r, data.month)}
+                    {r.state === "overdue" ? "Overdue" : fmtRecurringDue(r, data.month)}
                   </span>
                   <span className="w-5 shrink-0 text-center" aria-hidden>
                     {r.categoryIcon ?? "🔁"}
@@ -118,6 +145,13 @@ export default function RecurringsView({
           </ul>
         )}
       </section>
+
+      <RecurringSuggestionsList
+        suggestions={suggestions}
+        month={data.month}
+        onAdd={setAdding}
+        onDismiss={dismissSuggestion}
+      />
 
       {selected &&
         detailEl &&
@@ -145,6 +179,34 @@ export default function RecurringsView({
           onClose={() => setCreating(false)}
           onCreated={() => {
             setCreating(false);
+            router.refresh();
+          }}
+        />
+      )}
+
+      {adding && (
+        <RecurringCreateDialog
+          seed={{
+            name: adding.name,
+            merchantName: null,
+            categoryId: adding.categoryId,
+            amount: adding.predicted,
+          }}
+          categories={categories}
+          initial={{
+            name: adding.name,
+            matchType: adding.matchType,
+            pattern: adding.pattern,
+            amountMin: adding.amountMin,
+            amountMax: adding.amountMax,
+            cadence: adding.cadence,
+            dueDay: adding.dueDay,
+            dueMonth: adding.dueMonth,
+            categoryId: adding.categoryId,
+          }}
+          onClose={() => setAdding(null)}
+          onCreated={() => {
+            setAdding(null);
             router.refresh();
           }}
         />

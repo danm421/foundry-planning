@@ -29,7 +29,8 @@ export function RecurringCreateDialog({
     cadence: "monthly" | "annually";
     dueDay: number | null;
     dueMonth: number | null;
-    categoryId: string;
+    /** Null when prefilled from a suggestion the client never categorised. */
+    categoryId: string | null;
   };
 }): ReactElement {
   const isEdit = recurringId != null;
