@@ -343,17 +343,34 @@ describe("AccountsWorkspace", () => {
     await act(async () => {
       fireEvent.click(getByRole("button", { name: "Holdings" }));
     });
-    const list = getByRole("list", { name: "Holdings" });
-    expect(list.textContent).toContain("VTI");
-    // The ticker takes the title line, so the name joins the share count below it.
-    expect(list.textContent).toContain("Vanguard Total Stock · 500 sh at $240");
-    expect(list.textContent).toContain("$120,000");
-    // Untickered positions fall back to their name and still print a value.
-    expect(list.textContent).toContain("Treasury 4.25% 2030");
-    // No ticker, so the name is not repeated under itself.
-    expect(list.textContent).toContain("25,000 sh at $100");
-    expect(list.textContent).not.toContain("Treasury 4.25% 2030 · ");
-    expect(list.textContent).toContain("$24,875");
+    const table = getByRole("table", { name: "Holdings" });
+    expect(
+      within(table).getAllByRole("columnheader").map((th) => th.textContent),
+    ).toEqual(["Holding", "Shares", "Price", "Cost basis", "Value"]);
+
+    // Cell-by-cell, so a value landing in the wrong column is a failure rather
+    // than a substring that still happens to appear somewhere in the table.
+    const rows = within(table).getAllByRole("row").slice(1); // drop the header row
+    const cellValues = (row: HTMLElement) =>
+      within(row).getAllByRole("cell").map((td) => td.textContent);
+    expect(rows[0].textContent).toContain("VTI");
+    // The ticker takes the first line, so the name repeats beneath it.
+    expect(rows[0].textContent).toContain("Vanguard Total Stock");
+    expect(cellValues(rows[0])).toEqual([
+      "500",
+      "$240.00",
+      "$90,000",
+      "$120,000",
+    ]);
+    // Untickered positions fall back to their name, and a price to the cent
+    // keeps a bond at 99.5 from reading as "$100".
+    expect(rows[1].textContent).toContain("Treasury 4.25% 2030");
+    expect(cellValues(rows[1])).toEqual([
+      "25,000",
+      "$99.50",
+      "—",
+      "$24,875",
+    ]);
     expect(portalFetch).toHaveBeenCalledWith("/api/portal/accounts/a2/holdings");
   });
 

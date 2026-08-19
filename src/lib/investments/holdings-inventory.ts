@@ -1,5 +1,5 @@
 // src/lib/investments/holdings-inventory.ts
-import { holdingMarketValue } from "./holdings-rollup";
+import { holdingMarketValue, reportedCostBasis } from "./holdings-rollup";
 
 /** The subset of an enriched/raw holding row this view reads. Decimal columns
  *  arrive as strings from Drizzle; dates as `YYYY-MM-DD` strings. An enriched
@@ -68,8 +68,7 @@ export function buildHoldingsInventory(
       const price = Number(row.price);
       const mvRaw = row.marketValue != null ? Number(row.marketValue) : null;
       const mv = holdingMarketValue({ marketValue: mvRaw, shares, price });
-      const cbRaw = Number(row.costBasis);
-      const costBasis = Number.isFinite(cbRaw) && cbRaw > 0 ? cbRaw : null;
+      const costBasis = reportedCostBasis(row.costBasis);
       grandTotal += posMv(mv);
       return { row, shares, price, mv, costBasis };
     });
