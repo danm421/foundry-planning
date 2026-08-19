@@ -7131,7 +7131,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           // expense name. The save-remainder destination gets nothing.
           debitChecking(surplusForSplit, {
             category: "expense",
-            label: absorbingRow.name,
+            // Same label shape as every other household expense debit (:4986),
+            // so the Asset Ledger shows the floor and this top-up as two
+            // postings of one row rather than two differently-named lines.
+            label: `Expense: ${absorbingRow.name}`,
             amount: -surplusForSplit,
             sourceId: absorbingRow.id,
             basis: -surplusForSplit, // cash outflow: basis == amount (signed)
