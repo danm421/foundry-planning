@@ -1,7 +1,12 @@
 import { eq } from "drizzle-orm";
 import { clerkClient } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { opsEntitlementOverrides, subscriptions, subscriptionItems } from "@/db/schema";
+import {
+  opsEntitlementOverrides,
+  opsUserEntitlementOverrides,
+  subscriptions,
+  subscriptionItems,
+} from "@/db/schema";
 import {
   deriveEntitlements,
   CLIENT_PORTAL_ENTITLEMENT,
@@ -20,7 +25,15 @@ export type { OverrideRow, ActiveOverride } from "@/lib/entitlements/overrides";
  *  UI). The AI keys are base entitlements — on everywhere, so an override here
  *  is a per-firm kill switch. `client_portal` is the inverse: off everywhere, so
  *  a grant here is the only way to turn it on for a firm. */
-export type CapabilityKey = { key: string; label: string; description: string };
+export type CapabilityKey = {
+  key: string;
+  label: string;
+  description: string;
+  /** True when ops can also aim this key at a SINGLE user inside the firm.
+   *  Only the client portal today — the storage and the resolution take any
+   *  key, so widening later is this flag and nothing else. */
+  perUser?: boolean;
+};
 export const CAPABILITY_KEYS: CapabilityKey[] = [
   {
     key: "ai_import",
@@ -37,6 +50,7 @@ export const CAPABILITY_KEYS: CapabilityKey[] = [
     label: "Client portal",
     description:
       "Off by default. Grant to let this firm invite clients to the portal; revoking locks out clients already using it.",
+    perUser: true,
   },
 ];
 
@@ -135,4 +149,38 @@ export async function setEntitlementOverride(args: {
     metadata: { entitlement, reason, entitlements },
   });
   return entitlements;
+}
+
+/**
+ * Append a per-user override and audit it.
+ *
+ * No Clerk write, deliberately: per-user overrides are never mirrored onto the
+ * user or the membership, so a revoke bites on the very next request instead of
+ * waiting for a session token to refresh. That also means there is nothing here
+ * for the reconcile cron to fall out of sync with.
+ *
+ * Not transactional, matching `setEntitlementOverride`: the row is the durable
+ * source of truth, and the audit writer already swallows its own failures.
+ */
+export async function setUserEntitlementOverride(args: {
+  firmId: string;
+  clerkUserId: string;
+  entitlement: string;
+  mode: "grant" | "revoke";
+  reason: string;
+  setBy: string; // ops clerk_user_id (from requireOpsAdmin)
+}): Promise<void> {
+  const { firmId, clerkUserId, entitlement, mode, reason, setBy } = args;
+  await db
+    .insert(opsUserEntitlementOverrides)
+    .values({ firmId, clerkUserId, entitlement, mode, reason, setBy });
+  await recordAudit({
+    action:
+      mode === "grant" ? "ops.user_entitlement.granted" : "ops.user_entitlement.revoked",
+    resourceType: "firm_member",
+    resourceId: clerkUserId,
+    firmId,
+    actorId: setBy,
+    metadata: { entitlement, reason },
+  });
 }

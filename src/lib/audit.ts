@@ -249,6 +249,8 @@ export type AuditAction =
   // Ops console (cross-org staff actions; actorId = ops user, firmId = target)
   | "ops.entitlement.granted"
   | "ops.entitlement.revoked"
+  | "ops.user_entitlement.granted"
+  | "ops.user_entitlement.revoked"
   | "ops.billing.portal_opened"
   | "ops.billing.trial_extended"
   | "ops.impersonation.started"
