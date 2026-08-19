@@ -18,11 +18,11 @@ export async function GET(): Promise<Response> {
     // off would take the tiles off the web dashboard and leave them on the
     // phone. The DTO echoes `budgetEnabled` so the app can drop them.
     const features = await loadPortalFeatures(clientId);
-    // includeGoals: false — this route serves the mobile home screen, which has
-    // no goals tile and refetches on every open/pull-to-refresh. Flip it on in
-    // the same commit a mobile goals tile lands.
+    // The mobile home screen now renders a Goals funded tile beside net worth,
+    // matching how the web dashboard leads. That tile needs the base-case
+    // projection, so this route pays for it — the reason it used to opt out.
     const dto = await loadPortalDashboard(clientId, new Date(), sharing, {
-      includeGoals: false,
+      includeGoals: true,
       budgetEnabled: features.budget,
     });
     return NextResponse.json(dto);

@@ -1,6 +1,9 @@
 import { Text, View } from "react-native";
-import type { PortalDashboardDTO } from "@contracts";
+import type { PortalDashboardDTO, PortalGoalFunding } from "@contracts";
 import { formatMoney } from "@/ui/money";
+import { goalGapLabel, goalTone, goalYearRange } from "@/goals/funding";
+import { assetGroupWeights } from "./asset-groups";
+import { AllocationBars } from "@/invest/allocation-bars";
 import { tokenToHex } from "@/ui/data-color";
 import { Sparkline } from "./sparkline";
 
@@ -14,6 +17,10 @@ export function Tile({ title, children }: { title: string; children: React.React
 }
 
 export function NetWorthTile({ d }: { d: PortalDashboardDTO["netWorth"] }) {
+  // The web tile breaks the asset side down by account type (a pie); bars are
+  // the phone's idiom for the same shares, and reuse what Investments already
+  // renders an allocation with.
+  const byType = assetGroupWeights(d.assetGroups);
   return (
     <Tile title="Net worth">
       <Text className="text-ink text-3xl font-semibold">{formatMoney(d.netWorth)}</Text>
@@ -22,6 +29,12 @@ export function NetWorthTile({ d }: { d: PortalDashboardDTO["netWorth"] }) {
         <Text className="text-ink-3">Assets {formatMoney(d.assets)}</Text>
         <Text className="text-ink-3">Debt {formatMoney(d.debt)}</Text>
       </View>
+      {byType.length > 0 ? (
+        <View className="mt-4 border-t border-hair pt-3">
+          <Text className="text-ink-3 text-xs uppercase tracking-wide mb-2">By type</Text>
+          <AllocationBars items={byType} />
+        </View>
+      ) : null}
     </Tile>
   );
 }
@@ -114,6 +127,81 @@ export function UpcomingTile({ d }: { d: PortalDashboardDTO["recurrings"] }) {
           </Text>
         </View>
       ))}
+    </Tile>
+  );
+}
+
+const GOAL_TONE_TEXT = { good: "text-good", warn: "text-warn", crit: "text-crit" } as const;
+const GOAL_TONE_BAR = { good: "bg-good", warn: "bg-warn", crit: "bg-crit" } as const;
+
+function GoalRow({ goal }: { goal: PortalGoalFunding }) {
+  const tone = goalTone(goal.pctFunded);
+  const years = goalYearRange(goal);
+  return (
+    <View className="mb-4">
+      <View className="flex-row items-baseline justify-between mb-1">
+        <Text className="text-ink-2 flex-1 mr-3" numberOfLines={1}>
+          {goal.label}
+          {goal.forName ? <Text className="text-ink-3"> · for {goal.forName}</Text> : null}
+        </Text>
+        <Text className={`text-sm font-semibold ${GOAL_TONE_TEXT[tone]}`}>
+          {Math.round(goal.pctFunded * 100)}%
+        </Text>
+      </View>
+      <View className="h-1.5 bg-card-2 rounded-full overflow-hidden">
+        <View
+          className={`h-1.5 ${GOAL_TONE_BAR[tone]}`}
+          style={{ width: `${Math.max(0, Math.min(1, goal.pctFunded)) * 100}%` }}
+        />
+      </View>
+      <View className="flex-row items-baseline justify-between mt-1">
+        <Text className="text-ink-3 text-xs">{years ?? ""}</Text>
+        <Text className="text-ink-3 text-xs">{goalGapLabel(goal)}</Text>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Percent funded per goal, straight off the cash-flow projection — the phone's
+ * half of the web's TileGoalsFunded, which leads that dashboard beside net
+ * worth.
+ *
+ * `projected` false and an empty `goals` are different answers and must read
+ * differently: telling a household with a real plan that they have no goals is
+ * a different lie from telling them it hasn't been projected yet.
+ */
+export function GoalsFundedTile({
+  goals,
+  projected,
+}: {
+  goals: PortalDashboardDTO["goals"];
+  projected: boolean;
+}) {
+  return (
+    <Tile title="Goals funded">
+      {!projected ? (
+        <Text className="text-ink-3">
+          Your plan hasn't been projected yet — funding shows up here once your advisor
+          builds it out.
+        </Text>
+      ) : goals.length === 0 ? (
+        <Text className="text-ink-3">
+          No goals on your plan yet. Your advisor adds them as you set them.
+        </Text>
+      ) : (
+        <>
+          {goals.map((g) => (
+            <GoalRow key={g.id} goal={g} />
+          ))}
+          {/* Names the metric. The advisor side carries a different "funding"
+              number (the solver's liquidity-boundary score), so this one has to
+              say out loud which question it answers. */}
+          <Text className="text-ink-3 text-xs border-t border-hair pt-3">
+            The share of each goal's planned cost your projected cash flow covers.
+          </Text>
+        </>
+      )}
     </Tile>
   );
 }

@@ -6,6 +6,7 @@ import { fetchDashboard } from "@/api/portal";
 import { useMe } from "@/auth/me-gate";
 import { IntakeBanner } from "@/home/intake-banner";
 import {
+  GoalsFundedTile,
   NetThisMonthTile,
   NetWorthTile,
   SpendingTile,
@@ -55,7 +56,9 @@ export default function Home() {
         )}
       </View>
       <Text className="text-ink text-2xl font-semibold mb-4">
-        Hi {me.client.displayName.split(" ")[0] || "there"}
+        {/* The whole household, primary first ("Hi John & Jane") — the same
+            welcome the web portal renders. */}
+        Hi {me.greetingName || "there"}
       </Text>
 
       {me.intakePending && !intakeDismissed ? (
@@ -77,11 +80,20 @@ export default function Home() {
             <Text className="text-warn mb-3">Couldn't refresh. Pull down to try again.</Text>
           ) : null}
           <NetWorthTile d={data.netWorth} />
-          <SpendingTile d={data.spending} />
-          <ToReviewTile d={data.toReview} />
-          <NetThisMonthTile d={data.netThisMonth} />
-          <TopCategoriesTile d={data.topCategories} />
-          <UpcomingTile d={data.recurrings} />
+          <GoalsFundedTile goals={data.goals} projected={data.goalsProjected} />
+          {/* Every remaining tile reads budgeting data. When the advisor
+              switches Budget off the loader skips those queries entirely and
+              echoes `budgetEnabled: false`, so these would render zeros — the
+              web dashboard drops the same five. */}
+          {data.budgetEnabled ? (
+            <>
+              <SpendingTile d={data.spending} />
+              <ToReviewTile d={data.toReview} />
+              <NetThisMonthTile d={data.netThisMonth} />
+              <TopCategoriesTile d={data.topCategories} />
+              <UpcomingTile d={data.recurrings} />
+            </>
+          ) : null}
         </>
       ) : null}
     </ScrollView>
