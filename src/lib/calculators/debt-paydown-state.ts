@@ -17,11 +17,13 @@ import type { PaydownStrategy } from "@/lib/calculators/debt-paydown";
 
 export interface ManualDebt {
   /**
-   * Client-generated. Uniqueness within the payload is enforced by
-   * `validateDebtPaydownState`. Collision with a real liability id is NOT
-   * checked here — this file has no access to the household's liabilities —
-   * and must be guarded at the merge site in a later task, where manual
-   * debts and liabilities are combined into one id-keyed collection.
+   * Client-generated (`m` + a timestamp + a per-tab counter — see
+   * `debt-paydown-workspace.tsx`'s `addManual`). Uniqueness within the
+   * payload is enforced by `validateDebtPaydownState`. Collision with a real
+   * liability id is structurally impossible, not merely unchecked: a
+   * liability id is a Postgres `uuid` (hex digits only), and every manual id
+   * starts with `m`, which is not a hex character — the two id spaces can
+   * never intersect, so no merge-site guard is owed.
    */
   id: string;
   name: string;

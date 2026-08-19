@@ -7,7 +7,9 @@ import { DebtPaydownChart } from "@/components/portal/debt-paydown-chart";
 import { DebtPaydownSchedule } from "@/components/portal/debt-paydown-schedule";
 import {
   DebtPaydownDebts,
+  toPercent,
   type PaydownRow,
+  type ManualRawInputs,
 } from "@/components/portal/debt-paydown-debts";
 import { fmtUsd } from "@/lib/portal/format";
 import {
@@ -79,6 +81,25 @@ const SAVE_FAILED_NOTE =
  */
 let manualIdCounter = 0;
 
+/** Blank or unparseable → 0, matching how a cleared field means "no figure
+ * yet" rather than a validation error while the client is mid-edit. */
+function parseAmount(raw: string): number {
+  const n = Number(raw);
+  return raw.trim() === "" || !Number.isFinite(n) ? 0 : n;
+}
+
+function rawInputsFor(d: { balance: number; annualRate: number; minimumPayment: number }): {
+  balance: string;
+  annualRate: string;
+  minimumPayment: string;
+} {
+  return {
+    balance: String(d.balance),
+    annualRate: String(toPercent(d.annualRate)),
+    minimumPayment: String(d.minimumPayment),
+  };
+}
+
 /**
  * The debt paydown calculator.
  *
@@ -102,6 +123,22 @@ export function DebtPaydownWorkspace({
   const [state, setState] = useState<DebtPaydownState>(dto.state);
   const [saveNote, setSaveNote] = useState<string | null>(null);
   const firstRender = useRef(true);
+
+  // The RAW strings behind the extra-payment field and every manual debt's
+  // amount fields — kept separate from the parsed numbers in `state` because
+  // a controlled input whose `value` is re-derived from a parsed number loses
+  // whatever the number can't represent while it's typed, most visibly a
+  // trailing decimal point: type "5", then ".", and a `String(rate * 100)`
+  // round-trip renders "5" again, so the next digit appends onto the integer
+  // instead of continuing the decimal. These strings ARE what the input
+  // displays; `state` is what the maths and the save use. Both are updated
+  // together on every keystroke — see `setManualField` and the extra-payment
+  // field below — so the two never actually disagree about the VALUE, only
+  // about how it's spelled mid-edit.
+  const [extraRaw, setExtraRaw] = useState(() => String(dto.state.extraMonthly));
+  const [manualRaw, setManualRaw] = useState<ManualRawInputs>(() =>
+    Object.fromEntries(dto.state.manualDebts.map((d) => [d.id, rawInputsFor(d)])),
+  );
 
   const now = useMemo(() => new Date(), []);
   const startYear = now.getFullYear();
@@ -251,7 +288,13 @@ export function DebtPaydownWorkspace({
 
   /** A hand-added debt has no server-known figures to fall back on, so unlike
    * `setOverride` above, every field writes straight into the manual debt
-   * itself — this IS its data, not a patch over something else. */
+   * itself — this IS its data, not a patch over something else.
+   *
+   * Updates TWO pieces of state on every keystroke: the parsed number in
+   * `state.manualDebts` (what the maths and the save use) and the raw typed
+   * string in `manualRaw` (what the field displays). Never derive one from
+   * the other after the fact — that round trip is the decimal-point bug this
+   * split exists to avoid. */
   function setManualField(
     id: string,
     field: "name" | "balance" | "annualRate" | "minimumPayment",
@@ -260,12 +303,18 @@ export function DebtPaydownWorkspace({
     const manualDebts = state.manualDebts.map((d): ManualDebt => {
       if (d.id !== id) return d;
       if (field === "name") return { ...d, name: raw.slice(0, MAX_NAME_LENGTH) };
-      const n = Number(raw);
-      const value = raw.trim() === "" || !Number.isFinite(n) ? 0 : n;
+      const value = parseAmount(raw);
       // Typed as a percent, stored as a fraction — same convention as overrides.
       return field === "annualRate" ? { ...d, annualRate: value / 100 } : { ...d, [field]: value };
     });
     patch({ manualDebts });
+
+    if (field !== "name") {
+      setManualRaw((m) => ({
+        ...m,
+        [id]: { ...(m[id] ?? rawInputsFor({ balance: 0, annualRate: 0, minimumPayment: 0 })), [field]: raw },
+      }));
+    }
   }
 
   function isManual(id: string): boolean {
@@ -274,22 +323,22 @@ export function DebtPaydownWorkspace({
 
   function addManual(): void {
     manualIdCounter += 1;
+    const id = `m${Date.now()}-${manualIdCounter}`;
+    const fresh = { balance: 0, annualRate: 0, minimumPayment: 0 };
     patch({
-      manualDebts: [
-        ...state.manualDebts,
-        {
-          id: `m${Date.now()}-${manualIdCounter}`,
-          name: "New debt",
-          balance: 0,
-          annualRate: 0,
-          minimumPayment: 0,
-        },
-      ],
+      manualDebts: [...state.manualDebts, { id, name: "New debt", ...fresh }],
     });
+    setManualRaw((m) => ({ ...m, [id]: rawInputsFor(fresh) }));
   }
 
   function removeManual(id: string): void {
     patch({ manualDebts: state.manualDebts.filter((d) => d.id !== id) });
+    setManualRaw((m) => {
+      if (!(id in m)) return m;
+      const next = { ...m };
+      delete next[id];
+      return next;
+    });
   }
 
   if (dto.debts.length === 0 && state.manualDebts.length === 0) {
@@ -395,8 +444,11 @@ export function DebtPaydownWorkspace({
             />
             I can pay
             <CurrencyInput
-              value={String(state.extraMonthly)}
-              onValueChange={(v) => patch({ extraMonthly: Number(v) || 0, mode: "extra" })}
+              value={extraRaw}
+              onValueChange={(v) => {
+                setExtraRaw(v);
+                patch({ extraMonthly: parseAmount(v), mode: "extra" });
+              }}
               aria-label="Extra payment each month"
               className="w-28 rounded-md border border-hair bg-card-2 px-2 py-1 text-right tabular text-[13px] text-ink"
             />
@@ -441,6 +493,7 @@ export function DebtPaydownWorkspace({
       <DebtPaydownDebts
         rows={listRows}
         manualCount={state.manualDebts.length}
+        manualRaw={manualRaw}
         edits={{
           onToggle: toggle,
           onRate: (id, v) =>

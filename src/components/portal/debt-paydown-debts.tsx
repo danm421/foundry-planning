@@ -13,7 +13,9 @@ export interface PaydownRow {
   minimumPayment: number | null;
   manual: boolean;
   included: boolean;
-  /** "YYYY-MM" this debt clears under the current plan, when it does. */
+  /** Display-ready month this debt clears under the current plan (e.g.
+   * "Jan 2028"), already formatted by the workspace's own `monthName` — not
+   * the "YYYY-MM" wire format `PaydownDebtResult.payoffMonth` derives from. */
   payoffLabel: string | null;
 }
 
@@ -28,6 +30,14 @@ export interface DebtEdits {
   onAdd: () => void;
 }
 
+/** A manual row's own typed strings, kept separate from the parsed numbers
+ * that drive the maths — see the workspace's `manualRaw` for why. Keyed by
+ * debt id; absent until the workspace has seeded an entry for that id. */
+export type ManualRawInputs = Record<
+  string,
+  { balance: string; annualRate: string; minimumPayment: string }
+>;
+
 const RATE_CLS =
   "w-20 rounded-md border border-hair bg-card-2 px-2 py-1 text-right tabular text-[12px] text-ink";
 const NAME_CLS =
@@ -36,18 +46,25 @@ const BALANCE_CLS =
   "tabular w-24 rounded-md border border-hair bg-card-2 px-2 py-1 text-right text-[13px] text-ink";
 
 /** Fraction → display percent, rounded to keep float division noise (e.g.
- * 5.9999999999998) off the screen. */
-function toPercent(rate: number): number {
+ * 5.9999999999998) off the screen. Exported so the workspace can seed a
+ * manual row's raw percent string with the same rounding when it mints one
+ * (on load and on "Add a debt") — a single source of truth for the
+ * conversion rather than two copies drifting apart. */
+export function toPercent(rate: number): number {
   return Math.round(rate * 100 * 10_000) / 10_000;
 }
 
 export function DebtPaydownDebts({
   rows,
   manualCount,
+  manualRaw,
   edits,
 }: {
   rows: PaydownRow[];
   manualCount: number;
+  /** A manual row's own typed strings — see `ManualRawInputs`. Ignored for
+   * non-manual rows, which never read from it. */
+  manualRaw: ManualRawInputs;
   edits: DebtEdits;
 }): ReactElement {
   return (
@@ -83,7 +100,7 @@ export function DebtPaydownDebts({
                   className={NAME_CLS}
                   value={r.name}
                   maxLength={MAX_NAME_LENGTH}
-                  aria-label="Debt name"
+                  aria-label={`Name for ${r.name}`}
                   onChange={(e) => edits.onName(r.id, e.target.value)}
                 />
               ) : (
@@ -92,9 +109,14 @@ export function DebtPaydownDebts({
 
               {r.manual ? (
                 <CurrencyInput
-                  value={String(r.balance)}
+                  // The RAW typed string, not `String(r.balance)` — a value
+                  // re-derived from the parsed number every render fights a
+                  // decimal point the client just typed (React restores the
+                  // pre-"." digits on the next render, so "5." becomes "5"
+                  // and the next keystroke appends onto the integer).
+                  value={manualRaw[r.id]?.balance ?? String(r.balance)}
                   onValueChange={(v) => edits.onBalance(r.id, v)}
-                  aria-label="Debt balance"
+                  aria-label={`Balance for ${r.name}`}
                   className={BALANCE_CLS}
                 />
               ) : (
@@ -106,7 +128,7 @@ export function DebtPaydownDebts({
                   className={RATE_CLS}
                   inputMode="decimal"
                   aria-label={`Interest rate for ${r.name}`}
-                  value={String(toPercent(r.annualRate ?? 0))}
+                  value={manualRaw[r.id]?.annualRate ?? String(toPercent(r.annualRate ?? 0))}
                   onChange={(e) => edits.onRate(r.id, e.target.value)}
                 />
               ) : r.annualRate === null ? (
@@ -125,7 +147,7 @@ export function DebtPaydownDebts({
 
               {r.manual ? (
                 <CurrencyInput
-                  value={String(r.minimumPayment ?? 0)}
+                  value={manualRaw[r.id]?.minimumPayment ?? String(r.minimumPayment ?? 0)}
                   onValueChange={(v) => edits.onPayment(r.id, v)}
                   aria-label={`Monthly payment for ${r.name}`}
                   className={RATE_CLS}

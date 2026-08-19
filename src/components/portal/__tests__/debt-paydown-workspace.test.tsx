@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { DebtPaydownWorkspace } from "@/components/portal/debt-paydown-workspace";
+import { comparePaydown } from "@/lib/calculators/debt-paydown";
 import { DEFAULT_DEBT_PAYDOWN_STATE } from "@/lib/calculators/debt-paydown-state";
+import { fmtUsd } from "@/lib/portal/format";
 import type { DebtPaydownDTO } from "@/lib/portal/load-debt-paydown";
 
 // The chart needs a canvas; the numbers are what this test is about.
@@ -16,6 +18,9 @@ vi.mock("@/components/portal/debt-paydown-chart", () => ({
 // a real debt whose full balance genuinely can't clear it inside the
 // simulator's own horizon isn't representable through realistic loan
 // numbers, and the render branch, not the maths, is what that test is about.
+// `comparePaydown` itself is left untouched by the mock (spread from
+// `actual`), so importing it directly below gives the test its own oracle
+// for the real simulator's output.
 const { solveExtraForTargetMock } = vi.hoisted(() => ({ solveExtraForTargetMock: vi.fn() }));
 vi.mock("@/lib/calculators/debt-paydown", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/calculators/debt-paydown")>();
@@ -58,8 +63,12 @@ function monthsFromNow(n: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+// Shared by every test (asserted on directly by the autosave describe block
+// below); reset fresh each time so call counts never leak between tests.
+let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }));
+  fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+  vi.stubGlobal("fetch", fetchMock);
 });
 
 describe("DebtPaydownWorkspace", () => {
@@ -133,20 +142,27 @@ describe("DebtPaydownWorkspace", () => {
     fireEvent.click(addButton);
     fireEvent.click(addButton);
     nowSpy.mockRestore();
-    expect(screen.getAllByLabelText("Debt name")).toHaveLength(2);
+    // Both rows still default to "New debt" — qualifying the label by name
+    // (matching the rate/payment siblings) doesn't disambiguate two UNEDITED
+    // rows, so this stays a count check rather than two individually
+    // addressable fields.
+    expect(screen.getAllByLabelText("Name for New debt")).toHaveLength(2);
     expect(screen.queryByText(/own id/i)).toBeNull();
   });
 
   // A hand-added debt used to render its name and balance as plain text and
   // route rate/payment edits into `overrides`, which manual rows never read —
-  // so "Add a debt" led nowhere. All four fields must reach the maths.
+  // so "Add a debt" led nowhere. All four fields must reach the maths: the
+  // assertion below is the REAL simulator's own output for these exact
+  // numbers, so a routing that silently drops any one of the four (balance
+  // stuck at 0, or rate/payment misrouted back into `overrides`, which a
+  // manual id never appears in) produces a DIFFERENT figure and fails.
   it("routes a hand-added debt's own fields into the maths", () => {
     const { container } = render(<DebtPaydownWorkspace dto={dto()} />);
     fireEvent.click(screen.getByRole("button", { name: "Add a debt" }));
-    const beforeFill = container.textContent ?? "";
 
-    fireEvent.change(screen.getByLabelText("Debt name"), { target: { value: "New card" } });
-    fireEvent.change(screen.getByLabelText("Debt balance"), { target: { value: "4000" } });
+    fireEvent.change(screen.getByLabelText("Name for New debt"), { target: { value: "New card" } });
+    fireEvent.change(screen.getByLabelText("Balance for New card"), { target: { value: "4000" } });
     fireEvent.change(screen.getByLabelText("Interest rate for New card"), {
       target: { value: "20" },
     });
@@ -154,12 +170,24 @@ describe("DebtPaydownWorkspace", () => {
       target: { value: "200" },
     });
 
-    // Field values live in <input>s, which contribute nothing to
-    // `textContent` — assert the value directly, then prove the number
-    // actually reached the maths (the payoff dates, saved-interest figure)
-    // by checking the surrounding read-only text changed.
-    expect((screen.getByLabelText("Debt name") as HTMLInputElement).value).toBe("New card");
-    expect(container.textContent).not.toBe(beforeFill);
+    expect((screen.getByLabelText("Name for New card") as HTMLInputElement).value).toBe(
+      "New card",
+    );
+
+    const now = new Date();
+    const expected = comparePaydown(
+      [
+        { id: "l1", name: "Auto loan", balance: 18_400, annualRate: 0.059, minimumPayment: 415 },
+        { id: "manual", name: "New card", balance: 4_000, annualRate: 0.2, minimumPayment: 200 },
+      ],
+      {
+        strategy: "avalanche",
+        extraMonthly: 0,
+        startYear: now.getFullYear(),
+        startMonth: now.getMonth() + 1,
+      },
+    );
+    expect(container.textContent).toContain(fmtUsd(expected.interestSaved));
   });
 
   // Every included debt at (or already near) a zero balance leaves the chart
@@ -200,5 +228,105 @@ describe("DebtPaydownWorkspace", () => {
     );
     expect(container.textContent).toMatch(/not even paying the whole balance/i);
     expect(container.textContent).not.toContain("999,999");
+  });
+
+  // A controlled input whose `value` is re-derived from the parsed number
+  // every render can't represent a state the number can't — most visibly a
+  // trailing decimal point. CurrencyInput only shows its raw (unformatted)
+  // value while focused, so these fire a real focus event first, matching
+  // how a client actually gets to a field before typing into it.
+  it("keeps a typed decimal point in every amount field instead of losing it on the next keystroke", () => {
+    render(<DebtPaydownWorkspace dto={dto()} />);
+
+    const extra = screen.getByLabelText("Extra payment each month") as HTMLInputElement;
+    fireEvent.focus(extra);
+    fireEvent.change(extra, { target: { value: "250.5" } });
+    expect(extra.value).toBe("250.5");
+
+    fireEvent.click(screen.getByRole("button", { name: "Add a debt" }));
+
+    const balance = screen.getByLabelText("Balance for New debt") as HTMLInputElement;
+    fireEvent.focus(balance);
+    fireEvent.change(balance, { target: { value: "1500.25" } });
+    expect(balance.value).toBe("1500.25");
+
+    // Plain <input>, not CurrencyInput — no focused/idle formatting switch,
+    // so no focus event is needed to see its raw value.
+    const rate = screen.getByLabelText("Interest rate for New debt") as HTMLInputElement;
+    fireEvent.change(rate, { target: { value: "5" } });
+    expect(rate.value).toBe("5");
+    fireEvent.change(rate, { target: { value: "5." } });
+    expect(rate.value).toBe("5.");
+    fireEvent.change(rate, { target: { value: "5.9" } });
+    expect(rate.value).toBe("5.9");
+
+    const payment = screen.getByLabelText("Monthly payment for New debt") as HTMLInputElement;
+    fireEvent.focus(payment);
+    fireEvent.change(payment, { target: { value: "89.99" } });
+    expect(payment.value).toBe("89.99");
+
+    // Clearing a field to retype it must not snap back to "0".
+    fireEvent.change(payment, { target: { value: "" } });
+    expect(payment.value).toBe("");
+  });
+});
+
+describe("DebtPaydownWorkspace — autosave", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("PUTs the validated state once editing settles, after the debounce", async () => {
+    vi.useFakeTimers();
+    render(<DebtPaydownWorkspace dto={dto()} />);
+    // Mounting alone must not write a row.
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("Extra payment each month"), {
+      target: { value: "50" },
+    });
+    // Still inside the 700ms debounce window.
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(700);
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/portal/calculators/debt-paydown");
+    expect(init.method).toBe("PUT");
+    const body = JSON.parse(init.body as string) as { state: { extraMonthly: number } };
+    expect(body.state.extraMonthly).toBe(50);
+  });
+
+  it("skips the PUT and shows the validator's own message when the state is locally invalid", async () => {
+    vi.useFakeTimers();
+    render(<DebtPaydownWorkspace dto={dto()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add a debt" }));
+    fireEvent.change(screen.getByLabelText("Name for New debt"), { target: { value: "" } });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(700);
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByText("Give each debt a name.")).toBeTruthy();
+  });
+
+  it("never PUTs in read-only preview mode, however long the debounce is given", async () => {
+    vi.useFakeTimers();
+    render(<DebtPaydownWorkspace dto={dto()} readOnly />);
+
+    fireEvent.change(screen.getByLabelText("Extra payment each month"), {
+      target: { value: "50" },
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
