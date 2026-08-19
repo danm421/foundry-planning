@@ -5611,11 +5611,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // 0 ⇒ fund entirely from expense cuts), but 100% in a pre-retirement year
       // when surplusSpendAllUntilRetirement is on, which funds from cash flow
       // instead. effectiveSurplusSpendPct owns the 0..1 clamp.
-      const selfFundingSpendPct = effectiveSurplusSpendPct(
-        data.planSettings,
-        data.client,
-        year,
-      );
+      // An absorbing living row spends 100% of the surplus, so the whole
+      // surplus is redirectable — the same rule this block already applies via
+      // effectiveSurplusSpendPct, stated for the row-level mode. No double
+      // count: hypoContribution is subtracted from surplusForSplit at phase 14,
+      // so every dollar taken here shrinks the absorbed living expense by one.
+      const selfFundingSpendPct = absorbingRow
+        ? 1
+        : effectiveSurplusSpendPct(data.planSettings, data.client, year);
       let surplusAvailable =
         Math.max(0, surplusBeforeSavings - savings.total) * selfFundingSpendPct;
       // Living expense pool still available to cut this year.
