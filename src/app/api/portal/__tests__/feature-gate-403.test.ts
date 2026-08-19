@@ -19,6 +19,9 @@ vi.mock("@/db/schema", () => ({
   clients: { _name: "clients" },
   crmDocumentFolders: { _name: "crmDocumentFolders" },
   portalPrivacySettings: { _name: "portalPrivacySettings" },
+  // Never queried here: the real @/lib/authz pulls in user-overrides.ts, which
+  // reads this table's columns at module load. The export only has to exist.
+  opsUserEntitlementOverrides: {},
 }));
 vi.mock("drizzle-orm", () => ({ eq: (...a: unknown[]) => a }));
 vi.mock("@/db", () => ({

@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, crmHouseholdContacts } from "@/db/schema";
 import { requireOrgAndUser } from "@/lib/db-helpers";
-import { currentOrgHasClientPortal } from "@/lib/authz";
+import { currentUserHasClientPortal } from "@/lib/authz";
 import PortalAccessCard from "@/components/portal/portal-access-card";
 import PortalEditToggle from "@/components/portal/portal-edit-toggle";
 import PortalActivityFeed from "@/components/portal/portal-activity-feed";
@@ -43,9 +43,10 @@ function PortalNotEnabled(): ReactElement {
 export default async function PortalManagePage({ params }: Props): Promise<ReactElement> {
   const { id } = await params;
   const { orgId, userId } = await requireOrgAndUser();
-  // Off for a firm until ops switches it on. Only the portal-specific panels
-  // go dark — the Intake form panel below works without the portal.
-  const portalEnabled = await currentOrgHasClientPortal();
+  // Off until ops switches it on for this firm or this advisor. Only the
+  // portal-specific panels go dark — the Intake form panel below works without
+  // the portal.
+  const portalEnabled = await currentUserHasClientPortal();
   const defaultSections = await loadAdvisorDefaultSections(orgId, userId);
 
   const [row] = await db

@@ -11,6 +11,9 @@ vi.mock("@/db/schema", () => ({
   plaidTransactions: { _name: "plaidTransactions" },
   scenarios: { _name: "scenarios" },
   transactionCategories: { _name: "transactionCategories" },
+  // Never queried here: the real @/lib/authz pulls in user-overrides.ts, which
+  // reads this table's columns at module load. The export only has to exist.
+  opsUserEntitlementOverrides: {},
 }));
 vi.mock("drizzle-orm", () => ({
   and: (...a: unknown[]) => a,

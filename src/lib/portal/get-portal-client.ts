@@ -13,15 +13,18 @@ import { clients } from "@/db/schema";
  * are what authorize them. Selecting it here keeps that a single query rather
  * than a second lookup per gate.
  *
+ * `advisorId` rides along because the portal entitlement gate resolves through
+ * the household's owning advisor — same row, same query.
+ *
  * Wrapped in React.cache so middleware + layouts + route handlers in the
  * same request only hit the DB once.
  */
 export const getPortalClientRef = cache(async (
   clerkUserId: string,
-): Promise<{ id: string; firmId: string | null } | null> => {
+): Promise<{ id: string; firmId: string | null; advisorId: string } | null> => {
   if (!clerkUserId) return null;
   const rows = await db
-    .select({ id: clients.id, firmId: clients.firmId })
+    .select({ id: clients.id, firmId: clients.firmId, advisorId: clients.advisorId })
     .from(clients)
     .where(eq(clients.clerkUserId, clerkUserId))
     .limit(1);
