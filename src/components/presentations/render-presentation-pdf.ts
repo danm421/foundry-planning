@@ -16,7 +16,7 @@ import { runProjectionWithEvents } from "@/engine/projection";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import {
   buildDerivedBundle,
-  derivedKey,
+  entryDerivedKey,
   type DerivedDeps,
   type DerivedRefRequest,
 } from "@/lib/presentations/derived-refs";
@@ -127,9 +127,10 @@ interface DerivablePage {
 
 // The real engine + solver, injected rather than imported by
 // `derived-refs.ts`: that module is reached from "use client" launcher
-// components through the registry, so a value import of the projection there
-// would drag the whole engine into the browser bundle. This file is
-// server-only, so it owns the real wiring.
+// components through the registry (`launcher/selected-page-row.tsx` and
+// `launcher/report-command-palette.tsx` both open with "use client" and import
+// it), so a value import of the projection there would drag the engine into the
+// browser bundle. This file is server-only, so it owns the real wiring.
 const REAL_DERIVED_DEPS: DerivedDeps = {
   applyMutations,
   runProjection: runProjectionWithEvents,
@@ -137,8 +138,14 @@ const REAL_DERIVED_DEPS: DerivedDeps = {
 
 /**
  * Returns a NEW record: every loaded scenario bundle, plus one derived bundle
- * per variant any page asked for. Loaded bundles are passed through by
- * reference (the max-spend pass mutates them in place after assembly).
+ * per variant any page ENTRY asked for. Loaded bundles are passed through by
+ * reference — a `ProjectionResult` is megabytes, and nothing downstream mutates
+ * one.
+ *
+ * Keyed per entry, not per page id: a deck may contain the same page twice with
+ * different options, and both entries name the same variant `key`. See
+ * `entryDerivedKey`. `document.tsx` re-keys each entry's slice back to the
+ * index-free form before a page sees it.
  *
  * Derived variants are pure compute against a tree that is already loaded, so
  * this runs long after `planScenarioBundles` and the MAX_DISTINCT_SCENARIOS /
@@ -154,16 +161,20 @@ export function resolveDerivedBundles(
   deps: DerivedDeps = REAL_DERIVED_DEPS,
 ): Record<string, PageScenarioBundle> {
   const out: Record<string, PageScenarioBundle> = { ...loaded };
-  for (const p of pages) {
-    if (!p.requiredDerivedRefs) continue;
+  pages.forEach((p, idx) => {
+    if (!p.requiredDerivedRefs) return;
     for (const req of p.requiredDerivedRefs(p.options as never)) {
       // `resolveScenarioRef` maps any unknown token to a well-formed ref and
       // never throws, so an absent source simply misses the record lookup.
       const source = loaded[keyForRef(resolveScenarioRef(req.from))];
       if (!source) continue;
-      out[derivedKey(p.pageId, req.key)] = buildDerivedBundle(source.clientData, req, deps);
+      out[entryDerivedKey(idx, p.pageId, req.key)] = buildDerivedBundle(
+        source.clientData,
+        req,
+        deps,
+      );
     }
-  }
+  });
   return out;
 }
 
@@ -655,6 +666,9 @@ export async function renderPresentationPdf(
   // Plan variants a page asked for: the base plan with one lever moved. Built
   // last, so every loaded bundle (including the max-spend attachments above) is
   // final, and so this work sits outside the scenario caps enforced up top.
+  // Index-aligned with `body.pages` — and so with the document's `pages` prop
+  // below, which is built from the same array — because the bundle keys are
+  // per deck entry, not per page id.
   const bundlesWithDerived = resolveDerivedBundles(
     body.pages.map((p) => ({
       pageId: p.pageId,

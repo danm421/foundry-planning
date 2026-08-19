@@ -50,6 +50,24 @@ export function derivedKey(pageId: string, key: string): string {
   return `derived:${pageId}:${key}`;
 }
 
+/**
+ * Key for ONE DECK ENTRY's variant in the export's global bundle store.
+ *
+ * A deck may legitimately contain the same page twice with different options —
+ * `addPage` in the launcher appends without deduping, and `document.tsx` keys
+ * its fragments `pageId + idx` for exactly that reason. Two entries of one page
+ * ask for the same variant `key`, so a store keyed by page id alone would have
+ * the second entry overwrite the first and both sheets would print the second
+ * entry's numbers under their own headings.
+ *
+ * Pages never see this form. The document re-keys each entry's slice back to
+ * `derivedKey(pageId, key)` before handing it to the view model, which knows
+ * its own page id but has no business knowing its position in the deck.
+ */
+export function entryDerivedKey(entryIndex: number, pageId: string, key: string): string {
+  return `${derivedKey(pageId, key)}@${entryIndex}`;
+}
+
 export function buildDerivedBundle(
   sourceTree: ClientData,
   req: DerivedRefRequest,

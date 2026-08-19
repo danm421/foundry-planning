@@ -444,7 +444,10 @@ export interface PresentationPage<TData, TOptions> {
   /** Optional: a page may request plan *variants* that exist nowhere in the
    *  database — an already-loaded plan with one lever moved. The export applies
    *  the mutations to the `from` tree and exposes each result at
-   *  `bundlesByRef[derivedKey(page.id, key)]`. Derived variants are pure
+   *  `bundlesByRef[derivedKey(page.id, key)]` — index-free, so a view model
+   *  names its own variants without knowing where in the deck it sits (the
+   *  export stores them per deck entry and the document re-keys the slice).
+   *  Derived variants are pure
    *  compute against a tree that is already in memory: they cost no scenario
    *  load, and they do NOT count toward MAX_DISTINCT_SCENARIOS /
    *  MAX_MC_SCENARIOS (the export plans and caps scenarios from
