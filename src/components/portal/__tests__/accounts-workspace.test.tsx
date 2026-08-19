@@ -112,7 +112,7 @@ describe("AccountsWorkspace", () => {
 
   it("hides every write affordance when editEnabled is false", () => {
     const { queryByRole, getByText } = render(<AccountsWorkspace dto={dto({ editEnabled: false })} />);
-    expect(queryByRole("button", { name: "Add Account" })).toBeNull();
+    expect(queryByRole("button", { name: "Add Account or Loan" })).toBeNull();
     expect(queryByRole("button", { name: /Link Account/ })).toBeNull();
     fireEvent.click(getByText("Joint Checking"));
     expect(queryByRole("button", { name: "Edit" })).toBeNull();
@@ -201,6 +201,55 @@ describe("AccountsWorkspace", () => {
     expect(body.owners).toEqual([{ kind: "family_member", familyMemberId: "fm1", percent: 1 }]);
   });
 
+  // ---- Adding a loan ----
+
+  it("POSTs a new account when the add panel is left on Account", async () => {
+    const { getByRole, getByLabelText } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(getByRole("button", { name: "Add Account or Loan" }));
+    fireEvent.change(getByLabelText("Name"), { target: { value: "New Savings" } });
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Save" }));
+    });
+
+    const [, init] = callTo("/api/portal/accounts");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body)).category).toBe("cash");
+  });
+
+  it("switches the add panel to the loan form and POSTs to the liabilities route", async () => {
+    const { getByRole, getByLabelText, container } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(getByRole("button", { name: "Add Account or Loan" }));
+    fireEvent.change(getByLabelText("What are you adding?"), { target: { value: "debt" } });
+
+    // The loan form is showing: its Type select replaced the account Category one.
+    expect(getByRole("option", { name: "Auto loan" })).toBeTruthy();
+    expect(container.textContent).not.toContain("Sub-type");
+
+    fireEvent.change(getByLabelText("Name"), { target: { value: "Car Loan" } });
+    fireEvent.change(getByLabelText("Type"), { target: { value: "auto" } });
+    fireEvent.change(getByLabelText("Balance"), { target: { value: "18500" } });
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Save" }));
+    });
+
+    const [, init] = callTo("/api/portal/liabilities");
+    expect(init.method).toBe("POST");
+    const body = JSON.parse(String(init.body));
+    expect(body.name).toBe("Car Loan");
+    expect(body.liabilityType).toBe("auto");
+    expect(body.balance).toBe("18500");
+    // Pre-checked from the primary family member, same as the account add form.
+    expect(body.owners).toEqual([{ kind: "family_member", familyMemberId: "fm1", percent: 1 }]);
+  });
+
+  it("keeps the loan add form editable — nothing is Plaid-locked on a new row", () => {
+    const { getByRole, getByLabelText, container } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(getByRole("button", { name: "Add Account or Loan" }));
+    fireEvent.change(getByLabelText("What are you adding?"), { target: { value: "debt" } });
+    expect(container.textContent).not.toContain("syncs from your institution");
+    expect(getByLabelText("Balance").tagName).toBe("INPUT");
+  });
+
   it("shows the empty state with no accounts and no debts", () => {
     const { container } = render(
       <AccountsWorkspace dto={dto({ assets: [], debts: [], netWorth: { assets: 0, debt: 0, netWorth: 0 } })} />,
@@ -208,7 +257,7 @@ describe("AccountsWorkspace", () => {
     expect(container.textContent).toContain("No accounts yet");
   });
 
-  it("disables Save, Cancel, and Add Account while an account save is in flight", async () => {
+  it("disables Save, Cancel, and Add while an account save is in flight", async () => {
     const { getByText, getByRole } = render(<AccountsWorkspace dto={dto()} />);
     fireEvent.click(getByText("Joint Checking"));
     fireEvent.click(getByRole("button", { name: "Edit" }));
@@ -227,14 +276,14 @@ describe("AccountsWorkspace", () => {
     // reachable from this view must be locked.
     expect(getByRole("button", { name: "Saving…" })).toBeDisabled();
     expect(getByRole("button", { name: "Cancel" })).toBeDisabled();
-    expect(getByRole("button", { name: "Add Account" })).toBeDisabled();
+    expect(getByRole("button", { name: "Add Account or Loan" })).toBeDisabled();
 
     await act(async () => {
       resolveSave({ ok: true, json: async () => ({}) });
     });
   });
 
-  it("disables Edit, Delete, and Add Account while an account delete is in flight", async () => {
+  it("disables Edit, Delete, and Add while an account delete is in flight", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const { getByText, getByRole } = render(<AccountsWorkspace dto={dto()} />);
     fireEvent.click(getByText("Joint Checking"));
@@ -251,7 +300,7 @@ describe("AccountsWorkspace", () => {
     // Mid-flight: the DELETE has fired but not resolved.
     expect(getByRole("button", { name: "Edit" })).toBeDisabled();
     expect(getByRole("button", { name: "Delete" })).toBeDisabled();
-    expect(getByRole("button", { name: "Add Account" })).toBeDisabled();
+    expect(getByRole("button", { name: "Add Account or Loan" })).toBeDisabled();
 
     await act(async () => {
       resolveDelete({ ok: true, json: async () => ({}) });

@@ -26,6 +26,16 @@ export type DebtFormState = {
   ownerEntityIds: Set<string>;
 };
 
+export function emptyDebtForm(defaultFm: string | null = null): DebtFormState {
+  return {
+    name: "",
+    liabilityType: "mortgage",
+    balance: "0",
+    ownerFmIds: new Set(defaultFm ? [defaultFm] : []),
+    ownerEntityIds: new Set(),
+  };
+}
+
 export function debtRowToForm(row: PortalDebtRow): DebtFormState {
   return {
     name: row.name,

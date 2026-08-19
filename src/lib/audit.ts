@@ -382,6 +382,7 @@ export type AuditAction =
   | "portal.account.create"
   | "portal.account.update"
   | "portal.account.delete"
+  | "portal.liability.create"
   | "portal.liability.update"
   | "portal.liability.delete"
   | "portal.plaid.link"

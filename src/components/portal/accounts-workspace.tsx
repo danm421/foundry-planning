@@ -25,6 +25,7 @@ import {
   DebtFormPanel,
   debtRowToForm,
   debtOwnersFromForm,
+  emptyDebtForm,
   type DebtFormState,
 } from "@/components/portal/debt-form-panel";
 import { PlaidLinkButton } from "@/components/portal/plaid-link-button-dynamic";
@@ -37,6 +38,7 @@ type Drill =
   | { kind: "account"; id: string }
   | { kind: "debt"; id: string }
   | { kind: "add-account" }
+  | { kind: "add-debt" }
   | { kind: "edit-account"; id: string }
   | { kind: "edit-debt"; id: string };
 
@@ -46,6 +48,35 @@ function BackButton({ onBack }: { onBack: () => void }): ReactElement {
     <button type="button" onClick={onBack} className="text-[13px] text-ink-3 hover:text-ink">
       ← Back
     </button>
+  );
+}
+
+/**
+ * Accounts and loans are separate records with separate forms, so the add flow
+ * asks which one first instead of hiding loans behind a second button.
+ */
+function AddKindPicker({
+  kind,
+  onChange,
+  disabled,
+}: {
+  kind: "account" | "debt";
+  onChange: (kind: "account" | "debt") => void;
+  disabled: boolean;
+}): ReactElement {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-[12px] text-ink-3">What are you adding?</span>
+      <select
+        value={kind}
+        onChange={(e) => onChange(e.target.value as "account" | "debt")}
+        disabled={disabled}
+        className="w-fit rounded-md border border-hair bg-paper px-2 py-1 text-[13px] disabled:opacity-50"
+      >
+        <option value="account">Account</option>
+        <option value="debt">Loan</option>
+      </select>
+    </label>
   );
 }
 
@@ -100,8 +131,15 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
   }
 
   function openAddAccount(): void {
+    setDebtForm(null);
     setAccountForm(emptyAccountForm("cash", primaryFm?.id ?? null));
     setDrill({ kind: "add-account" });
+  }
+
+  function openAddDebt(): void {
+    setAccountForm(null);
+    setDebtForm(emptyDebtForm(primaryFm?.id ?? null));
+    setDrill({ kind: "add-debt" });
   }
 
   function openEditAccount(id: string): void {
@@ -159,25 +197,27 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
   }
 
   async function submitDebt(): Promise<void> {
-    if (!debtForm || drill?.kind !== "edit-debt") return;
+    if (!debtForm || (drill?.kind !== "edit-debt" && drill?.kind !== "add-debt")) return;
     const owners = debtOwnersFromForm(debtForm);
     if (owners.length === 0) {
       alert("Pick at least one owner.");
       return;
     }
+    const isNew = drill.kind === "add-debt";
+    const id = drill.kind === "edit-debt" ? drill.id : null;
     const body: Record<string, unknown> = {
       name: debtForm.name,
       liabilityType: debtForm.liabilityType,
       balance: debtForm.balance,
       owners,
     };
-    if (debt(drill.id)?.isPlaidLinked) {
+    if (id && debt(id)?.isPlaidLinked) {
       for (const k of LIABILITY_PLAID_LOCKED_FIELDS) delete body[k];
     }
     setBusy(true);
     try {
-      const res = await portalFetch(`/api/portal/liabilities/${drill.id}`, {
-        method: "PUT",
+      const res = await portalFetch(isNew ? "/api/portal/liabilities" : `/api/portal/liabilities/${id}`, {
+        method: isNew ? "POST" : "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       });
@@ -234,7 +274,7 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
       );
     }
 
-    if (drill.kind === "edit-debt") {
+    if (drill.kind === "add-debt" || drill.kind === "edit-debt") {
       if (!debtForm) return null;
       return (
         <DebtFormPanel
@@ -245,7 +285,7 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
           onCancel={closeDrill}
           onSubmit={submitDebt}
           disabled={inFlight}
-          plaidLocked={debt(drill.id)?.isPlaidLinked ?? false}
+          plaidLocked={drill.kind === "edit-debt" && (debt(drill.id)?.isPlaidLinked ?? false)}
         />
       );
     }
@@ -320,7 +360,7 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
               disabled={inFlight}
               className="rounded-md border border-accent bg-accent/15 px-3 py-1.5 text-[13px] font-medium text-accent disabled:opacity-50"
             >
-              Add Account
+              Add Account or Loan
             </button>
           </div>
         )}
@@ -342,6 +382,13 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
           {drill ? (
             <div className="space-y-3">
               <BackButton onBack={closeDrill} />
+              {(drill.kind === "add-account" || drill.kind === "add-debt") && (
+                <AddKindPicker
+                  kind={drill.kind === "add-debt" ? "debt" : "account"}
+                  onChange={(k) => (k === "debt" ? openAddDebt() : openAddAccount())}
+                  disabled={inFlight}
+                />
+              )}
               {drilled()}
             </div>
           ) : (
