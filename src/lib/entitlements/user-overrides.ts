@@ -4,15 +4,26 @@ import { db } from "@/db";
 import { opsUserEntitlementOverrides } from "@/db/schema";
 import { collapseActiveOverrides, type ActiveOverride, type OverrideRow } from "./overrides";
 
-/** The six columns `collapseActiveOverrides` consumes. */
-const COLUMNS = {
-  entitlement: opsUserEntitlementOverrides.entitlement,
-  mode: opsUserEntitlementOverrides.mode,
-  reason: opsUserEntitlementOverrides.reason,
-  setBy: opsUserEntitlementOverrides.setBy,
-  expiresAt: opsUserEntitlementOverrides.expiresAt,
-  createdAt: opsUserEntitlementOverrides.createdAt,
-};
+/**
+ * The six columns `collapseActiveOverrides` consumes.
+ *
+ * Built per call rather than held in a module-scope const: dereferencing the
+ * Drizzle table at import time would make merely importing this module — and
+ * so `authz.ts`, which now does — require `opsUserEntitlementOverrides` to
+ * exist on `@/db/schema`. Tests that replace that module with a hand-rolled
+ * stub would crash on import. One small object per call costs nothing next to
+ * the DB round trip that follows.
+ */
+function columns() {
+  return {
+    entitlement: opsUserEntitlementOverrides.entitlement,
+    mode: opsUserEntitlementOverrides.mode,
+    reason: opsUserEntitlementOverrides.reason,
+    setBy: opsUserEntitlementOverrides.setBy,
+    expiresAt: opsUserEntitlementOverrides.expiresAt,
+    createdAt: opsUserEntitlementOverrides.createdAt,
+  };
+}
 
 /**
  * The active per-user overrides for ONE user in ONE firm.
@@ -28,7 +39,7 @@ export const getActiveUserOverrides = cache(
   async (firmId: string, clerkUserId: string): Promise<ActiveOverride[]> => {
     if (!firmId || !clerkUserId) return [];
     const rows = await db
-      .select(COLUMNS)
+      .select(columns())
       .from(opsUserEntitlementOverrides)
       .where(
         and(
@@ -49,7 +60,7 @@ export const getActiveUserOverridesForFirm = cache(
   async (firmId: string): Promise<Map<string, ActiveOverride[]>> => {
     if (!firmId) return new Map();
     const rows = await db
-      .select({ ...COLUMNS, clerkUserId: opsUserEntitlementOverrides.clerkUserId })
+      .select({ ...columns(), clerkUserId: opsUserEntitlementOverrides.clerkUserId })
       .from(opsUserEntitlementOverrides)
       .where(eq(opsUserEntitlementOverrides.firmId, firmId))
       .orderBy(opsUserEntitlementOverrides.createdAt);

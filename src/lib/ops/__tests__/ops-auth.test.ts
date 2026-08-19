@@ -8,12 +8,7 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("@clerk/nextjs/server", () => ({ auth: () => Promise.resolve({ userId: h.userId }) }));
-// opsUserEntitlementOverrides is never queried here: the real @/lib/authz pulls
-// in user-overrides.ts, which reads its columns at module load. It only has to exist.
-vi.mock("@/db/schema", () => ({
-  opsAdmins: { clerkUserId: "clerk_user_id" },
-  opsUserEntitlementOverrides: {},
-}));
+vi.mock("@/db/schema", () => ({ opsAdmins: { clerkUserId: "clerk_user_id" } }));
 vi.mock("@/db", () => ({
   db: { select: () => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve(h.rows) }) }) }) },
 }));

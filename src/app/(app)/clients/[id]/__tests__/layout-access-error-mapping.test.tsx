@@ -34,9 +34,6 @@ vi.mock("@/db/schema", () => ({
   crmHouseholdContacts: {},
   scenarios: {},
   accounts: {},
-  // Never queried here: the real @/lib/authz pulls in user-overrides.ts, which
-  // reads this table's columns at module load. The export only has to exist.
-  opsUserEntitlementOverrides: {},
 }));
 vi.mock("drizzle-orm", () => ({
   eq: vi.fn(),

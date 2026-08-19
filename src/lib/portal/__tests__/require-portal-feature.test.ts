@@ -4,12 +4,7 @@
 // can still fetch the data the advisor removed.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// opsUserEntitlementOverrides is never queried here: the real @/lib/authz pulls
-// in user-overrides.ts, which reads its columns at module load. It only has to exist.
-vi.mock("@/db/schema", () => ({
-  clients: { _name: "clients" },
-  opsUserEntitlementOverrides: {},
-}));
+vi.mock("@/db/schema", () => ({ clients: { _name: "clients" } }));
 vi.mock("drizzle-orm", () => ({ eq: (...a: unknown[]) => a }));
 
 let row: Record<string, boolean> | undefined;
