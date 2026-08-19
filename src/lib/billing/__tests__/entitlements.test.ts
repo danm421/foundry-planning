@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   deriveEntitlements,
+  deriveUserEntitlements,
   BASE_ENTITLEMENTS,
   CLIENT_PORTAL_ENTITLEMENT,
   hasClientPortalEntitlement,
@@ -161,5 +162,50 @@ describe("hasClientPortalEntitlement", () => {
     expect(hasClientPortalEntitlement(null)).toBe(false);
     expect(hasClientPortalEntitlement(undefined)).toBe(false);
     expect(hasClientPortalEntitlement([])).toBe(false);
+  });
+});
+
+describe("deriveUserEntitlements — the per-user override layer", () => {
+  const FIRM_WITH_PORTAL = [...BASE, CLIENT_PORTAL_ENTITLEMENT].sort();
+
+  it("returns the firm set untouched when the user has no overrides", () => {
+    expect(deriveUserEntitlements({ firmEntitlements: BASE })).toEqual(BASE);
+  });
+
+  it("grants a key the firm does not have (the pilot advisor)", () => {
+    expect(
+      deriveUserEntitlements({
+        firmEntitlements: BASE,
+        overrides: [{ entitlement: CLIENT_PORTAL_ENTITLEMENT, mode: "grant" }],
+      }),
+    ).toEqual(FIRM_WITH_PORTAL);
+  });
+
+  it("revokes a key the firm does have (the per-advisor kill switch)", () => {
+    expect(
+      deriveUserEntitlements({
+        firmEntitlements: FIRM_WITH_PORTAL,
+        overrides: [{ entitlement: CLIENT_PORTAL_ENTITLEMENT, mode: "revoke" }],
+      }),
+    ).toEqual(BASE);
+  });
+
+  it("does NOT re-seed a base key the firm-level revoke stripped", () => {
+    const firmMinusForge = BASE.filter((k) => k !== "ai_forge");
+    expect(deriveUserEntitlements({ firmEntitlements: firmMinusForge })).not.toContain(
+      "ai_forge",
+    );
+  });
+
+  it("applies overrides in array order, later entries winning", () => {
+    expect(
+      deriveUserEntitlements({
+        firmEntitlements: BASE,
+        overrides: [
+          { entitlement: CLIENT_PORTAL_ENTITLEMENT, mode: "grant" },
+          { entitlement: CLIENT_PORTAL_ENTITLEMENT, mode: "revoke" },
+        ],
+      }),
+    ).toEqual(BASE);
   });
 });

@@ -231,7 +231,7 @@ describe("PortalPreview catch-all", () => {
   it("calls notFound() when the firm has no client_portal entitlement", async () => {
     vi.mocked(notFound).mockClear();
     portalEntitlementMock.mockImplementationOnce(() => {
-      throw new ForbiddenError("Client portal is not enabled for this firm");
+      throw new ForbiddenError("Client portal is not enabled");
     });
     await expect(renderPreview(undefined)).rejects.toThrow("NEXT_NOT_FOUND");
     expect(notFound).toHaveBeenCalled();

@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, crmHouseholdContacts } from "@/db/schema";
 import { requireOrgAndUser } from "@/lib/db-helpers";
-import { currentOrgHasClientPortal } from "@/lib/authz";
+import { currentUserHasClientPortal } from "@/lib/authz";
 import PortalAccessCard from "@/components/portal/portal-access-card";
 import PortalEditToggle from "@/components/portal/portal-edit-toggle";
 import PortalActivityFeed from "@/components/portal/portal-activity-feed";
@@ -30,8 +30,8 @@ function PortalNotEnabled(): ReactElement {
       <h3 className="text-[15px] font-semibold text-ink">Portal not enabled</h3>
       <p className="mt-2 text-[14px] text-ink-2">
         The client portal gives clients their own sign-in to review accounts,
-        upload documents, and fill in the forms you send. It is off for your firm
-        — contact Foundry to turn it on.
+        upload documents, and fill in the forms you send. It is not turned on
+        for you — contact Foundry to enable it.
       </p>
       <p className="mt-3 text-[13px] text-ink-3">
         You can still send a data-collection form from the Intake form tab.
@@ -43,9 +43,10 @@ function PortalNotEnabled(): ReactElement {
 export default async function PortalManagePage({ params }: Props): Promise<ReactElement> {
   const { id } = await params;
   const { orgId, userId } = await requireOrgAndUser();
-  // Off for a firm until ops switches it on. Only the portal-specific panels
-  // go dark — the Intake form panel below works without the portal.
-  const portalEnabled = await currentOrgHasClientPortal();
+  // Off until ops switches it on for this firm or this advisor. Only the
+  // portal-specific panels go dark — the Intake form panel below works without
+  // the portal.
+  const portalEnabled = await currentUserHasClientPortal();
   const defaultSections = await loadAdvisorDefaultSections(orgId, userId);
 
   const [row] = await db
@@ -124,7 +125,7 @@ export default async function PortalManagePage({ params }: Props): Promise<React
         <p className="text-[13px] text-ink-3">
           {portalEnabled
             ? "Control portal access, send data-collection forms, and review what the client changes."
-            : "Send data-collection forms. Portal access is not enabled for your firm."}
+            : "Send data-collection forms. Portal access is not enabled for you."}
         </p>
       </header>
       <PortalManageShell

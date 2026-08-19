@@ -8,6 +8,7 @@ import { requireClientEditAccess } from "@/lib/clients/authz";
 import {
   requireActiveSubscriptionForFirm,
   requireClientPortalEntitlement,
+  requireClientPortalForAdvisor,
   authErrorResponse,
 } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
@@ -29,11 +30,19 @@ export async function POST(
   try {
     const { id } = await ctx.params;
     const { orgId: callerOrg } = await requireOrgAndUser();
-    const { firmId, access } = await requireClientEditAccess(id);
+    const { client, firmId, access } = await requireClientEditAccess(id);
     await requireActiveSubscriptionForFirm(firmId);
     // Granting portal access is the one advisor action the entitlement blocks;
     // DELETE below stays open so an advisor can always revoke.
+    //
+    // TWO people are asked about, because two different people decide. The
+    // SENDER must be entitled to grant access at all; the HOUSEHOLD'S OWN
+    // advisor must be entitled too, because that is who sign-in resolves
+    // against (`requireClientPortalAccess` → `clients.advisor_id`). Skip the
+    // second check and an entitled firm-admin can mint an invite on a revoked
+    // advisor's household — the client signs up and is refused forever.
     await requireClientPortalEntitlement(firmId);
+    await requireClientPortalForAdvisor(firmId, client.advisorId);
 
     const limit = await checkPortalInviteRateLimit(firmId);
     if (!limit.allowed) {

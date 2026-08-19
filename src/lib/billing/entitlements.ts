@@ -93,3 +93,29 @@ export function deriveEntitlements(input: EntitlementsInput): string[] {
   }
   return Array.from(set).sort();
 }
+
+/**
+ * Layer one user's active overrides on top of their firm's effective
+ * entitlements. Pure — no IO, no Date.now, no env reads.
+ *
+ * `firmEntitlements` is the firm's ALREADY-DERIVED set: what
+ * `deriveEntitlements` produced and `writeFirmEntitlements` mirrored into
+ * Clerk. BASE_ENTITLEMENTS are deliberately NOT re-seeded here — the firm set
+ * already carries them, and re-seeding would resurrect a base key that a
+ * firm-level ops `revoke` had deliberately stripped.
+ *
+ * Overrides apply in array order, later entries winning: `grant` adds a key the
+ * firm does not have, `revoke` removes one it does. Output is sorted and
+ * deduped so two equivalent inputs compare equal.
+ */
+export function deriveUserEntitlements(input: {
+  firmEntitlements: string[];
+  overrides?: EntitlementOverride[];
+}): string[] {
+  const set = new Set(input.firmEntitlements);
+  for (const o of input.overrides ?? []) {
+    if (o.mode === "grant") set.add(o.entitlement);
+    else set.delete(o.entitlement);
+  }
+  return Array.from(set).sort();
+}

@@ -5196,6 +5196,38 @@ export const opsEntitlementOverrides = pgTable(
   ],
 );
 
+// Per-user entitlement overrides — the second layer beneath
+// `ops_entitlement_overrides`. A row aims ONE entitlement at ONE user inside
+// ONE firm. `firm_id` is part of the key, not decoration: a Clerk user can
+// belong to more than one organization, and a grant must not follow them
+// across. Append-only like the firm table — the newest un-expired row per
+// (firm, user, entitlement) wins and history is retained for SOC 2.
+export const opsUserEntitlementOverrides = pgTable(
+  "ops_user_entitlement_overrides",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id").notNull(),
+    clerkUserId: text("clerk_user_id").notNull(),
+    entitlement: text("entitlement").notNull(),
+    mode: text("mode").notNull(), // 'grant' | 'revoke'
+    reason: text("reason").notNull(),
+    setBy: text("set_by").notNull(), // ops clerk_user_id
+    expiresAt: timestamp("expires_at", { withTimezone: true }), // nullable; pilots auto-expire
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("ops_user_entitlement_overrides_lookup_idx").on(
+      t.firmId,
+      t.clerkUserId,
+      t.entitlement,
+    ),
+    check(
+      "ops_user_entitlement_overrides_mode_check",
+      sql`${t.mode} IN ('grant','revoke')`,
+    ),
+  ],
+);
+
 // Stripe subscription items — one per seat line + one per add-on.
 // `kind` distinguishes seats (quantity tracks org membership) from
 // add-ons (quantity is always 1, presence = entitlement).

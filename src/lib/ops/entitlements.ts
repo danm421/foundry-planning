@@ -1,7 +1,12 @@
 import { eq } from "drizzle-orm";
 import { clerkClient } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { opsEntitlementOverrides, subscriptions, subscriptionItems } from "@/db/schema";
+import {
+  opsEntitlementOverrides,
+  opsUserEntitlementOverrides,
+  subscriptions,
+  subscriptionItems,
+} from "@/db/schema";
 import {
   deriveEntitlements,
   CLIENT_PORTAL_ENTITLEMENT,
@@ -9,12 +14,26 @@ import {
   type StripeItemView,
 } from "@/lib/billing/entitlements";
 import { recordAudit } from "@/lib/audit";
+import { collapseActiveOverrides, type ActiveOverride } from "@/lib/entitlements/overrides";
+
+// Re-exported from their new pure home so importers of this module — including
+// `ops/__tests__/entitlements.test.ts` — are unaffected by the move.
+export { collapseActiveOverrides } from "@/lib/entitlements/overrides";
+export type { OverrideRow, ActiveOverride } from "@/lib/entitlements/overrides";
 
 /** Capability keys the Entitlements tab can toggle (label/description drive the
  *  UI). The AI keys are base entitlements — on everywhere, so an override here
  *  is a per-firm kill switch. `client_portal` is the inverse: off everywhere, so
  *  a grant here is the only way to turn it on for a firm. */
-export type CapabilityKey = { key: string; label: string; description: string };
+export type CapabilityKey = {
+  key: string;
+  label: string;
+  description: string;
+  /** True when ops can also aim this key at a SINGLE user inside the firm.
+   *  Only the client portal today — the storage and the resolution take any
+   *  key, so widening later is this flag and nothing else. */
+  perUser?: boolean;
+};
 export const CAPABILITY_KEYS: CapabilityKey[] = [
   {
     key: "ai_import",
@@ -31,55 +50,11 @@ export const CAPABILITY_KEYS: CapabilityKey[] = [
     label: "Client portal",
     description:
       "Off by default. Grant to let this firm invite clients to the portal; revoking locks out clients already using it.",
+    perUser: true,
   },
 ];
 
-/** A raw override row as loaded from the table (mode is DB `text`). */
-export type OverrideRow = {
-  entitlement: string;
-  mode: string;
-  reason: string;
-  setBy: string;
-  expiresAt: Date | null;
-  createdAt: Date;
-};
-
-/** The latest active override for an entitlement, with attribution for the UI. */
-export type ActiveOverride = {
-  entitlement: string;
-  mode: "grant" | "revoke";
-  reason: string;
-  setBy: string;
-  expiresAt: Date | null;
-  createdAt: Date;
-};
-
 const LIVE_SUB_STATUSES = ["trialing", "active", "past_due", "unpaid", "paused"];
-
-/**
- * Pure: keep only active rows (no expiry or future expiry), then the latest row
- * per entitlement by createdAt. `now` is a parameter so this is unit-testable.
- * Result is sorted by entitlement key for stable rendering.
- */
-export function collapseActiveOverrides(rows: OverrideRow[], now: Date): ActiveOverride[] {
-  const latest = new Map<string, OverrideRow>();
-  for (const r of rows) {
-    if (r.expiresAt !== null && r.expiresAt <= now) continue; // expired
-    if (r.mode !== "grant" && r.mode !== "revoke") continue; // defensive
-    const prev = latest.get(r.entitlement);
-    if (!prev || r.createdAt > prev.createdAt) latest.set(r.entitlement, r);
-  }
-  return Array.from(latest.values())
-    .map((r) => ({
-      entitlement: r.entitlement,
-      mode: r.mode as "grant" | "revoke",
-      reason: r.reason,
-      setBy: r.setBy,
-      expiresAt: r.expiresAt,
-      createdAt: r.createdAt,
-    }))
-    .sort((a, b) => a.entitlement.localeCompare(b.entitlement));
-}
 
 /** Load + collapse a firm's active overrides (full rows, for the UI). */
 export async function getActiveOverrides(firmId: string): Promise<ActiveOverride[]> {
@@ -174,4 +149,38 @@ export async function setEntitlementOverride(args: {
     metadata: { entitlement, reason, entitlements },
   });
   return entitlements;
+}
+
+/**
+ * Append a per-user override and audit it.
+ *
+ * No Clerk write, deliberately: per-user overrides are never mirrored onto the
+ * user or the membership, so a revoke bites on the very next request instead of
+ * waiting for a session token to refresh. That also means there is nothing here
+ * for the reconcile cron to fall out of sync with.
+ *
+ * Not transactional, matching `setEntitlementOverride`: the row is the durable
+ * source of truth, and the audit writer already swallows its own failures.
+ */
+export async function setUserEntitlementOverride(args: {
+  firmId: string;
+  clerkUserId: string;
+  entitlement: string;
+  mode: "grant" | "revoke";
+  reason: string;
+  setBy: string; // ops clerk_user_id (from requireOpsAdmin)
+}): Promise<void> {
+  const { firmId, clerkUserId, entitlement, mode, reason, setBy } = args;
+  await db
+    .insert(opsUserEntitlementOverrides)
+    .values({ firmId, clerkUserId, entitlement, mode, reason, setBy });
+  await recordAudit({
+    action:
+      mode === "grant" ? "ops.user_entitlement.granted" : "ops.user_entitlement.revoked",
+    resourceType: "firm_member",
+    resourceId: clerkUserId,
+    firmId,
+    actorId: setBy,
+    metadata: { entitlement, reason },
+  });
 }

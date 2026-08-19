@@ -8,23 +8,30 @@ vi.mock("@/lib/db-helpers", () => ({
   UnauthorizedError: class UnauthorizedError extends Error {},
 }));
 
+// The household's advisor is advisor-2 while the CALLER is advisor-1 — the two
+// gates below must be asked about different people, so they must not be
+// interchangeable in a test either.
+const h = vi.hoisted(() => ({ client: { id: "c1", advisorId: "advisor-2" } }));
 vi.mock("@/lib/clients/authz", () => ({
   requireClientEditAccess: async () => ({
     firmId: "firm-1",
     access: "own",
-    client: { id: "c1" },
+    client: h.client,
   }),
 }));
 
 // Real ForbiddenError + authErrorResponse so the 403 path under test is the
 // route's actual error mapping, not a stub of it.
 const portalEntitlementMock = vi.fn();
+const portalForAdvisorMock = vi.fn();
 vi.mock("@/lib/authz", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/authz")>();
   return {
     ...actual,
     requireActiveSubscriptionForFirm: async () => {},
     requireClientPortalEntitlement: async () => portalEntitlementMock(),
+    requireClientPortalForAdvisor: async (firmId: string, advisorId: string) =>
+      portalForAdvisorMock(firmId, advisorId),
   };
 });
 
@@ -77,6 +84,8 @@ beforeEach(() => {
   getInvitationListMock.mockReset();
   updateMock.mockReset();
   portalEntitlementMock.mockReset();
+  portalForAdvisorMock.mockReset();
+  h.client = { id: "c1", advisorId: "advisor-2" };
 });
 
 function postReq(body: unknown) {
@@ -152,12 +161,40 @@ describe("POST /api/clients/[id]/portal/invite", () => {
   it("403s without sending an invite when the firm lacks the client_portal entitlement", async () => {
     checkLimitMock.mockResolvedValue({ allowed: true });
     portalEntitlementMock.mockImplementation(() => {
-      throw new ForbiddenError("Client portal is not enabled for this firm");
+      throw new ForbiddenError("Client portal is not enabled");
     });
     const res = await POST(postReq({ email: "client@example.com" }), {
       params: Promise.resolve({ id: "c1" }),
     });
     expect(res.status).toBe(403);
+    expect(createInvitationMock).not.toHaveBeenCalled();
+    expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it("asks the portal question about the HOUSEHOLD'S advisor, not the sender", async () => {
+    checkLimitMock.mockResolvedValue({ allowed: true });
+    createInvitationMock.mockResolvedValue({ id: "inv_1" });
+    const res = await POST(postReq({ email: "client@example.com" }), {
+      params: Promise.resolve({ id: "c1" }),
+    });
+    expect(res.status).toBe(200);
+    // advisor-2 owns the household; advisor-1 is the caller. Sign-in resolves
+    // against clients.advisor_id, so advisor-2 is the one who must be entitled.
+    expect(portalForAdvisorMock).toHaveBeenCalledWith("firm-1", "advisor-2");
+  });
+
+  it("403s without sending an invite when the household's advisor is revoked, though the sender is entitled", async () => {
+    checkLimitMock.mockResolvedValue({ allowed: true });
+    // The sender passes; only the owning advisor is revoked. Without the second
+    // gate this mints an invite whose client then 403s at sign-in forever.
+    portalForAdvisorMock.mockImplementation(() => {
+      throw new ForbiddenError("Client portal is not enabled");
+    });
+    const res = await POST(postReq({ email: "client@example.com" }), {
+      params: Promise.resolve({ id: "c1" }),
+    });
+    expect(res.status).toBe(403);
+    expect(portalEntitlementMock).toHaveBeenCalled();
     expect(createInvitationMock).not.toHaveBeenCalled();
     expect(updateMock).not.toHaveBeenCalled();
   });

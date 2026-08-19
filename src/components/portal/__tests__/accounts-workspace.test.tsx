@@ -5,8 +5,15 @@ import { render, fireEvent, within, act } from "@testing-library/react";
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 // Canvas is unavailable in jsdom.
 vi.mock("../networth-trend-chart", () => ({ NetWorthTrendChart: () => <div data-testid="trend" /> }));
-// Plaid Link pulls in a dynamic browser-only bundle.
-vi.mock("../plaid-link-button-dynamic", () => ({ PlaidLinkButton: () => <button type="button">Link Account</button> }));
+// Plaid Link pulls in a dynamic browser-only bundle. Surface `scope` so the
+// header's two entry points stay distinguishable in tests.
+vi.mock("../plaid-link-button-dynamic", () => ({
+  PlaidLinkButton: ({ scope }: { scope?: string }) => (
+    <button type="button" data-scope={scope}>
+      Link Account
+    </button>
+  ),
+}));
 vi.mock("../plaid-consent-notice", () => ({ PlaidConsentNotice: () => null }));
 vi.mock("../plaid-account-picker", () => ({ PlaidAccountPicker: () => null }));
 
@@ -120,6 +127,17 @@ describe("AccountsWorkspace", () => {
     fireEvent.click(getByRole("button", { name: /Back/ }));
     fireEvent.click(getByText("Rollover IRA"));
     expect(queryByRole("button", { name: "Delete" })).toBeNull();
+  });
+
+  // Plaid can't require one product that fits every account type, so banking and
+  // investment links are separate tokens. Losing either button silently strands
+  // half a client's accounts — the bug this pair replaced.
+  it("offers both a banking and an investments link entry point", () => {
+    const { container } = render(<AccountsWorkspace dto={dto()} />);
+    const scopes = Array.from(container.querySelectorAll("button[data-scope]")).map((b) =>
+      b.getAttribute("data-scope"),
+    );
+    expect(scopes).toEqual(["banking", "investments"]);
   });
 
   it("hides every write affordance when editEnabled is false", () => {

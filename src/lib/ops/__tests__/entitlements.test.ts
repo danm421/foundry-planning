@@ -1,8 +1,17 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { collapseActiveOverrides, setEntitlementOverride, type OverrideRow } from "../entitlements";
+import {
+  collapseActiveOverrides,
+  setEntitlementOverride,
+  setUserEntitlementOverride,
+  CAPABILITY_KEYS,
+  type OverrideRow,
+} from "../entitlements";
 
 const h = vi.hoisted(() => ({
   inserted: [] as Array<Record<string, unknown>>,
+  /** The `__t` tag of each table inserted into, in order — so a write aimed at
+   *  the WRONG table cannot pass by having the right column values. */
+  insertedInto: [] as string[],
   overrideRows: [] as Array<Record<string, unknown>>,
   metadataWrites: [] as Array<{ id: string; p: unknown }>,
   audits: [] as Array<Record<string, unknown>>,
@@ -10,14 +19,16 @@ const h = vi.hoisted(() => ({
 
 vi.mock("@/db/schema", () => ({
   opsEntitlementOverrides: { __t: "overrides" },
+  opsUserEntitlementOverrides: { __t: "userOverrides" },
   subscriptions: { __t: "subscriptions" },
   subscriptionItems: { __t: "subscriptionItems" },
 }));
 
 vi.mock("@/db", () => ({
   db: {
-    insert: () => ({
+    insert: (t: { __t: string }) => ({
       values: (v: Record<string, unknown>) => {
+        h.insertedInto.push(t.__t);
         h.inserted.push(v);
         return Promise.resolve();
       },
@@ -42,6 +53,16 @@ vi.mock("@clerk/nextjs/server", () => ({
     Promise.resolve({
       organizations: {
         updateOrganizationMetadata: (id: string, p: unknown) => {
+          h.metadataWrites.push({ id, p });
+          return Promise.resolve();
+        },
+      },
+      // Stubbed so a per-USER mirror would be OBSERVED here rather than
+      // crashing on a missing key — "never mirrored" is the spec guarantee
+      // that keeps a revoke from waiting on a session-token refresh, so the
+      // test must fail by assertion, not by TypeError.
+      users: {
+        updateUserMetadata: (id: string, p: unknown) => {
           h.metadataWrites.push({ id, p });
           return Promise.resolve();
         },
@@ -116,6 +137,7 @@ describe("collapseActiveOverrides", () => {
 
 beforeEach(() => {
   h.inserted = [];
+  h.insertedInto = [];
   h.overrideRows = [];
   h.metadataWrites = [];
   h.audits = [];
@@ -134,6 +156,7 @@ describe("setEntitlementOverride", () => {
       setBy: "user_op",
     });
     expect(h.inserted[0]).toMatchObject({ firmId: "org_1", entitlement: "ai_copilot", mode: "grant", reason: "comp", setBy: "user_op" });
+    expect(h.insertedInto).toEqual(["overrides"]);
     // No live sub → items []; base AI is always seeded, and the ai_copilot grant
     // is idempotent against it, so the effective set is the full base set.
     expect(result).toEqual(["ai_copilot", "ai_forge", "ai_import"]);
@@ -163,5 +186,65 @@ describe("setEntitlementOverride", () => {
     // the rest of the base set — the ops per-firm kill switch on a base key.
     expect(result).toEqual(["ai_copilot", "ai_forge"]);
     expect(h.audits[0]).toMatchObject({ action: "ops.entitlement.revoked" });
+  });
+});
+
+const USER_ARGS = {
+  firmId: "org_firm",
+  clerkUserId: "u_advisor",
+  entitlement: "client_portal",
+  mode: "grant" as const,
+  reason: "pilot",
+  setBy: "u_ops",
+};
+
+describe("setUserEntitlementOverride", () => {
+  it("inserts the row with the firm AND the user on it", async () => {
+    await setUserEntitlementOverride(USER_ARGS);
+    expect(h.inserted).toEqual([
+      {
+        firmId: "org_firm",
+        clerkUserId: "u_advisor",
+        entitlement: "client_portal",
+        mode: "grant",
+        reason: "pilot",
+        setBy: "u_ops",
+      },
+    ]);
+  });
+
+  it("writes to the per-USER table, not the firm-wide one", async () => {
+    await setUserEntitlementOverride(USER_ARGS);
+    expect(h.insertedInto).toEqual(["userOverrides"]);
+  });
+
+  it("audits a grant against the target user", async () => {
+    await setUserEntitlementOverride(USER_ARGS);
+    expect(h.audits[0]).toMatchObject({
+      action: "ops.user_entitlement.granted",
+      resourceType: "firm_member",
+      resourceId: "u_advisor",
+      firmId: "org_firm",
+      actorId: "u_ops",
+      metadata: { entitlement: "client_portal", reason: "pilot" },
+    });
+  });
+
+  it("audits a revoke with the revoked action", async () => {
+    await setUserEntitlementOverride({ ...USER_ARGS, mode: "revoke", reason: "pilot over" });
+    expect(h.audits[0]).toMatchObject({ action: "ops.user_entitlement.revoked" });
+  });
+
+  it("never writes Clerk metadata — a per-user override is not mirrored", async () => {
+    await setUserEntitlementOverride({ ...USER_ARGS, mode: "revoke", reason: "pilot over" });
+    expect(h.metadataWrites).toEqual([]);
+  });
+});
+
+describe("CAPABILITY_KEYS — the per-user flag", () => {
+  it("marks client portal per-user and nothing else", () => {
+    expect(CAPABILITY_KEYS.filter((c) => c.perUser).map((c) => c.key)).toEqual([
+      "client_portal",
+    ]);
   });
 });

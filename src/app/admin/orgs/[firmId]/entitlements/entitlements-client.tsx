@@ -38,8 +38,14 @@ function RowCard({ firmId, row }: { firmId: string; row: EntitlementRow }) {
       </div>
       {row.overrideMode && (
         <p className="text-xs text-warn">
-          Manual {row.overrideMode} · &ldquo;{row.reason}&rdquo; · {row.setBy}
-          {row.createdAt ? ` · ${new Date(row.createdAt).toLocaleDateString()}` : ""}
+          Manual {row.overrideMode} · &ldquo;{row.reason}&rdquo; ·{" "}
+          <span className="tabular">{row.setBy}</span>
+          {row.createdAt ? (
+            <>
+              {" · "}
+              <span className="tabular">{new Date(row.createdAt).toLocaleDateString()}</span>
+            </>
+          ) : null}
         </p>
       )}
       <div className="flex gap-2">

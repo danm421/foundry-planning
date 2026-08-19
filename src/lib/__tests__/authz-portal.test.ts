@@ -15,13 +15,29 @@ vi.mock("@/lib/portal/get-portal-client", () => ({
   getPortalClientId: async (uid: string) => (await getPortalClientRefMock(uid))?.id ?? null,
 }));
 
-import { requireClientPortalAccess, ForbiddenError } from "@/lib/authz";
+const getActiveUserOverridesMock = vi.fn();
+vi.mock("@/lib/entitlements/user-overrides", () => ({
+  getActiveUserOverrides: (f: string, u: string) => getActiveUserOverridesMock(f, u),
+  getActiveUserOverridesForFirm: async () => new Map(),
+}));
+
+import {
+  requireClientPortalAccess,
+  requireClientPortalEntitlement,
+  currentUserHasClientPortal,
+  ForbiddenError,
+} from "@/lib/authz";
 import { UnauthorizedError } from "@/lib/db-helpers";
+import type { EntitlementOverride } from "@/lib/billing/entitlements";
 
 /** A bound portal user whose firm carries the given entitlements. */
-function bindPortalUser(entitlements: string[]) {
+function bindPortalUser(entitlements: string[], advisorId = "u_advisor") {
   authMock.mockResolvedValue({ userId: "u_client", orgId: null });
-  getPortalClientRefMock.mockResolvedValue({ id: "client-1", firmId: "org_firm" });
+  getPortalClientRefMock.mockResolvedValue({
+    id: "client-1",
+    firmId: "org_firm",
+    advisorId,
+  });
   getOrganizationMock.mockResolvedValue({ publicMetadata: { entitlements } });
 }
 
@@ -29,6 +45,8 @@ beforeEach(() => {
   authMock.mockReset();
   getPortalClientRefMock.mockReset();
   getOrganizationMock.mockReset();
+  getActiveUserOverridesMock.mockReset();
+  getActiveUserOverridesMock.mockResolvedValue([]);
 });
 
 describe("requireClientPortalAccess", () => {
@@ -64,15 +82,154 @@ describe("requireClientPortalAccess — client_portal entitlement gate", () => {
 
   it("fails closed when the firm's Clerk metadata carries no entitlements array", async () => {
     authMock.mockResolvedValue({ userId: "u_client", orgId: null });
-    getPortalClientRefMock.mockResolvedValue({ id: "client-1", firmId: "org_firm" });
+    getPortalClientRefMock.mockResolvedValue({
+      id: "client-1",
+      firmId: "org_firm",
+      advisorId: "u_advisor",
+    });
     getOrganizationMock.mockResolvedValue({ publicMetadata: {} });
     await expect(requireClientPortalAccess()).rejects.toBeInstanceOf(ForbiddenError);
   });
 
   it("fails closed when the client has no firm", async () => {
     authMock.mockResolvedValue({ userId: "u_client", orgId: null });
-    getPortalClientRefMock.mockResolvedValue({ id: "client-1", firmId: null });
+    getPortalClientRefMock.mockResolvedValue({
+      id: "client-1",
+      firmId: null,
+      advisorId: "u_advisor",
+    });
     await expect(requireClientPortalAccess()).rejects.toBeInstanceOf(ForbiddenError);
     expect(getOrganizationMock).not.toHaveBeenCalled();
+  });
+});
+
+const GRANT: EntitlementOverride[] = [{ entitlement: "client_portal", mode: "grant" }];
+const REVOKE: EntitlementOverride[] = [{ entitlement: "client_portal", mode: "revoke" }];
+
+/**
+ * Hand the overrides to exactly ONE user id; every other id gets nothing and
+ * falls back to the firm. This is what lets an A1 test FAIL: a gate that
+ * resolved against the client's own id instead of their advisor's would see an
+ * empty list. `mockResolvedValue` answers for every id, so it proves nothing.
+ */
+function overridesForOnly(clerkUserId: string, rows: EntitlementOverride[]) {
+  getActiveUserOverridesMock.mockImplementation(async (_f: string, u: string) =>
+    u === clerkUserId ? rows : [],
+  );
+}
+
+describe("requireClientPortalAccess — A1: the client follows their own advisor", () => {
+  it("lets a client in when the firm is OFF but their advisor is granted", async () => {
+    bindPortalUser([]);
+    overridesForOnly("u_advisor", GRANT);
+    await expect(requireClientPortalAccess()).resolves.toEqual({
+      clientId: "client-1",
+      clerkUserId: "u_client",
+    });
+  });
+
+  it("locks a client out when the firm is ON but their advisor is revoked", async () => {
+    bindPortalUser(["client_portal"]);
+    overridesForOnly("u_advisor", REVOKE);
+    await expect(requireClientPortalAccess()).rejects.toThrow(ForbiddenError);
+  });
+
+  it("resolves against the CLIENT'S advisor, not the client's own user id", async () => {
+    bindPortalUser([], "u_advisor");
+    overridesForOnly("u_advisor", GRANT);
+    await expect(requireClientPortalAccess()).resolves.toMatchObject({
+      clientId: "client-1",
+    });
+    expect(getActiveUserOverridesMock).toHaveBeenCalledWith("org_firm", "u_advisor");
+  });
+
+  it("fails closed when the client has no advisor", async () => {
+    bindPortalUser(["client_portal"], "");
+    await expect(requireClientPortalAccess()).rejects.toThrow(ForbiddenError);
+  });
+
+  it("follows the firm when the advisor has no override, in both directions", async () => {
+    bindPortalUser(["client_portal"]);
+    await expect(requireClientPortalAccess()).resolves.toMatchObject({
+      clientId: "client-1",
+    });
+    bindPortalUser([]);
+    await expect(requireClientPortalAccess()).rejects.toThrow(ForbiddenError);
+  });
+});
+
+describe("requireClientPortalEntitlement — the advisor-side gate", () => {
+  /** An advisor acting inside their own org, whose org metadata rides the session. */
+  function bindAdvisor(entitlements: string[]) {
+    authMock.mockResolvedValue({
+      userId: "u_advisor",
+      orgId: "org_firm",
+      sessionClaims: { org_public_metadata: { entitlements } },
+    });
+  }
+
+  it("allows a granted advisor at a firm with no firm-level grant", async () => {
+    bindAdvisor([]);
+    getActiveUserOverridesMock.mockResolvedValue(GRANT);
+    await expect(requireClientPortalEntitlement("org_firm")).resolves.toBeUndefined();
+  });
+
+  it("blocks a revoked advisor at a firm that has the grant", async () => {
+    bindAdvisor(["client_portal"]);
+    getActiveUserOverridesMock.mockResolvedValue(REVOKE);
+    await expect(requireClientPortalEntitlement("org_firm")).rejects.toThrow(ForbiddenError);
+  });
+
+  it("resolves against the CALLER, not some other member", async () => {
+    bindAdvisor([]);
+    getActiveUserOverridesMock.mockImplementation(async (_f: string, u: string) =>
+      u === "u_other" ? GRANT : [],
+    );
+    await expect(requireClientPortalEntitlement("org_firm")).rejects.toThrow(ForbiddenError);
+  });
+
+  it("scopes the lookup to the OWNING firm for a shared cross-firm client", async () => {
+    bindAdvisor(["client_portal"]);
+    getOrganizationMock.mockResolvedValue({ publicMetadata: { entitlements: [] } });
+    await expect(requireClientPortalEntitlement("org_other")).rejects.toThrow(ForbiddenError);
+    expect(getActiveUserOverridesMock).toHaveBeenCalledWith("org_other", "u_advisor");
+  });
+
+  it("throws UnauthorizedError with no session", async () => {
+    authMock.mockResolvedValue({ userId: null, orgId: null });
+    await expect(requireClientPortalEntitlement("org_firm")).rejects.toThrow(UnauthorizedError);
+  });
+});
+
+describe("currentUserHasClientPortal", () => {
+  it("is true for a granted advisor at a firm with no firm-level grant", async () => {
+    authMock.mockResolvedValue({
+      userId: "u_advisor",
+      orgId: "org_firm",
+      sessionClaims: { org_public_metadata: { entitlements: [] } },
+    });
+    getActiveUserOverridesMock.mockResolvedValue(GRANT);
+    expect(await currentUserHasClientPortal()).toBe(true);
+  });
+
+  it("is false for a revoked advisor at a firm that has the grant", async () => {
+    authMock.mockResolvedValue({
+      userId: "u_advisor",
+      orgId: "org_firm",
+      sessionClaims: { org_public_metadata: { entitlements: ["client_portal"] } },
+    });
+    getActiveUserOverridesMock.mockResolvedValue(REVOKE);
+    expect(await currentUserHasClientPortal()).toBe(false);
+  });
+
+  it("is false with no org, without asking for overrides at all", async () => {
+    // A granted override must not resurrect an org-less caller: with no org
+    // there is no firm the override could belong to. The second assertion is
+    // what makes this test real — the answer alone is `false` either way, so
+    // it also passed with the `!orgId` guard deleted.
+    authMock.mockResolvedValue({ userId: "u_advisor", orgId: null });
+    getActiveUserOverridesMock.mockResolvedValue(GRANT);
+    expect(await currentUserHasClientPortal()).toBe(false);
+    expect(getActiveUserOverridesMock).not.toHaveBeenCalled();
   });
 });

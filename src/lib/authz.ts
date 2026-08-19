@@ -5,7 +5,8 @@ import { getPortalClientRef } from "@/lib/portal/get-portal-client";
 import { roleHasCapability, type Capability } from "./capabilities";
 import { currentUserIsBillingContact } from "@/lib/billing/billing-contact";
 import { PAST_DUE_GRACE_DAYS } from "@/lib/billing/access-policy";
-import { hasClientPortalEntitlement } from "@/lib/billing/entitlements";
+import { hasClientPortalEntitlement, deriveUserEntitlements } from "@/lib/billing/entitlements";
+import { getActiveUserOverrides } from "@/lib/entitlements/user-overrides";
 
 /**
  * Forbidden — the caller is authenticated but lacks the required role
@@ -161,59 +162,130 @@ const firmEntitlements = cache(async (firmId: string): Promise<string[] | null> 
   return Array.isArray(raw) ? raw.map(String) : null;
 });
 
-const PORTAL_NOT_ENTITLED = "Client portal is not enabled for this firm";
+// Reaches the browser verbatim: `authErrorResponse` returns `err.message` as the
+// 403 body. It deliberately names NO scope — a denial can now be firm-wide OR a
+// single user's override, and "for this firm" sent a per-user-revoked advisor to
+// an admin who would see the firm switched on.
+const PORTAL_NOT_ENTITLED = "Client portal is not enabled";
 
-/**
- * Client-portal entitlement gate, keyed to the owning firm. The portal is OFF
- * for every firm by default — `client_portal` is not a base entitlement — so
- * this throws unless ops has granted the key to `firmId`.
- *
- * Own org: read sessionClaims.org_public_metadata (the advisor-side callers,
- * no Clerk call). Other firm — including every portal user, who has no orgId of
- * their own: fetch that org's publicMetadata via Clerk.
- */
-export async function requireClientPortalEntitlement(firmId: string): Promise<void> {
-  const { userId, orgId, sessionClaims } = await auth();
-  if (!userId) throw new UnauthorizedError();
+/** One message for the blank-advisor condition, which two gates below check. */
+const PORTAL_NO_ADVISOR = "No advisor for this client";
+
+/** The firm's entitlements, preferring the caller's session claims when
+ *  `firmId` IS the caller's own org (no Clerk round trip), else Clerk. This is
+ *  the fast path the single old gate had inlined. */
+async function firmEntitlementsFor(firmId: string): Promise<string[] | null> {
+  const { orgId, sessionClaims } = await auth();
   if (orgId && firmId === orgId) {
     const meta =
       (sessionClaims as { org_public_metadata?: { entitlements?: string[] } } | null)
         ?.org_public_metadata ?? {};
-    if (!hasClientPortalEntitlement(meta.entitlements)) {
-      throw new ForbiddenError(PORTAL_NOT_ENTITLED);
-    }
-    return;
+    return meta.entitlements ?? null;
   }
-  if (!hasClientPortalEntitlement(await firmEntitlements(firmId))) {
+  return firmEntitlements(firmId);
+}
+
+/** The portal decision for ONE named user at ONE firm: the firm's entitlements
+ *  with that user's active overrides layered on top. */
+async function portalEntitledFor(firmId: string, clerkUserId: string): Promise<boolean> {
+  // Two independent round trips (Clerk, then Postgres) on a gate that runs on
+  // every portal request — issued together rather than one after the other.
+  const [firm, overrides] = await Promise.all([
+    firmEntitlementsFor(firmId),
+    getActiveUserOverrides(firmId, clerkUserId),
+  ]);
+  const effective = deriveUserEntitlements({
+    firmEntitlements: firm ?? [],
+    overrides,
+  });
+  return hasClientPortalEntitlement(effective);
+}
+
+/**
+ * ADVISOR-SIDE client-portal gate, keyed to the owning firm and resolved
+ * against THE CALLER. The portal is off for every firm by default, and a
+ * per-user override can turn it on for one advisor at a firm that lacks the
+ * firm-level grant — or off for one advisor at a firm that has it.
+ *
+ * The override lookup uses the OWNING `firmId`, so an advisor acting on another
+ * firm's shared household has no override there and follows that firm's own
+ * setting. A firm authorizes its own households.
+ *
+ * Not for portal clients — they have no org membership and therefore no
+ * overrides of their own. Use `requireClientPortalForAdvisor`.
+ */
+export async function requireClientPortalEntitlement(firmId: string): Promise<void> {
+  const { userId } = await auth();
+  if (!userId) throw new UnauthorizedError();
+  if (!(await portalEntitledFor(firmId, userId))) {
     throw new ForbiddenError(PORTAL_NOT_ENTITLED);
   }
 }
 
 /**
- * Non-throwing read of the CALLER'S OWN org client-portal entitlement, for
- * advisor-side UI that hides the portal surface rather than denying it. Reads
- * sessionClaims only — no Clerk call. Never use it to authorize a mutation;
- * `requireClientPortalEntitlement` is the gate.
+ * CLIENT-SIDE client-portal gate. A portal client has no org membership, so
+ * there is no caller whose overrides could apply — the rule names the
+ * household's owning advisor (`clients.advisor_id`) instead.
+ *
+ * Takes no CALLER identity — the advisor is named explicitly, because the
+ * session belongs to the client, not to the user being decided about. It does
+ * still read the session underneath (`firmEntitlementsFor`'s own-org fast
+ * path), which simply never matches here: a portal client has no org. Fails
+ * closed on a blank advisor, matching the `firmId` guard in
+ * `requireClientPortalAccess`.
  */
-export async function currentOrgHasClientPortal(): Promise<boolean> {
-  const { sessionClaims } = await auth();
+export async function requireClientPortalForAdvisor(
+  firmId: string,
+  advisorId: string,
+): Promise<void> {
+  if (!advisorId) throw new ForbiddenError(PORTAL_NO_ADVISOR);
+  if (!(await portalEntitledFor(firmId, advisorId))) {
+    throw new ForbiddenError(PORTAL_NOT_ENTITLED);
+  }
+}
+
+/**
+ * Non-throwing read of the CALLER'S OWN client-portal access, for advisor-side
+ * UI that hides the portal surface rather than denying it. Named for the user,
+ * not the org, because a per-user override can differ from the firm's setting.
+ * Never use it to authorize a mutation; `requireClientPortalEntitlement` is the
+ * gate.
+ */
+export async function currentUserHasClientPortal(): Promise<boolean> {
+  const { userId, orgId, sessionClaims } = await auth();
+  if (!userId || !orgId) return false;
   const meta =
     (sessionClaims as { org_public_metadata?: { entitlements?: string[] } } | null)
       ?.org_public_metadata ?? {};
-  return hasClientPortalEntitlement(meta.entitlements);
+  return hasClientPortalEntitlement(
+    deriveUserEntitlements({
+      firmEntitlements: meta.entitlements ?? [],
+      overrides: await getActiveUserOverrides(orgId, userId),
+    }),
+  );
 }
 
 /**
  * Portal-user gate. Returns the bound clientId for the session, or
  * throws — UnauthorizedError if no session, ForbiddenError otherwise
- * (advisor session, signed-in user with no clients.clerk_user_id, or a firm
- * whose `client_portal` entitlement is off).
+ * (advisor session, signed-in user with no clients.clerk_user_id, or a
+ * household whose owning advisor's effective `client_portal` entitlement is
+ * off — the firm's setting with that advisor's per-user override applied).
  *
- * The entitlement check lives HERE rather than at each call site because this
- * is the single chokepoint for both `/portal/*` pages and every
- * `/api/portal/*` route handler — an ops revoke goes fully dark in one place,
- * and an already-bound client is not grandfathered. Pairs with the middleware
- * branch that routes portal users to `/portal`.
+ * The entitlement check lives HERE rather than at each call site so an ops
+ * revoke goes dark in one place for every surface that calls this gate, with
+ * no grandfathering for an already-bound client.
+ *
+ * ⚠️ That is the `/portal/*` PAGES ONLY — this is NOT the chokepoint for the
+ * portal API. `api/portal/intake/route.ts` is the one handler that calls this
+ * gate; every other `/api/portal/*` handler resolves identity through
+ * `resolvePortalClient`, whose no-org branch checks the clerk_user_id BINDING
+ * and no entitlement at all. A revoked client therefore keeps read/write on
+ * the portal API — which is what the mobile portal talks to. Closing that gap
+ * changes the auth behaviour of every one of those pre-existing routes, so it
+ * is a deliberate open decision, not an oversight.
+ *
+ * Pairs with the middleware branch that routes portal users to `/portal`.
  */
 export async function requireClientPortalAccess(): Promise<{
   clientId: string;
@@ -232,7 +304,13 @@ export async function requireClientPortalAccess(): Promise<{
   if (!ref.firmId) {
     throw new ForbiddenError("No firm for this client");
   }
-  await requireClientPortalEntitlement(ref.firmId);
+  // A1: the client's access follows their household's owning advisor, not the
+  // firm alone and not the client's own user id — a portal client has no
+  // overrides of their own.
+  if (!ref.advisorId) {
+    throw new ForbiddenError(PORTAL_NO_ADVISOR);
+  }
+  await requireClientPortalForAdvisor(ref.firmId, ref.advisorId);
   return { clientId: ref.id, clerkUserId: userId };
 }
 

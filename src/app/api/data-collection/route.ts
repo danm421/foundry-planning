@@ -10,6 +10,7 @@ import { requireClientEditAccess } from "@/lib/clients/authz";
 import {
   requireActiveSubscriptionForFirm,
   requireClientPortalEntitlement,
+  requireClientPortalForAdvisor,
   authErrorResponse,
 } from "@/lib/authz";
 import { clerkInviteErrorResponse } from "@/lib/clients/portal-invite-errors";
@@ -137,8 +138,14 @@ export async function POST(req: Request): Promise<Response> {
     if (mode === "prefilled") {
       // A prefilled send is delivered AS a portal invite (see below), so it is
       // the second way to grant portal access and needs the same entitlement as
-      // /portal/invite. A blank send is a tokenized email link — not gated.
+      // /portal/invite — including that route's second check: the HOUSEHOLD'S
+      // OWN advisor must be entitled, since sign-in resolves against
+      // `clients.advisor_id` and not against the sender. Prefilled always
+      // carries a clientId (validated above), so a missing row here is a
+      // malformed request and fails closed on the blank advisorId. A blank
+      // send is a tokenized email link — not gated.
       await requireClientPortalEntitlement(firmId);
+      await requireClientPortalForAdvisor(firmId, accessedClient?.advisorId ?? "");
       const limit = await checkPortalInviteRateLimit(firmId);
       if (!limit.allowed) {
         return NextResponse.json(
