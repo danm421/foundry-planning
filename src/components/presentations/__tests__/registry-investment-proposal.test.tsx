@@ -11,6 +11,7 @@ describe("investmentProposalPage", () => {
     expect(CATEGORY_ORDER).toEqual([
       "Framing", "Cash Flow", "Income Tax", "Assets",
       "Insurance", "Estate", "Monte Carlo", "Comparison", "Retirement",
+      "Early Years",
     ]);
   });
 

@@ -64,6 +64,10 @@ export const SECTION_ACCENTS: Record<string, SectionAccent> = {
   "Monte Carlo": { accent: dataLight.pink,   tint: "#f5e3ea" },  // pink
   Retirement:    { accent: dataLight.yellow, tint: "#f5ecd2" },  // gold
   Comparison:    { accent: dataLight.grey,   tint: "#ececef" },  // grey
+  // Green reads as growth, which is what this section is about. It is the
+  // same Deep Jewel hue Insurance uses: all nine palette entries are
+  // otherwise allocated, and the two sections do not share a built-in deck.
+  "Early Years": { accent: dataLight.green,  tint: "#e0f0e8" },  // green
 };
 
 // Neutral warm stripe for alternating data rows — color identity lives in the

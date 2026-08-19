@@ -341,6 +341,17 @@ import {
 import { MapNetWorthPagePdf } from "./pages/map-net-worth/page-pdf";
 import { MapCashFlowPagePdf } from "./pages/map-cash-flow/page-pdf";
 import { MapGoalsPagePdf } from "./pages/map-goals/page-pdf";
+import {
+  EARLY_YEARS_STANDING_OPTIONS_DEFAULT,
+  type EarlyYearsStandingPageData,
+  type EarlyYearsStandingPageOptions,
+} from "@/lib/presentations/pages/early-years-standing/types";
+import { earlyYearsStandingOptionsSchema } from "@/lib/presentations/pages/early-years-standing/options-schema";
+import { summarizeEarlyYearsStandingOptions } from "@/lib/presentations/pages/early-years-standing/summarize-options";
+import { estimateEarlyYearsStandingPageCount } from "@/lib/presentations/pages/early-years-standing/estimate-page-count";
+import { buildEarlyYearsStandingData } from "@/lib/presentations/pages/early-years-standing/view-model";
+import { EarlyYearsStandingPagePdf } from "./pages/early-years-standing/page-pdf";
+import { EarlyYearsStandingOptionsControl } from "./pages/early-years-standing/options-control";
 
 export const CATEGORY_ORDER = [
   "Framing",
@@ -352,6 +363,7 @@ export const CATEGORY_ORDER = [
   "Monte Carlo",
   "Comparison",
   "Retirement",
+  "Early Years",
 ] as const;
 
 export type PresentationCategory = (typeof CATEGORY_ORDER)[number];
@@ -1297,6 +1309,30 @@ export const lifeInsuranceSummaryPage: PresentationPage<
   renderPdf: (input) => <LifeInsuranceSummaryPagePdf {...input} />,
 };
 
+export const earlyYearsStandingPage: PresentationPage<
+  EarlyYearsStandingPageData,
+  EarlyYearsStandingPageOptions
+> = {
+  id: "earlyYearsStanding",
+  title: "Where You Stand Today",
+  description: "Savings rate, current portfolio, and what the employer match adds each year.",
+  category: "Early Years",
+  defaultOptions: EARLY_YEARS_STANDING_OPTIONS_DEFAULT,
+  optionsSchema: earlyYearsStandingOptionsSchema,
+  summarizeOptions: summarizeEarlyYearsStandingOptions,
+  estimatePageCount: () => estimateEarlyYearsStandingPageCount(),
+  OptionsControl: EarlyYearsStandingOptionsControl,
+  // Pinned to Base Case, like the other Early Years sheet. The deck's two pages
+  // answer one question together — "where you are, and what moving one lever is
+  // worth" — and the ladder derives its rungs from the base tree. A per-page
+  // scenario override here would print a savings rate the next sheet's own
+  // "what you save now" bar disagrees with.
+  supportsScenarioOverride: false,
+  requiredScenarioRefs: () => ["base"],
+  buildData: (ctx, options) => buildEarlyYearsStandingData(ctx, options),
+  renderPdf: (input) => <EarlyYearsStandingPagePdf {...input} />,
+};
+
 export const PRESENTATION_PAGES = {
   cover: coverPage,
   toc: tocPage,
@@ -1345,6 +1381,7 @@ export const PRESENTATION_PAGES = {
   scenarioChanges: scenarioChangesPage,
   retirementComparison: retirementComparisonPage,
   lifeInsuranceSummary: lifeInsuranceSummaryPage,
+  earlyYearsStanding: earlyYearsStandingPage,
 } as const;
 
 export type PresentationPageId = keyof typeof PRESENTATION_PAGES;
