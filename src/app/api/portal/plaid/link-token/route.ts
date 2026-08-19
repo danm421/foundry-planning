@@ -15,10 +15,56 @@ import { getPlaidClient } from "@/lib/plaid/client";
 import { decrypt } from "@/lib/plaid/crypto";
 import { redactPlaidError } from "@/lib/plaid/errors";
 import { plaidWebhookUrl } from "@/lib/plaid/webhook-url";
+import type { LinkScope } from "@/lib/portal/contracts";
 
 export const dynamic = "force-dynamic";
 
-type Body = { itemId?: string; enableProducts?: boolean; accountSelection?: boolean };
+const LINK_SCOPES: readonly string[] = ["banking", "investments"];
+
+type Body = {
+  itemId?: string;
+  enableProducts?: boolean;
+  accountSelection?: boolean;
+  scope?: LinkScope;
+};
+
+/**
+ * Products for a new link, given what the client says it is connecting.
+ *
+ * Only ever require the one product that matches the scope; everything else
+ * rides along in `required_if_supported_products`, which is extracted (and
+ * billed) wherever supported and never blocks Link. Plaid's compatibility
+ * matrix is why this has to be a choice at all:
+ *
+ *   Investments  — investment accounts, and no depository subtype but cash
+ *                  management. Excludes credit and loan entirely.
+ *   Transactions — depository, credit, loan (student/mortgage) and other.
+ *                  Excludes investment accounts entirely.
+ *
+ * So requiring Investments dead-ends a client linking a card or a loan ("None
+ * of your accounts are investment accounts"), and requiring Transactions
+ * dead-ends a brokerage- or IRA-only link. Plaid rejects an empty `products`
+ * array, and Identity/Assets — the only products covering every account type —
+ * are not enabled on our Plaid account.
+ *
+ * Never request Auth: account/routing numbers are unused by the app and Auth is
+ * not in our Plaid production approval — including it fails the whole
+ * linkTokenCreate with INVALID_PRODUCT in production.
+ */
+function buildNewLinkProducts(scope: LinkScope): {
+  products: Products[];
+  required_if_supported_products: Products[];
+} {
+  return scope === "investments"
+    ? {
+        products: [Products.Investments],
+        required_if_supported_products: [Products.Transactions, Products.Liabilities],
+      }
+    : {
+        products: [Products.Transactions],
+        required_if_supported_products: [Products.Investments, Products.Liabilities],
+      };
+}
 
 /**
  * OAuth banks redirect the whole browser tab out to the bank and back to a URL
@@ -50,6 +96,9 @@ export async function POST(req: Request): Promise<Response> {
     }
 
     const body = (await req.json().catch(() => ({}))) as Body;
+    if (body.scope !== undefined && !LINK_SCOPES.includes(body.scope)) {
+      return NextResponse.json({ error: "Invalid scope" }, { status: 400 });
+    }
 
     const redirectUri = oauthRedirectUri();
 
@@ -93,26 +142,13 @@ export async function POST(req: Request): Promise<Response> {
       });
     }
 
-    // New-link mode.
+    // New-link mode. Default to banking: it covers depository, credit and loan
+    // accounts, so a caller that predates `scope` (an older mobile build) gets
+    // the broader half rather than the investments-only one.
     const webhookUrl = plaidWebhookUrl();
     const resp = await plaid.linkTokenCreate({
       ...baseRequest,
-      // Never request Auth: account/routing numbers are unused by the app and
-      // Auth is not in our Plaid production approval — including it fails the
-      // whole linkTokenCreate with INVALID_PRODUCT in production.
-      //
-      // Only Investments is *required*. Everything in `products` is a hard
-      // filter: Link only shows institutions that support *every* listed
-      // product, so requiring Transactions/Liabilities silently blocked
-      // brokerages (Fidelity, etc.) with a "Connectivity not supported" screen —
-      // they support Investments but not Transactions/Liabilities. Moving those
-      // to required_if_supported_products keeps such institutions selectable and
-      // still extracts (and bills) Transactions/Liabilities wherever supported.
-      products: [Products.Investments],
-      required_if_supported_products: [
-        Products.Transactions,
-        Products.Liabilities,
-      ],
+      ...buildNewLinkProducts(body.scope ?? "banking"),
       // New items deliver webhooks from birth; existing items are backfilled
       // via scripts/backfill-plaid-webhooks.ts (itemWebhookUpdate).
       ...(webhookUrl ? { webhook: webhookUrl } : {}),

@@ -67,8 +67,8 @@ describe("POST /api/portal/plaid/link-token", () => {
       expect.objectContaining({
         user: { client_user_id: "client-1" },
         client_name: expect.any(String),
-        products: ["investments"],
-        required_if_supported_products: ["transactions", "liabilities"],
+        products: ["transactions"],
+        required_if_supported_products: ["investments", "liabilities"],
         country_codes: ["US"],
         language: "en",
       }),
@@ -143,24 +143,63 @@ describe("POST /api/portal/plaid/link-token", () => {
     expect(linkTokenCreate).not.toHaveBeenCalled();
   });
 
-  it("new link requires only Investments; Transactions/Liabilities are required-if-supported — never Auth", async () => {
-    // Auth (account/routing numbers) is unused by the app and not in our Plaid
-    // production approval; requesting it makes linkTokenCreate fail with
-    // INVALID_PRODUCT in production.
-    //
-    // Only Investments is required — `products` is a hard institution filter, so
-    // requiring Transactions/Liabilities blocked brokerages (Fidelity) that
-    // don't support them ("Connectivity not supported"). Those move to
-    // required_if_supported_products: extracted where supported, non-blocking.
+  // Plaid rejects the Item unless it holds at least one account compatible with
+  // EVERY product in `products`. Investments is incompatible with credit/loan;
+  // Transactions is incompatible with investment accounts. So each scope may
+  // require only its own product — anything else has to be non-blocking, or a
+  // client dead-ends after authorising at their bank.
+  it("banking scope requires only Transactions — never Investments, never Auth", async () => {
     const { POST } = await import("../route");
-    await POST(new Request("https://x/", { method: "POST", body: "{}" }));
+    await POST(
+      new Request("https://x/", { method: "POST", body: JSON.stringify({ scope: "banking" }) }),
+    );
+    const arg = linkTokenCreate.mock.calls[0][0];
+    expect(arg.products).toEqual(["transactions"]);
+    expect(arg.required_if_supported_products).toEqual(["investments", "liabilities"]);
+    expect(arg.additional_consented_products).toBeUndefined();
+  });
+
+  it("investments scope requires only Investments — never Transactions, never Auth", async () => {
+    const { POST } = await import("../route");
+    await POST(
+      new Request("https://x/", { method: "POST", body: JSON.stringify({ scope: "investments" }) }),
+    );
     const arg = linkTokenCreate.mock.calls[0][0];
     expect(arg.products).toEqual(["investments"]);
-    expect(arg.required_if_supported_products).toEqual([
-      "transactions",
-      "liabilities",
-    ]);
+    expect(arg.required_if_supported_products).toEqual(["transactions", "liabilities"]);
     expect(arg.additional_consented_products).toBeUndefined();
+  });
+
+  // A caller that predates `scope` (an older mobile build) gets the broader
+  // half — banking covers depository, credit and loan.
+  it("omitted scope defaults to banking", async () => {
+    const { POST } = await import("../route");
+    await POST(new Request("https://x/", { method: "POST", body: "{}" }));
+    expect(linkTokenCreate.mock.calls[0][0].products).toEqual(["transactions"]);
+  });
+
+  it("rejects an unrecognised scope rather than silently picking one", async () => {
+    const { POST } = await import("../route");
+    const res = await POST(
+      new Request("https://x/", { method: "POST", body: JSON.stringify({ scope: "everything" }) }),
+    );
+    expect(res.status).toBe(400);
+    expect(linkTokenCreate).not.toHaveBeenCalled();
+  });
+
+  it("never requests Auth in either scope", async () => {
+    // Auth (account/routing numbers) is unused by the app and is not in our
+    // Plaid production approval — requesting it fails linkTokenCreate outright
+    // with INVALID_PRODUCT in production.
+    const { POST } = await import("../route");
+    for (const scope of ["banking", "investments"]) {
+      await POST(new Request("https://x/", { method: "POST", body: JSON.stringify({ scope }) }));
+    }
+    for (const call of linkTokenCreate.mock.calls) {
+      expect(call[0].products).not.toContain("auth");
+      expect(call[0].required_if_supported_products).not.toContain("auth");
+      expect(call[0].additional_consented_products ?? []).not.toContain("auth");
+    }
   });
 
   it("enableProducts uses update mode with additional_consented_products", async () => {

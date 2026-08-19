@@ -393,6 +393,17 @@ export interface PlaidItemDTO {
 }
 
 // ---- plaid link (from plaid-link-complete.ts / portal-link-helpers.ts / route files) ----
+/**
+ * Which half of the account world a NEW Plaid link is for.
+ *
+ * Plaid requires at least one product in `products`, and no product we're
+ * approved for is compatible with every account type: Investments excludes
+ * credit and loan accounts, Transactions excludes investment accounts. So the
+ * client says which kind it is linking and the link-token route requires only
+ * the matching product. See the route for the full compatibility matrix.
+ */
+export type LinkScope = "banking" | "investments";
+
 export interface PlaidLinkTokenDTO {
   linkToken: string;
   expiration: string;

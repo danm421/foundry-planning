@@ -362,7 +362,8 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
         {dto.editEnabled && (
           <div className="flex flex-wrap items-center justify-end gap-3">
             <PlaidConsentNotice />
-            <PlaidLinkButton mode="link" onLinkSuccess={setLinkPayload} />
+            <PlaidLinkButton mode="link" scope="banking" onLinkSuccess={setLinkPayload} />
+            <PlaidLinkButton mode="link" scope="investments" onLinkSuccess={setLinkPayload} />
             <button
               type="button"
               onClick={openAddAccount}

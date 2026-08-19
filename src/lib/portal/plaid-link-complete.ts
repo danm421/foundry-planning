@@ -7,13 +7,17 @@
 // the side-effects here — and letting each caller own its own UI continuation
 // (in-memory callbacks vs. navigation) — keeps the two paths identical.
 
-import type { PlaidLinkSuccessPayload } from "@/lib/portal/contracts";
+import type { LinkScope, PlaidLinkSuccessPayload } from "@/lib/portal/contracts";
+
+export type { LinkScope };
 
 export type PlaidLinkMode =
   | "link"
   | "reauth"
   | "enable-products"
   | "account-selection";
+
+
 
 /** Response shape of `POST /api/portal/plaid/exchange` (new-link mode). */
 export type LinkSuccessPayload = PlaidLinkSuccessPayload;

@@ -8,12 +8,16 @@ import {
   runPlaidLinkSuccess,
   setPlaidOAuthCtx,
   clearPlaidOAuthCtx,
+  type LinkScope,
   type LinkSuccessPayload,
 } from "@/lib/portal/plaid-link-complete";
 
 type Props =
   | {
       mode: "link";
+      // Plaid can't require a product that fits every account type at once, so a
+      // new link says which kind it is after. See the link-token route.
+      scope: LinkScope;
       onLinkSuccess: (payload: LinkSuccessPayload) => void;
     }
   | {
@@ -89,7 +93,7 @@ export function PlaidLinkButton(props: Props) {
             ? JSON.stringify({ itemId: props.itemId, enableProducts: true })
             : props.mode === "account-selection"
               ? JSON.stringify({ itemId: props.itemId, accountSelection: true })
-              : "{}";
+              : JSON.stringify({ scope: props.scope });
       const r = await portalFetch("/api/portal/plaid/link-token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -128,7 +132,9 @@ export function PlaidLinkButton(props: Props) {
 
   const label =
     props.mode === "link"
-      ? "Link bank"
+      ? props.scope === "investments"
+        ? "Link investments"
+        : "Link bank or loan"
       : props.mode === "reauth"
         ? "Re-authenticate"
         : props.mode === "account-selection"

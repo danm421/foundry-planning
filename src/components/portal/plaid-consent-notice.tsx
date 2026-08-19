@@ -8,7 +8,7 @@ const PLAID_EUPP_URL = "https://plaid.com/legal/#end-user-privacy-policy";
 const LINK_CLS = "text-ink-2 underline hover:text-ink";
 
 /**
- * Clickwrap disclosure that sits beside the "Link bank" button. Satisfies
+ * Clickwrap disclosure that sits beside the account-linking buttons. Satisfies
  * Plaid's "Provide required notices and obtain consent" requirement: discloses
  * Plaid usage + links Foundry's Privacy Policy and Plaid's End User Privacy
  * Policy. Proceeding to link an account constitutes agreement; no consent

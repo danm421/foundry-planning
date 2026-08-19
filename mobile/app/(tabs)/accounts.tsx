@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
-import type { AccountsOverviewDTO, PlaidItemDTO } from "@contracts";
+import type { AccountsOverviewDTO, LinkScope, PlaidItemDTO } from "@contracts";
 import { useApi } from "@/api/context";
 import { useMe } from "@/auth/me-gate";
 import { fetchAccountsOverview, fetchPlaidItems } from "@/api/portal";
@@ -53,6 +53,8 @@ export default function Accounts() {
   const me = useMe();
   const plaidLink = usePlaidLink();
 
+  // Which link button was pressed — drives the spinner on that button alone.
+  const [linkingScope, setLinkingScope] = useState<LinkScope | null>(null);
   const [data, setData] = useState<AccountsOverviewDTO | null>(null);
   const [error, setError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -160,14 +162,33 @@ export default function Accounts() {
       >
         <Text className="text-ink text-2xl font-semibold mb-4">Accounts</Text>
 
+        {/* Two entry points, because Plaid can't require one product that fits
+            every account type — see LinkScope in @contracts. */}
         {me.editEnabled ? (
-          <Pressable
-            className={`bg-accent rounded-xl px-4 py-2.5 mb-3 self-start ${linking ? "opacity-50" : ""}`}
-            disabled={linking}
-            onPress={() => void plaidLink.open({ mode: "link" })}
-          >
-            {linking ? <ActivityIndicator /> : <Text className="text-paper font-semibold">Link a bank</Text>}
-          </Pressable>
+          <View className="flex-row flex-wrap gap-2 mb-3">
+            {(
+              [
+                { scope: "banking", label: "Link bank or loan" },
+                { scope: "investments", label: "Link investments" },
+              ] as const
+            ).map(({ scope, label }) => (
+              <Pressable
+                key={scope}
+                className={`bg-accent rounded-xl px-4 py-2.5 ${linking ? "opacity-50" : ""}`}
+                disabled={linking}
+                onPress={() => {
+                  setLinkingScope(scope);
+                  void plaidLink.open({ mode: "link", scope });
+                }}
+              >
+                {linking && linkingScope === scope ? (
+                  <ActivityIndicator />
+                ) : (
+                  <Text className="text-paper font-semibold">{label}</Text>
+                )}
+              </Pressable>
+            ))}
+          </View>
         ) : null}
 
         {plaidLink.error ? <Text className="text-warn mb-3">{plaidLink.error}</Text> : null}

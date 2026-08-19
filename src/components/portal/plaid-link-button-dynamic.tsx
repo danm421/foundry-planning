@@ -12,7 +12,7 @@ export const PlaidLinkButton = dynamic(
   {
     ssr: false,
     loading: () => (
-      <span className="inline-block h-9 w-28 animate-pulse rounded-md bg-hair" aria-hidden />
+      <span className="inline-block h-9 w-32 animate-pulse rounded-md bg-hair" aria-hidden />
     ),
   },
 );

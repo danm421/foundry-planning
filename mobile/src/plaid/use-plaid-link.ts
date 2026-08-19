@@ -9,7 +9,7 @@
 
 import { useCallback, useState } from "react";
 import { createPlaidLinkSession, type LinkExit, type LinkSuccess } from "react-native-plaid-link-sdk";
-import type { PlaidLinkSuccessPayload } from "@contracts";
+import type { LinkScope, PlaidLinkSuccessPayload } from "@contracts";
 import { useApi } from "@/api/context";
 import { createLinkToken } from "@/api/portal";
 import { runPlaidLinkSuccess, type PlaidLinkMode } from "@/plaid/link-complete";
@@ -23,7 +23,7 @@ export function usePlaidLink() {
   const [error, setError] = useState<string | null>(null);
 
   const open = useCallback(
-    async (args: { mode: PlaidLinkMode; itemId?: string }) => {
+    async (args: { mode: PlaidLinkMode; itemId?: string; scope?: LinkScope }) => {
       setError(null);
       setStatus("opening");
       setPickerPayload(null);
@@ -32,6 +32,8 @@ export function usePlaidLink() {
           itemId: args.itemId,
           enableProducts: args.mode === "enable-products" ? true : undefined,
           accountSelection: args.mode === "account-selection" ? true : undefined,
+          // Only a new link picks a scope; update modes reuse the item's products.
+          scope: args.mode === "link" ? (args.scope ?? "banking") : undefined,
         });
         const session = await createPlaidLinkSession({
           token: linkToken,

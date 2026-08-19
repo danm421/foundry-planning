@@ -4,14 +4,32 @@
 // type-only from @contracts (enforced by the mobile build).
 
 import type {
-  AccountsOverviewDTO, BudgetSummaryDTO, CategoryDetail,
-  PlaidCommitDecision, PlaidItemAccountsDTO, PlaidItemDTO,
-  PortalCategoryDTO, PortalDashboardDTO, PortalMeDTO, TransactionsPageDTO,
-  PlaidLinkSuccessPayload, PlaidLinkTokenDTO,
-  PortalInvestmentsData, LiveQuote, QuotesResponseDTO, RecurringsDTO, RecurringUpsertInput,
-  RecurringPreviewDTO, PortalHouseholdDTO, HouseholdUpdateInput,
-  PortalFamilyMemberDTO, FamilyMemberInput, PortalTrustDTO, PortalSettingsDTO,
+  AccountsOverviewDTO,
+  BudgetSummaryDTO,
+  CategoryDetail,
+  FamilyMemberInput,
+  HouseholdUpdateInput,
+  LinkScope,
+  LiveQuote,
+  PlaidCommitDecision,
+  PlaidItemAccountsDTO,
+  PlaidItemDTO,
+  PlaidLinkSuccessPayload,
+  PlaidLinkTokenDTO,
+  PortalCategoryDTO,
+  PortalDashboardDTO,
+  PortalFamilyMemberDTO,
+  PortalHouseholdDTO,
+  PortalInvestmentsData,
+  PortalMeDTO,
   PortalPrivacy,
+  PortalSettingsDTO,
+  PortalTrustDTO,
+  QuotesResponseDTO,
+  RecurringPreviewDTO,
+  RecurringUpsertInput,
+  RecurringsDTO,
+  TransactionsPageDTO,
 } from "@contracts";
 import { ForbiddenError, NonJsonResponseError, type ApiClient } from "./client";
 import { buildTransactionsQuery, buildQuotesQuery, buildRecurringPreviewQuery, type TxnQuery, type RecurringPreviewQuery } from "./query";
@@ -92,7 +110,12 @@ export async function setBudget(api: ApiClient, categoryId: string, monthlyAmoun
 // Phase 3 — Plaid linking (mobile)
 // ============================================================================
 
-export type LinkTokenRequest = { itemId?: string; enableProducts?: boolean; accountSelection?: boolean };
+export type LinkTokenRequest = {
+  itemId?: string;
+  enableProducts?: boolean;
+  accountSelection?: boolean;
+  scope?: LinkScope;
+};
 
 export function createLinkToken(api: ApiClient, body: LinkTokenRequest): Promise<PlaidLinkTokenDTO> {
   return api.post<PlaidLinkTokenDTO>("/api/portal/plaid/link-token", body);

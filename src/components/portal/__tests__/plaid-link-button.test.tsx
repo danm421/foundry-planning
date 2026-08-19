@@ -34,13 +34,34 @@ describe("PlaidLinkButton", () => {
     usePlaidLink.mockReturnValue({ open, ready: true });
 
     const { PlaidLinkButton } = await import("../plaid-link-button");
-    render(<PlaidLinkButton mode="link" onLinkSuccess={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: /link bank/i }));
+    render(<PlaidLinkButton mode="link" scope="banking" onLinkSuccess={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /link bank or loan/i }));
     await waitFor(() => expect(open).toHaveBeenCalled());
     expect(global.fetch).toHaveBeenCalledWith(
       "/api/portal/plaid/link-token",
       expect.objectContaining({ method: "POST" }),
     );
+  });
+
+  // The scope decides which Plaid product the token requires; dropping it on the
+  // floor would silently send every client down the banking path.
+  it.each([
+    ["banking", /link bank or loan/i],
+    ["investments", /link investments/i],
+  ] as const)("sends scope=%s from its own button", async (scope, label) => {
+    const open = vi.fn();
+    usePlaidLink.mockReturnValue({ open, ready: true });
+
+    const { PlaidLinkButton } = await import("../plaid-link-button");
+    render(<PlaidLinkButton mode="link" scope={scope} onLinkSuccess={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: label }));
+    await waitFor(() => expect(open).toHaveBeenCalled());
+    // The fetch spy accumulates across tests in this file — take the most
+    // recent link-token call, not the first.
+    const init = (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls
+      .filter((c) => String(c[0]).endsWith("/link-token"))
+      .at(-1)?.[1] as RequestInit;
+    expect(JSON.parse(String(init.body))).toEqual({ scope });
   });
 
   it("posts reauth-complete and refreshes in 'reauth' mode after Link success", async () => {
