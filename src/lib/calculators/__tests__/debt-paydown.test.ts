@@ -164,8 +164,26 @@ describe("simulatePaydown — the yearly rows", () => {
 
     // payment must foot to principal + interest for the same years, checked
     // on the field itself rather than assumed from principal/interest alone.
+    // NOTE: this is a tautology by construction — the simulator derives
+    // yPayment, yPrincipal and yInterest from the same two locals
+    // (monthPaid, monthInterest) inside the same loop iteration, so
+    // payment === principal + interest holds algebraically for ANY value of
+    // monthPaid. It gives zero mutation resistance on its own; the
+    // yearly[0].payment check below is what actually pins the number.
     const payment = run.yearly.reduce((s, y) => s + y.payment, 0);
     expect(payment).toBeCloseTo(principal + interest, 2);
+
+    // yearly[0].payment against an oracle derived from the INPUTS, not from
+    // the simulator's own accumulators. Both minimums (150 + 320) plus the
+    // extra (250) go out every month = 720/mo. Card clears at month 11 (see
+    // activeDebts below) but its freed $150 rolls into the pool the same
+    // month rather than leaving the household's outflow, and Auto's balance
+    // is nowhere close to being overshot by the $720 pool at that point, so
+    // year one's 12 months all pay exactly 720 regardless of how the code
+    // happens to split it between debts. Neither debt is anywhere near
+    // cleared for the whole plan (monthsToDebtFree is well past 12), so this
+    // isn't testing an edge month.
+    expect(run.yearly[0].payment).toBe(12 * 720);
 
     // Card (higher rate, smaller balance) clears inside year one under
     // avalanche, so both debts are active in 2026 but only Auto remains by
