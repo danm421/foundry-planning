@@ -118,7 +118,7 @@ export default function RecurringsView({
                 <button
                   type="button"
                   onClick={() => setSelectedId(r.id)}
-                  className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-card-2 ${
+                  className={`flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-card-2 sm:gap-3 ${
                     selectedId === r.id ? "bg-card-2" : ""
                   }`}
                 >
@@ -130,11 +130,20 @@ export default function RecurringsView({
                   <span className="w-5 shrink-0 text-center" aria-hidden>
                     {r.categoryIcon ?? "🔁"}
                   </span>
-                  <span className="flex-1 truncate text-[13px]">
-                    <span className="text-ink">{r.name}</span>{" "}
-                    <span className="text-ink-3">{r.cadence === "monthly" ? "Monthly" : "Annually"}</span>
+                  {/* On a phone the name is what the client recognises, so it
+                      takes the line and the cadence drops underneath rather than
+                      both truncating into nothing. One line from sm up. */}
+                  <span className="min-w-0 flex-1 text-[13px]">
+                    <span className="block truncate text-ink sm:inline">{r.name}</span>{" "}
+                    <span className="block truncate text-[12px] text-ink-3 sm:inline sm:text-[13px]">
+                      {r.cadence === "monthly" ? "Monthly" : "Annually"}
+                    </span>
                   </span>
-                  <CategoryBadge name={r.categoryName} color={r.categoryColor} icon={null} />
+                  {/* The category label is the one thing that will not fit on a
+                      phone, and its icon already sits in the column to the left. */}
+                  <span className="hidden sm:contents">
+                    <CategoryBadge name={r.categoryName} color={r.categoryColor} icon={null} />
+                  </span>
                   <span className="tabular w-20 shrink-0 text-right text-[13px] text-ink">
                     {fmtUsd(r.state === "paid" ? r.postedThisMonth : r.predicted)}
                   </span>
