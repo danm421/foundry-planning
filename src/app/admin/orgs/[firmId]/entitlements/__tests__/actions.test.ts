@@ -75,6 +75,20 @@ describe("toggleUserEntitlementAction", () => {
     expect(mockSetUserEntitlementOverride).not.toHaveBeenCalled();
   });
 
+  it("takes the FIRST registry entry for a key, so a duplicate cannot open the gate", async () => {
+    // `.some(c => c.key === k && c.perUser)` scans until ANY entry satisfies both,
+    // so a stray non-perUser duplicate ahead of the real one would still pass.
+    // First-wins refuses. Not attacker-reachable — the registry is source code —
+    // but the stricter read is free.
+    CAPABILITIES.unshift({ key: "client_portal", label: "Client portal", description: "d" });
+    try {
+      await expect(toggleUserEntitlementAction(form())).rejects.toThrow();
+      expect(mockSetUserEntitlementOverride).not.toHaveBeenCalled();
+    } finally {
+      CAPABILITIES.shift();
+    }
+  });
+
   it("REFUSES a capability with no registry entry at all", async () => {
     await expect(toggleUserEntitlementAction(form({ entitlement: "made_up" }))).rejects.toThrow();
     expect(mockSetUserEntitlementOverride).not.toHaveBeenCalled();
