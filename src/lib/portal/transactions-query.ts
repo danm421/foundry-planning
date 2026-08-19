@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { accounts, plaidTransactions, transactionCategories } from "@/db/schema";
+import { accounts, liabilities, plaidTransactions, transactionCategories } from "@/db/schema";
 import { and, eq, gte, lte, or, ilike, desc, sql, isNull, isNotNull } from "drizzle-orm";
 import { containsPattern } from "@/lib/like-pattern";
 import type { PortalTransactionDTO } from "@/lib/portal/contracts";
@@ -11,6 +11,13 @@ export type TransactionFilters = {
   to?: string;
   categoryId?: string;
   accountId?: string;
+  /**
+   * Credit-card activity carries no `accountId` — the sync leaves it NULL and
+   * keeps only the Plaid account handle, which is what a `liabilities` row is
+   * matched on. Resolve it with `resolveLiabilityPlaidAccountId`; never accept
+   * a handle straight off the wire, or one client could read another's card.
+   */
+  liabilityPlaidAccountId?: string;
   q?: string;
   includeExcluded?: boolean;
   reviewed?: boolean;
@@ -26,6 +33,12 @@ export function buildTransactionConditions(clientId: string, f: TransactionFilte
   if (f.to) conds.push(lte(plaidTransactions.date, f.to));
   if (f.categoryId) conds.push(eq(plaidTransactions.categoryId, f.categoryId));
   if (f.accountId) conds.push(eq(plaidTransactions.accountId, f.accountId));
+  if (f.liabilityPlaidAccountId) {
+    // The IS NULL is load-bearing: an asset account synced under the same
+    // handle would otherwise fold its transactions into the card's list.
+    conds.push(isNull(plaidTransactions.accountId));
+    conds.push(eq(plaidTransactions.plaidAccountId, f.liabilityPlaidAccountId));
+  }
   if (f.reviewed === false) conds.push(isNull(plaidTransactions.reviewedAt));
   else if (f.reviewed === true) conds.push(isNotNull(plaidTransactions.reviewedAt));
   if (f.q && f.q.trim()) {
@@ -83,6 +96,27 @@ export async function loadPortalTransactionById(
     offset: 0,
   });
   return rows[0] ?? null;
+}
+
+/**
+ * The Plaid account handle a client's liability syncs under, or null when the
+ * debt is manual (no handle) or belongs to someone else — the client scope is
+ * the whole point, so callers must never pass a handle in from the request.
+ *
+ * A null answer means "no transactions can exist for this debt". Callers must
+ * return an empty list rather than dropping the filter, which would hand a
+ * card's panel every transaction the household has.
+ */
+export async function resolveLiabilityPlaidAccountId(
+  clientId: string,
+  liabilityId: string,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ plaidAccountId: liabilities.plaidAccountId })
+    .from(liabilities)
+    .where(and(eq(liabilities.id, liabilityId), eq(liabilities.clientId, clientId)))
+    .limit(1);
+  return row?.plaidAccountId ?? null;
 }
 
 export async function countPortalTransactions(

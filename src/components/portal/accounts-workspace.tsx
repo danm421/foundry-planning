@@ -357,6 +357,10 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
           payoffYear: d.payoffYear,
           isPlaidLinked: d.isPlaidLinked,
           ownerLabel: ownerLabel(d.ownerFmIds, d.ownerEntityIds),
+          // Plaid's transactions feed covers bank and card accounts only, so a
+          // mortgage or student loan would show a section that never fills;
+          // a hand-entered card has nothing syncing into it either.
+          showActivity: d.isPlaidLinked && d.liabilityType === "credit_card",
         }}
         onClose={closeDrill}
         busy={inFlight}
