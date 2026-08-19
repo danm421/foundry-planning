@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
 import { CloseButton, Row, usePortalBasePath } from "@/components/portal/portal-detail-rail";
 import { portalTabColors } from "@/components/portal/portal-tab-strip";
-import { fmtDay, fmtShares, fmtUsd } from "@/lib/portal/format";
+import { fmtDay, fmtShares, fmtUsd, fmtUsdCents } from "@/lib/portal/format";
 import type { PortalHolding } from "@/lib/portal/contracts";
 
 type PanelTab = "activity" | "holdings";
@@ -103,31 +103,19 @@ function RecentTransactions({ accountId }: { accountId: string }): ReactElement 
   );
 }
 
-/** One line of the holdings list — the shape both the cash and position rows take. */
-function HoldingRow({
-  title,
-  subtitle,
-  value,
-}: {
-  title: string;
-  subtitle: string | null;
-  value: number;
-}): ReactElement {
-  return (
-    <li className="flex items-baseline gap-3 border-b border-hair/60 py-2 text-[13px] last:border-0">
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-ink">{title}</span>
-        {subtitle && <span className="block truncate text-[12px] text-ink-3">{subtitle}</span>}
-      </span>
-      <span className="tabular shrink-0 text-ink">{fmtUsd(value)}</span>
-    </li>
-  );
-}
+const HOLDINGS_TH = "px-1 py-1 text-[10px] font-medium uppercase tracking-[0.08em] text-ink-3";
+const HOLDINGS_TD = "whitespace-nowrap px-1 py-2 text-[12px]";
+// Capped so a long fund name ellipsises instead of pushing Value out of the rail.
+const HOLDING_NAME = "block max-w-[116px] truncate";
 
 /**
  * Positions inside one account, fetched on open. Only rendered for accounts the
  * page loader flagged as holding something, so "no positions" here means the
  * sync emptied the account since the page rendered.
+ *
+ * Five columns in a 480px rail: the wrapper scrolls sideways rather than letting
+ * a long fund name squeeze the numbers, and the name itself is capped so it
+ * can't push Value off-screen on a phone.
  */
 function Holdings({ accountId }: { accountId: string }): ReactElement {
   const res = usePanelResource(`/api/portal/accounts/${accountId}/holdings`);
@@ -141,27 +129,52 @@ function Holdings({ accountId }: { accountId: string }): ReactElement {
     return <PanelPlaceholder>No holdings for this account yet.</PanelPlaceholder>;
   }
   return (
-    <ul aria-label="Holdings">
-      {holdings.map((h, i) => (
-        <HoldingRow
-          key={`${h.ticker ?? h.name}-${i}`}
-          title={h.ticker ?? h.name}
-          // The name only earns a repeat when the ticker took the title line.
-          subtitle={[h.ticker ? h.name : null, `${fmtShares(h.shares)} sh at ${fmtUsd(h.price)}`]
-            .filter(Boolean)
-            .join(" · ")}
-          value={h.marketValue}
-        />
-      ))}
-    </ul>
+    <div className="overflow-x-auto">
+      <table aria-label="Holdings" className="w-full border-collapse">
+        <thead>
+          <tr className="border-b border-hair">
+            <th scope="col" className={`${HOLDINGS_TH} text-left`}>Holding</th>
+            <th scope="col" className={`${HOLDINGS_TH} text-right`}>Shares</th>
+            <th scope="col" className={`${HOLDINGS_TH} text-right`}>Price</th>
+            <th scope="col" className={`${HOLDINGS_TH} text-right`}>Cost basis</th>
+            <th scope="col" className={`${HOLDINGS_TH} text-right`}>Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          {holdings.map((h, i) => (
+            <tr key={`${h.ticker ?? h.name}-${i}`} className="border-b border-hair/60 last:border-0">
+              <th scope="row" className={`${HOLDINGS_TD} text-left font-normal`}>
+                <span className={`${HOLDING_NAME} text-ink`}>{h.ticker ?? h.name}</span>
+                {/* The name only earns a repeat when the ticker took the first line. */}
+                {h.ticker && (
+                  <span className={`${HOLDING_NAME} text-[11px] text-ink-3`}>{h.name}</span>
+                )}
+              </th>
+              <td className={`${HOLDINGS_TD} tabular text-right text-ink-2`}>{fmtShares(h.shares)}</td>
+              <td className={`${HOLDINGS_TD} tabular text-right text-ink-2`}>{fmtUsdCents(h.price)}</td>
+              <td className={`${HOLDINGS_TD} tabular text-right text-ink-2`}>
+                {/* No basis reported by the custodian. "$0" would read as "free" and
+                    make the whole position look like pure gain. */}
+                {h.costBasis == null ? <span className="text-ink-3">—</span> : fmtUsd(h.costBasis)}
+              </td>
+              <td className={`${HOLDINGS_TD} tabular text-right text-ink`}>{fmtUsd(h.marketValue)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
-/** A bank account holds one thing. Say so rather than leaving the tab empty. */
+/** A bank account holds one thing — and it has no shares, price, or basis, so
+ *  it stays a single line rather than a table of dashes. */
 function CashHolding({ value }: { value: number }): ReactElement {
   return (
     <ul aria-label="Holdings">
-      <HoldingRow title="Cash" subtitle={null} value={value} />
+      <li className="flex items-baseline gap-3 py-2 text-[13px]">
+        <span className="min-w-0 flex-1 truncate text-ink">Cash</span>
+        <span className="tabular shrink-0 text-ink">{fmtUsd(value)}</span>
+      </li>
     </ul>
   );
 }

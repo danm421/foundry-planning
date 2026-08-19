@@ -1,3 +1,20 @@
+// Pinned to en-US and hoisted — a drawer of holdings formats every row's
+// shares, price, basis and value, and building an Intl.NumberFormat per cell is
+// the expensive part. Same reason the holdings deck hoists its own (see
+// presentations/pages/holdings/view-model.ts).
+const USD0 = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
+const USD2 = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+const SHARES = new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 });
+
 /** "2026-06-12" → "Jun 12" (UTC-pinned so the day never shifts across timezones). */
 export function fmtDay(iso: string): string {
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", {
@@ -8,11 +25,16 @@ export function fmtDay(iso: string): string {
 }
 
 export function fmtUsd(n: number): string {
-  return n.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  });
+  return USD0.format(n);
+}
+
+/**
+ * A share price, to the cent. Rounding a price to whole dollars misreads a
+ * position — a bond quoted at 99.5 is not "$100" — so prices keep two decimals
+ * here, matching the advisor's holdings table and the holdings PDF.
+ */
+export function fmtUsdCents(n: number): string {
+  return USD2.format(n);
 }
 
 /**
@@ -21,7 +43,7 @@ export function fmtUsd(n: number): string {
  * must not grow a trailing ".0000".
  */
 export function fmtShares(n: number): string {
-  return n.toLocaleString("en-US", { maximumFractionDigits: 4 });
+  return SHARES.format(n);
 }
 
 /**

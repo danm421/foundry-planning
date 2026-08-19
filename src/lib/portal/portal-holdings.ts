@@ -1,7 +1,7 @@
 // The portal's per-position projection — the wire shape the Investments page
 // and the Accounts drawer's Holdings tab both read. One mapper so the two
 // surfaces can never disagree about what a position is worth.
-import { holdingMarketValue } from "@/lib/investments/holdings-rollup";
+import { holdingMarketValue, reportedCostBasis } from "@/lib/investments/holdings-rollup";
 import type { PortalHolding } from "@/lib/portal/contracts";
 
 /**
@@ -31,7 +31,7 @@ export function toPortalHoldings(rows: readonly HoldingProjectionRow[]): PortalH
         shares: Number(h.shares),
         price: Number(h.price),
       }),
-      costBasis: h.costBasis != null ? Number(h.costBasis) : null,
+      costBasis: reportedCostBasis(h.costBasis),
     }))
     .sort((x, y) => y.marketValue - x.marketValue);
 }

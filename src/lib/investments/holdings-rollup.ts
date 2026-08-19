@@ -41,6 +41,25 @@ export function holdingMarketValue(h: { marketValue: number | null; shares: numb
   return h.marketValue ?? h.shares * h.price;
 }
 
+/** Cost basis of one holding, or null when nobody reported one.
+ *
+ *  `account_holdings.cost_basis` is NOT NULL DEFAULT '0' and the Plaid ingest
+ *  writes `(h.cost_basis ?? 0)` (holdings-refresh.ts) — Plaid's field is
+ *  optional and many institutions omit it. So a non-positive basis here means
+ *  "not reported", never "acquired for free": rendering it as $0 makes the
+ *  whole position look like pure gain. Every read-only surface (advisor
+ *  holdings table, holdings deck, client portal) prints "—" for null.
+ *
+ *  Read-only display only. `rollupHoldings` below still sums the raw column, so
+ *  an unreported basis lands in `basis` (and in `accounts.basis`, and the
+ *  projection's gain estimate) as 0 — understating basis and overstating gains.
+ *  Fixing that needs a nullable column, not a display rule; left as-is. */
+export function reportedCostBasis(raw: string | number | null): number | null {
+  if (raw == null) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 export interface HoldingsRollup {
   /** Σ holdingMarketValue. Authoritative account value in holdings mode. */
   value: number;
