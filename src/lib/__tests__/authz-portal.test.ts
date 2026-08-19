@@ -222,8 +222,14 @@ describe("currentUserHasClientPortal", () => {
     expect(await currentUserHasClientPortal()).toBe(false);
   });
 
-  it("is false with no org", async () => {
+  it("is false with no org, without asking for overrides at all", async () => {
+    // A granted override must not resurrect an org-less caller: with no org
+    // there is no firm the override could belong to. The second assertion is
+    // what makes this test real — the answer alone is `false` either way, so
+    // it also passed with the `!orgId` guard deleted.
     authMock.mockResolvedValue({ userId: "u_advisor", orgId: null });
+    getActiveUserOverridesMock.mockResolvedValue(GRANT);
     expect(await currentUserHasClientPortal()).toBe(false);
+    expect(getActiveUserOverridesMock).not.toHaveBeenCalled();
   });
 });
