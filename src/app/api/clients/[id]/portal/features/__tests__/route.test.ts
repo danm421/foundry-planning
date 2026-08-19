@@ -67,6 +67,7 @@ describe("PUT /api/clients/[id]/portal/features", () => {
         investments: clients.portalInvestmentsEnabled,
         budget: clients.portalBudgetEnabled,
         documents: clients.portalDocumentsEnabled,
+        calculators: clients.portalCalculatorsEnabled,
       })
       .from(clients)
       .where(eq(clients.id, clientId));
@@ -74,7 +75,12 @@ describe("PUT /api/clients/[id]/portal/features", () => {
   }
 
   it("defaults every section to on", async () => {
-    expect(await row()).toEqual({ investments: true, budget: true, documents: true });
+    expect(await row()).toEqual({
+      investments: true,
+      budget: true,
+      documents: true,
+      calculators: true,
+    });
   });
 
   // The regression this exists for: an empty SET clause. Drizzle silently drops
@@ -86,26 +92,41 @@ describe("PUT /api/clients/[id]/portal/features", () => {
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: true, feature: "budget", enabled: false });
-    expect(await row()).toEqual({ investments: true, budget: false, documents: true });
+    expect(await row()).toEqual({
+      investments: true,
+      budget: false,
+      documents: true,
+      calculators: true,
+    });
   });
 
-  it("switches each of the three independently, and back on", async () => {
-    for (const feature of ["investments", "documents"] as const) {
+  it("switches each of the four independently, and back on", async () => {
+    for (const feature of ["investments", "documents", "calculators"] as const) {
       const res = await PUT(req({ feature, enabled: false }), {
         params: Promise.resolve({ id: clientId }),
       });
       expect(res.status).toBe(200);
     }
-    expect(await row()).toEqual({ investments: false, budget: false, documents: false });
+    expect(await row()).toEqual({
+      investments: false,
+      budget: false,
+      documents: false,
+      calculators: false,
+    });
 
     const res = await PUT(req({ feature: "budget", enabled: true }), {
       params: Promise.resolve({ id: clientId }),
     });
     expect(res.status).toBe(200);
-    expect(await row()).toEqual({ investments: false, budget: true, documents: false });
+    expect(await row()).toEqual({
+      investments: false,
+      budget: true,
+      documents: false,
+      calculators: false,
+    });
   });
 
-  it("rejects a feature key that is not one of the three", async () => {
+  it("rejects a feature key that is not one of the four", async () => {
     const before = await row();
     for (const feature of ["portalEditEnabled", "organizer", "firmId", "", null, 7]) {
       const res = await PUT(req({ feature, enabled: false }), {

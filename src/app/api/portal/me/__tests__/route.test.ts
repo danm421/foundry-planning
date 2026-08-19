@@ -75,6 +75,7 @@ const clientRow = (over: Record<string, unknown> = {}) => ({
   portalInvestmentsEnabled: true,
   portalBudgetEnabled: true,
   portalDocumentsEnabled: true,
+  portalCalculatorsEnabled: true,
   ...over,
 });
 
@@ -109,7 +110,7 @@ describe("GET /api/portal/me", () => {
       mode: "client",
       editEnabled: true,
       intakePending: false,
-      features: { investments: true, budget: true, documents: true },
+      features: { investments: true, budget: true, documents: true, calculators: true },
       greetingName: "Casey",
     });
     expect(brandingForClientMock).toHaveBeenCalledWith("firm-1", "adv-1");
@@ -177,10 +178,15 @@ describe("GET /api/portal/me", () => {
     selectQueue.push([primaryContact()]);
     const res = await GET();
     const body = await res.json();
-    expect(body.features).toEqual({ investments: false, budget: true, documents: false });
+    expect(body.features).toEqual({
+      investments: false,
+      budget: true,
+      documents: false,
+      calculators: true,
+    });
   });
 
-  // Each switch has to reach its own key. All three columns are boolean, so a
+  // Each switch has to reach its own key. All four columns are boolean, so a
   // cross-wired projection would typecheck clean and hide the wrong section.
   it("maps each switch to its own key", async () => {
     selectQueue.push([
@@ -192,7 +198,12 @@ describe("GET /api/portal/me", () => {
     ]);
     selectQueue.push([primaryContact()]);
     const bodyA = await (await GET()).json();
-    expect(bodyA.features).toEqual({ investments: false, budget: true, documents: true });
+    expect(bodyA.features).toEqual({
+      investments: false,
+      budget: true,
+      documents: true,
+      calculators: true,
+    });
 
     selectQueue.push([
       clientRow({
@@ -203,7 +214,29 @@ describe("GET /api/portal/me", () => {
     ]);
     selectQueue.push([primaryContact()]);
     const bodyB = await (await GET()).json();
-    expect(bodyB.features).toEqual({ investments: true, budget: false, documents: true });
+    expect(bodyB.features).toEqual({
+      investments: true,
+      budget: false,
+      documents: true,
+      calculators: true,
+    });
+
+    selectQueue.push([
+      clientRow({
+        portalInvestmentsEnabled: true,
+        portalBudgetEnabled: true,
+        portalDocumentsEnabled: true,
+        portalCalculatorsEnabled: false,
+      }),
+    ]);
+    selectQueue.push([primaryContact()]);
+    const bodyC = await (await GET()).json();
+    expect(bodyC.features).toEqual({
+      investments: true,
+      budget: true,
+      documents: true,
+      calculators: false,
+    });
   });
 
   // The web portal's welcome line names the whole household ("John & Jane"),

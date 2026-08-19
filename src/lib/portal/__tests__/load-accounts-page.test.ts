@@ -46,6 +46,7 @@ let mockClientRow: Record<string, boolean> = {
   portalInvestmentsEnabled: true,
   portalBudgetEnabled: true,
   portalDocumentsEnabled: true,
+  portalCalculatorsEnabled: true,
 };
 
 vi.mock("@/db", () => ({
@@ -121,6 +122,7 @@ beforeEach(() => {
     portalInvestmentsEnabled: true,
     portalBudgetEnabled: true,
     portalDocumentsEnabled: true,
+    portalCalculatorsEnabled: true,
   };
 });
 

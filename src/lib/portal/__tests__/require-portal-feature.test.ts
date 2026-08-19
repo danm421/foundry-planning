@@ -31,6 +31,7 @@ const ALL_ON = {
   portalInvestmentsEnabled: true,
   portalBudgetEnabled: true,
   portalDocumentsEnabled: true,
+  portalCalculatorsEnabled: true,
 };
 
 beforeEach(() => {
