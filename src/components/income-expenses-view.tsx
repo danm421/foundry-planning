@@ -32,6 +32,7 @@ import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useClientAccess } from "./client-access-provider";
 import Row from "@/components/income-expenses/row";
 import Group from "@/components/income-expenses/group";
+import { FieldTooltip } from "@/components/forms/field-tooltip";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -116,6 +117,7 @@ interface Expense {
   forFamilyMemberId?: string | null;
   dedicatedAccountIds?: string[];
   isGoal?: boolean;
+  absorbsRemainingCashFlow?: boolean;
 }
 
 interface SavingsRule {
@@ -1132,6 +1134,9 @@ function ExpenseDialog({
   );
   const [payOutOfPocket, setPayOutOfPocket] = useState<boolean>(editing?.payShortfallOutOfPocket ?? false);
   const [isGoal, setIsGoal] = useState<boolean>(editing?.isGoal ?? defaultIsGoal);
+  const [absorbsRemaining, setAbsorbsRemaining] = useState<boolean>(
+    editing?.absorbsRemainingCashFlow ?? false,
+  );
   const [institutionState, setInstitutionState] = useState<string>(editing?.institutionState ?? "");
   const [institutionName, setInstitutionName] = useState<string>(editing?.institutionName ?? "");
   const [forFamilyMemberId, setForFamilyMemberId] = useState<string>(editing?.forFamilyMemberId ?? "");
@@ -1251,6 +1256,7 @@ function ExpenseDialog({
       forFamilyMemberId: type === "education" ? (forFamilyMemberId || null) : null,
       dedicatedAccountIds: type === "education" ? dedicatedAccountIds : [],
       isGoal: type === "education" ? true : isGoal,
+      absorbsRemainingCashFlow: type === "living" ? absorbsRemaining : false,
     };
 
     try {
@@ -1438,6 +1444,19 @@ function ExpenseDialog({
             />
           </div>
 
+          {type === "living" && (
+            <label className="flex items-center gap-2 text-sm text-ink-2">
+              <input
+                type="checkbox"
+                checked={absorbsRemaining}
+                onChange={(e) => setAbsorbsRemaining(e.target.checked)}
+                className="accent-[color:var(--color-accent)]"
+              />
+              Spend whatever&rsquo;s left each year
+              <FieldTooltip text="The plan spends this household's entire remaining cash flow — after tax, debt payments, other expenses and savings — on living costs. Set a minimum below only if they have a spending floor they'll never go under; leave it at $0 if they don't." />
+            </label>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
             {hasSchedule ? (
               <>
@@ -1460,7 +1479,11 @@ function ExpenseDialog({
               <>
                 <div>
                   <label className="block text-sm font-medium text-gray-300" htmlFor="exp-amount">
-                    Annual Amount ($) <span className="text-red-500">*</span>
+                    {absorbsRemaining && type === "living" ? (
+                      "Minimum annual spend ($)"
+                    ) : (
+                      <>Annual Amount ($) <span className="text-red-500">*</span></>
+                    )}
                   </label>
                   <CurrencyInput
                     id="exp-amount"
@@ -1895,13 +1918,21 @@ export default function IncomeExpensesView({
       : undefined;
     const startRef = coerceYearRef(expense.startYearRef) ?? null;
     const endRef = coerceYearRef(expense.endYearRef) ?? null;
+    // An absorbing row has no single annual figure to show or edit inline — the
+    // typed amount is only a floor, so the cell states the mode and the floor is
+    // edited in the dialog where its label explains what it is. `Row` ignores
+    // `value` whenever `amount` AND `onSaveAmount` are both set, so both drop.
+    const absorbing = Boolean(expense.absorbsRemainingCashFlow);
+    const floor = Number(expense.annualAmount);
+    const absorbValue =
+      floor > 0 ? `Whatever’s left · min ${fmt(expense.annualAmount)}` : "Whatever’s left";
     return (
       <Row
         key={expense.id}
         onEdit={canEdit ? () => setExpenseDialog({ open: true, editing: expense }) : undefined}
-        amount={inlineAmount ? Number(expense.annualAmount) : undefined}
+        amount={inlineAmount && !absorbing ? Number(expense.annualAmount) : undefined}
         onSaveAmount={
-          canEdit && inlineAmount
+          canEdit && inlineAmount && !absorbing
             ? (next) => saveExpenseField(expense, flowAmountPatch(next))
             : undefined
         }
@@ -1949,7 +1980,7 @@ export default function IncomeExpensesView({
         onDelete={canEdit && !expense.isDefault ? () => setDeletingExpense(expense) : undefined}
         label={expense.name}
         meta={[entityName ?? businessName ?? null]}
-        value={fmt(expense.annualAmount)}
+        value={absorbing ? absorbValue : fmt(expense.annualAmount)}
         outOfEstate={Boolean(expense.ownerEntityId)}
       />
     );
