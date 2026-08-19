@@ -886,6 +886,7 @@ export const loadClientDataWithContext = cache(
           forFamilyMemberId: e.forFamilyMemberId,
           dedicatedAccountIds: dedicatedByExpenseId.get(e.id) ?? [],
           isGoal: e.isGoal,
+          absorbsRemainingCashFlow: e.absorbsRemainingCashFlow,
         },
         resolutionCtx,
       ),

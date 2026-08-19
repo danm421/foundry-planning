@@ -539,4 +539,33 @@ describe("POST /api/clients/[id]/solver/save-to-base", () => {
     // Guarded BEFORE the transaction — nothing written.
     expect(inserts).toHaveLength(0);
   });
+
+  it("carries absorbsRemainingCashFlow into the base expense row", async () => {
+    const LIVING_EXPENSE = {
+      id: "syn-living-1",
+      name: "Current Living Expenses",
+      type: "living",
+      annualAmount: 0,
+      startYear: 2026,
+      endYear: 2040,
+      growthRate: 0.03,
+      absorbsRemainingCashFlow: true,
+    };
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [{ kind: "expense-upsert", id: "syn-living-1", value: LIVING_EXPENSE }],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    // Whether the route classifies this as an insert or a full update, the
+    // written row must carry the flag. A field absent from either literal is
+    // dropped SILENTLY — the plan simply stops absorbing, with no error.
+    const written = [...inserts.map((i) => i.values), ...updates.map((u) => u.set)].find(
+      (v) => (v as { name?: string } | undefined)?.name === "Current Living Expenses",
+    ) as Record<string, unknown> | undefined;
+    expect(written).toBeDefined();
+    expect(written!.absorbsRemainingCashFlow).toBe(true);
+  });
 });

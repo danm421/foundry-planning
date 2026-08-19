@@ -21,8 +21,22 @@
 import type { ClientData, Expense } from "@/engine/types";
 import type { SolverMutation } from "./types";
 
+/**
+ * The fields the retirement test actually reads. Widened from `Expense` so the
+ * expense write-layer can ask the question about a payload that is not an
+ * `Expense` yet — a create body, or a patch merged onto its stored row — rather
+ * than inventing a throwaway full `Expense` to satisfy the parameter. Every
+ * existing caller passes a real `Expense`, which still satisfies this shape.
+ */
+export type RetirementLivingFields = {
+  type: string;
+  startYear: number;
+  endYear: number;
+  startYearRef?: string | null;
+};
+
 export function isRetirementLivingExpense(
-  e: Expense,
+  e: RetirementLivingFields,
   planStartYear: number,
 ): boolean {
   if (e.type !== "living") return false;

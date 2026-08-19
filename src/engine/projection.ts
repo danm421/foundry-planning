@@ -68,7 +68,7 @@ import {
 } from "../lib/tax/derive-deductions";
 import { applySavingsRules, computeEmployerMatch, resolveContributionAmount } from "./savings";
 import { itemProrationGate } from "./retirement-proration";
-import { effectiveSurplusSpendPct } from "./surplus-spend";
+import { effectiveSurplusSpendPct, absorbingLivingRow } from "./surplus-spend";
 import {
   applyContributionLimits,
   computeIraLimit,
@@ -1156,6 +1156,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         exp.ownerAccountId == null &&
         exp.type !== "education"
     );
+
+    // The living row (if any) that spends this year's entire remaining cash
+    // flow. Resolved here — above BOTH consumers, the min-savings self-funding
+    // block and phase 14 — because the two must agree on the same row.
+    const absorbingRow = absorbingLivingRow(data.expenses, year, data.client);
 
     // Initialize per-account ledgers with the year-start balances. Ledgers are
     // populated first so that BoY sales/purchases (next) can append their entries
@@ -5606,11 +5611,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // 0 ⇒ fund entirely from expense cuts), but 100% in a pre-retirement year
       // when surplusSpendAllUntilRetirement is on, which funds from cash flow
       // instead. effectiveSurplusSpendPct owns the 0..1 clamp.
-      const selfFundingSpendPct = effectiveSurplusSpendPct(
-        data.planSettings,
-        data.client,
-        year,
-      );
+      // An absorbing living row spends 100% of the surplus, so the whole
+      // surplus is redirectable — the same rule this block already applies via
+      // effectiveSurplusSpendPct, stated for the row-level mode. No double
+      // count: hypoContribution is subtracted from surplusForSplit at phase 14,
+      // so every dollar taken here shrinks the absorbed living expense by one.
+      const selfFundingSpendPct = absorbingRow
+        ? 1
+        : effectiveSurplusSpendPct(data.planSettings, data.client, year);
       let surplusAvailable =
         Math.max(0, surplusBeforeSavings - savings.total) * selfFundingSpendPct;
       // Living expense pool still available to cut this year.
@@ -7116,80 +7124,101 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           - grantorTrustSurplusCorrection
       );
       if (surplusForSplit > 0) {
-        const spendPct = effectiveSurplusSpendPct(data.planSettings, data.client, year);
-        const spendAmount = surplusForSplit * spendPct;
-        const saveAmount = surplusForSplit - spendAmount;
-
-        // Discretionary spend leaves the household entirely.
-        if (spendAmount > 0) {
-          debitChecking(spendAmount, {
-            category: "discretionary",
-            label: "Discretionary spend (surplus)",
-            amount: -spendAmount,
-            basis: -spendAmount, // cash outflow: basis == amount (signed)
+        if (absorbingRow) {
+          // The row spends the whole leftover. Booked as living expense on the
+          // row's own id rather than as `discretionary`, so every consumer that
+          // reads expenses.living / bySource shows it under the client's own
+          // expense name. The save-remainder destination gets nothing.
+          debitChecking(surplusForSplit, {
+            category: "expense",
+            // Same label shape as every other household expense debit (:4986),
+            // so the Asset Ledger shows the floor and this top-up as two
+            // postings of one row rather than two differently-named lines.
+            label: `Expense: ${absorbingRow.name}`,
+            amount: -surplusForSplit,
+            sourceId: absorbingRow.id,
+            basis: -surplusForSplit, // cash outflow: basis == amount (signed)
           });
-          expenses.discretionary = spendAmount;
-          expenses.total += spendAmount;
-        }
+          expenses.living += surplusForSplit;
+          expenses.bySource[absorbingRow.id] =
+            (expenses.bySource[absorbingRow.id] ?? 0) + surplusForSplit;
+          expenses.total += surplusForSplit;
+        } else {
+          const spendPct = effectiveSurplusSpendPct(data.planSettings, data.client, year);
+          const spendAmount = surplusForSplit * spendPct;
+          const saveAmount = surplusForSplit - spendAmount;
 
-        // Saved remainder: transfer to the chosen destination, else book an
-        // explicit retained-surplus marker so the cash isn't silently absorbed
-        // into Portfolio Activity (it stays in checking either way).
-        const saveDestId = data.planSettings.surplusSaveAccountId ?? null;
-        const canTransfer =
-          saveAmount > 0 &&
-          saveDestId != null &&
-          saveDestId !== checkingId &&
-          // Quietly skip if the user picked an account that no longer exists.
-          data.accounts.some((a) => a.id === saveDestId);
-        if (canTransfer) {
-          debitChecking(saveAmount, {
-            category: "surplus_transfer",
-            label: "Surplus transferred out",
-            amount: -saveAmount,
-            sourceId: saveDestId!,
-            basis: -saveAmount, // cash outflow: basis == amount (signed)
-          });
-          accountBalances[saveDestId!] = (accountBalances[saveDestId!] ?? 0) + saveAmount;
-          // H5: the saved surplus is after-tax cash, so it raises the
-          // destination's cost basis 1:1 — otherwise a later sale re-recognizes
-          // it as capital gain (basisMap persists across years and feeds the
-          // withdrawal cap-gain gate at draw time). Only taxable destinations
-          // track a basisMap-backed basis: the EoY stamp reads basisMap for
-          // non-cash, cash stamps endingValue, and pre-tax carries no cost
-          // basis. Gate the ledger entry's basis to match so I2 holds for the
-          // destination in every case. Mirrors the hypo-savings path.
-          const destCategory = accountById.get(saveDestId!)?.category;
-          const destTaxable = destCategory === "taxable";
-          if (destTaxable) {
-            basisMap[saveDestId!] = (basisMap[saveDestId!] ?? 0) + saveAmount;
+          // Discretionary spend leaves the household entirely.
+          if (spendAmount > 0) {
+            debitChecking(spendAmount, {
+              category: "discretionary",
+              label: "Discretionary spend (surplus)",
+              amount: -spendAmount,
+              basis: -spendAmount, // cash outflow: basis == amount (signed)
+            });
+            expenses.discretionary = spendAmount;
+            expenses.total += spendAmount;
           }
-          const destLedger = accountLedgers[saveDestId!];
-          if (destLedger) {
-            destLedger.endingValue += saveAmount;
-            destLedger.contributions += saveAmount;
-            destLedger.entries.push({
+
+          // Saved remainder: transfer to the chosen destination, else book an
+          // explicit retained-surplus marker so the cash isn't silently absorbed
+          // into Portfolio Activity (it stays in checking either way).
+          const saveDestId = data.planSettings.surplusSaveAccountId ?? null;
+          const canTransfer =
+            saveAmount > 0 &&
+            saveDestId != null &&
+            saveDestId !== checkingId &&
+            // Quietly skip if the user picked an account that no longer exists.
+            data.accounts.some((a) => a.id === saveDestId);
+          if (canTransfer) {
+            debitChecking(saveAmount, {
               category: "surplus_transfer",
-              label: "Surplus transferred in",
+              label: "Surplus transferred out",
+              amount: -saveAmount,
+              sourceId: saveDestId!,
+              basis: -saveAmount, // cash outflow: basis == amount (signed)
+            });
+            accountBalances[saveDestId!] = (accountBalances[saveDestId!] ?? 0) + saveAmount;
+            // H5: the saved surplus is after-tax cash, so it raises the
+            // destination's cost basis 1:1 — otherwise a later sale re-recognizes
+            // it as capital gain (basisMap persists across years and feeds the
+            // withdrawal cap-gain gate at draw time). Only taxable destinations
+            // track a basisMap-backed basis: the EoY stamp reads basisMap for
+            // non-cash, cash stamps endingValue, and pre-tax carries no cost
+            // basis. Gate the ledger entry's basis to match so I2 holds for the
+            // destination in every case. Mirrors the hypo-savings path.
+            const destCategory = accountById.get(saveDestId!)?.category;
+            const destTaxable = destCategory === "taxable";
+            if (destTaxable) {
+              basisMap[saveDestId!] = (basisMap[saveDestId!] ?? 0) + saveAmount;
+            }
+            const destLedger = accountLedgers[saveDestId!];
+            if (destLedger) {
+              destLedger.endingValue += saveAmount;
+              destLedger.contributions += saveAmount;
+              destLedger.entries.push({
+                category: "surplus_transfer",
+                label: "Surplus transferred in",
+                amount: saveAmount,
+                sourceId: checkingId,
+                // Taxable & cash carry basis == amount (after-tax / cash
+                // convention); pre-tax got no basisMap bump, so its entry basis is
+                // 0 to keep basisBoY + Σ entry.basis == basisEoY.
+                basis: destTaxable || destCategory === "cash" ? saveAmount : 0,
+              });
+            }
+          } else if (saveAmount > 0 && checkingLedger) {
+            // Already reflected in the balance + the net cash contribution above;
+            // flagged internal so it isn't double-counted in aggregate add/
+            // distribution reconciliation (mirrors the entity gap-fill refill).
+            checkingLedger.entries.push({
+              category: "surplus_retained",
+              label: "Surplus retained in cash",
               amount: saveAmount,
-              sourceId: checkingId,
-              // Taxable & cash carry basis == amount (after-tax / cash
-              // convention); pre-tax got no basisMap bump, so its entry basis is
-              // 0 to keep basisBoY + Σ entry.basis == basisEoY.
-              basis: destTaxable || destCategory === "cash" ? saveAmount : 0,
+              isInternalTransfer: true,
+              basis: saveAmount, // stays in cash: basis == amount
             });
           }
-        } else if (saveAmount > 0 && checkingLedger) {
-          // Already reflected in the balance + the net cash contribution above;
-          // flagged internal so it isn't double-counted in aggregate add/
-          // distribution reconciliation (mirrors the entity gap-fill refill).
-          checkingLedger.entries.push({
-            category: "surplus_retained",
-            label: "Surplus retained in cash",
-            amount: saveAmount,
-            isInternalTransfer: true,
-            basis: saveAmount, // stays in cash: basis == amount
-          });
         }
       }
     }

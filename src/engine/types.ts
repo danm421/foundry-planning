@@ -1017,6 +1017,11 @@ export interface Expense {
    *  Presentation only — engine math ignores it. Education rows are treated as
    *  goals regardless of this flag; see src/lib/household-map/goals.ts. */
   isGoal?: boolean;
+  /** Living rows only. When true the row spends the household's entire
+   *  remaining cash flow in each year it is active, and `annualAmount` is a
+   *  floor rather than the amount. Consumed by the surplus-allocation phase in
+   *  projection.ts — see `absorbingLivingRow` in ./surplus-spend. */
+  absorbsRemainingCashFlow?: boolean;
 }
 
 export interface ExtraPayment {

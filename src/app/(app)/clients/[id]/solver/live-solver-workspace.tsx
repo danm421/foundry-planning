@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useClientAccess } from "@/components/client-access-provider";
 import type { ClientData, ProjectionYear, SavingsRule } from "@/engine";
 import { controllingFamilyMember } from "@/engine/ownership";
+import { isAbsorbingLivingRow } from "@/engine/surplus-spend";
 import type { QuickAddType } from "@/lib/solver/quick-add-account";
 import { buildAdditionalSavingsAccount } from "@/lib/solver/quick-add-account";
 import { applyMutations } from "@/lib/solver/apply-mutations";
@@ -552,6 +553,13 @@ export function LiveSolverWorkspace({
     () => applyMutations(initialSourceClientData, mutations),
     [initialSourceClientData, mutations],
   );
+
+  // "Lock in a fixed budget" lowers the working-years living rows. Against a row
+  // that spends whatever is left, the cut frees money the row instantly
+  // re-absorbs — so the button is disabled rather than left to do nothing.
+  const lockInCutUnavailableReason = workingTree.expenses.some(isAbsorbingLivingRow)
+    ? "Current living expenses are set to spend whatever is left, so there is nothing to cut."
+    : null;
 
   const baseTechniqueIds = useMemo(
     () => ({
@@ -1357,6 +1365,7 @@ export function LiveSolverWorkspace({
                 onSolve={handleSolveMinSavings}
                 onIncludeSelfFunding={handleIncludeSelfFunding}
                 onIncludeLockInCut={handleIncludeLockInCut}
+                lockInCutUnavailableReason={lockInCutUnavailableReason}
                 onDismissResult={handleDismissResult}
               />
             </SolverSection>

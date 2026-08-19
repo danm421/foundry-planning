@@ -2829,6 +2829,13 @@ export const expenses = pgTable("expenses", {
   // board. Education rows are always treated as goals regardless of this flag —
   // see src/lib/household-map/goals.ts. Presentation only; the engine ignores it.
   isGoal: boolean("is_goal").notNull().default(false),
+  // When true on a living row, the row spends the household's entire remaining
+  // cash flow for each year it is active, and `annual_amount` acts as a floor
+  // rather than the answer. Consumed by the engine's surplus-allocation phase.
+  // Valid only on type = 'living'; at most one per (client, scenario).
+  absorbsRemainingCashFlow: boolean("absorbs_remaining_cash_flow")
+    .notNull()
+    .default(false),
   // Optional free-text labels (no cost-lookup DB in v1).
   institutionState: text("institution_state"),
   institutionName: text("institution_name"),
