@@ -14,6 +14,7 @@ import type { InvestmentProposalBundle } from "@/lib/presentations/investment-pr
 import type { ScenarioChangesContext } from "@/lib/presentations/pages/scenario-changes/types";
 import { SECTION_ACCENTS, DEFAULT_ACCENT } from "@/lib/presentations/theme";
 import { resolveScenarioRef, keyForRef } from "@/lib/scenario/presentation-refs";
+import { derivedKey } from "@/lib/presentations/derived-refs";
 import type { MaxSpendResult } from "@/lib/solver/solve-max-spending";
 
 export interface PageScenarioBundle {
@@ -105,12 +106,26 @@ export function PresentationDocument(props: PresentationDocumentProps) {
       {resolved.map(({ p, page, options }, idx) => {
         const bundle =
           props.bundles[p.scenarioKey] ?? props.bundles[props.topScenarioKey];
+        const scenarioKeys = page.requiredScenarioRefs
+          ? page
+              .requiredScenarioRefs(options as never)
+              .map((raw) => keyForRef(resolveScenarioRef(raw)))
+          : [];
+        // Derived plan variants the export built for THIS page entry. Keyed on
+        // `p.pageId` — the same id `resolveDerivedBundles` namespaced them
+        // with — so the two sides can never drift apart.
+        const derivedKeys = page.requiredDerivedRefs
+          ? page
+              .requiredDerivedRefs(options as never)
+              .map((req) => derivedKey(p.pageId, req.key))
+          : [];
+        // Stays `undefined` (not `{}`) for pages that declare neither kind of
+        // ref: existing consumers read `ctx.bundlesByRef ?? {}`, but the
+        // absence is what tells a page it is single-scenario.
         const bundlesByRef: Record<string, PageScenarioBundle> | undefined =
-          page.requiredScenarioRefs
+          page.requiredScenarioRefs || page.requiredDerivedRefs
             ? Object.fromEntries(
-                page
-                  .requiredScenarioRefs(options as never)
-                  .map((raw) => keyForRef(resolveScenarioRef(raw)))
+                [...scenarioKeys, ...derivedKeys]
                   .map((key) => [key, props.bundles[key]])
                   .filter(([, b]) => b != null) as [string, PageScenarioBundle][],
               )

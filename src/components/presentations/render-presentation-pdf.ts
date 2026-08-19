@@ -13,6 +13,13 @@ import {
 } from "@/lib/projection/load-client-data";
 import { loadEffectiveTreeForRef } from "@/lib/scenario/loader";
 import { runProjectionWithEvents } from "@/engine/projection";
+import { applyMutations } from "@/lib/solver/apply-mutations";
+import {
+  buildDerivedBundle,
+  derivedKey,
+  type DerivedDeps,
+  type DerivedRefRequest,
+} from "@/lib/presentations/derived-refs";
 import type { MonteCarloReportPayload } from "@/lib/presentations/pages/monte-carlo/view-model";
 import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
 import {
@@ -111,6 +118,54 @@ const slugify = (s: string) =>
     .toLowerCase()
     .replace(/[^a-z0-9.-]+/g, "-")
     .replace(/^-+|-+$/g, "");
+
+interface DerivablePage {
+  pageId: string;
+  options: unknown;
+  requiredDerivedRefs?: (options: never) => DerivedRefRequest[];
+}
+
+// The real engine + solver, injected rather than imported by
+// `derived-refs.ts`: that module is reached from "use client" launcher
+// components through the registry, so a value import of the projection there
+// would drag the whole engine into the browser bundle. This file is
+// server-only, so it owns the real wiring.
+const REAL_DERIVED_DEPS: DerivedDeps = {
+  applyMutations,
+  runProjection: runProjectionWithEvents,
+};
+
+/**
+ * Returns a NEW record: every loaded scenario bundle, plus one derived bundle
+ * per variant any page asked for. Loaded bundles are passed through by
+ * reference (the max-spend pass mutates them in place after assembly).
+ *
+ * Derived variants are pure compute against a tree that is already loaded, so
+ * this runs long after `planScenarioBundles` and the MAX_DISTINCT_SCENARIOS /
+ * MAX_MC_SCENARIOS checks — it cannot inflate either count.
+ *
+ * A variant whose `from` ref was not loaded is skipped rather than thrown —
+ * the page renders its empty state, which is a better failure than a 500 on an
+ * export the advisor has already waited on.
+ */
+export function resolveDerivedBundles(
+  pages: DerivablePage[],
+  loaded: Record<string, PageScenarioBundle>,
+  deps: DerivedDeps = REAL_DERIVED_DEPS,
+): Record<string, PageScenarioBundle> {
+  const out: Record<string, PageScenarioBundle> = { ...loaded };
+  for (const p of pages) {
+    if (!p.requiredDerivedRefs) continue;
+    for (const req of p.requiredDerivedRefs(p.options as never)) {
+      // `resolveScenarioRef` maps any unknown token to a well-formed ref and
+      // never throws, so an absent source simply misses the record lookup.
+      const source = loaded[keyForRef(resolveScenarioRef(req.from))];
+      if (!source) continue;
+      out[derivedKey(p.pageId, req.key)] = buildDerivedBundle(source.clientData, req, deps);
+    }
+  }
+  return out;
+}
 
 /**
  * Render a presentation deck to a PDF buffer. Throws ClientNotFoundError /
@@ -597,6 +652,18 @@ export async function renderPresentationPdf(
   const firmName = branding.firmName;
   const firmLogoDataUrl = branding.logoDataUrl ?? (await foundryDefaultLogoDataUrl());
 
+  // Plan variants a page asked for: the base plan with one lever moved. Built
+  // last, so every loaded bundle (including the max-spend attachments above) is
+  // final, and so this work sits outside the scenario caps enforced up top.
+  const bundlesWithDerived = resolveDerivedBundles(
+    body.pages.map((p) => ({
+      pageId: p.pageId,
+      options: p.options,
+      requiredDerivedRefs: PRESENTATION_PAGES[p.pageId].requiredDerivedRefs,
+    })),
+    bundles,
+  );
+
   // Cast required: renderToBuffer expects ReactElement<DocumentProps> but
   // createElement infers ReactElement<PresentationDocumentProps>. The element
   // is valid at runtime — PresentationDocument wraps react-pdf's <Document>.
@@ -617,7 +684,7 @@ export async function renderPresentationPdf(
     spouseName: spouseFirstName,
     spouseLastName,
     headerName,
-    bundles,
+    bundles: bundlesWithDerived,
     topScenarioKey: plan.topKey,
     investments,
     lifeInsurance,

@@ -1,6 +1,7 @@
 import type { z } from "zod";
 import type { ComponentType, ReactElement } from "react";
 import type { SectionAccent } from "@/lib/presentations/theme";
+import type { DerivedRefRequest } from "@/lib/presentations/derived-refs";
 import type {
   CashFlowPageData,
   CashFlowPageOptions,
@@ -397,8 +398,10 @@ export interface BuildDataContext {
    *  different proposals. Absent → the page prints its empty state. */
   proposal?: InvestmentProposalBundle;
   /** Present only for multi-scenario pages (those that define
-   *  `requiredScenarioRefs`). Keyed by `keyForRef` — e.g. "base",
-   *  "scenario:<id>". Each entry is the fully-built bundle for that ref. */
+   *  `requiredScenarioRefs` or `requiredDerivedRefs`). Scenario refs are keyed
+   *  by `keyForRef` — e.g. "base", "scenario:<id>". Derived plan variants are
+   *  keyed by `derivedKey(pageId, key)` — e.g. "derived:earlyYearsLadder:up3".
+   *  Each entry is the fully-built bundle for that ref. */
   bundlesByRef?: Record<string, PageScenarioBundle>;
 }
 
@@ -438,6 +441,17 @@ export interface PresentationPage<TData, TOptions> {
    *  tokens: "base" | "<scenarioId>" | "snap:<id>"). The planner loads each and
    *  the document exposes them via `BuildDataContext.bundlesByRef`. */
   requiredScenarioRefs?: (options: TOptions) => string[];
+  /** Optional: a page may request plan *variants* that exist nowhere in the
+   *  database — an already-loaded plan with one lever moved. The export applies
+   *  the mutations to the `from` tree and exposes each result at
+   *  `bundlesByRef[derivedKey(page.id, key)]`. Derived variants are pure
+   *  compute against a tree that is already in memory: they cost no scenario
+   *  load, and they do NOT count toward MAX_DISTINCT_SCENARIOS /
+   *  MAX_MC_SCENARIOS (the export plans and caps scenarios from
+   *  `requiredScenarioRefs` alone, before any derived work happens). A variant
+   *  whose `from` ref is not in the deck is skipped, so a page that needs one
+   *  must also declare that ref in `requiredScenarioRefs`. */
+  requiredDerivedRefs?: (options: TOptions) => DerivedRefRequest[];
   /** Optional: surface an inline scenario picker in the launcher row that edits
    *  a scenario id stored *inside* this page's options — e.g. Retirement
    *  Comparison's "compare to" scenario. The baseline is always Base Case, so
