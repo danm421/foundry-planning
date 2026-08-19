@@ -18,6 +18,11 @@ export type PriceKind = "seat";
 
 let cached: PriceCatalog | null = null;
 
+// AI import is deliberately absent: it ships with every seat as a base
+// entitlement (`BASE_ENTITLEMENTS`), and docs/bundle-ai-into-plan-runbook.md
+// archives the standalone price. Adding it here would re-require a var that
+// runbook deletes, and would drop the promo guard's floor to $98.99 to protect
+// a price nothing can ever bill.
 const ENV_TO_KEY = {
   STRIPE_PRICE_ID_SEAT_MONTHLY: "seatMonthly",
   STRIPE_PRICE_ID_SEAT_ANNUAL: "seatAnnual",

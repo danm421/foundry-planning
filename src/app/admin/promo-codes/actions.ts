@@ -32,6 +32,12 @@ const CreateInput = z
       .nullable()
       .optional(),
     firstTimeOnly: z.boolean().optional(),
+    // Stripe products the code may discount. Deliberately not `.min(1)` here:
+    // an empty selection is an operator mistake with its own wording in
+    // `createPromoCode`, and a zod failure would flatten it into the generic
+    // "check the form values". A *missing* field is a caller bug and does
+    // rightly fall through to that generic message.
+    productIds: z.array(z.string().min(1)),
   })
   // The discount amount lives in one of two fields depending on the kind, so
   // the required-ness is cross-field and can't be expressed on either alone.
@@ -72,6 +78,7 @@ export async function createPromoCodeAction(input: unknown): Promise<CreateResul
       maxRedemptions: v.maxRedemptions,
       expiresAt: expiry,
       firstTimeOnly: v.firstTimeOnly ?? false,
+      productIds: v.productIds,
     });
   } catch (err) {
     // Surfaces both our own validation copy and Stripe's own message (e.g. a
@@ -94,6 +101,10 @@ export async function createPromoCodeAction(input: unknown): Promise<CreateResul
       maxRedemptions: v.maxRedemptions,
       expiresAt: v.expiresAt ?? null,
       firstTimeOnly: v.firstTimeOnly ?? false,
+      // What the code was fenced to. Worth auditing: it is the difference
+      // between "$200 off annual" and "$200 off everything", and the coupon
+      // itself is the only other record of it.
+      productIds: v.productIds,
     },
   });
   revalidatePath("/admin/promo-codes");

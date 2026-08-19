@@ -2,16 +2,27 @@ import { describe, it, expect } from "vitest";
 import {
   applyDiscountCents,
   assertDiscountLeavesSomethingToPay,
+  plansInProducts,
   previewDiscount,
-  type SeatPlanPrice,
+  type PlanPrice,
 } from "../promo-discount-math";
 
-// The real Foundry seat prices. The spread between them is the whole problem:
+// The real Foundry prices, one Stripe product each — the split that makes a
+// discount aimable at an interval. The spread between them is the whole problem:
 // a discount sized for the annual plan is larger than the monthly plan's price.
-const PLANS: SeatPlanPrice[] = [
-  { key: "seatMonthly", label: "Monthly", unitAmountCents: 19_900 },
-  { key: "seatAnnual", label: "Annual", unitAmountCents: 199_000 },
-  { key: "seatFoundingAnnual", label: "Founding annual", unitAmountCents: 178_800 },
+const MONTHLY = "prod_seat_monthly";
+const ANNUAL = "prod_seat_annual";
+const FOUNDING = "prod_seat_founding";
+
+const PLANS: PlanPrice[] = [
+  { key: "seatMonthly", label: "Monthly", unitAmountCents: 19_900, productId: MONTHLY },
+  { key: "seatAnnual", label: "Annual", unitAmountCents: 199_000, productId: ANNUAL },
+  {
+    key: "seatFoundingAnnual",
+    label: "Founding annual",
+    unitAmountCents: 178_800,
+    productId: FOUNDING,
+  },
 ];
 
 describe("applyDiscountCents", () => {
@@ -37,12 +48,25 @@ describe("applyDiscountCents", () => {
 describe("previewDiscount", () => {
   it("prices every plan with the discount on it", () => {
     expect(previewDiscount({ kind: "percent", percentOff: 10 }, PLANS)).toEqual([
-      { key: "seatMonthly", label: "Monthly", unitAmountCents: 19_900, afterCents: 17_910 },
-      { key: "seatAnnual", label: "Annual", unitAmountCents: 199_000, afterCents: 179_100 },
+      {
+        key: "seatMonthly",
+        label: "Monthly",
+        unitAmountCents: 19_900,
+        productId: MONTHLY,
+        afterCents: 17_910,
+      },
+      {
+        key: "seatAnnual",
+        label: "Annual",
+        unitAmountCents: 199_000,
+        productId: ANNUAL,
+        afterCents: 179_100,
+      },
       {
         key: "seatFoundingAnnual",
         label: "Founding annual",
         unitAmountCents: 178_800,
+        productId: FOUNDING,
         afterCents: 160_920,
       },
     ]);
@@ -53,6 +77,38 @@ describe("previewDiscount", () => {
     const rows = previewDiscount({ kind: "amount", amountOffCents: 20_000 }, PLANS);
     expect(rows.find((r) => r.key === "seatMonthly")?.afterCents).toBe(0);
     expect(rows.find((r) => r.key === "seatAnnual")?.afterCents).toBe(179_000);
+  });
+});
+
+describe("plansInProducts", () => {
+  it("keeps only the plans belonging to the selected products", () => {
+    expect(plansInProducts(PLANS, [ANNUAL]).map((p) => p.key)).toEqual(["seatAnnual"]);
+  });
+
+  it("keeps several", () => {
+    expect(plansInProducts(PLANS, [ANNUAL, FOUNDING]).map((p) => p.key)).toEqual([
+      "seatAnnual",
+      "seatFoundingAnnual",
+    ]);
+  });
+
+  it("returns nothing when nothing is selected", () => {
+    expect(plansInProducts(PLANS, [])).toEqual([]);
+  });
+
+  it("ignores a product id that matches no plan", () => {
+    expect(plansInProducts(PLANS, ["prod_gone"])).toEqual([]);
+  });
+
+  // Two prices under one product cannot be discounted apart — Stripe's
+  // applies_to takes products, not prices. Selecting the product must therefore
+  // take BOTH, so the caller can never believe it split them.
+  it("takes every plan sharing a selected product, not just one", () => {
+    const shared: PlanPrice[] = [
+      { key: "a", label: "Annual", unitAmountCents: 199_000, productId: ANNUAL },
+      { key: "b", label: "Founding annual", unitAmountCents: 178_800, productId: ANNUAL },
+    ];
+    expect(plansInProducts(shared, [ANNUAL]).map((p) => p.key)).toEqual(["a", "b"]);
   });
 });
 
@@ -104,9 +160,9 @@ describe("assertDiscountLeavesSomethingToPay", () => {
   // Names every plan it would zero, not just the first — otherwise fixing the
   // named one surfaces the next as a fresh surprise.
   it("names every plan the discount would zero", () => {
-    const twoPlans: SeatPlanPrice[] = [
-      { key: "a", label: "Monthly", unitAmountCents: 19_900 },
-      { key: "b", label: "Quarterly", unitAmountCents: 20_000 },
+    const twoPlans: PlanPrice[] = [
+      { key: "a", label: "Monthly", unitAmountCents: 19_900, productId: MONTHLY },
+      { key: "b", label: "Quarterly", unitAmountCents: 20_000, productId: ANNUAL },
     ];
     expect(() =>
       assertDiscountLeavesSomethingToPay({ kind: "amount", amountOffCents: 25_000 }, twoPlans),
@@ -124,9 +180,43 @@ describe("assertDiscountLeavesSomethingToPay", () => {
   // A price change must move the ceiling on its own — the check reads prices
   // rather than carrying a copy of them.
   it("follows the prices it is given rather than a fixed ceiling", () => {
-    const cheaper: SeatPlanPrice[] = [{ key: "a", label: "Monthly", unitAmountCents: 9_900 }];
+    const cheaper: PlanPrice[] = [
+      { key: "a", label: "Monthly", unitAmountCents: 9_900, productId: MONTHLY },
+    ];
     expect(() =>
       assertDiscountLeavesSomethingToPay({ kind: "amount", amountOffCents: 15_000 }, cheaper),
     ).toThrow(/\$99\.00/);
+  });
+
+  // The capability the split exists to restore: $200 off is fine on annual, and
+  // monthly is untouchable because the coupon cannot reach it.
+  it("allows $200 off once monthly is out of scope", () => {
+    const annualOnly = plansInProducts(PLANS, [ANNUAL]);
+    expect(() =>
+      assertDiscountLeavesSomethingToPay({ kind: "amount", amountOffCents: 20_000 }, annualOnly),
+    ).not.toThrow();
+  });
+
+  it("still refuses $200 off while monthly is in scope", () => {
+    const withMonthly = plansInProducts(PLANS, [ANNUAL, MONTHLY]);
+    expect(() =>
+      assertDiscountLeavesSomethingToPay({ kind: "amount", amountOffCents: 20_000 }, withMonthly),
+    ).toThrow(/Monthly/);
+  });
+
+  it("still refuses a discount that empties the plan it is aimed at", () => {
+    const annualOnly = plansInProducts(PLANS, [ANNUAL]);
+    expect(() =>
+      assertDiscountLeavesSomethingToPay({ kind: "amount", amountOffCents: 200_000 }, annualOnly),
+    ).toThrow(/Annual/);
+  });
+
+  // The ceiling quoted must be the cheapest IN SCOPE, or it tells the operator
+  // to type a number their own selection has already made safe.
+  it("quotes the cheapest plan in scope, not the cheapest overall", () => {
+    const annualOnly = plansInProducts(PLANS, [ANNUAL]);
+    expect(() =>
+      assertDiscountLeavesSomethingToPay({ kind: "amount", amountOffCents: 200_000 }, annualOnly),
+    ).toThrow(/\$1,990\.00/);
   });
 });

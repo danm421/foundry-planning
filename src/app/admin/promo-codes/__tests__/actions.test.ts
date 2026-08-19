@@ -28,6 +28,7 @@ const validForm = {
   maxRedemptions: 25,
   expiresAt: null,
   firstTimeOnly: false,
+  productIds: ["prod_seat_monthly", "prod_seat_annual"],
 };
 
 beforeEach(() => {

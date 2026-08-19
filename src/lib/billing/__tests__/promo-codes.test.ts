@@ -34,19 +34,29 @@ import {
   toPromoCodeRow,
   createPromoCode,
   listPromoCodes,
-  listSeatPlanPrices,
+  listPlanPrices,
   deactivatePromoCode,
 } from "../promo-codes";
 import { __resetPriceCatalogForTests } from "../price-catalog";
 
-// The real Foundry seat prices. The monthly one is what makes a flat discount
-// dangerous: it is an order of magnitude below the annual price, so a discount
-// sized for the annual plan wipes it out entirely.
-const PRICE_IDS = {
-  price_seat_monthly: 19_900,
-  price_seat_annual: 199_000,
-  price_seat_founding: 178_800,
+// The real Foundry seat prices, one Stripe product each — the split that lets a
+// coupon be aimed at an interval. The monthly price is what makes a flat
+// discount dangerous: it is an order of magnitude below the annual price, so a
+// discount sized for the annual plan wipes it out entirely. `product` comes back
+// as a bare id unless the call expands it, and that id is the only thing
+// `applies_to` accepts.
+const PRICES = {
+  price_seat_monthly: { unit_amount: 19_900, product: "prod_seat_monthly" },
+  price_seat_annual: { unit_amount: 199_000, product: "prod_seat_annual" },
+  price_seat_founding: { unit_amount: 178_800, product: "prod_seat_founding" },
 } as const;
+
+const P_MONTHLY = "prod_seat_monthly";
+const P_ANNUAL = "prod_seat_annual";
+const P_FOUNDING = "prod_seat_founding";
+
+/** Everything selected — what the form submits by default. */
+const ALL_PRODUCTS = [P_MONTHLY, P_ANNUAL, P_FOUNDING];
 
 beforeEach(() => {
   h.couponCreate.mockReset().mockResolvedValue({ id: "coupon_1" });
@@ -54,8 +64,8 @@ beforeEach(() => {
   h.promoCreate.mockReset().mockResolvedValue({ id: "promo_1", code: "FOUNDER25" });
   h.promoList.mockReset().mockResolvedValue({ data: [], has_more: false });
   h.promoUpdate.mockReset().mockResolvedValue({ id: "promo_1", active: false });
-  h.priceRetrieve.mockReset().mockImplementation((id: keyof typeof PRICE_IDS) =>
-    Promise.resolve({ id, object: "price", unit_amount: PRICE_IDS[id] }),
+  h.priceRetrieve.mockReset().mockImplementation((id: keyof typeof PRICES) =>
+    Promise.resolve({ id, object: "price", ...PRICES[id] }),
   );
 
   process.env.STRIPE_PRICE_ID_SEAT_MONTHLY = "price_seat_monthly";
@@ -136,6 +146,7 @@ describe("buildCouponParams", () => {
     discount: { kind: "percent" as const, percentOff: 25 },
     years: 1,
     maxRedemptions: 25,
+    productIds: ALL_PRODUCTS,
   };
 
   it("maps a percent discount", () => {
@@ -198,6 +209,7 @@ describe("buildPromotionCodeParams", () => {
     discount: { kind: "percent" as const, percentOff: 25 },
     years: 1,
     maxRedemptions: 25,
+    productIds: ALL_PRODUCTS,
   };
 
   it("points at the coupon using the promotion wrapper", () => {
@@ -327,6 +339,7 @@ describe("createPromoCode", () => {
     years: 1,
     maxRedemptions: 25,
     code: "FOUNDER25",
+    productIds: ALL_PRODUCTS,
   };
 
   it("creates the coupon first, then the code pointing at it", async () => {
@@ -458,13 +471,23 @@ describe("listPromoCodes", () => {
   });
 });
 
-describe("listSeatPlanPrices", () => {
-  it("prices every seat plan a discount could land on", async () => {
-    const plans = await listSeatPlanPrices();
+describe("listPlanPrices", () => {
+  it("prices every plan a discount could land on, with the product to aim at", async () => {
+    const plans = await listPlanPrices();
     expect(plans).toEqual([
-      { key: "seatMonthly", label: "Monthly", unitAmountCents: 19_900 },
-      { key: "seatAnnual", label: "Annual", unitAmountCents: 199_000 },
-      { key: "seatFoundingAnnual", label: "Founding annual", unitAmountCents: 178_800 },
+      {
+        key: "seatMonthly",
+        label: "Monthly",
+        unitAmountCents: 19_900,
+        productId: P_MONTHLY,
+      },
+      { key: "seatAnnual", label: "Annual", unitAmountCents: 199_000, productId: P_ANNUAL },
+      {
+        key: "seatFoundingAnnual",
+        label: "Founding annual",
+        unitAmountCents: 178_800,
+        productId: P_FOUNDING,
+      },
     ]);
   });
 
@@ -472,9 +495,103 @@ describe("listSeatPlanPrices", () => {
   // list would leave a flat discount unchecked against exactly that plan.
   it("refuses a plan with no flat amount rather than skipping it", async () => {
     h.priceRetrieve.mockImplementation((id: string) =>
-      Promise.resolve({ id, object: "price", unit_amount: id === "price_seat_monthly" ? null : 199_000 }),
+      Promise.resolve({
+        id,
+        object: "price",
+        product: "prod_x",
+        unit_amount: id === "price_seat_monthly" ? null : 199_000,
+      }),
     );
-    await expect(listSeatPlanPrices()).rejects.toThrow(/Monthly price has no flat amount/);
+    await expect(listPlanPrices()).rejects.toThrow(/Monthly price has no flat amount/);
+  });
+
+  // An expanded product is an object, and String()-ing it would yield an id
+  // matching nothing — a coupon aimed at no product discounts nothing, silently.
+  it("refuses an expanded product rather than coercing it to an id", async () => {
+    h.priceRetrieve.mockImplementation((id: string) =>
+      Promise.resolve({
+        id,
+        object: "price",
+        unit_amount: 19_900,
+        product: { id: "prod_x", object: "product" },
+      }),
+    );
+    await expect(listPlanPrices()).rejects.toThrow(/plain product id/);
+  });
+});
+
+describe("targeting", () => {
+  const input = {
+    name: "Annual only",
+    discount: { kind: "amount" as const, amountOffCents: 20_000 },
+    years: 1,
+    maxRedemptions: 25,
+    code: "ANNUAL200",
+    productIds: [P_ANNUAL],
+  };
+
+  // The capability the whole split exists to restore.
+  it("allows $200 off when only the annual plan is in scope", async () => {
+    await expect(createPromoCode(input)).resolves.toBeTruthy();
+    expect(h.couponCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amount_off: 20_000,
+        applies_to: { products: [P_ANNUAL] },
+      }),
+    );
+  });
+
+  it("still refuses the same discount once monthly is in scope", async () => {
+    await expect(
+      createPromoCode({ ...input, productIds: [P_ANNUAL, P_MONTHLY] }),
+    ).rejects.toThrow(/Monthly/);
+    expect(h.couponCreate).not.toHaveBeenCalled();
+  });
+
+  it("still refuses a discount that empties the plan it is aimed at", async () => {
+    await expect(
+      createPromoCode({ ...input, discount: { kind: "amount", amountOffCents: 200_000 } }),
+    ).rejects.toThrow(/Annual/);
+    expect(h.couponCreate).not.toHaveBeenCalled();
+  });
+
+  // Same empty list, two different causes. Telling an operator who ticked
+  // nothing that Stripe is unreachable sends them hunting an outage.
+  it("names an empty selection as such, not as a price-read failure", async () => {
+    await expect(createPromoCode({ ...input, productIds: [] })).rejects.toThrow(
+      /at least one plan/i,
+    );
+    expect(h.couponCreate).not.toHaveBeenCalled();
+  });
+
+  // …and the other way round: when the prices genuinely cannot be read, the
+  // operator gets the outage rather than being told to tick a plan on a form
+  // that is showing none precisely because the read failed.
+  it("reports a price-read failure ahead of an empty selection", async () => {
+    h.priceRetrieve.mockRejectedValue(new Error("Expired API Key provided"));
+    await expect(createPromoCode({ ...input, productIds: [] })).rejects.toThrow(/Expired API Key/);
+    expect(h.couponCreate).not.toHaveBeenCalled();
+  });
+
+  it("says so when the selection names products the catalog no longer has", async () => {
+    await expect(createPromoCode({ ...input, productIds: ["prod_gone"] })).rejects.toThrow(
+      /current price list/i,
+    );
+    expect(h.couponCreate).not.toHaveBeenCalled();
+  });
+
+  it("dedupes product ids, which Stripe rejects when repeated", async () => {
+    await createPromoCode({ ...input, productIds: [P_ANNUAL, P_ANNUAL] });
+    expect(h.couponCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ applies_to: { products: [P_ANNUAL] } }),
+    );
+  });
+
+  it("fences a code to the selection rather than the whole invoice", async () => {
+    await createPromoCode({ ...input, productIds: [P_ANNUAL, P_FOUNDING] });
+    expect(h.couponCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ applies_to: { products: [P_ANNUAL, P_FOUNDING] } }),
+    );
   });
 });
 

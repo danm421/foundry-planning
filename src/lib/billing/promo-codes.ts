@@ -3,8 +3,9 @@ import { getStripe } from "./stripe-client";
 import { getPriceCatalog, type PriceCatalog } from "./price-catalog";
 import {
   assertDiscountLeavesSomethingToPay,
+  plansInProducts,
   type PromoDiscount,
-  type SeatPlanPrice,
+  type PlanPrice,
 } from "./promo-discount-math";
 
 /**
@@ -41,6 +42,12 @@ export type CreatePromoInput = {
   expiresAt?: Date | null;
   /** Restrict to customers with no prior successful payment. */
   firstTimeOnly?: boolean;
+  /**
+   * Stripe Products the discount is allowed to touch — the only unit
+   * `applies_to` accepts. Always written, so a code is fenced to what was
+   * chosen instead of spreading across the whole invoice subtotal.
+   */
+  productIds: string[];
 };
 
 /**
@@ -108,6 +115,11 @@ export function buildCouponParams(input: CreatePromoInput): Stripe.CouponCreateP
     // discount can't outrun its limit even if the coupon is ever applied by
     // hand in the Stripe dashboard.
     max_redemptions: input.maxRedemptions,
+    // Fences the discount to the chosen products. Without this a coupon comes
+    // off the whole invoice subtotal, so a seat discount would also come off any
+    // add-on billed alongside it. Deduped because several plans can share a
+    // product and Stripe rejects a repeated id.
+    applies_to: { products: [...new Set(input.productIds)] },
     metadata: { source: "foundry_ops", years: String(input.years) },
     ...amount,
   };
@@ -220,26 +232,23 @@ export function toPromoCodeRow(p: Stripe.PromotionCode): PromoCodeRow {
  * omission is a typecheck failure. Coverage must not be decided by whether
  * someone remembered to write a label.
  */
-const SEAT_PLAN_LABELS = {
+const PLAN_LABELS = {
   seatMonthly: "Monthly",
   seatAnnual: "Annual",
   seatFoundingAnnual: "Founding annual",
 } as const satisfies Record<keyof PriceCatalog, string>;
 
 /**
- * Every seat price a discount could land on, priced from Stripe.
+ * Every price a discount could land on, priced from Stripe.
  *
  * Read live rather than hardcoded: this is what the "can't bill $0" check
  * measures against, and a floor copied into the code here would keep passing
  * quietly the day a price changes.
  */
-export async function listSeatPlanPrices(): Promise<SeatPlanPrice[]> {
+export async function listPlanPrices(): Promise<PlanPrice[]> {
   const catalog = getPriceCatalog();
   const stripe = getStripe();
-  const entries = Object.entries(SEAT_PLAN_LABELS) as [
-    keyof typeof SEAT_PLAN_LABELS,
-    string,
-  ][];
+  const entries = Object.entries(PLAN_LABELS) as [keyof typeof PLAN_LABELS, string][];
   return Promise.all(
     entries.map(async ([key, label]) => {
       const price = await stripe.prices.retrieve(catalog[key]);
@@ -249,7 +258,16 @@ export async function listSeatPlanPrices(): Promise<SeatPlanPrice[]> {
         // would let a discount through unchecked on exactly that plan.
         throw new Error(`The ${label} price has no flat amount, so a discount can't be checked against it.`);
       }
-      return { key, label, unitAmountCents: price.unit_amount };
+      if (typeof price.product !== "string") {
+        // Unexpanded, `product` is the bare id — which is what targeting needs.
+        // An object means the call started expanding it, or the product was
+        // deleted. Coercing either would produce an id that matches no product,
+        // and a coupon aimed at nothing silently discounts nothing.
+        throw new Error(
+          `The ${label} price did not come back with a plain product id, so it can't be targeted.`,
+        );
+      }
+      return { key, label, unitAmountCents: price.unit_amount, productId: price.product };
     }),
   );
 }
@@ -269,8 +287,27 @@ export async function createPromoCode(
 ): Promise<{ id: string; code: string }> {
   const couponParams = buildCouponParams(input);
   // The money guarantee, enforced server-side: the form caps the inputs too,
-  // but this action is reachable without it.
-  assertDiscountLeavesSomethingToPay(input.discount, await listSeatPlanPrices());
+  // but this action is reachable without it. Checked against the plans the
+  // coupon can actually reach — that is what lets "$200 off annual" through
+  // while leaving monthly, which it cannot touch, out of the arithmetic.
+  //
+  // Three ways this can have nothing to measure, and they are told apart in
+  // this order deliberately. Reading the prices comes FIRST so that a Stripe
+  // outage reports itself, rather than the operator being told to tick a plan
+  // on a form that is showing none because the read failed.
+  const plans = await listPlanPrices();
+  if (input.productIds.length === 0) {
+    throw new Error("Pick at least one plan for this code to apply to.");
+  }
+  const inScope = plansInProducts(plans, input.productIds);
+  if (inScope.length === 0) {
+    // Prices read fine and something was ticked, so the selection names products
+    // the catalog no longer has — the form is showing a stale list.
+    throw new Error(
+      "None of the selected plans are in the current price list. Reload the page and choose again.",
+    );
+  }
+  assertDiscountLeavesSomethingToPay(input.discount, inScope);
   const stripe = getStripe();
   const coupon = await stripe.coupons.create(couponParams);
   try {

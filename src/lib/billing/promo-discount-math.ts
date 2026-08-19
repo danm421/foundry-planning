@@ -13,15 +13,22 @@ export type PromoDiscount =
   | { kind: "amount"; amountOffCents: number };
 
 /** One price a buyer can be billed at, as Stripe holds it. */
-export type SeatPlanPrice = {
+export type PlanPrice = {
   /** Price-catalog key — `seatMonthly`, `seatAnnual`, `seatFoundingAnnual`. */
   key: string;
   /** What ops calls it: "Monthly", "Annual". */
   label: string;
   unitAmountCents: number;
+  /**
+   * The Stripe Product this price sits under — the only unit a coupon can be
+   * aimed at (`applies_to` takes products, never prices). Two prices sharing a
+   * product can never be discounted apart, which is why targeting is expressed
+   * in products throughout rather than in the plan keys the form displays.
+   */
+  productId: string;
 };
 
-export type PlanDiscountPreview = SeatPlanPrice & {
+export type PlanDiscountPreview = PlanPrice & {
   /** What the plan bills once the discount is applied. Never negative. */
   afterCents: number;
 };
@@ -38,7 +45,7 @@ export function formatUsd(cents: number): string {
  * rule rather than two copies of it that could drift apart and offer a discount
  * the server then rejects.
  */
-export function cheapestPlanCents(plans: SeatPlanPrice[]): number {
+export function cheapestPlanCents(plans: PlanPrice[]): number {
   return Math.min(...plans.map((p) => p.unitAmountCents));
 }
 
@@ -64,12 +71,27 @@ export function applyDiscountCents(discount: PromoDiscount, unitAmountCents: num
 /** Every plan priced with the discount applied, for the ops form's preview. */
 export function previewDiscount(
   discount: PromoDiscount,
-  plans: SeatPlanPrice[],
+  plans: PlanPrice[],
 ): PlanDiscountPreview[] {
   return plans.map((plan) => ({
     ...plan,
     afterCents: applyDiscountCents(discount, plan.unitAmountCents),
   }));
+}
+
+/**
+ * The plans a coupon aimed at these products can actually reach.
+ *
+ * Selection is expressed in **products** rather than plan keys because that is
+ * the only thing `applies_to` accepts. The consequence is deliberate and visible
+ * here: selecting a product takes *every* plan under it. If two prices ever
+ * share a product again, this returns both — so no caller can come to believe it
+ * discounted one and spared the other, which is precisely the belief that billed
+ * the monthly plan $0.
+ */
+export function plansInProducts(plans: PlanPrice[], productIds: string[]): PlanPrice[] {
+  const wanted = new Set(productIds);
+  return plans.filter((plan) => wanted.has(plan.productId));
 }
 
 /**
@@ -86,13 +108,16 @@ export function previewDiscount(
  * A $200 code on the $199 monthly plan repeating for a year is twelve free
  * months, and nothing downstream would have flagged it.
  *
- * Checked against *every* seat price, not just the ones on the pricing page: a
- * coupon can also be put on a subscription by hand in the Stripe dashboard, so
- * the internal founding price is reachable too.
+ * Takes the plans the coupon can *reach* — the caller narrows to the selected
+ * products via `plansInProducts` first. That is what makes "$200 off annual"
+ * expressible again: monthly is not checked because the coupon cannot touch it.
+ * Everything in scope is still checked, including the internal founding price,
+ * since a coupon can also be attached to a subscription by hand in the Stripe
+ * dashboard.
  */
 export function assertDiscountLeavesSomethingToPay(
   discount: PromoDiscount,
-  plans: SeatPlanPrice[],
+  plans: PlanPrice[],
 ): void {
   if (plans.length === 0) {
     // Fail closed. Without prices there is nothing to check the discount
