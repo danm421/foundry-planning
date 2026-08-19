@@ -21,6 +21,7 @@ export const portalFeatureColumns = {
   portalInvestmentsEnabled: clients.portalInvestmentsEnabled,
   portalBudgetEnabled: clients.portalBudgetEnabled,
   portalDocumentsEnabled: clients.portalDocumentsEnabled,
+  portalCalculatorsEnabled: clients.portalCalculatorsEnabled,
 };
 
 /**

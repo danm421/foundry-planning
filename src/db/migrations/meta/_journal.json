@@ -1723,6 +1723,13 @@
       "when": 1787148923527,
       "tag": "0245_nice_union_jack",
       "breakpoints": true
+    },
+    {
+      "idx": 246,
+      "version": "7",
+      "when": 1787166976217,
+      "tag": "0246_steady_cable",
+      "breakpoints": true
     }
   ]
 }

@@ -39,7 +39,7 @@ beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn();
 });
 
-const ALL_OFF = { investments: false, budget: false, documents: false };
+const ALL_OFF = { investments: false, budget: false, documents: false, calculators: false };
 
 function hrefs(container: HTMLElement): (string | null)[] {
   return Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"));
@@ -53,6 +53,7 @@ describe("visiblePortalNavItems", () => {
       "/investments",
       "/budget",
       "/documents",
+      "/calculators",
       "/settings",
     ]);
   });
@@ -70,6 +71,7 @@ describe("visiblePortalNavItems", () => {
       investments: true,
       budget: false,
       documents: true,
+      calculators: true,
     }).map((i) => i.suffix);
     expect(suffixes).toContain("/investments");
     expect(suffixes).toContain("/documents");
@@ -114,7 +116,7 @@ describe("PortalNav features", () => {
       <PortalNav
         displayName="A"
         email="a@b.co"
-        features={{ investments: true, budget: true, documents: false }}
+        features={{ investments: true, budget: true, documents: false, calculators: true }}
       />,
     );
     expect(hrefs(container)).toEqual([
@@ -122,13 +124,14 @@ describe("PortalNav features", () => {
       "/portal/organizer",
       "/portal/investments",
       "/portal/budget",
+      "/portal/calculators",
       "/portal/settings",
     ]);
   });
 
   it("renders the full rail when features is omitted", () => {
     const { container } = render(<PortalNav displayName="A" email="a@b.co" />);
-    expect(hrefs(container)).toHaveLength(6);
+    expect(hrefs(container)).toHaveLength(7);
   });
 });
 
@@ -147,7 +150,7 @@ describe("PortalMobileNav features", () => {
       <PortalMobileNav
         displayName="A"
         basePath="/clients/c1/portal/preview"
-        features={{ investments: false, budget: true, documents: true }}
+        features={{ investments: false, budget: true, documents: true, calculators: true }}
       />,
     );
     expect(hrefs(container)).not.toContain("/clients/c1/portal/preview/investments");

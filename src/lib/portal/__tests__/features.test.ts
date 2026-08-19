@@ -11,7 +11,7 @@ describe("isPortalFeatureKey", () => {
   // This is the allowlist the PUT /api/clients/[id]/portal/features handler
   // indexes its column map with. Anything that slips through would be a
   // client-supplied key reaching `.set()`.
-  it("accepts exactly the three switchable sections", () => {
+  it("accepts exactly the four switchable sections", () => {
     expect(PORTAL_FEATURE_KEYS.every(isPortalFeatureKey)).toBe(true);
   });
 
@@ -40,6 +40,7 @@ describe("portal feature metadata", () => {
       investments: true,
       budget: true,
       documents: true,
+      calculators: true,
     });
   });
 
@@ -50,7 +51,7 @@ describe("portal feature metadata", () => {
 
 describe("toPortalFeatures", () => {
   // Every read site projects through this, so a cross-wired column here would
-  // gate the wrong section everywhere at once. All three columns are boolean,
+  // gate the wrong section everywhere at once. All four columns are boolean,
   // so the compiler can't catch it — only a per-key assertion can.
   it("maps each column onto its own feature", () => {
     expect(
@@ -58,22 +59,33 @@ describe("toPortalFeatures", () => {
         portalInvestmentsEnabled: false,
         portalBudgetEnabled: true,
         portalDocumentsEnabled: true,
+        portalCalculatorsEnabled: true,
       }),
-    ).toEqual({ investments: false, budget: true, documents: true });
+    ).toEqual({ investments: false, budget: true, documents: true, calculators: true });
     expect(
       toPortalFeatures({
         portalInvestmentsEnabled: true,
         portalBudgetEnabled: false,
         portalDocumentsEnabled: true,
+        portalCalculatorsEnabled: true,
       }),
-    ).toEqual({ investments: true, budget: false, documents: true });
+    ).toEqual({ investments: true, budget: false, documents: true, calculators: true });
     expect(
       toPortalFeatures({
         portalInvestmentsEnabled: true,
         portalBudgetEnabled: true,
         portalDocumentsEnabled: false,
+        portalCalculatorsEnabled: true,
       }),
-    ).toEqual({ investments: true, budget: true, documents: false });
+    ).toEqual({ investments: true, budget: true, documents: false, calculators: true });
+    expect(
+      toPortalFeatures({
+        portalInvestmentsEnabled: true,
+        portalBudgetEnabled: true,
+        portalDocumentsEnabled: true,
+        portalCalculatorsEnabled: false,
+      }),
+    ).toEqual({ investments: true, budget: true, documents: true, calculators: false });
   });
 
   it("falls back to everything on when there is no row", () => {

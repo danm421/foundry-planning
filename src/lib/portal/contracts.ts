@@ -226,6 +226,7 @@ export interface PortalFeatureFlags {
   investments: boolean;
   budget: boolean;
   documents: boolean;
+  calculators: boolean;
 }
 
 // ============================================================================

@@ -15,10 +15,19 @@ export const dynamic = "force-dynamic";
 
 /** Feature key → the column it switches. Also the allowlist: an unrecognised
  *  key never reaches `.set()`, so the body can't reach other client columns. */
-const COLUMN_BY_FEATURE: Readonly<Record<PortalFeatureKey, "portalInvestmentsEnabled" | "portalBudgetEnabled" | "portalDocumentsEnabled">> = {
+const COLUMN_BY_FEATURE: Readonly<
+  Record<
+    PortalFeatureKey,
+    | "portalInvestmentsEnabled"
+    | "portalBudgetEnabled"
+    | "portalDocumentsEnabled"
+    | "portalCalculatorsEnabled"
+  >
+> = {
   investments: "portalInvestmentsEnabled",
   budget: "portalBudgetEnabled",
   documents: "portalDocumentsEnabled",
+  calculators: "portalCalculatorsEnabled",
 };
 
 export async function PUT(
@@ -36,7 +45,7 @@ export async function PUT(
     };
     if (!isPortalFeatureKey(body.feature)) {
       return NextResponse.json(
-        { error: "feature must be one of investments, budget, documents" },
+        { error: "feature must be one of investments, budget, documents, calculators" },
         { status: 400 },
       );
     }
