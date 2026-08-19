@@ -3,6 +3,8 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } 
 import { useRouter } from "expo-router";
 import type { BudgetSummaryDTO, GroupCell } from "@contracts";
 import { useApi } from "@/api/context";
+import { ForbiddenError } from "@/api/client";
+import { SectionOff } from "@/ui/section-off";
 import { fetchBudgetSummary } from "@/api/portal";
 import { formatMoney } from "@/ui/money";
 import { formatMonth } from "@/ui/date";
@@ -61,14 +63,18 @@ export default function Budget() {
   const router = useRouter();
   const [data, setData] = useState<BudgetSummaryDTO | null>(null);
   const [error, setError] = useState(false);
+  const [off, setOff] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
       setError(false);
       setData(await fetchBudgetSummary(api));
-    } catch {
-      setError(true);
+    } catch (e) {
+      // The advisor's Budget switch 403s this whole section. The tab is
+      // already hidden for it; this covers a switch flipped mid-session.
+      if (e instanceof ForbiddenError) setOff(e.message);
+      else setError(true);
     }
   }, [api]);
 
@@ -95,7 +101,9 @@ export default function Budget() {
     >
       <Text className="text-ink text-2xl font-semibold mb-4">Budget</Text>
 
-      {data === null && !error ? (
+      {off !== null ? (
+        <SectionOff title="Budget" reason={off} />
+      ) : data === null && !error ? (
         <View className="py-24 items-center">
           <ActivityIndicator />
         </View>

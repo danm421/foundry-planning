@@ -13,6 +13,8 @@ import { useLocalSearchParams } from "expo-router";
 import type { PortalTransactionDTO } from "@contracts";
 import { useApi } from "@/api/context";
 import { useMe } from "@/auth/me-gate";
+import { isSectionVisible } from "@/nav/sections";
+import { SectionOff } from "@/ui/section-off";
 import { useTransactions, type CategoryPick, type TxnFilter } from "@/txn/use-transactions";
 import { CategoryPickerModal } from "@/txn/category-picker";
 import { formatMoney } from "@/ui/money";
@@ -78,7 +80,25 @@ function accountSublabel(t: PortalTransactionDTO): string {
   return acct ? `${acct} · ${day}` : day;
 }
 
+/**
+ * Transactions is a tab *inside* the web's Budget section, so the advisor's
+ * Budget switch removes it. The tab bar already hides it; this catches a
+ * deep link (the to-review push notification routes straight here) and a
+ * switch flipped mid-session.
+ *
+ * A wrapper rather than a branch inside the screen: the screen's first hook
+ * starts fetching, and there is no point paging transactions the API will
+ * 403.
+ */
 export default function Transactions() {
+  const me = useMe();
+  if (!isSectionVisible("transactions", me.features)) {
+    return <SectionOff title="Transactions" />;
+  }
+  return <TransactionsScreen />;
+}
+
+function TransactionsScreen() {
   const { accountId: accountIdParam, review: reviewParam } =
     useLocalSearchParams<{ accountId?: string; review?: string }>();
   const api = useApi();

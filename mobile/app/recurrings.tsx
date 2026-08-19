@@ -4,6 +4,8 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import type { PortalMeDTO, RecurringRowDTO, RecurringsDTO } from "@contracts";
 import { useApi } from "@/api/context";
+import { ForbiddenError } from "@/api/client";
+import { SectionOff } from "@/ui/section-off";
 import { fetchMe, fetchRecurrings } from "@/api/portal";
 import { formatMoney } from "@/ui/money";
 import { formatMonth } from "@/ui/date";
@@ -69,14 +71,18 @@ export default function Recurrings() {
   const [me, setMe] = useState<PortalMeDTO | null>(null);
   const [data, setData] = useState<RecurringsDTO | null>(null);
   const [error, setError] = useState(false);
+  const [off, setOff] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
       setError(false);
       setData(await fetchRecurrings(api));
-    } catch {
-      setError(true);
+    } catch (e) {
+      // Recurrings live inside the web's Budget section, so the Budget switch
+      // 403s them. That is a removed section, not a fault — no retry to offer.
+      if (e instanceof ForbiddenError) setOff(e.message);
+      else setError(true);
     }
   }, [api]);
 
@@ -127,7 +133,9 @@ export default function Recurrings() {
         ) : null}
       </View>
 
-      {data === null && !error ? (
+      {off !== null ? (
+        <SectionOff title="Recurrings" reason={off} />
+      ) : data === null && !error ? (
         <View className="py-24 items-center">
           <ActivityIndicator />
         </View>

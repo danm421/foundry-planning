@@ -6,13 +6,7 @@ import { useMe } from "@/auth/me-gate";
 import { useAppLock } from "@/lock/use-app-lock";
 import { usePushNotifications } from "@/push/use-push-notifications";
 import { Row } from "@/ui/row";
-
-const MORE_LINKS = [
-  { label: "Investments", href: "/investments" },
-  { label: "Recurrings", href: "/recurrings" },
-  { label: "Profile", href: "/profile" },
-  { label: "Privacy & sharing", href: "/privacy" },
-] as const;
+import { visibleMoreLinks } from "@/nav/sections";
 
 export default function More() {
   const me = useMe();
@@ -20,6 +14,9 @@ export default function More() {
   const { signOut } = useAuth();
   const { enabled, setEnabled } = useAppLock();
   const { enabled: pushEnabled, setEnabled: setPushEnabled, unregister } = usePushNotifications();
+  // A section the advisor switched off 403s at the API, so listing it here
+  // would only lead somewhere broken.
+  const links = visibleMoreLinks(me.features);
 
   const handleSignOut = async () => {
     await unregister();
@@ -41,10 +38,10 @@ export default function More() {
       ) : null}
 
       <View className="bg-card border border-hair rounded-2xl px-4">
-        {MORE_LINKS.map((link, i) => (
+        {links.map((link, i) => (
           <View
             key={link.href}
-            className={i === MORE_LINKS.length - 1 ? "" : "border-b border-hair"}
+            className={i === links.length - 1 ? "" : "border-b border-hair"}
           >
             <Row
               label={link.label}
