@@ -56,6 +56,7 @@ describe("GET /api/presentation-templates", () => {
       "foundation-plan",
       "comparison-plan",
       "cash-flow-details",
+      "your-early-years",
     ]);
     expect(body.builtInHidden).toEqual([]);
   });

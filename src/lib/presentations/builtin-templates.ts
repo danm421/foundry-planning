@@ -79,6 +79,23 @@ export const BUILTIN_TEMPLATES: readonly BuiltInTemplate[] = [
       page("cashFlowAssets", { range: "full", showCallout: true }),
     ],
   },
+  {
+    slug: "your-early-years",
+    name: "Your Early Years",
+    pages: [
+      // The only built-in that names itself on the cover: this deck answers one
+      // narrow question rather than presenting the whole plan, so the generic
+      // "Financial Planning Report" kicker would undersell it.
+      page("cover", { title: "Your Early Years" }),
+      page("toc"),
+      // Where they stand, then what moving one lever is worth. Both pages take
+      // the registry defaults: the ladder's rungs are RELATIVE (+0/+3/+6pp off
+      // whatever this client already defers), so nothing here freezes a rate a
+      // template picked, and both tidbit slots stay empty for the advisor.
+      page("earlyYearsStanding"),
+      page("earlyYearsLadder"),
+    ],
+  },
 ] as const;
 
 export const BUILTIN_SLUGS: ReadonlySet<string> = new Set(

@@ -14,6 +14,7 @@ describe("built-in templates", () => {
       "foundation-plan",
       "comparison-plan",
       "cash-flow-details",
+      "your-early-years",
     ]);
   });
 
@@ -66,6 +67,7 @@ describe("built-in templates", () => {
     expect(builtIn.map((r) => r.slug)).toEqual([
       "foundation-plan",
       "comparison-plan",
+      "your-early-years",
     ]);
     expect(builtInHidden.map((r) => r.slug)).toEqual(["cash-flow-details"]);
     expect(builtIn[0]).toMatchObject({
@@ -74,5 +76,44 @@ describe("built-in templates", () => {
       visibility: "shared",
       builtIn: true,
     });
+  });
+});
+
+// The set-wide tests above already cover this template's schema validity and
+// its freedom from firm-specific UUIDs — both iterate every built-in. What is
+// asserted here is only what is specific to this deck.
+describe("Your Early Years built-in template", () => {
+  const t = () => BUILTIN_TEMPLATES.find((x) => x.slug === "your-early-years")!;
+
+  it("is registered", () => {
+    expect(t()).toBeDefined();
+    expect(t().name).toBe("Your Early Years");
+  });
+
+  it("opens on the cover and contents, then the two Early Years sheets", () => {
+    expect(t().pages.map((p) => p.pageId)).toEqual([
+      "cover", "toc", "earlyYearsStanding", "earlyYearsLadder",
+    ]);
+  });
+
+  it("names the deck on the cover", () => {
+    const cover = t().pages.find((p) => p.pageId === "cover")!;
+    expect((cover.options as { title: string }).title).toBe("Your Early Years");
+  });
+
+  it("ladders RELATIVE to what the client already saves, and stops at 65", () => {
+    const ladder = t().pages.find((p) => p.pageId === "earlyYearsLadder")!;
+    // Absolute percents here would be "a round number a template picked" —
+    // the spec requires the rungs to start from what this client saves today.
+    expect(ladder.options).toMatchObject({
+      rungs: { mode: "relative", offsets: [0, 0.03, 0.06] },
+      milestoneAges: [40, 50, 65],
+      tidbits: [],
+    });
+  });
+
+  it("leaves the match line on and both tidbit slots empty for the advisor", () => {
+    const standing = t().pages.find((p) => p.pageId === "earlyYearsStanding")!;
+    expect(standing.options).toEqual({ showMatchLine: true, tidbits: [] });
   });
 });
