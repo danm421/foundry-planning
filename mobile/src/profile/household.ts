@@ -5,11 +5,11 @@
 //
 // Mirrors the API (src/app/api/portal/household/route.ts): PUT only patches
 // a role that already has an existing contact row, and only the fields
-// present on the patch are updated. HouseholdContactPatch's nullable fields
-// (lastName/email/phone) use "" -> null ("clear it" on the wire); firstName
-// is NOT NULL in the DB (crm_household_contacts.first_name) and is never
-// emitted as "" or null here — a blanked firstName is simply excluded from
-// the patch (the stored value stands untouched). validateFields() is the
+// present on the patch are updated. The nullable columns (email/phone) use
+// "" -> null ("clear it" on the wire). Both name columns are NOT NULL, and
+// the route 400s a null name, so lastName clears to "" instead; firstName is
+// never emitted as "" or null at all — a blanked firstName is simply excluded
+// from the patch (the stored value stands untouched). validateFields() is the
 // separate Save-gate that catches that case so the omission is never silent
 // to the user: the caller blocks Save while any contact's firstName field is
 // blank, rather than letting the edit vanish unremarked.
@@ -51,7 +51,10 @@ function contactPatch(
 
   const origLastName = orig.lastName ?? "";
   if (edited.lastName !== origLastName) {
-    patch.lastName = edited.lastName === "" ? null : edited.lastName;
+    // NOT NULL in `crm_household_contacts`, unlike email/phone — clear it with
+    // "" rather than null. The API rejects a null name outright ("Name cannot
+    // be cleared", 400), so emitting null here loses the whole save.
+    patch.lastName = edited.lastName;
   }
 
   const origEmail = orig.email ?? "";
