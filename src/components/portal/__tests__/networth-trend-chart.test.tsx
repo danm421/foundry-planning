@@ -3,10 +3,18 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 
-// Mock react-chartjs-2 so jsdom never has to draw a canvas; echo the point count.
+// Mock react-chartjs-2 so jsdom never has to draw a canvas; echo the point
+// count and the y-axis config the component handed Chart.js.
 vi.mock("react-chartjs-2", () => ({
-  Line: ({ data }: { data: { labels: string[] } }) => (
-    <div data-testid="chart">{data.labels.length}</div>
+  Line: ({ data, options }: { data: { labels: string[] }; options: unknown }) => (
+    <>
+      <div data-testid="chart">{data.labels.length}</div>
+      <div data-testid="y-axis">
+        {JSON.stringify(
+          (options as { scales: { y: Record<string, unknown> } }).scales.y,
+        )}
+      </div>
+    </>
   ),
 }));
 // chart.js register() is a no-op in tests but the import must resolve.
@@ -49,5 +57,16 @@ describe("NetWorthTrendChart", () => {
     fireEvent.click(screen.getByRole("button", { name: "1W" }));
     const oneWeekCount = Number(screen.getByTestId("chart").textContent);
     expect(oneWeekCount).toBeLessThanOrEqual(8);
+  });
+
+  it("gives Chart.js a $5k-grid y-axis rather than letting it hug the data", () => {
+    // The fixture moves ~$400 in total; without snapped bounds Chart.js would
+    // scale to that and draw $100 gridlines.
+    const series = mkSeries();
+    render(<NetWorthTrendChart series={series} asOfDate={series[series.length - 1].date} />);
+    const y = JSON.parse(screen.getByTestId("y-axis").textContent ?? "{}");
+    expect(y.min).toBe(0);
+    expect(y.max).toBe(5_000);
+    expect(y.ticks.stepSize).toBe(5_000);
   });
 });

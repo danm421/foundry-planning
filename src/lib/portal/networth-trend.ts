@@ -70,3 +70,39 @@ export function sliceSeriesToWindow(
   const cutoff = windowCutoff(window, asOfDate);
   return series.filter((p) => p.date >= cutoff);
 }
+
+/**
+ * Y-axis bounds for a trend chart. Auto-scaling hugs the data, so a household
+ * whose net worth moved $3k across the year gets $1k gridlines and a line that
+ * swings corner-to-corner — a rounding error drawn as a cliff. Snap the axis to
+ * a $5k grid instead, stepping up through 1/2/5 multiples so the labels stay
+ * round no matter how large the balance sheet.
+ */
+const FINEST_STEP = 5_000;
+const MAX_GRIDLINES = 6;
+
+export function trendAxisBounds(
+  values: number[],
+): { min: number; max: number; stepSize: number } {
+  const finite = values.filter((v) => Number.isFinite(v));
+  if (finite.length === 0) return { min: 0, max: FINEST_STEP, stepSize: FINEST_STEP };
+
+  const lo = Math.min(...finite);
+  const hi = Math.max(...finite);
+  const step = gridStep(hi - lo);
+  // `|| 0` scrubs the -0 that Math.ceil hands back just below zero — Intl
+  // would print that tick as "-$0".
+  const min = Math.floor(lo / step) * step || 0;
+  const max = Math.ceil(hi / step) * step || 0;
+  return { min, max: max === min ? min + step : max, stepSize: step };
+}
+
+/** Smallest 1/2/5-style multiple of $5k that spans `range` in ≤ 6 gridlines. */
+function gridStep(range: number): number {
+  for (let decade = FINEST_STEP; decade <= FINEST_STEP * 1e9; decade *= 10) {
+    for (const m of [1, 2, 5]) {
+      if (range / (decade * m) <= MAX_GRIDLINES) return decade * m;
+    }
+  }
+  return FINEST_STEP * 1e9;
+}

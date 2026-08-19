@@ -8,7 +8,7 @@ import {
 } from "chart.js";
 import { useThemeName, chartChrome, dataPalette } from "@/lib/chart-colors";
 import {
-  sliceSeriesToWindow, type TrendPoint, type TrendWindow,
+  sliceSeriesToWindow, trendAxisBounds, type TrendPoint, type TrendWindow,
 } from "@/lib/portal/networth-trend";
 import { fmtUsd } from "@/lib/portal/format";
 
@@ -36,6 +36,8 @@ export function TrendLineChart({
   );
 
   if (series.length < 2) return null;
+
+  const axis = trendAxisBounds(points.map((p) => p.netWorth));
 
   const data = {
     labels: points.map((p) => p.date),
@@ -67,7 +69,9 @@ export function TrendLineChart({
     },
     scales: {
       x: { ticks: { color: chrome.tick, maxTicksLimit: 6 }, grid: { display: false } },
-      y: { ticks: { color: chrome.tick, callback: (v) => fmtUsd(Number(v)) },
+      y: { min: axis.min, max: axis.max,
+           ticks: { color: chrome.tick, stepSize: axis.stepSize,
+                    callback: (v) => fmtUsd(Number(v)) },
            grid: { color: chrome.grid } },
     },
   };

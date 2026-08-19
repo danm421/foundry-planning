@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   reconstructDailyNetWorth,
   sliceSeriesToWindow,
+  trendAxisBounds,
 } from "@/lib/portal/networth-trend";
 
 describe("reconstructDailyNetWorth", () => {
@@ -90,5 +91,36 @@ describe("sliceSeriesToWindow", () => {
     expect(sliceSeriesToWindow(series, "YTD", "2026-06-22").map((p) => p.date)).toEqual([
       "2026-01-01", "2026-06-01", "2026-06-21", "2026-06-22",
     ]);
+  });
+});
+
+describe("trendAxisBounds", () => {
+  it("keeps a small swing on a $5k grid instead of filling the panel", () => {
+    // $3k of movement on an $850k balance sheet: auto-scaling would draw this
+    // as a cliff with $1k gridlines.
+    expect(trendAxisBounds([848_100, 849_400, 851_000])).toEqual({
+      min: 845_000, max: 855_000, stepSize: 5_000,
+    });
+  });
+
+  it("steps the grid up so a big balance sheet keeps round labels", () => {
+    // $400k of movement — $5k lines would be 80 of them.
+    const axis = trendAxisBounds([1_800_000, 2_200_000]);
+    expect(axis.stepSize).toBe(100_000);
+    expect(axis.min).toBe(1_800_000);
+    expect(axis.max).toBe(2_200_000);
+    expect((axis.max - axis.min) / axis.stepSize).toBeLessThanOrEqual(6);
+  });
+
+  it("gives a flat series a full step of height", () => {
+    expect(trendAxisBounds([500_000, 500_000])).toEqual({
+      min: 500_000, max: 505_000, stepSize: 5_000,
+    });
+  });
+
+  it("handles a negative net worth", () => {
+    expect(trendAxisBounds([-12_000, -1_000])).toEqual({
+      min: -15_000, max: 0, stepSize: 5_000,
+    });
   });
 });
