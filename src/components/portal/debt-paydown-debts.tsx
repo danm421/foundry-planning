@@ -9,10 +9,22 @@ export interface PaydownRow {
   id: string;
   name: string;
   balance: number;
+  /** EFFECTIVE value — the client's override applied over the debt's own
+   * figure, when one exists. This is what the maths and the "usable"
+   * checkbox read; it is NOT what gates whether this row shows an editable
+   * box (see `rateUnknown`/`paymentUnknown`). */
   annualRate: number | null;
   minimumPayment: number | null;
   manual: boolean;
   included: boolean;
+  /** True when the debt's OWN reported rate (before any override) is
+   * unknown, so this row always shows an editable rate box — seeded with
+   * any saved override, and never frozen into read-only text once one is
+   * set, because an override must stay revisable. Always true for a manual
+   * row: it has no "own" rate to begin with. */
+  rateUnknown: boolean;
+  /** Same idea as `rateUnknown`, for the monthly payment. */
+  paymentUnknown: boolean;
   /** Display-ready month this debt clears under the current plan (e.g.
    * "Jan 2028"), already formatted by the workspace's own `monthName` — not
    * the "YYYY-MM" wire format `PaydownDebtResult.payoffMonth` derives from. */
@@ -30,12 +42,18 @@ export interface DebtEdits {
   onAdd: () => void;
 }
 
-/** A manual row's own typed strings, kept separate from the parsed numbers
- * that drive the maths — see the workspace's `manualRaw` for why. Keyed by
- * debt id; absent until the workspace has seeded an entry for that id. */
-export type ManualRawInputs = Record<
+/** Every row's own typed strings — a manual debt's fields AND a real debt's
+ * rate/payment override — kept separate from the parsed numbers that drive
+ * the maths (see the workspace's `rowRaw` for why). Keyed by row id: a
+ * manual debt's own generated id, or a real debt's id for an override. One
+ * map safely covers both, since a manual id always starts with "m" and no
+ * liability uuid can, so the two id spaces never collide. Fields are
+ * optional because a real-debt override entry has no `balance` (a real
+ * debt's balance is never editable) and a fresh row may have typed only one
+ * of its fields so far. */
+export type RowRawInputs = Record<
   string,
-  { balance: string; annualRate: string; minimumPayment: string }
+  { balance?: string; annualRate?: string; minimumPayment?: string }
 >;
 
 const RATE_CLS =
@@ -57,14 +75,13 @@ export function toPercent(rate: number): number {
 export function DebtPaydownDebts({
   rows,
   manualCount,
-  manualRaw,
+  rowRaw,
   edits,
 }: {
   rows: PaydownRow[];
   manualCount: number;
-  /** A manual row's own typed strings — see `ManualRawInputs`. Ignored for
-   * non-manual rows, which never read from it. */
-  manualRaw: ManualRawInputs;
+  /** Every row's own typed strings — see `RowRawInputs`. */
+  rowRaw: RowRawInputs;
   edits: DebtEdits;
 }): ReactElement {
   return (
@@ -114,7 +131,7 @@ export function DebtPaydownDebts({
                   // decimal point the client just typed (React restores the
                   // pre-"." digits on the next render, so "5." becomes "5"
                   // and the next keystroke appends onto the integer).
-                  value={manualRaw[r.id]?.balance ?? String(r.balance)}
+                  value={rowRaw[r.id]?.balance ?? String(r.balance)}
                   onValueChange={(v) => edits.onBalance(r.id, v)}
                   aria-label={`Balance for ${r.name}`}
                   className={BALANCE_CLS}
@@ -128,33 +145,49 @@ export function DebtPaydownDebts({
                   className={RATE_CLS}
                   inputMode="decimal"
                   aria-label={`Interest rate for ${r.name}`}
-                  value={manualRaw[r.id]?.annualRate ?? String(toPercent(r.annualRate ?? 0))}
+                  value={rowRaw[r.id]?.annualRate ?? String(toPercent(r.annualRate ?? 0))}
                   onChange={(e) => edits.onRate(r.id, e.target.value)}
                 />
-              ) : r.annualRate === null ? (
+              ) : r.rateUnknown ? (
                 <input
                   className={RATE_CLS}
                   inputMode="decimal"
                   placeholder="rate %"
                   aria-label={`Interest rate for ${r.name}`}
+                  // The RAW typed string, seeded from any override already
+                  // saved for this debt (converted fraction -> percent by
+                  // the workspace) — never re-derived from the parsed number,
+                  // which is the same decimal-point bug the manual fields
+                  // had. Gated on `rateUnknown`, not `r.annualRate === null`:
+                  // once an override supplies a rate, `r.annualRate` stops
+                  // being null, but the box must stay editable rather than
+                  // freezing into read-only text — an override has to stay
+                  // revisable.
+                  value={rowRaw[r.id]?.annualRate ?? ""}
                   onChange={(e) => edits.onRate(r.id, e.target.value)}
                 />
               ) : (
                 <span className="tabular w-20 text-right text-[13px] text-ink-2">
-                  {(r.annualRate * 100).toFixed(2)}%
+                  {((r.annualRate ?? 0) * 100).toFixed(2)}%
                 </span>
               )}
 
               {r.manual ? (
                 <CurrencyInput
-                  value={manualRaw[r.id]?.minimumPayment ?? String(r.minimumPayment ?? 0)}
+                  value={rowRaw[r.id]?.minimumPayment ?? String(r.minimumPayment ?? 0)}
                   onValueChange={(v) => edits.onPayment(r.id, v)}
                   aria-label={`Monthly payment for ${r.name}`}
                   className={RATE_CLS}
                 />
-              ) : r.minimumPayment === null ? (
+              ) : r.paymentUnknown ? (
                 <CurrencyInput
-                  value=""
+                  // Was a hardcoded `value=""` — parent-owned and never
+                  // updated, so every keystroke arrived as a fresh single
+                  // character and the override ended up as whatever was
+                  // typed LAST, not the whole number. Same fix and the same
+                  // reason as the rate box above: gated on `paymentUnknown`,
+                  // seeded from any saved override.
+                  value={rowRaw[r.id]?.minimumPayment ?? ""}
                   onValueChange={(v) => edits.onPayment(r.id, v)}
                   aria-label={`Monthly payment for ${r.name}`}
                   placeholder="payment"
@@ -162,7 +195,7 @@ export function DebtPaydownDebts({
                 />
               ) : (
                 <span className="tabular w-24 text-right text-[13px] text-ink-2">
-                  {fmtUsd(r.minimumPayment)}
+                  {fmtUsd(r.minimumPayment ?? 0)}
                 </span>
               )}
 

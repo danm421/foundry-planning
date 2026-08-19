@@ -95,6 +95,75 @@ describe("DebtPaydownWorkspace", () => {
     expect(tick.disabled).toBe(true);
   });
 
+  // A real debt's payment override box was a hardcoded `value=""` —
+  // parent-owned and never updated, so every keystroke arrived as a fresh
+  // single character and the override ended up as whatever was typed LAST
+  // (a client typing "250" stored "0"). Assert the STORED/effective value
+  // via the real simulator's own output, not merely that the DOM changed —
+  // the same lesson round 1's routing test learned.
+  it("stores the whole typed number for a real debt's payment override, not just the last digit", () => {
+    const { container } = render(
+      <DebtPaydownWorkspace dto={dto({ debts: [USABLE, NEEDS_RATE] })} />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Interest rate for Store card"), {
+      target: { value: "22" },
+    });
+    const payment = screen.getByLabelText("Monthly payment for Store card") as HTMLInputElement;
+    fireEvent.focus(payment);
+    fireEvent.change(payment, { target: { value: "2" } });
+    fireEvent.change(payment, { target: { value: "25" } });
+    fireEvent.change(payment, { target: { value: "250" } });
+    expect(payment.value).toBe("250");
+
+    const now = new Date();
+    const expected = comparePaydown(
+      [
+        { id: "l1", name: "Auto loan", balance: 18_400, annualRate: 0.059, minimumPayment: 415 },
+        { id: "l2", name: "Store card", balance: 1_150, annualRate: 0.22, minimumPayment: 250 },
+      ],
+      {
+        strategy: "avalanche",
+        extraMonthly: 0,
+        startYear: now.getFullYear(),
+        startMonth: now.getMonth() + 1,
+      },
+    );
+    expect(container.textContent).toContain(fmtUsd(expected.interestSaved));
+  });
+
+  // The sibling rate box had the opposite flaw: uncontrolled, so nothing
+  // ever seeded it — a saved override was invisible on return, even though
+  // it was already live in the maths. Both boxes must show a saved override
+  // on first paint, the rate converted from the stored fraction to a percent.
+  it("renders a saved rate and payment override in their boxes on first paint", () => {
+    const state = {
+      ...DEFAULT_DEBT_PAYDOWN_STATE,
+      overrides: { l2: { annualRate: 0.1899, minimumPayment: 45 } },
+    };
+    render(<DebtPaydownWorkspace dto={dto({ debts: [USABLE, NEEDS_RATE], state })} />);
+
+    const rate = screen.getByLabelText("Interest rate for Store card") as HTMLInputElement;
+    const payment = screen.getByLabelText("Monthly payment for Store card") as HTMLInputElement;
+    expect(rate.value).toBe("18.99");
+    expect(payment.value).toBe("45");
+  });
+
+  // Same rule as the manual fields: clearing a box to retype it must not
+  // snap back to "0".
+  it("lets a client clear a real debt's saved override instead of snapping it back to 0", () => {
+    const state = {
+      ...DEFAULT_DEBT_PAYDOWN_STATE,
+      overrides: { l2: { annualRate: 0.1899, minimumPayment: 45 } },
+    };
+    render(<DebtPaydownWorkspace dto={dto({ debts: [USABLE, NEEDS_RATE], state })} />);
+
+    const payment = screen.getByLabelText("Monthly payment for Store card") as HTMLInputElement;
+    fireEvent.focus(payment);
+    fireEvent.change(payment, { target: { value: "" } });
+    expect(payment.value).toBe("");
+  });
+
   it("tells the client when a payment cannot cover the interest", () => {
     const stalling = {
       id: "l3", name: "Visa", balance: 5_000, annualRate: 0.24,

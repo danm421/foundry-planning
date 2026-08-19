@@ -9,7 +9,7 @@ import {
   DebtPaydownDebts,
   toPercent,
   type PaydownRow,
-  type ManualRawInputs,
+  type RowRawInputs,
 } from "@/components/portal/debt-paydown-debts";
 import { fmtUsd } from "@/lib/portal/format";
 import {
@@ -124,21 +124,37 @@ export function DebtPaydownWorkspace({
   const [saveNote, setSaveNote] = useState<string | null>(null);
   const firstRender = useRef(true);
 
-  // The RAW strings behind the extra-payment field and every manual debt's
-  // amount fields — kept separate from the parsed numbers in `state` because
-  // a controlled input whose `value` is re-derived from a parsed number loses
-  // whatever the number can't represent while it's typed, most visibly a
-  // trailing decimal point: type "5", then ".", and a `String(rate * 100)`
-  // round-trip renders "5" again, so the next digit appends onto the integer
-  // instead of continuing the decimal. These strings ARE what the input
-  // displays; `state` is what the maths and the save use. Both are updated
-  // together on every keystroke — see `setManualField` and the extra-payment
-  // field below — so the two never actually disagree about the VALUE, only
-  // about how it's spelled mid-edit.
+  // The RAW strings behind the extra-payment field, every manual debt's
+  // amount fields, and every real debt's rate/payment OVERRIDE — kept
+  // separate from the parsed numbers in `state` because a controlled input
+  // whose `value` is re-derived from a parsed number loses whatever the
+  // number can't represent while it's typed. Two distinct failure shapes,
+  // same root cause: a rate box re-derived from `String(rate * 100)` loses a
+  // trailing decimal point (type "5", then ".", and the "." vanishes on the
+  // next render, so the next digit appends onto the integer); a payment box
+  // hardcoded to `value=""` is worse — EVERY keystroke arrives as a fresh
+  // single character, so the override ends up as whatever was typed last,
+  // not the whole number. These strings ARE what the input displays; `state`
+  // is what the maths and the save use. Both are updated together on every
+  // keystroke — see `setManualField` and `setOverride` — so the two never
+  // actually disagree about the VALUE, only about how it's spelled mid-edit.
   const [extraRaw, setExtraRaw] = useState(() => String(dto.state.extraMonthly));
-  const [manualRaw, setManualRaw] = useState<ManualRawInputs>(() =>
-    Object.fromEntries(dto.state.manualDebts.map((d) => [d.id, rawInputsFor(d)])),
-  );
+  const [rowRaw, setRowRaw] = useState<RowRawInputs>(() => {
+    const raw: RowRawInputs = {};
+    for (const d of dto.state.manualDebts) raw[d.id] = rawInputsFor(d);
+    // A saved override seeds the SAME map, under the real debt's own id — the
+    // two id spaces never collide (see `RowRawInputs`), and this is what lets
+    // a rate/payment override the client entered last visit still show in its
+    // box instead of reading empty while the number is already live in the
+    // maths behind it.
+    for (const [id, o] of Object.entries(dto.state.overrides)) {
+      raw[id] = {
+        ...(o.annualRate !== undefined ? { annualRate: String(toPercent(o.annualRate)) } : {}),
+        ...(o.minimumPayment !== undefined ? { minimumPayment: String(o.minimumPayment) } : {}),
+      };
+    }
+    return raw;
+  });
 
   const now = useMemo(() => new Date(), []);
   const startYear = now.getFullYear();
@@ -196,6 +212,11 @@ export function DebtPaydownWorkspace({
         minimumPayment: o.minimumPayment ?? d.minimumPayment,
         manual: false,
         included: !excluded.has(d.id),
+        // Gates the editable box on the DEBT's own (pre-override) figure,
+        // not the merged one above — an override must stay revisable, so
+        // the box cannot disappear the moment it first holds a value.
+        rateUnknown: d.annualRate === null,
+        paymentUnknown: d.minimumPayment === null,
       };
     });
     const manual = state.manualDebts.map((d) => ({
@@ -206,6 +227,9 @@ export function DebtPaydownWorkspace({
       minimumPayment: d.minimumPayment,
       manual: true,
       included: !excluded.has(d.id),
+      // A manual debt has no "own" figure to begin with — always editable.
+      rateUnknown: true,
+      paymentUnknown: true,
     }));
     return [...real, ...manual];
   }, [dto.debts, state.overrides, state.manualDebts, state.excludedDebtIds]);
@@ -284,6 +308,13 @@ export function DebtPaydownWorkspace({
     else entry[field] = field === "annualRate" ? value / 100 : value;
     next[id] = entry;
     patch({ overrides: next });
+
+    // Mirrors `setManualField`: the box shows exactly what was typed, never
+    // a value re-derived from the parsed number — that round trip is the
+    // CRITICAL bug (a payment override eating everything but the last
+    // digit) and the IMPORTANT one (a saved rate override reading empty)
+    // this exists to fix.
+    setRowRaw((m) => ({ ...m, [id]: { ...(m[id] ?? {}), [field]: raw } }));
   }
 
   /** A hand-added debt has no server-known figures to fall back on, so unlike
@@ -292,7 +323,7 @@ export function DebtPaydownWorkspace({
    *
    * Updates TWO pieces of state on every keystroke: the parsed number in
    * `state.manualDebts` (what the maths and the save use) and the raw typed
-   * string in `manualRaw` (what the field displays). Never derive one from
+   * string in `rowRaw` (what the field displays). Never derive one from
    * the other after the fact — that round trip is the decimal-point bug this
    * split exists to avoid. */
   function setManualField(
@@ -310,10 +341,7 @@ export function DebtPaydownWorkspace({
     patch({ manualDebts });
 
     if (field !== "name") {
-      setManualRaw((m) => ({
-        ...m,
-        [id]: { ...(m[id] ?? rawInputsFor({ balance: 0, annualRate: 0, minimumPayment: 0 })), [field]: raw },
-      }));
+      setRowRaw((m) => ({ ...m, [id]: { ...(m[id] ?? {}), [field]: raw } }));
     }
   }
 
@@ -328,12 +356,12 @@ export function DebtPaydownWorkspace({
     patch({
       manualDebts: [...state.manualDebts, { id, name: "New debt", ...fresh }],
     });
-    setManualRaw((m) => ({ ...m, [id]: rawInputsFor(fresh) }));
+    setRowRaw((m) => ({ ...m, [id]: rawInputsFor(fresh) }));
   }
 
   function removeManual(id: string): void {
     patch({ manualDebts: state.manualDebts.filter((d) => d.id !== id) });
-    setManualRaw((m) => {
+    setRowRaw((m) => {
       if (!(id in m)) return m;
       const next = { ...m };
       delete next[id];
@@ -493,7 +521,7 @@ export function DebtPaydownWorkspace({
       <DebtPaydownDebts
         rows={listRows}
         manualCount={state.manualDebts.length}
-        manualRaw={manualRaw}
+        rowRaw={rowRaw}
         edits={{
           onToggle: toggle,
           onRate: (id, v) =>
