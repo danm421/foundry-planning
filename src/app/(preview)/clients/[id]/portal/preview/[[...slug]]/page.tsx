@@ -179,11 +179,12 @@ export default async function PortalPreviewPage({
       />
       {/*
         The grid fills the height left below the banner (`flex-1 min-h-0`) and
-        each of the three columns scrolls independently (`min-h-0 overflow-y-auto`
+        the nav and main columns scroll independently (`min-h-0 overflow-y-auto`
         against the `grid-rows-1` = minmax(0,1fr) track), so scrolling one panel
-        leaves the tops of the other two in view.
+        leaves the top of the other in view. `relative` anchors the detail
+        drawer below, which overlays this area rather than sitting in the grid.
       */}
-      <div className="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)_auto] grid-rows-1">
+      <div className="relative grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)] grid-rows-1">
         <PortalNav
           displayName={greetingName}
           email={primary?.email ?? ""}
@@ -203,14 +204,14 @@ export default async function PortalPreviewPage({
           </PortalModeProvider>
         </main>
         {/*
-          Detail rail (createPortal target). `empty:hidden` collapses the slot —
-          and with the `auto` third track, the empty grid column too — so the main
-          content fills the full width when nothing is selected. When populated it
-          reserves a fixed 480px panel that scrolls on its own.
+          Detail drawer (createPortal target) — mirrors the client layout: taken
+          out of the grid so it slides OVER the right of the page instead of
+          narrowing the content beside it. `empty:hidden` keeps it out of the
+          way when nothing is selected.
         */}
         <aside
           id="portal-detail"
-          className="min-h-0 w-[480px] overflow-y-auto p-4 empty:hidden"
+          className="portal-drawer absolute inset-y-0 right-0 z-30 w-[480px] overflow-y-auto border-l border-hair bg-paper p-4 shadow-xl empty:hidden"
         />
       </div>
     </div>

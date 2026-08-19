@@ -80,13 +80,13 @@ export default async function PortalLayout({
   const features = toPortalFeatures(row);
 
   return (
-    <div className="min-h-dvh bg-paper text-ink lg:grid lg:h-dvh lg:grid-cols-[240px_minmax(0,1fr)_auto] lg:overflow-hidden">
+    <div className="min-h-dvh bg-paper text-ink lg:relative lg:grid lg:h-dvh lg:grid-cols-[240px_minmax(0,1fr)] lg:overflow-hidden">
       {/* Desktop side rail — hidden on mobile, replaced by the top tab bar. */}
       {/*
-        On desktop each of the three columns is pinned to the viewport height
-        (`lg:h-dvh`) and scrolls independently (`lg:overflow-y-auto`), so
-        scrolling one panel leaves the tops of the other two in view. Below `lg`
-        the layout stacks and the page scrolls as one.
+        On desktop the nav and the main column are each pinned to the viewport
+        height (`lg:h-dvh`) and scroll independently (`lg:overflow-y-auto`), so
+        scrolling one panel leaves the top of the other in view. Below `lg` the
+        layout stacks and the page scrolls as one.
       */}
       <PortalNav
         displayName={displayName}
@@ -112,16 +112,17 @@ export default async function PortalLayout({
         </PortalModeProvider>
       </main>
       {/*
-        Transaction detail target (createPortal). `empty:hidden` collapses the
-        slot when nothing is selected — and with the `auto` third track, the
-        empty grid column too — so the main content fills the full width. On
-        desktop it's the 3rd grid column (a fixed 480px panel, `lg:p-4`); below
-        `lg` the slot is a zero-height block and the portaled content positions
-        itself as a bottom sheet (see transactions-list).
+        Detail target (createPortal). On desktop it's an overlay drawer, not a
+        third grid column: `lg:absolute` takes it out of the grid so opening a
+        drill-down slides the 480px panel OVER the right of the page instead of
+        squeezing the tiles underneath into a narrower column. `empty:hidden`
+        keeps it out of the way when nothing is selected. Below `lg` the slot
+        stays a zero-height block in flow and the portaled content positions
+        itself as a bottom sheet (see portal-detail-rail).
       */}
       <aside
         id="portal-detail"
-        className="empty:hidden lg:h-dvh lg:w-[480px] lg:overflow-y-auto lg:p-4"
+        className="portal-drawer empty:hidden lg:absolute lg:inset-y-0 lg:right-0 lg:z-30 lg:w-[480px] lg:overflow-y-auto lg:border-l lg:border-hair lg:bg-paper lg:p-4 lg:shadow-xl"
       />
     </div>
   );

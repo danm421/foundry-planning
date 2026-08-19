@@ -384,6 +384,24 @@ html {
   html { transition: none; }
 }
 
+/* Portal drill-down drawer (#portal-detail) — slides in over the page.  */
+@keyframes portalDrawerSlide {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+/* Gated to `lg` on purpose: below it the same slot is a zero-height block
+   whose portaled child is a `position: fixed` bottom sheet, and a transform
+   here would make this element that sheet's containing block. The animation
+   replays on every open because `empty:hidden` toggles `display`.          */
+@media (min-width: 64rem) {
+  .portal-drawer:not(:empty) {
+    animation: portalDrawerSlide 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-drawer:not(:empty) { animation: none !important; }
+}
+
 /* ------------------------------------------------------------------ */
 /* Thin scrollbar — matches the dark surface hairlines                 */
 /* ------------------------------------------------------------------ */
