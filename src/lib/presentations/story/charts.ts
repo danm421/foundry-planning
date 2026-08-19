@@ -11,24 +11,37 @@ import { portfolioBars, type PortfolioBar } from "@/lib/presentations/pages/reti
 import { buildTaxPaidBars, type TaxYearBar } from "@/lib/presentations/pages/tax-summary/aggregate";
 import type { EstateSummaryChartBar } from "@/lib/presentations/pages/estate-summary/view-model";
 
+export interface StoryEstateChart {
+  /**
+   * WHICH comparison the two bars are, carried with them.
+   *
+   * The bars alone cannot say: both pairings are two `EstateSummaryChartBar`s
+   * in the same slots, and `build-facts.ts` labels each one's figure. Reading
+   * the pairing off `hasProposal` there instead would be a second spelling of
+   * a decision made here — and the labels are display text, not a key.
+   */
+  comparison: "planVsPlan" | "todayVsEndOfLife";
+  /** Exactly two. One bar is not a comparison. */
+  bars: EstateSummaryChartBar[];
+}
+
 export interface StoryChartData {
   /** Stacked balances per projection year, for `willTheMoneyLast`. */
   portfolio: PortfolioBar[];
   /** Tax paid per projection year, for `whatYoullPayInTax`. */
   tax: TaxYearBar[];
   /**
-   * The estate's current-plan-vs-proposed-plan bars, both at end of life, for
-   * `whatsLeftForPeople` — or null when the deck cannot draw the pair.
+   * The estate's two bars, or null when the deck cannot draw a pair.
    *
-   * ⚠️ NOT today vs end of life, which is what the Estate Summary page draws
-   * from the same component. This chapter argues what the changes do to what
-   * reaches the heirs, so its picture compares the two plans.
+   * A proposal deck compares the current plan against the proposed plan, both
+   * at end of life. A base-only deck compares today against end of life — the
+   * same pair, in the same order, that the Estate Summary page draws.
    *
    * Null rather than an empty array, and the distinction is the one the whole
    * report makes elsewhere: an absent estate and an estate worth nothing are
    * different statements. An empty array would print an axis with no bars.
    */
-  estate: EstateSummaryChartBar[] | null;
+  estate: StoryEstateChart | null;
 }
 
 export interface BuildStoryChartsInput {
@@ -37,20 +50,27 @@ export interface BuildStoryChartsInput {
    * Built by the caller from the household summaries it already holds, rather
    * than rebuilt here.
    *
-   * `load-context.ts` runs `summarizeHousehold` over each plan's end-of-life
-   * estate report for the fact pack, and stacks the bars from those same two
-   * objects through `pages/estate-summary/view-model.ts#estateChartBar` — the
-   * one mapping the Estate Summary page uses too. Rebuilding either the reports
-   * or the mapping here would be the duplicate derivation this module exists to
-   * prevent. Null when the caller cannot produce both bars.
+   * `load-context.ts` runs `summarizeHousehold` over every estate report it
+   * builds and stacks the bars off those same objects through
+   * `pages/estate-summary/view-model.ts#estateChartBar` — the one mapping the
+   * Estate Summary page uses too. Rebuilding either the reports or the mapping
+   * here would be the duplicate derivation this module exists to prevent.
+   *
+   * Most of those reports are the fact pack's, read a second time for the
+   * picture. A base-only deck's TODAY report is the exception: it is built for
+   * this chart alone and its totals never become facts, because the `estate.*`
+   * pack stays at end of life on every deck.
+   *
+   * The caller also picks WHICH pair the deck compares, and says so on the
+   * chart. Null when it cannot produce both bars.
    */
-  estateBars: EstateSummaryChartBar[] | null;
+  estate: StoryEstateChart | null;
 }
 
 export function buildStoryCharts(input: BuildStoryChartsInput): StoryChartData {
   return {
     portfolio: portfolioBars(input.years),
     tax: buildTaxPaidBars(input.years),
-    estate: input.estateBars,
+    estate: input.estate,
   };
 }

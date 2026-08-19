@@ -58,7 +58,7 @@ import {
   type StoryCover,
   type StoryEstateTotals,
 } from "./build-facts";
-import { buildStoryCharts } from "./charts";
+import { buildStoryCharts, type StoryEstateChart } from "./charts";
 import { loadStoryNextSteps } from "./load-next-steps";
 import { CHECKLIST_CHAPTERS } from "./chapters/registry";
 import type { ChapterId, StoryContext, StoryGoal, StoryStrategy, StoryHousehold } from "./types";
@@ -331,16 +331,17 @@ async function maxSpendFor(clientId: string, firmId: string, ref: string): Promi
 }
 
 /**
- * What one plan's estate leaves behind, off the SAME report the deck's Estate
- * Summary page builds its KPI strip from: `summarizeHousehold` over
- * `buildEstateTransferReportData` at `asOf: { kind: "split" }`, which is that
- * page's End of Life column. Under `documentRole: "frontMatter"` the two pages
- * are a few leaves apart in one PDF, and "what reaches your heirs" meaning two
- * different numbers inside one document is the single failure this fact pack
- * exists to prevent.
+ * What one plan's estate leaves behind at one moment, off the SAME report the
+ * deck's Estate Summary page builds its KPI strip from: `summarizeHousehold`
+ * over `buildEstateTransferReportData`. `asOf: { kind: "split" }` is that page's
+ * End of Life column and `{ kind: "today" }` its Today column. Under
+ * `documentRole: "frontMatter"` the two pages are a few leaves apart in one PDF,
+ * and "what reaches your heirs" meaning two different numbers inside one
+ * document is the single failure this fact pack exists to prevent.
  *
- * End of life rather than today, because that is the horizon this chapter's
+ * The fact pack states end of life, because that is the horizon this chapter's
  * neighbours are stated at — `outcome.legacy.*` is already "left at the end".
+ * Today is drawn only as the left bar of a base-only deck's chart.
  *
  * `ordering` is that page's own default. Which death is reported first is an
  * option the advisor sets on the Estate Summary page, which this one cannot
@@ -355,13 +356,14 @@ async function maxSpendFor(clientId: string, firmId: string, ref: string): Promi
  * household rather than re-deriving it at the bar site keeps one
  * `summarizeHousehold` call behind both the picture and the paragraph.
  */
-function estateAtEndOfLife(
+function estateAt(
   projected: Projected,
+  asOf: { kind: "today" } | { kind: "split" },
   ownerNames: { clientName: string; spouseName: string | null },
 ): { totals: StoryEstateTotals; household: EstateSummaryHousehold } | null {
   const report = buildEstateTransferReportData({
     projection: projected.projection,
-    asOf: { kind: "split" },
+    asOf,
     ordering: ESTATE_SUMMARY_OPTIONS_DEFAULT.ordering,
     clientData: projected.effectiveTree,
     ownerNames,
@@ -546,32 +548,51 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
   const proposedYears = proposed?.projection.years ?? [];
   const proposedLast = proposedYears[proposedYears.length - 1];
 
-  // Both plans' end-of-life estates, computed ONCE and read twice — by the
+  // Each plan's end-of-life estate, computed ONCE and read twice — by the
   // chart's bars just below and by the fact pack further down. The names only
   // label the report's own death sections, which nothing here reads; the
   // figures taken off it are household totals.
   const estateOwnerNames = { clientName: firstName, spouseName: client.spouseName ?? null };
-  const baseEstate = estateAtEndOfLife(base, estateOwnerNames);
-  const proposedEstate = proposed ? estateAtEndOfLife(proposed, estateOwnerNames) : null;
 
-  // The estate chart compares the CURRENT plan against the PROPOSED plan, both
-  // at end of life — not today against end of life, which is what the Estate
-  // Summary page's own copy of this chart draws.
+  // Today's estate is built ONLY on a base-only deck: a proposal deck already
+  // makes two `buildEstateTransferReportData` calls and must keep making
+  // exactly those two, inside a loader that already takes ~23s cold.
   //
-  // That is what the chapter already argues: its registry `brief` is "what the
-  // changes do to it", and `requiresProposal` means it never prints without a
-  // proposal. It also costs nothing, because both households are already in
-  // hand above for the fact pack — a today bar would be a second
-  // `buildEstateTransferReportData` inside an already slow loader.
+  // First, so a base deck BUILDS its two reports in the order the Estate
+  // Summary page builds them (`pages/estate-summary/view-model.ts:77-90`) —
+  // today, then end of life. That is the call sequence only; the order the
+  // chart draws in is the array literal below, and swapping these two lines
+  // would not flip it.
+  const todayEstate = proposed ? null : estateAt(base, { kind: "today" }, estateOwnerNames);
+  const baseEstate = estateAt(base, { kind: "split" }, estateOwnerNames);
+  const proposedEstate = proposed ? estateAt(proposed, { kind: "split" }, estateOwnerNames) : null;
+
+  // A proposal deck argues what the changes do, so its bars are the two plans.
+  // A base-only deck has one plan and argues what time does to it, so its bars
+  // are today and the end — the same pair `pages/estate-summary/view-model.ts`
+  // draws, built by the same two calls in the same order.
   //
-  // Both bars or none. One bar is not a comparison, and `chartFor` returns null
-  // for a null array, so the chapter keeps its prose and prints no empty frame.
-  const estateBars =
-    baseEstate && proposedEstate
-      ? [
-          estateChartBar("Current plan", baseEstate.household),
-          estateChartBar("Proposed plan", proposedEstate.household),
-        ]
+  // Both bars or none, on either deck. One bar is not a comparison, and
+  // `chartFor` returns null for a null chart, so the chapter keeps its prose
+  // and prints no empty frame.
+  const estate: StoryEstateChart | null = proposed
+    ? baseEstate && proposedEstate
+      ? {
+          comparison: "planVsPlan",
+          bars: [
+            estateChartBar("Current plan", baseEstate.household),
+            estateChartBar("Proposed plan", proposedEstate.household),
+          ],
+        }
+      : null
+    : todayEstate && baseEstate
+      ? {
+          comparison: "todayVsEndOfLife",
+          bars: [
+            estateChartBar("Today", todayEstate.household),
+            estateChartBar("End of Life", baseEstate.household),
+          ],
+        }
       : null;
 
   // Whichever plan `willTheMoneyLast` is stating — the proposed plan's years
@@ -583,7 +604,7 @@ export async function loadStoryContext(args: LoadStoryContextArgs): Promise<Stor
   // labels for the same number.
   const charts = buildStoryCharts({
     years: proposed ? proposedYears : baseYears,
-    estateBars,
+    estate,
   });
 
   // Household totals come from the balance-sheet view-model, not the projection

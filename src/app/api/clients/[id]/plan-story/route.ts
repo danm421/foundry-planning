@@ -88,7 +88,7 @@ export async function GET(
         newerGeneratedText: row && hasNewerGeneration(row) ? row.generatedText : null,
         /**
          * Could a generation write this chapter for this story at all? False for
-         * the five chapters that need a proposal when the report is base-only.
+         * the two chapters that need a proposal when the report is base-only.
          *
          * ⚠️ A SUPERSET — the ref-level half of the answer only. A coverage
          * chapter with no policies behind it is `true` here and still refused

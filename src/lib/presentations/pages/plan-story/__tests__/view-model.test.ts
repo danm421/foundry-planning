@@ -1246,16 +1246,17 @@ describe("a chartWithProse chapter", () => {
     // The estate chart is the only one of the three that prints money, and its
     // own `fmtUsd` renders thousands with a lowercase k while `moneyFact` uses
     // `fmtUsdCompact`'s uppercase K. Two spellings of one number on one sheet.
-    const estate = [
+    const bars = [
       { label: "Today", netToHeirs: 850_000, federal: 0, state: 0, probate: 0, ird: 0, debts: 0, total: 850_000 },
     ];
+    const estate = { comparison: "todayVsEndOfLife" as const, bars };
     const data = buildPlanStoryData(
       deckCtx(input({ hasProposal: true, charts: { portfolio: [], tax: [], estate } })),
       PROPOSED,
     );
     expect(data.chapters.find((c) => c.chapterId === "whatsLeftForPeople")!.chart).toEqual({
       kind: "estateBars",
-      bars: estate,
+      bars,
       totals: ["$850K"],
     });
   });

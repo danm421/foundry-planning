@@ -905,6 +905,32 @@ describe("the default style preserves a clean household's stored hashes", () => 
   });
 });
 
+describe("a deck with no proposal", () => {
+  const BASE_CTX = { ...CTX, hasProposal: false };
+
+  it("briefs the three charted chapters on the current plan alone", () => {
+    for (const id of ["willTheMoneyLast", "whatYoullPayInTax", "whatsLeftForPeople"] as const) {
+      const { user } = buildChapterPrompt(id, BASE_CTX, EMPTY_VOICE, DEFAULT_CHAPTER_STYLE, []);
+      expect(user).toContain(CHAPTERS[id].briefBase!);
+      expect(user).not.toContain(CHAPTERS[id].brief);
+    }
+  });
+
+  it("tells the model there are no proposed changes", () => {
+    const { user } = buildChapterPrompt("willTheMoneyLast", BASE_CTX, EMPTY_VOICE, DEFAULT_CHAPTER_STYLE, []);
+    expect(user).toContain("There are no proposed changes");
+  });
+
+  it("leaves a proposal deck's prompt character-identical", () => {
+    // The hash pin's whole basis: a changed prompt on this path reports every
+    // stored chapter of every report stale, permanently, with nothing to clear
+    // it. Compared against the shipped text, not against itself.
+    const { user } = buildChapterPrompt("willTheMoneyLast", CTX, EMPTY_VOICE, DEFAULT_CHAPTER_STYLE, []);
+    expect(user).toContain(CHAPTERS.willTheMoneyLast.brief);
+    expect(user).not.toContain("There are no proposed changes");
+  });
+});
+
 /**
  * ⚠️⚠️ The third column-0 hole, and the one neither voice box covers.
  *

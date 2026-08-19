@@ -7,7 +7,9 @@ import {
   EMPTY_RESOLVE_DATA,
 } from "@/lib/presentations/pages/scenario-changes/describe/resolve";
 import { fmtUsdCompact } from "@/lib/presentations/pages/retirement-comparison/format";
+import type { EstateSummaryChartBar } from "@/lib/presentations/pages/estate-summary/view-model";
 import { buildStoryFacts, groupStrategies, type StoryFactsInput } from "../build-facts";
+import type { StoryChartData } from "../charts";
 import { factDisplaySet } from "../facts";
 import { extractFigures, validateFacts } from "../validate/facts";
 import { narrateWhatWeRecommend } from "../chapters/what-we-recommend";
@@ -829,15 +831,18 @@ describe("chart facts", () => {
       { year: 2026, federalOrdinary: 10_000, capGains: 0, state: 2_000, total: 12_000 },
       { year: 2035, federalOrdinary: 40_000, capGains: 5_000, state: 8_000, total: 53_000 },
     ],
-    // All three arrays carry bars, so the invariant at the end of this block is
+    // All three charts carry bars, so the invariant at the end of this block is
     // asked the interesting question. `view-model.ts#chartFor` returns an estate
     // chart only when `estate` holds bars; left null, a red on the estate
     // chapter would be ambiguous between "no figures for its chart" and "no
     // chart at all". With bars, the picture really would print.
-    estate: [
-      { label: "Current plan", netToHeirs: 2_100_000, federal: 0, state: 0, probate: 60_000, ird: 0, debts: 480_000, total: 2_640_000 },
-      { label: "Proposed plan", netToHeirs: 3_400_000, federal: 220_000, state: 90_000, probate: 110_000, ird: 140_000, debts: 0, total: 3_960_000 },
-    ],
+    estate: {
+      comparison: "planVsPlan" as const,
+      bars: [
+        { label: "Current plan", netToHeirs: 2_100_000, federal: 0, state: 0, probate: 60_000, ird: 0, debts: 480_000, total: 2_640_000 },
+        { label: "Proposed plan", netToHeirs: 3_400_000, federal: 220_000, state: 90_000, probate: 110_000, ird: 140_000, debts: 0, total: 3_960_000 },
+      ],
+    },
   };
 
   it("admits the peak the chart draws, and the year it happens", () => {
@@ -877,6 +882,76 @@ describe("chart facts", () => {
     expect(facts.find((f) => f.id === "chart.estate.grossProposed")?.raw).toBe(3_960_000);
   });
 
+  /**
+   * The two bars are the same two SLOTS on both kinds of deck, and only
+   * `comparison` says what they mean — so the fixture varies exactly that.
+   */
+  const estateBar = (label: string, total: number): EstateSummaryChartBar => ({
+    label,
+    netToHeirs: total,
+    federal: 0,
+    state: 0,
+    probate: 0,
+    ird: 0,
+    debts: 0,
+    total,
+  });
+
+  const estateChart = (
+    comparison: "planVsPlan" | "todayVsEndOfLife",
+    firstTotal: number,
+    secondTotal: number,
+  ): StoryChartData => ({
+    portfolio: [],
+    tax: [],
+    estate: {
+      comparison,
+      bars: [estateBar("first", firstTotal), estateBar("second", secondTotal)],
+    },
+  });
+
+  it("names the estate chart's figures for the comparison the chart actually draws", () => {
+    const idsOf = (facts: ReturnType<typeof buildStoryFacts>) => facts.map((f) => f.id);
+    const labelOf = (facts: ReturnType<typeof buildStoryFacts>, id: string) =>
+      facts.find((f) => f.id === id)?.label;
+
+    const base = buildStoryFacts({
+      ...input,
+      charts: estateChart("todayVsEndOfLife", 4_050_000, 4_550_000),
+    });
+
+    expect(idsOf(base)).toContain("chart.estate.grossToday");
+    expect(idsOf(base)).toContain("chart.estate.grossEndOfLife");
+    expect(idsOf(base)).not.toContain("chart.estate.grossBase");
+    expect(idsOf(base)).not.toContain("chart.estate.grossProposed");
+    expect(base.find((f) => f.id === "chart.estate.grossToday")?.raw).toBe(4_050_000);
+    expect(base.find((f) => f.id === "chart.estate.grossEndOfLife")?.raw).toBe(4_550_000);
+
+    // The label is the whole defence: three dollar figures about one estate sit
+    // in this pack, and only the label says which is which.
+    expect(labelOf(base, "chart.estate.grossToday")).toMatch(/today/i);
+    expect(labelOf(base, "chart.estate.grossEndOfLife")).toMatch(/end of the plan/i);
+
+    const proposal = buildStoryFacts({
+      ...input,
+      charts: estateChart("planVsPlan", 4_050_000, 4_550_000),
+    });
+    expect(idsOf(proposal)).toContain("chart.estate.grossBase");
+    expect(idsOf(proposal)).toContain("chart.estate.grossProposed");
+    expect(idsOf(proposal)).not.toContain("chart.estate.grossToday");
+    expect(idsOf(proposal)).not.toContain("chart.estate.grossEndOfLife");
+  });
+
+  it("scopes both base-deck estate chart facts to the chapter that draws them", () => {
+    const facts = buildStoryFacts({
+      ...input,
+      charts: estateChart("todayVsEndOfLife", 4_050_000, 4_550_000),
+    });
+    for (const id of ["chart.estate.grossToday", "chart.estate.grossEndOfLife"]) {
+      expect(facts.find((f) => f.id === id)?.chapters, id).toEqual(["whatsLeftForPeople"]);
+    }
+  });
+
   it("spells the estate bar's caption and the prose's figure the same way", () => {
     // `pages/plan-story/view-model.ts#chartFor` captions each bar with
     // `fmtUsdCompact(b.total)`, and `moneyFact` formats with the same function.
@@ -886,7 +961,7 @@ describe("chart facts", () => {
     // "$2.6M" and "$2.6m" collapse to one key.
     const facts = buildStoryFacts({ ...input, charts });
     const gross = facts.find((f) => f.id === "chart.estate.grossBase")!;
-    expect(gross.display).toBe(fmtUsdCompact(charts.estate[0]!.total));
+    expect(gross.display).toBe(fmtUsdCompact(charts.estate.bars[0]!.total));
   });
 
   it("does not confuse the whole estate with what reaches the heirs", () => {
@@ -937,7 +1012,7 @@ describe("chart facts", () => {
    * two live in different modules.
    *
    * `pages/plan-story/view-model.ts#chartFor` draws the estate chart on
-   * `charts.estate.length > 0`. If this file instead demanded a PAIR, a
+   * `charts.estate.bars.length > 0`. If this file instead demanded a PAIR, a
    * one-element array would print a chart with no citable figure — and Gate 8
    * stays silent for a chapter that owns no `chart.` fact, so nothing would
    * report it. The sweep at the end of this block cannot catch it either: its
@@ -947,7 +1022,7 @@ describe("chart facts", () => {
    * It is pinned because the disagreement, not the reachability, is the defect.
    */
   it("admits a figure for a lone estate bar, because the chart would still draw one", () => {
-    const oneBar = { ...charts, estate: [charts.estate[0]!] };
+    const oneBar = { ...charts, estate: { ...charts.estate, bars: [charts.estate.bars[0]!] } };
     const facts = buildStoryFacts({ ...input, charts: oneBar });
     expect(facts.find((f) => f.id === "chart.estate.grossBase")?.raw).toBe(2_640_000);
     // …and nothing invented for the bar that is not there.
@@ -996,14 +1071,33 @@ describe("chart facts", () => {
    * without giving it chart facts, or repoint one of the `*_CHART_CHAPTERS`
    * lists above at a different chapter. Both were run, and each names the
    * offending chapter in its failure message.
+   *
+   * ⚠️ Run over BOTH estate comparisons, because the estate chapter's figures
+   * are named off `charts.estate.comparison` and a pairing that emitted nothing
+   * would leave that chapter drawing an uncitable picture on ONE kind of deck.
+   * A `planVsPlan`-only fixture cannot see that: breaking just the
+   * `todayVsEndOfLife` arm was probed against the single-fixture version of this
+   * test and it stayed GREEN.
    */
   it("gives every chapter that PRINTS a chart at least one of that chart's figures", () => {
-    const facts = buildStoryFacts({ ...input, charts });
     const charted = CHAPTER_IDS.filter((id) => CHAPTERS[id].layout === "chartWithProse");
     // Not a vacuous loop: the layout has to be in use, or the body never runs.
     expect(charted.length).toBeGreaterThanOrEqual(2);
-    for (const id of charted) {
-      expect(factsForChapter(facts, id).some((f) => f.id.startsWith("chart.")), id).toBe(true);
+    for (const comparison of ["planVsPlan", "todayVsEndOfLife"] as const) {
+      // The bars stay labelled "Current plan"/"Proposed plan" even under
+      // `todayVsEndOfLife`, a shape `load-context.ts` never actually produces
+      // (it labels that pairing "Today"/"End of Life"). Deliberately
+      // irrelevant here: this test reads only fact ids, never the labels.
+      const facts = buildStoryFacts({
+        ...input,
+        charts: { ...charts, estate: { ...charts.estate, comparison } },
+      });
+      for (const id of charted) {
+        expect(
+          factsForChapter(facts, id).some((f) => f.id.startsWith("chart.")),
+          `${id} (${comparison})`,
+        ).toBe(true);
+      }
     }
   });
 });

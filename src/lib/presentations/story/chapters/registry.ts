@@ -32,7 +32,18 @@ export interface ChapterDef {
   layout: ChapterLayout;
   /** The AI-off fallback. Never returns an empty array for a valid context. */
   narrate: (ctx: StoryContext) => string[];
-  /** Hidden when there is no proposed scenario. */
+  /**
+   * Does this chapter have NOTHING to say without a proposal?
+   *
+   * True only for the two chapters whose entire subject is what the changes
+   * move — `whatWeRecommend` and `whatYouCanSpend`. `printedChapters` drops
+   * them from a base-only deck and `storyCandidates` refuses to generate them.
+   *
+   * ⚠️ NOT "this chapter mentions the proposal". The three charted chapters
+   * compare the two plans when there is one and state the current plan alone
+   * when there is not — see each one's `briefBase` and its narrator's base
+   * branch. They print on both kinds of deck.
+   */
   requiresProposal: boolean;
   /**
    * A per-area chapter rather than a spine chapter. Coverage chapters are the
@@ -58,6 +69,16 @@ export interface ChapterDef {
   available?: (ctx: StoryContext) => boolean;
   /** One line telling the model what this chapter is for. */
   brief: string;
+  /**
+   * The brief for a deck with NO proposal, used by `prompts.ts` when
+   * `ctx.hasProposal` is false. Absent means `brief` is true either way.
+   *
+   * Defined for the three charted chapters because each one's `brief` names the
+   * changes, and on a base-only deck there are none — an instruction to
+   * describe something absent produces hedging or invention, on a client
+   * document. Same voice, same subject, one plan.
+   */
+  briefBase?: string;
 }
 
 // Every `brief` is written FOR THE MODEL and the client never sees it, so each
@@ -131,10 +152,12 @@ export const CHAPTERS: Record<ChapterId, ChapterDef> = {
     title: "Will the money last?",
     layout: "chartWithProse",
     narrate: narrateWillTheMoneyLast,
-    requiresProposal: true,
+    requiresProposal: false,
     coverage: false,
     brief:
       "How the plan held up across the runs we tested, what the changes did to that confidence, and what it means for them in plain terms.",
+    briefBase:
+      "How the plan held up across the runs we tested, and what that confidence means for them in plain terms.",
   },
   whatYouCanSpend: {
     id: "whatYouCanSpend",
@@ -151,7 +174,7 @@ export const CHAPTERS: Record<ChapterId, ChapterDef> = {
     title: "What's left for the people you care about",
     layout: "chartWithProse",
     narrate: narrateWhatsLeftForPeople,
-    requiresProposal: true,
+    requiresProposal: false,
     coverage: true,
     // A coverage chapter with nothing to cover. Read by the GENERATE route to
     // skip a model call, never by `printedChapters` — the sheet stays reserved
@@ -159,16 +182,19 @@ export const CHAPTERS: Record<ChapterId, ChapterDef> = {
     available: (ctx) => ctx.facts.some((f) => f.id.startsWith("estate.")),
     brief:
       "What reaches the people and causes they name, after tax and costs, and what the changes do to it.",
+    briefBase:
+      "What reaches the people and causes they name, after tax and costs — what it looks like today, and what it looks like at the end of the plan.",
   },
   whatYoullPayInTax: {
     id: "whatYoullPayInTax",
     title: "What you'll pay in tax",
     layout: "chartWithProse",
     narrate: narrateWhatYoullPayInTax,
-    requiresProposal: true,
+    requiresProposal: false,
     coverage: true,
     available: (ctx) => ctx.facts.some((f) => f.id.startsWith("tax.")),
     brief: "What they pay in tax over the life of the plan, and where the changes save it.",
+    briefBase: "What they pay in tax over the life of the plan, and when the bill is heaviest.",
   },
   protectingYourFamily: {
     id: "protectingYourFamily",

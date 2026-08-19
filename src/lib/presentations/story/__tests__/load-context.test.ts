@@ -35,6 +35,10 @@ const fx = vi.hoisted(() => ({
   /** scenarioId → the estate report that ref should produce. A missing entry
    *  comes back EMPTY, which is a household with nothing on file. */
   estate: {} as Record<string, unknown>,
+  /** scenarioId → the report for an `asOf: { kind: "today" }` call, which is
+   *  a DIFFERENT estate from the same tree. Falls back to `estate` so every
+   *  existing case keeps its single answer. */
+  estateToday: {} as Record<string, unknown>,
   /** Every argument object `buildEstateTransferReportData` was called with. */
   estateCalls: [] as Array<{ asOf: { kind: string }; ordering: string }>,
 }));
@@ -126,7 +130,9 @@ vi.mock("@/lib/estate/transfer-report", () => ({
   buildEstateTransferReportData: vi.fn(
     (args: { asOf: { kind: string }; ordering: string; clientData: { scenarioId: string } }) => {
       fx.estateCalls.push({ asOf: args.asOf, ordering: args.ordering });
+      const byKind = args.asOf.kind === "today" ? fx.estateToday : fx.estate;
       return (
+        byKind[args.clientData.scenarioId] ??
         fx.estate[args.clientData.scenarioId] ?? {
           isEmpty: true,
           firstDeath: null,
@@ -272,6 +278,7 @@ beforeEach(() => {
   fx.maxSpend = {};
   fx.maxSpendCalls = [];
   fx.estate = {};
+  fx.estateToday = {};
   fx.estateCalls = [];
   fx.inflationRate = {};
   li.loadLifeInsuranceInventory.mockClear();
@@ -737,17 +744,18 @@ describe("loadStoryContext", () => {
       };
       const ctx = await load();
 
-      expect(ctx.charts?.estate?.map((b) => b.label)).toEqual(["Current plan", "Proposed plan"]);
+      expect(ctx.charts?.estate?.comparison).toBe("planVsPlan");
+      expect(ctx.charts?.estate?.bars.map((b) => b.label)).toEqual(["Current plan", "Proposed plan"]);
       // Current plan first, because the prose leads on it and moves FROM it
       // (`chapters/whats-left-for-people.ts`). A reversed pair would put the
       // paragraph's "from" on the right of the picture's "to".
-      expect(ctx.charts!.estate![0]!.netToHeirs).toBe(3_100_000);
-      expect(ctx.charts!.estate![1]!.netToHeirs).toBe(3_900_000);
+      expect(ctx.charts!.estate!.bars[0]!.netToHeirs).toBe(3_100_000);
+      expect(ctx.charts!.estate!.bars[1]!.netToHeirs).toBe(3_900_000);
       // The bar's height is the WHOLE estate: net to heirs, plus the estate tax
       // and probate above, plus the fixture's $250K of debts. Not `taxAndCosts`,
       // which is four of the six segments.
-      expect(ctx.charts!.estate![0]!.total).toBe(4_050_000);
-      expect(ctx.charts!.estate![1]!.total).toBe(4_550_000);
+      expect(ctx.charts!.estate!.bars[0]!.total).toBe(4_050_000);
+      expect(ctx.charts!.estate!.bars[1]!.total).toBe(4_550_000);
     });
 
     it("builds NO third estate report for the chart — the bars come off the two it already had", async () => {
@@ -761,17 +769,38 @@ describe("loadStoryContext", () => {
       };
       const ctx = await load();
 
-      expect(ctx.charts?.estate).toHaveLength(2);
+      expect(ctx.charts?.estate?.bars).toHaveLength(2);
       expect(fx.estateCalls).toHaveLength(2);
       expect(fx.estateCalls.every((c) => c.asOf.kind === "split")).toBe(true);
     });
 
-    it("draws no estate chart when there is no proposal to compare against", async () => {
-      // A comparison chart with one bar is not a comparison. `chartFor` returns
-      // null for a null array, so the chapter keeps its prose and prints no
-      // empty frame. This chapter is `requiresProposal` and so never prints on
-      // a base-only deck anyway — the null is the belt to that braces.
+    it("draws the estate chart as today against end of life on a base-only deck", async () => {
       fx.estate = { base: estateReport(3_100_000, 500_000, 200_000) };
+      fx.estateToday = { base: estateReport(2_000_000, 150_000, 50_000) };
+      const ctx = await loadStoryContext({
+        clientId: "c1",
+        firmId: "f1",
+        proposedRef: null,
+        scenarioLabel: "Base Case",
+        documentRole: "frontMatter",
+      });
+
+      expect(ctx.charts?.estate?.comparison).toBe("todayVsEndOfLife");
+      expect(ctx.charts?.estate?.bars.map((b) => b.label)).toEqual(["Today", "End of Life"]);
+      // Today first, because that is the order the Estate Summary page draws
+      // and the order the prose reads.
+      expect(ctx.charts!.estate!.bars[0]!.netToHeirs).toBe(2_000_000);
+      expect(ctx.charts!.estate!.bars[1]!.netToHeirs).toBe(3_100_000);
+      // Exactly two reports — one per bar, and no third.
+      expect(fx.estateCalls).toHaveLength(2);
+      expect(fx.estateCalls.map((c) => c.asOf.kind)).toEqual(["today", "split"]);
+      // …and the base plan's own figures still reach the pack.
+      expect(ctx.facts.some((f) => f.id === "estate.net.base")).toBe(true);
+    });
+
+    it("draws no estate chart on a base deck with nothing on file", async () => {
+      // Absent and worth-nothing are different statements, and this is the
+      // path a household with no estate reaches. Both reports come back empty.
       const ctx = await loadStoryContext({
         clientId: "c1",
         firmId: "f1",
@@ -781,8 +810,6 @@ describe("loadStoryContext", () => {
       });
 
       expect(ctx.charts?.estate).toBeNull();
-      // …and the base plan's own figures still reach the pack.
-      expect(ctx.facts.some((f) => f.id === "estate.net.base")).toBe(true);
     });
 
     it("draws no estate chart when the proposed estate report is empty", async () => {

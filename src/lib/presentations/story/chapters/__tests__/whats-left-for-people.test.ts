@@ -25,9 +25,51 @@ const net = (side: Side, n: number) =>
   moneyFact(`estate.net.${side}`, `What reaches your heirs, ${PLAN[side]} plan`, n, ESTATE);
 const cost = (side: Side, n: number) =>
   moneyFact(`estate.cost.${side}`, `Tax and costs on the estate, ${PLAN[side]} plan`, n, ESTATE);
+const grossToday = (n: number) =>
+  moneyFact("chart.estate.grossToday", "The whole estate as it stands today, before anything comes out", n, ESTATE);
+const grossEndOfLife = (n: number) =>
+  moneyFact(
+    "chart.estate.grossEndOfLife",
+    "The whole estate at the end of the plan, before anything comes out",
+    n,
+    ESTATE,
+  );
 
 const CTX = ctxWith([net("base", 3_100_000), net("proposed", 3_900_000), cost("base", 700_000), cost("proposed", 400_000)]);
 const textOf = (ctx: StoryContext) => narrateWhatsLeftForPeople(ctx).join(" ");
+
+/**
+ * A base-only deck's estate pack: the current plan's own net/cost, plus the
+ * chart's today/end-of-plan pair — the two facts `build-facts.ts` emits only
+ * when the estate chart drew `todayVsEndOfLife` rather than `planVsPlan`. No
+ * `estate.net.proposed`, so `movement` reads null and the sentence under test
+ * is the one that runs instead.
+ */
+function baseCtx({ today, endOfLife }: { today: number; endOfLife: number }): StoryContext {
+  return ctxWith([net("base", 5_000_000), cost("base", 700_000), grossToday(today), grossEndOfLife(endOfLife)]);
+}
+
+/**
+ * The proposal deck this chapter already ships — `CTX` itself, reused rather
+ * than rebuilt. It carries `estate.net.proposed`, so `movement` is non-null
+ * and the base-only sentence below must never run alongside it.
+ */
+const PROPOSAL_CTX = CTX;
+
+/**
+ * The shipped text of `narrateWhatsLeftForPeople(PROPOSAL_CTX)`, captured by
+ * running the chapter at 1344a1ebd — the commit before this file's estate-
+ * over-time sentence existed — and reading its own return value back, not by
+ * retyping it from the template by hand. Hard-coded so a change to the
+ * base-only branch can never quietly also change what a proposal deck prints.
+ */
+const SHIPPED_PARAGRAPHS = [
+  "What's left at the end goes to the people and causes you've named.",
+  "On your current plan that's about $3.1M.",
+  "The changes we're proposing lift that to about $3.9M.",
+  "Tax and the cost of settling the estate take about $700K before it gets there.",
+  "It's what the plan is protecting for them.",
+];
 
 /** Every shape the loader can hand this chapter. The gate, budget and grounding
  *  cases all run over this list rather than over `CTX` alone — Gate 4's rhythm
@@ -40,6 +82,10 @@ const PACKS: Array<[string, StoryContext]> = [
   ["the current plan alone", ctxWith([net("base", 3_100_000), cost("base", 700_000)])],
   ["the proposal alone", ctxWith([net("proposed", 3_900_000), cost("proposed", 400_000)])],
   ["nothing at all", ctxWith([])],
+  // A base-only deck with the estate chart: the fifth sentence this task adds,
+  // on top of the four the other PACKS entries already exercise — the shape
+  // the word-budget and gate checks below have to see to mean anything for it.
+  ["a base-only deck with the estate chart", baseCtx({ today: 4_100_000, endOfLife: 3_000_000 })],
 ];
 
 describe("narrateWhatsLeftForPeople", () => {
@@ -120,9 +166,11 @@ describe("narrateWhatsLeftForPeople", () => {
     }
   });
 
-  it.each(PACKS)("fits the twoUp prose budget on %s", (_label, pack) => {
-    // The figure column takes a third of the text measure, so this layout gets
-    // 130 words rather than heroProse's 300. A narrator over the budget is
+  it.each(PACKS)("stays within a tighter-than-required chartWithProse budget on %s", (_label, pack) => {
+    // This chapter renders under `chartWithProse`, whose real ceiling is
+    // `BUDGET_WORDS_CHART` — 150 words. 130 here is a deliberately tighter
+    // LOCAL bound, not a claim about what the layout allows, so a narrator
+    // that grows toward the real ceiling still has headroom before it is
     // trimmed mid-chapter with an italic aside the advisor never asked for.
     for (const role of ["standalone", "frontMatter"] as const) {
       const words = textOf({ ...pack, documentRole: role }).split(/\s+/u).filter(Boolean).length;
@@ -132,7 +180,7 @@ describe("narrateWhatsLeftForPeople", () => {
 
   it.each(PACKS)("clears every gate on %s, in both registers", (_label, pack) => {
     // Every branch, both roles. Gate 4's rhythm rule is what this catches: a
-    // twoUp chapter is four or five sentences, so one branch landing on an even
+    // chapter this short is four or five sentences, so one branch landing on an even
     // cadence is a real and easy failure — chapter 6's did, at 0.113 against a
     // floor of 0.122.
     for (const role of ["standalone", "frontMatter"] as const) {
@@ -143,5 +191,62 @@ describe("narrateWhatsLeftForPeople", () => {
         }),
       ).toEqual([]);
     }
+  });
+
+  it("names both bars on a base-only deck, and says which way the estate moved", () => {
+    const shrinking = textOf(baseCtx({ today: 4_100_000, endOfLife: 3_000_000 }));
+    expect(shrinking).toContain("$4.1M");
+    expect(shrinking).toContain("$3.0M");
+    expect(shrinking).toMatch(/smaller|less/i);
+
+    // ⚠️ NOT always smaller. An estate can grow across the plan, and a chapter
+    // that only knew how to say "shrinks" would tell those households the
+    // opposite of what their own picture shows.
+    const growing = textOf(baseCtx({ today: 3_000_000, endOfLife: 4_100_000 }));
+    expect(growing).toMatch(/larger|more|grows/i);
+    expect(growing).not.toMatch(/smaller/i);
+  });
+
+  it("says neither when the two figures round to the same display", () => {
+    // 4_010_000 and 4_040_000 both print "$4.0M" — comfortably inside one
+    // rounding bucket, unlike a pair straddling an x.x5 boundary (4_050_000
+    // rounds to "$4.0M" and 4_060_000 to "$4.1M" under plain `toFixed(1)`
+    // float behaviour, so a pair chosen either side of .05 is not a safe
+    // "equal display" fixture).
+    const flat = textOf(baseCtx({ today: 4_010_000, endOfLife: 4_040_000 }));
+    expect(flat).not.toMatch(/smaller|larger/i);
+  });
+
+  it("says nothing about how the estate moves when only one gross figure is on the pack", () => {
+    // The chart draws both bars or neither — see `load-context.ts:575-577`
+    // ("Both bars or none, on either deck. One bar is not a comparison...") —
+    // but the chapter still has to survive a pack that only carries one,
+    // without inventing the other half of a comparison.
+    const onlyToday = textOf(ctxWith([net("base", 5_000_000), cost("base", 700_000), grossToday(4_100_000)]));
+    expect(onlyToday).not.toMatch(/end of the plan/i);
+  });
+
+  it("prints the proposal's own sentence, never the base-only one, on a pack that somehow carries both fact families", () => {
+    // `load-context.ts:575-577` and the `ESTATE_FIGURE_NAMES` comment in
+    // `build-facts.ts` (~line 606) both keep a real pack from ever holding
+    // `estate.net.proposed` alongside `chart.estate.grossToday` — the two
+    // pairings are the two deck kinds, never both. But that is an invariant
+    // upheld elsewhere, not by this file, so the `move ? null :` guard here
+    // is tested directly rather than trusted to a loader this suite does not
+    // exercise.
+    const both = ctxWith([
+      net("base", 3_100_000),
+      net("proposed", 3_900_000),
+      grossToday(4_100_000),
+      grossEndOfLife(3_000_000),
+    ]);
+    const text = textOf(both);
+    expect(text).toMatch(/changes we're proposing/i);
+    expect(text).not.toMatch(/the whole estate/i);
+  });
+
+  it("leaves a proposal deck's prose unchanged", () => {
+    // The shipped text, character for character. This chapter ships today.
+    expect(narrateWhatsLeftForPeople(PROPOSAL_CTX)).toEqual(SHIPPED_PARAGRAPHS);
   });
 });

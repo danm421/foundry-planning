@@ -200,7 +200,9 @@ export interface StoryContext {
   goals: StoryGoal[];
   facts: Fact[];
   /**
-   * The arrays the chart chapters draw — see `story/charts.ts`.
+   * The chart data the chart chapters draw — see `story/charts.ts`. `estate`
+   * is a `StoryEstateChart` object (a `comparison` plus a `bars` array), not
+   * an array itself; `tax` and `portfolio` are arrays.
    *
    * Optional because a caller with no projection (the review panel's own
    * fixtures, and every test that builds a context by hand) has nothing to put

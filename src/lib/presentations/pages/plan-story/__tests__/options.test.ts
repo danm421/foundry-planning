@@ -53,7 +53,7 @@ const ON_BY_DEFAULT: ChapterId[] = [
 /** What the shipped default actually PRINTS: every chapter, less the ones with
  *  nothing to recommend on a base-only story.
  *
- *  Derived rather than spelled out a second time — the alternative was nine
+ *  Derived rather than spelled out a second time — the alternative was twelve
  *  literal expectations that all restate the same fact and all have to be
  *  edited together, which is how one of them ends up saying something else. */
 const DEFAULT_BASE_ONLY = ON_BY_DEFAULT.filter((id) => !CHAPTERS[id].requiresProposal);
@@ -173,6 +173,24 @@ describe("planStoryProposedRef", () => {
 });
 
 describe("printedChapters", () => {
+  it("prints the three charted chapters on a base-only deck, and neither comparison chapter", () => {
+    const options = planStoryOptionsSchema.parse({}); // no scenarioId = base
+    const printed = printedChapters(options);
+
+    // The point of the base-case deck: a chart chapter has something true to
+    // say about the current plan on its own.
+    expect(printed).toContain("willTheMoneyLast");
+    expect(printed).toContain("whatYoullPayInTax");
+    expect(printed).toContain("whatsLeftForPeople");
+
+    // These two exist ONLY to state what the changes move. Without a proposal
+    // they have no subject.
+    expect(printed).not.toContain("whatWeRecommend");
+    expect(printed).not.toContain("whatYouCanSpend");
+
+    expect(printed).toHaveLength(12);
+  });
+
   it("drops the recommendation on a base-only story, even though it is switched on", () => {
     expect(PLAN_STORY_OPTIONS_DEFAULT.sections.whatWeRecommend).toBe(true);
     expect(printedChapters(PLAN_STORY_OPTIONS_DEFAULT)).toEqual(DEFAULT_BASE_ONLY);
@@ -250,10 +268,10 @@ describe("estimatePlanStoryPageCount", () => {
   });
 
   it("counts the brief preset against the story it is actually telling", () => {
-    // One page with no plan to compare — two of the brief's three chapters need
-    // a proposal — and all three once one is picked.
+    // Two pages with no plan to compare — one of the brief's three chapters
+    // needs a proposal — and all three once one is picked.
     const brief = applyPreset(PLAN_STORY_OPTIONS_DEFAULT, "brief");
-    expect(estimatePlanStoryPageCount(undefined as never, brief)).toBe(1);
+    expect(estimatePlanStoryPageCount(undefined as never, brief)).toBe(2);
     expect(estimatePlanStoryPageCount(undefined as never, applyPreset(WITH_PROPOSAL, "brief"))).toBe(3);
   });
 
@@ -281,9 +299,12 @@ describe("summarizePlanStoryOptions", () => {
   });
 
   it("says one chapter in the singular", () => {
-    expect(summarizePlanStoryOptions(applyPreset(PLAN_STORY_OPTIONS_DEFAULT, "brief"))).toBe(
-      "Executive brief · 1 chapter",
-    );
+    // The brief preset alone now prints two chapters base-only (`planInOnePage`
+    // and `willTheMoneyLast`), so the singular case needs one of them switched
+    // off deliberately rather than reached by the preset's own default.
+    const brief = applyPreset(PLAN_STORY_OPTIONS_DEFAULT, "brief");
+    const oneChapter = { ...brief, sections: { ...brief.sections, willTheMoneyLast: false } };
+    expect(summarizePlanStoryOptions(oneChapter)).toBe("Executive brief · 1 chapter");
   });
 
   it("names a hand-tuned report Custom", () => {
@@ -335,13 +356,13 @@ describe("the two presets", () => {
   });
 
   it("drops the comparison chapters from either preset on a base-only story", () => {
-    // The five-chapter version of this rule is pinned against the registry in
+    // The two-chapter version of this rule is pinned against the registry in
     // `printedChapters` above, on ALL_ON. Here it is read on the presets, which
     // is where an advisor meets it.
     const full = applyPreset({ ...PLAN_STORY_OPTIONS_DEFAULT, scenarioId: "" }, "full");
     expect(printedChapters(full)).toEqual(DEFAULT_BASE_ONLY);
     const brief = applyPreset({ ...PLAN_STORY_OPTIONS_DEFAULT, scenarioId: "" }, "brief");
-    expect(printedChapters(brief)).toEqual(["planInOnePage"]);
+    expect(printedChapters(brief)).toEqual(["planInOnePage", "willTheMoneyLast"]);
   });
 
   it("keeps the estimate and the print list the same call", () => {
