@@ -28,8 +28,12 @@ function columns() {
 /**
  * The active per-user overrides for ONE user in ONE firm.
  *
- * React.cache'd because the portal gates can run several times in a single
- * request — a page, its nested layout, and a route handler all ask.
+ * React.cache'd because the portal gates can run several times while rendering
+ * ONE page — the page and its nested layouts share a single query.
+ *
+ * ⚠️ It does NOT dedupe inside a route handler (this repo has been bitten by
+ * exactly that), so on the `/api/portal/*` surface the cost is one query per
+ * gate call, not one per request.
  *
  * Blank inputs short-circuit rather than querying: a missing firm or user id is
  * never a legitimate lookup, and returning [] makes the caller fall back to the

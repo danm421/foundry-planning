@@ -162,7 +162,14 @@ const firmEntitlements = cache(async (firmId: string): Promise<string[] | null> 
   return Array.isArray(raw) ? raw.map(String) : null;
 });
 
-const PORTAL_NOT_ENTITLED = "Client portal is not enabled for this firm";
+// Reaches the browser verbatim: `authErrorResponse` returns `err.message` as the
+// 403 body. It deliberately names NO scope — a denial can now be firm-wide OR a
+// single user's override, and "for this firm" sent a per-user-revoked advisor to
+// an admin who would see the firm switched on.
+const PORTAL_NOT_ENTITLED = "Client portal is not enabled";
+
+/** One message for the blank-advisor condition, which two gates below check. */
+const PORTAL_NO_ADVISOR = "No advisor for this client";
 
 /** The firm's entitlements, preferring the caller's session claims when
  *  `firmId` IS the caller's own org (no Clerk round trip), else Clerk. This is
@@ -181,10 +188,15 @@ async function firmEntitlementsFor(firmId: string): Promise<string[] | null> {
 /** The portal decision for ONE named user at ONE firm: the firm's entitlements
  *  with that user's active overrides layered on top. */
 async function portalEntitledFor(firmId: string, clerkUserId: string): Promise<boolean> {
-  const firm = await firmEntitlementsFor(firmId);
+  // Two independent round trips (Clerk, then Postgres) on a gate that runs on
+  // every portal request — issued together rather than one after the other.
+  const [firm, overrides] = await Promise.all([
+    firmEntitlementsFor(firmId),
+    getActiveUserOverrides(firmId, clerkUserId),
+  ]);
   const effective = deriveUserEntitlements({
     firmEntitlements: firm ?? [],
-    overrides: await getActiveUserOverrides(firmId, clerkUserId),
+    overrides,
   });
   return hasClientPortalEntitlement(effective);
 }
@@ -226,7 +238,7 @@ export async function requireClientPortalForAdvisor(
   firmId: string,
   advisorId: string,
 ): Promise<void> {
-  if (!advisorId) throw new ForbiddenError(PORTAL_NOT_ENTITLED);
+  if (!advisorId) throw new ForbiddenError(PORTAL_NO_ADVISOR);
   if (!(await portalEntitledFor(firmId, advisorId))) {
     throw new ForbiddenError(PORTAL_NOT_ENTITLED);
   }
@@ -260,11 +272,20 @@ export async function currentUserHasClientPortal(): Promise<boolean> {
  * household whose owning advisor's effective `client_portal` entitlement is
  * off — the firm's setting with that advisor's per-user override applied).
  *
- * The entitlement check lives HERE rather than at each call site because this
- * is the single chokepoint for both `/portal/*` pages and every
- * `/api/portal/*` route handler — an ops revoke goes fully dark in one place,
- * and an already-bound client is not grandfathered. Pairs with the middleware
- * branch that routes portal users to `/portal`.
+ * The entitlement check lives HERE rather than at each call site so an ops
+ * revoke goes dark in one place for every surface that calls this gate, with
+ * no grandfathering for an already-bound client.
+ *
+ * ⚠️ That is the `/portal/*` PAGES ONLY — this is NOT the chokepoint for the
+ * portal API. `api/portal/intake/route.ts` is the one handler that calls this
+ * gate; every other `/api/portal/*` handler resolves identity through
+ * `resolvePortalClient`, whose no-org branch checks the clerk_user_id BINDING
+ * and no entitlement at all. A revoked client therefore keeps read/write on
+ * the portal API — which is what the mobile portal talks to. Closing that gap
+ * changes the auth behaviour of every one of those pre-existing routes, so it
+ * is a deliberate open decision, not an oversight.
+ *
+ * Pairs with the middleware branch that routes portal users to `/portal`.
  */
 export async function requireClientPortalAccess(): Promise<{
   clientId: string;
@@ -287,7 +308,7 @@ export async function requireClientPortalAccess(): Promise<{
   // firm alone and not the client's own user id — a portal client has no
   // overrides of their own.
   if (!ref.advisorId) {
-    throw new ForbiddenError("No advisor for this client");
+    throw new ForbiddenError(PORTAL_NO_ADVISOR);
   }
   await requireClientPortalForAdvisor(ref.firmId, ref.advisorId);
   return { clientId: ref.id, clerkUserId: userId };

@@ -19,8 +19,9 @@ interface Props {
   pendingFormId: string | null;
   /** The advisor's saved default, or null for the system default. */
   defaultSections?: IntakeSectionKey[] | null;
-  /** Whether the firm holds the `client_portal` entitlement. False hides the
-   *  pre-filled send, which is delivered as a portal invite. */
+  /** Whether THE ADVISOR VIEWING THIS holds the `client_portal` entitlement —
+   *  the firm's setting with their own per-user override applied. False hides
+   *  the pre-filled send, which is delivered as a portal invite. */
   portalEnabled: boolean;
 }
 
@@ -148,7 +149,7 @@ export default function SendClientForm({
           {sending ? "Sending…" : "Send blank form"}
         </button>
         {/* A pre-filled send is delivered as a portal invite, so it is gone
-            when the firm has no portal — the API refuses it either way. */}
+            when this advisor has no portal — the API refuses it either way. */}
         {portalEnabled && (
           <button type="button" disabled={sending} onClick={() => send("prefilled")} className={portalBtn.primary}>
             {sending ? "Sending…" : "Send pre-filled form"}

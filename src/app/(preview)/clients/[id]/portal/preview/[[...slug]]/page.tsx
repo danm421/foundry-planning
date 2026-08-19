@@ -57,8 +57,10 @@ export default async function PortalPreviewPage({
   const access = await requireClientAccess(id).catch(nullOnAccessDenial);
   if (!access) notFound();
 
-  // This renders the portal itself, so it follows the owning firm's
-  // `client_portal` entitlement — 404, matching the access-denial style above.
+  // This renders the portal itself, so it follows the CALLER'S effective
+  // `client_portal` entitlement at the owning firm — that firm's setting with
+  // the caller's per-user override applied. 404, matching the access-denial
+  // style above.
   const entitled = await requireClientPortalEntitlement(access.firmId)
     .then(() => true)
     .catch(nullOnAccessDenial);
