@@ -5,7 +5,9 @@ client of the Next.js backend (`/api/portal/*`) using Clerk Bearer tokens.
 
 ## Screens
 
-- **Home** — live dashboard (net worth, spending, to-review, recurrings).
+- **Home** — live dashboard (net worth + by-type breakdown, goals funded,
+  spending, to-review, recurrings). Greets the whole household ("Hi John &
+  Jane") from `me.greetingName`, the same helper the web chrome uses.
 - **Accounts** — assets grouped by category + debts, net-worth header;
   tap → detail modal (`/account/[id]`: fields, Plaid note, 10 recent
   transactions for assets, APR/statement/min/due for debts).
@@ -15,12 +17,23 @@ client of the Next.js backend (`/api/portal/*`) using Clerk Bearer tokens.
 - **Budget** — current-month summary + group→leaf tree; tap → category detail
   modal (`/category/[id]`: 24-month history, year metrics, transactions,
   inline budget set/clear).
-- **More** — Face ID toggle, sign out (Investments/Recurrings/Profile/Settings
-  come in later phases).
+- **More** — Investments, Recurrings, Profile, Privacy & sharing, Face ID and
+  push toggles, sign out.
 
 All edit affordances (review, recategorize, exclude, budget set/clear) are
 gated on `editEnabled` from `GET /api/portal/me` (`clients.portalEditEnabled`);
 the server enforces the same flag, so the UI gate is cosmetic-plus-parity.
+
+**Feature switches.** `me.features` carries the advisor's three portal switches
+(investments / budget / documents). `src/nav/sections.ts` is the single mapping
+from destination to switch — it mirrors `PORTAL_NAV_ITEMS` on the web, where
+Transactions and Recurrings are tabs *inside* the Budget section and so are
+hidden by the Budget switch too. Unlike `editEnabled` this is not cosmetic: the
+API 403s everything behind a switched-off section (`requirePortalFeature`), so
+a destination the app still lists is a door onto an error. Anything that
+reaches a gated route anyway renders `SectionOff` rather than a retry prompt.
+The Home screen drops its five budgeting tiles on `dto.budgetEnabled`, matching
+the web dashboard.
 
 Backend routes added for this app (Phase 2): `GET /api/portal/accounts/overview`
 and `GET /api/portal/budgets`; every mutation reuses a pre-existing portal route.
