@@ -5,11 +5,13 @@ vi.mock("@/lib/db-helpers", () => ({
   requireOrgAndUser: async () => ({ orgId: "firm-1", userId: "advisor-1" }),
 }));
 
+// advisor-2 owns the household; advisor-1 (requireOrgAndUser above) is the
+// sender. Keeping them different is what proves each gate names its own person.
 vi.mock("@/lib/clients/authz", () => ({
   requireClientEditAccess: async () => ({
     firmId: "firm-1",
     access: "own",
-    client: { id: "client-1" },
+    client: { id: "client-1", advisorId: "advisor-2" },
   }),
 }));
 
@@ -22,9 +24,12 @@ vi.mock("@/lib/branding/advisor-profile", () => ({
 }));
 
 const portalEntitlementMock = vi.fn();
+const portalForAdvisorMock = vi.fn();
 vi.mock("@/lib/authz", () => ({
   requireActiveSubscriptionForFirm: async () => {},
   requireClientPortalEntitlement: async () => portalEntitlementMock(),
+  requireClientPortalForAdvisor: async (firmId: string, advisorId: string) =>
+    portalForAdvisorMock(firmId, advisorId),
   // Enough of the real mapping for the entitlement 403 below; every other
   // error in this file is a plain Error and still falls through to 500.
   authErrorResponse: (err: unknown) =>
@@ -127,6 +132,7 @@ beforeEach(() => {
   sendIntakeFormEmailMock.mockReset();
   recordAuditMock.mockReset();
   portalEntitlementMock.mockReset();
+  portalForAdvisorMock.mockReset();
 
   // Happy-path defaults
   checkLimitMock.mockResolvedValue({ allowed: true });
@@ -428,12 +434,15 @@ describe("POST /api/data-collection — a prefilled send has to be renderable in
 });
 
 describe("POST /api/data-collection — client_portal entitlement", () => {
-  /** A ForbiddenError as thrown by the real requireClientPortalEntitlement. */
+  /** A ForbiddenError as thrown by the real portal gates. */
+  function forbidden() {
+    const err = new Error("Client portal is not enabled");
+    err.name = "ForbiddenError";
+    return err;
+  }
   function forbid() {
     portalEntitlementMock.mockImplementation(() => {
-      const err = new Error("Client portal is not enabled for this firm");
-      err.name = "ForbiddenError";
-      throw err;
+      throw forbidden();
     });
   }
 
@@ -451,6 +460,37 @@ describe("POST /api/data-collection — client_portal entitlement", () => {
     expect(createInvitationMock).not.toHaveBeenCalled();
   });
 
+  it("asks the portal question about the HOUSEHOLD'S advisor, not the sender", async () => {
+    const res = await POST(
+      postReq({
+        mode: "prefilled",
+        clientId: "client-1",
+        recipientEmail: "client@example.com",
+      }),
+    );
+    expect(res.status).toBe(200);
+    // Sign-in resolves against clients.advisor_id, so advisor-2 — not the
+    // sending advisor-1 — is the one whose entitlement decides.
+    expect(portalForAdvisorMock).toHaveBeenCalledWith("firm-1", "advisor-2");
+  });
+
+  it("403s a prefilled send when the household's advisor is revoked, though the sender is entitled", async () => {
+    portalForAdvisorMock.mockImplementation(() => {
+      throw forbidden();
+    });
+    const res = await POST(
+      postReq({
+        mode: "prefilled",
+        clientId: "client-1",
+        recipientEmail: "client@example.com",
+      }),
+    );
+    expect(res.status).toBe(403);
+    expect(portalEntitlementMock).toHaveBeenCalled();
+    expect(dbInsertMock).not.toHaveBeenCalled();
+    expect(createInvitationMock).not.toHaveBeenCalled();
+  });
+
   it("still sends a blank form — a tokenized email link needs no portal", async () => {
     forbid();
     const res = await POST(
@@ -458,6 +498,7 @@ describe("POST /api/data-collection — client_portal entitlement", () => {
     );
     expect(res.status).toBe(200);
     expect(portalEntitlementMock).not.toHaveBeenCalled();
+    expect(portalForAdvisorMock).not.toHaveBeenCalled();
     expect(sendIntakeFormEmailMock).toHaveBeenCalled();
   });
 });
