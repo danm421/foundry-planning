@@ -40,6 +40,7 @@ const GATED: Readonly<Record<string, { feature: PortalFeatureKey; via: "route" |
     rules: { feature: "budget", via: "route" },
     documents: { feature: "documents", via: "vault" },
     folders: { feature: "documents", via: "vault" },
+    calculators: { feature: "calculators", via: "route" },
   };
 
 /**
