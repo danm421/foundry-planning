@@ -553,6 +553,15 @@ export function LiveSolverWorkspace({
     [initialSourceClientData, mutations],
   );
 
+  // "Lock in a fixed budget" lowers the working-years living rows. Against a row
+  // that spends whatever is left, the cut frees money the row instantly
+  // re-absorbs — so the button is disabled rather than left to do nothing.
+  const lockInCutUnavailableReason = workingTree.expenses.some(
+    (e) => e.type === "living" && e.absorbsRemainingCashFlow === true,
+  )
+    ? "Current living expenses are set to spend whatever is left, so there is nothing to cut."
+    : null;
+
   const baseTechniqueIds = useMemo(
     () => ({
       roth: new Set((baseClientData.rothConversions ?? []).map((r) => r.id)),
@@ -1357,6 +1366,7 @@ export function LiveSolverWorkspace({
                 onSolve={handleSolveMinSavings}
                 onIncludeSelfFunding={handleIncludeSelfFunding}
                 onIncludeLockInCut={handleIncludeLockInCut}
+                lockInCutUnavailableReason={lockInCutUnavailableReason}
                 onDismissResult={handleDismissResult}
               />
             </SolverSection>

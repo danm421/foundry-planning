@@ -24,6 +24,9 @@ export function buildLockInCutMutations(
       e.type === "living" &&
       e.startYear <= currentYear &&
       currentYear <= e.endYear &&
+      // A row that spends whatever is left re-absorbs anything this cut frees,
+      // so cutting it moves no money. Excluded rather than silently no-op'd.
+      e.absorbsRemainingCashFlow !== true &&
       !isRetirementLivingExpense(e, planStartYear),
   );
   const total = rows.reduce((s, e) => s + e.annualAmount, 0);

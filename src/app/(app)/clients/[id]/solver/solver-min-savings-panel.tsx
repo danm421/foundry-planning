@@ -26,6 +26,9 @@ interface Props {
   onSolve: (modelPortfolioId: string, targetPoS: number) => void;
   onIncludeSelfFunding: () => void;
   onIncludeLockInCut: () => void;
+  /** When set, "Lock in a fixed budget" is disabled and this is its tooltip.
+   *  An absorbing current living row makes the cut a no-op. */
+  lockInCutUnavailableReason?: string | null;
   onDismissResult: () => void;
 }
 
@@ -33,7 +36,8 @@ const money = (n: number) => `$${Math.round(n).toLocaleString()}`;
 
 export function SolverMinSavingsPanel({
   portfolios, disabled, phase, progress, result,
-  onSolve, onIncludeSelfFunding, onIncludeLockInCut, onDismissResult,
+  onSolve, onIncludeSelfFunding, onIncludeLockInCut, lockInCutUnavailableReason,
+  onDismissResult,
 }: Props) {
   const [configuring, setConfiguring] = useState(false);
   const [portfolioId, setPortfolioId] = useState<string>(portfolios[0]?.id ?? "");
@@ -90,11 +94,17 @@ export function SolverMinSavingsPanel({
               Save flexibly
             </button>
           </ActionTip>
-          <ActionTip text="Permanently lowers the client's working-years living expenses by the cut and adds a fixed yearly contribution. A concrete committed budget — in a lean year the fixed savings can draw from the portfolio.">
+          <ActionTip
+            text={
+              lockInCutUnavailableReason ??
+              "Permanently lowers the client's working-years living expenses by the cut and adds a fixed yearly contribution. A concrete committed budget — in a lean year the fixed savings can draw from the portfolio."
+            }
+          >
             <button
               type="button"
               onClick={onIncludeLockInCut}
-              className="h-7 rounded-md border border-hair-2 bg-card-2 px-2.5 text-[12px] text-ink-2 hover:border-hair"
+              disabled={Boolean(lockInCutUnavailableReason)}
+              className="h-7 rounded-md border border-hair-2 bg-card-2 px-2.5 text-[12px] text-ink-2 hover:border-hair disabled:cursor-not-allowed disabled:opacity-50"
             >
               Lock in a fixed budget
             </button>

@@ -72,4 +72,27 @@ describe("SolverMinSavingsPanel", () => {
     rerender(<SolverMinSavingsPanel {...idle} portfolios={[]} />);
     expect(screen.getByRole("button", { name: /Solve minimum additional savings/i })).toBeDisabled();
   });
+  it("disables the lock-in cut and shows the reason when living absorbs the surplus", () => {
+    const onLock = vi.fn();
+    render(
+      <SolverMinSavingsPanel
+        {...idle}
+        phase="result"
+        result={{
+          status: "converged", savings: 24500, portfolioName: "Balanced 60/40",
+          startYear: 2026, endYear: 2039, targetPoS: 0.85,
+          baselineLiving: 120000, updatedLiving: 108300,
+          fromCashFlow: 12800, fromExpenseReduction: 11700,
+        }}
+        onIncludeLockInCut={onLock}
+        lockInCutUnavailableReason="Current living expenses are set to spend whatever is left, so there is nothing to cut."
+      />,
+    );
+    const btn = screen.getByRole("button", { name: /Lock in a fixed budget/i });
+    expect(btn).toBeDisabled();
+    // Disabled-and-still-wired is the failure this guards: a button that looks
+    // dead but still fires the mutation is worse than one that plainly works.
+    fireEvent.click(btn);
+    expect(onLock).not.toHaveBeenCalled();
+  });
 });
