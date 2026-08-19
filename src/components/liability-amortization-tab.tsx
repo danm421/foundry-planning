@@ -150,15 +150,21 @@ export default function LiabilityAmortizationTab({
     const term = termMonths || 360;
     if (balance <= 0 || monthlyPayment <= 0) return [];
 
+    // startMonth matters: an October origination makes 3 payments in its first
+    // calendar year, not 12. Omitting it drew the loan as if it had started
+    // that January, which both shifted every year's payment and ended the
+    // schedule a year early — disagreeing with the cash-flow projection, which
+    // has always passed it.
     return computeAmortizationSchedule(
       originalBalance,
       interestRate,
       monthlyPayment,
       startYear,
       term,
-      scheduleExtraPayments
+      scheduleExtraPayments,
+      startMonth || 1
     );
-  }, [originalBalance, balance, interestRate, monthlyPayment, startYear, termMonths, scheduleExtraPayments]);
+  }, [originalBalance, balance, interestRate, monthlyPayment, startYear, startMonth, termMonths, scheduleExtraPayments]);
 
   // Chart data
   const chartData = useMemo(() => {

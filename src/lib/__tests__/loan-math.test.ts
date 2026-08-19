@@ -7,6 +7,7 @@ import {
   isInterestOnlyPayment,
   calcOriginalBalance,
   computeAmortizationSchedule,
+  scheduleEndYear,
 } from "../loan-math";
 
 describe("calcPayment", () => {
@@ -235,5 +236,57 @@ describe("computeAmortizationSchedule", () => {
     expect(explicit).toEqual(implicit);
     // First calendar year amortizes a full 12 payments.
     expect(implicit[0].payment).toBeCloseTo(1896.2 * 12, 2);
+  });
+});
+
+describe("scheduleEndYear", () => {
+  it("ends a January loan on the last month of its term", () => {
+    // Jan 2024 + 60 months runs through Dec 2028.
+    expect(scheduleEndYear(2024, 60, 1)).toBe(2028);
+    // Omitting startMonth must stay identical to passing January.
+    expect(scheduleEndYear(2024, 60)).toBe(2028);
+  });
+
+  it("carries a mid-year loan into the calendar year its term actually ends", () => {
+    // Oct 2024 + 60 months runs through Sep 2029, not Dec 2028.
+    expect(scheduleEndYear(2024, 60, 10)).toBe(2029);
+    // Jul 2020 + 360 months runs through Jun 2050, not Dec 2049.
+    expect(scheduleEndYear(2020, 360, 7)).toBe(2050);
+    // Dec 2024 + 12 months runs through Nov 2025.
+    expect(scheduleEndYear(2024, 12, 12)).toBe(2025);
+  });
+});
+
+describe("computeAmortizationSchedule — mid-year origination pays its real term", () => {
+  // The Auto Loan from the reported bug: $35,184.27 originated Oct 2024,
+  // 60 months at 1.99%, $616.55/mo. Its last payment is Sep 2029.
+  const ORIG = 35184.27;
+  const RATE = 0.0199;
+  const PMT = 616.55;
+
+  it("does not collapse the tail of the term into a phantom balloon", () => {
+    const rows = computeAmortizationSchedule(ORIG, RATE, PMT, 2024, 60, [], 10);
+
+    // No calendar year may pay more than twelve scheduled payments. The
+    // defect dumped the whole unpaid balance into the final year: 2028 was
+    // charged $12,902 against a normal $7,399 year.
+    for (const row of rows) {
+      expect(row.payment).toBeLessThanOrEqual(PMT * 12 + 0.01);
+    }
+  });
+
+  it("runs through the calendar year of the final payment", () => {
+    const rows = computeAmortizationSchedule(ORIG, RATE, PMT, 2024, 60, [], 10);
+    expect(rows[rows.length - 1].year).toBe(2029);
+    expect(rows[rows.length - 1].endingBalance).toBe(0);
+    // Oct–Dec 2024 is three payments; Jan–Sep 2029 is nine.
+    expect(rows[0].payment).toBeCloseTo(PMT * 3, 2);
+    expect(rows[rows.length - 1].payment).toBeCloseTo(PMT * 9, 0);
+  });
+
+  it("pays exactly the contractual number of payments", () => {
+    const rows = computeAmortizationSchedule(ORIG, RATE, PMT, 2024, 60, [], 10);
+    const total = rows.reduce((sum, r) => sum + r.payment, 0);
+    expect(total).toBeCloseTo(PMT * 60, 0);
   });
 });

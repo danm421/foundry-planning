@@ -405,7 +405,7 @@ function currentYearBalance(l: LiabilityRow): number {
   const origBal = calcOriginalBalance(bal, rate, pmt, elapsedMonths);
   const currentYear = new Date().getFullYear();
   if (currentYear <= l.startYear) return origBal;
-  const schedule = computeAmortizationSchedule(origBal, rate, pmt, l.startYear, l.termMonths);
+  const schedule = computeAmortizationSchedule(origBal, rate, pmt, l.startYear, l.termMonths, [], l.startMonth);
   const row = schedule.find((r) => r.year === currentYear - 1);
   if (row) return row.endingBalance;
   // If current year is past the loan term, balance is 0

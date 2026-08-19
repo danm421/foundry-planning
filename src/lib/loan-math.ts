@@ -144,6 +144,30 @@ export interface ScheduleExtraPayment {
  * calendar year, so the startYear row simulates that many months instead of a
  * full 12. Defaults to 1 (January) — a January origination is unchanged.
  */
+/**
+ * Last calendar year `computeAmortizationSchedule` will emit a row for — the
+ * year the loan's final payment falls in.
+ *
+ * Exported so callers that need to name the payoff year — the portal's "Paid
+ * off in ____" among them — read the schedule's own bound rather than keeping
+ * a second copy of this expression in sync by hand.
+ *
+ * `startMonth` (1-12) matters because the schedule simulates only
+ * `12 - startMonth + 1` months in the first calendar year: an October
+ * origination spends 3 of its payments in the start year, so a 60-month term
+ * runs 9 months past the fifth December. Bounding on the term alone cut the
+ * window short by `startMonth - 1` months and left the schedule's "absorb the
+ * rounding dust" step to dump the whole unpaid remainder into one phantom
+ * balloon payment. Defaults to 1, so a January loan is unchanged.
+ */
+export function scheduleEndYear(
+  startYear: number,
+  termMonths: number,
+  startMonth = 1
+): number {
+  return startYear + Math.ceil((termMonths + startMonth - 1) / 12) - 1;
+}
+
 export function computeAmortizationSchedule(
   balance: number,
   annualRate: number,
@@ -153,7 +177,7 @@ export function computeAmortizationSchedule(
   extraPayments: ScheduleExtraPayment[] = [],
   startMonth = 1
 ): AmortizationScheduleRow[] {
-  const endYear = startYear + Math.ceil(termMonths / 12) - 1;
+  const endYear = scheduleEndYear(startYear, termMonths, startMonth);
   const rows: AmortizationScheduleRow[] = [];
   const r = annualRate / 12;
   let bal = balance;
