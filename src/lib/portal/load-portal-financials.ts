@@ -25,6 +25,11 @@ export async function loadPortalDebt(
       statementBalance: liabilities.statementBalance,
       aprPercentage: liabilities.aprPercentage,
       nextPaymentDueDate: liabilities.nextPaymentDueDate,
+      interestRate: liabilities.interestRate,
+      monthlyPayment: liabilities.monthlyPayment,
+      termMonths: liabilities.termMonths,
+      startYear: liabilities.startYear,
+      startMonth: liabilities.startMonth,
     })
     .from(liabilities)
     .where(and(eq(liabilities.clientId, clientId), eq(liabilities.scenarioId, scenarioId)));

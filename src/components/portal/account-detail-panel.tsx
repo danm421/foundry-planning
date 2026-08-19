@@ -340,6 +340,10 @@ export function DebtDetailPanel({
     statementBalance: number | null;
     minimumPayment: number | null;
     nextPaymentDueDate: string | null;
+    /** Client-entered annual FRACTION; aprPercentage is the bank's PERCENT. */
+    interestRate: number | null;
+    monthlyPayment: number | null;
+    payoffYear: number | null;
     isPlaidLinked: boolean;
     ownerLabel: string;
   };
@@ -358,9 +362,27 @@ export function DebtDetailPanel({
       <dl className="space-y-2 text-[13px]">
         <Row label="Type">{debt.typeLabel}</Row>
         <Row label="Owner">{debt.ownerLabel || "Household"}</Row>
-        {debt.aprPercentage != null && (
-          <Row label="APR">
-            <span className="tabular">{debt.aprPercentage.toFixed(2)}%</span>
+        {debt.interestRate != null ? (
+          <Row label="Interest rate">
+            <span className="tabular">{(debt.interestRate * 100).toFixed(2)}%</span>
+          </Row>
+        ) : (
+          // Only one rate row: the bank's APR is a fallback for a debt whose
+          // terms nobody has entered, not a second figure beside them.
+          debt.aprPercentage != null && (
+            <Row label="APR">
+              <span className="tabular">{debt.aprPercentage.toFixed(2)}%</span>
+            </Row>
+          )
+        )}
+        {debt.monthlyPayment != null && (
+          <Row label="Monthly payment">
+            <span className="tabular">{fmtUsd(debt.monthlyPayment)}</span>
+          </Row>
+        )}
+        {debt.payoffYear != null && (
+          <Row label="Paid off">
+            <span className="tabular">{debt.payoffYear}</span>
           </Row>
         )}
         {debt.statementBalance != null && (

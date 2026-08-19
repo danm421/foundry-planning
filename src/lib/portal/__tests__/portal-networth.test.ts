@@ -59,11 +59,13 @@ describe("buildPortalLiabilityRows", () => {
           id: "l1", name: "Chase Card", balance: "1000.00", liabilityType: "credit_card",
           plaidItemId: "it1", plaidAccountId: "pa1", minimumPayment: "35.00",
           statementBalance: "980.00", aprPercentage: "21.9900", nextPaymentDueDate: "2026-07-15",
+          interestRate: "0", monthlyPayment: null, termMonths: null, startYear: 2026, startMonth: 1,
         },
         {
           id: "l2", name: "Trust Note", balance: "5000.00", liabilityType: "other",
           plaidItemId: null, plaidAccountId: null, minimumPayment: null,
           statementBalance: null, aprPercentage: null, nextPaymentDueDate: null,
+          interestRate: "0", monthlyPayment: null, termMonths: null, startYear: 2026, startMonth: 1,
         },
       ],
       {
@@ -83,7 +85,8 @@ describe("buildPortalLiabilityRows", () => {
     const rows = buildPortalLiabilityRows(
       [{ id: "l1", name: "Joint Auto", balance: "2000.00", liabilityType: "auto",
          plaidItemId: null, plaidAccountId: null, minimumPayment: null,
-         statementBalance: null, aprPercentage: null, nextPaymentDueDate: null }],
+         statementBalance: null, aprPercentage: null, nextPaymentDueDate: null,
+         interestRate: "0", monthlyPayment: null, termMonths: null, startYear: 2026, startMonth: 1 }],
       { l1: [{ kind: "family_member", familyMemberId: "fmA", entityId: null, percent: 0.5 }] },
       roles,
     );
@@ -95,7 +98,8 @@ describe("buildPortalLiabilityRows", () => {
     const rows = buildPortalLiabilityRows(
       [{ id: "l1", name: "Plaid Student Loan", balance: "65262.00", liabilityType: "student",
          plaidItemId: "it1", plaidAccountId: "pa1", minimumPayment: null,
-         statementBalance: null, aprPercentage: null, nextPaymentDueDate: null }],
+         statementBalance: null, aprPercentage: null, nextPaymentDueDate: null,
+         interestRate: "0", monthlyPayment: null, termMonths: null, startYear: 2026, startMonth: 1 }],
       {}, // no owner rows at all
       roles,
     );
@@ -111,7 +115,8 @@ describe("buildPortalLiabilityRows", () => {
     const rows = buildPortalLiabilityRows(
       [{ id: "l1", name: "Joint Auto", balance: "2000.00", liabilityType: "auto",
          plaidItemId: null, plaidAccountId: null, minimumPayment: null,
-         statementBalance: null, aprPercentage: null, nextPaymentDueDate: null }],
+         statementBalance: null, aprPercentage: null, nextPaymentDueDate: null,
+         interestRate: "0", monthlyPayment: null, termMonths: null, startYear: 2026, startMonth: 1 }],
       { l1: [
         { kind: "family_member", familyMemberId: "fmA", entityId: null, percent: 0.5 },
         { kind: "entity", familyMemberId: null, entityId: "e1", percent: 0.5 },

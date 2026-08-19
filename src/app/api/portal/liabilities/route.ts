@@ -14,6 +14,7 @@ import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { validateOwnersShape, validateOwnersTenant } from "@/lib/ownership";
 import { validateTrustOnlyEntityOwners } from "@/lib/portal/validate-trust-owners";
+import { LOAN_SCHEDULE_START_MONTH, resolveLoanDetails } from "@/lib/portal/loan-details";
 import { recordCreate } from "@/lib/audit/record-helpers";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +29,9 @@ type Body = {
   liabilityType?: string;
   balance?: string;
   owners?: unknown;
+  /** Annual FRACTION ("0.0649"), matching liabilities.interest_rate. */
+  interestRate?: unknown;
+  monthlyPayment?: unknown;
 };
 
 export async function POST(req: Request): Promise<Response> {
@@ -80,13 +84,24 @@ export async function POST(req: Request): Promise<Response> {
 
     const balance = body.balance ?? "0";
 
+    // Payment terms are optional: without them the row stays held flat, exactly
+    // as before. With them the engine amortizes the debt — the only way a Plaid
+    // auto loan (whose rate Plaid never sends) gets paid down in the projection.
+    const loan = resolveLoanDetails(Number(balance), body.liabilityType, body);
+    if (!loan.ok) {
+      return NextResponse.json({ error: loan.error }, { status: 400 });
+    }
+
     let insertedId = "";
     await db.transaction(async (tx) => {
-      // Held-flat row, exactly like the Plaid commit path: no term and no
-      // payment, so `isHeldFlatLiability()` keeps the balance on the projection
-      // instead of amortizing an empty schedule to zero. The portal collects
-      // name/type/balance only — rate and term are the advisor's to set, and
-      // storing a rate with no term would look modelled while doing nothing.
+      // Without payment terms this is a held-flat row, exactly like the Plaid
+      // commit path: no term and no payment, so `isHeldFlatLiability()` keeps
+      // the balance on the projection instead of amortizing an empty schedule
+      // to zero. With them, the schedule starts THIS YEAR at today's balance
+      // (balanceAsOf left null => zero elapsed months => the back-calculated
+      // original balance is the balance itself), so the derived term is the
+      // REMAINING term rather than an original one. See
+      // LOAN_SCHEDULE_START_MONTH for why the month is pinned.
       const [row] = await tx
         .insert(liabilities)
         .values({
@@ -95,11 +110,9 @@ export async function POST(req: Request): Promise<Response> {
           name: body.name!,
           liabilityType: body.liabilityType as typeof liabilities.$inferInsert.liabilityType,
           balance,
-          interestRate: "0",
-          monthlyPayment: null,
-          termMonths: null,
+          ...loan.columns,
           startYear: new Date().getFullYear(),
-          startMonth: 1,
+          startMonth: LOAN_SCHEDULE_START_MONTH,
           isInterestDeductible: false,
         })
         .returning();
@@ -126,6 +139,7 @@ export async function POST(req: Request): Promise<Response> {
         name: body.name,
         liabilityType: body.liabilityType,
         balance,
+        ...loan.columns,
       },
     });
 

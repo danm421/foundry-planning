@@ -221,6 +221,96 @@ describe("PUT /api/portal/liabilities/[id]", () => {
     expect(res.status).toBe(400);
     expect(transactionMock).not.toHaveBeenCalled();
   });
+
+  it("sets the payment terms a client typed and derives the payoff term", async () => {
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
+    liabilityRow = { ...liabilityRow!, balance: "12000.00" };
+    const res = await PUT(putReq({ interestRate: 0, monthlyPayment: "500" }), ctx);
+    expect(res.status).toBe(200);
+
+    const [, vals] = updateMock.mock.calls[0];
+    expect(vals).toMatchObject({
+      interestRate: "0.0000",
+      monthlyPayment: "500.00",
+      termMonths: 24,
+    });
+    // The schedule restarts this year: buildLiabilitySchedule() reads the
+    // stored balance as the balance at (startYear, startMonth), so an older
+    // start would run the remaining term from the past and understate the
+    // debt. January, because the engine's window is whole calendar years.
+    expect(vals).toMatchObject({
+      startYear: new Date().getFullYear(),
+      startMonth: 1,
+    });
+  });
+
+  it("lets a client set terms on a Plaid-linked debt whose balance is locked", async () => {
+    // The auto-loan case: Plaid syncs the balance but never sends a rate, so
+    // typing the terms is the only way the loan amortizes.
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
+    liabilityRow = {
+      ...liabilityRow!, balance: "22687.59", liabilityType: "auto", plaidItemId: "pli_1",
+    };
+    const res = await PUT(putReq({ interestRate: 0.0649, monthlyPayment: "512.43" }), ctx);
+    expect(res.status).toBe(200);
+    const [, vals] = updateMock.mock.calls[0];
+    expect(vals.interestRate).toBe("0.0649");
+    expect(vals.monthlyPayment).toBe("512.43");
+    expect(vals.termMonths).toBeGreaterThan(0);
+  });
+
+  it("clears the terms back to held-flat when the payment is blanked", async () => {
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
+    const res = await PUT(putReq({ interestRate: null, monthlyPayment: "" }), ctx);
+    expect(res.status).toBe(200);
+    const [, vals] = updateMock.mock.calls[0];
+    expect(vals).toMatchObject({ interestRate: "0", monthlyPayment: null, termMonths: null });
+    // No schedule to restart, so the start date is left alone.
+    expect(vals.startYear).toBeUndefined();
+  });
+
+  it("leaves stored terms untouched when neither key is sent", async () => {
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
+    const res = await PUT(putReq({ name: "Renamed" }), ctx);
+    expect(res.status).toBe(200);
+    const [, vals] = updateMock.mock.calls[0];
+    expect(vals).toEqual({ name: "Renamed" });
+  });
+
+  it("rejects a payment that never covers the interest", async () => {
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
+    liabilityRow = { ...liabilityRow!, balance: "100000.00" };
+    const res = await PUT(putReq({ interestRate: 0.05, monthlyPayment: "200" }), ctx);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain("never be paid off");
+    expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it("derives the term from the balance sent in the SAME request", async () => {
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
+    // Stored balance is $1,000; the new one is $12,000. Deriving off the stale
+    // balance would store a 2-month term for a 24-month loan.
+    const res = await PUT(putReq({ balance: "12000", interestRate: 0, monthlyPayment: "500" }), ctx);
+    expect(res.status).toBe(200);
+    expect(updateMock.mock.calls[0][1].termMonths).toBe(24);
+  });
+
+  it("rejects payment terms on a credit card, which the engine holds flat", async () => {
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
+    liabilityRow = { ...liabilityRow!, liabilityType: "credit_card" };
+    const res = await PUT(putReq({ monthlyPayment: "50" }), ctx);
+    expect(res.status).toBe(400);
+    expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it("judges the credit-card rule on the type the row will HAVE after the edit", async () => {
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
+    liabilityRow = { ...liabilityRow!, liabilityType: "auto", balance: "12000.00" };
+    const res = await PUT(putReq({ liabilityType: "credit_card", monthlyPayment: "500" }), ctx);
+    expect(res.status).toBe(400);
+    expect(updateMock).not.toHaveBeenCalled();
+  });
+
 });
 
 describe("portal liability mutations — guards", () => {

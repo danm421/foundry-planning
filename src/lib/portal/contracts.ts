@@ -252,6 +252,17 @@ export interface PortalDebtRow {
   statementBalance: number | null;
   minimumPayment: number | null;
   nextPaymentDueDate: string | null;
+  /**
+   * Client-entered payment terms. Null when the debt has none, in which case
+   * the projection holds its balance flat. `interestRate` is an annual
+   * FRACTION (0.0649 = 6.49%), and is null exactly when monthlyPayment is —
+   * the two are stored and cleared as a unit. Distinct from `aprPercentage`,
+   * which is a PERCENT the bank reported via Plaid and is display-only.
+   */
+  interestRate: number | null;
+  monthlyPayment: number | null;
+  /** Calendar year the plan clears this debt. Null without terms. */
+  payoffYear: number | null;
   isPlaidLinked: boolean;
   ownerFmIds: string[];
   ownerEntityIds: string[];

@@ -214,7 +214,10 @@ describe("POST /api/portal/liabilities", () => {
         clientId: "c1",
         firmId: "firm-1",
         actorKind: "client",
-        snapshot: { name: "Car Loan", liabilityType: "auto", balance: "18500" },
+        snapshot: {
+          name: "Car Loan", liabilityType: "auto", balance: "18500",
+          interestRate: "0", monthlyPayment: null, termMonths: null, termUnit: "annual",
+        },
       }),
     );
   });
@@ -231,4 +234,62 @@ describe("POST /api/portal/liabilities", () => {
       expect.objectContaining({ actorKind: "advisor", extraMetadata: { viaPreview: true } }),
     );
   });
+
+  it("stores the payment terms a client typed and derives the payoff term", async () => {
+    const res = await POST(
+      req({
+        name: "Car Loan", liabilityType: "auto", balance: "12000",
+        interestRate: 0, monthlyPayment: "500", owners: [OWNER],
+      }),
+    );
+    expect(res.status).toBe(200);
+    const values = insertLiabilityValuesMock.mock.calls[0][0];
+    expect(values).toMatchObject({
+      interestRate: "0.0000",
+      monthlyPayment: "500.00",
+      termMonths: 24,
+    });
+    // The derived term is the REMAINING term, so the schedule starts this
+    // YEAR at today's balance rather than at some origination date. January,
+    // not the current month: the engine's schedule window is bounded in whole
+    // calendar years from startYear, and a mid-year start runs out of window
+    // and swallows the remainder as a phantom balloon payment.
+    expect(values.startYear).toBe(new Date().getFullYear());
+    expect(values.startMonth).toBe(1);
+  });
+
+  it("rejects a payment that never covers the interest", async () => {
+    const res = await POST(
+      req({
+        name: "Car Loan", liabilityType: "auto", balance: "100000",
+        interestRate: 0.05, monthlyPayment: "200", owners: [OWNER],
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain("never be paid off");
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a rate sent as a percent instead of a fraction", async () => {
+    const res = await POST(
+      req({
+        name: "Car Loan", liabilityType: "auto", balance: "12000",
+        interestRate: 6.49, monthlyPayment: "500", owners: [OWNER],
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects payment terms on a credit card, which the engine holds flat", async () => {
+    const res = await POST(
+      req({
+        name: "Rewards Card", liabilityType: "credit_card", balance: "2000",
+        monthlyPayment: "50", owners: [OWNER],
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
 });

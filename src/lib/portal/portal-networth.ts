@@ -1,4 +1,5 @@
 import type { NetWorthSummary, PortalDebtRow } from "@/lib/portal/contracts";
+import { payoffYear } from "@/lib/portal/loan-details";
 export type { NetWorthSummary, PortalDebtRow };
 
 export type FamilyRole = string;
@@ -40,6 +41,12 @@ export interface RawLiability {
   statementBalance: string | null;
   aprPercentage: string | null;
   nextPaymentDueDate: string | null;
+  interestRate: string | null;
+  monthlyPayment: string | null;
+  termMonths: number | null;
+  startYear: number;
+  /** Origination month, 1-12. NOT NULL default 1 in the column. */
+  startMonth: number;
 }
 
 function num(s: string | null): number | null {
@@ -70,6 +77,11 @@ export function buildPortalLiabilityRows(
       statementBalance: num(l.statementBalance),
       minimumPayment: num(l.minimumPayment),
       nextPaymentDueDate: l.nextPaymentDueDate,
+      // The payment is the switch: interest_rate is NOT NULL default "0", so a
+      // stored 0 is ambiguous on its own (unset, or a real 0% promo loan).
+      interestRate: l.monthlyPayment == null ? null : num(l.interestRate),
+      monthlyPayment: num(l.monthlyPayment),
+      payoffYear: payoffYear(l.startYear, l.termMonths, l.startMonth),
       isPlaidLinked: l.plaidItemId != null,
       ownerFmIds: owners
         .filter((o) => o.kind === "family_member" && o.familyMemberId != null)

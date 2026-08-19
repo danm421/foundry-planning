@@ -10,7 +10,7 @@ const rail = buildAccountRail({
     { id: "2", name: "401k", category: "retirement", subType: "401k", last4: null, value: 965_186, isPlaidLinked: false },
   ],
   debts: [
-    { id: "l1", name: "Mortgage", balance: 125_000, rawBalance: 125_000, liabilityType: "mortgage", aprPercentage: null, statementBalance: null, minimumPayment: null, nextPaymentDueDate: null, isPlaidLinked: false, ownerFmIds: [], ownerEntityIds: [] },
+    { id: "l1", name: "Mortgage", balance: 125_000, rawBalance: 125_000, liabilityType: "mortgage", aprPercentage: null, statementBalance: null, minimumPayment: null, nextPaymentDueDate: null, interestRate: null, monthlyPayment: null, payoffYear: null, isPlaidLinked: false, ownerFmIds: [], ownerEntityIds: [] },
   ],
 });
 

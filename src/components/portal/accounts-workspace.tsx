@@ -25,6 +25,7 @@ import {
   DebtFormPanel,
   debtRowToForm,
   debtOwnersFromForm,
+  debtLoanFieldsFromForm,
   emptyDebtForm,
   type DebtFormState,
 } from "@/components/portal/debt-form-panel";
@@ -198,19 +199,30 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
 
   async function submitDebt(): Promise<void> {
     if (!debtForm || (drill?.kind !== "edit-debt" && drill?.kind !== "add-debt")) return;
+    const isNew = drill.kind === "add-debt";
+    const id = drill.kind === "edit-debt" ? drill.id : null;
     const owners = debtOwnersFromForm(debtForm);
-    if (owners.length === 0) {
+    // A Plaid "Add as new" debt is HOUSEHOLD-owned: the commit route writes no
+    // liability_owners row at all, so its owner boxes open unchecked. Demanding
+    // a pick there blocked every edit of a synced loan — including adding the
+    // payment terms Plaid never sends. Omitting `owners` leaves the row
+    // household-owned; the API only rewrites owners when the key is present.
+    const existing = id ? debt(id) : undefined;
+    const householdOwned =
+      existing != null && existing.ownerFmIds.length === 0 && existing.ownerEntityIds.length === 0;
+    if (owners.length === 0 && !householdOwned) {
       alert("Pick at least one owner.");
       return;
     }
-    const isNew = drill.kind === "add-debt";
-    const id = drill.kind === "edit-debt" ? drill.id : null;
     const body: Record<string, unknown> = {
       name: debtForm.name,
       liabilityType: debtForm.liabilityType,
       balance: debtForm.balance,
-      owners,
+      // Always sent, so blanking the boxes clears the schedule rather than
+      // leaving stale terms behind. The API derives the payoff term itself.
+      ...debtLoanFieldsFromForm(debtForm),
     };
+    if (owners.length > 0) body.owners = owners;
     if (id && debt(id)?.isPlaidLinked) {
       for (const k of LIABILITY_PLAID_LOCKED_FIELDS) delete body[k];
     }
@@ -340,6 +352,9 @@ export function AccountsWorkspace({ dto }: { dto: AccountsPageDTO }): ReactEleme
           statementBalance: d.statementBalance,
           minimumPayment: d.minimumPayment,
           nextPaymentDueDate: d.nextPaymentDueDate,
+          interestRate: d.interestRate,
+          monthlyPayment: d.monthlyPayment,
+          payoffYear: d.payoffYear,
           isPlaidLinked: d.isPlaidLinked,
           ownerLabel: ownerLabel(d.ownerFmIds, d.ownerEntityIds),
         }}

@@ -13,7 +13,8 @@ function debt(over: Partial<PortalDebtRow> = {}): PortalDebtRow {
   return {
     id: "l1", name: "Loan", balance: 100, rawBalance: 100, liabilityType: "mortgage",
     aprPercentage: null, statementBalance: null, minimumPayment: null,
-    nextPaymentDueDate: null, isPlaidLinked: false, ownerFmIds: [], ownerEntityIds: [],
+    nextPaymentDueDate: null, interestRate: null, monthlyPayment: null, payoffYear: null,
+    isPlaidLinked: false, ownerFmIds: [], ownerEntityIds: [],
     ...over,
   };
 }

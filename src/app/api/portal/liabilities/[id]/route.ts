@@ -9,6 +9,7 @@ import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-sub
 import { validateOwnersShape, validateOwnersTenant } from "@/lib/ownership";
 import { validateTrustOnlyEntityOwners } from "@/lib/portal/validate-trust-owners";
 import { LIABILITY_PLAID_LOCKED_FIELDS } from "@/lib/portal/plaid-locked-fields";
+import { LOAN_SCHEDULE_START_MONTH, resolveLoanDetails } from "@/lib/portal/loan-details";
 import { recordUpdate, recordDelete } from "@/lib/audit/record-helpers";
 import type { EntitySnapshot } from "@/lib/audit/types";
 
@@ -27,6 +28,9 @@ type LiabilityRow = {
   balance: string | null;
   liabilityType: string | null;
   plaidItemId: string | null;
+  interestRate: string | null;
+  monthlyPayment: string | null;
+  termMonths: number | null;
 };
 
 const ALLOWED_FIELDS = ["name", "liabilityType", "balance"] as const;
@@ -35,6 +39,9 @@ const FIELD_LABELS = {
   name: { label: "Name", format: "text" as const },
   liabilityType: { label: "Type", format: "text" as const },
   balance: { label: "Balance", format: "text" as const },
+  interestRate: { label: "Interest rate", format: "text" as const },
+  monthlyPayment: { label: "Monthly payment", format: "text" as const },
+  termMonths: { label: "Months to pay off", format: "text" as const },
 };
 
 async function loadOwnedRow(rowId: string, clientId: string): Promise<LiabilityRow | null> {
@@ -51,6 +58,9 @@ async function loadOwnedRow(rowId: string, clientId: string): Promise<LiabilityR
     balance: row.balance,
     liabilityType: (row as { liabilityType?: string | null }).liabilityType ?? null,
     plaidItemId: (row as { plaidItemId?: string | null }).plaidItemId ?? null,
+    interestRate: (row as { interestRate?: string | null }).interestRate ?? null,
+    monthlyPayment: (row as { monthlyPayment?: string | null }).monthlyPayment ?? null,
+    termMonths: (row as { termMonths?: number | null }).termMonths ?? null,
   };
 }
 
@@ -64,7 +74,14 @@ async function getFirmId(clientId: string): Promise<string | null> {
 }
 
 function snapshot(row: LiabilityRow): EntitySnapshot {
-  return { name: row.name, liabilityType: row.liabilityType, balance: row.balance };
+  return {
+    name: row.name,
+    liabilityType: row.liabilityType,
+    balance: row.balance,
+    interestRate: row.interestRate,
+    monthlyPayment: row.monthlyPayment,
+    termMonths: row.termMonths,
+  };
 }
 
 export async function PUT(
@@ -105,6 +122,30 @@ export async function PUT(
     const patch: Record<string, unknown> = {};
     for (const k of ALLOWED_FIELDS) {
       if (k in body) patch[k] = body[k];
+    }
+
+    // Payment terms: sending them sets the payoff schedule, sending a blank
+    // payment clears it back to held-flat, and omitting both keys leaves
+    // whatever is stored alone. Both the balance and the type are read as they
+    // will BE after this PUT, not as they were.
+    if ("monthlyPayment" in body || "interestRate" in body) {
+      const nextType = "liabilityType" in body ? (body.liabilityType as string) : row.liabilityType;
+      const nextBalance = Number("balance" in body ? body.balance : row.balance);
+      const loan = resolveLoanDetails(nextBalance, nextType, body);
+      if (!loan.ok) {
+        return NextResponse.json({ error: loan.error }, { status: 400 });
+      }
+      Object.assign(patch, loan.columns);
+      if (loan.columns.termMonths != null) {
+        // Restart the schedule at this year: buildLiabilitySchedule() reads the
+        // stored balance as the balance at (startYear, startMonth), so leaving
+        // an older start behind would run the client's REMAINING term from a
+        // point in the past and understate the debt today. Clearing terms
+        // deliberately does NOT stamp a start — that would overwrite an
+        // advisor's real origination date on a loan the client only blanked.
+        patch.startYear = new Date().getFullYear();
+        patch.startMonth = LOAN_SCHEDULE_START_MONTH;
+      }
     }
 
     let newOwners: ReturnType<typeof validateOwnersShape> | null = null;
@@ -155,6 +196,9 @@ export async function PUT(
     if ("name" in patch) after.name = patch.name as string;
     if ("liabilityType" in patch) after.liabilityType = patch.liabilityType as string;
     if ("balance" in patch) after.balance = patch.balance as string;
+    if ("interestRate" in patch) after.interestRate = patch.interestRate as string;
+    if ("monthlyPayment" in patch) after.monthlyPayment = patch.monthlyPayment as string | null;
+    if ("termMonths" in patch) after.termMonths = patch.termMonths as number | null;
 
     await recordUpdate({
       action: "portal.liability.update",
@@ -216,6 +260,9 @@ export async function DELETE(
       balance: raw.balance,
       liabilityType: (raw as { liabilityType?: string | null }).liabilityType ?? null,
       plaidItemId,
+      interestRate: (raw as { interestRate?: string | null }).interestRate ?? null,
+      monthlyPayment: (raw as { monthlyPayment?: string | null }).monthlyPayment ?? null,
+      termMonths: (raw as { termMonths?: number | null }).termMonths ?? null,
     };
 
     await db.transaction(async (tx) => {

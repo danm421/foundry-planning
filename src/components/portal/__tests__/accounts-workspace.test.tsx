@@ -39,7 +39,7 @@ function dto(over: Partial<AccountsPageDTO> = {}): AccountsPageDTO {
       { id: "a2", name: "Rollover IRA", category: "retirement", subType: "traditional_ira", last4: null, value: 965_186, isPlaidLinked: true },
     ],
     debts: [
-      { id: "l1", name: "Home Loan", balance: 125_000, rawBalance: 125_000, liabilityType: "mortgage", aprPercentage: null, statementBalance: null, minimumPayment: null, nextPaymentDueDate: null, isPlaidLinked: false, ownerFmIds: [], ownerEntityIds: [] },
+      { id: "l1", name: "Home Loan", balance: 125_000, rawBalance: 125_000, liabilityType: "mortgage", aprPercentage: null, statementBalance: null, minimumPayment: null, nextPaymentDueDate: null, interestRate: null, monthlyPayment: null, payoffYear: null, isPlaidLinked: false, ownerFmIds: [], ownerEntityIds: [] },
     ],
     netWorth: { assets: 975_186, debt: 125_000, netWorth: 850_186 },
     series: [],
@@ -270,6 +270,120 @@ describe("AccountsWorkspace", () => {
     expect(body.balance).toBe("18500");
     // Pre-checked from the primary family member, same as the account add form.
     expect(body.owners).toEqual([{ kind: "family_member", familyMemberId: "fm1", percent: 1 }]);
+  });
+
+  it("sends the typed rate as a FRACTION and previews the payoff year", async () => {
+    const { getByRole, getByLabelText, container } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(getByRole("button", { name: "Add Account or Loan" }));
+    fireEvent.change(getByLabelText("What are you adding?"), { target: { value: "debt" } });
+    fireEvent.change(getByLabelText("Name"), { target: { value: "Car Loan" } });
+    fireEvent.change(getByLabelText("Type"), { target: { value: "auto" } });
+    fireEvent.change(getByLabelText("Balance"), { target: { value: "12000" } });
+    fireEvent.change(getByLabelText("Interest rate"), { target: { value: "0" } });
+    fireEvent.change(getByLabelText("Monthly payment"), { target: { value: "500" } });
+
+    // $12k at 0% and $500/mo is 24 months = two calendar years from January.
+    expect(container.textContent).toContain(`Paid off in ${new Date().getFullYear() + 1}`);
+
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Save" }));
+    });
+    const body = JSON.parse(String(callTo("/api/portal/liabilities")[1].body));
+    // Typed as a percent, stored as a fraction — 6.49% must never reach the
+    // API as 6.49, which would be 649%.
+    expect(body.interestRate).toBe(0);
+    expect(body.monthlyPayment).toBe("500");
+  });
+
+  it("converts a percent rate to a fraction", async () => {
+    const { getByRole, getByLabelText } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(getByRole("button", { name: "Add Account or Loan" }));
+    fireEvent.change(getByLabelText("What are you adding?"), { target: { value: "debt" } });
+    fireEvent.change(getByLabelText("Name"), { target: { value: "Car Loan" } });
+    fireEvent.change(getByLabelText("Balance"), { target: { value: "22687.59" } });
+    fireEvent.change(getByLabelText("Interest rate"), { target: { value: "6.49" } });
+    fireEvent.change(getByLabelText("Monthly payment"), { target: { value: "512.43" } });
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Save" }));
+    });
+    expect(JSON.parse(String(callTo("/api/portal/liabilities")[1].body)).interestRate).toBe(0.0649);
+  });
+
+  it("blocks the save and says why when the payment never covers the interest", () => {
+    const { getByRole, getByLabelText, container } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(getByRole("button", { name: "Add Account or Loan" }));
+    fireEvent.change(getByLabelText("What are you adding?"), { target: { value: "debt" } });
+    fireEvent.change(getByLabelText("Balance"), { target: { value: "100000" } });
+    fireEvent.change(getByLabelText("Interest rate"), { target: { value: "5" } });
+    fireEvent.change(getByLabelText("Monthly payment"), { target: { value: "200" } });
+    expect(container.textContent).toContain("never be paid off");
+    expect((getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("refuses a rate that isn't a number rather than quietly saving 0%", () => {
+    const { getByRole, getByLabelText, container } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(getByRole("button", { name: "Add Account or Loan" }));
+    fireEvent.change(getByLabelText("What are you adding?"), { target: { value: "debt" } });
+    fireEvent.change(getByLabelText("Balance"), { target: { value: "12000" } });
+    fireEvent.change(getByLabelText("Interest rate"), { target: { value: "six point five" } });
+    fireEvent.change(getByLabelText("Monthly payment"), { target: { value: "500" } });
+    expect(container.textContent).toContain("Enter the interest rate as a number.");
+    expect((getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("hides the payment terms for a credit card, which the plan holds flat", () => {
+    const { getByRole, getByLabelText, container } = render(<AccountsWorkspace dto={dto()} />);
+    fireEvent.click(getByRole("button", { name: "Add Account or Loan" }));
+    fireEvent.change(getByLabelText("What are you adding?"), { target: { value: "debt" } });
+    expect(container.textContent).toContain("Payment terms");
+    fireEvent.change(getByLabelText("Type"), { target: { value: "credit_card" } });
+    expect(container.textContent).not.toContain("Payment terms");
+  });
+
+  it("lets a client set terms on a Plaid-linked loan whose balance is locked", async () => {
+    // The auto-loan case: Plaid syncs the balance but sends no rate at all.
+    const base = dto();
+    const { getByText, getByRole, getByLabelText } = render(
+      <AccountsWorkspace
+        dto={dto({
+          debts: [{
+            ...base.debts[0], name: "Auto Loan", liabilityType: "auto", balance: 22_687.59,
+            rawBalance: 22_687.59, isPlaidLinked: true, ownerFmIds: ["fm1"],
+          }],
+        })}
+      />,
+    );
+    fireEvent.click(getByText("Auto Loan"));
+    fireEvent.click(getByRole("button", { name: "Edit" }));
+    fireEvent.change(getByLabelText("Interest rate"), { target: { value: "6.49" } });
+    fireEvent.change(getByLabelText("Monthly payment"), { target: { value: "512.43" } });
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Save" }));
+    });
+
+    const body = JSON.parse(String(callTo("/api/portal/liabilities/l1")[1].body));
+    expect(body).not.toHaveProperty("balance");
+    expect(body.interestRate).toBe(0.0649);
+    expect(body.monthlyPayment).toBe("512.43");
+  });
+
+  it("prefills the stored terms when reopening a loan for edit", () => {
+    const base = dto();
+    const { getByText, getByRole, getByLabelText } = render(
+      <AccountsWorkspace
+        dto={dto({
+          debts: [{
+            ...base.debts[0], interestRate: 0.0649, monthlyPayment: 512.43,
+            payoffYear: 2030, ownerFmIds: ["fm1"],
+          }],
+        })}
+      />,
+    );
+    fireEvent.click(getByText("Home Loan"));
+    fireEvent.click(getByRole("button", { name: "Edit" }));
+    // Shown as a percent, not the stored 0.0649.
+    expect((getByLabelText("Interest rate") as HTMLInputElement).value).toBe("6.49");
+    expect((getByLabelText("Monthly payment") as HTMLInputElement).value).toBe("512.43");
   });
 
   it("keeps the loan add form editable — nothing is Plaid-locked on a new row", () => {
