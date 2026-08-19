@@ -6,20 +6,12 @@
 // quick-edit drawer, and no Social Security dialog here, because the portal
 // writes base only and routes every editable row through one small panel.
 //
-// ⚠️ NO HEADER ADD BAR, and that is a ruling, not an omission. The plan's Task 9
-// specified a header bar carrying "Add income" / "Add savings" / "Add expense".
-// `CashFlowBoard` already renders exactly those three buttons, one per band, and
-// gates them on `canEdit` ALONE (cash-flow-board.tsx:227) — not on
-// `canEdit && onAddFlow` the way `GoalsBoard` gates its own add button. So the
-// trick Task 10 uses for Goals (withhold the callback, keep the header bar)
-// cannot work here: the band buttons render regardless, and a header bar would
-// put a second "Add income" a few pixels from the first — the precise defect the
-// plan rejects for Goals. Suppressing them at the board is not available either:
-// `household-map/__tests__/cash-flow-board.test.tsx:316` renders the board
-// WITHOUT `onAddFlow` and asserts all three buttons are present, and this
-// branch's hardest constraint is that the advisor Map does not change. So the
-// board's own buttons are the add affordance, and wiring `onAddFlow` is what
-// makes them work.
+// ⚠️ NO PAGE-LEVEL ADD BAR, and that is a ruling, not an omission. The board
+// renders its own "Add income" / "Add savings" / "Add expense" — one per band —
+// and gates them on `canEdit` ALONE, so (unlike `GoalsBoard`) withholding the
+// callback cannot suppress them and a page header bar would sit a second "Add
+// income" a few pixels from the first. `variant="portal"` is what makes the
+// band buttons full-size; wiring `onAddFlow` is what makes them work.
 
 import { useState, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
@@ -107,25 +99,25 @@ export default function OrganizerCashFlowClient({
   return (
     <>
       {/*
-        The board is a spreadsheet: a 100px gutter plus one `minmax(0,1fr)` track
-        per owner. Each card's trailing group is `shrink-0` and ~143px wide (a
-        fixed 74px timing cell plus the amount), so below roughly 260px of track
-        the cards stop fitting — the name's `truncate` collapses it to ZERO width
-        and the cards spill past the grid. Measured at 390x844 before this
-        wrapper: the document scrolled to 462px and all seven card names rendered
-        at 0px.
+        The board is a spreadsheet: one `minmax(0,1fr)` track per owner. Each
+        card's trailing group is `shrink-0` and ~143px wide (a fixed 74px timing
+        cell plus the amount), so below roughly 260px of track the cards stop
+        fitting — the name's `truncate` collapses it to ZERO width and the cards
+        spill past the grid. Measured at 390x844 before this wrapper: the
+        document scrolled to 462px and all seven card names rendered at 0px.
 
         So the board scrolls inside its own container instead of dragging the
         page sideways, which is the house pattern for wide content. `min-w` is
         what actually stops the crush — `overflow-x-auto` alone would still let
-        the tracks shrink to 75px. The number is 3 x ~265px of track + the 100px
-        gutter + gaps + this padding. It is inert above 960px, so desktop and the
-        advisor preview render exactly as before; `cash-flow-board.tsx` itself is
-        untouched, which keeps the advisor Household Map byte-identical.
+        the tracks shrink to 75px. The number is 3 x ~265px of track + 2 x 8px of
+        column gap + the band panel's own 2 x 12px padding + this 2 x 20px — 875,
+        rounded up. It was 960 while the board still carried a 100px label
+        gutter, which the `portal` variant drops.
       */}
       <div className="overflow-x-auto">
-        <div className="min-w-[960px] p-5">
+        <div className="min-w-[880px] p-5">
           <CashFlowBoard
+            variant="portal"
             people={data.people}
             items={data.items}
             canEdit={data.canEdit}

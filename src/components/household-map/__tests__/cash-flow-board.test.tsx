@@ -338,6 +338,76 @@ describe("CashFlowBoard", () => {
     expect(screen.queryByRole("button", { name: "Add income" })).not.toBeInTheDocument();
   });
 
+  // The `portal` variant. The client portal shows these three bands to a
+  // non-advisor on a page with one board on it, so it wears section chrome the
+  // advisor Map must never grow: a bordered panel per band, a labelled add
+  // button instead of an 18px icon square, and no label gutter.
+  describe("portal variant", () => {
+    it("gives each band add button its visible label, which the advisor's icon square never shows", () => {
+      const { rerender } = render(<CashFlowBoard {...baseProps({ canEdit: true })} />);
+
+      // Advisor: named by `aria-label` alone — the button's own text is empty.
+      expect(screen.getByRole("button", { name: "Add income" }).textContent).toBe("");
+
+      rerender(<CashFlowBoard {...baseProps({ canEdit: true })} variant="portal" />);
+
+      expect(screen.getByRole("button", { name: "Add income" }).textContent).toBe("Add income");
+      expect(screen.getByRole("button", { name: "Add savings" }).textContent).toBe("Add savings");
+      expect(screen.getByRole("button", { name: "Add expense" }).textContent).toBe("Add expense");
+    });
+
+    // Read as joined classNames rather than a `[class*=...]` selector: nwsapi
+    // will not match an attribute value containing an unescaped `[`, and the
+    // Tailwind arbitrary track list is nothing but brackets.
+    function gridClasses(container: HTMLElement): string {
+      return Array.from(container.querySelectorAll("div"))
+        .map((el) => el.className)
+        .join(" ");
+    }
+
+    // The portal client's `min-w` is computed from the track count and nothing
+    // else (see `organizer-cash-flow-client.tsx`), so the gutter going away is
+    // load-bearing arithmetic there, not just a look. Asserted on the portal
+    // render ALONE — pinning the advisor's own gutter class here would redden a
+    // portal test the next time someone retunes advisor chrome.
+    it("drops the 100px label gutter, so the owner tracks are the only grid columns", () => {
+      const { container } = render(
+        <CashFlowBoard {...baseProps({ canEdit: true })} variant="portal" />,
+      );
+
+      expect(gridClasses(container)).not.toContain("grid-cols-[100px_repeat(3");
+      expect(gridClasses(container)).toContain("grid-cols-[repeat(3");
+    });
+
+    it("still reports the same kind and column preset from the panel-header button", () => {
+      const onAddFlow = vi.fn();
+      render(
+        <CashFlowBoard {...baseProps({ canEdit: true })} variant="portal" onAddFlow={onAddFlow} />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "Add expense" }));
+
+      expect(onAddFlow).toHaveBeenCalledWith("expense", "joint");
+    });
+
+    it("keeps every band subtotal, so the panel footer is not a swap of one for the other", () => {
+      const items: MapItem[] = [
+        item({ id: "inc-1", kind: "income", column: "client", name: "Salary", value: 90000 }),
+      ];
+      const { container } = render(
+        <CashFlowBoard {...baseProps({ items, canEdit: true })} variant="portal" />,
+      );
+
+      expect(subtotalTextFor(container, "income")).toBe("Income · $90,000");
+    });
+
+    it("a read-only portal viewer still gets no add buttons", () => {
+      render(<CashFlowBoard {...baseProps({ canEdit: false })} variant="portal" />);
+
+      expect(screen.queryByRole("button", { name: "Add income" })).not.toBeInTheDocument();
+    });
+  });
+
   it("single-client household renders two owner columns (client, joint), not three", () => {
     const items: MapItem[] = [
       item({ id: "inc-client", kind: "income", column: "client", name: "Alex salary", value: 90000 }),
