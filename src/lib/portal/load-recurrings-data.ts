@@ -72,6 +72,7 @@ export async function loadRecurringsData(clientId: string, now: Date): Promise<R
         amount: plaidTransactions.amount,
         date: plaidTransactions.date,
         categoryId: plaidTransactions.categoryId,
+        pfcDetailed: plaidTransactions.pfcDetailed,
       })
       .from(plaidTransactions)
       .where(and(
@@ -103,6 +104,7 @@ export async function loadRecurringsData(clientId: string, now: Date): Promise<R
       transactions: unclaimed.map((t) => ({
         id: t.id, merchantName: t.merchantName, name: t.name,
         amount: Number(t.amount), date: t.date, categoryId: t.categoryId,
+        pfcDetailed: t.pfcDetailed,
       })),
       // A charge a rule already covers is not a suggestion — even one the
       // retroactive claim skipped because the client had categorised it by hand.

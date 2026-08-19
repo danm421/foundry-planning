@@ -21,7 +21,35 @@ export type SuggestionTxn = {
   amount: number; // spend-positive
   date: string; // YYYY-MM-DD
   categoryId: string | null;
+  /** Plaid's Personal Finance Category detail, when it gave one. */
+  pfcDetailed: string | null;
 };
+
+/** Descriptors a credit-card payment arrives under when Plaid has not labelled
+ *  it. Deliberately narrow — a mortgage, car or student loan payment is a real
+ *  recurring bill and has to survive this list. */
+const CARD_PAYMENT_TEXT: RegExp[] = [
+  /credit\s*c(?:ar)?d\b[^a-z]*(?:payment|pymt|pmt)/i,
+  /\bpayment\b[\s\-\u2013\u2014]*thank/i,
+  /\bthank\s*you\b[\s\-\u2013\u2014]*payment/i,
+  /\bauto\s?pay\b/i,
+  /\bcardmember\b/i,
+];
+
+/** Paying off a credit card is not a bill: the spending it settles was already
+ *  counted as expenses, so suggesting it would double-count the month. Plaid
+ *  labels these when it can — but it files plenty of them under a vaguer loan
+ *  detail (the real "AUTOMATIC PAYMENT - THANK" autopay comes through as
+ *  LOAN_PAYMENTS_OTHER_PAYMENT), so the descriptor is checked too. */
+export function looksLikeCardPayment(txn: {
+  merchantName: string | null;
+  name: string;
+  pfcDetailed: string | null;
+}): boolean {
+  if (txn.pfcDetailed === "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT") return true;
+  const text = `${txn.merchantName ?? ""} ${txn.name}`;
+  return CARD_PAYMENT_TEXT.some((re) => re.test(text));
+}
 
 /** Occurrences needed before we will call a rhythm a pattern. */
 const MIN_MONTHLY_HITS = 3;
@@ -214,6 +242,7 @@ export function detectRecurringSuggestions(input: {
   const byName = new Map<string, SuggestionTxn[]>();
   for (const t of transactions) {
     if (t.amount <= 0) continue;
+    if (looksLikeCardPayment(t)) continue;
     const key = normalizeMerchantKey(t);
     if (!key) continue;
     const list = byName.get(key) ?? [];

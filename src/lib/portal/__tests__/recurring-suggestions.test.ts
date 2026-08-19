@@ -6,6 +6,7 @@ import {
   clusterByAmount,
   commonPattern,
   displayNameFor,
+  looksLikeCardPayment,
   type SuggestionTxn,
 } from "@/lib/portal/recurring-suggestions";
 import { matchesRecurring, type RecurringLike } from "@/lib/portal/recurring-matching";
@@ -20,6 +21,7 @@ function txn(over: Partial<SuggestionTxn> & { date: string; amount: number }): S
     merchantName: "Netflix",
     name: "NETFLIX.COM",
     categoryId: "c-subs",
+    pfcDetailed: null,
     ...over,
   };
 }
@@ -353,5 +355,90 @@ describe("detectRecurringSuggestions", () => {
     const [s] = detect(netflixSeries());
     expect(s.sample.map((x) => x.date)).toEqual(["2026-08-12", "2026-07-12", "2026-06-12"]);
     expect(s.sample[0].amount).toBe(17.99);
+  });
+
+  it("leaves a credit-card payment out — settling the card is not a bill", () => {
+    // Plaid labelled this one itself. The spend it pays off was already counted
+    // as expenses, so suggesting it would double-count the client's month.
+    const cardPayments = ["2026-06-04", "2026-07-04", "2026-08-04"].map((date) =>
+      txn({
+        merchantName: null,
+        name: "CREDIT CARD 3333 PAYMENT *//",
+        pfcDetailed: "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT",
+        categoryId: null,
+        date,
+        amount: 25,
+      }),
+    );
+    expect(detect(cardPayments)).toEqual([]);
+  });
+
+  it("leaves the autopay out even when Plaid files it under a vaguer loan detail", () => {
+    // The real dev-DB row: a $2,078.50 monthly card autopay that Plaid typed
+    // LOAN_PAYMENTS_OTHER_PAYMENT, so the category alone cannot catch it.
+    const autopay = ["2026-06-23", "2026-07-23", "2026-08-23"].map((date) =>
+      txn({
+        merchantName: null,
+        name: "AUTOMATIC PAYMENT - THANK",
+        pfcDetailed: "LOAN_PAYMENTS_OTHER_PAYMENT",
+        categoryId: null,
+        date,
+        amount: 2078.5,
+      }),
+    );
+    expect(detect(autopay)).toEqual([]);
+  });
+
+  it("still suggests a mortgage payment — that one really is a bill", () => {
+    // The guard above must not swallow every descriptor with "PAYMENT" in it.
+    const mortgage = ["2026-06-01", "2026-07-01", "2026-08-01"].map((date) =>
+      txn({
+        merchantName: "MORTGAGE PAYMENT — Northgate Home Loans",
+        name: "MORTGAGE PAYMENT — Northgate Home Loans",
+        categoryId: null,
+        date,
+        amount: 2450,
+      }),
+    );
+    const [s, ...rest] = detect(mortgage);
+    expect(rest).toEqual([]);
+    expect(s.predicted).toBe(2450);
+  });
+});
+
+// ---------------------------------------------------------------- looksLikeCardPayment
+
+describe("looksLikeCardPayment", () => {
+  it("takes Plaid's word when it has labelled the charge", () => {
+    expect(
+      looksLikeCardPayment({
+        merchantName: null,
+        name: "ACH DEBIT 4567",
+        pfcDetailed: "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT",
+      }),
+    ).toBe(true);
+  });
+
+  it("reads the descriptor when Plaid has not", () => {
+    for (const name of [
+      "AUTOMATIC PAYMENT - THANK YOU",
+      "PAYMENT THANK YOU",
+      "CREDIT CARD 3333 PAYMENT *//",
+      "CHASE CREDIT CRD AUTOPAY",
+      "CARDMEMBER SERV WEB PMT",
+    ]) {
+      expect(looksLikeCardPayment({ merchantName: null, name, pfcDetailed: null })).toBe(true);
+    }
+  });
+
+  it("leaves the other loan payments alone — they are real bills", () => {
+    for (const name of [
+      "MORTGAGE PAYMENT — Northgate Home Loans",
+      "STUDENT LOAN PAYMENT",
+      "CAR PAYMENT ALLY AUTO",
+      "RENT PAYMENT",
+    ]) {
+      expect(looksLikeCardPayment({ merchantName: null, name, pfcDetailed: null })).toBe(false);
+    }
   });
 });
