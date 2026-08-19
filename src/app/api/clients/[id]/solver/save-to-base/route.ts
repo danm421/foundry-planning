@@ -511,6 +511,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             institutionState: e.institutionState ?? null,
             institutionName: e.institutionName ?? null,
             forFamilyMemberId: e.forFamilyMemberId ?? null,
+            absorbsRemainingCashFlow: e.absorbsRemainingCashFlow ?? false,
           })
           .returning({ id: expenses.id });
         await insertExpenseDedicatedRows(tx, inserted.id, e.dedicatedAccountIds, idRemap);
@@ -533,6 +534,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             institutionState: e.institutionState ?? null,
             institutionName: e.institutionName ?? null,
             forFamilyMemberId: e.forFamilyMemberId ?? null,
+            absorbsRemainingCashFlow: e.absorbsRemainingCashFlow ?? false,
             updatedAt: new Date(),
           })
           .where(
