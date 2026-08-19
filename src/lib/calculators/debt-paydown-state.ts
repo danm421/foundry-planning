@@ -5,9 +5,10 @@
  * The payload lands in a jsonb column, which is the easiest place in this
  * codebase to reintroduce mass assignment: `.set({ state: body.state })` would
  * happily store whatever the caller sent. So `validateDebtPaydownState`
- * REBUILDS the object field by field and returns only what it constructed —
- * an unrecognised key is dropped rather than persisted. Same shape as
- * `resolveLoanDetails` in `@/lib/portal/loan-details`.
+ * REBUILDS the object field by field — including the NESTED objects inside
+ * `overrides` and `manualDebts` — and returns only what it constructed: an
+ * unrecognised key, at any depth, is dropped rather than persisted. Same
+ * shape as `resolveLoanDetails` in `@/lib/portal/loan-details`.
  *
  * Shared by the route handler and the client workspace so the browser enforces
  * the same limits it will be judged by.
@@ -15,7 +16,13 @@
 import type { PaydownStrategy } from "@/lib/calculators/debt-paydown";
 
 export interface ManualDebt {
-  /** Client-generated, unique within the payload. Never a liability id. */
+  /**
+   * Client-generated. Uniqueness within the payload is enforced by
+   * `validateDebtPaydownState`. Collision with a real liability id is NOT
+   * checked here — this file has no access to the household's liabilities —
+   * and must be guarded at the merge site in a later task, where manual
+   * debts and liabilities are combined into one id-keyed collection.
+   */
   id: string;
   name: string;
   balance: number;
@@ -47,16 +54,49 @@ export interface DebtPaydownState {
   manualDebts: ManualDebt[];
 }
 
-export const DEFAULT_DEBT_PAYDOWN_STATE: DebtPaydownState = {
-  v: 1,
-  strategy: "avalanche",
-  mode: "extra",
-  extraMonthly: 0,
-  targetMonth: null,
-  excludedDebtIds: [],
-  overrides: {},
-  manualDebts: [],
-};
+/**
+ * Always returns a FRESH object — safe for a consumer to mutate (push a
+ * manual debt, set an override) without touching anyone else's state.
+ * Prefer this over `DEFAULT_DEBT_PAYDOWN_STATE` whenever the caller intends
+ * to mutate the result.
+ */
+export function createDefaultDebtPaydownState(): DebtPaydownState {
+  return {
+    v: 1,
+    strategy: "avalanche",
+    mode: "extra",
+    extraMonthly: 0,
+    targetMonth: null,
+    excludedDebtIds: [],
+    overrides: {},
+    manualDebts: [],
+  };
+}
+
+/** Recursively `Object.freeze`s `value` and everything nested inside it. */
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    for (const key of Object.getOwnPropertyNames(value)) {
+      deepFreeze((value as Record<string, unknown>)[key]);
+    }
+    Object.freeze(value);
+  }
+  return value;
+}
+
+/**
+ * A shared module-level constant, not a template: on the server it lives for
+ * the lifetime of the lambda instance, so if this were left mutable a
+ * consumer doing `saved ?? DEFAULT_DEBT_PAYDOWN_STATE` and then pushing a
+ * manual debt or setting an override would corrupt the "empty" starting
+ * point for every portal client served afterward. Deep-frozen so that
+ * mutation throws immediately instead of silently leaking one client's data
+ * into the next. Use `createDefaultDebtPaydownState()` instead when the
+ * caller intends to mutate the result.
+ */
+export const DEFAULT_DEBT_PAYDOWN_STATE: DebtPaydownState = deepFreeze(
+  createDefaultDebtPaydownState(),
+);
 
 export const MAX_MANUAL_DEBTS = 25;
 export const MAX_ID_ENTRIES = 200;
@@ -149,9 +189,14 @@ export function validateDebtPaydownState(raw: unknown): DebtPaydownStateResult {
     return { ok: false, error: `You can add up to ${MAX_MANUAL_DEBTS} debts of your own.` };
   }
   const manualDebts: ManualDebt[] = [];
+  const seenManualIds = new Set<string>();
   for (const entry of rawManual) {
     if (!isPlainObject(entry)) return { ok: false, error: "each added debt must be an object" };
     if (!validId(entry.id)) return { ok: false, error: "each added debt needs an id" };
+    if (seenManualIds.has(entry.id)) {
+      return { ok: false, error: "Give each added debt its own id." };
+    }
+    seenManualIds.add(entry.id);
     const name =
       typeof entry.name === "string" ? entry.name.trim().slice(0, MAX_NAME_LENGTH) : "";
     if (name === "") return { ok: false, error: "Give each debt a name." };
