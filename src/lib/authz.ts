@@ -276,14 +276,11 @@ export async function currentUserHasClientPortal(): Promise<boolean> {
  * revoke goes dark in one place for every surface that calls this gate, with
  * no grandfathering for an already-bound client.
  *
- * ⚠️ That is the `/portal/*` PAGES ONLY — this is NOT the chokepoint for the
- * portal API. `api/portal/intake/route.ts` is the one handler that calls this
- * gate; every other `/api/portal/*` handler resolves identity through
- * `resolvePortalClient`, whose no-org branch checks the clerk_user_id BINDING
- * and no entitlement at all. A revoked client therefore keeps read/write on
- * the portal API — which is what the mobile portal talks to. Closing that gap
- * changes the auth behaviour of every one of those pre-existing routes, so it
- * is a deliberate open decision, not an oversight.
+ * This IS the chokepoint for the portal API as well: `api/portal/intake` calls
+ * it directly, and every other `/api/portal/*` handler reaches it through
+ * `resolvePortalClient`'s no-org branch. Until 2026-08-19 that branch checked
+ * the clerk_user_id binding alone, so a revoked client kept read/write on the
+ * API the mobile portal talks to while the web pages went dark.
  *
  * Pairs with the middleware branch that routes portal users to `/portal`.
  */

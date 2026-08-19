@@ -113,10 +113,10 @@ export default clerkMiddleware(async (auth, request) => {
       // Bound portal user: allow /portal/*; allow API routes; bounce every
       // other page to the portal home.
       //
-      // ⚠️ Those API handlers do NOT re-check the client_portal entitlement:
-      // all but `/api/portal/intake` resolve identity via `resolvePortalClient`,
-      // which checks the clerk_user_id binding alone. An ops revoke closes the
-      // portal PAGES, not the portal API. See `requireClientPortalAccess`.
+      // Allowing API routes here is not the authorization decision: every
+      // `/api/portal/*` handler re-checks the client_portal entitlement for
+      // itself, via `resolvePortalClient` or `requireClientPortalAccess`
+      // directly. An ops revoke closes the pages AND the API.
       //
       // Soft first-run gate: redirect to /portal/intake when the client has
       // an unsubmitted prefilled form (draft-only — not after submission).
