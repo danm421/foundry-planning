@@ -129,7 +129,9 @@ describe("DebtPaydownWorkspace", () => {
         startMonth: now.getMonth() + 1,
       },
     );
-    expect(container.textContent).toContain(fmtUsd(expected.interestSaved));
+    // This fixture's baseline does pay off, so there IS a figure to show.
+    expect(expected.interestSaved).not.toBeNull();
+    expect(container.textContent).toContain(fmtUsd(expected.interestSaved!));
   });
 
   // The sibling rate box had the opposite flaw: uncontrolled, so nothing
@@ -256,7 +258,38 @@ describe("DebtPaydownWorkspace", () => {
         startMonth: now.getMonth() + 1,
       },
     );
-    expect(container.textContent).toContain(fmtUsd(expected.interestSaved));
+    // This fixture's baseline does pay off, so there IS a figure to show.
+    expect(expected.interestSaved).not.toBeNull();
+    expect(container.textContent).toContain(fmtUsd(expected.interestSaved!));
+  });
+
+  // A card whose minimum does not cover its own interest never clears, so
+  // "just the minimums" is not a real outcome to measure against. Measured
+  // off the simulator's 600-month ceiling instead, this exact debt claimed
+  // "$16,143,991 saved" and "47 yr 9 mo saved" on the two headline tiles.
+  it("shows no saving figures when paying the minimums never clears the debt", () => {
+    const STUCK = {
+      id: "l9",
+      name: "Rewards card",
+      balance: 8_000,
+      annualRate: 0.1999,
+      minimumPayment: 120,
+      liabilityType: "credit_card",
+      rateFromApr: false,
+    };
+    const { container } = render(<DebtPaydownWorkspace dto={dto({ debts: [STUCK] })} />);
+    fireEvent.change(screen.getByLabelText("Extra payment each month"), {
+      target: { value: "250" },
+    });
+
+    // The plan itself does pay off, so that tile still carries a real date.
+    expect(container.textContent).toMatch(/Debt-free by/i);
+    expect(container.textContent).not.toMatch(/Interest saved/i);
+    expect(container.textContent).not.toMatch(/Time saved/i);
+    expect(container.textContent).toMatch(/no .before. figure to measure your plan against/i);
+    // The specific fabrications this replaced.
+    expect(container.textContent).not.toMatch(/\$16,1\d\d,\d\d\d/);
+    expect(container.textContent).not.toMatch(/47 yr/);
   });
 
   // Every included debt at (or already near) a zero balance leaves the chart

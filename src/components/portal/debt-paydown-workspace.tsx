@@ -403,8 +403,27 @@ export function DebtPaydownWorkspace({
         <>
           <div className="grid gap-4 sm:grid-cols-3">
             <Stat label="Debt-free by" value={monthName(comparison.debtFreeMonth)} />
-            <Stat label="Interest saved" value={fmtUsd(comparison.interestSaved)} />
-            <Stat label="Time saved" value={yearsAndMonths(comparison.monthsSaved)} />
+            {/* Both saving figures are measured against "just the minimums".
+                When that reference never ends, they are measured against the
+                simulator's own ceiling instead — which is how an $8,000 card
+                came to claim $16,143,991 saved. Say what is true instead. */}
+            {comparison.interestSaved === null || comparison.monthsSaved === null ? (
+              <div className="card p-5 sm:col-span-2">
+                <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3">
+                  Against paying just the minimums
+                </div>
+                <p className="mt-1.5 max-w-prose text-[14px] leading-relaxed text-ink-2">
+                  Paying only the minimums, at least one of these debts still
+                  isn&rsquo;t cleared fifty years from now — so there&rsquo;s no
+                  &ldquo;before&rdquo; figure to measure your plan against.
+                </p>
+              </div>
+            ) : (
+              <>
+                <Stat label="Interest saved" value={fmtUsd(comparison.interestSaved)} />
+                <Stat label="Time saved" value={yearsAndMonths(comparison.monthsSaved)} />
+              </>
+            )}
           </div>
 
           <section className="card p-5">

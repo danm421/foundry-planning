@@ -264,10 +264,16 @@ export interface PaydownComparison {
   /** Every minimum paid separately: no extra, no rolling. */
   baseline: PaydownRun;
   plan: PaydownRun;
-  /** baseline.totalInterest − plan.totalInterest. */
-  interestSaved: number;
-  /** baseline.monthsToDebtFree − plan.monthsToDebtFree. */
-  monthsSaved: number;
+  /**
+   * baseline.totalInterest − plan.totalInterest, or null when the baseline
+   * itself never pays off. A baseline that stalls stops at MAX_PAYDOWN_MONTHS
+   * having accrued fifty years of interest on a balance that never fell, so
+   * the difference is a measure of the ceiling, not of the plan.
+   */
+  interestSaved: number | null;
+  /** baseline.monthsToDebtFree − plan.monthsToDebtFree, null on the same
+   * condition and for the same reason. */
+  monthsSaved: number | null;
   /** "YYYY-MM" the last dollar is paid under the plan, or null if it never is. */
   debtFreeMonth: string | null;
 }
@@ -302,11 +308,19 @@ export function comparePaydown(
 ): PaydownComparison {
   const baseline = simulatePaydown(debts, { ...opts, extraMonthly: 0, roll: false });
   const plan = simulatePaydown(debts, { ...opts, roll: true });
+  // Whatever the plan is compared AGAINST has to be a real outcome. When the
+  // minimums do not cover their own interest — an $8,000 card at 19.99% with
+  // the bank's $120 minimum, the commonest reason anyone opens this screen —
+  // the baseline just runs to MAX_PAYDOWN_MONTHS, and the difference reads as
+  // "$16,143,991 saved" and "47 yr 9 mo saved" on the two headline tiles.
+  // Null instead, so the caller has to say something true. Same reasoning as
+  // `debtFreeMonth` below, for the other side of the comparison.
+  const comparable = !baseline.neverPaysOff;
   return {
     baseline,
     plan,
-    interestSaved: baseline.totalInterest - plan.totalInterest,
-    monthsSaved: baseline.monthsToDebtFree - plan.monthsToDebtFree,
+    interestSaved: comparable ? baseline.totalInterest - plan.totalInterest : null,
+    monthsSaved: comparable ? baseline.monthsToDebtFree - plan.monthsToDebtFree : null,
     // A plan that never pays off has no real date — MAX_PAYDOWN_MONTHS
     // rendered through monthLabel would read as a confident date ~50 years
     // out, on the same screen that names the debt as never clearing.

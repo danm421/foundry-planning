@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { calcPayment } from "@/lib/loan-math";
 import {
+  comparePaydown,
   simulatePaydown,
   MAX_PAYDOWN_MONTHS,
   type PaydownDebt,
@@ -199,5 +200,40 @@ describe("simulatePaydown — nothing to pay down", () => {
     expect(run.monthsToDebtFree).toBe(0);
     expect(run.neverPaysOff).toBe(false);
     expect(run.yearly).toEqual([]);
+  });
+});
+
+describe("comparePaydown — when the minimums alone never clear the debt", () => {
+  // The single most ordinary reason someone opens a debt paydown calculator:
+  // a card whose minimum payment does not cover its own interest. $8,000 at
+  // 19.99% costs $133.27 a month in interest against a $120 minimum, so the
+  // balance never falls and the baseline runs to the 600-month ceiling.
+  const STUCK: PaydownDebt[] = [
+    { id: "c1", name: "Rewards card", balance: 8_000, annualRate: 0.1999, minimumPayment: 120 },
+  ];
+
+  it("still answers when the plan itself pays off", () => {
+    const c = comparePaydown(STUCK, { ...START, strategy: "avalanche", extraMonthly: 250 });
+    expect(c.baseline.neverPaysOff).toBe(true);
+    expect(c.plan.neverPaysOff).toBe(false);
+    expect(c.debtFreeMonth).not.toBeNull();
+  });
+
+  it("reports no saving figures, rather than ones measured off the 600-month ceiling", () => {
+    const c = comparePaydown(STUCK, { ...START, strategy: "avalanche", extraMonthly: 250 });
+    // Measured against the ceiling these read $16,145,988 saved and 47 years
+    // saved — figures the app cannot stand behind, on its two headline tiles.
+    expect(c.interestSaved).toBeNull();
+    expect(c.monthsSaved).toBeNull();
+  });
+
+  it("still reports real figures when the baseline does pay off", () => {
+    const ok: PaydownDebt[] = [
+      { id: "a1", name: "Auto", balance: 18_400, annualRate: 0.059, minimumPayment: 415 },
+    ];
+    const c = comparePaydown(ok, { ...START, strategy: "avalanche", extraMonthly: 200 });
+    expect(c.baseline.neverPaysOff).toBe(false);
+    expect(c.interestSaved).toBeGreaterThan(0);
+    expect(c.monthsSaved).toBeGreaterThan(0);
   });
 });
