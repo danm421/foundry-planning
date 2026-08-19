@@ -215,8 +215,12 @@ export async function requireClientPortalEntitlement(firmId: string): Promise<vo
  * there is no caller whose overrides could apply — the rule names the
  * household's owning advisor (`clients.advisor_id`) instead.
  *
- * Takes no session: the caller has already resolved the binding. Fails closed
- * on a blank advisor, matching the `firmId` guard in `requireClientPortalAccess`.
+ * Takes no CALLER identity — the advisor is named explicitly, because the
+ * session belongs to the client, not to the user being decided about. It does
+ * still read the session underneath (`firmEntitlementsFor`'s own-org fast
+ * path), which simply never matches here: a portal client has no org. Fails
+ * closed on a blank advisor, matching the `firmId` guard in
+ * `requireClientPortalAccess`.
  */
 export async function requireClientPortalForAdvisor(
   firmId: string,

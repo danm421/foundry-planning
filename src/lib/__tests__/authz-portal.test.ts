@@ -102,13 +102,26 @@ describe("requireClientPortalAccess — client_portal entitlement gate", () => {
   });
 });
 
-const GRANT = [{ entitlement: "client_portal", mode: "grant" as const }];
-const REVOKE = [{ entitlement: "client_portal", mode: "revoke" as const }];
+type Override = { entitlement: string; mode: "grant" | "revoke" };
+const GRANT: Override[] = [{ entitlement: "client_portal", mode: "grant" }];
+const REVOKE: Override[] = [{ entitlement: "client_portal", mode: "revoke" }];
+
+/**
+ * Hand the overrides to exactly ONE user id; every other id gets nothing and
+ * falls back to the firm. This is what lets an A1 test FAIL: a gate that
+ * resolved against the client's own id instead of their advisor's would see an
+ * empty list. `mockResolvedValue` answers for every id, so it proves nothing.
+ */
+function overridesForOnly(clerkUserId: string, rows: Override[]) {
+  getActiveUserOverridesMock.mockImplementation(async (_f: string, u: string) =>
+    u === clerkUserId ? rows : [],
+  );
+}
 
 describe("requireClientPortalAccess — A1: the client follows their own advisor", () => {
   it("lets a client in when the firm is OFF but their advisor is granted", async () => {
     bindPortalUser([]);
-    getActiveUserOverridesMock.mockResolvedValue(GRANT);
+    overridesForOnly("u_advisor", GRANT);
     await expect(requireClientPortalAccess()).resolves.toEqual({
       clientId: "client-1",
       clerkUserId: "u_client",
@@ -117,15 +130,13 @@ describe("requireClientPortalAccess — A1: the client follows their own advisor
 
   it("locks a client out when the firm is ON but their advisor is revoked", async () => {
     bindPortalUser(["client_portal"]);
-    getActiveUserOverridesMock.mockResolvedValue(REVOKE);
+    overridesForOnly("u_advisor", REVOKE);
     await expect(requireClientPortalAccess()).rejects.toThrow(ForbiddenError);
   });
 
   it("resolves against the CLIENT'S advisor, not the client's own user id", async () => {
     bindPortalUser([], "u_advisor");
-    getActiveUserOverridesMock.mockImplementation(async (_f: string, u: string) =>
-      u === "u_advisor" ? GRANT : [],
-    );
+    overridesForOnly("u_advisor", GRANT);
     await expect(requireClientPortalAccess()).resolves.toMatchObject({
       clientId: "client-1",
     });
