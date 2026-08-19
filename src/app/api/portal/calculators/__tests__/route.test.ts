@@ -100,6 +100,14 @@ describe("GET /api/portal/calculators/[key]", () => {
     expect((await res.json()).state.strategy).toBe("avalanche");
   });
 
+  it("hands back the saved setup when it validates", async () => {
+    selectRows = [{ state: VALID_STATE }];
+    const res = await GET(new Request("http://localhost"), params("debt-paydown"));
+    const { state } = await res.json();
+    expect(state.strategy).toBe("snowball");
+    expect(state.extraMonthly).toBe(300);
+  });
+
   it("403s when the advisor has switched Calculators off", async () => {
     requirePortalFeatureMock.mockRejectedValue(new ForbiddenError("not enabled"));
     const res = await GET(new Request("http://localhost"), params("debt-paydown"));
