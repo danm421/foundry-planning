@@ -34,6 +34,7 @@ vi.mock("@/db", () => ({
             portalInvestmentsEnabled: true,
             portalBudgetEnabled: true,
             portalDocumentsEnabled: documentsEnabled,
+            portalCalculatorsEnabled: true,
           },
         ]);
       return chain;
@@ -52,10 +53,14 @@ vi.mock("@/components/portal/portal-documents-screen", () => ({
 vi.mock("@/components/portal/budget-tabs", () => ({
   default: () => <div data-testid="budget-tabs" />,
 }));
+vi.mock("@/components/portal/calculators-screen", () => ({
+  CalculatorsScreen: () => <div data-testid="screen-calculators" />,
+}));
 
 import InvestmentsPage from "../investments/page";
 import DocumentsPage from "../documents/page";
 import BudgetLayout from "../budget/layout";
+import CalculatorsPage from "../calculators/page";
 
 beforeEach(() => {
   featureEnabledMock.mockReset();
@@ -89,6 +94,14 @@ describe("a switched-off portal section", () => {
     expect(container.querySelector("[data-testid='budget-tabs']")).toBeNull();
     expect(container.querySelector("[data-testid='budget-child']")).toBeNull();
   });
+
+  it("tells the client instead of rendering Calculators", async () => {
+    featureEnabledMock.mockResolvedValue(false);
+    const { container } = render(await CalculatorsPage());
+    expect(container.textContent).toContain("Not part of your portal");
+    expect(container.textContent).toContain("Calculators");
+    expect(container.querySelector("[data-testid='screen-calculators']")).toBeNull();
+  });
 });
 
 describe("a switched-on portal section", () => {
@@ -104,5 +117,8 @@ describe("a switched-on portal section", () => {
     );
     expect(budget.container.querySelector("[data-testid='budget-tabs']")).toBeTruthy();
     expect(budget.container.querySelector("[data-testid='budget-child']")).toBeTruthy();
+
+    const calc = render(await CalculatorsPage());
+    expect(calc.container.querySelector("[data-testid='screen-calculators']")).toBeTruthy();
   });
 });
