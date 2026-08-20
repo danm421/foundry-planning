@@ -185,6 +185,11 @@ function cappedRungLabels(rungs: Rung[], deliveredRates: number[]): string[] {
  * 8%, so "saving 11% instead of 5%" would state a rate this plan never
  * reaches — the same defect the two sheets were just reconciled to remove. The
  * dollars are measured off the bars either way, so only the naming changes.
+ *
+ * It carries no "in today's dollars" tail: the page subtitle and the chart's
+ * own subtitle each say it already, and "(today)" inside this sentence means
+ * the rate the client defers TODAY — the same word in two senses, one line
+ * apart, is worse than the third repetition it saved.
  */
 function takeawayFor(groups: LadderGroup[], rungs: Rung[]): string | null {
   const last = groups[groups.length - 1];
@@ -200,5 +205,5 @@ function takeawayFor(groups: LadderGroup[], rungs: Rung[]): string | null {
   // Exactly the legend's own text, so the client can find each bar.
   const named = (i: number) =>
     rungs[i].isCurrent ? `${rungs[i].label} (today)` : rungs[i].label;
-  return `At age ${last.age}, the ${named(topIdx)} bar is about ${fmtAxisUsd(gap)} ahead of ${named(baseIdx)} — in today's dollars.`;
+  return `At age ${last.age}, the ${named(topIdx)} bar is about ${fmtAxisUsd(gap)} ahead of ${named(baseIdx)}.`;
 }

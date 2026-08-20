@@ -24,6 +24,7 @@ import {
 import { savePlanToVault } from "@/lib/crm/vault-plans";
 import { recordAudit } from "@/lib/audit";
 import { unreviewedStoryChapters, InvalidStoryOptionsError } from "@/lib/presentations/story/export-gate";
+import { flatLadderWarning } from "@/lib/presentations/flat-ladder-gate";
 import {
   ClientNotFoundError,
   ProjectionInputError,
@@ -243,7 +244,19 @@ export async function POST(
     // a warning derived from it. Here the render is still ahead of us (in
     // `after()`, above), so the launcher can show the count before the file
     // exists.
-    return NextResponse.json({ runId, storyReview }, { status: 202 });
+    //
+    // The Early Years flat-chart note rides the same path for the same reason,
+    // and is computed HERE rather than beside `storyReview` above so the
+    // download branch never pays for an answer it has nowhere to put. It is
+    // advice, not a compliance control, so it files no audit — and a note about
+    // a deck must not be able to fail the deck, hence the catch.
+    const ladderWarning = await flatLadderWarning(id, firmId, parsed.data.pages).catch(
+      (err) => {
+        console.error("[presentations/runs] flat-chart note failed", err);
+        return null;
+      },
+    );
+    return NextResponse.json({ runId, storyReview, ladderWarning }, { status: 202 });
   } catch (err) {
     // Render-path errors only reach here via the synchronous download branch —
     // the async after() job catches its own and marks the run failed instead.

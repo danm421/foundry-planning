@@ -173,7 +173,7 @@ describe("buildEarlyYearsLadderData", () => {
     const d = buildEarlyYearsLadderData(ctx(THREE_RUNGS), OPTS);
     // 4_800_000/1.03^36 − 3_000_000/1.03^36 ≈ 621_058.
     expect(d.takeaway).toBe(
-      "At age 65, the Save 14% bar is about $621K ahead of Save 8% (today) — in today's dollars.",
+      "At age 65, the Save 14% bar is about $621K ahead of Save 8% (today).",
     );
   });
 

@@ -31,7 +31,7 @@ const base: EarlyYearsLadderPageData = {
   cappedRungLabels: [],
   emptyMessage: null,
   takeaway:
-    "At age 65, the Save 14% bar is about $621K ahead of Save 8% (today) — in today's dollars.",
+    "At age 65, the Save 14% bar is about $621K ahead of Save 8% (today).",
   tidbits: [
     {
       id: "compounding-runway",

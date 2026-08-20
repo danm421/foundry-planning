@@ -269,4 +269,42 @@ describe("PresentationsLauncher", () => {
     await screen.findByText(/Generating your presentation/i);
     await screen.findByText(/8 of 12 Plan Story chapters haven't been reviewed yet\./i);
   });
+
+  // The Early Years flat-chart note rides the SAME 202 and lands in the same
+  // status region — one warning surface, not a second one per feature.
+  it("surfaces the flat-chart note in the run-progress notice", async () => {
+    const NOTE = "“What Saving More Is Worth” will read nearly flat for this plan: no living expense is set to spend whatever’s left each year.";
+    global.fetch = vi.fn(async (url: string) => {
+      if (String(url).includes("/presentations/runs") && !String(url).includes("download=1")) {
+        return new Response(JSON.stringify({ runId: "r1", ladderWarning: NOTE }), { status: 202 });
+      }
+      if (String(url).includes("/generation-runs")) {
+        return new Response(JSON.stringify({ householdId: "hh-test", runs: [] }), { status: 200 });
+      }
+      if (url === "/api/presentation-templates") {
+        return new Response(
+          JSON.stringify({ shared: [], mine: [], builtIn: [], builtInHidden: [] }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }) as never;
+
+    render(
+      <PresentationsLauncher
+        clientId="c1"
+        currentUserId="me"
+        clientLastName="Sample"
+        householdId="hh-test"
+        scenarios={[]}
+        snapshots={[]}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
+        investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Generate PDF/i }));
+    // Soft, like the story gate beside it: the export still ran.
+    await screen.findByText(/Generating your presentation/i);
+    await screen.findByText(/will read nearly flat for this plan/i);
+  });
 });

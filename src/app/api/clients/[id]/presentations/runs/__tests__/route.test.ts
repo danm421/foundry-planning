@@ -8,7 +8,7 @@ import { renderPresentationPdf } from "@/components/presentations/render-present
 
 // Capture after() callbacks so the test can await the background work
 // deterministically instead of racing the real DB.
-const { afterTasks, unreviewed } = vi.hoisted(() => ({
+const { afterTasks, unreviewed, flatLadder } = vi.hoisted(() => ({
   afterTasks: [] as Array<Promise<unknown>>,
   // The soft gate's one DB read, mocked here rather than seeded through real
   // `plan_story_chapters` rows — this suite is about the ROUTE's wiring
@@ -16,6 +16,10 @@ const { afterTasks, unreviewed } = vi.hoisted(() => ({
   // counting, which `export-gate.test.ts` already covers against the real
   // options schema (`planStoryOptionsSchema`) and `printedChapters`.
   unreviewed: vi.fn(),
+  // The Early Years flat-chart note's one storage read. Mocked for the same
+  // reason: this suite is about the ROUTE's wiring, and `flat-ladder-gate.test.ts`
+  // covers the decision itself.
+  flatLadder: vi.fn(),
 }));
 
 vi.mock("@/lib/db-helpers", async (importOriginal) => {
@@ -85,6 +89,10 @@ vi.mock("@/lib/presentations/story/export-gate", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/presentations/story/export-gate")>();
   return { ...actual, unreviewedStoryChapters: unreviewed };
 });
+vi.mock("@/lib/presentations/flat-ladder-gate", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/presentations/flat-ladder-gate")>();
+  return { ...actual, flatLadderWarning: flatLadder };
+});
 
 import { POST } from "../route";
 
@@ -115,6 +123,10 @@ beforeEach(async () => {
   // never mentions "planStory".
   unreviewed.mockReset();
   unreviewed.mockResolvedValue([]);
+  // Default: no ladder page in the deck, so the note has nothing to say —
+  // what the real gate returns for a deck that never mentions the chart.
+  flatLadder.mockReset();
+  flatLadder.mockResolvedValue(null);
 });
 
 function req(body: unknown, query = "") {
@@ -286,5 +298,54 @@ describe("POST /presentations/runs — the soft gate", () => {
     expect(recordAudit).not.toHaveBeenCalledWith(
       expect.objectContaining({ action: "plan_story.exported_unreviewed" }),
     );
+  });
+
+  // ── The Early Years flat-chart note ──────────────────────────────────────
+  //
+  // Same surface as the story gate's warning and for the same reason: the 202
+  // is the one response that both knows the answer and lands before the file
+  // does. Unlike that gate this one files no audit — it is advice, not a
+  // compliance control.
+  describe("flat-chart note", () => {
+    const ladderBody = {
+      scenarioId: null,
+      pages: [{ pageId: "earlyYearsLadder", options: {} }],
+    };
+    const NOTE = "the bars will read flat";
+
+    it("puts the note on the JSON response, so the launcher can show it before the file exists", async () => {
+      flatLadder.mockResolvedValue(NOTE);
+      const res = await POST(req(ladderBody), { params: Promise.resolve({ id: clientId }) });
+      const json = await res.json();
+      expect(json.ladderWarning).toBe(NOTE);
+    });
+
+    it("says nothing when the household already absorbs its surplus", async () => {
+      flatLadder.mockResolvedValue(null);
+      const res = await POST(req(ladderBody), { params: Promise.resolve({ id: clientId }) });
+      const json = await res.json();
+      // Positive control: the export still ran — proves this is "the note
+      // stayed silent", not "the request never got here".
+      expect(json.runId).toBeTruthy();
+      expect(json.ladderWarning).toBeNull();
+    });
+
+    // A cosmetic note must never be able to fail the deck it is about.
+    it("still exports when the note's own read throws", async () => {
+      flatLadder.mockRejectedValue(new Error("db down"));
+      const res = await POST(req(ladderBody), { params: Promise.resolve({ id: clientId }) });
+      expect(res.status).toBe(202);
+      expect((await res.json()).ladderWarning).toBeNull();
+    });
+
+    // The download branch's response IS the PDF — already in the advisor's
+    // hands — so it must not pay for an answer it has nowhere to put.
+    it("costs the download=1 branch nothing", async () => {
+      const res = await POST(req(ladderBody, "?download=1"), {
+        params: Promise.resolve({ id: clientId }),
+      });
+      expect(res.status).toBe(200);
+      expect(flatLadder).not.toHaveBeenCalled();
+    });
   });
 });
