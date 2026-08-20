@@ -90,10 +90,33 @@ describe("Your Early Years built-in template", () => {
     expect(t().name).toBe("Your Early Years");
   });
 
-  it("opens on the cover and contents, then the two Early Years sheets", () => {
+  it("opens on the cover and contents, then runs the six Early Years sheets in order", () => {
     expect(t().pages.map((p) => p.pageId)).toEqual([
-      "cover", "toc", "earlyYearsStanding", "earlyYearsLadder",
+      "cover",
+      "toc",
+      "earlyYearsStanding",
+      "earlyYearsHumanCapital",
+      "earlyYearsLadder",
+      "earlyYearsWaiting",
+      "earlyYearsRoth",
+      "earlyYearsDebtOrInvest",
     ]);
+  });
+
+  it("leaves the optional notes page out — the advisor adds it deliberately", () => {
+    expect(t().pages.map((p) => p.pageId)).not.toContain("earlyYearsTidbits");
+  });
+
+  it("ships every tidbit slot empty, so no note is chosen for the advisor", () => {
+    const withSlots = t().pages.filter(
+      (p) => "tidbits" in (p.options as Record<string, unknown>),
+    );
+    // Guards the claim the template's own comment makes. Six of the eight sheets
+    // carry the slot; cover and toc do not.
+    expect(withSlots).toHaveLength(6);
+    for (const p of withSlots) {
+      expect((p.options as { tidbits: unknown[] }).tidbits).toEqual([]);
+    }
   });
 
   it("names the deck on the cover", () => {
