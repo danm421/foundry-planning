@@ -2,8 +2,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { SolverQuickAddCashflow } from "../solver-quick-add-cashflow";
+import type { CashflowFormContext } from "../solver-cashflow-edit-dialog";
 import type { ClientMilestones } from "@/lib/milestones";
-import type { ClientData, Income, Expense } from "@/engine/types";
 
 const milestones: ClientMilestones = {
   planStart: 2026,
@@ -12,38 +12,21 @@ const milestones: ClientMilestones = {
   clientEnd: 2061,
 };
 
-const owners = [
-  { value: "client" as const, label: "John" },
-  { value: "spouse" as const, label: "Jane" },
-  { value: "joint" as const, label: "Joint" },
-];
+const ctx: CashflowFormContext = {
+  owners: [
+    { value: "client", label: "John" },
+    { value: "spouse", label: "Jane" },
+    { value: "joint", label: "Joint" },
+  ],
+  milestones,
+  clientFirstName: "John",
+  spouseFirstName: "Jane",
+  resolvedInflationRate: 0.03,
+};
 
-function tree(incomes: Income[] = [], expenses: Expense[] = []): ClientData {
-  return {
-    client: {} as never,
-    accounts: [],
-    savingsRules: [],
-    incomes,
-    expenses,
-    planSettings: { planStartYear: 2026, planEndYear: 2061, inflationRate: 0.03 },
-    withdrawalStrategy: [],
-  } as unknown as ClientData;
-}
-
-function renderPanel(opts: { working?: ClientData; source?: ClientData } = {}) {
+function renderPanel() {
   const onChange = vi.fn();
-  render(
-    <SolverQuickAddCashflow
-      sourceClientData={opts.source ?? tree()}
-      workingClientData={opts.working ?? tree()}
-      owners={owners}
-      milestones={milestones}
-      clientFirstName="John"
-      spouseFirstName="Jane"
-      resolvedInflationRate={0.03}
-      onChange={onChange}
-    />,
-  );
+  render(<SolverQuickAddCashflow ctx={ctx} onChange={onChange} />);
   return onChange;
 }
 
@@ -82,6 +65,22 @@ describe("SolverQuickAddCashflow — adding an income", () => {
     expect(m.value.endYearRef).toBe("plan_end");
     expect(m.value.startYear).toBe(2026);
     expect(m.value.endYear).toBe(2061);
+    // Untouched, the treatment select still hands the engine a taxable stream.
+    expect(m.value.taxType).toBe("ordinary_income");
+  });
+
+  it("writes the chosen tax treatment onto the income", () => {
+    const onChange = renderPanel();
+    openDialog();
+
+    fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: "Muni interest" } });
+    fireEvent.change(screen.getByLabelText(/annual amount/i), { target: { value: "8000" } });
+    fireEvent.change(screen.getByLabelText(/tax treatment/i), {
+      target: { value: "tax_exempt" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^add$/i }));
+
+    expect(onChange.mock.calls[0][0].value.taxType).toBe("tax_exempt");
   });
 
   it("writes a custom growth rate when the advisor switches off inflation", () => {
@@ -112,12 +111,15 @@ describe("SolverQuickAddCashflow — adding an income", () => {
 });
 
 describe("SolverQuickAddCashflow — adding an expense", () => {
-  it("emits an expense-upsert and hides the Owner field (expenses have no household owner)", () => {
+  it("emits an expense-upsert and hides the income-only fields", () => {
     const onChange = renderPanel();
     openDialog();
     fireEvent.click(screen.getByRole("button", { name: /^expense$/i }));
 
+    // An Expense carries no household owner anywhere in the app, and no tax
+    // treatment — both are income-only concepts.
     expect(screen.queryByLabelText(/^owner$/i)).toBeNull();
+    expect(screen.queryByLabelText(/tax treatment/i)).toBeNull();
 
     fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: "Travel" } });
     fireEvent.change(screen.getByLabelText(/annual amount/i), { target: { value: "12000" } });
@@ -130,75 +132,5 @@ describe("SolverQuickAddCashflow — adding an expense", () => {
     // NOT "living" — a living row starting after plan start is swept into the
     // living-expense-scale solve lever, which the advisor never asked for.
     expect(m.value.type).toBe("other");
-  });
-});
-
-describe("SolverQuickAddCashflow — the added-rows list", () => {
-  const added: Income = {
-    id: "inc-new",
-    type: "other",
-    name: "Rental income",
-    annualAmount: 24_000,
-    startYear: 2026,
-    endYear: 2061,
-    growthRate: 0.03,
-    growthSource: "inflation",
-    owner: "client",
-  };
-
-  it("lists a working row the source tree does not have", () => {
-    renderPanel({ working: tree([added]) });
-    expect(screen.getByText("Rental income")).toBeInTheDocument();
-    expect(screen.getByText("$24,000")).toBeInTheDocument();
-  });
-
-  it("leaves rows the source tree already had alone — no delete affordance for them", () => {
-    renderPanel({ source: tree([added]), working: tree([added]) });
-    expect(screen.queryByText("Rental income")).toBeNull();
-  });
-
-  it("ignores a solver-added row this popup could not have minted", () => {
-    // A max-spending solve synthesizes a "living" retirement expense and
-    // SolverEducationSection adds "education" goals — both land in the working
-    // tree through the same expense-upsert this popup uses.
-    const synthesized: Expense = {
-      id: "exp-living",
-      type: "living",
-      name: "Retirement Living Expenses",
-      annualAmount: 90_000,
-      startYear: 2045,
-      endYear: 2061,
-      growthRate: 0.03,
-    };
-    const goal: Expense = { ...synthesized, id: "exp-goal", type: "education", name: "College" };
-    renderPanel({ working: tree([], [synthesized, goal]) });
-
-    expect(screen.queryByText("Retirement Living Expenses")).toBeNull();
-    expect(screen.queryByText("College")).toBeNull();
-  });
-
-  it("removes an added row with a null upsert", () => {
-    const onChange = renderPanel({ working: tree([added]) });
-    fireEvent.click(screen.getByRole("button", { name: /remove rental income/i }));
-
-    expect(onChange).toHaveBeenCalledWith({
-      kind: "income-upsert",
-      id: "inc-new",
-      value: null,
-    });
-  });
-
-  it("re-edits an added row as a FULL upsert on the same id, not a field lever", () => {
-    const onChange = renderPanel({ working: tree([added]) });
-    fireEvent.click(screen.getByRole("button", { name: /edit rental income/i }));
-    fireEvent.change(screen.getByLabelText(/annual amount/i), { target: { value: "30000" } });
-    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
-
-    const m = onChange.mock.calls[0][0];
-    // A field lever (income-annual-amount) would be silently dropped by
-    // save-to-base's hasIncome() guard, since base has no such row.
-    expect(m.kind).toBe("income-upsert");
-    expect(m.id).toBe("inc-new");
-    expect(m.value.annualAmount).toBe(30000);
   });
 });
