@@ -4,7 +4,7 @@ import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { CurrencyInput } from "@/components/portal/currency-input";
 import { portalTabColors } from "@/components/portal/portal-tab-strip";
 import { SavingsGoalChart } from "@/components/portal/savings-goal-chart";
-import { fmtUsd, fmtMonthLabel } from "@/lib/portal/format";
+import { fmtUsd, fmtMonthLabel, parseAmount } from "@/lib/portal/format";
 import { monthLabel } from "@/lib/calculators/debt-paydown";
 import {
   monthsToJanuary,
@@ -53,13 +53,6 @@ const RETURNS: { label: string; rate: number; help: string }[] = [
 
 const SAVE_FAILED_NOTE =
   "We couldn’t save your setup just now — the numbers above still work.";
-
-/** Blank or unparseable → 0, matching how a cleared field means "no figure
- * yet" rather than a validation error while the client is mid-edit. */
-function parseAmount(raw: string): number {
-  const n = Number(raw);
-  return raw.trim() === "" || !Number.isFinite(n) ? 0 : n;
-}
 
 function Stat({ label, value }: { label: string; value: string }): ReactElement {
   return (
@@ -186,10 +179,12 @@ export function SavingsGoalWorkspace({
     [shared, state.mode, state.monthlyContribution, required],
   );
 
-  const goalLabel = fmtMonthLabel(monthLabel(startYear, startMonth, Math.max(1, months + 1)));
+  const goalLabel = fmtMonthLabel(monthLabel(startYear, startMonth, months + 1));
   const nothingEntered = state.targetToday <= 0;
   const dueNow = months <= 0;
-  const alreadyThere = !nothingEntered && !dueNow && required === 0;
+  /** There is a horizon AND a cost, so a monthly figure means something. */
+  const projecting = !nothingEntered && !dueNow;
+  const alreadyThere = projecting && required === 0;
 
   function setPreset(label: string, yearsOut: number): void {
     patch({ name: label, targetYear: startYear + yearsOut });
@@ -242,7 +237,7 @@ export function SavingsGoalWorkspace({
         )}
       </section>
 
-      {!nothingEntered && !dueNow && (
+      {projecting && (
         <>
           <div className="grid gap-4 sm:grid-cols-3">
             <Stat label="You'd put in" value={fmtUsd(run.totalContributed)} />
@@ -313,7 +308,7 @@ export function SavingsGoalWorkspace({
             </select>
           </div>
 
-          {!nothingEntered && !dueNow && (
+          {projecting && (
             <p className="text-[12px] leading-relaxed text-ink-3">
               About <span className="tabular">{fmtUsd(run.targetAtGoal)}</span> by then,
               at your plan&rsquo;s{" "}
@@ -395,7 +390,7 @@ export function SavingsGoalWorkspace({
             a month
           </label>
 
-          {state.mode === "contribute" && !nothingEntered && !dueNow && (
+          {state.mode === "contribute" && projecting && (
             <p className="max-w-prose text-[13px] leading-relaxed text-ink-2">
               <span className="tabular font-medium text-ink">
                 {Math.round(run.percentFunded * 100)}%

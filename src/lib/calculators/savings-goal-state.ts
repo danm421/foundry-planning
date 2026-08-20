@@ -17,6 +17,7 @@
  * Shared by the route handler and the client workspace so the browser
  * enforces the same limits it will be judged by.
  */
+import { num, isPlainObject } from "@/lib/calculators/state-primitives";
 
 export interface SavingsGoalState {
   v: 1;
@@ -71,17 +72,14 @@ export type SavingsGoalStateResult =
   | { ok: true; state: SavingsGoalState }
   | { ok: false; error: string };
 
-/** A finite number in [0, max]. Anything else — null, an object, "" — is null. */
-function num(raw: unknown, max: number): number | null {
-  if (typeof raw !== "number" && typeof raw !== "string") return null;
-  if (typeof raw === "string" && raw.trim() === "") return null;
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n < 0 || n > max) return null;
-  return n;
-}
-
-function isPlainObject(raw: unknown): raw is Record<string, unknown> {
-  return raw != null && typeof raw === "object" && !Array.isArray(raw);
+/**
+ * A field the client may simply not have filled in yet. Missing or cleared
+ * reads as 0 — "no figure yet" is not a validation error while they are
+ * mid-edit — but anything actually present must still be a number in range,
+ * and null still means reject.
+ */
+function optionalNum(raw: unknown, max: number): number | null {
+  return raw == null || raw === "" ? 0 : num(raw, max);
 }
 
 export function validateSavingsGoalState(raw: unknown): SavingsGoalStateResult {
@@ -91,7 +89,7 @@ export function validateSavingsGoalState(raw: unknown): SavingsGoalStateResult {
     typeof raw.name === "string" ? raw.name.trim().slice(0, MAX_NAME_LENGTH) : "";
   if (name === "") return { ok: false, error: "Give your goal a name." };
 
-  const targetToday = raw.targetToday == null || raw.targetToday === "" ? 0 : num(raw.targetToday, MAX_AMOUNT);
+  const targetToday = optionalNum(raw.targetToday, MAX_AMOUNT);
   if (targetToday === null) {
     return { ok: false, error: "Enter what the goal costs as a number." };
   }
@@ -106,23 +104,19 @@ export function validateSavingsGoalState(raw: unknown): SavingsGoalStateResult {
   }
   const targetYear = raw.targetYear;
 
-  const currentSavings = raw.currentSavings == null || raw.currentSavings === "" ? 0 : num(raw.currentSavings, MAX_AMOUNT);
+  const currentSavings = optionalNum(raw.currentSavings, MAX_AMOUNT);
   if (currentSavings === null) {
     return { ok: false, error: "Enter what you have saved as a number." };
   }
 
-  const annualReturn =
-    raw.annualReturn == null || raw.annualReturn === ""
-      ? 0
-      : num(raw.annualReturn, MAX_RETURN);
+  const annualReturn = optionalNum(raw.annualReturn, MAX_RETURN);
   if (annualReturn === null) {
     return { ok: false, error: "Pick an expected return between 0% and 50%." };
   }
 
   const mode = raw.mode === "contribute" ? "contribute" : "solve";
 
-  const monthlyContribution =
-    raw.monthlyContribution == null || raw.monthlyContribution === "" ? 0 : num(raw.monthlyContribution, MAX_AMOUNT);
+  const monthlyContribution = optionalNum(raw.monthlyContribution, MAX_AMOUNT);
   if (monthlyContribution === null) {
     return { ok: false, error: "Enter your monthly saving as a number." };
   }

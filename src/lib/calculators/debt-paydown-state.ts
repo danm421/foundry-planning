@@ -14,6 +14,7 @@
  * the same limits it will be judged by.
  */
 import type { PaydownStrategy } from "@/lib/calculators/debt-paydown";
+import { num, isPlainObject } from "@/lib/calculators/state-primitives";
 
 export interface ManualDebt {
   /**
@@ -115,19 +116,6 @@ export type DebtPaydownStateResult =
 
 const STRATEGIES: readonly PaydownStrategy[] = ["avalanche", "snowball", "equally"];
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
-
-/** A finite number in [0, max]. Anything else — null, an object, "" — is null. */
-function num(raw: unknown, max: number): number | null {
-  if (typeof raw !== "number" && typeof raw !== "string") return null;
-  if (typeof raw === "string" && raw.trim() === "") return null;
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n < 0 || n > max) return null;
-  return n;
-}
-
-function isPlainObject(raw: unknown): raw is Record<string, unknown> {
-  return raw != null && typeof raw === "object" && !Array.isArray(raw);
-}
 
 function validId(raw: unknown): raw is string {
   return typeof raw === "string" && raw.length > 0 && raw.length <= MAX_ID_LENGTH;
