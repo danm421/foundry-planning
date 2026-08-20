@@ -3,7 +3,6 @@ import {
   projectSavings,
   solveMonthlyForGoal,
   monthsToJanuary,
-  MAX_SAVINGS_MONTHS,
   type SavingsGoalInput,
 } from "../savings-goal";
 
@@ -122,12 +121,6 @@ describe("projectSavings", () => {
     expect(run.monthsToGoal! - frozenCrossing).toBe(98);
   });
 
-  it("searches past the goal month, so falling short still yields a date", () => {
-    const run = projectSavings(withPmt(200));
-    // 266 is well beyond the 113-month horizon the series covers.
-    expect(run.monthsToGoal).toBeGreaterThan(PINNED.months);
-  });
-
   it("returns null and terminates when the goal is never reached", () => {
     const run = projectSavings(withPmt(0, { currentSavings: 0, annualReturn: 0 }));
     expect(run.monthsToGoal).toBeNull();
@@ -152,7 +145,26 @@ describe("projectSavings", () => {
     expect(run.shortfall).toBe(0);
   });
 
-  it("caps the crossing search at the fifty-year ceiling", () => {
-    expect(MAX_SAVINGS_MONTHS).toBe(600);
+  // The fifty-year ceiling from BOTH sides, on a straight line so the crossing
+  // month is arithmetic rather than a compounding artefact: at $1/mo from zero
+  // the balance meets a flat goal on the month whose number equals the goal.
+  // The months are written as LITERALS on purpose — expressed in terms of
+  // MAX_SAVINGS_MONTHS the pair moves with the constant and cannot see it
+  // change, which is the very thing the test it replaced got wrong. A ceiling
+  // one month lower loses the 600 case; one month higher, or a search that
+  // never stops, turns the 601 case into a date.
+  it.each([
+    [600, 600],
+    [601, null],
+  ])("a goal costing $%i is reached at month %s", (targetToday, expected) => {
+    const run = projectSavings(
+      withPmt(1, {
+        targetToday,
+        currentSavings: 0,
+        annualReturn: 0,
+        inflationRate: 0,
+      }),
+    );
+    expect(run.monthsToGoal).toBe(expected);
   });
 });

@@ -2968,8 +2968,9 @@ export const liabilityOwners = pgTable(
  * section. A scratchpad, not plan data: nothing here reaches the projection,
  * and `portal_edit_enabled` deliberately does not gate writes to it.
  *
- * `state` is validated field by field before it is written — see
- * `@/lib/calculators/debt-paydown-state`.
+ * `state` is validated field by field before it is written, by the validator
+ * the route holds for that `calculator_key` — see
+ * `@/lib/calculators/debt-paydown-state` and `savings-goal-state`.
  */
 export const portalCalculatorStates = pgTable("portal_calculator_states", {
   id: uuid("id").defaultRandom().primaryKey(),

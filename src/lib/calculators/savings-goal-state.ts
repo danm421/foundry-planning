@@ -44,7 +44,7 @@ export const MAX_STATE_BYTES = 4 * 1024;
 
 /** How far out a fresh goal is pencilled in. */
 export const DEFAULT_YEARS_OUT = 5;
-/** Middle chip of the three on the screen. */
+/** Middle chip of the three on the screen — `RETURNS` imports it, so they cannot drift. */
 export const DEFAULT_ANNUAL_RETURN = 0.06;
 
 /**

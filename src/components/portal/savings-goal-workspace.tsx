@@ -14,6 +14,7 @@ import {
 } from "@/lib/calculators/savings-goal";
 import {
   validateSavingsGoalState,
+  DEFAULT_ANNUAL_RETURN,
   MAX_NAME_LENGTH,
   type SavingsGoalState,
 } from "@/lib/calculators/savings-goal-state";
@@ -37,7 +38,10 @@ const RETURNS: { label: string; rate: number; help: string }[] = [
   },
   {
     label: "Moderate",
-    rate: 0.06,
+    // The default a fresh goal starts on. Hardcoding it here instead would let
+    // the two drift, and a fresh goal matching NO chip renders all three
+    // unselected with nothing to say why.
+    rate: DEFAULT_ANNUAL_RETURN,
     help: "A mix of shares and bonds — the middle of the road.",
   },
   {
