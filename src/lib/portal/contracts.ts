@@ -350,8 +350,19 @@ export type GroupCell = {
   leaves: LeafCell[];
 };
 
+/**
+ * A category the client has taken out of the budget. Flattened on purpose: the
+ * Budget page shows one "Excluded from budget" section, so an excluded category
+ * carries its group's name rather than nesting under a group row.
+ */
+export type ExcludedCell = LeafCell & { groupName: string };
+
 export type BudgetSummary = {
   groups: GroupCell[];
+  /** Excluded categories, group order then category order. Never in `groups`. */
+  excluded: ExcludedCell[];
+  /** Spend in excluded categories. Deliberately NOT part of `totalSpent`. */
+  totalExcluded: number;
   totalBudget: number;
   totalSpent: number;
   totalRemaining: number;

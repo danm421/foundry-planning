@@ -130,6 +130,8 @@ beforeEach(() => {
     totalRemaining: 1683,
     incomeThisMonth: 9000,
     groups: [{ id: "cat1", name: "Food", color: "var(--data-blue)", actual: 382, budget: 1500 }],
+    excluded: [],
+    totalExcluded: 0,
   });
   loadRecurringsMock.mockReset();
   loadRecurringsMock.mockResolvedValue({ recurrings: [] });

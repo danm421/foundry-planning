@@ -201,3 +201,109 @@ it("omitting recurrings is backward-compatible", () => {
     .leaves.find((l) => l.id === "l-groceries")!;
   expect(groceries.actual).toBe(300);
 });
+
+// ── Excluded from budget ──────────────────────────────────────────────────────
+// A client can take a category out of the budget (reimbursed travel, a side
+// business). The spend is still real — it just must not reach any budget total.
+
+it("an excluded category leaves its group and lands in `excluded` with the group name", () => {
+  const s = computeBudgetSummary({
+    categories: cats.map((c) =>
+      c.id === "l-restaurants" ? { ...c, excludedFromBudget: true } : c,
+    ),
+    budgets: [{ categoryId: "l-groceries", monthlyAmount: 800 }],
+    transactions: [
+      { categoryId: "l-groceries", amount: 300, type: "expense" },
+      { categoryId: "l-restaurants", amount: 120, type: "expense" },
+    ],
+  });
+  const food = s.groups.find((g) => g.id === "g-food")!;
+  expect(food.leaves.map((l) => l.id)).toEqual(["l-groceries"]);
+  expect(food.actual).toBe(300); // the excluded 120 is NOT in the group rollup
+  expect(s.excluded.map((l) => [l.id, l.groupName, l.actual])).toEqual([
+    ["l-restaurants", "Food & Drink", 120],
+  ]);
+});
+
+it("excluded spend stays out of totalSpent and is reported as totalExcluded", () => {
+  const s = computeBudgetSummary({
+    categories: cats.map((c) =>
+      c.id === "l-restaurants" ? { ...c, excludedFromBudget: true } : c,
+    ),
+    budgets: [],
+    transactions: [
+      { categoryId: "l-groceries", amount: 300, type: "expense" },
+      { categoryId: "l-restaurants", amount: 120, type: "expense" },
+    ],
+  });
+  expect(s.totalSpent).toBe(300);
+  expect(s.totalExcluded).toBe(120);
+});
+
+it("an excluded category's own budget never reaches totalBudget", () => {
+  const s = computeBudgetSummary({
+    categories: cats.map((c) =>
+      c.id === "l-restaurants" ? { ...c, excludedFromBudget: true } : c,
+    ),
+    // A budget set BEFORE the category was excluded still sits in the table.
+    budgets: [
+      { categoryId: "l-groceries", monthlyAmount: 800 },
+      { categoryId: "l-restaurants", monthlyAmount: 200 },
+    ],
+    transactions: [],
+  });
+  expect(s.groups.find((g) => g.id === "g-food")!.budget).toBe(800);
+  expect(s.totalBudget).toBe(800);
+});
+
+it("excluding a GROUP excludes every category under it and drops the group", () => {
+  const s = computeBudgetSummary({
+    categories: cats.map((c) =>
+      c.id === "g-food" ? { ...c, excludedFromBudget: true } : c,
+    ),
+    budgets: [{ categoryId: "l-general", monthlyAmount: 150 }],
+    transactions: [
+      { categoryId: "l-groceries", amount: 300, type: "expense" },
+      { categoryId: "l-restaurants", amount: 120, type: "expense" },
+      { categoryId: "l-general", amount: 40, type: "expense" },
+    ],
+  });
+  expect(s.groups.map((g) => g.id)).toEqual(["g-shopping"]);
+  expect(s.excluded.map((l) => l.id)).toEqual(["l-groceries", "l-restaurants"]);
+  expect(s.totalSpent).toBe(40);
+  expect(s.totalExcluded).toBe(420);
+});
+
+it("a group whose every category is excluded drops out rather than showing an empty row", () => {
+  const s = computeBudgetSummary({
+    categories: cats.map((c) =>
+      c.parentId === "g-food" ? { ...c, excludedFromBudget: true } : c,
+    ),
+    budgets: [],
+    transactions: [{ categoryId: "l-groceries", amount: 300, type: "expense" }],
+  });
+  expect(s.groups.map((g) => g.id)).toEqual(["g-shopping"]); // no empty g-food
+  expect(s.excluded.map((l) => l.id)).toEqual(["l-groceries", "l-restaurants"]);
+});
+
+it("a group with no categories at all still shows (a freshly created group)", () => {
+  const s = computeBudgetSummary({
+    categories: [
+      ...cats,
+      { id: "g-new", parentId: null, name: "Side business", slug: null, color: "var(--data-teal)", kind: "group", sortOrder: 50 },
+    ],
+    budgets: [],
+    transactions: [],
+  });
+  expect(s.groups.map((g) => g.id)).toContain("g-new");
+});
+
+it("no excluded categories → empty `excluded` and a zero total", () => {
+  const s = computeBudgetSummary({
+    categories: cats,
+    budgets: [],
+    transactions: [{ categoryId: "l-groceries", amount: 300, type: "expense" }],
+  });
+  expect(s.excluded).toEqual([]);
+  expect(s.totalExcluded).toBe(0);
+});

@@ -1737,6 +1737,13 @@
       "when": 1787187407220,
       "tag": "0247_panoramic_juggernaut",
       "breakpoints": true
+    },
+    {
+      "idx": 248,
+      "version": "7",
+      "when": 1787235055414,
+      "tag": "0248_little_agent_brand",
+      "breakpoints": true
     }
   ]
 }

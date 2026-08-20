@@ -3,6 +3,7 @@
 import { useState, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
+import { FieldTooltip } from "@/components/forms/field-tooltip";
 
 const NEW_GROUP = "__new__";
 // Palette for a brand-new group (grey is the route's fallback default).
@@ -34,12 +35,14 @@ export function AddCategoryForm({
   const [name, setName] = useState("");
   const [groupId, setGroupId] = useState<string>(groups[0]?.id ?? NEW_GROUP);
   const [newGroupName, setNewGroupName] = useState("");
+  const [excluded, setExcluded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function reset(): void {
     setName("");
     setNewGroupName("");
+    setExcluded(false);
     setGroupId(groups[0]?.id ?? NEW_GROUP);
     setError(null);
     setOpen(false);
@@ -74,7 +77,14 @@ export function AddCategoryForm({
       let leafColor: string;
       if (creatingGroup) {
         const color = GROUP_COLORS[groups.length % GROUP_COLORS.length];
-        const g = await post({ name: newGroupName.trim(), kind: "group", color });
+        // A brand-new group carries the flag too: excluding the group is the
+        // whole-group switch, so later categories added to it inherit it.
+        const g = await post({
+          name: newGroupName.trim(),
+          kind: "group",
+          color,
+          excludedFromBudget: excluded,
+        });
         if (!g.ok || !g.id) {
           setError("Couldn't create the group.");
           return;
@@ -91,6 +101,7 @@ export function AddCategoryForm({
         kind: "category",
         parentId,
         color: leafColor,
+        excludedFromBudget: excluded,
       });
       if (!leaf.ok) {
         setError("Couldn't create the category.");
@@ -164,6 +175,18 @@ export function AddCategoryForm({
           className={fieldCls}
         />
       )}
+      <label className="flex items-center gap-2 text-[12px] text-ink-2">
+        <input
+          type="checkbox"
+          checked={excluded}
+          onChange={(e) => setExcluded(e.target.checked)}
+          className="h-3.5 w-3.5 accent-[var(--color-accent)]"
+        />
+        <span className="flex items-center gap-1.5">
+          Exclude from budget
+          <FieldTooltip text="Spending here still shows in your transactions. It just won't count toward any budget total — useful for reimbursed costs or a side business." />
+        </span>
+      </label>
       {error && <p className="text-[12px] text-crit">{error}</p>}
       <div className="flex items-center gap-2">
         <button

@@ -34,6 +34,7 @@ it("creates a category in an existing group with one POST (inheriting the group 
       kind: "category",
       parentId: "g-food",
       color: "var(--data-orange)",
+      excludedFromBudget: false,
     });
   });
   await waitFor(() => expect(refreshMock).toHaveBeenCalled());
@@ -63,4 +64,40 @@ it("validates that a category name is required", () => {
   fireEvent.click(screen.getByRole("button", { name: /^add$/i }));
   expect(screen.getByText(/category name/i)).toBeTruthy();
   expect(portalFetchMock).not.toHaveBeenCalled();
+});
+
+it("ticking 'Exclude from budget' flags the category", async () => {
+  portalFetchMock.mockResolvedValue({ ok: true, json: async () => ({ id: "l-new" }) });
+  render(<AddCategoryForm groups={groups} />);
+  fireEvent.click(screen.getByRole("button", { name: /add category/i }));
+  fireEvent.change(screen.getByLabelText("Category name"), { target: { value: "Reimbursed travel" } });
+  fireEvent.click(screen.getByLabelText(/exclude from budget/i));
+  fireEvent.click(screen.getByRole("button", { name: /^add$/i }));
+  await waitFor(() => expect(portalFetchMock).toHaveBeenCalledTimes(1));
+  expect(JSON.parse(portalFetchMock.mock.calls[0][1].body)).toMatchObject({
+    name: "Reimbursed travel",
+    excludedFromBudget: true,
+  });
+});
+
+it("a new group created alongside an excluded category is excluded too", async () => {
+  portalFetchMock
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "g-new" }) })
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "l-new" }) });
+  render(<AddCategoryForm groups={groups} />);
+  fireEvent.click(screen.getByRole("button", { name: /add category/i }));
+  fireEvent.change(screen.getByLabelText("Category name"), { target: { value: "Expenses" } });
+  fireEvent.change(screen.getByLabelText("Group"), { target: { value: "__new__" } });
+  fireEvent.change(screen.getByLabelText("New group name"), { target: { value: "Side business" } });
+  fireEvent.click(screen.getByLabelText(/exclude from budget/i));
+  fireEvent.click(screen.getByRole("button", { name: /^add$/i }));
+  await waitFor(() => expect(portalFetchMock).toHaveBeenCalledTimes(2));
+  expect(JSON.parse(portalFetchMock.mock.calls[0][1].body)).toMatchObject({
+    kind: "group",
+    excludedFromBudget: true,
+  });
+  expect(JSON.parse(portalFetchMock.mock.calls[1][1].body)).toMatchObject({
+    kind: "category",
+    excludedFromBudget: true,
+  });
 });

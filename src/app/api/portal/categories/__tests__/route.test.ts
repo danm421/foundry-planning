@@ -20,6 +20,7 @@ let targetRow: any;    // reassignToId target for DELETE
 let clientRow: any;
 let allCategories: any[];
 const insertReturningMock = vi.fn();
+const insertValuesMock = vi.fn();
 const updateMock = vi.fn();
 const deleteMock = vi.fn();
 const txUpdateMock = vi.fn();
@@ -77,7 +78,12 @@ vi.mock("@/db", () => ({
         orderBy: () => Promise.resolve(allCategories ?? []),
       }),
     }),
-    insert: () => ({ values: () => ({ returning: () => insertReturningMock() }) }),
+    insert: () => ({
+      values: (v: unknown) => {
+        insertValuesMock(v);
+        return { returning: () => insertReturningMock() };
+      },
+    }),
     update: () => ({ set: (v: unknown) => ({ where: () => updateMock(v) }) }),
     delete: () => ({ where: () => deleteMock() }),
     transaction: async (fn: (tx: any) => Promise<void>) => {
@@ -117,6 +123,7 @@ beforeEach(() => {
   resolveMock.mockReset(); subMock.mockReset(); editMock.mockReset();
   authErrMock.mockReset(); recordCreateMock.mockReset(); recordUpdateMock.mockReset();
   recordDeleteMock.mockReset(); seedMock.mockReset(); insertReturningMock.mockReset();
+  insertValuesMock.mockReset();
   updateMock.mockReset(); deleteMock.mockReset(); txUpdateMock.mockReset(); txDeleteMock.mockReset();
   selectCallCount = 0;
 
@@ -394,5 +401,45 @@ describe("DELETE /api/portal/categories/[id]", () => {
     const res = await DELETE(deleteReq(), idCtx("cat-1"));
     expect(res.status).toBe(403);
     expect(txDeleteMock).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Excluded from budget ───────────────────────────────────────────────────
+
+describe("excludedFromBudget", () => {
+  it("POST persists the flag when the client ticks 'Exclude from budget'", async () => {
+    catRow = parentRow;
+    const res = await POST(
+      postReq({ name: "Reimbursed travel", kind: "category", parentId: "group-1", excludedFromBudget: true }),
+    );
+    expect(res.status).toBe(200);
+    expect(insertValuesMock).toHaveBeenCalledWith(
+      expect.objectContaining({ excludedFromBudget: true }),
+    );
+  });
+
+  it("POST defaults the flag to false, never undefined", async () => {
+    catRow = parentRow;
+    await POST(postReq({ name: "Restaurants", kind: "category", parentId: "group-1" }));
+    expect(insertValuesMock).toHaveBeenCalledWith(
+      expect.objectContaining({ excludedFromBudget: false }),
+    );
+  });
+
+  it("PUT flips the flag on an existing category", async () => {
+    catRow = { ...catRow, excludedFromBudget: false };
+    const res = await PUT(putReq({ excludedFromBudget: true }), idCtx("cat-1"));
+    expect(res.status).toBe(200);
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ excludedFromBudget: true }),
+    );
+  });
+
+  it("PUT leaves the flag alone when the body doesn't mention it", async () => {
+    catRow = { ...catRow, excludedFromBudget: true };
+    await PUT(putReq({ name: "Renamed" }), idCtx("cat-1"));
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Renamed", excludedFromBudget: true }),
+    );
   });
 });

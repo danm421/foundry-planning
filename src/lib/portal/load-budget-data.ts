@@ -46,6 +46,7 @@ export async function loadBudgetSummary(
       color: transactionCategories.color,
       kind: transactionCategories.kind,
       sortOrder: transactionCategories.sortOrder,
+      excludedFromBudget: transactionCategories.excludedFromBudget,
     })
     .from(transactionCategories)
     .where(eq(transactionCategories.clientId, clientId));

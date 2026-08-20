@@ -67,6 +67,8 @@ const summary = {
       ],
     },
   ],
+  excluded: [],
+  totalExcluded: 0,
 };
 
 beforeEach(() => {
@@ -146,4 +148,42 @@ it("editable budget input wrapper carries the alignment margin", () => {
   render(<BudgetView summary={summary} editEnabled />);
   const input = screen.getByLabelText("Budget for Groceries");
   expect(input.parentElement?.className).toContain("mx-1.5");
+});
+
+// ── Excluded from budget ─────────────────────────────────────────────────────
+
+const withExcluded = {
+  ...summary,
+  excluded: [
+    {
+      id: "l-reimb",
+      name: "Reimbursed travel",
+      slug: null,
+      color: "var(--data-teal)",
+      budget: null,
+      actual: 412.5,
+      groupName: "Work",
+    },
+  ],
+  totalExcluded: 412.5,
+};
+
+it("hides the excluded section entirely when nothing is excluded", () => {
+  render(<BudgetView summary={summary} editEnabled={false} />);
+  expect(screen.queryByText("Excluded from budget")).toBeNull();
+});
+
+it("shows the excluded section with its total, collapsed by default", () => {
+  render(<BudgetView summary={withExcluded} editEnabled={false} />);
+  expect(screen.getByText("Excluded from budget")).toBeTruthy();
+  expect(screen.getByText("$413")).toBeTruthy();
+  expect(screen.queryByText("Reimbursed travel")).toBeNull(); // collapsed
+});
+
+it("expands to list the excluded categories with their group", () => {
+  render(<BudgetView summary={withExcluded} editEnabled={false} />);
+  const headings = screen.getAllByLabelText("Expand");
+  fireEvent.click(headings[headings.length - 1]);
+  expect(screen.getByText("Reimbursed travel")).toBeTruthy();
+  expect(screen.getByText("· Work")).toBeTruthy();
 });

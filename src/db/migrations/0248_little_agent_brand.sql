@@ -1,0 +1,1 @@
+ALTER TABLE "transaction_categories" ADD COLUMN "excluded_from_budget" boolean DEFAULT false NOT NULL;

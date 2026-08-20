@@ -9,7 +9,13 @@ import { BudgetDonut } from "@/components/portal/budget-donut";
 import { BudgetCategoryDetail } from "@/components/portal/budget-category-detail";
 import { BudgetAmountInput } from "@/components/portal/budget-amount-input";
 import { AddCategoryForm } from "@/components/portal/add-category-form";
-import type { BudgetSummary, GroupCell, LeafCell } from "@/lib/portal/budget-summary";
+import { FieldTooltip } from "@/components/forms/field-tooltip";
+import type {
+  BudgetSummary,
+  GroupCell,
+  LeafCell,
+  ExcludedCell,
+} from "@/lib/portal/budget-summary";
 
 type Summary = BudgetSummary & { month: string };
 
@@ -113,6 +119,76 @@ function BudgetColumn({
     <BudgetAmountInput categoryId={categoryId} value={budget} label={label} muted={muted} />
   ) : (
     <BudgetCell budget={budget} />
+  );
+}
+
+/**
+ * Categories the client has taken out of the budget. One flat section rather
+ * than a second set of groups: the point of excluding a category is that it
+ * stops competing with the budgeted ones, so it stops looking like them too.
+ *
+ * The Budget column shows an em dash for every row — these rows can't hold a
+ * budget — and the bar column stays an empty spacer so the columns still line
+ * up with the list above.
+ */
+function ExcludedSection({
+  rows,
+  total,
+}: {
+  rows: ExcludedCell[];
+  total: number;
+}): ReactElement {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-3 border-t border-hair pt-3">
+      <div className="flex items-center">
+        <button
+          type="button"
+          aria-label={open ? "Collapse" : "Expand"}
+          onClick={() => setOpen((v) => !v)}
+          className="grid h-6 w-6 shrink-0 place-items-center rounded text-ink-3 hover:text-ink"
+        >
+          <Chevron open={open} />
+        </button>
+        <div className="flex flex-1 items-center gap-3 px-1.5 py-1.5">
+          <span className="flex flex-1 items-center gap-1.5 truncate text-[13px] font-medium text-ink-3">
+            Excluded from budget
+            <FieldTooltip text="These categories still collect transactions and still show on your accounts. They just don't count toward any budget total." />
+          </span>
+          <span className="tabular w-16 shrink-0 text-right text-[12px] text-ink-3">
+            {fmtUsd(total)}
+          </span>
+          <span className="hidden w-24 shrink-0 sm:block" />
+        </div>
+        <span className="mx-1.5 w-14 shrink-0" />
+      </div>
+
+      {open && (
+        <div className="space-y-0.5 pl-6">
+          {rows.map((l) => (
+            <div key={l.id} className="flex items-center">
+              <div className="flex flex-1 items-center gap-3 rounded-md px-1.5 py-1.5">
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full opacity-60"
+                  style={{ background: l.color }}
+                />
+                <span className="flex-1 truncate text-[13px] text-ink-3">
+                  {l.name}
+                  <span className="text-ink-4"> · {l.groupName}</span>
+                </span>
+                <span className="tabular w-16 shrink-0 text-right text-[12px] text-ink-3">
+                  {fmtUsd(l.actual)}
+                </span>
+                <span className="hidden w-24 shrink-0 sm:block" />
+              </div>
+              <span className="tabular mx-1.5 w-14 shrink-0 text-right text-[12px] text-ink-4">
+                —
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -301,6 +377,10 @@ export default function BudgetView({
           );
         })}
       </div>
+
+      {summary.excluded.length > 0 && (
+        <ExcludedSection rows={summary.excluded} total={summary.totalExcluded} />
+      )}
 
       {editEnabled && (
         <AddCategoryForm

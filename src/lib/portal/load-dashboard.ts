@@ -76,6 +76,8 @@ function emptyBudget(month: string): Awaited<ReturnType<typeof loadBudgetSummary
     totalRemaining: 0,
     incomeThisMonth: 0,
     groups: [],
+    excluded: [],
+    totalExcluded: 0,
   };
 }
 
@@ -193,10 +195,17 @@ export async function loadPortalDashboard(
     share.shareRecurrings
       ? loadRecurringsData(clientId, now)
       : Promise.resolve(null),
-    // This month's expense txns (signed) for the pace curve.
+    // This month's expense txns (signed) for the pace curve. `categoryId` comes
+    // along so the curve can drop budget-excluded categories below — the curve
+    // is drawn against `budget.totalBudget`, so it has to count the same spend
+    // the budget totals count or the "under by" read is wrong.
     share.shareTransactions
       ? db
-          .select({ date: plaidTransactions.date, amount: plaidTransactions.amount })
+          .select({
+            date: plaidTransactions.date,
+            amount: plaidTransactions.amount,
+            categoryId: plaidTransactions.categoryId,
+          })
           .from(plaidTransactions)
           .where(
             and(
@@ -356,8 +365,14 @@ export async function loadPortalDashboard(
   });
 
   // ---- Pace curve ----
+  // Reuse the rollup's own verdict on what is excluded rather than re-deriving
+  // it in SQL: `budget.excluded` already resolves both the per-category flag and
+  // the whole-group flag.
+  const excludedCategoryIds = new Set(budget.excluded.map((c) => c.id));
   const pace = spendingPaceCurve({
-    dailySpend: monthTxns.map((t) => ({ date: t.date, amount: Number(t.amount) })),
+    dailySpend: monthTxns
+      .filter((t) => t.categoryId == null || !excludedCategoryIds.has(t.categoryId))
+      .map((t) => ({ date: t.date, amount: Number(t.amount) })),
     totalBudget: budget.totalBudget,
     now,
   });

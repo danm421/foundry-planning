@@ -13,13 +13,19 @@ import type { FieldLabels } from "@/lib/audit/types";
 
 export const dynamic = "force-dynamic";
 
-type PutBody = { name?: string; color?: string; sortOrder?: number };
+type PutBody = {
+  name?: string;
+  color?: string;
+  sortOrder?: number;
+  excludedFromBudget?: boolean;
+};
 type DeleteBody = { reassignToId?: string | null };
 
 const FIELD_LABELS: FieldLabels = {
   name: { label: "Name", format: "text" },
   color: { label: "Color", format: "text" },
   sortOrder: { label: "Order", format: "text" },
+  excludedFromBudget: { label: "Excluded from budget", format: "text" },
 };
 
 async function getFirmId(clientId: string): Promise<string | null> {
@@ -44,6 +50,10 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
       name: body.name?.trim() || row.name,
       color: body.color ?? row.color,
       sortOrder: typeof body.sortOrder === "number" ? body.sortOrder : row.sortOrder,
+      excludedFromBudget:
+        typeof body.excludedFromBudget === "boolean"
+          ? body.excludedFromBudget
+          : row.excludedFromBudget,
     };
     const firmId = await getFirmId(clientId);
     if (!firmId) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -54,7 +64,12 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
       clientId, firmId,
       actorKind: mode === "advisor" ? "advisor" : "client",
       extraMetadata: mode === "advisor" ? { viaPreview: true } : undefined,
-      before: { name: row.name, color: row.color, sortOrder: row.sortOrder },
+      before: {
+        name: row.name,
+        color: row.color,
+        sortOrder: row.sortOrder,
+        excludedFromBudget: row.excludedFromBudget,
+      },
       after: next, fieldLabels: FIELD_LABELS,
     });
     return NextResponse.json({ ok: true });

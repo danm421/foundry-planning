@@ -13,7 +13,13 @@ import { ensureCategoriesSeeded } from "@/lib/portal/seed-categories";
 
 export const dynamic = "force-dynamic";
 
-type Body = { name?: string; kind?: string; parentId?: string | null; color?: string };
+type Body = {
+  name?: string;
+  kind?: string;
+  parentId?: string | null;
+  color?: string;
+  excludedFromBudget?: boolean;
+};
 
 export async function GET(): Promise<Response> {
   try {
@@ -64,6 +70,7 @@ export async function POST(req: Request): Promise<Response> {
       .values({
         clientId, parentId, name: body.name.trim(), slug: null,
         color: body.color ?? "var(--data-grey)", kind: body.kind, isSystem: false, sortOrder: 999,
+        excludedFromBudget: body.excludedFromBudget === true,
       })
       .returning({ id: transactionCategories.id });
 
@@ -72,7 +79,12 @@ export async function POST(req: Request): Promise<Response> {
       clientId, firmId,
       actorKind: mode === "advisor" ? "advisor" : "client",
       extraMetadata: mode === "advisor" ? { viaPreview: true } : undefined,
-      snapshot: { name: body.name.trim(), kind: body.kind, parentId },
+      snapshot: {
+        name: body.name.trim(),
+        kind: body.kind,
+        parentId,
+        excludedFromBudget: body.excludedFromBudget === true,
+      },
     });
     return NextResponse.json({ id: row.id });
   } catch (err) {

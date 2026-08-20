@@ -5904,6 +5904,12 @@ export const transactionCategories = pgTable(
     sortOrder: integer("sort_order").notNull().default(0),
     kind: transactionCategoryKindEnum("kind").notNull(),
     isSystem: boolean("is_system").notNull().default(false),
+    // Spending here is real, but the client doesn't want it measured against a
+    // budget (reimbursed work travel, a side business, one-off gifts). Excluded
+    // categories keep collecting transactions; they just sit in their own
+    // section of the Budget page and stay out of every budget total.
+    // Set on a group, it excludes the whole group and its categories.
+    excludedFromBudget: boolean("excluded_from_budget").notNull().default(false),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

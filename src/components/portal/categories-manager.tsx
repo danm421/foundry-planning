@@ -5,7 +5,7 @@ import { usePortalFetch } from "@/components/portal/portal-mode-context";
 
 type CategoryRow = {
   id: string; name: string; kind: "group" | "category"; parentId: string | null;
-  color: string; isSystem: boolean; sortOrder: number;
+  color: string; isSystem: boolean; sortOrder: number; excludedFromBudget: boolean;
 };
 
 const COLOR_TOKENS = [
@@ -33,6 +33,15 @@ export default function CategoriesManager({ editEnabled }: { editEnabled: boolea
     reload();
   }, [reload]);
 
+  // Flip a row's "excluded from budget" flag. On a group this is the
+  // whole-group switch — the Budget page treats every category under an
+  // excluded group as excluded, so the leaf checkboxes go read-only there.
+  const setExcluded = (id: string, value: boolean) =>
+    mutate(() => portalFetch(`/api/portal/categories/${id}`, {
+      method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ excludedFromBudget: value }),
+    }));
+
   const groups = cats.filter((c) => c.kind === "group");
   const leavesOf = (gid: string) => cats.filter((c) => c.kind === "category" && c.parentId === gid);
   const allLeaves = cats.filter((c) => c.kind === "category");
@@ -42,7 +51,16 @@ export default function CategoriesManager({ editEnabled }: { editEnabled: boolea
       {error && <p className="text-[12px] text-crit">{error}</p>}
       {groups.map((g) => (
         <div key={g.id} className="rounded-xl border border-hair bg-card p-4">
-          <div className="mb-2 text-[13px] font-medium text-ink">{g.name}</div>
+          <div className="mb-2 flex items-center gap-2">
+            <span className="flex-1 text-[13px] font-medium text-ink">{g.name}</span>
+            {editEnabled && (
+              <ExcludeToggle
+                label={`Exclude ${g.name} from budget`}
+                checked={g.excludedFromBudget}
+                onChange={(v) => void setExcluded(g.id, v)}
+              />
+            )}
+          </div>
           <ul className="space-y-1.5">
             {leavesOf(g.id).map((l) => (
               <li key={l.id} className="flex items-center gap-2">
@@ -50,6 +68,12 @@ export default function CategoriesManager({ editEnabled }: { editEnabled: boolea
                 <span className="flex-1 text-[13px] text-ink-2">{l.name}</span>
                 {editEnabled && (
                   <>
+                    <ExcludeToggle
+                      label={`Exclude ${l.name} from budget`}
+                      checked={g.excludedFromBudget || l.excludedFromBudget}
+                      disabled={g.excludedFromBudget}
+                      onChange={(v) => void setExcluded(l.id, v)}
+                    />
                     <select
                       value={l.color}
                       onChange={(e) => void mutate(() => portalFetch(`/api/portal/categories/${l.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ color: e.target.value }) }))}
@@ -73,6 +97,25 @@ export default function CategoriesManager({ editEnabled }: { editEnabled: boolea
         </div>
       ))}
     </div>
+  );
+}
+
+/** Compact "not counted in the budget" checkbox for a group or category row. */
+function ExcludeToggle({ label, checked, disabled, onChange }: {
+  label: string; checked: boolean; disabled?: boolean; onChange: (value: boolean) => void;
+}): ReactElement {
+  return (
+    <label
+      title={disabled ? "The whole group is excluded from the budget." : "Excluded from the budget — spending still shows in transactions."}
+      className={`flex items-center gap-1 text-[11px] ${disabled ? "text-ink-4" : "text-ink-3"}`}
+    >
+      <input
+        type="checkbox" aria-label={label} checked={checked} disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-3 w-3 accent-[var(--color-accent)] disabled:opacity-50"
+      />
+      Exclude
+    </label>
   );
 }
 

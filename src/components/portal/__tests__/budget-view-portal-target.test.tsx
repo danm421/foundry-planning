@@ -44,6 +44,8 @@ const summary = {
       ],
     },
   ],
+  excluded: [],
+  totalExcluded: 0,
 };
 
 // Mirrors the real layout: the page renders <main>{section}</main> and the
