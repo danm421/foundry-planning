@@ -515,6 +515,10 @@ export interface ClientData {
    *  installment-sale principal (basis recovery + §1(h) LTCG) per IRC §453.
    *  Engine consumption arrives in spec 2025-04-notes-receivable-installment. */
   notesReceivable?: NoteReceivable[];
+  /** Disability income policies. Client-level facts, not scenario-scoped —
+   *  they carry no scenario_id and are absent from promote-table-registry.
+   *  Consumed only when `planSettings.disabilityEvent` is set. */
+  disabilityPolicies?: DisabilityPolicy[];
   /** Per-person Medicare coverage overrides. Empty/undefined = use defaults for all enrolled persons. */
   medicareCoverage?: MedicareCoverage[];
   /** Annual rate at which Medicare premiums inflate forward from their base year.
@@ -776,6 +780,50 @@ export interface LifeInsurancePayout {
   faceValue: number;
 }
 
+/** A disability income policy. Unlike life insurance this is NOT an account —
+ *  it holds no value and never reaches the balance sheet. It pays only while a
+ *  `planSettings.disabilityEvent` is active for the insured person.
+ *
+ *  `shortTerm` / `longTerm` are null when that layer is absent, so the engine
+ *  never has to check a flag AND a block. The DB's has_short_term /
+ *  has_long_term booleans collapse into these nulls at the loader boundary. */
+export interface DisabilityPolicy {
+  id: string;
+  name: string;
+  /** No "joint" — a disability happens to a person. */
+  insured: "client" | "spouse";
+  /** "salary" derives covered earnings from the insured's salary income in the
+   *  disability start year; "manual" uses `coveredEarningsAmount`. */
+  coveredEarningsMode: "salary" | "manual";
+  /** Today's-dollars figure. Required when mode is "manual"; ignored otherwise. */
+  coveredEarningsAmount: number | null;
+  shortTerm: {
+    eliminationDays: number;
+    benefitPct: number;
+    /** Measured FROM THE DATE OF DISABILITY, not from the first paid day.
+     *  Paid weeks = durationWeeks − eliminationDays/7. */
+    durationWeeks: number;
+    monthlyMax: number | null;
+  } | null;
+  longTerm: {
+    eliminationDays: number;
+    benefitPct: number;
+    monthlyMax: number | null;
+    benefitPeriod:
+      | { mode: "to_age"; age: number }
+      | { mode: "to_ssnra" }
+      | { mode: "years"; years: number }
+      | { mode: "lifetime" };
+  } | null;
+  /** True when the employer paid the premium (benefit is taxable ordinary
+   *  income). False when the insured paid with after-tax dollars (tax-free). */
+  benefitTaxable: boolean;
+  /** Indexes the benefit from the SECOND disability year onward. 0 = fixed. */
+  colaRate: number;
+  annualPremium: number;
+  premiumPayer: "employer" | "insured";
+}
+
 export interface Account {
   id: string;
   name: string;
@@ -927,6 +975,13 @@ export interface Income {
   /** When source = "policy", the life-insurance account whose income
    *  schedule produced this synthetic income row. */
   sourcePolicyAccountId?: string;
+  /** When set, the disability policy whose benefit produced this row. Kept
+   *  separate from `sourcePolicyAccountId` because `withSynthesizedPolicyIncome`
+   *  strips every `source === "policy"` row and re-derives from life-insurance
+   *  ACCOUNTS — a disability row caught by that filter would vanish. Disability
+   *  rows are built inside the engine, after loading, so they never meet it;
+   *  this field keeps the two provenances distinguishable regardless. */
+  sourceDisabilityPolicyId?: string;
   /** SS-specific. When unset, engine treats as "manual_amount" (legacy). */
   ssBenefitMode?: "manual_amount" | "pia_at_fra" | "no_benefit";
   /** SS-specific. Monthly PIA in today's dollars. Required when ssBenefitMode=pia_at_fra. */
