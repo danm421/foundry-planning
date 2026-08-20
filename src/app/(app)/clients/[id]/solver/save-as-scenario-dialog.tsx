@@ -86,6 +86,10 @@ function describeMutation(m: SolverMutation): string {
       return `Retirement living expense → $${m.amount.toLocaleString()}/yr`;
     case "expense-annual-amount":
       return `Expense (${m.expenseId.slice(0, 8)}…) → $${m.annualAmount.toLocaleString()}`;
+    case "expense-absorbs-remaining":
+      return m.value
+        ? "Current living expenses spend whatever's left"
+        : "Current living expenses use a fixed amount";
     case "income-annual-amount":
       return `Income (${m.incomeId.slice(0, 8)}…) → $${m.annualAmount.toLocaleString()}`;
     case "ss-claim-age":

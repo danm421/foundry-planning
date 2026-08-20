@@ -41,6 +41,10 @@ export type SolverMutation =
   | { kind: "living-expense-scale"; multiplier: number }
   | { kind: "living-expense-amount"; amount: number }
   | { kind: "expense-annual-amount"; expenseId: string; annualAmount: number }
+  /** The current living row spends the household's entire remaining cash flow;
+   *  its annual amount becomes an optional floor. A lever of its own so it
+   *  composes with the amount stepper instead of clobbering it. */
+  | { kind: "expense-absorbs-remaining"; expenseId: string; value: boolean }
   | { kind: "income-annual-amount"; incomeId: string; annualAmount: number }
   | { kind: "income-growth-rate"; incomeId: string; rate: number }
   | { kind: "income-growth-source"; incomeId: string; source: SavingsGrowthSource }
@@ -104,6 +108,7 @@ export type SolverMutationKey =
   | "living-expense-scale"
   | "living-expense-amount"
   | `expense-annual-amount:${string}`
+  | `expense-absorbs-remaining:${string}`
   | `income-annual-amount:${string}`
   | `income-growth-rate:${string}`
   | `income-growth-source:${string}`
@@ -158,6 +163,8 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
       return "living-expense-amount";
     case "expense-annual-amount":
       return `expense-annual-amount:${m.expenseId}`;
+    case "expense-absorbs-remaining":
+      return `expense-absorbs-remaining:${m.expenseId}`;
     case "income-annual-amount":
       return `income-annual-amount:${m.incomeId}`;
     case "income-growth-rate":

@@ -202,6 +202,12 @@ export function mutationsToBaseUpdates(
         }
         break;
       }
+      case "expense-absorbs-remaining": {
+        if (source.expenses?.some((e) => e.id === m.expenseId)) {
+          expensePatch(m.expenseId).absorbsRemainingCashFlow = m.value;
+        }
+        break;
+      }
       case "living-expense-scale": {
         const planStartYear = source.planSettings.planStartYear;
         for (const e of source.expenses ?? []) {
