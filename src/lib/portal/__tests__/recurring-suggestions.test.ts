@@ -442,3 +442,95 @@ describe("looksLikeCardPayment", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------- wide search
+
+/** What the client's "Search for more" button runs. Same three stages, tuned
+ *  to surface the near-misses the unprompted list deliberately hides. */
+function detectWide(transactions: SuggestionTxn[], existing: RecurringLike[] = []) {
+  return detectRecurringSuggestions({
+    transactions,
+    existing,
+    categories: CATEGORIES,
+    today: TODAY,
+    sensitivity: "wide",
+  });
+}
+
+describe("wide sensitivity", () => {
+  it("takes two identical charges a month apart, which the strict pass will not", () => {
+    const pair = [
+      txn({ merchantName: "Calm", name: "CALM.COM", date: "2026-07-14", amount: 14.99 }),
+      txn({ merchantName: "Calm", name: "CALM.COM", date: "2026-08-14", amount: 14.99 }),
+    ];
+    expect(detect(pair)).toHaveLength(0);
+
+    const wide = detectWide(pair);
+    expect(wide).toHaveLength(1);
+    expect(wide[0].name).toBe("Calm");
+    expect(wide[0].cadence).toBe("monthly");
+    expect(wide[0].occurrences).toBe(2);
+  });
+
+  it("still refuses two charges a month apart whose amounts do not match", () => {
+    // Two ordinary shopping trips at the same shop, close enough in size to
+    // survive amount clustering — so the only thing standing between them and
+    // a made-up "monthly $42 subscription" is the two-charge spread guard.
+    const trips = [
+      txn({ merchantName: "Trader Joes", name: "TRADER JOES #12", date: "2026-07-14", amount: 40 }),
+      txn({ merchantName: "Trader Joes", name: "TRADER JOES #12", date: "2026-08-14", amount: 45 }),
+    ];
+    // Guard against the vacuous version of this test: the two must reach the
+    // cadence stage as one cluster, or it proves nothing about the guard.
+    expect(clusterByAmount(trips, (t) => t.amount)).toHaveLength(1);
+    expect(detectWide(trips)).toHaveLength(0);
+  });
+
+  it("forgives a monthly bill that skipped a month; the strict pass calls it cancelled", () => {
+    // Last charged 63 days before TODAY — past the strict 45-day cutoff.
+    const lapsed = ["2026-03-17", "2026-04-17", "2026-05-17", "2026-06-17"].map((date) =>
+      txn({ merchantName: "Peloton", name: "PELOTON MEMBERSHIP", date, amount: 44 }),
+    );
+    // Other spending carried on, so "how stale" is measured against TODAY.
+    const carriedOn = netflixSeries();
+
+    const strictNames = detect([...lapsed, ...carriedOn]).map((s) => s.name);
+    expect(strictNames).not.toContain("Peloton");
+    expect(detectWide([...lapsed, ...carriedOn]).map((s) => s.name)).toContain("Peloton");
+  });
+
+  it("lifts the six-suggestion cap the unprompted list is held to", () => {
+    const many = ["Calm", "Hulu", "Strava", "Duolingo", "Dropbox", "Notion", "Figma", "Audible"]
+      .flatMap((merchant, i) =>
+        ["2026-04-09", "2026-05-09", "2026-06-09", "2026-07-09", "2026-08-09"].map((date) =>
+          txn({ merchantName: merchant, name: merchant.toUpperCase(), date, amount: 9 + i }),
+        ),
+      );
+    expect(detect(many)).toHaveLength(6);
+    expect(detectWide(many)).toHaveLength(8);
+  });
+
+  it("is a superset: everything the strict pass found survives the wide one", () => {
+    const history = [...netflixSeries(), ...["2026-05-03", "2026-06-03", "2026-07-03", "2026-08-03"].map((date) =>
+      txn({ merchantName: "Puget Sound Energy", name: "PUGET SOUND ENERGY BILLPAY", date, amount: 132 }),
+    )];
+    const strictKeys = detect(history).map((s) => s.key);
+    expect(strictKeys.length).toBeGreaterThan(0);
+    const wideKeys = new Set(detectWide(history).map((s) => s.key));
+    for (const key of strictKeys) expect(wideKeys.has(key)).toBe(true);
+  });
+
+  it("still hides anything an existing rule already claims", () => {
+    const pair = [
+      txn({ merchantName: "Calm", name: "CALM.COM", date: "2026-07-14", amount: 14.99 }),
+      txn({ merchantName: "Calm", name: "CALM.COM", date: "2026-08-14", amount: 14.99 }),
+    ];
+    const rule: RecurringLike = {
+      id: "r-calm", matchType: "contains", pattern: "Calm",
+      amountMin: 10, amountMax: 20, cadence: "monthly", dueDay: 14, dueMonth: null,
+      categoryId: "c-subs", createdAt: new Date("2026-01-01"),
+    };
+    expect(matchesRecurring(rule, pair[0])).toBe(true);
+    expect(detectWide(pair, [rule])).toHaveLength(0);
+  });
+});

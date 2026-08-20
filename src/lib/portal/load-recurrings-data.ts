@@ -1,27 +1,17 @@
-import { and, eq, gt, gte, isNotNull, isNull, lte } from "drizzle-orm";
+import { and, eq, gte, isNotNull, lte } from "drizzle-orm";
 import { db } from "@/db";
 import { recurringTransactions, plaidTransactions, transactionCategories } from "@/db/schema";
 import { assembleRecurringView } from "@/lib/portal/recurring-matching";
 import { detectRecurringSuggestions } from "@/lib/portal/recurring-suggestions";
 import type { RecurringsData } from "@/lib/portal/recurring-matching";
 import { currentMonthRange } from "@/lib/portal/load-budget-data";
+import {
+  selectSuggestionCandidates,
+  suggestionLookbackFrom,
+  ymd,
+} from "@/lib/portal/load-recurring-suggestions";
 
 export type { RecurringRowDTO, RecurringsData } from "@/lib/portal/recurring-matching";
-
-function ymd(now: Date): string {
-  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(
-    now.getUTCDate(),
-  ).padStart(2, "0")}`;
-}
-
-/** How far back suggestion detection reads. Two years plus a month, so a bill
- *  paid once a year still has two occurrences to show a rhythm. */
-const SUGGESTION_LOOKBACK_MONTHS = 25;
-
-function lookbackFrom(now: Date, months: number): string {
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - months, 1));
-  return ymd(d);
-}
 
 export async function loadRecurringsData(clientId: string, now: Date): Promise<RecurringsData> {
   const { from, to, month } = currentMonthRange(now);
@@ -63,27 +53,7 @@ export async function loadRecurringsData(clientId: string, now: Date): Promise<R
       .from(transactionCategories)
       .where(eq(transactionCategories.clientId, clientId)),
 
-    // Candidates for suggestions: settled spend nothing has claimed yet.
-    db
-      .select({
-        id: plaidTransactions.id,
-        merchantName: plaidTransactions.merchantName,
-        name: plaidTransactions.name,
-        amount: plaidTransactions.amount,
-        date: plaidTransactions.date,
-        categoryId: plaidTransactions.categoryId,
-        pfcDetailed: plaidTransactions.pfcDetailed,
-      })
-      .from(plaidTransactions)
-      .where(and(
-        eq(plaidTransactions.clientId, clientId),
-        eq(plaidTransactions.excluded, false),
-        eq(plaidTransactions.pending, false),
-        eq(plaidTransactions.type, "expense"),
-        isNull(plaidTransactions.recurringTransactionId),
-        gt(plaidTransactions.amount, "0"),
-        gte(plaidTransactions.date, lookbackFrom(now, SUGGESTION_LOOKBACK_MONTHS)),
-      )),
+    selectSuggestionCandidates(clientId, suggestionLookbackFrom(now)),
   ]);
 
   return assembleRecurringView({

@@ -48,15 +48,17 @@ export default function RecurringsView({
   const [editing, setEditing] = useState<RecurringRowDTO | null>(null);
   const [adding, setAdding] = useState<RecurringSuggestionDTO | null>(null);
   const [dismissed, setDismissed] = useState<string[]>([]);
+  // The deeper pass the "Search for more" button runs. `null` means it has
+  // never been asked for; an array — including an empty one — means it has.
+  const [searched, setSearched] = useState<RecurringSuggestionDTO[] | null>(null);
+  const [searching, setSearching] = useState(false);
   const [detailEl, setDetailEl] = useState<HTMLElement | null>(null);
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDetailEl(document.getElementById("portal-detail"));
   }, []);
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(dismissedStorageKey(clientId));
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (raw) setDismissed(JSON.parse(raw) as string[]);
     } catch {
       // A blocked or corrupt store just means nothing has been dismissed.
@@ -73,10 +75,28 @@ export default function RecurringsView({
     }
   }
 
+  /** Asks the server to look again, harder. The wide pass is a superset of the
+   *  short list the page arrived with, so the two are merged rather than
+   *  swapped: whatever the client was already reading stays put at the top and
+   *  the extras land underneath it. */
+  async function runSearch(): Promise<void> {
+    setSearching(true);
+    try {
+      const res = await portalFetch("/api/portal/recurrings/suggestions?scope=wide");
+      if (!res.ok) return;
+      const body = (await res.json()) as { suggestions: RecurringSuggestionDTO[] };
+      setSearched(body.suggestions);
+    } finally {
+      setSearching(false);
+    }
+  }
+
   const sorted = [...data.recurrings].sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state]);
   // Accepting one means creating a rule, which the read-only portal cannot do.
+  const shownKeys = new Set(data.suggestions.map((s) => s.key));
+  const extra = (searched ?? []).filter((s) => !shownKeys.has(s.key));
   const suggestions = editEnabled
-    ? data.suggestions.filter((s) => !dismissed.includes(s.key))
+    ? [...data.suggestions, ...extra].filter((s) => !dismissed.includes(s.key))
     : [];
   const selected = sorted.find((r) => r.id === selectedId) ?? null;
 
@@ -160,6 +180,12 @@ export default function RecurringsView({
         month={data.month}
         onAdd={setAdding}
         onDismiss={dismissSuggestion}
+        // Offered until the deeper pass has run. Pressing it again would only
+        // repeat the same search — and alongside "that's everything we could
+        // find" it would read as a contradiction.
+        onSearchMore={editEnabled && searched === null ? () => void runSearch() : null}
+        searching={searching}
+        foundNothingMore={searched !== null && extra.length === 0}
       />
 
       {selected &&
@@ -217,6 +243,9 @@ export default function RecurringsView({
           onCreated={() => {
             setAdding(null);
             router.refresh();
+            // The new rule claims charges the wide pass had been offering, so
+            // the extras we are still holding are stale the moment it lands.
+            if (searched !== null) void runSearch();
           }}
         />
       )}

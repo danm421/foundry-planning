@@ -4,7 +4,10 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
-vi.mock("@/components/portal/portal-mode-context", () => ({ usePortalFetch: () => vi.fn() }));
+const portalFetchMock = vi.fn();
+vi.mock("@/components/portal/portal-mode-context", () => ({
+  usePortalFetch: () => portalFetchMock,
+}));
 
 import RecurringsView from "@/components/portal/recurrings-view";
 import type { RecurringsData } from "@/lib/portal/recurring-matching";
@@ -49,8 +52,19 @@ function view(over: Partial<RecurringsData> = {}, editEnabled = true) {
   );
 }
 
+/** The deeper pass the "Search for more" button runs. Returned as-is by the
+ *  suggestions endpoint. */
+function respond(suggestions: RecurringSuggestionDTO[]): void {
+  portalFetchMock.mockResolvedValue({
+    ok: true,
+    json: async () => ({ suggestions }),
+  });
+}
+
 beforeEach(() => {
   window.localStorage.clear();
+  portalFetchMock.mockReset();
+  respond([]);
 });
 
 describe("suggested recurrings", () => {
@@ -88,16 +102,84 @@ describe("suggested recurrings", () => {
     unmount();
     view();
     expect(screen.queryByText("Spotify")).not.toBeInTheDocument();
-    expect(screen.queryByText("Suggested")).not.toBeInTheDocument();
+    expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
   });
 
-  it("says nothing at all when there is nothing to suggest", () => {
+  it("offers the search even with nothing to suggest — that client wants it most", () => {
     view({ suggestions: [] });
-    expect(screen.queryByText("Suggested")).not.toBeInTheDocument();
+    expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Search for more" })).toBeInTheDocument();
   });
 
   it("stays quiet in a read-only portal, where the client could not act on it", () => {
     view({}, false);
     expect(screen.queryByText("Suggested")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Search for more" })).not.toBeInTheDocument();
+  });
+});
+
+const calm: RecurringSuggestionDTO = {
+  ...spotify,
+  key: "monthly:calm:15",
+  name: "Calm",
+  pattern: "Calm",
+  predicted: 14.99,
+  occurrences: 2,
+  categoryIcon: "🧘",
+};
+
+describe("searching for more recurrings", () => {
+  it("asks the server for the wide pass and shows what came back", async () => {
+    respond([spotify, calm]);
+    view();
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+
+    await userEvent.click(screen.getByRole("button", { name: "Search for more" }));
+
+    expect(portalFetchMock).toHaveBeenCalledWith("/api/portal/recurrings/suggestions?scope=wide");
+    const rows = screen.getAllByRole("listitem");
+    expect(rows).toHaveLength(2);
+    // The list the client was already reading keeps its place at the top; the
+    // wide pass repeats it, and a repeat must not become a duplicate row.
+    expect(within(rows[0]).getByText("Spotify")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("Calm")).toBeInTheDocument();
+  });
+
+  it("says so when the deeper search turns nothing up, and stops offering it", async () => {
+    respond([spotify]);
+    view();
+    await userEvent.click(screen.getByRole("button", { name: "Search for more" }));
+
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    expect(screen.getByText(/everything we could find/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Search for more" })).not.toBeInTheDocument();
+  });
+
+  it("tells a client with no suggestions at all that their history has none", async () => {
+    respond([]);
+    view({ suggestions: [] });
+    await userEvent.click(screen.getByRole("button", { name: "Search for more" }));
+
+    expect(screen.getByText(/did.?n.?t find any repeating charges/i)).toBeInTheDocument();
+  });
+
+  it("keeps a dismissed suggestion dismissed when the wide pass returns it again", async () => {
+    respond([spotify, calm]);
+    view();
+    await userEvent.click(screen.getByRole("button", { name: /Dismiss Spotify/i }));
+    await userEvent.click(screen.getByRole("button", { name: "Search for more" }));
+
+    const rows = screen.getAllByRole("listitem");
+    expect(rows).toHaveLength(1);
+    expect(within(rows[0]).getByText("Calm")).toBeInTheDocument();
+  });
+
+  it("a failed search leaves the button offered rather than claiming nothing exists", async () => {
+    portalFetchMock.mockResolvedValue({ ok: false, json: async () => ({}) });
+    view();
+    await userEvent.click(screen.getByRole("button", { name: "Search for more" }));
+
+    expect(screen.queryByText(/everything we could find/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Search for more" })).toBeEnabled();
   });
 });

@@ -17,20 +17,31 @@ export function RecurringSuggestionsList({
   month,
   onAdd,
   onDismiss,
+  onSearchMore,
+  searching = false,
+  foundNothingMore = false,
 }: {
   suggestions: RecurringSuggestionDTO[];
   month: string;
   onAdd: (s: RecurringSuggestionDTO) => void;
   onDismiss: (key: string) => void;
+  /** Absent once the deeper search has been run, or when the portal is
+   *  read-only — accepting a suggestion means creating a rule. */
+  onSearchMore?: (() => void) | null;
+  searching?: boolean;
+  /** The deeper search came back with nothing the client had not already seen. */
+  foundNothingMore?: boolean;
 }): ReactElement | null {
-  if (suggestions.length === 0) return null;
+  // The search button has to survive an empty list: a client with nothing
+  // suggested is exactly the one who wants us to go looking.
+  if (suggestions.length === 0 && !onSearchMore && !foundNothingMore) return null;
   return (
     <section className="space-y-1">
       <h2 className="text-[13px] font-medium text-ink-2">Suggested</h2>
       <p className="text-[12px] text-ink-3">
         Charges that repeat in your history and aren&rsquo;t tracked yet.
       </p>
-      <ul className="divide-y divide-hair rounded-xl border border-hair bg-card">
+      <ul className="divide-y divide-hair rounded-xl border border-hair bg-card empty:hidden">
         {suggestions.map((s) => (
           <li key={s.key} className="flex items-center gap-2 px-4 py-2.5 sm:gap-3">
             {/* The expected date is the first thing to go on a phone: the row
@@ -78,6 +89,28 @@ export function RecurringSuggestionsList({
           </li>
         ))}
       </ul>
+      {suggestions.length === 0 && !searching && (
+        <p className="text-[13px] text-ink-3">
+          {foundNothingMore
+            ? "We looked through your history and didn\u2019t find any repeating charges."
+            : "Nothing suggested yet."}
+        </p>
+      )}
+      {onSearchMore && (
+        <button
+          type="button"
+          onClick={onSearchMore}
+          disabled={searching}
+          className="rounded-md border border-hair px-2.5 py-1.5 text-[12px] text-ink-2 transition-colors hover:border-accent hover:text-accent disabled:opacity-60"
+        >
+          {searching ? "Searching\u2026" : "Search for more"}
+        </button>
+      )}
+      {foundNothingMore && suggestions.length > 0 && (
+        <p className="text-[12px] text-ink-3">
+          That&rsquo;s everything we could find &mdash; nothing else in your history repeats.
+        </p>
+      )}
     </section>
   );
 }

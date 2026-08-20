@@ -61,6 +61,32 @@ const ANNUAL_STALE_DAYS = 400;
 const SAME_DAY_SPREAD = 5;
 const DEFAULT_LIMIT = 6;
 
+/** How hard to look.
+ *
+ *  `strict` is the short, confident list the Recurring tab shows unprompted —
+ *  six rhythms we would stand behind without being asked.
+ *
+ *  `wide` is what the client's "Search for more" button runs. It is the same
+ *  three stages, tuned to surface the near-misses instead of hiding them: the
+ *  cap comes off, a bill that skipped a month is forgiven, and two charges a
+ *  month apart count as a rhythm when their amounts are near identical. */
+export type SuggestionSensitivity = "strict" | "wide";
+
+const SENSITIVITY: Record<
+  SuggestionSensitivity,
+  {
+    limit: number;
+    monthlyStaleDays: number;
+    /** Widest amount spread, as a share of the median, at which two charges on
+     *  their own count as monthly. `null` means never — two charges are not a
+     *  rhythm, which is the strict rule. */
+    twoChargeSpread: number | null;
+  }
+> = {
+  strict: { limit: DEFAULT_LIMIT, monthlyStaleDays: MONTHLY_STALE_DAYS, twoChargeSpread: null },
+  wide: { limit: 24, monthlyStaleDays: 75, twoChargeSpread: 0.1 },
+};
+
 // ---------------------------------------------------------------- date helpers
 
 function utcMs(d: string): number {
@@ -73,6 +99,15 @@ function median(ns: number[]): number {
   const s = [...ns].sort((a, b) => a - b);
   const mid = s.length >> 1;
   return s.length % 2 === 1 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+/** How much a set of charges varies, as a share of its own middle. 0 is "the
+ *  same amount every time"; 1 is "the largest is a whole median above the
+ *  smallest". Both how tightly a suggestion scores and whether two charges
+ *  alone may count as a rhythm are read off this one number. */
+function spreadRatio(amounts: number[]): number {
+  const mid = median(amounts);
+  if (mid <= 0) return Number.POSITIVE_INFINITY;
+  return (Math.max(...amounts) - Math.min(...amounts)) / mid;
 }
 
 // ---------------------------------------------------------------- 1. similar name
@@ -167,7 +202,10 @@ export type Cadence = {
  *  it shrugs off a skipped month that would wreck an average. Weekly and
  *  biweekly rhythms are deliberately rejected: the recurring schema only offers
  *  monthly and annually, so suggesting one would misstate the budget. */
-export function detectCadence(dates: string[]): Cadence | null {
+export function detectCadence(
+  dates: string[],
+  minMonthlyHits: number = MIN_MONTHLY_HITS,
+): Cadence | null {
   const days = [...new Set(dates)].sort();
   if (days.length < MIN_ANNUAL_HITS) return null;
 
@@ -176,7 +214,7 @@ export function detectCadence(dates: string[]): Cadence | null {
   const gap = median(gaps);
   const dayOfMonth = days.map((d) => Number(d.slice(8, 10)));
 
-  if (gap >= 23 && gap <= 38 && days.length >= MIN_MONTHLY_HITS) {
+  if (gap >= 23 && gap <= 38 && days.length >= minMonthlyHits) {
     const spread = Math.max(...dayOfMonth) - Math.min(...dayOfMonth);
     return {
       cadence: "monthly",
@@ -210,9 +248,7 @@ function mostCommonCategory(txns: SuggestionTxn[]): string | null {
  *  that lands on the same day every month and holds the same amount is the
  *  clearest kind of recurring, so both earn a bonus. */
 function score(s: { occurrences: number; dueDay: number | null; cadence: string }, amounts: number[]): number {
-  const mid = median(amounts);
-  const spread = Math.max(...amounts) - Math.min(...amounts);
-  const tightness = mid > 0 ? 6 * (1 - Math.min(1, spread / mid)) : 0;
+  const tightness = 6 * (1 - Math.min(1, spreadRatio(amounts)));
   return (
     Math.min(s.occurrences, 12) * 2 +
     (s.dueDay != null ? 6 : 0) +
@@ -226,9 +262,12 @@ export function detectRecurringSuggestions(input: {
   existing: RecurringLike[];
   categories: { id: string; name: string; color: string | null; icon: string | null }[];
   today: string; // YYYY-MM-DD
+  sensitivity?: SuggestionSensitivity;
   limit?: number;
 }): RecurringSuggestionDTO[] {
-  const { transactions, existing, categories, today, limit = DEFAULT_LIMIT } = input;
+  const { transactions, existing, categories, today, sensitivity = "strict" } = input;
+  const tuning = SENSITIVITY[sensitivity];
+  const limit = input.limit ?? tuning.limit;
   const catById = new Map(categories.map((c) => [c.id, c]));
 
   // Staleness is judged against the newest charge we hold, not the calendar. A
@@ -264,16 +303,24 @@ export function detectRecurringSuggestions(input: {
       // descriptors it was given, so a "contains" match on them cannot miss —
       // the Puget Sound case in the tests asserts it end to end.
       const members = cluster;
-      const cadence = detectCadence(members.map((t) => t.date));
+      const amounts = members.map((t) => t.amount);
+
+      // Two charges a month apart are only a rhythm when they are near enough
+      // the same size to be a bill. Without that guard a wide search would read
+      // any two shopping trips at the same shop as a monthly subscription.
+      const minMonthly =
+        tuning.twoChargeSpread != null && spreadRatio(amounts) <= tuning.twoChargeSpread
+          ? 2
+          : MIN_MONTHLY_HITS;
+      const cadence = detectCadence(members.map((t) => t.date), minMonthly);
       if (!cadence) continue;
 
-      const amounts = members.map((t) => t.amount);
       const amountMin = round2(Math.min(...amounts) * 0.8);
       const amountMax = round2(Math.max(...amounts) * 1.25);
 
       const dates = [...members].sort((a, b) => (a.date < b.date ? 1 : -1));
       const lastDate = dates[0].date;
-      const staleAfter = cadence.cadence === "monthly" ? MONTHLY_STALE_DAYS : ANNUAL_STALE_DAYS;
+      const staleAfter = cadence.cadence === "monthly" ? tuning.monthlyStaleDays : ANNUAL_STALE_DAYS;
       if (daysBetween(lastDate, asOf) > staleAfter) continue;
 
       // Anything an existing rule already claims is not a suggestion.
