@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { SavingsGoalWorkspace } from "../savings-goal-workspace";
 import { createDefaultSavingsGoalState } from "@/lib/calculators/savings-goal-state";
 import type { SavingsGoalDTO } from "@/lib/portal/load-savings-goal";
@@ -15,8 +15,13 @@ const dto = (over: Partial<SavingsGoalDTO> = {}): SavingsGoalDTO => ({
   ...over,
 });
 
+let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+  fetchMock = vi.fn().mockResolvedValue({ ok: true });
+  vi.stubGlobal("fetch", fetchMock);
+});
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("SavingsGoalWorkspace", () => {
@@ -80,15 +85,54 @@ describe("SavingsGoalWorkspace", () => {
     expect(Number(year.value)).toBe(new Date().getFullYear() + 10);
   });
 
-  it("never saves in readOnly mode", () => {
-    render(<SavingsGoalWorkspace dto={dto()} readOnly />);
+  // The three autosave tests below have to be read together. On its own the
+  // read-only one cannot fail for the thing it names: an effect that never
+  // saved at all would satisfy it just as well, which is what makes the
+  // positive path its necessary partner.
+  it("PUTs the validated setup once editing settles, after the debounce", async () => {
+    vi.useFakeTimers();
+    render(<SavingsGoalWorkspace dto={dto()} />);
+    // Mounting alone must not write a row.
+    expect(fetchMock).not.toHaveBeenCalled();
+
     fireEvent.click(screen.getByRole("button", { name: "Car" }));
-    expect(fetch).not.toHaveBeenCalled();
+    // Still inside the 700ms debounce window.
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(700);
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/portal/calculators/savings-goal");
+    expect(init.method).toBe("PUT");
+    const body = JSON.parse(init.body as string) as { state: { name: string } };
+    expect(body.state.name).toBe("Car");
   });
 
-  it("shows the validator's own reason when the name is cleared", () => {
+  it("never saves in readOnly mode, however long the debounce is given", async () => {
+    vi.useFakeTimers();
     render(<SavingsGoalWorkspace dto={dto()} readOnly />);
+    fireEvent.click(screen.getByRole("button", { name: "Car" }));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("skips the PUT and shows the validator's own reason when the name is cleared", async () => {
+    vi.useFakeTimers();
+    render(<SavingsGoalWorkspace dto={dto()} />);
     fireEvent.change(screen.getByLabelText("Goal name"), { target: { value: "" } });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(700);
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(screen.getByText(/give your goal a name/i)).toBeTruthy();
   });
 });
