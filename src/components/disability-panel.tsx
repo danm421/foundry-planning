@@ -85,14 +85,28 @@ function benefitPeriodLabel(row: DisabilityEditRow): string {
   }
 }
 
-/** At most one warning per row, most-blocking first — a policy that pays
- *  nothing outranks a seam in one that at least pays something. */
+/** At most one warning per row, most-blocking first: a layer that cannot pay at
+ *  all outranks a seam between two layers that do. The precedence and the scope
+ *  of each claim mirror `disability-coverage-timeline.tsx` — the row and the
+ *  timeline must not tell the advisor two different stories about one policy. */
 function coverageWarning(c: ResolvedCoverage): { tone: "crit" | "warn"; text: string } | null {
   if (c.unresolved === "missing_dob") {
+    // Scoped to the long-term layer on purpose. `resolveCoverage` builds the
+    // short-term window from `policy.shortTerm` alone and never consults a date
+    // of birth, so short-term still resolves and the projection still pays it —
+    // a blanket "this policy pays nothing" contradicts the short-term line
+    // rendered right beside this pill.
     return {
       tone: "crit",
-      text: "No date of birth on file for the insured, so this pays nothing",
+      text: "No date of birth on file, so long-term coverage pays nothing",
     };
+  }
+  if (c.coveredEarnings <= 0 && (c.shortTerm !== null || c.longTerm !== null)) {
+    // Reachable, not theoretical: in salary mode `resolveCoveredEarnings`
+    // returns 0 whenever the insured has no salary rows this year. The coverage
+    // lines are gated on the policy's sections, never on earnings, so they read
+    // as real cover while the benefit column shows $0 — unless we say why.
+    return { tone: "crit", text: "No covered earnings on file, so this pays nothing" };
   }
   if (c.seam?.kind === "gap") {
     return {

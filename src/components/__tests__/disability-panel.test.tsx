@@ -212,6 +212,29 @@ describe("DisabilityPanel", () => {
     expect(req.body.ltdMonthlyMax).toBe(10_000);
   });
 
+  it("scopes a missing date of birth to long-term coverage", () => {
+    // `resolveCoverage` builds the short-term window from `policy.shortTerm`
+    // alone and never consults a date of birth, so short-term still resolves and
+    // the projection still pays it. A blanket "this policy pays nothing" would
+    // contradict the short-term line rendered right beside it — the same defect
+    // Task 8's reviewer fixed in the timeline.
+    renderPanel("edit", {
+      policies: [{ ...WORKPLACE, insured: "spouse" }],
+      client: { ...CLIENT, spouseDob: undefined },
+      currentSalaryByPerson: { client: 200_000, spouse: 150_000 },
+    });
+    expect(screen.getByText(/no date of birth/i).textContent).toMatch(/long-term/i);
+    expect(screen.getByText(/60% for 13 weeks/i)).toBeInTheDocument();
+  });
+
+  it("says why a policy with no covered earnings pays nothing", () => {
+    // Salary mode with no salary rows for the insured — a non-earning spouse,
+    // or rows that end before this year. Both bands render at $0/mo and nothing
+    // gates them on earnings, so the row must say why.
+    renderPanel("edit", { currentSalaryByPerson: { client: 0, spouse: 0 } });
+    expect(screen.getByText(/no covered earnings/i)).toBeInTheDocument();
+  });
+
   it("explains the short-term duration and the taxable switch in the dialog", () => {
     renderPanel("edit");
     fireEvent.click(screen.getByRole("button", { name: "Edit Group disability" }));
