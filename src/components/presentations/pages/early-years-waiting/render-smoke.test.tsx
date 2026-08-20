@@ -10,15 +10,15 @@ import { EarlyYearsWaitingPagePdf } from "./page-pdf";
 import type { EarlyYearsWaitingPageData } from "@/lib/presentations/pages/early-years-waiting/types";
 
 const base: EarlyYearsWaitingPageData = {
-  subtitle: "Base Case · Every figure in today's dollars",
+  subtitle: "Base Case · Today's dollars first · Future-year dollars beneath",
   groups: [
-    { age: 40, bars: [{ value: 260_000 }, { value: 235_000 }, { value: 215_000 }] },
-    { age: 50, bars: [{ value: 590_000 }, { value: 540_000 }, { value: 495_000 }] },
-    { age: 65, bars: [{ value: 1_340_000 }, { value: 1_205_000 }, { value: 1_090_000 }] },
+    { age: 40, year: 2037, bars: [{ value: { today: 260_000, nominal: 337_000 } }, { value: { today: 235_000, nominal: 304_000 } }, { value: { today: 215_000, nominal: 278_000 } }] },
+    { age: 50, year: 2047, bars: [{ value: { today: 590_000, nominal: 1_098_000 } }, { value: { today: 540_000, nominal: 1_005_000 } }, { value: { today: 495_000, nominal: 921_000 } }] },
+    { age: 65, year: 2062, bars: [{ value: { today: 1_340_000, nominal: 3_884_000 } }, { value: { today: 1_205_000, nominal: 3_493_000 } }, { value: { today: 1_090_000, nominal: 3_159_000 } }] },
   ],
   seriesLabels: ["Start now", "Start in 5 years", "Start in 10 years"],
   raisedRate: 0.11,
-  takeaway: "Waiting five years costs about $135K by age 65.",
+  takeaway: "Waiting five years costs about $135K today ($391K in 2062 dollars) by age 65.",
   isCapped: false,
   emptyMessage: null,
   tidbits: [],
@@ -59,6 +59,7 @@ describe("EarlyYearsWaitingPagePdf", () => {
     expect(text).toContain("Age 65");
     // Chart-only: the takeaway quotes $135K, not this.
     expect(text).toContain("$1.3M");
+    expect(text).toContain("$3,884,000 in 2062");
   });
 
   it("says on the sheet that only the start date changes, and names the rate once", async () => {

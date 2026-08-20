@@ -19,14 +19,16 @@ export interface HumanCapitalBar {
 export function HumanCapitalChartPdf({
   bars,
   width = 505,
+  rowHeight = 64,
 }: {
   bars: HumanCapitalBar[];
   width?: number;
+  rowHeight?: number;
 }) {
   if (bars.length === 0) return null;
 
-  const rowH = 52;
-  const barH = 22;
+  const rowH = rowHeight;
+  const barH = 28;
   const padL = 2;
   const height = bars.length * rowH;
   const maxV = Math.max(1, ...bars.map((b) => b.value));

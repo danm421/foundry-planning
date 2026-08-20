@@ -10,23 +10,29 @@ import { EarlyYearsDebtOrInvestPagePdf } from "./page-pdf";
 import type { EarlyYearsDebtOrInvestPageData } from "@/lib/presentations/pages/early-years-debt-or-invest/types";
 
 const base: EarlyYearsDebtOrInvestPageData = {
-  subtitle: "Base Case · Every figure in today's dollars",
+  subtitle: "Base Case · Today's dollars first · Future-year dollars beneath",
   liabilityName: "Student loan",
   monthlyAmount: 500,
   milestoneAge: 65,
+  milestoneYear: 2062,
   loan: {
     label: "Onto the loan",
     debtFreeYear: 2032,
-    interestPaid: 6_600,
-    portfolioAtMilestone: 930_000,
+    interestPaid: { today: 6_600, nominal: 7_200 },
+    portfolioAtMilestone: { today: 930_000, nominal: 2_694_000 },
   },
   invest: {
     label: "Into the 401(k)",
     debtFreeYear: 2036,
-    interestPaid: 14_000,
-    portfolioAtMilestone: 985_000,
+    interestPaid: { today: 14_000, nominal: 17_800 },
+    portfolioAtMilestone: { today: 985_000, nominal: 2_853_000 },
   },
-  takeaway: 'By age 65, "Into the 401(k)" leaves about $55K more, in today\'s dollars.',
+  detailRows: [
+    { year: 2026, age: 29, loanBalance: { today: 30_000, nominal: 30_000 }, investBalance: { today: 30_000, nominal: 30_000 } },
+    { year: 2032, age: 35, loanBalance: { today: 0, nominal: 0 }, investBalance: { today: 25_000, nominal: 29_851 } },
+    { year: 2062, age: 65, loanBalance: { today: 0, nominal: 0 }, investBalance: { today: 0, nominal: 0 } },
+  ],
+  takeaway: 'By age 65, "Into the 401(k)" leaves about $55K today ($159K in 2062 dollars) more.',
   emptyMessage: null,
   tidbits: [],
 };
@@ -69,6 +75,8 @@ describe("EarlyYearsDebtOrInvestPagePdf", () => {
     expect(text).toContain("Student loan");
     expect(text).toContain("2032");
     expect(text).toContain("$930,000");
+    expect(text).toContain("$2,694,000 in 2062");
+    expect(text).toContain("$29,851 in 2032");
   });
 
   it("says on the sheet that the extra payment costs real money too", async () => {

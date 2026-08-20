@@ -1,5 +1,8 @@
-// Always one sheet: two bars, one takeaway line, one footnote and at most two
-// sidebar tidbits never exceed a page.
-export function estimateEarlyYearsHumanCapitalPageCount(): number {
-  return 1;
+import { HUMAN_CAPITAL_DETAIL_MAX_ROWS } from "../early-years-detail";
+import type { EarlyYearsHumanCapitalPageData } from "./types";
+
+export function estimateEarlyYearsHumanCapitalPageCount(
+  data: EarlyYearsHumanCapitalPageData,
+): number {
+  return Math.max(1, Math.ceil(data.detailRows.length / HUMAN_CAPITAL_DETAIL_MAX_ROWS));
 }

@@ -10,14 +10,19 @@ import { EarlyYearsHumanCapitalPagePdf } from "./page-pdf";
 import type { EarlyYearsHumanCapitalPageData } from "@/lib/presentations/pages/early-years-human-capital/types";
 
 const base: EarlyYearsHumanCapitalPageData = {
-  subtitle: "Base Case · Every figure in today's dollars",
+  subtitle: "Base Case · Today's dollars first · Future-year dollars beneath",
   isEmpty: false,
-  investedToday: 48_000,
-  lifetimeEarnings: 3_120_000,
+  invested: { today: 48_000, nominal: 48_000 },
+  lifetimeEarnings: { today: 3_120_000, nominal: 5_040_000 },
   multiple: 65,
   lastEarningYear: 2062,
   takeaway:
-    "About $3.1M of future pay will pass through your hands. That is roughly 65 times what you have invested today, which is why the decisions on the next few pages matter more than the balance on this one.",
+    "About $3.1M today ($5.0M nominal as paid) of future pay will pass through your hands. That is roughly 65 times what you have invested today, which is why the decisions on the next few pages matter more than the balance on this one.",
+  detailRows: [
+    { year: 2026, age: 29, salary: { today: 120_000, nominal: 120_000 } },
+    { year: 2056, age: 59, salary: { today: 120_000, nominal: 291_272 } },
+    { year: 2062, age: 65, salary: { today: 120_000, nominal: 347_739 } },
+  ],
   tidbits: [],
 };
 
@@ -54,6 +59,8 @@ describe("EarlyYearsHumanCapitalPagePdf", () => {
     expect(text).toContain("Future pay, through 2062");
     expect(text).toContain("$48K");
     expect(text).toContain("$3.1M");
+    expect(text).toContain("$5.0M nominal as paid");
+    expect(text).toContain("$347,739 in 2062");
     expect(text).toContain("65 times");
   });
 

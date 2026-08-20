@@ -8,7 +8,7 @@
 // ladder's middle rung does.
 
 import { derivedKey } from "@/lib/presentations/derived-refs";
-import { toTodaysDollars } from "@/lib/presentations/real-dollars";
+import { dollarPair } from "@/lib/presentations/real-dollars";
 import { renderTidbits } from "@/lib/presentations/tidbits";
 import { resolveAllTokens } from "@/lib/plan-text/tokens";
 import { householdSavingsRate } from "@/lib/presentations/savings-rate";
@@ -84,8 +84,9 @@ export function buildEarlyYearsWaitingData(
     if (rows.some((r) => r == null)) continue;
     groups.push({
       age,
+      year: rows[0]!.year,
       bars: rows.map((r) => ({
-        value: toTodaysDollars(r!.portfolioAssets.liquidTotal, r!.year, basis),
+        value: dollarPair(r!.portfolioAssets.liquidTotal, r!.year, basis),
       })),
     });
   }
@@ -157,9 +158,10 @@ const SPELLED = [
 function takeawayFor(groups: WaitingGroup[], delays: number[]): string | null {
   const last = groups[groups.length - 1];
   if (!last || last.bars.length < 2) return null;
-  const gap = last.bars[0].value - last.bars[1].value;
-  if (gap <= 0) return null;
+  const gapToday = last.bars[0].value.today - last.bars[1].value.today;
+  const gapNominal = last.bars[0].value.nominal - last.bars[1].value.nominal;
+  if (gapToday <= 0) return null;
   const years = delays[1] - delays[0];
   const spelled = SPELLED[years] ?? String(years);
-  return `Waiting ${spelled} year${years === 1 ? "" : "s"} costs about ${fmtAxisUsd(gap)} by age ${last.age}.`;
+  return `Waiting ${spelled} year${years === 1 ? "" : "s"} costs about ${fmtAxisUsd(gapToday)} today (${fmtAxisUsd(gapNominal)} in ${last.year} dollars) by age ${last.age}.`;
 }

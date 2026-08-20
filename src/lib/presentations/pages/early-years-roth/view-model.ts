@@ -9,11 +9,18 @@
 // numbers under a heading that promises a difference.
 
 import { derivedKey } from "@/lib/presentations/derived-refs";
-import { toTodaysDollars, type DeflationBasis } from "@/lib/presentations/real-dollars";
+import {
+  absoluteDollarDifference,
+  dollarPair,
+  sumDollarPairs,
+  type DeflationBasis,
+  type DollarPair,
+} from "@/lib/presentations/real-dollars";
 import { renderTidbits } from "@/lib/presentations/tidbits";
 import { resolveAllTokens } from "@/lib/plan-text/tokens";
-import { exactCurrency } from "@/lib/presentations/format";
+import { fmtAxisUsd } from "@/components/presentations/pages/retirement-comparison/chart-axis";
 import { earlyYearsSubtitle } from "../early-years-shared";
+import { ROTH_DETAIL_MAX_ROWS, selectEarlyYearsDetailYears } from "../early-years-detail";
 import { rothDeferralAccountIds } from "./deferral-mix";
 import type { ProjectionYear } from "@/engine/types";
 import type { BuildDataContext } from "@/components/presentations/registry";
@@ -29,7 +36,6 @@ export const ROTH_ALL_ROTH_KEY = "roth";
 
 /** Within this the two spending figures are the same number to a reader. */
 const SPENDING_TOLERANCE = 0.005;
-
 export function buildEarlyYearsRothData(
   ctx: BuildDataContext,
   options: EarlyYearsRothPageOptions,
@@ -44,6 +50,7 @@ export function buildEarlyYearsRothData(
   const empty = (blocker: RothBlocker): EarlyYearsRothPageData => ({
     subtitle: earlyYearsSubtitle(base?.scenarioLabel),
     rows: [],
+    detailRows: [],
     takeaway: null,
     spendingIsFixed: false,
     emptyMessage: BLOCKED_COPY[blocker],
@@ -65,8 +72,31 @@ export function buildEarlyYearsRothData(
   const t = summarize(trad.projection.years, basis, retirementAge);
   const r = summarize(roth.projection.years, basis, retirementAge);
 
-  const spendGap = Math.abs(t.avgRetirementSpend - r.avgRetirementSpend);
-  const spendScale = Math.max(t.avgRetirementSpend, r.avgRetirementSpend, 1);
+  const spendGap = Math.abs(t.avgRetirementSpend.today - r.avgRetirementSpend.today);
+  const spendScale = Math.max(t.avgRetirementSpend.today, r.avgRetirementSpend.today, 1);
+  const tradYears = trad.projection.years;
+  const rothByYear = new Map(roth.projection.years.map((year) => [year.year, year]));
+  const common = tradYears.filter((year) => rothByYear.has(year.year));
+  const retirementYear = common.find((year) => year.ages.client === retirementAge)?.year;
+  const detailYears = selectEarlyYearsDetailYears({
+    availableYears: common.map((year) => year.year),
+    planStartYear: basis.planStartYear,
+    requiredYears:
+      common.length === 0
+        ? []
+        : [common[0].year, retirementYear ?? common[common.length - 1].year, common[common.length - 1].year],
+    maxRows: ROTH_DETAIL_MAX_ROWS,
+  });
+  const detailRows = detailYears.map((year) => {
+    const traditional = common.find((candidate) => candidate.year === year)!;
+    const allRoth = rothByYear.get(year)!;
+    return {
+      year,
+      age: traditional.ages.client,
+      traditionalTax: dollarPair(traditional.expenses.taxes, year, basis),
+      rothTax: dollarPair(allRoth.expenses.taxes, year, basis),
+    };
+  });
 
   return {
     subtitle: earlyYearsSubtitle(base?.scenarioLabel),
@@ -75,27 +105,32 @@ export function buildEarlyYearsRothData(
         label: "Tax paid while you're working",
         traditional: t.working,
         roth: r.working,
+        nominalLabel: "nominal as paid",
         betterIsLower: true,
       },
       {
         label: "Tax paid from retirement on",
         traditional: t.retired,
         roth: r.retired,
+        nominalLabel: "nominal as paid",
         betterIsLower: true,
       },
       {
         label: "Tax over the whole plan",
         traditional: t.total,
         roth: r.total,
+        nominalLabel: "nominal as paid",
         betterIsLower: true,
       },
       {
         label: "Average yearly spending in retirement",
         traditional: t.avgRetirementSpend,
         roth: r.avgRetirementSpend,
+        nominalLabel: "nominal average",
         betterIsLower: false,
       },
     ],
+    detailRows,
     takeaway: takeawayFor(t.total, r.total),
     spendingIsFixed: spendGap / spendScale <= SPENDING_TOLERANCE,
     emptyMessage: null,
@@ -115,10 +150,10 @@ export function buildEarlyYearsRothData(
 }
 
 interface Summary {
-  working: number;
-  retired: number;
-  total: number;
-  avgRetirementSpend: number;
+  working: DollarPair;
+  retired: DollarPair;
+  total: DollarPair;
+  avgRetirementSpend: DollarPair;
 }
 
 /**
@@ -131,25 +166,28 @@ function summarize(
   basis: DeflationBasis,
   retirementAge: number,
 ): Summary {
-  let working = 0;
-  let retired = 0;
-  let spendTotal = 0;
-  let retiredYears = 0;
-  for (const y of years) {
-    const tax = toTodaysDollars(y.expenses.taxes, y.year, basis);
-    if (y.ages.client < retirementAge) {
-      working += tax;
-      continue;
-    }
-    retired += tax;
-    spendTotal += toTodaysDollars(y.expenses.total - y.expenses.taxes, y.year, basis);
-    retiredYears += 1;
-  }
+  const workingYears = years.filter((year) => year.ages.client < retirementAge);
+  const retiredYears = years.filter((year) => year.ages.client >= retirementAge);
+  const working = sumDollarPairs(
+    workingYears.map((year) => dollarPair(year.expenses.taxes, year.year, basis)),
+  );
+  const retired = sumDollarPairs(
+    retiredYears.map((year) => dollarPair(year.expenses.taxes, year.year, basis)),
+  );
+  const spendTotal = sumDollarPairs(
+    retiredYears.map((year) =>
+      dollarPair(year.expenses.total - year.expenses.taxes, year.year, basis),
+    ),
+  );
+  const count = retiredYears.length;
   return {
     working,
     retired,
-    total: working + retired,
-    avgRetirementSpend: retiredYears > 0 ? spendTotal / retiredYears : 0,
+    total: sumDollarPairs([working, retired]),
+    avgRetirementSpend:
+      count > 0
+        ? { today: spendTotal.today / count, nominal: spendTotal.nominal / count }
+        : { today: 0, nominal: 0 },
   };
 }
 
@@ -163,9 +201,9 @@ const BLOCKED_COPY: Record<RothBlocker, string> = {
 
 /** Names the cheaper column and what it saves. Null when they tie — a sheet that
  *  declares a winner over a rounding difference is worse than one that doesn't. */
-function takeawayFor(traditionalTotal: number, rothTotal: number): string | null {
-  const gap = Math.abs(traditionalTotal - rothTotal);
-  if (gap < 1) return null;
-  const cheaper = rothTotal < traditionalTotal ? "Roth" : "traditional";
-  return `Over the whole plan, all-${cheaper} contributions leave about ${exactCurrency(gap)} less tax paid.`;
+function takeawayFor(traditionalTotal: DollarPair, rothTotal: DollarPair): string | null {
+  const gap = absoluteDollarDifference(traditionalTotal, rothTotal);
+  if (gap.today < 1) return null;
+  const cheaper = rothTotal.today < traditionalTotal.today ? "Roth" : "traditional";
+  return `Over the whole plan, all-${cheaper} contributions leave about ${fmtAxisUsd(gap.today)} today (${fmtAxisUsd(gap.nominal)} nominal as paid) less tax paid.`;
 }

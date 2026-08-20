@@ -10,14 +10,19 @@ import { EarlyYearsRothPagePdf, betterColumn } from "./page-pdf";
 import type { EarlyYearsRothPageData } from "@/lib/presentations/pages/early-years-roth/types";
 
 const base: EarlyYearsRothPageData = {
-  subtitle: "Base Case · Every figure in today's dollars",
+  subtitle: "Base Case · Today's dollars first · Future-year dollars beneath",
   rows: [
-    { label: "Tax paid while you're working", traditional: 612_000, roth: 741_000, betterIsLower: true },
-    { label: "Tax paid from retirement on", traditional: 388_000, roth: 106_000, betterIsLower: true },
-    { label: "Tax over the whole plan", traditional: 1_000_000, roth: 847_000, betterIsLower: true },
-    { label: "Average yearly spending in retirement", traditional: 72_000, roth: 72_000, betterIsLower: false },
+    { label: "Tax paid while you're working", traditional: { today: 612_000, nominal: 850_000 }, roth: { today: 741_000, nominal: 1_020_000 }, nominalLabel: "nominal as paid", betterIsLower: true },
+    { label: "Tax paid from retirement on", traditional: { today: 388_000, nominal: 940_000 }, roth: { today: 106_000, nominal: 260_000 }, nominalLabel: "nominal as paid", betterIsLower: true },
+    { label: "Tax over the whole plan", traditional: { today: 1_000_000, nominal: 1_790_000 }, roth: { today: 847_000, nominal: 1_280_000 }, nominalLabel: "nominal as paid", betterIsLower: true },
+    { label: "Average yearly spending in retirement", traditional: { today: 72_000, nominal: 141_000 }, roth: { today: 72_000, nominal: 141_000 }, nominalLabel: "nominal average", betterIsLower: false },
   ],
-  takeaway: "Over the whole plan, all-Roth contributions leave about $153,000 less tax paid.",
+  detailRows: [
+    { year: 2026, age: 29, traditionalTax: { today: 20_000, nominal: 20_000 }, rothTax: { today: 24_000, nominal: 24_000 } },
+    { year: 2062, age: 65, traditionalTax: { today: 8_000, nominal: 23_175 }, rothTax: { today: 3_000, nominal: 8_691 } },
+    { year: 2067, age: 70, traditionalTax: { today: 8_000, nominal: 26_859 }, rothTax: { today: 3_000, nominal: 10_072 } },
+  ],
+  takeaway: "Over the whole plan, all-Roth contributions leave about $153K today ($510K nominal as paid) less tax paid.",
   spendingIsFixed: true,
   emptyMessage: null,
   tidbits: [],
@@ -58,6 +63,8 @@ describe("EarlyYearsRothPagePdf", () => {
     expect(text).toContain("ALL ROTH");
     expect(text).toContain("Tax over the whole plan");
     expect(text).toContain("Average yearly spending in retirement");
+    expect(text).toContain("$1,790,000 nominal as paid");
+    expect(text).toContain("$26,859 in 2067");
   });
 
   it("explains a plan whose spending cannot move", async () => {
@@ -106,8 +113,9 @@ describe("EarlyYearsRothPagePdf", () => {
 describe("betterColumn", () => {
   const row = (traditional: number, roth: number, betterIsLower: boolean) => ({
     label: "x",
-    traditional,
-    roth,
+    traditional: { today: traditional, nominal: traditional },
+    roth: { today: roth, nominal: roth },
+    nominalLabel: "nominal as paid",
     betterIsLower,
   });
 

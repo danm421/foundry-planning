@@ -110,17 +110,21 @@ describe("buildEarlyYearsWaitingData", () => {
     expect(d.seriesLabels).toEqual(["Start now", "Start in 5 years", "Start in 10 years"]);
   });
 
-  it("DEFLATES each bar — a nominal fixture would make this vacuous", () => {
+  it("carries each bar in today's and nominal dollars", () => {
     const d = buildEarlyYearsWaitingData(ctx(arms), OPTS);
     // Age 65 is 2062, 36 years out at 3%: 1_340_000 / 1.03^36 ≈ 462_000.
-    expect(d.groups[2].bars[0].value).toBeLessThan(600_000);
-    expect(d.groups[2].bars[0].value).toBeGreaterThan(0);
+    expect(d.groups[2].year).toBe(2062);
+    expect(d.groups[2].bars[0].value.today).toBeLessThan(600_000);
+    expect(d.groups[2].bars[0].value.today).toBeGreaterThan(0);
+    expect(d.groups[2].bars[0].value.nominal).toBe(1_340_000);
   });
 
   it("prices the wait in the takeaway, at the LAST milestone the chart reaches", () => {
     const d = buildEarlyYearsWaitingData(ctx(arms), OPTS);
     expect(d.takeaway).toContain("age 65");
     expect(d.takeaway).toContain("five years");
+    expect(d.takeaway).toContain("today");
+    expect(d.takeaway).toContain("in 2062 dollars");
   });
 
   it("says nothing about a wait when the advisor charted only one start date", () => {

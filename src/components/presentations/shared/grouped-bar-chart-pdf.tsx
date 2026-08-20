@@ -24,13 +24,19 @@ interface Props {
   /** Small note above the plot saying what the bars measure. */
   caption: string;
   width?: number;
+  height?: number;
 }
 
 /** Grouped bars: one cluster per group, one bar per series. */
-export function GroupedBarChartPdf({ series, groups, caption, width = 355 }: Props) {
+export function GroupedBarChartPdf({
+  series,
+  groups,
+  caption,
+  width = 355,
+  height = 178,
+}: Props) {
   if (groups.length === 0 || series.length === 0) return null;
 
-  const height = 178;
   const padL = 2, padR = 2, padT = 16, padB = 20;
   const plotH = height - padT - padB;
   // Headroom so the value label above the tallest bar is not clipped.

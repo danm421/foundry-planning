@@ -1,11 +1,11 @@
 // Today's-dollars conversion for the presentation layer.
 //
-// Nominal figures over a 30–40 year horizon are mostly inflation. Every Your
-// Early Years page deflates before it prints, so a client reads a number they
-// can price against their current life.
+// Nominal figures over a 30–40 year horizon are mostly inflation. Your Early
+// Years preserves the engine's future-year result beside its start-year
+// purchasing power, with today's dollars as the primary reading unit.
 
 export interface DeflationBasis {
-  /** PlanSettings.inflationRate — a fraction, e.g. 0.03. */
+  /** The effective tree's resolved inflation rate — a fraction, e.g. 0.03. */
   inflationRate: number;
   /** PlanSettings.planStartYear — the year whose purchasing power we quote in. */
   planStartYear: number;

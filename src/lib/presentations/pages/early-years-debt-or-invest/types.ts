@@ -1,13 +1,21 @@
 import type { Tidbit } from "@/lib/presentations/tidbits";
+import type { DollarPair } from "@/lib/presentations/real-dollars";
 
 export interface DebtOrInvestArm {
   label: string;
   /** The year this arm clears the loan. */
   debtFreeYear: number;
-  /** Interest paid on THIS loan over the whole plan, today's dollars. */
-  interestPaid: number;
-  /** Liquid portfolio at the milestone age, today's dollars. */
-  portfolioAtMilestone: number;
+  /** Interest paid on THIS loan over the whole plan, in both units. */
+  interestPaid: DollarPair;
+  /** Liquid portfolio at the milestone age, in both units. */
+  portfolioAtMilestone: DollarPair;
+}
+
+export interface DebtOrInvestDetailRow {
+  year: number;
+  age: number;
+  loanBalance: DollarPair;
+  investBalance: DollarPair;
 }
 
 export interface EarlyYearsDebtOrInvestPageData {
@@ -16,10 +24,12 @@ export interface EarlyYearsDebtOrInvestPageData {
   /** Extra dollars a month, as the advisor set them. */
   monthlyAmount: number;
   milestoneAge: number;
+  milestoneYear: number;
   /** Both null when the comparison could not be built; `emptyMessage` says why.
    *  Never one without the other — half a comparison is not a comparison. */
   loan: DebtOrInvestArm | null;
   invest: DebtOrInvestArm | null;
+  detailRows: DebtOrInvestDetailRow[];
   takeaway: string | null;
   emptyMessage: string | null;
   tidbits: Tidbit[];

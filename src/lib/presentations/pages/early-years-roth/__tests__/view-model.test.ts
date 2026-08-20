@@ -87,17 +87,17 @@ const ROTH = years(24_000, 3_000, 60_000);
 describe("buildEarlyYearsRothData", () => {
   it("splits tax at the client's retirement age", () => {
     const d = buildEarlyYearsRothData(ctx(TRAD, ROTH), OPTS);
-    expect(d.rows[0].traditional).toBeCloseTo(36 * 20_000, 6);
-    expect(d.rows[1].traditional).toBeCloseTo(6 * 8_000, 6);
-    expect(d.rows[2].traditional).toBeCloseTo(36 * 20_000 + 6 * 8_000, 6);
-    expect(d.rows[0].roth).toBeCloseTo(36 * 24_000, 6);
-    expect(d.rows[1].roth).toBeCloseTo(6 * 3_000, 6);
+    expect(d.rows[0].traditional.today).toBeCloseTo(36 * 20_000, 6);
+    expect(d.rows[1].traditional.today).toBeCloseTo(6 * 8_000, 6);
+    expect(d.rows[2].traditional.today).toBeCloseTo(36 * 20_000 + 6 * 8_000, 6);
+    expect(d.rows[0].roth.today).toBeCloseTo(36 * 24_000, 6);
+    expect(d.rows[1].roth.today).toBeCloseTo(6 * 3_000, 6);
   });
 
   it("averages retirement spending NET of tax", () => {
     const d = buildEarlyYearsRothData(ctx(TRAD, ROTH), OPTS);
-    expect(d.rows[3].traditional).toBeCloseTo(60_000, 6);
-    expect(d.rows[3].roth).toBeCloseTo(60_000, 6);
+    expect(d.rows[3].traditional.today).toBeCloseTo(60_000, 6);
+    expect(d.rows[3].roth.today).toBeCloseTo(60_000, 6);
   });
 
   it("marks the tax rows as lower-is-better and the spending row as higher-is-better", () => {
@@ -156,8 +156,9 @@ describe("buildEarlyYearsRothData", () => {
       }),
       OPTS,
     );
-    expect(d.rows[0].traditional).toBeLessThan(36 * 20_000);
-    expect(d.rows[0].traditional).toBeGreaterThan(0);
+    expect(d.rows[0].traditional.today).toBeLessThan(36 * 20_000);
+    expect(d.rows[0].traditional.today).toBeGreaterThan(0);
+    expect(d.rows[0].traditional.nominal).toBe(36 * 20_000);
   });
 
   it("renders its empty state when a variant is missing", () => {
@@ -166,5 +167,25 @@ describe("buildEarlyYearsRothData", () => {
       derivedKey(EARLY_YEARS_ROTH_PAGE_ID, ROTH_ALL_ROTH_KEY)
     ];
     expect(buildEarlyYearsRothData(c, OPTS).rows).toEqual([]);
+  });
+
+  it("adds bounded annual tax checkpoints with both units", () => {
+    const d = buildEarlyYearsRothData(
+      ctx(TRAD, ROTH, {
+        planSettings: { inflationRate: 0.03, planStartYear: 2026, taxEngineMode: "bracket" },
+      }),
+      OPTS,
+    );
+    expect(d.detailRows[0].year).toBe(2026);
+    expect(d.detailRows.some((row) => row.age === 65)).toBe(true);
+    expect(d.detailRows.at(-1)?.year).toBe(2067);
+    expect(d.detailRows[1].traditionalTax.nominal).toBe(20_000);
+    expect(d.detailRows[1].traditionalTax.today).toBeLessThan(20_000);
+  });
+
+  it("puts both lifetime-tax units in the takeaway", () => {
+    const d = buildEarlyYearsRothData(ctx(TRAD, ROTH), OPTS);
+    expect(d.takeaway).toContain("today");
+    expect(d.takeaway).toContain("nominal as paid");
   });
 });

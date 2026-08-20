@@ -5,13 +5,17 @@
 // sheet says so. Discounting at an expected return would produce a smaller and
 // arguably more correct number; that is a modeling call the spec already made.
 
-import { toTodaysDollars } from "@/lib/presentations/real-dollars";
+import { dollarPair, sumDollarPairs, type DollarPair } from "@/lib/presentations/real-dollars";
 import { renderTidbits } from "@/lib/presentations/tidbits";
 import { resolveAllTokens } from "@/lib/plan-text/tokens";
 // The same formatter the chart labels its bars with — one sheet printing "$3.1M"
 // beside "$3,120,000" reads as two different units.
 import { fmtAxisUsd } from "@/components/presentations/pages/retirement-comparison/chart-axis";
 import { earlyYearsSubtitle } from "../early-years-shared";
+import {
+  HUMAN_CAPITAL_DETAIL_MAX_ROWS,
+  selectEarlyYearsDetailYears,
+} from "../early-years-detail";
 import type { BuildDataContext } from "@/components/presentations/registry";
 import type {
   EarlyYearsHumanCapitalPageData,
@@ -36,25 +40,40 @@ export function buildEarlyYearsHumanCapitalData(
   // filed: it is the PRORATED tax-side figure and it folds in a grantor trust's
   // salaries. Both are unreachable on a young client's tree, and using the
   // engine's number beats re-deriving one that can drift from it.
-  const lifetimeEarnings = years.reduce(
-    (sum, y) => sum + toTodaysDollars(y.income.salaries, y.year, basis),
-    0,
-  );
   const earning = years.filter((y) => y.income.salaries > 0);
-  const investedToday = toTodaysDollars(
+  const lifetimeEarnings = sumDollarPairs(
+    years.map((y) => dollarPair(y.income.salaries, y.year, basis)),
+  );
+  const invested = dollarPair(
     years[0].portfolioAssets.liquidTotal,
     years[0].year,
     basis,
   );
+  const detailYears = selectEarlyYearsDetailYears({
+    availableYears: earning.map((y) => y.year),
+    planStartYear: basis.planStartYear,
+    requiredYears:
+      earning.length === 0 ? [] : [earning[0].year, earning[earning.length - 1].year],
+    maxRows: HUMAN_CAPITAL_DETAIL_MAX_ROWS,
+  });
+  const detailRows = detailYears.map((year) => {
+    const row = earning.find((candidate) => candidate.year === year)!;
+    return {
+      year,
+      age: row.ages.client,
+      salary: dollarPair(row.income.salaries, row.year, basis),
+    };
+  });
 
   return {
     subtitle: earlyYearsSubtitle(base?.scenarioLabel),
-    isEmpty: lifetimeEarnings <= 0,
-    investedToday,
+    isEmpty: lifetimeEarnings.nominal <= 0,
+    invested,
     lifetimeEarnings,
-    multiple: investedToday > 0 ? lifetimeEarnings / investedToday : null,
+    multiple: invested.today > 0 ? lifetimeEarnings.today / invested.today : null,
     lastEarningYear: earning.length > 0 ? earning[earning.length - 1].year : null,
-    takeaway: takeawayFor(lifetimeEarnings, investedToday),
+    takeaway: takeawayFor(lifetimeEarnings, invested.today),
+    detailRows,
     // Resolved only when the advisor picked something: `resolveAllTokens` walks
     // every registered token against the whole tree, and no page should pay for
     // a sidebar it is not printing.
@@ -78,12 +97,12 @@ export function buildEarlyYearsHumanCapitalData(
  * times", and a client whose portfolio already rivals their remaining pay would
  * read "1 times", which argues the opposite of the page.
  */
-function takeawayFor(lifetime: number, invested: number): string {
-  const total = `About ${fmtAxisUsd(lifetime)} of future pay will pass through your hands.`;
+function takeawayFor(lifetime: DollarPair, invested: number): string {
+  const total = `About ${fmtAxisUsd(lifetime.today)} today (${fmtAxisUsd(lifetime.nominal)} nominal as paid) of future pay will pass through your hands.`;
   if (invested <= 0) {
     return `${total} What this report is about is the share of it you keep.`;
   }
-  const x = lifetime / invested;
+  const x = lifetime.today / invested;
   if (x < 2) {
     return `${total} Your portfolio is already a meaningful share of that — the pages after this one decide how much of the rest joins it.`;
   }

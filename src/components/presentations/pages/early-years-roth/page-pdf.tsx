@@ -2,7 +2,8 @@ import { View, Text, StyleSheet } from "@react-pdf/renderer";
 import { PageFrame } from "@/components/presentations/shared/page-frame";
 import { TidbitSidebarPdf } from "@/components/presentations/shared/tidbit-sidebar-pdf";
 import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
-import { exactCurrency } from "@/lib/presentations/format";
+import { DetailTablePdf } from "@/components/presentations/shared/detail-table-pdf";
+import { DualDollarValuePdf } from "@/components/presentations/shared/dual-dollar-value-pdf";
 import type { RenderPdfInput } from "@/components/presentations/registry";
 import type {
   EarlyYearsRothPageData,
@@ -27,9 +28,7 @@ const s = StyleSheet.create({
     paddingVertical: 7,
   },
   label: { flex: 1.6, fontSize: 9, color: T.ink },
-  cell: { flex: 1, fontSize: 11, textAlign: "right" },
-  cellBetter: { color: T.ink, fontWeight: 700 },
-  cellOther: { color: T.ink2 },
+  cellWrap: { flex: 1, alignItems: "flex-end", justifyContent: "center" },
   headCell: {
     flex: 1,
     fontSize: 7,
@@ -50,6 +49,7 @@ const s = StyleSheet.create({
   },
   takeawayText: { fontSize: 9, color: T.ink, lineHeight: 1.35 },
   footnote: { fontSize: 7, color: T.ink3, lineHeight: 1.35, marginTop: 8 },
+  detailText: { fontSize: 7, color: T.ink },
   empty: { fontSize: 11, color: T.ink2, textAlign: "center", marginTop: 60 },
 });
 
@@ -61,8 +61,10 @@ const s = StyleSheet.create({
  *  see it. Bolding the losing column is the defect `betterIsLower` exists to
  *  prevent, and it would print silently. */
 export function betterColumn(r: RothRow): "traditional" | "roth" | null {
-  if (r.traditional === r.roth) return null;
-  const tradWins = r.betterIsLower ? r.traditional < r.roth : r.traditional > r.roth;
+  if (r.traditional.today === r.roth.today) return null;
+  const tradWins = r.betterIsLower
+    ? r.traditional.today < r.roth.today
+    : r.traditional.today > r.roth.today;
   return tradWins ? "traditional" : "roth";
 }
 
@@ -97,12 +99,20 @@ export function EarlyYearsRothPagePdf(input: RenderPdfInput<EarlyYearsRothPageDa
             return (
               <View key={r.label} style={s.row}>
                 <Text style={s.label}>{r.label}</Text>
-                <Text style={[s.cell, better === "traditional" ? s.cellBetter : s.cellOther]}>
-                  {exactCurrency(r.traditional)}
-                </Text>
-                <Text style={[s.cell, better === "roth" ? s.cellBetter : s.cellOther]}>
-                  {exactCurrency(r.roth)}
-                </Text>
+                <View style={s.cellWrap}>
+                  <DualDollarValuePdf
+                    value={r.traditional}
+                    nominalLabel={r.nominalLabel}
+                    emphasis={better === "traditional"}
+                  />
+                </View>
+                <View style={s.cellWrap}>
+                  <DualDollarValuePdf
+                    value={r.roth}
+                    nominalLabel={r.nominalLabel}
+                    emphasis={better === "roth"}
+                  />
+                </View>
               </View>
             );
           })}
@@ -112,6 +122,37 @@ export function EarlyYearsRothPagePdf(input: RenderPdfInput<EarlyYearsRothPageDa
               <Text style={s.takeawayText}>{data.takeaway}</Text>
             </View>
           )}
+
+          <DetailTablePdf
+            rows={data.detailRows}
+            rowKey={(row) => String(row.year)}
+            columns={[
+              {
+                header: "Year / age",
+                flex: 0.8,
+                render: (row) => <Text style={s.detailText}>{`${row.year} · ${row.age}`}</Text>,
+              },
+              {
+                header: "All traditional tax",
+                flex: 1.4,
+                align: "right",
+                render: (row) => (
+                  <DualDollarValuePdf
+                    value={row.traditionalTax}
+                    nominalLabel={`in ${row.year}`}
+                  />
+                ),
+              },
+              {
+                header: "All Roth tax",
+                flex: 1.4,
+                align: "right",
+                render: (row) => (
+                  <DualDollarValuePdf value={row.rothTax} nominalLabel={`in ${row.year}`} />
+                ),
+              },
+            ]}
+          />
 
           {data.spendingIsFixed && (
             <Text style={s.footnote}>

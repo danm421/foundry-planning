@@ -11,13 +11,13 @@ import type { EarlyYearsStandingPageData } from "@/lib/presentations/pages/early
 
 const base: EarlyYearsStandingPageData = {
   isEmpty: false,
-  subtitle: "Base Case · At age 29 · Every figure in today's dollars",
+  subtitle: "Base Case · At age 29 · 2026 dollars — today's and nominal are the same",
   clientAge: 29,
-  grossAnnual: 120_000,
-  contributionsAnnual: 9_600,
+  grossAnnual: { today: 120_000, nominal: 120_000 },
+  contributionsAnnual: { today: 9_600, nominal: 9_600 },
   savingsRatePct: 0.08,
-  portfolioToday: 84_000,
-  match: { kind: "captured", employerAnnual: 3_600 },
+  portfolio: { today: 84_000, nominal: 84_000 },
+  match: { kind: "captured", employerAnnual: { today: 3_600, nominal: 3_600 } },
   tidbits: [
     {
       id: "compounding-runway",
@@ -74,11 +74,11 @@ describe("EarlyYearsStandingPagePdf render", () => {
     expect((await render(base)).byteLength).toBeGreaterThan(1000);
   });
 
-  it("prints the savings rate, the match sentence, the tidbit and the today's-dollars label", async () => {
+  it("prints the savings rate, match, tidbit and current-year unit identity", async () => {
     const text = pdfText(await render(base)).replace(/\s+/g, " ");
     expect(text).toContain("8%");
     expect(text).toContain("Your employer adds $3,600 a year");
-    expect(text).toContain("today's dollars");
+    expect(text).toContain("today's and nominal are the same");
     expect(text).toContain("Time is the ingredient you can't buy later");
   });
 

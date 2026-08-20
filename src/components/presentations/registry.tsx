@@ -1450,12 +1450,12 @@ export const earlyYearsLadderPage: PresentationPage<
   id: "earlyYearsLadder",
   title: "What Saving More Is Worth",
   description:
-    "Grouped bars at three milestone ages under three savings rates — what raising the payroll contribution is worth, in today's dollars.",
+    "Grouped bars and detail at milestone ages under several savings rates, in today's and future-year dollars.",
   category: "Early Years",
   defaultOptions: EARLY_YEARS_LADDER_OPTIONS_DEFAULT,
   optionsSchema: earlyYearsLadderOptionsSchema,
   summarizeOptions: summarizeEarlyYearsLadderOptions,
-  estimatePageCount: () => estimateEarlyYearsLadderPageCount(),
+  estimatePageCount: (data) => estimateEarlyYearsLadderPageCount(data),
   OptionsControl: EarlyYearsLadderOptionsControl,
   // Pinned to Base Case. `requiredScenarioRefs` is also what CAUSES the base
   // bundle to be loaded — without it the rungs' `from: "base"` resolves to
@@ -1502,7 +1502,7 @@ export const earlyYearsHumanCapitalPage: PresentationPage<
   defaultOptions: EARLY_YEARS_HUMAN_CAPITAL_OPTIONS_DEFAULT,
   optionsSchema: earlyYearsHumanCapitalOptionsSchema,
   summarizeOptions: summarizeEarlyYearsHumanCapitalOptions,
-  estimatePageCount: () => estimateEarlyYearsHumanCapitalPageCount(),
+  estimatePageCount: (data) => estimateEarlyYearsHumanCapitalPageCount(data),
   OptionsControl: EarlyYearsHumanCapitalOptionsControl,
   // Pinned to Base Case with the rest of the deck. Declaring the ref is also
   // what LOADS the base bundle this page reads.
@@ -1524,7 +1524,7 @@ export const earlyYearsWaitingPage: PresentationPage<
   defaultOptions: EARLY_YEARS_WAITING_OPTIONS_DEFAULT,
   optionsSchema: earlyYearsWaitingOptionsSchema,
   summarizeOptions: summarizeEarlyYearsWaitingOptions,
-  estimatePageCount: () => estimateEarlyYearsWaitingPageCount(),
+  estimatePageCount: (data) => estimateEarlyYearsWaitingPageCount(data),
   OptionsControl: EarlyYearsWaitingOptionsControl,
   supportsScenarioOverride: false,
   requiredScenarioRefs: () => ["base"],
@@ -1561,7 +1561,7 @@ export const earlyYearsRothPage: PresentationPage<
   defaultOptions: EARLY_YEARS_ROTH_OPTIONS_DEFAULT,
   optionsSchema: earlyYearsRothOptionsSchema,
   summarizeOptions: summarizeEarlyYearsRothOptions,
-  estimatePageCount: () => estimateEarlyYearsRothPageCount(),
+  estimatePageCount: (data) => estimateEarlyYearsRothPageCount(data),
   OptionsControl: EarlyYearsRothOptionsControl,
   supportsScenarioOverride: false,
   requiredScenarioRefs: () => ["base"],
@@ -1601,7 +1601,7 @@ export const earlyYearsDebtOrInvestPage: PresentationPage<
   defaultOptions: EARLY_YEARS_DEBT_OR_INVEST_OPTIONS_DEFAULT,
   optionsSchema: earlyYearsDebtOrInvestOptionsSchema,
   summarizeOptions: summarizeEarlyYearsDebtOrInvestOptions,
-  estimatePageCount: () => estimateEarlyYearsDebtOrInvestPageCount(),
+  estimatePageCount: (data) => estimateEarlyYearsDebtOrInvestPageCount(data),
   OptionsControl: EarlyYearsDebtOrInvestOptionsControl,
   supportsScenarioOverride: false,
   requiredScenarioRefs: () => ["base"],

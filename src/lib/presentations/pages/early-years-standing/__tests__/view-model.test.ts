@@ -68,17 +68,20 @@ describe("buildEarlyYearsStandingData", () => {
     expect(d.isEmpty).toBe(false);
   });
 
-  it("names the scenario it rendered and labels the figures as today's dollars", () => {
+  it("names the scenario and explains why today's and nominal figures agree", () => {
     // The page is pinned to Base Case; inside a deck built on some other
     // scenario, the label is the only thing that says so.
     expect(buildEarlyYearsStandingData(ctx(), OPTS).subtitle).toBe(
-      "Base Case · At age 29 · Every figure in today's dollars",
+      "Base Case · At age 29 · 2026 dollars — today's and nominal are the same",
     );
   });
 
   it("reports what the employer actually deposits", () => {
     const d = buildEarlyYearsStandingData(ctx({ employer: 3_600 }), OPTS);
-    expect(d.match).toEqual({ kind: "captured", employerAnnual: 3_600 });
+    expect(d.match).toEqual({
+      kind: "captured",
+      employerAnnual: { today: 3_600, nominal: 3_600 },
+    });
   });
 
   it("omits the match line when the plan has no employer match at all", () => {
@@ -113,8 +116,10 @@ describe("buildEarlyYearsStandingData", () => {
       ctx({ year: 2028, planStartYear: 2026, inflationRate: 0.03 }),
       OPTS,
     );
-    expect(d.portfolioToday).toBeCloseTo(79_178.06, 2);
-    expect(d.grossAnnual).toBeCloseTo(113_111.51, 2);
+    expect(d.portfolio.today).toBeCloseTo(79_178.06, 2);
+    expect(d.portfolio.nominal).toBe(84_000);
+    expect(d.grossAnnual.today).toBeCloseTo(113_111.51, 2);
+    expect(d.grossAnnual.nominal).toBe(120_000);
     // A ratio is unit-free — deflating both sides must not move it.
     expect(d.savingsRatePct).toBeCloseTo(0.08, 6);
   });

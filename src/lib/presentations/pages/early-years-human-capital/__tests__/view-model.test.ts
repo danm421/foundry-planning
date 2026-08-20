@@ -32,7 +32,8 @@ describe("buildEarlyYearsHumanCapitalData", () => {
       ctx([yr(2026, 100_000, 50_000), yr(2027, 100_000, 60_000)]),
       OPTS,
     );
-    expect(d.lifetimeEarnings).toBeCloseTo(197_087.38, 2);
+    expect(d.lifetimeEarnings.today).toBeCloseTo(197_087.38, 2);
+    expect(d.lifetimeEarnings.nominal).toBe(200_000);
   });
 
   it("is not the nominal sum — a 0% inflation fixture would make this vacuous", () => {
@@ -40,7 +41,8 @@ describe("buildEarlyYearsHumanCapitalData", () => {
       ctx([yr(2026, 100_000, 50_000), yr(2027, 100_000, 60_000)]),
       OPTS,
     ).lifetimeEarnings;
-    expect(real).toBeLessThan(200_000);
+    expect(real.today).toBeLessThan(200_000);
+    expect(real.nominal).toBe(200_000);
   });
 
   it("quotes the portfolio from the plan's FIRST year", () => {
@@ -48,7 +50,7 @@ describe("buildEarlyYearsHumanCapitalData", () => {
       ctx([yr(2026, 100_000, 50_000), yr(2027, 100_000, 900_000)]),
       OPTS,
     );
-    expect(d.investedToday).toBe(50_000);
+    expect(d.invested).toEqual({ today: 50_000, nominal: 50_000 });
   });
 
   it("reports the multiple and names it in the takeaway", () => {
@@ -103,7 +105,7 @@ describe("buildEarlyYearsHumanCapitalData", () => {
       },
     } as unknown as BuildDataContext;
     const d = buildEarlyYearsHumanCapitalData(c, OPTS);
-    expect(d.lifetimeEarnings).toBe(200_000);
+    expect(d.lifetimeEarnings).toEqual({ today: 200_000, nominal: 200_000 });
     expect(d.subtitle).toContain("Base Case");
   });
 
@@ -115,6 +117,33 @@ describe("buildEarlyYearsHumanCapitalData", () => {
       clientData: { planSettings: { inflationRate: 0.03, planStartYear: 2026 } },
       scenarioLabel: "Base Case",
     } as unknown as BuildDataContext;
-    expect(buildEarlyYearsHumanCapitalData(c, OPTS).lifetimeEarnings).toBe(80_000);
+    expect(buildEarlyYearsHumanCapitalData(c, OPTS).lifetimeEarnings).toEqual({
+      today: 80_000,
+      nominal: 80_000,
+    });
+  });
+
+  it("carries salary checkpoints in both units", () => {
+    const d = buildEarlyYearsHumanCapitalData(
+      ctx([
+        yr(2026, 100_000, 10_000),
+        yr(2031, 115_927, 20_000),
+        yr(2032, 119_405, 30_000),
+      ]),
+      OPTS,
+    );
+
+    expect(d.detailRows.map((row) => row.year)).toEqual([2026, 2031, 2032]);
+    expect(d.detailRows[1].salary.nominal).toBe(115_927);
+    expect(d.detailRows[1].salary.today).toBeCloseTo(100_000, -1);
+  });
+
+  it("puts both aggregate units in the takeaway", () => {
+    const d = buildEarlyYearsHumanCapitalData(
+      ctx([yr(2026, 100_000, 20_000), yr(2027, 100_000, 25_000)]),
+      OPTS,
+    );
+    expect(d.takeaway).toContain("today");
+    expect(d.takeaway).toContain("nominal as paid");
   });
 });

@@ -4,6 +4,9 @@ import { TidbitSidebarPdf } from "@/components/presentations/shared/tidbit-sideb
 import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
 import { dataLight } from "@/brand";
 import { HumanCapitalChartPdf } from "./human-capital-chart-pdf";
+import { DetailTablePdf } from "@/components/presentations/shared/detail-table-pdf";
+import { DualDollarValuePdf } from "@/components/presentations/shared/dual-dollar-value-pdf";
+import { fmtAxisUsd } from "@/components/presentations/pages/retirement-comparison/chart-axis";
 import type { RenderPdfInput } from "@/components/presentations/registry";
 import type { EarlyYearsHumanCapitalPageData } from "@/lib/presentations/pages/early-years-human-capital/types";
 
@@ -23,6 +26,8 @@ const s = StyleSheet.create({
   },
   takeawayText: { fontSize: 9, color: T.ink, lineHeight: 1.35 },
   footnote: { fontSize: 7, color: T.ink3, lineHeight: 1.35, marginTop: 8 },
+  unitLine: { fontSize: 7, color: T.ink2, marginTop: 3 },
+  detailText: { fontSize: 7.5, color: T.ink },
   empty: { fontSize: 11, color: T.ink2, textAlign: "center", marginTop: 60 },
 });
 
@@ -54,21 +59,45 @@ export function EarlyYearsHumanCapitalPagePdf(
           <HumanCapitalChartPdf
             width={data.tidbits.length > 0 ? 355 : 505}
             bars={[
-              { label: "Invested today", value: data.investedToday, fill: dataLight.grey },
+              { label: "Invested today", value: data.invested.today, fill: dataLight.grey },
               {
                 label:
                   data.lastEarningYear != null
                     ? `Future pay, through ${data.lastEarningYear}`
                     : "Future pay",
-                value: data.lifetimeEarnings,
+                value: data.lifetimeEarnings.today,
                 fill: dataLight.green,
               },
             ]}
           />
 
+          <Text style={s.unitLine}>
+            {`Future pay: ${fmtAxisUsd(data.lifetimeEarnings.today)} today · ${fmtAxisUsd(data.lifetimeEarnings.nominal)} nominal as paid`}
+          </Text>
+
           <View style={[s.takeaway, { borderLeftColor: accent.accent }]}>
             <Text style={s.takeawayText}>{data.takeaway}</Text>
           </View>
+
+          <DetailTablePdf
+            rows={data.detailRows}
+            rowKey={(row) => String(row.year)}
+            columns={[
+              {
+                header: "Year / age",
+                flex: 1,
+                render: (row) => <Text style={s.detailText}>{`${row.year} · ${row.age}`}</Text>,
+              },
+              {
+                header: "Salary",
+                flex: 2,
+                align: "right",
+                render: (row) => (
+                  <DualDollarValuePdf value={row.salary} nominalLabel={`in ${row.year}`} />
+                ),
+              },
+            ]}
+          />
 
           <Text style={s.footnote}>
             Future pay is every salary dollar this plan projects, discounted back to today

@@ -8,13 +8,22 @@
 // "spend nothing"; it is one choice against another.
 
 import { derivedKey } from "@/lib/presentations/derived-refs";
-import { toTodaysDollars, type DeflationBasis } from "@/lib/presentations/real-dollars";
+import {
+  absoluteDollarDifference,
+  dollarPair,
+  sumDollarPairs,
+  type DeflationBasis,
+} from "@/lib/presentations/real-dollars";
 import { renderTidbits } from "@/lib/presentations/tidbits";
 import { resolveAllTokens } from "@/lib/plan-text/tokens";
 // The same formatter the other Early Years takeaways use, so two sheets never
 // print one quantity in two units.
 import { fmtAxisUsd } from "@/components/presentations/pages/retirement-comparison/chart-axis";
 import { earlyYearsSubtitle, largestMovableDeferral } from "../early-years-shared";
+import {
+  DEBT_OR_INVEST_DETAIL_MAX_ROWS,
+  selectEarlyYearsDetailYears,
+} from "../early-years-detail";
 import { targetLoan, payoffYear } from "./target-loan";
 import type { PageScenarioBundle } from "@/components/presentations/document";
 import type { BuildDataContext, DeckOmitContext } from "@/components/presentations/registry";
@@ -31,7 +40,6 @@ export const INVEST_ARM_KEY = "invest";
 /** Below this the two portfolios are the same number to a reader, and naming a
  *  winner would be naming a rounding difference. */
 const PORTFOLIO_TOLERANCE = 0.001;
-
 /**
  * The plan's own facts remove this sheet. Two conditions, and both make the
  * page's headings promise a comparison it cannot make:
@@ -69,8 +77,10 @@ export function buildEarlyYearsDebtOrInvestData(
     liabilityName: loanRow?.name ?? "",
     monthlyAmount: options.monthlyAmount,
     milestoneAge: options.milestoneAge,
+    milestoneYear: basis.planStartYear,
     loan: null,
     invest: null,
+    detailRows: [],
     takeaway: null,
     emptyMessage,
     tidbits: [],
@@ -97,12 +107,12 @@ export function buildEarlyYearsDebtOrInvestData(
     return {
       label: scenarioLabel,
       debtFreeYear: gone,
-      interestPaid: projection.years.reduce(
-        (sum, y) =>
-          sum + toTodaysDollars(y.expenses.interestByLiability[loanRow.id] ?? 0, y.year, basis),
-        0,
+      interestPaid: sumDollarPairs(
+        projection.years.map((year) =>
+          dollarPair(year.expenses.interestByLiability[loanRow.id] ?? 0, year.year, basis),
+        ),
       ),
-      portfolioAtMilestone: toTodaysDollars(at.portfolioAssets.liquidTotal, at.year, basis),
+      portfolioAtMilestone: dollarPair(at.portfolioAssets.liquidTotal, at.year, basis),
     };
   };
 
@@ -115,15 +125,42 @@ export function buildEarlyYearsDebtOrInvestData(
       `This plan does not run to age ${options.milestoneAge}, so there is nothing to compare the two choices at.`,
     );
   }
+  const loanYears = loanBundle.projection.years;
+  const investByYear = new Map(investBundle.projection.years.map((year) => [year.year, year]));
+  const milestone = loanYears.find((year) => year.ages.client === options.milestoneAge)!;
+  const throughYear = Math.max(milestone.year, loan.debtFreeYear, invest.debtFreeYear);
+  const common = loanYears.filter(
+    (year) => year.year <= throughYear && investByYear.has(year.year),
+  );
+  const detailYears = selectEarlyYearsDetailYears({
+    availableYears: common.map((year) => year.year),
+    planStartYear: basis.planStartYear,
+    requiredYears: [common[0]?.year, loan.debtFreeYear, invest.debtFreeYear, milestone.year].filter(
+      (year): year is number => year != null,
+    ),
+    maxRows: DEBT_OR_INVEST_DETAIL_MAX_ROWS,
+  });
+  const detailRows = detailYears.map((year) => {
+    const loanYear = common.find((candidate) => candidate.year === year)!;
+    const investYear = investByYear.get(year)!;
+    return {
+      year,
+      age: loanYear.ages.client,
+      loanBalance: dollarPair(loanYear.liabilityBalancesBoY[loanRow.id] ?? 0, year, basis),
+      investBalance: dollarPair(investYear.liabilityBalancesBoY[loanRow.id] ?? 0, year, basis),
+    };
+  });
 
   return {
     subtitle: earlyYearsSubtitle(base?.scenarioLabel),
     liabilityName: loanRow.name,
     monthlyAmount: options.monthlyAmount,
     milestoneAge: options.milestoneAge,
+    milestoneYear: milestone.year,
     loan,
     invest,
-    takeaway: takeawayFor(loan, invest, options.milestoneAge),
+    detailRows,
+    takeaway: takeawayFor(loan, invest, options.milestoneAge, milestone.year),
     emptyMessage: null,
     // Resolved only when the advisor picked something.
     tidbits:
@@ -147,10 +184,16 @@ function takeawayFor(
   loan: DebtOrInvestArm,
   invest: DebtOrInvestArm,
   milestoneAge: number,
+  milestoneYear: number,
 ): string | null {
-  const gap = Math.abs(invest.portfolioAtMilestone - loan.portfolioAtMilestone);
-  const scale = Math.max(invest.portfolioAtMilestone, loan.portfolioAtMilestone, 1);
-  if (gap / scale <= PORTFOLIO_TOLERANCE) return null;
-  const winner = invest.portfolioAtMilestone > loan.portfolioAtMilestone ? invest : loan;
-  return `By age ${milestoneAge}, "${winner.label}" leaves about ${fmtAxisUsd(gap)} more, in today's dollars.`;
+  const gap = absoluteDollarDifference(invest.portfolioAtMilestone, loan.portfolioAtMilestone);
+  const scale = Math.max(
+    invest.portfolioAtMilestone.today,
+    loan.portfolioAtMilestone.today,
+    1,
+  );
+  if (gap.today / scale <= PORTFOLIO_TOLERANCE) return null;
+  const winner =
+    invest.portfolioAtMilestone.today > loan.portfolioAtMilestone.today ? invest : loan;
+  return `By age ${milestoneAge}, "${winner.label}" leaves about ${fmtAxisUsd(gap.today)} today (${fmtAxisUsd(gap.nominal)} in ${milestoneYear} dollars) more.`;
 }

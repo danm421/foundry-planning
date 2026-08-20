@@ -132,7 +132,6 @@ export function PresentationDocument(props: PresentationDocumentProps) {
       options,
       bundle,
       bundlesByRef,
-      pageCount: page.estimatePageCount(undefined as never, options as never),
     };
   });
 
@@ -153,7 +152,42 @@ export function PresentationDocument(props: PresentationDocumentProps) {
   // react-pdf throws on a Document with no Page. An advisor who assembled a deck
   // of nothing but self-suppressing sheets gets one of them back rather than a
   // failed export.
-  const entries = kept.length > 0 ? kept : resolved.slice(0, 1);
+  // Build each kept page once, then give that exact model to both the estimator
+  // and renderer. A data-driven count cannot run before its rows exist.
+  const entries = (kept.length > 0 ? kept : resolved.slice(0, 1)).map((entry) => {
+    const { p, page, options, bundle, bundlesByRef } = entry;
+    const data = page.buildData(
+      {
+        years: bundle.projection.years,
+        projection: bundle.projection,
+        clientData: bundle.clientData,
+        scenarioLabel: bundle.scenarioLabel,
+        clientName: props.clientName,
+        spouseName: props.spouseName,
+        spouseLastName: props.spouseLastName,
+        firmName: props.firmName,
+        firmTagline: props.firmTagline,
+        firmLogoDataUrl: props.firmLogoDataUrl,
+        accentColor: props.accentColor,
+        reportDate: props.reportDate,
+        monteCarlo: bundle.monteCarlo ?? null,
+        investments: props.investments,
+        lifeInsurance: props.lifeInsurance,
+        observations: props.observations,
+        planStory: p.planStory,
+        proposal: p.proposal,
+        scenarioChanges: bundle.scenarioChanges,
+        bundlesByRef,
+      },
+      options as never,
+    );
+
+    return {
+      ...entry,
+      data,
+      pageCount: page.estimatePageCount(data as never, options as never),
+    };
+  });
 
   // Compute each page's starting page number based on document order.
   const startPages = entries.reduce<number[]>((acc, _entry, i) => {
@@ -173,32 +207,7 @@ export function PresentationDocument(props: PresentationDocumentProps) {
 
   return (
     <Document>
-      {entries.map(({ p, idx, page, options, bundle, bundlesByRef }, i) => {
-        const data = page.buildData(
-          {
-            years: bundle.projection.years,
-            projection: bundle.projection,
-            clientData: bundle.clientData,
-            scenarioLabel: bundle.scenarioLabel,
-            clientName: props.clientName,
-            spouseName: props.spouseName,
-            spouseLastName: props.spouseLastName,
-            firmName: props.firmName,
-            firmTagline: props.firmTagline,
-            firmLogoDataUrl: props.firmLogoDataUrl,
-            accentColor: props.accentColor,
-            reportDate: props.reportDate,
-            monteCarlo: bundle.monteCarlo ?? null,
-            investments: props.investments,
-            lifeInsurance: props.lifeInsurance,
-            observations: props.observations,
-            planStory: p.planStory,
-            proposal: p.proposal,
-            scenarioChanges: bundle.scenarioChanges,
-            bundlesByRef,
-          },
-          options as never,
-        );
+      {entries.map(({ p, idx, page, data }, i) => {
         return (
           <Fragment key={p.pageId + idx}>
             {page.renderPdf({

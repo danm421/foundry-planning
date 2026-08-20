@@ -1,5 +1,8 @@
-// Always one sheet: two cards of three figures, one takeaway line, one footnote
-// and at most two sidebar tidbits never exceed a page.
-export function estimateEarlyYearsDebtOrInvestPageCount(): number {
-  return 1;
+import { DEBT_OR_INVEST_DETAIL_MAX_ROWS } from "../early-years-detail";
+import type { EarlyYearsDebtOrInvestPageData } from "./types";
+
+export function estimateEarlyYearsDebtOrInvestPageCount(
+  data: EarlyYearsDebtOrInvestPageData,
+): number {
+  return Math.max(1, Math.ceil(data.detailRows.length / DEBT_OR_INVEST_DETAIL_MAX_ROWS));
 }

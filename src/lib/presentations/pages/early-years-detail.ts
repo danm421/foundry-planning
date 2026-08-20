@@ -5,6 +5,12 @@ interface SelectDetailYearsArgs {
   maxRows: number;
 }
 
+/** Measured one-Letter-sheet row budgets for the five detail layouts. */
+export const HUMAN_CAPITAL_DETAIL_MAX_ROWS = 10;
+export const EARLY_YEARS_GROUPED_DETAIL_MAX_ROWS = 16;
+export const ROTH_DETAIL_MAX_ROWS = 14;
+export const DEBT_OR_INVEST_DETAIL_MAX_ROWS = 12;
+
 /**
  * Five-year detail with boundary years kept even when a long plan needs
  * thinning. Returns only years the engine actually projected.

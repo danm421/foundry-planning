@@ -3,6 +3,8 @@ import { PageFrame } from "@/components/presentations/shared/page-frame";
 import { TidbitSidebarPdf } from "@/components/presentations/shared/tidbit-sidebar-pdf";
 import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
 import { exactCurrency } from "@/lib/presentations/format";
+import { DetailTablePdf } from "@/components/presentations/shared/detail-table-pdf";
+import { DualDollarValuePdf } from "@/components/presentations/shared/dual-dollar-value-pdf";
 import type { RenderPdfInput } from "@/components/presentations/registry";
 import type {
   DebtOrInvestArm,
@@ -35,6 +37,7 @@ const s = StyleSheet.create({
     marginTop: 6,
   },
   figVal: { fontSize: 13, fontWeight: 700, color: T.ink, marginTop: 1 },
+  figSecondary: { fontSize: 6.5, color: T.ink3, marginTop: 1 },
   takeaway: {
     backgroundColor: T.card,
     borderWidth: 1,
@@ -46,16 +49,19 @@ const s = StyleSheet.create({
   },
   takeawayText: { fontSize: 9, color: T.ink, lineHeight: 1.35 },
   footnote: { fontSize: 7, color: T.ink3, lineHeight: 1.35, marginTop: 8 },
+  detailText: { fontSize: 7, color: T.ink },
   empty: { fontSize: 11, color: T.ink2, textAlign: "center", marginTop: 60 },
 });
 
 function Arm({
   arm,
   milestoneAge,
+  milestoneYear,
   accent,
 }: {
   arm: DebtOrInvestArm;
   milestoneAge: number;
+  milestoneYear: number;
   accent: string;
 }) {
   return (
@@ -64,9 +70,13 @@ function Arm({
       <Text style={s.figLbl}>Debt-free in</Text>
       <Text style={s.figVal}>{String(arm.debtFreeYear)}</Text>
       <Text style={s.figLbl}>Interest paid on this loan</Text>
-      <Text style={s.figVal}>{exactCurrency(arm.interestPaid)}</Text>
+      <Text style={s.figVal}>{`${exactCurrency(arm.interestPaid.today)} today`}</Text>
+      <Text style={s.figSecondary}>{`${exactCurrency(arm.interestPaid.nominal)} nominal as paid`}</Text>
       <Text style={s.figLbl}>{`Portfolio at ${milestoneAge}`}</Text>
-      <Text style={s.figVal}>{exactCurrency(arm.portfolioAtMilestone)}</Text>
+      <Text style={s.figVal}>{`${exactCurrency(arm.portfolioAtMilestone.today)} today`}</Text>
+      <Text style={s.figSecondary}>
+        {`${exactCurrency(arm.portfolioAtMilestone.nominal)} in ${milestoneYear}`}
+      </Text>
     </View>
   );
 }
@@ -98,8 +108,18 @@ export function EarlyYearsDebtOrInvestPagePdf(
           </Text>
 
           <View style={s.arms}>
-            <Arm arm={data.loan} milestoneAge={data.milestoneAge} accent={accent.accent} />
-            <Arm arm={data.invest} milestoneAge={data.milestoneAge} accent={accent.accent} />
+            <Arm
+              arm={data.loan}
+              milestoneAge={data.milestoneAge}
+              milestoneYear={data.milestoneYear}
+              accent={accent.accent}
+            />
+            <Arm
+              arm={data.invest}
+              milestoneAge={data.milestoneAge}
+              milestoneYear={data.milestoneYear}
+              accent={accent.accent}
+            />
           </View>
 
           {data.takeaway != null && (
@@ -107,6 +127,40 @@ export function EarlyYearsDebtOrInvestPagePdf(
               <Text style={s.takeawayText}>{data.takeaway}</Text>
             </View>
           )}
+
+          <DetailTablePdf
+            rows={data.detailRows}
+            rowKey={(row) => String(row.year)}
+            columns={[
+              {
+                header: "Year / age",
+                flex: 0.8,
+                render: (row) => <Text style={s.detailText}>{`${row.year} · ${row.age}`}</Text>,
+              },
+              {
+                header: "Balance · pay loan",
+                flex: 1.4,
+                align: "right",
+                render: (row) => (
+                  <DualDollarValuePdf
+                    value={row.loanBalance}
+                    nominalLabel={`in ${row.year}`}
+                  />
+                ),
+              },
+              {
+                header: "Balance · invest",
+                flex: 1.4,
+                align: "right",
+                render: (row) => (
+                  <DualDollarValuePdf
+                    value={row.investBalance}
+                    nominalLabel={`in ${row.year}`}
+                  />
+                ),
+              },
+            ]}
+          />
 
           <Text style={s.footnote}>
             An extra loan payment is money out the door too, so this compares one use of it

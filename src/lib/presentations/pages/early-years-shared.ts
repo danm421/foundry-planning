@@ -137,5 +137,5 @@ export function deltaSavingsRuleMutation(
  * end the same way.
  */
 export function earlyYearsSubtitle(scenarioLabel: string | undefined): string {
-  return `${scenarioLabel ?? "Base Case"} · Every figure in today's dollars`;
+  return `${scenarioLabel ?? "Base Case"} · Today's dollars first · Future-year dollars beneath`;
 }

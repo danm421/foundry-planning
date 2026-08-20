@@ -1,18 +1,20 @@
 import type { Tidbit } from "@/lib/presentations/tidbits";
 import type { DeflationBasis } from "@/lib/presentations/real-dollars";
+import type { DollarPair } from "@/lib/presentations/real-dollars";
 
 export interface WaitingBar {
-  /** Portfolio at this milestone age, in the plan's start-year dollars. */
-  value: number;
+  /** Portfolio at this milestone age, in real and nominal dollars. */
+  value: DollarPair;
 }
 
 export interface WaitingGroup {
   age: number;
+  year: number;
   bars: WaitingBar[];
 }
 
 export interface EarlyYearsWaitingPageData {
-  /** Scenario label · the today's-dollars note, in the house subtitle form. */
+  /** Scenario label · the deck's two-unit reading rule. */
   subtitle: string;
   /** Empty when the page could not be modelled; `emptyMessage` then says why. */
   groups: WaitingGroup[];

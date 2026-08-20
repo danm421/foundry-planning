@@ -59,19 +59,19 @@ export function EarlyYearsStandingPagePdf(input: RenderPdfInput<EarlyYearsStandi
           <Text style={s.heroLbl}>Your savings rate</Text>
           <Text style={s.heroVal}>{`${Math.round(data.savingsRatePct * 100)}%`}</Text>
           <Text style={s.heroSub}>
-            {`${exactCurrency(data.contributionsAnnual)} of the ${exactCurrency(data.grossAnnual)} you earn goes into savings each year.`}
+            {`${exactCurrency(data.contributionsAnnual.today)} of the ${exactCurrency(data.grossAnnual.today)} you earn goes into savings each year.`}
           </Text>
 
           <View style={s.kpis}>
-            <Kpi lbl="Salary income" val={exactCurrency(data.grossAnnual)} />
-            <Kpi lbl="You contribute" val={exactCurrency(data.contributionsAnnual)} />
-            <Kpi lbl="Portfolio today" val={exactCurrency(data.portfolioToday)} />
+            <Kpi lbl="Salary income" val={exactCurrency(data.grossAnnual.today)} />
+            <Kpi lbl="You contribute" val={exactCurrency(data.contributionsAnnual.today)} />
+            <Kpi lbl="Portfolio today" val={exactCurrency(data.portfolio.today)} />
           </View>
 
           {data.match.kind === "captured" && (
             <View style={[s.match, { borderLeftColor: accent.accent }]}>
               <Text style={s.matchText}>
-                {`Your employer adds ${exactCurrency(data.match.employerAnnual)} a year on top of what you put in.`}
+                {`Your employer adds ${exactCurrency(data.match.employerAnnual.today)} a year on top of what you put in.`}
               </Text>
             </View>
           )}
