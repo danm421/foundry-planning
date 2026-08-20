@@ -12,6 +12,8 @@ const routerPush = vi.fn();
 const routerRefresh = vi.fn();
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: routerPush, refresh: routerRefresh }),
+  // The Balance Sheet report reads the ?view= param through useViewParam.
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 // The workspace calls useToast() for the report-layout save-failure toast and
@@ -704,6 +706,42 @@ describe("LiveSolverWorkspace — report vs input tab independence", () => {
       "aria-selected",
       "true",
     );
+  });
+});
+
+describe("LiveSolverWorkspace — KPI strip is Portfolio-only", () => {
+  it("shows the scenario KPIs on Portfolio and on no other report", () => {
+    // Report tab names collide with the input tab names, so scope every query
+    // to the right pane's strip. The LI report also kicks off the need-over-time
+    // SSE run, so stub that shape alongside the plain JSON solve. Summaries is
+    // left out: it reads useSearchParams, which this file's router mock omits.
+    const reportTabs = () =>
+      within(screen.getByRole("tablist", { name: "Chart view" }));
+    fetchMock.mockImplementation((url: string) =>
+      String(url).includes("/life-insurance/over-time")
+        ? Promise.resolve(makeSseStream([]))
+        : Promise.resolve({ ok: true, json: async () => liResult }),
+    );
+    render(<LiveSolverWorkspace {...baseProps} />);
+
+    // Portfolio is the report the workspace lands on.
+    expect(screen.getByText("Ending Portfolio Assets")).toBeInTheDocument();
+
+    for (const label of [
+      "Cash Flow",
+      "Tax Bracket",
+      "Life Insurance Need",
+      "Estate",
+      "Monte Carlo",
+      "Education",
+      "Balance Sheet",
+    ]) {
+      fireEvent.click(reportTabs().getByRole("tab", { name: label }));
+      expect(screen.queryByText("Ending Portfolio Assets")).toBeNull();
+    }
+
+    fireEvent.click(reportTabs().getByRole("tab", { name: "Portfolio" }));
+    expect(screen.getByText("Ending Portfolio Assets")).toBeInTheDocument();
   });
 });
 

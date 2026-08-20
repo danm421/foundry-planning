@@ -684,10 +684,11 @@ export function LiveSolverWorkspace({
   const workingLifetimeTax = lifetimeTaxes(currentProjection);
 
   // Total to Heirs needs a full projection *with death events* (server fetch,
-  // debounced), unlike the synchronous KPIs above. Gated to when the KPI strip
-  // is visible (any report except the Summaries/Monte Carlo decks).
+  // debounced), unlike the synchronous KPIs above. Gated to the two reports that
+  // consume it: Portfolio (the KPI strip) and Estate (the comparison chart's
+  // first-death marker).
   const netToHeirsEnabled =
-    activeReport !== "summaries" && activeReport !== "monteCarlo";
+    activeReport === "portfolio" || activeReport === "estate";
   const { netToHeirs, netToHeirsDelta, firstDeathYear, loading: netToHeirsLoading } =
     useSolverNetToHeirs({
       clientId,
@@ -1544,7 +1545,7 @@ export function LiveSolverWorkspace({
                 spouseName={spouseName}
               />
             ) : null}
-            {activeReport !== "summaries" && activeReport !== "monteCarlo" ? (
+            {activeReport === "portfolio" ? (
               <SolverKpiStrip
                 posState={scenarioGauge.state}
                 workingSuccess={scenarioGauge.successPct}
