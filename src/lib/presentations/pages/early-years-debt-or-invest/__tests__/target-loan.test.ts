@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { eligibleLoans, targetLoan, payoffYear } from "../target-loan";
+import { eligibleLoans, targetLoan, payoffYear, loanWindow } from "../target-loan";
 import type { ClientData, Liability } from "@/engine/types";
 // NOT `@/engine/types` — `ProjectionResult` is re-exported from the engine's
 // index, off `./projection`.
@@ -62,5 +62,28 @@ describe("payoffYear", () => {
 
   it("is null for a loan the projection never carries", () => {
     expect(payoffYear(projection([[2026, 0]]), "l1")).toBeNull();
+  });
+});
+
+describe("loanWindow", () => {
+  const source = (liabilities: Liability[], balances: Array<[number, number]>) => ({
+    clientData: tree(liabilities),
+    projection: {
+      years: balances.map(([year, bal]) => ({ year, liabilityBalancesBoY: { l1: bal } })),
+    } as unknown as ProjectionResult,
+  });
+
+  it("resolves the loan and the year the base plan clears it", () => {
+    const w = loanWindow(source([loan({ id: "l1" })], [[2026, 30_000], [2027, 0]]), null);
+    expect(w?.loan.id).toBe("l1");
+    expect(w?.endYear).toBe(2027);
+  });
+
+  it("is null when no loan is eligible — neither arm has anywhere to go", () => {
+    expect(loanWindow(source([], [[2026, 0]]), null)).toBeNull();
+  });
+
+  it("is null when the projection never carries the loan", () => {
+    expect(loanWindow(source([loan({ id: "l1" })], [[2026, 0]]), null)).toBeNull();
   });
 });

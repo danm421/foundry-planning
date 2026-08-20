@@ -11,6 +11,7 @@ import { resolveAllTokens } from "@/lib/plan-text/tokens";
 // The same formatter the chart labels its bars with — one sheet printing "$3.1M"
 // beside "$3,120,000" reads as two different units.
 import { fmtAxisUsd } from "@/components/presentations/pages/retirement-comparison/chart-axis";
+import { earlyYearsSubtitle } from "../early-years-shared";
 import type { BuildDataContext } from "@/components/presentations/registry";
 import type {
   EarlyYearsHumanCapitalPageData,
@@ -47,7 +48,7 @@ export function buildEarlyYearsHumanCapitalData(
   );
 
   return {
-    subtitle: `${base?.scenarioLabel ?? "Base Case"} · Every figure in today's dollars`,
+    subtitle: earlyYearsSubtitle(base?.scenarioLabel),
     isEmpty: lifetimeEarnings <= 0,
     investedToday,
     lifetimeEarnings,

@@ -40,3 +40,20 @@ export function payoffYear(projection: ProjectionResult, liabilityId: string): n
   if (owing.length === 0) return null;
   return owing[owing.length - 1].year + 1;
 }
+
+/** The loan both arms act on and the window they act over, resolved together.
+ *
+ *  One helper rather than two lookups per arm: the whole page rests on the two
+ *  arms committing the same money to the same loan over the same years, and a
+ *  guard added to one copy of that resolution and not the other would leave
+ *  them comparing different things under headings that promise otherwise. */
+export function loanWindow(
+  source: { clientData: ClientData; projection: ProjectionResult },
+  liabilityId: string | null,
+): { loan: Liability; endYear: number } | null {
+  const loan = targetLoan(source.clientData, liabilityId);
+  if (loan == null) return null;
+  const endYear = payoffYear(source.projection, loan.id);
+  if (endYear == null) return null;
+  return { loan, endYear };
+}

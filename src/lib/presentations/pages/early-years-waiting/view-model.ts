@@ -16,6 +16,7 @@ import { householdSavingsRate } from "@/lib/presentations/savings-rate";
 // bars it measures never print two different units.
 import { fmtAxisUsd } from "@/components/presentations/pages/retirement-comparison/chart-axis";
 import { ladderBlocker, type LadderBlocker } from "../early-years-ladder/rungs";
+import { earlyYearsSubtitle } from "../early-years-shared";
 import type { BuildDataContext } from "@/components/presentations/registry";
 import type {
   EarlyYearsWaitingPageData,
@@ -48,7 +49,7 @@ export function buildEarlyYearsWaitingData(
   const seriesLabels = options.delays.map(labelForDelay);
 
   const empty = (emptyMessage: string): EarlyYearsWaitingPageData => ({
-    subtitle: subtitleFor(base?.scenarioLabel),
+    subtitle: earlyYearsSubtitle(base?.scenarioLabel),
     groups: [],
     seriesLabels,
     raisedRate,
@@ -93,7 +94,7 @@ export function buildEarlyYearsWaitingData(
   }
 
   return {
-    subtitle: subtitleFor(base?.scenarioLabel),
+    subtitle: earlyYearsSubtitle(base?.scenarioLabel),
     groups,
     seriesLabels,
     raisedRate,
@@ -132,10 +133,6 @@ const BLOCKED_COPY: Record<LadderBlocker, string> = {
   "not-modellable":
     "This plan's retirement contributions can't be modelled as a single savings rate, so there is nothing to start sooner here.",
 };
-
-function subtitleFor(scenarioLabel: string | undefined): string {
-  return `${scenarioLabel ?? "Base Case"} · Every figure in today's dollars`;
-}
 
 /** "Start now" · "Start in 5 years" — never a rate: every bar on this page saves
  *  the SAME rate, and naming it per bar would suggest otherwise. */

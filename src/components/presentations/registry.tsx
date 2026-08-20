@@ -427,10 +427,7 @@ import {
   INVEST_ARM_KEY,
   LOAN_ARM_KEY,
 } from "@/lib/presentations/pages/early-years-debt-or-invest/view-model";
-import {
-  payoffYear,
-  targetLoan,
-} from "@/lib/presentations/pages/early-years-debt-or-invest/target-loan";
+import { loanWindow } from "@/lib/presentations/pages/early-years-debt-or-invest/target-loan";
 import { EarlyYearsDebtOrInvestPagePdf } from "./pages/early-years-debt-or-invest/page-pdf";
 import { EarlyYearsDebtOrInvestOptionsControl } from "./pages/early-years-debt-or-invest/options-control";
 
@@ -1606,10 +1603,9 @@ export const earlyYearsDebtOrInvestPage: PresentationPage<
       from: "base",
       label: "Onto the loan",
       mutations: (source: DerivedSource) => {
-        const loan = targetLoan(source.clientData, o.liabilityId);
-        if (loan == null) return [];
-        const end = payoffYear(source.projection, loan.id);
-        if (end == null) return [];
+        const window = loanWindow(source, o.liabilityId);
+        if (window == null) return [];
+        const { loan, endYear } = window;
         return [
           {
             kind: "debt-paydown",
@@ -1622,7 +1618,7 @@ export const earlyYearsDebtOrInvestPage: PresentationPage<
               frequency: "monthly",
               amount: o.monthlyAmount,
               startYear: source.clientData.planSettings.planStartYear,
-              endYear: end,
+              endYear,
               enabled: true,
             },
           },
@@ -1634,15 +1630,13 @@ export const earlyYearsDebtOrInvestPage: PresentationPage<
       from: "base",
       label: "Into the 401(k)",
       mutations: (source: DerivedSource) => {
-        const loan = targetLoan(source.clientData, o.liabilityId);
-        if (loan == null) return [];
-        const end = payoffYear(source.projection, loan.id);
-        if (end == null) return [];
+        const window = loanWindow(source, o.liabilityId);
+        if (window == null) return [];
         return deltaSavingsRuleMutation(source.clientData, {
           key: "debt-or-invest",
           amount: { mode: "annual-dollars", annualAmount: o.monthlyAmount * 12 },
           startYear: source.clientData.planSettings.planStartYear,
-          endYear: end,
+          endYear: window.endYear,
         });
       },
     },

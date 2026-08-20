@@ -109,8 +109,9 @@ export function EarlyYearsDebtOrInvestPagePdf(
           )}
 
           <Text style={s.footnote}>
-            Both choices spend the same money over the same years, so this compares one use
-            of it against the other — not against saving nothing.
+            An extra loan payment is money out the door too, so this compares one use of it
+            against the other — not against saving nothing. The extra payments stop the
+            moment the loan clears.
           </Text>
         </View>
 

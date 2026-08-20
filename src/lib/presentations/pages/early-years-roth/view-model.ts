@@ -13,6 +13,7 @@ import { toTodaysDollars, type DeflationBasis } from "@/lib/presentations/real-d
 import { renderTidbits } from "@/lib/presentations/tidbits";
 import { resolveAllTokens } from "@/lib/plan-text/tokens";
 import { exactCurrency } from "@/lib/presentations/format";
+import { earlyYearsSubtitle } from "../early-years-shared";
 import { rothDeferralAccountIds } from "./deferral-mix";
 import type { ProjectionYear } from "@/engine/types";
 import type { BuildDataContext } from "@/components/presentations/registry";
@@ -41,7 +42,7 @@ export function buildEarlyYearsRothData(
   };
 
   const empty = (blocker: RothBlocker): EarlyYearsRothPageData => ({
-    subtitle: subtitleFor(base?.scenarioLabel),
+    subtitle: earlyYearsSubtitle(base?.scenarioLabel),
     rows: [],
     takeaway: null,
     spendingIsFixed: false,
@@ -68,7 +69,7 @@ export function buildEarlyYearsRothData(
   const spendScale = Math.max(t.avgRetirementSpend, r.avgRetirementSpend, 1);
 
   return {
-    subtitle: subtitleFor(base?.scenarioLabel),
+    subtitle: earlyYearsSubtitle(base?.scenarioLabel),
     rows: [
       {
         label: "Tax paid while you're working",
@@ -159,10 +160,6 @@ const BLOCKED_COPY: Record<RothBlocker, string> = {
     "This plan has no 401(k) or 403(b) contributions, so there is no Roth-or-traditional choice to price.",
   "no-variant": "This comparison could not be built for this plan.",
 };
-
-function subtitleFor(scenarioLabel: string | undefined): string {
-  return `${scenarioLabel ?? "Base Case"} · Every figure in today's dollars`;
-}
 
 /** Names the cheaper column and what it saves. Null when they tie — a sheet that
  *  declares a winner over a rounding difference is worse than one that doesn't. */

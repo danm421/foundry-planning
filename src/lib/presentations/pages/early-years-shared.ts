@@ -124,3 +124,18 @@ export function deltaSavingsRuleMutation(
 
   return [{ kind: "savings-rule-upsert", id: value.id, value }];
 }
+
+/**
+ * The subtitle line every Your Early Years sheet prints under its title.
+ *
+ * One home for it because five pages print it identically, and the deck's whole
+ * claim is that its figures are comparable — a sheet whose subtitle drifted out
+ * of step with the others would quietly say it measures something else.
+ *
+ * The Where You Stand sheet is deliberately NOT a caller: its subtitle carries
+ * an extra "At age N" segment, so it is a different sentence that happens to
+ * end the same way.
+ */
+export function earlyYearsSubtitle(scenarioLabel: string | undefined): string {
+  return `${scenarioLabel ?? "Base Case"} · Every figure in today's dollars`;
+}

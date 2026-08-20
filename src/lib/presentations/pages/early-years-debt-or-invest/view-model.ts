@@ -14,9 +14,9 @@ import { resolveAllTokens } from "@/lib/plan-text/tokens";
 // The same formatter the other Early Years takeaways use, so two sheets never
 // print one quantity in two units.
 import { fmtAxisUsd } from "@/components/presentations/pages/retirement-comparison/chart-axis";
-import { largestMovableDeferral } from "../early-years-shared";
+import { earlyYearsSubtitle, largestMovableDeferral } from "../early-years-shared";
 import { targetLoan, payoffYear } from "./target-loan";
-import type { ProjectionResult } from "@/engine";
+import type { PageScenarioBundle } from "@/components/presentations/document";
 import type { BuildDataContext, DeckOmitContext } from "@/components/presentations/registry";
 import type {
   DebtOrInvestArm,
@@ -65,7 +65,7 @@ export function buildEarlyYearsDebtOrInvestData(
   const loanRow = targetLoan(source, options.liabilityId);
 
   const empty = (emptyMessage: string): EarlyYearsDebtOrInvestPageData => ({
-    subtitle: subtitleFor(base?.scenarioLabel),
+    subtitle: earlyYearsSubtitle(base?.scenarioLabel),
     liabilityName: loanRow?.name ?? "",
     monthlyAmount: options.monthlyAmount,
     milestoneAge: options.milestoneAge,
@@ -86,12 +86,16 @@ export function buildEarlyYearsDebtOrInvestData(
     return empty("This comparison could not be built for this plan.");
   }
 
-  const arm = (label: string, projection: ProjectionResult): DebtOrInvestArm | null => {
+  // The label comes off the bundle, not a literal here: the registry names each
+  // variant once (`label:` on its derived ref) and `buildDerivedBundle` carries
+  // that name through as `scenarioLabel`. Re-typing it would let the card title
+  // and the variant it describes drift apart.
+  const arm = ({ projection, scenarioLabel }: PageScenarioBundle): DebtOrInvestArm | null => {
     const gone = payoffYear(projection, loanRow.id);
     const at = projection.years.find((y) => y.ages.client === options.milestoneAge);
     if (gone == null || at == null) return null;
     return {
-      label,
+      label: scenarioLabel,
       debtFreeYear: gone,
       interestPaid: projection.years.reduce(
         (sum, y) =>
@@ -102,8 +106,8 @@ export function buildEarlyYearsDebtOrInvestData(
     };
   };
 
-  const loan = arm("Onto the loan", loanBundle.projection);
-  const invest = arm("Into the 401(k)", investBundle.projection);
+  const loan = arm(loanBundle);
+  const invest = arm(investBundle);
   // Half a comparison is not a comparison: if either arm has no figure at the
   // milestone age, the sheet says so rather than printing one column.
   if (loan == null || invest == null) {
@@ -113,7 +117,7 @@ export function buildEarlyYearsDebtOrInvestData(
   }
 
   return {
-    subtitle: subtitleFor(base?.scenarioLabel),
+    subtitle: earlyYearsSubtitle(base?.scenarioLabel),
     liabilityName: loanRow.name,
     monthlyAmount: options.monthlyAmount,
     milestoneAge: options.milestoneAge,
@@ -134,10 +138,6 @@ export function buildEarlyYearsDebtOrInvestData(
           )
         : [],
   };
-}
-
-function subtitleFor(scenarioLabel: string | undefined): string {
-  return `${scenarioLabel ?? "Base Case"} · Every figure in today's dollars`;
 }
 
 /** Names the arm that ends with more and by how much. Null on a near-tie: this

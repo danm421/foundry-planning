@@ -14,6 +14,7 @@ import { renderTidbits } from "@/lib/presentations/tidbits";
 import { fmtAxisUsd } from "@/components/presentations/pages/retirement-comparison/chart-axis";
 import { resolveAllTokens } from "@/lib/plan-text/tokens";
 import { householdSavingsRate } from "@/lib/presentations/savings-rate";
+import { earlyYearsSubtitle } from "../early-years-shared";
 import { resolveRungs, ladderBlocker, type LadderBlocker, type Rung } from "./rungs";
 import type { BuildDataContext } from "@/components/presentations/registry";
 import type {
@@ -51,7 +52,7 @@ export function buildEarlyYearsLadderData(
   );
 
   const empty = (emptyMessage: string): EarlyYearsLadderPageData => ({
-    subtitle: subtitleFor(base?.scenarioLabel),
+    subtitle: earlyYearsSubtitle(base?.scenarioLabel),
     groups: [],
     rungs,
     cappedRungLabels: [],
@@ -98,7 +99,7 @@ export function buildEarlyYearsLadderData(
   }
 
   return {
-    subtitle: subtitleFor(base?.scenarioLabel),
+    subtitle: earlyYearsSubtitle(base?.scenarioLabel),
     groups,
     rungs,
     cappedRungLabels: cappedRungLabels(
@@ -134,12 +135,6 @@ const BLOCKED_COPY: Record<LadderBlocker, string> = {
   "not-modellable":
     "This plan's retirement contributions can't be modelled as a single savings rate, so there is nothing to raise here.",
 };
-
-function subtitleFor(scenarioLabel: string | undefined): string {
-  // The bars are always the base plan with one lever moved, whatever scenario
-  // the rest of the deck is built on.
-  return `${scenarioLabel ?? "Base Case"} · Every figure in today's dollars`;
-}
 
 /** Below this the shortfall is float noise, not a limit. A tenth of a point is
  *  orders of magnitude under anything a rounded whole-percent label can show. */

@@ -71,8 +71,12 @@ describe("EarlyYearsDebtOrInvestPagePdf", () => {
     expect(text).toContain("$930,000");
   });
 
-  it("says on the sheet that both choices spend the same money", async () => {
-    expect(flat(await textOf(base))).toContain("same money over the same years");
+  it("says on the sheet that the extra payment costs real money too", async () => {
+    const text = flat(await textOf(base));
+    expect(text).toContain("money out the door");
+    // The loan arm's extras stop at ITS payoff, not at the base plan's — the
+    // sheet says so rather than claiming both arms spend for the same years.
+    expect(text).toContain("stop the moment the loan clears");
   });
 
   it("prints the empty state rather than one column", async () => {
