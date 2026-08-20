@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { toTodaysDollars } from "../real-dollars";
+import {
+  absoluteDollarDifference,
+  dollarPair,
+  sumDollarPairs,
+  toTodaysDollars,
+} from "../real-dollars";
 
 const basis = { inflationRate: 0.03, planStartYear: 2026 };
 
@@ -19,5 +24,35 @@ describe("toTodaysDollars", () => {
 
   it("is a no-op at zero inflation", () => {
     expect(toTodaysDollars(100_000, 2066, { inflationRate: 0, planStartYear: 2026 })).toBe(100_000);
+  });
+});
+
+describe("DollarPair", () => {
+  it("preserves the engine's nominal result beside its today's-dollar value", () => {
+    const pair = dollarPair(2_520_232, 2060, {
+      inflationRate: 0.024,
+      planStartYear: 2026,
+    });
+
+    expect(pair.nominal).toBe(2_520_232);
+    expect(pair.today).toBeCloseTo(1_125_232, 0);
+  });
+
+  it("adds aggregates in their own units", () => {
+    expect(
+      sumDollarPairs([
+        { today: 100, nominal: 120 },
+        { today: 200, nominal: 260 },
+      ]),
+    ).toEqual({ today: 300, nominal: 380 });
+  });
+
+  it("measures an absolute gap in both units", () => {
+    expect(
+      absoluteDollarDifference(
+        { today: 900, nominal: 1_500 },
+        { today: 1_100, nominal: 1_900 },
+      ),
+    ).toEqual({ today: 200, nominal: 400 });
   });
 });
