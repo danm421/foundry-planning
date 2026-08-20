@@ -1,0 +1,211 @@
+"use client";
+
+/**
+ * Reads a `ResolvedCoverage` straight from the engine and draws the two benefit
+ * layers on one month-scaled bar.
+ *
+ * Two things carry the meaning and neither is colour:
+ *  - Lanes. Short-term always occupies the TOP half of the bar and long-term the
+ *    BOTTOM half, so where the two overlap the advisor sees two simultaneous
+ *    payments stacked rather than one band interrupting another.
+ *  - The legend labels, whose swatches mirror the same lanes.
+ *
+ * The bar never re-derives a benefit or a month from the policy — every figure
+ * comes from `resolveCoverage`, which is also what the projection pays on. A
+ * second derivation here is how a screen and its engine drift apart.
+ */
+
+import type { CSSProperties } from "react";
+import { DAYS_PER_MONTH, type ResolvedCoverage } from "@/engine/disability-benefits";
+
+/** Past this the bar stops being readable: a to-age-65 benefit period runs
+ *  hundreds of months and squashes a 13-week short-term band into a hairline.
+ *  The bar clips with a "…" cap; the legend still names the true end month. */
+const MAX_BAR_MONTHS = 120;
+
+const money = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
+
+/** One decimal, dropping a trailing zero: 0.22998 → "0.2", 84 → "84". */
+const fmtMonths = (m: number) => String(Math.round(m * 10) / 10);
+
+const HATCH: CSSProperties = {
+  backgroundImage:
+    "repeating-linear-gradient(45deg, var(--color-hair-2) 0 2px, transparent 2px 6px)",
+};
+
+/** Replacement rate while BOTH layers pay, as a whole-number percentage. */
+function combinedPct(c: ResolvedCoverage): number {
+  if (!c.shortTerm || !c.longTerm || c.coveredEarnings <= 0) return 0;
+  const monthly = c.shortTerm.monthlyBenefit + c.longTerm.monthlyBenefit;
+  return Math.round(((monthly * 12) / c.coveredEarnings) * 100);
+}
+
+/** At most one alert, most-blocking first. An unresolvable benefit period means
+ *  the policy pays NOTHING, so it outranks a seam warning about a policy that
+ *  at least pays something. */
+function coverageAlert(c: ResolvedCoverage): { tone: "crit" | "warn"; message: string } | null {
+  if (c.unresolved === "missing_dob") {
+    return {
+      tone: "crit",
+      message:
+        "This policy's benefit period ends at an age, but no date of birth is on file for the insured. It pays nothing until one is added.",
+    };
+  }
+  if (c.seam?.kind === "gap") {
+    return {
+      tone: "warn",
+      message: `${c.seam.months.toFixed(1)} months with no benefit between short-term and long-term coverage.`,
+    };
+  }
+  if (c.seam?.kind === "overlap") {
+    return {
+      tone: "warn",
+      message: `Both policies pay for ${c.seam.months.toFixed(1)} months — a combined ${combinedPct(c)}% of earnings.`,
+    };
+  }
+  return null;
+}
+
+function CoverageAlert({ tone, message }: { tone: "crit" | "warn"; message: string }) {
+  return (
+    <p
+      role="alert"
+      className={
+        tone === "crit"
+          ? "rounded-md border border-crit/40 bg-crit/10 px-3 py-2 text-[13px] text-crit"
+          : "rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-[13px] text-warn"
+      }
+    >
+      {message}
+    </p>
+  );
+}
+
+/** The swatch mirrors the band's lane, so the legend reads without colour. */
+function LegendRow({
+  lane,
+  swatchClass,
+  swatchStyle,
+  label,
+  detail,
+  amount,
+}: {
+  lane: "top" | "bottom" | "full";
+  swatchClass?: string;
+  swatchStyle?: CSSProperties;
+  label: string;
+  detail: string;
+  amount: string;
+}) {
+  const laneClass =
+    lane === "top" ? "top-0 h-1/2" : lane === "bottom" ? "bottom-0 h-1/2" : "inset-y-0";
+  return (
+    <li className="flex items-center gap-2">
+      <span
+        aria-hidden="true"
+        className="relative inline-block h-3.5 w-6 shrink-0 rounded-[3px] border border-hair bg-paper"
+      >
+        <span
+          className={["absolute inset-x-0", laneClass, swatchClass].filter(Boolean).join(" ")}
+          style={swatchStyle}
+        />
+      </span>
+      <span className="text-ink-2">{label}</span>
+      <span className="tabular text-[11px] text-ink-3">{detail}</span>
+      <span className="tabular ml-auto text-ink">{amount}</span>
+    </li>
+  );
+}
+
+export function DisabilityCoverageTimeline({ coverage }: { coverage: ResolvedCoverage }) {
+  const { shortTerm, longTerm } = coverage;
+  const alert = coverageAlert(coverage);
+
+  const lastMonth = Math.max(shortTerm?.endMonth ?? 0, longTerm?.endMonth ?? 0);
+  const spanMonths = Math.min(MAX_BAR_MONTHS, lastMonth);
+
+  // An LTD-only policy whose benefit period cannot resolve leaves BOTH windows
+  // null, so the span is 0 and every percentage would be NaN — a bar drawn from
+  // garbage. There is no coverage to draw; show the warning on its own.
+  if (spanMonths <= 0) return alert ? <CoverageAlert {...alert} /> : null;
+
+  const firstBenefitMonth = Math.min(
+    shortTerm?.startMonth ?? Infinity,
+    longTerm?.startMonth ?? Infinity,
+  );
+
+  const clamp = (m: number) => Math.max(0, Math.min(spanMonths, m));
+  const band = (start: number, end: number): CSSProperties => ({
+    left: `${(clamp(start) / spanMonths) * 100}%`,
+    width: `${((clamp(end) - clamp(start)) / spanMonths) * 100}%`,
+  });
+
+  return (
+    <div className="space-y-3">
+      <div
+        data-testid="coverage-bar"
+        className="relative h-10 w-full overflow-hidden rounded-md border border-hair bg-card-2"
+      >
+        {firstBenefitMonth > 0 && (
+          <div className="absolute inset-y-0" style={{ ...band(0, firstBenefitMonth), ...HATCH }} />
+        )}
+        {shortTerm !== null && (
+          <div
+            className="absolute top-0 h-1/2 rounded-sm bg-data-blue"
+            style={band(shortTerm.startMonth, shortTerm.endMonth)}
+          />
+        )}
+        {longTerm !== null && (
+          <div
+            className="absolute bottom-0 h-1/2 rounded-sm bg-data-teal"
+            style={band(longTerm.startMonth, longTerm.endMonth)}
+          />
+        )}
+        {lastMonth > MAX_BAR_MONTHS && (
+          <span
+            aria-hidden="true"
+            className="absolute right-1 top-1/2 -translate-y-1/2 text-ink-3"
+          >
+            …
+          </span>
+        )}
+      </div>
+
+      <ul className="space-y-1 text-[13px]">
+        {firstBenefitMonth > 0 && (
+          <LegendRow
+            lane="full"
+            swatchStyle={HATCH}
+            label="Waiting"
+            detail={`${Math.round(firstBenefitMonth * DAYS_PER_MONTH)} days`}
+            amount="no benefit"
+          />
+        )}
+        {shortTerm !== null && (
+          <LegendRow
+            lane="top"
+            swatchClass="bg-data-blue"
+            label="Short-term"
+            detail={`months ${fmtMonths(shortTerm.startMonth)}–${fmtMonths(shortTerm.endMonth)}`}
+            amount={`${money.format(shortTerm.monthlyBenefit)}/mo`}
+          />
+        )}
+        {longTerm !== null && (
+          <LegendRow
+            lane="bottom"
+            swatchClass="bg-data-teal"
+            label="Long-term"
+            detail={`months ${fmtMonths(longTerm.startMonth)}–${fmtMonths(longTerm.endMonth)}`}
+            amount={`${money.format(longTerm.monthlyBenefit)}/mo`}
+          />
+        )}
+      </ul>
+
+      {alert && <CoverageAlert {...alert} />}
+    </div>
+  );
+}
