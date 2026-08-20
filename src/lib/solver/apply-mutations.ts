@@ -296,6 +296,12 @@ export function applyMutations(
         result.accounts = list;
         break;
       }
+      case "income-upsert": {
+        const list = result.incomes.filter((i) => i.id !== m.id);
+        if (m.value !== null) list.push(m.value);
+        result.incomes = list;
+        break;
+      }
       case "expense-upsert": {
         const list = result.expenses.filter((e) => e.id !== m.id);
         if (m.value !== null) list.push(m.value);

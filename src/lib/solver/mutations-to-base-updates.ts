@@ -22,7 +22,7 @@
 //     growthSource/modelPortfolioId the base columns need, so they can't
 //     round-trip; the others need junction-table writes. Deferred.
 
-import type { ClientData, Account, SavingsRule, Expense } from "@/engine/types";
+import type { ClientData, Account, Income, SavingsRule, Expense } from "@/engine/types";
 import { planHorizonFromLifeExpectancy } from "@/lib/plan-horizon";
 import { isRetirementLivingExpense, planLivingExpenseAmount } from "./living-expense";
 import type { SolverMutation, SolverPerson } from "./types";
@@ -78,6 +78,12 @@ export interface BaseUpdates {
    *  when a life-expectancy edit moves the plan horizon (planEndYear). */
   planSettingsUpdate: ColumnPatch | null;
   incomeUpdates: { id: string; set: ColumnPatch }[];
+  /** Full new income rows added by an `income-upsert` on a row absent from base. */
+  incomeInserts: Income[];
+  /** Full-row updates from an `income-upsert` against an existing base income. */
+  incomeFullUpdates: Income[];
+  /** Base income ids removed by an `income-upsert` with a null value. */
+  incomeRemoves: string[];
   expenseUpdates: { id: string; set: ColumnPatch }[];
   /** Full new expense rows (e.g. a synthesized retirement living expense). */
   expenseInserts: Expense[];
@@ -100,6 +106,7 @@ export interface BaseMembership {
   accountIds: ReadonlySet<string>;
   ruleIds: ReadonlySet<string>;
   expenseIds?: ReadonlySet<string>;
+  incomeIds?: ReadonlySet<string>;
 }
 
 /** number → DB decimal string; null/undefined → null. */
@@ -123,6 +130,9 @@ export function mutationsToBaseUpdates(
     clientUpdate: null,
     planSettingsUpdate: null,
     incomeUpdates: [],
+    incomeInserts: [],
+    incomeFullUpdates: [],
+    incomeRemoves: [],
     expenseUpdates: [],
     expenseInserts: [],
     expenseFullUpdates: [],
@@ -138,6 +148,8 @@ export function mutationsToBaseUpdates(
     baseMembership?.ruleIds ?? new Set((source.savingsRules ?? []).map((r) => r.id));
   const existingExpenses =
     baseMembership?.expenseIds ?? new Set((source.expenses ?? []).map((e) => e.id));
+  const existingIncomes =
+    baseMembership?.incomeIds ?? new Set((source.incomes ?? []).map((i) => i.id));
 
   // Coalesce field edits per target so multiple levers on one row produce a
   // single partial update.
@@ -344,6 +356,14 @@ export function mutationsToBaseUpdates(
           if (existingRules.has(m.id)) out.savingsRemoves.push(m.id);
         } else {
           (existingRules.has(m.id) ? out.savingsUpdates : out.savingsInserts).push(m.value);
+        }
+        break;
+      }
+      case "income-upsert": {
+        if (m.value === null) {
+          if (existingIncomes.has(m.id)) out.incomeRemoves.push(m.id);
+        } else {
+          (existingIncomes.has(m.id) ? out.incomeFullUpdates : out.incomeInserts).push(m.value);
         }
         break;
       }

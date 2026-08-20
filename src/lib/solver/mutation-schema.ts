@@ -134,6 +134,30 @@ const ACCOUNT_VALUE = z
   })
   .passthrough();
 
+const INCOME_VALUE = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    // Must match Income["type"] in src/engine/types.ts exactly.
+    type: z.enum([
+      "salary",
+      "social_security",
+      "business",
+      "deferred",
+      "capital_gains",
+      "trust",
+      "other",
+    ]),
+    annualAmount: MONEY,
+    startYear: YEAR,
+    endYear: YEAR,
+    growthRate: RATE,
+    owner: z.enum(["client", "spouse", "joint"]),
+    taxType: INCOME_TAX_TYPE.optional(),
+    isSelfEmployment: z.boolean().optional(),
+  })
+  .passthrough();
+
 const EXPENSE_VALUE = z
   .object({
     id: z.string().min(1),
@@ -454,6 +478,11 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     kind: z.literal("account-upsert"),
     id: z.string().min(1),
     value: ACCOUNT_VALUE.nullable(),
+  }),
+  z.object({
+    kind: z.literal("income-upsert"),
+    id: z.string().min(1),
+    value: INCOME_VALUE.nullable(),
   }),
   z.object({
     kind: z.literal("expense-upsert"),

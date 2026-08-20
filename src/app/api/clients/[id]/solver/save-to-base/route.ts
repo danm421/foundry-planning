@@ -239,6 +239,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     const baseMembership = {
       accountIds: new Set((baseTree.accounts ?? []).map((a) => a.id)),
       expenseIds: new Set((baseTree.expenses ?? []).map((e) => e.id)),
+      incomeIds: new Set((baseTree.incomes ?? []).map((i) => i.id)),
       ruleIds: new Set((baseTree.savingsRules ?? []).map((r) => r.id)),
     };
 
@@ -253,6 +254,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       clientUpdate,
       planSettingsUpdate,
       incomeUpdates,
+      incomeInserts,
+      incomeFullUpdates,
+      incomeRemoves,
       expenseUpdates,
       expenseInserts,
       expenseFullUpdates,
@@ -474,6 +478,56 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           );
       }
 
+      // Full new income rows added in the solver (a modeled side income, a
+      // rental, a pension). Column list mirrors the incomes base-write path;
+      // owner-scoping columns are deliberately left null — a solver-added income
+      // always belongs to a household member, never an entity/business/property.
+      for (const i of incomeInserts) {
+        await tx.insert(incomes).values({
+          clientId,
+          scenarioId: baseScenarioId,
+          type: i.type,
+          name: i.name,
+          annualAmount: String(i.annualAmount),
+          startYear: i.startYear,
+          endYear: i.endYear,
+          growthRate: String(i.growthRate),
+          growthSource: (i.growthSource ?? "custom") as typeof incomes.$inferInsert.growthSource,
+          startYearRef: (i.startYearRef ?? null) as typeof incomes.$inferInsert.startYearRef,
+          endYearRef: (i.endYearRef ?? null) as typeof incomes.$inferInsert.endYearRef,
+          owner: i.owner,
+          taxType: (i.taxType ?? null) as typeof incomes.$inferInsert.taxType,
+          source: (i.source ?? "manual") as typeof incomes.$inferInsert.source,
+        });
+      }
+
+      // Full-row updates from an `income-upsert` against a row already in base.
+      for (const i of incomeFullUpdates) {
+        await tx
+          .update(incomes)
+          .set({
+            type: i.type,
+            name: i.name,
+            annualAmount: String(i.annualAmount),
+            startYear: i.startYear,
+            endYear: i.endYear,
+            growthRate: String(i.growthRate),
+            growthSource: (i.growthSource ?? "custom") as typeof incomes.$inferInsert.growthSource,
+            startYearRef: (i.startYearRef ?? null) as typeof incomes.$inferInsert.startYearRef,
+            endYearRef: (i.endYearRef ?? null) as typeof incomes.$inferInsert.endYearRef,
+            owner: i.owner,
+            taxType: (i.taxType ?? null) as typeof incomes.$inferInsert.taxType,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(incomes.id, i.id),
+              eq(incomes.clientId, clientId),
+              eq(incomes.scenarioId, baseScenarioId),
+            ),
+          );
+      }
+
       // Partial column updates to existing expenses (incl. living-expense scale).
       for (const { id, set } of expenseUpdates) {
         await tx
@@ -589,6 +643,19 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           );
       }
 
+      // Solver-added incomes the advisor deleted again before saving.
+      for (const id of incomeRemoves) {
+        await tx
+          .delete(incomes)
+          .where(
+            and(
+              eq(incomes.id, id),
+              eq(incomes.clientId, clientId),
+              eq(incomes.scenarioId, baseScenarioId),
+            ),
+          );
+      }
+
       // Client singleton update (retirement ages / life expectancy). The clients
       // row is firm-scoped, not scenario-scoped.
       if (clientUpdate) {
@@ -642,6 +709,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         clientUpdate: clientUpdate ? 1 : 0,
         planSettingsUpdate: planSettingsUpdate ? 1 : 0,
         incomeUpdates: incomeUpdates.length,
+        incomeInserts: incomeInserts.length,
+        incomeFullUpdates: incomeFullUpdates.length,
+        incomeRemoves: incomeRemoves.length,
         expenseUpdates: expenseUpdates.length,
         expenseInserts: expenseInserts.length,
         expenseFullUpdates: expenseFullUpdates.length,
@@ -660,6 +730,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       savingsFieldUpdates: savingsFieldUpdates.length,
       clientUpdate: clientUpdate ? 1 : 0,
       incomeUpdates: incomeUpdates.length,
+      incomeInserts: incomeInserts.length,
+      incomeFullUpdates: incomeFullUpdates.length,
+      incomeRemoves: incomeRemoves.length,
       expenseUpdates: expenseUpdates.length,
       expenseInserts: expenseInserts.length,
       expenseFullUpdates: expenseFullUpdates.length,

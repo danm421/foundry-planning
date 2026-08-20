@@ -41,6 +41,7 @@ import { SolverRowLifeExpectancy } from "./solver-row-life-expectancy";
 import { SolverRowSocialSecurity } from "./solver-row-social-security";
 import { SolverRowSavingsContributions } from "./solver-row-savings-contributions";
 import { SolverRowIncomes } from "./solver-row-incomes";
+import { SolverQuickAddCashflow, type CashflowOwnerOption } from "./solver-quick-add-cashflow";
 import { SolverRowLivingExpenseScale } from "./solver-row-living-expense-scale";
 import { SolverActionBar } from "./solver-action-bar";
 import { ClientHeaderActions } from "@/components/client-header-actions";
@@ -168,6 +169,18 @@ export function LiveSolverWorkspace({
     const opts: { familyMemberId: string; label: string }[] = [];
     if (clientFm) opts.push({ familyMemberId: clientFm.id, label: clientName });
     if (spouseFm) opts.push({ familyMemberId: spouseFm.id, label: spouseName });
+    return opts;
+  }, [baseClientData, clientName, spouseName]);
+
+  // Income `owner` is the household enum (client/spouse/joint), not a family-member
+  // id — a separate list from `ownerOptions`, which addresses accounts.
+  const cashflowOwnerOptions = useMemo<CashflowOwnerOption[]>(() => {
+    const fms = baseClientData.familyMembers ?? [];
+    const opts: CashflowOwnerOption[] = [{ value: "client", label: clientName }];
+    if (fms.some((fm) => fm.role === "spouse")) {
+      opts.push({ value: "spouse", label: spouseName });
+      opts.push({ value: "joint", label: "Joint" });
+    }
     return opts;
   }, [baseClientData, clientName, spouseName]);
 
@@ -553,6 +566,14 @@ export function LiveSolverWorkspace({
     () => applyMutations(initialSourceClientData, mutations),
     [initialSourceClientData, mutations],
   );
+
+  // The rate a newly added income/expense grows at by default. Reads the WORKING
+  // tree first so a stress-inflation lever moves it — same chain SolverRowIncomes
+  // resolves internally for its Advanced-edit dialog.
+  const resolvedInflationRate =
+    workingTree.planSettings?.inflationRate ??
+    baseClientData.planSettings?.inflationRate ??
+    0.03;
 
   // "Lock in a fixed budget" lowers the working-years living rows. Against a row
   // that spends whatever is left, the cut frees money the row instantly
@@ -1324,6 +1345,16 @@ export function LiveSolverWorkspace({
                 currentYear={currentYear}
                 onChange={pushMutation}
                 onResetField={clearMutations}
+              />
+              <SolverQuickAddCashflow
+                sourceClientData={initialSourceClientData}
+                workingClientData={workingTree}
+                owners={cashflowOwnerOptions}
+                milestones={milestones}
+                clientFirstName={clientName}
+                spouseFirstName={spouseName}
+                resolvedInflationRate={resolvedInflationRate}
+                onChange={pushMutation}
               />
               <SolverRowSavingsContributions
                 baseClientData={baseClientData}
