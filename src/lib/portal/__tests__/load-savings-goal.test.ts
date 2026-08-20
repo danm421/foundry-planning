@@ -57,12 +57,19 @@ describe("loadSavingsGoal", () => {
     expect((await loadSavingsGoal("c1")).inflationRate).toBe(FALLBACK_INFLATION_RATE);
   });
 
-  it("falls back on an unparseable or out-of-range rate rather than yielding NaN", async () => {
-    queue = [SCENARIO, [{ inflationRate: "not-a-number" }], []];
-    const dto = await loadSavingsGoal("c1");
-    expect(Number.isFinite(dto.inflationRate)).toBe(true);
-    expect(dto.inflationRate).toBe(FALLBACK_INFLATION_RATE);
-  });
+  // Each raw value kills a different clause of the guard. "not-a-number" only
+  // exercises `Number.isFinite`; without a case on each side of the range the
+  // `>= 0 && <= 1` clause could be deleted with every test still green, and a
+  // column holding a mis-scaled "5" would compound the goal at 500% a year.
+  it.each([["not-a-number"], ["5.0000"], ["-0.0200"]])(
+    "falls back on the unparseable or out-of-range rate %s rather than yielding NaN",
+    async (raw) => {
+      queue = [SCENARIO, [{ inflationRate: raw }], []];
+      const dto = await loadSavingsGoal("c1");
+      expect(Number.isFinite(dto.inflationRate)).toBe(true);
+      expect(dto.inflationRate).toBe(FALLBACK_INFLATION_RATE);
+    },
+  );
 
   it("returns the client's saved setup when it still validates", async () => {
     const saved = {
