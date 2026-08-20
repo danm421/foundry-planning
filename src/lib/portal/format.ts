@@ -74,6 +74,16 @@ export function groupNumber(raw: string): string {
   return Number.isFinite(n) ? n.toLocaleString("en-US") : raw;
 }
 
+/**
+ * The inverse of `groupNumber`, for the same editable amount fields: blank or
+ * unparseable → 0, matching how a cleared field means "no figure yet" rather
+ * than a validation error while the client is mid-edit.
+ */
+export function parseAmount(raw: string): number {
+  const n = Number(raw);
+  return raw.trim() === "" || !Number.isFinite(n) ? 0 : n;
+}
+
 const MONTH_ABBR = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",

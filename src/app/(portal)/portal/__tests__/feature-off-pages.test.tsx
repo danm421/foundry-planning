@@ -56,11 +56,15 @@ vi.mock("@/components/portal/budget-tabs", () => ({
 vi.mock("@/components/portal/calculators-screen", () => ({
   CalculatorsScreen: () => <div data-testid="screen-calculators" />,
 }));
+vi.mock("@/components/portal/savings-goal-screen", () => ({
+  SavingsGoalScreen: () => <div data-testid="screen-savings-goal" />,
+}));
 
 import InvestmentsPage from "../investments/page";
 import DocumentsPage from "../documents/page";
 import BudgetLayout from "../budget/layout";
 import CalculatorsPage from "../calculators/page";
+import SavingsGoalPage from "../calculators/savings-goal/page";
 
 beforeEach(() => {
   featureEnabledMock.mockReset();
@@ -101,6 +105,9 @@ describe("a switched-off portal section", () => {
     expect(container.textContent).toContain("Not part of your portal");
     expect(container.textContent).toContain("Calculators");
     expect(container.querySelector("[data-testid='screen-calculators']")).toBeNull();
+
+    const goal = render(await SavingsGoalPage());
+    expect(goal.container.querySelector("[data-testid='screen-savings-goal']")).toBeNull();
   });
 });
 
@@ -120,5 +127,8 @@ describe("a switched-on portal section", () => {
 
     const calc = render(await CalculatorsPage());
     expect(calc.container.querySelector("[data-testid='screen-calculators']")).toBeTruthy();
+
+    const goal = render(await SavingsGoalPage());
+    expect(goal.container.querySelector("[data-testid='screen-savings-goal']")).toBeTruthy();
   });
 });

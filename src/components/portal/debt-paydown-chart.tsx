@@ -14,6 +14,8 @@ import {
 } from "chart.js";
 import { useThemeName, chartChrome, dataPalette } from "@/lib/chart-colors";
 import { fmtUsd, fmtUsdCompact, fmtMonthLabel } from "@/lib/portal/format";
+import { yearTickStep } from "@/lib/portal/chart-ticks";
+import { ChartLegendKey } from "@/components/portal/chart-legend-key";
 import {
   monthLabel,
   paydownChartIsEmpty,
@@ -22,19 +24,6 @@ import {
 } from "@/lib/calculators/debt-paydown";
 
 ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Tooltip);
-
-/**
- * Years between x-axis labels. A paydown can run anywhere from two years to
- * the fifty-year ceiling, so a fixed one-a-year rule draws four labels on one
- * chart and fifty overlapping ones on the next. Step up a 1/2/5 ladder until
- * at most eight labels remain, whatever the horizon.
- */
-function yearTickStep(points: number): number {
-  const spans = Math.max(1, points - 1);
-  return (
-    [1, 2, 5, 10, 25].find((step) => Math.floor(spans / (12 * step)) + 1 <= 8) ?? 50
-  );
-}
 
 /**
  * The month the last dollar is paid, marked where the plan's line touches
@@ -104,33 +93,6 @@ const debtFreeMarker: Plugin<"line"> = {
     ctx.restore();
   },
 };
-
-function LegendKey({
-  color,
-  label,
-  dashed = false,
-}: {
-  color: string;
-  label: string;
-  dashed?: boolean;
-}): ReactElement {
-  return (
-    <span className="flex items-center gap-2 text-[12px] text-ink-3">
-      <svg width="18" height="8" aria-hidden="true" className="shrink-0">
-        <line
-          x1="0"
-          y1="4"
-          x2="18"
-          y2="4"
-          stroke={color}
-          strokeWidth="2"
-          strokeDasharray={dashed ? "4 3" : undefined}
-        />
-      </svg>
-      {label}
-    </span>
-  );
-}
 
 /**
  * What they owe over time: doing nothing against the plan.
@@ -259,8 +221,8 @@ export function DebtPaydownChart({
       <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
         <h2 className="text-[15px] font-medium text-ink">What you still owe</h2>
         <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
-          <LegendKey color={pal.blue} label="Your plan" />
-          <LegendKey color={pal.grey} label="Minimums, paid separately" dashed />
+          <ChartLegendKey color={pal.blue} label="Your plan" />
+          <ChartLegendKey color={pal.grey} label="Minimums, paid separately" dashed />
         </div>
       </div>
       <div className="h-[260px] w-full">
