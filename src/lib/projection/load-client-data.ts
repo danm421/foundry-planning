@@ -76,6 +76,7 @@ import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
 import { resolveInflationRate } from "@/lib/inflation";
 import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
 import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies";
+import { loadDisabilityPolicies } from "@/lib/insurance-policies/load-disability-policies";
 import { withSynthesizedPremiums } from "@/lib/insurance-policies/premium-expense";
 import { withSynthesizedPolicyIncome } from "@/lib/insurance-policies/policy-income";
 import { withSynthesizedPremiumGifts } from "@/lib/insurance-policies/premium-gift";
@@ -1622,6 +1623,7 @@ export const loadClientDataWithContext = cache(
       wills: engineWills,
       familyMembers: mappedFamilyMembers,
       notesReceivable: await loadNotesReceivable(id, scenario.id),
+      disabilityPolicies: await loadDisabilityPolicies(id),
       medicareCoverage: medicareCoverageRows.map(rowToMedicareCoverage),
       medicarePremiumInflationRate: settings.medicarePremiumInflationRate != null
         ? parseFloat(settings.medicarePremiumInflationRate)
