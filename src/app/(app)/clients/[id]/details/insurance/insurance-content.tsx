@@ -15,6 +15,7 @@ import {
 import { eq, and, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies";
+import { loadDisabilityPolicies } from "@/lib/insurance-policies/load-disability-policies";
 import { computeScheduleYearRange } from "@/lib/insurance-policies/schedule-years";
 import { resolveInflationRate } from "@/lib/inflation";
 import InsurancePanel, {
@@ -24,6 +25,8 @@ import InsurancePanel, {
   type InsurancePanelExternal,
   type InsurancePanelModelPortfolio,
 } from "@/components/insurance-panel";
+import DisabilityPanel from "@/components/disability-panel";
+import { computeIncome } from "@/engine/income";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { ownerRefFromOwners } from "@/lib/insurance-policies/owner-ref";
 import { buildClientMilestones } from "@/lib/milestones";
@@ -64,6 +67,7 @@ export async function InsuranceContent({ clientId: id, scenarioParam }: Insuranc
     assetClassRows,
     settingsRows,
     { effectiveTree },
+    disabilityPolicies,
   ] = await Promise.all([
     db
       .select()
@@ -92,6 +96,8 @@ export async function InsuranceContent({ clientId: id, scenarioParam }: Insuranc
       .from(planSettings)
       .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
     loadEffectiveTree(id, firmId, scenarioParam ?? "base", {}),
+    // Client-level, like life insurance — no scenario lookup.
+    loadDisabilityPolicies(id),
   ]);
 
   const acMap = new Map(assetClassRows.map((ac) => [ac.id, ac]));
@@ -210,21 +216,46 @@ export async function InsuranceContent({ clientId: id, scenarioParam }: Insuranc
     planEndYear,
   );
 
+  // What each policy insures, this year. The filter is the ENGINE'S filter
+  // (`resolveCoveredEarnings`) copied whole — group plans insure W-2 base
+  // earnings, and business / K-1 income is excluded. A narrower or wider
+  // predicate here would show the advisor a benefit the projection never pays.
+  const currentYear = new Date().getFullYear();
+  const salaryFor = (person: "client" | "spouse") =>
+    computeIncome(
+      effectiveTree.incomes,
+      currentYear,
+      effectiveTree.client,
+      (inc) => inc.owner === person && inc.type === "salary",
+    ).salaries;
+
   return (
-    <InsurancePanel
-      clientId={id}
-      clientFirstName={effectiveTree.client.firstName}
-      spouseFirstName={effectiveTree.client.spouseName ?? null}
-      accounts={accts}
-      policies={policies}
-      entities={ents}
-      familyMembers={fams}
-      externalBeneficiaries={exts}
-      modelPortfolios={portfolios}
-      resolvedInflationRate={resolvedInflationRate}
-      scheduleStartYear={scheduleStartYear}
-      scheduleEndYear={scheduleEndYear}
-      milestones={milestones}
-    />
+    <div className="flex flex-col gap-10">
+      <InsurancePanel
+        clientId={id}
+        clientFirstName={effectiveTree.client.firstName}
+        spouseFirstName={effectiveTree.client.spouseName ?? null}
+        accounts={accts}
+        policies={policies}
+        entities={ents}
+        familyMembers={fams}
+        externalBeneficiaries={exts}
+        modelPortfolios={portfolios}
+        resolvedInflationRate={resolvedInflationRate}
+        scheduleStartYear={scheduleStartYear}
+        scheduleEndYear={scheduleEndYear}
+        milestones={milestones}
+      />
+      <DisabilityPanel
+        clientId={id}
+        policies={disabilityPolicies}
+        clientFirstName={effectiveTree.client.firstName}
+        spouseFirstName={effectiveTree.client.spouseName ?? null}
+        currentSalaryByPerson={{ client: salaryFor("client"), spouse: salaryFor("spouse") }}
+        currentYear={currentYear}
+        planEndYear={planEndYear}
+        client={effectiveTree.client}
+      />
+    </div>
   );
 }
