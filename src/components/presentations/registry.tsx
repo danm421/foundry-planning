@@ -455,6 +455,18 @@ export interface RenderPdfInput<TData> {
   documentSections?: TocSection[];
 }
 
+/**
+ * What `omitFromDeck` gets to decide on: the page's own scenario tree and
+ * projection, plus whatever refs it declared — already keyed the way the page's
+ * view model sees them, so a suppression rule and a view model read the same
+ * bundle under the same name.
+ */
+export interface DeckOmitContext {
+  clientData: ClientData;
+  projection: ProjectionResult;
+  bundles: Record<string, PageScenarioBundle>;
+}
+
 export interface PresentationPage<TData, TOptions> {
   id: string;
   title: string;
@@ -486,6 +498,15 @@ export interface PresentationPage<TData, TOptions> {
    *  whose `from` ref is not in the deck is skipped, so a page that needs one
    *  must also declare that ref in `requiredScenarioRefs`. */
   requiredDerivedRefs?: (options: TOptions) => DerivedRefRequest[];
+  /** Optional: the plan's own facts remove this sheet from the deck, without
+   *  the advisor noticing it needed removing. Applied in `document.tsx` ONLY —
+   *  the document owns page numbering, the contents list and the total, so a
+   *  second filter anywhere else would drift and silently blank a sheet.
+   *
+   *  Prefer this to an empty state when the sheet's HEADINGS would promise a
+   *  comparison the plan cannot make. Prefer an empty state when the page still
+   *  has something true to say. */
+  omitFromDeck?: (ctx: DeckOmitContext, options: TOptions) => boolean;
   /** Optional: surface an inline scenario picker in the launcher row that edits
    *  a scenario id stored *inside* this page's options — e.g. Retirement
    *  Comparison's "compare to" scenario. The baseline is always Base Case, so
