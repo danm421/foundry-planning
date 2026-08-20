@@ -19,9 +19,8 @@ export interface LadderGroup {
 export interface EarlyYearsLadderPageData {
   /** Scenario label · the today's-dollars note, in the house subtitle form. */
   subtitle: string;
-  /** Empty when the ladder could not be modelled — no variant was built, or the
-   *  plan has no payroll deferral the report can move. The page prints its
-   *  empty state rather than three identical bars under three labels. */
+  /** Empty when the ladder could not be modelled; `emptyMessage` then says why.
+   *  The page prints that instead of three identical bars under three labels. */
   groups: LadderGroup[];
   rungs: Rung[];
   /** Rungs whose extra percent bought no extra contribution — the §402(g)

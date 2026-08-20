@@ -126,6 +126,11 @@ interface SalaryBases {
  * `itemProrationGate`, which drops a salary that has already stopped. This
  * resolves at the plan's FIRST year, where `activeIncomes`' own window filter
  * covers every case except a client retiring inside that first year.
+ *
+ * NOT `savingsRuleOwnerForAccount` (`src/lib/milestones.ts`), which looks like
+ * the same lookup: it collapses "jointly owned" and "no family members on the
+ * tree" both to "joint", and the engine gives those two 0 and the household
+ * total respectively.
  */
 function salaryBases(data: ClientData, year: number): SalaryBases {
   const byOwner = { client: 0, spouse: 0, joint: 0 };

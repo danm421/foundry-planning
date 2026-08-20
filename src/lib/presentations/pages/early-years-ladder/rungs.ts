@@ -11,6 +11,7 @@ import {
   deferralAccounts,
   householdSalary,
   isMovable,
+  type DeferralAccount,
 } from "../early-years-standing/deferral-rules";
 
 export type RungConfig =
@@ -92,8 +93,7 @@ export function ladderMutations(
   // "Largest" in DOLLARS, not in percent: each percent is measured against its
   // own owner's pay, so 10% of a $160k salary is a smaller contribution than
   // 6% of a $345k one.
-  const dollars = (a: { currentPercent: number; ownerSalary: number }) =>
-    a.currentPercent * a.ownerSalary;
+  const dollars = (a: DeferralAccount) => a.currentPercent * a.ownerSalary;
   const target = movable.reduce((best, a) => (dollars(a) > dollars(best) ? a : best));
 
   const extraOnOwner = (delta * householdSalary(source, year)) / target.ownerSalary;
