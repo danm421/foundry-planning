@@ -328,6 +328,22 @@ describe("PATCH /api/clients/[id]/disability-policies/[policyId]", () => {
     expect(mine.stdDurationWeeks).toBe(13);
     expect((await res.json()).policy.longTerm.benefitPct).toBe(0.7);
   });
+
+  it("leaves a same-client sibling policy untouched", async () => {
+    // One client owning TWO policies is the ordinary case here — an STD-only
+    // alongside an LTD-only. Both carry the same clientId, so the clientId
+    // predicate alone matches both; only the `id` half of the where clause
+    // keeps the body off the sibling.
+    const target = seedPolicy(CLIENT_A, { name: "LTD" });
+    const sibling = seedPolicy(CLIENT_A, { name: "STD" });
+    const res = await PATCH(
+      req("PATCH", CLIENT_A, { name: "Renamed" }),
+      itemCtx(CLIENT_A, target.id as string),
+    );
+    expect(res.status).toBe(200);
+    expect(target.name).toBe("Renamed");
+    expect(sibling.name).toBe("STD");
+  });
 });
 
 describe("DELETE /api/clients/[id]/disability-policies/[policyId]", () => {
@@ -346,6 +362,19 @@ describe("DELETE /api/clients/[id]/disability-policies/[policyId]", () => {
         resourceId: mine.id,
       }),
     );
+  });
+
+  it("removes only the addressed policy, not a same-client sibling", async () => {
+    const target = seedPolicy(CLIENT_A, { name: "LTD" });
+    const sibling = seedPolicy(CLIENT_A, { name: "STD" });
+    const res = await DELETE(
+      req("DELETE", CLIENT_A),
+      itemCtx(CLIENT_A, target.id as string),
+    );
+    expect(res.status).toBe(200);
+    // Without the `id` half of the where clause this takes BOTH of the
+    // client's policies and still reports a single row gone.
+    expect(state.policies.map((p) => p.id)).toEqual([sibling.id]);
   });
 
   it("returns 404 for another client's policy and leaves it in place", async () => {
