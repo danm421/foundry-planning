@@ -1,3 +1,16 @@
+/**
+ * The client's saved setup for one portal calculator.
+ *
+ * Guarded by the portal identity gate, the subscription and the advisor's
+ * Calculators switch — but NOT by `requireEditEnabled`. That switch governs
+ * whether a client may change their plan data; this row is a scratchpad, and a
+ * read-only portal client should still be able to run the numbers.
+ *
+ * No audit row per save either: this autosaves as the client types, and
+ * flooding the trail with scratchpad writes would dilute the plan-data changes
+ * it exists to record.
+ */
+
 import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -16,19 +29,6 @@ import {
 } from "@/lib/calculators/savings-goal-state";
 
 export const dynamic = "force-dynamic";
-
-/**
- * The client's saved setup for one portal calculator.
- *
- * Guarded by the portal identity gate, the subscription and the advisor's
- * Calculators switch — but NOT by `requireEditEnabled`. That switch governs
- * whether a client may change their plan data; this row is a scratchpad, and a
- * read-only portal client should still be able to run the numbers.
- *
- * No audit row per save either: this autosaves as the client types, and
- * flooding the trail with scratchpad writes would dilute the plan-data changes
- * it exists to record.
- */
 
 /**
  * Every calculator this route will store, with the validator that judges its
