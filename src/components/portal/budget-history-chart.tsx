@@ -9,6 +9,7 @@ import {
   LinearScale,
   Tooltip,
   type ChartOptions,
+  type ChartType,
   type Plugin,
 } from "chart.js";
 import { useThemeName, chartChrome, dataPalette, statusColors } from "@/lib/chart-colors";
@@ -28,6 +29,72 @@ function monthTitle(month: string): string {
   const d = new Date(`${month}-01T00:00:00Z`);
   return d.toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
 }
+
+/**
+ * The horizontal budget reference line and its right-edge figure.
+ *
+ * Everything it draws arrives through `options.plugins.budgetLine` rather than
+ * through a closure, and the plugin itself is defined once at module level.
+ * `react-chartjs-2` hands its `plugins` prop to the Chart constructor and never
+ * again (see `DebtPaydownChart`, same fix) — a plugin closed over `budget` or
+ * `chrome` keeps the values from first paint, so the line would stay on the old
+ * number after the client edits the budget (the panel re-pulls in place, it
+ * does not remount) and stay dark after a switch to the light theme. Options
+ * are re-assigned on every render, so these do not.
+ */
+interface BudgetLineOptions {
+  /** Budget in dollars. Null or non-positive draws nothing. */
+  amount: number | null;
+  ink: string;
+  fill: string;
+  stroke: string;
+}
+
+declare module "chart.js" {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  interface PluginOptionsByType<TType extends ChartType> {
+    budgetLine?: BudgetLineOptions;
+  }
+}
+
+const budgetLine: Plugin<"bar"> = {
+  id: "budgetLine",
+  afterDatasetsDraw(chart, _args, opts) {
+    const o = opts as unknown as BudgetLineOptions | undefined;
+    if (o?.amount == null || o.amount <= 0) return;
+    const y = chart.scales.y.getPixelForValue(o.amount);
+    const { left, right } = chart.chartArea;
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.strokeStyle = o.ink;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(left, y);
+    ctx.lineTo(right, y);
+    ctx.stroke();
+    // Right-edge pill with the budget figure.
+    const text = fmtUsd(o.amount);
+    ctx.font = "600 10px ui-monospace, monospace";
+    const padX = 5;
+    const w = ctx.measureText(text).width + padX * 2;
+    const h = 15;
+    const px = right - w;
+    const py = y - h / 2;
+    ctx.fillStyle = o.fill;
+    ctx.strokeStyle = o.stroke;
+    ctx.lineWidth = 1;
+    const r = 4;
+    ctx.beginPath();
+    ctx.roundRect(px, py, w, h, r);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = o.ink;
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
+    ctx.fillText(text, px + padX, y + 0.5);
+    ctx.restore();
+  },
+};
 
 /**
  * 24-month spend bars heat-colored vs the category budget, with a horizontal
@@ -106,44 +173,12 @@ export function BudgetHistoryChart({
           label: (c) => fmtUsd(history[c.dataIndex]?.amount ?? 0),
         },
       },
-    },
-  };
-
-  const budgetLine: Plugin<"bar"> = {
-    id: "budgetLine",
-    afterDatasetsDraw(chart) {
-      if (budget == null || budget <= 0) return;
-      const y = chart.scales.y.getPixelForValue(budget);
-      const { left, right } = chart.chartArea;
-      const ctx = chart.ctx;
-      ctx.save();
-      ctx.strokeStyle = chrome.title;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(left, y);
-      ctx.lineTo(right, y);
-      ctx.stroke();
-      // Right-edge pill with the budget figure.
-      const text = fmtUsd(budget);
-      ctx.font = "600 10px ui-monospace, monospace";
-      const padX = 5;
-      const w = ctx.measureText(text).width + padX * 2;
-      const h = 15;
-      const px = right - w;
-      const py = y - h / 2;
-      ctx.fillStyle = chrome.tooltipBg;
-      ctx.strokeStyle = chrome.grid;
-      ctx.lineWidth = 1;
-      const r = 4;
-      ctx.beginPath();
-      ctx.roundRect(px, py, w, h, r);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = chrome.title;
-      ctx.textBaseline = "middle";
-      ctx.textAlign = "left";
-      ctx.fillText(text, px + padX, y + 0.5);
-      ctx.restore();
+      budgetLine: {
+        amount: budget,
+        ink: chrome.title,
+        fill: chrome.tooltipBg,
+        stroke: chrome.grid,
+      },
     },
   };
 

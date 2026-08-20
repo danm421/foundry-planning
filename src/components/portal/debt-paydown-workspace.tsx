@@ -12,7 +12,7 @@ import {
   type PaydownRow,
   type RowRawInputs,
 } from "@/components/portal/debt-paydown-debts";
-import { fmtUsd } from "@/lib/portal/format";
+import { fmtUsd, fmtMonthLabel } from "@/lib/portal/format";
 import {
   comparePaydown,
   monthLabel,
@@ -49,10 +49,6 @@ const STRATEGIES: { key: PaydownStrategy; label: string; help: string }[] = [
   },
 ];
 
-const MONTH_NAMES = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-
 /** Both halves or nothing. The saved state can only hold a WHOLE date
  * ("YYYY-MM"), but the two dropdowns are picked one at a time — a month with
  * no year yet has to read as "no target", or the goal-seek would start
@@ -74,8 +70,7 @@ const MONTH_FULL_NAMES = [
  * its own word. */
 function monthName(label: string | null): string {
   if (label === null) return "Never, at this pace";
-  const [y, m] = label.split("-");
-  return `${MONTH_NAMES[Number(m) - 1]} ${y}`;
+  return fmtMonthLabel(label);
 }
 
 function yearsAndMonths(n: number): string {
