@@ -4,9 +4,9 @@ import Link from "next/link";
 /**
  * The Calculators index: one card per self-serve what-if tool.
  *
- * A grid of one today. It exists as a grid so the second calculator is a card
- * and a route rather than a restructure — and so the section reads as a place
- * the client comes back to, not a single buried page.
+ * Two cards today. The grid is the extension point, so calculator #3 is a
+ * card and a route rather than a restructure — and so the section reads as a
+ * place the client comes back to, not a single buried page.
  */
 interface CalculatorCard {
   slug: string;
@@ -20,6 +20,12 @@ const CALCULATORS: readonly CalculatorCard[] = [
     title: "Debt paydown",
     blurb:
       "See what paying a little extra each month does to the interest you owe and the year you finish.",
+  },
+  {
+    slug: "savings-goal",
+    title: "Savings goal",
+    blurb:
+      "Work out what you need to put away each month to afford something you're planning for.",
   },
 ];
 
