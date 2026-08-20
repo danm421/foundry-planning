@@ -57,6 +57,7 @@ describe("deferralAccounts", () => {
         ownerSalary: 120_000,
         ruleCount: 1,
         contributesMax: false,
+        isPercentMode: true,
       },
     ]);
   });
@@ -225,5 +226,39 @@ describe("deferralAccounts", () => {
       [salary(100_000, { growthRate: 0.03, startYear: 2020, inflationStartYear: 2026 })],
     );
     expect(householdSalary(t, 2026)).toBe(100_000);
+  });
+});
+
+describe("DeferralAccount.isPercentMode", () => {
+  it("is true for a rule the engine resolves from annualPercent", () => {
+    const [a] = deferralAccounts(
+      tree([rule({ accountId: "a1", annualPercent: 0.08 })], [salary(120_000)]),
+      2026,
+    );
+    expect(a.isPercentMode).toBe(true);
+  });
+
+  it("is false for a flat-dollar rule, even though it reports an implied percent", () => {
+    const [a] = deferralAccounts(
+      tree([rule({ accountId: "a1", annualAmount: 12_000 })], [salary(120_000)]),
+      2026,
+    );
+    expect(a.currentPercent).toBeCloseTo(0.1, 9);
+    expect(a.isPercentMode).toBe(false);
+  });
+
+  it("is false for an account whose rules mix the two modes", () => {
+    const [a] = deferralAccounts(
+      tree(
+        [
+          rule({ id: "r1", accountId: "a1", annualPercent: 0.05 }),
+          rule({ id: "r2", accountId: "a1", annualAmount: 6_000 }),
+        ],
+        [salary(120_000)],
+      ),
+      2026,
+    );
+    expect(a.ruleCount).toBe(2);
+    expect(a.isPercentMode).toBe(false);
   });
 });

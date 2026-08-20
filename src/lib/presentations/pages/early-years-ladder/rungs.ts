@@ -7,11 +7,11 @@
 
 import type { ClientData } from "@/engine/types";
 import type { SolverMutation } from "@/lib/solver/types";
+import { largestMovableDeferral } from "../early-years-shared";
 import {
   deferralAccounts,
   householdSalary,
   isMovable,
-  type DeferralAccount,
 } from "../early-years-standing/deferral-rules";
 
 export type RungConfig =
@@ -61,12 +61,12 @@ export function resolveRungs(config: RungConfig, currentPercent: number): Rung[]
  * the household income delivers a third of the step, and the bar carries a
  * rate the plan never runs at.
  *
- * The whole delta lands on ONE account — the single-rule deferral holding the
- * most dollars — rather than being spread or applied to every account:
+ * The whole delta lands on ONE account — `largestMovableDeferral` — rather than
+ * being spread or applied to every account:
  *
  * - Setting every account to the rung would multiply the household's rate by
  *   the number of accounts.
- * - `applyMutations` sets `savings-annual-percent` on EVERY rule sharing the
+ * - `applyMutations` writes a savings mutation onto EVERY rule sharing the
  *   account id, so an account fed by two rules would defer twice the target.
  *   Unmovable accounts are left untouched (their contribution still shows in
  *   the base bars); when none is movable there is no honest mutation to make
@@ -87,23 +87,27 @@ export function ladderMutations(
   if (Math.abs(delta) < 1e-9) return [];
 
   const year = source.planSettings.planStartYear;
-  const movable = deferralAccounts(source, year).filter(isMovable);
-  if (movable.length === 0) return [];
-
-  // "Largest" in DOLLARS, not in percent: each percent is measured against its
-  // own owner's pay, so 10% of a $160k salary is a smaller contribution than
-  // 6% of a $345k one.
-  const dollars = (a: DeferralAccount) => a.currentPercent * a.ownerSalary;
-  const target = movable.reduce((best, a) => (dollars(a) > dollars(best) ? a : best));
+  const target = largestMovableDeferral(source, year);
+  if (target == null) return [];
 
   const extraOnOwner = (delta * householdSalary(source, year)) / target.ownerSalary;
-  return [
-    {
-      kind: "savings-annual-percent",
-      accountId: target.accountId,
-      percent: clamp01(target.currentPercent + extraOnOwner),
-    },
-  ];
+  const onOwner = clamp01(target.currentPercent + extraOnOwner);
+
+  // Express the rung in the mode the rule ALREADY uses. Writing `annualPercent`
+  // onto a rule that funds a flat dollar amount makes
+  // `resolveContributionAmount` (`src/engine/savings.ts:20`) prefer the percent,
+  // and — because rung 0 mutates nothing — only the raised bars would start
+  // growing with pay. The gap between bar 0 and bar 1 would then be part rung
+  // and part indexation.
+  return target.isPercentMode
+    ? [{ kind: "savings-annual-percent", accountId: target.accountId, percent: onOwner }]
+    : [
+        {
+          kind: "savings-contribution",
+          accountId: target.accountId,
+          annualAmount: onOwner * target.ownerSalary,
+        },
+      ];
 }
 
 /**
