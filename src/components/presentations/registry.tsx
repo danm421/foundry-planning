@@ -413,6 +413,26 @@ import {
 import { rothMixMutations } from "@/lib/presentations/pages/early-years-roth/deferral-mix";
 import { EarlyYearsRothPagePdf } from "./pages/early-years-roth/page-pdf";
 import { EarlyYearsRothOptionsControl } from "./pages/early-years-roth/options-control";
+import {
+  EARLY_YEARS_DEBT_OR_INVEST_OPTIONS_DEFAULT,
+  type EarlyYearsDebtOrInvestPageData,
+  type EarlyYearsDebtOrInvestPageOptions,
+} from "@/lib/presentations/pages/early-years-debt-or-invest/types";
+import { earlyYearsDebtOrInvestOptionsSchema } from "@/lib/presentations/pages/early-years-debt-or-invest/options-schema";
+import { summarizeEarlyYearsDebtOrInvestOptions } from "@/lib/presentations/pages/early-years-debt-or-invest/summarize-options";
+import { estimateEarlyYearsDebtOrInvestPageCount } from "@/lib/presentations/pages/early-years-debt-or-invest/estimate-page-count";
+import {
+  buildEarlyYearsDebtOrInvestData,
+  omitEarlyYearsDebtOrInvest,
+  INVEST_ARM_KEY,
+  LOAN_ARM_KEY,
+} from "@/lib/presentations/pages/early-years-debt-or-invest/view-model";
+import {
+  payoffYear,
+  targetLoan,
+} from "@/lib/presentations/pages/early-years-debt-or-invest/target-loan";
+import { EarlyYearsDebtOrInvestPagePdf } from "./pages/early-years-debt-or-invest/page-pdf";
+import { EarlyYearsDebtOrInvestOptionsControl } from "./pages/early-years-debt-or-invest/options-control";
 
 export const CATEGORY_ORDER = [
   "Framing",
@@ -1561,6 +1581,79 @@ export const earlyYearsRothPage: PresentationPage<
   renderPdf: (input) => <EarlyYearsRothPagePdf {...input} />,
 };
 
+export const earlyYearsDebtOrInvestPage: PresentationPage<
+  EarlyYearsDebtOrInvestPageData,
+  EarlyYearsDebtOrInvestPageOptions
+> = {
+  id: "earlyYearsDebtOrInvest",
+  title: "Pay Down the Loan, or Invest?",
+  description:
+    "The same extra monthly amount thrown at a loan, against the same amount deferred — debt-free date, interest avoided, and the portfolio at 65.",
+  category: "Early Years",
+  defaultOptions: EARLY_YEARS_DEBT_OR_INVEST_OPTIONS_DEFAULT,
+  optionsSchema: earlyYearsDebtOrInvestOptionsSchema,
+  summarizeOptions: summarizeEarlyYearsDebtOrInvestOptions,
+  estimatePageCount: () => estimateEarlyYearsDebtOrInvestPageCount(),
+  OptionsControl: EarlyYearsDebtOrInvestOptionsControl,
+  supportsScenarioOverride: false,
+  requiredScenarioRefs: () => ["base"],
+  // Both arms spend the same dollars over the SAME window — plan start to the
+  // year the base plan clears the loan. Factories, because the liability id and
+  // the payoff year both live in the source bundle.
+  requiredDerivedRefs: (o) => [
+    {
+      key: LOAN_ARM_KEY,
+      from: "base",
+      label: "Onto the loan",
+      mutations: (source: DerivedSource) => {
+        const loan = targetLoan(source.clientData, o.liabilityId);
+        if (loan == null) return [];
+        const end = payoffYear(source.projection, loan.id);
+        if (end == null) return [];
+        return [
+          {
+            kind: "debt-paydown",
+            liabilityId: loan.id,
+            // Lowers to the engine's own `extraPayments`; the amortization
+            // schedule caps each one at the remaining balance and stops at
+            // payoff, so this can never overpay the loan.
+            value: {
+              liabilityId: loan.id,
+              frequency: "monthly",
+              amount: o.monthlyAmount,
+              startYear: source.clientData.planSettings.planStartYear,
+              endYear: end,
+              enabled: true,
+            },
+          },
+        ];
+      },
+    },
+    {
+      key: INVEST_ARM_KEY,
+      from: "base",
+      label: "Into the 401(k)",
+      mutations: (source: DerivedSource) => {
+        const loan = targetLoan(source.clientData, o.liabilityId);
+        if (loan == null) return [];
+        const end = payoffYear(source.projection, loan.id);
+        if (end == null) return [];
+        return deltaSavingsRuleMutation(source.clientData, {
+          key: "debt-or-invest",
+          amount: { mode: "annual-dollars", annualAmount: o.monthlyAmount * 12 },
+          startYear: source.clientData.planSettings.planStartYear,
+          endYear: end,
+        });
+      },
+    },
+  ],
+  // The plan's own facts remove this sheet: a debt-free client never sees a page
+  // whose headings promise a comparison it cannot make.
+  omitFromDeck: (ctx, options) => omitEarlyYearsDebtOrInvest(ctx, options),
+  buildData: (ctx, options) => buildEarlyYearsDebtOrInvestData(ctx, options),
+  renderPdf: (input) => <EarlyYearsDebtOrInvestPagePdf {...input} />,
+};
+
 export const PRESENTATION_PAGES = {
   cover: coverPage,
   toc: tocPage,
@@ -1614,6 +1707,7 @@ export const PRESENTATION_PAGES = {
   earlyYearsLadder: earlyYearsLadderPage,
   earlyYearsWaiting: earlyYearsWaitingPage,
   earlyYearsRoth: earlyYearsRothPage,
+  earlyYearsDebtOrInvest: earlyYearsDebtOrInvestPage,
 } as const;
 
 export type PresentationPageId = keyof typeof PRESENTATION_PAGES;
