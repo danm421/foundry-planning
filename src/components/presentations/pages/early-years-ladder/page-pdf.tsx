@@ -2,9 +2,11 @@ import { View, Text, StyleSheet } from "@react-pdf/renderer";
 import { PageFrame } from "@/components/presentations/shared/page-frame";
 import { TidbitSidebarPdf } from "@/components/presentations/shared/tidbit-sidebar-pdf";
 import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
-import { LadderChartPdf } from "./ladder-chart-pdf";
+import { GroupedBarChartPdf } from "@/components/presentations/shared/grouped-bar-chart-pdf";
+import { dataLight } from "@/brand";
 import type { RenderPdfInput } from "@/components/presentations/registry";
 import type { EarlyYearsLadderPageData } from "@/lib/presentations/pages/early-years-ladder/types";
+import type { Rung } from "@/lib/presentations/pages/early-years-ladder/rungs";
 
 const s = StyleSheet.create({
   title: { fontSize: 16, fontWeight: 700, marginBottom: 2 },
@@ -25,6 +27,21 @@ const s = StyleSheet.create({
   empty: { fontSize: 11, color: T.ink2, textAlign: "center", marginTop: 60 },
 });
 
+// The plan as it stands is grey; every raised rung is green, deepening toward
+// the top of the ladder. Fixed hexes rather than opacity — a printed PDF's alpha
+// blend against cream paper is not the same colour on every printer.
+const RAISED = ["#8ecdb0", "#4aad80", dataLight.green];
+
+/** Always ends on the full green, so the top of the ladder reads the same
+ *  whether the advisor set one extra rung or three. */
+function ladderFills(rungs: Rung[]): string[] {
+  const raised = RAISED.slice(
+    Math.max(0, RAISED.length - rungs.filter((r) => !r.isCurrent).length),
+  );
+  let next = 0;
+  return rungs.map((r) => (r.isCurrent ? dataLight.grey : (raised[next++] ?? dataLight.green)));
+}
+
 /** "Save 11%" · "Save 11% and Save 14%" · "Save 11%, Save 14% and Save 17%" */
 function nameList(labels: string[]): string {
   if (labels.length <= 1) return labels[0] ?? "";
@@ -34,6 +51,7 @@ function nameList(labels: string[]): string {
 export function EarlyYearsLadderPagePdf(input: RenderPdfInput<EarlyYearsLadderPageData>) {
   const { data, firmName, clientName, reportDate, pageIndex, totalPages, accent } = input;
   const frame = { firmName, clientName, reportDate, pageIndex, totalPages };
+  const fills = ladderFills(data.rungs);
 
   if (data.groups.length === 0) {
     return (
@@ -51,7 +69,18 @@ export function EarlyYearsLadderPagePdf(input: RenderPdfInput<EarlyYearsLadderPa
 
       <View style={s.cols}>
         <View style={s.main}>
-          <LadderChartPdf groups={data.groups} width={data.tidbits.length > 0 ? 355 : 505} />
+          <GroupedBarChartPdf
+            caption="portfolio · today's dollars"
+            width={data.tidbits.length > 0 ? 355 : 505}
+            series={data.rungs.map((r, i) => ({
+              label: r.isCurrent ? `${r.label} (today)` : r.label,
+              fill: fills[i],
+            }))}
+            groups={data.groups.map((g) => ({
+              label: `Age ${g.age}`,
+              values: g.bars.map((b) => b.value),
+            }))}
+          />
 
           {data.takeaway != null && (
             <View style={[s.takeaway, { borderLeftColor: accent.accent }]}>

@@ -371,6 +371,76 @@ import {
 import { householdSavingsRate } from "@/lib/presentations/savings-rate";
 import { EarlyYearsLadderPagePdf } from "./pages/early-years-ladder/page-pdf";
 import { EarlyYearsLadderOptionsControl } from "./pages/early-years-ladder/options-control";
+import {
+  EARLY_YEARS_HUMAN_CAPITAL_OPTIONS_DEFAULT,
+  type EarlyYearsHumanCapitalPageData,
+  type EarlyYearsHumanCapitalPageOptions,
+} from "@/lib/presentations/pages/early-years-human-capital/types";
+import { earlyYearsHumanCapitalOptionsSchema } from "@/lib/presentations/pages/early-years-human-capital/options-schema";
+import { summarizeEarlyYearsHumanCapitalOptions } from "@/lib/presentations/pages/early-years-human-capital/summarize-options";
+import { estimateEarlyYearsHumanCapitalPageCount } from "@/lib/presentations/pages/early-years-human-capital/estimate-page-count";
+import { buildEarlyYearsHumanCapitalData } from "@/lib/presentations/pages/early-years-human-capital/view-model";
+import { EarlyYearsHumanCapitalPagePdf } from "./pages/early-years-human-capital/page-pdf";
+import { EarlyYearsHumanCapitalOptionsControl } from "./pages/early-years-human-capital/options-control";
+import {
+  EARLY_YEARS_WAITING_OPTIONS_DEFAULT,
+  type EarlyYearsWaitingPageData,
+  type EarlyYearsWaitingPageOptions,
+} from "@/lib/presentations/pages/early-years-waiting/types";
+import { earlyYearsWaitingOptionsSchema } from "@/lib/presentations/pages/early-years-waiting/options-schema";
+import { summarizeEarlyYearsWaitingOptions } from "@/lib/presentations/pages/early-years-waiting/summarize-options";
+import { estimateEarlyYearsWaitingPageCount } from "@/lib/presentations/pages/early-years-waiting/estimate-page-count";
+import {
+  buildEarlyYearsWaitingData,
+  delayKey,
+} from "@/lib/presentations/pages/early-years-waiting/view-model";
+import { deltaSavingsRuleMutation } from "@/lib/presentations/pages/early-years-shared";
+import { EarlyYearsWaitingPagePdf } from "./pages/early-years-waiting/page-pdf";
+import { EarlyYearsWaitingOptionsControl } from "./pages/early-years-waiting/options-control";
+import {
+  EARLY_YEARS_ROTH_OPTIONS_DEFAULT,
+  type EarlyYearsRothPageData,
+  type EarlyYearsRothPageOptions,
+} from "@/lib/presentations/pages/early-years-roth/types";
+import { earlyYearsRothOptionsSchema } from "@/lib/presentations/pages/early-years-roth/options-schema";
+import { summarizeEarlyYearsRothOptions } from "@/lib/presentations/pages/early-years-roth/summarize-options";
+import { estimateEarlyYearsRothPageCount } from "@/lib/presentations/pages/early-years-roth/estimate-page-count";
+import {
+  buildEarlyYearsRothData,
+  ROTH_ALL_ROTH_KEY,
+  ROTH_TRADITIONAL_KEY,
+} from "@/lib/presentations/pages/early-years-roth/view-model";
+import { rothMixMutations } from "@/lib/presentations/pages/early-years-roth/deferral-mix";
+import { EarlyYearsRothPagePdf } from "./pages/early-years-roth/page-pdf";
+import { EarlyYearsRothOptionsControl } from "./pages/early-years-roth/options-control";
+import {
+  EARLY_YEARS_DEBT_OR_INVEST_OPTIONS_DEFAULT,
+  type EarlyYearsDebtOrInvestPageData,
+  type EarlyYearsDebtOrInvestPageOptions,
+} from "@/lib/presentations/pages/early-years-debt-or-invest/types";
+import { earlyYearsDebtOrInvestOptionsSchema } from "@/lib/presentations/pages/early-years-debt-or-invest/options-schema";
+import { summarizeEarlyYearsDebtOrInvestOptions } from "@/lib/presentations/pages/early-years-debt-or-invest/summarize-options";
+import { estimateEarlyYearsDebtOrInvestPageCount } from "@/lib/presentations/pages/early-years-debt-or-invest/estimate-page-count";
+import {
+  buildEarlyYearsDebtOrInvestData,
+  omitEarlyYearsDebtOrInvest,
+  INVEST_ARM_KEY,
+  LOAN_ARM_KEY,
+} from "@/lib/presentations/pages/early-years-debt-or-invest/view-model";
+import { loanWindow } from "@/lib/presentations/pages/early-years-debt-or-invest/target-loan";
+import { EarlyYearsDebtOrInvestPagePdf } from "./pages/early-years-debt-or-invest/page-pdf";
+import { EarlyYearsDebtOrInvestOptionsControl } from "./pages/early-years-debt-or-invest/options-control";
+import {
+  EARLY_YEARS_TIDBITS_OPTIONS_DEFAULT,
+  type EarlyYearsTidbitsPageData,
+  type EarlyYearsTidbitsPageOptions,
+} from "@/lib/presentations/pages/early-years-tidbits/types";
+import { earlyYearsTidbitsOptionsSchema } from "@/lib/presentations/pages/early-years-tidbits/options-schema";
+import { summarizeEarlyYearsTidbitsOptions } from "@/lib/presentations/pages/early-years-tidbits/summarize-options";
+import { estimateEarlyYearsTidbitsPageCount } from "@/lib/presentations/pages/early-years-tidbits/estimate-page-count";
+import { buildEarlyYearsTidbitsData } from "@/lib/presentations/pages/early-years-tidbits/view-model";
+import { EarlyYearsTidbitsPagePdf } from "./pages/early-years-tidbits/page-pdf";
+import { EarlyYearsTidbitsOptionsControl } from "./pages/early-years-tidbits/options-control";
 
 export const CATEGORY_ORDER = [
   "Framing",
@@ -455,6 +525,18 @@ export interface RenderPdfInput<TData> {
   documentSections?: TocSection[];
 }
 
+/**
+ * What `omitFromDeck` gets to decide on: the page's own scenario tree and
+ * projection, plus whatever refs it declared — already keyed the way the page's
+ * view model sees them, so a suppression rule and a view model read the same
+ * bundle under the same name.
+ */
+export interface DeckOmitContext {
+  clientData: ClientData;
+  projection: ProjectionResult;
+  bundles: Record<string, PageScenarioBundle>;
+}
+
 export interface PresentationPage<TData, TOptions> {
   id: string;
   title: string;
@@ -486,6 +568,15 @@ export interface PresentationPage<TData, TOptions> {
    *  whose `from` ref is not in the deck is skipped, so a page that needs one
    *  must also declare that ref in `requiredScenarioRefs`. */
   requiredDerivedRefs?: (options: TOptions) => DerivedRefRequest[];
+  /** Optional: the plan's own facts remove this sheet from the deck, without
+   *  the advisor noticing it needed removing. Applied in `document.tsx` ONLY —
+   *  the document owns page numbering, the contents list and the total, so a
+   *  second filter anywhere else would drift and silently blank a sheet.
+   *
+   *  Prefer this to an empty state when the sheet's HEADINGS would promise a
+   *  comparison the plan cannot make. Prefer an empty state when the page still
+   *  has something true to say. */
+  omitFromDeck?: (ctx: DeckOmitContext, options: TOptions) => boolean;
   /** Optional: surface an inline scenario picker in the launcher row that edits
    *  a scenario id stored *inside* this page's options — e.g. Retirement
    *  Comparison's "compare to" scenario. The baseline is always Base Case, so
@@ -1399,6 +1490,204 @@ export const earlyYearsLadderPage: PresentationPage<
   renderPdf: (input) => <EarlyYearsLadderPagePdf {...input} />,
 };
 
+export const earlyYearsHumanCapitalPage: PresentationPage<
+  EarlyYearsHumanCapitalPageData,
+  EarlyYearsHumanCapitalPageOptions
+> = {
+  id: "earlyYearsHumanCapital",
+  title: "Your Biggest Asset Isn't Your Portfolio",
+  description:
+    "Invested assets today against the present value of remaining lifetime earnings, discounted at the plan's inflation assumption.",
+  category: "Early Years",
+  defaultOptions: EARLY_YEARS_HUMAN_CAPITAL_OPTIONS_DEFAULT,
+  optionsSchema: earlyYearsHumanCapitalOptionsSchema,
+  summarizeOptions: summarizeEarlyYearsHumanCapitalOptions,
+  estimatePageCount: () => estimateEarlyYearsHumanCapitalPageCount(),
+  OptionsControl: EarlyYearsHumanCapitalOptionsControl,
+  // Pinned to Base Case with the rest of the deck. Declaring the ref is also
+  // what LOADS the base bundle this page reads.
+  supportsScenarioOverride: false,
+  requiredScenarioRefs: () => ["base"],
+  buildData: (ctx, options) => buildEarlyYearsHumanCapitalData(ctx, options),
+  renderPdf: (input) => <EarlyYearsHumanCapitalPagePdf {...input} />,
+};
+
+export const earlyYearsWaitingPage: PresentationPage<
+  EarlyYearsWaitingPageData,
+  EarlyYearsWaitingPageOptions
+> = {
+  id: "earlyYearsWaiting",
+  title: "The Cost of Waiting",
+  description:
+    "The same raised contribution started now, in five years and in ten — what the delay costs at each milestone age.",
+  category: "Early Years",
+  defaultOptions: EARLY_YEARS_WAITING_OPTIONS_DEFAULT,
+  optionsSchema: earlyYearsWaitingOptionsSchema,
+  summarizeOptions: summarizeEarlyYearsWaitingOptions,
+  estimatePageCount: () => estimateEarlyYearsWaitingPageCount(),
+  OptionsControl: EarlyYearsWaitingOptionsControl,
+  supportsScenarioOverride: false,
+  requiredScenarioRefs: () => ["base"],
+  // One derived plan per start date: the base tree plus a SECOND savings rule on
+  // the deferral account that begins `delay` years out. A FACTORY, because the
+  // account ids live in the tree and the size of the increase is measured
+  // against what the base plan's projection actually contributes, while
+  // `requiredDerivedRefs` sees only page options.
+  requiredDerivedRefs: (o) =>
+    o.delays.map((delay, i) => ({
+      key: delayKey(i),
+      from: "base",
+      label: delay === 0 ? "Start now" : `Start in ${delay} years`,
+      mutations: (source: DerivedSource) =>
+        deltaSavingsRuleMutation(source.clientData, {
+          key: `waiting-${i}`,
+          amount: { mode: "household-percent", percent: o.rungOffset },
+          startYear: source.clientData.planSettings.planStartYear + delay,
+        }),
+    })),
+  buildData: (ctx, options) => buildEarlyYearsWaitingData(ctx, options),
+  renderPdf: (input) => <EarlyYearsWaitingPagePdf {...input} />,
+};
+
+export const earlyYearsRothPage: PresentationPage<
+  EarlyYearsRothPageData,
+  EarlyYearsRothPageOptions
+> = {
+  id: "earlyYearsRoth",
+  title: "Roth or Traditional?",
+  description:
+    "The tax bill under all-traditional against all-Roth payroll deferrals, split between the working years and retirement.",
+  category: "Early Years",
+  defaultOptions: EARLY_YEARS_ROTH_OPTIONS_DEFAULT,
+  optionsSchema: earlyYearsRothOptionsSchema,
+  summarizeOptions: summarizeEarlyYearsRothOptions,
+  estimatePageCount: () => estimateEarlyYearsRothPageCount(),
+  OptionsControl: EarlyYearsRothOptionsControl,
+  supportsScenarioOverride: false,
+  requiredScenarioRefs: () => ["base"],
+  // Two variants of the base plan. A FACTORY, because the eligible account ids
+  // live in the tree.
+  //
+  // R13 does not apply here. Neither variant is "the plan as it stands" — both
+  // are counterfactuals, and each must be built even when the client already
+  // sits at one of them, so both columns come from the same code path.
+  requiredDerivedRefs: () => [
+    {
+      key: ROTH_TRADITIONAL_KEY,
+      from: "base",
+      label: "All traditional",
+      mutations: (source: DerivedSource) => rothMixMutations(source.clientData, 0),
+    },
+    {
+      key: ROTH_ALL_ROTH_KEY,
+      from: "base",
+      label: "All Roth",
+      mutations: (source: DerivedSource) => rothMixMutations(source.clientData, 1),
+    },
+  ],
+  buildData: (ctx, options) => buildEarlyYearsRothData(ctx, options),
+  renderPdf: (input) => <EarlyYearsRothPagePdf {...input} />,
+};
+
+export const earlyYearsDebtOrInvestPage: PresentationPage<
+  EarlyYearsDebtOrInvestPageData,
+  EarlyYearsDebtOrInvestPageOptions
+> = {
+  id: "earlyYearsDebtOrInvest",
+  title: "Pay Down the Loan, or Invest?",
+  description:
+    "The same extra monthly amount thrown at a loan, against the same amount deferred — debt-free date, interest avoided, and the portfolio at 65.",
+  category: "Early Years",
+  defaultOptions: EARLY_YEARS_DEBT_OR_INVEST_OPTIONS_DEFAULT,
+  optionsSchema: earlyYearsDebtOrInvestOptionsSchema,
+  summarizeOptions: summarizeEarlyYearsDebtOrInvestOptions,
+  estimatePageCount: () => estimateEarlyYearsDebtOrInvestPageCount(),
+  OptionsControl: EarlyYearsDebtOrInvestOptionsControl,
+  supportsScenarioOverride: false,
+  requiredScenarioRefs: () => ["base"],
+  // Both arms spend the same dollars over the SAME window — plan start to the
+  // year the base plan clears the loan. Factories, because the liability id and
+  // the payoff year both live in the source bundle.
+  requiredDerivedRefs: (o) => [
+    {
+      key: LOAN_ARM_KEY,
+      from: "base",
+      label: "Onto the loan",
+      mutations: (source: DerivedSource) => {
+        const window = loanWindow(source, o.liabilityId);
+        if (window == null) return [];
+        const { loan, endYear } = window;
+        return [
+          {
+            kind: "debt-paydown",
+            liabilityId: loan.id,
+            // Lowers to the engine's own `extraPayments`; the amortization
+            // schedule caps each one at the remaining balance and stops at
+            // payoff, so this can never overpay the loan.
+            value: {
+              liabilityId: loan.id,
+              frequency: "monthly",
+              amount: o.monthlyAmount,
+              startYear: source.clientData.planSettings.planStartYear,
+              endYear,
+              enabled: true,
+            },
+          },
+        ];
+      },
+    },
+    {
+      key: INVEST_ARM_KEY,
+      from: "base",
+      label: "Into the 401(k)",
+      mutations: (source: DerivedSource) => {
+        const window = loanWindow(source, o.liabilityId);
+        if (window == null) return [];
+        return deltaSavingsRuleMutation(source.clientData, {
+          key: "debt-or-invest",
+          amount: { mode: "annual-dollars", annualAmount: o.monthlyAmount * 12 },
+          startYear: source.clientData.planSettings.planStartYear,
+          endYear: window.endYear,
+        });
+      },
+    },
+  ],
+  // The plan's own facts remove this sheet: a debt-free client never sees a page
+  // whose headings promise a comparison it cannot make.
+  omitFromDeck: (ctx, options) => omitEarlyYearsDebtOrInvest(ctx, options),
+  buildData: (ctx, options) => buildEarlyYearsDebtOrInvestData(ctx, options),
+  renderPdf: (input) => <EarlyYearsDebtOrInvestPagePdf {...input} />,
+};
+
+export const earlyYearsTidbitsPage: PresentationPage<
+  EarlyYearsTidbitsPageData,
+  EarlyYearsTidbitsPageOptions
+> = {
+  id: "earlyYearsTidbits",
+  title: "Things Worth Knowing",
+  description:
+    "Up to six educational notes with no natural home beside a chart. Not in the built-in deck — add it deliberately.",
+  category: "Early Years",
+  defaultOptions: EARLY_YEARS_TIDBITS_OPTIONS_DEFAULT,
+  optionsSchema: earlyYearsTidbitsOptionsSchema,
+  summarizeOptions: summarizeEarlyYearsTidbitsOptions,
+  estimatePageCount: () => estimateEarlyYearsTidbitsPageCount(),
+  OptionsControl: EarlyYearsTidbitsOptionsControl,
+  // Pinned to Base Case with the rest of the deck: the tokens in these notes
+  // quote the plan, and a back page quoting a different scenario from the sheets
+  // in front of it would contradict them.
+  supportsScenarioOverride: false,
+  requiredScenarioRefs: () => ["base"],
+  // An advisor who added the page and picked nothing gets no sheet at all,
+  // rather than a heading over blank paper. `omitFromDeck` runs before page
+  // numbering, so the contents list never mentions it and the numbers don't
+  // skip. The launcher still shows the page's own "no tidbits" summary line,
+  // which is where a build-time problem belongs.
+  omitFromDeck: (_ctx, options) => options.tidbits.length === 0,
+  buildData: (ctx, options) => buildEarlyYearsTidbitsData(ctx, options),
+  renderPdf: (input) => <EarlyYearsTidbitsPagePdf {...input} />,
+};
+
 export const PRESENTATION_PAGES = {
   cover: coverPage,
   toc: tocPage,
@@ -1448,7 +1737,12 @@ export const PRESENTATION_PAGES = {
   retirementComparison: retirementComparisonPage,
   lifeInsuranceSummary: lifeInsuranceSummaryPage,
   earlyYearsStanding: earlyYearsStandingPage,
+  earlyYearsHumanCapital: earlyYearsHumanCapitalPage,
   earlyYearsLadder: earlyYearsLadderPage,
+  earlyYearsWaiting: earlyYearsWaitingPage,
+  earlyYearsRoth: earlyYearsRothPage,
+  earlyYearsDebtOrInvest: earlyYearsDebtOrInvestPage,
+  earlyYearsTidbits: earlyYearsTidbitsPage,
 } as const;
 
 export type PresentationPageId = keyof typeof PRESENTATION_PAGES;

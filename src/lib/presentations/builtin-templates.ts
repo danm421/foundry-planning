@@ -88,12 +88,21 @@ export const BUILTIN_TEMPLATES: readonly BuiltInTemplate[] = [
       // "Financial Planning Report" kicker would undersell it.
       page("cover", { title: "Your Early Years" }),
       page("toc"),
-      // Where they stand, then what moving one lever is worth. Both pages take
-      // the registry defaults: the ladder's rungs are RELATIVE (+0/+3/+6pp off
-      // whatever this client already defers), so nothing here freezes a rate a
-      // template picked, and both tidbit slots stay empty for the advisor.
+      // Where they stand; why the pay matters more than the balance; then one
+      // lever per sheet. Every page takes the registry defaults, so nothing here
+      // freezes a rate or an amount a template picked — the ladder and the
+      // cost-of-waiting page both work RELATIVE to what this client already
+      // defers, and every tidbit slot stays empty for the advisor.
       page("earlyYearsStanding"),
+      page("earlyYearsHumanCapital"),
       page("earlyYearsLadder"),
+      page("earlyYearsWaiting"),
+      page("earlyYearsRoth"),
+      // Removes itself on a plan with no amortizing debt, so this is "up to"
+      // eight sheets, not exactly eight.
+      page("earlyYearsDebtOrInvest"),
+      // `earlyYearsTidbits` is deliberately NOT here — the spec asks for a back
+      // page the advisor adds on purpose.
     ],
   },
 ] as const;

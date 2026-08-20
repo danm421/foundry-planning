@@ -229,3 +229,38 @@ describe("ladderBlocker", () => {
     expect(ladderBlocker(t)).toBe("not-modellable");
   });
 });
+
+describe("ladderMutations expresses the rung in the rule's own mode", () => {
+  it("writes a percent for an account already in percent mode", () => {
+    const data = tree([rule({ accountId: "a1", annualPercent: 0.08 })]);
+    expect(ladderMutations(data, 0.11, 0.08)).toEqual<SolverMutation[]>([
+      { kind: "savings-annual-percent", accountId: "a1", percent: 0.11 },
+    ]);
+  });
+
+  it("writes DOLLARS for a flat-dollar account, so the rung does not index it to pay", () => {
+    // $12,000 on a $120,000 salary = an implied 10%. +3pp of household pay is
+    // +$3,600, so the raised rung funds $15,600 — still flat.
+    const data = tree([rule({ accountId: "a1", annualAmount: 12_000 })]);
+    const [m] = ladderMutations(data, 0.13, 0.1);
+    expect(m.kind).toBe("savings-contribution");
+    expect(m).toMatchObject({ accountId: "a1" });
+    expect((m as { annualAmount: number }).annualAmount).toBeCloseTo(15_600, 6);
+  });
+
+  it("never writes annualPercent onto a flat-dollar rule (the indexation defect)", () => {
+    const data = tree([rule({ accountId: "a1", annualAmount: 12_000 })]);
+    expect(ladderMutations(data, 0.16, 0.1).map((m) => m.kind)).not.toContain(
+      "savings-annual-percent",
+    );
+  });
+
+  it("still returns nothing for the baseline rung, in either mode (R13)", () => {
+    expect(
+      ladderMutations(tree([rule({ accountId: "a1", annualAmount: 12_000 })]), 0.1, 0.1),
+    ).toEqual([]);
+    expect(
+      ladderMutations(tree([rule({ accountId: "a1", annualPercent: 0.08 })]), 0.08, 0.08),
+    ).toEqual([]);
+  });
+});
