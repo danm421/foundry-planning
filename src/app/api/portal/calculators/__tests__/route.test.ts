@@ -247,6 +247,13 @@ describe("the second calculator key", () => {
     for (const key of ["nope", "constructor", "__proto__", "toString"]) {
       const res = await GET(new Request("http://localhost"), params(key));
       expect(res.status, `key ${key}`).toBe(404);
+      // PUT needs its own assertion: without the guard the route would call
+      // `calculator.validate` on `undefined`, and `authErrorResponse` returns
+      // null for a TypeError, so it rethrows as an unhandled 500 on a
+      // caller-controlled path.
+      const wrote = await PUT(putTo(key, {}), params(key));
+      expect(wrote.status, `PUT key ${key}`).toBe(404);
     }
+    expect(resolvePortalClientMock).not.toHaveBeenCalled();
   });
 });
