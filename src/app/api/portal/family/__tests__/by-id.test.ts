@@ -85,6 +85,20 @@ describe("PUT /api/portal/family/[id]", () => {
     expect(body.error).toBe("invalid relationship");
   });
 
+  // The client and spouse rows are seeded by create-client and anchor account
+  // ownership + the estate flow; the portal never lists them, so a request
+  // naming one is stale or hand-made either way.
+  it("404s on the client's own seeded row", async () => {
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
+    requireEditEnabledMock.mockResolvedValue(undefined);
+    selectChain.mockResolvedValue([{ clientId: "c1", firmId: "firm-1", id: "fm1", role: "client" }]);
+    const res = await PUT(putReq({ firstName: "X" }), {
+      params: Promise.resolve({ id: "fm1" }),
+    });
+    expect(res.status).toBe(404);
+    expect(updateChain).not.toHaveBeenCalled();
+  });
+
   it("updates fields when target row is owned by the bound client", async () => {
     resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requireEditEnabledMock.mockResolvedValue(undefined);
@@ -99,6 +113,18 @@ describe("PUT /api/portal/family/[id]", () => {
 });
 
 describe("DELETE /api/portal/family/[id]", () => {
+  it("404s on the spouse's seeded row instead of deleting it", async () => {
+    resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
+    requireEditEnabledMock.mockResolvedValue(undefined);
+    selectChain.mockResolvedValue([{ clientId: "c1", firmId: "firm-1", id: "fm2", role: "spouse" }]);
+    const res = await DELETE(
+      new Request("http://localhost/api/portal/family/fm2", { method: "DELETE" }),
+      { params: Promise.resolve({ id: "fm2" }) },
+    );
+    expect(res.status).toBe(404);
+    expect(deleteChain).not.toHaveBeenCalled();
+  });
+
   it("deletes when target row is owned by the bound client", async () => {
     resolvePortalClientMock.mockResolvedValue({ clientId: "c1", mode: "client", clerkUserId: "u1" });
     requireEditEnabledMock.mockResolvedValue(undefined);

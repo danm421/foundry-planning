@@ -1,8 +1,9 @@
 import type { ReactElement } from "react";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { clients, familyMembers } from "@/db/schema";
+import { clients } from "@/db/schema";
 import FamilyMemberCards from "@/components/portal/family-member-cards";
+import { loadPortalFamily } from "@/lib/portal/load-profile-data";
 
 interface Props {
   clientId: string;
@@ -17,16 +18,10 @@ export default async function FamilySection({
     .where(eq(clients.id, clientId))
     .limit(1);
 
-  const rows = await db
-    .select({
-      id: familyMembers.id,
-      firstName: familyMembers.firstName,
-      lastName: familyMembers.lastName,
-      relationship: familyMembers.relationship,
-      dateOfBirth: familyMembers.dateOfBirth,
-    })
-    .from(familyMembers)
-    .where(eq(familyMembers.clientId, clientId));
+  // Same loader the GET route (and so the phone app) uses, rather than a second
+  // copy of the query — it owns the rule that the household's own client and
+  // spouse rows don't belong in Family.
+  const rows = await loadPortalFamily(clientId);
 
   const editEnabled = client?.portalEditEnabled ?? false;
 

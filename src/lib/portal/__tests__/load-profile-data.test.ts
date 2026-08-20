@@ -10,23 +10,26 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const clientSelect = vi.fn();
 const contactsSelect = vi.fn();
 const familySelect = vi.fn();
+const familyWhere = vi.fn();
 const entitiesSelect = vi.fn();
 
 vi.mock("@/db/schema", () => ({
   clients: { _name: "clients" },
   crmHouseholdContacts: { _name: "crm_household_contacts" },
-  familyMembers: { _name: "family_members" },
+  familyMembers: { _name: "family_members", clientId: "fm.client_id", role: "fm.role" },
   entities: { _name: "entities" },
 }));
 vi.mock("drizzle-orm", () => ({
   and: (...a: unknown[]) => a,
   eq: (...a: unknown[]) => a,
+  notInArray: (...a: unknown[]) => a,
 }));
 vi.mock("@/db", () => ({
   db: {
     select: () => ({
       from: (tbl: { _name: string }) => ({
-        where: () => {
+        where: (pred: unknown) => {
+          if (tbl._name === "family_members") familyWhere(pred);
           if (tbl._name === "clients") {
             return { limit: () => Promise.resolve(clientSelect()) };
           }
@@ -45,6 +48,7 @@ beforeEach(() => {
   clientSelect.mockReset();
   contactsSelect.mockReset();
   familySelect.mockReset();
+  familyWhere.mockReset();
   entitiesSelect.mockReset();
 });
 
@@ -100,6 +104,21 @@ describe("loadPortalFamily", () => {
 
     expect(rows).toEqual([
       { id: "fm1", firstName: "Kid", lastName: "Doe", relationship: "child", dateOfBirth: "2015-01-01" },
+    ]);
+  });
+
+  // The mocked `where()` can't evaluate a predicate, so this asserts the
+  // predicate the query was built with. The client and spouse each already have
+  // a card at the top of Organizer -> Household; their seeded family_members
+  // rows would otherwise render a second time under Family.
+  it("excludes the client's and spouse's own family_members rows", async () => {
+    familySelect.mockReturnValue([]);
+
+    await loadPortalFamily("client-1");
+
+    expect(familyWhere).toHaveBeenCalledWith([
+      ["fm.client_id", "client-1"],
+      ["fm.role", ["client", "spouse"]],
     ]);
   });
 });
