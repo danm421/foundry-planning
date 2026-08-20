@@ -53,6 +53,21 @@ const MONTH_NAMES = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
+/** Both halves or nothing. The saved state can only hold a WHOLE date
+ * ("YYYY-MM"), but the two dropdowns are picked one at a time — a month with
+ * no year yet has to read as "no target", or the goal-seek would start
+ * solving for a date the client hasn't finished naming. */
+function joinTarget(month: string, year: string): string | null {
+  return month && year ? `${year}-${month}` : null;
+}
+
+/** Spelled out for the target-date dropdown — a list a client reads once and
+ * picks from has room for the whole word, unlike the summary stats above it. */
+const MONTH_FULL_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
 /** "YYYY-MM" → "Jan 2028". Null (the plan never clears) reads plainly rather
  * than crashing on a `.split` of null — it sits right beside the warn line
  * that already names a debt as stalled, so it needs to say the same thing in
@@ -149,6 +164,30 @@ export function DebtPaydownWorkspace({
   const now = useMemo(() => new Date(), []);
   const startYear = now.getFullYear();
   const startMonth = now.getMonth() + 1;
+
+  // Years the simulator can actually answer for — offering one past its
+  // 600-month ceiling would take the pick and silently clamp it, answering a
+  // different question than the one asked. The list reaches BACK far enough
+  // to still contain a target saved on an earlier visit: without that, a goal
+  // set last year reads as a blank dropdown while the stale date is still
+  // saved underneath it.
+  const savedYear = Number((dto.state.targetMonth ?? "").slice(0, 4)) || startYear;
+  const firstYear = Math.min(savedYear, startYear);
+  const targetYears = useMemo(
+    () =>
+      Array.from(
+        { length: startYear - firstYear + Math.floor(MAX_PAYDOWN_MONTHS / 12) + 1 },
+        (_, i) => firstYear + i,
+      ),
+    [firstYear, startYear],
+  );
+
+  // The half-answer between the two dropdowns lives here; `state.targetMonth`
+  // only ever holds a whole date (see `joinTarget`).
+  const [targetParts, setTargetParts] = useState(() => {
+    const [y = "", m = ""] = (dto.state.targetMonth ?? "").split("-");
+    return { month: m, year: y };
+  });
 
   function patch(next: Partial<DebtPaydownState>): void {
     setState((s) => ({ ...s, ...next }));
@@ -502,13 +541,46 @@ export function DebtPaydownWorkspace({
               className="accent-[var(--color-accent)]"
             />
             I want to be done by
-            <input
-              type="month"
-              value={state.targetMonth ?? ""}
-              onChange={(e) => patch({ targetMonth: e.target.value || null, mode: "target" })}
-              aria-label="Debt free by"
-              className="rounded-md border border-hair bg-card-2 px-2 py-1 tabular text-[13px] text-ink"
-            />
+            {/* Two real <select>s rather than <input type="month">, whose month
+                and year segments are spinbuttons — clicking them opens nothing,
+                which reads as a dropdown that's broken. These also render the
+                same in every browser, which the native control does not. */}
+            <span className="flex items-center gap-2">
+              <select
+                value={targetParts.month}
+                onChange={(e) => {
+                  const month = e.target.value;
+                  setTargetParts((p) => ({ ...p, month }));
+                  patch({ targetMonth: joinTarget(month, targetParts.year), mode: "target" });
+                }}
+                aria-label="Debt free by month"
+                className="rounded-md border border-hair bg-card-2 px-2 py-1 text-[13px] text-ink"
+              >
+                <option value="">Month</option>
+                {MONTH_FULL_NAMES.map((name, i) => (
+                  <option key={name} value={String(i + 1).padStart(2, "0")}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={targetParts.year}
+                onChange={(e) => {
+                  const year = e.target.value;
+                  setTargetParts((p) => ({ ...p, year }));
+                  patch({ targetMonth: joinTarget(targetParts.month, year), mode: "target" });
+                }}
+                aria-label="Debt free by year"
+                className="rounded-md border border-hair bg-card-2 px-2 py-1 tabular text-[13px] text-ink"
+              >
+                <option value="">Year</option>
+                {targetYears.map((y) => (
+                  <option key={y} value={String(y)}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </span>
             {goal &&
               (goal.unreachable ? (
                 <span className="text-[13px] text-warn">

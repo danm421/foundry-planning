@@ -189,6 +189,54 @@ describe("DebtPaydownWorkspace", () => {
     expect(container.textContent).toMatch(/you’d need/i);
   });
 
+  // The target date used to be a native <input type="month">, whose month and
+  // year segments are SPINBUTTONS — clicking them opens nothing, which reads
+  // as a broken dropdown. Real <select>s are what a client expects, and they
+  // are the only date control that behaves the same in every browser.
+  it("picks the target date with real month and year dropdowns", () => {
+    render(<DebtPaydownWorkspace dto={dto()} />);
+    const month = screen.getByLabelText("Debt free by month");
+    const year = screen.getByLabelText("Debt free by year");
+    expect(month.tagName).toBe("SELECT");
+    expect(year.tagName).toBe("SELECT");
+    expect(screen.getByRole("option", { name: "February" })).toBeTruthy();
+  });
+
+  it("solves for the target only once BOTH dropdowns are chosen", () => {
+    const target = monthsFromNow(24);
+    const [y, m] = target.split("-");
+    const { container } = render(<DebtPaydownWorkspace dto={dto()} />);
+
+    // Month alone is a half-answer — it must not start solving for a date
+    // the client hasn't finished naming.
+    fireEvent.change(screen.getByLabelText("Debt free by month"), { target: { value: m } });
+    expect(container.textContent).not.toMatch(/you’d need/i);
+
+    fireEvent.change(screen.getByLabelText("Debt free by year"), { target: { value: y } });
+    expect(container.textContent).toMatch(/you’d need/i);
+  });
+
+  // A target saved on an earlier visit can name a year that is now in the
+  // past. If the dropdown only offers this year onward, it reads BLANK while
+  // that stale date is still saved underneath it — the client sees no goal,
+  // can't tell what they picked, and the stale value keeps saving.
+  it("still offers a year saved before this one", () => {
+    const lastYear = String(new Date().getFullYear() - 1);
+    render(
+      <DebtPaydownWorkspace
+        dto={dto({
+          state: {
+            ...DEFAULT_DEBT_PAYDOWN_STATE,
+            mode: "target",
+            targetMonth: `${lastYear}-06`,
+          },
+        })}
+      />,
+    );
+    const year = screen.getByLabelText("Debt free by year") as HTMLSelectElement;
+    expect(year.value).toBe(lastYear);
+  });
+
   it("recomputes when the extra payment changes", () => {
     const { container } = render(<DebtPaydownWorkspace dto={dto()} />);
     const before = container.textContent ?? "";
