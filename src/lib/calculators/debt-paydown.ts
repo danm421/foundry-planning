@@ -405,12 +405,32 @@ export function solveExtraForTarget(
   };
 }
 
+/** A year of flat-at-zero tail past the plan's last payment, so the landing
+ *  reads as an ending rather than as the right edge of the chart. */
+const CHART_TAIL_MONTHS = 12;
+
+/** Ten years, when neither run ends: enough to show a balance going the wrong
+ *  way, without drawing fifty. */
+const STALLED_CHART_MONTHS = 121;
+
 /**
- * Monthly points the balance chart plots — the longer of the two runs, since
- * the shorter series is padded out to match it.
+ * Monthly points the balance chart plots. Every run that ends, ends on screen
+ * — but a run that never ends has no ending to show, and drawing all fifty
+ * years of the ceiling draws the ceiling, not the client's story.
+ *
+ * A card minimum that does not cover its own interest is the commonest reason
+ * anyone opens this screen, and it compounds into eight figures by year fifty.
+ * Plotted whole, that one series sets a $140,000,000 axis the plan's own curve
+ * lies flat along, and stacks fifty year labels into a smear. So: window to
+ * the plan, and let the baseline leave the frame still climbing — which is
+ * precisely what "still isn't cleared" looks like.
  */
 export function paydownChartPoints(c: PaydownComparison): number {
-  return Math.max(c.baseline.balanceSeries.length, c.plan.balanceSeries.length);
+  const baselinePoints = c.baseline.balanceSeries.length;
+  const planPoints = c.plan.balanceSeries.length;
+  if (!c.baseline.neverPaysOff) return Math.max(baselinePoints, planPoints);
+  if (!c.plan.neverPaysOff) return Math.min(baselinePoints, planPoints + CHART_TAIL_MONTHS);
+  return Math.min(baselinePoints, STALLED_CHART_MONTHS);
 }
 
 /**

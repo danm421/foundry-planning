@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { calcPayment } from "@/lib/loan-math";
 import {
   comparePaydown,
+  paydownChartIsEmpty,
+  paydownChartPoints,
   simulatePaydown,
   MAX_PAYDOWN_MONTHS,
   type PaydownDebt,
@@ -235,5 +237,49 @@ describe("comparePaydown — when the minimums alone never clear the debt", () =
     expect(c.baseline.neverPaysOff).toBe(false);
     expect(c.interestSaved).toBeGreaterThan(0);
     expect(c.monthsSaved).toBeGreaterThan(0);
+  });
+});
+
+describe("paydownChartPoints — the window the balance chart plots", () => {
+  // The commonest reason anyone opens this screen: a minimum that doesn't
+  // cover its own interest, so the baseline runs to the 600-month ceiling.
+  const STUCK_CARD: PaydownDebt[] = [
+    { id: "c1", name: "Rewards card", balance: 8_000, annualRate: 0.1999, minimumPayment: 120 },
+  ];
+
+  it("plots to the longer run when both of them end", () => {
+    const debts: PaydownDebt[] = [
+      { id: "a1", name: "Auto", balance: 18_400, annualRate: 0.059, minimumPayment: 415 },
+    ];
+    const c = comparePaydown(debts, { ...START, strategy: "avalanche", extraMonthly: 200 });
+    expect(c.baseline.neverPaysOff).toBe(false);
+    // Neither line may be cut off while it still has somewhere to go.
+    expect(paydownChartPoints(c)).toBe(
+      Math.max(c.baseline.balanceSeries.length, c.plan.balanceSeries.length),
+    );
+  });
+
+  it("windows to the plan, not the 600-month ceiling, when the baseline never ends", () => {
+    const c = comparePaydown(STUCK_CARD, { ...START, strategy: "avalanche", extraMonthly: 250 });
+    expect(c.baseline.neverPaysOff).toBe(true);
+    expect(c.plan.neverPaysOff).toBe(false);
+    // The baseline series is the full ceiling ...
+    expect(c.baseline.balanceSeries.length).toBe(MAX_PAYDOWN_MONTHS + 1);
+    // ... and plotting it would draw fifty years of compounding, flattening
+    // the plan's own curve onto the axis. A year of tail past the payoff is
+    // all the chart owes the comparison.
+    expect(paydownChartPoints(c)).toBe(c.plan.balanceSeries.length + 12);
+    expect(paydownChartPoints(c)).toBeLessThan(c.baseline.balanceSeries.length);
+  });
+
+  it("caps at ten years when neither run ends", () => {
+    const c = comparePaydown(STUCK_CARD, { ...START, strategy: "avalanche", extraMonthly: 0 });
+    expect(c.plan.neverPaysOff).toBe(true);
+    expect(paydownChartPoints(c)).toBe(121);
+  });
+
+  it("is still empty when there is nothing left to pay down", () => {
+    const c = comparePaydown([], { ...START, strategy: "avalanche", extraMonthly: 0 });
+    expect(paydownChartIsEmpty(c)).toBe(true);
   });
 });

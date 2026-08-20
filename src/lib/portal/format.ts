@@ -14,6 +14,12 @@ const USD2 = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2,
 });
 const SHARES = new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 });
+const USD_COMPACT = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
 
 /** "2026-06-12" → "Jun 12" (UTC-pinned so the day never shifts across timezones). */
 export function fmtDay(iso: string): string {
@@ -26,6 +32,15 @@ export function fmtDay(iso: string): string {
 
 export function fmtUsd(n: number): string {
   return USD0.format(n);
+}
+
+/**
+ * "$140M", "$20K" — for chart axis labels, where a full `fmtUsd` string is
+ * six characters of grid furniture. Never for a figure the client reads as an
+ * amount: the tooltip and the schedule keep the exact dollar.
+ */
+export function fmtUsdCompact(n: number): string {
+  return USD_COMPACT.format(n);
 }
 
 /**
@@ -63,6 +78,13 @@ const MONTH_ABBR = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
+
+/** "2043-03" → "Mar 2043". The month key the calculators pass around, said
+ *  the way a client reads it. */
+export function fmtMonthLabel(month: string): string {
+  const [y, m] = month.split("-");
+  return `${MONTH_ABBR[Number(m) - 1] ?? m} ${y}`;
+}
 
 /**
  * When a recurring charge is expected, in the column beside its name:

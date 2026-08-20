@@ -8,14 +8,25 @@ import { render, screen } from "@testing-library/react";
 vi.mock("react-chartjs-2", () => ({
   Line: ({
     data,
+    options,
   }: {
     data: { labels: string[]; datasets: Array<{ label: string; data: unknown[]; borderColor: string }> };
-  }) => (
-    <>
-      <div data-testid="labels-length">{data.labels.length}</div>
-      <div data-testid="datasets">{JSON.stringify(data.datasets)}</div>
-    </>
-  ),
+    options: {
+      scales?: { x?: { ticks?: { callback?: (v: unknown, i: number, t: unknown[]) => string } } };
+    };
+  }) => {
+    // Run the x-tick callback exactly as Chart.js would, so a test can count
+    // the year labels the axis actually draws rather than the months it holds.
+    const cb = options?.scales?.x?.ticks?.callback;
+    const drawn = cb ? data.labels.map((_, i) => cb(i, i, [])).filter(Boolean) : [];
+    return (
+      <>
+        <div data-testid="labels-length">{data.labels.length}</div>
+        <div data-testid="datasets">{JSON.stringify(data.datasets)}</div>
+        <div data-testid="x-ticks">{JSON.stringify(drawn)}</div>
+      </>
+    );
+  },
 }));
 vi.mock("chart.js", () => ({
   Chart: { register: () => {} },
@@ -49,21 +60,25 @@ vi.mock("@/lib/chart-colors", () => ({
 import { DebtPaydownChart } from "@/components/portal/debt-paydown-chart";
 import type { PaydownComparison, PaydownRun } from "@/lib/calculators/debt-paydown";
 
-function mkRun(balanceSeries: number[]): PaydownRun {
+function mkRun(balanceSeries: number[], neverPaysOff = false): PaydownRun {
   return {
     monthsToDebtFree: balanceSeries.length - 1,
     totalInterest: 0,
     balanceSeries,
     perDebt: [],
     yearly: [],
-    neverPaysOff: false,
+    neverPaysOff,
     stalledDebtIds: [],
   };
 }
 
-function mkComparison(baselineSeries: number[], planSeries: number[]): PaydownComparison {
+function mkComparison(
+  baselineSeries: number[],
+  planSeries: number[],
+  baselineNeverPaysOff = false,
+): PaydownComparison {
   return {
-    baseline: mkRun(baselineSeries),
+    baseline: mkRun(baselineSeries, baselineNeverPaysOff),
     plan: mkRun(planSeries),
     interestSaved: 0,
     monthsSaved: 0,
@@ -133,4 +148,50 @@ describe("DebtPaydownChart", () => {
     expect(baselineColor).not.toBe(REAL_ACCENT);
     expect(planColor).not.toBe(REAL_ACCENT);
   });
+
+  // The shape that made this chart unreadable: a card whose minimum does not
+  // cover its own interest, so the baseline compounds for the simulator's
+  // full fifty years while the plan is done in three.
+  it("truncates a baseline that never clears to the window the plan sets", () => {
+    const runaway = Array.from({ length: 601 }, (_, i) => 8_000 * 1.01 ** i);
+    const paidOff = [8_000, 6_000, 4_000, 2_000, 0];
+    render(
+      <DebtPaydownChart
+        comparison={mkComparison(runaway, paidOff, true)}
+        startYear={2026}
+        startMonth={1}
+      />,
+    );
+
+    const labelsLength = Number(screen.getByTestId("labels-length").textContent);
+    const datasets = JSON.parse(screen.getByTestId("datasets").textContent ?? "[]");
+
+    // The plan's 5 points plus a year of tail — not the 601-point ceiling.
+    expect(labelsLength).toBe(17);
+    expect(datasets[0].data).toHaveLength(17);
+    // Truncated, not padded: the baseline is still climbing when it leaves
+    // the frame, which is what "never cleared" looks like.
+    expect(datasets[0].data[16]).toBeCloseTo(runaway[16], 5);
+  });
+
+  it.each([25, 61, 121, 241, 361, 601])(
+    "draws at most eight year labels across a %i-month horizon",
+    (points) => {
+      const series = Array.from({ length: points }, (_, i) => points - i - 1);
+      render(
+        <DebtPaydownChart
+          comparison={mkComparison(series, series)}
+          startYear={2026}
+          startMonth={1}
+        />,
+      );
+
+      const drawn: string[] = JSON.parse(screen.getByTestId("x-ticks").textContent ?? "[]");
+      // Fifty stacked years was the original complaint; one lonely label is
+      // no better, so the ladder has to land between.
+      expect(drawn.length).toBeLessThanOrEqual(8);
+      expect(drawn.length).toBeGreaterThanOrEqual(2);
+      expect(new Set(drawn).size).toBe(drawn.length); // no year drawn twice
+    },
+  );
 });
