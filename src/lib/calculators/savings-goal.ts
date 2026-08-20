@@ -104,7 +104,10 @@ export function projectSavings(input: SavingsGoalInput): SavingsGoalRun {
   // A SEPARATE walk from the display series above, because it deliberately
   // runs PAST the goal month: a client who falls short should be told the
   // date they WOULD get there, which is the actionable half of the bad news.
-  // Capping at the horizon could only ever return null or the horizon itself.
+  // Capping the search at the horizon would report null for precisely the case
+  // where the date matters most — the client who is behind. (One who is ahead
+  // crosses INSIDE the horizon anyway: month 66 at $1,000/mo on the pinned
+  // inputs, so the wider search costs them nothing.)
   let monthsToGoal: number | null = null;
   let b = input.currentSavings;
   let t = input.targetToday;
@@ -163,7 +166,14 @@ export function solveMonthlyForGoal(
   // says so in words.
   if (months === 0) return 0;
 
-  // At r = 0 the annuity factor ((1+r)^n − 1)/r is 0/0; it degenerates to n.
-  const annuity = r > 0 ? ((1 + r) ** months - 1) / r : months;
+  // At r === 0 the annuity factor ((1+r)^n − 1)/r is 0/0 — and ONLY there, where
+  // it degenerates to n. The guard is `r !== 0`, not `r > 0`, because the factor
+  // is correct for every r > −1: substituting n for a NEGATIVE rate understates
+  // the contribution badly (at −2% on the pinned inputs it answers $850.79 where
+  // $932.71 is right, landing the client $8,444 short at the goal month).
+  // `validateSavingsGoalState` rejects any annualReturn outside [0, 0.5], so a
+  // negative rate cannot reach here through the app today. The guard is about
+  // this module staying correct across its own declared input domain.
+  const annuity = r !== 0 ? ((1 + r) ** months - 1) / r : months;
   return gap / annuity;
 }
