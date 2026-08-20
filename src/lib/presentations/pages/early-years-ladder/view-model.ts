@@ -98,7 +98,10 @@ export function buildEarlyYearsLadderData(
     subtitle: subtitleFor(base?.scenarioLabel),
     groups,
     rungs,
-    cappedRungLabels: cappedRungLabels(rungs, bundles.map((b) => b!.projection.years[0].savings.total)),
+    cappedRungLabels: cappedRungLabels(
+      rungs,
+      bundles.map((b) => householdSavingsRate(b!.projection.years[0])),
+    ),
     takeaway: takeawayFor(groups, rungs),
     emptyMessage: null,
     tidbits:
@@ -135,25 +138,31 @@ function subtitleFor(scenarioLabel: string | undefined): string {
   return `${scenarioLabel ?? "Base Case"} · Every figure in today's dollars`;
 }
 
+/** Below this the shortfall is float noise, not a limit. A tenth of a point is
+ *  orders of magnitude under anything a rounded whole-percent label can show. */
+const CAP_TOLERANCE = 0.001;
+
 /**
- * Rungs whose extra percent bought no extra contribution.
+ * Rungs the plan could not actually fund — the ones whose bar is labelled with
+ * a rate the plan does not run at.
  *
- * Detected by comparing what the ENGINE actually contributed in the plan's
- * first year, not by re-deriving the §402(g) limit here: the projection runs
- * `applyContributionLimits` whenever it has tax-year rows, and the capped
- * figure is what lands in `savings.total`. Once `salary × percent` clears the
- * owner's deferral ceiling, every higher rung funds identical dollars.
+ * Each rung is judged against ITSELF: what it asked for, versus what the
+ * engine contributed once the variant was re-projected. Not against the rung
+ * below it — a rung the limit only PARTLY absorbed still funds more than its
+ * neighbour, so a pairwise test called it uncapped and the sheet read as
+ * though 11% were delivered when the plan ran at 8%.
  *
- * Two rungs asking for the SAME percent also fund identical dollars — they are
- * the same plan. That is not a cap, so the percent has to rise before the
- * totals are worth comparing.
+ * The limit is read off the projection rather than re-derived here: the engine
+ * runs `applyContributionLimits` whenever it has tax-year rows, and the capped
+ * figure is what lands in `savings.total`. (One other thing can shorten a
+ * rung: `ladderMutations` clamps the owner's percent at 100% of their pay. A
+ * deferral limit binds long before that, so on any plan that applies one the
+ * footnote's reason is the true one.)
  */
-function cappedRungLabels(rungs: Rung[], firstYearSavings: number[]): string[] {
-  return rungs.flatMap((rung, i) => {
-    if (i === 0) return [];
-    if (rung.percent <= rungs[i - 1].percent) return [];
-    return firstYearSavings[i] <= firstYearSavings[i - 1] ? [rung.label] : [];
-  });
+function cappedRungLabels(rungs: Rung[], deliveredRates: number[]): string[] {
+  return rungs.flatMap((rung, i) =>
+    rung.percent - deliveredRates[i] > CAP_TOLERANCE ? [rung.label] : [],
+  );
 }
 
 /** One sentence naming what the top rung is worth at the last milestone the

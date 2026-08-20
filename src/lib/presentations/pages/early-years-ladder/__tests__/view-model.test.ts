@@ -106,20 +106,51 @@ describe("buildEarlyYearsLadderData", () => {
     expect(d.groups[2].bars[0].value).toBeLessThan(3_000_000);
   });
 
-  it("flags the ladder as capped when two rungs fund the same dollars", () => {
-    // The IRS deferral limit bites: 11% and 14% both land on $23,500.
+  // Salary is $120,000 in the fixture, so a rung is judged on what its own
+  // variant contributed: 10% asks $12,000, 20% asks $24,000, 30% asks $36,000.
+  const ABSOLUTE = { ...OPTS, rungs: { mode: "absolute" as const, percents: [0.1, 0.2, 0.3] } };
+
+  it("flags a rung the plan could not fund", () => {
+    // The IRS deferral limit bites at $23,500: both raised rungs stop there.
     const d = buildEarlyYearsLadderData(
       ctx([
-        { savings: 9_600, at65: 3_000_000 },
+        { savings: 12_000, at65: 3_000_000 },
         { savings: 23_500, at65: 4_200_000 },
         { savings: 23_500, at65: 4_200_000 },
       ]),
-      OPTS,
+      ABSOLUTE,
     );
-    expect(d.cappedRungLabels).toEqual(["Save 14%"]);
+    expect(d.cappedRungLabels).toEqual(["Save 20%", "Save 30%"]);
   });
 
-  it("does not flag a cap when every rung funds a different amount", () => {
+  // The limit absorbed PART of the 20% rung — it still funds more than the 10%
+  // one, so a pairwise "bought no extra" test called it uncapped and the sheet
+  // read as though 20% had been delivered.
+  it("flags a rung the limit only partly absorbed", () => {
+    const d = buildEarlyYearsLadderData(
+      ctx([
+        { savings: 12_000, at65: 3_000_000 },
+        { savings: 21_000, at65: 4_000_000 },
+        { savings: 23_500, at65: 4_200_000 },
+      ]),
+      ABSOLUTE,
+    );
+    expect(d.cappedRungLabels).toEqual(["Save 20%", "Save 30%"]);
+  });
+
+  it("does not flag a cap when every rung funds what it asked for", () => {
+    const d = buildEarlyYearsLadderData(
+      ctx([
+        { savings: 12_000, at65: 3_000_000 },
+        { savings: 24_000, at65: 4_200_000 },
+        { savings: 36_000, at65: 5_400_000 },
+      ]),
+      ABSOLUTE,
+    );
+    expect(d.cappedRungLabels).toEqual([]);
+  });
+
+  it("does not flag the baseline rung, which asks for what the plan already does", () => {
     expect(buildEarlyYearsLadderData(ctx(THREE_RUNGS), OPTS).cappedRungLabels).toEqual([]);
   });
 
