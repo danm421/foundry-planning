@@ -136,6 +136,17 @@ export async function extractWithMultiPass(args: {
         .join(" ");
     console.log(`[multi-pass] classifier ranges: ${rangeSummary}`);
 
+    // A document that isn't really a fact finder — a loan-servicer page, a
+    // one-screen statement — classifies fine and comes back with every
+    // section empty. Running zero passes would return an empty-but-successful
+    // result, so the import lands with nothing in it and no explanation.
+    // Treat it like a classification failure: the caller falls back to
+    // single-pass extraction, which reads these documents correctly.
+    if (sectionEntries.every(([, ranges]) => ranges.length === 0)) {
+        console.log("[multi-pass] classifier found no sections; deferring to single-pass");
+        return null;
+    }
+
     const passWarnings: string[] = [];
     const tasks = sectionEntries.flatMap(([section, ranges]) =>
         ranges.map(async ([start, end]) => {

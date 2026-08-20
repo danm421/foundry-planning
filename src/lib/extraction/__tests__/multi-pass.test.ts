@@ -300,3 +300,32 @@ describe("extractWithMultiPass", () => {
         expect(result?.sections.entities[0].entityType).toBe("partnership");
     });
 });
+
+describe("extractWithMultiPass — classifier finds nothing", () => {
+    beforeEach(() => {
+        mockedCallAI.mockReset();
+    });
+
+    // A misclassified document (a loan-servicer screenshot auto-typed as a
+    // fact finder) gets a *successful* classification with every section
+    // empty. Returning a result here imports nothing and says nothing —
+    // null routes the caller to single-pass extraction instead.
+    it("returns null so the caller falls back to single-pass", async () => {
+        mockedCallAI.mockImplementation(async (systemPrompt: string) => {
+            if (systemPrompt === FACT_FINDER_CLASSIFIER_PROMPT) {
+                return JSON.stringify({ accounts: [], expenses: [], liabilities: [] });
+            }
+            throw new Error("no section prompt should run when there are no ranges");
+        });
+
+        const result = await extractWithMultiPass({
+            pages: [pageText(1)],
+            outline: "page 1: Loan Details",
+            anchors: pageText(1),
+            model: "mini",
+        });
+
+        expect(result).toBeNull();
+        expect(mockedCallAI).toHaveBeenCalledTimes(1);
+    });
+});

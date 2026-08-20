@@ -266,6 +266,48 @@ describe("extractDocument", () => {
         expect(result.extracted.incomes[0].name).toBe("John SS");
     });
 
+    // A one-screen loan or statement page can trip the fact-finder heuristic,
+    // then classify into zero sections. Re-reading it as a fact finder yields a
+    // vague summary row; re-reading it as a statement yields the actual loans.
+    it("re-reads an auto-typed fact_finder as an account statement when it has no sections", async () => {
+        mockedPdf.mockResolvedValueOnce(
+            "eMoney Advisor — Confidential Client Profile\nPrepared for the Smith household."
+        );
+        mockedCallAI
+            .mockImplementationOnce(async () => JSON.stringify({})) // classifier: no ranges
+            .mockImplementationOnce(async () =>
+                JSON.stringify({ liabilities: [{ name: "Federal Student Loan", balance: 602.72 }] })
+            );
+
+        const result = await extractDocument(
+            Buffer.from("fake pdf"),
+            "smith-emoney.pdf",
+            "auto",
+            "mini",
+            "pdf",
+        );
+
+        expect(result.documentType).toBe("account_statement");
+        expect(result.promptVersion.startsWith("account_statement:")).toBe(true);
+        expect(result.extracted.liabilities).toHaveLength(1);
+    });
+
+    it("keeps an explicitly chosen fact_finder type when it has no sections", async () => {
+        mockedCallAI
+            .mockImplementationOnce(async () => JSON.stringify({})) // classifier: no ranges
+            .mockImplementationOnce(async () => JSON.stringify({ liabilities: [] }));
+
+        const result = await extractDocument(
+            Buffer.from("fake pdf"),
+            "smith.pdf",
+            "fact_finder",
+            "mini",
+            "pdf",
+        );
+
+        expect(result.documentType).toBe("fact_finder");
+    });
+
     it("auto-detects a fact_finder from the FILENAME when the body text is generic, and routes to multi-pass", async () => {
         // Generic body classifies as account_statement on its own; the MoneyGuidePro
         // filename is the ONLY fact_finder signal — so this test fails if the
@@ -629,7 +671,10 @@ describe("scanned-PDF vision OCR fallback", () => {
         expect(result.extracted.accounts).toHaveLength(1);
     });
 
-    it("returns an empty scanned-unreadable result when OCR fails", async () => {
+    // A reader that never ran and a page too blurry to read are different
+    // problems: one is ours, one is the file's. Telling a user with a
+    // perfectly legible screenshot to "try a text-based PDF" is a dead end.
+    it("blames the reader, not the file, when OCR throws", async () => {
         mockedPdf.mockResolvedValueOnce("");
         mockedVision.mockRejectedValueOnce(new Error("AZURE_API_KEY is not configured"));
 
@@ -642,7 +687,29 @@ describe("scanned-PDF vision OCR fallback", () => {
         );
 
         expect(result.extracted.accounts).toEqual([]);
-        expect(result.warnings.some((w) => /scanned image/i.test(w))).toBe(true);
+        expect(result.warnings.some((w) => /reader failed on our side/i.test(w))).toBe(true);
+        expect(result.warnings.some((w) => /text-based PDF/i.test(w))).toBe(false);
+    });
+
+    it("blames the file when OCR ran but recovered nothing", async () => {
+        mockedPdf.mockResolvedValueOnce("");
+        mockedVision.mockResolvedValueOnce({
+            text: "  ",
+            pageCount: 2,
+            pagesProcessed: 2,
+            truncated: false,
+        });
+
+        const result = await extractDocument(
+            Buffer.from("scanned pdf"),
+            "scan.pdf",
+            "account_statement",
+            "mini",
+            "pdf",
+        );
+
+        expect(result.extracted.accounts).toEqual([]);
+        expect(result.warnings.some((w) => /too low-resolution/i.test(w))).toBe(true);
     });
 });
 

@@ -383,7 +383,7 @@ export async function extractDocument(
                     // fall through to classify / redact / extract below
                 } else {
                     warnings.push(
-                        "We couldn't read any text from this PDF — it appears to be a scanned image we couldn't process. Try uploading a text-based PDF."
+                        "We couldn't read any text from this PDF — the page images may be too low-resolution. Try a sharper scan, or a text-based PDF."
                     );
                     return scannedUnreadableResult(fileName, documentType, warnings);
                 }
@@ -392,8 +392,12 @@ export async function extractDocument(
                     `[extract] ${logName}: vision OCR failed:`,
                     err instanceof Error ? err.message.slice(0, 200) : "unknown"
                 );
+                // Don't blame the document here — the OCR reader itself failed
+                // (Azure unconfigured, content filter, a missing native dep).
+                // Telling the user to "try a text-based PDF" sent a perfectly
+                // readable screenshot back to them once already.
                 warnings.push(
-                    "We couldn't read any text from this PDF — it appears to be a scanned image we couldn't process. Try uploading a text-based PDF."
+                    "We couldn't process this scanned PDF — the document reader failed on our side. Please try again, and let us know if it keeps happening."
                 );
                 return scannedUnreadableResult(fileName, documentType, warnings);
             }
@@ -409,6 +413,7 @@ export async function extractDocument(
     // 2. Classify if auto. The filename is a cheap, high-signal input for
     // fact-finder detection ("Smith eMoney Fact Finder.pdf") and is never
     // logged raw, so it is safe to feed the classifier.
+    const autoClassified = documentType === "auto";
     if (documentType === "auto") {
         documentType = classifyDocument(text, fileName);
     }
@@ -502,6 +507,14 @@ export async function extractDocument(
         warnings.push(
             "Could not classify the document — falling back to single-pass extraction."
         );
+        // The fact-finder heuristic guessed, and the section classifier just
+        // disagreed — so don't re-read it with the fact-finder prompt, which
+        // summarises where the statement prompt itemises (a student-loan page
+        // came back as one "Student Loans" row instead of four loans with
+        // their own rates). An explicit choice by the user stands.
+        if (autoClassified && documentType === "fact_finder") {
+            documentType = "account_statement";
+        }
         // fall through to single-pass below
     }
 
