@@ -32,7 +32,7 @@ import {
 } from "@/lib/db-scoping";
 import { recordAudit } from "@/lib/audit";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
-import { formatZodIssues } from "@/lib/schemas/common";
+import { summarizeZodIssues } from "@/lib/schemas/common";
 import { incomeCreateSchema, incomeUpdateSchema } from "@/lib/schemas/incomes";
 import { baseCaseScenarioId } from "./base-case";
 import { writeError, type EntityWriteResult } from "./entity-write-result";
@@ -56,7 +56,7 @@ export async function createIncomeForClient(args: {
 
   const parsed = incomeCreateSchema.safeParse(input);
   if (!parsed.success) {
-    return writeError(400, formatZodIssues(parsed.error).map((i) => i.message).join("; "));
+    return writeError(400, summarizeZodIssues(parsed.error));
   }
   const p = parsed.data;
 
@@ -137,7 +137,7 @@ export async function updateIncomeForClient(args: {
 
   const parsed = incomeUpdateSchema.safeParse(input);
   if (!parsed.success) {
-    return writeError(400, formatZodIssues(parsed.error).map((i) => i.message).join("; "));
+    return writeError(400, summarizeZodIssues(parsed.error));
   }
   const p = parsed.data;
 

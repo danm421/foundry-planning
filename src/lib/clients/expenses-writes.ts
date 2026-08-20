@@ -22,7 +22,7 @@ import {
 } from "@/lib/db-scoping";
 import { recordAudit } from "@/lib/audit";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
-import { formatZodIssues } from "@/lib/schemas/common";
+import { summarizeZodIssues } from "@/lib/schemas/common";
 import { expenseCreateSchema, expenseUpdateSchema } from "@/lib/schemas/expenses";
 import { isRetirementLivingExpense } from "@/lib/solver/living-expense";
 import { baseCaseScenarioId } from "./base-case";
@@ -122,7 +122,7 @@ export async function createExpenseForClient(args: {
 
   const parsed = expenseCreateSchema.safeParse(input);
   if (!parsed.success) {
-    return writeError(400, formatZodIssues(parsed.error).map((i) => i.message).join("; "));
+    return writeError(400, summarizeZodIssues(parsed.error));
   }
   const p = parsed.data;
 
@@ -234,7 +234,7 @@ export async function updateExpenseForClient(args: {
 
   const parsed = expenseUpdateSchema.safeParse(input);
   if (!parsed.success) {
-    return writeError(400, formatZodIssues(parsed.error).map((i) => i.message).join("; "));
+    return writeError(400, summarizeZodIssues(parsed.error));
   }
   const p = parsed.data;
 

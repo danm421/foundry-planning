@@ -56,6 +56,30 @@ import type { ForgeToolContext } from "../context";
 /** Every write tool's description ends with this so the UI can flag approval. */
 const APPROVAL_SUFFIX = "Requires human approval.";
 
+// ── Required-on-CREATE overrides ─────────────────────────────────────────────
+// The shared *Fields groups below are UPDATE-shaped: every field is .optional()
+// because a partial update legitimately omits most of them. But the write cores'
+// create schemas (expenseCreateSchema / incomeCreateSchema / liabilityCreateSchema)
+// REQUIRE a handful of those fields, so each add_* tool must re-declare them as
+// required. Leaving them optional lets the model — which reads the schema, not the
+// prose description — omit them, which means an approval card the advisor confirms
+// and only THEN a core rejection ("Invalid input; Invalid input: expected number,
+// received undefined") with no way to recover. Declaring them required is what makes
+// the model ask the advisor up front instead of proposing a change that cannot apply.
+//
+// The override stays as loose as the surrounding *Fields groups (bare int, no range) — the core's
+// create schema owns the range check and reports it by field name. Only REQUIRED-ness
+// is asserted here, because that is the part the model needs before it calls.
+const requiredInt = (what: string) =>
+  z
+    .number()
+    .int()
+    .describe(
+      `${what}. Required — if the advisor didn't state it and you cannot infer it from ` +
+        `today's date or the plan, ASK them for it in one short question; do not call this ` +
+        `tool with it missing and do not invent a value.`,
+    );
+
 /**
  * Re-derive the firmId from the live session and confirm the (server-supplied)
  * clientId belongs to it. Never trust the firmId baked into `ctx` at
@@ -342,12 +366,14 @@ export function buildDetailWriteTools({
       name: "add_expense",
       description:
         "Add a new expense to the current client's base-case plan. The model supplies the " +
-        "expense fields (type + name required); clientId is server-derived. " +
+        "expense fields (type + name + startYear + endYear required); clientId is server-derived. " +
         APPROVAL_SUFFIX,
       schema: z.object({
         type: z.string().min(1).describe("expense category, e.g. 'discretionary'"),
         name: z.string().min(1).describe("display name for the expense"),
         ...expenseFields,
+        startYear: requiredInt("first plan year the expense applies"),
+        endYear: requiredInt("last plan year the expense applies"),
       }),
     },
   );
@@ -471,12 +497,14 @@ export function buildDetailWriteTools({
       name: "add_income",
       description:
         "Add a new income to the current client's base-case plan. The model supplies the " +
-        "income fields (type + name required); clientId is server-derived. " +
+        "income fields (type + name + startYear + endYear required); clientId is server-derived. " +
         APPROVAL_SUFFIX,
       schema: z.object({
         type: z.string().min(1).describe("income category, e.g. 'salary' or 'social_security'"),
         name: z.string().min(1).describe("display name for the income"),
         ...incomeFields,
+        startYear: requiredInt("first plan year the income applies"),
+        endYear: requiredInt("last plan year the income applies"),
       }),
     },
   );
@@ -604,6 +632,10 @@ export function buildDetailWriteTools({
       schema: z.object({
         name: z.string().min(1).describe("display name for the liability"),
         ...liabilityFields,
+        startYear: requiredInt("first plan year the liability applies"),
+        termMonths: requiredInt(
+          "loan term in months — 360 for a 30-year mortgage, 60 for a 5-year auto loan",
+        ),
       }),
     },
   );

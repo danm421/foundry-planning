@@ -47,7 +47,7 @@ import { assertAccountsInClient, assertEntitiesInClient } from "@/lib/db-scoping
 import { recordCreate, recordUpdate, recordDelete } from "@/lib/audit";
 import { toLiabilitySnapshot, LIABILITY_FIELD_LABELS } from "@/lib/audit/snapshots/liability";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
-import { formatZodIssues } from "@/lib/schemas/common";
+import { summarizeZodIssues } from "@/lib/schemas/common";
 import {
   type ValidatedOwner,
   validateOwnersShape,
@@ -74,7 +74,7 @@ export async function createLiabilityForClient(args: {
 
   const parsed = liabilityCreateSchema.safeParse(input);
   if (!parsed.success) {
-    return writeError(400, formatZodIssues(parsed.error).map((i) => i.message).join("; "));
+    return writeError(400, summarizeZodIssues(parsed.error));
   }
   const p = parsed.data;
 
@@ -198,7 +198,7 @@ export async function updateLiabilityForClient(args: {
 
   const parsed = liabilityUpdateSchema.safeParse(input);
   if (!parsed.success) {
-    return writeError(400, formatZodIssues(parsed.error).map((i) => i.message).join("; "));
+    return writeError(400, summarizeZodIssues(parsed.error));
   }
   const p = parsed.data;
 

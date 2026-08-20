@@ -62,7 +62,7 @@ import {
 import { recordCreate, recordUpdate, recordDelete } from "@/lib/audit";
 import { toAccountSnapshot, ACCOUNT_FIELD_LABELS } from "@/lib/audit/snapshots/account";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
-import { formatZodIssues } from "@/lib/schemas/common";
+import { summarizeZodIssues } from "@/lib/schemas/common";
 import {
   type ValidatedOwner,
   validateOwnersShape,
@@ -136,7 +136,7 @@ export async function createAccountForClient(args: {
 
   const parsed = accountCreateSchema.safeParse(mergedInput);
   if (!parsed.success) {
-    return writeError(400, formatZodIssues(parsed.error).map((i) => i.message).join("; "));
+    return writeError(400, summarizeZodIssues(parsed.error));
   }
   const p = parsed.data;
   const category = p.category;

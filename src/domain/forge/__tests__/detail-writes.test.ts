@@ -60,6 +60,10 @@ import {
   deleteAccountForClient,
 } from "@/lib/clients/accounts-writes";
 import { recordAudit } from "@/lib/audit";
+import { expenseCreateSchema } from "@/lib/schemas/expenses";
+import { incomeCreateSchema } from "@/lib/schemas/incomes";
+import { liabilityCreateSchema } from "@/lib/schemas/liabilities";
+import { accountCreateSchema } from "@/lib/schemas/accounts";
 import type { ForgeAuthContext } from "@/domain/forge/context";
 
 const CTX: ForgeAuthContext = {
@@ -95,7 +99,7 @@ describe("add_expense", () => {
       data: { id: "exp-1", name: "Vacation" } as never,
       resourceId: "exp-1",
     });
-    await getTool("add_expense").invoke({ type: "discretionary", name: "Vacation" });
+    await getTool("add_expense").invoke({ type: "discretionary", name: "Vacation", startYear: 2026, endYear: 2040 });
 
     expect(requireOrgId).toHaveBeenCalled();
     expect(verifyClientAccess).toHaveBeenCalledWith("client_1");
@@ -121,6 +125,8 @@ describe("add_expense", () => {
     const result = await getTool("add_expense").invoke({
       type: "discretionary",
       name: "Vacation",
+      startYear: 2026,
+      endYear: 2040,
     });
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -141,6 +147,8 @@ describe("add_expense", () => {
     const result = await getTool("add_expense").invoke({
       type: "discretionary",
       name: "x",
+      startYear: 2026,
+      endYear: 2040,
       ownerEntityId: "e1",
       ownerAccountId: "a1",
     });
@@ -155,6 +163,8 @@ describe("add_expense", () => {
     const result = await getTool("add_expense").invoke({
       type: "discretionary",
       name: "x",
+      startYear: 2026,
+      endYear: 2040,
     });
     expect(String(result)).toMatch(/not found|access denied/i);
     expect(createExpenseForClient).not.toHaveBeenCalled();
@@ -169,6 +179,8 @@ describe("add_expense", () => {
     await getTool("add_expense").invoke({
       type: "education",
       name: "Emma — College",
+      startYear: 2026,
+      endYear: 2040,
       annualAmount: 45000,
       dedicatedAccountIds: ["acct-1"],
       payShortfallOutOfPocket: true,
@@ -321,7 +333,7 @@ describe("add_income", () => {
       data: { id: "inc-1", name: "Salary" } as never,
       resourceId: "inc-1",
     });
-    await getTool("add_income").invoke({ type: "salary", name: "Salary" });
+    await getTool("add_income").invoke({ type: "salary", name: "Salary", startYear: 2026, endYear: 2040 });
 
     expect(requireOrgId).toHaveBeenCalled();
     expect(verifyClientAccess).toHaveBeenCalledWith("client_1");
@@ -344,7 +356,7 @@ describe("add_income", () => {
       data: { id: "inc-1", name: "Salary" } as never,
       resourceId: "inc-1",
     });
-    const result = await getTool("add_income").invoke({ type: "salary", name: "Salary" });
+    const result = await getTool("add_income").invoke({ type: "salary", name: "Salary", startYear: 2026, endYear: 2040 });
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "forge.write_approved",
@@ -365,6 +377,8 @@ describe("add_income", () => {
     const result = await getTool("add_income").invoke({
       type: "salary",
       name: "x",
+      startYear: 2026,
+      endYear: 2040,
       ownerEntityId: "e1",
       ownerAccountId: "a1",
     });
@@ -376,7 +390,7 @@ describe("add_income", () => {
 
   it("rejects when verifyClientAccess fails WITHOUT calling the core", async () => {
     vi.mocked(verifyClientAccess).mockResolvedValue({ ok: false });
-    const result = await getTool("add_income").invoke({ type: "salary", name: "x" });
+    const result = await getTool("add_income").invoke({ type: "salary", name: "x", startYear: 2026, endYear: 2040 });
     expect(String(result)).toMatch(/not found|access denied/i);
     expect(createIncomeForClient).not.toHaveBeenCalled();
   });
@@ -819,5 +833,89 @@ describe("remove_account", () => {
     expect(recordAudit).not.toHaveBeenCalledWith(
       expect.objectContaining({ action: "forge.write_approved" }),
     );
+  });
+});
+
+// ── Every add_* tool declares what its write core REQUIRES ───────────────────
+// Regression (2026-08-20): the add_* tool schemas marked startYear / endYear /
+// termMonths .optional() even though the create schemas REQUIRE them. The model
+// read the schema, omitted them, an approval card was raised and CONFIRMED, and
+// only then did the core reject — "Invalid input; Invalid input: expected number,
+// received undefined" — so the advisor approved a change that could never apply.
+// A field the model must supply has to be required at the TOOL boundary, because
+// that is what makes the model ask for it instead of proposing an unapplicable card.
+//
+// This asserts the invariant STRUCTURALLY rather than pinning today's field names:
+// required(core create schema) ⊆ required(tool schema). Any future required field
+// added to a core is caught here, on every add_* tool, without editing this test.
+// (Zod v4 keeps `.shape` through .passthrough()/.superRefine(), and a field is
+// "required" exactly when it cannot parse `undefined` — which correctly reads
+// `.default(…)` as optional and `coerceToIntOptional.pipe(z.number())` as required.)
+describe("add_* tools require what their write cores require", () => {
+  type Shaped = { shape: Record<string, { safeParse(v: unknown): { success: boolean } }> };
+  const requiredKeys = (schema: unknown) =>
+    Object.entries((schema as Shaped).shape)
+      .filter(([, field]) => !field.safeParse(undefined).success)
+      .map(([key]) => key)
+      .sort();
+
+  const PAIRS = [
+    ["add_expense", expenseCreateSchema],
+    ["add_income", incomeCreateSchema],
+    ["add_liability", liabilityCreateSchema],
+    ["add_account", accountCreateSchema],
+  ] as const;
+
+  for (const [toolName, coreSchema] of PAIRS) {
+    it(`${toolName} marks every field ${toolName.replace("add_", "")}CreateSchema requires as required`, () => {
+      const declared = requiredKeys(getTool(toolName).schema);
+      const needed = requiredKeys(coreSchema);
+      expect(needed.length).toBeGreaterThan(0); // guard against an empty-shape false pass
+      expect(needed.filter((k) => !declared.includes(k))).toEqual([]);
+    });
+  }
+
+  // The reported repro, end to end: the advisor gave balance + rate + payment but
+  // no term or start year. The call must die at the schema, BEFORE the core — that
+  // ordering is what keeps an unapplicable approval card off the advisor's screen.
+  it("add_liability rejects the reported student-loan call without reaching the core", async () => {
+    await expect(
+      getTool("add_liability").invoke({
+        name: "Student loan",
+        balance: 1000,
+        interestRate: 0.032,
+        monthlyPayment: 24,
+      }),
+    ).rejects.toThrow();
+    expect(createLiabilityForClient).not.toHaveBeenCalled();
+  });
+
+  it("add_liability accepts that same call once startYear and termMonths are supplied", async () => {
+    vi.mocked(createLiabilityForClient).mockResolvedValue({
+      ok: true,
+      data: { id: "liab-9", name: "Student loan" } as never,
+      resourceId: "liab-9",
+    });
+    await getTool("add_liability").invoke({
+      name: "Student loan",
+      balance: 1000,
+      interestRate: 0.032,
+      monthlyPayment: 24,
+      startYear: 2026,
+      termMonths: 45,
+    });
+    expect(createLiabilityForClient).toHaveBeenCalled();
+  });
+
+  // Tightening CREATE must NOT leak into UPDATE — the update schemas are genuinely
+  // partial, so a one-field patch has to keep working.
+  it("update_liability still accepts a partial patch with no years or term", async () => {
+    vi.mocked(updateLiabilityForClient).mockResolvedValue({
+      ok: true,
+      data: { id: "liab-1", name: "Student loan" } as never,
+      resourceId: "liab-1",
+    });
+    await getTool("update_liability").invoke({ liabilityId: "liab-1", monthlyPayment: 50 });
+    expect(updateLiabilityForClient).toHaveBeenCalled();
   });
 });

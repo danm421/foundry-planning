@@ -61,6 +61,19 @@ export function formatZodIssues(
   return error.issues.map((i) => ({ path: i.path.join("."), message: i.message }));
 }
 
+/** One-line summary of a ZodError for the entity write cores' `writeError(400, …)`.
+ *  Keeps the field NAME on the front of each issue — without it a missing required
+ *  field reads as the useless "Invalid input; Invalid input: expected number,
+ *  received undefined", which is what an advisor saw when a Forge write tool was
+ *  called with a required field omitted. Path-free issues (whole-object refinements)
+ *  keep their bare message. Same sanitization posture as formatZodIssues: path +
+ *  message only, never the received value. */
+export function summarizeZodIssues(error: z.ZodError): string {
+  return formatZodIssues(error)
+    .map((i) => (i.path ? `${i.path}: ${i.message}` : i.message))
+    .join("; ");
+}
+
 /**
  * Parse `req.json()` against `schema`. Returns either the validated data
  * or a 400 NextResponse that the handler should return immediately.
