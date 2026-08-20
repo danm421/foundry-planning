@@ -1431,7 +1431,6 @@ export function LiveSolverWorkspace({
             onRegisterAccountMix={registerDraftAccountMix}
             mutations={mutations}
             onChange={pushMutation}
-            onResetField={clearMutations}
             onSolveStart={handleSolveStart}
             baseClientData={baseClientData}
             baseGifts={baseGifts}

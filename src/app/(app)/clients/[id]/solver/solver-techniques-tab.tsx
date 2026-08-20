@@ -10,7 +10,7 @@ import type {
   Reinvestment,
   Relocation,
 } from "@/engine/types";
-import type { SolverMutation, SolverMutationKey } from "@/lib/solver/types";
+import type { SolverMutation } from "@/lib/solver/types";
 import type { AccountAssetMix } from "@/engine/monteCarlo/trial";
 import type { ClientMilestones } from "@/lib/milestones";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
@@ -38,12 +38,10 @@ import AddReinvestmentForm from "@/components/forms/add-reinvestment-form";
 import AddAssetTransactionForm from "@/components/forms/add-asset-transaction-form";
 import AddRelocationForm from "@/components/forms/add-relocation-form";
 import DebtPaydownDialog from "@/components/forms/debt-paydown-dialog";
-import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { SolverSection } from "./solver-section";
 import { SolverTechniqueRow } from "./solver-technique-row";
 import { SolverTechniqueCard } from "./solver-technique-card";
 import { SolverEstateTechnique } from "./solver-estate-technique";
-import { SolverSurplusAllocation } from "./solver-surplus-allocation";
 import {
   RothConversionIcon,
   AssetTransactionIcon,
@@ -189,9 +187,6 @@ interface Props {
    *  renders in isolation. */
   mutations?: SolverMutation[];
   onChange: (m: SolverMutation) => void;
-  /** Per-field reset (clears the given lever keys). Optional so the tab renders
-   *  in isolation in tests. */
-  onResetField?: (keys: SolverMutationKey[]) => void;
   /** Wired by the workspace. Starts a goal-seek solve on a roth conversion's
    *  fixed amount. Optional so the component renders in isolation in tests. */
   onSolveStart?: (
@@ -229,7 +224,6 @@ export function SolverTechniquesTab({
   baseTechniqueIds,
   mutations,
   onChange,
-  onResetField,
   onSolveStart,
   baseClientData,
   baseGifts,
@@ -588,22 +582,6 @@ export function SolverTechniquesTab({
           )}
         </div>
       </SolverSection>
-
-      {baseClientData && onResetField ? (
-        <SolverSection
-          title="Surplus Cash Flow"
-          action={
-            <FieldTooltip text="Splits each year's leftover cash flow: the spent share leaves the household as discretionary spending; the rest is saved to the chosen account (or household checking). Raising the spend % lowers Plan Confidence, Net to Heirs, and ending net worth, and grows the Cash Flow chart's discretionary band." />
-          }
-        >
-          <SolverSurplusAllocation
-            workingTree={workingTree}
-            baseClientData={baseClientData}
-            onChange={onChange}
-            onResetField={onResetField}
-          />
-        </SolverSection>
-      ) : null}
 
       {form}
     </div>
