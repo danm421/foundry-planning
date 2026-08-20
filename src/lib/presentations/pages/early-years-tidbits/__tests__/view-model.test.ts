@@ -29,7 +29,6 @@ function plan(firstName: string, liquid: number) {
         },
       ],
     },
-    scenarioLabel: "Base Case",
   };
 }
 
@@ -38,9 +37,10 @@ function plan(firstName: string, liquid: number) {
 function ctx(withBase: boolean): BuildDataContext {
   const own = plan("Wrong", 11_111);
   const base = plan("Cooper", 48_000);
+  // Only `clientData`, `projection`, `monteCarlo` and `bundlesByRef` are read;
+  // anything else here would imply a dependency the view model does not have.
   return {
     ...own,
-    years: own.projection.years,
     ...(withBase ? { bundlesByRef: { base } } : {}),
   } as unknown as BuildDataContext;
 }
@@ -67,9 +67,11 @@ describe("buildEarlyYearsTidbitsData", () => {
     expect(d.tidbits[1].body).toContain("$48,000");
   });
 
-  // The fallback is what lets the Forge compute tool answer for this page: it
-  // loads no bundles, and a page that returned em-dashes there would narrate a
-  // missing value as a real one.
+  // NOT for the Forge compute tool — `compute.ts:371-374` refuses any page that
+  // declares `requiredScenarioRefs`, and this one does, so it never reaches
+  // buildData. The fallback covers `bundlesByRef` being optional on
+  // `BuildDataContext`: any caller that skips ref loading gets the plan's real
+  // figures rather than a body full of em-dashes presented as real values.
   it("falls back to its own context when no base bundle was loaded", () => {
     const d = buildEarlyYearsTidbitsData(ctx(false), { tidbits: [NAMED, MONEY] });
     expect(d.tidbits[0].body).toContain("Wrong");

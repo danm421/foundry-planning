@@ -40,9 +40,9 @@ const bundle = (over: Record<string, unknown> = {}): PageScenarioBundle =>
     scenarioLabel: "Base Case",
   }) as unknown as PageScenarioBundle;
 
-function doc(pageIds: PresentationPageId[], base: PageScenarioBundle) {
-  return PresentationDocument({
-    pages: pageIds.map((pageId) => ({ pageId, scenarioKey: "base" })),
+function docProps(base: PageScenarioBundle) {
+  return {
+    pages: [] as { pageId: PresentationPageId; scenarioKey: string }[],
     firmName: "Ethos Financial Group",
     firmTagline: null,
     firmLogoDataUrl: null,
@@ -54,6 +54,13 @@ function doc(pageIds: PresentationPageId[], base: PageScenarioBundle) {
     headerName: "Cooper",
     bundles: { base },
     topScenarioKey: "base",
+  };
+}
+
+function doc(pageIds: PresentationPageId[], base: PageScenarioBundle) {
+  return PresentationDocument({
+    ...docProps(base),
+    pages: pageIds.map((pageId) => ({ pageId, scenarioKey: "base" })),
   });
 }
 
@@ -92,5 +99,46 @@ describe("omitFromDeck", () => {
   it("never empties the Document — react-pdf throws with no Page", async () => {
     const text = await textOf(doc(["earlyYearsDebtOrInvest"], bundle()));
     expect(text.trim().length).toBeGreaterThan(0);
+  });
+
+  // The second omit user, and the first whose trigger is a page OPTION rather
+  // than the plan's own facts: an advisor who added the notes page and picked
+  // nothing gets no sheet, not a heading over blank paper.
+  it("drops the notes page when the advisor picked no tidbits", async () => {
+    const text = await textOf(doc(["cover", "toc", "earlyYearsTidbits"], bundle()));
+    expect(text).not.toContain("Things Worth Knowing");
+  });
+
+  it("keeps the notes page once something is picked", async () => {
+    // Cover and TOC are load-bearing, not scenery. With the notes page ALONE in
+    // the deck, `document.tsx`'s never-empty rescue puts a suppressed page back —
+    // so a one-page deck renders the sheet whether the omit rule fired or not,
+    // and this assertion would pass against an omit rule hardcoded to `true`.
+    // Proven: that mutation went green until these two pages were added.
+    const text = await textOf(
+      PresentationDocument({
+        ...docProps(bundle()),
+        pages: [
+          { pageId: "cover" as PresentationPageId, scenarioKey: "base" },
+          { pageId: "toc" as PresentationPageId, scenarioKey: "base" },
+          {
+            pageId: "earlyYearsTidbits" as PresentationPageId,
+            scenarioKey: "base",
+            options: { tidbits: ["compounding-rule-of-72"] },
+          },
+        ],
+      }),
+    );
+    expect(text).toContain("Things Worth Knowing");
+    expect(text).toContain("Divide 72");
+  });
+
+  // The rescue path: a deck of nothing but self-suppressing sheets keeps one
+  // back rather than throwing. That sheet reaches a CLIENT, so it must not carry
+  // instructions aimed at the advisor who built the deck.
+  it("rescues the last page without printing build instructions at the client", async () => {
+    const text = await textOf(doc(["earlyYearsTidbits"], bundle()));
+    expect(text).toContain("No notes were selected");
+    expect(text).not.toContain("options");
   });
 });

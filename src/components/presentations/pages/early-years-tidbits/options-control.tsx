@@ -2,7 +2,10 @@
 
 import { OptionsRow, OptionsGroup } from "@/components/presentations/shared/options-layout";
 import { TidbitPicker } from "@/components/presentations/shared/tidbit-picker";
-import type { EarlyYearsTidbitsPageOptions } from "@/lib/presentations/pages/early-years-tidbits/types";
+import {
+  TIDBITS_PAGE_MAX,
+  type EarlyYearsTidbitsPageOptions,
+} from "@/lib/presentations/pages/early-years-tidbits/types";
 
 interface Props {
   value: EarlyYearsTidbitsPageOptions;
@@ -12,12 +15,12 @@ interface Props {
 export function EarlyYearsTidbitsOptionsControl({ value, onChange }: Props) {
   return (
     <OptionsRow>
-      <OptionsGroup label="Notes">
+      <OptionsGroup label="Tidbits">
         {/* Six, not the sidebar's two — and they are the page here, so the
-            picker's default "beside the chart" hint would be false. */}
+            picker's default "beside the chart" tail would be false. */}
         <TidbitPicker
-          max={6}
-          hint="Pick up to 6 — they fill this page, two to a row."
+          max={TIDBITS_PAGE_MAX}
+          hint="they fill this page, two to a row."
           value={value.tidbits}
           onChange={(tidbits) => onChange({ ...value, tidbits })}
         />

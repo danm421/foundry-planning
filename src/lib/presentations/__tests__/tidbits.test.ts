@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { TIDBITS, tidbitsById, renderTidbits, type TidbitTopic } from "../tidbits";
+import {
+  TIDBITS,
+  TIDBIT_BODY_MAX,
+  TIDBIT_TITLE_MAX,
+  tidbitsById,
+  renderTidbits,
+  type TidbitTopic,
+} from "../tidbits";
 import { resolveAllTokens, type TokenContext } from "@/lib/plan-text/tokens";
 
 const ALL_TOPICS: TidbitTopic[] = [
@@ -23,7 +30,14 @@ describe("TIDBITS", () => {
   });
 
   it("keeps every body short enough for a sidebar", () => {
-    for (const t of TIDBITS) expect(t.body.length).toBeLessThanOrEqual(320);
+    for (const t of TIDBITS) expect(t.body.length).toBeLessThanOrEqual(TIDBIT_BODY_MAX);
+  });
+
+  // Stated here rather than discovered by the back page's render test: a title
+  // long enough to wrap reds a PDF fit test three directories away, which points
+  // at the sheet instead of at the copy that broke it.
+  it("keeps every title short enough for the sidebar card", () => {
+    for (const t of TIDBITS) expect(t.title.length, t.id).toBeLessThanOrEqual(TIDBIT_TITLE_MAX);
   });
 
   it("covers every topic with more than one entry", () => {
@@ -149,8 +163,9 @@ function earlyYearsContext(): TokenContext {
 }
 
 describe("TIDBITS token coverage", () => {
+  const values = resolveAllTokens(earlyYearsContext());
+
   it("every token a tidbit uses resolves on a deck that tidbit can print on", () => {
-    const values = resolveAllTokens(earlyYearsContext());
     for (const t of TIDBITS) {
       for (const [, id] of t.body.matchAll(TOKEN_PATTERN)) {
         expect(values, `${t.id} uses an unregistered token {{${id}}}`).toHaveProperty(id);
@@ -162,8 +177,13 @@ describe("TIDBITS token coverage", () => {
     }
   });
 
-  it("leaves no unsubstituted placeholder once rendered", () => {
-    const values = resolveAllTokens(earlyYearsContext());
+  // NOT a values guard, despite how it reads: `renderTokens` replaces every match
+  // of its own pattern with `values[id] ?? "—"`, so no WELL-FORMED placeholder can
+  // survive whatever `values` holds. What it actually catches is a placeholder the
+  // token pattern cannot match — `{{planStartYear}}`, `{{mc-success}}` — which
+  // prints its braces on the sheet and which the test above cannot see, because
+  // that one only iterates matches the same pattern found.
+  it("catches a placeholder the token pattern cannot match", () => {
     for (const t of renderTidbits(
       TIDBITS.map((x) => x.id),
       values,

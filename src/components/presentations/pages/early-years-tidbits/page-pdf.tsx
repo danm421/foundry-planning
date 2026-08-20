@@ -32,16 +32,17 @@ export function EarlyYearsTidbitsPagePdf(
   const { data, firmName, clientName, reportDate, pageIndex, totalPages, accent } = input;
   const frame = { firmName, clientName, reportDate, pageIndex, totalPages };
 
-  // The advisor added this page on purpose but picked nothing. A heading over
-  // blank paper promises notes that aren't there; say what happened instead.
+  // `omitFromDeck` drops this page when nothing is picked, so this branch is
+  // reached only by the one deck that cannot omit — an export whose every sheet
+  // suppressed itself, which `document.tsx` rescues by keeping one back. The
+  // copy is written for the CLIENT holding the PDF, not as an instruction to the
+  // advisor who built it: a report is not the place to tell someone to go edit a
+  // report.
   if (data.tidbits.length === 0) {
     return (
       <PageFrame {...frame}>
         <Text style={s.title}>Things Worth Knowing</Text>
-        <Text style={s.empty}>
-          No notes were picked for this page. Choose up to six in the page&apos;s options,
-          or remove the page from the deck.
-        </Text>
+        <Text style={s.empty}>No notes were selected for this page.</Text>
       </PageFrame>
     );
   }

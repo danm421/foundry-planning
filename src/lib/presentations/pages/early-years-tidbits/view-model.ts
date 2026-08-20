@@ -19,8 +19,9 @@ export function buildEarlyYearsTidbitsData(
 ): EarlyYearsTidbitsPageData {
   if (options.tidbits.length === 0) return { tidbits: [] };
   // The tokens describe the same plan the rest of the deck describes, so they
-  // resolve against base — with the usual fallback to `ctx`, which is what lets
-  // this page build real output for a caller that loads no bundles.
+  // resolve against base — with the usual fallback to `ctx`, because
+  // `bundlesByRef` is optional on `BuildDataContext` and a caller that skipped
+  // ref loading would otherwise print the em-dash fallback for every figure.
   const base = ctx.bundlesByRef?.base;
   return {
     tidbits: renderTidbits(

@@ -6,23 +6,31 @@ import { join } from "node:path";
 import { renderToBuffer, Document } from "@react-pdf/renderer";
 import { ensureFontsRegistered } from "@/components/presentations/shared/fonts";
 import { SECTION_ACCENTS } from "@/lib/presentations/theme";
-import { TIDBITS } from "@/lib/presentations/tidbits";
+import { TIDBIT_BODY_MAX, TIDBIT_TITLE_MAX } from "@/lib/presentations/tidbits";
 import { EarlyYearsTidbitsPagePdf } from "./page-pdf";
 import type { EarlyYearsTidbitsPageData } from "@/lib/presentations/pages/early-years-tidbits/types";
 
 /**
  * The WORST case the library PERMITS, not the worst case it currently holds.
- * `tidbits.test.ts` caps a body at 320 characters and nothing caps a title, so
- * six cards at that cap are what this sheet has to survive — today's longest
- * body is 230, and a test built on that would go green and stay green right up
- * until someone wrote a perfectly legal 320-character one.
+ * `tidbits.ts` caps a body at `TIDBIT_BODY_MAX` and a title at
+ * `TIDBIT_TITLE_MAX`, so six cards AT those caps are what this sheet has to
+ * survive — today's longest body is 230, and a fixture built on that would go
+ * green and stay green right up until someone wrote a perfectly legal long one.
+ *
+ * Both fixtures are built FROM the exported caps rather than re-typing them, so
+ * raising a cap in `tidbits.ts` moves this measurement with it instead of
+ * leaving it quietly measuring the old rule.
  */
-const LONGEST_TITLE = "Early-career tax rates are often the lowest you will ever see";
-const MAX_BODY =
+const LONGEST_TITLE = "Early-career tax rates are often the lowest you will ever see".padEnd(
+  TIDBIT_TITLE_MAX,
+  "!",
+);
+const MAX_BODY = (
   "Money left in cash loses purchasing power every year prices rise, and the gap compounds quietly. " +
   "Holding some cash for near-term needs and an emergency fund makes sense; holding every long-term " +
   "dollar in cash shrinks what those dollars will buy decades from now, long after anyone " +
-  "remembers deciding to leave them there.";
+  "remembers deciding to leave them there."
+).padEnd(TIDBIT_BODY_MAX, ".");
 
 /** Six cards at the cap — the fit question. */
 const worstCase = Array.from({ length: 6 }, (_, i) => ({
@@ -74,15 +82,11 @@ async function textOf(data: EarlyYearsTidbitsPageData): Promise<string> {
 }
 
 describe("EarlyYearsTidbitsPagePdf", () => {
-  it("keeps the worst-case fixture AT the cap the copy rule allows", () => {
-    // Guards the guard. If someone raises or lowers the 320-character rule in
-    // `tidbits.ts`, this fixture stops being the worst case and the fit test
-    // below quietly starts measuring something easier than reality.
-    expect(MAX_BODY.length).toBeGreaterThan(300);
-    expect(MAX_BODY.length).toBeLessThanOrEqual(320);
-    expect(LONGEST_TITLE.length).toBeGreaterThanOrEqual(
-      Math.max(...TIDBITS.map((t) => t.title.length)),
-    );
+  it("measures the fixture AT the caps, so the fit test cannot drift off them", () => {
+    // `padEnd` only ever grows a string, so a cap LOWERED below the handwritten
+    // copy would leave the fixture over it and this assertion is what says so.
+    expect(MAX_BODY.length).toBe(TIDBIT_BODY_MAX);
+    expect(LONGEST_TITLE.length).toBe(TIDBIT_TITLE_MAX);
   });
 
   it("prints all six cards, title and body", async () => {
@@ -107,7 +111,10 @@ describe("EarlyYearsTidbitsPagePdf", () => {
 
   it("says so rather than printing a heading over blank paper", async () => {
     const text = await textOf({ tidbits: [] });
-    expect(text).toContain("No notes were picked");
+    expect(text).toContain("No notes were selected");
     expect(text).not.toContain("General financial education");
+    // The rescue path prints to a CLIENT. It must not carry build instructions.
+    expect(text).not.toContain("options");
+    expect(text).not.toContain("deck");
   });
 });

@@ -6,8 +6,14 @@ export interface EarlyYearsTidbitsPageData {
   tidbits: Tidbit[];
 }
 
+/** Two columns of three, which is what fits one sheet. The schema and the
+ *  picker each enforce this independently, so it lives in one place — a picker
+ *  that let through what the schema rejects would lose the advisor's seventh
+ *  pick on save with no explanation. */
+export const TIDBITS_PAGE_MAX = 6;
+
 export interface EarlyYearsTidbitsPageOptions {
-  /** Tidbit ids, max 6 — two columns of three, which is what fits one sheet. */
+  /** Tidbit ids, capped at `TIDBITS_PAGE_MAX`. */
   tidbits: string[];
 }
 

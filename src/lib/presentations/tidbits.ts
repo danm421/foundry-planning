@@ -9,11 +9,21 @@
  * gloss, no hype, and nothing that reads as a personalized recommendation,
  * a guarantee, or a specific-security suggestion.
  *
- * Keep each body under ~320 characters: it renders in a narrow sidebar
- * beside a chart, and a long one pushes the chart off the sheet. If a body
- * is too long, shorten the copy — do not raise the limit.
+ * Keep each body within `TIDBIT_BODY_MAX` and each title within
+ * `TIDBIT_TITLE_MAX`: they render in a narrow sidebar beside a chart, and a long
+ * one pushes the chart off the sheet. If a body is too long, shorten the copy —
+ * do not raise the limit. Both caps are exported rather than re-typed, because
+ * the back page's fit test builds its worst-case fixture FROM them; a cap that
+ * lived in two places would let the rule move while the test that measures it
+ * went on measuring the old one.
  */
 import { renderTokens } from "@/lib/plan-text/tokens";
+
+/** A body longer than this pushes the chart off the sidebar pages. */
+export const TIDBIT_BODY_MAX = 320;
+
+/** A title longer than this wraps to a third line in the 150pt sidebar. */
+export const TIDBIT_TITLE_MAX = 70;
 
 export type TidbitTopic =
   | "compounding"

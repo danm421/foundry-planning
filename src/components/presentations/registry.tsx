@@ -1678,6 +1678,12 @@ export const earlyYearsTidbitsPage: PresentationPage<
   // in front of it would contradict them.
   supportsScenarioOverride: false,
   requiredScenarioRefs: () => ["base"],
+  // An advisor who added the page and picked nothing gets no sheet at all,
+  // rather than a heading over blank paper. `omitFromDeck` runs before page
+  // numbering, so the contents list never mentions it and the numbers don't
+  // skip. The launcher still shows the page's own "no tidbits" summary line,
+  // which is where a build-time problem belongs.
+  omitFromDeck: (_ctx, options) => options.tidbits.length === 0,
   buildData: (ctx, options) => buildEarlyYearsTidbitsData(ctx, options),
   renderPdf: (input) => <EarlyYearsTidbitsPagePdf {...input} />,
 };
