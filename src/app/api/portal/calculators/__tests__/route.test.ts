@@ -71,6 +71,24 @@ const VALID_STATE = {
   manualDebts: [],
 };
 
+const VALID_SAVINGS_STATE = {
+  v: 1,
+  name: "Home down payment",
+  targetToday: 80_000,
+  targetYear: 2036,
+  currentSavings: 12_000,
+  annualReturn: 0.06,
+  mode: "solve",
+  monthlyContribution: 200,
+};
+
+function putTo(key: string, body: unknown): Request {
+  return new Request(`http://localhost/api/portal/calculators/${key}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
 function put(body: unknown): Request {
   return new Request("http://localhost/api/portal/calculators/debt-paydown", {
     method: "PUT",
@@ -177,5 +195,58 @@ describe("PUT /api/portal/calculators/[key]", () => {
   it("does not consult the portal edit switch", async () => {
     const res = await PUT(put({ state: VALID_STATE }), params("debt-paydown"));
     expect(res.status).toBe(200);
+  });
+});
+
+describe("the second calculator key", () => {
+  it("accepts a valid savings-goal payload", async () => {
+    // Fails loudly while the route hardcodes the debt-paydown validator: a
+    // savings-goal body has no `strategy`, so it 400s with "Pick a paydown
+    // strategy."
+    const res = await PUT(
+      putTo("savings-goal", { state: VALID_SAVINGS_STATE }),
+      params("savings-goal"),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ state: VALID_SAVINGS_STATE });
+  });
+
+  it("stores it under its own key", async () => {
+    await PUT(putTo("savings-goal", { state: VALID_SAVINGS_STATE }), params("savings-goal"));
+    expect(valuesMock).toHaveBeenCalledWith(
+      expect.objectContaining({ calculatorKey: "savings-goal" }),
+    );
+  });
+
+  it("judges each key by ITS OWN validator, not the other's", async () => {
+    const wrongWay = await PUT(
+      putTo("savings-goal", { state: VALID_STATE }),
+      params("savings-goal"),
+    );
+    expect(wrongWay.status).toBe(400);
+
+    const otherWay = await PUT(
+      putTo("debt-paydown", { state: VALID_SAVINGS_STATE }),
+      params("debt-paydown"),
+    );
+    expect(otherWay.status).toBe(400);
+  });
+
+  it("GETs the savings-goal default when nothing is stored", async () => {
+    selectRows = [];
+    const res = await GET(new Request("http://localhost"), params("savings-goal"));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { state: Record<string, unknown> };
+    expect(body.state.mode).toBe("solve");
+    expect(body.state.name).toBe("My goal");
+    // Not the debt-paydown default.
+    expect(body.state.strategy).toBeUndefined();
+  });
+
+  it("still 404s a key that is not registered, including prototype keys", async () => {
+    for (const key of ["nope", "constructor", "__proto__", "toString"]) {
+      const res = await GET(new Request("http://localhost"), params(key));
+      expect(res.status, `key ${key}`).toBe(404);
+    }
   });
 });
