@@ -1,5 +1,5 @@
 import type { Transaction, RemovedTransaction } from "plaid";
-import { and, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { accounts, plaidItems, plaidTransactions } from "@/db/schema";
 import { getPlaidClient } from "./client";
@@ -183,6 +183,55 @@ export async function applyTransactionUpdates(
   }
 }
 
+/** Our `accounts.id` for each Plaid account handle linked under one item. */
+export async function loadAccountIdByPlaidAccountId(
+  plaidItemId: string,
+): Promise<Map<string, string>> {
+  const linked = await db
+    .select({ id: accounts.id, plaidAccountId: accounts.plaidAccountId })
+    .from(accounts)
+    .where(and(eq(accounts.plaidItemId, plaidItemId), isNotNull(accounts.plaidAccountId)));
+  const map = new Map<string, string>();
+  for (const a of linked) if (a.plaidAccountId) map.set(a.plaidAccountId, a.id);
+  return map;
+}
+
+/**
+ * Attributes already-stored transactions to the asset account they belong to.
+ *
+ * Plaid fires TRANSACTIONS:SYNC_UPDATES_AVAILABLE within seconds of the
+ * exchange — routinely BEFORE the client has finished the "which accounts are
+ * these?" step. That first sync therefore lands every row with accountId NULL
+ * and advances the cursor past them, and Plaid never resends an unchanged
+ * transaction, so without this repair a checking account's spending stays
+ * unattributed forever: its transaction list reads empty and the net-worth
+ * trend drops it. Runs on every sync, so an item linked before this shipped
+ * heals on its next webhook.
+ *
+ * NULL-only by design. A credit card is a `liabilities` row matched on the
+ * Plaid handle, and its transactions must KEEP accountId NULL — that IS NULL is
+ * load-bearing in `buildTransactionConditions`. Handles absent from the map
+ * (cards, loans) are simply never touched.
+ */
+export async function backfillTransactionAccountIds(
+  tx: typeof db,
+  clientId: string,
+  accountIdByPlaidAccountId: Map<string, string>,
+): Promise<void> {
+  for (const [plaidAccountId, accountId] of accountIdByPlaidAccountId) {
+    await tx
+      .update(plaidTransactions)
+      .set({ accountId })
+      .where(
+        and(
+          eq(plaidTransactions.clientId, clientId),
+          eq(plaidTransactions.plaidAccountId, plaidAccountId),
+          isNull(plaidTransactions.accountId),
+        ),
+      );
+  }
+}
+
 export type SyncSummary =
   | { ok: true; added: number; modified: number; removed: number }
   | { ok: false; errorCode: string; errorMessage: string };
@@ -208,12 +257,7 @@ export async function syncTransactionsForItem(item: {
   const categorization = await loadCategorizationContext(item.clientId);
 
   // Resolve our accountId for each Plaid account handle under this item.
-  const linked = await db
-    .select({ id: accounts.id, plaidAccountId: accounts.plaidAccountId })
-    .from(accounts)
-    .where(and(eq(accounts.plaidItemId, item.id), isNotNull(accounts.plaidAccountId)));
-  const accountIdByPlaidAccountId = new Map<string, string>();
-  for (const a of linked) if (a.plaidAccountId) accountIdByPlaidAccountId.set(a.plaidAccountId, a.id);
+  const accountIdByPlaidAccountId = await loadAccountIdByPlaidAccountId(item.id);
 
   await db.transaction(async (tx) => {
     await applyTransactionUpdates(tx as unknown as typeof db, {
@@ -222,6 +266,7 @@ export async function syncTransactionsForItem(item: {
       accountIdByPlaidAccountId,
       categorization,
     }, fetched);
+    await backfillTransactionAccountIds(tx as unknown as typeof db, item.clientId, accountIdByPlaidAccountId);
     await tx
       .update(plaidItems)
       .set({ transactionsCursor: fetched.nextCursor })

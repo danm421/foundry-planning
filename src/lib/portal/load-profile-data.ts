@@ -5,7 +5,7 @@
 //   - src/components/portal/household-section.tsx:14-39
 //   - src/components/portal/family-section.tsx:14-29
 //   - src/components/portal/trusts-section.tsx:14-28
-import { and, eq } from "drizzle-orm";
+import { and, eq, notInArray } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, crmHouseholdContacts, entities, familyMembers } from "@/db/schema";
 import type {
@@ -79,7 +79,17 @@ export async function loadPortalFamily(clientId: string): Promise<PortalFamilyMe
       dateOfBirth: familyMembers.dateOfBirth,
     })
     .from(familyMembers)
-    .where(eq(familyMembers.clientId, clientId));
+    // The client and spouse each already have a card at the top of Organizer ->
+    // Household, sourced from the CRM contacts. create-client also seeds them a
+    // family_members row (role 'client'/'spouse') so account ownership has
+    // something to point at — listing those here showed the household its own
+    // members a second time, filed under relationship "Other".
+    .where(
+      and(
+        eq(familyMembers.clientId, clientId),
+        notInArray(familyMembers.role, ["client", "spouse"]),
+      ),
+    );
 }
 
 export async function loadPortalTrusts(clientId: string): Promise<PortalTrustDTO[]> {

@@ -24,6 +24,7 @@ type RowWithFirmId = EditableFields & {
   id: string;
   clientId: string;
   firmId: string;
+  role: string;
 };
 
 const FIELD_LABELS = {
@@ -46,12 +47,24 @@ async function loadRow(rowId: string): Promise<RowWithFirmId | null> {
       lastName: familyMembers.lastName,
       relationship: familyMembers.relationship,
       dateOfBirth: familyMembers.dateOfBirth,
+      role: familyMembers.role,
       firmId: sql<string>`(SELECT firm_id FROM clients WHERE id = ${familyMembers.clientId})`,
     })
     .from(familyMembers)
     .where(eq(familyMembers.id, rowId))
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * The household's own client and spouse rows, seeded by create-client. They are
+ * never listed by the portal (loadPortalFamily filters them out) — they exist so
+ * account ownership and the estate flow have a person to point at. Deleting one
+ * from here would leave every account owner-less, so a request naming one is
+ * answered exactly like a row that doesn't exist.
+ */
+function isHouseholdPrincipal(role: string): boolean {
+  return role === "client" || role === "spouse";
 }
 
 function editable(row: EditableFields): EditableFields {
@@ -74,7 +87,7 @@ export async function PUT(
 
     const { id } = await ctx.params;
     const row = await loadRow(id);
-    if (!row || row.clientId !== clientId) {
+    if (!row || row.clientId !== clientId || isHouseholdPrincipal(row.role)) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -135,7 +148,7 @@ export async function DELETE(
 
     const { id } = await ctx.params;
     const row = await loadRow(id);
-    if (!row || row.clientId !== clientId) {
+    if (!row || row.clientId !== clientId || isHouseholdPrincipal(row.role)) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 

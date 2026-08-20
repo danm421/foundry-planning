@@ -141,3 +141,35 @@ describe("IncomeExpensesView — a living row that spends whatever's left", () =
     expect(screen.queryByText(/Spend whatever/)).toBeNull();
   });
 });
+
+// The Guided Walkthrough's Cash Flow step renders this same view with
+// `embed="wizard"` (see onboarding/steps/cash-flow-step.tsx), so an advisor
+// setting the household up for the first time gets the option there too. The
+// embed only drops the KPI strip today — this pins that, so a future
+// wizard-specific branch can't quietly take the toggle with it.
+describe("IncomeExpensesView — the option inside the Guided Walkthrough", () => {
+  function renderWizard(expenses: ExpenseRow[]) {
+    render(
+      <ClientAccessProvider value={{ permission: "edit", access: "own" }}>
+        <IncomeExpensesView
+          {...BASE_PROPS}
+          clientInfo={CLIENT_INFO}
+          initialExpenses={expenses}
+          embed="wizard"
+          section="cash-flow"
+        />
+      </ClientAccessProvider>,
+    );
+  }
+
+  it("offers the absorb toggle on the CURRENT living row", () => {
+    renderWizard([currentSlot({})]);
+    fireEvent.click(screen.getByRole("button", { name: "Edit Current Living Expenses" }));
+    expect(screen.getByText(/Spend whatever/)).toBeInTheDocument();
+  });
+
+  it("shows an already-absorbing row as spending whatever's left", () => {
+    renderWizard([currentSlot({ absorbsRemainingCashFlow: true })]);
+    expect(screen.getByText("Whatever’s left")).toBeInTheDocument();
+  });
+});

@@ -44,6 +44,8 @@ const mockInsertValues = vi.fn();
 const mockOnConflictDoUpdate = vi.fn();
 const mockDeleteWhere = vi.fn();
 const mockTransaction = vi.fn();
+const mockUpdate = vi.fn();
+let selectRows: unknown[] = [];
 
 vi.mock("@/db", () => ({
   db: {
@@ -65,8 +67,16 @@ vi.mock("@/db", () => ({
       },
     }),
     select: vi.fn(() => ({
-      from: () => ({ where: () => Promise.resolve([]) }),
+      from: () => ({ where: () => Promise.resolve(selectRows) }),
     })),
+    update: (table: unknown) => ({
+      set: (values: unknown) => ({
+        where: (cond: unknown) => {
+          mockUpdate({ table, values, cond });
+          return Promise.resolve();
+        },
+      }),
+    }),
     transaction: (fn: (tx: unknown) => Promise<unknown>) => {
       mockTransaction();
       return fn({
@@ -87,8 +97,13 @@ vi.mock("@/db", () => ({
             return Promise.resolve();
           },
         }),
-        update: () => ({
-          set: () => ({ where: () => Promise.resolve() }),
+        update: (table: unknown) => ({
+          set: (values: unknown) => ({
+            where: (cond: unknown) => {
+              mockUpdate({ table, values, cond });
+              return Promise.resolve();
+            },
+          }),
         }),
       });
     },
@@ -96,7 +111,12 @@ vi.mock("@/db", () => ({
 }));
 
 vi.mock("@/db/schema", () => ({
-  plaidTransactions: { plaidTransactionId: "plaidTransactionId", clientId: "clientId" },
+  plaidTransactions: {
+    plaidTransactionId: "plaidTransactionId",
+    clientId: "clientId",
+    plaidAccountId: "plaidAccountId",
+    accountId: "accountId",
+  },
   plaidItems: { id: "id", transactionsCursor: "transactionsCursor" },
   accounts: { id: "id", plaidItemId: "plaidItemId", plaidAccountId: "plaidAccountId" },
 }));
@@ -106,12 +126,15 @@ vi.mock("drizzle-orm", () => ({
   and: () => ({ type: "and" }),
   inArray: () => ({ type: "inArray" }),
   isNotNull: () => ({ type: "isNotNull" }),
+  isNull: () => ({ type: "isNull" }),
 }));
 
 import {
   mapPlaidTransaction,
   fetchTransactionUpdates,
   applyTransactionUpdates,
+  backfillTransactionAccountIds,
+  syncTransactionsForItem,
 } from "@/lib/plaid/transactions-sync";
 
 function makePlaidTxn(over: Record<string, unknown> = {}) {
@@ -146,6 +169,8 @@ beforeEach(() => {
   mockOnConflictDoUpdate.mockReset();
   mockDeleteWhere.mockReset();
   mockTransaction.mockReset();
+  mockUpdate.mockReset();
+  selectRows = [];
 });
 
 const plaidTxn = {
@@ -392,5 +417,59 @@ describe("applyTransactionUpdates categorization", () => {
     const conflictOpts = mockOnConflictDoUpdate.mock.calls[0][0];
     expect(conflictOpts.set).not.toHaveProperty("categoryId");
     expect(conflictOpts.set).not.toHaveProperty("categorizedBy");
+  });
+});
+
+describe("backfillTransactionAccountIds", () => {
+  it("re-points each mapped Plaid handle's unattributed rows at our accountId", async () => {
+    const { db } = await import("@/db");
+    const { plaidTransactions } = await import("@/db/schema");
+    await backfillTransactionAccountIds(
+      db as never,
+      "c1",
+      new Map([
+        ["plaid-checking", "acct-checking"],
+        ["plaid-savings", "acct-savings"],
+      ]),
+    );
+    expect(mockUpdate).toHaveBeenCalledTimes(2);
+    const calls = mockUpdate.mock.calls.map((c) => c[0]);
+    expect(calls.every((c) => c.table === plaidTransactions)).toBe(true);
+    expect(calls.map((c) => c.values)).toEqual([
+      { accountId: "acct-checking" },
+      { accountId: "acct-savings" },
+    ]);
+  });
+
+  it("issues no UPDATE when the item has no mapped asset accounts (cards only)", async () => {
+    const { db } = await import("@/db");
+    await backfillTransactionAccountIds(db as never, "c1", new Map());
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe("syncTransactionsForItem attribution repair", () => {
+  it("backfills rows Plaid will never resend (webhook synced before the client mapped accounts)", async () => {
+    // The first sync ran from the SYNC_UPDATES_AVAILABLE webhook, before the
+    // checking account existed — every row landed with accountId NULL and the
+    // cursor moved past them. This sync returns nothing new; the repair is the
+    // only thing that can attribute them.
+    selectRows = [{ id: "acct-checking", plaidAccountId: "plaid-checking" }];
+    transactionsSync.mockResolvedValueOnce({
+      data: { added: [], modified: [], removed: [], next_cursor: "cur2", has_more: false },
+    });
+    const res = await syncTransactionsForItem({
+      id: "item-1",
+      clientId: "c1",
+      accessToken: "enc",
+      transactionsCursor: "cur1",
+    });
+    expect(res.ok).toBe(true);
+    const { plaidTransactions } = await import("@/db/schema");
+    const repair = mockUpdate.mock.calls
+      .map((c) => c[0])
+      .filter((c) => c.table === plaidTransactions);
+    expect(repair).toHaveLength(1);
+    expect(repair[0].values).toEqual({ accountId: "acct-checking" });
   });
 });

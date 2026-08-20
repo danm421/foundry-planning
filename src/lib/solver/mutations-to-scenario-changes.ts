@@ -213,6 +213,17 @@ export function mutationsToScenarioChanges(
         );
         break;
       }
+      case "expense-absorbs-remaining": {
+        const expense = source.expenses.find((e) => e.id === m.expenseId);
+        if (!expense) break;
+        accumulateExpense(
+          expense.id,
+          "absorbsRemainingCashFlow",
+          expense.absorbsRemainingCashFlow ?? false,
+          m.value,
+        );
+        break;
+      }
       case "income-annual-amount": {
         const inc = incomeRowFor(m.incomeId);
         if (!inc) break;

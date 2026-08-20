@@ -65,6 +65,12 @@ export function applyMutations(
         );
         break;
       }
+      case "expense-absorbs-remaining": {
+        result.expenses = result.expenses.map((e) =>
+          e.id === m.expenseId ? { ...e, absorbsRemainingCashFlow: m.value } : e,
+        );
+        break;
+      }
       case "income-annual-amount": {
         result.incomes = result.incomes.map((i) =>
           i.id === m.incomeId ? { ...i, annualAmount: m.annualAmount } : i,

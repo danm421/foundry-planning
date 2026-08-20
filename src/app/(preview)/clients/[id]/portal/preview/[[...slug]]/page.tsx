@@ -19,6 +19,7 @@ import OrganizerTabs from "@/components/portal/organizer-tabs";
 import OrganizerGoalsScreen from "@/components/portal/organizer-goals-screen";
 import OrganizerCashFlowScreen from "@/components/portal/organizer-cash-flow-screen";
 import BudgetTabs from "@/components/portal/budget-tabs";
+import BudgetDrawerGutter from "@/components/portal/budget-drawer-gutter";
 import PortalPreviewBanner from "@/components/portal/portal-preview-banner";
 import { PortalModeProvider } from "@/components/portal/portal-mode-context";
 import { NotSharedNotice } from "@/components/portal/not-shared-notice";
@@ -179,6 +180,14 @@ export default async function PortalPreviewPage({
     : "";
   const greetingName = portalGreetingName(contacts);
 
+  // Bound once: the Budget branch below nests it inside the drawer gutter,
+  // every other section renders it directly.
+  const body = (
+    <PortalModeProvider value={{ mode: "advisor", clientId: id }}>
+      {section}
+    </PortalModeProvider>
+  );
+
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-paper text-ink">
       {/* Full-width banner — spans nav + content + detail rail, stays pinned
@@ -207,18 +216,28 @@ export default async function PortalPreviewPage({
         <main className="min-h-0 min-w-0 overflow-y-auto border-x border-hair">
           <PortalBrandingStrip branding={branding} />
           {/* The Budget section's tab strip sits above the privacy gate, so an
-              advisor can still move between tabs when one area isn't shared. */}
+              advisor can still move between tabs when one area isn't shared.
+              Budget alone keeps its content out of the drawer's column; every
+              other section runs full width and lets the drawer overlay it.
+              The two strips never both apply — a path is one section or the
+              other — so Organizer stays outside the Budget branch. */}
           {inOrganizer && <OrganizerTabs basePath={basePath} />}
-          {inBudget && <BudgetTabs basePath={basePath} />}
-          <PortalModeProvider value={{ mode: "advisor", clientId: id }}>
-            {section}
-          </PortalModeProvider>
+          {inBudget ? (
+            <BudgetDrawerGutter>
+              <BudgetTabs basePath={basePath} />
+              {body}
+            </BudgetDrawerGutter>
+          ) : (
+            body
+          )}
         </main>
         {/*
           Detail drawer (createPortal target) — mirrors the client layout: taken
           out of the grid so it slides OVER the right of the page instead of
           narrowing the content beside it. `empty:hidden` keeps it out of the
-          way when nothing is selected.
+          way when nothing is selected. The Budget tabs opt out of the overlay
+          by reserving a matching column (see budget-drawer-gutter) — change
+          the width here and you must change it there.
         */}
         <aside
           id="portal-detail"

@@ -118,7 +118,10 @@ export default async function PortalLayout({
         squeezing the tiles underneath into a narrower column. `empty:hidden`
         keeps it out of the way when nothing is selected. Below `lg` the slot
         stays a zero-height block in flow and the portaled content positions
-        itself as a bottom sheet (see portal-detail-rail).
+        itself as a bottom sheet (see portal-detail-rail). The Budget tabs opt
+        out of the overlay by reserving a matching column (see
+        budget-drawer-gutter) — change the width here and you must change it
+        there.
       */}
       <aside
         id="portal-detail"

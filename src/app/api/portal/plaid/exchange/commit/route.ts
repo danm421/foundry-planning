@@ -16,7 +16,11 @@ import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { resolvePortalClient } from "@/lib/portal/resolve-portal-client";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordCreate } from "@/lib/audit/record-helpers";
-import { syncTransactionsForItem } from "@/lib/plaid/transactions-sync";
+import {
+  syncTransactionsForItem,
+  backfillTransactionAccountIds,
+  loadAccountIdByPlaidAccountId,
+} from "@/lib/plaid/transactions-sync";
 import { redactPlaidError } from "@/lib/plaid/errors";
 
 export const dynamic = "force-dynamic";
@@ -324,6 +328,15 @@ export async function POST(req: Request): Promise<Response> {
     // idempotent safety net.
     if (linkedCount + addedCount > 0) {
       try {
+        // Attribute anything already stored FIRST. The SYNC_UPDATES_AVAILABLE
+        // webhook usually beats this screen, so the item's transactions are
+        // already down with accountId NULL and the cursor past them — and this
+        // repair must not be hostage to the sync below reaching Plaid.
+        await backfillTransactionAccountIds(
+          db,
+          clientId,
+          await loadAccountIdByPlaidAccountId(body.itemId),
+        );
         const summary = await syncTransactionsForItem({
           id: body.itemId,
           clientId,

@@ -318,6 +318,11 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     expenseId: z.string().uuid(),
     annualAmount: MONEY,
   }),
+  z.object({
+    kind: z.literal("expense-absorbs-remaining"),
+    expenseId: z.string().uuid(),
+    value: z.boolean(),
+  }),
 
   // Incomes (non-SS)
   z.object({
