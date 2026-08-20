@@ -14,10 +14,22 @@ import type { ClientData } from "@/engine/types";
 import type { ProjectionResult } from "@/engine";
 import type { SolverMutation } from "@/lib/solver/types";
 
-/** Mutations that can only be named once the source tree is known — e.g. a
- *  per-account mutation whose account ids live in the tree. `requiredDerivedRefs`
- *  sees only page options, so anything account-scoped MUST use this form. */
-export type MutationFactory = (source: ClientData) => SolverMutation[];
+/** The already-loaded bundle a variant is derived FROM. */
+export interface DerivedSource {
+  clientData: ClientData;
+  projection: ProjectionResult;
+}
+
+/** Mutations that can only be named once the source is known — e.g. a
+ *  per-account mutation whose account ids live in the tree, or one sized
+ *  against what the source plan actually does. `requiredDerivedRefs` sees only
+ *  page options, so anything source-scoped MUST use this form.
+ *
+ *  It gets the source's PROJECTION as well as its tree: a rung expressed as
+ *  "three points more than the client saves today" cannot be sized off the
+ *  tree alone, because what the plan saves is what the engine contributed
+ *  after the IRS deferral cap, not the sum of the rules' own percents. */
+export type MutationFactory = (source: DerivedSource) => SolverMutation[];
 
 export interface DerivedRefRequest {
   /** Page-local key. Namespaced by `derivedKey` before it reaches bundlesByRef. */
@@ -69,14 +81,14 @@ export function entryDerivedKey(entryIndex: number, pageId: string, key: string)
 }
 
 export function buildDerivedBundle(
-  sourceTree: ClientData,
+  source: DerivedSource,
   req: DerivedRefRequest,
   deps: DerivedDeps,
 ): DerivedBundle {
   const mutations = typeof req.mutations === "function"
-    ? req.mutations(sourceTree)
+    ? req.mutations(source)
     : req.mutations;
-  const clientData = deps.applyMutations(sourceTree, mutations);
+  const clientData = deps.applyMutations(source.clientData, mutations);
   return {
     clientData,
     projection: deps.runProjection(clientData),

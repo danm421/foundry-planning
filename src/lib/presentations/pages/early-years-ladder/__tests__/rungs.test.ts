@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveRungs, householdCurrentPercent, ladderMutations } from "../rungs";
+import { resolveRungs, ladderMutations, ladderBlocker } from "../rungs";
 import type { ClientData, Income, SavingsRule } from "@/engine/types";
 import type { SolverMutation } from "@/lib/solver/types";
 
@@ -14,7 +14,7 @@ function rule(over: Partial<SavingsRule> & { accountId: string }): SavingsRule {
   };
 }
 
-function salary(annualAmount: number): Income {
+function salary(annualAmount: number, over: Partial<Income> = {}): Income {
   return {
     id: "i1",
     type: "salary",
@@ -22,16 +22,22 @@ function salary(annualAmount: number): Income {
     annualAmount,
     startYear: 2020,
     endYear: 2060,
-    growthRate: 0.03,
+    growthRate: 0,
     owner: "client",
+    ...over,
   } as Income;
 }
 
-function tree(rules: SavingsRule[], incomes: Income[] = [salary(120_000)]): ClientData {
+function tree(
+  rules: SavingsRule[],
+  incomes: Income[] = [salary(120_000)],
+  extra: Record<string, unknown> = {},
+): ClientData {
   return {
     planSettings: { planStartYear: 2026, inflationRate: 0.03 },
     savingsRules: rules,
     incomes,
+    ...extra,
   } as unknown as ClientData;
 }
 
@@ -75,20 +81,6 @@ describe("resolveRungs", () => {
   });
 });
 
-describe("householdCurrentPercent", () => {
-  it("is the SUM of every active deferral, not the first account's rate", () => {
-    const t = tree([
-      rule({ id: "r1", accountId: "a1", annualPercent: 0.06 }),
-      rule({ id: "r2", accountId: "a2", annualPercent: 0.04 }),
-    ]);
-    expect(householdCurrentPercent(t)).toBeCloseTo(0.1, 9);
-  });
-
-  it("is zero when the plan has no payroll deferral at all", () => {
-    expect(householdCurrentPercent(tree([]))).toBe(0);
-  });
-});
-
 /** The deferral mutations only, narrowed off the `SolverMutation` union. The
  *  percent is float arithmetic (0.06 + 0.06 is not 0.12), so it is compared at
  *  nine decimals rather than by equality. */
@@ -108,11 +100,11 @@ describe("ladderMutations", () => {
   // R13 — the "what you save now" bar has to BE what they save now. Rung 0
   // asks for the household's own rate, so it must move nothing.
   it("returns no mutations for a rung that equals the household's current rate", () => {
-    expect(ladderMutations(twoAccounts(), 0.08)).toEqual([]);
+    expect(ladderMutations(twoAccounts(), 0.08, 0.08)).toEqual([]);
   });
 
   it("applies the whole delta to the largest deferral account, leaving the others alone", () => {
-    const ms = ladderMutations(twoAccounts(), 0.14);
+    const ms = ladderMutations(twoAccounts(), 0.14, 0.08);
     expect(ms).toHaveLength(1);
     const [only] = deferrals(ms);
     expect(only.accountId).toBe("big");
@@ -127,7 +119,7 @@ describe("ladderMutations", () => {
       rule({ id: "r2", accountId: "shared", annualPercent: 0.03 }),
       rule({ id: "r3", accountId: "solo", annualPercent: 0.02 }),
     ]);
-    const ms = ladderMutations(t, 0.16);
+    const ms = ladderMutations(t, 0.16, 0.1);
     expect(ms).toHaveLength(1);
     const [only] = deferrals(ms);
     expect(only.accountId).toBe("solo");
@@ -139,11 +131,101 @@ describe("ladderMutations", () => {
       rule({ id: "r1", accountId: "shared", annualPercent: 0.05 }),
       rule({ id: "r2", accountId: "shared", annualPercent: 0.03 }),
     ]);
-    expect(ladderMutations(t, 0.14)).toEqual([]);
+    expect(ladderMutations(t, 0.14, 0.08)).toEqual([]);
+  });
+
+  it("never targets an account already contributing the annual maximum", () => {
+    const t = tree([rule({ accountId: "maxed", contributeMax: true })]);
+    expect(ladderMutations(t, 0.14, 0.08)).toEqual([]);
   });
 
   it("clamps the account's new percent to the whole salary", () => {
     const t = tree([rule({ accountId: "a1", annualPercent: 0.9 })]);
-    expect(deferrals(ladderMutations(t, 1.4))).toEqual([{ accountId: "a1", percent: 1 }]);
+    expect(deferrals(ladderMutations(t, 1.4, 0.9))).toEqual([{ accountId: "a1", percent: 1 }]);
+  });
+
+  // F2's second-order effect. The rung is a share of HOUSEHOLD pay — the
+  // quantity both sheets print — but `annualPercent` is resolved against the
+  // ACCOUNT OWNER's slice. Written straight through, a +3pp rung on a spouse
+  // earning $160k of a $505k household delivers +0.95pp and the bar carries a
+  // rate the plan never runs at.
+  describe("a household rung on a two-earner household", () => {
+    const HOUSEHOLD = 505_000;
+    const SUSAN = 160_000;
+    const cooperAndSusan = () =>
+      tree(
+        [rule({ id: "r-s", accountId: "susan-401k", annualPercent: 0.1 })],
+        [
+          salary(345_000, { id: "i-c", owner: "client" }),
+          salary(SUSAN, { id: "i-s", owner: "spouse" }),
+        ],
+        {
+          familyMembers: [
+            { id: "fm-c", role: "client" },
+            { id: "fm-s", role: "spouse" },
+          ],
+          accounts: [
+            {
+              id: "susan-401k",
+              owners: [{ kind: "family_member", familyMemberId: "fm-s", percent: 1 }],
+            },
+          ],
+        },
+      );
+
+    it("moves the owner's rate by enough to deliver the household's extra dollars", () => {
+      const current = 0.0465346534653; // 23,500 / 505,000, as the engine ran it
+      const [only] = deferrals(ladderMutations(cooperAndSusan(), current + 0.03, current));
+      expect(only.accountId).toBe("susan-401k");
+      // Measured as the thing that matters: the extra dollars the plan now
+      // contributes must be three points of HOUSEHOLD pay.
+      const extra = only.percent! * SUSAN - 0.1 * SUSAN;
+      expect(extra).toBeCloseTo(0.03 * HOUSEHOLD, 6);
+    });
+
+    it("picks the account holding the most dollars, not the highest percent", () => {
+      const t = cooperAndSusan();
+      // Cooper defers 4% of $345,000 = $13,800; Susan 10% of $160,000 =
+      // $16,000. Comparing the percents alone would move Susan's; comparing
+      // dollars moves hers too — so make Cooper's the bigger one.
+      (t as unknown as { savingsRules: SavingsRule[] }).savingsRules.push(
+        rule({ id: "r-c", accountId: "cooper-401k", annualPercent: 0.06 }),
+      );
+      (t as unknown as { accounts: unknown[] }).accounts.push({
+        id: "cooper-401k",
+        owners: [{ kind: "family_member", familyMemberId: "fm-c", percent: 1 }],
+      });
+      const [only] = deferrals(ladderMutations(t, 0.1, 0.05));
+      expect(only.accountId).toBe("cooper-401k"); // $20,700 > $16,000
+    });
+  });
+});
+
+describe("ladderBlocker", () => {
+  it("is clear when the plan has a deferral the ladder can move", () => {
+    expect(ladderBlocker(tree([rule({ accountId: "a1", annualPercent: 0.08 })]))).toBeNull();
+  });
+
+  it("reports a plan with no payroll deferral at all", () => {
+    expect(ladderBlocker(tree([]))).toBe("no-deferral");
+  });
+
+  // F1 — Michael Mitchell's two rules both contribute the IRS maximum. There
+  // IS a contribution, and the sheet before this one just printed it; what
+  // there is not is a rate left to raise.
+  it("reports a plan whose contributions are already at the annual maximum", () => {
+    const t = tree([
+      rule({ id: "r1", accountId: "401k", contributeMax: true }),
+      rule({ id: "r2", accountId: "roth", contributeMax: true }),
+    ]);
+    expect(ladderBlocker(t)).toBe("at-annual-maximum");
+  });
+
+  it("reports a plan whose contributions cannot be expressed as one rate", () => {
+    const t = tree([
+      rule({ id: "r1", accountId: "shared", annualPercent: 0.05 }),
+      rule({ id: "r2", accountId: "shared", annualPercent: 0.03 }),
+    ]);
+    expect(ladderBlocker(t)).toBe("not-modellable");
   });
 });

@@ -10,7 +10,8 @@ import { toTodaysDollars } from "@/lib/presentations/real-dollars";
 import { renderTidbits } from "@/lib/presentations/tidbits";
 import { compactCurrency } from "@/lib/presentations/format";
 import { resolveAllTokens } from "@/lib/plan-text/tokens";
-import { resolveRungs, householdCurrentPercent, movableAccountCount, type Rung } from "./rungs";
+import { householdSavingsRate } from "@/lib/presentations/savings-rate";
+import { resolveRungs, ladderBlocker, type LadderBlocker, type Rung } from "./rungs";
 import type { BuildDataContext } from "@/components/presentations/registry";
 import type {
   EarlyYearsLadderPageData,
@@ -37,27 +38,39 @@ export function buildEarlyYearsLadderData(
     planStartYear: source.planSettings.planStartYear,
   };
 
-  const current = householdCurrentPercent(source);
+  // The rate the plan ACTUALLY runs at, read the same way the standing sheet
+  // reads it — one shared function, so the two pages of this deck cannot state
+  // one household's savings rate two different ways.
+  const current = householdSavingsRate(base?.projection.years[0] ?? ctx.years[0]);
   const rungs = resolveRungs(options.rungs, current);
   const bundles = rungs.map(
     (_, i) => ctx.bundlesByRef?.[derivedKey(EARLY_YEARS_LADDER_PAGE_ID, rungKey(i))],
   );
 
-  const empty = (): EarlyYearsLadderPageData => ({
+  const empty = (emptyMessage: string): EarlyYearsLadderPageData => ({
     subtitle: subtitleFor(base?.scenarioLabel),
     groups: [],
     rungs,
     cappedRungLabels: [],
     takeaway: null,
+    emptyMessage,
     tidbits: [],
     basis,
   });
 
-  // No variant built (the export skipped it, or this is a context that never
-  // assembles derived bundles), or nothing in the plan the ladder can move: a
-  // rung the mutation cannot express re-runs the base plan, so the chart would
-  // be the same bar drawn three times under three different labels.
-  if (bundles.some((b) => b == null) || movableAccountCount(source) === 0) return empty();
+  // Nothing in the plan the ladder can move: a rung the mutation cannot
+  // express re-runs the base plan, so the chart would be the same bar drawn
+  // three times under three different labels. WHY it cannot be moved decides
+  // the sentence — a client contributing the annual maximum is not a client
+  // with no contributions.
+  const blocker = ladderBlocker(source);
+  if (blocker != null) return empty(BLOCKED_COPY[blocker]);
+
+  // No variant built — the export skipped it, or this is a context that never
+  // assembles derived bundles.
+  if (bundles.some((b) => b == null)) {
+    return empty("This chart could not be built for this plan.");
+  }
 
   const groups: LadderGroup[] = [];
   for (const age of options.milestoneAges) {
@@ -77,7 +90,9 @@ export function buildEarlyYearsLadderData(
 
   // Every milestone fell outside the projection. The page has nothing to draw,
   // and a cap footnote without a chart to footnote is noise.
-  if (groups.length === 0) return empty();
+  if (groups.length === 0) {
+    return empty("This plan does not run to any of the milestone ages on this chart.");
+  }
 
   return {
     subtitle: subtitleFor(base?.scenarioLabel),
@@ -85,6 +100,7 @@ export function buildEarlyYearsLadderData(
     rungs,
     cappedRungLabels: cappedRungLabels(rungs, bundles.map((b) => b!.projection.years[0].savings.total)),
     takeaway: takeawayFor(groups, rungs),
+    emptyMessage: null,
     tidbits:
       options.tidbits.length > 0
         ? renderTidbits(
@@ -99,6 +115,19 @@ export function buildEarlyYearsLadderData(
     basis,
   };
 }
+
+/** One sentence per reason the ladder has no chart. They are not
+ *  interchangeable: printing "no payroll retirement contributions" onto a plan
+ *  that maxes them out contradicts the sheet before it, which has just
+ *  reported those dollars. */
+const BLOCKED_COPY: Record<LadderBlocker, string> = {
+  "no-deferral":
+    "This plan has no payroll retirement contributions to model, so there is no contribution to raise.",
+  "at-annual-maximum":
+    "This plan's retirement contributions are already set to the annual IRS maximum, so there is no rate left to raise.",
+  "not-modellable":
+    "This plan's retirement contributions can't be modelled as a single savings rate, so there is nothing to raise here.",
+};
 
 function subtitleFor(scenarioLabel: string | undefined): string {
   // The bars are always the base plan with one lever moved, whatever scenario

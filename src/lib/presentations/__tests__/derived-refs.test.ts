@@ -5,6 +5,9 @@ import type { ProjectionResult } from "@/engine";
 
 const tree = (tag: string): ClientData => ({ tag } as unknown as ClientData);
 const proj = (tag: string): ProjectionResult => ({ tag } as unknown as ProjectionResult);
+/** The loaded bundle a variant derives FROM — tree AND projection, because a
+ *  mutation may be sized against what the source plan actually does. */
+const src = (tag: string) => ({ clientData: tree(tag), projection: proj(tag) });
 
 describe("derivedKey", () => {
   it("namespaces by page so two pages never collide on the same local key", () => {
@@ -30,7 +33,7 @@ describe("buildDerivedBundle", () => {
     const applied = vi.fn().mockReturnValue(mutated);
     const run = vi.fn().mockReturnValue(proj("projected"));
 
-    const bundle = buildDerivedBundle(tree("base"), req, { applyMutations: applied, runProjection: run });
+    const bundle = buildDerivedBundle(src("base"), req, { applyMutations: applied, runProjection: run });
 
     expect(applied).toHaveBeenCalledWith(tree("base"), req.mutations);
     expect(run).toHaveBeenCalledWith(mutated);
@@ -38,18 +41,21 @@ describe("buildDerivedBundle", () => {
     expect(bundle.projection).toEqual(proj("projected"));
   });
 
-  it("resolves a mutation factory against the source tree before applying it", () => {
+  // The factory needs the source PROJECTION as well as its tree: a rung sized
+  // as "three points more than the client saves today" reads what the engine
+  // actually contributed, which the tree alone cannot tell it.
+  it("resolves a mutation factory against the whole source bundle before applying it", () => {
     const factory = vi.fn().mockReturnValue([]);
     const applied = vi.fn().mockReturnValue(tree("mutated"));
-    buildDerivedBundle(tree("base"), { ...req, mutations: factory }, {
+    buildDerivedBundle(src("base"), { ...req, mutations: factory }, {
       applyMutations: applied, runProjection: () => proj("p"),
     });
-    expect(factory).toHaveBeenCalledWith(tree("base"));
+    expect(factory).toHaveBeenCalledWith(src("base"));
     expect(applied).toHaveBeenCalledWith(tree("base"), []);
   });
 
   it("labels the bundle with the request's label, not the source's", () => {
-    const bundle = buildDerivedBundle(tree("base"), req, {
+    const bundle = buildDerivedBundle(src("base"), req, {
       applyMutations: () => tree("mutated"),
       runProjection: () => proj("p"),
     });

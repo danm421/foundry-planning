@@ -168,11 +168,7 @@ export function resolveDerivedBundles(
       // never throws, so an absent source simply misses the record lookup.
       const source = loaded[keyForRef(resolveScenarioRef(req.from))];
       if (!source) continue;
-      out[entryDerivedKey(idx, p.pageId, req.key)] = buildDerivedBundle(
-        source.clientData,
-        req,
-        deps,
-      );
+      out[entryDerivedKey(idx, p.pageId, req.key)] = buildDerivedBundle(source, req, deps);
     }
   });
   return out;

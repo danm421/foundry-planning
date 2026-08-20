@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import type { ComponentType, ReactElement } from "react";
 import type { SectionAccent } from "@/lib/presentations/theme";
-import type { DerivedRefRequest } from "@/lib/presentations/derived-refs";
+import type { DerivedRefRequest, DerivedSource } from "@/lib/presentations/derived-refs";
 import type {
   CashFlowPageData,
   CashFlowPageOptions,
@@ -366,9 +366,9 @@ import {
 } from "@/lib/presentations/pages/early-years-ladder/view-model";
 import {
   resolveRungs,
-  householdCurrentPercent,
   ladderMutations,
 } from "@/lib/presentations/pages/early-years-ladder/rungs";
+import { householdSavingsRate } from "@/lib/presentations/savings-rate";
 import { EarlyYearsLadderPagePdf } from "./pages/early-years-ladder/page-pdf";
 import { EarlyYearsLadderOptionsControl } from "./pages/early-years-ladder/options-control";
 
@@ -1373,8 +1373,9 @@ export const earlyYearsLadderPage: PresentationPage<
   requiredScenarioRefs: () => ["base"],
   // One derived plan per rung: the base tree with a single deferral account
   // moved so the household lands on that rung's rate. The mutations are a
-  // FACTORY because the account ids and the client's current rate live in the
-  // tree, and `requiredDerivedRefs` sees only page options.
+  // FACTORY because the account ids live in the tree and the client's current
+  // rate is what the base plan's PROJECTION actually contributed, while
+  // `requiredDerivedRefs` sees only page options.
   requiredDerivedRefs: (o) => {
     const steps = o.rungs.mode === "relative" ? o.rungs.offsets : o.rungs.percents;
     return steps.map((step, i) => ({
@@ -1384,8 +1385,14 @@ export const earlyYearsLadderPage: PresentationPage<
         o.rungs.mode === "relative"
           ? `${step >= 0 ? "+" : ""}${Math.round(step * 100)}pp`
           : `${Math.round(step * 100)}%`,
-      mutations: (source: ClientData) =>
-        ladderMutations(source, resolveRungs(o.rungs, householdCurrentPercent(source))[i].percent),
+      mutations: (source: DerivedSource) => {
+        const current = householdSavingsRate(source.projection.years[0]);
+        return ladderMutations(
+          source.clientData,
+          resolveRungs(o.rungs, current)[i].percent,
+          current,
+        );
+      },
     }));
   },
   buildData: (ctx, options) => buildEarlyYearsLadderData(ctx, options),

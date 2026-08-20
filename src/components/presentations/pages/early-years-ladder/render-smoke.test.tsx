@@ -29,6 +29,7 @@ const base: EarlyYearsLadderPageData = {
   ],
   rungs,
   cappedRungLabels: [],
+  emptyMessage: null,
   takeaway:
     "At age 65, saving 14% instead of 8% leaves you about $621k more — in today's dollars.",
   tidbits: [
@@ -118,11 +119,36 @@ describe("EarlyYearsLadderPagePdf render", () => {
 
   it("renders the empty state instead of a chart when nothing could be modelled", async () => {
     const text = pdfText(
-      await render({ ...base, groups: [], takeaway: null, tidbits: [] }),
+      await render({
+        ...base,
+        groups: [],
+        takeaway: null,
+        tidbits: [],
+        emptyMessage:
+          "This plan has no payroll retirement contributions to model, so there is no contribution to raise.",
+      }),
     ).replace(/\s+/g, " ");
     expect(text).toContain("no payroll retirement contributions to model");
     // The empty state must not still print the ladder it cannot stand behind.
     expect(text).not.toContain("Save 14%");
     expect(text).not.toContain("Age 65");
+  });
+
+  // F1 — the sheet used to print "no payroll retirement contributions" for
+  // every reason it had no chart, including a client who contributes the
+  // annual maximum and whose dollars the previous sheet has just reported.
+  it("prints the reason it was given, not one hard-coded sentence", async () => {
+    const text = pdfText(
+      await render({
+        ...base,
+        groups: [],
+        takeaway: null,
+        tidbits: [],
+        emptyMessage:
+          "This plan's retirement contributions are already set to the annual IRS maximum, so there is no rate left to raise.",
+      }),
+    ).replace(/\s+/g, " ");
+    expect(text).toContain("already set to the annual IRS maximum");
+    expect(text).not.toContain("no payroll retirement contributions");
   });
 });

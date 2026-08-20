@@ -30,6 +30,11 @@ export interface EarlyYearsLadderPageData {
   /** One sentence naming the gap at the last milestone age; null when there is
    *  no raised rung to compare against. */
   takeaway: string | null;
+  /** Why there is no chart, in the client's words; null when there is one. The
+   *  page prints exactly this — the reasons are not interchangeable, and one
+   *  of them ("no payroll retirement contributions") is false on a plan that
+   *  contributes the annual maximum. */
+  emptyMessage: string | null;
   tidbits: Tidbit[];
   basis: DeflationBasis;
 }

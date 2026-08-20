@@ -39,10 +39,7 @@ export function EarlyYearsLadderPagePdf(input: RenderPdfInput<EarlyYearsLadderPa
     return (
       <PageFrame {...frame}>
         <Text style={s.title}>What Saving More Is Worth</Text>
-        <Text style={s.empty}>
-          This plan has no payroll retirement contributions to model, so there is no
-          contribution to raise.
-        </Text>
+        <Text style={s.empty}>{data.emptyMessage}</Text>
       </PageFrame>
     );
   }

@@ -8,6 +8,7 @@
 // dollars" line true by construction rather than by that invariant holding.
 
 import { toTodaysDollars } from "@/lib/presentations/real-dollars";
+import { householdSavingsRate } from "@/lib/presentations/savings-rate";
 import { renderTidbits } from "@/lib/presentations/tidbits";
 import { resolveAllTokens } from "@/lib/plan-text/tokens";
 import type { BuildDataContext } from "@/components/presentations/registry";
@@ -37,7 +38,9 @@ export function buildEarlyYearsStandingData(
     clientAge: first.ages.client,
     grossAnnual: real(grossNominal),
     contributionsAnnual: real(contributionsNominal),
-    savingsRatePct: grossNominal > 0 ? contributionsNominal / grossNominal : 0,
+    // Shared with the ladder sheet, which prints the same rate on the next
+    // page of the same deck.
+    savingsRatePct: householdSavingsRate(first),
     portfolioToday: real(first.portfolioAssets.liquidTotal),
     match: resolveMatchLine(options, first.savings.employerTotal, real),
     // Resolved only when the advisor picked something: `resolveAllTokens` walks

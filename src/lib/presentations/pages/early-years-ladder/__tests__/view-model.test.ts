@@ -19,16 +19,34 @@ const yr = (age: number, liquid: number, savingsTotal: number) => ({
   portfolioAssets: { liquidTotal: liquid },
 });
 
-const oneRule = [
+interface Rule {
+  id: string;
+  accountId: string;
+  annualAmount: number;
+  annualPercent?: number;
+  contributeMax?: boolean;
+  startYear: number;
+  endYear: number;
+}
+
+const oneRule: Rule[] = [
   { id: "r1", accountId: "a1", annualPercent: 0.08, annualAmount: 0, startYear: 2020, endYear: 2060 },
 ];
 
-function baseTree(savingsRules = oneRule) {
+function baseTree(savingsRules: Rule[] = oneRule) {
   return {
     planSettings: { inflationRate: 0.03, planStartYear: 2026 },
     savingsRules,
     incomes: [
-      { id: "i1", type: "salary", annualAmount: 120_000, startYear: 2020, endYear: 2070 },
+      {
+        id: "i1",
+        type: "salary",
+        owner: "client",
+        annualAmount: 120_000,
+        growthRate: 0,
+        startYear: 2020,
+        endYear: 2070,
+      },
     ],
   };
 }
@@ -134,17 +152,15 @@ describe("buildEarlyYearsLadderData", () => {
   });
 
   // The bars are derived FROM BASE. In a deck built on another scenario the
-  // page's own tree defers at a different rate, and labelling the bars from it
-  // would print rung percents the bars disagree with.
+  // page's own projection saves at a different rate, and labelling the bars
+  // from it would print rung percents the bars disagree with.
   it("reads the client's current rate from the base bundle, not the deck's scenario", () => {
     const c = ctx(THREE_RUNGS);
-    const scenarioTree = baseTree([
-      { id: "r9", accountId: "a1", annualPercent: 0.12, annualAmount: 0, startYear: 2020, endYear: 2060 },
-    ]);
-    (c as { clientData: unknown }).clientData = scenarioTree;
+    // The deck's own scenario saves 12% of pay; the base plan saves 8%.
+    (c as { years: unknown }).years = [yr(29, 84_000, 14_400)];
     (c.bundlesByRef as Record<string, unknown>).base = {
       clientData: baseTree(),
-      projection: { years: [] },
+      projection: { years: [yr(29, 84_000, 9_600)] },
       scenarioLabel: "Base Case",
     };
     const d = buildEarlyYearsLadderData(c, OPTS);
@@ -158,6 +174,7 @@ describe("buildEarlyYearsLadderData", () => {
     const d = buildEarlyYearsLadderData(bare, OPTS);
     expect(d.groups).toEqual([]);
     expect(d.takeaway).toBeNull();
+    expect(d.emptyMessage).toBe("This chart could not be built for this plan.");
   });
 
   // Every rung would re-run the identical plan, so three bars under three
@@ -172,5 +189,41 @@ describe("buildEarlyYearsLadderData", () => {
       OPTS,
     );
     expect(d.groups).toEqual([]);
+    expect(d.emptyMessage).toBe(
+      "This plan's retirement contributions can't be modelled as a single savings rate, so there is nothing to raise here.",
+    );
+  });
+
+  // F1 — the sheet before this one reports the dollars a maxed-out contributor
+  // saves. Saying there are none here contradicts it inside one deck.
+  it("says the contributions are already at the maximum rather than denying them", () => {
+    const maxedOut = [
+      { id: "r1", accountId: "a1", annualAmount: 0, contributeMax: true, startYear: 2020, endYear: 2060 },
+      { id: "r2", accountId: "a2", annualAmount: 0, contributeMax: true, startYear: 2020, endYear: 2060 },
+    ];
+    const d = buildEarlyYearsLadderData(ctx(THREE_RUNGS, { tree: baseTree(maxedOut) }), OPTS);
+    expect(d.groups).toEqual([]);
+    expect(d.emptyMessage).toBe(
+      "This plan's retirement contributions are already set to the annual IRS maximum, so there is no rate left to raise.",
+    );
+  });
+
+  it("says a plan with no deferral at all has nothing to raise", () => {
+    const d = buildEarlyYearsLadderData(ctx(THREE_RUNGS, { tree: baseTree([]) }), OPTS);
+    expect(d.emptyMessage).toBe(
+      "This plan has no payroll retirement contributions to model, so there is no contribution to raise.",
+    );
+  });
+
+  it("says so when the plan never reaches a milestone age on the chart", () => {
+    const d = buildEarlyYearsLadderData(ctx(THREE_RUNGS, { ages: [29] }), OPTS);
+    expect(d.groups).toEqual([]);
+    expect(d.emptyMessage).toBe(
+      "This plan does not run to any of the milestone ages on this chart.",
+    );
+  });
+
+  it("carries no empty message when it has a chart to draw", () => {
+    expect(buildEarlyYearsLadderData(ctx(THREE_RUNGS), OPTS).emptyMessage).toBeNull();
   });
 });
