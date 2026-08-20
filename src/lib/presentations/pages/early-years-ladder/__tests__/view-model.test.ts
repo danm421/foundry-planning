@@ -173,8 +173,26 @@ describe("buildEarlyYearsLadderData", () => {
     const d = buildEarlyYearsLadderData(ctx(THREE_RUNGS), OPTS);
     // 4_800_000/1.03^36 − 3_000_000/1.03^36 ≈ 621_058.
     expect(d.takeaway).toBe(
-      "At age 65, saving 14% instead of 8% leaves you about $621k more — in today's dollars.",
+      "At age 65, the Save 14% bar is about $621K ahead of Save 8% (today) — in today's dollars.",
     );
+  });
+
+  // The sentence names the BARS, not a rate. On a capped top rung the plan runs
+  // below the label, so "saving 14%" would state something this plan never
+  // does — and it sits directly above a footnote saying that bar is capped.
+  it("does not claim the client saves a rate the plan could not fund", () => {
+    const d = buildEarlyYearsLadderData(
+      ctx([
+        { savings: 9_600, at65: 3_000_000 },
+        { savings: 13_200, at65: 3_900_000 },
+        // Asks 14% of $120,000 = $16,800; the plan funds $13,800 (11.5%).
+        { savings: 13_800, at65: 4_100_000 },
+      ]),
+      OPTS,
+    );
+    expect(d.cappedRungLabels).toEqual(["Save 14%"]);
+    expect(d.takeaway).not.toContain("saving 14%");
+    expect(d.takeaway).toContain("the Save 14% bar");
   });
 
   it("drops a milestone age the projection never reaches", () => {

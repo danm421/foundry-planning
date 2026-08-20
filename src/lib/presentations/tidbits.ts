@@ -66,7 +66,7 @@ export const TIDBITS: readonly Tidbit[] = [
   // ── Taxes ────────────────────────────────────────────────────────────
   {
     id: "lowest-bracket-of-your-life",
-    title: "You are in the lowest tax bracket you will ever see",
+    title: "Early-career tax rates are often the lowest you will see",
     topic: "taxes",
     body: "Roth contributions are taxed now and never again. Paying tax at today's rate, early in a career, is usually the cheapest tax you will ever pay.",
   },
@@ -118,7 +118,7 @@ export const TIDBITS: readonly Tidbit[] = [
     id: "debt-minimums-are-a-floor",
     title: "A minimum payment is a floor, not a plan",
     topic: "debt",
-    body: "A lender's minimum payment is calculated to keep a balance outstanding — and collecting interest — for as long as the terms allow. Paying only the minimum is the slowest, most expensive way to close out a debt.",
+    body: "A minimum payment covers the interest plus a small slice of the balance. Paying only the minimum stretches a debt across the longest schedule the terms allow, so more of what you pay goes to interest and less of it to the balance.",
   },
   {
     id: "debt-student-loan-terms",
@@ -208,7 +208,7 @@ export const TIDBITS: readonly Tidbit[] = [
     id: "risk-volatility-is-normal",
     title: "Ups and downs are normal, not a warning sign",
     topic: "risk",
-    body: "A plan modeled with a {{mc_success}} confidence figure already assumes both good years and bad ones will happen along the way. A market moving up or down in a given year isn't a sign the plan is off track.",
+    body: "A plan is modeled across many market paths — good years and bad ones both — before it reports a confidence figure. A market moving up or down in a given year isn't a sign the plan is off track.",
   },
   {
     id: "risk-insurance-as-a-backstop",

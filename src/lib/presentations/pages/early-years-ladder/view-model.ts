@@ -8,7 +8,10 @@
 import { derivedKey } from "@/lib/presentations/derived-refs";
 import { toTodaysDollars } from "@/lib/presentations/real-dollars";
 import { renderTidbits } from "@/lib/presentations/tidbits";
-import { compactCurrency } from "@/lib/presentations/format";
+// The same formatter the chart labels its bars with. The takeaway quotes a
+// figure measured off those bars, and one sheet printing "$8.9k" beside
+// "$977K" reads as two different units.
+import { fmtAxisUsd } from "@/components/presentations/pages/retirement-comparison/chart-axis";
 import { resolveAllTokens } from "@/lib/plan-text/tokens";
 import { householdSavingsRate } from "@/lib/presentations/savings-rate";
 import { resolveRungs, ladderBlocker, type LadderBlocker, type Rung } from "./rungs";
@@ -160,14 +163,29 @@ const CAP_TOLERANCE = 0.001;
  * footnote's reason is the true one.)
  */
 function cappedRungLabels(rungs: Rung[], deliveredRates: number[]): string[] {
-  return rungs.flatMap((rung, i) =>
-    rung.percent - deliveredRates[i] > CAP_TOLERANCE ? [rung.label] : [],
-  );
+  // Deduped: `resolveRungs` rounds each label to a whole percent, so two rungs
+  // a fraction of a point apart share one, and the footnote would name it twice.
+  return [
+    ...new Set(
+      rungs.flatMap((rung, i) =>
+        rung.percent - deliveredRates[i] > CAP_TOLERANCE ? [rung.label] : [],
+      ),
+    ),
+  ];
 }
 
-/** One sentence naming what the top rung is worth at the last milestone the
- *  chart reaches. Null when there is no raised rung above the baseline to
- *  compare against — this page never phrases a gap it cannot show. */
+/**
+ * One sentence naming what the top rung is worth at the last milestone the
+ * chart reaches. Null when there is no raised rung above the baseline to
+ * compare against — this page never phrases a gap it cannot show.
+ *
+ * It names the two BARS, in the words the legend labels them with, rather than
+ * asserting that the client saves the top rung's rate. A rung the §402(g)
+ * limit partly absorbs is drawn and labelled "Save 11%" while the plan runs at
+ * 8%, so "saving 11% instead of 5%" would state a rate this plan never
+ * reaches — the same defect the two sheets were just reconciled to remove. The
+ * dollars are measured off the bars either way, so only the naming changes.
+ */
 function takeawayFor(groups: LadderGroup[], rungs: Rung[]): string | null {
   const last = groups[groups.length - 1];
   if (!last || last.bars.length < 2) return null;
@@ -179,6 +197,8 @@ function takeawayFor(groups: LadderGroup[], rungs: Rung[]): string | null {
   const gap = last.bars[topIdx].value - last.bars[baseIdx].value;
   if (gap <= 0) return null;
 
-  const asPct = (p: number) => `${Math.round(p * 100)}%`;
-  return `At age ${last.age}, saving ${asPct(rungs[topIdx].percent)} instead of ${asPct(rungs[baseIdx].percent)} leaves you about ${compactCurrency(gap)} more — in today's dollars.`;
+  // Exactly the legend's own text, so the client can find each bar.
+  const named = (i: number) =>
+    rungs[i].isCurrent ? `${rungs[i].label} (today)` : rungs[i].label;
+  return `At age ${last.age}, the ${named(topIdx)} bar is about ${fmtAxisUsd(gap)} ahead of ${named(baseIdx)} — in today's dollars.`;
 }

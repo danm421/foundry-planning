@@ -62,7 +62,7 @@ export function LadderChartPdf({ groups, width = 355 }: Props) {
                 const h = Math.max(0.5, (b.value / maxY) * barsH);
                 const x = clusterX + bi * (barW + gap);
                 return (
-                  <G key={b.label}>
+                  <G key={bi}>
                     <Rect x={x} y={baseY - h} width={barW} height={h} fill={barFills[bi]} />
                     <SvgText
                       x={x + barW / 2}
@@ -93,7 +93,7 @@ export function LadderChartPdf({ groups, width = 355 }: Props) {
       <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 2 }}>
         {legend.map((b, i) => (
           <View
-            key={b.label}
+            key={i}
             style={{ flexDirection: "row", alignItems: "center", marginRight: 10, marginBottom: 2 }}
           >
             <View style={{ width: 6, height: 6, backgroundColor: barFills[i], marginRight: 3 }} />

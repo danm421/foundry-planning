@@ -77,7 +77,7 @@ export function EarlyYearsStandingPagePdf(input: RenderPdfInput<EarlyYearsStandi
           )}
         </View>
 
-        <TidbitSidebarPdf tidbits={data.tidbits} />
+        <TidbitSidebarPdf tidbits={data.tidbits} accent={accent.accent} />
       </View>
     </PageFrame>
   );

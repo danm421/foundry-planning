@@ -31,7 +31,7 @@ const base: EarlyYearsLadderPageData = {
   cappedRungLabels: [],
   emptyMessage: null,
   takeaway:
-    "At age 65, saving 14% instead of 8% leaves you about $621k more — in today's dollars.",
+    "At age 65, the Save 14% bar is about $621K ahead of Save 8% (today) — in today's dollars.",
   tidbits: [
     {
       id: "compounding-runway",
@@ -95,7 +95,7 @@ describe("EarlyYearsLadderPagePdf render", () => {
     expect(text).toContain("Save 14%");
     expect(text).toContain("Age 65");
     expect(text).toContain("$1.7M");
-    expect(text).toContain("saving 14% instead of 8%");
+    expect(text).toContain("the Save 14% bar is about $621K ahead of Save 8% (today)");
     expect(text).toContain("today's dollars");
     expect(text).toContain("Time is the ingredient you can't buy later");
   });

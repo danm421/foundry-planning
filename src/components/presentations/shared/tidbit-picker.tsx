@@ -1,5 +1,6 @@
 "use client";
 
+import { OptionsGroup } from "@/components/presentations/shared/options-layout";
 import { TIDBITS, type TidbitTopic } from "@/lib/presentations/tidbits";
 
 interface Props {
@@ -48,10 +49,7 @@ export function TidbitPicker({ value, onChange, max = 2 }: Props) {
   return (
     <div className="flex flex-col gap-3">
       {TOPIC_ORDER.map((topic) => (
-        <div key={topic} className="space-y-1">
-          <div className="text-[11px] uppercase tracking-[0.1em] text-ink-3">
-            {TOPIC_LABELS[topic]}
-          </div>
+        <OptionsGroup key={topic} label={TOPIC_LABELS[topic]}>
           <div className="flex flex-col gap-1">
             {TIDBITS.filter((t) => t.topic === topic).map((t) => {
               const checked = value.includes(t.id);
@@ -73,7 +71,7 @@ export function TidbitPicker({ value, onChange, max = 2 }: Props) {
               );
             })}
           </div>
-        </div>
+        </OptionsGroup>
       ))}
       <span className="text-[11px] text-ink-3">
         Pick up to {max} — they render beside the chart on this page.
