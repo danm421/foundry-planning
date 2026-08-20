@@ -430,6 +430,17 @@ import {
 import { loanWindow } from "@/lib/presentations/pages/early-years-debt-or-invest/target-loan";
 import { EarlyYearsDebtOrInvestPagePdf } from "./pages/early-years-debt-or-invest/page-pdf";
 import { EarlyYearsDebtOrInvestOptionsControl } from "./pages/early-years-debt-or-invest/options-control";
+import {
+  EARLY_YEARS_TIDBITS_OPTIONS_DEFAULT,
+  type EarlyYearsTidbitsPageData,
+  type EarlyYearsTidbitsPageOptions,
+} from "@/lib/presentations/pages/early-years-tidbits/types";
+import { earlyYearsTidbitsOptionsSchema } from "@/lib/presentations/pages/early-years-tidbits/options-schema";
+import { summarizeEarlyYearsTidbitsOptions } from "@/lib/presentations/pages/early-years-tidbits/summarize-options";
+import { estimateEarlyYearsTidbitsPageCount } from "@/lib/presentations/pages/early-years-tidbits/estimate-page-count";
+import { buildEarlyYearsTidbitsData } from "@/lib/presentations/pages/early-years-tidbits/view-model";
+import { EarlyYearsTidbitsPagePdf } from "./pages/early-years-tidbits/page-pdf";
+import { EarlyYearsTidbitsOptionsControl } from "./pages/early-years-tidbits/options-control";
 
 export const CATEGORY_ORDER = [
   "Framing",
@@ -1648,6 +1659,29 @@ export const earlyYearsDebtOrInvestPage: PresentationPage<
   renderPdf: (input) => <EarlyYearsDebtOrInvestPagePdf {...input} />,
 };
 
+export const earlyYearsTidbitsPage: PresentationPage<
+  EarlyYearsTidbitsPageData,
+  EarlyYearsTidbitsPageOptions
+> = {
+  id: "earlyYearsTidbits",
+  title: "Things Worth Knowing",
+  description:
+    "Up to six educational notes with no natural home beside a chart. Not in the built-in deck — add it deliberately.",
+  category: "Early Years",
+  defaultOptions: EARLY_YEARS_TIDBITS_OPTIONS_DEFAULT,
+  optionsSchema: earlyYearsTidbitsOptionsSchema,
+  summarizeOptions: summarizeEarlyYearsTidbitsOptions,
+  estimatePageCount: () => estimateEarlyYearsTidbitsPageCount(),
+  OptionsControl: EarlyYearsTidbitsOptionsControl,
+  // Pinned to Base Case with the rest of the deck: the tokens in these notes
+  // quote the plan, and a back page quoting a different scenario from the sheets
+  // in front of it would contradict them.
+  supportsScenarioOverride: false,
+  requiredScenarioRefs: () => ["base"],
+  buildData: (ctx, options) => buildEarlyYearsTidbitsData(ctx, options),
+  renderPdf: (input) => <EarlyYearsTidbitsPagePdf {...input} />,
+};
+
 export const PRESENTATION_PAGES = {
   cover: coverPage,
   toc: tocPage,
@@ -1702,6 +1736,7 @@ export const PRESENTATION_PAGES = {
   earlyYearsWaiting: earlyYearsWaitingPage,
   earlyYearsRoth: earlyYearsRothPage,
   earlyYearsDebtOrInvest: earlyYearsDebtOrInvestPage,
+  earlyYearsTidbits: earlyYearsTidbitsPage,
 } as const;
 
 export type PresentationPageId = keyof typeof PRESENTATION_PAGES;

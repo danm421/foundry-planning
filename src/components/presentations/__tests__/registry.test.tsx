@@ -46,6 +46,7 @@ describe("registry — Cash Flow page", () => {
         "earlyYearsLadder",
         "earlyYearsRoth",
         "earlyYearsStanding",
+        "earlyYearsTidbits",
         "earlyYearsWaiting",
         "entitiesBalanceSheet",
         "entityCashFlow",
