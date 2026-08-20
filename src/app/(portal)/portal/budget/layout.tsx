@@ -3,10 +3,15 @@ import { requireClientPortalAccess } from "@/lib/authz";
 import { isPortalFeatureEnabled } from "@/lib/portal/load-features";
 import { PortalFeatureOffNotice } from "@/components/portal/feature-off-notice";
 import BudgetTabs from "@/components/portal/budget-tabs";
+import BudgetDrawerGutter from "@/components/portal/budget-drawer-gutter";
 
 /**
  * Chrome for the Budget section: the tab strip that navigates between Budget,
  * Transactions and Recurring — plus the one gate that covers all three tabs.
+ *
+ * Everything below the gate sits in the drawer gutter, so the detail panel
+ * gets a column of its own here instead of covering the tabs and their
+ * content the way it does elsewhere in the portal.
  *
  * The feature check lives here rather than in each page so a switched-off
  * Budget takes the tab strip down with it; a page-level check would leave the
@@ -24,9 +29,9 @@ export default async function BudgetLayout({
   }
 
   return (
-    <>
+    <BudgetDrawerGutter>
       <BudgetTabs />
       {children}
-    </>
+    </BudgetDrawerGutter>
   );
 }
