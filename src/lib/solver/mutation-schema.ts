@@ -149,6 +149,7 @@ const EXPENSE_VALUE = z
     institutionState: z.string().nullable().optional(),
     institutionName: z.string().nullable().optional(),
     forFamilyMemberId: z.string().nullable().optional(),
+    absorbsRemainingCashFlow: z.boolean().optional(),
   })
   .passthrough();
 

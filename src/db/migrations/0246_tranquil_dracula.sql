@@ -1,0 +1,1 @@
+ALTER TABLE "expenses" ADD COLUMN "absorbs_remaining_cash_flow" boolean DEFAULT false NOT NULL;

@@ -127,6 +127,10 @@ export interface ExpenseView {
    *  only — but it is a real persisted column, so the adapter must carry it or a
    *  form hydrated from the effective tree silently clears it on save. */
   isGoal?: boolean;
+  /** Living rows only: the row spends whatever cash flow is left each year.
+   *  A real persisted column, so the adapter must carry it or a form hydrated
+   *  from the effective tree silently clears it on save. */
+  absorbsRemainingCashFlow?: boolean;
 }
 
 export function expenseEngineToView(expense: EngineExpense): ExpenseView {
@@ -153,6 +157,7 @@ export function expenseEngineToView(expense: EngineExpense): ExpenseView {
     forFamilyMemberId: expense.forFamilyMemberId ?? null,
     dedicatedAccountIds: expense.dedicatedAccountIds ?? [],
     isGoal: expense.isGoal ?? false,
+    absorbsRemainingCashFlow: expense.absorbsRemainingCashFlow ?? false,
   };
 }
 

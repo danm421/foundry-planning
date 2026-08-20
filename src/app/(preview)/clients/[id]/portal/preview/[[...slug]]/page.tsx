@@ -24,6 +24,8 @@ import { PortalModeProvider } from "@/components/portal/portal-mode-context";
 import { NotSharedNotice } from "@/components/portal/not-shared-notice";
 import { PortalFeatureOffNotice } from "@/components/portal/feature-off-notice";
 import { PortalSettingsView } from "@/components/portal/portal-settings-view";
+import { CalculatorsScreen } from "@/components/portal/calculators-screen";
+import { DebtPaydownScreen } from "@/components/portal/debt-paydown-screen";
 import { loadPortalPrivacy } from "@/lib/portal/privacy";
 import { toPortalFeatures } from "@/lib/portal/features";
 import { portalGreetingName } from "@/lib/portal/greeting-name";
@@ -101,6 +103,9 @@ export default async function PortalPreviewPage({
   // check covers `/budget`, `/budget/transactions` and `/budget/recurring`.
   const gatedBy = portalFeatureForPath(path);
   const switchedOff = gatedBy !== undefined && !features[gatedBy] ? gatedBy : undefined;
+  // Hoisted above the dispatch chain: the `calculators` branch below needs it,
+  // and it depends only on `id`, not on `section`.
+  const basePath = `/clients/${id}/portal/preview`;
   let section: ReactElement;
   if (switchedOff !== undefined) {
     // Advisor's own switch: tell them which one, not 404 — this is the screen
@@ -150,6 +155,12 @@ export default async function PortalPreviewPage({
         readOnly
       />
     );
+  } else if (path === "calculators") {
+    section = <CalculatorsScreen basePath={basePath} />;
+  } else if (path === "calculators/debt-paydown") {
+    // requireClientPortalAccess 403s any session carrying an org, so the
+    // preview must never let this screen try to save on its own.
+    section = <DebtPaydownScreen clientId={id} readOnly />;
   } else {
     notFound();
   }
@@ -167,8 +178,6 @@ export default async function PortalPreviewPage({
     ? `${primary.firstName} ${primary.lastName ?? ""}`.trim()
     : "";
   const greetingName = portalGreetingName(contacts);
-
-  const basePath = `/clients/${id}/portal/preview`;
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-paper text-ink">

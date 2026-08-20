@@ -33,6 +33,7 @@ const row: typeof clients.$inferSelect = {
   portalInvestmentsEnabled: true,
   portalBudgetEnabled: true,
   portalDocumentsEnabled: true,
+  portalCalculatorsEnabled: true,
 };
 
 describe("toClientSnapshot", () => {

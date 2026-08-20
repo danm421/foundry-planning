@@ -383,6 +383,7 @@ type RawExpense = {
   forFamilyMemberId?: string | null;
   dedicatedAccountIds?: string[];
   isGoal?: boolean | null;
+  absorbsRemainingCashFlow?: boolean | null;
 };
 
 function mapEndsAtMedicareEligibilityOwner(
@@ -428,6 +429,7 @@ export function resolveExpenseFromRaw(
     forFamilyMemberId: raw.forFamilyMemberId ?? null,
     dedicatedAccountIds: raw.dedicatedAccountIds ?? [],
     isGoal: raw.isGoal ?? false,
+    absorbsRemainingCashFlow: raw.absorbsRemainingCashFlow ?? false,
   };
 }
 

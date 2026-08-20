@@ -1022,6 +1022,7 @@ export const clients = pgTable("clients", {
   portalInvestmentsEnabled: boolean("portal_investments_enabled").notNull().default(true),
   portalBudgetEnabled: boolean("portal_budget_enabled").notNull().default(true),
   portalDocumentsEnabled: boolean("portal_documents_enabled").notNull().default(true),
+  portalCalculatorsEnabled: boolean("portal_calculators_enabled").notNull().default(true),
 }, (t) => [
   index("clients_firm_idx").on(t.firmId),
 ]);
@@ -2829,6 +2830,13 @@ export const expenses = pgTable("expenses", {
   // board. Education rows are always treated as goals regardless of this flag —
   // see src/lib/household-map/goals.ts. Presentation only; the engine ignores it.
   isGoal: boolean("is_goal").notNull().default(false),
+  // When true on a living row, the row spends the household's entire remaining
+  // cash flow for each year it is active, and `annual_amount` acts as a floor
+  // rather than the answer. Consumed by the engine's surplus-allocation phase.
+  // Valid only on type = 'living'; at most one per (client, scenario).
+  absorbsRemainingCashFlow: boolean("absorbs_remaining_cash_flow")
+    .notNull()
+    .default(false),
   // Optional free-text labels (no cost-lookup DB in v1).
   institutionState: text("institution_state"),
   institutionName: text("institution_name"),
@@ -2954,6 +2962,30 @@ export const liabilityOwners = pgTable(
       .nullsNotDistinct(),
   }),
 );
+
+/**
+ * One saved setup per client per calculator, for the portal's Calculators
+ * section. A scratchpad, not plan data: nothing here reaches the projection,
+ * and `portal_edit_enabled` deliberately does not gate writes to it.
+ *
+ * `state` is validated field by field before it is written — see
+ * `@/lib/calculators/debt-paydown-state`.
+ */
+export const portalCalculatorStates = pgTable("portal_calculator_states", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  calculatorKey: text("calculator_key").notNull(),
+  state: jsonb("state").notNull().default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => ({
+  clientCalculatorUniq: unique("portal_calculator_states_client_key_uniq").on(
+    t.clientId,
+    t.calculatorKey,
+  ),
+}));
 
 export const extraPayments = pgTable("extra_payments", {
   id: uuid("id").defaultRandom().primaryKey(),

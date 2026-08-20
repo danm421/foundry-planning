@@ -8,13 +8,22 @@
 // tests silently stubbing it to `undefined`:
 //
 //   vi.mock("@/lib/portal/load-features", () => import("@/lib/portal/__tests__/load-features-mock"));
-import { DEFAULT_PORTAL_FEATURES, type PortalFeatures } from "@/lib/portal/features";
+import {
+  DEFAULT_PORTAL_FEATURES,
+  type PortalFeatureColumns,
+  type PortalFeatures,
+} from "@/lib/portal/features";
 
-/** Column map only ever spread into a `db.select()`; the db doubles ignore it. */
-export const portalFeatureColumns = {
+/**
+ * Column map only ever spread into a `db.select()`; the db doubles ignore it.
+ * Typed against the real module's column interface so a new switch's column
+ * missing here is a compile error, not a silently-`undefined` stub.
+ */
+export const portalFeatureColumns: Record<keyof PortalFeatureColumns, string> = {
   portalInvestmentsEnabled: "portal_investments_enabled",
   portalBudgetEnabled: "portal_budget_enabled",
   portalDocumentsEnabled: "portal_documents_enabled",
+  portalCalculatorsEnabled: "portal_calculators_enabled",
 };
 
 export const loadPortalFeatures = (): Promise<PortalFeatures> =>
@@ -23,3 +32,5 @@ export const loadPortalFeatures = (): Promise<PortalFeatures> =>
 export const isPortalFeatureEnabled = (): Promise<boolean> => Promise.resolve(true);
 
 export const requirePortalFeature = (): Promise<void> => Promise.resolve();
+
+export const assertPortalFeature = (): void => {};

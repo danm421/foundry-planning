@@ -85,7 +85,7 @@ describe("PortalNav basePath", () => {
     ).toHaveLength(0);
   });
 
-  it("renders exactly the six rail destinations", () => {
+  it("renders exactly the seven rail destinations", () => {
     // Exactness here relies on this file's top-level UserButton mock
     // (`() => null`) contributing zero anchors. If that mock ever renders a
     // real UserButton (which can include an avatar/menu link), re-scope this
@@ -99,6 +99,7 @@ describe("PortalNav basePath", () => {
       "/portal/investments",
       "/portal/budget",
       "/portal/documents",
+      "/portal/calculators",
       "/portal/settings",
     ]);
   });

@@ -34,7 +34,7 @@ beforeAll(() => {
 });
 
 describe("PortalMobileNav", () => {
-  it("renders all six portal destinations as links (default /portal basePath)", () => {
+  it("renders all seven portal destinations as links (default /portal basePath)", () => {
     mockPathname = "/portal/organizer";
     const { container } = render(<PortalMobileNav displayName="Jane Doe" />);
     const hrefs = Array.from(container.querySelectorAll("a")).map((a) =>
@@ -49,6 +49,7 @@ describe("PortalMobileNav", () => {
       "/portal/investments",
       "/portal/budget",
       "/portal/documents",
+      "/portal/calculators",
       "/portal/settings",
     ]);
   });

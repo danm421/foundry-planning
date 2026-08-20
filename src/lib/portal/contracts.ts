@@ -226,6 +226,7 @@ export interface PortalFeatureFlags {
   investments: boolean;
   budget: boolean;
   documents: boolean;
+  calculators: boolean;
 }
 
 // ============================================================================
@@ -507,6 +508,33 @@ export interface RecurringsDTO {
   paidSoFar: number;
   leftToPay: number;
   month: string; // YYYY-MM
+  /** Unclaimed charges that look recurring, detected from transaction history.
+   *  Never persisted — recomputed on read, and dropped once a rule covers them. */
+  suggestions: RecurringSuggestionDTO[];
+}
+/** A candidate recurring the client has not created yet. Every field is a
+ *  prefill for the create dialog, so accepting one is a single tap. */
+export interface RecurringSuggestionDTO {
+  /** Stable across re-runs (cadence + merchant + rounded amount) — the React
+   *  key and the handle a dismissal is remembered by. */
+  key: string;
+  name: string;
+  matchType: "contains";
+  pattern: string;
+  amountMin: number;
+  amountMax: number;
+  /** Median of the observed charges. */
+  predicted: number;
+  cadence: "monthly" | "annually";
+  dueDay: number | null;
+  dueMonth: number | null;
+  occurrences: number;
+  lastDate: string; // YYYY-MM-DD
+  categoryId: string | null;
+  categoryName: string | null;
+  categoryColor: string | null;
+  categoryIcon: string | null;
+  sample: { id: string; date: string; amount: number }[];
 }
 export interface RecurringPreviewDTO {
   count: number;

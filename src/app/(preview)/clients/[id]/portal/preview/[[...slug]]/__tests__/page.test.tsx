@@ -47,6 +47,16 @@ vi.mock("@/components/portal/portal-documents-screen", () => ({
     <div data-testid="screen-documents" data-edit={String(editEnabled)} />
   ),
 }));
+vi.mock("@/components/portal/calculators-screen", () => ({
+  CalculatorsScreen: ({ basePath }: { basePath?: string }) => (
+    <div data-testid="screen-calculators" data-basepath={basePath} />
+  ),
+}));
+vi.mock("@/components/portal/debt-paydown-screen", () => ({
+  DebtPaydownScreen: ({ clientId, readOnly }: { clientId: string; readOnly?: boolean }) => (
+    <div data-testid="screen-debt-paydown" data-client={clientId} data-readonly={String(readOnly)} />
+  ),
+}));
 vi.mock("@/components/portal/portal-nav", () => ({
   default: ({ basePath }: { basePath?: string }) => (
     <div data-testid="nav" data-basepath={basePath} />
@@ -90,6 +100,7 @@ const clientFeatures = {
   portalInvestmentsEnabled: true,
   portalBudgetEnabled: true,
   portalDocumentsEnabled: true,
+  portalCalculatorsEnabled: true,
 };
 
 // The page no longer inherits (app)/clients/[id]/layout.tsx — it must call
@@ -321,6 +332,25 @@ describe("PortalPreview catch-all", () => {
     expect(img?.getAttribute("src")).toBe("https://blob.example/logo.png");
   });
 
+  it("renders the Calculators index on slug=['calculators'], linking back inside the preview", async () => {
+    const { container } = await renderPreview(["calculators"]);
+    const node = container.querySelector("[data-testid='screen-calculators']");
+    expect(node).toBeTruthy();
+    // Without the basePath the advisor's card link would dump them out of the
+    // preview and into the real client portal.
+    expect(node?.getAttribute("data-basepath")).toBe(`/clients/c1/portal/preview`);
+  });
+
+  it("renders the debt paydown calculator READ-ONLY on slug=['calculators','debt-paydown']", async () => {
+    const { container } = await renderPreview(["calculators", "debt-paydown"]);
+    const node = container.querySelector("[data-testid='screen-debt-paydown']");
+    expect(node).toBeTruthy();
+    expect(node?.getAttribute("data-client")).toBe("c1");
+    // requireClientPortalAccess throws for any session carrying an orgId, so
+    // an autosaving preview would 403 on every keystroke.
+    expect(node?.getAttribute("data-readonly")).toBe("true");
+  });
+
   it("renders PortalDocumentsScreen on slug=['documents'], passing the client's edit toggle", async () => {
     const { container } = await renderPreview(["documents"]);
     const node = container.querySelector("[data-testid='screen-documents']");
@@ -336,6 +366,20 @@ describe("PortalPreview feature switches", () => {
     clientFeatures.portalInvestmentsEnabled = true;
     clientFeatures.portalBudgetEnabled = true;
     clientFeatures.portalDocumentsEnabled = true;
+    clientFeatures.portalCalculatorsEnabled = true;
+  });
+
+  // Both calculator paths hang off ONE switch — `portalFeatureForPath`
+  // prefix-matches — so the child route must go dark with its index.
+  it("gates both calculator paths from the one switch", async () => {
+    clientFeatures.portalCalculatorsEnabled = false;
+    for (const slug of [["calculators"], ["calculators", "debt-paydown"]]) {
+      const { container } = await renderPreview(slug);
+      expect(container.textContent).toContain("Switched off");
+      expect(container.textContent).toContain("Calculators");
+      expect(container.querySelector("[data-testid='screen-calculators']")).toBeNull();
+      expect(container.querySelector("[data-testid='screen-debt-paydown']")).toBeNull();
+    }
   });
 
   // Not a 404: the advisor lands here by clicking through to check the switch

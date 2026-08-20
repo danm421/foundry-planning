@@ -8,7 +8,7 @@
 
 import type { PortalFeatureFlags } from "@/lib/portal/contracts";
 
-export const PORTAL_FEATURE_KEYS = ["investments", "budget", "documents"] as const;
+export const PORTAL_FEATURE_KEYS = ["investments", "budget", "documents", "calculators"] as const;
 
 export type PortalFeatureKey = (typeof PORTAL_FEATURE_KEYS)[number];
 
@@ -36,6 +36,7 @@ export const DEFAULT_PORTAL_FEATURES: PortalFeatures = {
   investments: true,
   budget: true,
   documents: true,
+  calculators: true,
 };
 
 export interface PortalFeatureMeta {
@@ -62,6 +63,11 @@ export const PORTAL_FEATURE_META: readonly PortalFeatureMeta[] = [
     label: "Documents",
     description: "The shared document vault they upload to and download from.",
   },
+  {
+    key: "calculators",
+    label: "Calculators",
+    description: "Self-serve what-if tools, starting with a debt paydown calculator.",
+  },
 ] as const;
 
 /**
@@ -83,6 +89,7 @@ export interface PortalFeatureColumns {
   portalInvestmentsEnabled: boolean;
   portalBudgetEnabled: boolean;
   portalDocumentsEnabled: boolean;
+  portalCalculatorsEnabled: boolean;
 }
 
 /**
@@ -101,6 +108,7 @@ export function toPortalFeatures(
         investments: row.portalInvestmentsEnabled,
         budget: row.portalBudgetEnabled,
         documents: row.portalDocumentsEnabled,
+        calculators: row.portalCalculatorsEnabled,
       }
     : DEFAULT_PORTAL_FEATURES;
 }

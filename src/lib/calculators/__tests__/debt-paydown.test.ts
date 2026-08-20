@@ -1,0 +1,239 @@
+import { describe, it, expect } from "vitest";
+import { calcPayment } from "@/lib/loan-math";
+import {
+  comparePaydown,
+  simulatePaydown,
+  MAX_PAYDOWN_MONTHS,
+  type PaydownDebt,
+} from "@/lib/calculators/debt-paydown";
+
+const START = { startYear: 2026, startMonth: 1 as const };
+
+/** Minimums only, no rolling, no extra — the "do nothing" reference. */
+function baseline(debts: PaydownDebt[]) {
+  return simulatePaydown(debts, {
+    ...START,
+    strategy: "avalanche",
+    extraMonthly: 0,
+    roll: false,
+  });
+}
+
+describe("simulatePaydown — one debt against the closed form", () => {
+  it("clears a 60-month loan in 60 months for the textbook interest", () => {
+    // calcPayment gives the payment that amortizes exactly, so total paid is
+    // known without re-deriving it from the simulator under test.
+    const payment = calcPayment(10_000, 0.06, 60);
+    const run = baseline([
+      { id: "d1", name: "Loan", balance: 10_000, annualRate: 0.06, minimumPayment: payment },
+    ]);
+
+    expect(run.monthsToDebtFree).toBe(60);
+    expect(run.totalInterest).toBeCloseTo(payment * 60 - 10_000, 1);
+    expect(run.balanceSeries[0]).toBeCloseTo(10_000, 2);
+    expect(run.balanceSeries.at(-1)).toBe(0);
+    expect(run.perDebt[0].payoffMonth).toBe(60);
+    // Single debt, so per-debt interest is total interest — check it against
+    // the same closed form rather than just against run.totalInterest.
+    expect(run.perDebt[0].totalInterest).toBeCloseTo(payment * 60 - 10_000, 1);
+    expect(run.neverPaysOff).toBe(false);
+  });
+
+  it("amortizes a 0% debt linearly", () => {
+    const run = baseline([
+      { id: "d1", name: "Promo card", balance: 1_200, annualRate: 0, minimumPayment: 100 },
+    ]);
+    expect(run.monthsToDebtFree).toBe(12);
+    expect(run.totalInterest).toBeCloseTo(0, 6);
+  });
+});
+
+describe("simulatePaydown — the rolling pool", () => {
+  const debts: PaydownDebt[] = [
+    { id: "small", name: "Store card", balance: 1_000, annualRate: 0.2, minimumPayment: 100 },
+    { id: "big", name: "Auto loan", balance: 5_000, annualRate: 0.06, minimumPayment: 150 },
+  ];
+
+  // The one test that fails if the pool is never built. Without rolling, all
+  // three strategies would silently produce identical numbers.
+  it("beats the baseline on interest even with no extra payment", () => {
+    const plan = simulatePaydown(debts, { ...START, strategy: "avalanche", extraMonthly: 0 });
+    const base = baseline(debts);
+    expect(plan.totalInterest).toBeLessThan(base.totalInterest);
+    expect(plan.monthsToDebtFree).toBeLessThan(base.monthsToDebtFree);
+  });
+});
+
+describe("simulatePaydown — the pool from an overshot minimum", () => {
+  // 0% throughout so the arithmetic is exact. A's minimum ($50) overshoots
+  // its own $40 balance; the $10 it can't use has to roll into B THIS SAME
+  // month — a second pool source distinct from a debt cleared in an earlier
+  // month. Month 1: A pays 40 of its 50 minimum and clears, freeing $10;
+  // B pays its $10 minimum (990 left), then absorbs the freed $10 (980 left).
+  it("rolls the unused remainder of an overshooting minimum into the pool the same month", () => {
+    const run = simulatePaydown(
+      [
+        { id: "a", name: "A", balance: 40, annualRate: 0, minimumPayment: 50 },
+        { id: "b", name: "B", balance: 1_000, annualRate: 0, minimumPayment: 10 },
+      ],
+      { ...START, strategy: "avalanche", extraMonthly: 0 },
+    );
+
+    expect(run.perDebt.find((d) => d.id === "a")!.payoffMonth).toBe(1);
+    expect(run.balanceSeries[1]).toBeCloseTo(980, 6);
+  });
+});
+
+describe("simulatePaydown — strategy order", () => {
+  // The high rate sits on the LARGER balance, so avalanche and snowball
+  // genuinely disagree about what to attack first.
+  const debts: PaydownDebt[] = [
+    { id: "a", name: "Big card", balance: 8_000, annualRate: 0.22, minimumPayment: 200 },
+    { id: "b", name: "Small loan", balance: 1_500, annualRate: 0.06, minimumPayment: 50 },
+  ];
+  const opts = { ...START, extraMonthly: 300 };
+
+  it("avalanche costs less interest, snowball clears the small debt sooner", () => {
+    const av = simulatePaydown(debts, { ...opts, strategy: "avalanche" });
+    const sn = simulatePaydown(debts, { ...opts, strategy: "snowball" });
+
+    expect(av.totalInterest).toBeLessThan(sn.totalInterest);
+
+    const avB = av.perDebt.find((d) => d.id === "b")!.payoffMonth!;
+    const snB = sn.perDebt.find((d) => d.id === "b")!.payoffMonth!;
+    expect(snB).toBeLessThan(avB);
+  });
+
+  it("never lets the total balance rise on a run that pays off", () => {
+    const av = simulatePaydown(debts, { ...opts, strategy: "avalanche" });
+    for (let i = 1; i < av.balanceSeries.length; i++) {
+      expect(av.balanceSeries[i]).toBeLessThanOrEqual(av.balanceSeries[i - 1] + 1e-6);
+    }
+  });
+});
+
+describe("simulatePaydown — equally", () => {
+  it("splits the pool and redistributes what a cleared debt could not absorb", () => {
+    // 0% throughout so the arithmetic is exact and checkable by hand.
+    // Month 1: minimums take A to 90, B and C to 990. Pool = 300, share 100:
+    // A absorbs 90 and clears, leaving 10 to re-split 5/5 across B and C.
+    const run = simulatePaydown(
+      [
+        { id: "a", name: "A", balance: 100, annualRate: 0, minimumPayment: 10 },
+        { id: "b", name: "B", balance: 1_000, annualRate: 0, minimumPayment: 10 },
+        { id: "c", name: "C", balance: 1_000, annualRate: 0, minimumPayment: 10 },
+      ],
+      { ...START, strategy: "equally", extraMonthly: 300 },
+    );
+
+    expect(run.perDebt.find((d) => d.id === "a")!.payoffMonth).toBe(1);
+    expect(run.balanceSeries[1]).toBeCloseTo(1_770, 6);
+  });
+});
+
+describe("simulatePaydown — a debt that can never be paid off", () => {
+  it("stops at the ceiling and names the debt instead of looping", () => {
+    // $100/mo of interest against a $50 minimum.
+    const run = simulatePaydown(
+      [{ id: "cc", name: "Visa", balance: 5_000, annualRate: 0.24, minimumPayment: 50 }],
+      { ...START, strategy: "avalanche", extraMonthly: 0 },
+    );
+    expect(run.neverPaysOff).toBe(true);
+    expect(run.stalledDebtIds).toEqual(["cc"]);
+    expect(run.monthsToDebtFree).toBe(MAX_PAYDOWN_MONTHS);
+  });
+});
+
+describe("simulatePaydown — the yearly rows", () => {
+  it("reconciles principal to the starting balance and ends at zero", () => {
+    const debts: PaydownDebt[] = [
+      { id: "a", name: "Card", balance: 4_000, annualRate: 0.18, minimumPayment: 150 },
+      { id: "b", name: "Auto", balance: 12_000, annualRate: 0.055, minimumPayment: 320 },
+    ];
+    const run = simulatePaydown(debts, { ...START, strategy: "avalanche", extraMonthly: 250 });
+
+    const principal = run.yearly.reduce((s, y) => s + y.principal, 0);
+    const interest = run.yearly.reduce((s, y) => s + y.interest, 0);
+    expect(principal).toBeCloseTo(16_000, 2);
+    expect(interest).toBeCloseTo(run.totalInterest, 2);
+    expect(run.yearly.at(-1)!.endingBalance).toBe(0);
+    expect(run.yearly[0].year).toBe(2026);
+
+    // perDebt totalInterest must foot to the same total the yearly rows do.
+    const perDebtInterest = run.perDebt.reduce((s, d) => s + d.totalInterest, 0);
+    expect(perDebtInterest).toBeCloseTo(run.totalInterest, 6);
+
+    // payment must foot to principal + interest for the same years, checked
+    // on the field itself rather than assumed from principal/interest alone.
+    // NOTE: this is a tautology by construction — the simulator derives
+    // yPayment, yPrincipal and yInterest from the same two locals
+    // (monthPaid, monthInterest) inside the same loop iteration, so
+    // payment === principal + interest holds algebraically for ANY value of
+    // monthPaid. It gives zero mutation resistance on its own; the
+    // yearly[0].payment check below is what actually pins the number.
+    const payment = run.yearly.reduce((s, y) => s + y.payment, 0);
+    expect(payment).toBeCloseTo(principal + interest, 2);
+
+    // yearly[0].payment against an oracle derived from the INPUTS, not from
+    // the simulator's own accumulators. Both minimums (150 + 320) plus the
+    // extra (250) go out every month = 720/mo. Card clears at month 11 (see
+    // activeDebts below) but its freed $150 rolls into the pool the same
+    // month rather than leaving the household's outflow, and Auto's balance
+    // is nowhere close to being overshot by the $720 pool at that point, so
+    // year one's 12 months all pay exactly 720 regardless of how the code
+    // happens to split it between debts. Neither debt is anywhere near
+    // cleared for the whole plan (monthsToDebtFree is well past 12), so this
+    // isn't testing an edge month.
+    expect(run.yearly[0].payment).toBe(12 * 720);
+
+    // Card (higher rate, smaller balance) clears inside year one under
+    // avalanche, so both debts are active in 2026 but only Auto remains by
+    // the final year.
+    expect(run.yearly[0].activeDebts).toBe(2);
+    expect(run.yearly.at(-1)!.activeDebts).toBe(1);
+  });
+});
+
+describe("simulatePaydown — nothing to pay down", () => {
+  it("returns an empty run for no debts", () => {
+    const run = simulatePaydown([], { ...START, strategy: "avalanche", extraMonthly: 0 });
+    expect(run.monthsToDebtFree).toBe(0);
+    expect(run.neverPaysOff).toBe(false);
+    expect(run.yearly).toEqual([]);
+  });
+});
+
+describe("comparePaydown — when the minimums alone never clear the debt", () => {
+  // The single most ordinary reason someone opens a debt paydown calculator:
+  // a card whose minimum payment does not cover its own interest. $8,000 at
+  // 19.99% costs $133.27 a month in interest against a $120 minimum, so the
+  // balance never falls and the baseline runs to the 600-month ceiling.
+  const STUCK: PaydownDebt[] = [
+    { id: "c1", name: "Rewards card", balance: 8_000, annualRate: 0.1999, minimumPayment: 120 },
+  ];
+
+  it("still answers when the plan itself pays off", () => {
+    const c = comparePaydown(STUCK, { ...START, strategy: "avalanche", extraMonthly: 250 });
+    expect(c.baseline.neverPaysOff).toBe(true);
+    expect(c.plan.neverPaysOff).toBe(false);
+    expect(c.debtFreeMonth).not.toBeNull();
+  });
+
+  it("reports no saving figures, rather than ones measured off the 600-month ceiling", () => {
+    const c = comparePaydown(STUCK, { ...START, strategy: "avalanche", extraMonthly: 250 });
+    // Measured against the ceiling these read $16,145,988 saved and 47 years
+    // saved — figures the app cannot stand behind, on its two headline tiles.
+    expect(c.interestSaved).toBeNull();
+    expect(c.monthsSaved).toBeNull();
+  });
+
+  it("still reports real figures when the baseline does pay off", () => {
+    const ok: PaydownDebt[] = [
+      { id: "a1", name: "Auto", balance: 18_400, annualRate: 0.059, minimumPayment: 415 },
+    ];
+    const c = comparePaydown(ok, { ...START, strategy: "avalanche", extraMonthly: 200 });
+    expect(c.baseline.neverPaysOff).toBe(false);
+    expect(c.interestSaved).toBeGreaterThan(0);
+    expect(c.monthsSaved).toBeGreaterThan(0);
+  });
+});
