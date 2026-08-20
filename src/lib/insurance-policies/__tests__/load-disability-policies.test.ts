@@ -54,6 +54,10 @@ describe("rowToDisabilityPolicy", () => {
     // A zero cap would silently pay nothing. This is the trap in this mapper.
     const p = rowToDisabilityPolicy({ ...row, ltdMonthlyMax: null });
     expect(p.longTerm!.monthlyMax).toBeNull();
+    // The base fixture already carries these two as null — assert them too,
+    // so a naive Number(v) on either column (not just ltdMonthlyMax) fails here.
+    expect(p.coveredEarningsAmount).toBeNull();
+    expect(p.shortTerm!.monthlyMax).toBeNull();
   });
 
   it("builds the years benefit period from ltdBenefitPeriodYears", () => {
