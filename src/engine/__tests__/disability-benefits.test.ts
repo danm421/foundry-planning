@@ -51,22 +51,66 @@ describe("resolveCoverage", () => {
   });
 
   it("resolves to_ssnra through the SSA table, not a hardcoded 67", () => {
+    const ssnraPolicy = workplacePolicy({
+      longTerm: {
+        eliminationDays: 90,
+        benefitPct: 0.6,
+        monthlyMax: null,
+        benefitPeriod: { mode: "to_ssnra" },
+      },
+    });
+
+    // The 1955-1959 band is the ONLY place the SSA table and a hardcoded 67
+    // disagree: every effective birth year >= 1960 returns FRA_POST_1960 (67y0m),
+    // so a 1970 DOB alone cannot tell the two apart.
+    // DOB 1957-06-15 is not a January-1 birth, so fraForBirthDate leaves the
+    // effective birth year at 1957 => FRA_TABLE[1957] = 66y 6m.
+    // 1957-06 + 66y6m = 2023-12; from 2023-01 that is month 11.
+    // A hardcoded 67 * 12 would land on 2024-06 => month 17, and fail here.
+    const born1957 = { ...baseClient, dateOfBirth: "1957-06-15" };
+    expect(resolveCoverage(ssnraPolicy, SALARY_2028, 2023, born1957, 2055).longTerm!.endMonth)
+      .toBe(11);
+
     // baseClient born 1970 => FRA 67y0m => age 67 in 2037-01 => 108 months.
+    const cov = resolveCoverage(ssnraPolicy, SALARY_2028, START, baseClient, 2055);
+    expect(cov.longTerm!.endMonth).toBe(108);
+  });
+
+  it("never returns an inverted long-term window when the disability starts after the to_age target", () => {
+    // DOB 1970-01-01 with to_age 65 targets 2035-01 — twelve years BEFORE a 2047
+    // disability, so the raw arithmetic is -144. benefitForYear clamps paid
+    // months to 0 either way, but ResolvedCoverage is also the coverage
+    // timeline's data source: an inverted window draws a bar ending before it
+    // starts.
+    const cov = resolveCoverage(
+      workplacePolicy({ shortTerm: null }),
+      SALARY_2028,
+      2047,
+      baseClient,
+      2055,
+    );
+    expect(cov.longTerm!.startMonth).toBeCloseTo(90 / DAYS_PER_MONTH, 5);
+    expect(cov.longTerm!.endMonth).toBe(cov.longTerm!.startMonth);
+    // A zero-width window still pays nothing.
+    expect(benefitForYear(cov, 2047, 2047, 0)).toBe(0);
+  });
+
+  it("never returns an inverted short-term window when the elimination period outlasts the duration", () => {
+    // A 30-day wait on a 2-week benefit: the duration expires before the first
+    // paid day. Raw arithmetic gives end 0.45996 < start 0.98563.
     const cov = resolveCoverage(
       workplacePolicy({
-        longTerm: {
-          eliminationDays: 90,
-          benefitPct: 0.6,
-          monthlyMax: null,
-          benefitPeriod: { mode: "to_ssnra" },
-        },
+        shortTerm: { eliminationDays: 30, benefitPct: 0.6, durationWeeks: 2, monthlyMax: null },
       }),
       SALARY_2028,
       START,
       baseClient,
       2055,
     );
-    expect(cov.longTerm!.endMonth).toBe(108);
+    expect(cov.shortTerm!.startMonth).toBeCloseTo(30 / DAYS_PER_MONTH, 5);
+    expect(cov.shortTerm!.endMonth).toBe(cov.shortTerm!.startMonth);
+    // Only the LTD layer pays in 2028: 9.04312 months at $7,956.75.
+    expect(benefitForYear(cov, START, 2028, 0)).toBeCloseTo(71_953.85, 2);
   });
 
   it("caps the monthly benefit at the contract maximum", () => {
@@ -180,6 +224,28 @@ describe("benefitForYear", () => {
     let total = 0;
     for (let y = 2028; y <= 2040; y++) total += benefitForYear(fiveYear, START, y, 0);
     expect(total).toBeCloseTo(60 * (SALARY_2028 * 0.6 / 12), 2);
+  });
+
+  it("runs a lifetime benefit period to the last plan year and stops there", () => {
+    const lifetime = resolveCoverage(
+      workplacePolicy({
+        shortTerm: null,
+        longTerm: {
+          eliminationDays: 90,
+          benefitPct: 0.6,
+          monthlyMax: null,
+          benefitPeriod: { mode: "lifetime" },
+        },
+      }),
+      SALARY_2028,
+      START,
+      baseClient,
+      2055,
+    );
+    // 2028..2055 inclusive is 28 plan years => 336 months from the disability.
+    expect(lifetime.longTerm!.endMonth).toBe(336);
+    expect(benefitForYear(lifetime, START, 2055, 0)).toBeCloseTo(95_481.0, 2);
+    expect(benefitForYear(lifetime, START, 2056, 0)).toBe(0);
   });
 });
 

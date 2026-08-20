@@ -39,6 +39,19 @@ export interface ResolvedCoverage {
 
 const monthsFromDays = (days: number) => days / DAYS_PER_MONTH;
 
+/** Builds a window that can never end before it starts. `benefitForYear` clamps
+ *  paid months to 0 either way, but `ResolvedCoverage` is ALSO the coverage
+ *  timeline's data source — an inverted window (a disability beginning after
+ *  the `to_age` target, or a duration shorter than the elimination period)
+ *  would draw a bar running backwards. */
+function coverageWindow(
+  startMonth: number,
+  endMonth: number,
+  monthlyBenefit: number,
+): CoverageWindow {
+  return { startMonth, endMonth: Math.max(startMonth, endMonth), monthlyBenefit };
+}
+
 /** Absolute month index for a calendar year + 1-based month. */
 const absMonth = (year: number, month1: number) => year * 12 + (month1 - 1);
 
@@ -80,16 +93,13 @@ export function resolveCoverage(
   const monthlyEarnings = coveredEarnings / 12;
 
   const shortTerm: CoverageWindow | null = policy.shortTerm
-    ? {
-        startMonth: monthsFromDays(policy.shortTerm.eliminationDays),
+    ? coverageWindow(
+        monthsFromDays(policy.shortTerm.eliminationDays),
         // Duration is measured FROM THE DATE OF DISABILITY, so the end is the
         // duration itself — the elimination period is unpaid time inside it.
-        endMonth: monthsFromDays(policy.shortTerm.durationWeeks * 7),
-        monthlyBenefit: cap(
-          monthlyEarnings * policy.shortTerm.benefitPct,
-          policy.shortTerm.monthlyMax,
-        ),
-      }
+        monthsFromDays(policy.shortTerm.durationWeeks * 7),
+        cap(monthlyEarnings * policy.shortTerm.benefitPct, policy.shortTerm.monthlyMax),
+      )
     : null;
 
   let longTerm: CoverageWindow | null = null;
@@ -99,14 +109,11 @@ export function resolveCoverage(
     if (endMonth == null) {
       unresolved = "missing_dob";
     } else {
-      longTerm = {
-        startMonth: monthsFromDays(policy.longTerm.eliminationDays),
+      longTerm = coverageWindow(
+        monthsFromDays(policy.longTerm.eliminationDays),
         endMonth,
-        monthlyBenefit: cap(
-          monthlyEarnings * policy.longTerm.benefitPct,
-          policy.longTerm.monthlyMax,
-        ),
-      };
+        cap(monthlyEarnings * policy.longTerm.benefitPct, policy.longTerm.monthlyMax),
+      );
     }
   }
 
@@ -165,10 +172,17 @@ export interface SynthesizeDisabilityInput {
 /** Earnings the policy insures, in `startYear` dollars. Exported so the policy
  *  dialog's coverage timeline reads the same number the projection pays on —
  *  a second derivation on the UI side is how the screen and the engine drift
- *  apart. */
+ *  apart.
+ *
+ *  ⚠️ `opts.incomes` MUST be the income rows as they stand BEFORE
+ *  `applyDisabilityEvent` clips the paycheck. Reading them after the clip
+ *  yields $0 covered earnings, a benefit row that exists and pays nothing, and
+ *  NO ERROR anywhere — the plan simply shows an uninsured disability. */
 export function resolveCoveredEarnings(
   policy: DisabilityPolicy,
   opts: {
+    /** PRE-CLIP income rows — see the warning above. Passing post-clip incomes
+     *  silently produces a $0 benefit. */
     incomes: Income[];
     client: ClientInfo;
     startYear: number;
