@@ -98,10 +98,15 @@ vi.mock("@/db", () => ({
   db: { select: (...a: unknown[]) => dbSelect(...a), transaction: dbTransaction },
 }));
 
-// Best-effort initial transactions sync fired after a successful commit.
+// Best-effort initial transactions sync fired after a successful commit, plus
+// the attribution repair that runs first (Plaid-independent).
 const syncTransactionsForItem = vi.fn();
+const backfillTransactionAccountIds = vi.fn();
+const loadAccountIdByPlaidAccountId = vi.fn().mockResolvedValue(new Map());
 vi.mock("@/lib/plaid/transactions-sync", () => ({
   syncTransactionsForItem: (...a: unknown[]) => syncTransactionsForItem(...a),
+  backfillTransactionAccountIds: (...a: unknown[]) => backfillTransactionAccountIds(...a),
+  loadAccountIdByPlaidAccountId: (...a: unknown[]) => loadAccountIdByPlaidAccountId(...a),
 }));
 
 beforeEach(() => {
@@ -121,6 +126,8 @@ beforeEach(() => {
   txSelect.mockClear();
   txSelectResp = [];
   syncTransactionsForItem.mockReset();
+  backfillTransactionAccountIds.mockReset();
+  loadAccountIdByPlaidAccountId.mockReset().mockResolvedValue(new Map());
   syncTransactionsForItem.mockResolvedValue({ ok: true, added: 0, modified: 0, removed: 0 });
 
   resolvePortalClient.mockResolvedValue({ clientId: "client-1", mode: "client", clerkUserId: "user-1" });
@@ -564,5 +571,42 @@ describe("POST commit — best-effort initial transactions sync", () => {
 
     expect(res.status).toBe(200);
     expect(syncTransactionsForItem).toHaveBeenCalledTimes(1);
+  });
+
+  it("repairs account attribution even when Plaid is unreachable", async () => {
+    // The webhook has usually already pulled this item's transactions down with
+    // accountId NULL. Attribution must not depend on the sync below succeeding.
+    loadAccountIdByPlaidAccountId.mockResolvedValue(new Map([["pa-link", "manual-1"]]));
+    syncTransactionsForItem.mockRejectedValue(new Error("plaid down"));
+    nextResponses(
+      [
+        {
+          clientId: "client-1",
+          institutionName: "Chase",
+          accessToken: "enc-token",
+          transactionsCursor: null,
+        },
+      ],
+      [{ firmId: "firm-1" }],
+      [{ id: "scenario-1" }],
+      [{ id: "manual-1", clientId: "client-1", plaidItemId: null }],
+    );
+
+    const { POST } = await import("../route");
+    const res = await POST(
+      commitReq({
+        itemId: "item-1",
+        decisions: [
+          { plaidAccountId: "pa-link", action: "link", existingAccountId: "manual-1" },
+        ],
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(backfillTransactionAccountIds).toHaveBeenCalledTimes(1);
+    expect(backfillTransactionAccountIds.mock.calls[0][1]).toBe("client-1");
+    expect(backfillTransactionAccountIds.mock.calls[0][2]).toEqual(
+      new Map([["pa-link", "manual-1"]]),
+    );
   });
 });
