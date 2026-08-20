@@ -434,8 +434,8 @@ describe("LiveSolverWorkspace — editing-surface tabs", () => {
     // Retirement tab is active by default — its Goals section is visible.
     expect(screen.getByText("Goals")).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: /techniques/i }));
-    // Techniques tab shows the technique groups.
-    expect(screen.getByText("Roth Conversions")).toBeTruthy();
+    // Techniques tab shows the technique catalog.
+    expect(screen.getByRole("button", { name: /add roth conversion/i })).toBeTruthy();
   });
 });
 

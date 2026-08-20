@@ -33,8 +33,24 @@ const rc: {
   indexingRate: 0,
 };
 
-function tree(rothConversions = [] as (typeof rc)[]): ClientData {
-  return { accounts: [], rothConversions } as unknown as ClientData;
+/** A sell of a named asset — enough for summarizeAssetTransaction. */
+const at = {
+  id: "at-1",
+  name: "Lake house",
+  type: "sell" as const,
+  year: 2032,
+};
+
+function tree(
+  rothConversions = [] as (typeof rc)[],
+  assetTransactions = [] as (typeof at)[],
+): ClientData {
+  return { accounts: [], rothConversions, assetTransactions } as unknown as ClientData;
+}
+
+/** Row order as the switches read it, top to bottom. */
+function switchLabels(): (string | null)[] {
+  return screen.getAllByRole("switch").map((s) => s.getAttribute("aria-label"));
 }
 
 // MC asset mixes used to prove an inline-created draft Roth registers its
@@ -352,7 +368,7 @@ describe("SolverTechniquesTab", () => {
     expect(onRegisterAccountMix).not.toHaveBeenCalled();
   });
 
-  it("renders the Estate planning technique only when baseClientData is provided", () => {
+  it("offers Estate planning as a catalog card only when baseClientData is provided", () => {
     const base = {
       client: { spouseDob: null }, accounts: [], entities: [], externalBeneficiaries: [],
       incomes: [], expenses: {}, savingsRules: [], liabilities: [], gifts: [], giftEvents: [],
@@ -362,8 +378,8 @@ describe("SolverTechniquesTab", () => {
     const { rerender } = render(
       <SolverTechniquesTab {...baseProps} workingTree={tree([])} onChange={vi.fn()} />,
     );
-    // No estate props → no estate row.
-    expect(screen.queryByRole("button", { name: /edit estate planning/i })).toBeNull();
+    // No estate props → the estate card is absent entirely.
+    expect(screen.queryByRole("button", { name: /add estate planning/i })).toBeNull();
 
     rerender(
       <SolverTechniquesTab
@@ -374,7 +390,83 @@ describe("SolverTechniquesTab", () => {
         onChange={vi.fn()}
       />,
     );
-    expect(screen.getByRole("button", { name: /edit estate planning/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add estate planning/i })).toBeInTheDocument();
+    // Nothing configured yet, so the card is the only affordance — no row.
+    expect(screen.queryByRole("button", { name: /edit estate planning/i })).toBeNull();
+  });
+
+  it("opens the estate editor from its catalog card", () => {
+    const base = {
+      client: { spouseDob: null }, accounts: [], entities: [], externalBeneficiaries: [],
+      incomes: [], expenses: {}, savingsRules: [], liabilities: [], gifts: [], giftEvents: [],
+      taxYearRows: [], planSettings: { planStartYear: 2026, planEndYear: 2060, inflationRate: 0.025 },
+    } as unknown as ClientData;
+    const onEstateOpen = vi.fn();
+
+    render(
+      <SolverTechniquesTab
+        {...baseProps}
+        workingTree={base}
+        baseClientData={base}
+        baseGifts={[]}
+        onChange={vi.fn()}
+        onEstateOpen={onEstateOpen}
+      />,
+    );
+    // The editor body is closed to start with.
+    expect(screen.queryByText("Revocable Living Trust")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /add estate planning/i }));
+
+    expect(screen.getByText("Revocable Living Trust")).toBeInTheDocument();
+    // The workspace swings the right pane to the Estate report alongside it.
+    expect(onEstateOpen).toHaveBeenCalled();
+  });
+
+  it("counts a scenario's techniques on the matching catalog card", () => {
+    render(
+      <SolverTechniquesTab
+        {...baseProps}
+        workingTree={tree([rc, { ...rc, id: "rc-2", name: "Second Conv" }], [at])}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Add Roth conversion (2 in this scenario)" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Add Asset transaction (1 in this scenario)" }),
+    ).toBeInTheDocument();
+    // A kind with none configured carries no count.
+    expect(screen.getByRole("button", { name: "Add Relocation" })).toBeInTheDocument();
+  });
+
+  it("labels each row with its technique kind, since the list mixes kinds", () => {
+    render(
+      <SolverTechniquesTab {...baseProps} workingTree={tree([rc], [at])} onChange={vi.fn()} />,
+    );
+    // The kind prefixes the summary line — "Existing Conv" alone doesn't say
+    // what kind of technique it is once the sections are gone. The row uses the
+    // compact form; the catalog card keeps the full noun.
+    expect(screen.getByText("Roth ·")).toBeInTheDocument();
+    expect(screen.getByText("Asset ·")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add roth conversion/i })).toBeInTheDocument();
+  });
+
+  it("sinks switched-off techniques below the in-use ones across every kind", () => {
+    render(
+      <SolverTechniquesTab
+        {...baseProps}
+        // Input order deliberately puts the switched-off Roth first, and the
+        // asset transaction after it — a per-kind sort would leave it there.
+        workingTree={tree([{ ...rc, id: "rc-off", name: "Off Conv", enabled: false }], [at])}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(switchLabels()).toEqual([
+      "Include Lake house in projection",
+      "Include Off Conv in projection",
+    ]);
   });
 
   it("renders the Surplus Cash Flow control", () => {

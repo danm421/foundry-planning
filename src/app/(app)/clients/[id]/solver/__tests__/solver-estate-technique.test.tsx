@@ -29,7 +29,7 @@ const gift: EstateFlowGift = {
 function renderTech(
   over: {
     baseGifts?: EstateFlowGift[];
-    onOpen?: () => void;
+    onOpenChange?: (open: boolean) => void;
     onChange?: (m: SolverMutation) => void;
   } = {},
 ) {
@@ -41,7 +41,7 @@ function renderTech(
       clientData={base}
       baseGifts={over.baseGifts ?? []}
       onChange={onChange}
-      onOpen={over.onOpen}
+      onOpenChange={over.onOpenChange}
     />,
   );
   return { onChange };
@@ -57,12 +57,12 @@ describe("SolverEstateTechnique", () => {
     expect(screen.getByRole("dialog", { name: /estate planning/i })).toBeInTheDocument();
   });
 
-  it("summarises a configured plan and fires onOpen when the editor is opened", () => {
-    const onOpen = vi.fn();
-    renderTech({ baseGifts: [gift], onOpen });
+  it("summarises a configured plan and reports the editor opening", () => {
+    const onOpenChange = vi.fn();
+    renderTech({ baseGifts: [gift], onOpenChange });
     expect(screen.getByText(/1 gift/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /edit estate/i }));
-    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(onOpenChange).toHaveBeenCalledWith(true);
     // The gift row is present inside the open editor.
     const dialog = screen.getByRole("dialog", { name: /estate planning/i });
     expect(within(dialog).getByText(/Cash gift 2030/)).toBeInTheDocument();

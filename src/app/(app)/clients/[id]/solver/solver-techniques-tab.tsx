@@ -15,6 +15,7 @@ import type { AccountAssetMix } from "@/engine/monteCarlo/trial";
 import type { ClientMilestones } from "@/lib/milestones";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { controllingFamilyMember } from "@/engine/ownership";
+import { flipEnabled, isEnabled } from "@/lib/solver/technique-enabled";
 import {
   summarizeRothConversion,
   summarizeAssetTransaction,
@@ -40,18 +41,106 @@ import DebtPaydownDialog from "@/components/forms/debt-paydown-dialog";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { SolverSection } from "./solver-section";
 import { SolverTechniqueRow } from "./solver-technique-row";
+import { SolverTechniqueCard } from "./solver-technique-card";
 import { SolverEstateTechnique } from "./solver-estate-technique";
 import { SolverSurplusAllocation } from "./solver-surplus-allocation";
+import {
+  RothConversionIcon,
+  AssetTransactionIcon,
+  ReinvestmentIcon,
+  RelocationIcon,
+  DebtPaydownIcon,
+  EstatePlanningIcon,
+} from "./solver-technique-icons";
 
-type TechniqueKind = "roth" | "asset" | "reinvestment" | "relocation" | "debt";
+type TechniqueKind = "roth" | "asset" | "reinvestment" | "relocation" | "debt" | "estate";
 
 /** Target probability-of-success a Roth-amount solve aims for by default. */
 const DEFAULT_SOLVE_POS = 0.9;
+
+/**
+ * The technique catalog, rendered as the card grid. A card stays put after use
+ * — a scenario can hold several conversions, sales, or paydowns — so the grid
+ * is a permanent palette rather than an empty state that disappears.
+ */
+const CATALOG: {
+  kind: TechniqueKind;
+  label: string;
+  /** Compact form for the row list, where the summary competes for a ~230px
+   *  line — "Roth · $25,000/yr · 2030–2035" fits where the full noun doesn't. */
+  rowLabel: string;
+  blurb: string;
+  Icon: (props: { className?: string }) => ReactNode;
+}[] = [
+  {
+    kind: "roth",
+    label: "Roth conversion",
+    rowLabel: "Roth",
+    blurb: "Move pre-tax savings into a Roth",
+    Icon: RothConversionIcon,
+  },
+  {
+    kind: "asset",
+    label: "Asset transaction",
+    rowLabel: "Asset",
+    blurb: "Buy or sell an asset",
+    Icon: AssetTransactionIcon,
+  },
+  {
+    kind: "reinvestment",
+    label: "Reinvestment",
+    rowLabel: "Reinvest",
+    blurb: "Put sale proceeds into a portfolio",
+    Icon: ReinvestmentIcon,
+  },
+  {
+    kind: "relocation",
+    label: "Relocation",
+    rowLabel: "Relocation",
+    blurb: "Move to a new state",
+    Icon: RelocationIcon,
+  },
+  {
+    kind: "debt",
+    label: "Debt paydown",
+    rowLabel: "Debt",
+    blurb: "Pay a loan off sooner",
+    Icon: DebtPaydownIcon,
+  },
+  {
+    kind: "estate",
+    label: "Estate planning",
+    rowLabel: "Estate",
+    blurb: "Trusts, gifts, and charities",
+    Icon: EstatePlanningIcon,
+  },
+];
+
+/** Kind → its card entry, for the label/glyph a mixed row list needs. Total by
+ *  construction: CATALOG covers every TechniqueKind. */
+const BY_KIND = Object.fromEntries(CATALOG.map((c) => [c.kind, c])) as Record<
+  TechniqueKind,
+  (typeof CATALOG)[number]
+>;
 
 interface EditorState {
   kind: TechniqueKind;
   /** undefined = add; otherwise the id of the technique being edited. */
   editId?: string;
+}
+
+/** One line in the scenario's technique list, flattened across every kind. */
+interface TechniqueRowData {
+  key: string;
+  kind: TechniqueKind;
+  name: string;
+  summary: string;
+  enabled: boolean;
+  badge?: "Base plan" | "Added";
+  onEdit: () => void;
+  onRemove: () => void;
+  onToggle: () => void;
+  extraAction?: ReactNode;
 }
 
 interface Props {
@@ -111,7 +200,7 @@ interface Props {
   ) => void;
   /** Base facts + base-plan gifts for the estate technique. Optional so the
    *  component still renders in isolation (tests, storybook). When absent the
-   *  Estate Planning section is hidden. */
+   *  Estate Planning card is hidden. */
   baseClientData?: ClientData;
   baseGifts?: EstateFlowGift[];
   /** Forwarded to the estate technique's onOpen — the workspace uses it to
@@ -119,85 +208,10 @@ interface Props {
   onEstateOpen?: () => void;
 }
 
-/** Dashed "add" tile that lives in the Scenario (working) column — the affordance
- *  for adding a new technique, and the whole empty state when there are none. */
-function TechniqueAddTile({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-hair-2 px-3 py-2.5 text-[12px] font-medium text-ink-3 transition-colors hover:border-accent/60 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-    >
-      <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5">
-        <path
-          d="M8 3.5v9M3.5 8h9"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        />
-      </svg>
-      Add {label}
-    </button>
-  );
-}
-
-/**
- * Editable list of technique rows for the scenario surface. Each row gets
- * Edit / Remove and the group ends with a trailing add-tile (the add-tile is
- * also the whole empty state when there are no techniques yet).
- */
-function TechniqueGroup<T extends { id: string; name: string; enabled?: boolean }>({
-  working,
-  baseIds,
-  summarize,
-  onEdit,
-  onRemove,
-  onToggle,
-  onAdd,
-  addLabel,
-  renderExtraAction,
-}: {
-  working: T[];
-  /** Base-plan technique ids for this kind; drives the origin badge. */
-  baseIds?: Set<string>;
-  summarize: (t: T) => string;
-  onEdit: (id: string) => void;
-  onRemove: (id: string) => void;
-  /** Flips the technique's enabled state. */
-  onToggle: (t: T) => void;
-  /** Opens the add form for this technique kind. */
-  onAdd: () => void;
-  /** Noun for the add tile, e.g. "Roth conversion" → "Add Roth conversion". */
-  addLabel: string;
-  /** Per-row control (e.g. a Solve button). */
-  renderExtraAction?: (t: T) => ReactNode;
-}) {
-  // Float techniques that are in use (enabled) to the top; keep the existing
-  // relative order within each group via a stable sort.
-  const ordered = working
-    .map((t, i) => ({ t, i }))
-    .sort((a, b) => Number(a.t.enabled === false) - Number(b.t.enabled === false) || a.i - b.i)
-    .map(({ t }) => t);
-
-  return (
-    <div className="col-span-2 space-y-2">
-      {ordered.map((t) => (
-        <SolverTechniqueRow
-          key={t.id}
-          name={t.name}
-          summary={summarize(t)}
-          enabled={t.enabled !== false}
-          onToggle={() => onToggle(t)}
-          badge={baseIds ? (baseIds.has(t.id) ? "Base plan" : "Added") : undefined}
-          onEdit={() => onEdit(t.id)}
-          onRemove={() => onRemove(t.id)}
-          extraAction={renderExtraAction?.(t)}
-        />
-      ))}
-      <TechniqueAddTile label={addLabel} onClick={onAdd} />
-    </div>
-  );
+/** "Base plan" vs "Added" — only when the caller supplied base ids for the kind. */
+function badgeFor(baseIds: Set<string> | undefined, id: string) {
+  if (!baseIds) return undefined;
+  return baseIds.has(id) ? ("Base plan" as const) : ("Added" as const);
 }
 
 export function SolverTechniquesTab({
@@ -245,7 +259,7 @@ export function SolverTechniquesTab({
         ([liabilityId, row]) => {
           const liability = workingLiabilities.find((l) => l.id === liabilityId);
           return liability
-            ? [{ id: liabilityId, name: liability.name, enabled: row.enabled, row, liability }]
+            ? [{ id: liabilityId, name: liability.name, row, liability }]
             : [];
         },
       ),
@@ -299,7 +313,117 @@ export function SolverTechniquesTab({
         }
       : undefined;
 
-  // Active editor form.
+  // Every configured technique as one flat list — the tab no longer groups by
+  // kind, so each row carries its own kind label and glyph.
+  const rows: TechniqueRowData[] = [
+    ...workingRoth.map((t) => ({
+      key: `roth:${t.id}`,
+      kind: "roth" as const,
+      name: t.name,
+      summary: summarizeRothConversion(t),
+      enabled: isEnabled(t),
+      badge: badgeFor(baseTechniqueIds?.roth, t.id),
+      onEdit: () => setEditor({ kind: "roth", editId: t.id }),
+      onRemove: () => onChange({ kind: "roth-conversion-upsert", id: t.id, value: null }),
+      onToggle: () =>
+        onChange({
+          kind: "roth-conversion-upsert",
+          id: t.id,
+          value: flipEnabled(t),
+        }),
+      extraAction:
+        onSolveStart && t.conversionType === "fixed_amount" ? (
+          <button
+            type="button"
+            onClick={() =>
+              onSolveStart({ kind: "roth-conversion-amount", techniqueId: t.id }, DEFAULT_SOLVE_POS)
+            }
+            className="rounded-md border border-hair-2 px-2 py-1 text-[12px] text-accent hover:border-accent/60"
+          >
+            Solve
+          </button>
+        ) : undefined,
+    })),
+    ...workingAsset.map((t) => ({
+      key: `asset:${t.id}`,
+      kind: "asset" as const,
+      name: t.name,
+      summary: summarizeAssetTransaction(t),
+      enabled: isEnabled(t),
+      badge: badgeFor(baseTechniqueIds?.asset, t.id),
+      onEdit: () => setEditor({ kind: "asset", editId: t.id }),
+      onRemove: () => onChange({ kind: "asset-transaction-upsert", id: t.id, value: null }),
+      onToggle: () =>
+        onChange({
+          kind: "asset-transaction-upsert",
+          id: t.id,
+          value: flipEnabled(t),
+        }),
+    })),
+    ...workingReinv.map((t) => ({
+      key: `reinvestment:${t.id}`,
+      kind: "reinvestment" as const,
+      name: t.name,
+      summary: summarizeReinvestment(t, reinvestmentPortfolioGrowth),
+      enabled: isEnabled(t),
+      badge: badgeFor(baseTechniqueIds?.reinvestment, t.id),
+      onEdit: () => setEditor({ kind: "reinvestment", editId: t.id }),
+      onRemove: () => onChange({ kind: "reinvestment-upsert", id: t.id, value: null }),
+      onToggle: () =>
+        onChange({
+          kind: "reinvestment-upsert",
+          id: t.id,
+          value: flipEnabled(t),
+        }),
+    })),
+    ...workingReloc.map((t) => ({
+      key: `relocation:${t.id}`,
+      kind: "relocation" as const,
+      name: t.name,
+      summary: summarizeRelocation(t),
+      enabled: isEnabled(t),
+      badge: badgeFor(baseTechniqueIds?.relocation, t.id),
+      onEdit: () => setEditor({ kind: "relocation", editId: t.id }),
+      onRemove: () => onChange({ kind: "relocation-upsert", id: t.id, value: null }),
+      onToggle: () =>
+        onChange({
+          kind: "relocation-upsert",
+          id: t.id,
+          value: flipEnabled(t),
+        }),
+    })),
+    ...debtPaydownRows.map((t) => ({
+      key: `debt:${t.id}`,
+      kind: "debt" as const,
+      name: t.name,
+      summary: summarizeDebtPaydown(t.row, previewDebtPaydown(t.liability, t.row)),
+      enabled: isEnabled(t.row),
+      onEdit: () => setEditor({ kind: "debt" }),
+      onRemove: () => onChange({ kind: "debt-paydown", liabilityId: t.id, value: null }),
+      onToggle: () =>
+        onChange({
+          kind: "debt-paydown",
+          liabilityId: t.id,
+          value: flipEnabled(t.row),
+        }),
+    })),
+  ];
+
+  // Techniques in use float to the top; switched-off ones sink, dimmed. Sort is
+  // stable, so a row only moves when its own switch is flipped.
+  const orderedRows = [...rows].sort((a, b) => Number(!a.enabled) - Number(!b.enabled));
+
+  const countByKind: Partial<Record<TechniqueKind, number>> = {};
+  for (const r of rows) countByKind[r.kind] = (countByKind[r.kind] ?? 0) + 1;
+
+  const openAdd = (kind: TechniqueKind) => {
+    // The estate editor drives the right pane's Estate report.
+    if (kind === "estate") onEstateOpen?.();
+    setEditor({ kind });
+  };
+
+  // Active editor form. Estate planning has no arm here on purpose — it
+  // renders its own dialog from the row list above, driven by `editor`.
   let form: ReactNode = null;
   if (editor?.kind === "roth") {
     const existing: RothConversion | undefined = editor.editId
@@ -411,135 +535,59 @@ export function SolverTechniquesTab({
 
   return (
     <div>
-      <SolverSection title="Roth Conversions">
-        <TechniqueGroup
-          working={workingRoth}
-          baseIds={baseTechniqueIds?.roth}
-          summarize={summarizeRothConversion}
-          onEdit={(id) => setEditor({ kind: "roth", editId: id })}
-          onRemove={(id) =>
-            onChange({ kind: "roth-conversion-upsert", id, value: null })
-          }
-          onToggle={(t) =>
-            onChange({
-              kind: "roth-conversion-upsert",
-              id: t.id,
-              value: { ...t, enabled: t.enabled === false ? undefined : false },
-            })
-          }
-          onAdd={() => setEditor({ kind: "roth" })}
-          addLabel="Roth conversion"
-          renderExtraAction={(rc) =>
-            onSolveStart && rc.conversionType === "fixed_amount" ? (
-              <button
-                type="button"
-                onClick={() =>
-                  onSolveStart(
-                    { kind: "roth-conversion-amount", techniqueId: rc.id },
-                    DEFAULT_SOLVE_POS,
-                  )
-                }
-                className="rounded-md border border-hair-2 px-2 py-1 text-[12px] text-accent hover:border-accent/60"
-              >
-                Solve
-              </button>
-            ) : null
-          }
-        />
-      </SolverSection>
-
-      <SolverSection title="Asset Transactions">
-        <TechniqueGroup
-          working={workingAsset}
-          baseIds={baseTechniqueIds?.asset}
-          summarize={summarizeAssetTransaction}
-          onEdit={(id) => setEditor({ kind: "asset", editId: id })}
-          onRemove={(id) =>
-            onChange({ kind: "asset-transaction-upsert", id, value: null })
-          }
-          onToggle={(t) =>
-            onChange({
-              kind: "asset-transaction-upsert",
-              id: t.id,
-              value: { ...t, enabled: t.enabled === false ? undefined : false },
-            })
-          }
-          onAdd={() => setEditor({ kind: "asset" })}
-          addLabel="asset transaction"
-        />
-      </SolverSection>
-
-      <SolverSection title="Reinvestments">
-        <TechniqueGroup
-          working={workingReinv}
-          baseIds={baseTechniqueIds?.reinvestment}
-          summarize={(ri) => summarizeReinvestment(ri, reinvestmentPortfolioGrowth)}
-          onEdit={(id) => setEditor({ kind: "reinvestment", editId: id })}
-          onRemove={(id) =>
-            onChange({ kind: "reinvestment-upsert", id, value: null })
-          }
-          onToggle={(t) =>
-            onChange({
-              kind: "reinvestment-upsert",
-              id: t.id,
-              value: { ...t, enabled: t.enabled === false ? undefined : false },
-            })
-          }
-          onAdd={() => setEditor({ kind: "reinvestment" })}
-          addLabel="reinvestment"
-        />
-      </SolverSection>
-
-      <SolverSection title="Relocation">
-        <TechniqueGroup
-          working={workingReloc}
-          baseIds={baseTechniqueIds?.relocation}
-          summarize={summarizeRelocation}
-          onEdit={(id) => setEditor({ kind: "relocation", editId: id })}
-          onRemove={(id) =>
-            onChange({ kind: "relocation-upsert", id, value: null })
-          }
-          onToggle={(t) =>
-            onChange({
-              kind: "relocation-upsert",
-              id: t.id,
-              value: { ...t, enabled: t.enabled === false ? undefined : false },
-            })
-          }
-          onAdd={() => setEditor({ kind: "relocation" })}
-          addLabel="relocation"
-        />
-      </SolverSection>
-
-      <SolverSection title="Debt Paydown">
-        <TechniqueGroup
-          working={debtPaydownRows}
-          summarize={(t) => summarizeDebtPaydown(t.row, previewDebtPaydown(t.liability, t.row))}
-          onEdit={() => setEditor({ kind: "debt" })}
-          onRemove={(id) => onChange({ kind: "debt-paydown", liabilityId: id, value: null })}
-          onToggle={(t) =>
-            onChange({
-              kind: "debt-paydown",
-              liabilityId: t.id,
-              value: { ...t.row, enabled: t.row.enabled === false ? undefined : false },
-            })
-          }
-          onAdd={() => setEditor({ kind: "debt" })}
-          addLabel="debt paydown"
-        />
-      </SolverSection>
-
-      {baseClientData ? (
-        <SolverSection title="Estate Planning">
+      {/* The scenario's techniques, above the catalog. `empty:hidden` collapses
+          the padding when there are no rows AND the estate technique renders
+          nothing — so keep this wrapper free of always-rendered children. */}
+      <div className="flex flex-col gap-2 px-5 py-4 empty:hidden">
+        {orderedRows.map((r) => {
+          const { rowLabel, Icon } = BY_KIND[r.kind];
+          return (
+            <SolverTechniqueRow
+              key={r.key}
+              name={r.name}
+              summary={r.summary}
+              kindLabel={rowLabel}
+              icon={<Icon className="h-3.5 w-3.5" />}
+              enabled={r.enabled}
+              onToggle={r.onToggle}
+              badge={r.badge}
+              onEdit={r.onEdit}
+              onRemove={r.onRemove}
+              extraAction={r.extraAction}
+            />
+          );
+        })}
+        {baseClientData ? (
           <SolverEstateTechnique
             baseClientData={baseClientData}
             clientData={workingTree}
             baseGifts={baseGifts ?? []}
             onChange={onChange}
-            onOpen={onEstateOpen}
+            hideWhenUnconfigured
+            open={editor?.kind === "estate"}
+            // Both ways in — this row's Edit and the catalog card — land here,
+            // so the right-pane swing is wired once.
+            onOpenChange={(o) => (o ? openAdd("estate") : setEditor(null))}
           />
-        </SolverSection>
-      ) : null}
+        ) : null}
+      </div>
+
+      <SolverSection title="Add a technique">
+        <div className="grid grid-cols-2 gap-2 xl:grid-cols-3">
+          {CATALOG.filter((c) => c.kind !== "estate" || baseClientData).map(
+            ({ kind, label, blurb, Icon }) => (
+              <SolverTechniqueCard
+                key={kind}
+                label={label}
+                blurb={blurb}
+                count={countByKind[kind]}
+                icon={<Icon className="h-4 w-4" />}
+                onClick={() => openAdd(kind)}
+              />
+            ),
+          )}
+        </div>
+      </SolverSection>
 
       {baseClientData && onResetField ? (
         <SolverSection

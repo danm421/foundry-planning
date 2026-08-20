@@ -27,9 +27,16 @@ interface Props {
   clientData: ClientData;
   baseGifts: EstateFlowGift[];
   onChange: (m: SolverMutation) => void;
-  /** Fired when the editor opens — the workspace uses it to switch the right
-   *  pane to the Estate report. */
-  onOpen?: () => void;
+  /** Controlled dialog state, so the Techniques catalog card can open the
+   *  editor. When omitted the component owns the state itself. Fires on both
+   *  routes in — the card and this row's own Edit button — so a parent has one
+   *  place to hang "the estate editor opened" side effects. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Render nothing until the plan has something in it. For a parent that
+   *  offers its own way in (the catalog card), an unconfigured plan has no row
+   *  worth listing. */
+  hideWhenUnconfigured?: boolean;
 }
 
 /** One-line summary of the configured estate plan, e.g.
@@ -142,14 +149,25 @@ export function SolverEstateTechnique({
   clientData,
   baseGifts,
   onChange,
-  onOpen,
+  open: controlledOpen,
+  onOpenChange,
+  hideWhenUnconfigured,
 }: Props) {
   const editor = useSolverEstateEditor({ baseClientData, clientData, baseGifts, onChange });
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = (next: boolean) => {
+    if (controlledOpen === undefined) setUncontrolledOpen(next);
+    onOpenChange?.(next);
+  };
+
+  // Rendering nothing — rather than an empty wrapper — is what lets the list
+  // this row sits in collapse when the scenario holds no techniques at all.
+  if (hideWhenUnconfigured && editor.summary.isEmpty && !open) return null;
 
   return (
     <div className="col-span-2">
-      <div className="flex items-center justify-between gap-3 rounded-md border border-hair bg-card-2 px-3 py-2.5">
+      <div className="flex items-center justify-between gap-3 rounded-md border border-hair-2 bg-card-2 px-3 py-2.5">
         <div className="min-w-0">
           <div className="text-[13px] font-medium text-ink">Estate planning</div>
           <div className="truncate text-[12px] text-ink-3">{summaryText(editor.summary)}</div>
@@ -157,10 +175,7 @@ export function SolverEstateTechnique({
         <button
           type="button"
           aria-label="Edit estate planning"
-          onClick={() => {
-            setOpen(true);
-            onOpen?.();
-          }}
+          onClick={() => setOpen(true)}
           className="shrink-0 rounded-md border border-hair-2 px-2.5 py-1 text-[12px] text-accent hover:border-accent/60"
         >
           Edit

@@ -3,6 +3,11 @@
 interface Props {
   name: string;
   summary: string;
+  /** Technique kind, e.g. "Roth conversion" — prefixes the summary line so a
+   *  row still says what it is once the list mixes every kind together. */
+  kindLabel?: string;
+  /** Small kind glyph shown before the name (matches the catalog card's icon). */
+  icon?: React.ReactNode;
   /** Technique participates in the projection. Default true. */
   enabled?: boolean;
   /** Flips the on/off (enabled) state. */
@@ -19,6 +24,8 @@ interface Props {
 export function SolverTechniqueRow({
   name,
   summary,
+  kindLabel,
+  icon,
   enabled = true,
   onToggle,
   onEdit,
@@ -48,6 +55,9 @@ export function SolverTechniqueRow({
             />
           </button>
         ) : null}
+        {icon ? (
+          <span className={`shrink-0 text-ink-4 ${enabled ? "" : "opacity-50"}`}>{icon}</span>
+        ) : null}
         <div className={`min-w-0 ${enabled ? "" : "opacity-50"}`}>
           <div className="flex items-center gap-2">
             <span className="truncate text-[13px] font-medium text-ink">{name}</span>
@@ -63,7 +73,10 @@ export function SolverTechniqueRow({
               </span>
             ) : null}
           </div>
-          <div className="truncate text-[12px] text-ink-3">{summary}</div>
+          <div className="truncate text-[12px] text-ink-3">
+            {kindLabel ? <span className="text-ink-4">{kindLabel} · </span> : null}
+            {summary}
+          </div>
         </div>
       </div>
       {onEdit || onRemove || extraAction ? (
