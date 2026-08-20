@@ -331,6 +331,57 @@ describe("loadClientData", () => {
     expect(data).toMatchSnapshot();
   });
 
+  it("pays Social Security off the salary when no PIA has been entered", async () => {
+    // The seeded state for every new household: a `pia_at_fra` row with no PIA
+    // beside a salary. Alice earns $150,000, so a full 35-year career gives an
+    // AIME of $12,500 → 0.9*1226 + 0.32*(7391-1226) + 0.15*(12500-7391) = $3,843.
+    seedValidFixture();
+    dbState.incomes = [
+      incomeRow,
+      {
+        ...incomeRow,
+        id: "11111111-1111-1111-1111-111111111111",
+        type: "social_security" as unknown as typeof incomeRow.type,
+        name: "Social Security — Alice",
+        annualAmount: "0",
+        endYear: 2099,
+        claimingAge: 67 as unknown as typeof incomeRow.claimingAge,
+        claimingAgeMode: "fra" as unknown as typeof incomeRow.claimingAgeMode,
+        ssBenefitMode: "pia_at_fra" as unknown as typeof incomeRow.ssBenefitMode,
+        piaMonthly: null,
+      },
+    ];
+
+    const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+
+    const ss = data.incomes.find((i) => i.type === "social_security");
+    expect(ss!.piaMonthly).toBe(3843);
+  });
+
+  it("never overwrites a PIA somebody entered", async () => {
+    seedValidFixture();
+    dbState.incomes = [
+      incomeRow,
+      {
+        ...incomeRow,
+        id: "11111111-1111-1111-1111-111111111111",
+        type: "social_security" as unknown as typeof incomeRow.type,
+        name: "Social Security — Alice",
+        annualAmount: "0",
+        endYear: 2099,
+        claimingAge: 67 as unknown as typeof incomeRow.claimingAge,
+        claimingAgeMode: "fra" as unknown as typeof incomeRow.claimingAgeMode,
+        ssBenefitMode: "pia_at_fra" as unknown as typeof incomeRow.ssBenefitMode,
+        piaMonthly: "2400.00" as unknown as typeof incomeRow.piaMonthly,
+      },
+    ];
+
+    const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+
+    const ss = data.incomes.find((i) => i.type === "social_security");
+    expect(ss!.piaMonthly).toBe(2400);
+  });
+
   it("hydrates residuaryRecipients onto each Will", async () => {
     seedValidFixture();
     dbState.willResiduaryRecipients = [willResiduaryRecipientRow];

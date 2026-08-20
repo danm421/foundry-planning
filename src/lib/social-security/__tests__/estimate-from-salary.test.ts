@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { estimatePiaFromSalary, ownerAnnualSalary } from "../estimate-from-salary";
+import {
+  estimatedPiaMonthly,
+  estimatePiaFromSalary,
+  ownerAnnualSalary,
+} from "../estimate-from-salary";
 
 const YEAR = 2026;
 
@@ -90,5 +94,68 @@ describe("estimatePiaFromSalary", () => {
 
   it("rounds to whole dollars for the dialog's amount box", () => {
     expect(Number.isInteger(estimatePiaFromSalary(83_456))).toBe(true);
+  });
+});
+
+describe("estimatedPiaMonthly", () => {
+  const salary = { type: "salary", owner: "client", annualAmount: "100000", endYear: 2040 };
+  const ssRow = {
+    type: "social_security",
+    owner: "client",
+    annualAmount: "0",
+    ssBenefitMode: "pia_at_fra",
+    piaMonthly: null,
+  };
+
+  it("estimates from the owner's salary when nobody has entered a PIA", () => {
+    expect(estimatedPiaMonthly(ssRow, [salary, ssRow], YEAR)).toBe(3218);
+  });
+
+  it("leaves an entered PIA alone", () => {
+    const entered = { ...ssRow, piaMonthly: "2400" };
+    expect(estimatedPiaMonthly(entered, [salary, entered], YEAR)).toBeNull();
+  });
+
+  it("treats a stored zero as never entered", () => {
+    const zeroed = { ...ssRow, piaMonthly: "0" };
+    expect(estimatedPiaMonthly(zeroed, [salary, zeroed], YEAR)).toBe(3218);
+  });
+
+  it("leaves an advisor's explicit annual-amount row alone", () => {
+    const manual = { ...ssRow, ssBenefitMode: "manual_amount", annualAmount: "30000" };
+    expect(estimatedPiaMonthly(manual, [salary, manual], YEAR)).toBeNull();
+  });
+
+  it("leaves a No Benefit row alone — it pays nothing on purpose", () => {
+    const none = { ...ssRow, ssBenefitMode: "no_benefit" };
+    expect(estimatedPiaMonthly(none, [salary, none], YEAR)).toBeNull();
+  });
+
+  it("leaves a legacy row with no stored mode alone", () => {
+    // A null mode reads as `manual_amount` on every surface, so filling a PIA
+    // here would show a figure the engine never pays.
+    const legacy = { ...ssRow, ssBenefitMode: null };
+    expect(estimatedPiaMonthly(legacy, [salary, legacy], YEAR)).toBeNull();
+  });
+
+  it("ignores a row that is not Social Security", () => {
+    expect(estimatedPiaMonthly(salary, [salary], YEAR)).toBeNull();
+  });
+
+  it("returns null when the owner has no salary", () => {
+    expect(estimatedPiaMonthly(ssRow, [ssRow], YEAR)).toBeNull();
+  });
+
+  it("reads each person's own salary", () => {
+    const spouseSs = { ...ssRow, owner: "spouse" };
+    const spouseSalary = { ...salary, owner: "spouse", annualAmount: "60000" };
+    const rows = [salary, spouseSalary, ssRow, spouseSs];
+    expect(estimatedPiaMonthly(ssRow, rows, YEAR)).toBe(3218);
+    expect(estimatedPiaMonthly(spouseSs, rows, YEAR)).toBe(2311);
+  });
+
+  it("returns null for a jointly-owned SS row — there is no such earnings record", () => {
+    const joint = { ...ssRow, owner: "joint" };
+    expect(estimatedPiaMonthly(joint, [salary, joint], YEAR)).toBeNull();
   });
 });
