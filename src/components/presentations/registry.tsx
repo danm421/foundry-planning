@@ -397,6 +397,22 @@ import {
 import { deltaSavingsRuleMutation } from "@/lib/presentations/pages/early-years-shared";
 import { EarlyYearsWaitingPagePdf } from "./pages/early-years-waiting/page-pdf";
 import { EarlyYearsWaitingOptionsControl } from "./pages/early-years-waiting/options-control";
+import {
+  EARLY_YEARS_ROTH_OPTIONS_DEFAULT,
+  type EarlyYearsRothPageData,
+  type EarlyYearsRothPageOptions,
+} from "@/lib/presentations/pages/early-years-roth/types";
+import { earlyYearsRothOptionsSchema } from "@/lib/presentations/pages/early-years-roth/options-schema";
+import { summarizeEarlyYearsRothOptions } from "@/lib/presentations/pages/early-years-roth/summarize-options";
+import { estimateEarlyYearsRothPageCount } from "@/lib/presentations/pages/early-years-roth/estimate-page-count";
+import {
+  buildEarlyYearsRothData,
+  ROTH_ALL_ROTH_KEY,
+  ROTH_TRADITIONAL_KEY,
+} from "@/lib/presentations/pages/early-years-roth/view-model";
+import { rothMixMutations } from "@/lib/presentations/pages/early-years-roth/deferral-mix";
+import { EarlyYearsRothPagePdf } from "./pages/early-years-roth/page-pdf";
+import { EarlyYearsRothOptionsControl } from "./pages/early-years-roth/options-control";
 
 export const CATEGORY_ORDER = [
   "Framing",
@@ -1505,6 +1521,46 @@ export const earlyYearsWaitingPage: PresentationPage<
   renderPdf: (input) => <EarlyYearsWaitingPagePdf {...input} />,
 };
 
+export const earlyYearsRothPage: PresentationPage<
+  EarlyYearsRothPageData,
+  EarlyYearsRothPageOptions
+> = {
+  id: "earlyYearsRoth",
+  title: "Roth or Traditional?",
+  description:
+    "The tax bill under all-traditional against all-Roth payroll deferrals, split between the working years and retirement.",
+  category: "Early Years",
+  defaultOptions: EARLY_YEARS_ROTH_OPTIONS_DEFAULT,
+  optionsSchema: earlyYearsRothOptionsSchema,
+  summarizeOptions: summarizeEarlyYearsRothOptions,
+  estimatePageCount: () => estimateEarlyYearsRothPageCount(),
+  OptionsControl: EarlyYearsRothOptionsControl,
+  supportsScenarioOverride: false,
+  requiredScenarioRefs: () => ["base"],
+  // Two variants of the base plan. A FACTORY, because the eligible account ids
+  // live in the tree.
+  //
+  // R13 does not apply here. Neither variant is "the plan as it stands" — both
+  // are counterfactuals, and each must be built even when the client already
+  // sits at one of them, so both columns come from the same code path.
+  requiredDerivedRefs: () => [
+    {
+      key: ROTH_TRADITIONAL_KEY,
+      from: "base",
+      label: "All traditional",
+      mutations: (source: DerivedSource) => rothMixMutations(source.clientData, 0),
+    },
+    {
+      key: ROTH_ALL_ROTH_KEY,
+      from: "base",
+      label: "All Roth",
+      mutations: (source: DerivedSource) => rothMixMutations(source.clientData, 1),
+    },
+  ],
+  buildData: (ctx, options) => buildEarlyYearsRothData(ctx, options),
+  renderPdf: (input) => <EarlyYearsRothPagePdf {...input} />,
+};
+
 export const PRESENTATION_PAGES = {
   cover: coverPage,
   toc: tocPage,
@@ -1557,6 +1613,7 @@ export const PRESENTATION_PAGES = {
   earlyYearsHumanCapital: earlyYearsHumanCapitalPage,
   earlyYearsLadder: earlyYearsLadderPage,
   earlyYearsWaiting: earlyYearsWaitingPage,
+  earlyYearsRoth: earlyYearsRothPage,
 } as const;
 
 export type PresentationPageId = keyof typeof PRESENTATION_PAGES;
