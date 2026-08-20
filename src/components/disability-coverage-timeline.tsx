@@ -37,22 +37,49 @@ const HATCH: CSSProperties = {
     "repeating-linear-gradient(45deg, var(--color-hair-2) 0 2px, transparent 2px 6px)",
 };
 
-/** Replacement rate while BOTH layers pay, as a whole-number percentage. */
-function combinedPct(c: ResolvedCoverage): number {
-  if (!c.shortTerm || !c.longTerm || c.coveredEarnings <= 0) return 0;
+/** Replacement rate while BOTH layers pay, as a whole-number percentage. Null
+ *  when there is nothing to divide by — a fabricated "0%" inside a warning
+ *  reads as a measurement. Defensive: the no-earnings alert below returns
+ *  before the overlap branch can call this with zero earnings, and the engine
+ *  only sets a seam when both windows exist. */
+function combinedPct(c: ResolvedCoverage): number | null {
+  if (c.shortTerm === null || c.longTerm === null || c.coveredEarnings <= 0) return null;
   const monthly = c.shortTerm.monthlyBenefit + c.longTerm.monthlyBenefit;
   return Math.round(((monthly * 12) / c.coveredEarnings) * 100);
 }
 
-/** At most one alert, most-blocking first. An unresolvable benefit period means
- *  the policy pays NOTHING, so it outranks a seam warning about a policy that
- *  at least pays something. */
+/** At most one alert, most-blocking first: a layer that cannot pay at all
+ *  outranks a seam between two layers that do.
+ *
+ *  `missing_dob` and a seam cannot in fact co-occur — the engine sets
+ *  `missing_dob` only when `longTerm` stays null, and it sets `seam` only when
+ *  both windows exist — so that first branch is ordered defensively rather than
+ *  to resolve a real collision. The no-earnings branch is a real collision: zero
+ *  covered earnings leaves both windows in place, overlapping, paying $0/mo. */
 function coverageAlert(c: ResolvedCoverage): { tone: "crit" | "warn"; message: string } | null {
   if (c.unresolved === "missing_dob") {
+    // Scoped to the long-term layer on purpose. Short-term coverage is built
+    // from `policy.shortTerm` alone and never consults a date of birth, so it
+    // still resolves and the projection still pays it — a blanket "this policy
+    // pays nothing" contradicts the short-term band rendered right above.
     return {
       tone: "crit",
       message:
-        "This policy's benefit period ends at an age, but no date of birth is on file for the insured. It pays nothing until one is added.",
+        "The long-term benefit period ends at an age, but no date of birth is on file for the insured. Long-term coverage pays nothing until one is added.",
+    };
+  }
+  if (c.coveredEarnings <= 0 && (c.shortTerm !== null || c.longTerm !== null)) {
+    // Reachable through the app, not theoretical: in salary mode
+    // `resolveCoveredEarnings` returns 0 whenever the insured has no salary rows
+    // — a non-earning spouse, or rows that end before the disability year — and
+    // nothing gates that. (Manual mode with a null amount also yields 0, but
+    // `validateCrossFields` rejects it on write; manual mode CAN however be
+    // saved with a deliberate 0, which `z.number().gte(0)` permits.) The bands
+    // are gated on the policy sections and the benefit period, never on
+    // earnings, so they render at $0/mo with no explanation unless we give one.
+    return {
+      tone: "crit",
+      message: "No covered earnings are on file for the insured, so this policy pays nothing.",
     };
   }
   if (c.seam?.kind === "gap") {
@@ -62,9 +89,12 @@ function coverageAlert(c: ResolvedCoverage): { tone: "crit" | "warn"; message: s
     };
   }
   if (c.seam?.kind === "overlap") {
+    const pct = combinedPct(c);
     return {
       tone: "warn",
-      message: `Both policies pay for ${c.seam.months.toFixed(1)} months — a combined ${combinedPct(c)}% of earnings.`,
+      message: `Both policies pay for ${c.seam.months.toFixed(1)} months${
+        pct === null ? "" : ` — a combined ${pct}% of earnings`
+      }.`,
     };
   }
   return null;

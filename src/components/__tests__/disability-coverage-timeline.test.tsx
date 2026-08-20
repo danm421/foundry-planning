@@ -41,7 +41,15 @@ const policy = (over: Partial<DisabilityPolicy> = {}): DisabilityPolicy => ({
   ...over,
 });
 
+/** A 26-week STD against the standard 90-day LTD — the two layers overlap by
+ *  3.0 months. */
+const overlapping = () =>
+  policy({ shortTerm: { eliminationDays: 7, benefitPct: 0.6, durationWeeks: 26, monthlyMax: null } });
+
 const cov = (p: DisabilityPolicy) => resolveCoverage(p, 159_135, 2028, baseClient, 2055);
+
+const barOf = (container: HTMLElement) =>
+  container.querySelector('[data-testid="coverage-bar"]') as HTMLElement;
 
 describe("DisabilityCoverageTimeline", () => {
   it("labels the waiting period, both benefit bands, and their monthly amounts", () => {
@@ -50,6 +58,21 @@ describe("DisabilityCoverageTimeline", () => {
     expect(screen.getByText(/short-term/i)).toBeInTheDocument();
     expect(screen.getByText(/long-term/i)).toBeInTheDocument();
     expect(screen.getAllByText(/\$7,957/).length).toBeGreaterThan(0);
+  });
+
+  it("stacks short-term on the top lane and long-term on the bottom lane", () => {
+    // The lane split is the component's one layout promise: where the layers
+    // overlap the advisor must see two simultaneous payments, not one band
+    // interrupting another. jsdom has no layout engine, so the only honest
+    // handle is the geometry classes React actually emits.
+    const { container } = render(<DisabilityCoverageTimeline coverage={cov(overlapping())} />);
+    const bar = barOf(container);
+    const shortTerm = bar.querySelector(".bg-data-blue") as HTMLElement;
+    const longTerm = bar.querySelector(".bg-data-teal") as HTMLElement;
+    expect(shortTerm.className).toContain("top-0");
+    expect(shortTerm.className).toContain("h-1/2");
+    expect(longTerm.className).toContain("bottom-0");
+    expect(longTerm.className).toContain("h-1/2");
   });
 
   it("shows no gap warning for the standard 13-week / 90-day pairing", () => {
@@ -75,24 +98,49 @@ describe("DisabilityCoverageTimeline", () => {
   });
 
   it("warns about an overlap and states the combined replacement", () => {
-    const overlapped = policy({
-      shortTerm: { eliminationDays: 7, benefitPct: 0.6, durationWeeks: 26, monthlyMax: null },
-    });
-    render(<DisabilityCoverageTimeline coverage={cov(overlapped)} />);
+    render(<DisabilityCoverageTimeline coverage={cov(overlapping())} />);
     expect(screen.getByRole("alert")).toHaveTextContent(/both policies pay/i);
     expect(screen.getByRole("alert")).toHaveTextContent(/120% of earnings/i);
   });
 
-  it("warns when the benefit period cannot be resolved", () => {
+  it("states no replacement rate when there are no covered earnings to divide by", () => {
+    // `coveredEarnings === 0` is reachable, not theoretical: in salary mode
+    // `resolveCoveredEarnings` returns 0 whenever the insured has no salary rows
+    // (a non-earning spouse), and manual mode accepts a deliberate 0. The windows
+    // are gated on the policy sections and the benefit period, never on earnings —
+    // so they still exist and still overlap while every band pays $0/mo. Saying
+    // "both policies pay ... a combined 0% of earnings" there is nonsense.
+    const { container } = render(
+      <DisabilityCoverageTimeline coverage={resolveCoverage(overlapping(), 0, 2028, baseClient, 2055)} />,
+    );
+    expect(container.textContent).not.toMatch(/% of earnings/);
+    expect(screen.getByRole("alert")).toHaveTextContent(/no covered earnings/i);
+    expect(screen.getByRole("alert")).not.toHaveTextContent(/both policies pay/i);
+  });
+
+  it("blames only long-term coverage when the benefit period cannot be resolved", () => {
+    // Missing DOB kills the LONG-TERM layer alone — `resolveCoverage` builds the
+    // short-term window without ever consulting a date of birth, and
+    // `benefitForYear` genuinely pays it ($21,958.67 in 2028 on this fixture).
+    // A warning that says the policy pays nothing contradicts the band above it.
     const noDob = { ...baseClient, spouseDob: undefined };
     const c = resolveCoverage(policy({ insured: "spouse" }), 159_135, 2028, noDob, 2055);
     render(<DisabilityCoverageTimeline coverage={c} />);
-    expect(screen.getByRole("alert")).toHaveTextContent(/date of birth/i);
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(/date of birth/i);
+    expect(alert).toHaveTextContent(/long-term coverage pays nothing/i);
+    expect(alert).not.toHaveTextContent(/it pays nothing/i);
+    // …and the short-term layer is still on screen, still paying.
+    expect(screen.getByText(/short-term/i)).toBeInTheDocument();
+    expect(screen.getByText("$7,957/mo")).toBeInTheDocument();
   });
 
   it("renders the warning alone — no bar, no NaN — when nothing resolves at all", () => {
     // LTD-only AND unresolvable: both windows are null, so the bar's span is 0
     // and every percentage would divide by zero. The bar must not render.
+    // The garbage an unguarded render emits is "Infinity days" in the waiting
+    // legend, which is textContent — jsdom drops an invalid `left: NaN%`
+    // declaration outright, so it never reaches innerHTML either.
     const noDob = { ...baseClient, spouseDob: undefined };
     const c = resolveCoverage(
       policy({ insured: "spouse", shortTerm: null }),
@@ -104,6 +152,33 @@ describe("DisabilityCoverageTimeline", () => {
     const { container } = render(<DisabilityCoverageTimeline coverage={c} />);
     expect(screen.getByRole("alert")).toHaveTextContent(/date of birth/i);
     expect(screen.queryByTestId("coverage-bar")).toBeNull();
-    expect(container.innerHTML).not.toMatch(/NaN/);
+    expect(container.textContent).not.toMatch(/NaN|Infinity/);
+  });
+
+  it("clips a 336-month benefit period to the bar without overflowing it", () => {
+    // A lifetime benefit period runs to plan end — 336 months here, well past
+    // MAX_BAR_MONTHS. The band must be clamped PER VALUE (clamping the width
+    // alone leaves `left` outside the clamp and the band runs past the track),
+    // the bar gets a "…" cap, and the legend must still name the TRUE end month
+    // so a screen reader is not handed the truncated figure.
+    const lifetime = policy({
+      longTerm: {
+        eliminationDays: 90,
+        benefitPct: 0.6,
+        monthlyMax: 10_000,
+        benefitPeriod: { mode: "lifetime" },
+      },
+    });
+    const { container } = render(<DisabilityCoverageTimeline coverage={cov(lifetime)} />);
+    const bar = barOf(container);
+    const longTerm = bar.querySelector(".bg-data-teal") as HTMLElement;
+    const left = parseFloat(longTerm.style.left);
+    const width = parseFloat(longTerm.style.width);
+    expect(width).toBeGreaterThan(0);
+    // 100.001 absorbs float noise (the true sum lands on 99.99999999999999)
+    // while still catching the width-only clamp's 102.46%.
+    expect(left + width).toBeLessThanOrEqual(100.001);
+    expect(bar.textContent).toContain("…");
+    expect(screen.getByText("months 3–336")).toBeInTheDocument();
   });
 });
