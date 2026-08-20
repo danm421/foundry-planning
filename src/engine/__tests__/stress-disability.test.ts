@@ -7,7 +7,7 @@ import {
   sampleIncomes,
 } from "./fixtures";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
-import type { Account, ProjectionYear } from "../types";
+import type { Account, DisabilityPolicy, ProjectionYear } from "../types";
 
 // The disability stress must behave like the person's paycheck genuinely stopped:
 // no cash lands, nothing is taxed, and the resulting deficit is funded from the
@@ -33,10 +33,14 @@ const checking: Account = {
 
 const DISABILITY_YEAR = 2028;
 
-function run(withDisability: boolean): ProjectionYear[] {
+function run(
+  withDisability: boolean,
+  policies: DisabilityPolicy[] = [],
+): ProjectionYear[] {
   return runProjection(
     buildClientData({
       accounts: [...sampleAccounts, checking],
+      disabilityPolicies: policies,
       planSettings: withDisability
         ? {
             ...basePlanSettings,
@@ -161,5 +165,90 @@ describe("disability stress — the disabled person's earned income truly stops"
       baseRow.income.bySource[ssId],
       2,
     );
+  });
+});
+
+// ── Benefits paid under the stress test ──────────────────────────────────────
+// Group LTD with a matching 13-week STD layer: the classic 7-day/90-day pairing
+// that hands off from short term to long term with no gap.
+const workPolicy: DisabilityPolicy = {
+  id: "dp-work",
+  name: "Group disability",
+  insured: "client",
+  coveredEarningsMode: "salary",
+  coveredEarningsAmount: null,
+  shortTerm: { eliminationDays: 7, benefitPct: 0.6, durationWeeks: 13, monthlyMax: null },
+  longTerm: {
+    eliminationDays: 90,
+    benefitPct: 0.6,
+    monthlyMax: 10_000,
+    benefitPeriod: { mode: "to_age", age: 65 },
+  },
+  benefitTaxable: true,
+  colaRate: 0,
+  annualPremium: 0,
+  premiumPayer: "employer",
+};
+
+const BENEFIT_ID = `disability-benefit-${workPolicy.id}`;
+
+/** The numbers a policy is supposed to move, year by year. */
+function planSeries(rows: ProjectionYear[]) {
+  return rows.map((r) => [
+    r.year,
+    r.totalIncome,
+    r.expenses.taxes,
+    r.portfolioAssets.liquidTotal,
+  ]);
+}
+
+describe("disability benefits in the projection", () => {
+  it("credits the benefit to household checking in the disability year", () => {
+    const rows = run(true, [workPolicy]);
+    // John's salary in 2028 is 150,000 × 1.03² = 159,135 — read BEFORE the
+    // clip, because the policy insures the paycheck that is about to stop.
+    // 60% of that is 7,956.75/mo; 11.802876 covered months land in 2028.
+    const credited = incomeCredited(yearOf(rows, DISABILITY_YEAR), BENEFIT_ID);
+    expect(credited).toBeCloseTo(93_912.52, 0);
+  });
+
+  it("pays nothing when the stress test is off, leaving the plan untouched", () => {
+    const withPolicies = run(false, [workPolicy]);
+    const without = run(false, []);
+    // A policy on file must not change a plan where nobody is disabled.
+    expect(planSeries(withPolicies)).toEqual(planSeries(without));
+    expect(
+      withPolicies.reduce((sum, r) => sum + incomeCredited(r, BENEFIT_ID), 0),
+    ).toBe(0);
+    // Control: the same series DOES move when the stress test is on, so the
+    // equality above is a real comparison and not two empty/constant arrays.
+    expect(planSeries(run(true, [workPolicy]))).not.toEqual(planSeries(without));
+  });
+
+  it("leaves the household materially better off than the same disability with no coverage", () => {
+    const covered = run(true, [workPolicy]);
+    const bare = run(true, []);
+    const last = covered.length - 1;
+    expect(covered[last].portfolioAssets.liquidTotal).toBeGreaterThan(
+      bare[last].portfolioAssets.liquidTotal,
+    );
+  });
+
+  it("puts an employer-paid benefit in the taxed base and an employee-paid one in the tax-exempt bucket", () => {
+    const taxable = run(true, [workPolicy]);
+    const taxFree = run(true, [{ ...workPolicy, benefitTaxable: false }]);
+    const y = DISABILITY_YEAR;
+    const taxableDetail = yearOf(taxable, y).taxDetail!;
+    const taxFreeDetail = yearOf(taxFree, y).taxDetail!;
+
+    expect(taxableDetail.bySource[BENEFIT_ID].type).toBe("ordinary_income");
+    expect(taxFreeDetail.bySource[BENEFIT_ID].type).toBe("tax_exempt");
+    // The whole benefit moves between the two buckets — nothing is dropped or
+    // counted twice on the way.
+    expect(taxableDetail.ordinaryIncome - taxFreeDetail.ordinaryIncome).toBeCloseTo(
+      93_912.52,
+      0,
+    );
+    expect(taxFreeDetail.taxExempt - taxableDetail.taxExempt).toBeCloseTo(93_912.52, 0);
   });
 });
