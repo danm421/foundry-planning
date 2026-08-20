@@ -384,6 +384,19 @@ html {
   html { transition: none; }
 }
 
+/* Portal "make this a rule?" bar — rises from the bottom after a category
+   pick, so it reads as an offer rather than a page element.               */
+@keyframes portalRuleBarRise {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.portal-rule-bar {
+  animation: portalRuleBarRise 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-rule-bar { animation: none !important; }
+}
+
 /* Portal drill-down drawer (#portal-detail) — slides in over the page.  */
 @keyframes portalDrawerSlide {
   from { opacity: 0; transform: translateX(24px); }

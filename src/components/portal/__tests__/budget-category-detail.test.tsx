@@ -158,3 +158,51 @@ it("opens the transaction drawer from a transaction name", async () => {
   expect(await screen.findByText("WEGMANS")).toBeTruthy();
   expect(screen.getByText("Checking")).toBeTruthy();
 });
+
+it("offers a standing rule after a manual recategorize, and creates it", async () => {
+  const onSaved = vi.fn();
+  render(
+    <BudgetCategoryDetail categoryId="l-groceries" editEnabled onBudgetSaved={onSaved} />,
+  );
+  await screen.findByRole("heading", { name: "Groceries" });
+  fireEvent.click(screen.getAllByTitle("Change category")[0]);
+  fireEvent.click(await screen.findByRole("button", { name: /dining/i }));
+
+  // The slide-up names the merchant and the category it would stick to.
+  const prompt = await screen.findByText(/always categorize/i);
+  expect(prompt.textContent).toContain("Wegmans");
+  expect(prompt.textContent).toContain("Dining");
+
+  fireEvent.click(screen.getByRole("button", { name: /create rule/i }));
+
+  await waitFor(() => {
+    const post = portalFetchMock.mock.calls.find(
+      (c) => c[0] === "/api/portal/rules" && c[1]?.method === "POST",
+    );
+    expect(post).toBeTruthy();
+    expect(JSON.parse(post![1].body)).toEqual({
+      matchType: "contains",
+      pattern: "Wegmans",
+      categoryId: "l-dining",
+    });
+  });
+  await waitFor(() => expect(screen.queryByText(/always categorize/i)).toBeNull());
+});
+
+it("does not offer a rule when a transaction is uncategorized", async () => {
+  render(
+    <BudgetCategoryDetail categoryId="l-groceries" editEnabled onBudgetSaved={() => {}} />,
+  );
+  await screen.findByRole("heading", { name: "Groceries" });
+  fireEvent.click(screen.getAllByTitle("Change category")[0]);
+  fireEvent.click(await screen.findByRole("button", { name: /uncategorized/i }));
+
+  await waitFor(() =>
+    expect(
+      portalFetchMock.mock.calls.find(
+        (c) => c[0] === "/api/portal/transactions/t1" && c[1]?.method === "PUT",
+      ),
+    ).toBeTruthy(),
+  );
+  expect(screen.queryByText(/always categorize/i)).toBeNull();
+});

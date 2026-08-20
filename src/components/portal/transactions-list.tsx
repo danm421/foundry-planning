@@ -8,6 +8,7 @@ import { CategoryPill } from "@/components/portal/category-pill";
 import { CategoryComboBox } from "@/components/portal/category-combobox";
 import { TransactionDetailPanel } from "@/components/portal/transaction-detail-panel";
 import { RuleCreateDialog } from "@/components/portal/rule-create-dialog";
+import { RuleConfirmBar } from "@/components/portal/rule-confirm-bar";
 import { RecurringCreateDialog } from "@/components/portal/recurring-create-dialog";
 import { ManualTransactionDialog } from "@/components/portal/manual-transaction-dialog";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
@@ -80,8 +81,7 @@ export default function TransactionsList({
   const [recurringSeed, setRecurringSeed] = useState<PortalTransactionDTO | null>(null);
   const [recurrings, setRecurrings] = useState<{ id: string; name: string }[]>([]);
   // After a manual category change, offer to make it a standing rule for that name.
-  const [ruleConfirm, setRuleConfirm] = useState<{ name: string; categoryId: string; categoryName: string } | null>(null);
-  const [creatingRule, setCreatingRule] = useState(false);
+  const [ruleConfirm, setRuleConfirm] = useState<{ pattern: string; categoryId: string; categoryName: string } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [editTxn, setEditTxn] = useState<PortalTransactionDTO | null>(null);
   const portalFetch = usePortalFetch();
@@ -170,31 +170,11 @@ export default function TransactionsList({
         categorizedBy: "manual",
       }));
       if (catId && picked) {
-        setRuleConfirm({ name: t.merchantName ?? t.name, categoryId: catId, categoryName: picked.name });
+        setRuleConfirm({ pattern: t.merchantName ?? t.name, categoryId: catId, categoryName: picked.name });
       }
     },
     [categories, patchTransaction],
   );
-
-  const createRuleFromConfirm = useCallback(async () => {
-    if (!ruleConfirm) return;
-    setCreatingRule(true);
-    setError(null);
-    try {
-      const res = await portalFetch("/api/portal/rules", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ matchType: "contains", pattern: ruleConfirm.name, categoryId: ruleConfirm.categoryId }),
-      });
-      if (!res.ok) { setError("Couldn't create the rule."); return; }
-      setRuleConfirm(null);
-      void load(0, true); // reflect retroactive recategorization of matching rows
-    } catch {
-      setError("Couldn't create the rule.");
-    } finally {
-      setCreatingRule(false);
-    }
-  }, [ruleConfirm, portalFetch, load]);
 
   async function linkRecurring(txnId: string, recurringId: string): Promise<void> {
     const res = await portalFetch(`/api/portal/transactions/${txnId}`, {
@@ -505,30 +485,16 @@ export default function TransactionsList({
         />
       )}
       {ruleConfirm && (
-        <div className="fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
-          <div className="flex max-w-full items-center gap-3 rounded-xl border border-hair bg-card-2 px-4 py-3 shadow-lg">
-            <span className="text-[13px] text-ink-2">
-              Always categorize{" "}
-              <span className="font-medium text-ink">{ruleConfirm.name}</span> as{" "}
-              <span className="font-medium text-ink">{ruleConfirm.categoryName}</span>?
-            </span>
-            <button
-              type="button"
-              onClick={() => setRuleConfirm(null)}
-              className="shrink-0 rounded-md px-2 py-1 text-[12px] text-ink-3 hover:bg-card"
-            >
-              Not now
-            </button>
-            <button
-              type="button"
-              disabled={creatingRule}
-              onClick={() => void createRuleFromConfirm()}
-              className="shrink-0 rounded-md bg-accent px-3 py-1.5 text-[12px] font-medium text-accent-on hover:bg-accent/90 disabled:opacity-50"
-            >
-              {creatingRule ? "Creating…" : "Create rule"}
-            </button>
-          </div>
-        </div>
+        <RuleConfirmBar
+          pattern={ruleConfirm.pattern}
+          categoryId={ruleConfirm.categoryId}
+          categoryName={ruleConfirm.categoryName}
+          onDismiss={() => setRuleConfirm(null)}
+          onCreated={() => {
+            setRuleConfirm(null);
+            void load(0, true); // reflect retroactive recategorization of matching rows
+          }}
+        />
       )}
       {addOpen && (
         <ManualTransactionDialog

@@ -6,6 +6,7 @@ import { CurrencyInput } from "@/components/portal/currency-input";
 import { BudgetHistoryChart } from "@/components/portal/budget-history-chart";
 import { CategoryComboBox } from "@/components/portal/category-combobox";
 import { TransactionDrawer } from "@/components/portal/transaction-drawer";
+import { RuleConfirmBar } from "@/components/portal/rule-confirm-bar";
 import type {
   CategoryDetail,
   CategoryTransaction,
@@ -89,6 +90,11 @@ export function BudgetCategoryDetail({
   const [recurrings, setRecurrings] = useState<{ id: string; name: string }[]>([]);
   const [drawerTxnId, setDrawerTxnId] = useState<string | null>(null);
   const [txnError, setTxnError] = useState<string | null>(null);
+  // After a hand-picked category sticks, offer to make it a standing rule for
+  // that merchant name.
+  const [ruleConfirm, setRuleConfirm] = useState<
+    { pattern: string; categoryId: string; categoryName: string } | null
+  >(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // When edit mode opens, drop the cursor into the amount field (and select any
@@ -157,10 +163,15 @@ export function BudgetCategoryDetail({
   // Recategorize a transaction straight from the rail. The row may leave this
   // category (or move between leaves of a group), so re-pull rather than patch
   // local state.
-  async function changeTxnCategory(txnId: string, catId: string | null): Promise<void> {
+  async function changeTxnCategory(
+    txn: CategoryTransaction,
+    catId: string | null,
+  ): Promise<void> {
+    if (catId === txn.categoryId) return;
     setTxnError(null);
+    setRuleConfirm(null);
     try {
-      const res = await portalFetch(`/api/portal/transactions/${txnId}`, {
+      const res = await portalFetch(`/api/portal/transactions/${txn.id}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ categoryId: catId }),
@@ -170,6 +181,15 @@ export function BudgetCategoryDetail({
         return;
       }
       handleTxnChanged();
+      // Only a real leaf can back a rule — "Uncategorized" has nothing to stick.
+      const picked = catId ? categories.find((c) => c.id === catId) : null;
+      if (picked && picked.kind === "category") {
+        setRuleConfirm({
+          pattern: txn.merchantName ?? txn.name,
+          categoryId: picked.id,
+          categoryName: picked.name,
+        });
+      }
     } catch {
       setTxnError("Couldn't change that category.");
     }
@@ -393,7 +413,7 @@ export function BudgetCategoryDetail({
                         value={t.categoryId}
                         currentName={t.categoryName}
                         currentColor={t.categoryColor}
-                        onPick={(catId) => void changeTxnCategory(t.id, catId)}
+                        onPick={(catId) => void changeTxnCategory(t, catId)}
                       />
                     </span>
                   ) : (
@@ -424,6 +444,21 @@ export function BudgetCategoryDetail({
           </div>
         ))}
       </section>
+
+      {ruleConfirm && (
+        <RuleConfirmBar
+          pattern={ruleConfirm.pattern}
+          categoryId={ruleConfirm.categoryId}
+          categoryName={ruleConfirm.categoryName}
+          onDismiss={() => setRuleConfirm(null)}
+          onCreated={() => {
+            setRuleConfirm(null);
+            // The rule applies retroactively, so rows may join or leave this
+            // category — re-pull rather than trust the list on screen.
+            handleTxnChanged();
+          }}
+        />
+      )}
 
       {drawerTxnId && (
         <TransactionDrawer
