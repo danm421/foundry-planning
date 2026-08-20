@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { synthesizeDisabilityPremiums } from "../disability-premium-expense";
-import { buildClientData, basePlanSettings } from "@/engine/__tests__/fixtures";
+import {
+  synthesizeDisabilityPremiums,
+  withSynthesizedDisabilityPremiums,
+} from "../disability-premium-expense";
+import { withSynthesizedPremiums } from "../premium-expense";
+import { computeExpenses } from "@/engine/expenses";
+import { buildClientData, basePlanSettings, baseClient } from "@/engine/__tests__/fixtures";
 import type { DisabilityPolicy } from "@/engine/types";
 
 const base: DisabilityPolicy = {
@@ -89,21 +94,100 @@ describe("synthesizeDisabilityPremiums", () => {
     expect(out[0].endYear).toBe(2037);
   });
 
-  it("boundary: bills through the last year before disability and stops exactly there", () => {
-    // Pins BOTH the last billed year and the first unbilled year explicitly —
-    // a test that only checks a total could pass with the boundary off by one.
-    const out = synthesizeDisabilityPremiums(
-      buildClientData({
-        disabilityPolicies: [base],
-        planSettings: {
-          ...basePlanSettings,
-          disabilityEvent: { person: "client", startYear: 2030 },
-        },
-      }),
-    );
-    const lastBilledYear = out[0].endYear;
-    const firstUnbilledYear = lastBilledYear + 1;
-    expect(lastBilledYear).toBe(2029);
-    expect(firstUnbilledYear).toBe(2030); // the disability's own start year
+  it("bills the last year before disability and NOTHING in the disability year, observed as a real amount", () => {
+    // The only assertion in this suite that reads a BILLED AMOUNT rather than
+    // the row's own `endYear` field. It is what pins `endYear` as INCLUSIVE —
+    // i.e. that 2029 is the last billed year, not the first unbilled one.
+    // `computeExpenses` gates on `year <= endYear` via `endInclusionAndFactor`.
+    const tree = buildClientData({
+      disabilityPolicies: [base],
+      planSettings: {
+        ...basePlanSettings,
+        disabilityEvent: { person: "client", startYear: 2030 },
+      },
+    });
+    const rows = synthesizeDisabilityPremiums(tree);
+    const billed = (year: number) => computeExpenses(rows, year, tree.client).insurance;
+    expect(billed(2029)).toBeGreaterThan(0);
+    expect(billed(2030)).toBe(0);
+  });
+
+  describe("unresolvable retirement year — no row at all", () => {
+    // Global constraint: "Missing DOB fails loudly. An age-based benefit period
+    // that cannot resolve pays NOTHING and surfaces a warning. No silent
+    // fallback to plan end, to zero, or to the client's DOB." A policy that
+    // cannot resolve is inert on BOTH sides — it pays no benefit (Task 4) and
+    // must bill no premium. Surfacing the warning is the UI's job, via
+    // `resolveCoverage`'s `unresolved`.
+    it("emits no premium row for a spouse-insured policy with no spouseDob", () => {
+      const out = synthesizeDisabilityPremiums(
+        buildClientData({
+          client: { ...baseClient, spouseDob: undefined },
+          disabilityPolicies: [{ ...base, insured: "spouse" }],
+        }),
+      );
+      expect(out).toEqual([]);
+    });
+
+    it("emits no premium row for a spouse-insured policy with no spouseRetirementAge", () => {
+      const out = synthesizeDisabilityPremiums(
+        buildClientData({
+          client: { ...baseClient, spouseRetirementAge: undefined },
+          disabilityPolicies: [{ ...base, insured: "spouse" }],
+        }),
+      );
+      expect(out).toEqual([]);
+    });
+
+    it("emits no premium row when the DOB is malformed and parses to NaN", () => {
+      // NaN comparisons are always false, so an unguarded parse escapes the
+      // `resolvedEnd < planStartYear` guard and emits a row with endYear: NaN
+      // that silently never bills. Mirrors the `Number.isFinite` guard in
+      // src/engine/retirement-proration.ts.
+      const out = synthesizeDisabilityPremiums(
+        buildClientData({
+          client: { ...baseClient, dateOfBirth: "not-a-date" },
+          disabilityPolicies: [base],
+        }),
+      );
+      expect(out).toEqual([]);
+    });
+  });
+});
+
+describe("withSynthesizedDisabilityPremiums", () => {
+  const ROW_ID = "disability-premium-dp-1";
+
+  it('tags the row `source: "policy"` so the editable surfaces hide it', () => {
+    // Four surfaces gate on `source !== "policy"`: the portal writability check
+    // (portal-flow-writable.ts), the manual income/expense editor, the
+    // onboarding cash-flow step, and the household-map edit drawer. Without the
+    // tag the portal offers edit/delete on a row with no DB id and the PUT 500s.
+    const out = synthesizeDisabilityPremiums(buildClientData({ disabilityPolicies: [base] }));
+    expect(out[0].source).toBe("policy");
+  });
+
+  it("ORDERING INVARIANT: the disability synthesizer must run AFTER withSynthesizedPremiums", () => {
+    // `withSynthesizedPremiums` strips EVERY `source: "policy"` expense and
+    // re-derives only from life-insurance ACCOUNTS — it knows nothing about
+    // disability policies. Run it after us and the disability premium is gone
+    // for good, silently. Both non-test call sites honour this ordering:
+    // load-client-data.ts (disability outermost) and scenario/loader.ts
+    // (disability after the life-insurance links). This test is the alarm if
+    // either is ever reordered or a third call site is added the wrong way.
+    const tree = buildClientData({ disabilityPolicies: [base], expenses: [] });
+
+    const right = withSynthesizedDisabilityPremiums(withSynthesizedPremiums(tree));
+    expect(right.expenses.some((e) => e.id === ROW_ID)).toBe(true);
+
+    const wrong = withSynthesizedPremiums(withSynthesizedDisabilityPremiums(tree));
+    expect(wrong.expenses.some((e) => e.id === ROW_ID)).toBe(false);
+  });
+
+  it("is idempotent — re-running does not duplicate the row", () => {
+    const tree = buildClientData({ disabilityPolicies: [base], expenses: [] });
+    const once = withSynthesizedDisabilityPremiums(tree);
+    const twice = withSynthesizedDisabilityPremiums(once);
+    expect(twice.expenses.filter((e) => e.id === ROW_ID)).toHaveLength(1);
   });
 });

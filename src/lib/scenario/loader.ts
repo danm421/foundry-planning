@@ -27,6 +27,7 @@ import { reResolveInflationGrowth } from "@/lib/projection/resolve-inflation-gro
 import { withSynthesizedPremiums } from "@/lib/insurance-policies/premium-expense";
 import { withSynthesizedPolicyIncome } from "@/lib/insurance-policies/policy-income";
 import { withSynthesizedPremiumGifts } from "@/lib/insurance-policies/premium-gift";
+import { withSynthesizedDisabilityPremiums } from "@/lib/insurance-policies/disability-premium-expense";
 import { withSynthesizedEntityChecking } from "@/lib/entities/entity-checking";
 import { resolveRefYears } from "@/lib/year-refs";
 import { applyGiftOverlays } from "./apply-gift-overlays";
@@ -106,7 +107,9 @@ export interface LoadEffectiveTreeResult {
  * effective accounts via `withSynthesizedPremiums`. Base-load synthesis runs on
  * the BASE accounts, so without this a scenario that added / removed / edited a
  * life-insurance account would carry missing / orphaned / stale premiums. The
- * re-derivation is idempotent.
+ * re-derivation is idempotent. Disability premiums are re-derived alongside
+ * them, off the effective PLAN SETTINGS rather than accounts — see the
+ * `withSynthesizedDisabilityPremiums` link below.
  */
 export function applyScenarioChangesWithRefs(
   treeForChanges: ClientData,
@@ -173,16 +176,29 @@ export function applyScenarioChangesWithRefs(
   // prior policy gifts and re-derives. Must run OUTERMOST so it sees the
   // effective tree after premium + income synthesis.
   const withPremiumGifts = withSynthesizedPremiumGifts(withPolicyIncome);
+  // Re-synthesize disability premium expenses over the effective PLAN SETTINGS.
+  // Base-load synthesis ran against the base settings, so a scenario that turns
+  // the disability stress test on (a `plan_settings.disabilityEvent` edit, which
+  // `applyScenarioChanges` has already applied above) would otherwise keep
+  // billing the premium straight through the disabled years — waiver of premium
+  // would never fire outside the base tree. Idempotent: strips prior
+  // `disability-premium-` rows and re-derives.
+  //
+  // MUST run after `withSynthesizedPremiums`: these rows carry
+  // `source: "policy"`, which that function strips and — knowing only about
+  // life-insurance accounts — never regenerates. Placed here rather than
+  // outermost so `withSynthesizedEntityChecking` keeps its "runs LAST" contract.
+  const withDisabilityPremiums = withSynthesizedDisabilityPremiums(withPremiumGifts);
   // Give every entity on the effective tree a default checking account. A saved
   // scenario persists an entity as a lone `targetKind: "entity"` row, so an
   // entity the solver created arrives here with no account and the engine has
   // nowhere to route its cash (audit F13). Runs LAST so it mirrors the live
   // ordering exactly — the solver calls loadEffectiveTree (this whole chain)
   // and only then applyMutations, whose entity-upsert branch synthesizes the
-  // same account. Nothing downstream of here reads accounts, so the three
+  // same account. Nothing downstream of here reads accounts, so the four
   // policy synthesizers above are provably unaffected. Idempotent, and returns
   // the same tree when every entity already has one.
-  const withEntityChecking = withSynthesizedEntityChecking(withPremiumGifts);
+  const withEntityChecking = withSynthesizedEntityChecking(withDisabilityPremiums);
 
   return { effectiveTree: withEntityChecking, warnings };
 }
