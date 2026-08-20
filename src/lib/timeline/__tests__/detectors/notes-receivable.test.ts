@@ -3,6 +3,7 @@ import { detectNotesReceivableEvents } from "../../detectors/notes-receivable";
 import { runProjection } from "@/engine";
 import { buildClientData } from "@/engine/__tests__/fixtures";
 import type { EntitySummary } from "@/engine/types";
+import { buildNoteReceivableSchedule } from "@/engine/notes-receivable/note-schedules";
 import type { NoteReceivable } from "@/engine/notes-receivable/types";
 
 describe("detectNotesReceivableEvents", () => {
@@ -106,6 +107,36 @@ describe("detectNotesReceivableEvents", () => {
     const mJun = events.find((e) => e.id === "transaction:note_maturity:note-jun36");
     expect(m30!.year).toBe(2032);
     expect(mJun!.year).toBe(2033);
+  });
+
+  it("puts the maturity card in the year the engine's own schedule pays the note off", () => {
+    // The detector's maturityYear() and the schedule's window are two separate
+    // expressions for the same fact. While the schedule ignored startMonth they
+    // disagreed for any note not originated in January: the timeline announced
+    // "paid off" a year after the schedule had already zeroed the balance.
+    const data = buildClientData();
+    data.notesReceivable = [
+      {
+        id: "note-jun36",
+        name: "June-start 36-month note",
+        faceValue: 75000,
+        basis: 75000,
+        interestRate: 0.05,
+        paymentType: "amortizing",
+        monthlyPayment: 2250,
+        startYear: 2030,
+        startMonth: 6,
+        termMonths: 36,
+        extraPayments: [],
+        owners: [],
+      } as NoteReceivable,
+    ];
+    const projection = runProjection(data);
+    const events = detectNotesReceivableEvents(data, projection);
+    const mature = events.find((e) => e.id === "transaction:note_maturity:note-jun36");
+
+    const schedule = buildNoteReceivableSchedule(data.notesReceivable[0]);
+    expect(mature!.year).toBe(schedule[schedule.length - 1].year);
   });
 
   it("emits one card per lump-sum extra payment, skips per_payment extras", () => {

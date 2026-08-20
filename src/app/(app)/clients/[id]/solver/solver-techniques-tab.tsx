@@ -22,6 +22,11 @@ import {
   summarizeRelocation,
 } from "@/lib/solver/technique-summaries";
 import {
+  previewDebtPaydown,
+  resolveDebtPaydowns,
+  summarizeDebtPaydown,
+} from "@/lib/solver/debt-paydown";
+import {
   toRothConversionInitialData,
   toReinvestmentInitialData,
   toAssetTransactionInitialData,
@@ -31,13 +36,14 @@ import AddRothConversionForm from "@/components/forms/add-roth-conversion-form";
 import AddReinvestmentForm from "@/components/forms/add-reinvestment-form";
 import AddAssetTransactionForm from "@/components/forms/add-asset-transaction-form";
 import AddRelocationForm from "@/components/forms/add-relocation-form";
+import DebtPaydownDialog from "@/components/forms/debt-paydown-dialog";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { SolverSection } from "./solver-section";
 import { SolverTechniqueRow } from "./solver-technique-row";
 import { SolverEstateTechnique } from "./solver-estate-technique";
 import { SolverSurplusAllocation } from "./solver-surplus-allocation";
 
-type TechniqueKind = "roth" | "asset" | "reinvestment" | "relocation";
+type TechniqueKind = "roth" | "asset" | "reinvestment" | "relocation" | "debt";
 
 /** Target probability-of-success a Roth-amount solve aims for by default. */
 const DEFAULT_SOLVE_POS = 0.9;
@@ -88,6 +94,11 @@ interface Props {
     reinvestment: Set<string>;
     relocation: Set<string>;
   };
+  /** The live mutation set. Debt paydowns are stored as mutations rather than
+   *  engine entities (they lower to a liability's extraPayments), so the tab
+   *  reads their current specs back from here. Optional so the tab still
+   *  renders in isolation. */
+  mutations?: SolverMutation[];
   onChange: (m: SolverMutation) => void;
   /** Per-field reset (clears the given lever keys). Optional so the tab renders
    *  in isolation in tests. */
@@ -202,6 +213,7 @@ export function SolverTechniquesTab({
   resolvedInflationRate,
   onRegisterAccountMix,
   baseTechniqueIds,
+  mutations,
   onChange,
   onResetField,
   onSolveStart,
@@ -221,6 +233,23 @@ export function SolverTechniquesTab({
           .map((p) => [p.id, p.growthRate]),
       ),
     [modelPortfolios],
+  );
+
+  // A paydown lowers to a liability's `extraPayments`, so one that arrives from
+  // a sourced scenario has no mutation behind it — resolveDebtPaydowns reads
+  // those back off the tree and overlays this session's edits on top.
+  const workingLiabilities = useMemo(() => workingTree.liabilities ?? [], [workingTree.liabilities]);
+  const debtPaydownRows = useMemo(
+    () =>
+      [...resolveDebtPaydowns(workingLiabilities, mutations ?? []).entries()].flatMap(
+        ([liabilityId, row]) => {
+          const liability = workingLiabilities.find((l) => l.id === liabilityId);
+          return liability
+            ? [{ id: liabilityId, name: liability.name, enabled: row.enabled, row, liability }]
+            : [];
+        },
+      ),
+    [workingLiabilities, mutations],
   );
 
   const workingRoth = workingTree.rothConversions ?? [];
@@ -345,6 +374,20 @@ export function SolverTechniquesTab({
         }
       />
     );
+  } else if (editor?.kind === "debt") {
+    form = (
+      <DebtPaydownDialog
+        liabilities={workingLiabilities}
+        rows={Object.fromEntries(debtPaydownRows.map((t) => [t.id, t.row]))}
+        minYear={workingTree.planSettings.planStartYear}
+        onClose={close}
+        onSubmit={(changes) => {
+          for (const c of changes) {
+            onChange({ kind: "debt-paydown", liabilityId: c.liabilityId, value: c.value });
+          }
+        }}
+      />
+    );
   } else if (editor?.kind === "relocation") {
     const existing: Relocation | undefined = editor.editId
       ? workingReloc.find((t) => t.id === editor.editId)
@@ -465,6 +508,24 @@ export function SolverTechniquesTab({
           }
           onAdd={() => setEditor({ kind: "relocation" })}
           addLabel="relocation"
+        />
+      </SolverSection>
+
+      <SolverSection title="Debt Paydown">
+        <TechniqueGroup
+          working={debtPaydownRows}
+          summarize={(t) => summarizeDebtPaydown(t.row, previewDebtPaydown(t.liability, t.row))}
+          onEdit={() => setEditor({ kind: "debt" })}
+          onRemove={(id) => onChange({ kind: "debt-paydown", liabilityId: id, value: null })}
+          onToggle={(t) =>
+            onChange({
+              kind: "debt-paydown",
+              liabilityId: t.id,
+              value: { ...t.row, enabled: t.row.enabled === false ? undefined : false },
+            })
+          }
+          onAdd={() => setEditor({ kind: "debt" })}
+          addLabel="debt paydown"
         />
       </SolverSection>
 

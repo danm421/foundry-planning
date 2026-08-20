@@ -30,6 +30,7 @@ export default async function RecurringsSection({
       data={data}
       categories={categories}
       editEnabled={client?.portalEditEnabled ?? false}
+      clientId={clientId}
     />
   );
 }

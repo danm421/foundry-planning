@@ -18,6 +18,7 @@ import type {
 } from "@/engine/types";
 import type { ProjectionResult } from "@/engine";
 import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
+import type { DebtPaydownRow } from "./debt-paydown";
 
 export type SolverPerson = "client" | "spouse";
 
@@ -75,6 +76,9 @@ export type SolverMutation =
   | { kind: "asset-transaction-upsert"; id: string; value: AssetTransaction | null }
   | { kind: "reinvestment-upsert"; id: string; value: Reinvestment | null }
   | { kind: "relocation-upsert"; id: string; value: Relocation | null }
+  /** Extra principal thrown at one loan. Identity is the liability — a loan
+   *  carries at most one paydown. `null` clears it. */
+  | { kind: "debt-paydown"; liabilityId: string; value: DebtPaydownRow | null }
   | { kind: "account-upsert"; id: string; value: Account | null }
   | { kind: "expense-upsert"; id: string; value: Expense | null }
   | { kind: "savings-rule-upsert"; id: string; value: SavingsRule | null }
@@ -130,6 +134,7 @@ export type SolverMutationKey =
   | `asset-transaction-upsert:${string}`
   | `reinvestment-upsert:${string}`
   | `relocation-upsert:${string}`
+  | `debt-paydown:${string}`
   | `account-upsert:${string}`
   | `expense-upsert:${string}`
   | `savings-rule-upsert:${string}`
@@ -213,6 +218,8 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
       return `reinvestment-upsert:${m.id}`;
     case "relocation-upsert":
       return `relocation-upsert:${m.id}`;
+    case "debt-paydown":
+      return `debt-paydown:${m.liabilityId}`;
     case "account-upsert":
       return `account-upsert:${m.id}`;
     case "expense-upsert":
@@ -277,7 +284,7 @@ export interface SolverSaveResponse {
  *  (the route fills that in once the new scenarios row exists). */
 export interface SolverScenarioChangeDraft {
   opType: "add" | "edit" | "remove";
-  targetKind: "client" | "plan_settings" | "account" | "income" | "expense" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "gift" | "external_beneficiary" | "entity" | "relocation";
+  targetKind: "client" | "plan_settings" | "account" | "income" | "expense" | "savings_rule" | "roth_conversion" | "asset_transaction" | "reinvestment" | "gift" | "external_beneficiary" | "entity" | "relocation" | "liability";
   targetId: string;
   /** edit: { field: { from, to } } map. add: full entity. remove: null. */
   payload: unknown;

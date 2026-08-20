@@ -114,7 +114,7 @@ export function ScenarioChangesPagePdf({
 }: RenderPdfInput<ScenarioChangesPageData>) {
   return (
     <PageFrame firmName={firmName} clientName={clientName} reportDate={reportDate} pageIndex={pageIndex} totalPages={totalPages}>
-      <SectionHead title={data.title} subtitle={data.subtitle || undefined} eyebrow="SCENARIO CHANGES" accent={accent} />
+      <SectionHead title={data.title} subtitle={data.subtitle || undefined} eyebrow="PLAN COMPARISON" accent={accent} />
       {data.isEmpty ? (
         <Text style={styles.empty}>This scenario matches the base plan — there are no changes to show.</Text>
       ) : (

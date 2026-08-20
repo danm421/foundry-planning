@@ -1,5 +1,5 @@
 {
-  "id": "d4cd84bd-61d2-41a2-9077-21270e279481",
+  "id": "ad2ed5cd-2e17-40fa-938b-18b819f9f818",
   "prevId": "ac19eaed-93a1-4273-8ddc-1f5f97bfcbb4",
   "version": "7",
   "dialect": "postgresql",
@@ -4692,13 +4692,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": true
-        },
-        "portal_calculators_enabled": {
-          "name": "portal_calculators_enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
         }
       },
       "indexes": {
@@ -8330,6 +8323,13 @@
         },
         "is_goal": {
           "name": "is_goal",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "absorbs_remaining_cash_flow": {
+          "name": "absorbs_remaining_cash_flow",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
@@ -15086,82 +15086,6 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.portal_calculator_states": {
-      "name": "portal_calculator_states",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "client_id": {
-          "name": "client_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "calculator_key": {
-          "name": "calculator_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "portal_calculator_states_client_id_clients_id_fk": {
-          "name": "portal_calculator_states_client_id_clients_id_fk",
-          "tableFrom": "portal_calculator_states",
-          "tableTo": "clients",
-          "columnsFrom": [
-            "client_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "portal_calculator_states_client_key_uniq": {
-          "name": "portal_calculator_states_client_key_uniq",
-          "nullsNotDistinct": false,
-          "columns": [
-            "client_id",
-            "calculator_key"
-          ]
-        }
-      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false

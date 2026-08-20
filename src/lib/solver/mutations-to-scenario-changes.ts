@@ -11,6 +11,7 @@
 import type { ClientData } from "@/engine/types";
 import { planHorizonFromLifeExpectancy } from "@/lib/plan-horizon";
 import { isRetirementLivingExpense, planLivingExpenseAmount } from "./living-expense";
+import { baseExtraPayments, withDebtPaydown } from "./debt-paydown";
 import type {
   SolverMutation,
   SolverPerson,
@@ -507,6 +508,35 @@ export function mutationsToScenarioChanges(
           m.id,
           m.value as Record<string, unknown> | null,
         );
+        break;
+      }
+      case "debt-paydown": {
+        // A paydown is stored as the liability's own extraPayments, so it
+        // round-trips as a `liability` edit — applyScenarioChanges sets the
+        // field back onto the loan when the scenario reloads.
+        //
+        // ⚠️ The scenario READ path works; PROMOTE-to-base does not carry it.
+        // `extra_payment` is a nested-only TargetKind and `liability` has a
+        // childWriter but no childUpdater, so promoting a scenario that holds a
+        // paydown leaves the base loan's schedule unchanged — silently, because
+        // coerceForTable drops `extraPayments` and the UPDATE still succeeds.
+        // Filed to future-work/integrations.md rather than fixed here: a
+        // childUpdater would also need extra_payments to carry provenance in a
+        // column, since a DB-minted uuid destroys the `solver-paydown:` tag that
+        // withDebtPaydown()'s strip-and-replace depends on.
+        const liab = (source.liabilities ?? []).find((l) => l.id === m.liabilityId);
+        if (!liab) break;
+        const from = baseExtraPayments(liab);
+        const to = withDebtPaydown(liab, m.value).extraPayments;
+        if (JSON.stringify(from) !== JSON.stringify(to)) {
+          nonClientDrafts.push({
+            opType: "edit",
+            targetKind: "liability",
+            targetId: liab.id,
+            payload: { extraPayments: { from, to } },
+            orderIndex: 0,
+          });
+        }
         break;
       }
       case "relocation-upsert": {

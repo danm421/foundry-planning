@@ -1,6 +1,7 @@
 import type { Expense } from "@/engine/types";
 import type { SolverMutation } from "@/lib/solver/types";
 import { isRetirementLivingExpense } from "@/lib/solver/living-expense";
+import { isAbsorbingLivingRow } from "@/engine/surplus-spend";
 
 /**
  * Build `expense-annual-amount` mutations that lower the household's
@@ -24,6 +25,9 @@ export function buildLockInCutMutations(
       e.type === "living" &&
       e.startYear <= currentYear &&
       currentYear <= e.endYear &&
+      // A row that spends whatever is left re-absorbs anything this cut frees,
+      // so cutting it moves no money. Excluded rather than silently no-op'd.
+      !isAbsorbingLivingRow(e) &&
       !isRetirementLivingExpense(e, planStartYear),
   );
   const total = rows.reduce((s, e) => s + e.annualAmount, 0);

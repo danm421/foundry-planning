@@ -58,3 +58,22 @@ export function groupNumber(raw: string): string {
   const n = Number(trimmed);
   return Number.isFinite(n) ? n.toLocaleString("en-US") : raw;
 }
+
+const MONTH_ABBR = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/**
+ * When a recurring charge is expected, in the column beside its name:
+ * "Aug 12" for a monthly with a due day, "Anytime" without one, and the month
+ * name for an annual. `month` is the YYYY-MM being displayed.
+ */
+export function fmtRecurringDue(
+  r: { cadence: "monthly" | "annually"; dueDay: number | null; dueMonth: number | null },
+  month: string,
+): string {
+  if (r.cadence === "annually") return r.dueMonth ? MONTH_ABBR[r.dueMonth - 1] : "Yearly";
+  if (!r.dueDay) return "Anytime";
+  return `${MONTH_ABBR[Number(month.slice(5, 7)) - 1]} ${r.dueDay}`;
+}

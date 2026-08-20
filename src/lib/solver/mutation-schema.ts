@@ -97,6 +97,15 @@ const RELOCATION_VALUE = z
   })
   .passthrough();
 
+const DEBT_PAYDOWN_VALUE = z.object({
+  liabilityId: z.string().min(1),
+  frequency: z.enum(["one_time", "monthly", "annual"]),
+  amount: MONEY,
+  startYear: YEAR,
+  endYear: YEAR,
+  enabled: z.boolean().optional(),
+});
+
 const ACCOUNT_VALUE = z
   .object({
     id: z.string().min(1),
@@ -140,6 +149,7 @@ const EXPENSE_VALUE = z
     institutionState: z.string().nullable().optional(),
     institutionName: z.string().nullable().optional(),
     forFamilyMemberId: z.string().nullable().optional(),
+    absorbsRemainingCashFlow: z.boolean().optional(),
   })
   .passthrough();
 
@@ -429,6 +439,11 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     kind: z.literal("relocation-upsert"),
     id: z.string().min(1),
     value: RELOCATION_VALUE.nullable(),
+  }),
+  z.object({
+    kind: z.literal("debt-paydown"),
+    liabilityId: z.string().min(1),
+    value: DEBT_PAYDOWN_VALUE.nullable(),
   }),
   z.object({
     kind: z.literal("account-upsert"),

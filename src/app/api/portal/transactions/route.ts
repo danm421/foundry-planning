@@ -13,6 +13,7 @@ import { encodeSignedAmount } from "@/lib/portal/transaction-amount";
 import {
   loadPortalTransactions,
   countPortalTransactions,
+  resolveLiabilityPlaidAccountId,
   type TransactionFilters,
 } from "@/lib/portal/transactions-query";
 
@@ -31,11 +32,29 @@ export async function GET(req: Request): Promise<Response> {
     const qp = url.searchParams;
     const limit = Math.min(MAX_LIMIT, Math.max(1, Number(qp.get("limit")) || DEFAULT_LIMIT));
     const offset = Math.max(0, Number(qp.get("offset")) || 0);
+
+    // A credit card is a `liabilities` row, not an `accounts` row, and its
+    // transactions are joined by Plaid handle instead of accountId. Resolving
+    // here keeps the handle server-side and client-scoped.
+    const liabilityId = qp.get("liabilityId");
+    let liabilityPlaidAccountId: string | undefined;
+    if (liabilityId) {
+      const handle = await resolveLiabilityPlaidAccountId(clientId, liabilityId);
+      // Manual debt, or not this client's. Either way nothing can be linked to
+      // it — answer empty rather than falling through to an unfiltered read,
+      // which would show one card the household's entire transaction history.
+      if (!handle) {
+        return NextResponse.json({ transactions: [], total: 0, hasMore: false });
+      }
+      liabilityPlaidAccountId = handle;
+    }
+
     const filters: TransactionFilters = {
       from: qp.get("from") ?? undefined,
       to: qp.get("to") ?? undefined,
       categoryId: qp.get("categoryId") ?? undefined,
       accountId: qp.get("accountId") ?? undefined,
+      liabilityPlaidAccountId,
       q: qp.get("q") ?? undefined,
       includeExcluded: qp.get("includeExcluded") === "true",
       reviewed: qp.get("reviewed") === null ? undefined : qp.get("reviewed") === "true",

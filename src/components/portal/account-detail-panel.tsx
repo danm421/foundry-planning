@@ -31,7 +31,7 @@ type MiniTxn = {
 type PanelResource =
   | { phase: "loading" }
   | { phase: "ok"; body: unknown }
-  | { phase: "error"; status: number };
+  | { phase: "error"; status: number; message: string | null };
 
 function usePanelResource(url: string): PanelResource {
   const portalFetch = usePortalFetch();
@@ -45,12 +45,21 @@ function usePanelResource(url: string): PanelResource {
     portalFetch(url)
       .then(async (r) => {
         if (!live) return;
-        if (!r.ok) return setState({ phase: "error", status: r.status });
+        if (!r.ok) {
+          // A 403 here is one of two different things — a privacy switch or a
+          // section the advisor never turned on — and only the body says which.
+          const detail = (await r.json().catch(() => ({}))) as { error?: string };
+          return setState({
+            phase: "error",
+            status: r.status,
+            message: typeof detail.error === "string" ? detail.error : null,
+          });
+        }
         const body = (await r.json()) as unknown;
         if (live) setState({ phase: "ok", body });
       })
       .catch(() => {
-        if (live) setState({ phase: "error", status: 0 });
+        if (live) setState({ phase: "error", status: 0, message: null });
       });
     return () => {
       live = false;
@@ -60,23 +69,45 @@ function usePanelResource(url: string): PanelResource {
   return state;
 }
 
+// Both panels close with a bordered section, so the chrome lives in one place
+// and the account and card views can't drift apart visually.
+const PANEL_SECTION = "space-y-1.5 border-t border-hair pt-3";
+
+function SectionLabel({ children }: { children: string }): ReactElement {
+  return <p className="text-[11px] uppercase tracking-wide text-ink-3">{children}</p>;
+}
+
 /** The skeleton and the one-line messages every tab body falls back to. */
 function PanelPlaceholder({ children }: { children?: string }): ReactElement {
   if (children === undefined) return <div className="h-16 animate-pulse rounded-md bg-card-2" />;
   return <p className="text-[12px] text-ink-3">{children}</p>;
 }
 
-/** Recent activity for one account, fetched on open. */
-function RecentTransactions({ accountId }: { accountId: string }): ReactElement {
-  const res = usePanelResource(`/api/portal/transactions?accountId=${accountId}&limit=10`);
+/**
+ * Recent activity for one account, fetched on open. An asset account filters by
+ * our own account id; a credit card has none — the sync leaves `accountId` NULL
+ * on card transactions — so it filters by liability id and the API resolves
+ * that to the Plaid handle the rows actually carry.
+ */
+function RecentTransactions({
+  accountId,
+  liabilityId,
+}: {
+  accountId?: string;
+  liabilityId?: string;
+}): ReactElement {
+  const filter = liabilityId ? `liabilityId=${liabilityId}` : `accountId=${accountId}`;
+  const res = usePanelResource(`/api/portal/transactions?${filter}&limit=10`);
 
   if (res.phase === "loading") return <PanelPlaceholder />;
   if (res.phase === "error") {
-    // 403 = advisor preview of a client who keeps transactions private.
+    // A 403 is either an advisor previewing a client who keeps transactions
+    // private, or a portal whose Budget section is switched off — the server
+    // says which, so don't guess on its behalf.
     return (
       <PanelPlaceholder>
         {res.status === 403
-          ? "The client keeps transactions private."
+          ? res.message ?? "The client keeps transactions private."
           : "Couldn’t load recent activity."}
       </PanelPlaceholder>
     );
@@ -297,11 +328,11 @@ export function AccountDetailPanel({
         <Row label="Owner">{account.ownerLabel || "—"}</Row>
         {account.isPlaid && <Row label="Balance">Synced from your institution</Row>}
       </dl>
-      <div className="space-y-1.5 border-t border-hair pt-3">
+      <div className={PANEL_SECTION}>
         {account.holdingsTab ? (
           <PanelTabs tab={activeTab} setTab={setTab} />
         ) : (
-          <p className="text-[11px] uppercase tracking-wide text-ink-3">Recent activity</p>
+          <SectionLabel>Recent activity</SectionLabel>
         )}
         {activeTab === "activity" ? (
           <RecentTransactions accountId={account.id} />
@@ -346,6 +377,12 @@ export function DebtDetailPanel({
     payoffYear: number | null;
     isPlaidLinked: boolean;
     ownerLabel: string;
+    /**
+     * Whether this debt can ever carry transactions. False keeps the section
+     * off a mortgage or a hand-entered loan entirely, rather than promising
+     * activity with a heading that stays empty forever.
+     */
+    showActivity: boolean;
   };
   onClose: () => void;
   onEdit?: () => void;
@@ -402,6 +439,12 @@ export function DebtDetailPanel({
         )}
         {debt.isPlaidLinked && <Row label="Balance">Synced from your institution</Row>}
       </dl>
+      {debt.showActivity && (
+        <div className={PANEL_SECTION}>
+          <SectionLabel>Recent activity</SectionLabel>
+          <RecentTransactions liabilityId={debt.id} />
+        </div>
+      )}
       <DetailActions onEdit={onEdit} onDelete={onDelete} busy={busy} />
     </div>
   );

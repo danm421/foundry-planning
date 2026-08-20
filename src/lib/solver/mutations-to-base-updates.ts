@@ -47,6 +47,10 @@ const NON_BASE_SAVABLE = new Set<SolverMutation["kind"]>([
   "external-beneficiary-upsert",
   "entity-upsert",
   "relocation-upsert",
+  // Debt paydown writes a liability's extraPayments — a child table with no
+  // base-write path here (see promote-table-registry: extra_payment is a
+  // nested-only kind). It round-trips via save-as-scenario instead.
+  "debt-paydown",
   "stress-inflation",
   "stress-ss-haircut",
   "stress-disability",

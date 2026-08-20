@@ -3,7 +3,7 @@ import type { PortalTransactionDTO } from "@/lib/portal/transactions-query";
 vi.mock("@/db/schema", () => ({ plaidTransactions: {
   clientId: "client_id", date: "date", categoryId: "category_id",
   merchantName: "merchant_name", name: "name", excluded: "excluded",
-  reviewedAt: "reviewed_at",
+  reviewedAt: "reviewed_at", accountId: "account_id", plaidAccountId: "plaid_account_id",
 } }));
 vi.mock("drizzle-orm", () => ({
   and: (...a: unknown[]) => ({ op: "and", a }),
@@ -69,4 +69,18 @@ it("DTO includes a type field", () => {
     accountName: null, accountMask: null, type: "expense", source: "plaid", reviewed: false,
   };
   expect(dto.type).toBe("expense");
+});
+
+describe("buildTransactionConditions — liability (credit card) filter", () => {
+  it("pairs the Plaid handle with an accountId IS NULL", () => {
+    const conds = buildTransactionConditions("c1", { ...base, liabilityPlaidAccountId: "plaid-acct-9" });
+    expect(conds).toContainEqual({ op: "eq", c: "plaid_account_id", v: "plaid-acct-9" });
+    // Without this, an asset account synced under the same handle would leak
+    // its transactions into the card's panel.
+    expect(conds).toContainEqual({ op: "isNull", c: "account_id" });
+  });
+  it("is absent when the filter is not set", () => {
+    const conds = buildTransactionConditions("c1", { ...base });
+    expect(conds).not.toContainEqual({ op: "isNull", c: "account_id" });
+  });
 });

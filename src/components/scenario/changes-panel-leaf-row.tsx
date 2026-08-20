@@ -356,6 +356,12 @@ function humanizeKind(k: string): string {
 
 function formatVal(v: unknown): string {
   if (v === null || v === undefined) return String(v);
+  // An array-valued field (e.g. a liability's extraPayments) dumped as raw JSON
+  // is unreadable on an advisor-facing panel; count it instead.
+  if (Array.isArray(v)) {
+    if (v.length === 0) return "none";
+    return `${v.length} ${v.length === 1 ? "entry" : "entries"}`;
+  }
   if (typeof v === "object") return JSON.stringify(v);
   return String(v);
 }

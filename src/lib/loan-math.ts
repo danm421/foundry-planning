@@ -160,6 +160,18 @@ export interface ScheduleExtraPayment {
  * rounding dust" step to dump the whole unpaid remainder into one phantom
  * balloon payment. Defaults to 1, so a January loan is unchanged.
  */
+/**
+ * Payments a schedule collects in its origination calendar year. An October
+ * loan makes Oct–Dec = 3 of them; a January loan makes all 12.
+ *
+ * Exported for the same reason as `scheduleEndYear`: it is the other half of
+ * how a term is divided into calendar years, and a caller that reimplements it
+ * silently drifts out of step with the schedule it is describing.
+ */
+export function monthsInOriginationYear(startMonth = 1): number {
+  return 13 - startMonth;
+}
+
 export function scheduleEndYear(
   startYear: number,
   termMonths: number,
@@ -198,7 +210,7 @@ export function computeAmortizationSchedule(
     // A mid-year-originated loan makes fewer than 12 payments in its first
     // calendar year (e.g. a July start makes Jul–Dec = 6). Every later calendar
     // year still simulates a full 12 months.
-    const monthsThisYear = year === startYear ? 12 - startMonth + 1 : 12;
+    const monthsThisYear = year === startYear ? monthsInOriginationYear(startMonth) : 12;
 
     // Simulate this calendar year's months of amortization
     let yearInterest = 0;

@@ -15,6 +15,7 @@ import type { RecurringsData } from "@/lib/portal/recurring-matching";
 const data: RecurringsData = {
   month: "2026-06",
   paidSoFar: 100,
+  suggestions: [],
   leftToPay: 50,
   recurrings: [
     {
@@ -33,7 +34,7 @@ function LayoutLike(): ReactElement {
   return (
     <div>
       <main>
-        <RecurringsView data={data} categories={[]} editEnabled={false} />
+        <RecurringsView data={data} categories={[]} editEnabled={false} clientId="c1" />
       </main>
       <aside id="portal-detail" />
     </div>

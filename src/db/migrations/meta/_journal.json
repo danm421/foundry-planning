@@ -1727,8 +1727,15 @@
     {
       "idx": 246,
       "version": "7",
-      "when": 1787166976217,
-      "tag": "0246_steady_cable",
+      "when": 1787175859794,
+      "tag": "0246_tranquil_dracula",
+      "breakpoints": true
+    },
+    {
+      "idx": 247,
+      "version": "7",
+      "when": 1787187407220,
+      "tag": "0247_panoramic_juggernaut",
       "breakpoints": true
     }
   ]
