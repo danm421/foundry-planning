@@ -1,6 +1,7 @@
 "use client";
 
 import { OptionsRow, OptionsGroup } from "@/components/presentations/shared/options-layout";
+import { MilestoneAgesControl } from "@/components/presentations/shared/milestone-ages-control";
 import { TidbitPicker } from "@/components/presentations/shared/tidbit-picker";
 import type { EarlyYearsLadderPageOptions } from "@/lib/presentations/pages/early-years-ladder/types";
 
@@ -68,27 +69,10 @@ export function EarlyYearsLadderOptionsControl({ value, onChange }: Props) {
         </div>
       </OptionsGroup>
 
-      <OptionsGroup label="Milestone ages">
-        <div className="flex items-center gap-2">
-          {value.milestoneAges.map((age, i) => (
-            <input
-              key={i}
-              type="number"
-              aria-label={`Milestone age ${i + 1}`}
-              className={NUM}
-              value={age}
-              onChange={(e) =>
-                onChange({
-                  ...value,
-                  milestoneAges: value.milestoneAges.map((a, j) =>
-                    j === i ? Number(e.target.value) : a,
-                  ),
-                })
-              }
-            />
-          ))}
-        </div>
-      </OptionsGroup>
+      <MilestoneAgesControl
+        value={value.milestoneAges}
+        onChange={(milestoneAges) => onChange({ ...value, milestoneAges })}
+      />
 
       <OptionsGroup label="Tidbits">
         <TidbitPicker

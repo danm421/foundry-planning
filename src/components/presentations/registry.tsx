@@ -382,6 +382,21 @@ import { estimateEarlyYearsHumanCapitalPageCount } from "@/lib/presentations/pag
 import { buildEarlyYearsHumanCapitalData } from "@/lib/presentations/pages/early-years-human-capital/view-model";
 import { EarlyYearsHumanCapitalPagePdf } from "./pages/early-years-human-capital/page-pdf";
 import { EarlyYearsHumanCapitalOptionsControl } from "./pages/early-years-human-capital/options-control";
+import {
+  EARLY_YEARS_WAITING_OPTIONS_DEFAULT,
+  type EarlyYearsWaitingPageData,
+  type EarlyYearsWaitingPageOptions,
+} from "@/lib/presentations/pages/early-years-waiting/types";
+import { earlyYearsWaitingOptionsSchema } from "@/lib/presentations/pages/early-years-waiting/options-schema";
+import { summarizeEarlyYearsWaitingOptions } from "@/lib/presentations/pages/early-years-waiting/summarize-options";
+import { estimateEarlyYearsWaitingPageCount } from "@/lib/presentations/pages/early-years-waiting/estimate-page-count";
+import {
+  buildEarlyYearsWaitingData,
+  delayKey,
+} from "@/lib/presentations/pages/early-years-waiting/view-model";
+import { deltaSavingsRuleMutation } from "@/lib/presentations/pages/early-years-shared";
+import { EarlyYearsWaitingPagePdf } from "./pages/early-years-waiting/page-pdf";
+import { EarlyYearsWaitingOptionsControl } from "./pages/early-years-waiting/options-control";
 
 export const CATEGORY_ORDER = [
   "Framing",
@@ -1453,6 +1468,43 @@ export const earlyYearsHumanCapitalPage: PresentationPage<
   renderPdf: (input) => <EarlyYearsHumanCapitalPagePdf {...input} />,
 };
 
+export const earlyYearsWaitingPage: PresentationPage<
+  EarlyYearsWaitingPageData,
+  EarlyYearsWaitingPageOptions
+> = {
+  id: "earlyYearsWaiting",
+  title: "The Cost of Waiting",
+  description:
+    "The same raised contribution started now, in five years and in ten — what the delay costs at each milestone age.",
+  category: "Early Years",
+  defaultOptions: EARLY_YEARS_WAITING_OPTIONS_DEFAULT,
+  optionsSchema: earlyYearsWaitingOptionsSchema,
+  summarizeOptions: summarizeEarlyYearsWaitingOptions,
+  estimatePageCount: () => estimateEarlyYearsWaitingPageCount(),
+  OptionsControl: EarlyYearsWaitingOptionsControl,
+  supportsScenarioOverride: false,
+  requiredScenarioRefs: () => ["base"],
+  // One derived plan per start date: the base tree plus a SECOND savings rule on
+  // the deferral account that begins `delay` years out. A FACTORY, because the
+  // account ids live in the tree and the size of the increase is measured
+  // against what the base plan's projection actually contributes, while
+  // `requiredDerivedRefs` sees only page options.
+  requiredDerivedRefs: (o) =>
+    o.delays.map((delay, i) => ({
+      key: delayKey(i),
+      from: "base",
+      label: delay === 0 ? "Start now" : `Start in ${delay} years`,
+      mutations: (source: DerivedSource) =>
+        deltaSavingsRuleMutation(source.clientData, {
+          key: `waiting-${i}`,
+          amount: { mode: "household-percent", percent: o.rungOffset },
+          startYear: source.clientData.planSettings.planStartYear + delay,
+        }),
+    })),
+  buildData: (ctx, options) => buildEarlyYearsWaitingData(ctx, options),
+  renderPdf: (input) => <EarlyYearsWaitingPagePdf {...input} />,
+};
+
 export const PRESENTATION_PAGES = {
   cover: coverPage,
   toc: tocPage,
@@ -1504,6 +1556,7 @@ export const PRESENTATION_PAGES = {
   earlyYearsStanding: earlyYearsStandingPage,
   earlyYearsHumanCapital: earlyYearsHumanCapitalPage,
   earlyYearsLadder: earlyYearsLadderPage,
+  earlyYearsWaiting: earlyYearsWaitingPage,
 } as const;
 
 export type PresentationPageId = keyof typeof PRESENTATION_PAGES;
