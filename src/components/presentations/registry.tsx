@@ -371,6 +371,17 @@ import {
 import { householdSavingsRate } from "@/lib/presentations/savings-rate";
 import { EarlyYearsLadderPagePdf } from "./pages/early-years-ladder/page-pdf";
 import { EarlyYearsLadderOptionsControl } from "./pages/early-years-ladder/options-control";
+import {
+  EARLY_YEARS_HUMAN_CAPITAL_OPTIONS_DEFAULT,
+  type EarlyYearsHumanCapitalPageData,
+  type EarlyYearsHumanCapitalPageOptions,
+} from "@/lib/presentations/pages/early-years-human-capital/types";
+import { earlyYearsHumanCapitalOptionsSchema } from "@/lib/presentations/pages/early-years-human-capital/options-schema";
+import { summarizeEarlyYearsHumanCapitalOptions } from "@/lib/presentations/pages/early-years-human-capital/summarize-options";
+import { estimateEarlyYearsHumanCapitalPageCount } from "@/lib/presentations/pages/early-years-human-capital/estimate-page-count";
+import { buildEarlyYearsHumanCapitalData } from "@/lib/presentations/pages/early-years-human-capital/view-model";
+import { EarlyYearsHumanCapitalPagePdf } from "./pages/early-years-human-capital/page-pdf";
+import { EarlyYearsHumanCapitalOptionsControl } from "./pages/early-years-human-capital/options-control";
 
 export const CATEGORY_ORDER = [
   "Framing",
@@ -1420,6 +1431,28 @@ export const earlyYearsLadderPage: PresentationPage<
   renderPdf: (input) => <EarlyYearsLadderPagePdf {...input} />,
 };
 
+export const earlyYearsHumanCapitalPage: PresentationPage<
+  EarlyYearsHumanCapitalPageData,
+  EarlyYearsHumanCapitalPageOptions
+> = {
+  id: "earlyYearsHumanCapital",
+  title: "Your Biggest Asset Isn't Your Portfolio",
+  description:
+    "Invested assets today against the present value of remaining lifetime earnings, discounted at the plan's inflation assumption.",
+  category: "Early Years",
+  defaultOptions: EARLY_YEARS_HUMAN_CAPITAL_OPTIONS_DEFAULT,
+  optionsSchema: earlyYearsHumanCapitalOptionsSchema,
+  summarizeOptions: summarizeEarlyYearsHumanCapitalOptions,
+  estimatePageCount: () => estimateEarlyYearsHumanCapitalPageCount(),
+  OptionsControl: EarlyYearsHumanCapitalOptionsControl,
+  // Pinned to Base Case with the rest of the deck. Declaring the ref is also
+  // what LOADS the base bundle this page reads.
+  supportsScenarioOverride: false,
+  requiredScenarioRefs: () => ["base"],
+  buildData: (ctx, options) => buildEarlyYearsHumanCapitalData(ctx, options),
+  renderPdf: (input) => <EarlyYearsHumanCapitalPagePdf {...input} />,
+};
+
 export const PRESENTATION_PAGES = {
   cover: coverPage,
   toc: tocPage,
@@ -1469,6 +1502,7 @@ export const PRESENTATION_PAGES = {
   retirementComparison: retirementComparisonPage,
   lifeInsuranceSummary: lifeInsuranceSummaryPage,
   earlyYearsStanding: earlyYearsStandingPage,
+  earlyYearsHumanCapital: earlyYearsHumanCapitalPage,
   earlyYearsLadder: earlyYearsLadderPage,
 } as const;
 
