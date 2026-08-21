@@ -11,7 +11,7 @@ import type { EarlyYearsStandingPageData } from "@/lib/presentations/pages/early
 
 const base: EarlyYearsStandingPageData = {
   isEmpty: false,
-  subtitle: "Base Case · At age 29 · Today's dollars equal future-year dollars",
+  subtitle: "Base Case · At age 29 · Starting year 2026",
   clientAge: 29,
   grossAnnual: { today: 120_000, nominal: 120_000 },
   contributionsAnnual: { today: 9_600, nominal: 9_600 },
@@ -51,13 +51,17 @@ function render(data: EarlyYearsStandingPageData) {
  * today's-dollars label — are read back off the rendered bytes. Requires poppler
  * on PATH (`brew install poppler`) and says so rather than skipping itself.
  */
-function pdfText(pdf: Buffer): string {
+function inspectPdf(pdf: Buffer): { text: string; layout: string; bbox: string } {
   const dir = mkdtempSync(join(tmpdir(), "early-years-standing-"));
   const file = join(dir, "sheet.pdf");
   try {
     writeFileSync(file, pdf);
     try {
-      return execFileSync("pdftotext", [file, "-"], { encoding: "utf8" });
+      return {
+        text: execFileSync("pdftotext", [file, "-"], { encoding: "utf8" }),
+        layout: execFileSync("pdftotext", ["-layout", file, "-"], { encoding: "utf8" }),
+        bbox: execFileSync("pdftotext", ["-bbox", file, "-"], { encoding: "utf8" }),
+      };
     } catch (cause) {
       throw new Error(
         "this assertion needs `pdftotext` (poppler) on PATH — `brew install poppler`",
@@ -69,18 +73,33 @@ function pdfText(pdf: Buffer): string {
   }
 }
 
+function pdfText(pdf: Buffer): string {
+  return inspectPdf(pdf).text;
+}
+
 describe("EarlyYearsStandingPagePdf render", () => {
   it("renders to a non-trivial PDF buffer", async () => {
     expect((await render(base)).byteLength).toBeGreaterThan(1000);
   });
 
-  it("prints the savings rate, match, tidbit and a visible current-year unit proof", async () => {
-    const text = pdfText(await render(base)).replace(/\s+/g, " ");
+  it("fills one sheet to a measured depth without repeating the portfolio value", async () => {
+    const { text: extracted, layout, bbox } = inspectPdf(await render(base));
+    const text = extracted.replace(/\s+/g, " ");
+    const pages = layout.split("\f").filter((part) => part.trim().length > 0);
+    const unitProofBottoms = [...bbox.matchAll(
+      /<word xMin="[\d.-]+" yMin="[\d.-]+" xMax="[\d.-]+" yMax="([\d.-]+)">value\.<\/word>/g,
+    )].map((match) => Number(match[1]));
+
     expect(text).toContain("8%");
     expect(text).toContain("Your employer adds $3,600 a year");
-    expect(text).toContain("Today's dollars equal future-year dollars");
-    expect(text).toContain("$84,000 today = $84,000 future-year dollars");
+    expect(text).toContain("Today's dollars = future-year dollars");
     expect(text).toContain("Time is the ingredient you can't buy later");
+    expect(text).not.toContain("One number, two views");
+    expect(text.match(/\$84,000/g)).toHaveLength(1);
+    expect(pages).toHaveLength(1);
+    expect(unitProofBottoms).not.toHaveLength(0);
+    expect(Math.max(...unitProofBottoms)).toBeGreaterThanOrEqual(600);
+    expect(Math.max(...unitProofBottoms)).toBeLessThan(720);
   });
 
   it("renders without a match line or tidbits", async () => {

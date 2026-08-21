@@ -4,7 +4,7 @@ import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
 import type { DollarPair } from "@/lib/presentations/real-dollars";
 
 const s = StyleSheet.create({
-  wrap: { gap: 0.5 },
+  wrap: { width: "100%", gap: 0.5 },
   primary: { fontSize: 7.5, fontWeight: 700, color: T.ink, lineHeight: 1.1 },
   secondary: { fontSize: 6, color: T.ink3, lineHeight: 1.1 },
 });

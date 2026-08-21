@@ -23,6 +23,7 @@ import { estimateEarlyYearsLadderPageCount } from "@/lib/presentations/pages/ear
 import { estimateEarlyYearsWaitingPageCount } from "@/lib/presentations/pages/early-years-waiting/estimate-page-count";
 import { estimateEarlyYearsRothPageCount } from "@/lib/presentations/pages/early-years-roth/estimate-page-count";
 import { estimateEarlyYearsDebtOrInvestPageCount } from "@/lib/presentations/pages/early-years-debt-or-invest/estimate-page-count";
+import { exactCurrency } from "@/lib/presentations/format";
 
 const FRAME = {
   firmName: "Ethos Financial Group",
@@ -179,11 +180,95 @@ const debt: EarlyYearsDebtOrInvestPageData = {
 };
 
 const CONTENT_BOTTOM = 720;
+const MAX_RIGHT_EDGE_DRIFT = 1;
+
+type PdfLine = {
+  text: string;
+  xMax: number;
+  yMin: number;
+};
+
+function pdfLines(bbox: string): PdfLine[] {
+  return [
+    ...bbox.matchAll(
+      /<line xMin="[\d.-]+" yMin="([\d.-]+)" xMax="([\d.-]+)" yMax="[\d.-]+">([\s\S]*?)<\/line>/g,
+    ),
+  ].map((match) => ({
+    yMin: Number(match[1]),
+    xMax: Number(match[2]),
+    text: [...match[3].matchAll(/<word [^>]*>(.*?)<\/word>/g)]
+      .map((word) => word[1])
+      .join(" "),
+  }));
+}
+
+function expectDualDollarRightEdgesAligned(
+  name: string,
+  bbox: string,
+  values: readonly DollarPair[],
+) {
+  const lines = pdfLines(bbox);
+  const usedPrimary = new Set<number>();
+  const usedSecondary = new Set<number>();
+  const drifts = values
+    .filter(
+      (value) =>
+        Math.round(value.today) !== 0 || Math.round(value.nominal) !== 0,
+    )
+    .map((value) => {
+      const primaryText = `${exactCurrency(value.today)} today`;
+      const secondaryText =
+        Math.round(value.today) === Math.round(value.nominal)
+          ? "Same amount in future-year dollars"
+          : `${exactCurrency(value.nominal)} future-year dollars`;
+      const primaryCandidates = lines
+        .map((line, index) => ({ line, index }))
+        .filter(
+          ({ line, index }) =>
+            line.text === primaryText && !usedPrimary.has(index),
+        );
+      const secondaryCandidates = lines
+        .map((line, index) => ({ line, index }))
+        .filter(
+          ({ line, index }) =>
+            line.text === secondaryText && !usedSecondary.has(index),
+        );
+      const match = primaryCandidates
+        .flatMap((primary) =>
+          secondaryCandidates.map((secondary) => ({
+            primary,
+            secondary,
+            verticalGap: secondary.line.yMin - primary.line.yMin,
+            drift: Math.abs(secondary.line.xMax - primary.line.xMax),
+          })),
+        )
+        .filter(({ verticalGap }) => verticalGap > 0 && verticalGap < 16)
+        .sort((a, b) => a.drift - b.drift)[0];
+
+      expect(
+        match,
+        `${name} must expose bbox lines for ${primaryText}`,
+      ).toBeDefined();
+      usedPrimary.add(match!.primary.index);
+      usedSecondary.add(match!.secondary.index);
+      return match!.drift;
+    });
+
+  expect(
+    drifts,
+    `${name} must exercise rendered dual-dollar cells`,
+  ).not.toHaveLength(0);
+  expect(
+    Math.max(...drifts),
+    `${name} dual-dollar line xMax drift (${drifts.map((drift) => drift.toFixed(3)).join(", ")}pt)`,
+  ).toBeLessThanOrEqual(MAX_RIGHT_EDGE_DRIFT);
+}
 
 async function inspect(
   name: string,
   lastYear: number,
   page: ReturnType<typeof EarlyYearsHumanCapitalPagePdf>,
+  dualDollarValues: readonly DollarPair[],
 ) {
   ensureFontsRegistered();
   const pdf = await renderToBuffer(<Document>{page}</Document>);
@@ -195,7 +280,7 @@ async function inspect(
     let bbox: string;
     try {
       layout = execFileSync("pdftotext", ["-layout", file, "-"], { encoding: "utf8" });
-      bbox = execFileSync("pdftotext", ["-bbox", file, "-"], { encoding: "utf8" });
+      bbox = execFileSync("pdftotext", ["-bbox-layout", file, "-"], { encoding: "utf8" });
     } catch (cause) {
       throw new Error(
         "this measurement needs `pdftotext` (poppler) on PATH — `brew install poppler`",
@@ -223,6 +308,7 @@ async function inspect(
     expect(Math.max(...lastRowBoxes), `${name} final row must stay above the footer`).toBeLessThan(
       CONTENT_BOTTOM,
     );
+    expectDualDollarRightEdgesAligned(name, bbox, dualDollarValues);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -230,12 +316,44 @@ async function inspect(
 
 describe("Your Early Years maximum detail geometry", () => {
   it.each([
-    ["human-capital", 2071, EarlyYearsHumanCapitalPagePdf({ data: human, ...FRAME })],
-    ["ladder", 2062, EarlyYearsLadderPagePdf({ data: ladder, ...FRAME })],
-    ["waiting", 2062, EarlyYearsWaitingPagePdf({ data: waiting, ...FRAME })],
-    ["roth", 2091, EarlyYearsRothPagePdf({ data: roth, ...FRAME })],
-    ["debt-or-invest", 2081, EarlyYearsDebtOrInvestPagePdf({ data: debt, ...FRAME })],
-  ] as const)("prints the %s final row on one Letter sheet above the footer", inspect, 30_000);
+    [
+      "human-capital",
+      2071,
+      EarlyYearsHumanCapitalPagePdf({ data: human, ...FRAME }),
+      human.detailRows.map((row) => row.salary),
+    ],
+    [
+      "ladder",
+      2062,
+      EarlyYearsLadderPagePdf({ data: ladder, ...FRAME }),
+      ladder.groups.flatMap((group) => group.bars.map((bar) => bar.value)),
+    ],
+    [
+      "waiting",
+      2062,
+      EarlyYearsWaitingPagePdf({ data: waiting, ...FRAME }),
+      waiting.groups.flatMap((group) => group.bars.map((bar) => bar.value)),
+    ],
+    [
+      "roth",
+      2091,
+      EarlyYearsRothPagePdf({ data: roth, ...FRAME }),
+      [
+        ...roth.rows.flatMap((row) => [row.traditional, row.roth]),
+        ...roth.detailRows.flatMap((row) => [row.traditionalTax, row.rothTax]),
+      ],
+    ],
+    [
+      "debt-or-invest",
+      2081,
+      EarlyYearsDebtOrInvestPagePdf({ data: debt, ...FRAME }),
+      debt.detailRows.flatMap((row) => [row.loanBalance, row.investBalance]),
+    ],
+  ] as const)(
+    "prints the %s final row on one Letter sheet and aligns every dual-dollar cell",
+    inspect,
+    30_000,
+  );
 
   it("keeps supported maxima at one sheet and counts overflow honestly", () => {
     expect(estimateEarlyYearsHumanCapitalPageCount(human)).toBe(1);

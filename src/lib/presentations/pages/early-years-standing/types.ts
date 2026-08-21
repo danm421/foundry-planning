@@ -17,8 +17,8 @@ export type MatchLine =
   | { kind: "captured"; employerAnnual: DollarPair };
 
 export interface EarlyYearsStandingPageData {
-  /** Scenario label · age · the current-year unit identity. The page is pinned
-   *  to Base Case, so naming the scenario is what
+  /** Scenario label · age · starting year. The page is pinned to Base Case,
+   *  so naming the scenario is what
    *  keeps it honest inside a deck built on some other one. */
   subtitle: string;
   /** True when the household has no salary — a savings RATE has no denominator,
