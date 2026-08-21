@@ -124,7 +124,7 @@ describe("buildEarlyYearsWaitingData", () => {
     expect(d.takeaway).toContain("age 65");
     expect(d.takeaway).toContain("five years");
     expect(d.takeaway).toContain("today");
-    expect(d.takeaway).toContain("in 2062 dollars");
+    expect(d.takeaway).toContain("future-year dollars");
   });
 
   it("says nothing about a wait when the advisor charted only one start date", () => {

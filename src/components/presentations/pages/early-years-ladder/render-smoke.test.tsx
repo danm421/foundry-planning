@@ -36,7 +36,7 @@ const base: EarlyYearsLadderPageData = {
   cappedRungLabels: [],
   emptyMessage: null,
   takeaway:
-    "At age 65, the Save 14% bar is about $621K today ($1.2M in 2062 dollars) ahead of Save 8% (today).",
+    "At age 65, the Save 14% bar is about $621K today ($1.2M future-year dollars) ahead of Save 8% (current plan).",
   tidbits: [
     {
       id: "compounding-runway",
@@ -96,12 +96,12 @@ describe("EarlyYearsLadderPagePdf render", () => {
 
   it("prints the rung legend, the milestone ages, a bar figure and the takeaway", async () => {
     const text = pdfText(await render(base)).replace(/\s+/g, " ");
-    expect(text).toContain("Save 8% (today)");
+    expect(text).toContain("Save 8% (current plan)");
     expect(text).toContain("Save 14%");
     expect(text).toContain("Age 65");
     expect(text).toContain("$1.7M");
     expect(text).toContain("the Save 14% bar is about $621K today");
-    expect(text).toContain("$3,312,312 in 2062");
+    expect(text).toContain("$3,312,312 future-year dollars");
     expect(text).toContain("both units below");
     expect(text).toContain("Time is the ingredient you can't buy later");
   });

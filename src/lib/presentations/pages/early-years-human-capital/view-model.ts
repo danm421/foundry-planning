@@ -98,7 +98,7 @@ export function buildEarlyYearsHumanCapitalData(
  * read "1 times", which argues the opposite of the page.
  */
 function takeawayFor(lifetime: DollarPair, invested: number): string {
-  const total = `About ${fmtAxisUsd(lifetime.today)} today (${fmtAxisUsd(lifetime.nominal)} nominal as paid) of future pay will pass through your hands.`;
+  const total = `About ${fmtAxisUsd(lifetime.today)} today (${fmtAxisUsd(lifetime.nominal)} future-year dollars) of future pay will pass through your hands.`;
   if (invested <= 0) {
     return `${total} What this report is about is the share of it you keep.`;
   }

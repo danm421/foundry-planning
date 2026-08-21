@@ -102,14 +102,12 @@ export function EarlyYearsRothPagePdf(input: RenderPdfInput<EarlyYearsRothPageDa
                 <View style={s.cellWrap}>
                   <DualDollarValuePdf
                     value={r.traditional}
-                    nominalLabel={r.nominalLabel}
                     emphasis={better === "traditional"}
                   />
                 </View>
                 <View style={s.cellWrap}>
                   <DualDollarValuePdf
                     value={r.roth}
-                    nominalLabel={r.nominalLabel}
                     emphasis={better === "roth"}
                   />
                 </View>
@@ -137,10 +135,7 @@ export function EarlyYearsRothPagePdf(input: RenderPdfInput<EarlyYearsRothPageDa
                 flex: 1.4,
                 align: "right",
                 render: (row) => (
-                  <DualDollarValuePdf
-                    value={row.traditionalTax}
-                    nominalLabel={`in ${row.year}`}
-                  />
+                  <DualDollarValuePdf value={row.traditionalTax} />
                 ),
               },
               {
@@ -148,7 +143,7 @@ export function EarlyYearsRothPagePdf(input: RenderPdfInput<EarlyYearsRothPageDa
                 flex: 1.4,
                 align: "right",
                 render: (row) => (
-                  <DualDollarValuePdf value={row.rothTax} nominalLabel={`in ${row.year}`} />
+                  <DualDollarValuePdf value={row.rothTax} />
                 ),
               },
             ]}

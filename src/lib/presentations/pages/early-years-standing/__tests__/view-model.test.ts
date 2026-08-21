@@ -68,11 +68,11 @@ describe("buildEarlyYearsStandingData", () => {
     expect(d.isEmpty).toBe(false);
   });
 
-  it("names the scenario and explains why today's and nominal figures agree", () => {
+  it("names the scenario and explains why the two dollar views agree", () => {
     // The page is pinned to Base Case; inside a deck built on some other
     // scenario, the label is the only thing that says so.
     expect(buildEarlyYearsStandingData(ctx(), OPTS).subtitle).toBe(
-      "Base Case · At age 29 · 2026 dollars — today's and nominal are the same",
+      "Base Case · At age 29 · Starting year 2026 · Today's dollars equal future-year dollars",
     );
   });
 

@@ -10,7 +10,6 @@
 
 import { derivedKey } from "@/lib/presentations/derived-refs";
 import {
-  absoluteDollarDifference,
   dollarPair,
   sumDollarPairs,
   type DeflationBasis,
@@ -18,7 +17,7 @@ import {
 } from "@/lib/presentations/real-dollars";
 import { renderTidbits } from "@/lib/presentations/tidbits";
 import { resolveAllTokens } from "@/lib/plan-text/tokens";
-import { fmtAxisUsd } from "@/components/presentations/pages/retirement-comparison/chart-axis";
+import { exactCurrency } from "@/lib/presentations/format";
 import { earlyYearsSubtitle } from "../early-years-shared";
 import { ROTH_DETAIL_MAX_ROWS, selectEarlyYearsDetailYears } from "../early-years-detail";
 import { rothDeferralAccountIds } from "./deferral-mix";
@@ -105,28 +104,24 @@ export function buildEarlyYearsRothData(
         label: "Tax paid while you're working",
         traditional: t.working,
         roth: r.working,
-        nominalLabel: "nominal as paid",
         betterIsLower: true,
       },
       {
         label: "Tax paid from retirement on",
         traditional: t.retired,
         roth: r.retired,
-        nominalLabel: "nominal as paid",
         betterIsLower: true,
       },
       {
         label: "Tax over the whole plan",
         traditional: t.total,
         roth: r.total,
-        nominalLabel: "nominal as paid",
         betterIsLower: true,
       },
       {
         label: "Average yearly spending in retirement",
         traditional: t.avgRetirementSpend,
         roth: r.avgRetirementSpend,
-        nominalLabel: "nominal average",
         betterIsLower: false,
       },
     ],
@@ -202,8 +197,14 @@ const BLOCKED_COPY: Record<RothBlocker, string> = {
 /** Names the cheaper column and what it saves. Null when they tie — a sheet that
  *  declares a winner over a rounding difference is worse than one that doesn't. */
 function takeawayFor(traditionalTotal: DollarPair, rothTotal: DollarPair): string | null {
-  const gap = absoluteDollarDifference(traditionalTotal, rothTotal);
-  if (gap.today < 1) return null;
-  const cheaper = rothTotal.today < traditionalTotal.today ? "Roth" : "traditional";
-  return `Over the whole plan, all-${cheaper} contributions leave about ${fmtAxisUsd(gap.today)} today (${fmtAxisUsd(gap.nominal)} nominal as paid) less tax paid.`;
+  const todayDelta = traditionalTotal.today - rothTotal.today;
+  if (Math.abs(todayDelta) < 1) return null;
+
+  const nominalDelta = traditionalTotal.nominal - rothTotal.nominal;
+  const cheaper = todayDelta > 0 ? "Roth" : "traditional";
+  const futureGap =
+    Math.abs(nominalDelta) >= 1 && Math.sign(todayDelta) === Math.sign(nominalDelta)
+      ? ` (${exactCurrency(Math.abs(nominalDelta))} future-year dollars)`
+      : "";
+  return `Over the whole plan, all-${cheaper} contributions leave about ${exactCurrency(Math.abs(todayDelta))} today${futureGap} less tax paid.`;
 }

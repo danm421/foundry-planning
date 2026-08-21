@@ -8,19 +8,23 @@ import type { EarlyYearsStandingPageData } from "@/lib/presentations/pages/early
 
 const s = StyleSheet.create({
   title: { fontSize: 16, fontWeight: 700, marginBottom: 2 },
-  subtitle: { fontSize: 8, color: T.ink2, marginBottom: 12 },
+  subtitle: { fontSize: 8, color: T.ink2, marginBottom: 18 },
   cols: { flexDirection: "row", gap: 14 },
   main: { flex: 1 },
-  heroLbl: { fontSize: 7, color: T.ink2, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 },
+  heroLbl: { fontSize: 8, color: T.ink2, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6 },
   // Ink, never the section accent: the accent marks the sheet, not the datum.
-  heroVal: { fontSize: 40, fontWeight: 700, color: T.ink, lineHeight: 1.1 },
-  heroSub: { fontSize: 9, color: T.ink2, marginTop: 2 },
-  kpis: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 14 },
-  kpi: { flexBasis: "31%", justifyContent: "space-between", backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderRadius: 3, padding: 6 },
-  kpiLbl: { fontSize: 6.5, color: T.ink2, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 },
-  kpiVal: { fontSize: 14, fontWeight: 700, marginTop: 2 },
-  match: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderLeftWidth: 3, borderRadius: 3, padding: 8, marginTop: 12 },
-  matchText: { fontSize: 9, color: T.ink, lineHeight: 1.35 },
+  heroVal: { fontSize: 56, fontWeight: 700, color: T.ink, lineHeight: 1 },
+  heroSub: { fontSize: 11, color: T.ink2, lineHeight: 1.35, marginTop: 5 },
+  kpis: { flexDirection: "row", gap: 9, marginTop: 20 },
+  kpi: { flex: 1, justifyContent: "space-between", backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderRadius: 3, padding: 11, minHeight: 57 },
+  kpiLbl: { fontSize: 7.5, color: T.ink2, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 },
+  kpiVal: { fontSize: 18, fontWeight: 700, marginTop: 6 },
+  match: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderLeftWidth: 3, borderRadius: 3, padding: 12, marginTop: 16 },
+  matchText: { fontSize: 10.5, color: T.ink, lineHeight: 1.4 },
+  unitProof: { borderTopWidth: 1, borderTopColor: T.hair, marginTop: 28, paddingTop: 17 },
+  unitProofLabel: { fontSize: 7.5, color: T.ink2, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6 },
+  unitProofText: { fontSize: 10, color: T.ink2, lineHeight: 1.4, marginTop: 6 },
+  unitProofValue: { fontSize: 15, color: T.ink, fontWeight: 700, marginTop: 9 },
   empty: { fontSize: 11, color: T.ink2, textAlign: "center", marginTop: 60 },
 });
 
@@ -65,7 +69,7 @@ export function EarlyYearsStandingPagePdf(input: RenderPdfInput<EarlyYearsStandi
           <View style={s.kpis}>
             <Kpi lbl="Salary income" val={exactCurrency(data.grossAnnual.today)} />
             <Kpi lbl="You contribute" val={exactCurrency(data.contributionsAnnual.today)} />
-            <Kpi lbl="Portfolio today" val={exactCurrency(data.portfolio.today)} />
+            <Kpi lbl="Invested portfolio" val={exactCurrency(data.portfolio.today)} />
           </View>
 
           {data.match.kind === "captured" && (
@@ -75,6 +79,17 @@ export function EarlyYearsStandingPagePdf(input: RenderPdfInput<EarlyYearsStandi
               </Text>
             </View>
           )}
+
+          <View style={s.unitProof}>
+            <Text style={s.unitProofLabel}>One number, two views</Text>
+            <Text style={s.unitProofText}>
+              Because this is the plan&apos;s starting year, inflation has not separated the
+              values yet.
+            </Text>
+            <Text style={s.unitProofValue}>
+              {`${exactCurrency(data.portfolio.today)} today = ${exactCurrency(data.portfolio.nominal)} future-year dollars`}
+            </Text>
+          </View>
         </View>
 
         <TidbitSidebarPdf tidbits={data.tidbits} accent={accent.accent} />

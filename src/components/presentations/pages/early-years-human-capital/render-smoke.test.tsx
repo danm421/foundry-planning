@@ -17,7 +17,7 @@ const base: EarlyYearsHumanCapitalPageData = {
   multiple: 65,
   lastEarningYear: 2062,
   takeaway:
-    "About $3.1M today ($5.0M nominal as paid) of future pay will pass through your hands. That is roughly 65 times what you have invested today, which is why the decisions on the next few pages matter more than the balance on this one.",
+    "About $3.1M today ($5.0M future-year dollars) of future pay will pass through your hands. That is roughly 65 times what you have invested today, which is why the decisions on the next few pages matter more than the balance on this one.",
   detailRows: [
     { year: 2026, age: 29, salary: { today: 120_000, nominal: 120_000 } },
     { year: 2056, age: 59, salary: { today: 120_000, nominal: 291_272 } },
@@ -59,8 +59,8 @@ describe("EarlyYearsHumanCapitalPagePdf", () => {
     expect(text).toContain("Future pay, through 2062");
     expect(text).toContain("$48K");
     expect(text).toContain("$3.1M");
-    expect(text).toContain("$5.0M nominal as paid");
-    expect(text).toContain("$347,739 in 2062");
+    expect(text).toContain("$5.0M future-year dollars");
+    expect(text).toContain("$347,739 future-year dollars");
     expect(text).toContain("65 times");
   });
 

@@ -144,6 +144,6 @@ describe("buildEarlyYearsHumanCapitalData", () => {
       OPTS,
     );
     expect(d.takeaway).toContain("today");
-    expect(d.takeaway).toContain("nominal as paid");
+    expect(d.takeaway).toContain("future-year dollars");
   });
 });

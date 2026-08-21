@@ -15,6 +15,7 @@ async function textOf(): Promise<string> {
       <Page size="LETTER">
         <DetailTablePdf
           rows={[
+            { year: 2025, today: 0, nominal: 0 },
             { year: 2026, today: 120_000, nominal: 120_000 },
             { year: 2055, today: 800_000, nominal: 1_600_000 },
             { year: 2060, today: 1_125_232, nominal: 2_520_232 },
@@ -27,10 +28,7 @@ async function textOf(): Promise<string> {
               flex: 2,
               align: "right",
               render: (row) => (
-                <DualDollarValuePdf
-                  value={{ today: row.today, nominal: row.nominal }}
-                  nominalLabel={`in ${row.year}`}
-                />
+                <DualDollarValuePdf value={{ today: row.today, nominal: row.nominal }} />
               ),
             },
           ]}
@@ -51,17 +49,24 @@ async function textOf(): Promise<string> {
 }
 
 describe("DetailTablePdf", () => {
-  it("prints today's dollars first and the row-year nominal value beneath it", async () => {
+  it("prints today's dollars first and plain-language future-year dollars beneath it", async () => {
     const text = await textOf();
     expect(text).toContain("$1,125,232 today");
-    expect(text).toContain("$2,520,232 in 2060");
+    expect(text).toContain("$2,520,232 future-year dollars");
   });
 
   it("does not repeat a current-year amount when both units are identical", async () => {
     const text = await textOf();
     expect(text).toContain("$120,000 today");
-    expect(text).toContain("Same in 2026");
-    expect(text).not.toContain("$120,000 in 2026");
+    expect(text).toContain("Same amount in future-year dollars");
+    expect(text).not.toContain("Same in 2026");
+    expect(text).not.toContain("$120,000 future-year dollars");
+  });
+
+  it("does not add a redundant future-year line to zero", async () => {
+    const text = await textOf();
+    expect(text).toContain("$0 today");
+    expect(text.match(/Same amount in future-year dollars/g)).toHaveLength(1);
   });
 
   it("prints the final row instead of clipping a wrapped flex row", async () => {

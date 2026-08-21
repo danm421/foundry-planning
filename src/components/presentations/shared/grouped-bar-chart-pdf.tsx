@@ -3,7 +3,7 @@ import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
 import { fmtAxisUsd, MONO } from "../pages/retirement-comparison/chart-axis";
 
 export interface GroupedBarSeries {
-  /** Legend text, printed EXACTLY as given — a page that wants "(today)" adds
+  /** Legend text, printed EXACTLY as given — a page that wants "(current plan)" adds
    *  it. Colour meaning belongs to the page, not to the chart: the ladder
    *  deepens toward the top rung while the cost-of-waiting page pales toward the
    *  longest delay, and neither ordering is the chart's to know. */

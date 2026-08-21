@@ -56,12 +56,10 @@ const s = StyleSheet.create({
 function Arm({
   arm,
   milestoneAge,
-  milestoneYear,
   accent,
 }: {
   arm: DebtOrInvestArm;
   milestoneAge: number;
-  milestoneYear: number;
   accent: string;
 }) {
   return (
@@ -71,11 +69,11 @@ function Arm({
       <Text style={s.figVal}>{String(arm.debtFreeYear)}</Text>
       <Text style={s.figLbl}>Interest paid on this loan</Text>
       <Text style={s.figVal}>{`${exactCurrency(arm.interestPaid.today)} today`}</Text>
-      <Text style={s.figSecondary}>{`${exactCurrency(arm.interestPaid.nominal)} nominal as paid`}</Text>
+      <Text style={s.figSecondary}>{`${exactCurrency(arm.interestPaid.nominal)} future-year dollars`}</Text>
       <Text style={s.figLbl}>{`Portfolio at ${milestoneAge}`}</Text>
       <Text style={s.figVal}>{`${exactCurrency(arm.portfolioAtMilestone.today)} today`}</Text>
       <Text style={s.figSecondary}>
-        {`${exactCurrency(arm.portfolioAtMilestone.nominal)} in ${milestoneYear}`}
+        {`${exactCurrency(arm.portfolioAtMilestone.nominal)} future-year dollars`}
       </Text>
     </View>
   );
@@ -111,13 +109,11 @@ export function EarlyYearsDebtOrInvestPagePdf(
             <Arm
               arm={data.loan}
               milestoneAge={data.milestoneAge}
-              milestoneYear={data.milestoneYear}
               accent={accent.accent}
             />
             <Arm
               arm={data.invest}
               milestoneAge={data.milestoneAge}
-              milestoneYear={data.milestoneYear}
               accent={accent.accent}
             />
           </View>
@@ -142,10 +138,7 @@ export function EarlyYearsDebtOrInvestPagePdf(
                 flex: 1.4,
                 align: "right",
                 render: (row) => (
-                  <DualDollarValuePdf
-                    value={row.loanBalance}
-                    nominalLabel={`in ${row.year}`}
-                  />
+                  <DualDollarValuePdf value={row.loanBalance} />
                 ),
               },
               {
@@ -153,10 +146,7 @@ export function EarlyYearsDebtOrInvestPagePdf(
                 flex: 1.4,
                 align: "right",
                 render: (row) => (
-                  <DualDollarValuePdf
-                    value={row.investBalance}
-                    nominalLabel={`in ${row.year}`}
-                  />
+                  <DualDollarValuePdf value={row.investBalance} />
                 ),
               },
             ]}

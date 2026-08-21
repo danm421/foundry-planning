@@ -31,7 +31,7 @@ export function buildEarlyYearsStandingData(
     // A savings RATE needs salary to divide by. Without it the honest output is
     // "we can't state this", not a 0% that reads as "you save nothing".
     isEmpty: grossNominal <= 0,
-    subtitle: `${ctx.scenarioLabel} · At age ${first.ages.client} · ${first.year} dollars — today's and nominal are the same`,
+    subtitle: `${ctx.scenarioLabel} · At age ${first.ages.client} · Starting year ${first.year} · Today's dollars equal future-year dollars`,
     clientAge: first.ages.client,
     grossAnnual: pair(grossNominal),
     contributionsAnnual: pair(contributionsNominal),

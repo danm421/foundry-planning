@@ -11,7 +11,7 @@ import type { EarlyYearsStandingPageData } from "@/lib/presentations/pages/early
 
 const base: EarlyYearsStandingPageData = {
   isEmpty: false,
-  subtitle: "Base Case · At age 29 · 2026 dollars — today's and nominal are the same",
+  subtitle: "Base Case · At age 29 · Today's dollars equal future-year dollars",
   clientAge: 29,
   grossAnnual: { today: 120_000, nominal: 120_000 },
   contributionsAnnual: { today: 9_600, nominal: 9_600 },
@@ -74,11 +74,12 @@ describe("EarlyYearsStandingPagePdf render", () => {
     expect((await render(base)).byteLength).toBeGreaterThan(1000);
   });
 
-  it("prints the savings rate, match, tidbit and current-year unit identity", async () => {
+  it("prints the savings rate, match, tidbit and a visible current-year unit proof", async () => {
     const text = pdfText(await render(base)).replace(/\s+/g, " ");
     expect(text).toContain("8%");
     expect(text).toContain("Your employer adds $3,600 a year");
-    expect(text).toContain("today's and nominal are the same");
+    expect(text).toContain("Today's dollars equal future-year dollars");
+    expect(text).toContain("$84,000 today = $84,000 future-year dollars");
     expect(text).toContain("Time is the ingredient you can't buy later");
   });
 

@@ -80,7 +80,7 @@ export function EarlyYearsLadderPagePdf(input: RenderPdfInput<EarlyYearsLadderPa
             width={data.tidbits.length > 0 ? 355 : 505}
             height={195}
             series={data.rungs.map((r, i) => ({
-              label: r.isCurrent ? `${r.label} (today)` : r.label,
+              label: r.isCurrent ? `${r.label} (current plan)` : r.label,
               fill: fills[i],
             }))}
             groups={data.groups.map((g) => ({
@@ -115,7 +115,7 @@ export function EarlyYearsLadderPagePdf(input: RenderPdfInput<EarlyYearsLadderPa
                 flex: 1.7,
                 align: "right",
                 render: (row) => (
-                  <DualDollarValuePdf value={row.bar.value} nominalLabel={`in ${row.year}`} />
+                  <DualDollarValuePdf value={row.bar.value} />
                 ),
               },
             ]}

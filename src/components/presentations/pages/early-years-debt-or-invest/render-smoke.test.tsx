@@ -14,7 +14,6 @@ const base: EarlyYearsDebtOrInvestPageData = {
   liabilityName: "Student loan",
   monthlyAmount: 500,
   milestoneAge: 65,
-  milestoneYear: 2062,
   loan: {
     label: "Onto the loan",
     debtFreeYear: 2032,
@@ -32,7 +31,7 @@ const base: EarlyYearsDebtOrInvestPageData = {
     { year: 2032, age: 35, loanBalance: { today: 0, nominal: 0 }, investBalance: { today: 25_000, nominal: 29_851 } },
     { year: 2062, age: 65, loanBalance: { today: 0, nominal: 0 }, investBalance: { today: 0, nominal: 0 } },
   ],
-  takeaway: 'By age 65, "Into the 401(k)" leaves about $55K today ($159K in 2062 dollars) more.',
+  takeaway: 'By age 65, "Into the 401(k)" leaves about $55K today ($159K future-year dollars) more.',
   emptyMessage: null,
   tidbits: [],
 };
@@ -75,8 +74,9 @@ describe("EarlyYearsDebtOrInvestPagePdf", () => {
     expect(text).toContain("Student loan");
     expect(text).toContain("2032");
     expect(text).toContain("$930,000");
-    expect(text).toContain("$2,694,000 in 2062");
-    expect(text).toContain("$29,851 in 2032");
+    expect(text).toContain("$2,694,000 future-year dollars");
+    expect(text).toContain("$29,851 future-year dollars");
+    expect(text).not.toMatch(/\$0 today\s+Same amount in future-year dollars/);
   });
 
   it("says on the sheet that the extra payment costs real money too", async () => {

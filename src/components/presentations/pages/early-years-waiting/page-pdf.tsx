@@ -103,7 +103,7 @@ export function EarlyYearsWaitingPagePdf(input: RenderPdfInput<EarlyYearsWaiting
                 flex: 1.7,
                 align: "right",
                 render: (row) => (
-                  <DualDollarValuePdf value={row.bar.value} nominalLabel={`in ${row.year}`} />
+                  <DualDollarValuePdf value={row.bar.value} />
                 ),
               },
             ]}

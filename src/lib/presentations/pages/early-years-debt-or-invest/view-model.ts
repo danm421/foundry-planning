@@ -77,7 +77,6 @@ export function buildEarlyYearsDebtOrInvestData(
     liabilityName: loanRow?.name ?? "",
     monthlyAmount: options.monthlyAmount,
     milestoneAge: options.milestoneAge,
-    milestoneYear: basis.planStartYear,
     loan: null,
     invest: null,
     detailRows: [],
@@ -132,8 +131,15 @@ export function buildEarlyYearsDebtOrInvestData(
   const common = loanYears.filter(
     (year) => year.year <= throughYear && investByYear.has(year.year),
   );
+  const balanceYears = common.filter((year) => {
+    const investYear = investByYear.get(year.year)!;
+    return (
+      (year.liabilityBalancesBoY[loanRow.id] ?? 0) > 0 ||
+      (investYear.liabilityBalancesBoY[loanRow.id] ?? 0) > 0
+    );
+  });
   const detailYears = selectEarlyYearsDetailYears({
-    availableYears: common.map((year) => year.year),
+    availableYears: balanceYears.map((year) => year.year),
     planStartYear: basis.planStartYear,
     requiredYears: [common[0]?.year, loan.debtFreeYear, invest.debtFreeYear, milestone.year].filter(
       (year): year is number => year != null,
@@ -141,7 +147,7 @@ export function buildEarlyYearsDebtOrInvestData(
     maxRows: DEBT_OR_INVEST_DETAIL_MAX_ROWS,
   });
   const detailRows = detailYears.map((year) => {
-    const loanYear = common.find((candidate) => candidate.year === year)!;
+    const loanYear = balanceYears.find((candidate) => candidate.year === year)!;
     const investYear = investByYear.get(year)!;
     return {
       year,
@@ -156,11 +162,10 @@ export function buildEarlyYearsDebtOrInvestData(
     liabilityName: loanRow.name,
     monthlyAmount: options.monthlyAmount,
     milestoneAge: options.milestoneAge,
-    milestoneYear: milestone.year,
     loan,
     invest,
     detailRows,
-    takeaway: takeawayFor(loan, invest, options.milestoneAge, milestone.year),
+    takeaway: takeawayFor(loan, invest, options.milestoneAge),
     emptyMessage: null,
     // Resolved only when the advisor picked something.
     tidbits:
@@ -184,7 +189,6 @@ function takeawayFor(
   loan: DebtOrInvestArm,
   invest: DebtOrInvestArm,
   milestoneAge: number,
-  milestoneYear: number,
 ): string | null {
   const gap = absoluteDollarDifference(invest.portfolioAtMilestone, loan.portfolioAtMilestone);
   const scale = Math.max(
@@ -195,5 +199,5 @@ function takeawayFor(
   if (gap.today / scale <= PORTFOLIO_TOLERANCE) return null;
   const winner =
     invest.portfolioAtMilestone.today > loan.portfolioAtMilestone.today ? invest : loan;
-  return `By age ${milestoneAge}, "${winner.label}" leaves about ${fmtAxisUsd(gap.today)} today (${fmtAxisUsd(gap.nominal)} in ${milestoneYear} dollars) more.`;
+  return `By age ${milestoneAge}, "${winner.label}" leaves about ${fmtAxisUsd(gap.today)} today (${fmtAxisUsd(gap.nominal)} future-year dollars) more.`;
 }

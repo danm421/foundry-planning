@@ -183,9 +183,27 @@ describe("buildEarlyYearsRothData", () => {
     expect(d.detailRows[1].traditionalTax.today).toBeLessThan(20_000);
   });
 
-  it("puts both lifetime-tax units in the takeaway", () => {
+  it("keeps the shipped exact-dollar precision and puts both lifetime-tax units in the takeaway", () => {
     const d = buildEarlyYearsRothData(ctx(TRAD, ROTH), OPTS);
-    expect(d.takeaway).toContain("today");
-    expect(d.takeaway).toContain("nominal as paid");
+    expect(d.takeaway).toContain("$114,000 today");
+    expect(d.takeaway).not.toContain("$114K");
+    expect(d.takeaway).toContain("future-year dollars");
+  });
+
+  it("drops the future-year gap when the two units disagree on the cheaper choice", () => {
+    const traditionalLate = years(0, 20_000, 60_000);
+    const rothEarly = years(3_000, 0, 60_000);
+    const d = buildEarlyYearsRothData(
+      ctx(traditionalLate, rothEarly, {
+        planSettings: { inflationRate: 0.03, planStartYear: 2026, taxEngineMode: "bracket" },
+      }),
+      OPTS,
+    );
+
+    expect(d.rows[2].traditional.today).toBeLessThan(d.rows[2].roth.today);
+    expect(d.rows[2].traditional.nominal).toBeGreaterThan(d.rows[2].roth.nominal);
+    expect(d.takeaway).toContain("all-traditional");
+    expect(d.takeaway).toContain("today less tax paid");
+    expect(d.takeaway).not.toContain("future-year dollars");
   });
 });

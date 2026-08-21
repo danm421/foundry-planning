@@ -106,7 +106,7 @@ describe("buildEarlyYearsDebtOrInvestData", () => {
     expect(d.takeaway).toContain("401(k)");
     expect(d.takeaway).toContain("age 65");
     expect(d.takeaway).toContain("today");
-    expect(d.takeaway).toContain("in 2062 dollars");
+    expect(d.takeaway).toContain("future-year dollars");
   });
 
   it("says nothing rather than declaring a winner over a rounding difference", () => {
@@ -125,13 +125,16 @@ describe("buildEarlyYearsDebtOrInvestData", () => {
     expect(d.emptyMessage).not.toBeNull();
   });
 
-  it("adds five-year and payoff balance checkpoints from both engine arms", () => {
+  it("adds five-year and payoff balance checkpoints without rows after both loans clear", () => {
     const d = buildEarlyYearsDebtOrInvestData(ctx(base, loanArm, investArm), OPTS);
-    expect(d.detailRows.map((row) => row.year)).toEqual([
-      2026, 2031, 2032, 2036, 2041, 2046, 2051, 2056, 2061, 2062,
-    ]);
+    expect(d.detailRows.map((row) => row.year)).toEqual([2026, 2031, 2032]);
     expect(d.detailRows.find((row) => row.year === 2032)?.loanBalance.nominal).toBe(0);
     expect(d.detailRows.find((row) => row.year === 2032)?.investBalance.nominal).toBe(30_000);
+    expect(
+      d.detailRows.some(
+        (row) => row.loanBalance.nominal === 0 && row.investBalance.nominal === 0,
+      ),
+    ).toBe(false);
   });
 });
 

@@ -11,7 +11,6 @@ export interface RothRow {
   label: string;
   traditional: DollarPair;
   roth: DollarPair;
-  nominalLabel: string;
   /** True for the tax rows: the smaller figure is the better outcome. False for
    *  the spending row. The sheet marks the better column, and marking the wrong
    *  one is the defect this flag exists to prevent. */

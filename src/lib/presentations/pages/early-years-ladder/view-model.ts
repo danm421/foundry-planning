@@ -182,9 +182,8 @@ function cappedRungLabels(rungs: Rung[], deliveredRates: number[]): string[] {
  * reaches — the same defect the two sheets were just reconciled to remove. The
  * dollars are measured off the bars either way, so only the naming changes.
  *
- * The value carries both units. "(today)" after a rung still means the rate the
- * client defers today; "today" after the first dollar value means purchasing
- * power, and the parenthetical future-year value makes that distinction plain.
+ * The value carries both units. The current-rate suffix says "current plan" so
+ * it cannot be confused with the purchasing-power unit on the dollar gap.
  */
 function takeawayFor(groups: LadderGroup[], rungs: Rung[]): string | null {
   const last = groups[groups.length - 1];
@@ -200,6 +199,6 @@ function takeawayFor(groups: LadderGroup[], rungs: Rung[]): string | null {
 
   // Exactly the legend's own text, so the client can find each bar.
   const named = (i: number) =>
-    rungs[i].isCurrent ? `${rungs[i].label} (today)` : rungs[i].label;
-  return `At age ${last.age}, the ${named(topIdx)} bar is about ${fmtAxisUsd(gapToday)} today (${fmtAxisUsd(gapNominal)} in ${last.year} dollars) ahead of ${named(baseIdx)}.`;
+    rungs[i].isCurrent ? `${rungs[i].label} (current plan)` : rungs[i].label;
+  return `At age ${last.age}, the ${named(topIdx)} bar is about ${fmtAxisUsd(gapToday)} today (${fmtAxisUsd(gapNominal)} future-year dollars) ahead of ${named(baseIdx)}.`;
 }

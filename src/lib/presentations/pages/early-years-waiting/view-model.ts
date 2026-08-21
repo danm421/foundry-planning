@@ -163,5 +163,5 @@ function takeawayFor(groups: WaitingGroup[], delays: number[]): string | null {
   if (gapToday <= 0) return null;
   const years = delays[1] - delays[0];
   const spelled = SPELLED[years] ?? String(years);
-  return `Waiting ${spelled} year${years === 1 ? "" : "s"} costs about ${fmtAxisUsd(gapToday)} today (${fmtAxisUsd(gapNominal)} in ${last.year} dollars) by age ${last.age}.`;
+  return `Waiting ${spelled} year${years === 1 ? "" : "s"} costs about ${fmtAxisUsd(gapToday)} today (${fmtAxisUsd(gapNominal)} future-year dollars) by age ${last.age}.`;
 }

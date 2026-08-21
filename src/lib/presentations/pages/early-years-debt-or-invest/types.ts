@@ -24,7 +24,6 @@ export interface EarlyYearsDebtOrInvestPageData {
   /** Extra dollars a month, as the advisor set them. */
   monthlyAmount: number;
   milestoneAge: number;
-  milestoneYear: number;
   /** Both null when the comparison could not be built; `emptyMessage` says why.
    *  Never one without the other — half a comparison is not a comparison. */
   loan: DebtOrInvestArm | null;

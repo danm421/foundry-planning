@@ -11,19 +11,18 @@ const s = StyleSheet.create({
 
 export function DualDollarValuePdf({
   value,
-  nominalLabel,
   align = "right",
   emphasis = true,
 }: {
   value: DollarPair;
-  nominalLabel: string;
   align?: "left" | "right";
   emphasis?: boolean;
 }) {
-  const secondary =
-    Math.round(value.today) === Math.round(value.nominal)
-      ? `Same ${nominalLabel}`
-      : `${exactCurrency(value.nominal)} ${nominalLabel}`;
+  const isZero = Math.round(value.today) === 0 && Math.round(value.nominal) === 0;
+  const isSame = Math.round(value.today) === Math.round(value.nominal);
+  const secondary = isSame
+    ? "Same amount in future-year dollars"
+    : `${exactCurrency(value.nominal)} future-year dollars`;
 
   return (
     <View style={s.wrap}>
@@ -39,7 +38,7 @@ export function DualDollarValuePdf({
       >
         {`${exactCurrency(value.today)} today`}
       </Text>
-      <Text style={[s.secondary, { textAlign: align }]}>{secondary}</Text>
+      {!isZero && <Text style={[s.secondary, { textAlign: align }]}>{secondary}</Text>}
     </View>
   );
 }

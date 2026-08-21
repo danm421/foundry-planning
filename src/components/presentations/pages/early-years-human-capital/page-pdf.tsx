@@ -72,7 +72,7 @@ export function EarlyYearsHumanCapitalPagePdf(
           />
 
           <Text style={s.unitLine}>
-            {`Future pay: ${fmtAxisUsd(data.lifetimeEarnings.today)} today · ${fmtAxisUsd(data.lifetimeEarnings.nominal)} nominal as paid`}
+            {`Future pay: ${fmtAxisUsd(data.lifetimeEarnings.today)} today · ${fmtAxisUsd(data.lifetimeEarnings.nominal)} future-year dollars`}
           </Text>
 
           <View style={[s.takeaway, { borderLeftColor: accent.accent }]}>
@@ -93,7 +93,7 @@ export function EarlyYearsHumanCapitalPagePdf(
                 flex: 2,
                 align: "right",
                 render: (row) => (
-                  <DualDollarValuePdf value={row.salary} nominalLabel={`in ${row.year}`} />
+                  <DualDollarValuePdf value={row.salary} />
                 ),
               },
             ]}

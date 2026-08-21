@@ -18,7 +18,7 @@ const base: EarlyYearsWaitingPageData = {
   ],
   seriesLabels: ["Start now", "Start in 5 years", "Start in 10 years"],
   raisedRate: 0.11,
-  takeaway: "Waiting five years costs about $135K today ($391K in 2062 dollars) by age 65.",
+  takeaway: "Waiting five years costs about $135K today ($391K future-year dollars) by age 65.",
   isCapped: false,
   emptyMessage: null,
   tidbits: [],
@@ -59,7 +59,7 @@ describe("EarlyYearsWaitingPagePdf", () => {
     expect(text).toContain("Age 65");
     // Chart-only: the takeaway quotes $135K, not this.
     expect(text).toContain("$1.3M");
-    expect(text).toContain("$3,884,000 in 2062");
+    expect(text).toContain("$3,884,000 future-year dollars");
   });
 
   it("says on the sheet that only the start date changes, and names the rate once", async () => {

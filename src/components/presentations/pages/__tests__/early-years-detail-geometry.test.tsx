@@ -63,7 +63,7 @@ const human: EarlyYearsHumanCapitalPageData = {
   multiple: 65,
   lastEarningYear: 2071,
   takeaway:
-    "About $3.1M today ($5.0M nominal as paid) of future pay will pass through your hands. That is roughly 65 times what you have invested today.",
+    "About $3.1M today ($5.0M future-year dollars) of future pay will pass through your hands. That is roughly 65 times what you have invested today.",
   detailRows: Array.from({ length: 10 }, (_, index) => {
     const year = index === 9 ? 2071 : 2026 + index * 5;
     return { year, age: 29 + year - 2026, salary: pair(120_000, year) };
@@ -92,7 +92,7 @@ const ladder: EarlyYearsLadderPageData = {
   rungs,
   cappedRungLabels: ["Save 17%"],
   takeaway:
-    "At age 65, the Save 17% bar is about $700K today ($2.0M in 2062 dollars) ahead of Save 8% (today).",
+    "At age 65, the Save 17% bar is about $700K today ($2.0M future-year dollars) ahead of Save 8% (current plan).",
   emptyMessage: null,
   tidbits: TIDBITS,
   basis: { inflationRate: 0.024, planStartYear: 2026 },
@@ -110,7 +110,7 @@ const waiting: EarlyYearsWaitingPageData = {
   seriesLabels: ["Start now", "Start in 5 years", "Start in 10 years", "Start in 15 years"],
   raisedRate: 0.11,
   takeaway:
-    "Waiting five years leaves about $250K today ($720K in 2062 dollars) less at age 65.",
+    "Waiting five years leaves about $250K today ($720K future-year dollars) less at age 65.",
   isCapped: true,
   emptyMessage: null,
   tidbits: TIDBITS,
@@ -128,7 +128,6 @@ const roth: EarlyYearsRothPageData = {
     label: String(label),
     traditional: { today: Number(traditional), nominal: Number(traditional) * 2 },
     roth: { today: Number(allRoth), nominal: Number(allRoth) * 2 },
-    nominalLabel: "nominal as paid",
     betterIsLower: label !== "Average yearly spending in retirement",
   })),
   detailRows: Array.from({ length: 14 }, (_, index) => {
@@ -141,7 +140,7 @@ const roth: EarlyYearsRothPageData = {
     };
   }),
   takeaway:
-    "Over the whole plan, all-Roth contributions leave about $153K today ($510K nominal as paid) less tax paid.",
+    "Over the whole plan, all-Roth contributions leave about $153,000 today ($510,000 future-year dollars) less tax paid.",
   spendingIsFixed: true,
   emptyMessage: null,
   tidbits: TIDBITS,
@@ -152,7 +151,6 @@ const debt: EarlyYearsDebtOrInvestPageData = {
   liabilityName: "student loan",
   monthlyAmount: 500,
   milestoneAge: 65,
-  milestoneYear: 2062,
   loan: {
     label: "Onto the loan",
     debtFreeYear: 2032,
@@ -175,7 +173,7 @@ const debt: EarlyYearsDebtOrInvestPageData = {
     };
   }),
   takeaway:
-    'By age 65, "Into the 401(k)" leaves about $55K today ($159K in 2062 dollars) more.',
+    'By age 65, "Into the 401(k)" leaves about $55K today ($159K future-year dollars) more.',
   emptyMessage: null,
   tidbits: TIDBITS,
 };
