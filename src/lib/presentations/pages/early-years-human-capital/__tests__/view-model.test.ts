@@ -4,13 +4,22 @@ import type { BuildDataContext } from "@/components/presentations/registry";
 
 const OPTS = { tidbits: [] };
 
-/** A projection year: salary, and the liquid portfolio at the start of it. */
-const yr = (year: number, salaries: number, liquid: number) => ({
+/** A projection year: salary, and the liquid portfolio at year end and today. */
+const yr = (year: number, salaries: number, liquidEoy: number, liquidToday = liquidEoy) => ({
   year,
   ages: { client: 29 + (year - 2026) },
   income: { salaries, total: salaries },
   savings: { byAccount: {}, total: 0, employerTotal: 0 },
-  portfolioAssets: { liquidTotal: liquid },
+  portfolioAssets: {
+    taxable: { brokerage: liquidEoy },
+    liquidTotal: liquidEoy,
+  },
+  accountLedgers: {
+    brokerage: {
+      beginningValue: liquidToday,
+      endingValue: liquidEoy,
+    },
+  },
 });
 
 function ctx(years: ReturnType<typeof yr>[], inflationRate = 0.03): BuildDataContext {
@@ -45,9 +54,9 @@ describe("buildEarlyYearsHumanCapitalData", () => {
     expect(real.nominal).toBe(200_000);
   });
 
-  it("quotes the portfolio from the plan's FIRST year", () => {
+  it("quotes today's portfolio from the plan's first-year beginning balances", () => {
     const d = buildEarlyYearsHumanCapitalData(
-      ctx([yr(2026, 100_000, 50_000), yr(2027, 100_000, 900_000)]),
+      ctx([yr(2026, 100_000, 60_000, 50_000), yr(2027, 100_000, 900_000)]),
       OPTS,
     );
     expect(d.invested).toEqual({ today: 50_000, nominal: 50_000 });

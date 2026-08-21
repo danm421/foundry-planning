@@ -8,6 +8,7 @@ import { dollarPair, type DollarPair } from "@/lib/presentations/real-dollars";
 import { householdSavingsRate } from "@/lib/presentations/savings-rate";
 import { renderTidbits } from "@/lib/presentations/tidbits";
 import { resolveAllTokens } from "@/lib/plan-text/tokens";
+import { liquidPortfolioBoy } from "@/engine/portfolio-snapshot";
 import type { BuildDataContext } from "@/components/presentations/registry";
 import type {
   EarlyYearsStandingPageData,
@@ -38,7 +39,9 @@ export function buildEarlyYearsStandingData(
     // Shared with the ladder sheet, which prints the same rate on the next
     // page of the same deck.
     savingsRatePct: householdSavingsRate(first),
-    portfolio: pair(first.portfolioAssets.liquidTotal),
+    // The projection row is end-of-year. This page says "today," so rebuild
+    // the same liquid-portfolio total from the accounts' beginning balances.
+    portfolio: pair(liquidPortfolioBoy(first, ctx.years)),
     match: resolveMatchLine(options, first.savings.employerTotal, pair),
     // Resolved only when the advisor picked something: `resolveAllTokens` walks
     // every registered token against the whole tree, and no page should pay for

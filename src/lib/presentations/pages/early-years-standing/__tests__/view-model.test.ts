@@ -12,6 +12,8 @@ function ctx({
   year = 2026,
   planStartYear = 2026,
   inflationRate = 0.03,
+  portfolioEoy = 84_000,
+  portfolioToday = portfolioEoy,
 }: {
   salary?: number;
   contributed?: number;
@@ -19,13 +21,24 @@ function ctx({
   year?: number;
   planStartYear?: number;
   inflationRate?: number;
+  portfolioEoy?: number;
+  portfolioToday?: number;
 } = {}): BuildDataContext {
   const y = {
     year,
     ages: { client: 29 },
     income: { salaries: salary, total: salary },
     savings: { byAccount: {}, total: contributed, employerTotal: employer },
-    portfolioAssets: { liquidTotal: 84_000 },
+    portfolioAssets: {
+      taxable: { brokerage: portfolioEoy },
+      liquidTotal: portfolioEoy,
+    },
+    accountLedgers: {
+      brokerage: {
+        beginningValue: portfolioToday,
+        endingValue: portfolioEoy,
+      },
+    },
   };
   return {
     years: [y],
@@ -66,6 +79,15 @@ describe("buildEarlyYearsStandingData", () => {
     const d = buildEarlyYearsStandingData(ctx(), OPTS);
     expect(d.savingsRatePct).toBeCloseTo(0.08, 6);
     expect(d.isEmpty).toBe(false);
+  });
+
+  it("uses current account balances, not the first projection year's ending balances", () => {
+    const d = buildEarlyYearsStandingData(
+      ctx({ portfolioToday: 100_000, portfolioEoy: 113_996 }),
+      OPTS,
+    );
+
+    expect(d.portfolio).toEqual({ today: 100_000, nominal: 100_000 });
   });
 
   it("names the scenario, age and starting year without duplicating the unit explanation", () => {

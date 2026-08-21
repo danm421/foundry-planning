@@ -8,6 +8,7 @@
 import { dollarPair, sumDollarPairs, type DollarPair } from "@/lib/presentations/real-dollars";
 import { renderTidbits } from "@/lib/presentations/tidbits";
 import { resolveAllTokens } from "@/lib/plan-text/tokens";
+import { liquidPortfolioBoy } from "@/engine/portfolio-snapshot";
 // The same formatter the chart labels its bars with — one sheet printing "$3.1M"
 // beside "$3,120,000" reads as two different units.
 import { fmtAxisUsd } from "@/components/presentations/pages/retirement-comparison/chart-axis";
@@ -45,7 +46,7 @@ export function buildEarlyYearsHumanCapitalData(
     years.map((y) => dollarPair(y.income.salaries, y.year, basis)),
   );
   const invested = dollarPair(
-    years[0].portfolioAssets.liquidTotal,
+    liquidPortfolioBoy(years[0], years),
     years[0].year,
     basis,
   );
