@@ -99,6 +99,26 @@ describe("SolverMonthlyCashFlowPanel", () => {
     expect(screen.getByText(/the portfolio supplies the rest/i)).toBeInTheDocument();
   });
 
+  // The engine does not always fund a shortfall by withdrawing: once the
+  // accounts are empty it overdrafts checking and books no draw at all. Saying
+  // "the portfolio supplies the rest" there describes a rescue that did not
+  // happen.
+  it("does not claim the portfolio covered a gap it never drew for", () => {
+    render(
+      <SolverMonthlyCashFlowPanel
+        rows={[
+          row({ income: 4_100, leftAfterFixed: -1_500, portfolioDraw: 0, available: -1_500 }),
+        ]}
+        selectedYear={2026}
+        onYearClick={noop}
+        basis="today"
+        onBasisChange={noop}
+      />,
+    );
+    expect(screen.getByTestId("monthly-left-after-fixed")).toHaveTextContent("-$1,500");
+    expect(screen.queryByText(/the portfolio supplies the rest/i)).toBeNull();
+  });
+
   it("flags a depleted year on the hero card", () => {
     render(
       <SolverMonthlyCashFlowPanel

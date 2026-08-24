@@ -99,7 +99,11 @@ export const SolverMonthlyCashFlowPanel = memo(function SolverMonthlyCashFlowPan
           />
         </div>
 
-        {selected.leftAfterFixed < 0 ? (
+        {/* Only when the portfolio actually is supplying it. When the money has
+            run out the engine overdrafts instead of withdrawing — no draw is
+            booked at all — and this sentence would be describing a rescue that
+            never happened. */}
+        {selected.leftAfterFixed < 0 && selected.portfolioDraw > 0 ? (
           <p className="mt-2 text-[11px] text-ink-4">
             Income covers {fmt.format(selected.income)} of {fmt.format(selected.fixed.total)} in
             fixed costs — the portfolio supplies the rest.
