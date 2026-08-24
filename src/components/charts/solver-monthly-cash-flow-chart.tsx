@@ -51,6 +51,25 @@ const AVAILABLE_LABEL = "Available";
  *  must never be the only thing carrying a meaning this severe. */
 const DEPLETED_NOTE = "the portfolio has run out; this money is not there";
 
+/** The depletion flag's SECOND carrier: a depleted year's Available segment is
+ *  the only segment in the chart that is outlined.
+ *
+ *  The stain cannot carry it alone. In light theme `crit` #b91c1c sits 7.6 ΔE76
+ *  from the ordinary Taxes band #c5392b — this chart's tightest INTENTIONAL
+ *  pair is 25.5 — so two large flat patches of red read as one; and hue carries
+ *  nothing at all for a color-blind reader, in either theme. What survives both
+ *  is an outline where no other segment has one.
+ *
+ *  The stroke is `chartChrome().title`, the chart's single non-series ink (the
+ *  Income line and the selected-year outline already use it). A third stroke
+ *  hue would duplicate a series color or leave the palette, and the carrier is
+ *  the outline's PRESENCE, not its hue. Selection and depletion stay legible
+ *  apart by SCOPE: selection outlines the whole column, depletion one band. */
+const DEPLETED_BORDER_WIDTH = 2;
+
+/** The selected year's outline, matching `SolverCashFlowChart`. */
+const SELECTED_BORDER_WIDTH = 2;
+
 interface MonthlyDataset {
   type: "bar" | "line";
   label: string;
@@ -59,7 +78,10 @@ interface MonthlyDataset {
    *  stains without touching its neighbours. A flat string everywhere else. */
   backgroundColor?: string | string[];
   borderColor?: string;
-  borderWidth?: number;
+  /** An ARRAY on the Available band — one width per year, so only a depleted
+   *  year is outlined. A flat number on the Income line, absent elsewhere. */
+  borderWidth?: number | number[];
+  borderSkipped?: boolean;
   stack?: string;
   fill?: boolean;
   pointRadius?: number;
@@ -85,6 +107,7 @@ export function buildMonthlyCashFlowChartData(
 ): { labels: string[]; datasets: MonthlyDataset[] } {
   const c = theme === "light" ? colorsLight : colors;
   const palette = theme === "light" ? brandDataLight : brandData;
+  const chrome = chartChrome(theme);
 
   const bar = (
     label: string,
@@ -110,11 +133,18 @@ export function buildMonthlyCashFlowChartData(
         (r) => r.fixed.insurance + r.fixed.realEstate + r.fixed.other,
         palette.grey,
       ),
-      bar(
-        AVAILABLE_LABEL,
-        (r) => r.available,
-        rows.map((r) => (r.depleted ? c.crit : palette.green)),
-      ),
+      {
+        ...bar(
+          AVAILABLE_LABEL,
+          (r) => r.available,
+          rows.map((r) => (r.depleted ? c.crit : palette.green)),
+        ),
+        borderColor: chrome.title,
+        borderWidth: rows.map((r) => (r.depleted ? DEPLETED_BORDER_WIDTH : 0)),
+        // All four sides, not the three Chart.js skips by default, so the
+        // depleted segment reads as boxed off from the stack it sits on.
+        borderSkipped: false,
+      },
       {
         type: "line",
         label: "Income",
@@ -144,6 +174,43 @@ export function monthlyCashFlowTooltipLabel(
   return depleted && datasetLabel === AVAILABLE_LABEL ? `${base} — ${DEPLETED_NOTE}` : base;
 }
 
+/**
+ * Outline the selected year rather than dimming the rest, so the whole
+ * projection stays readable. Mirrors `SolverCashFlowChart`.
+ *
+ * COMPOSES with the border the builder already wrote — it does not overwrite
+ * it. Writing a selection-only width across the chart would zero the depletion
+ * outline on every year that is not the selected one, silently un-flagging the
+ * chart's one hard warning the moment an advisor clicks a different year. A
+ * depleted year that IS the selected year gets one stroke for both reasons and
+ * still reads as depleted through its stain and its tooltip.
+ */
+export function applySelectedYearOutline(
+  data: { labels: string[]; datasets: MonthlyDataset[] },
+  selectedIndex: number,
+  outlineColor: string,
+): { labels: string[]; datasets: MonthlyDataset[] } {
+  if (selectedIndex < 0) return data;
+  return {
+    ...data,
+    datasets: data.datasets.map((ds) => {
+      if (ds.type !== "bar") return ds;
+      const own = ds.borderWidth;
+      return {
+        ...ds,
+        borderColor: ds.borderColor ?? outlineColor,
+        borderWidth: data.labels.map((_, i) =>
+          Math.max(
+            (Array.isArray(own) ? own[i] : own) ?? 0,
+            i === selectedIndex ? SELECTED_BORDER_WIDTH : 0,
+          ),
+        ),
+        borderSkipped: false,
+      };
+    }),
+  };
+}
+
 interface Props {
   rows: MonthlyCashFlowRow[];
   onYearClick?: (year: number) => void;
@@ -160,25 +227,10 @@ export function SolverMonthlyCashFlowChart({ rows, onYearClick, selectedYear }: 
     [rows, selectedYear],
   );
 
-  // Outline the selected year rather than dimming the rest, so the whole
-  // projection stays readable. Mirrors SolverCashFlowChart.
-  const styledData = useMemo(() => {
-    if (selectedIndex < 0) return data;
-    return {
-      ...data,
-      datasets: data.datasets.map((ds) =>
-        ds.type !== "bar"
-          ? ds
-          : {
-              ...ds,
-              borderColor: chrome.title,
-              borderWidth: (ctx: { dataIndex: number }) =>
-                ctx.dataIndex === selectedIndex ? 2 : 0,
-              borderSkipped: false,
-            },
-      ),
-    };
-  }, [data, selectedIndex, chrome.title]);
+  const styledData = useMemo(
+    () => applySelectedYearOutline(data, selectedIndex, chrome.title),
+    [data, selectedIndex, chrome.title],
+  );
 
   return (
     <Chart
