@@ -12,11 +12,16 @@ import type { ClientData, DisabilityPolicy, Expense } from "@/engine/types";
  *  disability policies. Run it after us and the disability premium is deleted
  *  and never regenerated: it VANISHES SILENTLY, no error, no warning.
  *
- *  There are exactly two non-test call sites and both honour the ordering:
+ *  There are exactly three non-test call sites and all honour the ordering:
  *    - projection/load-client-data.ts — this synthesizer wraps the
  *      life-insurance chain outermost.
  *    - scenario/loader.ts — this link sits after the life-insurance links.
- *  Any third call site must sit downstream of `withSynthesizedPremiums`. The
+ *    - solver/apply-mutations.ts — re-derives from the MUTATED tree, because
+ *      the stress-disability lever writes `planSettings.disabilityEvent` after
+ *      both loaders have already run and waiver of premium reads it. Safe:
+ *      `applyMutations` never calls `withSynthesizedPremiums`, and the tree it
+ *      receives has already been through it at load.
+ *  Any further call site must sit downstream of `withSynthesizedPremiums`. The
  *  "ORDERING INVARIANT" test in ./__tests__/disability-premium-expense.test.ts
  *  pins both directions. */
 export function synthesizeDisabilityPremiums(tree: ClientData): Expense[] {
