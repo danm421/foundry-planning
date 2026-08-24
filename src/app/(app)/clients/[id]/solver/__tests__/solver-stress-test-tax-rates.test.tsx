@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ClientData } from "@/engine/types";
+import { MAX_RATE_STRESS_POINTS } from "@/lib/tax/rate-stress";
 import { SolverStressTestTab } from "../solver-stress-test-tab";
 
 const CURRENT_YEAR = 2026;
@@ -87,12 +88,25 @@ describe("Tax rates rise stressor", () => {
     });
   });
 
-  it("commits an edited start year without losing the rate", () => {
+  it("clamps a rate increase above the ceiling", () => {
     const { onChange } = renderTab({ taxRateStress: { points: 0.03, startYear: 2032 } });
+    fireEvent.blur(screen.getByDisplayValue("3"), { target: { value: "25" } });
+    expect(onChange).toHaveBeenCalledWith({
+      kind: "stress-tax-rates",
+      points: MAX_RATE_STRESS_POINTS,
+      startYear: 2032,
+    });
+  });
+
+  // Stored points (0.05) deliberately differs from DEFAULT_TAX_RATE_POINTS
+  // (0.03): a handler that hardcoded the default instead of reading the
+  // stored value would still pass if this fixture matched the default.
+  it("commits an edited start year without losing the rate", () => {
+    const { onChange } = renderTab({ taxRateStress: { points: 0.05, startYear: 2032 } });
     fireEvent.blur(screen.getByDisplayValue("2032"), { target: { value: "2035" } });
     expect(onChange).toHaveBeenCalledWith({
       kind: "stress-tax-rates",
-      points: 0.03,
+      points: 0.05,
       startYear: 2035,
     });
   });
