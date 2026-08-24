@@ -59,10 +59,10 @@ export interface MonthlyAvailableSplit {
  * destination, or left sitting in checking.
  *
  * POSITIVE AMOUNTS ONLY, and that is load-bearing. `surplus_transfer` is booked
- * as two legs: −saveAmount debited from checking (projection.ts:7175) and
- * +saveAmount credited to the destination (:7200). Summing both nets to zero
+ * as two legs: −saveAmount debited from checking (projection.ts:7194) and
+ * +saveAmount credited to the destination (:7219). Summing both nets to zero
  * and silently reports "nothing saved" for every plan with a save destination.
- * `surplus_retained` is a single positive leg on checking (:7215).
+ * `surplus_retained` is a single positive leg on checking (:7234).
  */
 function surplusUnspentAnnual(y: ProjectionYear): number {
   let total = 0;
@@ -95,7 +95,7 @@ function surplusUnspentAnnual(y: ProjectionYear): number {
  * under-counts the balance, which is the dangerous direction: it flags a
  * household that is fine.
  *
- * Read through `normalizeOwners` because THE ENGINE DOES. `projection.ts:446`
+ * Read through `normalizeOwners` because THE ENGINE DOES. `projection.ts:447`
  * runs `data.accounts.map(normalizeOwners)` before it computes anything, so an
  * account carrying no `account_owners` rows is client-owned by the time the
  * engine overdrafts it. Filtering the RAW `clientData.accounts` against a rule
@@ -132,7 +132,7 @@ function householdLiquidAccountIds(
  * NOT a tuned threshold — it is the size of a known engine artefact, and it is
  * PROPORTIONAL because the artefact is.
  *
- * Mechanism, read at `projection.ts:5849-5850`: the phase-12 gap-fill runs at
+ * Mechanism, read at `projection.ts:5868-5869`: the phase-12 gap-fill runs at
  * most `MAX_ITER = 5` Newton steps and breaks early only on an ABSOLUTE
  * `|checkingAfterTax| <= TOLERANCE` of 1. So the undershoot is capped at a
  * dollar ONLY when the loop converges; when it does not, the loop exits still
@@ -167,7 +167,7 @@ const DEPLETION_TOLERANCE_FRACTION = 0.001;
  *
  * When the money runs out the engine does not cut spending — it overdrafts and
  * keeps paying, either as the M14 "unfunded remainder" against the last-drawn
- * account (`projection.ts:6672-6702`) or by letting checking itself finish
+ * account (`projection.ts:6691-6721`) or by letting checking itself finish
  * negative once the gap-fill has nothing left to refill it from. Either way the
  * household's liquid total goes underwater and stays there.
  *
@@ -197,7 +197,7 @@ function isDepleted(y: ProjectionYear, householdLiquidIds: Set<string>): boolean
   let net = 0;
   for (const id of householdLiquidIds) net += y.accountLedgers[id]?.endingValue ?? 0;
   // `totalExpenses` is the engine's own outflow side of
-  // `netCashFlow = totalIncome - totalExpenses` (projection.ts:7226) and is
+  // `netCashFlow = totalIncome - totalExpenses` (projection.ts:7245) and is
   // exactly `expenses.total + savings.total + hypoContribution`. Verified by
   // measurement, not by reading: `expenses.total` ALREADY carries taxes (the
   // per-bucket sum matches it to 0.00 across 30 years, and taxes run up to 36%
