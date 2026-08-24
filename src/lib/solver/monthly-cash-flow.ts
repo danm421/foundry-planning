@@ -1,4 +1,6 @@
 import type { ClientData, ProjectionYear } from "@/engine";
+import type { AccountOwner } from "@/engine/ownership";
+import { LIQUID_PORTFOLIO_CATEGORIES } from "@/engine/portfolio-snapshot";
 import { ageLabel } from "./cashflow-year-detail";
 
 /** Nominal = the engine's own future dollars. Today = deflated to plan-start
@@ -34,6 +36,10 @@ export interface MonthlyCashFlowRow {
   /** The household's whole monthly lifestyle budget, living expenses included. */
   available: number;
   split: MonthlyAvailableSplit;
+  /** True when `available` is money that does not exist: the household's liquid
+   *  portfolio finished the year below zero and the engine kept paying anyway.
+   *  Rendered as a hard flag on the chart, the table row and the hero card. */
+  depleted: boolean;
 }
 
 /** Where the available money actually goes today. The three named parts each
@@ -70,6 +76,72 @@ function surplusUnspentAnnual(y: ProjectionYear): number {
   return total;
 }
 
+/**
+ * The accounts whose ending balance is household spendable money.
+ *
+ * Liquid only, using the engine's own `LIQUID_PORTFOLIO_CATEGORIES` rather than
+ * a second hand-maintained list: real estate, business and stock options are net
+ * worth the engine will never draw on, so a $750k house must not make an
+ * exhausted portfolio look solvent.
+ *
+ * Ownership is "has a family-member owner and no entity owner". Deliberately NOT
+ * `controllingFamilyMember` — that requires a single owner at 100%, so it drops
+ * every jointly-owned account, i.e. most real ones, and silences the flag on a
+ * portfolio that is millions underwater.
+ *
+ * `syntheticAccounts` are engine-minted equity destination accounts holding real
+ * household money that never appear in `clientData.accounts`. Omitting them
+ * under-counts the balance, which is the dangerous direction: it flags a
+ * household that is fine.
+ */
+function householdLiquidAccountIds(
+  years: ProjectionYear[],
+  clientData: ClientData,
+): Set<string> {
+  const candidates: Array<{ id: string; category: string; owners: AccountOwner[] }> = [
+    ...clientData.accounts,
+    ...years.flatMap((y) => y.syntheticAccounts ?? []),
+  ];
+  const ids = new Set<string>();
+  for (const a of candidates) {
+    if (!LIQUID_PORTFOLIO_CATEGORIES.has(a.category)) continue;
+    const owners = a.owners ?? [];
+    if (!owners.some((o) => o.kind === "family_member")) continue;
+    if (owners.some((o) => o.kind === "entity")) continue;
+    ids.add(a.id);
+  }
+  return ids;
+}
+
+/**
+ * True when the household's whole liquid portfolio ends the year below zero.
+ *
+ * When the money runs out the engine does not cut spending — it overdrafts and
+ * keeps paying, either as the M14 "unfunded remainder" against the last-drawn
+ * account (`projection.ts:6672-6702`) or by letting checking itself finish
+ * negative once the gap-fill has nothing left to refill it from. Either way the
+ * household's liquid total goes underwater and stays there.
+ *
+ * Measured on a SINGLE account this is a false-positive machine, which is why
+ * it is measured across the portfolio: a self-funding plan that owns a default
+ * checking account ends nine of its thirty years with checking below zero — once
+ * by $3.29 (the gap-fill converges to the engine's own $1 TOLERANCE), otherwise
+ * by ~1e-11 of float dust — while holding $3-5M in liquid assets. Summed, those
+ * same years are $3.4M to $4.9M in the black. The separation is not a tuned
+ * threshold: across six self-funding fixtures the smallest liquid total measured
+ * was +$1,147,000, and the first genuinely depleted year was -$92,483.
+ *
+ * Structural on purpose. The same code writes a ledger entry labelled "Unfunded
+ * shortfall (accounts depleted)", but matching that string would break the
+ * moment someone rewords it — and the checking-overdraft path writes no entry
+ * at all, so a label match would miss it entirely.
+ */
+function isDepleted(y: ProjectionYear, householdLiquidIds: Set<string>): boolean {
+  let net = 0;
+  for (const id of householdLiquidIds) net += y.accountLedgers[id]?.endingValue ?? 0;
+  return net < 0;
+}
+
 /** Deflate to plan-start purchasing power. Returns 1 for the nominal basis and
  *  for the plan's own first year, so the near-term figures are untouched. */
 function deflator(
@@ -87,6 +159,8 @@ export function buildMonthlyCashFlowRows(
   clientData: ClientData,
   basis: DollarBasis = "today",
 ): MonthlyCashFlowRow[] {
+  const householdLiquidIds = householdLiquidAccountIds(years, clientData);
+
   return years.map((y) => {
     // One scale factor per year: annual → monthly, then nominal → chosen basis.
     const k = deflator(y.year, basis, clientData.planSettings) / MONTHS_PER_YEAR;
@@ -136,6 +210,7 @@ export function buildMonthlyCashFlowRows(
       portfolioDraw,
       available,
       split,
+      depleted: isDepleted(y, householdLiquidIds),
     };
   });
 }
