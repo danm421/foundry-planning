@@ -74,9 +74,13 @@ describe("EarlyYearsDebtOrInvestPagePdf", () => {
     expect(text).toContain("Student loan");
     expect(text).toContain("2032");
     expect(text).toContain("$930,000");
+    // The arm CARD still spells its units out — it is two hero figures, not a
+    // column of them. The detail table names them once, in its caption.
     expect(text).toContain("$2,694,000 future-year dollars");
-    expect(text).toContain("$29,851 future-year dollars");
-    expect(text).not.toMatch(/\$0 today\s+Same amount in future-year dollars/);
+    expect(text).toContain("$29,851");
+    expect(text).not.toContain("$29,851 future-year dollars");
+    expect(text).toContain("Student loan balance still owed");
+    expect(text).not.toContain("Same amount in future-year dollars");
   });
 
   it("says on the sheet that the extra payment costs real money too", async () => {

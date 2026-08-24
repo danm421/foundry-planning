@@ -48,3 +48,17 @@ const MONTH_NAMES = [
 export function dateLong(d: Date): string {
   return `${MONTH_NAMES[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
+
+/**
+ * Fraction → percent, whole where it is whole: 0.03 → "3%", 0.025 → "2.5%".
+ *
+ * A trailing ".0" on a round assumption reads as precision the number does not
+ * have. NOTE: `src/lib/presentations/pages/assumptions/helpers.ts` prints rates
+ * to one decimal always, so the Assumptions sheet says "3.0%" where this says
+ * "3%" — pre-existing, and not worth changing under a copy edit.
+ */
+export function percentLabel(fraction: number): string {
+  if (!Number.isFinite(fraction)) return "—";
+  const pct = fraction * 100;
+  return `${Number.isInteger(pct) ? pct : Number(pct.toFixed(1))}%`;
+}

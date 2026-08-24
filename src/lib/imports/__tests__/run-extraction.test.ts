@@ -19,6 +19,40 @@ let importRowResult: unknown[] = [
   { id: "imp1", payloadJson: null, extractHoldings: false, status: "draft" },
 ];
 
+function fileRow(id: string, name: string) {
+  return {
+    id,
+    blobUrl: `https://blob/${name}`,
+    originalFilename: name,
+    documentType: "auto",
+    detectedKind: "pdf",
+    importId: "imp1",
+    deletedAt: null,
+  };
+}
+
+// Controls what the files SELECT (call 1) returns
+let filesResult: unknown[] = [fileRow("f1", "a.pdf")];
+
+/** A stored ExtractionResult carrying one account — enough to count as usable. */
+function storedResult(name: string, accountName: string) {
+  return {
+    documentType: "fact_finder",
+    fileName: name,
+    extracted: {
+      accounts: [{ name: accountName }],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      entities: [],
+      lifePolicies: [],
+      wills: [],
+    },
+    warnings: [],
+    promptVersion: "v",
+  };
+}
+
 vi.mock("@/db", () => ({
   db: {
     select: vi.fn(() => {
@@ -29,17 +63,7 @@ vi.mock("@/db", () => ({
           where: vi.fn(() => {
             if (callIndex === 1) {
               // First select: files — returns array directly (no .limit())
-              return Promise.resolve([
-                {
-                  id: "f1",
-                  blobUrl: "https://blob/a.pdf",
-                  originalFilename: "a.pdf",
-                  documentType: "auto",
-                  detectedKind: "pdf",
-                  importId: "imp1",
-                  deletedAt: null,
-                },
-              ]);
+              return Promise.resolve(filesResult);
             }
             // Second select: import row — supports .limit() chaining
             return {
@@ -70,6 +94,7 @@ beforeEach(() => {
   vi.mocked(extractDocument).mockReset();
   vi.mocked(recordAudit).mockReset();
   selectCallCount = 0;
+  filesResult = [fileRow("f1", "a.pdf")];
   importRowResult = [
     { id: "imp1", payloadJson: null, extractHoldings: false, status: "draft" },
   ];
@@ -118,6 +143,102 @@ describe("runImportExtraction", () => {
     const auditCalls = vi.mocked(recordAudit).mock.calls.map((c) => c[0].action);
     expect(auditCalls).toContain("import.extraction.started");
     expect(auditCalls).toContain("import.extraction.completed");
+  });
+
+  // The onboarding drawer lets an advisor add documents to an import that has
+  // already been read. Only the new file may go to the model — re-reading the
+  // rest pays for them twice and can outrun the extract route's 300s ceiling.
+  it("with skipExtracted, only reads files that have no stored result", async () => {
+    filesResult = [fileRow("f1", "a.pdf"), fileRow("f2", "b.pdf")];
+    importRowResult = [
+      {
+        id: "imp1",
+        payloadJson: {
+          fileResults: {
+            f1: storedResult("a.pdf", "already here"),
+          },
+        },
+        extractHoldings: false,
+        status: "review",
+      },
+    ];
+    vi.mocked(extractDocument).mockResolvedValue(
+      storedResult("b.pdf", "new") as never,
+    );
+
+    const res = await runImportExtraction({
+      importId: "imp1",
+      clientId: "c1",
+      firmId: "org_A",
+      model: "mini",
+      extractHoldings: false,
+      skipExtracted: true,
+    });
+
+    expect(extractDocument).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(extractDocument).mock.calls[0][1]).toBe("b.pdf");
+    expect(res.succeeded).toBe(1);
+    expect(res.status).toBe("review");
+  });
+
+  it("with skipExtracted and nothing new, reads nothing and keeps review status", async () => {
+    importRowResult = [
+      {
+        id: "imp1",
+        payloadJson: {
+          fileResults: {
+            f1: storedResult("a.pdf", "already here"),
+          },
+        },
+        extractHoldings: false,
+        status: "review",
+      },
+    ];
+
+    const res = await runImportExtraction({
+      importId: "imp1",
+      clientId: "c1",
+      firmId: "org_A",
+      model: "mini",
+      extractHoldings: false,
+      skipExtracted: true,
+    });
+
+    expect(extractDocument).not.toHaveBeenCalled();
+    expect(res).toEqual({
+      succeeded: 0,
+      failed: 0,
+      status: "review",
+      warnings: [],
+    });
+  });
+
+  it("without skipExtracted, re-reads a file that already has a result", async () => {
+    importRowResult = [
+      {
+        id: "imp1",
+        payloadJson: {
+          fileResults: {
+            f1: storedResult("a.pdf", "already here"),
+          },
+        },
+        extractHoldings: false,
+        status: "review",
+      },
+    ];
+    vi.mocked(extractDocument).mockResolvedValue(
+      storedResult("a.pdf", "re-read") as never,
+    );
+
+    await runImportExtraction({
+      importId: "imp1",
+      clientId: "c1",
+      firmId: "org_A",
+      model: "mini",
+      extractHoldings: false,
+    });
+
+    expect(extractDocument).toHaveBeenCalledTimes(1);
   });
 
   it("throws Import not found when the import row is missing", async () => {

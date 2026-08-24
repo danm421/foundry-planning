@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import UploadZone from "@/components/import/upload-zone";
 import {
@@ -31,9 +31,10 @@ interface LoadedImport {
   importId: string;
   payload: ImportPayload | null;
   perTabCommittedAt: Record<string, string> | null;
+  /** Files persisted server-side at load time, newest first. */
+  files: { id: string; name: string }[];
+  /** Live count: `files` plus anything uploaded since this load. */
   fileCount: number;
-  /** fileId → original filename, for the per-row source-document badge. */
-  fileNames: Record<string, string>;
 }
 
 export default function WizardImportDrawer({
@@ -49,6 +50,8 @@ export default function WizardImportDrawer({
   const [imp, setImp] = useState<LoadedImport | null>(null);
   const [busy, setBusy] = useState(false);
   const [extractHoldings, setExtractHoldings] = useState(false);
+  /** Non-blocking note carried from the last extraction into the review pane. */
+  const [notice, setNotice] = useState<string | null>(null);
 
   /** PATCH onboarding_state.activeImportId (set or clear). Non-blocking. */
   const setActiveImportId = useCallback(
@@ -94,10 +97,11 @@ export default function WizardImportDrawer({
           ? normalizeImportPayload(body.import.payloadJson.payload)
           : null,
         perTabCommittedAt: body.import.perTabCommittedAt,
+        files: body.files.map((f) => ({
+          id: f.id,
+          name: f.originalFilename,
+        })),
         fileCount: body.files.length,
-        fileNames: Object.fromEntries(
-          body.files.map((f) => [f.id, f.originalFilename]),
-        ),
       };
     },
     [clientId],
@@ -146,7 +150,13 @@ export default function WizardImportDrawer({
     }
     const body = (await res.json()) as { import: { id: string } };
     const importId = body.import.id;
-    setImp({ importId, payload: null, perTabCommittedAt: null, fileCount: 0, fileNames: {} });
+    setImp({
+      importId,
+      payload: null,
+      perTabCommittedAt: null,
+      files: [],
+      fileCount: 0,
+    });
     void setActiveImportId(importId);
     return importId;
   }, [imp, clientId, baseScenarioId, setActiveImportId]);
@@ -156,6 +166,7 @@ export default function WizardImportDrawer({
     if (!imp) return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     setStage("extracting");
     try {
       const extractRes = await fetch(
@@ -163,7 +174,14 @@ export default function WizardImportDrawer({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: "mini", extractHoldings }),
+          body: JSON.stringify({
+            model: "mini",
+            extractHoldings,
+            // Documents can be added to an import that has already been read.
+            // Only the new ones need the model — re-reading the rest would
+            // pay for them twice and can outrun the route's time budget.
+            skipExtracted: true,
+          }),
         },
       );
       if (!extractRes.ok) {
@@ -173,11 +191,23 @@ export default function WizardImportDrawer({
             `Extraction failed (${extractRes.status})`,
         );
       }
-      // The extract route reports status "draft" when every file failed.
-      const extractBody = (await extractRes.json()) as { status?: string };
+      // The extract route reports status "draft" when nothing usable came out.
+      const extractBody = (await extractRes.json()) as {
+        status?: string;
+        succeeded?: number;
+        failed?: number;
+      };
       if (extractBody.status === "draft") {
         throw new Error(
           "Every uploaded file failed to extract. Check the file and try again.",
+        );
+      }
+      // A partial failure still lands on review — earlier documents keep the
+      // status green — so say so rather than letting the new file vanish.
+      const failedCount = extractBody.failed ?? 0;
+      if (failedCount > 0) {
+        setNotice(
+          `${failedCount} document${failedCount === 1 ? "" : "s"} could not be read. The rows below come from the rest.`,
         );
       }
       const matchRes = await fetch(
@@ -217,10 +247,17 @@ export default function WizardImportDrawer({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
-  const hasDataForStep =
-    stage === "review" && imp?.payload
-      ? stepHasImportData(imp.payload, step)
-      : false;
+  /** This import has been through extraction at least once. */
+  const alreadyRead = Boolean(imp?.payload);
+  const hasDataForStep = imp?.payload
+    ? stepHasImportData(imp.payload, step)
+    : false;
+
+  /** fileId → original filename, for the per-row source-document badge. */
+  const fileNames = useMemo(
+    () => Object.fromEntries((imp?.files ?? []).map((f) => [f.id, f.name])),
+    [imp?.files],
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -263,13 +300,38 @@ export default function WizardImportDrawer({
 
           {stage === "upload" && (
             <div className="space-y-4">
+              {alreadyRead && imp && imp.files.length > 0 ? (
+                <div className="rounded-[var(--radius-sm)] border border-hair bg-card-2/40 px-3 py-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[12px] text-ink-3">
+                        Already read — add a document below and extract again;
+                        these rows are kept.
+                      </p>
+                      <ul className="mt-1 space-y-0.5">
+                        {imp.files.map((f) => (
+                          <li key={f.id} className="truncate text-[12px] text-ink-2">
+                            {f.name}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    {hasDataForStep ? (
+                      <button
+                        type="button"
+                        onClick={() => setStage("review")}
+                        className="shrink-0 rounded border border-hair px-2.5 py-1 text-[12px] text-ink-2 hover:bg-card-2"
+                      >
+                        Back to review
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
               <UploadZoneGate
                 clientId={clientId}
                 importId={imp?.importId ?? null}
                 ensureImport={ensureImport}
-                // fileNames isn't extended here; loadImport rebuilds the full
-                // map on extraction. The stale map is never user-visible since
-                // the SourceFilesContext provider only renders in stage "review".
                 onUploaded={() =>
                   setImp((cur) =>
                     cur ? { ...cur, fileCount: cur.fileCount + 1 } : cur,
@@ -291,6 +353,9 @@ export default function WizardImportDrawer({
                   </label>
                   <p className="text-[11px] text-ink-4">
                     Pulls each position&apos;s ticker, shares, and cost basis from brokerage statements. Bonds, untickered funds, and cash are saved with the values shown on the statement.
+                    {alreadyRead
+                      ? " Applies to documents that haven't been read yet."
+                      : ""}
                   </p>
                   <button
                     type="button"
@@ -298,7 +363,11 @@ export default function WizardImportDrawer({
                     disabled={busy}
                     className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-on disabled:opacity-60"
                   >
-                    {busy ? "Extracting…" : "Extract data"}
+                    {busy
+                      ? "Extracting…"
+                      : alreadyRead
+                        ? "Extract new documents"
+                        : "Extract data"}
                   </button>
                 </div>
               ) : (
@@ -332,15 +401,34 @@ export default function WizardImportDrawer({
           )}
 
           {stage === "review" && imp?.payload && hasDataForStep && (
-            <WizardImportReview
-              clientId={clientId}
-              importId={imp.importId}
-              step={step}
-              payload={imp.payload}
-              perTabCommittedAt={imp.perTabCommittedAt}
-              onCommitted={handleCommitted}
-              fileNames={imp.fileNames}
-            />
+            <div className="space-y-4">
+              {notice ? (
+                <p className="rounded-[var(--radius-sm)] border border-hair bg-card-2/40 px-3 py-2 text-[12px] text-ink-3">
+                  {notice}
+                </p>
+              ) : null}
+              <div className="flex items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-hair bg-card-2/40 px-3 py-2">
+                <span className="text-[12px] text-ink-3">
+                  Read {imp.fileCount} document{imp.fileCount === 1 ? "" : "s"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setStage("upload")}
+                  className="shrink-0 rounded border border-hair px-2.5 py-1 text-[12px] text-ink-2 hover:bg-card-2"
+                >
+                  Add another document
+                </button>
+              </div>
+              <WizardImportReview
+                clientId={clientId}
+                importId={imp.importId}
+                step={step}
+                payload={imp.payload}
+                perTabCommittedAt={imp.perTabCommittedAt}
+                onCommitted={handleCommitted}
+                fileNames={fileNames}
+              />
+            </div>
           )}
 
           {stage === "review" && imp?.payload && !hasDataForStep && (

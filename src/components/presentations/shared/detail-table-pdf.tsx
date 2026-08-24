@@ -11,6 +11,7 @@ export interface DetailTableColumn<Row> {
 
 const s = StyleSheet.create({
   table: { marginTop: 10 },
+  caption: { fontSize: 6.5, color: T.ink3, marginBottom: 4 },
   header: {
     flexDirection: "row",
     borderBottomWidth: 1,
@@ -33,26 +34,38 @@ const s = StyleSheet.create({
   cell: { paddingRight: 5, justifyContent: "center" },
 });
 
+/** The caption line above a table. Exported because the Roth sheet's summary
+ *  matrix is hand-rolled rather than a `DetailTablePdf`, and two copies of one
+ *  caption style drift apart the first time it is retuned. */
+export function TableCaptionPdf({ children }: { children: string }) {
+  return <Text style={s.caption}>{children}</Text>;
+}
+
 export function DetailTablePdf<Row>({
   rows,
   columns,
   rowKey,
+  caption,
   marginTop = 10,
   rowPaddingVertical = 2.25,
 }: {
   rows: Row[];
   columns: DetailTableColumn<Row>[];
   rowKey: (row: Row) => string;
+  /** Names the quantity and its units ONCE, above the table. The cells then
+   *  hold digits only — see `DualDollarValuePdf`. */
+  caption?: string;
   marginTop?: number;
   rowPaddingVertical?: number;
 }) {
   if (rows.length === 0) return null;
   return (
     <View style={[s.table, { marginTop }]}>
+      {caption != null && <TableCaptionPdf>{caption}</TableCaptionPdf>}
       <View style={s.header} wrap={false}>
-        {columns.map((column) => (
+        {columns.map((column, index) => (
           <View
-            key={column.header}
+            key={index}
             style={[
               s.cell,
               {
@@ -73,9 +86,9 @@ export function DetailTablePdf<Row>({
           style={[s.row, { paddingVertical: rowPaddingVertical }]}
           wrap={false}
         >
-          {columns.map((column) => (
+          {columns.map((column, index) => (
             <View
-              key={column.header}
+              key={index}
               style={[
                 s.cell,
                 {

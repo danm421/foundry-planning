@@ -1,5 +1,5 @@
 import type { Tidbit } from "@/lib/presentations/tidbits";
-import type { DollarPair } from "@/lib/presentations/real-dollars";
+import type { DeflationBasis, DollarPair } from "@/lib/presentations/real-dollars";
 
 /**
  * What the page says about the employer match.
@@ -25,6 +25,11 @@ export interface EarlyYearsStandingPageData {
    *  so the page says so instead of printing a 0% that is not true. */
   isEmpty: boolean;
   clientAge: number;
+  /** What the deck means by "today's dollars": the year quoted in, and the rate
+   *  converted at. The reading-the-dollars panel prints both, so the client is
+   *  told the plan's OWN assumption rather than a generic 3%. Same shape the
+   *  ladder and waiting sheets carry, so one concept has one spelling. */
+  basis: DeflationBasis;
   grossAnnual: DollarPair;
   contributionsAnnual: DollarPair;
   /** Fraction of salary, 0–1. */

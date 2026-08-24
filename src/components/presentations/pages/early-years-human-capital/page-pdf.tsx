@@ -5,7 +5,10 @@ import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
 import { dataLight } from "@/brand";
 import { HumanCapitalChartPdf } from "./human-capital-chart-pdf";
 import { DetailTablePdf } from "@/components/presentations/shared/detail-table-pdf";
-import { DualDollarValuePdf } from "@/components/presentations/shared/dual-dollar-value-pdf";
+import {
+  DualDollarValuePdf,
+  dualDollarCaption,
+} from "@/components/presentations/shared/dual-dollar-value-pdf";
 import { fmtAxisUsd } from "@/components/presentations/pages/retirement-comparison/chart-axis";
 import type { RenderPdfInput } from "@/components/presentations/registry";
 import type { EarlyYearsHumanCapitalPageData } from "@/lib/presentations/pages/early-years-human-capital/types";
@@ -82,6 +85,7 @@ export function EarlyYearsHumanCapitalPagePdf(
           <DetailTablePdf
             rows={data.detailRows}
             rowKey={(row) => String(row.year)}
+            caption={dualDollarCaption("Salary in each year")}
             columns={[
               {
                 header: "Year / age",

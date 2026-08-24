@@ -7,7 +7,17 @@ interface SelectDetailYearsArgs {
 
 /** Measured one-Letter-sheet row budgets for the five detail layouts. */
 export const HUMAN_CAPITAL_DETAIL_MAX_ROWS = 10;
-export const EARLY_YEARS_GROUPED_DETAIL_MAX_ROWS = 16;
+/**
+ * How many milestone ages the ladder and waiting sheets accept.
+ *
+ * ONE constant because it is two facts that must not drift: both options schemas
+ * cap `milestoneAges` here, and both sheets print ONE ROW PER AGE (with a column
+ * per savings rate or start date — the shape of the chart above them), so it is
+ * also the measured one-sheet row budget at the widest column set those schemas
+ * allow. Raising the cap without re-measuring the sheet would print a table that
+ * runs off the page while the estimator still claimed one sheet.
+ */
+export const EARLY_YEARS_MAX_MILESTONE_AGES = 4;
 export const ROTH_DETAIL_MAX_ROWS = 14;
 export const DEBT_OR_INVEST_DETAIL_MAX_ROWS = 12;
 

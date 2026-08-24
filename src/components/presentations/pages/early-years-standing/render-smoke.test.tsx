@@ -13,6 +13,7 @@ const base: EarlyYearsStandingPageData = {
   isEmpty: false,
   subtitle: "Base Case · At age 29 · Starting year 2026",
   clientAge: 29,
+  basis: { inflationRate: 0.025, planStartYear: 2026 },
   grossAnnual: { today: 120_000, nominal: 120_000 },
   contributionsAnnual: { today: 9_600, nominal: 9_600 },
   savingsRatePct: 0.08,
@@ -86,20 +87,38 @@ describe("EarlyYearsStandingPagePdf render", () => {
     const { text: extracted, layout, bbox } = inspectPdf(await render(base));
     const text = extracted.replace(/\s+/g, " ");
     const pages = layout.split("\f").filter((part) => part.trim().length > 0);
+    // "prices," appears once, inside the reading-the-dollars panel — the
+    // page's bottom-most block. Its depth is what proves the panel filled the
+    // sheet without running under the footer.
     const unitProofBottoms = [...bbox.matchAll(
-      /<word xMin="[\d.-]+" yMin="[\d.-]+" xMax="[\d.-]+" yMax="([\d.-]+)">value\.<\/word>/g,
+      /<word xMin="[\d.-]+" yMin="[\d.-]+" xMax="[\d.-]+" yMax="([\d.-]+)">prices,<\/word>/g,
     )].map((match) => Number(match[1]));
 
     expect(text).toContain("8%");
     expect(text).toContain("Your employer adds $3,600 a year");
-    expect(text).toContain("Today's dollars = future-year dollars");
+    expect(text).toContain("Every figure is in today's dollars");
     expect(text).toContain("Time is the ingredient you can't buy later");
     expect(text).not.toContain("One number, two views");
+    expect(text).not.toContain("Today's dollars = future-year dollars");
     expect(text.match(/\$84,000/g)).toHaveLength(1);
     expect(pages).toHaveLength(1);
     expect(unitProofBottoms).not.toHaveLength(0);
     expect(Math.max(...unitProofBottoms)).toBeGreaterThanOrEqual(600);
     expect(Math.max(...unitProofBottoms)).toBeLessThan(720);
+  });
+
+  // The panel's whole job is telling the client what "today's dollars" means and
+  // at what rate. A generic 3% would be a claim about a number this plan may not
+  // use, so the rate is read back off the rendered sheet.
+  it("names the plan's own inflation rate and basis year, not a generic one", async () => {
+    const text = pdfText(await render(base)).replace(/\s+/g, " ");
+    expect(text).toContain("at 2026 prices");
+    expect(text).toContain("inflation assumption of 2.5% a year");
+    expect(
+      pdfText(
+        await render({ ...base, basis: { ...base.basis, inflationRate: 0.03 } }),
+      ).replace(/\s+/g, " "),
+    ).toContain("inflation assumption of 3% a year");
   });
 
   it("renders without a match line or tidbits", async () => {

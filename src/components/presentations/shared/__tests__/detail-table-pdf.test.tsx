@@ -14,6 +14,7 @@ async function textOf(): Promise<string> {
     <Document>
       <Page size="LETTER">
         <DetailTablePdf
+          caption="Portfolio · today's dollars, with the future-year amount beneath"
           rows={[
             { year: 2025, today: 0, nominal: 0 },
             { year: 2026, today: 120_000, nominal: 120_000 },
@@ -49,24 +50,28 @@ async function textOf(): Promise<string> {
 }
 
 describe("DetailTablePdf", () => {
-  it("prints today's dollars first and plain-language future-year dollars beneath it", async () => {
+  it("prints today's dollars first and the future-year amount beneath it", async () => {
     const text = await textOf();
-    expect(text).toContain("$1,125,232 today");
-    expect(text).toContain("$2,520,232 future-year dollars");
+    expect(text).toContain("$1,125,232");
+    expect(text).toContain("$2,520,232");
   });
 
-  it("does not repeat a current-year amount when both units are identical", async () => {
+  // The units are the caption's job. Repeating them on every cell is what made
+  // the Early Years tables unreadable, so their absence is asserted, not assumed.
+  it("names the two units once, in the caption, and never inside a cell", async () => {
     const text = await textOf();
-    expect(text).toContain("$120,000 today");
-    expect(text).toContain("Same amount in future-year dollars");
-    expect(text).not.toContain("Same in 2026");
-    expect(text).not.toContain("$120,000 future-year dollars");
+    expect(text).toContain("today's dollars, with the future-year amount beneath");
+    expect(text).not.toContain("$1,125,232 today");
+    expect(text).not.toContain("$2,520,232 future-year dollars");
   });
 
-  it("does not add a redundant future-year line to zero", async () => {
+  // One render answers both: a full renderToBuffer plus a `pdftotext` subprocess
+  // is not worth spending twice on the same fixture.
+  it("prints one figure, not two, when both units agree — including zero", async () => {
     const text = await textOf();
-    expect(text).toContain("$0 today");
-    expect(text.match(/Same amount in future-year dollars/g)).toHaveLength(1);
+    expect(text.match(/\$120,000/g)).toHaveLength(1);
+    expect(text.match(/\$0/g)).toHaveLength(1);
+    expect(text).not.toContain("Same amount in future-year dollars");
   });
 
   it("prints the final row instead of clipping a wrapped flex row", async () => {

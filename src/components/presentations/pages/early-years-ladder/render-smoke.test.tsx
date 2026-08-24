@@ -101,9 +101,21 @@ describe("EarlyYearsLadderPagePdf render", () => {
     expect(text).toContain("Age 65");
     expect(text).toContain("$1.7M");
     expect(text).toContain("the Save 14% bar is about $621K today");
-    expect(text).toContain("$3,312,312 future-year dollars");
+    expect(text).toContain("$3,312,312");
+    expect(text).not.toContain("$3,312,312 future-year dollars");
     expect(text).toContain("both units below");
     expect(text).toContain("Time is the ingredient you can't buy later");
+  });
+
+  // The table is one row per age with a column per rung — the chart's own
+  // shape. The row-per-bar version restated the age once for every rung, so
+  // the age appearing ONCE is the thing worth pinning.
+  it("lays the detail out one row per age, one column per rung", async () => {
+    const text = pdfText(await render(base));
+    expect(text).toContain("Portfolio at each age");
+    expect(text.match(/65 · 2062/g)).toHaveLength(1);
+    expect(text).toContain("SAVE 8% · CURRENT PLAN");
+    expect(text).not.toContain("SAVINGS CHOICE");
   });
 
   // R8 — the footnote is the whole reason the cap is detected. A byte-length

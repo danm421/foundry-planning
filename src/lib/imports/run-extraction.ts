@@ -20,6 +20,15 @@ export interface RunExtractionArgs {
     model: "mini" | "full";
     extractHoldings: boolean;
     comprehensive?: boolean;
+    /**
+     * Skip files that already carry a stored extraction result.
+     *
+     * The onboarding drawer lets an advisor add documents to an import that has
+     * already been extracted. Without this, every earlier document would be
+     * re-read on each addition — paying the model cost again and risking the
+     * route's 300s ceiling once a handful of files are in play.
+     */
+    skipExtracted?: boolean;
 }
 
 export interface RunExtractionResult {
@@ -32,7 +41,15 @@ export interface RunExtractionResult {
 export async function runImportExtraction(
     args: RunExtractionArgs,
 ): Promise<RunExtractionResult> {
-    const { importId, clientId, firmId, model, extractHoldings, comprehensive = false } = args;
+    const {
+        importId,
+        clientId,
+        firmId,
+        model,
+        extractHoldings,
+        comprehensive = false,
+        skipExtracted = false,
+    } = args;
 
     // Load all live files for this import.
     const files = await db
@@ -58,6 +75,23 @@ export async function runImportExtraction(
         ...((importRow.payloadJson as { fileResults?: Record<string, ExtractionResult> })
             ?.fileResults ?? {}),
     };
+
+    const pending = skipExtracted
+        ? files.filter((f) => !fileResults[f.id])
+        : files;
+
+    // Nothing new to read. Return the standing summary rather than rewriting
+    // payloadJson — that write drops the annotated `payload`, and the caller
+    // would be re-running matching for no reason.
+    if (pending.length === 0) {
+        const summary = summarizeExtraction(fileResults);
+        return {
+            succeeded: 0,
+            failed: 0,
+            status: summary.status,
+            warnings: summary.warnings,
+        };
+    }
 
     let succeeded = 0;
     let failed = 0;
@@ -183,8 +217,8 @@ export async function runImportExtraction(
         }
     };
 
-    for (let i = 0; i < files.length; i += CONCURRENCY) {
-        const chunk = files.slice(i, i + CONCURRENCY);
+    for (let i = 0; i < pending.length; i += CONCURRENCY) {
+        const chunk = pending.slice(i, i + CONCURRENCY);
         const outcomes = await Promise.all(chunk.map(extractOne));
         for (const outcome of outcomes) {
             if (outcome.ok) {
