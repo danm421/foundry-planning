@@ -79,8 +79,13 @@ describe("SolverMonthlyCashFlowPanel", () => {
         onBasisChange={noop}
       />,
     );
-    expect(screen.getByText(/portfolio draw/i)).toBeInTheDocument();
-    expect(screen.getByTestId("monthly-draw")).toHaveTextContent("$3,000");
+    // Scoped to the hero line, not the whole panel: the table now carries a
+    // "Portfolio draw" column header too, and an unscoped text match would be
+    // satisfied by the header alone. Reading the label and the amount off the
+    // SAME row is also the stronger claim — it is what "its own line" means.
+    const drawLine = screen.getByTestId("monthly-draw").parentElement!;
+    expect(drawLine).toHaveTextContent(/portfolio draw/i);
+    expect(drawLine).toHaveTextContent("$3,000");
   });
 
   it("reads a negative left-after-fixed as a description, not an error", () => {
@@ -178,6 +183,67 @@ describe("SolverMonthlyCashFlowPanel", () => {
     expect(cell(2026, "Other")).toHaveTextContent("$123");
     expect(cell(2026, "Savings")).toHaveTextContent("$1,000");
     expect(cell(2026, "Available")).toHaveTextContent("$5,000");
+  });
+
+  it("shows the portfolio draw as its own column, so every row reconciles", () => {
+    // The browser pass found that without this column `Available` cannot be
+    // derived from what is on screen: on a drawing plan it exceeds income minus
+    // the four cost columns by exactly the draw, and every row of the table
+    // reads as an arithmetic error.
+    render(
+      <SolverMonthlyCashFlowPanel
+        rows={[
+          row({
+            income: 10_000,
+            fixed: {
+              taxes: 2_000,
+              liabilities: 1_500,
+              savings: 1_000,
+              insurance: 100,
+              realEstate: 20,
+              other: 3,
+              total: 4_623,
+            },
+            leftAfterFixed: 5_377,
+            portfolioDraw: 1_234,
+            available: 6_611,
+          }),
+        ]}
+        selectedYear={2026}
+        onYearClick={noop}
+        basis="today"
+        onBasisChange={noop}
+      />,
+    );
+
+    expect(cell(2026, "Portfolio draw")).toHaveTextContent("$1,234");
+
+    // The reading, not just the presence: the money-in columns come first, the
+    // costs after, the result last. That order is why the column needs no
+    // "this one is added, not subtracted" note beside it.
+    expect(screen.getAllByRole("columnheader").map((th) => th.textContent?.trim())).toEqual([
+      "Year",
+      "Age",
+      "Income",
+      "Portfolio draw",
+      "Taxes",
+      "Debt",
+      "Savings",
+      "Other",
+      "Available",
+    ]);
+
+    // And the row actually adds up as rendered — read back off the screen, not
+    // recomputed from the fixture.
+    const money = (header: string) => Number(cell(2026, header).textContent!.replace(/[$,]/g, ""));
+    expect(
+      money("Income") +
+        money("Portfolio draw") -
+        money("Taxes") -
+        money("Debt") -
+        money("Savings") -
+        money("Other"),
+    ).toBe(money("Available"));
   });
 
   it("moves the headline when a table row is clicked", async () => {

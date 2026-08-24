@@ -138,14 +138,20 @@ export const SolverMonthlyCashFlowPanel = memo(function SolverMonthlyCashFlowPan
       <div className="overflow-x-auto rounded-lg border border-hair bg-card">
         <table className="min-w-full text-sm">
           <caption className="sr-only">
-            Month-by-month cash flow for every plan year: income, the costs already committed, and
-            what is left to live on
+            Month-by-month cash flow for every plan year: income and the portfolio draw that tops
+            it up, the costs already committed, and what is left to live on
           </caption>
           <thead className="text-xs uppercase text-ink-3">
             <tr>
               <Th align="left">Year</Th>
               <Th align="left">Age</Th>
               <Th>Income</Th>
+              {/* Sits WITH Income, ahead of the costs, because it is money in.
+                  Sitting among the cost columns it would read as a fifth cost
+                  and the row would still not add up. In this order it does:
+                  income + draw − taxes − debt − savings − other = available,
+                  which is why the column needs no note explaining its sign. */}
+              <Th>Portfolio draw</Th>
               <Th>Taxes</Th>
               <Th>Debt</Th>
               <Th>Savings</Th>
@@ -181,6 +187,7 @@ export const SolverMonthlyCashFlowPanel = memo(function SolverMonthlyCashFlowPan
                   {r.ageLabel}
                 </Td>
                 <Td>{fmt.format(r.income)}</Td>
+                <Td>{fmt.format(r.portfolioDraw)}</Td>
                 <Td>{fmt.format(r.fixed.taxes)}</Td>
                 <Td>{fmt.format(r.fixed.liabilities)}</Td>
                 <Td>{fmt.format(r.fixed.savings)}</Td>
