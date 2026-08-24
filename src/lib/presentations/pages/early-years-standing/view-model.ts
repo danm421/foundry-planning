@@ -34,6 +34,7 @@ export function buildEarlyYearsStandingData(
     isEmpty: grossNominal <= 0,
     subtitle: `${ctx.scenarioLabel} · At age ${first.ages.client} · Starting year ${first.year}`,
     clientAge: first.ages.client,
+    basis: { inflationRate, planStartYear },
     grossAnnual: pair(grossNominal),
     contributionsAnnual: pair(contributionsNominal),
     // Shared with the ladder sheet, which prints the same rate on the next

@@ -4,7 +4,10 @@ import { TidbitSidebarPdf } from "@/components/presentations/shared/tidbit-sideb
 import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
 import { exactCurrency } from "@/lib/presentations/format";
 import { DetailTablePdf } from "@/components/presentations/shared/detail-table-pdf";
-import { DualDollarValuePdf } from "@/components/presentations/shared/dual-dollar-value-pdf";
+import {
+  DualDollarValuePdf,
+  dualDollarCaption,
+} from "@/components/presentations/shared/dual-dollar-value-pdf";
 import type { RenderPdfInput } from "@/components/presentations/registry";
 import type {
   DebtOrInvestArm,
@@ -127,14 +130,18 @@ export function EarlyYearsDebtOrInvestPagePdf(
           <DetailTablePdf
             rows={data.detailRows}
             rowKey={(row) => String(row.year)}
+            caption={dualDollarCaption(`${data.liabilityName} balance still owed`)}
             columns={[
               {
                 header: "Year / age",
                 flex: 0.8,
                 render: (row) => <Text style={s.detailText}>{`${row.year} · ${row.age}`}</Text>,
               },
+              // The two cards' own labels, verbatim — the table used to rename
+              // them "pay loan" and "invest", so the reader had to map one
+              // choice onto two names to follow the page.
               {
-                header: "Balance · pay loan",
+                header: data.loan.label,
                 flex: 1.4,
                 align: "right",
                 render: (row) => (
@@ -142,7 +149,7 @@ export function EarlyYearsDebtOrInvestPagePdf(
                 ),
               },
               {
-                header: "Balance · invest",
+                header: data.invest.label,
                 flex: 1.4,
                 align: "right",
                 render: (row) => (

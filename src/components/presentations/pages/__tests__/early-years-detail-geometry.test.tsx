@@ -211,16 +211,12 @@ function expectDualDollarRightEdgesAligned(
   const usedPrimary = new Set<number>();
   const usedSecondary = new Set<number>();
   const drifts = values
-    .filter(
-      (value) =>
-        Math.round(value.today) !== 0 || Math.round(value.nominal) !== 0,
-    )
+    // A pair whose two units round to the same number renders ONE line, so
+    // there is no second right edge to align. See `DualDollarValuePdf`.
+    .filter((value) => Math.round(value.today) !== Math.round(value.nominal))
     .map((value) => {
-      const primaryText = `${exactCurrency(value.today)} today`;
-      const secondaryText =
-        Math.round(value.today) === Math.round(value.nominal)
-          ? "Same amount in future-year dollars"
-          : `${exactCurrency(value.nominal)} future-year dollars`;
+      const primaryText = exactCurrency(value.today);
+      const secondaryText = exactCurrency(value.nominal);
       const primaryCandidates = lines
         .map((line, index) => ({ line, index }))
         .filter(

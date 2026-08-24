@@ -59,7 +59,16 @@ describe("EarlyYearsWaitingPagePdf", () => {
     expect(text).toContain("Age 65");
     // Chart-only: the takeaway quotes $135K, not this.
     expect(text).toContain("$1.3M");
-    expect(text).toContain("$3,884,000 future-year dollars");
+    expect(text).toContain("$3,884,000");
+    expect(text).not.toContain("$3,884,000 future-year dollars");
+  });
+
+  // Same shape as the ladder sheet: one row per age, one column per start date.
+  it("lays the detail out one row per age, one column per start date", async () => {
+    const text = await textOf(base);
+    expect(text).toContain("Portfolio at each age");
+    expect(text.match(/65 · 2062/g)).toHaveLength(1);
+    expect(text).not.toContain("START CHOICE");
   });
 
   it("says on the sheet that only the start date changes, and names the rate once", async () => {

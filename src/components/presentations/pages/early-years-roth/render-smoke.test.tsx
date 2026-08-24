@@ -63,8 +63,11 @@ describe("EarlyYearsRothPagePdf", () => {
     expect(text).toContain("ALL ROTH");
     expect(text).toContain("Tax over the whole plan");
     expect(text).toContain("Average yearly spending in retirement");
-    expect(text).toContain("$1,790,000 future-year dollars");
-    expect(text).toContain("$26,859 future-year dollars");
+    // Both tables carry digits only; the caption above each names the units.
+    expect(text).toContain("$1,790,000");
+    expect(text).toContain("$26,859");
+    expect(text).not.toContain("$26,859 future-year dollars");
+    expect(text).toContain("today's dollars, with the future-year amount beneath");
   });
 
   it("explains a plan whose spending cannot move", async () => {

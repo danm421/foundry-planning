@@ -60,7 +60,10 @@ describe("EarlyYearsHumanCapitalPagePdf", () => {
     expect(text).toContain("$48K");
     expect(text).toContain("$3.1M");
     expect(text).toContain("$5.0M future-year dollars");
-    expect(text).toContain("$347,739 future-year dollars");
+    // A detail cell: digits only, with the units named by the table caption.
+    expect(text).toContain("$347,739");
+    expect(text).not.toContain("$347,739 future-year dollars");
+    expect(text).toContain("today's dollars, with the future-year amount beneath");
     expect(text).toContain("65 times");
   });
 

@@ -3,8 +3,7 @@ import { PageFrame } from "@/components/presentations/shared/page-frame";
 import { TidbitSidebarPdf } from "@/components/presentations/shared/tidbit-sidebar-pdf";
 import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
 import { GroupedBarChartPdf } from "@/components/presentations/shared/grouped-bar-chart-pdf";
-import { DetailTablePdf } from "@/components/presentations/shared/detail-table-pdf";
-import { DualDollarValuePdf } from "@/components/presentations/shared/dual-dollar-value-pdf";
+import { GroupedDetailTablePdf } from "@/components/presentations/shared/grouped-detail-table-pdf";
 import { dataLight } from "@/brand";
 import type { RenderPdfInput } from "@/components/presentations/registry";
 import type { EarlyYearsLadderPageData } from "@/lib/presentations/pages/early-years-ladder/types";
@@ -26,7 +25,6 @@ const s = StyleSheet.create({
   },
   takeawayText: { fontSize: 9, color: T.ink, lineHeight: 1.35 },
   footnote: { fontSize: 7, color: T.ink3, lineHeight: 1.35, marginTop: 4 },
-  detailText: { fontSize: 7, color: T.ink },
   empty: { fontSize: 11, color: T.ink2, textAlign: "center", marginTop: 60 },
 });
 
@@ -55,9 +53,6 @@ export function EarlyYearsLadderPagePdf(input: RenderPdfInput<EarlyYearsLadderPa
   const { data, firmName, clientName, reportDate, pageIndex, totalPages, accent } = input;
   const frame = { firmName, clientName, reportDate, pageIndex, totalPages };
   const fills = ladderFills(data.rungs);
-  const detailRows = data.groups.flatMap((group) =>
-    group.bars.map((bar) => ({ age: group.age, year: group.year, bar })),
-  );
 
   if (data.groups.length === 0) {
     return (
@@ -95,30 +90,12 @@ export function EarlyYearsLadderPagePdf(input: RenderPdfInput<EarlyYearsLadderPa
             </View>
           )}
 
-          <DetailTablePdf
-            rows={detailRows}
-            rowKey={(row) => `${row.age}-${row.bar.label}`}
-            rowPaddingVertical={1}
-            columns={[
-              {
-                header: "Age / year",
-                flex: 0.8,
-                render: (row) => <Text style={s.detailText}>{`${row.age} · ${row.year}`}</Text>,
-              },
-              {
-                header: "Savings choice",
-                flex: 1.1,
-                render: (row) => <Text style={s.detailText}>{row.bar.label}</Text>,
-              },
-              {
-                header: "Portfolio",
-                flex: 1.7,
-                align: "right",
-                render: (row) => (
-                  <DualDollarValuePdf value={row.bar.value} />
-                ),
-              },
-            ]}
+          <GroupedDetailTablePdf
+            groups={data.groups}
+            seriesHeaders={data.rungs.map((rung) =>
+              rung.isCurrent ? `${rung.label} · current plan` : rung.label,
+            )}
+            quantity="Portfolio at each age"
           />
 
           {data.cappedRungLabels.length > 0 && (

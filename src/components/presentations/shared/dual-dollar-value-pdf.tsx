@@ -9,6 +9,38 @@ const s = StyleSheet.create({
   secondary: { fontSize: 6, color: T.ink3, lineHeight: 1.1 },
 });
 
+/**
+ * The deck's unit convention, in the client's own words. ONE home for it: five
+ * tables print it, and three phrasings of one convention read as three
+ * conventions on a deck whose whole claim is that its figures are comparable.
+ */
+export const DUAL_DOLLAR_UNITS =
+  "today's dollars, with the future-year amount beneath";
+
+/** "Salary in each year · today's dollars, with the future-year amount beneath" */
+export function dualDollarCaption(quantity: string): string {
+  return `${quantity} · ${DUAL_DOLLAR_UNITS}`;
+}
+
+/**
+ * One figure in the deck's two units: today's dollars on top, the same amount
+ * in the year it happens beneath.
+ *
+ * FOR CELLS. A hero figure — the two arm cards on the debt-or-invest sheet, the
+ * bar total on the human-capital sheet — spells its units out in its own text
+ * instead, because there is no column header or caption beside it to carry
+ * them. Cells bare, heroes labelled.
+ *
+ * The units are named ONCE — by the page subtitle and by the caption over each
+ * table — never inside the cell. A "today" / "future-year dollars" suffix on
+ * every cell is the same six words repeated sixty times across a deck, and it
+ * pushes the digits (the thing being compared down the column) off their own
+ * right edge. Weight and size carry the distinction instead.
+ *
+ * The second line is dropped when the two round to the same number, so it
+ * appears exactly where inflation has actually separated them — the starting
+ * year, and every zero, print one figure.
+ */
 export function DualDollarValuePdf({
   value,
   align = "right",
@@ -18,11 +50,7 @@ export function DualDollarValuePdf({
   align?: "left" | "right";
   emphasis?: boolean;
 }) {
-  const isZero = Math.round(value.today) === 0 && Math.round(value.nominal) === 0;
   const isSame = Math.round(value.today) === Math.round(value.nominal);
-  const secondary = isSame
-    ? "Same amount in future-year dollars"
-    : `${exactCurrency(value.nominal)} future-year dollars`;
 
   return (
     <View style={s.wrap}>
@@ -36,9 +64,13 @@ export function DualDollarValuePdf({
           },
         ]}
       >
-        {`${exactCurrency(value.today)} today`}
+        {exactCurrency(value.today)}
       </Text>
-      {!isZero && <Text style={[s.secondary, { textAlign: align }]}>{secondary}</Text>}
+      {!isSame && (
+        <Text style={[s.secondary, { textAlign: align }]}>
+          {exactCurrency(value.nominal)}
+        </Text>
+      )}
     </View>
   );
 }

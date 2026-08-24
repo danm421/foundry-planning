@@ -2,7 +2,7 @@ import { View, Text, StyleSheet } from "@react-pdf/renderer";
 import { PageFrame } from "@/components/presentations/shared/page-frame";
 import { TidbitSidebarPdf } from "@/components/presentations/shared/tidbit-sidebar-pdf";
 import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
-import { exactCurrency } from "@/lib/presentations/format";
+import { exactCurrency, percentLabel } from "@/lib/presentations/format";
 import type { RenderPdfInput } from "@/components/presentations/registry";
 import type { EarlyYearsStandingPageData } from "@/lib/presentations/pages/early-years-standing/types";
 
@@ -24,7 +24,7 @@ const s = StyleSheet.create({
   matchText: { fontSize: 11.5, color: T.ink, lineHeight: 1.4 },
   unitProof: { justifyContent: "center", borderWidth: 1, borderColor: T.hair2, borderLeftWidth: 3, borderRadius: 3, padding: 18, minHeight: 120 },
   unitProofLabel: { fontSize: 8, color: T.ink2, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6 },
-  unitProofValue: { fontSize: 22, color: T.ink, fontWeight: 700, marginTop: 10 },
+  unitProofValue: { fontSize: 19, color: T.ink, fontWeight: 700, marginTop: 9 },
   unitProofText: { fontSize: 10.5, color: T.ink2, lineHeight: 1.4, marginTop: 8 },
   empty: { fontSize: 11, color: T.ink2, textAlign: "center", marginTop: 60 },
 });
@@ -94,11 +94,10 @@ export function EarlyYearsStandingPagePdf(input: RenderPdfInput<EarlyYearsStandi
             { backgroundColor: accent.tint, borderLeftColor: accent.accent },
           ]}
         >
-          <Text style={s.unitProofLabel}>Starting-year dollars</Text>
-          <Text style={s.unitProofValue}>Today&apos;s dollars = future-year dollars</Text>
+          <Text style={s.unitProofLabel}>How to read the dollars</Text>
+          <Text style={s.unitProofValue}>Every figure is in today&apos;s dollars</Text>
           <Text style={s.unitProofText}>
-            Inflation has not separated the two views yet. Later pages show the
-            future-year amount beneath today&apos;s value.
+            {`A dollar decades from now buys less than a dollar does at ${data.basis.planStartYear} prices, so every amount in this report is restated in what it would buy today. Where a later page prints a second figure in smaller type beneath a number, that is the same amount in the year it actually happens. The two are converted at this plan's inflation assumption of ${percentLabel(data.basis.inflationRate)} a year.`}
           </Text>
         </View>
       </View>

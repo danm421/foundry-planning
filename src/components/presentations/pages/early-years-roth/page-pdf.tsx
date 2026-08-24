@@ -2,8 +2,14 @@ import { View, Text, StyleSheet } from "@react-pdf/renderer";
 import { PageFrame } from "@/components/presentations/shared/page-frame";
 import { TidbitSidebarPdf } from "@/components/presentations/shared/tidbit-sidebar-pdf";
 import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
-import { DetailTablePdf } from "@/components/presentations/shared/detail-table-pdf";
-import { DualDollarValuePdf } from "@/components/presentations/shared/dual-dollar-value-pdf";
+import {
+  DetailTablePdf,
+  TableCaptionPdf,
+} from "@/components/presentations/shared/detail-table-pdf";
+import {
+  DualDollarValuePdf,
+  dualDollarCaption,
+} from "@/components/presentations/shared/dual-dollar-value-pdf";
 import type { RenderPdfInput } from "@/components/presentations/registry";
 import type {
   EarlyYearsRothPageData,
@@ -88,6 +94,9 @@ export function EarlyYearsRothPagePdf(input: RenderPdfInput<EarlyYearsRothPageDa
 
       <View style={s.cols}>
         <View style={s.main}>
+          {/* "Every figure", not a quantity: three of these rows are plan
+              totals and the fourth is a yearly average. */}
+          <TableCaptionPdf>{dualDollarCaption("Every figure")}</TableCaptionPdf>
           <View style={s.head}>
             <Text style={s.label}> </Text>
             <Text style={s.headCell}>All traditional</Text>
@@ -124,14 +133,17 @@ export function EarlyYearsRothPagePdf(input: RenderPdfInput<EarlyYearsRothPageDa
           <DetailTablePdf
             rows={data.detailRows}
             rowKey={(row) => String(row.year)}
+            caption={dualDollarCaption("Tax paid in each year")}
             columns={[
               {
                 header: "Year / age",
                 flex: 0.8,
                 render: (row) => <Text style={s.detailText}>{`${row.year} · ${row.age}`}</Text>,
               },
+              // The same two column names the summary above uses — one page
+              // naming one choice two ways is what makes a table hard to follow.
               {
-                header: "All traditional tax",
+                header: "All traditional",
                 flex: 1.4,
                 align: "right",
                 render: (row) => (
@@ -139,7 +151,7 @@ export function EarlyYearsRothPagePdf(input: RenderPdfInput<EarlyYearsRothPageDa
                 ),
               },
               {
-                header: "All Roth tax",
+                header: "All Roth",
                 flex: 1.4,
                 align: "right",
                 render: (row) => (

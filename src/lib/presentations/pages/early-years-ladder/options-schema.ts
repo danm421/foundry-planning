@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { EARLY_YEARS_MAX_MILESTONE_AGES } from "../early-years-detail";
 import type { EarlyYearsLadderPageOptions } from "./types";
 
 // Every field carries a `.default()` on purpose. The export route passes RAW
@@ -16,6 +17,7 @@ export const earlyYearsLadderOptionsSchema = z.object({
       z.object({ mode: z.literal("absolute"), percents: z.array(z.number()).min(1).max(4) }),
     ])
     .default({ mode: "relative", offsets: [0, 0.03, 0.06] }),
-  milestoneAges: z.array(z.number().int().min(1).max(120)).min(1).max(4).default([40, 50, 65]),
+  milestoneAges: z.array(z.number().int().min(1).max(120)).min(1).max(EARLY_YEARS_MAX_MILESTONE_AGES)
+    .default([40, 50, 65]),
   tidbits: z.array(z.string()).max(2).default([]),
 }) satisfies z.ZodType<EarlyYearsLadderPageOptions>;
