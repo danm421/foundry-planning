@@ -198,6 +198,12 @@ function buildStressTests(ps: PlanSettings): AssumptionRow[] {
     });
   }
   if (ps.marketShock) rows.push({ label: "Market shock", value: `${formatPct(ps.marketShock.drawdownPct)} drawdown in ${ps.marketShock.year}` });
+  if (ps.taxRateStress) {
+    rows.push({
+      label: "Tax rates rise",
+      value: `${formatPct(ps.taxRateStress.points)} on all federal rates from ${ps.taxRateStress.startYear}`,
+    });
+  }
   return rows;
 }
 

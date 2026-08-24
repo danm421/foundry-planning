@@ -160,6 +160,31 @@ describe("buildAssumptionsData", () => {
   });
 });
 
+describe("tax-rate stressor disclosure", () => {
+  function withStress(taxRateStress: { points: number; startYear: number }) {
+    const cd = clientData();
+    return input({
+      clientData: {
+        ...cd,
+        planSettings: { ...cd.planSettings, taxRateStress },
+      } as unknown as ClientData,
+    });
+  }
+
+  it("discloses an active tax-rate stressor", () => {
+    const d = buildAssumptionsData(withStress({ points: 0.03, startYear: 2030 }));
+    expect(d.stressTests).toContainEqual({
+      label: "Tax rates rise",
+      value: "3.0% on all federal rates from 2030",
+    });
+  });
+
+  it("omits the row when no tax-rate stressor is set", () => {
+    const d = buildAssumptionsData(input());
+    expect(d.stressTests.find((r) => r.label === "Tax rates rise")).toBeUndefined();
+  });
+});
+
 describe("estimateAssumptionsPageCount", () => {
   it("counts overview + account pages + appendix", () => {
     const d = buildAssumptionsData(input());
