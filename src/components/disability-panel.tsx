@@ -20,6 +20,7 @@ import { useClientAccess } from "@/components/client-access-provider";
 import { InlineAmount } from "@/components/forms/inline-amount";
 import { usePendingEdits } from "@/hooks/use-pending-edits";
 import DisabilityPolicyDialog, {
+  coveredEarningsFor,
   formToPolicy,
   policyToForm,
   type DisabilityFormValues,
@@ -37,11 +38,16 @@ export interface DisabilityPanelProps {
   policies: DisabilityPolicy[];
   clientFirstName: string;
   spouseFirstName: string | null;
-  /** This year's salary per person, computed with the SAME filter the engine
-   *  uses (`owner === insured && type === "salary"`), so the row's preview and
-   *  the projection agree on what the policy insures. */
+  /** This year's covered earnings per person in SALARY mode, produced by the
+   *  engine's own `resolveCoveredEarnings` on the server, where the pre-clip
+   *  income rows live. Manual mode is resolved in `coveredEarningsFor`. */
   currentSalaryByPerson: { client: number; spouse: number };
   currentYear: number;
+  /** The two inputs the engine's MANUAL covered-earnings branch reads. The row
+   *  previewed off the raw amount without them, so a manual policy's benefit
+   *  read below what the projection pays, by more the older the plan. */
+  planStartYear: number;
+  inflationRate: number;
   planEndYear: number;
   client: ClientInfo;
 }
@@ -68,6 +74,15 @@ const pct = (d: number) => `${Math.round(d * 1000) / 10}%`;
 const capLabel = (max: number | null) =>
   max == null ? "No monthly cap" : `${money.format(max)}/mo cap`;
 
+/** "for 13 weeks". The null arm exists because the form type allows a cleared
+ *  field, not because it renders: the line above is gated on a RESOLVED
+ *  short-term window, and a window only resolves when the duration is a number.
+ *  Without it the template would print "for null weeks". Same shape as
+ *  `benefitPeriodLabel` below. */
+function durationLabel(weeks: number | null): string {
+  return weeks == null ? "for a duration not yet set" : `for ${weeks} weeks`;
+}
+
 function benefitPeriodLabel(row: DisabilityEditRow): string {
   switch (row.ltdBenefitPeriodMode) {
     case "to_age":
@@ -85,13 +100,28 @@ function benefitPeriodLabel(row: DisabilityEditRow): string {
   }
 }
 
-/** At most one warning per row, most-blocking first: a layer that cannot pay at
- *  all outranks a seam between two layers that do. The precedence and the scope
- *  of each claim mirror `disability-coverage-timeline.tsx` — the row and the
- *  timeline must not tell the advisor two different stories about one policy. */
+/** At most one warning per row, most-blocking first, where "most blocking" is
+ *  how many layers the condition stops paying.
+ *
+ *  The precedence, the scope of each claim and the conditions themselves mirror
+ *  `disability-coverage-timeline.tsx` exactly — the row and the timeline must
+ *  not tell the advisor two different stories about one policy. Nothing but
+ *  wording differs, and `disability-panel.test.tsx` renders BOTH surfaces on the
+ *  same fixtures to keep it that way. Change one of these two functions and you
+ *  must change the other. */
 function coverageWarning(c: ResolvedCoverage): { tone: "crit" | "warn"; text: string } | null {
+  if (c.coveredEarnings <= 0 && (c.shortTerm !== null || c.longTerm !== null)) {
+    // FIRST because it kills BOTH layers: every band pays $0 and no field on
+    // this screen changes that. Reachable, not theoretical — in salary mode
+    // `resolveCoveredEarnings` returns 0 whenever the insured has no salary rows
+    // this year. The coverage lines are gated on the policy's sections, never on
+    // earnings, so they read as real cover while the benefit column shows $0 —
+    // unless we say why.
+    return { tone: "crit", text: "No covered earnings on file, so this pays nothing" };
+  }
   if (c.unresolved === "missing_dob") {
-    // Scoped to the long-term layer on purpose. `resolveCoverage` builds the
+    // Scoped to the long-term layer on purpose, and ranked BELOW zero earnings
+    // because it stops one layer rather than two. `resolveCoverage` builds the
     // short-term window from `policy.shortTerm` alone and never consults a date
     // of birth, so short-term still resolves and the projection still pays it —
     // a blanket "this policy pays nothing" contradicts the short-term line
@@ -100,13 +130,6 @@ function coverageWarning(c: ResolvedCoverage): { tone: "crit" | "warn"; text: st
       tone: "crit",
       text: "No date of birth on file, so long-term coverage pays nothing",
     };
-  }
-  if (c.coveredEarnings <= 0 && (c.shortTerm !== null || c.longTerm !== null)) {
-    // Reachable, not theoretical: in salary mode `resolveCoveredEarnings`
-    // returns 0 whenever the insured has no salary rows this year. The coverage
-    // lines are gated on the policy's sections, never on earnings, so they read
-    // as real cover while the benefit column shows $0 — unless we say why.
-    return { tone: "crit", text: "No covered earnings on file, so this pays nothing" };
   }
   if (c.seam?.kind === "gap") {
     return {
@@ -286,17 +309,26 @@ export default function DisabilityPanel(props: DisabilityPanelProps) {
               <th className="font-medium">Tax</th>
               <th className="text-right font-medium">Annual increase</th>
               <th className="text-right font-medium">Premium</th>
-              <th />
+              <th>
+                <span className="sr-only">Edit</span>
+              </th>
             </tr>
           </thead>
           <tbody>
             {pending.rows.map((row) => {
-              const coveredEarnings =
-                row.coveredEarningsMode === "manual"
-                  ? (row.coveredEarningsAmount ?? 0)
-                  : props.currentSalaryByPerson[row.insured];
+              const policy = formToPolicy(row, row.id);
+              // The engine's own resolver, shared with the dialog, so the row's
+              // preview and the projection cannot disagree about what the policy
+              // insures — in manual mode as well as salary mode.
+              const coveredEarnings = coveredEarningsFor(policy, {
+                salaryByPerson: props.currentSalaryByPerson,
+                client: props.client,
+                startYear: props.currentYear,
+                planStartYear: props.planStartYear,
+                inflationRate: props.inflationRate,
+              });
               const coverage = resolveCoverage(
-                formToPolicy(row, row.id),
+                policy,
                 coveredEarnings,
                 props.currentYear,
                 props.client,
@@ -315,14 +347,19 @@ export default function DisabilityPanel(props: DisabilityPanelProps) {
                   <td className="text-ink-2">{insuredLabel(row.insured)}</td>
                   <td className="py-2">
                     <div className="flex flex-col gap-1.5">
-                      {row.hasShortTerm && (
+                      {/* Gated on the RESOLVED window, not on the form switch.
+                          Gated on the switch, a policy whose long-term period
+                          cannot resolve still advertised "60% to age 65" as live
+                          cover while the timeline drew no band at all — the two
+                          surfaces describing one policy differently. */}
+                      {coverage.shortTerm !== null && (
                         <CoverageLine
                           layer="Short-term"
-                          summary={`${pct(row.stdBenefitPct)} for ${row.stdDurationWeeks} weeks`}
+                          summary={`${pct(row.stdBenefitPct)} ${durationLabel(row.stdDurationWeeks)}`}
                           cap={capLabel(row.stdMonthlyMax)}
                         />
                       )}
-                      {row.hasLongTerm && (
+                      {coverage.longTerm !== null && (
                         <CoverageLine
                           layer="Long-term"
                           summary={`${pct(row.ltdBenefitPct)} ${benefitPeriodLabel(row)}`}
@@ -415,6 +452,8 @@ export default function DisabilityPanel(props: DisabilityPanelProps) {
           spouseFirstName={props.spouseFirstName}
           currentSalaryByPerson={props.currentSalaryByPerson}
           currentYear={props.currentYear}
+          planStartYear={props.planStartYear}
+          inflationRate={props.inflationRate}
           planEndYear={props.planEndYear}
           client={props.client}
           onClose={() => setDialogState(null)}

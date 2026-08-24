@@ -26,7 +26,8 @@ import InsurancePanel, {
   type InsurancePanelModelPortfolio,
 } from "@/components/insurance-panel";
 import DisabilityPanel from "@/components/disability-panel";
-import { computeIncome } from "@/engine/income";
+import { resolveCoveredEarnings } from "@/engine/disability-benefits";
+import type { DisabilityPolicy } from "@/engine/types";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { ownerRefFromOwners } from "@/lib/insurance-policies/owner-ref";
 import { buildClientMilestones } from "@/lib/milestones";
@@ -216,18 +217,38 @@ export async function InsuranceContent({ clientId: id, scenarioParam }: Insuranc
     planEndYear,
   );
 
-  // What each policy insures, this year. The filter is the ENGINE'S filter
-  // (`resolveCoveredEarnings`) copied whole — group plans insure W-2 base
-  // earnings, and business / K-1 income is excluded. A narrower or wider
-  // predicate here would show the advisor a benefit the projection never pays.
+  // What a policy insures this year, in SALARY mode. This calls the engine's
+  // `resolveCoveredEarnings` itself rather than re-typing its `computeIncome`
+  // predicate, so a change to what the engine counts as covered pay reaches this
+  // screen automatically instead of drifting from it. `effectiveTree.incomes` is
+  // PRE-CLIP — `loadEffectiveTree` never applies the disability event — which is
+  // the input that function requires.
+  //
+  // Only `insured` and `coveredEarningsMode` are read on that branch, so the
+  // stand-in below carries nothing else meaningful. Manual mode is resolved in
+  // the browser, off the LIVE form, by the same engine function.
   const currentYear = new Date().getFullYear();
+  const salaryModeProbe = (person: "client" | "spouse"): DisabilityPolicy => ({
+    id: `covered-earnings-${person}`,
+    name: "",
+    insured: person,
+    coveredEarningsMode: "salary",
+    coveredEarningsAmount: null,
+    shortTerm: null,
+    longTerm: null,
+    benefitTaxable: true,
+    colaRate: 0,
+    annualPremium: 0,
+    premiumPayer: "employer",
+  });
   const salaryFor = (person: "client" | "spouse") =>
-    computeIncome(
-      effectiveTree.incomes,
-      currentYear,
-      effectiveTree.client,
-      (inc) => inc.owner === person && inc.type === "salary",
-    ).salaries;
+    resolveCoveredEarnings(salaryModeProbe(person), {
+      incomes: effectiveTree.incomes,
+      client: effectiveTree.client,
+      startYear: currentYear,
+      planStartYear,
+      inflationRate: resolvedInflationRate,
+    });
 
   return (
     <div className="flex flex-col gap-10">
@@ -253,6 +274,8 @@ export async function InsuranceContent({ clientId: id, scenarioParam }: Insuranc
         spouseFirstName={effectiveTree.client.spouseName ?? null}
         currentSalaryByPerson={{ client: salaryFor("client"), spouse: salaryFor("spouse") }}
         currentYear={currentYear}
+        planStartYear={planStartYear}
+        inflationRate={resolvedInflationRate}
         planEndYear={planEndYear}
         client={effectiveTree.client}
       />

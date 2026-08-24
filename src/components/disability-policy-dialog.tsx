@@ -34,7 +34,7 @@ import {
   inputClassName,
   selectClassName,
 } from "@/components/forms/input-styles";
-import { resolveCoverage } from "@/engine/disability-benefits";
+import { resolveCoverage, resolveCoveredEarnings } from "@/engine/disability-benefits";
 import type { ClientInfo, DisabilityPolicy } from "@/engine/types";
 
 /**
@@ -52,7 +52,10 @@ export interface DisabilityFormValues {
   hasShortTerm: boolean;
   stdEliminationDays: number;
   stdBenefitPct: number;
-  stdDurationWeeks: number;
+  /** null means the advisor has cleared the field and not yet typed a new
+   *  number. Never 0 — a 0 the advisor did not type reads as a real duration,
+   *  and `formToPolicy` would build a short-term window paying zero weeks. */
+  stdDurationWeeks: number | null;
   /** null means UNCAPPED. Never 0 — a 0 cap pays nothing. */
   stdMonthlyMax: number | null;
   hasLongTerm: boolean;
@@ -123,28 +126,35 @@ export function policyToForm(p: DisabilityPolicy): DisabilityFormValues {
 /** The form as the engine sees it, so the timeline below the coverage sections
  *  reads the same numbers the projection will pay on. */
 export function formToPolicy(f: DisabilityFormValues, id: string): DisabilityPolicy {
+  // A layer whose shape is not yet complete is OMITTED, never filled in. The
+  // engine has no way to say "this window is unresolved", so a fabricated
+  // `?? 65` / `?? 0` reached the timeline as a real benefit window — see
+  // `previewOmissions`, which puts the omission into words on screen.
+  const benefitPeriod = benefitPeriodOf(f);
   return {
     id,
     name: f.name,
     insured: f.insured,
     coveredEarningsMode: f.coveredEarningsMode,
     coveredEarningsAmount: f.coveredEarningsAmount,
-    shortTerm: f.hasShortTerm
-      ? {
-          eliminationDays: f.stdEliminationDays,
-          benefitPct: f.stdBenefitPct,
-          durationWeeks: f.stdDurationWeeks,
-          monthlyMax: f.stdMonthlyMax,
-        }
-      : null,
-    longTerm: f.hasLongTerm
-      ? {
-          eliminationDays: f.ltdEliminationDays,
-          benefitPct: f.ltdBenefitPct,
-          monthlyMax: f.ltdMonthlyMax,
-          benefitPeriod: benefitPeriodOf(f),
-        }
-      : null,
+    shortTerm:
+      f.hasShortTerm && f.stdDurationWeeks !== null
+        ? {
+            eliminationDays: f.stdEliminationDays,
+            benefitPct: f.stdBenefitPct,
+            durationWeeks: f.stdDurationWeeks,
+            monthlyMax: f.stdMonthlyMax,
+          }
+        : null,
+    longTerm:
+      f.hasLongTerm && benefitPeriod !== null
+        ? {
+            eliminationDays: f.ltdEliminationDays,
+            benefitPct: f.ltdBenefitPct,
+            monthlyMax: f.ltdMonthlyMax,
+            benefitPeriod,
+          }
+        : null,
     benefitTaxable: f.benefitTaxable,
     colaRate: f.colaRate,
     annualPremium: f.annualPremium,
@@ -152,19 +162,88 @@ export function formToPolicy(f: DisabilityFormValues, id: string): DisabilityPol
   };
 }
 
+/** Null when the chosen mode's companion value is still blank.
+ *
+ *  This used to answer `{mode:"to_age", age: 65}` for an EMPTY age field, and
+ *  the live timeline drew the age-65 window — switching a to-SSNRA policy to
+ *  "To an age" moved the long-term band from months 3–257 to 3–233 for an age
+ *  nobody had typed. The same silent fill lives in the row mapper
+ *  (`load-disability-policies.ts`), which is Task 11's; this is the copy that
+ *  RENDERS. "Missing values fail loudly, no silent fallback" applies to a blank
+ *  age exactly as it applies to a missing date of birth. */
 function benefitPeriodOf(
   f: DisabilityFormValues,
-): NonNullable<DisabilityPolicy["longTerm"]>["benefitPeriod"] {
+): NonNullable<DisabilityPolicy["longTerm"]>["benefitPeriod"] | null {
   switch (f.ltdBenefitPeriodMode) {
     case "to_age":
-      return { mode: "to_age", age: f.ltdBenefitPeriodAge ?? 65 };
+      return f.ltdBenefitPeriodAge == null ? null : { mode: "to_age", age: f.ltdBenefitPeriodAge };
     case "years":
-      return { mode: "years", years: f.ltdBenefitPeriodYears ?? 0 };
+      return f.ltdBenefitPeriodYears == null
+        ? null
+        : { mode: "years", years: f.ltdBenefitPeriodYears };
     case "to_ssnra":
       return { mode: "to_ssnra" };
     case "lifetime":
       return { mode: "lifetime" };
   }
+}
+
+/** Sentences for coverage blocks that are switched ON but still missing the one
+ *  value their shape needs, so the advisor reads WHY a band is absent instead of
+ *  wondering. `formToPolicy` drops such a block rather than inventing the value,
+ *  which is what makes these sentences true. */
+export function previewOmissions(f: DisabilityFormValues): string[] {
+  const out: string[] = [];
+  if (f.hasShortTerm && f.stdDurationWeeks === null) {
+    out.push("Short-term coverage is left out below until it has a duration in weeks.");
+  }
+  if (f.hasLongTerm && benefitPeriodOf(f) === null) {
+    out.push("Long-term coverage is left out below until its benefit period has a value.");
+  }
+  return out;
+}
+
+/**
+ * Covered earnings for one policy, resolved the way the PROJECTION resolves
+ * them. Shared by the row and by this dialog's live preview, which is why it
+ * takes a policy rather than a form: both surfaces must answer identically.
+ *
+ * MANUAL mode is handed to the engine's own `resolveCoveredEarnings`. Its manual
+ * branch reads the policy's amount plus `startYear`, `planStartYear` and
+ * `inflationRate` and returns before it touches `incomes` or `client`, so the
+ * browser can run it verbatim. The hand-written copy that used to sit here read
+ * the RAW amount with no inflation term at all: at 3% on a plan that started two
+ * years ago the engine resolved 159,135 where this screen previewed off 150,000,
+ * and the error grows with the plan's age.
+ *
+ * SALARY mode is resolved on the SERVER, where the pre-clip income rows live —
+ * `insurance-content.tsx` calls this same engine function once per person and
+ * passes the two answers down as `salaryByPerson`. The income rows themselves
+ * never cross the boundary.
+ */
+export function coveredEarningsFor(
+  policy: DisabilityPolicy,
+  ctx: {
+    salaryByPerson: { client: number; spouse: number };
+    client: ClientInfo;
+    startYear: number;
+    planStartYear: number;
+    inflationRate: number;
+  },
+): number {
+  if (policy.coveredEarningsMode === "salary") return ctx.salaryByPerson[policy.insured];
+  return resolveCoveredEarnings(policy, {
+    // MANUAL ONLY, and unread on that branch. Pinned by the panel test
+    // "previews manual covered earnings exactly as the projection pays them",
+    // which resolves the same policy through the engine with REAL salary rows
+    // for the insured: if the manual branch ever began consulting `incomes` the
+    // two figures would part and that test would red.
+    incomes: [],
+    client: ctx.client,
+    startYear: ctx.startYear,
+    planStartYear: ctx.planStartYear,
+    inflationRate: ctx.inflationRate,
+  });
 }
 
 /**
@@ -230,8 +309,11 @@ function formErrors(f: DisabilityFormValues): string[] {
   if (f.hasLongTerm && f.ltdBenefitPeriodMode === "years" && f.ltdBenefitPeriodYears == null) {
     out.push("A fixed benefit period requires a number of years.");
   }
-  if (f.hasShortTerm && f.stdDurationWeeks * 7 <= f.stdEliminationDays) {
-    out.push("Short-term duration must be longer than the waiting period.");
+  if (f.hasShortTerm) {
+    if (f.stdDurationWeeks == null) out.push("Short-term coverage needs a duration in weeks.");
+    else if (f.stdDurationWeeks * 7 <= f.stdEliminationDays) {
+      out.push("Short-term duration must be longer than the waiting period.");
+    }
   }
   return out;
 }
@@ -253,8 +335,16 @@ interface BaseProps {
   clientId: string;
   clientFirstName: string;
   spouseFirstName: string | null;
+  /** `resolveCoveredEarnings`'s SALARY branch, resolved server-side per person
+   *  where the pre-clip income rows live. Manual mode is resolved here — see
+   *  `coveredEarningsFor`. */
   currentSalaryByPerson: { client: number; spouse: number };
   currentYear: number;
+  /** Both are what the ENGINE's manual covered-earnings branch reads. Without
+   *  them this screen previewed a manual policy off its raw amount while the
+   *  projection paid an inflated one. */
+  planStartYear: number;
+  inflationRate: number;
   planEndYear: number;
   client: ClientInfo;
   onClose: () => void;
@@ -272,22 +362,37 @@ export default function DisabilityPolicyDialog(props: DisabilityPolicyDialogProp
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
+  /** Whether the advisor has set the taxable switch themselves. An explicit
+   *  value, not the presence of anything: once it is true a payer change stops
+   *  seeding `benefitTaxable`, so a deliberate split-premium "Tax-free" survives
+   *  re-picking the payer. */
+  const [benefitTaxableTouched, setBenefitTaxableTouched] = useState(false);
 
-  const set = (patch: Partial<DisabilityFormValues>) =>
+  const set = (patch: Partial<DisabilityFormValues>) => {
+    // Editing anything disarms the two-click remove. Left armed it never
+    // expired: an advisor who armed it, thought better of it, worked on in the
+    // form and later pressed the button expecting to ARM it deleted the policy
+    // on that press.
+    setConfirmingRemove(false);
     setForm((prev) => ({ ...prev, ...patch }));
+  };
 
   const errors = formErrors(form);
+  const omissions = previewOmissions(form);
 
-  // Covered earnings mirrors `resolveCoveredEarnings` for a disability starting
-  // THIS year: at startYear === planStartYear the manual figure's inflation
-  // exponent is 0, so the branch is the whole calculation.
-  const coveredEarnings =
-    form.coveredEarningsMode === "manual"
-      ? (form.coveredEarningsAmount ?? 0)
-      : props.currentSalaryByPerson[form.insured];
+  const draft = formToPolicy(form, props.mode === "edit" ? props.policy.id : "draft");
+  // The engine's own resolver, so the preview and the projection cannot disagree
+  // about what this policy insures — in manual mode as well as salary mode.
+  const coveredEarnings = coveredEarningsFor(draft, {
+    salaryByPerson: props.currentSalaryByPerson,
+    client: props.client,
+    startYear: props.currentYear,
+    planStartYear: props.planStartYear,
+    inflationRate: props.inflationRate,
+  });
 
   const coverage = resolveCoverage(
-    formToPolicy(form, props.mode === "edit" ? props.policy.id : "draft"),
+    draft,
     coveredEarnings,
     props.currentYear,
     props.client,
@@ -380,6 +485,13 @@ export default function DisabilityPolicyDialog(props: DisabilityPolicyDialogProp
       }
     >
       <div className="flex flex-col gap-6">
+        {/* First in the DOM, and the only `role="alert"` while it is showing:
+            a save that did not land outranks every warning below it. */}
+        {saveError !== null && (
+          <p role="alert" className="rounded-md border border-crit/40 bg-crit/10 px-3 py-2 text-[13px] text-crit">
+            {saveError}
+          </p>
+        )}
         <Section title="Who and what's covered">
           <Field label="Policy name">
             <input
@@ -469,8 +581,15 @@ export default function DisabilityPolicyDialog(props: DisabilityPolicyDialogProp
                   type="number"
                   className={inputClassName}
                   aria-label="Short-term duration (weeks)"
-                  value={String(form.stdDurationWeeks)}
-                  onChange={(e) => set({ stdDurationWeeks: Number(e.target.value || 0) })}
+                  // Blank stays blank. `Number(v || 0)` wrote a 0 back into the
+                  // field the instant the advisor cleared it — a duration they
+                  // never typed, in the one field where 0 is not a real answer.
+                  value={form.stdDurationWeeks == null ? "" : String(form.stdDurationWeeks)}
+                  onChange={(e) =>
+                    set({
+                      stdDurationWeeks: e.target.value === "" ? null : Number(e.target.value),
+                    })
+                  }
                 />
               </Field>
               <Field label="Monthly cap" help="Leave blank for no cap — group short-term usually has none.">
@@ -586,7 +705,18 @@ export default function DisabilityPolicyDialog(props: DisabilityPolicyDialogProp
 
         <section className="flex flex-col gap-2">
           <h3 className="text-[13px] font-semibold text-ink">If a disability started this year</h3>
-          <DisabilityCoverageTimeline coverage={coverage} />
+          {omissions.map((o) => (
+            <p key={o} className="rounded-md border border-hair bg-card-2 px-3 py-2 text-[13px] text-ink-2">
+              {o}
+            </p>
+          ))}
+          {/* Exactly one `role="alert"` on screen, most-blocking first: a failed
+              save is the more blocking of the two and it is rendered above, so
+              the coverage warning steps down to `status` while it is showing. */}
+          <DisabilityCoverageTimeline
+            coverage={coverage}
+            alertRole={saveError === null ? "alert" : "status"}
+          />
         </section>
 
         <Section title="Taxes and cost">
@@ -595,7 +725,10 @@ export default function DisabilityPolicyDialog(props: DisabilityPolicyDialogProp
               ariaLabel="Benefits are taxable"
               stateLabel={form.benefitTaxable ? "Taxable" : "Tax-free"}
               checked={form.benefitTaxable}
-              onChange={(next) => set({ benefitTaxable: next })}
+              onChange={(next) => {
+                setBenefitTaxableTouched(true);
+                set({ benefitTaxable: next });
+              }}
             />
           </Field>
           <Field label="Who pays the premium">
@@ -605,10 +738,17 @@ export default function DisabilityPolicyDialog(props: DisabilityPolicyDialogProp
               value={form.premiumPayer}
               onChange={(e) => {
                 const premiumPayer = e.target.value as "employer" | "insured";
-                // Defaults the tax treatment, but does not lock it — split
-                // premium arrangements are real, and the advisor may know the
-                // policy is part employer-paid.
-                set({ premiumPayer, benefitTaxable: premiumPayer === "employer" });
+                // Seeds the tax treatment only while the advisor has not set it
+                // themselves. Seeding it every time destroyed a deliberate
+                // choice: record a split-premium policy as tax-free, re-pick
+                // "The employer", and it silently flipped back to taxable —
+                // settable, but not sticky, and stickiness is the half a split
+                // premium needs.
+                set(
+                  benefitTaxableTouched
+                    ? { premiumPayer }
+                    : { premiumPayer, benefitTaxable: premiumPayer === "employer" },
+                );
               }}
             >
               <option value="employer">The employer</option>
@@ -644,11 +784,6 @@ export default function DisabilityPolicyDialog(props: DisabilityPolicyDialogProp
               <li key={e}>{e}</li>
             ))}
           </ul>
-        )}
-        {saveError !== null && (
-          <p role="alert" className="rounded-md border border-crit/40 bg-crit/10 px-3 py-2 text-[13px] text-crit">
-            {saveError}
-          </p>
         )}
       </div>
     </DialogShell>

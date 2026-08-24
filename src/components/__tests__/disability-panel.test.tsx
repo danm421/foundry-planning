@@ -19,8 +19,8 @@
  *    as 0 silently pays nothing.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import type { ClientInfo, DisabilityPolicy } from "@/engine/types";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import type { ClientInfo, DisabilityPolicy, Income } from "@/engine/types";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
@@ -29,7 +29,13 @@ vi.mock("next/navigation", () => ({
 import DisabilityPanel, {
   type DisabilityPanelProps,
 } from "@/components/disability-panel";
+import { DisabilityCoverageTimeline } from "@/components/disability-coverage-timeline";
 import { ClientAccessProvider } from "@/components/client-access-provider";
+import {
+  benefitForYear,
+  resolveCoverage,
+  resolveCoveredEarnings,
+} from "@/engine/disability-benefits";
 import { WORKPLACE_DEFAULTS } from "@/lib/schemas/disability-policies";
 
 const WORKPLACE: DisabilityPolicy = {
@@ -72,11 +78,30 @@ function makeProps(over: Partial<DisabilityPanelProps> = {}): DisabilityPanelPro
     spouseFirstName: "Jane",
     currentSalaryByPerson: { client: 200_000, spouse: 0 },
     currentYear: 2026,
+    // Deliberately EARLIER than `currentYear`. The engine inflates a manual
+    // covered-earnings amount by `startYear - planStartYear`, so an equal pair
+    // would make the manual tests pass against a preview that ignores inflation
+    // entirely — the exact hole the shipped bug hid in.
+    planStartYear: 2024,
+    inflationRate: 0.03,
     planEndYear: 2060,
     client: CLIENT,
     ...over,
   };
 }
+
+const money = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
+
+/** The dialog's live coverage preview. "Short-term" and "Long-term" each name
+ *  three things on this screen — a form section, a row coverage line and a
+ *  legend row — so band assertions have to say which one they mean. */
+const preview = () =>
+  screen.getByRole("heading", { name: /if a disability started this year/i })
+    .parentElement as HTMLElement;
 
 function renderPanel(
   permission: "view" | "edit",
@@ -184,6 +209,13 @@ describe("DisabilityPanel", () => {
     expect(req.body).toHaveProperty("hasShortTerm", false);
     expect(req.body).toHaveProperty("hasLongTerm"); // the pair, not the one
     expect(req.body.hasLongTerm).toBe(true);
+    // The short-term block travels even with short-term switched OFF. Making
+    // these keys conditional on `hasShortTerm` is the tidy-up a maintainer
+    // reaches for — it mirrors the file's own conditional `ltdBenefitPeriodAge`
+    // — and it would ship `stdDurationWeeks` without the companion the
+    // duration-vs-wait guard needs in order to run at all.
+    expect(req.body).toHaveProperty("stdEliminationDays", 7);
+    expect(req.body).toHaveProperty("stdDurationWeeks", 13);
   });
 
   it("ships the whole long-term block whenever long-term coverage is on", async () => {
@@ -199,6 +231,17 @@ describe("DisabilityPanel", () => {
     expect(req.body).toHaveProperty("hasLongTerm", true);
     expect(req.body).toHaveProperty("ltdBenefitPeriodMode", "to_age");
     expect(req.body).toHaveProperty("ltdBenefitPeriodAge", 65);
+    // The other three pairings the body is the only defence for.
+    // `coveredEarningsAmount` travels WITH its mode even in salary mode, where
+    // it is a real null: "manual" arriving without an amount is a 400 even when
+    // the stored row already holds one.
+    expect(req.body).toHaveProperty("coveredEarningsMode", "salary");
+    expect(req.body).toHaveProperty("coveredEarningsAmount", null);
+    // `{stdDurationWeeks: 1}` on its own PASSES the real update schema — the
+    // duration-vs-wait guard only runs when both keys are defined — so the wait
+    // must travel with the duration.
+    expect(req.body).toHaveProperty("stdEliminationDays", 7);
+    expect(req.body).toHaveProperty("stdDurationWeeks", 13);
   });
 
   it("round-trips an uncapped monthly max as null, never as zero", async () => {
@@ -210,6 +253,147 @@ describe("DisabilityPanel", () => {
     const req = lastRequest();
     expect(req.body.stdMonthlyMax).toBeNull();
     expect(req.body.ltdMonthlyMax).toBe(10_000);
+  });
+
+  /**
+   * IF-1's durable half. The reorder itself is two lines; what let the row and
+   * the timeline drift apart in the first place is that NOTHING compared them.
+   * Task 9 mirrored the timeline's precedence into the row by hand on the stated
+   * invariant "the row and the timeline cannot tell the advisor two different
+   * stories about one policy", and a reviewer checked it once, by eye.
+   *
+   * The row legitimately shortens its wording to fit a pill, so this asserts on
+   * WHICH CONDITION each surface reports, never on byte-equal strings.
+   */
+  describe("the row and the timeline report the same condition", () => {
+    const CONDITIONS = [
+      ["no_earnings", /no covered earnings/i],
+      ["missing_dob", /date of birth/i],
+      ["gap", /months with no benefit/i],
+      ["overlap", /both (layers|policies) pay/i],
+    ] as const;
+
+    const conditionIn = (text: string): string | null =>
+      CONDITIONS.find(([, re]) => re.test(text))?.[0] ?? null;
+
+    const NO_SPOUSE_DOB: ClientInfo = { ...CLIENT, spouseDob: undefined };
+    const LATE_LTD = {
+      eliminationDays: 180,
+      benefitPct: 0.6,
+      monthlyMax: 10_000,
+      benefitPeriod: { mode: "to_age", age: 65 },
+    } as const;
+    const LONG_STD = {
+      eliminationDays: 7,
+      benefitPct: 0.6,
+      durationWeeks: 26,
+      monthlyMax: null,
+    } as const;
+
+    const CASES: {
+      name: string;
+      policy: DisabilityPolicy;
+      client: ClientInfo;
+      salary: { client: number; spouse: number };
+      expected: string | null;
+    }[] = [
+      {
+        name: "missing DOB alone",
+        policy: { ...WORKPLACE, insured: "spouse" },
+        client: NO_SPOUSE_DOB,
+        salary: { client: 200_000, spouse: 150_000 },
+        expected: "missing_dob",
+      },
+      {
+        name: "zero covered earnings alone",
+        policy: WORKPLACE,
+        client: CLIENT,
+        salary: { client: 0, spouse: 0 },
+        expected: "no_earnings",
+      },
+      {
+        // The case the old precedence got wrong on BOTH surfaces: adding a date
+        // of birth does not make this policy pay, so naming the DOB names a
+        // remedy the data contradicts.
+        name: "missing DOB AND zero covered earnings",
+        policy: { ...WORKPLACE, insured: "spouse" },
+        client: NO_SPOUSE_DOB,
+        salary: { client: 0, spouse: 0 },
+        expected: "no_earnings",
+      },
+      {
+        // Long-term only: both windows are null, so neither layer is on screen
+        // to be explained and the DOB — the thing actually missing — is what
+        // the advisor needs. The `shortTerm !== null || longTerm !== null`
+        // guard is what keeps this case on the DOB message.
+        name: "long-term only, missing DOB, zero earnings",
+        policy: { ...WORKPLACE, insured: "spouse", shortTerm: null },
+        client: NO_SPOUSE_DOB,
+        salary: { client: 0, spouse: 0 },
+        expected: "missing_dob",
+      },
+      {
+        name: "a real gap between the layers",
+        policy: { ...WORKPLACE, longTerm: LATE_LTD },
+        client: CLIENT,
+        salary: { client: 200_000, spouse: 0 },
+        expected: "gap",
+      },
+      {
+        name: "an overlap between the layers",
+        policy: { ...WORKPLACE, shortTerm: LONG_STD },
+        client: CLIENT,
+        salary: { client: 200_000, spouse: 0 },
+        expected: "overlap",
+      },
+      {
+        name: "a healthy policy",
+        policy: WORKPLACE,
+        client: CLIENT,
+        salary: { client: 200_000, spouse: 0 },
+        expected: null,
+      },
+    ];
+
+    for (const c of CASES) {
+      it(c.name, () => {
+        const row = renderPanel("edit", {
+          policies: [c.policy],
+          client: c.client,
+          currentSalaryByPerson: c.salary,
+        });
+        // Vacuity guard: a surface that rendered nothing reports `null` too, so
+        // prove each one drew before comparing what it says.
+        expect(screen.getByText("Group disability")).toBeInTheDocument();
+        const rowText = within(row.container).getByRole("row", { name: /Group disability/ })
+          .textContent!;
+        row.unmount();
+
+        // The SAME covered-earnings figure the row resolved for this policy, so
+        // the two surfaces are answering one question rather than two.
+        const timeline = render(
+          <DisabilityCoverageTimeline
+            coverage={resolveCoverage(
+              c.policy,
+              c.salary[c.policy.insured],
+              2026,
+              c.client,
+              2060,
+            )}
+          />,
+        );
+        const timelineText = timeline.container.textContent!;
+        if (c.expected === null) {
+          expect(timeline.container.querySelector('[data-testid="coverage-bar"]')).not.toBeNull();
+        } else {
+          expect(screen.getByRole("alert")).toBeInTheDocument();
+        }
+
+        expect(conditionIn(rowText)).toBe(c.expected);
+        expect(conditionIn(timelineText)).toBe(c.expected);
+        timeline.unmount();
+      });
+    }
   });
 
   it("scopes a missing date of birth to long-term coverage", () => {
@@ -225,6 +409,10 @@ describe("DisabilityPanel", () => {
     });
     expect(screen.getByText(/no date of birth/i).textContent).toMatch(/long-term/i);
     expect(screen.getByText(/60% for 13 weeks/i)).toBeInTheDocument();
+    // …and the long-term line is GONE, because the window did not resolve.
+    // Gated on the form switch instead, the row advertised "60% to age 65" as
+    // live cover while the timeline drew no band for it at all.
+    expect(screen.queryByText(/60% to age 65/i)).toBeNull();
   });
 
   it("says why a policy with no covered earnings pays nothing", () => {
@@ -233,6 +421,196 @@ describe("DisabilityPanel", () => {
     // gates them on earnings, so the row must say why.
     renderPanel("edit", { currentSalaryByPerson: { client: 0, spouse: 0 } });
     expect(screen.getByText(/no covered earnings/i)).toBeInTheDocument();
+  });
+
+  it("saves a manual covered-earnings policy with its mode and amount together", async () => {
+    // No test exercised manual mode at all, which is how a preview that ignored
+    // the engine's inflation term survived a review round.
+    renderPanel("edit");
+    fireEvent.click(screen.getByRole("button", { name: "Edit Group disability" }));
+    fireEvent.change(screen.getByLabelText("Covered earnings"), { target: { value: "manual" } });
+
+    // A manual mode with no amount is a 400 on the wire; the dialog must say so
+    // rather than let the request go.
+    expect(screen.getByText(/manual covered earnings require an amount/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("Covered earnings amount"), {
+      target: { value: "150000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(fetchMock().mock.calls.length).toBe(1));
+    const req = lastRequest();
+    expect(req.body).toHaveProperty("coveredEarningsMode", "manual");
+    expect(req.body).toHaveProperty("coveredEarningsAmount", 150_000);
+  });
+
+  it("previews manual covered earnings exactly as the projection pays them", () => {
+    const manual: DisabilityPolicy = {
+      ...WORKPLACE,
+      coveredEarningsMode: "manual",
+      coveredEarningsAmount: 150_000,
+    };
+    // The engine's answer, taken with REAL salary rows for the insured. Two
+    // things are pinned at once: the manual branch must IGNORE those rows, and
+    // it must apply the inflation the panel's old hand-copy left out.
+    const incomes: Income[] = [
+      {
+        id: "i1",
+        type: "salary",
+        name: "Base pay",
+        annualAmount: 200_000,
+        startYear: 2020,
+        endYear: 2040,
+        growthRate: 0,
+        owner: "client",
+      },
+    ];
+    const engineEarnings = resolveCoveredEarnings(manual, {
+      incomes,
+      client: CLIENT,
+      startYear: 2026,
+      planStartYear: 2024,
+      inflationRate: 0.03,
+    });
+    expect(Math.round(engineEarnings)).toBe(159_135); // 150,000 × 1.03²
+    const engineFirstYear = benefitForYear(
+      resolveCoverage(manual, engineEarnings, 2026, CLIENT, 2060),
+      2026,
+      2026,
+      0,
+    );
+    // The figure the raw amount produces, so a preview that quietly drops the
+    // inflation term cannot satisfy this test by accident.
+    const rawFirstYear = benefitForYear(
+      resolveCoverage(manual, 150_000, 2026, CLIENT, 2060),
+      2026,
+      2026,
+      0,
+    );
+    expect(money.format(rawFirstYear)).not.toBe(money.format(engineFirstYear));
+
+    renderPanel("edit", { policies: [manual] });
+    expect(screen.getByText(money.format(engineFirstYear))).toBeInTheDocument();
+    expect(screen.queryByText(money.format(rawFirstYear))).toBeNull();
+  });
+
+  it("draws no long-term band while the benefit period has no value", () => {
+    // `benefitPeriodOf` answered `{mode:"to_age", age:65}` for an EMPTY age
+    // field, so the live timeline drew the age-65 window for an age nobody had
+    // typed — and switching the mode moved the band to it.
+    renderPanel("edit");
+    fireEvent.click(screen.getByRole("button", { name: "Edit Group disability" }));
+    // Scoped to the preview: "Short-term" and "Long-term" also name the two
+    // form sections and the row's coverage lines.
+    expect(within(preview()).getByText("Long-term")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Benefits run to age"), { target: { value: "" } });
+    expect(screen.getByLabelText("Benefits run to age")).toHaveValue(null);
+    expect(within(preview()).queryByText("Long-term")).toBeNull();
+    expect(
+      screen.getByText(/long-term coverage is left out below until its benefit period/i),
+    ).toBeInTheDocument();
+    // Short-term is untouched — the omission is scoped to the layer that lacks
+    // a value, exactly as the missing-DOB warning is.
+    expect(within(preview()).getByText("Short-term")).toBeInTheDocument();
+
+    // Same fabrication through the other door: pick a mode whose companion is
+    // blank and the band must not reappear at `years: 0`.
+    fireEvent.change(screen.getByLabelText("Long-term benefits run"), {
+      target: { value: "years" },
+    });
+    expect(within(preview()).queryByText("Long-term")).toBeNull();
+  });
+
+  it("keeps a cleared short-term duration blank instead of writing a 0 back", () => {
+    renderPanel("edit");
+    fireEvent.click(screen.getByRole("button", { name: "Edit Group disability" }));
+    fireEvent.change(screen.getByLabelText("Short-term duration (weeks)"), {
+      target: { value: "" },
+    });
+    expect(screen.getByLabelText("Short-term duration (weeks)")).toHaveValue(null);
+    expect(screen.getByText(/short-term coverage needs a duration in weeks/i)).toBeInTheDocument();
+    expect(within(preview()).queryByText("Short-term")).toBeNull();
+    expect(within(preview()).getByText("Long-term")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("keeps a deliberate tax-free setting when the premium payer changes", () => {
+    renderPanel("edit"); // employer-paid, taxable
+    fireEvent.click(screen.getByRole("button", { name: "Edit Group disability" }));
+    const taxable = () => screen.getByRole("switch", { name: "Benefits are taxable" });
+    expect(taxable()).toBeChecked();
+
+    // The advisor records a split-premium arrangement.
+    fireEvent.click(taxable());
+    expect(taxable()).not.toBeChecked();
+
+    fireEvent.change(screen.getByLabelText("Who pays the premium"), {
+      target: { value: "insured" },
+    });
+    fireEvent.change(screen.getByLabelText("Who pays the premium"), {
+      target: { value: "employer" },
+    });
+    expect(taxable()).not.toBeChecked(); // the deliberate choice survives
+  });
+
+  it("still defaults the tax treatment from a payer the advisor has not overridden", () => {
+    // The other half of the brief: seeding must keep working until it is
+    // overridden, or "default it from premiumPayer" is not met either.
+    renderPanel("edit", { policies: [] });
+    fireEvent.click(screen.getByRole("button", { name: "Add policy" }));
+    const taxable = () => screen.getByRole("switch", { name: "Benefits are taxable" });
+    expect(taxable()).not.toBeChecked(); // a private policy defaults tax-free
+    fireEvent.change(screen.getByLabelText("Who pays the premium"), {
+      target: { value: "employer" },
+    });
+    expect(taxable()).toBeChecked();
+  });
+
+  it("disarms the remove confirmation as soon as the form is edited", () => {
+    renderPanel("edit");
+    fireEvent.click(screen.getByRole("button", { name: "Edit Group disability" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove policy" }));
+    expect(screen.getByRole("button", { name: "Really remove it?" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Policy name"), { target: { value: "Group STD" } });
+    expect(screen.queryByRole("button", { name: "Really remove it?" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Remove policy" })).toBeInTheDocument();
+    expect(fetchMock().mock.calls.length).toBe(0); // nothing was deleted on the way
+  });
+
+  it("shows one alert when a save fails — the save error, above the coverage warning", async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) }) as never;
+    renderPanel("edit", {
+      policies: [{ ...WORKPLACE, insured: "spouse" }],
+      client: { ...CLIENT, spouseDob: undefined },
+      currentSalaryByPerson: { client: 200_000, spouse: 150_000 },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Edit Group disability" }));
+    // Before the save there is exactly one: the coverage warning.
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(screen.getByRole("alert")).toHaveTextContent(/date of birth/i);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    const saveError = await screen.findByText(/could not save this policy/i);
+
+    const alerts = screen.getAllByRole("alert");
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toBe(saveError);
+    // The coverage warning is still on screen and still readable — it has only
+    // stepped out of the live region for the more blocking message.
+    const warning = screen.getByText(/no date of birth is on file/i);
+    expect(warning).toHaveAttribute("role", "status");
+    expect(saveError.compareDocumentPosition(warning)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("names the edit column for a screen reader", () => {
+    renderPanel("edit");
+    expect(screen.getByRole("columnheader", { name: "Edit" })).toBeInTheDocument();
   });
 
   it("explains the short-term duration and the taxable switch in the dialog", () => {

@@ -39,24 +39,53 @@ const HATCH: CSSProperties = {
 
 /** Replacement rate while BOTH layers pay, as a whole-number percentage. Null
  *  when there is nothing to divide by — a fabricated "0%" inside a warning
- *  reads as a measurement. Defensive: the no-earnings alert below returns
- *  before the overlap branch can call this with zero earnings, and the engine
- *  only sets a seam when both windows exist. */
+ *  reads as a measurement.
+ *
+ *  Both disjuncts are unreachable today and both stay. The null-window one is a
+ *  theorem, not a sample result: `disability-benefits.ts:120-125` assigns `seam`
+ *  ONLY inside `if (shortTerm && longTerm)`, so a seam implies two windows. The
+ *  zero-earnings one holds only because `coverageAlert` returns before the
+ *  overlap branch — a NON-LOCAL invariant living in another function, which is
+ *  exactly why deleting the guard would be wrong. */
 function combinedPct(c: ResolvedCoverage): number | null {
   if (c.shortTerm === null || c.longTerm === null || c.coveredEarnings <= 0) return null;
   const monthly = c.shortTerm.monthlyBenefit + c.longTerm.monthlyBenefit;
   return Math.round(((monthly * 12) / c.coveredEarnings) * 100);
 }
 
-/** At most one alert, most-blocking first: a layer that cannot pay at all
- *  outranks a seam between two layers that do.
+/** At most one alert, most-blocking first — and "most blocking" is measured by
+ *  HOW MANY LAYERS the condition stops paying, not by which reads worse.
  *
- *  `missing_dob` and a seam cannot in fact co-occur — the engine sets
- *  `missing_dob` only when `longTerm` stays null, and it sets `seam` only when
- *  both windows exist — so that first branch is ordered defensively rather than
- *  to resolve a real collision. The no-earnings branch is a real collision: zero
- *  covered earnings leaves both windows in place, overlapping, paying $0/mo. */
+ *  Zero covered earnings is checked FIRST because it kills BOTH layers: every
+ *  band on the bar pays $0/mo and no field the advisor can edit on this screen
+ *  changes that. `missing_dob` kills the long-term layer alone — short-term is
+ *  built from `policy.shortTerm` and never consults a date of birth, so it
+ *  still resolves and the projection still pays it.
+ *
+ *  The two co-occur on an ordinary half-finished onboarding (a spouse with
+ *  neither a DOB nor salary rows). Reported the other way round, the advisor is
+ *  told a date of birth fixes it, adds one, and the policy still pays nothing —
+ *  a remedy the data contradicts. `disability-panel.tsx` carries the identical
+ *  precedence, and `disability-panel.test.tsx` renders both surfaces on the
+ *  same fixtures to keep them from drifting apart again. */
 function coverageAlert(c: ResolvedCoverage): { tone: "crit" | "warn"; message: string } | null {
+  if (c.coveredEarnings <= 0 && (c.shortTerm !== null || c.longTerm !== null)) {
+    // Reachable through the app, not theoretical: in salary mode
+    // `resolveCoveredEarnings` returns 0 whenever the insured has no salary rows
+    // — a non-earning spouse, or rows that end before the disability year — and
+    // nothing gates that. Manual mode reaches 0 two ways: a deliberate 0, which
+    // `z.number().gte(0)` permits on create, and a null amount, which
+    // `validateCrossFields` rejects on CREATE but not on UPDATE — it is a
+    // `superRefine` over a `strictPartial`, so a PATCH that omits
+    // `coveredEarningsMode` never runs the manual check and stores the null
+    // (observed: `PATCH {"coveredEarningsAmount": null}` parses clean). The
+    // bands are gated on the policy sections and the benefit period, never on
+    // earnings, so they render at $0/mo with no explanation unless we give one.
+    return {
+      tone: "crit",
+      message: "No covered earnings are on file for the insured, so this policy pays nothing.",
+    };
+  }
   if (c.unresolved === "missing_dob") {
     // Scoped to the long-term layer on purpose. Short-term coverage is built
     // from `policy.shortTerm` alone and never consults a date of birth, so it
@@ -66,20 +95,6 @@ function coverageAlert(c: ResolvedCoverage): { tone: "crit" | "warn"; message: s
       tone: "crit",
       message:
         "The long-term benefit period ends at an age, but no date of birth is on file for the insured. Long-term coverage pays nothing until one is added.",
-    };
-  }
-  if (c.coveredEarnings <= 0 && (c.shortTerm !== null || c.longTerm !== null)) {
-    // Reachable through the app, not theoretical: in salary mode
-    // `resolveCoveredEarnings` returns 0 whenever the insured has no salary rows
-    // — a non-earning spouse, or rows that end before the disability year — and
-    // nothing gates that. (Manual mode with a null amount also yields 0, but
-    // `validateCrossFields` rejects it on write; manual mode CAN however be
-    // saved with a deliberate 0, which `z.number().gte(0)` permits.) The bands
-    // are gated on the policy sections and the benefit period, never on
-    // earnings, so they render at $0/mo with no explanation unless we give one.
-    return {
-      tone: "crit",
-      message: "No covered earnings are on file for the insured, so this policy pays nothing.",
     };
   }
   if (c.seam?.kind === "gap") {
@@ -100,10 +115,18 @@ function coverageAlert(c: ResolvedCoverage): { tone: "crit" | "warn"; message: s
   return null;
 }
 
-function CoverageAlert({ tone, message }: { tone: "crit" | "warn"; message: string }) {
+function CoverageAlert({
+  tone,
+  message,
+  role,
+}: {
+  tone: "crit" | "warn";
+  message: string;
+  role: "alert" | "status";
+}) {
   return (
     <p
-      role="alert"
+      role={role}
       className={
         tone === "crit"
           ? "rounded-md border border-crit/40 bg-crit/10 px-3 py-2 text-[13px] text-crit"
@@ -151,7 +174,19 @@ function LegendRow({
   );
 }
 
-export function DisabilityCoverageTimeline({ coverage }: { coverage: ResolvedCoverage }) {
+export function DisabilityCoverageTimeline({
+  coverage,
+  alertRole = "alert",
+}: {
+  coverage: ResolvedCoverage;
+  /** Live-region role for the coverage warning. A screen may hold at most ONE
+   *  `role="alert"`, most-blocking first, so a host that is already showing a
+   *  MORE blocking alert — the dialog's failed-save message — passes "status"
+   *  and this warning stays on screen without competing for the live region.
+   *  The branch reads the VALUE; nothing here tests whether the prop was
+   *  supplied. */
+  alertRole?: "alert" | "status";
+}) {
   const { shortTerm, longTerm } = coverage;
   const alert = coverageAlert(coverage);
 
@@ -161,7 +196,7 @@ export function DisabilityCoverageTimeline({ coverage }: { coverage: ResolvedCov
   // An LTD-only policy whose benefit period cannot resolve leaves BOTH windows
   // null, so the span is 0 and every percentage would be NaN — a bar drawn from
   // garbage. There is no coverage to draw; show the warning on its own.
-  if (spanMonths <= 0) return alert ? <CoverageAlert {...alert} /> : null;
+  if (spanMonths <= 0) return alert ? <CoverageAlert {...alert} role={alertRole} /> : null;
 
   const firstBenefitMonth = Math.min(
     shortTerm?.startMonth ?? Infinity,
@@ -196,9 +231,15 @@ export function DisabilityCoverageTimeline({ coverage }: { coverage: ResolvedCov
           />
         )}
         {lastMonth > MAX_BAR_MONTHS && (
+          // On its own the "…" sat on the band, and `text-ink-3` over
+          // `bg-data-teal` is 1.03:1 in light theme / 1.91:1 in dark — below
+          // even the 3:1 non-text floor, so the one mark telling a sighted
+          // advisor the bar is truncated was invisible. Contrast is a ratio of
+          // two known tokens, not something only a browser can see. The opaque
+          // track-coloured chip is 7.61:1 / 11.67:1.
           <span
             aria-hidden="true"
-            className="absolute right-1 top-1/2 -translate-y-1/2 text-ink-3"
+            className="absolute right-1 top-1/2 flex h-4 -translate-y-1/2 items-center rounded-[3px] border border-hair bg-card-2 px-1 leading-none text-ink-2"
           >
             …
           </span>
@@ -235,7 +276,7 @@ export function DisabilityCoverageTimeline({ coverage }: { coverage: ResolvedCov
         )}
       </ul>
 
-      {alert && <CoverageAlert {...alert} />}
+      {alert && <CoverageAlert {...alert} role={alertRole} />}
     </div>
   );
 }
