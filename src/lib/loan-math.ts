@@ -127,6 +127,13 @@ export interface AmortizationScheduleRow {
   principal: number;
   extraPayment: number;
   endingBalance: number;
+  /** Calendar month (1-12) of this year's FIRST payment. An October-originated
+   *  loan reports 10 in its origination year and 1 in every year after. */
+  firstPaymentMonth: number;
+  /** Payments this calendar year actually made. Twelve in a full year, fewer
+   *  in the origination year and in the payoff year. Consumed by the solver's
+   *  month-by-month view to place debt in the months it is really paid. */
+  paymentCount: number;
 }
 
 export interface ScheduleExtraPayment {
@@ -218,6 +225,7 @@ export function computeAmortizationSchedule(
     let yearPrincipal = 0;
     let yearExtraPayment = 0;
     let lumpApplied = false;
+    let monthsPaidThisYear = 0;
 
     for (let m = 0; m < monthsThisYear; m++) {
       if (bal <= 0) break;
@@ -228,6 +236,7 @@ export function computeAmortizationSchedule(
 
       yearInterest += monthlyInterest;
       yearScheduledPayment += scheduled;
+      monthsPaidThisYear++;
       yearPrincipal += principalFromPayment;
       bal = Math.max(0, bal - principalFromPayment);
 
@@ -265,6 +274,8 @@ export function computeAmortizationSchedule(
       principal: yearPrincipal,
       extraPayment: yearExtraPayment,
       endingBalance: bal,
+      firstPaymentMonth: year === startYear ? startMonth : 1,
+      paymentCount: monthsPaidThisYear,
     });
   }
 
