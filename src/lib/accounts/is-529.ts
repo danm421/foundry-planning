@@ -17,3 +17,16 @@ export function is529Account(row: {
 }): boolean {
   return row.category === "education_savings" || row.subType === "529";
 }
+
+/**
+ * The inline "you must name a beneficiary" cue, shared by every surface that
+ * edits a 529: the account form and the import review row. One constant
+ * because they had already drifted into two different sentences saying the
+ * same thing, and an advisor meets both in the same afternoon.
+ *
+ * The API's own 400 for this is deliberately NOT this string — a rejected save
+ * surfaces as a toast, where a "Required —" field prefix reads as a fragment,
+ * and the server adds "(family member or name)" to say which inputs satisfy it.
+ */
+export const BENEFICIARY_REQUIRED_MESSAGE =
+  "Required — a 529 is attributed to its designated beneficiary.";

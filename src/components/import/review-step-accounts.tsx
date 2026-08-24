@@ -11,7 +11,7 @@ import { GrowthRateField, parseGrowthSourceSelection } from "@/components/forms/
 import { inputClassName, selectClassName, fieldLabelClassName } from "@/components/forms/input-styles";
 import { OwnershipEditor } from "@/components/forms/ownership-editor";
 import { matchFamilyMemberByName, matchOwnersFromHint } from "@/lib/imports/owner-match";
-import { is529Account } from "@/lib/accounts/is-529";
+import { BENEFICIARY_REQUIRED_MESSAGE, is529Account } from "@/lib/accounts/is-529";
 import type { GrowthSource } from "@/lib/investments/allocation";
 import type { AccountOwner } from "@/engine/ownership";
 import MatchColumn from "./match-column";
@@ -588,7 +588,7 @@ export default function ReviewStepAccounts({
                         familyMemberId={account.beneficiaryFamilyMemberId}
                         name={account.beneficiaryName}
                         onChange={(id, nm) => set529Person(i, "beneficiary", id, nm)}
-                        missingMessage="Required — a 529 is attributed to its designated beneficiary."
+                        missingMessage={BENEFICIARY_REQUIRED_MESSAGE}
                       />
                     </div>
                     <div className="col-span-6">
