@@ -108,6 +108,29 @@ describe("view-adapters", () => {
       expect(view.ownerAccountId).toBe("acct-acme");
       expect(view.ownerEntityId).toBeNull();
     });
+
+    // REGRESSION GUARD. `paymentMonth` is the "Paid in" month the income dialog
+    // writes. Dropping it here is invisible AND destructive: the dialog hydrates
+    // from this view, so a row saved as "March" reopens on "Monthly", and
+    // `incomes-writes.ts` writes the column whenever the key is present — so a
+    // no-op Save on that reopened row nulls the month the advisor chose.
+    it("carries paymentMonth so the Paid in select hydrates on edit", () => {
+      const income: EngineIncome = {
+        id: "i4",
+        type: "other",
+        name: "Bonus",
+        annualAmount: 20_000,
+        startYear: 2025,
+        endYear: 2030,
+        growthRate: 0,
+        owner: "client",
+        paymentMonth: 3,
+      };
+      expect(incomeEngineToView(income).paymentMonth).toBe(3);
+      // Absent means "spread evenly across all twelve months", carried as null
+      // rather than dropped — `undefined` is the value that skips the write.
+      expect(incomeEngineToView({ ...income, paymentMonth: undefined }).paymentMonth).toBeNull();
+    });
   });
 
   describe("incomeEngineToView linkedPropertyId", () => {
@@ -156,6 +179,24 @@ describe("view-adapters", () => {
       const view = expenseEngineToView(expense);
       expect(view.ownerAccountId).toBe("acct-acme");
       expect(view.ownerEntityId).toBeNull();
+    });
+
+    // REGRESSION GUARD — the expense half of the same round trip. See the
+    // income guard above: without this field the expense dialog reopens a
+    // timed row on "Monthly" and saving it nulls the stored month.
+    it("carries paymentMonth so the Paid in select hydrates on edit", () => {
+      const expense: EngineExpense = {
+        id: "e5",
+        type: "other",
+        name: "Property tax",
+        annualAmount: 8_000,
+        startYear: 2025,
+        endYear: 2055,
+        growthRate: 0.02,
+        paymentMonth: 11,
+      };
+      expect(expenseEngineToView(expense).paymentMonth).toBe(11);
+      expect(expenseEngineToView({ ...expense, paymentMonth: undefined }).paymentMonth).toBeNull();
     });
 
     it("round-trips education fields for edit (create→edit round-trip)", () => {
