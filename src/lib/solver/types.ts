@@ -96,6 +96,7 @@ export type SolverMutation =
   | { kind: "stress-disability"; person: SolverPerson; startYear: number; endYear: number | null }
   | { kind: "stress-market-crash"; year: number; drawdownPct: number }
   | { kind: "stress-exemption-cap"; cap: number }
+  | { kind: "stress-tax-rates"; points: number; startYear: number }
   | {
       kind: "surplus-allocation";
       spendPct: number;
@@ -154,6 +155,7 @@ export type SolverMutationKey =
   | "stress-disability"
   | "stress-market-crash"
   | "stress-exemption-cap"
+  | "stress-tax-rates"
   | "surplus-allocation";
 
 export function mutationKey(m: SolverMutation): SolverMutationKey {
@@ -254,6 +256,8 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
       return "stress-market-crash";
     case "stress-exemption-cap":
       return "stress-exemption-cap";
+    case "stress-tax-rates":
+      return "stress-tax-rates";
     case "surplus-allocation":
       return "surplus-allocation";
   }

@@ -9,6 +9,7 @@
 
 import { z } from "zod";
 import { isUSPSStateCode } from "@/lib/usps-states";
+import { MAX_RATE_STRESS_POINTS } from "@/lib/tax/rate-stress";
 
 const PERSON = z.enum(["client", "spouse"]);
 
@@ -535,6 +536,14 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("stress-exemption-cap"),
     cap: MONEY,
+  }),
+  z.object({
+    kind: z.literal("stress-tax-rates"),
+    // Decimal fraction of points added to every marginal rate: 0.03 = three
+    // points. The ceiling is imported, not re-typed, so the schema bound, the
+    // transform clamp and the UI clamp can never drift apart.
+    points: z.number().min(0).max(MAX_RATE_STRESS_POINTS),
+    startYear: YEAR,
   }),
   z.object({
     kind: z.literal("surplus-allocation"),
