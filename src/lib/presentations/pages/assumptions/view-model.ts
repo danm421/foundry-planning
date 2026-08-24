@@ -201,7 +201,7 @@ function buildStressTests(ps: PlanSettings): AssumptionRow[] {
   if (ps.taxRateStress) {
     rows.push({
       label: "Tax rates rise",
-      value: `${formatPct(ps.taxRateStress.points)} on all federal rates from ${ps.taxRateStress.startYear}`,
+      value: `${formatPct(ps.taxRateStress.points)} on federal ordinary and capital-gains rates from ${ps.taxRateStress.startYear}`,
     });
   }
   return rows;

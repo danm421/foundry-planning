@@ -175,7 +175,7 @@ describe("tax-rate stressor disclosure", () => {
     const d = buildAssumptionsData(withStress({ points: 0.03, startYear: 2030 }));
     expect(d.stressTests).toContainEqual({
       label: "Tax rates rise",
-      value: "3.0% on all federal rates from 2030",
+      value: "3.0% on federal ordinary and capital-gains rates from 2030",
     });
   });
 
