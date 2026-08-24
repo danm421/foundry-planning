@@ -77,9 +77,11 @@ import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
 import { resolveInflationRate } from "@/lib/inflation";
 import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
 import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies";
+import { loadDisabilityPolicies } from "@/lib/insurance-policies/load-disability-policies";
 import { withSynthesizedPremiums } from "@/lib/insurance-policies/premium-expense";
 import { withSynthesizedPolicyIncome } from "@/lib/insurance-policies/policy-income";
 import { withSynthesizedPremiumGifts } from "@/lib/insurance-policies/premium-gift";
+import { withSynthesizedDisabilityPremiums } from "@/lib/insurance-policies/disability-premium-expense";
 import { loadNotesReceivable } from "@/lib/loaders/notes-receivable";
 import { loadStockOptionPlans } from "./load-equity";
 import { rowToMedicareCoverage } from "@/lib/medicare/dbMapper";
@@ -1635,6 +1637,7 @@ export const loadClientDataWithContext = cache(
       wills: engineWills,
       familyMembers: mappedFamilyMembers,
       notesReceivable: await loadNotesReceivable(id, scenario.id),
+      disabilityPolicies: await loadDisabilityPolicies(id),
       medicareCoverage: medicareCoverageRows.map(rowToMedicareCoverage),
       medicarePremiumInflationRate: settings.medicarePremiumInflationRate != null
         ? parseFloat(settings.medicarePremiumInflationRate)
@@ -1643,8 +1646,10 @@ export const loadClientDataWithContext = cache(
     };
 
     return {
-      clientData: withSynthesizedPremiumGifts(
-        withSynthesizedPolicyIncome(withSynthesizedPremiums(clientData)),
+      clientData: withSynthesizedDisabilityPremiums(
+        withSynthesizedPremiumGifts(
+          withSynthesizedPolicyIncome(withSynthesizedPremiums(clientData)),
+        ),
       ),
       resolutionContext: resolutionCtx,
     };

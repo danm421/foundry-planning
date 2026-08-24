@@ -35,6 +35,7 @@ import { accrueLockedEntityShare } from "./locked-shares";
 import { computeFamilyAccountShares } from "./family-cashflow";
 import { computeGiftLedger, type GiftLedgerYear } from "./gift-ledger";
 import { computeIncome, applyDisabilityEvent } from "./income";
+import { synthesizeDisabilityBenefits } from "./disability-benefits";
 import { expandLinkedIncomes } from "./linked-income";
 import { computeExpenses } from "./expenses";
 import { computeLiabilities } from "./liabilities";
@@ -905,17 +906,30 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // The disability stress is applied once, here, as a clip on the income rows —
   // so the cash routing, the tax base, and the display totals all see the same
   // stopped paycheck. See `applyDisabilityEvent`.
-  let currentIncomes: Income[] = applyDisabilityEvent(
-    expandLinkedIncomes(data.incomes, {
-      accountById,
-      giftEvents: data.giftEvents ?? [],
-      assetTransactions: data.assetTransactions ?? [],
+  //
+  // Benefits are synthesized from the SAME pre-clip rows, because a disability
+  // policy insures the paycheck that is about to stop. Reading earnings after
+  // the clip yields $0 and a benefit row that pays nothing.
+  const expandedIncomes = expandLinkedIncomes(data.incomes, {
+    accountById,
+    giftEvents: data.giftEvents ?? [],
+    assetTransactions: data.assetTransactions ?? [],
+    planStartYear: planSettings.planStartYear,
+    clientFmId,
+    spouseFmId,
+  });
+  let currentIncomes: Income[] = [
+    ...applyDisabilityEvent(expandedIncomes, planSettings.disabilityEvent),
+    ...synthesizeDisabilityBenefits({
+      incomesBeforeClip: expandedIncomes,
+      event: planSettings.disabilityEvent,
+      policies: data.disabilityPolicies ?? [],
+      client,
       planStartYear: planSettings.planStartYear,
-      clientFmId,
-      spouseFmId,
+      planEndYear: planSettings.planEndYear,
+      inflationRate: planSettings.inflationRate,
     }),
-    planSettings.disabilityEvent,
-  );
+  ];
   // Snapshot of the year's resolved `allExpenses` (data.expenses + synthetic
   // property-tax rows). Captured each iteration so the post-loop entity
   // cash-flow pass can read entity-tagged synthetic expenses.

@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
-import { buildClientData, basePlanSettings, baseClient, sampleExpenses, sampleAccounts, sampleLiabilities } from "./fixtures";
-import type { TaxYearParameters } from "../../lib/tax/types";
+import { buildClientData, basePlanSettings, baseClient, sampleExpenses, sampleAccounts, sampleLiabilities, FIXTURE_TAX_PARAMS } from "./fixtures";
 import type { ClientData, ClientInfo, Account, PlanSettings } from "../types";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
 import { buildLiabilitySchedules } from "../liability-schedules";
@@ -515,63 +514,6 @@ describe("runProjection", () => {
 // ============================================================================
 // Tax engine routing integration tests (Task 28)
 // ============================================================================
-
-const FIXTURE_TAX_PARAMS: TaxYearParameters[] = [{
-  year: 2026,
-  incomeBrackets: {
-    married_joint: [
-      { from: 0, to: 24800, rate: 0.10 },
-      { from: 24800, to: 100800, rate: 0.12 },
-      { from: 100800, to: null, rate: 0.22 },
-    ],
-    single: [{ from: 0, to: null, rate: 0.10 }],
-    head_of_household: [{ from: 0, to: null, rate: 0.10 }],
-    married_separate: [{ from: 0, to: null, rate: 0.10 }],
-  },
-  capGainsBrackets: {
-    married_joint: { zeroPctTop: 94050, fifteenPctTop: 583750 },
-    single: { zeroPctTop: 47025, fifteenPctTop: 518900 },
-    head_of_household: { zeroPctTop: 63000, fifteenPctTop: 551350 },
-    married_separate: { zeroPctTop: 47025, fifteenPctTop: 291850 },
-  },
-  trustIncomeBrackets: [],
-  trustCapGainsBrackets: [],
-  stdDeduction: { married_joint: 30000, single: 15000, head_of_household: 21900, married_separate: 15000 },
-  amtExemption: { mfj: 137000, singleHoh: 88100, mfs: 68500 },
-  amtBreakpoint2628: { mfjShoh: 239100, mfs: 119550 },
-  amtPhaseoutStart: { mfj: 1237450, singleHoh: 618700, mfs: 618725 },
-  ssTaxRate: 0.062,
-  ssWageBase: 176100,
-  medicareTaxRate: 0.0145,
-  addlMedicareRate: 0.009,
-  addlMedicareThreshold: { mfj: 250000, single: 200000, mfs: 125000 },
-  niitRate: 0.038,
-  niitThreshold: { mfj: 250000, single: 200000, mfs: 125000 },
-  qbi: {
-    thresholdMfj: 383900,
-    thresholdSingleHohMfs: 191950,
-    phaseInRangeMfj: 100000,
-    phaseInRangeOther: 50000,
-  },
-  rothPhaseout: { startMfj: null, endMfj: null, startSingle: null, endSingle: null },
-  iraDeduct: { coveredStartMfj: null, coveredEndMfj: null, coveredStartSingle: null,
-               coveredEndSingle: null, spousalStartMfj: null, spousalEndMfj: null },
-  studentLoan: { maxDeduction: null, startMfj: null, endMfj: null, startSingle: null, endSingle: null },
-  ctc: { perChild: null, refundableMax: null, odcPerDependent: null },
-  saversCredit: { mfj: [], single: [], hoh: [] },
-  contribLimits: {
-    ira401kElective: 23500,
-    ira401kCatchup50: 7500,
-    ira401kCatchup6063: 11250,
-    iraTradLimit: 7000,
-    iraCatchup50: 1000,
-    simpleLimitRegular: 17000,
-    simpleCatchup50: 4000,
-    hsaLimitSelf: 4400,
-    hsaLimitFamily: 8750,
-    hsaCatchup55: 1000,
-  },
-}];
 
 describe("projection — bracket/flat tax routing", () => {
   it("populates taxResult on every projection year when mode=bracket", () => {
