@@ -128,7 +128,10 @@ describe("view-adapters", () => {
       };
       expect(incomeEngineToView(income).paymentMonth).toBe(3);
       // Absent means "spread evenly across all twelve months", carried as null
-      // rather than dropped — `undefined` is the value that skips the write.
+      // rather than dropped. This is FILE CONSISTENCY, not a write-path guard:
+      // `incomes-writes.ts:209` does skip an `undefined`, but the dialog
+      // re-applies its own `?? null` before submitting, so the payload is null
+      // either way. Every sibling field here normalises the same way.
       expect(incomeEngineToView({ ...income, paymentMonth: undefined }).paymentMonth).toBeNull();
     });
   });

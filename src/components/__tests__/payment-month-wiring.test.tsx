@@ -10,10 +10,15 @@
  *   OUT — a month chosen in the dialog reaches the request body as a NUMBER.
  *   BACK IN — a row that already carries a month reopens on that month.
  *
- * The BACK IN half is the one that fails when `view-adapters.ts` drops
- * `paymentMonth`: the dialog would hydrate from a view row that never carried
- * the field, reopen on "Monthly", and — because the write layer applies the
- * column whenever the key is present — null the stored month on save.
+ * The two BACK IN tests hand-build their row, so they do NOT catch
+ * `view-adapters.ts` dropping the field — MEASURED: with both adapter lines
+ * deleted they stay green. Only the adapter-composition block at the bottom of
+ * this file covers that, and it is where the reasoning for it is written down.
+ *
+ * That failure is worth naming here anyway, because it is what the whole file
+ * exists to prevent: the dialog would hydrate from a view row that never
+ * carried the field, reopen on "Monthly", and — because the write layer applies
+ * the column whenever the key is present — null the stored month on save.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -126,6 +131,36 @@ describe("Paid in month — wired into the income dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit Bonus" }));
 
     expect((screen.getByLabelText("Paid in") as HTMLSelectElement).value).toBe("11");
+  });
+
+  // The DESTRUCTIVE scenario itself, on the update branch. Every other test
+  // here submits from `+ Add`; this one reopens a row that already has a month
+  // and saves it untouched. `incomes-writes.ts:209` writes the column whenever
+  // the key is present, so a payload that reached this point carrying `null`
+  // would erase the advisor's choice on a no-op Save.
+  it("keeps the stored month on the payload when a dated row is saved untouched", async () => {
+    renderView({
+      initialIncomes: [
+        {
+          id: "inc-1",
+          type: "other",
+          name: "Bonus",
+          annualAmount: "20000",
+          startYear: 2026,
+          endYear: 2040,
+          owner: "client",
+          claimingAge: null,
+          growthRate: "0.02",
+          paymentMonth: 11,
+        },
+      ],
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Bonus" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+    expect(sentBodyFor("/incomes").paymentMonth).toBe(11);
   });
 });
 
