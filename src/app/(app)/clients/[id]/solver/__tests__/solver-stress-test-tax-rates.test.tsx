@@ -35,18 +35,23 @@ function tree(over: {
 function renderTab(over: Parameters<typeof tree>[0] = {}) {
   const onChange = vi.fn();
   const onResetField = vi.fn();
-  render(
+  const tab = (o: Parameters<typeof tree>[0]) => (
     <SolverStressTestTab
       baseClientData={tree()}
-      workingTree={tree(over)}
+      workingTree={tree(o)}
       currentYear={CURRENT_YEAR}
       clientName="John"
       spouseName="Jane"
       onChange={onChange as never}
       onResetField={onResetField}
-    />,
+    />
   );
-  return { onChange, onResetField };
+  const { rerender } = render(tab(over));
+  /** Re-render as the real parent does after a mutation lands on the working
+   *  tree. Needed to see anything about what the inputs DISPLAY, as opposed to
+   *  what they emit. */
+  const rerenderWith = (o: Parameters<typeof tree>[0]) => rerender(tab(o));
+  return { onChange, onResetField, rerenderWith };
 }
 
 afterEach(cleanup);
@@ -96,6 +101,22 @@ describe("Tax rates rise stressor", () => {
       points: MAX_RATE_STRESS_POINTS,
       startYear: 2032,
     });
+  });
+
+  it("shows the CLAMPED rate afterwards, not the number the clamp rejected", () => {
+    // The test above proves the right value is EMITTED. This one asks what the
+    // advisor then sees, which is a different question: PercentField is
+    // uncontrolled (defaultValue), so without a remount the box goes on
+    // displaying the rejected 25 while the projection runs at 20 — the advisor
+    // reads a 25-point stress off a plan carrying a 20-point one.
+    const { rerenderWith } = renderTab({ taxRateStress: { points: 0.03, startYear: 2032 } });
+    fireEvent.blur(screen.getByDisplayValue("3"), { target: { value: "25" } });
+    // Precondition, so this test cannot pass by the typing never registering.
+    expect(screen.getByDisplayValue("25")).toBeInTheDocument();
+
+    rerenderWith({ taxRateStress: { points: MAX_RATE_STRESS_POINTS, startYear: 2032 } });
+    expect(screen.getByDisplayValue("20")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("25")).toBeNull();
   });
 
   // Stored points (0.05) deliberately differs from DEFAULT_TAX_RATE_POINTS

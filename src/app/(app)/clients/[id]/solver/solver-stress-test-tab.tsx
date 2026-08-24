@@ -81,6 +81,15 @@ export function SolverStressTestTab({
     endYear: ps.disabilityEvent?.endYear ?? null,
   };
 
+  // Same reasoning as `disability` above. Also keeps the field's `key` and its
+  // `value` reading the SAME expression — they must agree for the remount to
+  // show what was committed, and two copies of a fallback chain can drift.
+  const taxRates: Extract<SolverMutation, { kind: "stress-tax-rates" }> = {
+    kind: "stress-tax-rates",
+    points: ps.taxRateStress?.points ?? DEFAULT_TAX_RATE_POINTS,
+    startYear: ps.taxRateStress?.startYear ?? defaultEventYear,
+  };
+
   return (
     <SolverSection
       title="Stress Test"
@@ -152,7 +161,7 @@ export function SolverStressTestTab({
         label="Tax rates rise"
         hint={
           bracketMode
-            ? "Adds this many percentage points to every federal marginal rate from the chosen year — ordinary income, long-term gains and qualified dividends, and trust brackets. Bracket thresholds do not move. The alternative minimum tax, the 3.8% net investment income surtax, and state income tax are unaffected, so a client with large AMT or state exposure will see less than the full effect."
+            ? "Adds this many percentage points to each federal marginal rate above 0% from the chosen year — ordinary income, long-term gains and qualified dividends, and trust brackets. Bracket thresholds do not move. The alternative minimum tax, the 3.8% net investment income surtax, and state income tax are unaffected, so a client with large AMT or state exposure will see less than the full effect."
             : "Unavailable in flat tax mode — this plan has no tax brackets to raise. Switch the plan to the bracket tax engine to use it."
         }
         on={taxRatesOn}
@@ -169,29 +178,28 @@ export function SolverStressTestTab({
       >
         <div className="grid grid-cols-2 gap-x-5">
           <PercentField
+            // PercentField is uncontrolled, so it keeps displaying whatever was
+            // typed. That only matters where the committed value can DIFFER
+            // from it, and this is the one percent field that applies a CEILING
+            // — type 25, blur, and the plan carries 20 while the box still
+            // reads 25. (The component's own floor at zero cannot disagree with
+            // the box, because the number input will not surrender a negative.)
+            // Remounting on the committed value is the fix the disability
+            // ending year already uses below.
+            key={taxRates.points}
             label="Rate increase"
-            value={ps.taxRateStress?.points ?? DEFAULT_TAX_RATE_POINTS}
+            value={taxRates.points}
             onCommit={(points) =>
-              onChange({
-                kind: "stress-tax-rates",
-                // Upper clamp only — PercentField's own onBlur already floors
-                // at zero (Math.max(0, next) / 100) and the input carries
-                // min="0", so a redundant lower clamp here would be dead code.
-                points: Math.min(points, MAX_RATE_STRESS_POINTS),
-                startYear: ps.taxRateStress?.startYear ?? defaultEventYear,
-              })
+              // Upper clamp only — PercentField's own onBlur already floors at
+              // zero (Math.max(0, next) / 100) and the input carries min="0",
+              // so a lower clamp here would be dead code.
+              onChange({ ...taxRates, points: Math.min(points, MAX_RATE_STRESS_POINTS) })
             }
           />
           <YearField
             label="Starting year"
-            value={ps.taxRateStress?.startYear ?? defaultEventYear}
-            onCommit={(y) =>
-              onChange({
-                kind: "stress-tax-rates",
-                points: ps.taxRateStress?.points ?? DEFAULT_TAX_RATE_POINTS,
-                startYear: y,
-              })
-            }
+            value={taxRates.startYear}
+            onCommit={(y) => onChange({ ...taxRates, startYear: y })}
           />
         </div>
       </StressRow>
