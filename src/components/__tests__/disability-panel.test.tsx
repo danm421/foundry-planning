@@ -20,7 +20,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
-import type { ClientInfo, DisabilityPolicy, Income } from "@/engine/types";
+import type { ClientData, ClientInfo, DisabilityPolicy, Income } from "@/engine/types";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
@@ -30,6 +30,10 @@ import DisabilityPanel, {
   type DisabilityPanelProps,
 } from "@/components/disability-panel";
 import { DisabilityCoverageTimeline } from "@/components/disability-coverage-timeline";
+// The solver's lever pane is the THIRD surface carrying this precedence. It is
+// an app-route component rather than a shared one, and importing it here is
+// deliberate: the invariant is cross-layer, so the test that pins it has to be.
+import { SolverStressTestTab } from "@/app/(app)/clients/[id]/solver/solver-stress-test-tab";
 import { ClientAccessProvider } from "@/components/client-access-provider";
 import {
   benefitForYear,
@@ -256,16 +260,18 @@ describe("DisabilityPanel", () => {
   });
 
   /**
-   * IF-1's durable half. The reorder itself is two lines; what let the row and
-   * the timeline drift apart in the first place is that NOTHING compared them.
+   * IF-1's durable half. The reorder itself is two lines; what let these
+   * surfaces drift apart in the first place is that NOTHING compared them.
    * Task 9 mirrored the timeline's precedence into the row by hand on the stated
    * invariant "the row and the timeline cannot tell the advisor two different
-   * stories about one policy", and a reviewer checked it once, by eye.
+   * stories about one policy", and a reviewer checked it once, by eye. The
+   * solver's lever pane then made the same claim a THIRD time, by hand again.
    *
-   * The row legitimately shortens its wording to fit a pill, so this asserts on
-   * WHICH CONDITION each surface reports, never on byte-equal strings.
+   * Each surface legitimately words the condition to fit its own space — a pill,
+   * a full sentence under a bar, a 233px line — so this asserts on WHICH
+   * CONDITION each one reports, never on byte-equal strings.
    */
-  describe("the row and the timeline report the same condition", () => {
+  describe("the row, the timeline and the solver report the same condition", () => {
     const CONDITIONS = [
       ["no_earnings", /no covered earnings/i],
       ["missing_dob", /date of birth/i],
@@ -273,8 +279,64 @@ describe("DisabilityPanel", () => {
       ["overlap", /both (layers|policies) pay/i],
     ] as const;
 
+    /** The solver's pane reports a deliberate SUBSET: the two conditions that
+     *  stop a benefit being paid at all. A gap or overlap between the layers is
+     *  a shape it has no room to explain, and the Insurance page says it
+     *  properly. Derived from the shared expectation rather than written per
+     *  case, so a future editor cannot quietly re-point one case at a different
+     *  condition — silence is allowed, disagreement is not. */
+    const SOLVER_REPORTS: readonly string[] = ["no_earnings", "missing_dob"];
+    const solverExpectationFor = (expected: string | null) =>
+      expected !== null && SOLVER_REPORTS.includes(expected) ? expected : null;
+
     const conditionIn = (text: string): string | null =>
       CONDITIONS.find(([, re]) => re.test(text))?.[0] ?? null;
+
+    /** The same policy, client and covered earnings the other two surfaces saw,
+     *  in the shape the solver takes. `growthRate: 0` with the disability year
+     *  equal to `planStartYear` makes `resolveCoveredEarnings` return the salary
+     *  scalar unchanged, so all three resolve one identical `ResolvedCoverage`.
+     *  Zero-salary people get no row at all — which is the real shape of the
+     *  non-earning spouse this precedence exists for. */
+    const solverTree = (
+      policy: DisabilityPolicy,
+      client: ClientInfo,
+      salary: { client: number; spouse: number },
+      withEvent: boolean,
+    ): ClientData =>
+      ({
+        client,
+        planSettings: {
+          flatFederalRate: 0.22,
+          flatStateRate: 0.05,
+          inflationRate: 0.03,
+          planStartYear: 2026,
+          planEndYear: 2060,
+          disabilityEvent: withEvent
+            ? { person: policy.insured, startYear: 2026 }
+            : undefined,
+        },
+        accounts: [],
+        incomes: (["client", "spouse"] as const)
+          .filter((who) => salary[who] > 0)
+          .map((who) => ({
+            id: `inc-${who}`,
+            type: "salary",
+            name: `${who} salary`,
+            annualAmount: salary[who],
+            startYear: 2026,
+            endYear: 2060,
+            growthRate: 0,
+            owner: who,
+          })),
+        expenses: [],
+        liabilities: [],
+        savingsRules: [],
+        withdrawalStrategy: [],
+        familyMembers: [],
+        giftEvents: [],
+        disabilityPolicies: [policy],
+      }) as unknown as ClientData;
 
     const NO_SPOUSE_DOB: ClientInfo = { ...CLIENT, spouseDob: undefined };
     const LATE_LTD = {
@@ -388,10 +450,30 @@ describe("DisabilityPanel", () => {
         } else {
           expect(screen.getByRole("alert")).toBeInTheDocument();
         }
+        timeline.unmount();
+
+        const solver = render(
+          <SolverStressTestTab
+            baseClientData={solverTree(c.policy, c.client, c.salary, false)}
+            workingTree={solverTree(c.policy, c.client, c.salary, true)}
+            currentYear={2026}
+            clientName="Cooper"
+            spouseName="Jane"
+            onChange={vi.fn()}
+            onResetField={vi.fn()}
+          />,
+        );
+        const solverText = solver.container.textContent!;
+        // Vacuity guard, both halves: the coverage block drew, and it drew the
+        // RESOLVED branch rather than the "no coverage on file" fallback — which
+        // would report `null` for every case and agree with nothing.
+        expect(solverText).toContain("Pays");
+        expect(solverText).not.toContain("No disability coverage on file");
+        solver.unmount();
 
         expect(conditionIn(rowText)).toBe(c.expected);
         expect(conditionIn(timelineText)).toBe(c.expected);
-        timeline.unmount();
+        expect(conditionIn(solverText)).toBe(solverExpectationFor(c.expected));
       });
     }
   });

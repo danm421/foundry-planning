@@ -55,6 +55,21 @@ const clientSalary: Income = {
   owner: "client",
 };
 
+/** The spouse earns too. Only the DOB test needs this: without it the insured
+ *  spouse has neither a date of birth NOR covered earnings, and the assertion
+ *  below would pin the PRECEDENCE between the two notes rather than the DOB
+ *  note itself. */
+const spouseSalary: Income = {
+  id: "inc-salary-spouse",
+  type: "salary",
+  name: "Jane Salary",
+  annualAmount: 120_000,
+  startYear: 2026,
+  endYear: 2035,
+  growthRate: 0.03,
+  owner: "spouse",
+};
+
 function tree(over: {
   disabilityPolicies?: DisabilityPolicy[];
   disabilityEvent?: { person: "client" | "spouse"; startYear: number };
@@ -168,11 +183,19 @@ describe("Disability stressor coverage line", () => {
     // `resolveCoverage` leaves `longTerm` null and flags `missing_dob`; the
     // contract still says "to age 65", so claiming that unqualified would be a
     // false statement about what the plan pays.
+    //
+    // The spouse is given a salary row ON PURPOSE. `coverageNote` reports zero
+    // covered earnings FIRST — it stops both layers where a missing DOB stops
+    // only the long-term one — so a spouse with neither would make this test
+    // pin the precedence instead of the note it names.
     renderTab({
       disabilityPolicies: [{ ...workplace, insured: "spouse" }],
       disabilityEvent: { person: "spouse", startYear: DISABILITY_YEAR },
+      incomes: [clientSalary, spouseSalary],
       spouseDob: undefined,
     });
     expect(screen.getByText(/no date of birth on file/i)).toBeInTheDocument();
+    // Says what it means: only the DOB condition qualifies here.
+    expect(screen.queryByText(/no covered earnings/i)).not.toBeInTheDocument();
   });
 });

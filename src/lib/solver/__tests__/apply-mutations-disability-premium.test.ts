@@ -28,6 +28,8 @@ import { applyMutations } from "../apply-mutations";
 const ROW_ID = "disability-premium-dp-own";
 /** baseClient: DOB 1970-01-01, retirementAge 65 => the premium runs to 2035. */
 const RETIREMENT_YEAR = 2035;
+/** baseClient: spouseDob 1972-06-15, spouseRetirementAge 65 => 2037. */
+const SPOUSE_RETIREMENT_YEAR = 2037;
 const DISABILITY_YEAR = 2030;
 
 const insuredPaid: DisabilityPolicy = {
@@ -85,6 +87,51 @@ describe("applyMutations re-derives disability premiums from the mutated tree", 
     const out = applyMutations(loadedTree(), [] as SolverMutation[]);
     expect(out.expenses.filter((e) => e.id === ROW_ID)).toHaveLength(1);
     expect(premiumRow(out)?.endYear).toBe(RETIREMENT_YEAR);
+  });
+
+  /**
+   * The re-derive is not scoped to the disability stressor: it runs on EVERY
+   * batch, so any lever feeding `retirementYear` now moves the premium's end
+   * year too. That is the loader's own answer — fence it off and moving
+   * retirement age gives an end year a save-and-reload would silently change —
+   * but the only thing standing between "correct" and "silently wrong for the
+   * spouse" is one ternary in `retirementYear`, and moving retirement age is
+   * the most-used lever in the product. So it is pinned, in both directions.
+   */
+  describe("a retirement-age lever moves the premium's end year, for the RIGHT person", () => {
+    it("follows the client when the client is the insured", () => {
+      const before = loadedTree();
+      expect(premiumRow(before)?.endYear).toBe(RETIREMENT_YEAR);
+
+      const out = applyMutations(before, [
+        { kind: "retirement-age", person: "client", age: 70 },
+      ] as SolverMutation[]);
+
+      expect(premiumRow(out)?.endYear).toBe(2040);
+    });
+
+    it("does not let a CLIENT lever move a SPOUSE-insured policy", () => {
+      const spouseInsured = { ...insuredPaid, insured: "spouse" as const };
+      const before = loadedTree(spouseInsured);
+      expect(premiumRow(before)?.endYear).toBe(SPOUSE_RETIREMENT_YEAR);
+
+      const out = applyMutations(before, [
+        { kind: "retirement-age", person: "client", age: 70 },
+      ] as SolverMutation[]);
+
+      expect(premiumRow(out)?.endYear).toBe(SPOUSE_RETIREMENT_YEAR);
+    });
+
+    it("does let a SPOUSE lever move it", () => {
+      // The control for the assertion above: without this, "unchanged" would
+      // also be satisfied by a re-derive that never moves a spouse policy at
+      // all — including one that cannot read `spouseRetirementAge`.
+      const out = applyMutations(loadedTree({ ...insuredPaid, insured: "spouse" }), [
+        { kind: "retirement-age", person: "spouse", age: 70 },
+      ] as SolverMutation[]);
+
+      expect(premiumRow(out)?.endYear).toBe(2042);
+    });
   });
 
   it("leaves the life-insurance premiums alone", () => {

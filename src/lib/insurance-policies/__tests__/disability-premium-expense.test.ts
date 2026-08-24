@@ -171,10 +171,18 @@ describe("withSynthesizedDisabilityPremiums", () => {
     // `withSynthesizedPremiums` strips EVERY `source: "policy"` expense and
     // re-derives only from life-insurance ACCOUNTS — it knows nothing about
     // disability policies. Run it after us and the disability premium is gone
-    // for good, silently. Both non-test call sites honour this ordering:
-    // load-client-data.ts (disability outermost) and scenario/loader.ts
-    // (disability after the life-insurance links). This test is the alarm if
-    // either is ever reordered or a third call site is added the wrong way.
+    // for good, silently. All THREE non-test call sites honour this ordering:
+    // load-client-data.ts (disability outermost), scenario/loader.ts (disability
+    // after the life-insurance links) and solver/apply-mutations.ts (which
+    // never calls withSynthesizedPremiums at all).
+    //
+    // ⚠️ What this test does NOT do is watch the call sites. It composes the two
+    // functions here and pins both directions; it cannot see a call site, and it
+    // proved that when the third one was added and this file stayed 13/13 green
+    // without a character changing. A new call site placed on the wrong side of
+    // `withSynthesizedPremiums` deletes the premium row silently and NOTHING
+    // here goes red. Call-site ordering is reviewed by hand, against the
+    // ORDERING INVARIANT doc comment on `synthesizeDisabilityPremiums`.
     const tree = buildClientData({ disabilityPolicies: [base], expenses: [] });
 
     const right = withSynthesizedDisabilityPremiums(withSynthesizedPremiums(tree));
