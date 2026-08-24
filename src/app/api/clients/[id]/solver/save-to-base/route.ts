@@ -498,6 +498,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           owner: i.owner,
           taxType: (i.taxType ?? null) as typeof incomes.$inferInsert.taxType,
           source: (i.source ?? "manual") as typeof incomes.$inferInsert.source,
+          paymentMonth: i.paymentMonth ?? null,
         });
       }
 
@@ -517,6 +518,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             endYearRef: (i.endYearRef ?? null) as typeof incomes.$inferInsert.endYearRef,
             owner: i.owner,
             taxType: (i.taxType ?? null) as typeof incomes.$inferInsert.taxType,
+            paymentMonth: i.paymentMonth ?? null,
             updatedAt: new Date(),
           })
           .where(
@@ -566,6 +568,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             institutionName: e.institutionName ?? null,
             forFamilyMemberId: e.forFamilyMemberId ?? null,
             absorbsRemainingCashFlow: e.absorbsRemainingCashFlow ?? false,
+            paymentMonth: e.paymentMonth ?? null,
           })
           .returning({ id: expenses.id });
         await insertExpenseDedicatedRows(tx, inserted.id, e.dedicatedAccountIds, idRemap);
@@ -589,6 +592,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             institutionName: e.institutionName ?? null,
             forFamilyMemberId: e.forFamilyMemberId ?? null,
             absorbsRemainingCashFlow: e.absorbsRemainingCashFlow ?? false,
+            paymentMonth: e.paymentMonth ?? null,
             updatedAt: new Date(),
           })
           .where(
