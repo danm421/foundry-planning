@@ -20,6 +20,12 @@ describe("buildMonthlyCashFlowRows — headline lines", () => {
     expect(rows[0].portfolioDraw).toBeCloseTo(y.withdrawals.total / 12, 6);
     // Savings is a committed cost, not money left to live on.
     expect(rows[0].fixed.savings).toBeCloseTo(y.savings.total / 12, 6);
+    // Each remaining field pinned to its OWN engine source. The sum-composition
+    // check below cannot see two of these swapped — the total is identical, but
+    // the report would print the mortgage on the insurance row.
+    expect(rows[0].fixed.liabilities).toBeCloseTo(y.expenses.liabilities / 12, 6);
+    expect(rows[0].fixed.insurance).toBeCloseTo(y.expenses.insurance / 12, 6);
+    expect(rows[0].fixed.realEstate).toBeCloseTo(y.expenses.realEstate / 12, 6);
   });
 
   it("leaves living expenses OUT of fixed costs", () => {
@@ -55,7 +61,15 @@ describe("buildMonthlyCashFlowRows — headline lines", () => {
     }
   });
 
-  it("never counts entity withdrawals in the draw", () => {
+  it("reads the draw from withdrawals.total alone", () => {
+    // Without this the loop below could pass on a fixture that never draws.
+    expect(years.some((y) => y.withdrawals.total > 0)).toBe(true);
+    // The limit of what this test proves: the fixture has no entity-owned
+    // accounts, so `entityWithdrawals` is 0 in every year and an ADDITIVE
+    // `+ y.entityWithdrawals.total` bug could not red here. Wholesale
+    // replacement does red. If this assertion ever fails, the fixture has
+    // grown entity withdrawals and the loop below becomes the real guard.
+    expect(years.every((y) => y.entityWithdrawals.total === 0)).toBe(true);
     for (const [i, r] of rows.entries()) {
       expect(r.portfolioDraw).toBeCloseTo(years[i].withdrawals.total / 12, 6);
     }
@@ -67,7 +81,7 @@ describe("buildMonthlyCashFlowRows — headline lines", () => {
 });
 
 describe("cash gifts", () => {
-  it("are already inside expenses.other, and counted there exactly once", () => {
+  it("sit inside expenses.other exactly once, and reach fixed.other unchanged", () => {
     const clientData = buildClientData({
       giftEvents: [
         {
@@ -96,6 +110,14 @@ describe("cash gifts", () => {
     expect(y2026.expenses.other - base2026.expenses.other).toBe(
       y2026.expenses.cashGifts,
     );
+
+    // The module must carry that through untouched. This is the only test that
+    // pins `fixed.other` at all: the base fixture's `expenses.other` is 0 in
+    // every year, so on that fixture dropping the field entirely, or adding
+    // `cashGifts` on top of it, are both invisible.
+    const giftRows = buildMonthlyCashFlowRows(years, clientData, "nominal");
+    const giftRow = giftRows.find((r) => r.year === 2026)!;
+    expect(giftRow.fixed.other * 12).toBeCloseTo(y2026.expenses.other, 6);
   });
 });
 
