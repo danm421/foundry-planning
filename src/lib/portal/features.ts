@@ -66,7 +66,7 @@ export const PORTAL_FEATURE_META: readonly PortalFeatureMeta[] = [
   {
     key: "calculators",
     label: "Calculators",
-    description: "Self-serve what-if tools, starting with a debt paydown calculator.",
+    description: "Self-serve what-if tools — a debt paydown planner and a savings goal calculator.",
   },
 ] as const;
 

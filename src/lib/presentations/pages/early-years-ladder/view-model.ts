@@ -3,10 +3,10 @@
 // Every bar comes from a DERIVED plan variant: the base tree with one deferral
 // account moved to the rung's percent, re-projected. The page therefore reads
 // its numbers out of `bundlesByRef`, never out of the deck's own scenario, and
-// deflates each one to the plan's start year before printing it.
+// preserves each engine result beside its plan-start-year purchasing power.
 
 import { derivedKey } from "@/lib/presentations/derived-refs";
-import { toTodaysDollars } from "@/lib/presentations/real-dollars";
+import { dollarPair } from "@/lib/presentations/real-dollars";
 import { renderTidbits } from "@/lib/presentations/tidbits";
 // The same formatter the chart labels its bars with. The takeaway quotes a
 // figure measured off those bars, and one sheet printing "$8.9k" beside
@@ -14,6 +14,7 @@ import { renderTidbits } from "@/lib/presentations/tidbits";
 import { fmtAxisUsd } from "@/components/presentations/pages/retirement-comparison/chart-axis";
 import { resolveAllTokens } from "@/lib/plan-text/tokens";
 import { householdSavingsRate } from "@/lib/presentations/savings-rate";
+import { earlyYearsSubtitle } from "../early-years-shared";
 import { resolveRungs, ladderBlocker, type LadderBlocker, type Rung } from "./rungs";
 import type { BuildDataContext } from "@/components/presentations/registry";
 import type {
@@ -51,7 +52,7 @@ export function buildEarlyYearsLadderData(
   );
 
   const empty = (emptyMessage: string): EarlyYearsLadderPageData => ({
-    subtitle: subtitleFor(base?.scenarioLabel),
+    subtitle: earlyYearsSubtitle(base?.scenarioLabel),
     groups: [],
     rungs,
     cappedRungLabels: [],
@@ -83,10 +84,11 @@ export function buildEarlyYearsLadderData(
     if (rows.some((r) => r == null)) continue;
     groups.push({
       age,
+      year: rows[0]!.year,
       bars: rungs.map((rung, i) => ({
         label: rung.label,
         isCurrent: rung.isCurrent,
-        value: toTodaysDollars(rows[i]!.portfolioAssets.liquidTotal, rows[i]!.year, basis),
+        value: dollarPair(rows[i]!.portfolioAssets.liquidTotal, rows[i]!.year, basis),
       })),
     });
   }
@@ -98,7 +100,7 @@ export function buildEarlyYearsLadderData(
   }
 
   return {
-    subtitle: subtitleFor(base?.scenarioLabel),
+    subtitle: earlyYearsSubtitle(base?.scenarioLabel),
     groups,
     rungs,
     cappedRungLabels: cappedRungLabels(
@@ -134,12 +136,6 @@ const BLOCKED_COPY: Record<LadderBlocker, string> = {
   "not-modellable":
     "This plan's retirement contributions can't be modelled as a single savings rate, so there is nothing to raise here.",
 };
-
-function subtitleFor(scenarioLabel: string | undefined): string {
-  // The bars are always the base plan with one lever moved, whatever scenario
-  // the rest of the deck is built on.
-  return `${scenarioLabel ?? "Base Case"} · Every figure in today's dollars`;
-}
 
 /** Below this the shortfall is float noise, not a limit. A tenth of a point is
  *  orders of magnitude under anything a rounded whole-percent label can show. */
@@ -186,10 +182,8 @@ function cappedRungLabels(rungs: Rung[], deliveredRates: number[]): string[] {
  * reaches — the same defect the two sheets were just reconciled to remove. The
  * dollars are measured off the bars either way, so only the naming changes.
  *
- * It carries no "in today's dollars" tail: the page subtitle and the chart's
- * own subtitle each say it already, and "(today)" inside this sentence means
- * the rate the client defers TODAY — the same word in two senses, one line
- * apart, is worse than the third repetition it saved.
+ * The value carries both units. The current-rate suffix says "current plan" so
+ * it cannot be confused with the purchasing-power unit on the dollar gap.
  */
 function takeawayFor(groups: LadderGroup[], rungs: Rung[]): string | null {
   const last = groups[groups.length - 1];
@@ -199,11 +193,12 @@ function takeawayFor(groups: LadderGroup[], rungs: Rung[]): string | null {
   const topIdx = last.bars.length - 1;
   if (topIdx === baseIdx) return null;
 
-  const gap = last.bars[topIdx].value - last.bars[baseIdx].value;
-  if (gap <= 0) return null;
+  const gapToday = last.bars[topIdx].value.today - last.bars[baseIdx].value.today;
+  const gapNominal = last.bars[topIdx].value.nominal - last.bars[baseIdx].value.nominal;
+  if (gapToday <= 0) return null;
 
   // Exactly the legend's own text, so the client can find each bar.
   const named = (i: number) =>
-    rungs[i].isCurrent ? `${rungs[i].label} (today)` : rungs[i].label;
-  return `At age ${last.age}, the ${named(topIdx)} bar is about ${fmtAxisUsd(gap)} ahead of ${named(baseIdx)}.`;
+    rungs[i].isCurrent ? `${rungs[i].label} (current plan)` : rungs[i].label;
+  return `At age ${last.age}, the ${named(topIdx)} bar is about ${fmtAxisUsd(gapToday)} today (${fmtAxisUsd(gapNominal)} future-year dollars) ahead of ${named(baseIdx)}.`;
 }

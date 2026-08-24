@@ -59,8 +59,8 @@ export const PORTAL_NAV_ITEMS: readonly PortalNavItem[] = [
   // entries — see `BUDGET_TABS` in `budget-tabs.tsx`.
   { label: "Budget", suffix: "/budget", group: "money", matchNested: true, feature: "budget" },
   { label: "Documents", suffix: "/documents", group: "money", feature: "documents" },
-  // Owns /calculators/debt-paydown, so `matchNested` keeps the rail entry lit
-  // while the client is inside a calculator.
+  // Owns every /calculators/<slug> page, so `matchNested` keeps the rail entry
+  // lit while the client is inside a calculator.
   { label: "Calculators", suffix: "/calculators", group: "money", matchNested: true, feature: "calculators" },
   { label: "Settings", suffix: "/settings", group: "settings" },
 ] as const;

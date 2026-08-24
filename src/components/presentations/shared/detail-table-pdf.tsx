@@ -1,0 +1,94 @@
+import { Text, View, StyleSheet } from "@react-pdf/renderer";
+import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
+import type { ReactNode } from "react";
+
+export interface DetailTableColumn<Row> {
+  header: string;
+  flex: number;
+  align?: "left" | "right";
+  render: (row: Row) => ReactNode;
+}
+
+const s = StyleSheet.create({
+  table: { marginTop: 10 },
+  header: {
+    flexDirection: "row",
+    borderBottomWidth: 1,
+    borderBottomColor: T.hair,
+    paddingBottom: 3,
+  },
+  headerText: {
+    fontSize: 6,
+    color: T.ink2,
+    fontWeight: 700,
+    textTransform: "uppercase",
+    letterSpacing: 0.35,
+  },
+  row: {
+    flexDirection: "row",
+    borderBottomWidth: 0.5,
+    borderBottomColor: T.hair2,
+    paddingVertical: 2.25,
+  },
+  cell: { paddingRight: 5, justifyContent: "center" },
+});
+
+export function DetailTablePdf<Row>({
+  rows,
+  columns,
+  rowKey,
+  marginTop = 10,
+  rowPaddingVertical = 2.25,
+}: {
+  rows: Row[];
+  columns: DetailTableColumn<Row>[];
+  rowKey: (row: Row) => string;
+  marginTop?: number;
+  rowPaddingVertical?: number;
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <View style={[s.table, { marginTop }]}>
+      <View style={s.header} wrap={false}>
+        {columns.map((column) => (
+          <View
+            key={column.header}
+            style={[
+              s.cell,
+              {
+                flex: column.flex,
+                alignItems: column.align === "right" ? "flex-end" : "flex-start",
+              },
+            ]}
+          >
+            <Text style={[s.headerText, { textAlign: column.align ?? "left" }]}>
+              {column.header}
+            </Text>
+          </View>
+        ))}
+      </View>
+      {rows.map((row) => (
+        <View
+          key={rowKey(row)}
+          style={[s.row, { paddingVertical: rowPaddingVertical }]}
+          wrap={false}
+        >
+          {columns.map((column) => (
+            <View
+              key={column.header}
+              style={[
+                s.cell,
+                {
+                  flex: column.flex,
+                  alignItems: column.align === "right" ? "flex-end" : "flex-start",
+                },
+              ]}
+            >
+              {column.render(row)}
+            </View>
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}

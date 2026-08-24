@@ -12,7 +12,7 @@ import {
   type PaydownRow,
   type RowRawInputs,
 } from "@/components/portal/debt-paydown-debts";
-import { fmtUsd, fmtMonthLabel } from "@/lib/portal/format";
+import { fmtUsd, fmtMonthLabel, parseAmount } from "@/lib/portal/format";
 import {
   comparePaydown,
   monthLabel,
@@ -92,13 +92,6 @@ const SAVE_FAILED_NOTE =
  * never collide with ones minted fresh.
  */
 let manualIdCounter = 0;
-
-/** Blank or unparseable → 0, matching how a cleared field means "no figure
- * yet" rather than a validation error while the client is mid-edit. */
-function parseAmount(raw: string): number {
-  const n = Number(raw);
-  return raw.trim() === "" || !Number.isFinite(n) ? 0 : n;
-}
 
 /**
  * The debt paydown calculator.

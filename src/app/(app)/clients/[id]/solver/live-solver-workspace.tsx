@@ -41,7 +41,12 @@ import { SolverRowLifeExpectancy } from "./solver-row-life-expectancy";
 import { SolverRowSocialSecurity } from "./solver-row-social-security";
 import { SolverRowSavingsContributions } from "./solver-row-savings-contributions";
 import { SolverRowIncomes } from "./solver-row-incomes";
-import { SolverQuickAddCashflow, type CashflowOwnerOption } from "./solver-quick-add-cashflow";
+import { SolverRowOtherExpenses } from "./solver-row-other-expenses";
+import { SolverQuickAddCashflow } from "./solver-quick-add-cashflow";
+import type {
+  CashflowFormContext,
+  CashflowOwnerOption,
+} from "./solver-cashflow-edit-dialog";
 import { SolverRowLivingExpenseScale } from "./solver-row-living-expense-scale";
 import { SolverActionBar } from "./solver-action-bar";
 import { ClientHeaderActions } from "@/components/client-header-actions";
@@ -574,6 +579,20 @@ export function LiveSolverWorkspace({
     workingTree.planSettings?.inflationRate ??
     baseClientData.planSettings?.inflationRate ??
     0.03;
+
+  // Everything the quick-add cashflow form needs, threaded as one prop to the
+  // three surfaces that can open it: the add button and the two categories that
+  // render the rows it mints.
+  const cashflowCtx = useMemo<CashflowFormContext>(
+    () => ({
+      owners: cashflowOwnerOptions,
+      milestones,
+      clientFirstName: clientName,
+      spouseFirstName: spouseName,
+      resolvedInflationRate,
+    }),
+    [cashflowOwnerOptions, milestones, clientName, spouseName, resolvedInflationRate],
+  );
 
   // "Lock in a fixed budget" lowers the working-years living rows. Against a row
   // that spends whatever is left, the cut frees money the row instantly
@@ -1338,24 +1357,26 @@ export function LiveSolverWorkspace({
               />
             </SolverSection>
 
-            <SolverSection title="Income & Savings">
+            <SolverSection title="Income, Expenses & Savings">
               <SolverRowIncomes
                 baseClientData={baseClientData}
+                sourceClientData={initialSourceClientData}
                 workingClientData={workingTree}
                 currentYear={currentYear}
                 onChange={pushMutation}
                 onResetField={clearMutations}
+                cashflowCtx={cashflowCtx}
               />
-              <SolverQuickAddCashflow
+              <SolverRowOtherExpenses
+                baseClientData={baseClientData}
                 sourceClientData={initialSourceClientData}
                 workingClientData={workingTree}
-                owners={cashflowOwnerOptions}
-                milestones={milestones}
-                clientFirstName={clientName}
-                spouseFirstName={spouseName}
-                resolvedInflationRate={resolvedInflationRate}
+                currentYear={currentYear}
                 onChange={pushMutation}
+                onResetField={clearMutations}
+                cashflowCtx={cashflowCtx}
               />
+              <SolverQuickAddCashflow ctx={cashflowCtx} onChange={pushMutation} />
               <SolverRowSavingsContributions
                 baseClientData={baseClientData}
                 workingClientData={workingTree}

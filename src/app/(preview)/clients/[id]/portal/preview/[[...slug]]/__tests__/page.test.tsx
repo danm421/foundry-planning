@@ -57,6 +57,11 @@ vi.mock("@/components/portal/debt-paydown-screen", () => ({
     <div data-testid="screen-debt-paydown" data-client={clientId} data-readonly={String(readOnly)} />
   ),
 }));
+vi.mock("@/components/portal/savings-goal-screen", () => ({
+  SavingsGoalScreen: ({ clientId, readOnly }: { clientId: string; readOnly?: boolean }) => (
+    <div data-testid="screen-savings-goal" data-client={clientId} data-readonly={String(readOnly)} />
+  ),
+}));
 vi.mock("@/components/portal/portal-nav", () => ({
   default: ({ basePath }: { basePath?: string }) => (
     <div data-testid="nav" data-basepath={basePath} />
@@ -351,6 +356,17 @@ describe("PortalPreview catch-all", () => {
     expect(node?.getAttribute("data-readonly")).toBe("true");
   });
 
+  it("renders the savings goal calculator READ-ONLY on slug=['calculators','savings-goal']", async () => {
+    const { container } = await renderPreview(["calculators", "savings-goal"]);
+    const node = container.querySelector("[data-testid='screen-savings-goal']");
+    expect(node).toBeTruthy();
+    expect(node?.getAttribute("data-client")).toBe("c1");
+    // Same 403 as the paydown arm above. Each calculator arm carries its own
+    // `readOnly`, so each one needs its own assertion — a new arm that forgets
+    // the prop is invisible to the paydown test.
+    expect(node?.getAttribute("data-readonly")).toBe("true");
+  });
+
   it("renders PortalDocumentsScreen on slug=['documents'], passing the client's edit toggle", async () => {
     const { container } = await renderPreview(["documents"]);
     const node = container.querySelector("[data-testid='screen-documents']");
@@ -373,12 +389,17 @@ describe("PortalPreview feature switches", () => {
   // prefix-matches — so the child route must go dark with its index.
   it("gates both calculator paths from the one switch", async () => {
     clientFeatures.portalCalculatorsEnabled = false;
-    for (const slug of [["calculators"], ["calculators", "debt-paydown"]]) {
+    for (const slug of [
+      ["calculators"],
+      ["calculators", "debt-paydown"],
+      ["calculators", "savings-goal"],
+    ]) {
       const { container } = await renderPreview(slug);
       expect(container.textContent).toContain("Switched off");
       expect(container.textContent).toContain("Calculators");
       expect(container.querySelector("[data-testid='screen-calculators']")).toBeNull();
       expect(container.querySelector("[data-testid='screen-debt-paydown']")).toBeNull();
+      expect(container.querySelector("[data-testid='screen-savings-goal']")).toBeNull();
     }
   });
 

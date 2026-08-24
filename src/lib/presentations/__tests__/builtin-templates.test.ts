@@ -90,10 +90,27 @@ describe("Your Early Years built-in template", () => {
     expect(t().name).toBe("Your Early Years");
   });
 
-  it("opens on the cover and contents, then the two Early Years sheets", () => {
+  it("opens on the cover and contents, then runs the six Early Years sheets in order", () => {
     expect(t().pages.map((p) => p.pageId)).toEqual([
-      "cover", "toc", "earlyYearsStanding", "earlyYearsLadder",
+      "cover", "toc", "earlyYearsStanding", "earlyYearsHumanCapital",
+      "earlyYearsLadder", "earlyYearsWaiting", "earlyYearsRoth", "earlyYearsDebtOrInvest",
     ]);
+  });
+
+  it("leaves the optional notes page out — the advisor adds it deliberately", () => {
+    expect(t().pages.map((p) => p.pageId)).not.toContain("earlyYearsTidbits");
+  });
+
+  it("ships every sheet's tidbit slot empty, so no note is chosen for the advisor", () => {
+    // Guards the claim the template's own comment makes. Every CONTENT sheet in
+    // this deck carries a tidbits slot; cover and contents are furniture and
+    // carry none. Asserting the invariant rather than a count means a seventh
+    // sheet needs no edit here — and an undefined slot fails by page id, which
+    // is the sentence the next reader needs.
+    const FRAMING = new Set(["cover", "toc"]);
+    for (const p of t().pages.filter((x) => !FRAMING.has(x.pageId))) {
+      expect((p.options as { tidbits?: unknown[] }).tidbits, p.pageId).toEqual([]);
+    }
   });
 
   it("names the deck on the cover", () => {

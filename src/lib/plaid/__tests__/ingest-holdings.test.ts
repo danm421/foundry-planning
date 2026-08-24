@@ -103,11 +103,14 @@ afterAll(async () => {
 });
 
 describe("ingestHoldingsForItem", () => {
-  it("replaces plaid holdings, keeps manual holdings, sets value/basis/source, syncs", async () => {
+  it("replaces EVERY prior holding, sets value/basis/source, syncs", async () => {
     const { itemRowId, accountId } = await seedPlaidAccount();
     syncAccountFromHoldings.mockClear();
 
-    // pre-existing manual holding (must survive)
+    // Pre-existing NON-plaid holding — a statement import writes source="manual"
+    // for the same positions Plaid is about to report. It must NOT survive:
+    // Plaid returns the account's complete position list, so any leftover row
+    // is a duplicate and every Σ-holdings surface would double-count it.
     await db.insert(accountHoldings).values({
       accountId,
       source: "manual",
@@ -162,7 +165,7 @@ describe("ingestHoldingsForItem", () => {
       (m, r) => ((m[r.source] = (m[r.source] ?? 0) + 1), m),
       {} as Record<string, number>,
     );
-    expect(bySource).toEqual({ manual: 1, plaid: 2 });
+    expect(bySource).toEqual({ plaid: 2 });
 
     const vti = rows.find((r) => r.displayTicker === "VTI")!;
     expect(vti.marketValue).toBeNull(); // tickered → derive shares×price
@@ -176,6 +179,14 @@ describe("ingestHoldingsForItem", () => {
     expect(acct.source).toBe("plaid");
     expect(Number(acct.value)).toBeCloseTo(1500); // 10*100 + 500
     expect(Number(acct.basis)).toBeCloseTo(1300); // 800 + 500
+
+    // The invariant every read surface depends on: accounts.value equals the
+    // sum over EVERY row in account_holdings, not just the plaid-sourced ones.
+    const holdingsSum = rows.reduce(
+      (s, r) => s + (r.marketValue != null ? Number(r.marketValue) : Number(r.shares) * Number(r.price)),
+      0,
+    );
+    expect(holdingsSum).toBeCloseTo(Number(acct.value));
 
     expect(syncAccountFromHoldings).toHaveBeenCalledWith(accountId);
   });

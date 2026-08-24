@@ -1,4 +1,5 @@
 import type { Tidbit } from "@/lib/presentations/tidbits";
+import type { DollarPair } from "@/lib/presentations/real-dollars";
 
 /**
  * What the page says about the employer match.
@@ -13,22 +14,22 @@ import type { Tidbit } from "@/lib/presentations/tidbits";
  */
 export type MatchLine =
   | { kind: "none" }
-  | { kind: "captured"; employerAnnual: number };
+  | { kind: "captured"; employerAnnual: DollarPair };
 
 export interface EarlyYearsStandingPageData {
-  /** Scenario label · age · the today's-dollars note, in the house subtitle
-   *  form. The page is pinned to Base Case, so naming the scenario is what
+  /** Scenario label · age · starting year. The page is pinned to Base Case,
+   *  so naming the scenario is what
    *  keeps it honest inside a deck built on some other one. */
   subtitle: string;
   /** True when the household has no salary — a savings RATE has no denominator,
    *  so the page says so instead of printing a 0% that is not true. */
   isEmpty: boolean;
   clientAge: number;
-  grossAnnual: number;
-  contributionsAnnual: number;
+  grossAnnual: DollarPair;
+  contributionsAnnual: DollarPair;
   /** Fraction of salary, 0–1. */
   savingsRatePct: number;
-  portfolioToday: number;
+  portfolio: DollarPair;
   match: MatchLine;
   tidbits: Tidbit[];
 }

@@ -9,10 +9,20 @@ import type { IngestHolding } from "./holdings-refresh";
 
 /**
  * Persist fetched Plaid positions into account_holdings (one source of truth),
- * then re-derive each account's value/basis/asset-mix. Replaces source='plaid'
- * rows wholesale; manual rows are never touched. Tickered holdings store
+ * then re-derive each account's value/basis/asset-mix. Tickered holdings store
  * marketValue=null (derive shares×price so the daily price refresh + live quotes
  * flow through); untickered holdings store the authoritative institution_value.
+ *
+ * Replaces EVERY holding on the account, not just the source='plaid' ones.
+ * /investments/holdings/get returns an account's COMPLETE position list, so any
+ * row that predates the link — a statement import writes source='manual' for the
+ * very same positions — is a duplicate the moment Plaid reports the account.
+ * Keeping those rows double-counts the account everywhere Σ-holdings is read
+ * (portal Investments, the holdings tab's derived value, value snapshots), and
+ * the advisor form then saves that doubled total back into accounts.value.
+ * Safe to delete wholesale: we only reach here for accounts Plaid actually
+ * returned positions for, and the delete + insert share one transaction, so the
+ * account is never left holding-less.
  */
 export async function ingestHoldingsForItem(
   plaidItemRowId: string,
@@ -71,11 +81,7 @@ export async function ingestHoldingsForItem(
     });
 
     await db.transaction(async (tx) => {
-      await tx
-        .delete(accountHoldings)
-        .where(
-          and(eq(accountHoldings.accountId, acct.id), eq(accountHoldings.source, "plaid")),
-        );
+      await tx.delete(accountHoldings).where(eq(accountHoldings.accountId, acct.id));
       if (toInsert.length) await tx.insert(accountHoldings).values(toInsert);
       await tx
         .update(accounts)

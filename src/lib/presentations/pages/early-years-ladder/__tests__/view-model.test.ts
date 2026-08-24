@@ -98,12 +98,14 @@ describe("buildEarlyYearsLadderData", () => {
     expect(d.groups[0].bars.map((b) => b.label)).toEqual(["Save 8%", "Save 11%", "Save 14%"]);
   });
 
-  it("reports every figure in today's dollars, not nominal", () => {
+  it("carries every bar in today's and nominal dollars", () => {
     const d = buildEarlyYearsLadderData(ctx(THREE_RUNGS), OPTS);
     // age 65 → year 2062 → 36 years of 3% inflation. 3_000_000 / 1.03^36,
     // computed independently: node -e "console.log(3e6/Math.pow(1.03,36))"
-    expect(d.groups[2].bars[0].value).toBeCloseTo(1_035_097, -3);
-    expect(d.groups[2].bars[0].value).toBeLessThan(3_000_000);
+    expect(d.groups[2].year).toBe(2062);
+    expect(d.groups[2].bars[0].value.today).toBeCloseTo(1_035_097, -3);
+    expect(d.groups[2].bars[0].value.today).toBeLessThan(3_000_000);
+    expect(d.groups[2].bars[0].value.nominal).toBe(3_000_000);
   });
 
   // Salary is $120,000 in the fixture, so a rung is judged on what its own
@@ -173,7 +175,7 @@ describe("buildEarlyYearsLadderData", () => {
     const d = buildEarlyYearsLadderData(ctx(THREE_RUNGS), OPTS);
     // 4_800_000/1.03^36 − 3_000_000/1.03^36 ≈ 621_058.
     expect(d.takeaway).toBe(
-      "At age 65, the Save 14% bar is about $621K ahead of Save 8% (today).",
+      "At age 65, the Save 14% bar is about $621K today ($1.8M future-year dollars) ahead of Save 8% (current plan).",
     );
   });
 
@@ -214,7 +216,9 @@ describe("buildEarlyYearsLadderData", () => {
     };
     const d = buildEarlyYearsLadderData(c, OPTS);
     expect(d.groups[0].bars.map((b) => b.label)).toEqual(["Save 8%", "Save 11%", "Save 14%"]);
-    expect(d.subtitle).toBe("Base Case · Every figure in today's dollars");
+    expect(d.subtitle).toBe(
+      "Base Case · Today's dollars first · Future-year dollars beneath",
+    );
   });
 
   it("renders an empty state rather than a chart when no variant was built", () => {

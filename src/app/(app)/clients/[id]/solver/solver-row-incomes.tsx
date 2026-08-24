@@ -9,8 +9,12 @@ import {
   type SolverMutationKey,
 } from "@/lib/solver/types";
 import { activeIncomes } from "@/lib/solver/active-incomes";
+import { addedQuickAddRows, draftFromIncome } from "@/lib/solver/quick-add-cashflow";
 import { FieldHintPopover, type HintRow } from "@/components/forms/field-hint-popover";
+import { SolverAddedCashflowRow } from "./solver-added-cashflow-row";
 import { SolverBaseHint } from "./solver-base-hint";
+import { CurrencyAmountInput } from "./solver-currency-amount-input";
+import type { CashflowFormContext } from "./solver-cashflow-edit-dialog";
 import { SolverIncomeEditDialog } from "./solver-income-edit-dialog";
 
 const TAX_TYPE_SHORT: Record<IncomeTaxType, string> = {
@@ -25,10 +29,15 @@ const TAX_TYPE_SHORT: Record<IncomeTaxType, string> = {
 
 interface Props {
   baseClientData: ClientData;
+  /** The tree the solver started from (base, or the loaded scenario). Rows in
+   *  the working tree but not here were added by this session's quick-add. */
+  sourceClientData: ClientData;
   workingClientData: ClientData;
   currentYear: number;
   onChange(m: SolverMutation): void;
   onResetField?: (keys: SolverMutationKey[]) => void;
+  /** Form context for the quick-add editor behind an added row's pencil. */
+  cashflowCtx: CashflowFormContext;
 }
 
 /** Every per-income mutation key the inline input + edit dialog can write.
@@ -47,13 +56,18 @@ function incomeResetKeys(incomeId: string): SolverMutationKey[] {
 
 export function SolverRowIncomes({
   baseClientData,
+  sourceClientData,
   workingClientData,
   currentYear,
   onChange,
   onResetField,
+  cashflowCtx,
 }: Props) {
   const baseActive = activeIncomes(baseClientData.incomes, currentYear);
-  if (baseActive.length === 0) return null;
+  // Rows this session added. Deliberately NOT year-filtered: an advisor who
+  // just typed a stream starting at retirement still has to see it.
+  const added = addedQuickAddRows(sourceClientData.incomes, workingClientData.incomes);
+  if (baseActive.length === 0 && added.length === 0) return null;
 
   const resolvedInflationRate =
     workingClientData.planSettings?.inflationRate ??
@@ -80,6 +94,16 @@ export function SolverRowIncomes({
             />
           );
         })}
+        {added.map((inc) => (
+          <SolverAddedCashflowRow
+            key={inc.id}
+            draft={draftFromIncome(inc)}
+            label={labelFor(inc, baseClientData.client)}
+            hintRows={incomeDetailRows(inc)}
+            ctx={cashflowCtx}
+            onChange={onChange}
+          />
+        ))}
       </div>
     </div>
   );
@@ -155,9 +179,6 @@ function Editable({
   onResetField?: (keys: SolverMutationKey[]) => void;
 }) {
   const [open, setOpen] = useState(false);
-  // Bumps on reset to remount CurrencyAmountInput so its local `display` state
-  // re-seeds from the reverted base value (it seeds from defaultValue once).
-  const [resetTick, setResetTick] = useState(0);
   const rows = incomeDetailRows(workingIncome);
   const inputId = `inc-${workingIncome.id}`;
   return (
@@ -170,10 +191,9 @@ function Editable({
       </div>
       <div className="mt-1 flex items-center gap-1.5">
         <CurrencyAmountInput
-          key={`${workingIncome.id}-${resetTick}`}
           id={inputId}
           label={label}
-          defaultValue={workingIncome.annualAmount}
+          value={workingIncome.annualAmount}
           onCommit={(n) =>
             onChange({
               kind: "income-annual-amount",
@@ -199,12 +219,7 @@ function Editable({
         working={workingIncome.annualAmount}
         format={(v) => `${formatCurrency(v)}/yr`}
         onReset={
-          onResetField
-            ? () => {
-                onResetField(incomeResetKeys(workingIncome.id));
-                setResetTick((t) => t + 1);
-              }
-            : undefined
+          onResetField ? () => onResetField(incomeResetKeys(workingIncome.id)) : undefined
         }
       />
       {open ? (
@@ -216,46 +231,6 @@ function Editable({
           resolvedInflationRate={resolvedInflationRate}
         />
       ) : null}
-    </div>
-  );
-}
-
-/** Compact $-prefixed currency input with live thousands formatting. */
-function CurrencyAmountInput({
-  id,
-  label,
-  defaultValue,
-  onCommit,
-}: {
-  id: string;
-  label: string;
-  defaultValue: number;
-  onCommit: (n: number) => void;
-}) {
-  const [display, setDisplay] = useState<string>(
-    Math.round(defaultValue).toLocaleString(),
-  );
-  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const raw = e.target.value.replace(/[^\d]/g, "");
-    const n = raw === "" ? 0 : parseInt(raw, 10);
-    if (Number.isNaN(n) || n < 0) return;
-    setDisplay(n.toLocaleString());
-    onCommit(n);
-  }
-  return (
-    <div className="relative">
-      <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[13px] text-ink-3">
-        $
-      </span>
-      <input
-        id={id}
-        type="text"
-        inputMode="numeric"
-        value={display}
-        onChange={handleChange}
-        className="h-9 w-32 rounded-md border border-hair-2 bg-card-2 pl-6 pr-2.5 text-[14px] text-ink tabular border-l-2 border-l-accent/70 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
-        aria-label={label}
-      />
     </div>
   );
 }

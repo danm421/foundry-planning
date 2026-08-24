@@ -7,6 +7,11 @@ interface Props {
   value: string[];
   onChange: (next: string[]) => void;
   max?: number;
+  /** Where the picks land, as a sentence tail. The picker composes
+   *  "Pick up to {max} — {hint}" so the CAP is never re-typed by a caller and
+   *  cannot drift from the one actually enforced; the default names the sidebar,
+   *  and a page where the tidbits ARE the page passes its own tail. */
+  hint?: string;
 }
 
 const TOPIC_LABELS: Record<TidbitTopic, string> = {
@@ -34,7 +39,12 @@ const TOPIC_ORDER: TidbitTopic[] = [
  * the advisor's oldest pick is never silently evicted. Deselecting always
  * works, cap or no cap.
  */
-export function TidbitPicker({ value, onChange, max = 2 }: Props) {
+export function TidbitPicker({
+  value,
+  onChange,
+  max = 2,
+  hint = "they render beside the chart on this page.",
+}: Props) {
   const atCap = value.length >= max;
 
   function toggle(id: string) {
@@ -73,9 +83,7 @@ export function TidbitPicker({ value, onChange, max = 2 }: Props) {
           </div>
         </OptionsGroup>
       ))}
-      <span className="text-[11px] text-ink-3">
-        Pick up to {max} — they render beside the chart on this page.
-      </span>
+      <span className="text-[11px] text-ink-3">{`Pick up to ${max} — ${hint}`}</span>
     </div>
   );
 }

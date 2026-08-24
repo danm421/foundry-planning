@@ -1,5 +1,6 @@
 import type { Tidbit } from "@/lib/presentations/tidbits";
 import type { DeflationBasis } from "@/lib/presentations/real-dollars";
+import type { DollarPair } from "@/lib/presentations/real-dollars";
 import type { Rung, RungConfig } from "./rungs";
 
 export interface LadderBar {
@@ -7,17 +8,18 @@ export interface LadderBar {
   label: string;
   /** True for the bar that is the plan as it stands today. */
   isCurrent: boolean;
-  /** Portfolio at this milestone age, in the plan's start-year dollars. */
-  value: number;
+  /** Portfolio at this milestone age, in real and nominal dollars. */
+  value: DollarPair;
 }
 
 export interface LadderGroup {
   age: number;
+  year: number;
   bars: LadderBar[];
 }
 
 export interface EarlyYearsLadderPageData {
-  /** Scenario label · the today's-dollars note, in the house subtitle form. */
+  /** Scenario label · the deck's two-unit reading rule. */
   subtitle: string;
   /** Empty when the ladder could not be modelled; `emptyMessage` then says why.
    *  The page prints that instead of three identical bars under three labels. */

@@ -59,3 +59,45 @@ export function estimatePiaFromSalary(annualSalary: number): number {
     }),
   );
 }
+
+/** The subset of a Social Security row this module reads. Accepts the raw API
+ *  shape, where `piaMonthly` arrives as a decimal string. */
+export interface SsRowLike extends SalaryLike {
+  ssBenefitMode?: string | null;
+  piaMonthly?: number | string | null;
+}
+
+/**
+ * The PIA a Social Security row should use when nobody has entered one, or null
+ * to leave the row exactly as stored.
+ *
+ * An advisor who has entered a salary has already told us roughly what Social
+ * Security will pay. Making them open the Social Security dialog and press Save
+ * before that money appears in the projection means every plan nobody has got
+ * round to understates retirement income by the household's whole benefit — so
+ * the estimate is DERIVED at load instead. Nothing is written: it follows the
+ * salary if the salary changes, and an entered PIA always wins.
+ *
+ * Only `pia_at_fra` rows are filled. `manual_amount` and `no_benefit` are
+ * answers somebody gave — the first is paid off `annualAmount`, the second pays
+ * nothing on purpose — and a stored NULL reads as `manual_amount` on every
+ * surface (`SocialSecurityCard`, `SocialSecurityDialog`, `household-map/goals`),
+ * so filling any of the three would show a figure the engine never pays.
+ */
+export function estimatedPiaMonthly(
+  row: SsRowLike,
+  rows: readonly SalaryLike[],
+  currentYear: number,
+): number | null {
+  if (row.type !== "social_security") return null;
+  if (row.ssBenefitMode !== "pia_at_fra") return null;
+  // A seeded row stores NULL; an imported one can store "0". Both mean unset.
+  if (Number(row.piaMonthly ?? 0) > 0) return null;
+  // `joint` has no earnings record to estimate from — see `ownerAnnualSalary`.
+  if (row.owner !== "client" && row.owner !== "spouse") return null;
+
+  // No salary estimates to $0, and so does one too small to earn a credit —
+  // both are "we cannot say", which is the stored row's own answer.
+  const pia = estimatePiaFromSalary(ownerAnnualSalary(rows, row.owner, currentYear));
+  return pia > 0 ? pia : null;
+}

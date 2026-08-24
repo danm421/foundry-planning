@@ -12,6 +12,8 @@ function ctx({
   year = 2026,
   planStartYear = 2026,
   inflationRate = 0.03,
+  portfolioEoy = 84_000,
+  portfolioToday = portfolioEoy,
 }: {
   salary?: number;
   contributed?: number;
@@ -19,13 +21,24 @@ function ctx({
   year?: number;
   planStartYear?: number;
   inflationRate?: number;
+  portfolioEoy?: number;
+  portfolioToday?: number;
 } = {}): BuildDataContext {
   const y = {
     year,
     ages: { client: 29 },
     income: { salaries: salary, total: salary },
     savings: { byAccount: {}, total: contributed, employerTotal: employer },
-    portfolioAssets: { liquidTotal: 84_000 },
+    portfolioAssets: {
+      taxable: { brokerage: portfolioEoy },
+      liquidTotal: portfolioEoy,
+    },
+    accountLedgers: {
+      brokerage: {
+        beginningValue: portfolioToday,
+        endingValue: portfolioEoy,
+      },
+    },
   };
   return {
     years: [y],
@@ -68,17 +81,29 @@ describe("buildEarlyYearsStandingData", () => {
     expect(d.isEmpty).toBe(false);
   });
 
-  it("names the scenario it rendered and labels the figures as today's dollars", () => {
+  it("uses current account balances, not the first projection year's ending balances", () => {
+    const d = buildEarlyYearsStandingData(
+      ctx({ portfolioToday: 100_000, portfolioEoy: 113_996 }),
+      OPTS,
+    );
+
+    expect(d.portfolio).toEqual({ today: 100_000, nominal: 100_000 });
+  });
+
+  it("names the scenario, age and starting year without duplicating the unit explanation", () => {
     // The page is pinned to Base Case; inside a deck built on some other
     // scenario, the label is the only thing that says so.
     expect(buildEarlyYearsStandingData(ctx(), OPTS).subtitle).toBe(
-      "Base Case · At age 29 · Every figure in today's dollars",
+      "Base Case · At age 29 · Starting year 2026",
     );
   });
 
   it("reports what the employer actually deposits", () => {
     const d = buildEarlyYearsStandingData(ctx({ employer: 3_600 }), OPTS);
-    expect(d.match).toEqual({ kind: "captured", employerAnnual: 3_600 });
+    expect(d.match).toEqual({
+      kind: "captured",
+      employerAnnual: { today: 3_600, nominal: 3_600 },
+    });
   });
 
   it("omits the match line when the plan has no employer match at all", () => {
@@ -113,8 +138,10 @@ describe("buildEarlyYearsStandingData", () => {
       ctx({ year: 2028, planStartYear: 2026, inflationRate: 0.03 }),
       OPTS,
     );
-    expect(d.portfolioToday).toBeCloseTo(79_178.06, 2);
-    expect(d.grossAnnual).toBeCloseTo(113_111.51, 2);
+    expect(d.portfolio.today).toBeCloseTo(79_178.06, 2);
+    expect(d.portfolio.nominal).toBe(84_000);
+    expect(d.grossAnnual.today).toBeCloseTo(113_111.51, 2);
+    expect(d.grossAnnual.nominal).toBe(120_000);
     // A ratio is unit-free — deflating both sides must not move it.
     expect(d.savingsRatePct).toBeCloseTo(0.08, 6);
   });

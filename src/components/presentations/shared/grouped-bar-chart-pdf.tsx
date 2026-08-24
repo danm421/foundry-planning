@@ -1,76 +1,79 @@
 import { View, Svg, G, Rect, Line, Text as SvgText, Text } from "@react-pdf/renderer";
 import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
-import { dataLight } from "@/brand";
-import { fmtAxisUsd, MONO } from "../retirement-comparison/chart-axis";
-import type { LadderGroup } from "@/lib/presentations/pages/early-years-ladder/types";
+import { fmtAxisUsd, MONO } from "../pages/retirement-comparison/chart-axis";
 
-// The plan as it stands is grey; every raised rung is green, deepening toward
-// the top of the ladder. Fixed hexes rather than opacity — a printed PDF's
-// alpha blend against cream paper is not the same colour on every printer.
-const CURRENT = dataLight.grey;
-const RAISED = ["#8ecdb0", "#4aad80", dataLight.green];
+export interface GroupedBarSeries {
+  /** Legend text, printed EXACTLY as given — a page that wants "(current plan)" adds
+   *  it. Colour meaning belongs to the page, not to the chart: the ladder
+   *  deepens toward the top rung while the cost-of-waiting page pales toward the
+   *  longest delay, and neither ordering is the chart's to know. */
+  label: string;
+  fill: string;
+}
 
-/** Colours for the raised rungs, always ending on the full green so the top of
- *  the ladder reads the same whether the advisor set one extra rung or three. */
-function raisedFills(count: number): string[] {
-  return RAISED.slice(Math.max(0, RAISED.length - count));
+export interface GroupedBarGroup {
+  /** Cluster label under the axis — "Age 40". */
+  label: string;
+  /** One value per series, in series order. */
+  values: number[];
 }
 
 interface Props {
-  groups: LadderGroup[];
+  series: GroupedBarSeries[];
+  groups: GroupedBarGroup[];
+  /** Small note above the plot saying what the bars measure. */
+  caption: string;
   width?: number;
+  height?: number;
 }
 
-/** Grouped bars: one cluster per milestone age, one bar per rung. */
-export function LadderChartPdf({ groups, width = 355 }: Props) {
-  if (groups.length === 0) return null;
+/** Grouped bars: one cluster per group, one bar per series. */
+export function GroupedBarChartPdf({
+  series,
+  groups,
+  caption,
+  width = 355,
+  height = 178,
+}: Props) {
+  if (groups.length === 0 || series.length === 0) return null;
 
-  const height = 178;
   const padL = 2, padR = 2, padT = 16, padB = 20;
   const plotH = height - padT - padB;
   // Headroom so the value label above the tallest bar is not clipped.
   const barsH = plotH - 10;
   const baseY = padT + plotH;
 
-  const maxY = Math.max(1, ...groups.flatMap((g) => g.bars.map((b) => b.value)));
-  const barCount = groups[0].bars.length;
+  const maxY = Math.max(1, ...groups.flatMap((g) => g.values));
+  const barCount = series.length;
   const slot = (width - padL - padR) / groups.length;
   const gap = 2;
   const barW = Math.max(2, Math.min(22, (slot * 0.72 - gap * (barCount - 1)) / barCount));
   const clusterW = barCount * barW + (barCount - 1) * gap;
 
-  const legend = groups[0].bars;
-  const fills = raisedFills(legend.filter((b) => !b.isCurrent).length);
-  const barFills = legend.map((b, i) =>
-    b.isCurrent
-      ? CURRENT
-      : (fills[legend.slice(0, i).filter((x) => !x.isCurrent).length] ?? dataLight.green),
-  );
-
   return (
     <View>
       <Svg width={width} height={height}>
         <SvgText x={padL} y={padT - 6} textAnchor="start" style={{ fontSize: 6, fill: T.ink3 }}>
-          portfolio · today&apos;s dollars
+          {caption}
         </SvgText>
 
         {groups.map((g, gi) => {
           const clusterX = padL + gi * slot + (slot - clusterW) / 2;
           return (
-            <G key={g.age}>
-              {g.bars.map((b, bi) => {
-                const h = Math.max(0.5, (b.value / maxY) * barsH);
+            <G key={g.label}>
+              {g.values.map((v, bi) => {
+                const h = Math.max(0.5, (v / maxY) * barsH);
                 const x = clusterX + bi * (barW + gap);
                 return (
                   <G key={bi}>
-                    <Rect x={x} y={baseY - h} width={barW} height={h} fill={barFills[bi]} />
+                    <Rect x={x} y={baseY - h} width={barW} height={h} fill={series[bi].fill} />
                     <SvgText
                       x={x + barW / 2}
                       y={baseY - h - 3}
                       textAnchor="middle"
                       style={{ fontSize: 5.5, fill: T.ink2, fontFamily: MONO }}
                     >
-                      {fmtAxisUsd(b.value)}
+                      {fmtAxisUsd(v)}
                     </SvgText>
                   </G>
                 );
@@ -81,7 +84,7 @@ export function LadderChartPdf({ groups, width = 355 }: Props) {
                 textAnchor="middle"
                 style={{ fontSize: 7, fill: T.ink2 }}
               >
-                {`Age ${g.age}`}
+                {g.label}
               </SvgText>
             </G>
           );
@@ -91,15 +94,13 @@ export function LadderChartPdf({ groups, width = 355 }: Props) {
       </Svg>
 
       <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 2 }}>
-        {legend.map((b, i) => (
+        {series.map((sr, i) => (
           <View
             key={i}
             style={{ flexDirection: "row", alignItems: "center", marginRight: 10, marginBottom: 2 }}
           >
-            <View style={{ width: 6, height: 6, backgroundColor: barFills[i], marginRight: 3 }} />
-            <Text style={{ fontSize: 7, color: T.ink2 }}>
-              {b.isCurrent ? `${b.label} (today)` : b.label}
-            </Text>
+            <View style={{ width: 6, height: 6, backgroundColor: sr.fill, marginRight: 3 }} />
+            <Text style={{ fontSize: 7, color: T.ink2 }}>{sr.label}</Text>
           </View>
         ))}
       </View>

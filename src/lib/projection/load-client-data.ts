@@ -57,6 +57,7 @@ import {
   revocableTrusts,
   relocations,
 } from "@/db/schema";
+import { estimatedPiaMonthly } from "@/lib/social-security/estimate-from-salary";
 import type {
   AccountFlowOverride,
   BeneficiaryRef,
@@ -829,7 +830,7 @@ export const loadClientDataWithContext = cache(
       return acct;
     });
 
-    const mappedIncomes = incomeRows.map((i) =>
+    const resolvedIncomes = incomeRows.map((i) =>
       resolveIncomeFromRaw(
         {
           id: i.id,
@@ -861,6 +862,18 @@ export const loadClientDataWithContext = cache(
         resolutionCtx,
       ),
     );
+
+    // Social Security nobody has filled in is paid off the SALARY they did fill
+    // in. `create-client` seeds every person a `pia_at_fra` row with no PIA, so
+    // without this the projection pays $0 of Social Security until an advisor
+    // opens the dialog and presses Save. Derived, never written: it tracks the
+    // salary and an entered PIA always wins — `estimatedPiaMonthly` owns which
+    // rows qualify. It reads the WHOLE set because a PIA sums all the owner's
+    // salaries, so this cannot fold into the resolve pass above.
+    const mappedIncomes = resolvedIncomes.map((inc) => {
+      const pia = estimatedPiaMonthly(inc, resolvedIncomes, settings.planStartYear);
+      return pia == null ? inc : { ...inc, piaMonthly: pia };
+    });
 
     const mappedExpenses = expenseRows.map((e) =>
       resolveExpenseFromRaw(

@@ -12,7 +12,9 @@ import {
 } from "@/components/forms/input-styles";
 import type { IncomeTaxType, SolverMutation } from "@/lib/solver/types";
 
-const INCOME_TAX_TYPE_LABELS: Record<IncomeTaxType, string> = {
+/** Advisor-facing name for each engine tax treatment. Shared with the quick-add
+ *  cashflow form so the two solver surfaces name the same thing identically. */
+export const INCOME_TAX_TYPE_LABELS: Record<IncomeTaxType, string> = {
   earned_income: "Earned Income",
   ordinary_income: "Ordinary Income",
   dividends: "Dividends",

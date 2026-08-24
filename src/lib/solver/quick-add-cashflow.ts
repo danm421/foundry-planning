@@ -10,6 +10,7 @@
 // to replace them.
 
 import type { Income, Expense } from "@/engine/types";
+import type { IncomeTaxType, SolverMutation } from "./types";
 import {
   defaultIncomeRefs,
   defaultExpenseRefs,
@@ -28,6 +29,10 @@ export type CashflowOwner = "client" | "spouse" | "joint";
  *  solver a row the advisor just typed and let it scale that too. */
 export const QUICK_ADD_CASHFLOW_TYPE = "other";
 
+/** Tax treatment a fresh income row starts on. Same neutral default the full
+ *  income editor falls back to for an "other" stream. */
+export const DEFAULT_INCOME_TAX_TYPE: IncomeTaxType = "ordinary_income";
+
 /** True for a row this popup could have minted. The added-rows list filters on
  *  it so a synthesized retirement living expense (living-expense.ts) or an
  *  education goal (solver-education-section.tsx) — both of which also reach the
@@ -44,6 +49,8 @@ export interface CashflowDraft {
   /** Income only — an Expense has no household owner anywhere in the app
    *  (only ownerEntityId / ownerAccountId). Absent on an expense draft. */
   owner?: CashflowOwner;
+  /** Income only — how the engine taxes the stream. Absent on an expense draft. */
+  taxType?: IncomeTaxType;
   growthSource: "custom" | "inflation";
   growthRate: number;
   startYear: number;
@@ -72,7 +79,7 @@ export function blankCashflowDraft(opts: {
     id,
     name: "",
     annualAmount: 0,
-    ...(kind === "income" ? { owner } : {}),
+    ...(kind === "income" ? { owner, taxType: DEFAULT_INCOME_TAX_TYPE } : {}),
     growthSource: "inflation",
     growthRate: inflationRate,
     startYear: yearFor(refs.startYearRef, milestones, "start", milestones.planStart),
@@ -117,7 +124,7 @@ export function incomeFromDraft(d: CashflowDraft): Income {
   return {
     ...sharedRowFields(d),
     owner: d.owner ?? "client",
-    taxType: "ordinary_income",
+    taxType: d.taxType ?? DEFAULT_INCOME_TAX_TYPE,
   };
 }
 
@@ -142,9 +149,47 @@ function sharedDraftFields(row: Income | Expense) {
 }
 
 export function draftFromIncome(i: Income): CashflowDraft {
-  return { ...sharedDraftFields(i), kind: "income", owner: i.owner };
+  return {
+    ...sharedDraftFields(i),
+    kind: "income",
+    owner: i.owner,
+    taxType: (i.taxType as IncomeTaxType | undefined) ?? DEFAULT_INCOME_TAX_TYPE,
+  };
 }
 
 export function draftFromExpense(e: Expense): CashflowDraft {
   return { ...sharedDraftFields(e), kind: "expense" };
+}
+
+/** The rows this session added: present in the working tree, absent from the
+ *  tree the solver started from, and of the type this popup mints.
+ *
+ *  Compared against the SOURCE rather than base so a loaded scenario's own rows
+ *  are never offered up for deletion, and type-filtered so a synthesized
+ *  retirement living expense (living-expense.ts) or an education goal
+ *  (solver-education-section.tsx) — both of which reach the working tree through
+ *  the same expense-upsert — are never mistaken for one of ours. A tree diff
+ *  says WHAT changed, never WHO changed it. */
+export function addedQuickAddRows<T extends { id: string; type: string }>(
+  sourceRows: readonly T[],
+  workingRows: readonly T[],
+): T[] {
+  const sourceIds = new Set(sourceRows.map((r) => r.id));
+  return workingRows.filter((r) => !sourceIds.has(r.id) && isQuickAddCashflowRow(r));
+}
+
+/** The mutation a quick-add row commits with — always a FULL upsert, never a
+ *  field lever. Field levers (`income-annual-amount` and friends) are dropped by
+ *  save-to-base's source-membership guard for a row base has never seen. */
+export function cashflowUpsertMutation(draft: CashflowDraft): SolverMutation {
+  return draft.kind === "income"
+    ? { kind: "income-upsert", id: draft.id, value: incomeFromDraft(draft) }
+    : { kind: "expense-upsert", id: draft.id, value: expenseFromDraft(draft) };
+}
+
+/** Drops a quick-added row from the working tree. */
+export function cashflowRemoveMutation(kind: CashflowKind, id: string): SolverMutation {
+  return kind === "income"
+    ? { kind: "income-upsert", id, value: null }
+    : { kind: "expense-upsert", id, value: null };
 }

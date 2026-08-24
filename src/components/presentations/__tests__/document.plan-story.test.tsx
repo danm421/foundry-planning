@@ -15,7 +15,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { BuildDataContext } from "../registry";
 import type { PlanStoryContextInput } from "@/lib/presentations/pages/plan-story/view-model";
 
-const pageMocks = vi.hoisted(() => ({ buildData: vi.fn(() => ({})) }));
+const pageMocks = vi.hoisted(() => ({
+  buildData: vi.fn((ctx: BuildDataContext) => ({
+    scenarioLabel: ctx.planStory?.story.scenarioLabel ?? null,
+  })),
+  estimatePageCount: vi.fn(() => 1),
+}));
 
 vi.mock("../shared/fonts", () => ({ ensureFontsRegistered: vi.fn() }));
 
@@ -25,7 +30,7 @@ vi.mock("../registry", () => ({
       id: "planStory",
       title: "Plan Story",
       category: "Framing",
-      estimatePageCount: () => 1,
+      estimatePageCount: pageMocks.estimatePageCount,
       buildData: pageMocks.buildData,
       renderPdf: () => null,
     },
@@ -67,6 +72,7 @@ const deliveredLabels = () =>
 
 beforeEach(() => {
   pageMocks.buildData.mockClear();
+  pageMocks.estimatePageCount.mockClear();
 });
 
 describe("PresentationDocument — Plan Story payloads", () => {
@@ -85,5 +91,14 @@ describe("PresentationDocument — Plan Story payloads", () => {
     PresentationDocument(props([{}, { planStory: story("New Plan") }]));
 
     expect(deliveredLabels()).toEqual([null, "New Plan"]);
+  });
+
+  it("estimates from the exact built data that it later renders", () => {
+    PresentationDocument(props([{ planStory: story("Base Case") }]));
+
+    expect(pageMocks.estimatePageCount).toHaveBeenCalledWith(
+      { scenarioLabel: "Base Case" },
+      {},
+    );
   });
 });

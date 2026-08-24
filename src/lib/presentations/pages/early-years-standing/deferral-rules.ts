@@ -32,6 +32,17 @@ export interface DeferralAccount {
   ruleCount: number;
   /** A rule on this account contributes the applicable IRS maximum. */
   contributesMax: boolean;
+  /** True when the engine resolves this account's contribution from
+   *  `annualPercent` — i.e. it is indexed to the owner's pay. False for a
+   *  flat-dollar rule, whose dollars do NOT grow with salary.
+   *
+   *  A mutation that raises this account MUST be written in the same mode.
+   *  `resolveContributionAmount` (`src/engine/savings.ts:20`) prefers a
+   *  non-null positive percent over the amount, so writing a percent onto a
+   *  flat-dollar rule silently converts it — and because rung 0 mutates
+   *  nothing, only the RAISED bars get converted. The gap between them is then
+   *  part rung and part indexation. */
+  isPercentMode: boolean;
 }
 
 /**
@@ -58,9 +69,11 @@ export function deferralAccounts(data: ClientData, year: number): DeferralAccoun
     // ladder.
     const contributesMax = rule.contributeMax === true;
     let percent = 0;
+    let percentMode = false;
     if (!contributesMax) {
       if (rule.annualPercent != null && rule.annualPercent > 0) {
         percent = rule.annualPercent;
+        percentMode = true;
       } else if (ownerSalary > 0 && rule.annualAmount > 0) {
         percent = rule.annualAmount / ownerSalary;
       }
@@ -73,6 +86,11 @@ export function deferralAccounts(data: ClientData, year: number): DeferralAccoun
       existing.currentPercent += percent;
       existing.ruleCount += 1;
       existing.contributesMax ||= contributesMax;
+      // A MIXED account is not "in percent mode": only an account every one of
+      // whose rules is indexed can be raised with a percent. `isMovable`
+      // rejects multi-rule accounts anyway — this keeps the field true to its
+      // name for any other reader.
+      existing.isPercentMode &&= percentMode;
     } else {
       byAccount.set(rule.accountId, {
         accountId: rule.accountId,
@@ -80,6 +98,7 @@ export function deferralAccounts(data: ClientData, year: number): DeferralAccoun
         ownerSalary,
         ruleCount: 1,
         contributesMax,
+        isPercentMode: percentMode,
       });
     }
   }
