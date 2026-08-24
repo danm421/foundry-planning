@@ -578,7 +578,7 @@ describe("mutationsToScenarioChanges — stress overrides → plan_settings", ()
     const drafts = mutationsToScenarioChanges(src, CLIENT_ID, [
       { kind: "stress-inflation", rate: 0.05 },
       { kind: "stress-ss-haircut", pct: 0.23, startYear: 2035 },
-      { kind: "stress-disability", person: "client", startYear: 2032 },
+      { kind: "stress-disability", person: "client", startYear: 2032, endYear: 2036 },
       { kind: "stress-market-crash", year: 2030, drawdownPct: 0.4 },
       { kind: "stress-exemption-cap", cap: 7_000_000 },
     ]);
@@ -589,7 +589,10 @@ describe("mutationsToScenarioChanges — stress overrides → plan_settings", ()
     expect(ps[0].payload).toEqual({
       livingExpenseInflationOverride: { from: null, to: 0.05 },
       ssBenefitHaircut: { from: null, to: { pct: 0.23, startYear: 2035 } },
-      disabilityEvent: { from: null, to: { person: "client", startYear: 2032 } },
+      disabilityEvent: {
+        from: null,
+        to: { person: "client", startYear: 2032, endYear: 2036 },
+      },
       marketShock: { from: null, to: { year: 2030, drawdownPct: 0.4 } },
       lifetimeExemptionCap: { from: null, to: 7_000_000 },
     });

@@ -67,6 +67,33 @@ describe("synthesizeDisabilityPremiums", () => {
     expect(out[0].endYear).toBe(2029);
   });
 
+  it("bills the premium again once a disability with an end year is over", () => {
+    const tree = buildClientData({
+      disabilityPolicies: [base],
+      planSettings: {
+        ...basePlanSettings,
+        disabilityEvent: { person: "client", startYear: 2030, endYear: 2032 },
+      },
+    });
+    const rows = synthesizeDisabilityPremiums(tree);
+    const billed = (year: number) => computeExpenses(rows, year, tree.client).insurance;
+    // Billed up to the disability, waived through it, billed again on recovery
+    // and on to the insured's retirement year.
+    expect(billed(2029)).toBeGreaterThan(0);
+    expect(billed(2030)).toBe(0);
+    expect(billed(2032)).toBe(0);
+    expect(billed(2033)).toBeGreaterThan(0);
+    expect(billed(2035)).toBeGreaterThan(0);
+    expect(billed(2036)).toBe(0); // client retires 2035
+    // The resumed premium is the row's own inflated amount, not a restart at
+    // the 2026 figure: it is one row with a hole, not two rows.
+    expect(rows).toHaveLength(1);
+    expect(billed(2033)).toBeCloseTo(
+      2400 * (1 + basePlanSettings.inflationRate) ** (2033 - basePlanSettings.planStartYear),
+      2,
+    );
+  });
+
   it("does not apply waiver when the OTHER person is the one disabled", () => {
     const out = synthesizeDisabilityPremiums(
       buildClientData({

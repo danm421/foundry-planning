@@ -1,8 +1,10 @@
 import type { ClientData, DisabilityPolicy, Expense } from "@/engine/types";
+import { disabilitySuspension } from "@/engine/disability-event";
 
 /** Group STD/LTD is usually employer-paid and costs the household nothing.
  *  Individual coverage is a real recurring expense — and every real DI contract
- *  carries waiver of premium, so it stops once the insured is disabled.
+ *  carries waiver of premium, so it stops once the insured is disabled, and
+ *  starts again if the disability has an end year and the insured recovers.
  *
  *  ── ORDERING INVARIANT ─────────────────────────────────────────────────────
  *  The rows are tagged `source: "policy"` (see the tag below for why). That tag
@@ -39,12 +41,26 @@ export function synthesizeDisabilityPremiums(tree: ClientData): Expense[] {
     // Unresolvable insured (no DOB / no retirement age / malformed DOB): emit
     // NOTHING. See the note on `retirementYear` — no silent fallback.
     if (endYear == null) continue;
-    // Waiver of premium: once the INSURED person's own disability event has
-    // started, the insurer stops charging from that year forward, so the
-    // last billed year is the year before it starts.
-    const waived =
-      event && event.person === policy.insured ? event.startYear - 1 : Infinity;
-    const resolvedEnd = Math.min(endYear, waived);
+    // Waiver of premium: the insurer stops charging while the INSURED person's
+    // own disability event is running.
+    //
+    // A disability that never ends simply ENDS the billing — last billed year is
+    // the year before it starts. A disability with an end year only SUSPENDS it:
+    // the insured recovers, the waiver lapses, and the premium is billed again
+    // from the following year through retirement as before. That resumption is a
+    // `suspended` hole rather than a second expense row because the cash-flow
+    // report keys its per-source columns off the expense id, and a
+    // `disability-premium-<id>-resumed` row would surface as its own column
+    // under a raw uuid.
+    const waiver =
+      event && event.person === policy.insured ? disabilitySuspension(event) : null;
+    const permanent = waiver !== null && waiver.throughYear == null;
+    // A permanent waiver ENDS the row rather than punching an open-ended hole
+    // in it. Both read the same to the gate, but a hole would leave a premium
+    // row on the tree that bills nothing for the whole plan — an expense line
+    // that shows a dollar figure and costs zero — and, for a disability
+    // starting before the plan does, a row emitted where today there is none.
+    const resolvedEnd = permanent ? Math.min(endYear, waiver.fromYear - 1) : endYear;
     if (resolvedEnd < planSettings.planStartYear) continue;
 
     out.push({
@@ -55,6 +71,10 @@ export function synthesizeDisabilityPremiums(tree: ClientData): Expense[] {
       startYear: planSettings.planStartYear,
       endYear: resolvedEnd,
       growthRate: planSettings.inflationRate,
+      // Null unless the insured actually recovers: a permanent disability
+      // already ends the row at `resolvedEnd`, and an unstressed plan has no
+      // hole to punch. `null` reads to the gate exactly as an absent field.
+      suspended: permanent ? null : waiver,
       // Marks the row as synthesized. Four surfaces gate on
       // `source !== "policy"` and would otherwise offer this row for edit or
       // delete even though NO DB ROW EXISTS behind its `disability-premium-…`

@@ -631,7 +631,7 @@ export function mutationsToScenarioChanges(
       case "stress-disability": {
         planSettingsDiff.disabilityEvent = {
           from: source.planSettings.disabilityEvent ?? null,
-          to: { person: m.person, startYear: m.startYear },
+          to: { person: m.person, startYear: m.startYear, endYear: m.endYear },
         };
         break;
       }

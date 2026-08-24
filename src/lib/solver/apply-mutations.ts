@@ -375,7 +375,11 @@ export function applyMutations(
       case "stress-disability": {
         result.planSettings = {
           ...result.planSettings,
-          disabilityEvent: { person: m.person, startYear: m.startYear },
+          disabilityEvent: {
+            person: m.person,
+            startYear: m.startYear,
+            endYear: m.endYear,
+          },
         };
         break;
       }

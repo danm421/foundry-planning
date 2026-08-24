@@ -251,7 +251,7 @@ describe("benefitForYear", () => {
 
 describe("synthesizeDisabilityBenefits", () => {
   const input = {
-    incomesBeforeClip: sampleIncomes,
+    incomesBeforeDisability: sampleIncomes,
     event: { person: "client" as const, startYear: START },
     policies: [workplacePolicy()],
     client: baseClient,
@@ -260,12 +260,41 @@ describe("synthesizeDisabilityBenefits", () => {
     inflationRate: basePlanSettings.inflationRate,
   };
 
-  it("reads covered earnings from the PRE-CLIP salary", () => {
+  it("reads covered earnings from the salary BEFORE the disability is applied", () => {
     // The whole feature fails silently if earnings are read after
-    // applyDisabilityEvent has clipped the paycheck — the benefit would be $0
+    // applyDisabilityEvent has stopped the paycheck — the benefit would be $0
     // and a row would still exist. Assert the DOLLARS, not the row's presence.
     const [row] = synthesizeDisabilityBenefits(input);
     expect(row.scheduleOverrides![2028]).toBeCloseTo(93_912.52, 2);
+  });
+
+  it("stops paying at the end of a disability that ends", () => {
+    // The workplace policy's benefit period runs to age 65 (2035 for this
+    // fixture), so the control below proves the truncation — not the contract —
+    // is what silences 2032.
+    const [row] = synthesizeDisabilityBenefits({
+      ...input,
+      event: { person: "client", startYear: START, endYear: 2031 },
+    });
+    expect(row.scheduleOverrides![2031]).toBeGreaterThan(0);
+    expect(row.scheduleOverrides![2032]).toBeUndefined();
+    expect(row.endYear).toBe(2031);
+
+    const [openEnded] = synthesizeDisabilityBenefits(input);
+    expect(openEnded.scheduleOverrides![2032]).toBeGreaterThan(0);
+  });
+
+  it("pays the partial year when the disability starts and ends in the same year", () => {
+    const out = synthesizeDisabilityBenefits({
+      ...input,
+      event: { person: "client", startYear: START, endYear: START },
+    });
+    expect(out).toHaveLength(1);
+    const only = out[0];
+    expect(Object.keys(only.scheduleOverrides!)).toEqual([String(START)]);
+    // The elimination periods are unpaid time inside the claim, so a one-year
+    // disability pays less than a full year of benefit but more than nothing.
+    expect(only.scheduleOverrides![START]).toBeCloseTo(93_912.52, 2);
   });
 
   it("emits a tax-free row when the insured paid the premium", () => {

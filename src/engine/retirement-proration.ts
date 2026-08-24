@@ -10,7 +10,7 @@
 // legacy "full year before, full year on/after" behavior, so existing plans
 // are unaffected.
 
-import type { ClientInfo } from "./types";
+import type { ClientInfo, SuspensionWindow } from "./types";
 
 type RetirementRef =
   | "client_retirement"
@@ -91,6 +91,14 @@ export function startProrationFactor(
   return (13 - m) / 12;
 }
 
+/** True when `year` falls inside a row's suspension hole. `throughYear: null`
+ *  means the row never resumes. */
+function isSuspended(window: SuspensionWindow | null | undefined, year: number): boolean {
+  if (!window) return false;
+  if (year < window.fromYear) return false;
+  return window.throughYear == null || year <= window.throughYear;
+}
+
 /**
  * Combined inclusion + multiplier for any time-windowed item that may have
  * retirement-linked start/end refs. Returns:
@@ -110,11 +118,17 @@ export function itemProrationGate(
     endYear: number;
     startYearRef?: string | null;
     endYearRef?: string | null;
+    suspended?: SuspensionWindow | null;
   },
   year: number,
   client: ClientInfo,
 ): { include: boolean; factor: number } {
   if (year < item.startYear) return { include: false, factor: 0 };
+  // A suspension is a hole in an otherwise unchanged window, so it is checked
+  // BEFORE the end boundary: an end-at-retirement row that is still suspended
+  // in its retirement year must not keep the prorated slice
+  // `endInclusionAndFactor` would otherwise hand back.
+  if (isSuspended(item.suspended, year)) return { include: false, factor: 0 };
   const endCheck = endInclusionAndFactor(item.endYearRef, year, item.endYear, client);
   if (!endCheck.included) return { include: false, factor: 0 };
   const startFactor = startProrationFactor(item.startYearRef, year, client);

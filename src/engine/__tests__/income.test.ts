@@ -259,10 +259,10 @@ describe("computeIncome — stress test", () => {
     expect(cut.socialSecurity).toBeCloseTo(base.socialSecurity, 2);
   });
 
-  // Disability clips the row itself (applyDisabilityEvent) rather than being
+  // Disability suspends the row itself (applyDisabilityEvent) rather than being
   // filtered inside computeIncome, so the stop is visible to the cash-routing
   // and tax-base loops too. The end-to-end consequences live in
-  // stress-disability.test.ts; these assert the clip itself.
+  // stress-disability.test.ts; these assert the suspension itself.
   it("stops the disabled person's salary from startYear forward", () => {
     // 2030: John salary active (owner client), Jane salary active (owner spouse).
     const before = computeIncome(sampleIncomes, 2030, baseClient);
@@ -291,19 +291,83 @@ describe("computeIncome — stress test", () => {
     expect(notYet.salaries).toBeCloseTo(before.salaries, 2);
   });
 
-  it("clips an end-at-retirement salary without leaving a prorated slice", () => {
+  it("suppresses an end-at-retirement salary's prorated retirement-year slice", () => {
     // A row whose end is anchored to retirement stays partly included in the
-    // retirement year even past `endYear` — the clip must clear `endYearRef`
-    // too, or the disabled person keeps a sliver of paycheck.
+    // retirement year even past `endYear`. The gate has to check the suspension
+    // BEFORE that proration, or the disabled person keeps a sliver of paycheck.
     const anchored: Income[] = [
       { ...sampleIncomes[0], endYear: 2034, endYearRef: "client_retirement" },
     ];
-    const clipped = applyDisabilityEvent(anchored, { person: "client", startYear: 2030 });
+    const stopped = applyDisabilityEvent(anchored, { person: "client", startYear: 2030 });
     const retirementYear = 2035; // baseClient: born 1970, retires at 65
-    expect(computeIncome(clipped, retirementYear, {
+    expect(computeIncome(stopped, retirementYear, {
       ...baseClient,
       retirementMonth: 7,
     }).salaries).toBe(0);
+  });
+
+  // ── A disability that ends ────────────────────────────────────────────────
+  it("pays nothing through the last disabled year", () => {
+    const stopped = applyDisabilityEvent(sampleIncomes, {
+      person: "client",
+      startYear: 2030,
+      endYear: 2033,
+    });
+    const janeOnly = sampleIncomes.filter((i) => i.id === "inc-salary-jane");
+    for (const year of [2030, 2031, 2032, 2033]) {
+      expect(computeIncome(stopped, year, baseClient).salaries).toBeCloseTo(
+        computeIncome(janeOnly, year, baseClient).salaries,
+        2,
+      );
+    }
+  });
+
+  it("resumes the salary the year after, at the level it would have reached", () => {
+    const stopped = applyDisabilityEvent(sampleIncomes, {
+      person: "client",
+      startYear: 2030,
+      endYear: 2033,
+    });
+    // Growth keeps compounding through the stopped years — the row's own
+    // start year is untouched, so 2034 pays exactly what an undisabled 2034
+    // would have. Splitting the row and restarting its growth clock in 2034
+    // would pay the 2029 amount here, ~16% lower.
+    expect(computeIncome(stopped, 2034, baseClient).salaries).toBeCloseTo(
+      computeIncome(sampleIncomes, 2034, baseClient).salaries,
+      2,
+    );
+  });
+
+  it("treats an end year before the start year as one disabled year, not as no disability", () => {
+    // An inverted window suspends nothing, so read literally the whole stressor
+    // goes inert: the paycheck never stops. The solver's own field prevents the
+    // ordering, but a saved scenario or an older draft can still carry it.
+    const stopped = applyDisabilityEvent(sampleIncomes, {
+      person: "client",
+      startYear: 2030,
+      endYear: 2025,
+    });
+    const janeOnly = sampleIncomes.filter((i) => i.id === "inc-salary-jane");
+    expect(computeIncome(stopped, 2030, baseClient).salaries).toBeCloseTo(
+      computeIncome(janeOnly, 2030, baseClient).salaries,
+      2,
+    );
+    expect(computeIncome(stopped, 2031, baseClient).salaries).toBeCloseTo(
+      computeIncome(sampleIncomes, 2031, baseClient).salaries,
+      2,
+    );
+  });
+
+  it("keeps the salary stopped for good when no end year is given", () => {
+    const stopped = applyDisabilityEvent(sampleIncomes, {
+      person: "client",
+      startYear: 2030,
+    });
+    const janeOnly = sampleIncomes.filter((i) => i.id === "inc-salary-jane");
+    expect(computeIncome(stopped, 2034, baseClient).salaries).toBeCloseTo(
+      computeIncome(janeOnly, 2034, baseClient).salaries,
+      2,
+    );
   });
 
   it("leaves an entity-owned business row alone", () => {

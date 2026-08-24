@@ -1,5 +1,6 @@
-import type { ClientInfo, DisabilityPolicy, Income } from "./types";
+import type { ClientInfo, DisabilityEvent, DisabilityPolicy, Income } from "./types";
 import { computeIncome } from "./income";
+import { lastDisabledYear } from "./disability-event";
 import { fraForBirthDate } from "./socialSecurity/fra";
 
 /** 365.25 / 12. The single definition — never re-type this literal. */
@@ -157,11 +158,11 @@ export function benefitForYear(
 }
 
 export interface SynthesizeDisabilityInput {
-  /** Income rows as they stand BEFORE applyDisabilityEvent clips the paycheck.
-   *  Reading them after the clip yields $0 covered earnings — a benefit row
-   *  that exists and pays nothing. */
-  incomesBeforeClip: Income[];
-  event: { person: "client" | "spouse"; startYear: number } | undefined;
+  /** Income rows as they stand BEFORE applyDisabilityEvent suspends the
+   *  paycheck. Reading them afterwards yields $0 covered earnings — a benefit
+   *  row that exists and pays nothing. */
+  incomesBeforeDisability: Income[];
+  event: DisabilityEvent | undefined;
   policies: DisabilityPolicy[];
   client: ClientInfo;
   planStartYear: number;
@@ -175,14 +176,14 @@ export interface SynthesizeDisabilityInput {
  *  apart.
  *
  *  ⚠️ `opts.incomes` MUST be the income rows as they stand BEFORE
- *  `applyDisabilityEvent` clips the paycheck. Reading them after the clip
+ *  `applyDisabilityEvent` suspends the paycheck. Reading them afterwards
  *  yields $0 covered earnings, a benefit row that exists and pays nothing, and
  *  NO ERROR anywhere — the plan simply shows an uninsured disability. */
 export function resolveCoveredEarnings(
   policy: DisabilityPolicy,
   opts: {
-    /** PRE-CLIP income rows — see the warning above. Passing post-clip incomes
-     *  silently produces a $0 benefit. */
+    /** Income rows from before the disability is applied — see the warning
+     *  above. Passing suspended rows silently produces a $0 benefit. */
     incomes: Income[];
     client: ClientInfo;
     startYear: number;
@@ -213,7 +214,7 @@ export function synthesizeDisabilityBenefits(input: SynthesizeDisabilityInput): 
     if (policy.insured !== event.person) continue;
 
     const coveredEarnings = resolveCoveredEarnings(policy, {
-      incomes: input.incomesBeforeClip,
+      incomes: input.incomesBeforeDisability,
       client,
       startYear: event.startYear,
       planStartYear: input.planStartYear,
@@ -227,8 +228,15 @@ export function synthesizeDisabilityBenefits(input: SynthesizeDisabilityInput): 
       planEndYear,
     );
 
+    // A disability that ends stops the benefit with it: the insured is back at
+    // work from `endYear + 1`, so a policy whose benefit period runs longer
+    // simply stops paying. Truncating the payment YEARS rather than the
+    // coverage windows keeps `ResolvedCoverage` a statement about the CONTRACT,
+    // which is what the Insurance page's timeline and the solver's readout draw.
+    const lastPaidYear = Math.min(planEndYear, lastDisabledYear(event) ?? planEndYear);
+
     const scheduleOverrides: Record<number, number> = {};
-    for (let year = event.startYear; year <= planEndYear; year++) {
+    for (let year = event.startYear; year <= lastPaidYear; year++) {
       const amount = benefitForYear(coverage, event.startYear, year, policy.colaRate);
       if (amount > 0) scheduleOverrides[year] = amount;
     }

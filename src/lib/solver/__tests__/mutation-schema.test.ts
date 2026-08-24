@@ -128,7 +128,8 @@ const SAMPLES: SolverMutation[] = [
   },
   { kind: "stress-inflation", rate: 0.05 },
   { kind: "stress-ss-haircut", pct: 0.23, startYear: 2034 },
-  { kind: "stress-disability", person: "client", startYear: 2030 },
+  { kind: "stress-disability", person: "client", startYear: 2030, endYear: null },
+  { kind: "stress-disability", person: "client", startYear: 2030, endYear: 2034 },
   { kind: "stress-market-crash", year: 2030, drawdownPct: 0.3 },
   { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: null, spendAllUntilRetirement: false },
   {
@@ -192,6 +193,34 @@ describe("SOLVER_MUTATION_SCHEMA", () => {
     expect(result.success).toBe(true);
     if (result.success && result.data.kind === "surplus-allocation") {
       expect(result.data.spendAllUntilRetirement).toBe(true);
+    }
+  });
+
+  it("accepts a legacy stress-disability payload with no endYear key, defaulting to null", () => {
+    // Regression pin: saved scenarios and solver drafts hold stress-disability
+    // mutations written before the disability could end. A required key would
+    // reject them at parse and the whole draft would fail to load.
+    const result = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "stress-disability",
+      person: "client",
+      startYear: 2030,
+    });
+    expect(result.success).toBe(true);
+    if (result.success && result.data.kind === "stress-disability") {
+      expect(result.data.endYear).toBeNull();
+    }
+  });
+
+  it("round-trips a stress-disability endYear through the schema (not silently stripped)", () => {
+    const result = SOLVER_MUTATION_SCHEMA.safeParse({
+      kind: "stress-disability",
+      person: "client",
+      startYear: 2030,
+      endYear: 2034,
+    });
+    expect(result.success).toBe(true);
+    if (result.success && result.data.kind === "stress-disability") {
+      expect(result.data.endYear).toBe(2034);
     }
   });
 

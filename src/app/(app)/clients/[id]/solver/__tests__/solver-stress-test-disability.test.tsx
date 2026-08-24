@@ -16,7 +16,8 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { useState } from "react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ClientData, DisabilityPolicy, Income } from "@/engine/types";
 import { SolverStressTestTab } from "../solver-stress-test-tab";
 
@@ -72,7 +73,7 @@ const spouseSalary: Income = {
 
 function tree(over: {
   disabilityPolicies?: DisabilityPolicy[];
-  disabilityEvent?: { person: "client" | "spouse"; startYear: number };
+  disabilityEvent?: { person: "client" | "spouse"; startYear: number; endYear?: number | null };
   incomes?: Income[];
   spouseDob?: string | undefined;
 }): ClientData {
@@ -108,7 +109,10 @@ function tree(over: {
   } as unknown as ClientData;
 }
 
-function renderTab(over: Parameters<typeof tree>[0]) {
+function renderTab(
+  over: Parameters<typeof tree>[0],
+  onChange: (m: unknown) => void = vi.fn(),
+) {
   const working = tree(over);
   render(
     <SolverStressTestTab
@@ -117,10 +121,35 @@ function renderTab(over: Parameters<typeof tree>[0]) {
       currentYear={CURRENT_YEAR}
       clientName="John"
       spouseName="Jane"
-      onChange={vi.fn()}
+      onChange={onChange as never}
       onResetField={vi.fn()}
     />,
   );
+}
+
+/** Same tab, but wired to state the way the solver page wires it: whatever the
+ *  lever commits comes straight back as the working tree. Only the tests about
+ *  what the FIELDS SHOW after a commit need this — `renderTab` freezes the
+ *  event, so a stale input would look correct there. */
+function renderStatefulTab(over: Parameters<typeof tree>[0]) {
+  function Harness() {
+    const [event, setEvent] = useState(over.disabilityEvent);
+    return (
+      <SolverStressTestTab
+        baseClientData={tree({ spouseDob: over.spouseDob })}
+        workingTree={tree({ ...over, disabilityEvent: event })}
+        currentYear={CURRENT_YEAR}
+        clientName="John"
+        spouseName="Jane"
+        onChange={
+          ((m: { person: "client" | "spouse"; startYear: number; endYear: number | null }) =>
+            setEvent({ person: m.person, startYear: m.startYear, endYear: m.endYear })) as never
+        }
+        onResetField={vi.fn()}
+      />
+    );
+  }
+  render(<Harness />);
 }
 
 describe("Disability stressor coverage line", () => {
@@ -176,6 +205,141 @@ describe("Disability stressor coverage line", () => {
       disabilityEvent: { person: "client", startYear: DISABILITY_YEAR },
     });
     expect(screen.getByText(/no short-term or long-term coverage set/i)).toBeInTheDocument();
+  });
+
+  it("adds the total paid through recovery when the disability ends", () => {
+    // 2028 + 2029 of the engine's own figures: 93,912.52 + 95,481.00 =
+    // 189,393.52. Nothing here re-derives the benefit.
+    renderTab({
+      disabilityPolicies: [workplace],
+      disabilityEvent: { person: "client", startYear: DISABILITY_YEAR, endYear: 2029 },
+    });
+    expect(screen.getByText(/\$93,913/)).toBeInTheDocument();
+    expect(screen.getByText(/\$189,394/)).toBeInTheDocument();
+    expect(screen.getByText(/through 2029/)).toBeInTheDocument();
+  });
+
+  it("shows no total for a disability that never ends", () => {
+    // A "total" over an open-ended disability would be a number about the plan's
+    // horizon, not about the coverage.
+    renderTab({
+      disabilityPolicies: [workplace],
+      disabilityEvent: { person: "client", startYear: DISABILITY_YEAR },
+    });
+    expect(screen.queryByText(/through 20/)).not.toBeInTheDocument();
+  });
+
+  it("prefills the ending year from the event and leaves it blank when open-ended", () => {
+    renderTab({
+      disabilityPolicies: [workplace],
+      disabilityEvent: { person: "client", startYear: DISABILITY_YEAR, endYear: 2033 },
+    });
+    expect(screen.getByLabelText(/ending year/i)).toHaveValue(2033);
+    cleanup();
+
+    renderTab({
+      disabilityPolicies: [workplace],
+      disabilityEvent: { person: "client", startYear: DISABILITY_YEAR },
+    });
+    expect(screen.getByLabelText(/ending year/i)).toHaveValue(null);
+  });
+
+  it("clearing the ending year commits null, not year zero", () => {
+    // `Number("")` is 0, so a plain year input would silently commit a
+    // disability ending in the year 0 — which reads to the engine as a
+    // disability that ended before it began.
+    const onChange = vi.fn();
+    renderTab(
+      {
+        disabilityPolicies: [workplace],
+        disabilityEvent: { person: "client", startYear: DISABILITY_YEAR, endYear: 2033 },
+      },
+      onChange,
+    );
+    const field = screen.getByLabelText(/ending year/i);
+    fireEvent.change(field, { target: { value: "" } });
+    fireEvent.blur(field);
+    expect(onChange).toHaveBeenCalledWith({
+      kind: "stress-disability",
+      person: "client",
+      startYear: DISABILITY_YEAR,
+      endYear: null,
+    });
+  });
+
+  it("never lets the disability end before it begins", () => {
+    // An inverted window suspends no year at all, so the whole stressor would
+    // silently do nothing while the readout still claimed a benefit.
+    const onChange = vi.fn();
+    renderTab(
+      {
+        disabilityPolicies: [workplace],
+        disabilityEvent: { person: "client", startYear: DISABILITY_YEAR, endYear: 2033 },
+      },
+      onChange,
+    );
+    const end = screen.getByLabelText(/ending year/i);
+    fireEvent.change(end, { target: { value: "2020" } });
+    fireEvent.blur(end);
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ startYear: DISABILITY_YEAR, endYear: DISABILITY_YEAR }),
+    );
+
+    // ...and moving the START past the end drags the end along.
+    const start = screen.getByLabelText(/starting year/i);
+    fireEvent.change(start, { target: { value: "2040" } });
+    fireEvent.blur(start);
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ startYear: 2040, endYear: 2040 }),
+    );
+  });
+
+  it("shows the year it clamped to, not the one the advisor typed", () => {
+    // Both year inputs are uncontrolled, so a value the component rewrites on
+    // the advisor's behalf has to remount the field. Otherwise the box keeps
+    // reading 2020 while the plan runs a disability ending in 2028 — and the
+    // readout beside it says "through 2028", contradicting the field above it.
+    renderStatefulTab({
+      disabilityPolicies: [workplace],
+      disabilityEvent: { person: "client", startYear: DISABILITY_YEAR, endYear: 2033 },
+    });
+    const end = screen.getByLabelText(/ending year/i);
+    fireEvent.change(end, { target: { value: "2020" } });
+    fireEvent.blur(end);
+    expect(screen.getByLabelText(/ending year/i)).toHaveValue(DISABILITY_YEAR);
+  });
+
+  it("shows the ending year a later starting year dragged along", () => {
+    renderStatefulTab({
+      disabilityPolicies: [workplace],
+      disabilityEvent: { person: "client", startYear: DISABILITY_YEAR, endYear: 2033 },
+    });
+    const start = screen.getByLabelText(/starting year/i);
+    fireEvent.change(start, { target: { value: "2040" } });
+    fireEvent.blur(start);
+    expect(screen.getByLabelText(/ending year/i)).toHaveValue(2040);
+  });
+
+  it("keeps the other two fields when only one of the three is edited", () => {
+    // Each handler spreads the whole lever, so moving the start year cannot drop
+    // the ending year the advisor just set.
+    const onChange = vi.fn();
+    renderTab(
+      {
+        disabilityPolicies: [workplace],
+        disabilityEvent: { person: "client", startYear: DISABILITY_YEAR, endYear: 2033 },
+      },
+      onChange,
+    );
+    const start = screen.getByLabelText(/starting year/i);
+    fireEvent.change(start, { target: { value: "2030" } });
+    fireEvent.blur(start);
+    expect(onChange).toHaveBeenCalledWith({
+      kind: "stress-disability",
+      person: "client",
+      startYear: 2030,
+      endYear: 2033,
+    });
   });
 
   it("says long-term pays nothing when the insured spouse has no date of birth", () => {

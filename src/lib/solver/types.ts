@@ -93,7 +93,7 @@ export type SolverMutation =
   | { kind: "entity-upsert";               id: string; value: EntitySummary | null }
   | { kind: "stress-inflation"; rate: number }
   | { kind: "stress-ss-haircut"; pct: number; startYear: number }
-  | { kind: "stress-disability"; person: SolverPerson; startYear: number }
+  | { kind: "stress-disability"; person: SolverPerson; startYear: number; endYear: number | null }
   | { kind: "stress-market-crash"; year: number; drawdownPct: number }
   | { kind: "stress-exemption-cap"; cap: number }
   | {

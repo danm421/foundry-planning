@@ -38,6 +38,8 @@ function run(
   withDisability: boolean,
   policies: DisabilityPolicy[] = [],
   taxMode: "flat" | "bracket" = "flat",
+  /** Last disabled year. Null = the disability never ends. */
+  recoversAfter: number | null = null,
 ): ProjectionYear[] {
   return runProjection(
     buildClientData({
@@ -51,7 +53,13 @@ function run(
         ...basePlanSettings,
         taxEngineMode: taxMode,
         ...(withDisability
-          ? { disabilityEvent: { person: "client", startYear: DISABILITY_YEAR } }
+          ? {
+              disabilityEvent: {
+                person: "client",
+                startYear: DISABILITY_YEAR,
+                endYear: recoversAfter,
+              },
+            }
           : {}),
       },
     }),
@@ -307,5 +315,84 @@ describe("disability benefits in the projection", () => {
     const delta = taxableRow.expenses.taxes - taxFreeRow.expenses.taxes;
     expect(delta).toBeGreaterThan(BENEFIT_2028 * 0.10);
     expect(delta).toBeLessThan(BENEFIT_2028 * 0.50);
+  });
+});
+
+// ── A disability that ends ───────────────────────────────────────────────────
+// The advisor sets a last disabled year; the person goes back to work the
+// following January. Everything the disability stopped has to start again —
+// the paycheck, the tax on it, and the percentage-of-salary saving — and
+// everything it started has to stop.
+const RECOVERY_YEAR = DISABILITY_YEAR + 3; // disabled 2028–2031, back at work 2032
+
+describe("disability stress — a disability that ends", () => {
+  const base = run(false);
+  const permanent = run(true);
+  const temporary = run(true, [], "flat", RECOVERY_YEAR);
+
+  it("pays no salary in any disabled year, including the last one", () => {
+    for (let year = DISABILITY_YEAR; year <= RECOVERY_YEAR; year++) {
+      expect(incomeCredited(yearOf(temporary, year), CLIENT_SALARY)).toBe(0);
+    }
+  });
+
+  it("credits the salary again the year after the disability ends", () => {
+    const back = yearOf(temporary, RECOVERY_YEAR + 1);
+    expect(incomeCredited(back, CLIENT_SALARY)).toBeGreaterThan(0);
+    // Control: the permanent variant is the same plan with only the end year
+    // removed, so a non-zero paycheck here is the end year's doing and nothing
+    // else's.
+    expect(
+      incomeCredited(yearOf(permanent, RECOVERY_YEAR + 1), CLIENT_SALARY),
+    ).toBe(0);
+  });
+
+  it("resumes the salary at the level it would have reached, not at the pre-disability amount", () => {
+    // Growth keeps compounding from the row's own start year through the
+    // stopped years — a returning earner comes back at the market rate, not at
+    // their 2027 pay. Four years of 3% growth is a 12.6% gap, so a resumption
+    // that restarted the growth clock would fail this by ~19k.
+    const back = incomeCredited(yearOf(temporary, RECOVERY_YEAR + 1), CLIENT_SALARY);
+    expect(back).toBeCloseTo(
+      incomeCredited(yearOf(base, RECOVERY_YEAR + 1), CLIENT_SALARY),
+      2,
+    );
+    const lastFullPaycheck = incomeCredited(
+      yearOf(base, DISABILITY_YEAR - 1),
+      CLIENT_SALARY,
+    );
+    expect(back).toBeGreaterThan(lastFullPaycheck * 1.1);
+  });
+
+  it("taxes the resumed salary again", () => {
+    expect(earnedIncomeTaxed(yearOf(temporary, RECOVERY_YEAR))).toBeLessThan(
+      earnedIncomeTaxed(yearOf(base, RECOVERY_YEAR)),
+    );
+    expect(earnedIncomeTaxed(yearOf(temporary, RECOVERY_YEAR + 1))).toBeCloseTo(
+      earnedIncomeTaxed(yearOf(base, RECOVERY_YEAR + 1)),
+      0,
+    );
+  });
+
+  it("leaves the household better off than the same disability with no recovery", () => {
+    const last = temporary.length - 1;
+    expect(temporary[last].portfolioAssets.liquidTotal).toBeGreaterThan(
+      permanent[last].portfolioAssets.liquidTotal,
+    );
+    // ...and still worse off than never having been disabled at all.
+    expect(temporary[last].portfolioAssets.liquidTotal).toBeLessThan(
+      base[last].portfolioAssets.liquidTotal,
+    );
+  });
+
+  it("stops paying the policy benefit once the insured is back at work", () => {
+    const covered = run(true, [workPolicy], "flat", RECOVERY_YEAR);
+    expect(incomeCredited(yearOf(covered, RECOVERY_YEAR), BENEFIT_ID)).toBeGreaterThan(0);
+    expect(incomeCredited(yearOf(covered, RECOVERY_YEAR + 1), BENEFIT_ID)).toBe(0);
+    // Control: this policy's benefit period runs to age 65 (2035), so without
+    // the end year it would still be paying in that same year.
+    expect(
+      incomeCredited(yearOf(run(true, [workPolicy]), RECOVERY_YEAR + 1), BENEFIT_ID),
+    ).toBeGreaterThan(0);
   });
 });

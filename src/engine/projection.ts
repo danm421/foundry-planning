@@ -903,13 +903,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     | { decedent: "client" | "spouse"; estateTax: EstateTaxResult; transfers: DeathTransfer[]; dsueGenerated: number }
     | null = null;
 
-  // The disability stress is applied once, here, as a clip on the income rows —
-  // so the cash routing, the tax base, and the display totals all see the same
-  // stopped paycheck. See `applyDisabilityEvent`.
+  // The disability stress is applied once, here, as a suspension window on the
+  // income rows — so the cash routing, the tax base, and the display totals all
+  // see the same stopped paycheck, and all see it resume together if the event
+  // has an end year. See `applyDisabilityEvent`.
   //
-  // Benefits are synthesized from the SAME pre-clip rows, because a disability
+  // Benefits are synthesized from the SAME untouched rows, because a disability
   // policy insures the paycheck that is about to stop. Reading earnings after
-  // the clip yields $0 and a benefit row that pays nothing.
+  // the suspension yields $0 and a benefit row that pays nothing.
   const expandedIncomes = expandLinkedIncomes(data.incomes, {
     accountById,
     giftEvents: data.giftEvents ?? [],
@@ -921,7 +922,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   let currentIncomes: Income[] = [
     ...applyDisabilityEvent(expandedIncomes, planSettings.disabilityEvent),
     ...synthesizeDisabilityBenefits({
-      incomesBeforeClip: expandedIncomes,
+      incomesBeforeDisability: expandedIncomes,
       event: planSettings.disabilityEvent,
       policies: data.disabilityPolicies ?? [],
       client,
@@ -3747,6 +3748,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         endYear: e.endYear,
         growthRate: e.growthRate,
         inflationStartYear: e.inflationStartYear,
+        // This narrowed copy is the one expense view that skips
+        // `itemProrationGate`; drop `suspended` here and a row's hole is
+        // invisible to the deduction math. See `SuspensionWindow`.
+        suspended: e.suspended,
       }));
       const isGrantorThisYear = (entityId: string) => effectiveIsGrantor(entityId, year);
 

@@ -29,6 +29,11 @@ const DEFAULT_SS_HAIRCUT_YEAR = 2034;
 const DEFAULT_CRASH_PCT = 0.3;
 const DEFAULT_EXEMPTION_CAP = 7_000_000;
 
+/** Shared by the narrow numeric inputs so a styling change cannot land on one
+ *  and miss the others. `DollarField` is deliberately wider and keeps its own. */
+const NUMBER_INPUT_CLASS =
+  "w-24 rounded border border-hair bg-card px-2 py-1 text-[13px] text-ink tabular-nums";
+
 const money = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
@@ -57,6 +62,16 @@ export function SolverStressTestTab({
   const capOn =
     (ps.lifetimeExemptionCap ?? null) !==
     (baseClientData.planSettings.lifetimeExemptionCap ?? null);
+
+  // The whole disability lever as a mutation, so each field's onCommit spreads
+  // it and overrides one key. Rebuilding all three at every call site is how a
+  // newly added field gets dropped by the two handlers nobody remembered.
+  const disability: Extract<SolverMutation, { kind: "stress-disability" }> = {
+    kind: "stress-disability",
+    person: ps.disabilityEvent?.person ?? "client",
+    startYear: ps.disabilityEvent?.startYear ?? defaultEventYear,
+    endYear: ps.disabilityEvent?.endYear ?? null,
+  };
 
   return (
     <SolverSection
@@ -127,18 +142,23 @@ export function SolverStressTestTab({
       {/* Disability */}
       <StressRow
         label="Disability"
-        hint="Stops the person's salary and business income from the chosen year forward, and pays any disability policies they hold. Percentage-of-salary savings stop automatically; flat-dollar contributions do not (adjust those manually)."
+        hint="Stops the person's salary and business income from the chosen year, and pays any disability policies they hold. Leave the ending year blank for a disability that never ends; fill it in to model a recovery — the paycheck picks back up the following year at the level it would have reached, the benefit stops, and any waived premium is billed again. Percentage-of-salary savings stop and restart automatically; flat-dollar contributions do not (adjust those manually)."
         on={disabilityOn}
         onToggle={(checked) =>
           checked
-            ? onChange({ kind: "stress-disability", person: "client", startYear: defaultEventYear })
+            ? onChange({
+                kind: "stress-disability",
+                person: "client",
+                startYear: defaultEventYear,
+                endYear: null,
+              })
             : onResetField(["stress-disability"])
         }
       >
-        <div className="grid grid-cols-2 gap-x-5">
+        <div className="grid grid-cols-2 gap-x-5 gap-y-3">
           <SelectField
             label="Person"
-            value={ps.disabilityEvent?.person ?? "client"}
+            value={disability.person}
             options={
               hasSpouse
                 ? [
@@ -148,29 +168,46 @@ export function SolverStressTestTab({
                 : [{ value: "client", label: clientName }]
             }
             onCommit={(person) =>
-              onChange({
-                kind: "stress-disability",
-                person: person as SolverPerson,
-                startYear: ps.disabilityEvent?.startYear ?? defaultEventYear,
-              })
+              onChange({ ...disability, person: person as SolverPerson })
             }
           />
           <YearField
             label="Starting year"
-            value={ps.disabilityEvent?.startYear ?? defaultEventYear}
+            value={disability.startYear}
             onCommit={(y) =>
               onChange({
-                kind: "stress-disability",
-                person: ps.disabilityEvent?.person ?? "client",
+                ...disability,
                 startYear: y,
+                // A disability cannot end before it begins. Pushing the start
+                // past the end drags the end along rather than leaving an
+                // inverted window, which reads to the engine as no disability
+                // at all — a lever that silently does nothing.
+                endYear: disability.endYear == null ? null : Math.max(disability.endYear, y),
+              })
+            }
+          />
+          <OptionalYearField
+            // The input is uncontrolled, so a year the CLAMP rewrote — either
+            // handler can move the ending year — has to remount the field, or
+            // the box keeps showing the rejected year while the readout beside
+            // it reports the clamped one.
+            key={disability.endYear ?? "never"}
+            label="Ending year"
+            value={disability.endYear}
+            placeholder="Never"
+            onCommit={(y) =>
+              onChange({
+                ...disability,
+                endYear: y == null ? null : Math.max(y, disability.startYear),
               })
             }
           />
         </div>
         <DisabilityCoverage
           tree={workingTree}
-          person={ps.disabilityEvent?.person ?? "client"}
-          startYear={ps.disabilityEvent?.startYear ?? defaultEventYear}
+          person={disability.person}
+          startYear={disability.startYear}
+          endYear={disability.endYear}
         />
       </StressRow>
 
@@ -336,19 +373,23 @@ function coverageNote(c: ResolvedCoverage): string | null {
  * here re-derives a benefit from the policy's stored fields; a second
  * derivation on the UI side is how a screen and its engine drift apart.
  *
- * `tree.incomes` is the PRE-CLIP salary. `applyDisabilityEvent` runs inside the
- * projection, never on the solver's working tree, so the row the policy insures
- * is still there. Reading post-clip incomes would yield $0 covered earnings and
- * a benefit that looks present and pays nothing.
+ * `tree.incomes` is the salary BEFORE the disability is applied.
+ * `applyDisabilityEvent` runs inside the projection, never on the solver's
+ * working tree, so the row the policy insures is still there. Reading suspended
+ * incomes would yield $0 covered earnings and a benefit that looks present and
+ * pays nothing.
  */
 function DisabilityCoverage({
   tree,
   person,
   startYear,
+  endYear,
 }: {
   tree: ClientData;
   person: SolverPerson;
   startYear: number;
+  /** Last disabled year, or null for a disability that never ends. */
+  endYear: number | null;
 }) {
   const policies = (tree.disabilityPolicies ?? []).filter((p) => p.insured === person);
 
@@ -380,9 +421,25 @@ function DisabilityCoverage({
       policy,
       coverage,
       firstYear: benefitForYear(coverage, startYear, startYear, policy.colaRate),
+      // Only meaningful when the disability ends — an open-ended one runs to the
+      // plan horizon and a "total" would be a number about the plan's length,
+      // not about the coverage.
+      throughRecovery:
+        endYear == null
+          ? 0
+          : sumBenefit(
+              coverage,
+              startYear,
+              // The same horizon clamp `synthesizeDisabilityBenefits` applies:
+              // a recovery year past the end of the plan cannot be credited
+              // dollars the projection never runs long enough to pay.
+              Math.min(endYear, planSettings.planEndYear),
+              policy.colaRate,
+            ),
     };
   });
   const total = resolved.reduce((sum, r) => sum + r.firstYear, 0);
+  const totalThroughRecovery = resolved.reduce((sum, r) => sum + r.throughRecovery, 0);
   // Named only when there is more than one, so the common single-policy case
   // stays two short lines in a pane that is about 35% of the viewport.
   const named = resolved.length > 1;
@@ -402,8 +459,67 @@ function DisabilityCoverage({
       })}
       <p>
         Pays <span className="tabular text-ink">{money.format(total)}</span> in {startYear}
+        {endYear !== null && (
+          <>
+            , <span className="tabular text-ink">{money.format(totalThroughRecovery)}</span>{" "}
+            through {endYear}
+          </>
+        )}
       </p>
     </div>
+  );
+}
+
+/** Nominal dollars a policy pays across a bounded disability, start and end
+ *  year inclusive. The same per-year function the projection pays on, summed —
+ *  never a shortcut like `firstYear x years`, which would ignore the COLA, the
+ *  elimination period, and a benefit period that runs out mid-window. */
+function sumBenefit(
+  coverage: ResolvedCoverage,
+  startYear: number,
+  endYear: number,
+  colaRate: number,
+): number {
+  let total = 0;
+  for (let year = startYear; year <= endYear; year++) {
+    total += benefitForYear(coverage, startYear, year, colaRate);
+  }
+  return total;
+}
+
+/** A year input that may be left empty. Empty commits null — `YearField` would
+ *  read the blank as `Number("") === 0` and commit year zero. */
+function OptionalYearField({
+  label,
+  value,
+  placeholder,
+  onCommit,
+}: {
+  label: string;
+  value: number | null;
+  placeholder: string;
+  onCommit: (year: number | null) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-[11px] text-ink-3">{label}</span>
+      <input
+        type="number"
+        step="1"
+        placeholder={placeholder}
+        defaultValue={value ?? ""}
+        onBlur={(e) => {
+          const raw = e.target.value.trim();
+          if (raw === "") {
+            onCommit(null);
+            return;
+          }
+          const next = Number(raw);
+          if (Number.isFinite(next)) onCommit(Math.round(next));
+        }}
+        className={NUMBER_INPUT_CLASS}
+      />
+    </label>
   );
 }
 
@@ -429,7 +545,7 @@ function PercentField({
             const next = Number(e.target.value);
             if (Number.isFinite(next)) onCommit(Math.max(0, next) / 100);
           }}
-          className="w-24 rounded border border-hair bg-card px-2 py-1 text-[13px] text-ink tabular-nums"
+          className={NUMBER_INPUT_CLASS}
         />
         <span className="text-[12px] text-ink-3">%</span>
       </div>
@@ -499,7 +615,7 @@ function YearField({
           const next = Number(e.target.value);
           if (Number.isFinite(next)) onCommit(Math.round(next));
         }}
-        className="w-24 rounded border border-hair bg-card px-2 py-1 text-[13px] text-ink tabular-nums"
+        className={NUMBER_INPUT_CLASS}
       />
     </label>
   );
