@@ -23,6 +23,11 @@ export type BracketsByStatus = Record<FilingStatus, BracketTier[]>;
 export interface CapGainsTier {
   zeroPctTop: number;
   fifteenPctTop: number;  // 20% applies above
+  /** Preferential rates on the 15% and 20% bands. Absent = statutory
+   *  0.15 / 0.20. Seeded DB rows never carry these; they are written only by
+   *  the "tax rates rise" stressor (src/lib/tax/rate-stress.ts). */
+  midRate?: number;
+  topRate?: number;
 }
 
 export type CapGainsBracketsByStatus = Record<FilingStatus, CapGainsTier>;
