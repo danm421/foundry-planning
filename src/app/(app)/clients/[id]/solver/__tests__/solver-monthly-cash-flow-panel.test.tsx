@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { SolverMonthlyCashFlowPanel } from "../solver-monthly-cash-flow-panel";
+import { SolverMonthlyCashFlowPanel, selectMonthlyRow } from "../solver-monthly-cash-flow-panel";
 import type { MonthlyCashFlowRow } from "@/lib/solver/monthly-cash-flow";
+import type { MonthRow } from "@/lib/solver/monthly-allocation";
 
 function row(over: Partial<MonthlyCashFlowRow> = {}): MonthlyCashFlowRow {
   return {
@@ -337,5 +341,210 @@ describe("SolverMonthlyCashFlowPanel", () => {
       />,
     );
     expect(screen.getByText(/no projection years to show/i)).toBeInTheDocument();
+  });
+});
+
+const MONTH_LABELS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+/** Twelve rows the shape `buildMonthlyAllocation` returns. Defaults are a flat,
+ *  healthy year; each test overrides only the field it is about. */
+function monthRow(i: number, over: Partial<MonthRow> = {}): MonthRow {
+  return {
+    month: i + 1,
+    label: MONTH_LABELS[i],
+    income: 8_000,
+    portfolioDraw: 1_000,
+    taxes: 1_500,
+    debt: 900,
+    savings: 500,
+    other: 400,
+    living: 5_000,
+    net: 700,
+    cashOnHand: 10_000 + 700 * (i + 1),
+    ...over,
+  };
+}
+
+const twelveMonths = Array.from({ length: 12 }, (_, i) => monthRow(i));
+
+/** For the month-view block only. The fourteen tests above inline their props
+ *  and are deliberately left alone. */
+const baseProps = {
+  rows: [row()],
+  selectedYear: 2026 as number | null,
+  onYearClick: noop,
+  basis: "today" as const,
+  onBasisChange: noop,
+};
+
+describe("selectMonthlyRow", () => {
+  // The rule this helper exists to make un-duplicable. The panel opens on the
+  // first SHORTFALL year, not the first year — and the chart panel has to pick
+  // the same one, or the table captions one year and lists another's months.
+  const covered = row({ year: 2026, income: 10_000 });
+  const short = row({ year: 2027, income: 4_000 });
+  const alsoShort = row({ year: 2028, income: 3_000 });
+
+  it("opens on the first shortfall year when no year is picked", () => {
+    expect(selectMonthlyRow([covered, short, alsoShort], null)?.year).toBe(2027);
+  });
+
+  it("honours an explicitly picked year over the shortfall rule", () => {
+    expect(selectMonthlyRow([covered, short, alsoShort], 2028)?.year).toBe(2028);
+  });
+
+  it("falls back to the first year when income never falls short", () => {
+    expect(selectMonthlyRow([covered, row({ year: 2027, income: 9_000 })], null)?.year).toBe(2026);
+  });
+
+  it("returns undefined for an empty projection", () => {
+    expect(selectMonthlyRow([], null)).toBeUndefined();
+  });
+});
+
+describe("SolverMonthlyCashFlowPanel — month by month", () => {
+  it("shows the year table in plan view and the month table in months view", () => {
+    const { rerender } = render(
+      <SolverMonthlyCashFlowPanel
+        {...baseProps}
+        monthRows={twelveMonths}
+        view="plan"
+        onViewChange={noop}
+      />,
+    );
+    expect(screen.queryByText("January")).toBeNull();
+
+    rerender(
+      <SolverMonthlyCashFlowPanel
+        {...baseProps}
+        monthRows={twelveMonths}
+        view="months"
+        onViewChange={noop}
+      />,
+    );
+    expect(screen.getByText("January")).toBeTruthy();
+    expect(screen.getByText("December")).toBeTruthy();
+  });
+
+  it("renders twelve month rows with a Living column and a running balance", () => {
+    render(
+      <SolverMonthlyCashFlowPanel
+        {...baseProps}
+        monthRows={twelveMonths}
+        view="months"
+        onViewChange={noop}
+      />,
+    );
+    expect(screen.getAllByTestId("month-row")).toHaveLength(12);
+    expect(screen.getByText("Living")).toBeTruthy();
+    expect(screen.getByText("Cash on hand")).toBeTruthy();
+  });
+
+  it("reports a view change from the toggle", async () => {
+    const user = userEvent.setup();
+    const onViewChange = vi.fn();
+    render(
+      <SolverMonthlyCashFlowPanel
+        {...baseProps}
+        monthRows={twelveMonths}
+        view="plan"
+        onViewChange={onViewChange}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Month by month" }));
+    expect(onViewChange).toHaveBeenCalledWith("months");
+  });
+
+  // A mid-year-originated entity-owned mortgage really does produce negative
+  // debt months (Task 6 built the fixture and proved it). The allocator is the
+  // authority; the cell must show what it returned, minus sign and all. A clamp
+  // here would turn a row that reconciles into one that silently does not.
+  it("shows a negative debt month rather than clamping it to zero", () => {
+    const withNegativeDebt = twelveMonths.map((m, i) => (i < 6 ? { ...m, debt: -1_200 } : m));
+    render(
+      <SolverMonthlyCashFlowPanel
+        {...baseProps}
+        monthRows={withNegativeDebt}
+        view="months"
+        onViewChange={noop}
+      />,
+    );
+    expect(screen.getAllByTestId("month-row")[0]).toHaveTextContent("-$1,200");
+  });
+
+  // `cashOnHand` seeds from the portfolio-wide liquid set and then walks it with
+  // checking-level flows — it adds the portfolio draw (money LEAVING those
+  // accounts) and subtracts savings (money ENTERING them), and never adds
+  // growth. In a drawdown year it runs high by roughly the year's whole draw, so
+  // presenting it as a bank balance misstates the client's liquid position. The
+  // note has to be VISIBLE; an sr-only caption is not a disclosure a sighted
+  // advisor ever reads.
+  it("captions the running balance as cash flow, never as a bank balance", () => {
+    render(
+      <SolverMonthlyCashFlowPanel
+        {...baseProps}
+        monthRows={twelveMonths}
+        view="months"
+        onViewChange={noop}
+      />,
+    );
+    expect(screen.getByTestId("cash-on-hand-note")).toBeVisible();
+    expect(screen.queryByText(/cash left in the account/i)).toBeNull();
+    expect(screen.queryByText(/bank balance/i)).toBeNull();
+  });
+
+  // `net` subtracts a surplusSpent term that has NO column, so in a year with
+  // discretionary spend the visible columns genuinely do not add up to the row's
+  // own net. A Task 6 test asserts that gap deliberately. Say so in the years it
+  // applies to — and stay quiet in the ones it does not.
+  it("explains the missing surplus term only in a year that has one", () => {
+    const { unmount } = render(
+      <SolverMonthlyCashFlowPanel
+        {...baseProps}
+        monthRows={twelveMonths}
+        view="months"
+        onViewChange={noop}
+      />,
+    );
+    expect(screen.queryByTestId("surplus-spent-note")).toBeNull();
+    unmount();
+
+    render(
+      <SolverMonthlyCashFlowPanel
+        {...baseProps}
+        rows={[
+          row({ split: { living: 2_000, surplusSpent: 3_000, surplusUnspent: 0, unexplained: 0 } }),
+        ]}
+        monthRows={twelveMonths}
+        view="months"
+        onViewChange={noop}
+      />,
+    );
+    expect(screen.getByTestId("surplus-spent-note")).toHaveTextContent(/surplus/i);
+  });
+});
+
+// The unit tests above pin the RULE; this pins that there is only ONE
+// implementation of it. The plan shipped a second copy in the chart panel
+// (`currentProjection.find(...) ?? currentProjection[0]`) with no shortfall
+// clause, which disagrees with the panel whenever `selectedYear` is null — its
+// value every time the Monthly sub-tab is opened. The table would then caption
+// one year and list another's twelve months, silently. The behaviour is not
+// renderable from here, so the guard is on the source.
+describe("the chart panel resolves the month year through the shared helper", () => {
+  const source = readFileSync(
+    resolve(process.cwd(), "src/app/(app)/clients/[id]/solver/solver-chart-panel.tsx"),
+    "utf8",
+  );
+
+  it("calls selectMonthlyRow", () => {
+    expect(source).toContain("selectMonthlyRow(");
+  });
+
+  it("keeps no second year-selection rule of its own", () => {
+    expect(source).not.toMatch(/currentProjection\s*\[\s*0\s*\]/);
   });
 });

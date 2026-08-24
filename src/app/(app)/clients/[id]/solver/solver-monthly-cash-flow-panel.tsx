@@ -3,6 +3,7 @@
 import { memo } from "react";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import type { DollarBasis, MonthlyCashFlowRow } from "@/lib/solver/monthly-cash-flow";
+import type { MonthRow } from "@/lib/solver/monthly-allocation";
 
 const fmt = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -22,6 +23,35 @@ interface Props {
   onYearClick: (year: number) => void;
   basis: DollarBasis;
   onBasisChange: (b: DollarBasis) => void;
+  /** The selected year split into twelve months. Optional so the fourteen tests
+   *  that predate the toggle keep compiling; the one production caller always
+   *  passes it. */
+  monthRows?: MonthRow[];
+  /** Defaults to the table this panel has always shown, so a caller that forgets
+   *  the toggle degrades to today's behaviour rather than to a blank table. */
+  view?: "plan" | "months";
+  onViewChange?: (v: "plan" | "months") => void;
+}
+
+/**
+ * Which year the month table is about.
+ *
+ * EXPORTED AND SHARED ON PURPOSE. `solver-chart-panel.tsx` builds the twelve
+ * rows for the same year this panel captions, and the rule is not the obvious
+ * one: with no year picked it opens on the first SHORTFALL year, not the first
+ * year. A second copy that omitted the middle clause would caption one year and
+ * list another's months on first open, silently — `selectedYear` is null every
+ * time the Monthly sub-tab is opened.
+ */
+export function selectMonthlyRow(
+  rows: MonthlyCashFlowRow[],
+  selectedYear: number | null,
+): MonthlyCashFlowRow | undefined {
+  return (
+    rows.find((r) => r.year === selectedYear) ??
+    rows.find((r) => r.income < r.fixed.total) ??
+    rows[0]
+  );
 }
 
 // Memoized for the same reason `SolverWithdrawalPanel` is: this table renders
@@ -34,6 +64,9 @@ export const SolverMonthlyCashFlowPanel = memo(function SolverMonthlyCashFlowPan
   onYearClick,
   basis,
   onBasisChange,
+  monthRows = [],
+  view = "plan",
+  onViewChange,
 }: Props) {
   if (rows.length === 0) {
     return (
@@ -43,28 +76,39 @@ export const SolverMonthlyCashFlowPanel = memo(function SolverMonthlyCashFlowPan
     );
   }
 
-  // Until a year is picked, opens on the first one where income stops covering
-  // fixed costs — this report exists for the retirement conversation, and year
-  // one is the least interesting row in it. A plan whose income never falls
-  // short opens on its first year.
-  const selected =
-    rows.find((r) => r.year === selectedYear) ??
-    rows.find((r) => r.income < r.fixed.total) ??
-    rows[0];
+  // Opens on the first shortfall year rather than year one — this report exists
+  // for the retirement conversation. The rule itself lives on `selectMonthlyRow`
+  // because the chart panel has to pick the SAME year; `rows.length === 0`
+  // returned above, so it cannot come back empty here.
+  const selected = selectMonthlyRow(rows, selectedYear)!;
 
   return (
     <div className="mt-3 space-y-3">
-      <div className="flex items-center justify-end gap-1" role="group" aria-label="Dollar basis">
-        <BasisButton
-          label="Today's dollars"
-          active={basis === "today"}
-          onClick={() => onBasisChange("today")}
-        />
-        <BasisButton
-          label="Future dollars"
-          active={basis === "nominal"}
-          onClick={() => onBasisChange("nominal")}
-        />
+      <div className="flex items-center justify-between gap-1">
+        <div className="flex items-center gap-1" role="group" aria-label="Table view">
+          <BasisButton
+            label="Across the plan"
+            active={view === "plan"}
+            onClick={() => onViewChange?.("plan")}
+          />
+          <BasisButton
+            label="Month by month"
+            active={view === "months"}
+            onClick={() => onViewChange?.("months")}
+          />
+        </div>
+        <div className="flex items-center justify-end gap-1" role="group" aria-label="Dollar basis">
+          <BasisButton
+            label="Today's dollars"
+            active={basis === "today"}
+            onClick={() => onBasisChange("today")}
+          />
+          <BasisButton
+            label="Future dollars"
+            active={basis === "nominal"}
+            onClick={() => onBasisChange("nominal")}
+          />
+        </div>
       </div>
 
       <div className="rounded-lg border border-hair bg-card px-4 py-3">
@@ -135,69 +179,150 @@ export const SolverMonthlyCashFlowPanel = memo(function SolverMonthlyCashFlowPan
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-hair bg-card">
-        <table className="min-w-full text-sm">
-          <caption className="sr-only">
-            Month-by-month cash flow for every plan year: income and the portfolio draw that tops
-            it up, the costs already committed, and what is left to live on
-          </caption>
-          <thead className="text-xs uppercase text-ink-3">
-            <tr>
-              <Th align="left">Year</Th>
-              <Th align="left">Age</Th>
-              <Th>Income</Th>
-              {/* Sits WITH Income, ahead of the costs, because it is money in.
-                  Sitting among the cost columns it would read as a fifth cost
-                  and the row would still not add up. In this order it does:
-                  income + draw − taxes − debt − savings − other = available,
-                  which is why the column needs no note explaining its sign. */}
-              <Th>Portfolio draw</Th>
-              <Th>Taxes</Th>
-              <Th>Debt</Th>
-              <Th>Savings</Th>
-              <Th>Other</Th>
-              <Th>Available</Th>
-            </tr>
-          </thead>
-          <tbody className="text-ink">
-            {rows.map((r) => (
-              <tr key={r.year} className={r.year === selected.year ? "bg-accent-wash" : undefined}>
-                <td className="border-b border-hair px-3 py-2 text-left">
-                  <button
-                    type="button"
-                    onClick={() => onYearClick(r.year)}
-                    title={`Show ${r.year} above`}
-                    className="rounded-sm text-ink hover:text-accent focus:outline-none focus:ring-1 focus:ring-accent"
-                  >
-                    {r.year}
-                  </button>
-                  {r.depleted ? (
-                    // Shape and label, not colour alone — the flag has to survive
-                    // a colour-blind reader and a greyscale print of the report.
-                    <span
-                      aria-label="Accounts exhausted"
-                      title="Accounts exhausted — this year's figure is money that does not exist"
-                      className="ml-1 font-semibold text-crit"
-                    >
-                      !
-                    </span>
-                  ) : null}
-                </td>
-                <Td align="left" tone="text-ink-3">
-                  {r.ageLabel}
-                </Td>
-                <Td>{fmt.format(r.income)}</Td>
-                <Td>{fmt.format(r.portfolioDraw)}</Td>
-                <Td>{fmt.format(r.fixed.taxes)}</Td>
-                <Td>{fmt.format(r.fixed.liabilities)}</Td>
-                <Td>{fmt.format(r.fixed.savings)}</Td>
-                <Td>{fmt.format(r.fixed.insurance + r.fixed.realEstate + r.fixed.other)}</Td>
-                <Td tone="font-medium text-ink">{fmt.format(r.available)}</Td>
+      {view === "plan" ? (
+        <div className="overflow-x-auto rounded-lg border border-hair bg-card">
+          <table className="min-w-full text-sm">
+            <caption className="sr-only">
+              Month-by-month cash flow for every plan year: income and the portfolio draw that tops
+              it up, the costs already committed, and what is left to live on
+            </caption>
+            <thead className="text-xs uppercase text-ink-3">
+              <tr>
+                <Th align="left">Year</Th>
+                <Th align="left">Age</Th>
+                <Th>Income</Th>
+                {/* Sits WITH Income, ahead of the costs, because it is money in.
+                    Sitting among the cost columns it would read as a fifth cost
+                    and the row would still not add up. In this order it does:
+                    income + draw − taxes − debt − savings − other = available,
+                    which is why the column needs no note explaining its sign. */}
+                <Th>Portfolio draw</Th>
+                <Th>Taxes</Th>
+                <Th>Debt</Th>
+                <Th>Savings</Th>
+                <Th>Other</Th>
+                <Th>Available</Th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="text-ink">
+              {rows.map((r) => (
+                <tr key={r.year} className={r.year === selected.year ? "bg-accent-wash" : undefined}>
+                  <td className="border-b border-hair px-3 py-2 text-left">
+                    <button
+                      type="button"
+                      onClick={() => onYearClick(r.year)}
+                      title={`Show ${r.year} above`}
+                      className="rounded-sm text-ink hover:text-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                    >
+                      {r.year}
+                    </button>
+                    {r.depleted ? (
+                      // Shape and label, not colour alone — the flag has to survive
+                      // a colour-blind reader and a greyscale print of the report.
+                      <span
+                        aria-label="Accounts exhausted"
+                        title="Accounts exhausted — this year's figure is money that does not exist"
+                        className="ml-1 font-semibold text-crit"
+                      >
+                        !
+                      </span>
+                    ) : null}
+                  </td>
+                  <Td align="left" tone="text-ink-3">
+                    {r.ageLabel}
+                  </Td>
+                  <Td>{fmt.format(r.income)}</Td>
+                  <Td>{fmt.format(r.portfolioDraw)}</Td>
+                  <Td>{fmt.format(r.fixed.taxes)}</Td>
+                  <Td>{fmt.format(r.fixed.liabilities)}</Td>
+                  <Td>{fmt.format(r.fixed.savings)}</Td>
+                  <Td>{fmt.format(r.fixed.insurance + r.fixed.realEstate + r.fixed.other)}</Td>
+                  <Td tone="font-medium text-ink">{fmt.format(r.available)}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="overflow-x-auto rounded-lg border border-hair bg-card">
+            <table className="min-w-full text-sm">
+              <caption className="sr-only">
+                {selected.year} month by month: what comes in, what is already committed, what is
+                left to live on, and the running cash-flow total each month closes at
+              </caption>
+              <thead className="text-xs uppercase text-ink-3">
+                <tr>
+                  <Th align="left">Month</Th>
+                  <Th>Income</Th>
+                  {/* Same order as the year table above, and for the same reason:
+                      money in sits ahead of the costs, so the row reads left to
+                      right as the arithmetic that produces Net. */}
+                  <Th>Portfolio draw</Th>
+                  <Th>Taxes</Th>
+                  <Th>Debt</Th>
+                  <Th>Savings</Th>
+                  <Th>Other</Th>
+                  <Th>Living</Th>
+                  <Th>Net</Th>
+                  <Th>Cash on hand</Th>
+                </tr>
+              </thead>
+              <tbody className="text-ink">
+                {monthRows.map((m) => (
+                  <tr key={m.month} data-testid="month-row">
+                    <Td align="left" tone="text-ink-3">
+                      {m.label}
+                    </Td>
+                    <Td>{fmt.format(m.income)}</Td>
+                    <Td>{fmt.format(m.portfolioDraw)}</Td>
+                    <Td>{fmt.format(m.taxes)}</Td>
+                    {/* Printed exactly as the allocator returned it. A
+                        mid-year-originated entity-owned loan really does produce
+                        negative debt months, and clamping one to zero would turn
+                        a row that reconciles into one that silently does not. */}
+                    <Td>{fmt.format(m.debt)}</Td>
+                    <Td>{fmt.format(m.savings)}</Td>
+                    <Td>{fmt.format(m.other)}</Td>
+                    <Td>{fmt.format(m.living)}</Td>
+                    <Td tone={m.net < 0 ? "text-crit" : "text-ink-2"}>{fmt.format(m.net)}</Td>
+                    <Td tone={m.cashOnHand < 0 ? "font-medium text-crit" : "font-medium text-ink"}>
+                      {fmt.format(m.cashOnHand)}
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* VISIBLE on purpose, not an sr-only caption. "Cash on hand" opens at
+              the household's liquid balance and then carries this table's own net
+              forward — it adds the portfolio draw (money LEAVING those same
+              accounts) and subtracts savings (money ENTERING them), and never adds
+              growth. In a drawdown year it therefore runs high by roughly the
+              whole year's draw. It answers "is the month short?", not "what is in
+              the account?", and an advisor reading it as a balance would overstate
+              the client's liquid position. */}
+          <p className="px-1 text-[11px] text-ink-3" data-testid="cash-on-hand-note">
+            Cash on hand is a running cash-flow total, not an account balance — it opens at this
+            household&apos;s liquid savings and carries each month&apos;s net forward. It ignores
+            growth and treats a portfolio withdrawal as money in, so it shows whether a month is
+            short, not what the accounts hold.
+          </p>
+
+          {/* Only in the years it is true of. `net` subtracts a surplus-spending
+              term that has no column of its own, so those rows genuinely do not
+              add up across the columns shown. Discretionary spend is zero on most
+              plans, and an always-on footnote would read as true of every year. */}
+          {selected.split.surplusSpent > 0 ? (
+            <p className="px-1 text-[11px] text-ink-3" data-testid="surplus-spent-note">
+              In {selected.year} the plan also spends {fmt.format(selected.split.surplusSpent)} of
+              surplus. That comes out of Net without a column of its own, so these rows will not
+              add across.
+            </p>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 });

@@ -90,7 +90,13 @@ vi.mock("@/components/charts/solver-monthly-cash-flow-chart", () => ({
 // so the assertions can tell a wired-up panel from one handed the empty array
 // the other sub-tabs pass or a dead callback — same reasoning as the
 // withdrawal-panel mock above.
-vi.mock("../solver-monthly-cash-flow-panel", () => ({
+vi.mock("../solver-monthly-cash-flow-panel", async (importActual) => ({
+  // `selectMonthlyRow` keeps its REAL implementation. It is the panel's own
+  // year-selection rule and this panel's month lookup runs through it, so a stub
+  // would let a wrong-year regression pass this file unseen. Only the component
+  // is replaced.
+  selectMonthlyRow: (await importActual<typeof import("../solver-monthly-cash-flow-panel")>())
+    .selectMonthlyRow,
   SolverMonthlyCashFlowPanel: ({
     rows,
     basis,
@@ -149,6 +155,12 @@ const workingTree = {
     dateOfBirth: "1960-01-01",
   },
   accounts: [],
+  // The month allocator reads all three lists to find each row's chosen payment
+  // month. They are required on ClientData, so a real working tree always has
+  // them; this stub predates the allocator and needs them spelled out.
+  incomes: [],
+  expenses: [],
+  liabilities: [],
   // The Monthly sub-tab's row builder deflates every figure to plan-start
   // dollars, so it reads these two off the working tree.
   planSettings: { inflationRate: 0.03, planStartYear: 2026 },
@@ -161,11 +173,13 @@ const withdrawalProjection = [2026, 2027].map(
     ({
       year,
       ages: { client: 66 },
-      income: { socialSecurity: 0, salaries: 0 },
+      income: { socialSecurity: 0, salaries: 0, bySource: {} },
       withdrawals: { byAccount: {}, total: 0 },
       accountLedgers: {},
       // Every bucket the Monthly row builder reads, not just `living`: a
       // missing one makes that fixed cost NaN, and a missing `savings` throws.
+      // `bySource`/`byLiability` are for the month ALLOCATOR, which walks them to
+      // place each row in its chosen month — it throws outright on undefined.
       expenses: {
         living: 0,
         taxes: 0,
@@ -174,6 +188,8 @@ const withdrawalProjection = [2026, 2027].map(
         realEstate: 0,
         other: 0,
         discretionary: 0,
+        bySource: {},
+        byLiability: {},
       },
       savings: { byAccount: {}, total: 0, employerTotal: 0 },
       portfolioAssets: { liquidTotal: 0 },
