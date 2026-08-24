@@ -16,6 +16,13 @@ export interface BracketTier {
   from: number;       // inclusive lower bound
   to: number | null;  // exclusive upper bound; null for top bracket
   rate: number;       // e.g., 0.22 for 22%
+  /** The rate this tier carried BEFORE any hypothetical rate stressor, set
+   *  only by `applyTaxRateStress` and absent everywhere else. `baseRate ?? rate`
+   *  is the tier's stable IDENTITY, which is a different question from what it
+   *  charges: a Roth "fill up the 22% bracket" conversion names the tier it
+   *  targets by rate, so matching on `rate` alone loses that tier the moment a
+   *  stressor moves it — silently, because both lookup sites bail on a miss. */
+  baseRate?: number;
 }
 
 export type BracketsByStatus = Record<FilingStatus, BracketTier[]>;

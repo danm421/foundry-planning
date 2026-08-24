@@ -16,7 +16,7 @@ import { basePlanSettings, buildClientData, FIXTURE_TAX_PARAMS, sampleAccounts }
 import { runMonteCarlo } from "../monteCarlo/run";
 import { createReturnEngine } from "../monteCarlo/returns";
 import { resolveThresholdParams } from "@/lib/solver/threshold-params";
-import { STATUTORY_MID_RATE, STATUTORY_TOP_RATE } from "@/lib/tax/rate-stress";
+import { STATUTORY_MID_RATE, STATUTORY_TOP_RATE } from "@/lib/tax/constants";
 import type { Account, ClientData, EntitySummary, ProjectionYear } from "../types";
 import type { TaxYearParameters } from "@/lib/tax/types";
 import type { TrustTaxBreakdown } from "../trust-tax/types";
@@ -60,6 +60,11 @@ function tree(
     },
   });
 }
+
+/** The 1041 schedule's fourth tier, which projection.ts turns into the trust's
+ *  NIIT floor. Read off the fixture rather than retyped, so a fixture edit
+ *  cannot leave the assertions pinned to a number that is no longer there. */
+const TRUST_NIIT_FLOOR = TRUST_ROWS[0].trustIncomeBrackets[3].from;
 
 const TRUST_ID = "trust-nongrantor";
 
@@ -182,13 +187,35 @@ describe("tax rates rise — through runProjection", () => {
     }
   });
 
-  it("raises every ordinary rate the engine used by exactly the dial", () => {
-    const used = bracketsAt(stressed, START).incomeBrackets.married_joint;
-    const base = bracketsAt(plain, START).incomeBrackets.married_joint;
-    expect(used.length).toBeGreaterThan(0);
-    expect(used.length).toBe(base.length);
-    used.forEach((tier, i) => {
-      expect(tier.rate).toBeCloseTo(base[i].rate + POINTS, 10);
+  it("raises every ordinary rate the engine used by exactly the dial — ALL four filing statuses", () => {
+    // rate-stress.ts loops all four; the household here is married_joint, so
+    // the other three would never have been checked by an assertion that read
+    // only the status in play. A transform that fell out of its loop early
+    // would leave a single or head-of-household plan silently unstressed.
+    const usedParams = bracketsAt(stressed, START);
+    const baseParams = bracketsAt(plain, START);
+    for (const fs of ["married_joint", "single", "head_of_household", "married_separate"] as const) {
+      const used = usedParams.incomeBrackets[fs];
+      const base = baseParams.incomeBrackets[fs];
+      expect(used.length).toBeGreaterThan(0);
+      expect(used.length).toBe(base.length);
+      used.forEach((tier, i) => {
+        expect(tier.rate).toBeCloseTo(base[i].rate + POINTS, 10);
+      });
+    }
+  });
+
+  it("keeps stressing years far past the last seeded row — the dial has no end year", () => {
+    // "raises federal tax from the start year forward" stops at 2037 because the
+    // household owes no federal tax after that, which makes a TAX comparison
+    // useless — but the RATES still resolve.
+    // Without this, a transform that quietly stopped applying (an end year, an
+    // inflation-horizon cutoff) would go unnoticed beyond 2037.
+    const late = bracketsAt(stressed, 2040).incomeBrackets.married_joint;
+    const lateBase = bracketsAt(plain, 2040).incomeBrackets.married_joint;
+    expect(late.length).toBeGreaterThan(0);
+    late.forEach((tier, i) => {
+      expect(tier.rate).toBeCloseTo(lateBase[i].rate + POINTS, 10);
     });
   });
 
@@ -253,6 +280,11 @@ describe("the trust schedule rises without its thresholds moving", () => {
     // asserts on the floor the trust pass actually charged.)
     expect(used.trustIncomeBrackets.length).toBeGreaterThanOrEqual(4);
 
+    // ⚠️ This YEAR-OVER-YEAR arm holds only because resolver.ts passes trust
+    // brackets through UNINFLATED, under a pre-existing `TODO(Task 4/5)`. When
+    // trust inflation lands this will red for a CORRECT reason — the fix then
+    // is to DELETE this arm, not to loosen it. The same-year arm below already
+    // covers the property this test is actually about.
     expect(used.trustIncomeBrackets.map((t) => t.from))
       .toEqual(before.trustIncomeBrackets.map((t) => t.from));
     expect(used.trustIncomeBrackets.map((t) => t.from))
@@ -261,7 +293,7 @@ describe("the trust schedule rises without its thresholds moving", () => {
       .toEqual(base.trustCapGainsBrackets.map((t) => [t.from, t.to]));
 
     // The derived figure itself — the 37% floor.
-    expect(used.trustIncomeBrackets[3].from).toBe(16300);
+    expect(used.trustIncomeBrackets[3].from).toBe(TRUST_NIIT_FLOOR);
   });
 
   it("raises the trust rates, leaving the structural 0% band at zero", () => {
@@ -300,12 +332,17 @@ describe("the trust schedule rises without its thresholds moving", () => {
     // Read the floor the pass actually charged back out of the NIIT line, and
     // pin it to the schedule's fourth tier. A transform that nudged `from`
     // would land here even though every rate assertion stayed green.
-    const niitRate = bracketsAt(trustStressed, START).niitRate;
-    expect(niitRate).toBeGreaterThan(0);
-    const floorCharged = (b: TrustTaxBreakdown) =>
+    // Each arm divides by ITS OWN niitRate. The stressor cannot reach niitRate
+    // today, so one shared rate happened to be correct — but it coupled a
+    // plain-arm assertion to the stressed resolution for no reason.
+    const usedRate = bracketsAt(trustStressed, START).niitRate;
+    const baseRate = bracketsAt(trustPlain, START).niitRate;
+    expect(usedRate).toBeGreaterThan(0);
+    expect(baseRate).toBeGreaterThan(0);
+    const floorCharged = (b: TrustTaxBreakdown, niitRate: number) =>
       b.retainedOrdinary + b.retainedDividends + b.recognizedCapGains - b.niit / niitRate;
-    expect(floorCharged(used)).toBeCloseTo(16300, 6);
-    expect(floorCharged(base)).toBeCloseTo(16300, 6);
+    expect(floorCharged(used, usedRate)).toBeCloseTo(TRUST_NIIT_FLOOR, 6);
+    expect(floorCharged(base, baseRate)).toBeCloseTo(TRUST_NIIT_FLOOR, 6);
 
     // Same NIIT base on both sides — START is the FIRST stressed year, so the
     // trust's income for it comes off unstressed balances. (By 2031 the extra
@@ -351,6 +388,16 @@ describe("the Thresholds panel and the engine cannot drift", () => {
       .toEqual(engine.incomeBrackets.married_joint.map((t) => t.rate));
     expect(panel.incomeBrackets.married_joint.map((t) => [t.from, t.to]))
       .toEqual(engine.incomeBrackets.married_joint.map((t) => [t.from, t.to]));
+
+    // The stressed arm above compares cap-gains fields too; without the same
+    // here, a drift in the UNSTRESSED preferential thresholds (the panel and
+    // the engine inflating on different rates, say) would go uncaught.
+    const panelCg = panel.capGainsBrackets.married_joint;
+    const engineCg = engine.capGainsBrackets.married_joint;
+    expect(panelCg.zeroPctTop).toBe(engineCg.zeroPctTop);
+    expect(panelCg.fifteenPctTop).toBe(engineCg.fifteenPctTop);
+    expect(panelCg.midRate).toBeUndefined();     // both sides statutory-fallback
+    expect(engineCg.midRate).toBeUndefined();
   });
 });
 
@@ -389,5 +436,81 @@ describe("Monte Carlo trials see the stressor", () => {
     // equal the plain projection instead.
     expect(stressedMc.endingLiquidAssets[0]).toBeCloseTo(liquidEnding(stressed), 6);
     expect(plainMc.endingLiquidAssets[0]).toBeCloseTo(liquidEnding(plain), 6);
+  });
+});
+
+describe("a fill-up-bracket Roth conversion survives the stressor", () => {
+  // The defect this pins is invisible to a grep: projection.ts and
+  // roth-conversions.ts identify the bracket a conversion targets by matching
+  // `fillUpBracket` against the tier's RATE, and this stressor is the first
+  // thing in the app that ever moves a rate. Both sites bail silently on a
+  // miss — `continue` and `return 0` — so the conversion just stops happening.
+  //
+  // The right answer is that NOTHING about the conversion changes: `bumpTiers`
+  // copies `from`/`to` verbatim, so the bracket's dollar ceiling is identical
+  // stressed or not. Only the tax charged on those dollars rises. That makes
+  // "stressed converts the same taxable amount as plain" the assertion.
+  //
+  // Target 0.12, not 0.22: FIXTURE_TAX_PARAMS' married_joint schedule is
+  // [0.10, 0.12, 0.22] and the 0.22 tier is the TOP one, with `to: null` —
+  // both call sites also bail on `tier.to == null`, so a 0.22 fixture would
+  // convert nothing in EITHER arm and the test would pass while proving
+  // nothing.
+  // 2039, not START: both salaries have ended by 2038, so this is the first
+  // year the household has real headroom under the 12% ceiling. At START the
+  // plain arm converts $0 — the vacuity guard below caught exactly that, and a
+  // test written at START would have compared 0 to 0 in every arm.
+  const CONV_ID = "conv-fill";
+  const CONV_YEAR = 2039;
+
+  function fillTree(overrides?: Partial<ClientData["planSettings"]>): ClientData {
+    const base = tree(overrides);
+    return {
+      ...base,
+      rothConversions: [{
+        id: CONV_ID,
+        name: "Fill the 12% bracket",
+        destinationAccountId: "acct-roth",
+        sourceAccountIds: ["acct-401k"],
+        conversionType: "fill_up_bracket",
+        fillUpBracket: 0.12,
+        fixedAmount: 0,
+        startYear: CONV_YEAR,
+        endYear: CONV_YEAR,
+        indexingRate: 0,
+      }],
+    };
+  }
+
+  /** The taxable dollars the projection actually converted that year. Returns
+   *  0 when the conversion never ran — which is exactly the defect's signature,
+   *  so it must be a number, not undefined. */
+  function convertedAt(p: ProjectionYear[], year: number): number {
+    return yearOf(p, year).rothConversions?.find((c) => c.id === CONV_ID)?.taxable ?? 0;
+  }
+
+  const fillPlain = runProjection(fillTree());
+
+  it("converts something at all without a stressor (guards both tests below)", () => {
+    // Without this, a fixture whose income already overflows the 12% bracket
+    // would make every assertion below 0 === 0.
+    expect(convertedAt(fillPlain, CONV_YEAR)).toBeGreaterThan(0);
+  });
+
+  it("converts the same dollars when the dial moves a rate off the schedule", () => {
+    // +3 points: the schedule becomes [0.13, 0.15, 0.25] and NOTHING equals
+    // 0.12 any more. Pre-fix the `find` misses, the conversion is skipped
+    // entirely, and this reads 0.
+    const fillStressed = runProjection(fillTree({ taxRateStress: { points: 0.03, startYear: START } }));
+    expect(convertedAt(fillStressed, CONV_YEAR)).toBeCloseTo(convertedAt(fillPlain, CONV_YEAR), 6);
+  });
+
+  it("does not retarget onto a different bracket when the dial equals a bracket gap", () => {
+    // The nastier half. 0.10 -> 0.12 is a gap of exactly 0.02, so +2 points
+    // makes the EX-10% tier carry rate 0.12 and the `find` matches it. Pre-fix
+    // the conversion fills the 24,800 ceiling instead of the 100,800 one and
+    // returns a smaller, entirely plausible number — no error, no warning.
+    const fillStressed = runProjection(fillTree({ taxRateStress: { points: 0.02, startYear: START } }));
+    expect(convertedAt(fillStressed, CONV_YEAR)).toBeCloseTo(convertedAt(fillPlain, CONV_YEAR), 6);
   });
 });

@@ -10,10 +10,7 @@
 // contribution limits are all left alone.
 
 import type { TaxYearParameters, BracketTier, CapGainsTier, FilingStatus } from "./types";
-
-/** IRC §1(h) preferential rates, applied when a tier carries no override. */
-export const STATUTORY_MID_RATE = 0.15;
-export const STATUTORY_TOP_RATE = 0.20;
+import { STATUTORY_MID_RATE, STATUTORY_TOP_RATE } from "./constants";
 
 /** Ceiling on the dial, as a decimal fraction (0.20 = twenty points). */
 export const MAX_RATE_STRESS_POINTS = 0.20;
@@ -51,7 +48,17 @@ function bumpTiers(tiers: BracketTier[], points: number): BracketTier[] {
   // `from`/`to` are copied verbatim. projection.ts derives the trust NIIT
   // threshold from trustIncomeBrackets[3].from, so moving a threshold here
   // would silently move a threshold three modules away.
-  return tiers.map((t) => ({ from: t.from, to: t.to, rate: bump(t.rate, points) }));
+  //
+  // `baseRate` preserves the tier's identity for consumers that address a
+  // bracket BY its statutory rate — see BracketTier's own comment. `?? t.rate`
+  // rather than a bare `t.rate` so a hypothetical second pass keeps the
+  // original, not the once-stressed value.
+  return tiers.map((t) => ({
+    from: t.from,
+    to: t.to,
+    rate: bump(t.rate, points),
+    baseRate: t.baseRate ?? t.rate,
+  }));
 }
 
 function bumpCapGainsTier(tier: CapGainsTier, points: number): CapGainsTier {
@@ -76,7 +83,13 @@ export function applyTaxRateStress(
   year: number,
 ): TaxYearParameters {
   const points = effectivePoints(stress);
-  if (!stress || points === 0 || year < stress.startYear) return params;
+  // `year < undefined` and `year < NaN` are both FALSE, so a payload missing a
+  // usable startYear would stress EVERY year, retroactively. The solver's zod
+  // schema rejects that, but `applyChanges` writes a stored scenario value onto
+  // planSettings without re-validating it, so the guard belongs here too —
+  // symmetric with effectivePoints' own non-finite check.
+  if (!stress || points === 0 || !Number.isFinite(stress.startYear)) return params;
+  if (year < stress.startYear) return params;
 
   const incomeBrackets = { ...params.incomeBrackets };
   const capGainsBrackets = { ...params.capGainsBrackets };
@@ -102,6 +115,16 @@ export function applyTaxRateStress(
  * shares `calcCapGainsTax` with the regular one, stressed rates riding on the
  * params would otherwise reach it for free. Stripping them here keeps amt.ts
  * itself untouched.
+ *
+ * ⚠️ KNOWN LIMIT — this strips ANY tier-carried preferential rate, because it
+ * cannot tell a stressor's rate from a real one. Seeded `cap_gains_brackets`
+ * rows carry neither field today (every unstressed tier resolves midRate and
+ * topRate as undefined), so nothing is lost. But the day a genuine statutory
+ * change is seeded into those columns, AMT would silently revert to 15/20 while
+ * regular tax used the new rates. Closing that needs the tier to carry its
+ * pre-stress rates the way BracketTier.baseRate does; it is filed in
+ * future-work/tax-engine.md rather than built here, because no seeded row can
+ * trigger it yet.
  */
 export function withStatutoryRates(tier: CapGainsTier): CapGainsTier {
   if (tier.midRate === undefined && tier.topRate === undefined) return tier;

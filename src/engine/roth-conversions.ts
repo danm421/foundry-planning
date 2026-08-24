@@ -66,6 +66,37 @@ export interface RothConversionsResult {
 // Main Function
 // ============================================================================
 
+/**
+ * The taxable-income ceiling a "fill up the N% bracket" conversion aims at, or
+ * null when the target bracket is unusable.
+ *
+ * ONE copy of a rule that used to live in two places — projection.ts sizes the
+ * conversion and this module converges on it, and both had to find the same
+ * tier the same way. When the "tax rates rise" stressor first made rates
+ * mutable, both copies broke identically, which is the argument for the helper.
+ *
+ * Two things it gets right that a bare `.find()` on the rate does not:
+ * - **Identity, not charge.** `baseRate ?? rate` — a stressor rewrites `rate`,
+ *   so a conversion saved against "the 22% bracket" would otherwise match
+ *   nothing (and be skipped) or match whichever tier the dial moved ONTO 22%.
+ *   Bracket THRESHOLDS never move under the stressor, so the ceiling must not.
+ * - **The $1 backoff.** `findMarginalTier` uses `base < top`, so a base landing
+ *   exactly on `tier.to` is classified into the NEXT bracket — a perfect
+ *   "fill 22%" would read as "24% bracket, $0 into it" on the advisor's
+ *   bracket table.
+ *
+ * Returns null for an unknown target rate and for the TOP tier, which has no
+ * upper bound to fill to.
+ */
+export function fillUpBracketCeiling(
+  tiers: BracketTier[],
+  targetRate: number,
+): number | null {
+  const tier = tiers.find((t) => Math.abs((t.baseRate ?? t.rate) - targetRate) < 1e-9);
+  if (!tier || tier.to == null) return null;
+  return tier.to - 1;
+}
+
 export function applyRothConversions(input: RothConversionsInput): RothConversionsResult {
   const {
     conversions,
@@ -294,18 +325,8 @@ function _resolveTargetAmount(
         taxDeduction,
       } = input;
       if (ordinaryBrackets == null || conv.fillUpBracket == null) return 0;
-      const tier = ordinaryBrackets.find(
-        (t) => Math.abs(t.rate - conv.fillUpBracket!) < 1e-9,
-      );
-      if (!tier || tier.to == null) return 0;
-
-      // Aim for $1 short of tier.to. findMarginalTier uses `base < top` (strict
-      // less-than), so a base landing exactly at tier.to gets classified into
-      // the NEXT bracket — making a perfect "fill 22%" read as "24% bracket
-      // with $0 into it" on the advisor's bracket table. The $1 backoff keeps
-      // the final base inside the targeted tier so the marginal-bracket
-      // display matches advisor intent.
-      const ceiling = tier.to - 1;
+      const ceiling = fillUpBracketCeiling(ordinaryBrackets, conv.fillUpBracket);
+      if (ceiling == null) return 0;
 
       // Preferred path: caller supplied a `computeIncomeTaxBaseWithRothTaxable`
       // closure that returns the year's true `incomeTaxBase` for any hypothetical
