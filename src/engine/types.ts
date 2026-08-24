@@ -515,6 +515,10 @@ export interface ClientData {
    *  installment-sale principal (basis recovery + §1(h) LTCG) per IRC §453.
    *  Engine consumption arrives in spec 2025-04-notes-receivable-installment. */
   notesReceivable?: NoteReceivable[];
+  /** Disability income policies. Client-level facts, not scenario-scoped —
+   *  they carry no scenario_id and are absent from promote-table-registry.
+   *  Consumed only when `planSettings.disabilityEvent` is set. */
+  disabilityPolicies?: DisabilityPolicy[];
   /** Per-person Medicare coverage overrides. Empty/undefined = use defaults for all enrolled persons. */
   medicareCoverage?: MedicareCoverage[];
   /** Annual rate at which Medicare premiums inflate forward from their base year.
@@ -776,6 +780,50 @@ export interface LifeInsurancePayout {
   faceValue: number;
 }
 
+/** A disability income policy. Unlike life insurance this is NOT an account —
+ *  it holds no value and never reaches the balance sheet. It pays only while a
+ *  `planSettings.disabilityEvent` is active for the insured person.
+ *
+ *  `shortTerm` / `longTerm` are null when that layer is absent, so the engine
+ *  never has to check a flag AND a block. The DB's has_short_term /
+ *  has_long_term booleans collapse into these nulls at the loader boundary. */
+export interface DisabilityPolicy {
+  id: string;
+  name: string;
+  /** No "joint" — a disability happens to a person. */
+  insured: "client" | "spouse";
+  /** "salary" derives covered earnings from the insured's salary income in the
+   *  disability start year; "manual" uses `coveredEarningsAmount`. */
+  coveredEarningsMode: "salary" | "manual";
+  /** Today's-dollars figure. Required when mode is "manual"; ignored otherwise. */
+  coveredEarningsAmount: number | null;
+  shortTerm: {
+    eliminationDays: number;
+    benefitPct: number;
+    /** Measured FROM THE DATE OF DISABILITY, not from the first paid day.
+     *  Paid weeks = durationWeeks − eliminationDays/7. */
+    durationWeeks: number;
+    monthlyMax: number | null;
+  } | null;
+  longTerm: {
+    eliminationDays: number;
+    benefitPct: number;
+    monthlyMax: number | null;
+    benefitPeriod:
+      | { mode: "to_age"; age: number }
+      | { mode: "to_ssnra" }
+      | { mode: "years"; years: number }
+      | { mode: "lifetime" };
+  } | null;
+  /** True when the employer paid the premium (benefit is taxable ordinary
+   *  income). False when the insured paid with after-tax dollars (tax-free). */
+  benefitTaxable: boolean;
+  /** Indexes the benefit from the SECOND disability year onward. 0 = fixed. */
+  colaRate: number;
+  annualPremium: number;
+  premiumPayer: "employer" | "insured";
+}
+
 export interface Account {
   id: string;
   name: string;
@@ -891,6 +939,50 @@ export interface Account {
   businessTaxTreatment?: "qbi" | "ordinary" | "non_taxable" | null;
 }
 
+/** Stress test: one person is disabled from `startYear` through `endYear`.
+ *
+ *  `endYear` is the LAST disabled year (inclusive), matching every other
+ *  start/end window in the engine — the paycheck picks back up the following
+ *  January, the policy benefit stops paying, and a waived premium resumes
+ *  being billed. Omit it (or null) for a disability that never ends, which is
+ *  the original and still the default behavior. */
+export interface DisabilityEvent {
+  person: "client" | "spouse";
+  startYear: number;
+  /** Inclusive last disabled year. Null / absent = never recovers. */
+  endYear?: number | null;
+}
+
+/** A hole punched in a time-windowed row: it pays nothing from `fromYear`
+ *  through `throughYear` (both inclusive), then resumes on its original terms.
+ *  `throughYear: null` = never resumes.
+ *
+ *  Honored inside `itemProrationGate`, which every consumer of incomes,
+ *  expenses and savings rules runs through — the cash-routing loop, the
+ *  tax-base mapping and the display totals alike. That is the whole reason the
+ *  suspension lives on the row instead of being filtered per-consumer: the
+ *  disability stress test learned the hard way that suppressing a row inside
+ *  `computeIncome` only blanks the DISPLAY while cash routing re-derives the
+ *  full paycheck from `annualAmount x growth`.
+ *
+ *  ⚠️ The one consumer that does NOT run through the gate is the deduction
+ *  mapping (`ExpenseForDeduction` in lib/tax/derive-deductions.ts), which
+ *  hand-copies expense fields and does its own window check. It carries
+ *  `suspended` too — keep it that way, or a deductible expense with a hole is
+ *  deducted straight through it in silence.
+ *
+ *  Growth is untouched by the hole: the amount still compounds from
+ *  `inflationStartYear ?? startYear`, so a salary resumes at the level it would
+ *  have reached had it never stopped.
+ *
+ *  Set only by the engine / synthesizers (today: the disability stress test).
+ *  It is not a persisted column. */
+export interface SuspensionWindow {
+  fromYear: number;
+  /** Inclusive last suspended year. Null = suspended for good. */
+  throughYear: number | null;
+}
+
 export interface Income {
   id: string;
   type: "salary" | "social_security" | "business" | "deferred" | "capital_gains" | "trust" | "other";
@@ -927,6 +1019,13 @@ export interface Income {
   /** When source = "policy", the life-insurance account whose income
    *  schedule produced this synthetic income row. */
   sourcePolicyAccountId?: string;
+  /** When set, the disability policy whose benefit produced this row. Kept
+   *  separate from `sourcePolicyAccountId` because `withSynthesizedPolicyIncome`
+   *  strips every `source === "policy"` row and re-derives from life-insurance
+   *  ACCOUNTS — a disability row caught by that filter would vanish. Disability
+   *  rows are built inside the engine, after loading, so they never meet it;
+   *  this field keeps the two provenances distinguishable regardless. */
+  sourceDisabilityPolicyId?: string;
   /** SS-specific. When unset, engine treats as "manual_amount" (legacy). */
   ssBenefitMode?: "manual_amount" | "pia_at_fra" | "no_benefit";
   /** SS-specific. Monthly PIA in today's dollars. Required when ssBenefitMode=pia_at_fra. */
@@ -961,6 +1060,8 @@ export interface Income {
   startYearRef?: string | null;
   endYearRef?: string | null;
   growthSource?: string | null;
+  /** Years this row pays nothing before resuming. See `SuspensionWindow`. */
+  suspended?: SuspensionWindow | null;
 }
 
 export interface Expense {
@@ -1022,6 +1123,10 @@ export interface Expense {
    *  floor rather than the amount. Consumed by the surplus-allocation phase in
    *  projection.ts — see `absorbingLivingRow` in ./surplus-spend. */
   absorbsRemainingCashFlow?: boolean;
+  /** Years this row costs nothing before resuming. See `SuspensionWindow`.
+   *  Today's only writer is waiver of premium on a disability policy whose
+   *  stress-test event has an end year. */
+  suspended?: SuspensionWindow | null;
 }
 
 export interface ExtraPayment {
@@ -1342,8 +1447,8 @@ export interface PlanSettings {
    *  projection year ≥ `startYear`. Applied in computeIncome before taxation. */
   ssBenefitHaircut?: { pct: number; startYear: number };
   /** Stress test: stop one person's earned income (salary + business they own)
-   *  from `startYear` forward, modeling a disability. */
-  disabilityEvent?: { person: "client" | "spouse"; startYear: number };
+   *  from `startYear` forward, modeling a disability. See `DisabilityEvent`. */
+  disabilityEvent?: DisabilityEvent;
   /** Stress test: one-time drawdown of market-exposed account balances in `year`
    *  (e.g. drawdownPct 0.30 = −30%). Applied after the growth pass. */
   marketShock?: { year: number; drawdownPct: number };

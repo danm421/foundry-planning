@@ -298,6 +298,23 @@ function makeExpense(
 }
 
 describe("deriveAboveLineFromExpenses", () => {
+  it("skips a suspended year and resumes after the hole", () => {
+    // This module is the one expense consumer that does NOT run through
+    // `itemProrationGate` — it hand-copies fields and does its own window
+    // check — so a row's suspension has to be honored here explicitly.
+    const exp = { ...makeExpense("above_line", 5000), suspended: { fromYear: 2027, throughYear: 2028 } };
+    expect(deriveAboveLineFromExpenses(2026, [exp]).aboveLine).toBe(5000);
+    expect(deriveAboveLineFromExpenses(2027, [exp]).aboveLine).toBe(0);
+    expect(deriveAboveLineFromExpenses(2028, [exp]).aboveLine).toBe(0);
+    expect(deriveAboveLineFromExpenses(2029, [exp]).aboveLine).toBe(5000);
+  });
+
+  it("never resumes when the suspension has no end", () => {
+    const exp = { ...makeExpense("above_line", 5000), suspended: { fromYear: 2027, throughYear: null } };
+    expect(deriveAboveLineFromExpenses(2026, [exp]).aboveLine).toBe(5000);
+    expect(deriveAboveLineFromExpenses(2040, [exp]).aboveLine).toBe(0);
+  });
+
   it("sums expenses tagged above_line", () => {
     const result = deriveAboveLineFromExpenses(2026, [makeExpense("above_line", 5000)]);
     expect(result.aboveLine).toBe(5000);

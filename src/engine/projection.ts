@@ -35,6 +35,7 @@ import { accrueLockedEntityShare } from "./locked-shares";
 import { computeFamilyAccountShares } from "./family-cashflow";
 import { computeGiftLedger, type GiftLedgerYear } from "./gift-ledger";
 import { computeIncome, applyDisabilityEvent } from "./income";
+import { synthesizeDisabilityBenefits } from "./disability-benefits";
 import { expandLinkedIncomes } from "./linked-income";
 import { computeExpenses } from "./expenses";
 import { computeLiabilities } from "./liabilities";
@@ -902,20 +903,34 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     | { decedent: "client" | "spouse"; estateTax: EstateTaxResult; transfers: DeathTransfer[]; dsueGenerated: number }
     | null = null;
 
-  // The disability stress is applied once, here, as a clip on the income rows —
-  // so the cash routing, the tax base, and the display totals all see the same
-  // stopped paycheck. See `applyDisabilityEvent`.
-  let currentIncomes: Income[] = applyDisabilityEvent(
-    expandLinkedIncomes(data.incomes, {
-      accountById,
-      giftEvents: data.giftEvents ?? [],
-      assetTransactions: data.assetTransactions ?? [],
+  // The disability stress is applied once, here, as a suspension window on the
+  // income rows — so the cash routing, the tax base, and the display totals all
+  // see the same stopped paycheck, and all see it resume together if the event
+  // has an end year. See `applyDisabilityEvent`.
+  //
+  // Benefits are synthesized from the SAME untouched rows, because a disability
+  // policy insures the paycheck that is about to stop. Reading earnings after
+  // the suspension yields $0 and a benefit row that pays nothing.
+  const expandedIncomes = expandLinkedIncomes(data.incomes, {
+    accountById,
+    giftEvents: data.giftEvents ?? [],
+    assetTransactions: data.assetTransactions ?? [],
+    planStartYear: planSettings.planStartYear,
+    clientFmId,
+    spouseFmId,
+  });
+  let currentIncomes: Income[] = [
+    ...applyDisabilityEvent(expandedIncomes, planSettings.disabilityEvent),
+    ...synthesizeDisabilityBenefits({
+      incomesBeforeDisability: expandedIncomes,
+      event: planSettings.disabilityEvent,
+      policies: data.disabilityPolicies ?? [],
+      client,
       planStartYear: planSettings.planStartYear,
-      clientFmId,
-      spouseFmId,
+      planEndYear: planSettings.planEndYear,
+      inflationRate: planSettings.inflationRate,
     }),
-    planSettings.disabilityEvent,
-  );
+  ];
   // Snapshot of the year's resolved `allExpenses` (data.expenses + synthetic
   // property-tax rows). Captured each iteration so the post-loop entity
   // cash-flow pass can read entity-tagged synthetic expenses.
@@ -3733,6 +3748,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         endYear: e.endYear,
         growthRate: e.growthRate,
         inflationStartYear: e.inflationStartYear,
+        // This narrowed copy is the one expense view that skips
+        // `itemProrationGate`; drop `suspended` here and a row's hole is
+        // invisible to the deduction math. See `SuspensionWindow`.
+        suspended: e.suspended,
       }));
       const isGrantorThisYear = (entityId: string) => effectiveIsGrantor(entityId, year);
 

@@ -5,9 +5,10 @@ import {
   basePlanSettings,
   sampleAccounts,
   sampleIncomes,
+  FIXTURE_TAX_PARAMS,
 } from "./fixtures";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
-import type { Account, ProjectionYear } from "../types";
+import type { Account, DisabilityPolicy, ProjectionYear } from "../types";
 
 // The disability stress must behave like the person's paycheck genuinely stopped:
 // no cash lands, nothing is taxed, and the resulting deficit is funded from the
@@ -33,16 +34,34 @@ const checking: Account = {
 
 const DISABILITY_YEAR = 2028;
 
-function run(withDisability: boolean): ProjectionYear[] {
+function run(
+  withDisability: boolean,
+  policies: DisabilityPolicy[] = [],
+  taxMode: "flat" | "bracket" = "flat",
+  /** Last disabled year. Null = the disability never ends. */
+  recoversAfter: number | null = null,
+): ProjectionYear[] {
   return runProjection(
     buildClientData({
       accounts: [...sampleAccounts, checking],
-      planSettings: withDisability
-        ? {
-            ...basePlanSettings,
-            disabilityEvent: { person: "client", startYear: DISABILITY_YEAR },
-          }
-        : basePlanSettings,
+      disabilityPolicies: policies,
+      // Bracket mode needs real parameter rows: with none, the projection warns
+      // and falls back to flat (`projection.ts` — "Bracket mode selected but no
+      // tax_year_parameters rows available").
+      taxYearRows: taxMode === "bracket" ? FIXTURE_TAX_PARAMS : [],
+      planSettings: {
+        ...basePlanSettings,
+        taxEngineMode: taxMode,
+        ...(withDisability
+          ? {
+              disabilityEvent: {
+                person: "client",
+                startYear: DISABILITY_YEAR,
+                endYear: recoversAfter,
+              },
+            }
+          : {}),
+      },
     }),
   );
 }
@@ -161,5 +180,219 @@ describe("disability stress — the disabled person's earned income truly stops"
       baseRow.income.bySource[ssId],
       2,
     );
+  });
+});
+
+// ── Benefits paid under the stress test ──────────────────────────────────────
+// Group LTD with a matching 13-week STD layer: the classic 7-day/90-day pairing
+// that hands off from short term to long term with no gap.
+const workPolicy: DisabilityPolicy = {
+  id: "dp-work",
+  name: "Group disability",
+  insured: "client",
+  coveredEarningsMode: "salary",
+  coveredEarningsAmount: null,
+  shortTerm: { eliminationDays: 7, benefitPct: 0.6, durationWeeks: 13, monthlyMax: null },
+  longTerm: {
+    eliminationDays: 90,
+    benefitPct: 0.6,
+    monthlyMax: 10_000,
+    benefitPeriod: { mode: "to_age", age: 65 },
+  },
+  benefitTaxable: true,
+  colaRate: 0,
+  annualPremium: 0,
+  premiumPayer: "employer",
+};
+
+const BENEFIT_ID = `disability-benefit-${workPolicy.id}`;
+
+// Benefit arithmetic, derived from the fixture rather than read back out of the
+// engine. John's salary is 150,000 growing 3%/yr (`sampleIncomes`), so his 2028
+// pay is 150,000 × 1.03² = 159,135 — read PRE-clip, because the policy insures
+// the paycheck that is about to stop. 60% of a month of that is the benefit,
+// comfortably under the 10,000 LTD cap.
+const MONTHLY_BENEFIT = ((150_000 * 1.03 ** 2) / 12) * 0.6; // 7,956.75
+// 2028 covers 11.802876 months: the 13-week STD layer net of its 7-day
+// elimination, then LTD from day 90 to year end.
+const BENEFIT_2028 = MONTHLY_BENEFIT * 11.802876; // 93,912.52
+// The whole claim runs from the 7-day elimination to age 65. John was born
+// 1970-01-01, so coverage ends at month 84 of the claim (January 2035): the
+// 11.802876 months of 2028 plus six full years, 2029 through 2034.
+const BENEFIT_TOTAL = MONTHLY_BENEFIT * (11.802876 + 6 * 12); // ~666,798
+
+/** The numbers a policy is supposed to move, year by year. */
+function planSeries(rows: ProjectionYear[]) {
+  return rows.map((r) => [
+    r.year,
+    r.totalIncome,
+    r.expenses.taxes,
+    r.portfolioAssets.liquidTotal,
+  ]);
+}
+
+describe("disability benefits in the projection", () => {
+  it("credits the benefit to household checking in the disability year", () => {
+    const rows = run(true, [workPolicy]);
+    const credited = incomeCredited(yearOf(rows, DISABILITY_YEAR), BENEFIT_ID);
+    expect(credited).toBeCloseTo(BENEFIT_2028, 0);
+  });
+
+  it("pays nothing when the stress test is off, leaving the plan untouched", () => {
+    const withPolicies = run(false, [workPolicy]);
+    const without = run(false, []);
+    // A policy on file must not change a plan where nobody is disabled.
+    expect(planSeries(withPolicies)).toEqual(planSeries(without));
+    expect(
+      withPolicies.reduce((sum, r) => sum + incomeCredited(r, BENEFIT_ID), 0),
+    ).toBe(0);
+    // Control: the same series DOES move when the stress test is on, so the
+    // equality above is a real comparison and not two empty/constant arrays.
+    expect(planSeries(run(true, [workPolicy]))).not.toEqual(planSeries(without));
+  });
+
+  it("leaves the household materially better off than the same disability with no coverage", () => {
+    const covered = run(true, [workPolicy]);
+    const bare = run(true, []);
+    const last = covered.length - 1;
+    // "Materially" has to mean something, or a one-cent difference passes a test
+    // named for a benefit worth ~95k a year. Floor it at BENEFIT_TOTAL: every
+    // benefit dollar the policy pays is a portfolio withdrawal the bare plan has
+    // to make instead, so by the last plan year the covered household must be
+    // ahead by at least the nominal benefit — before any of the 20+ years of
+    // 4-7% growth those un-withdrawn dollars then earn.
+    expect(covered[last].portfolioAssets.liquidTotal).toBeGreaterThan(
+      bare[last].portfolioAssets.liquidTotal + BENEFIT_TOTAL,
+    );
+  });
+
+  it("puts an employer-paid benefit in the taxed base and an employee-paid one in the tax-exempt bucket", () => {
+    const taxable = run(true, [workPolicy]);
+    const taxFree = run(true, [{ ...workPolicy, benefitTaxable: false }]);
+    const y = DISABILITY_YEAR;
+    const taxableDetail = yearOf(taxable, y).taxDetail!;
+    const taxFreeDetail = yearOf(taxFree, y).taxDetail!;
+
+    expect(taxableDetail.bySource[BENEFIT_ID].type).toBe("ordinary_income");
+    expect(taxFreeDetail.bySource[BENEFIT_ID].type).toBe("tax_exempt");
+    // The whole benefit moves between the two buckets — nothing is dropped or
+    // counted twice on the way.
+    expect(taxableDetail.ordinaryIncome - taxFreeDetail.ordinaryIncome).toBeCloseTo(
+      BENEFIT_2028,
+      0,
+    );
+    expect(taxFreeDetail.taxExempt - taxableDetail.taxExempt).toBeCloseTo(BENEFIT_2028, 0);
+  });
+
+  // Run in BRACKET mode on purpose. Flat mode builds its taxable base by summing
+  // income TYPE buckets and omits `income.other`, which is the bucket every
+  // disability benefit lands in — so in flat mode the taxable and tax-free
+  // variants both report the identical 28,644.30 and this assertion can never
+  // see the difference it exists to measure. That flat-mode gap is pre-existing
+  // and out of scope here; bracket mode reads `taxDetail.ordinaryIncome`, which
+  // IS taxType-aware, and is what production plans default to.
+  it("taxes an employer-paid benefit and does not tax an employee-paid one", () => {
+    const taxable = run(true, [workPolicy], "bracket");
+    const taxFree = run(true, [{ ...workPolicy, benefitTaxable: false }], "bracket");
+    const taxableRow = yearOf(taxable, DISABILITY_YEAR);
+    const taxFreeRow = yearOf(taxFree, DISABILITY_YEAR);
+
+    // Guard first: bracket mode must actually have run. Handed no `taxYearRows`
+    // the projection only console.warns and quietly reverts to flat, where both
+    // variants tax the same and this test would pass on a lie. `diag.amti` is
+    // populated by the bracket calculator alone — flat leaves it undefined.
+    expect(taxableRow.taxResult!.diag.amti).toBeDefined();
+    expect(taxFreeRow.taxResult!.diag.amti).toBeDefined();
+
+    // Equal taxes here means the taxable/tax-free flag never reached the tax
+    // base — that is the failure this test exists to catch, not a tolerable tie.
+    expect(taxableRow.expenses.taxes).toBeGreaterThan(taxFreeRow.expenses.taxes);
+
+    // And the gap has to be a real tax on the ~93.9k benefit rather than a
+    // rounding wobble. The fixture's top ordinary tier is 22% federal and the
+    // state rate is 5%, so anything between a tenth and a half of the benefit
+    // is the plausible band; outside it, something other than this benefit moved.
+    const delta = taxableRow.expenses.taxes - taxFreeRow.expenses.taxes;
+    expect(delta).toBeGreaterThan(BENEFIT_2028 * 0.10);
+    expect(delta).toBeLessThan(BENEFIT_2028 * 0.50);
+  });
+});
+
+// ── A disability that ends ───────────────────────────────────────────────────
+// The advisor sets a last disabled year; the person goes back to work the
+// following January. Everything the disability stopped has to start again —
+// the paycheck, the tax on it, and the percentage-of-salary saving — and
+// everything it started has to stop.
+const RECOVERY_YEAR = DISABILITY_YEAR + 3; // disabled 2028–2031, back at work 2032
+
+describe("disability stress — a disability that ends", () => {
+  const base = run(false);
+  const permanent = run(true);
+  const temporary = run(true, [], "flat", RECOVERY_YEAR);
+
+  it("pays no salary in any disabled year, including the last one", () => {
+    for (let year = DISABILITY_YEAR; year <= RECOVERY_YEAR; year++) {
+      expect(incomeCredited(yearOf(temporary, year), CLIENT_SALARY)).toBe(0);
+    }
+  });
+
+  it("credits the salary again the year after the disability ends", () => {
+    const back = yearOf(temporary, RECOVERY_YEAR + 1);
+    expect(incomeCredited(back, CLIENT_SALARY)).toBeGreaterThan(0);
+    // Control: the permanent variant is the same plan with only the end year
+    // removed, so a non-zero paycheck here is the end year's doing and nothing
+    // else's.
+    expect(
+      incomeCredited(yearOf(permanent, RECOVERY_YEAR + 1), CLIENT_SALARY),
+    ).toBe(0);
+  });
+
+  it("resumes the salary at the level it would have reached, not at the pre-disability amount", () => {
+    // Growth keeps compounding from the row's own start year through the
+    // stopped years — a returning earner comes back at the market rate, not at
+    // their 2027 pay. Four years of 3% growth is a 12.6% gap, so a resumption
+    // that restarted the growth clock would fail this by ~19k.
+    const back = incomeCredited(yearOf(temporary, RECOVERY_YEAR + 1), CLIENT_SALARY);
+    expect(back).toBeCloseTo(
+      incomeCredited(yearOf(base, RECOVERY_YEAR + 1), CLIENT_SALARY),
+      2,
+    );
+    const lastFullPaycheck = incomeCredited(
+      yearOf(base, DISABILITY_YEAR - 1),
+      CLIENT_SALARY,
+    );
+    expect(back).toBeGreaterThan(lastFullPaycheck * 1.1);
+  });
+
+  it("taxes the resumed salary again", () => {
+    expect(earnedIncomeTaxed(yearOf(temporary, RECOVERY_YEAR))).toBeLessThan(
+      earnedIncomeTaxed(yearOf(base, RECOVERY_YEAR)),
+    );
+    expect(earnedIncomeTaxed(yearOf(temporary, RECOVERY_YEAR + 1))).toBeCloseTo(
+      earnedIncomeTaxed(yearOf(base, RECOVERY_YEAR + 1)),
+      0,
+    );
+  });
+
+  it("leaves the household better off than the same disability with no recovery", () => {
+    const last = temporary.length - 1;
+    expect(temporary[last].portfolioAssets.liquidTotal).toBeGreaterThan(
+      permanent[last].portfolioAssets.liquidTotal,
+    );
+    // ...and still worse off than never having been disabled at all.
+    expect(temporary[last].portfolioAssets.liquidTotal).toBeLessThan(
+      base[last].portfolioAssets.liquidTotal,
+    );
+  });
+
+  it("stops paying the policy benefit once the insured is back at work", () => {
+    const covered = run(true, [workPolicy], "flat", RECOVERY_YEAR);
+    expect(incomeCredited(yearOf(covered, RECOVERY_YEAR), BENEFIT_ID)).toBeGreaterThan(0);
+    expect(incomeCredited(yearOf(covered, RECOVERY_YEAR + 1), BENEFIT_ID)).toBe(0);
+    // Control: this policy's benefit period runs to age 65 (2035), so without
+    // the end year it would still be paying in that same year.
+    expect(
+      incomeCredited(yearOf(run(true, [workPolicy]), RECOVERY_YEAR + 1), BENEFIT_ID),
+    ).toBeGreaterThan(0);
   });
 });

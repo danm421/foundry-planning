@@ -208,6 +208,28 @@ export const policyTypeEnum = pgEnum("policy_type", [
   "variable",
 ]);
 
+export const disabilityInsuredEnum = pgEnum("disability_insured", [
+  "client",
+  "spouse",
+]);
+
+export const disabilityEarningsModeEnum = pgEnum("disability_earnings_mode", [
+  "salary",
+  "manual",
+]);
+
+export const disabilityBenefitPeriodEnum = pgEnum("disability_benefit_period", [
+  "to_age",
+  "to_ssnra",
+  "years",
+  "lifetime",
+]);
+
+export const disabilityPremiumPayerEnum = pgEnum("disability_premium_payer", [
+  "employer",
+  "insured",
+]);
+
 export const cashValueGrowthModeEnum = pgEnum("cash_value_growth_mode", [
   "basic",
   "free_form",
@@ -2466,6 +2488,66 @@ export const lifeInsuranceCashValueSchedule = pgTable(
     policyYearUnique: unique().on(table.policyId, table.year),
   }),
 );
+
+export const disabilityPolicies = pgTable(
+  "disability_policies",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    insured: disabilityInsuredEnum("insured").notNull(),
+    carrier: text("carrier"),
+
+    coveredEarningsMode: disabilityEarningsModeEnum("covered_earnings_mode")
+      .notNull()
+      .default("salary"),
+    coveredEarningsAmount: decimal("covered_earnings_amount", { precision: 15, scale: 2 }),
+
+    hasShortTerm: boolean("has_short_term").notNull().default(true),
+    stdEliminationDays: integer("std_elimination_days").notNull().default(7),
+    stdBenefitPct: decimal("std_benefit_pct", { precision: 5, scale: 4 })
+      .notNull()
+      .default("0.6000"),
+    stdDurationWeeks: integer("std_duration_weeks").notNull().default(13),
+    stdMonthlyMax: decimal("std_monthly_max", { precision: 15, scale: 2 }),
+
+    hasLongTerm: boolean("has_long_term").notNull().default(true),
+    ltdEliminationDays: integer("ltd_elimination_days").notNull().default(90),
+    ltdBenefitPct: decimal("ltd_benefit_pct", { precision: 5, scale: 4 })
+      .notNull()
+      .default("0.6000"),
+    ltdMonthlyMax: decimal("ltd_monthly_max", { precision: 15, scale: 2 }).default("10000.00"),
+    ltdBenefitPeriodMode: disabilityBenefitPeriodEnum("ltd_benefit_period_mode")
+      .notNull()
+      .default("to_age"),
+    ltdBenefitPeriodAge: integer("ltd_benefit_period_age").default(65),
+    ltdBenefitPeriodYears: integer("ltd_benefit_period_years"),
+
+    benefitTaxable: boolean("benefit_taxable").notNull().default(true),
+    colaRate: decimal("cola_rate", { precision: 5, scale: 4 }).notNull().default("0.0000"),
+    annualPremium: decimal("annual_premium", { precision: 15, scale: 2 })
+      .notNull()
+      .default("0"),
+    premiumPayer: disabilityPremiumPayerEnum("premium_payer").notNull().default("employer"),
+    notes: text("notes"),
+
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [index("disability_policies_client_idx").on(t.clientId)],
+);
+
+export const disabilityPoliciesRelations = relations(disabilityPolicies, ({ one }) => ({
+  client: one(clients, {
+    fields: [disabilityPolicies.clientId],
+    references: [clients.id],
+  }),
+}));
+
+export type DisabilityPolicyRow = InferSelectModel<typeof disabilityPolicies>;
+export type NewDisabilityPolicyRow = InferInsertModel<typeof disabilityPolicies>;
 
 // ── Stock options (equity compensation) ──────────────────────────────────
 // 1:1 extension on a stock_options account. Mirrors lifeInsurancePolicies.

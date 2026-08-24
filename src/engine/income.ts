@@ -1,4 +1,5 @@
-import type { Income, ClientInfo } from "./types";
+import type { Income, ClientInfo, DisabilityEvent } from "./types";
+import { disabilitySuspension } from "./disability-event";
 import { resolveAnnualBenefit } from "./socialSecurity/orchestrator";
 import { resolveClaimAgeMonths } from "./socialSecurity/claimAge";
 import { itemProrationGate } from "./retirement-proration";
@@ -32,18 +33,29 @@ const incomeTypeToKey: Record<Income["type"], keyof Omit<IncomeBreakdown, "total
 
 /**
  * Stress test — disability: the disabled person's own earned income stops from
- * `startYear` forward.
+ * `startYear` through `endYear` (inclusive), then picks back up. Without an
+ * `endYear` the disability never ends and the paycheck never returns.
  *
- * Applied by clipping `endYear` on the row itself (the mechanism the death event
- * uses in `applyIncomeTermination`) so `itemProrationGate` hides the row from
- * EVERY consumer: the cash-routing loop, the tax-base mapping, and the display
- * totals alike. Suppressing it inside `computeIncome` instead only blanked the
- * display — the cash-routing fallback re-derived the full paycheck from
- * annualAmount × growth and the tax loop kept taxing it, so the stress made the
- * household richer instead of poorer.
+ * Applied as a `suspended` window on the row itself so `itemProrationGate`
+ * hides it from EVERY consumer: the cash-routing loop, the tax-base mapping,
+ * the percent-of-salary savings base, and the display totals alike. Suppressing
+ * it inside `computeIncome` instead only blanked the display — the cash-routing
+ * fallback re-derived the full paycheck from annualAmount × growth and the tax
+ * loop kept taxing it, so the stress made the household richer instead of
+ * poorer.
  *
- * `endYearRef` is cleared alongside the clip: an end-at-retirement row otherwise
- * keeps a prorated slice of its retirement year even once `endYear` has passed.
+ * A hole rather than a clipped `endYear` (the mechanism the death event uses in
+ * `applyIncomeTermination`) because a recovery has to restore the row's ORIGINAL
+ * terms, and because growth must keep compounding from
+ * `inflationStartYear ?? startYear` right through the disabled years — the
+ * salary resumes at the level it would have reached had it never stopped, which
+ * is what a returning earner's market rate looks like. Splitting the row into a
+ * before and an after would also mint a second income id, and the cash-flow
+ * report keys its per-source columns off those ids.
+ *
+ * The row's own `endYear` / `endYearRef` are left untouched: an end-at-retirement
+ * salary suspended THROUGH its retirement year is already excluded, because the
+ * gate checks the suspension before the retirement-month proration.
  *
  * Entity- and business-account-owned rows are left alone — the disabled owner
  * stops earning, but the business keeps operating and its K-1 / distribution
@@ -51,18 +63,14 @@ const incomeTypeToKey: Record<Income["type"], keyof Omit<IncomeBreakdown, "total
  */
 export function applyDisabilityEvent(
   incomes: Income[],
-  event: { person: "client" | "spouse"; startYear: number } | undefined,
+  event: DisabilityEvent | undefined,
 ): Income[] {
   if (!event) return incomes;
   return incomes.map((inc) => {
     if (inc.owner !== event.person) return inc;
     if (inc.type !== "salary" && inc.type !== "business") return inc;
     if (inc.ownerEntityId != null || inc.ownerAccountId != null) return inc;
-    return {
-      ...inc,
-      endYear: Math.min(inc.endYear, event.startYear - 1),
-      endYearRef: null,
-    };
+    return { ...inc, suspended: disabilitySuspension(event) };
   });
 }
 

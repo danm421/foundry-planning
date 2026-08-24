@@ -522,6 +522,10 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     kind: z.literal("stress-disability"),
     person: PERSON,
     startYear: YEAR,
+    // `.default(null)` rather than a bare `.nullable()`: sessions and saved
+    // scenarios hold stress-disability mutations written before recovery years
+    // existed, and a required key would fail those payloads at parse.
+    endYear: YEAR.nullable().default(null),
   }),
   z.object({
     kind: z.literal("stress-market-crash"),

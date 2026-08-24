@@ -156,6 +156,10 @@ export type AuditAction =
   | "insurance_policy.update"
   | "insurance_policy.delete"
   | "life_insurance_solver_settings.update"
+  // Disability insurance (client-level policies, not scenario-scoped)
+  | "disability_policy.create"
+  | "disability_policy.update"
+  | "disability_policy.delete"
   // CMA (firm-level, admin-gated)
   | "cma.asset_class.create"
   | "cma.asset_class.update"

@@ -15,6 +15,7 @@
 
 import type { FilingStatus, TaxYearParameters } from "./types";
 import type { LiabilityType } from "@/engine/liability-kind";
+import type { SuspensionWindow } from "@/engine/types";
 import { studentLoanInterestDeduction, traditionalIraDeductibleAmount } from "./thresholds";
 
 // ── Contribution interface ──────────────────────────────────────────────────
@@ -300,6 +301,22 @@ export interface ExpenseForDeduction {
   endYear: number;
   growthRate: number;
   inflationStartYear?: number;
+  /** Carried through from `Expense.suspended`. This module is the ONE expense
+   *  consumer that does not run through `itemProrationGate` — it hand-copies
+   *  the fields it needs and does its own window check below — so a hole in the
+   *  row is invisible here unless it is copied across. No expense with a hole
+   *  is deductible today; the field is here so the first one that is does not
+   *  get deducted through its own suspension in silence. */
+  suspended?: SuspensionWindow | null;
+}
+
+/** Same rule as `itemProrationGate`'s suspension check, applied to the narrowed
+ *  deduction view of an expense. */
+function activeInYear(exp: ExpenseForDeduction, year: number): boolean {
+  if (year < exp.startYear || year > exp.endYear) return false;
+  const hole = exp.suspended;
+  if (!hole || year < hole.fromYear) return true;
+  return hole.throughYear != null && year > hole.throughYear;
 }
 
 function inflateExpense(exp: ExpenseForDeduction, year: number): number {
@@ -315,7 +332,7 @@ export function deriveAboveLineFromExpenses(
   let total = 0;
   for (const exp of expenses) {
     if (exp.deductionType !== "above_line") continue;
-    if (year < exp.startYear || year > exp.endYear) continue;
+    if (!activeInYear(exp, year)) continue;
     total += inflateExpense(exp, year);
   }
   return { aboveLine: total, itemized: 0, saltPool: 0 };
@@ -329,7 +346,7 @@ export function deriveItemizedFromExpenses(
   let saltPool = 0;
   for (const exp of expenses) {
     if (!exp.deductionType || exp.deductionType === "above_line") continue;
-    if (year < exp.startYear || year > exp.endYear) continue;
+    if (!activeInYear(exp, year)) continue;
     const amount = inflateExpense(exp, year);
     if (exp.deductionType === "property_tax") {
       saltPool += amount;

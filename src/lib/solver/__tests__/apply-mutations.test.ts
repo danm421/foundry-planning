@@ -709,9 +709,27 @@ describe("applyMutations — stress test", () => {
 
   it("stress-disability sets planSettings.disabilityEvent", () => {
     const data = makeBase();
-    const out = applyMutations(data, [{ kind: "stress-disability", person: "spouse", startYear: 2030 }]);
-    expect(out.planSettings.disabilityEvent).toEqual({ person: "spouse", startYear: 2030 });
+    const out = applyMutations(data, [
+      { kind: "stress-disability", person: "spouse", startYear: 2030, endYear: null },
+    ]);
+    expect(out.planSettings.disabilityEvent).toEqual({
+      person: "spouse",
+      startYear: 2030,
+      endYear: null,
+    });
     expect(data.planSettings.disabilityEvent).toBeUndefined(); // original untouched
+  });
+
+  it("stress-disability carries the recovery year through to the plan settings", () => {
+    const data = makeBase();
+    const out = applyMutations(data, [
+      { kind: "stress-disability", person: "client", startYear: 2030, endYear: 2034 },
+    ]);
+    expect(out.planSettings.disabilityEvent).toEqual({
+      person: "client",
+      startYear: 2030,
+      endYear: 2034,
+    });
   });
 
   it("stress-market-crash sets planSettings.marketShock", () => {

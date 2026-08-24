@@ -33,7 +33,7 @@ describe("mutationKey — stress test", () => {
   it("keys each stressor as a single global lever", () => {
     expect(mutationKey({ kind: "stress-inflation", rate: 0.05 })).toBe("stress-inflation");
     expect(mutationKey({ kind: "stress-ss-haircut", pct: 0.23, startYear: 2034 })).toBe("stress-ss-haircut");
-    expect(mutationKey({ kind: "stress-disability", person: "client", startYear: 2030 })).toBe("stress-disability");
+    expect(mutationKey({ kind: "stress-disability", person: "client", startYear: 2030, endYear: null })).toBe("stress-disability");
     expect(mutationKey({ kind: "stress-market-crash", year: 2030, drawdownPct: 0.3 })).toBe("stress-market-crash");
     expect(mutationKey({ kind: "stress-exemption-cap", cap: 7_000_000 })).toBe("stress-exemption-cap");
   });

@@ -187,7 +187,16 @@ function buildWithdrawalOrder(
 function buildStressTests(ps: PlanSettings): AssumptionRow[] {
   const rows: AssumptionRow[] = [];
   if (ps.ssBenefitHaircut) rows.push({ label: "SS benefit haircut", value: `${formatPct(ps.ssBenefitHaircut.pct)} from ${ps.ssBenefitHaircut.startYear}` });
-  if (ps.disabilityEvent) rows.push({ label: "Disability", value: `${ps.disabilityEvent.person} earned income stops ${ps.disabilityEvent.startYear}` });
+  if (ps.disabilityEvent) {
+    const { person, startYear, endYear } = ps.disabilityEvent;
+    rows.push({
+      label: "Disability",
+      value:
+        endYear == null
+          ? `${person} earned income stops ${startYear}`
+          : `${person} earned income stops ${startYear}, resumes ${endYear + 1}`,
+    });
+  }
   if (ps.marketShock) rows.push({ label: "Market shock", value: `${formatPct(ps.marketShock.drawdownPct)} drawdown in ${ps.marketShock.year}` });
   return rows;
 }
