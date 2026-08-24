@@ -12,13 +12,14 @@
 // the resolver ever stressed before inflating instead of after.
 import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
-import { basePlanSettings, buildClientData, FIXTURE_TAX_PARAMS } from "./fixtures";
+import { basePlanSettings, buildClientData, FIXTURE_TAX_PARAMS, sampleAccounts } from "./fixtures";
 import { runMonteCarlo } from "../monteCarlo/run";
 import { createReturnEngine } from "../monteCarlo/returns";
 import { resolveThresholdParams } from "@/lib/solver/threshold-params";
 import { STATUTORY_MID_RATE, STATUTORY_TOP_RATE } from "@/lib/tax/rate-stress";
-import type { ClientData, ProjectionYear } from "../types";
+import type { Account, ClientData, EntitySummary, ProjectionYear } from "../types";
 import type { TaxYearParameters } from "@/lib/tax/types";
+import type { TrustTaxBreakdown } from "../trust-tax/types";
 
 const START = 2030;
 const POINTS = 0.03;
@@ -26,9 +27,9 @@ const STRESS = { points: POINTS, startYear: START };
 
 /** The shared engine fixture carries EMPTY trust schedules, which makes any
  *  trust assertion `[] === []`. This override gives the trust tests a real
- *  1041 schedule to bite on — four ordinary tiers (so projection.ts's
- *  `trustIncomeBrackets.length >= 4` NIIT derivation is actually reached) and
- *  three preferential tiers including the structural 0% band. */
+ *  1041 schedule to bite on — four ordinary tiers (the count projection.ts's
+ *  `trustIncomeBrackets.length >= 4` NIIT derivation needs) and three
+ *  preferential tiers including the structural 0% band. */
 const TRUST_ROWS: TaxYearParameters[] = [{
   ...FIXTURE_TAX_PARAMS[0],
   trustIncomeBrackets: [
@@ -60,6 +61,75 @@ function tree(
   });
 }
 
+const TRUST_ID = "trust-nongrantor";
+
+/** Irrevocable, non-grantor, not tax-exempt — the exact filter
+ *  `buildNonGrantorTrusts` (projection.ts) applies before a plan gets a 1041
+ *  pass at all. No distribution policy, so every dollar of trust income is
+ *  RETAINED and lands in the trust's own NIIT base. */
+const TRUST_ENTITY: EntitySummary = {
+  id: TRUST_ID,
+  includeInPortfolio: true,
+  isGrantor: false,
+  entityType: "trust",
+  isIrrevocable: true,
+  grantor: "client",
+  distributionMode: null,
+  distributionAmount: null,
+  distributionPercent: null,
+  incomeBeneficiaries: [],
+};
+
+/** Wholly trust-owned. The checking account is where the 1041 tax bill is
+ *  debited; the brokerage is what generates the retained income. $1M at 6%
+ *  with a 60% ordinary realization profile retains far more than the $16,300
+ *  NIIT floor, so the NIIT line is non-zero and can actually move. */
+const TRUST_ACCOUNTS: Account[] = [
+  {
+    id: "trust-checking",
+    name: "Trust Checking",
+    category: "cash",
+    subType: "checking",
+    titlingType: "jtwros",
+    value: 100_000,
+    basis: 100_000,
+    growthRate: 0,
+    rmdEnabled: false,
+    owners: [{ kind: "entity", entityId: TRUST_ID, percent: 1 }],
+    isDefaultChecking: true,
+  },
+  {
+    id: "trust-brokerage",
+    name: "Trust Brokerage",
+    category: "taxable",
+    subType: "brokerage",
+    titlingType: "jtwros",
+    value: 1_000_000,
+    basis: 1_000_000,
+    growthRate: 0.06,
+    rmdEnabled: false,
+    owners: [{ kind: "entity", entityId: TRUST_ID, percent: 1 }],
+    realization: {
+      pctOrdinaryIncome: 0.6,
+      pctQualifiedDividends: 0.15,
+      pctLtCapitalGains: 0.25,
+      pctTaxExempt: 0,
+      turnoverPct: 0,
+    },
+  },
+];
+
+/** The trust arm ONLY. The entity and its accounts are deliberately kept off
+ *  `tree()` so the other eleven tests in this file keep running on the
+ *  untouched shared fixture. */
+function trustTree(overrides?: Partial<ClientData["planSettings"]>): ClientData {
+  return {
+    ...tree(overrides, TRUST_ROWS),
+    accounts: [...sampleAccounts, ...TRUST_ACCOUNTS],
+    entities: [TRUST_ENTITY],
+  };
+}
+
 // runProjection returns ProjectionYear[] DIRECTLY — not an object with a
 // `.years` property.
 function yearOf(p: ProjectionYear[], year: number): ProjectionYear {
@@ -75,6 +145,16 @@ function bracketsAt(p: ProjectionYear[], year: number): TaxYearParameters {
 
 function fedTaxAt(p: ProjectionYear[], year: number): number {
   return yearOf(p, year).taxResult!.flow.totalFederalTax;
+}
+
+/** The 1041 pass's own answer for the trust. Throws rather than returning
+ *  undefined: a missing entry means `if (nonGrantorTrusts.length > 0)` never
+ *  opened, and every assertion below it would silently pass on
+ *  `undefined === undefined`. */
+function trustBreakdown(p: ProjectionYear[], year: number): TrustTaxBreakdown {
+  const b = yearOf(p, year).trustTaxByEntity?.get(TRUST_ID);
+  if (!b) throw new Error(`no trust tax for ${TRUST_ID} in ${year} — the 1041 pass never ran`);
+  return b;
 }
 
 const plain = runProjection(tree());
@@ -154,11 +234,13 @@ describe("tax rates rise — through runProjection", () => {
 
 describe("the trust schedule rises without its thresholds moving", () => {
   // Runs on TRUST_ROWS, not the shared fixture: the shared fixture's trust
-  // schedules are empty, which would make every assertion here `[] === []` AND
-  // would keep projection.ts's `trustIncomeBrackets[3].from` NIIT derivation
-  // from running at all.
-  const trustStressed = runProjection(tree({ taxRateStress: STRESS }, TRUST_ROWS));
-  const trustPlain = runProjection(tree(undefined, TRUST_ROWS));
+  // schedules are empty, which would make every assertion here `[] === []`.
+  // And on `trustTree`, not `tree`: projection.ts guards the whole 1041 pass —
+  // including the `trustIncomeBrackets[3].from` NIIT derivation — behind
+  // `if (nonGrantorTrusts.length > 0)`, and the shared fixture supplies no
+  // entities at all, so without one the derivation never runs.
+  const trustStressed = runProjection(trustTree({ taxRateStress: STRESS }));
+  const trustPlain = runProjection(trustTree());
 
   it("does not move the trust NIIT threshold", () => {
     const used = bracketsAt(trustStressed, START);
@@ -167,7 +249,8 @@ describe("the trust schedule rises without its thresholds moving", () => {
 
     // Vacuity guard: projection.ts derives the trust NIIT floor from
     // trustIncomeBrackets[3].from and falls back to niitThreshold.single below
-    // four tiers, so an empty/short schedule proves nothing.
+    // four tiers, so an empty/short schedule proves nothing. (The test below
+    // asserts on the floor the trust pass actually charged.)
     expect(used.trustIncomeBrackets.length).toBeGreaterThanOrEqual(4);
 
     expect(used.trustIncomeBrackets.map((t) => t.from))
@@ -197,6 +280,46 @@ describe("the trust schedule rises without its thresholds moving", () => {
     expect(cg[0].rate).toBe(0);   // "no tax at the bottom" is structural, not a rate
     expect(cg[1].rate).toBeCloseTo(0.15 + POINTS, 10);
     expect(cg[2].rate).toBeCloseTo(0.20 + POINTS, 10);
+  });
+
+  it("charges the trust's NIIT off an unmoved 37% floor, while its ordinary tax rises", () => {
+    // The two tests above read the PARAMS. This one reads what the 1041 pass
+    // actually did with them: projection.ts turns `trustIncomeBrackets[3].from`
+    // into the trust's NIIT floor, and compute-trust-tax.ts charges
+    // `niitRate x max(0, retained ordinary + dividends + gains - floor)`.
+    // Reachable only because `trustTree` supplies a real non-grantor trust —
+    // the whole derivation sits inside `if (nonGrantorTrusts.length > 0)`.
+    const used = trustBreakdown(trustStressed, START);
+    const base = trustBreakdown(trustPlain, START);
+
+    // Vacuity guards. `trustBreakdown` already throws on a missing entry; these
+    // stop the comparisons below from passing on 0 === 0.
+    expect(base.niit).toBeGreaterThan(0);
+    expect(used.niit).toBeGreaterThan(0);
+
+    // Read the floor the pass actually charged back out of the NIIT line, and
+    // pin it to the schedule's fourth tier. A transform that nudged `from`
+    // would land here even though every rate assertion stayed green.
+    const niitRate = bracketsAt(trustStressed, START).niitRate;
+    expect(niitRate).toBeGreaterThan(0);
+    const floorCharged = (b: TrustTaxBreakdown) =>
+      b.retainedOrdinary + b.retainedDividends + b.recognizedCapGains - b.niit / niitRate;
+    expect(floorCharged(used)).toBeCloseTo(16300, 6);
+    expect(floorCharged(base)).toBeCloseTo(16300, 6);
+
+    // Same NIIT base on both sides — START is the FIRST stressed year, so the
+    // trust's income for it comes off unstressed balances. (By 2031 the extra
+    // 2030 tax has drained trust cash and the bases genuinely diverge.)
+    const niitBase = (b: TrustTaxBreakdown) =>
+      b.retainedOrdinary + b.retainedDividends + b.recognizedCapGains;
+    expect(niitBase(used)).toBeCloseTo(niitBase(base), 6);
+
+    // Same base, same floor, and NIIT is not a bracket rate => identical NIIT.
+    expect(used.niit).toBeCloseTo(base.niit, 6);
+
+    // ...while the trust's ORDINARY 1041 tax, which IS bracket-rated, rises.
+    expect(base.federalOrdinaryTax).toBeGreaterThan(0);
+    expect(used.federalOrdinaryTax).toBeGreaterThan(base.federalOrdinaryTax);
   });
 });
 
