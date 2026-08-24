@@ -27,6 +27,8 @@ interface BodyArgs {
     model?: "mini" | "full";
     extractHoldings?: boolean;
     comprehensive?: boolean;
+    /** Only read files that have not been extracted yet. */
+    skipExtracted?: boolean;
 }
 
 export async function POST(request: NextRequest, { params }: Params) {
@@ -147,6 +149,7 @@ export async function POST(request: NextRequest, { params }: Params) {
             model,
             extractHoldings,
             comprehensive: body.comprehensive === true,
+            skipExtracted: body.skipExtracted === true,
         });
 
         return NextResponse.json({
