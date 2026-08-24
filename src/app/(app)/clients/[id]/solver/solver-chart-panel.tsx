@@ -19,6 +19,10 @@ import { hasSpouse } from "@/lib/life-insurance/need-over-time";
 import { SolverYearTablePanel } from "./solver-year-table-panel";
 import { SolverWithdrawalPanel } from "./solver-withdrawal-panel";
 import { buildWithdrawalReportRows } from "@/lib/solver/withdrawal-report";
+import { SolverMonthlyCashFlowChart } from "@/components/charts/solver-monthly-cash-flow-chart";
+import { SolverMonthlyCashFlowPanel } from "./solver-monthly-cash-flow-panel";
+import { buildMonthlyCashFlowRows } from "@/lib/solver/monthly-cash-flow";
+import { useDollarBasis } from "@/lib/solver/dollar-basis-store";
 import { EstateComparisonChart } from "@/components/charts/estate-comparison-chart";
 import { TaxBracketChart } from "@/components/cashflow/charts/tax-bracket-chart";
 import { TaxBracketTab } from "@/components/cashflow/tax-bracket-tab";
@@ -227,7 +231,11 @@ export function SolverChartPanel({
   const [showTable, setShowTable] = useState(false);
   const [showCustomize, setShowCustomize] = useState(false);
   const [estateSubTab, setEstateSubTab] = useState<"charts" | "flow">("charts");
-  const [cashflowSubTab, setCashflowSubTab] = useState<"cashflow" | "withdrawals">("cashflow");
+  const [cashflowSubTab, setCashflowSubTab] =
+    useState<"cashflow" | "withdrawals" | "monthly">("cashflow");
+  // Remembered across sessions — an advisor who works in today's dollars should
+  // not re-pick it for every client.
+  const [dollarBasis, setDollarBasis] = useDollarBasis();
   const chartHeight = useSyncExternalStore(
     subscribeChartHeight,
     getChartHeightSnapshot,
@@ -318,6 +326,19 @@ export function SolverChartPanel({
     () =>
       isWithdrawalSubTab ? buildWithdrawalReportRows(currentProjection, workingTree.accounts) : [],
     [isWithdrawalSubTab, currentProjection, workingTree.accounts],
+  );
+
+  const isMonthlySubTab = tab === "cashflow" && cashflowSubTab === "monthly";
+
+  // Built only while the Monthly sub-tab is open — the chart and the panel below
+  // it read the same rows, so the derivation runs once per recompute rather than
+  // once per consumer. Mirrors `withdrawalRows` directly above.
+  const monthlyRows = useMemo(
+    () =>
+      isMonthlySubTab
+        ? buildMonthlyCashFlowRows(currentProjection, workingTree, dollarBasis)
+        : [],
+    [isMonthlySubTab, currentProjection, workingTree, dollarBasis],
   );
 
   // The flow chart needs the FULL projection (death events + ledgers), not the
@@ -446,6 +467,14 @@ export function SolverChartPanel({
         clientLifeExpectancy={workingTree.client.lifeExpectancy}
         spouseLifeExpectancy={workingTree.client.spouseLifeExpectancy}
       />
+    ) : isMonthlySubTab ? (
+      <SolverMonthlyCashFlowPanel
+        rows={monthlyRows}
+        selectedYear={selectedYear}
+        onYearClick={onYearClick}
+        basis={dollarBasis}
+        onBasisChange={setDollarBasis}
+      />
     ) : null;
 
   const cashflowSubTabs = (
@@ -453,9 +482,14 @@ export function SolverChartPanel({
       tabs={[
         { id: "cashflow", label: "Cash Flow" },
         { id: "withdrawals", label: "Withdrawals" },
+        { id: "monthly", label: "Monthly" },
       ]}
       activeTab={cashflowSubTab}
-      onTabChange={(id) => setCashflowSubTab(id === "withdrawals" ? "withdrawals" : "cashflow")}
+      onTabChange={(id) => {
+        if (id === "withdrawals" || id === "monthly" || id === "cashflow") {
+          setCashflowSubTab(id);
+        }
+      }}
     />
   );
 
@@ -635,6 +669,13 @@ export function SolverChartPanel({
         {isWithdrawalSubTab ? (
           <SolverWithdrawalChart
             rows={withdrawalRows}
+            selectedYear={selectedYear}
+            onYearClick={onYearClick}
+          />
+        ) : null}
+        {isMonthlySubTab ? (
+          <SolverMonthlyCashFlowChart
+            rows={monthlyRows}
             selectedYear={selectedYear}
             onYearClick={onYearClick}
           />
