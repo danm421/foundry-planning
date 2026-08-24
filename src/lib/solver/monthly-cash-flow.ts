@@ -1,4 +1,5 @@
 import type { ClientData, ProjectionYear } from "@/engine";
+import { normalizeOwners } from "@/engine/ownership";
 import type { AccountOwner } from "@/engine/ownership";
 import { LIQUID_PORTFOLIO_CATEGORIES } from "@/engine/portfolio-snapshot";
 import { ageLabel } from "./cashflow-year-detail";
@@ -93,6 +94,17 @@ function surplusUnspentAnnual(y: ProjectionYear): number {
  * household money that never appear in `clientData.accounts`. Omitting them
  * under-counts the balance, which is the dangerous direction: it flags a
  * household that is fine.
+ *
+ * Read through `normalizeOwners` because THE ENGINE DOES. `projection.ts:446`
+ * runs `data.accounts.map(normalizeOwners)` before it computes anything, so an
+ * account carrying no `account_owners` rows is client-owned by the time the
+ * engine overdrafts it. Filtering the RAW `clientData.accounts` against a rule
+ * the engine only ever applies to the NORMALIZED copy dropped exactly one
+ * account — and it was the default checking account, the one account the engine
+ * overdrafts. Measured on four live plans: three carry a `Household Cash`
+ * account with zero owner rows, and on those the household sum stayed at 0
+ * while `portfolioAssets.liquidTotal` read -$80M to -$188M. With the backfill
+ * the flag matches `liquidTotal` year-for-year on all eight runs.
  */
 function householdLiquidAccountIds(
   years: ProjectionYear[],
@@ -105,12 +117,9 @@ function householdLiquidAccountIds(
   const ids = new Set<string>();
   for (const a of candidates) {
     if (!LIQUID_PORTFOLIO_CATEGORIES.has(a.category)) continue;
-    // `owners` is required on `Account`, but a partially un-normalized
-    // clientData can still reach here with it undefined. Falling back to []
-    // SHRINKS the household set, which is the dangerous direction: a missing
-    // balance makes a solvent household look broke. Preferred over `?? [{...}]`
-    // only because inventing an owner is worse than under-counting one.
-    const owners = a.owners ?? [];
+    // The engine's own backfill, not a local guess: an empty or absent
+    // `owners` becomes the same client-100% share the projection gives it.
+    const owners = normalizeOwners(a).owners;
     if (!owners.some((o) => o.kind === "family_member")) continue;
     if (owners.some((o) => o.kind === "entity")) continue;
     ids.add(a.id);

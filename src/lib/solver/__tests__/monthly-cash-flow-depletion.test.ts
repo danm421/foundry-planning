@@ -448,6 +448,40 @@ describe("depletion flag", () => {
     expect(flaggedYears(rows)[0]).toBe(2041);
     expectContiguousToEnd(rows);
   });
+  it("counts a default checking account that carries NO owner rows", () => {
+    // The production shape, found on three of four live plans: `Household Cash`
+    // is `is_default_checking` with zero `account_owners` rows, so the loader
+    // hands it `owners: []`. The engine never sees that — `projection.ts:446`
+    // runs every account through `normalizeOwners` first — but this module
+    // reads `clientData.accounts` raw, and a raw `[]` fails the
+    // "has a family-member owner" clause. The account dropped from the
+    // household set was the ONE account the engine overdrafts, so the sum
+    // stayed at 0 on a plan running $80M-$188M underwater.
+    const ownerless: Account = { ...defaultChecking, value: 1_000, basis: 1_000, owners: [] };
+    const clientData = buildClientData({ accounts: [ownerless, ...tinyLiquidAccounts] });
+
+    // Liveness: the fixture really is the ownerless shape. If it ever gains an
+    // owner this test silently becomes a duplicate of the one above.
+    expect(clientData.accounts.find((a) => a.id === "acct-checking")!.owners).toEqual([]);
+
+    const { years, rows } = build(clientData);
+    // Identical to the owned-checking plan above: real depletion at 2045, when
+    // checking lands $92,483 in the hole with every other account at zero.
+    expect(flaggedYears(rows)[0]).toBe(2045);
+    expectContiguousToEnd(rows);
+
+    // Control — the same engine years read against a clientData that omits the
+    // checking account entirely, which is precisely what the raw-`owners`
+    // filter used to do to it. Its overdraft goes uncounted and the flag never
+    // fires at all, so the 2045 above is this account being in the set.
+    const withoutChecking = buildMonthlyCashFlowRows(
+      years,
+      { ...clientData, accounts: tinyLiquidAccounts },
+      "nominal",
+    );
+    expect(flaggedYears(withoutChecking)).toEqual([]);
+  });
+
   it("counts engine-minted equity destination accounts as household money", () => {
     // The engine mints a household-owned taxable account on the first vest or
     // exercise and reports it ONLY on `ProjectionYear.syntheticAccounts` — it is
