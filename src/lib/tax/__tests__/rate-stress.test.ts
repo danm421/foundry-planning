@@ -154,8 +154,9 @@ describe("applyTaxRateStress", () => {
 
   it("does not mutate its input", () => {
     const input = params();
+    const snapshot = structuredClone(input);
     applyTaxRateStress(input, STRESS, 2030);
-    expect(input.incomeBrackets.married_joint[0].rate).toBe(0.10);
+    expect(input).toEqual(snapshot);
   });
 });
 
