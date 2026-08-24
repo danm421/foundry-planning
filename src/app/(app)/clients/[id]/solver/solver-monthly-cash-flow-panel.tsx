@@ -43,12 +43,14 @@ export const SolverMonthlyCashFlowPanel = memo(function SolverMonthlyCashFlowPan
     );
   }
 
-  // Opens on the first year income stops covering fixed costs — this report
-  // exists for the retirement conversation, and year one is the least
-  // interesting row in it. A plan whose income never falls short opens on
-  // its first year.
-  const firstShortfall = rows.find((r) => r.income < r.fixed.total);
-  const selected = rows.find((r) => r.year === selectedYear) ?? firstShortfall ?? rows[0];
+  // Until a year is picked, opens on the first one where income stops covering
+  // fixed costs — this report exists for the retirement conversation, and year
+  // one is the least interesting row in it. A plan whose income never falls
+  // short opens on its first year.
+  const selected =
+    rows.find((r) => r.year === selectedYear) ??
+    rows.find((r) => r.income < r.fixed.total) ??
+    rows[0];
 
   return (
     <div className="mt-3 space-y-3">
