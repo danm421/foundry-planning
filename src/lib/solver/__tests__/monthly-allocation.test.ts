@@ -226,10 +226,14 @@ describe("buildMonthlyAllocation — column routing", () => {
   const livingRows = clientData.expenses.filter((e) => e.type === "living");
   const otherRows = clientData.expenses.filter((e) => e.type !== "living");
 
-  // Fixture guard: the assertions below read "the whole living column" and "the
-  // whole non-living column", which is only meaningful while each side has
-  // exactly one row of its own.
-  it("the fixture has exactly one living row and one non-living row", () => {
+  // CANARY, not a guard on the assertions below — those are delta-based (a
+  // dated run minus an all-undated one), so an extra UNDATED row on either side
+  // cancels out and would not break them. What this pins is that `dateOnly`
+  // below still names a row of the kind its caller believes it does. Note the
+  // `other` column is NOT just `exp-insurance`: 2026's `expenses.bySource` also
+  // carries `synth-proptax-acct-home` at 12,000, which reaches `other` through
+  // the unknown-key path.
+  it("the fixture still has one living row and one non-living row", () => {
     expect(livingRows.map((e) => e.id)).toEqual(["exp-living"]);
     expect(otherRows.map((e) => e.id)).toEqual(["exp-insurance"]);
   });
@@ -256,8 +260,11 @@ describe("buildMonthlyAllocation — column routing", () => {
     // April carries the row's whole year; every other month carries none of it.
     expect(rows[3].living - flat[3].living).toBeCloseTo(amount * (11 / 12), 6);
     expect(rows[0].living - flat[0].living).toBeCloseTo(-amount / 12, 6);
-    // …and NOTHING moved in `other`. Invert the routing and this line goes red:
-    // the 80,000 spike shows up here instead.
+    // …and NOTHING moved in `other`. Inverting the routing reds this test at
+    // the April assertion above (April's `living` delta collapses to 0 against
+    // an expected 73,333.33 — the 80,000 row's 11/12 spike), so execution never
+    // reaches this loop; the loop is what pins the converse direction under the
+    // sibling test below.
     for (let i = 0; i < 12; i++) expect(rows[i].other).toBeCloseTo(flat[i].other, 6);
   });
 
@@ -318,10 +325,9 @@ describe("buildMonthlyAllocation — debt and the running balance", () => {
     for (const r of rows) expect(r.debt).toBeGreaterThanOrEqual(0);
   });
 
-  // NAMED FOR WHAT IT CHECKS. The opening balance is the household's beginning
-  // liquid cash by construction, but nothing below re-asserts that — restating
-  // the module's own definition would only mirror the implementation. What is
-  // pinned here is that the column is a RUNNING total, not a per-month figure.
+  // NAMED FOR WHAT IT CHECKS: that the column is a RUNNING total, not a
+  // per-month figure. The OPENING term is pinned separately by the two tests
+  // below — neither of which this one can see.
   it("carries a running balance — each month closes at the previous close plus its net", () => {
     const rows = buildMonthlyAllocation(years[0], clientData, "nominal");
     // `cashOnHand` is an END-of-month balance, so the opening is month 1's
@@ -330,6 +336,109 @@ describe("buildMonthlyAllocation — debt and the running balance", () => {
     expect(rows[11].cashOnHand).toBeCloseTo(opening + sum(rows.map((r) => r.net)), 6);
     for (let i = 1; i < 12; i++) {
       expect(rows[i].cashOnHand).toBeCloseTo(rows[i - 1].cashOnHand + rows[i].net, 6);
+    }
+  });
+
+  // Ruling F1, which AMENDS Task 5's cashOnHand ruling. That ruling's "do not
+  // assert it equals any account balance" binds the RUNNING total — no month's
+  // close is any account's balance, and pinning one would encode the very
+  // stock/flow confusion the ruling exists to flag. It does not bind the
+  // OPENING SEED, which the spec defines in these words: "opens at the sum of
+  // `beginningValue` across the household's liquid accounts."
+  //
+  // Measured before this test existed: replacing the seed with `let cash = 0`
+  // left all 23 tests in this file GREEN. The whole first half of that spec
+  // sentence was unpinned.
+  //
+  // 1,050,000 is read off `fixtures.ts`, never off the module: acct-401k
+  // 500,000 + acct-roth 200,000 + acct-brokerage 300,000 + acct-savings 50,000.
+  // acct-home (750,000) is real_estate and so is not liquid — excluding it is
+  // the half of the definition an implementation could plausibly get wrong, and
+  // the literal is what makes that visible.
+  it("opens at the household's beginning liquid balance, excluding the house", () => {
+    const rows = buildMonthlyAllocation(years[0], clientData, "nominal");
+    expect(rows[0].cashOnHand - rows[0].net).toBeCloseTo(1_050_000, 6);
+  });
+
+  // The seed is a NOMINAL account balance until it is multiplied by k. Drop
+  // that one `* k` and the column becomes a nominal opening carrying deflated
+  // flows — a mixed-basis number on the face of Task 8's table. Measured: with
+  // the `* k` dropped, every other test in this file stays green.
+  //
+  // Compared against the same year's nominal run rather than a literal, because
+  // by year 10 the accounts have grown; `k < 0.8` is asserted independently, so
+  // a dropped `* k` (which would make the two openings equal) cannot pass.
+  it("deflates that opening too, so the column is one basis end to end", () => {
+    const y = years[10];
+    const k = deflator(y.year, "today", clientData.planSettings);
+    expect(k).toBeLessThan(0.8);
+    const nominal = buildMonthlyAllocation(y, clientData, "nominal");
+    const today = buildMonthlyAllocation(y, clientData, "today");
+    const nominalOpening = nominal[0].cashOnHand - nominal[0].net;
+    const todayOpening = today[0].cashOnHand - today[0].net;
+    expect(nominalOpening).toBeGreaterThan(0);
+    expect(todayOpening).toBeCloseTo(nominalOpening * k, 6);
+  });
+
+  // Ruling F2. Nothing in this file read `net` at all before: flipping the sign
+  // on one of its terms — measured with `debt` — left all 23 tests green, and
+  // `net` is the number Task 8's table and Task 9's chart both put on screen.
+  //
+  // This is not a mirror of the implementation: it asserts the ROW's published
+  // columns add up to the ROW's published net, which is what a reader of the
+  // table will do by eye. Asserted per month AND on the year, so a per-column
+  // sign error that happened to cancel across twelve months still reds.
+  it("nets each month to income plus draw, less every committed outflow", () => {
+    const y = years[0];
+    const rows = buildMonthlyAllocation(y, clientData, "nominal");
+    // Scope, stated rather than assumed: this fixture never spends a surplus,
+    // so the formula's `− surplusSpent` term is NOT exercised here. The spiked
+    // test below is what covers it.
+    expect(y.expenses.discretionary).toBe(0);
+    for (const r of rows) {
+      expect(r.net).toBeCloseTo(
+        r.income + r.portfolioDraw - r.taxes - r.debt - r.savings - r.other - r.living,
+        6,
+      );
+    }
+    // …and the year's own totals agree, anchored on a measured literal so the
+    // check is not purely self-referential: 250,000 income, less 67,500 tax,
+    // 30,000 debt service, 23,500 savings, 17,000 other and 80,000 living.
+    const yearNet =
+      y.totalIncome +
+      y.withdrawals.total -
+      y.expenses.taxes -
+      y.expenses.liabilities -
+      y.savings.total -
+      (y.expenses.insurance + y.expenses.realEstate + y.expenses.other) -
+      y.expenses.living;
+    expect(yearNet).toBeCloseTo(32_000, 6);
+    expect(sum(rows.map((r) => r.net))).toBeCloseTo(yearNet, 6);
+  });
+
+  // The `− surplusSpent` term is unreachable from this fixture: `discretionary`
+  // is 0 in all 30 years, and reaching it needs BOTH a default-checking account
+  // and a `surplusSpendPct` — a change that re-routes cash in every year and
+  // would move numbers every other test here depends on. Spiking the year is
+  // the same technique the synthetic-key test uses: it asks the allocator what
+  // it does with a year that carries discretionary spend, which is precisely
+  // what it promises to handle.
+  //
+  // TASK 8, BINDING: `MonthRow` has no `surplusSpent` column, so in a year with
+  // discretionary spend the row's VISIBLE columns do not add up to its `net` —
+  // the gap asserted below. That is a presentation decision Task 8 owes; it is
+  // not a bug and must not be "fixed" by hiding it.
+  it("subtracts discretionary surplus spend from net, though no column shows it", () => {
+    const y = years[0];
+    const spiked = { ...y, expenses: { ...y.expenses, discretionary: 60_000 } };
+    const base = buildMonthlyAllocation(y, clientData, "nominal");
+    const rows = buildMonthlyAllocation(spiked, clientData, "nominal");
+    for (let i = 0; i < 12; i++) {
+      expect(rows[i].net - base[i].net).toBeCloseTo(-5_000, 6);
+      // Invisible in every published column — that is the whole point.
+      expect(rows[i].living).toBeCloseTo(base[i].living, 6);
+      expect(rows[i].other).toBeCloseTo(base[i].other, 6);
+      expect(rows[i].taxes).toBeCloseTo(base[i].taxes, 6);
     }
   });
 
@@ -432,7 +541,8 @@ describe("buildMonthlyAllocation — the `today` basis", () => {
     // 2045 is an RMD year: ~98,600 of the year's income has no `bySource` key,
     // so most of the column comes from the true-up. If the true-up skipped its
     // `* k`, that 98,600 would arrive in nominal dollars on top of a deflated
-    // remainder and this sum would overshoot by ~40%.
+    // remainder and this sum would overshoot by ~49% (measured: 128,523 against
+    // an expected 86,147).
     const y = years.find((x) => x.year === 2045)!;
     const k = deflator(y.year, "today", clientData.planSettings);
     const residual = y.totalIncome - sum(Object.values(y.income.bySource));
