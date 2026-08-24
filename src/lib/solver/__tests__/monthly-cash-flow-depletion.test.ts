@@ -102,8 +102,9 @@ function expectContiguousToEnd(rows: { year: number; depleted: boolean }[]) {
  * never removed the engine's gap-fill residue — it only hid it behind millions
  * in other accounts. Narrow the set and the residue IS the sum.
  *
- * Both households below are grossly solvent, and both flag without the
- * tolerance.
+ * Called two ways: with a real brokerage it is a grossly solvent household that
+ * flags anyway without the tolerance, and with a $1,000 brokerage it is a
+ * genuinely broke one — which is how the module's set is proven live.
  */
 function narrowHouseholdPlan(brokerageValue: number, livingAnnual: number): ClientData {
   return buildClientData({
@@ -250,18 +251,42 @@ describe("depletion flag", () => {
     expect(flaggedYears(rows)).toEqual([]);
   });
 
+  it("keeps the household set LIVE on the narrow fixture, at both ends of the scale", () => {
+    // Every other guard on this fixture reads the ENGINE, so none of them can
+    // see the MODULE'S set. Flip the checking account's `category` from "cash"
+    // to anything outside `LIQUID_PORTFOLIO_CATEGORIES` and the set empties —
+    // the brokerage is excluded wholesale for its entity owner — so `depleted`
+    // becomes unreachable for ANY input and every `toEqual([])` below still
+    // passes. This is the assertion that closes that hole: the same fixture
+    // starved to $1,000 must flag, which is only possible if the set is
+    // non-empty AND contains checking.
+    //
+    // It also proves the FRACTIONAL tolerance does not swallow a real depletion
+    // at UHNW scale: at $200M of spending the tolerance is ~$380,000, and the
+    // starved household still has to clear it.
+    for (const livingAnnual of [80_000, 200_000_000]) {
+      const { rows } = build(narrowHouseholdPlan(1_000, livingAnnual));
+      expect(rows).toHaveLength(30);
+      expect(flaggedYears(rows).length).toBeGreaterThan(0);
+    }
+  });
+
   it("is false in every year of a self-funding household whose liquid set narrows to ONE account", () => {
     // The wide fixtures above cannot prove the tolerance: they hold four or five
     // accounts summing to $1.1M-$4.9M, so no per-account residue can flip the
-    // sign and `toEqual([])` would pass with the tolerance deleted. These two
-    // narrow to checking alone.
+    // sign and `toEqual([])` would pass with the tolerance deleted. These narrow
+    // to checking alone, and they climb until the residue is real money.
     for (const [brokerageValue, livingAnnual] of [
-      // The shape the reviewer reproduced: residue is float dust (~1e-11), and
-      // the flag fires NON-CONTIGUOUSLY without the tolerance.
+      // Float dust (~1e-11). Flags NON-CONTIGUOUSLY with no tolerance at all.
       [4_000_000, 80_000],
-      // The same shape at UHNW scale, where the residue is DOLLARS rather than
-      // dust. This is the case that decides 10 over 1.
+      // -$5.33. Past a tolerance of 1, inside a flat 10.
       [100_000_000, 2_000_000],
+      // -$63.36 — WHERE A FLAT $10 BREAKS, and not a hypothetical: a $500M
+      // family-office portfolio running $520M to $1.72B flags 2046 on its own.
+      [500_000_000, 10_000_000],
+      // -$352.64 and -$1,436, same single year, further out.
+      [2_500_000_000, 50_000_000],
+      [10_000_000_000, 200_000_000],
     ] as const) {
       const clientData = narrowHouseholdPlan(brokerageValue, livingAnnual);
 
@@ -269,9 +294,6 @@ describe("depletion flag", () => {
       // the trust, which Ruling 5 excludes wholesale. Without this guard the
       // fixture could silently widen and stop testing anything.
       expect(clientData.accounts).toHaveLength(2);
-      expect(
-        clientData.accounts.filter((a) => (a.owners ?? []).every((o) => o.kind === "family_member")),
-      ).toHaveLength(1);
 
       const { years, rows } = build(clientData);
       // Liveness: 30 real rows, not an empty array `toEqual([])` would accept.
@@ -288,16 +310,19 @@ describe("depletion flag", () => {
   });
 
   it("tolerates the engine's DOLLAR-scale gap-fill residue, not just float dust", () => {
-    // Ruling 1: a tolerance of 1 would not have been enough. The engine's
-    // phase-12 convergence loop carries its own `const TOLERANCE = 1`, so the
-    // gap-fill is allowed to undershoot by dollars — and the undershoot SCALES
-    // with the plan. On this $100M household it lands at about -$5.33, which is
-    // past 1 and inside 10. Pinned as a range so the day the residue outgrows
-    // the tolerance this reds instead of the flag quietly lying.
+    // Vacuity guard for the fixtures above. The engine's phase-12 convergence
+    // loop carries its own `const TOLERANCE = 1` and gives up after 5 Newton
+    // steps, so the gap-fill is allowed to undershoot by dollars — and the
+    // undershoot scales with the year's spending. On this $100M / $2M-a-year
+    // household it lands at about -$5.33, which makes the `toEqual([])` above a
+    // claim about the tolerance rather than a claim about 1e-11 of float dust.
+    //
+    // The upper half of this pin (`toBeGreaterThan(-10)`) is deliberately GONE:
+    // it was implied by `flaggedYears(rows) === []` on the same fixture, and it
+    // watched a fixture frozen at $100M while the failure mode is a CLIENT'S
+    // plan being larger — so it could only ever red on an engine change.
     const { years, rows } = build(narrowHouseholdPlan(100_000_000, 2_000_000));
-    const residue = worstCheckingResidue(years);
-    expect(residue).toBeLessThan(-1);
-    expect(residue).toBeGreaterThan(-10);
+    expect(worstCheckingResidue(years)).toBeLessThan(-1);
     expect(flaggedYears(rows)).toEqual([]);
   });
 

@@ -119,33 +119,39 @@ function householdLiquidAccountIds(
 }
 
 /**
- * Dollars of engine residue the depletion flag tolerates before it calls a
- * household broke. NOT a tuned threshold — it is the size of a known engine
- * artefact, measured:
+ * Engine residue the depletion flag tolerates before it calls a household broke.
+ * NOT a tuned threshold — it is the size of a known engine artefact, and it is
+ * PROPORTIONAL because the artefact is.
  *
- *  · **−$3.29** is the largest healthy residue measured anywhere in this
- *    module's fixtures (2041 of the with-checking plan: shortfall 140,245.60,
- *    gap-fill 140,242.31). The engine's phase-12 convergence loop carries its
- *    own `const TOLERANCE = 1`, so `projection.ts:5822-5825`'s "household
- *    checking should never end the year negative" is true to the DOLLAR, not to
- *    the cent. The money comes back the next year. **This is why the tolerance
- *    is 10 and not 1** — at 1 a household set that narrows to the account
- *    carrying that undershoot still flags.
- *  · **~1e-11** is the float dust left when the gap-fill lands exactly: a
- *    self-funding plan parks checking at nominal zero and lands a hair either
- *    side of it, flagging NON-CONTIGUOUSLY in scattered years.
- *  · **−$92,483** is the first genuinely depleted year measured. The tolerance
- *    sits ~9,000× below it, so nothing an advisor could act on is swallowed.
+ * Mechanism, read at `projection.ts:5849-5850`: the phase-12 gap-fill runs at
+ * most `MAX_ITER = 5` Newton steps and breaks early only on an ABSOLUTE
+ * `|checkingAfterTax| <= TOLERANCE` of 1. So the undershoot is capped at a
+ * dollar ONLY when the loop converges; when it does not, the loop exits still
+ * carrying a RELATIVE error on the amount it was filling, and that error is
+ * unbounded in dollars.
  *
- * `monthly-cash-flow-split.test.ts:44` (`RESIDUAL_TOLERANCE_PER_YEAR`) already
- * names 10 for this same engine residue; this is that constant's twin, not a
- * second opinion.
+ * Which means the residue tracks the YEAR'S SPENDING, not the portfolio.
+ * Measured on the narrow-set fixture, worst end-of-year checking balance:
  *
- * Known limit: the residue SCALES with plan size — measured at −$5.33 on a
- * $100M portfolio — while this constant is absolute. A large enough plan would
- * breach it. See the report's blind-spot list.
+ *  · portfolio 100x at fixed $2M spending — -$5.33 ($100M), -$0.04 ($500M),
+ *    -$0.78 ($2.5B), -$1.30 ($10B). Flat and noisy; it does NOT grow.
+ *  · spending 2500x at a fixed portfolio — -7e-12 ($80k), -$0.33 ($400k),
+ *    -$1.30 ($2M), -$35.53 ($10M), -$1,436 ($200M). Order of magnitude follows.
+ *
+ * Against the year's own outflow every measured residue lands at or below
+ * ~3.8e-6: -$5.33/$3.91M, -$63.36/$19.1M, -$352.64/$95.0M, -$1,436/$379.7M.
+ * The first genuinely depleted year is -$92,483 against a $174,823 outflow —
+ * a ratio of 0.53. So 0.001 sits ~260x above the worst measured noise and
+ * ~500x below the real signal.
+ *
+ * A flat $10 was tried first and is ALREADY BREACHED in range: a $500M
+ * brokerage against $10M-a-year spending leaves -$63.36 in a single year of
+ * thirty while the brokerage runs $520M to $1.72B. `DEPLETION_TOLERANCE_DOLLARS`
+ * survives only as the floor for a near-zero-outflow year, where a fraction of
+ * nothing is nothing.
  */
 const DEPLETION_TOLERANCE_DOLLARS = 10;
+const DEPLETION_TOLERANCE_FRACTION = 0.001;
 
 /**
  * True when the household's whole liquid portfolio ends the year below zero.
@@ -170,7 +176,8 @@ const DEPLETION_TOLERANCE_DOLLARS = 10;
  * household/entity accounts wholesale, so a household holding checking plus one
  * 50/50 client/trust brokerage is down to checking alone — the residue is once
  * again the whole sum, and an unpadded `< 0` flags a household with $21M in the
- * bank. Hence `DEPLETION_TOLERANCE_DOLLARS`; see its comment for the numbers.
+ * bank. Hence the tolerance; see `DEPLETION_TOLERANCE_FRACTION` for why it is a
+ * fraction of the year's outflow rather than a flat dollar figure.
  *
  * Structural on purpose. The same code writes a ledger entry labelled "Unfunded
  * shortfall (accounts depleted)", but matching that string would break the
@@ -180,7 +187,19 @@ const DEPLETION_TOLERANCE_DOLLARS = 10;
 function isDepleted(y: ProjectionYear, householdLiquidIds: Set<string>): boolean {
   let net = 0;
   for (const id of householdLiquidIds) net += y.accountLedgers[id]?.endingValue ?? 0;
-  return net < -DEPLETION_TOLERANCE_DOLLARS;
+  // `totalExpenses` is the engine's own outflow side of
+  // `netCashFlow = totalIncome - totalExpenses` (projection.ts:7226) and is
+  // exactly `expenses.total + savings.total + hypoContribution`. Verified by
+  // measurement, not by reading: `expenses.total` ALREADY carries taxes (the
+  // per-bucket sum matches it to 0.00 across 30 years, and taxes run up to 36%
+  // of it), and savings is NOT in it (23,500/yr of savings shows up only in the
+  // 194,500 -> 218,000 step). Adding either by hand would double-count or
+  // under-count the very quantity the gap-fill is sized against.
+  const tolerance = Math.max(
+    DEPLETION_TOLERANCE_DOLLARS,
+    DEPLETION_TOLERANCE_FRACTION * y.totalExpenses,
+  );
+  return net < -tolerance;
 }
 
 /** Deflate to plan-start purchasing power. Returns 1 for the nominal basis and
