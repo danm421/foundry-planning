@@ -1060,6 +1060,10 @@ export interface Income {
   startYearRef?: string | null;
   endYearRef?: string | null;
   growthSource?: string | null;
+  /** Calendar month (1-12) the whole year's amount lands in, for the solver's
+   *  month-by-month view. Null/absent = spread across all twelve months.
+   *  Engine math ignores this, like everything else in this block. */
+  paymentMonth?: number | null;
   /** Years this row pays nothing before resuming. See `SuspensionWindow`. */
   suspended?: SuspensionWindow | null;
 }
@@ -1114,6 +1118,10 @@ export interface Expense {
   startYearRef?: string | null;
   endYearRef?: string | null;
   growthSource?: string | null;
+  /** Calendar month (1-12) the whole year's amount lands in, for the solver's
+   *  month-by-month view. Null/absent = spread across all twelve months.
+   *  Engine math ignores this, like everything else in this block. */
+  paymentMonth?: number | null;
   /** Advisor-set flag surfacing this expense on the Household Map Goals board.
    *  Presentation only — engine math ignores it. Education rows are treated as
    *  goals regardless of this flag; see src/lib/household-map/goals.ts. */
