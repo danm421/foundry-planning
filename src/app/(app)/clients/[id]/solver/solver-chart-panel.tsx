@@ -52,6 +52,10 @@ import { EducationReportPanel } from "@/components/solver/education/education-re
 import { SolverBalanceSheetPanel } from "./solver-balance-sheet-panel";
 import { SolverThresholdsPanel } from "./solver-thresholds-panel";
 
+/** The three tables the Cash Flow report can show. Exported because the
+ *  workspace owns this state — see the `cashflowSubTab` prop below. */
+export type CashflowSubTab = "cashflow" | "withdrawals" | "monthly";
+
 // `label` is the full name (accessible name + hover title); `short` is what
 // renders beneath the icon — mirrors the left-pane LEFT_TABS so both tab strips
 // read the same. Keep `label` exact: tests query tabs by accessible name.
@@ -184,6 +188,12 @@ interface Props {
   mcRequested: boolean;
   activeSummary: SummaryKey;
   onSummaryChange: (s: SummaryKey) => void;
+  /** Controlled Cash Flow sub-tab. Lifted rather than local because the
+   *  workspace renders the ANNUAL year-detail drill as a sibling below this
+   *  panel and has to hide it while the MONTHLY table is showing — two figures
+   *  twelve times apart, stacked, read as a contradiction. */
+  cashflowSubTab: CashflowSubTab;
+  onCashflowSubTabChange: (t: CashflowSubTab) => void;
   /** Selected year for the cash-flow detail panel; highlights that bar. */
   selectedYear: number | null;
   /** Fired when a cash-flow chart bar is clicked. */
@@ -221,6 +231,8 @@ export function SolverChartPanel({
   mcRequested,
   activeSummary,
   onSummaryChange,
+  cashflowSubTab,
+  onCashflowSubTabChange,
   selectedYear,
   onYearClick,
   educationReturnStats,
@@ -231,8 +243,6 @@ export function SolverChartPanel({
   const [showTable, setShowTable] = useState(false);
   const [showCustomize, setShowCustomize] = useState(false);
   const [estateSubTab, setEstateSubTab] = useState<"charts" | "flow">("charts");
-  const [cashflowSubTab, setCashflowSubTab] =
-    useState<"cashflow" | "withdrawals" | "monthly">("cashflow");
   // Remembered across sessions — an advisor who works in today's dollars should
   // not re-pick it for every client.
   const [dollarBasis, setDollarBasis] = useDollarBasis();
@@ -487,7 +497,7 @@ export function SolverChartPanel({
       activeTab={cashflowSubTab}
       onTabChange={(id) => {
         if (id === "withdrawals" || id === "monthly" || id === "cashflow") {
-          setCashflowSubTab(id);
+          onCashflowSubTabChange(id);
         }
       }}
     />

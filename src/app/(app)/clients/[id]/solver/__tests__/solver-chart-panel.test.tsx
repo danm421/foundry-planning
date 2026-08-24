@@ -140,7 +140,7 @@ vi.mock("../use-solver-full-projection", () => ({
   useSolverFullProjection: () => fullProjectionStub.current,
 }));
 
-import { SolverChartPanel, REPORT_TABS } from "../solver-chart-panel";
+import { SolverChartPanel, REPORT_TABS, type CashflowSubTab } from "../solver-chart-panel";
 
 const workingTree = {
   client: {
@@ -219,6 +219,7 @@ function ControlledPanel({
   currentProjection?: ProjectionYear[];
 }) {
   const [activeReport, setActiveReport] = useState<ReportKey>(initialReport);
+  const [cashflowSubTab, setCashflowSubTab] = useState<CashflowSubTab>("cashflow");
   return (
     <SolverChartPanel
       currentProjection={currentProjection}
@@ -242,6 +243,8 @@ function ControlledPanel({
       mcRequested={false}
       activeSummary="retirement"
       onSummaryChange={() => undefined}
+      cashflowSubTab={cashflowSubTab}
+      onCashflowSubTabChange={setCashflowSubTab}
       selectedYear={null}
       onYearClick={() => undefined}
       layout={layout}
@@ -427,6 +430,8 @@ describe("SolverChartPanel", () => {
         mcRequested={false}
         activeSummary="retirement"
         onSummaryChange={() => undefined}
+        cashflowSubTab="cashflow"
+        onCashflowSubTabChange={() => undefined}
         selectedYear={null}
         onYearClick={() => undefined}
         baseGifts={[]}
