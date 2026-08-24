@@ -56,6 +56,10 @@ const NON_BASE_SAVABLE = new Set<SolverMutation["kind"]>([
   "stress-disability",
   "stress-market-crash",
   "stress-exemption-cap",
+  // PlanSettings.taxRateStress is TypeScript-only — there is no plan_settings
+  // column for it, so reporting savable would make Save-to-base drop it AND
+  // clear it from the working set.
+  "stress-tax-rates",
 ]);
 
 export function isBaseSavableMutation(m: SolverMutation): boolean {

@@ -651,6 +651,15 @@ export function mutationsToScenarioChanges(
         );
         break;
       }
+      case "stress-tax-rates": {
+        // Object-valued, so a direct assignment like ssBenefitHaircut above —
+        // maybeDiff compares with === and would never dedupe a fresh object.
+        planSettingsDiff.taxRateStress = {
+          from: source.planSettings.taxRateStress ?? null,
+          to: { points: m.points, startYear: m.startYear },
+        };
+        break;
+      }
       case "surplus-allocation": {
         maybeDiff(
           planSettingsDiff,

@@ -153,12 +153,13 @@ interface Account {
   value?: number;
   isDefaultChecking?: boolean | null;
   ownerEntityId?: string | null;
-  /** "Who is this account FOR" — a 529 substitutes its BENEFICIARY here so the
-   *  dedicated-funding picker's eligibility filter keeps it. Not an ownership
-   *  signal; use `owners` for that. */
   ownerFamilyMemberIds?: string[];
   /** Ownership rows verbatim, for the savings-rule year defaults. */
   owners?: AccountOwner[];
+  /** 529 only — who the money is FOR. Kept out of `ownerFamilyMemberIds`
+   *  because a 529's owners are deliberately empty (out of estate). */
+  beneficiaryFamilyMemberId?: string | null;
+  beneficiaryName?: string | null;
 }
 
 interface Entity {
@@ -1219,6 +1220,10 @@ function ExpenseDialog({
     .filter((fm) => fm.role === "client" || fm.role === "spouse")
     .map((fm) => fm.id);
   const allowedFundingOwnerIds = [...householdMemberIds, ...(forFamilyMemberId ? [forFamilyMemberId] : [])];
+  // Names for the picker's "· for <beneficiary>" caption on 529 rows.
+  const familyMemberNames = Object.fromEntries(
+    (familyMembers ?? []).map((fm) => [fm.id, `${fm.firstName}${fm.lastName ? ` ${fm.lastName}` : ""}`]),
+  );
 
   // Switching an unsaved expense to education re-frames its end the same way a
   // dialog opened on education starts out — a four-year programme off the
@@ -1445,6 +1450,7 @@ function ExpenseDialog({
                 value={dedicatedAccountIds}
                 onChange={setDedicatedAccountIds}
                 allowedOwnerFamilyMemberIds={allowedFundingOwnerIds}
+                familyMemberNames={familyMemberNames}
               />
               <label className="flex items-center gap-2 text-sm text-gray-100">
                 <input

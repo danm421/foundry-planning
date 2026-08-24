@@ -397,6 +397,13 @@ export function applyMutations(
         };
         break;
       }
+      case "stress-tax-rates": {
+        result.planSettings = {
+          ...result.planSettings,
+          taxRateStress: { points: m.points, startYear: m.startYear },
+        };
+        break;
+      }
       case "surplus-allocation": {
         result.planSettings = {
           ...result.planSettings,

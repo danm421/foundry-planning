@@ -7,6 +7,7 @@ import type { InvestmentsBundle, CategoryGrowthDefault } from "@/lib/presentatio
 import { exactCurrency } from "@/lib/presentations/format";
 import {
   formatPct,
+  formatPoints,
   blendReturn,
   growthSourceLabel,
   accountCategoryLabel,
@@ -198,6 +199,26 @@ function buildStressTests(ps: PlanSettings): AssumptionRow[] {
     });
   }
   if (ps.marketShock) rows.push({ label: "Market shock", value: `${formatPct(ps.marketShock.drawdownPct)} drawdown in ${ps.marketShock.year}` });
+  // Gated on bracket mode for the same reason the solver's row is disabled
+  // there: in flat mode the engine never builds a bracket resolver, so the
+  // stressor is inert. Ungated, one PDF would tell a client both "Method: Flat
+  // rate" (see the Income Tax section above) and "Tax rates rise", disclosing a
+  // stress that did not happen — while the solver's own row correctly reads OFF.
+  //
+  // The stored value deliberately SURVIVES a switch to flat mode rather than
+  // being cleared, so flipping back to bracket restores the advisor's setting
+  // intact. That is why this is a read-time gate and not a write-time delete.
+  if (ps.taxRateStress && ps.taxEngineMode === "bracket") {
+    // formatPOINTS, not formatPct: this row is a DELTA, and two sections up the
+    // same page renders "Federal rate — 22.0%". A client reading "3.0% on
+    // federal ordinary rates" can fairly take it as the rate itself. The
+    // sibling stress rows do not have this problem because their percentages
+    // really are the size of the move ("23.0% from 2034" is a 23% cut).
+    rows.push({
+      label: "Tax rates rise",
+      value: `${formatPoints(ps.taxRateStress.points)} on federal ordinary and capital-gains rates from ${ps.taxRateStress.startYear}`,
+    });
+  }
   return rows;
 }
 

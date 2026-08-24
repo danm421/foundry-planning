@@ -47,7 +47,7 @@ import {
   scheduleBoYBalance,
   type LiabilityScheduleMap,
 } from "./liability-schedules";
-import { createTaxResolver } from "../lib/tax/resolver";
+import { buildTaxResolver } from "../lib/tax/build-resolver";
 import type { TaxHouseholdInput, TaxYearParameters, FilingStatus } from "../lib/tax/types";
 import type { CapitalLossCarryforward } from "../lib/tax/capital-loss";
 import type { ThresholdFacts, ThresholdHousehold } from "../lib/tax/thresholds";
@@ -85,7 +85,7 @@ import { computeEducationDraw } from "./education/education-funding";
 import { calculateRMD } from "./rmd";
 import { applyTransfers, type TransfersResult } from "./transfers";
 import { applyReinvestments } from "./reinvestments";
-import { applyRothConversions } from "./roth-conversions";
+import { applyRothConversions, fillUpBracketCeiling } from "./roth-conversions";
 import { applyMarketShock } from "./market-shock";
 import {
   applyAssetSales,
@@ -471,16 +471,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       "Falling back to flat mode. Run `npm run seed:tax-data` to populate."
     );
   }
-  const taxResolver = taxYearRows.length > 0
-    ? createTaxResolver(taxYearRows, {
-        taxInflationRate: planSettings.taxInflationRate != null
-          ? planSettings.taxInflationRate
-          : planSettings.inflationRate,
-        ssWageGrowthRate: planSettings.ssWageGrowthRate != null
-          ? planSettings.ssWageGrowthRate
-          : planSettings.inflationRate + 0.005,
-      })
-    : null;
+  const taxResolver = buildTaxResolver(taxYearRows, planSettings);
 
   // Mutable working list of entities. Death-event grantor-succession can flip
   // an irrevocable grantor trust (IDGT/SLAT) to non-grantor at IRC §671 when
@@ -4601,11 +4592,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         for (const conv of bracketFillers) {
           if (!_isFillBracketActiveYear(conv, year)) continue;
           if (conv.fillUpBracket == null) continue;
-          const tier = convBrackets.find(
-            (t) => Math.abs(t.rate - conv.fillUpBracket!) < 1e-9,
-          );
-          if (!tier || tier.to == null) continue;
-          const ceiling = tier.to - 1;
+          // Shared with the sizing pass in roth-conversions.ts — see that
+          // function's comment for why the tier is found by IDENTITY rather
+          // than by the rate it currently charges.
+          const ceiling = fillUpBracketCeiling(convBrackets, conv.fillUpBracket);
+          if (ceiling == null) continue;
           fillBracketCeilingsById[conv.id] = ceiling;
           const sourceCap = conv.sourceAccountIds.reduce(
             (sum, sid) => sum + Math.max(0, accountBalances[sid] ?? 0),

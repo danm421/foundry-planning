@@ -101,15 +101,27 @@ describe("Your Early Years built-in template", () => {
     expect(t().pages.map((p) => p.pageId)).not.toContain("earlyYearsTidbits");
   });
 
-  it("ships every sheet's tidbit slot empty, so no note is chosen for the advisor", () => {
+  it("ships every sheet with its own tidbits, and no note twice", () => {
     // Guards the claim the template's own comment makes. Every CONTENT sheet in
     // this deck carries a tidbits slot; cover and contents are furniture and
     // carry none. Asserting the invariant rather than a count means a seventh
-    // sheet needs no edit here — and an undefined slot fails by page id, which
-    // is the sentence the next reader needs.
+    // sheet needs no edit here — and an empty slot fails by page id, which is
+    // the sentence the next reader needs.
+    //
+    // WHICH notes each page defaults to is decided in the page's own types.ts
+    // and checked in `deck-tidbit-defaults.test.ts`. What is asserted here is
+    // only that the TEMPLATE carries them through rather than flattening the
+    // slot back to empty on its way into a deck.
     const FRAMING = new Set(["cover", "toc"]);
+    const seen = new Set<string>();
     for (const p of t().pages.filter((x) => !FRAMING.has(x.pageId))) {
-      expect((p.options as { tidbits?: unknown[] }).tidbits, p.pageId).toEqual([]);
+      const picks = (p.options as { tidbits?: string[] }).tidbits;
+      expect(picks, p.pageId).toBeDefined();
+      expect(picks!.length, p.pageId).toBeGreaterThan(0);
+      for (const id of picks!) {
+        expect(seen.has(id), `${p.pageId} repeats ${id}`).toBe(false);
+        seen.add(id);
+      }
     }
   });
 
@@ -125,12 +137,15 @@ describe("Your Early Years built-in template", () => {
     expect(ladder.options).toMatchObject({
       rungs: { mode: "relative", offsets: [0, 0.03, 0.06] },
       milestoneAges: [40, 50, 65],
-      tidbits: [],
+      tidbits: ["compounding-small-amounts", "compounding-automate"],
     });
   });
 
-  it("leaves the match line on and both tidbit slots empty for the advisor", () => {
+  it("leaves the match line on, beside the note about what a match is", () => {
     const standing = t().pages.find((p) => p.pageId === "earlyYearsStanding")!;
-    expect(standing.options).toEqual({ showMatchLine: true, tidbits: [] });
+    expect(standing.options).toEqual({
+      showMatchLine: true,
+      tidbits: ["match-is-not-a-bonus", "behavior-pay-yourself-first"],
+    });
   });
 });

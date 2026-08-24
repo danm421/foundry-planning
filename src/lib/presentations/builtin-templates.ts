@@ -92,7 +92,9 @@ export const BUILTIN_TEMPLATES: readonly BuiltInTemplate[] = [
       // lever per sheet. Every page takes the registry defaults, so nothing here
       // freezes a rate or an amount a template picked — the ladder and the
       // cost-of-waiting page both work RELATIVE to what this client already
-      // defers, and every tidbit slot stays empty for the advisor.
+      // defers, and each sheet's tidbits are the ones its own page chose, no
+      // note repeated across the deck. The advisor can swap or clear any of
+      // them, and the picker offers a reset back to these.
       page("earlyYearsStanding"),
       page("earlyYearsHumanCapital"),
       page("earlyYearsLadder"),

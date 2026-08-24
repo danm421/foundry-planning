@@ -1,6 +1,7 @@
 // src/lib/tax/resolver.ts
 import type { TaxYearParameters } from "./types";
 import { ROUNDING_STEPS, floorToStep } from "./constants";
+import { applyTaxRateStress, type TaxRateStress } from "./rate-stress";
 
 export interface ResolverRates {
   taxInflationRate: number;   // for everything except SS wage base
@@ -17,11 +18,33 @@ export interface TaxResolver {
   getYear(year: number): ResolvedYear;
 }
 
-export function createTaxResolver(rows: TaxYearParameters[], rates: ResolverRates): TaxResolver {
+export function createTaxResolver(
+  rows: TaxYearParameters[],
+  rates: ResolverRates,
+  /** Optional "tax rates rise" stressor. Absent = today's behaviour, which is
+   *  what src/lib/tax-returns/load-analysis-context.ts relies on: it resolves
+   *  parameters for ACTUAL FILED RETURNS and must never see a hypothetical. */
+  stress?: TaxRateStress,
+): TaxResolver {
   if (rows.length === 0) throw new Error("createTaxResolver: no tax_year_parameters rows provided");
   const sorted = [...rows].sort((a, b) => a.year - b.year);
   const latest = sorted[sorted.length - 1];
   const cache = new Map<number, ResolvedYear>();
+
+  /** Every return path must do the same two things — apply the stressor and
+   *  cache the result — so they are written once. Three hand-rolled copies is
+   *  how a branch silently loses its `applyTaxRateStress` call while the other
+   *  two stay green (see build-resolver.test.ts's past-year test). */
+  const remember = (
+    year: number,
+    row: TaxYearParameters,
+    inflationFactor: number,
+    sourceYear: number,
+  ): ResolvedYear => {
+    const out = { params: applyTaxRateStress(row, stress, year), inflationFactor, sourceYear };
+    cache.set(year, out);
+    return out;
+  };
 
   return {
     getYear(year: number): ResolvedYear {
@@ -30,28 +53,24 @@ export function createTaxResolver(rows: TaxYearParameters[], rates: ResolverRate
 
       // Exact match
       const exact = sorted.find((r) => r.year === year);
-      if (exact) {
-        const out = { params: exact, inflationFactor: 1.0, sourceYear: year };
-        cache.set(year, out);
-        return out;
-      }
+      // applyTaxRateStress never mutates, so `exact` — a caller-owned row — is
+      // safe to hand it. Unstressed years get the same object back.
+      if (exact) return remember(year, exact, 1.0, year);
 
       // Past year — fall back to earliest (defensive; engine validates planStartYear >= currentYear)
-      if (year < sorted[0].year) {
-        const out = { params: sorted[0], inflationFactor: 1.0, sourceYear: sorted[0].year };
-        cache.set(year, out);
-        return out;
-      }
+      if (year < sorted[0].year) return remember(year, sorted[0], 1.0, sorted[0].year);
 
       // Future year — inflate latest forward
       const yearsForward = year - latest.year;
       const generalFactor = Math.pow(1 + rates.taxInflationRate, yearsForward);
       const ssFactor = Math.pow(1 + rates.ssWageGrowthRate, yearsForward);
 
+      // ORDER IS LOAD-BEARING: stress AFTER inflating, never before. inflateParams
+      // rebuilds capGainsBrackets field-by-field, emitting only zeroPctTop and
+      // fifteenPctTop — it would silently drop the stressor's midRate/topRate,
+      // leaving preferential rates unstressed while ordinary rates rose.
       const inflated = inflateParams(latest, generalFactor, ssFactor);
-      const out = { params: inflated, inflationFactor: generalFactor, sourceYear: latest.year };
-      cache.set(year, out);
-      return out;
+      return remember(year, inflated, generalFactor, latest.year);
     },
   };
 }

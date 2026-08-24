@@ -44,9 +44,11 @@ export interface EarlyYearsWaitingPageOptions {
   tidbits: string[];
 }
 
+// The chart prices a delay; the notes say why a delay costs more than the years
+// it skips, and why the runway itself is the scarce thing.
 export const EARLY_YEARS_WAITING_OPTIONS_DEFAULT: EarlyYearsWaitingPageOptions = {
   rungOffset: 0.03,
   delays: [0, 5, 10],
   milestoneAges: [40, 50, 65],
-  tidbits: [],
+  tidbits: ["compounding-cost-of-waiting", "compounding-runway"],
 };

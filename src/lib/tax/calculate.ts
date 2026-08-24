@@ -2,6 +2,7 @@
 import type { CalcInput, TaxResult, FilingStatus } from "./types";
 import { calcFederalTax, calcMarginalRate, findMarginalTier } from "./federal";
 import { calcCapGainsTax } from "./capGains";
+import { withStatutoryRates } from "./rate-stress";
 import { calcAmtTentative, calcAmtAdditional } from "./amt";
 import { calcNiit } from "./niit";
 import { calcFica, calcAdditionalMedicare, ficaWagesOf } from "./fica";
@@ -178,7 +179,12 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
   const tentativeAmt = calcAmtTentative(amti, amtParams, {
     year: input.year,
     ltcgPlusQdiv: capitalGains + dividends,
-    capGainsBrackets: p.capGainsBrackets[fs],
+    // Statutory rates deliberately. The "tax rates rise" stressor writes raised
+    // preferential rates onto the params, and AMT is out of its scope by
+    // decision — without this strip, AMT would inherit them for free because
+    // amt.ts shares calcCapGainsTax with the regular calculation. Stripping
+    // here keeps amt.ts itself untouched. See rate-stress.ts.
+    capGainsBrackets: withStatutoryRates(p.capGainsBrackets[fs]),
     regularOrdinaryBase: incomeTaxBase,
   });
   const amtAdditional = calcAmtAdditional(tentativeAmt, regularTaxCalc + capitalGainsTax);

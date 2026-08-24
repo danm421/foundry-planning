@@ -7,19 +7,20 @@
  * `ProjectionYear.thresholdFacts` deliberately omits `params` (see
  * src/engine/types.ts), so the panel has to resolve its own
  * `TaxYearParameters` from the working tree's `taxYearRows`. This uses
- * `createTaxResolver` exactly as the engine does.
+ * `buildTaxResolver` exactly as the engine does.
  */
 import type { ClientData } from "@/engine/types";
 import type { TaxYearParameters } from "@/lib/tax/types";
-import { createTaxResolver } from "@/lib/tax/resolver";
+import { buildTaxResolver } from "@/lib/tax/build-resolver";
 
 /**
  * Resolve `year`'s `TaxYearParameters` from `tree.taxYearRows`.
  *
- * The inflation-rate fallback chain here MUST match the engine's, at
- * src/engine/projection.ts:452-459, exactly. If this drifts from that
- * chain, the report will display thresholds the engine did not actually
- * apply to the projection — silently, with every test still green.
+ * Goes through `buildTaxResolver` — the same factory the projection uses — so
+ * the inflation-rate fallback chain and the "tax rates rise" stressor cannot
+ * drift between the two. That drift is the failure this file's history warns
+ * about: a panel showing thresholds the engine never applied, silently, with
+ * every test green.
  *
  * Returns `null` when `taxYearRows` is missing or empty — the flat-mode
  * fallback path (bracket tax mode selected but no `tax_year_parameters`
@@ -30,19 +31,6 @@ export function resolveThresholdParams(
   tree: ClientData,
   year: number,
 ): TaxYearParameters | null {
-  const rows = tree.taxYearRows;
-  if (rows == null || rows.length === 0) return null;
-
-  const { planSettings } = tree;
-  const resolver = createTaxResolver(rows, {
-    taxInflationRate:
-      planSettings.taxInflationRate != null
-        ? planSettings.taxInflationRate
-        : planSettings.inflationRate,
-    ssWageGrowthRate:
-      planSettings.ssWageGrowthRate != null
-        ? planSettings.ssWageGrowthRate
-        : planSettings.inflationRate + 0.005,
-  });
-  return resolver.getYear(year).params;
+  const resolver = buildTaxResolver(tree.taxYearRows, tree.planSettings);
+  return resolver == null ? null : resolver.getYear(year).params;
 }

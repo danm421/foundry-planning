@@ -39,8 +39,8 @@ describe("DedicatedFundingPicker", () => {
   it("filters to accounts owned by the household or the beneficiary when allowed ids are given", () => {
     const owned = [
       { id: "p1", name: "Parent Brokerage", category: "taxable", subType: "brokerage", ownerFamilyMemberIds: ["client"] },
-      { id: "k1", name: "Kid 529", category: "taxable", subType: "529", ownerFamilyMemberIds: ["child-a"] },
-      { id: "o1", name: "Other Kid 529", category: "taxable", subType: "529", ownerFamilyMemberIds: ["child-b"] },
+      { id: "k1", name: "Kid Brokerage", category: "taxable", subType: "brokerage", ownerFamilyMemberIds: ["child-a"] },
+      { id: "o1", name: "Other Kid Brokerage", category: "taxable", subType: "brokerage", ownerFamilyMemberIds: ["child-b"] },
     ];
     render(
       <DedicatedFundingPicker
@@ -51,8 +51,88 @@ describe("DedicatedFundingPicker", () => {
       />,
     );
     expect(screen.getByText("Parent Brokerage")).toBeTruthy();
-    expect(screen.getByText("Kid 529")).toBeTruthy();
-    // Owned only by a different child — excluded.
-    expect(screen.queryByText("Other Kid 529")).toBeNull();
+    expect(screen.getByText("Kid Brokerage")).toBeTruthy();
+    // Owned only by a different child — excluded. (A 529 is exempt from this
+    // filter and stays listed; see the 529 suite below.)
+    expect(screen.queryByText("Other Kid Brokerage")).toBeNull();
+  });
+});
+
+/**
+ * A 529 has no family-member owner by construction: the loader replaces its
+ * owners with an out-of-estate sentinel (engine/ownership.ts). Before this
+ * suite, the picker's ownership filter read that empty list and silently
+ * dropped the account — so on a real household the only college asset in the
+ * plan was the one thing the advisor could not pick.
+ */
+describe("DedicatedFundingPicker — 529s and the ownership filter", () => {
+  const names = { client: "Mike", "child-a": "Emma", "child-b": "Jack" };
+
+  it("keeps a 529 with no beneficiary on file — there is nothing to filter it out by", () => {
+    const accounts = [
+      { id: "k1", name: "Education Savings", category: "education_savings", subType: "529" },
+      { id: "n1", name: "Nephew Brokerage", category: "taxable", subType: "brokerage", ownerFamilyMemberIds: ["child-b"] },
+    ];
+    render(
+      <DedicatedFundingPicker
+        accounts={accounts as never}
+        value={[]}
+        onChange={vi.fn()}
+        allowedOwnerFamilyMemberIds={["client", "child-a"]}
+        familyMemberNames={names}
+      />,
+    );
+    expect(screen.getByLabelText("Education Savings")).toBeTruthy();
+    expect(screen.getByText(/no beneficiary on file/i)).toBeTruthy();
+    // The ownership filter still bites for everything that isn't a 529.
+    expect(screen.queryByText("Nephew Brokerage")).toBeNull();
+  });
+
+  it("keeps another child's 529 and names whose it is, rather than hiding it", () => {
+    const accounts = [
+      { id: "k2", name: "College Fund", category: "education_savings", subType: "529", beneficiaryFamilyMemberId: "child-b" },
+    ];
+    render(
+      <DedicatedFundingPicker
+        accounts={accounts as never}
+        value={[]}
+        onChange={vi.fn()}
+        allowedOwnerFamilyMemberIds={["client", "child-a"]}
+        familyMemberNames={names}
+      />,
+    );
+    expect(screen.getByLabelText("College Fund")).toBeTruthy();
+    expect(screen.getByText("· for Jack")).toBeTruthy();
+  });
+
+  it("falls back to the beneficiary's typed-in name when they aren't a family member", () => {
+    const accounts = [
+      { id: "k3", name: "Grandparent 529", category: "education_savings", subType: "529", beneficiaryName: "Chris" },
+    ];
+    render(
+      <DedicatedFundingPicker
+        accounts={accounts as never}
+        value={[]}
+        onChange={vi.fn()}
+        allowedOwnerFamilyMemberIds={["client"]}
+        familyMemberNames={names}
+      />,
+    );
+    expect(screen.getByText("· for Chris")).toBeTruthy();
+  });
+
+  it("says the list was narrowed, instead of claiming the plan has no eligible accounts", () => {
+    const accounts = [
+      { id: "n1", name: "Nephew Brokerage", category: "taxable", subType: "brokerage", ownerFamilyMemberIds: ["child-b"] },
+    ];
+    render(
+      <DedicatedFundingPicker
+        accounts={accounts as never}
+        value={[]}
+        onChange={vi.fn()}
+        allowedOwnerFamilyMemberIds={["client", "child-a"]}
+      />,
+    );
+    expect(screen.getByText(/belong to someone outside this goal/i)).toBeTruthy();
   });
 });

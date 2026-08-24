@@ -426,3 +426,65 @@ describe("529 golden end-to-end", () => {
     }
   });
 });
+
+/**
+ * The cash-flow half of "out of estate": a 529 sits outside the household's
+ * portfolio, so the tuition it pays must be invisible to household cash flow —
+ * no expense line, no portfolio withdrawal. The out-of-pocket twin below is the
+ * same goal with no 529 behind it; it is what these assertions must be able to
+ * tell the covered case APART from, so they can't pass vacuously.
+ */
+describe("529-covered education cost never reaches household cash flow", () => {
+  const outOfPocketYears = runProjection({
+    ...makeData({ with529: false }),
+    expenses: [{ ...eduExpense, dedicatedAccountIds: [], payShortfallOutOfPocket: true }],
+  } as ClientData);
+  const outOfPocket = (year: number) => outOfPocketYears.find((y) => y.year === year)!;
+
+  it("books no household expense and no portfolio withdrawal while the 529 covers the cost", () => {
+    for (let year = EDU_START; year <= EDU_END; year++) {
+      const y = golden(year);
+      expect(eduRow(year)!.dedicatedWithdrawal).toBeCloseTo(EDU_COST, 6);
+      // The school is paid straight out of the 529.
+      expect(y.expenses.bySource["edu"]).toBeUndefined();
+      expect(y.expenses.other).toBe(0);
+      // …and that payment is not a portfolio draw: nothing was sold or
+      // gap-filled to fund it.
+      expect(y.withdrawals.byAccount["the-529"] ?? 0).toBe(0);
+      expect(y.withdrawals.total).toBe(0);
+    }
+  });
+
+  it("shows the SAME cost as a household expense once no 529 is behind it", () => {
+    for (let year = EDU_START; year <= EDU_END; year++) {
+      const y = outOfPocket(year);
+      expect(y.expenses.bySource["edu"]).toBeCloseTo(EDU_COST, 6);
+      expect(y.expenses.other).toBeCloseTo(EDU_COST, 6);
+    }
+  });
+
+  it("moves neither household income nor net cash flow — only tax moves", () => {
+    // Pre-tax net cash flow is the honest measure: taxes legitimately shift
+    // year to year (the NY 529 subtraction). Everything else must be flat
+    // through the education years — a covered goal costs the household nothing,
+    // and the draw is not household income either.
+    const preTaxNet = (y: ProjectionYear) => y.netCashFlow + y.expenses.taxes;
+    const before = golden(EDU_START - 1);
+    for (let year = EDU_START; year <= EDU_END; year++) {
+      const y = golden(year);
+      expect(y.totalIncome).toBeCloseTo(before.totalIncome, 6);
+      expect(preTaxNet(y)).toBeCloseTo(preTaxNet(before), 6);
+    }
+  });
+
+  it("the same goal paid out of pocket DOES move net cash flow — the measure is live", () => {
+    // Without this the assertion above would pass on a projection that had
+    // stopped modelling the goal at all.
+    const preTaxNet = (y: ProjectionYear) => y.netCashFlow + y.expenses.taxes;
+    const before = outOfPocket(EDU_START - 1);
+    for (let year = EDU_START; year <= EDU_END; year++) {
+      expect(preTaxNet(outOfPocket(year))).toBeCloseTo(preTaxNet(before) - EDU_COST, 6);
+    }
+  });
+});
+

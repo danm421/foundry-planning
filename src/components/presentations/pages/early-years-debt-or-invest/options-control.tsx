@@ -2,7 +2,10 @@
 
 import { OptionsRow, OptionsGroup } from "@/components/presentations/shared/options-layout";
 import { TidbitPicker } from "@/components/presentations/shared/tidbit-picker";
-import type { EarlyYearsDebtOrInvestPageOptions } from "@/lib/presentations/pages/early-years-debt-or-invest/types";
+import {
+  EARLY_YEARS_DEBT_OR_INVEST_OPTIONS_DEFAULT,
+  type EarlyYearsDebtOrInvestPageOptions,
+} from "@/lib/presentations/pages/early-years-debt-or-invest/types";
 
 interface Props {
   value: EarlyYearsDebtOrInvestPageOptions;
@@ -53,7 +56,11 @@ export function EarlyYearsDebtOrInvestOptionsControl({ value, onChange }: Props)
       </OptionsGroup>
 
       <OptionsGroup label="Tidbits">
-        <TidbitPicker value={value.tidbits} onChange={(tidbits) => onChange({ ...value, tidbits })} />
+        <TidbitPicker
+          value={value.tidbits}
+          defaults={EARLY_YEARS_DEBT_OR_INVEST_OPTIONS_DEFAULT.tidbits}
+          onChange={(tidbits) => onChange({ ...value, tidbits })}
+        />
       </OptionsGroup>
     </OptionsRow>
   );

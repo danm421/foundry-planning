@@ -8,6 +8,15 @@ export function formatPct(n: number): string {
   return `${(n * 100).toFixed(1)}%`;
 }
 
+/** Decimal → a signed percentage-POINT delta, e.g. 0.03 → "+3.0 percentage
+ *  points". Distinct from formatPct on purpose: a stress row states how far a
+ *  rate MOVES, and "3.0%" beside a page that also prints "Federal rate — 22.0%"
+ *  reads as the rate itself. "—" for non-finite, matching formatPct. */
+export function formatPoints(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  return `${n < 0 ? "" : "+"}${(n * 100).toFixed(1)} percentage points`;
+}
+
 /** Weighted sum of per-class geometric returns. Classes missing from `geoByClassId`
  *  contribute 0 (their weight is effectively unmodeled). */
 export function blendReturn(

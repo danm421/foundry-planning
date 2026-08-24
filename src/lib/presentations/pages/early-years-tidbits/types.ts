@@ -17,6 +17,15 @@ export interface EarlyYearsTidbitsPageOptions {
   tidbits: string[];
 }
 
+// The back page is the deck's catch-all, so its six are one per topic — and all
+// six are notes no sidebar in the deck already carries.
 export const EARLY_YEARS_TIDBITS_OPTIONS_DEFAULT: EarlyYearsTidbitsPageOptions = {
-  tidbits: [],
+  tidbits: [
+    "compounding-rule-of-72",
+    "taxes-hsa-triple",
+    "debt-minimums-are-a-floor",
+    "behavior-fees-compound-too",
+    "accounts-beneficiaries",
+    "risk-volatility-is-normal",
+  ],
 };

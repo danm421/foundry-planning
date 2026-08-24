@@ -160,6 +160,59 @@ describe("buildAssumptionsData", () => {
   });
 });
 
+describe("tax-rate stressor disclosure", () => {
+  /** NOTE: the shared fixture is `taxEngineMode: "flat"`, so bracket mode has to
+   *  be set explicitly here — without it every assertion below would be testing
+   *  the flat-mode case by accident. */
+  //  ⚠️ No default on `taxEngineMode` — every caller passes it. A default would
+  //  swallow the `undefined` case, because passing `undefined` explicitly is
+  //  exactly what triggers a JS default parameter, and the "unset means flat"
+  //  test below would then be testing bracket mode while claiming otherwise.
+  function withStress(
+    taxRateStress: { points: number; startYear: number },
+    taxEngineMode: string | undefined,
+  ) {
+    const cd = clientData();
+    return input({
+      clientData: {
+        ...cd,
+        planSettings: { ...cd.planSettings, taxEngineMode, taxRateStress },
+      } as unknown as ClientData,
+    });
+  }
+
+  it("discloses an active tax-rate stressor", () => {
+    const d = buildAssumptionsData(withStress({ points: 0.03, startYear: 2030 }, "bracket"));
+    expect(d.stressTests).toContainEqual({
+      label: "Tax rates rise",
+      value: "+3.0 percentage points on federal ordinary and capital-gains rates from 2030",
+    });
+  });
+
+  it("omits the row when no tax-rate stressor is set", () => {
+    const d = buildAssumptionsData(input());
+    expect(d.stressTests.find((r) => r.label === "Tax rates rise")).toBeUndefined();
+  });
+
+  it("omits the row on a flat-mode plan that still carries a stressor", () => {
+    // The engine never stresses a flat-mode plan (proved end-to-end by
+    // engine/__tests__/tax-rate-stress.test.ts "is inert in flat tax mode"), and
+    // the solver's own row reads OFF there. Ungated, this PDF would say both
+    // "Flat rate" and "Tax rates rise" about the same plan.
+    const d = buildAssumptionsData(withStress({ points: 0.03, startYear: 2030 }, "flat"));
+    expect(d.stressTests.find((r) => r.label === "Tax rates rise")).toBeUndefined();
+    // Vacuity guard: the section still renders its OTHER rows, so the assertion
+    // above is about this row and not about an empty list.
+    expect(d.stressTests.find((r) => r.label === "Market shock")).toBeDefined();
+  });
+
+  it("omits the row when taxEngineMode is unset — unset means flat", () => {
+    // The trap Ruling 13 exists for: `!== "flat"` would pass this row through.
+    const d = buildAssumptionsData(withStress({ points: 0.03, startYear: 2030 }, undefined));
+    expect(d.stressTests.find((r) => r.label === "Tax rates rise")).toBeUndefined();
+  });
+});
+
 describe("estimateAssumptionsPageCount", () => {
   it("counts overview + account pages + appendix", () => {
     const d = buildAssumptionsData(input());

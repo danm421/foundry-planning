@@ -11,6 +11,7 @@ import {
 } from "@/engine/disability-benefits";
 import type { SolverMutation, SolverMutationKey, SolverPerson } from "@/lib/solver/types";
 import { benefitPeriodText } from "@/lib/insurance-policies/disability-labels";
+import { MAX_RATE_STRESS_POINTS } from "@/lib/tax/rate-stress";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { SolverSection } from "./solver-section";
 
@@ -28,6 +29,7 @@ const DEFAULT_SS_HAIRCUT_PCT = 0.23;
 const DEFAULT_SS_HAIRCUT_YEAR = 2034;
 const DEFAULT_CRASH_PCT = 0.3;
 const DEFAULT_EXEMPTION_CAP = 7_000_000;
+const DEFAULT_TAX_RATE_POINTS = 0.03;
 
 /** Shared by the narrow numeric inputs so a styling change cannot land on one
  *  and miss the others. `DollarField` is deliberately wider and keeps its own. */
@@ -57,6 +59,12 @@ export function SolverStressTestTab({
   // Derived on/off state — the working tree is the single source of truth.
   const inflationOn = ps.livingExpenseInflationOverride != null;
   const ssOn = ps.ssBenefitHaircut != null;
+  const taxRatesOn = ps.taxRateStress != null;
+  // Flat mode has no bracket data to raise, so the control would be inert.
+  // Disable it and say so rather than render something that looks live.
+  // `taxEngineMode` is OPTIONAL and unset means flat (projection.ts routes on
+  // `=== "bracket"`), so this must not be phrased as `!== "flat"`.
+  const bracketMode = ps.taxEngineMode === "bracket";
   const disabilityOn = ps.disabilityEvent != null;
   const crashOn = ps.marketShock != null;
   const capOn =
@@ -71,6 +79,15 @@ export function SolverStressTestTab({
     person: ps.disabilityEvent?.person ?? "client",
     startYear: ps.disabilityEvent?.startYear ?? defaultEventYear,
     endYear: ps.disabilityEvent?.endYear ?? null,
+  };
+
+  // Same reasoning as `disability` above. Also keeps the field's `key` and its
+  // `value` reading the SAME expression — they must agree for the remount to
+  // show what was committed, and two copies of a fallback chain can drift.
+  const taxRates: Extract<SolverMutation, { kind: "stress-tax-rates" }> = {
+    kind: "stress-tax-rates",
+    points: ps.taxRateStress?.points ?? DEFAULT_TAX_RATE_POINTS,
+    startYear: ps.taxRateStress?.startYear ?? defaultEventYear,
   };
 
   return (
@@ -135,6 +152,54 @@ export function SolverStressTestTab({
                 startYear: y,
               })
             }
+          />
+        </div>
+      </StressRow>
+
+      {/* Tax rates rise */}
+      <StressRow
+        label="Tax rates rise"
+        hint={
+          bracketMode
+            ? "Adds this many percentage points to each federal marginal rate above 0% from the chosen year — ordinary income, long-term gains and qualified dividends, and trust brackets. Bracket thresholds do not move. The alternative minimum tax, the 3.8% net investment income surtax, and state income tax are unaffected, so a client with large AMT or state exposure will see less than the full effect."
+            : "Unavailable in flat tax mode — this plan has no tax brackets to raise. Switch the plan to the bracket tax engine to use it."
+        }
+        on={taxRatesOn}
+        disabled={!bracketMode}
+        onToggle={(checked) =>
+          checked
+            ? onChange({
+                kind: "stress-tax-rates",
+                points: DEFAULT_TAX_RATE_POINTS,
+                startYear: defaultEventYear,
+              })
+            : onResetField(["stress-tax-rates"])
+        }
+      >
+        <div className="grid grid-cols-2 gap-x-5">
+          <PercentField
+            // PercentField is uncontrolled, so it keeps displaying whatever was
+            // typed. That only matters where the committed value can DIFFER
+            // from it, and this is the one percent field that applies a CEILING
+            // — type 25, blur, and the plan carries 20 while the box still
+            // reads 25. (The component's own floor at zero cannot disagree with
+            // the box, because the number input will not surrender a negative.)
+            // Remounting on the committed value is the fix the disability
+            // ending year already uses below.
+            key={taxRates.points}
+            label="Rate increase"
+            value={taxRates.points}
+            onCommit={(points) =>
+              // Upper clamp only — PercentField's own onBlur already floors at
+              // zero (Math.max(0, next) / 100) and the input carries min="0",
+              // so a lower clamp here would be dead code.
+              onChange({ ...taxRates, points: Math.min(points, MAX_RATE_STRESS_POINTS) })
+            }
+          />
+          <YearField
+            label="Starting year"
+            value={taxRates.startYear}
+            onCommit={(y) => onChange({ ...taxRates, startYear: y })}
           />
         </div>
       </StressRow>
@@ -274,22 +339,25 @@ function StressRow({
   label,
   hint,
   on,
+  disabled = false,
   onToggle,
   children,
 }: {
   label: string;
   hint: string;
   on: boolean;
+  disabled?: boolean;
   onToggle: (checked: boolean) => void;
   children: React.ReactNode;
 }) {
   return (
     <div className="border-t border-hair pt-4 first:border-t-0 first:pt-0">
       <div className="flex items-center gap-2">
-        <label className="flex items-center gap-2">
+        <label className={`flex items-center gap-2 ${disabled ? "opacity-50" : ""}`}>
           <input
             type="checkbox"
-            checked={on}
+            checked={on && !disabled}
+            disabled={disabled}
             onChange={(e) => onToggle(e.target.checked)}
             className="h-4 w-4 accent-accent"
           />
@@ -297,7 +365,7 @@ function StressRow({
         </label>
         <FieldTooltip text={hint} />
       </div>
-      {on ? <div className="mt-3">{children}</div> : null}
+      {on && !disabled ? <div className="mt-3">{children}</div> : null}
     </div>
   );
 }

@@ -32,5 +32,8 @@ export interface EarlyYearsHumanCapitalPageOptions {
   tidbits: string[];
 }
 
+// This sheet weighs a paycheck against a portfolio, so the notes are the two
+// that read off that pairing: the one about tying both to a single employer,
+// and the one about what happens to a raise.
 export const EARLY_YEARS_HUMAN_CAPITAL_OPTIONS_DEFAULT: EarlyYearsHumanCapitalPageOptions =
-  { tidbits: [] };
+  { tidbits: ["risk-diversification", "behavior-lifestyle-creep"] };
