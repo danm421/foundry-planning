@@ -105,6 +105,11 @@ function householdLiquidAccountIds(
   const ids = new Set<string>();
   for (const a of candidates) {
     if (!LIQUID_PORTFOLIO_CATEGORIES.has(a.category)) continue;
+    // `owners` is required on `Account`, but a partially un-normalized
+    // clientData can still reach here with it undefined. Falling back to []
+    // SHRINKS the household set, which is the dangerous direction: a missing
+    // balance makes a solvent household look broke. Preferred over `?? [{...}]`
+    // only because inventing an owner is worse than under-counting one.
     const owners = a.owners ?? [];
     if (!owners.some((o) => o.kind === "family_member")) continue;
     if (owners.some((o) => o.kind === "entity")) continue;
@@ -112,6 +117,35 @@ function householdLiquidAccountIds(
   }
   return ids;
 }
+
+/**
+ * Dollars of engine residue the depletion flag tolerates before it calls a
+ * household broke. NOT a tuned threshold — it is the size of a known engine
+ * artefact, measured:
+ *
+ *  · **−$3.29** is the largest healthy residue measured anywhere in this
+ *    module's fixtures (2041 of the with-checking plan: shortfall 140,245.60,
+ *    gap-fill 140,242.31). The engine's phase-12 convergence loop carries its
+ *    own `const TOLERANCE = 1`, so `projection.ts:5822-5825`'s "household
+ *    checking should never end the year negative" is true to the DOLLAR, not to
+ *    the cent. The money comes back the next year. **This is why the tolerance
+ *    is 10 and not 1** — at 1 a household set that narrows to the account
+ *    carrying that undershoot still flags.
+ *  · **~1e-11** is the float dust left when the gap-fill lands exactly: a
+ *    self-funding plan parks checking at nominal zero and lands a hair either
+ *    side of it, flagging NON-CONTIGUOUSLY in scattered years.
+ *  · **−$92,483** is the first genuinely depleted year measured. The tolerance
+ *    sits ~9,000× below it, so nothing an advisor could act on is swallowed.
+ *
+ * `monthly-cash-flow-split.test.ts:44` (`RESIDUAL_TOLERANCE_PER_YEAR`) already
+ * names 10 for this same engine residue; this is that constant's twin, not a
+ * second opinion.
+ *
+ * Known limit: the residue SCALES with plan size — measured at −$5.33 on a
+ * $100M portfolio — while this constant is absolute. A large enough plan would
+ * breach it. See the report's blind-spot list.
+ */
+const DEPLETION_TOLERANCE_DOLLARS = 10;
 
 /**
  * True when the household's whole liquid portfolio ends the year below zero.
@@ -127,9 +161,16 @@ function householdLiquidAccountIds(
  * checking account ends nine of its thirty years with checking below zero — once
  * by $3.29 (the gap-fill converges to the engine's own $1 TOLERANCE), otherwise
  * by ~1e-11 of float dust — while holding $3-5M in liquid assets. Summed, those
- * same years are $3.4M to $4.9M in the black. The separation is not a tuned
- * threshold: across six self-funding fixtures the smallest liquid total measured
- * was +$1,147,000, and the first genuinely depleted year was -$92,483.
+ * same years are $3.4M to $4.9M in the black. Across six self-funding fixtures
+ * the smallest liquid total measured was +$1,147,000, and the first genuinely
+ * depleted year was -$92,483.
+ *
+ * Summing does NOT remove the residue, it only hides it behind a wide account
+ * set. Whenever the set NARROWS to one account — Ruling 5 excludes mixed
+ * household/entity accounts wholesale, so a household holding checking plus one
+ * 50/50 client/trust brokerage is down to checking alone — the residue is once
+ * again the whole sum, and an unpadded `< 0` flags a household with $21M in the
+ * bank. Hence `DEPLETION_TOLERANCE_DOLLARS`; see its comment for the numbers.
  *
  * Structural on purpose. The same code writes a ledger entry labelled "Unfunded
  * shortfall (accounts depleted)", but matching that string would break the
@@ -139,7 +180,7 @@ function householdLiquidAccountIds(
 function isDepleted(y: ProjectionYear, householdLiquidIds: Set<string>): boolean {
   let net = 0;
   for (const id of householdLiquidIds) net += y.accountLedgers[id]?.endingValue ?? 0;
-  return net < 0;
+  return net < -DEPLETION_TOLERANCE_DOLLARS;
 }
 
 /** Deflate to plan-start purchasing power. Returns 1 for the nominal basis and

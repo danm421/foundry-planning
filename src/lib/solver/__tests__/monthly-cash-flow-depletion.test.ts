@@ -1,9 +1,15 @@
 import { describe, it, expect } from "vitest";
 import { runProjection } from "@/engine/projection";
-import { buildClientData, sampleAccounts } from "@/engine/__tests__/fixtures";
+import {
+  basePlanSettings,
+  buildClientData,
+  sampleAccounts,
+  sampleExpenses,
+} from "@/engine/__tests__/fixtures";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "@/engine/ownership";
 import { buildMonthlyCashFlowRows } from "../monthly-cash-flow";
 import type { Account, ClientData, ProjectionYear } from "@/engine/types";
+import type { StockOptionPlan } from "@/engine/equity/types";
 
 /**
  * The flag answers one question: is the Available figure for this year money
@@ -71,69 +77,164 @@ function naiveSignalYears(years: ProjectionYear[]): number[] {
     .map((y) => y.year);
 }
 
-/** Once the flag turns on it must stay on to the end of the plan — a hard
- *  "your money does not exist" alarm that blinks off and on again is noise.
- *  Observed true of both depleted fixtures here: the deficit compounds because
- *  a negative balance accrues negative growth and no later inflow reverses it. */
+/** Contiguity is a property OF THESE FIXTURES, not of the signal — asserted
+ *  because it is what "your money does not exist" ought to look like, but it is
+ *  observed, not guaranteed. It holds on both depleted fixtures here because the
+ *  deficit compounds (a negative balance accrues negative growth) and no later
+ *  inflow reverses it. It is NOT something the signal enforces: the same signal
+ *  flags non-contiguously on the narrow-set fixture below the moment the
+ *  tolerance is removed. A plan with a large late inflow could legitimately
+ *  recover, and this assertion should then be relaxed rather than the signal
+ *  contorted. */
 function expectContiguousToEnd(rows: { year: number; depleted: boolean }[]) {
   const first = rows.findIndex((r) => r.depleted);
   expect(first).toBeGreaterThanOrEqual(0);
   expect(flaggedYears(rows)).toEqual(rows.slice(first).map((r) => r.year));
 }
 
-/** A hand-built projection year, carrying only the fields the row builder
- *  reads. The engine cannot be coaxed into producing a synthetic equity
- *  destination account from a plain fixture plan, so that path is exercised
- *  here instead. */
-function stubYear(args: {
-  ledgers: Record<string, number>;
-  syntheticAccounts?: ProjectionYear["syntheticAccounts"];
-}): ProjectionYear {
-  const accountLedgers: ProjectionYear["accountLedgers"] = {};
-  for (const [id, endingValue] of Object.entries(args.ledgers)) {
-    accountLedgers[id] = {
-      beginningValue: 0,
-      growth: 0,
-      contributions: 0,
-      distributions: 0,
-      internalContributions: 0,
-      internalDistributions: 0,
-      rmdAmount: 0,
-      fees: 0,
-      endingValue,
-      entries: [],
-    };
-  }
-  return {
-    year: 2026,
-    ages: { client: 56, spouse: 54 },
-    totalIncome: 0,
-    withdrawals: { byAccount: {}, total: 0 },
-    savings: { byAccount: {}, total: 0, employerTotal: 0 },
-    expenses: {
-      living: 0,
-      liabilities: 0,
-      other: 0,
-      insurance: 0,
-      realEstate: 0,
-      taxes: 0,
-      cashGifts: 0,
-      discretionary: 0,
-      total: 0,
-      bySource: {},
-      byLiability: {},
-      interestByLiability: {},
-    },
-    accountLedgers,
-    syntheticAccounts: args.syntheticAccounts,
-  } as unknown as ProjectionYear;
+/**
+ * A household whose liquid set NARROWS TO ONE ACCOUNT, which is the shape the
+ * tolerance exists for.
+ *
+ * Ruling 5 excludes any account carrying an entity owner wholesale, so a
+ * client-owned checking account sitting beside a single 50/50 client / family-
+ * trust brokerage leaves the sum reading CHECKING AND NOTHING ELSE. Summing
+ * never removed the engine's gap-fill residue — it only hid it behind millions
+ * in other accounts. Narrow the set and the residue IS the sum.
+ *
+ * Both households below are grossly solvent, and both flag without the
+ * tolerance.
+ */
+function narrowHouseholdPlan(brokerageValue: number, livingAnnual: number): ClientData {
+  return buildClientData({
+    accounts: [
+      {
+        ...defaultChecking,
+        name: "Client Checking",
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      },
+      {
+        id: "mixed-brokerage",
+        name: "Client / Trust Brokerage",
+        category: "taxable",
+        subType: "brokerage",
+        titlingType: "jtwros",
+        value: brokerageValue,
+        basis: brokerageValue,
+        growthRate: 0.06,
+        rmdEnabled: false,
+        owners: [
+          { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+          { kind: "entity", entityId: "ent-trust", percent: 0.5 },
+        ],
+      },
+    ],
+    entities: [
+      {
+        id: "ent-trust",
+        name: "Family Trust",
+        entityType: "trust",
+        isIrrevocable: true,
+        isGrantor: false,
+        includeInPortfolio: false,
+        grantor: "client",
+      },
+    ] as NonNullable<ClientData["entities"]>,
+    savingsRules: [],
+    expenses: sampleExpenses.map((e) =>
+      e.type === "living" ? { ...e, annualAmount: livingAnnual } : e,
+    ),
+    withdrawalStrategy: [
+      { accountId: "mixed-brokerage", priorityOrder: 1, startYear: 2026, endYear: 2055 },
+    ],
+  });
 }
+
+/** The worst end-of-year checking balance the engine leaves behind. On a narrow
+ *  household this IS the whole liquid sum, so it is exactly what the tolerance
+ *  is measured against. */
+function worstCheckingResidue(years: ProjectionYear[]): number {
+  return Math.min(...years.map((y) => y.accountLedgers["acct-checking"]?.endingValue ?? 0));
+}
+
+/**
+ * An RSU plan whose vested shares land in an account the engine MINTS. It is
+ * reported only on `ProjectionYear.syntheticAccounts` and never appears in
+ * `clientData.accounts`. Shape follows
+ * `src/engine/__tests__/equity-reporting.integration.test.ts`.
+ */
+const equityPlan: StockOptionPlan = {
+  accountId: "so-equity",
+  ticker: "ACME",
+  pricePerShare: 420,
+  growthRate: 0.07,
+  destinationAccountId: null,
+  autoCreateDestination: true,
+  sellToCover: true,
+  withholdingRate: 0.22,
+  strategy: {
+    exerciseTiming: "at_vest",
+    exerciseYear: null,
+    sellTiming: "hold",
+    sellYear: null,
+    sellPercentPerYear: null,
+    sellStartYear: null,
+  },
+  owner: "client",
+  grants: [
+    {
+      id: "g-rsu",
+      grantNumber: "RSU-1",
+      grantType: "rsu",
+      grantDate: "2025-01-15",
+      sharesGranted: 4_000,
+      has83bElection: false,
+      fmvAtGrant: null,
+      strikePrice: null,
+      strikeDiscountPct: null,
+      expirationYear: null,
+      // Sold beyond the plan horizon, so the shares are HELD for every year here.
+      strategy: { sellTiming: "hold_then_sell_year", sellYear: 2060 },
+      tranches: [2027, 2028, 2029, 2030].map((vestYear) => ({
+        id: `t-rsu-${vestYear}`,
+        vestDate: `${vestYear}-01-15`,
+        shares: 1_000,
+        sharesExercised: 0,
+        sharesSold: 0,
+        acquiredOn: null,
+        priceAtAcquisition: null,
+        strategy: null,
+      })),
+      plannedEvents: [],
+    },
+  ],
+};
+
+/** The base `stock_options` account the plan hangs off. `stock_options` is NOT
+ *  in `LIQUID_PORTFOLIO_CATEGORIES`, so this account contributes nothing — only
+ *  the minted destination does. */
+const soAccount: Account = {
+  id: "so-equity",
+  name: "ACME Equity",
+  category: "stock_options",
+  subType: "stock_options",
+  titlingType: "jtwros",
+  value: 0,
+  basis: 0,
+  growthRate: 0.07,
+  rmdEnabled: false,
+  owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+};
 
 describe("depletion flag", () => {
   it("is false in every year of a plan that funds itself", () => {
     const clientData = buildClientData();
     const { years, rows } = build(clientData);
     expect(rows).toHaveLength(30);
+    // FIXTURE CHARACTERIZATION, not coverage. It records that this plan never
+    // trips the naive signal either, which is why it cannot stand in for the
+    // with-checking test below. NO implementation of `depleted` can fail this
+    // line — it reads the engine directly and never touches the module.
     expect(naiveSignalYears(years)).toEqual([]);
     expect(flaggedYears(rows)).toEqual([]);
   });
@@ -146,6 +247,57 @@ describe("depletion flag", () => {
     // below zero — $3.29 in 2041, float dust in the rest — while the household
     // holds millions. If this ever goes empty the assertion below is vacuous.
     expect(naiveSignalYears(years).length).toBeGreaterThan(0);
+    expect(flaggedYears(rows)).toEqual([]);
+  });
+
+  it("is false in every year of a self-funding household whose liquid set narrows to ONE account", () => {
+    // The wide fixtures above cannot prove the tolerance: they hold four or five
+    // accounts summing to $1.1M-$4.9M, so no per-account residue can flip the
+    // sign and `toEqual([])` would pass with the tolerance deleted. These two
+    // narrow to checking alone.
+    for (const [brokerageValue, livingAnnual] of [
+      // The shape the reviewer reproduced: residue is float dust (~1e-11), and
+      // the flag fires NON-CONTIGUOUSLY without the tolerance.
+      [4_000_000, 80_000],
+      // The same shape at UHNW scale, where the residue is DOLLARS rather than
+      // dust. This is the case that decides 10 over 1.
+      [100_000_000, 2_000_000],
+    ] as const) {
+      const clientData = narrowHouseholdPlan(brokerageValue, livingAnnual);
+
+      // The set really does narrow: two accounts, and the big one is co-owned by
+      // the trust, which Ruling 5 excludes wholesale. Without this guard the
+      // fixture could silently widen and stop testing anything.
+      expect(clientData.accounts).toHaveLength(2);
+      expect(
+        clientData.accounts.filter((a) => (a.owners ?? []).every((o) => o.kind === "family_member")),
+      ).toHaveLength(1);
+
+      const { years, rows } = build(clientData);
+      // Liveness: 30 real rows, not an empty array `toEqual([])` would accept.
+      expect(rows).toHaveLength(30);
+      // Liveness: the plan really does hit the residue, so the assertion below
+      // cannot pass by the trap having gone away.
+      expect(naiveSignalYears(years).length).toBeGreaterThan(0);
+      // And the household is not remotely short of money.
+      const finalBrokerage = years.at(-1)!.accountLedgers["mixed-brokerage"]!.endingValue;
+      expect(finalBrokerage).toBeGreaterThan(brokerageValue);
+
+      expect(flaggedYears(rows)).toEqual([]);
+    }
+  });
+
+  it("tolerates the engine's DOLLAR-scale gap-fill residue, not just float dust", () => {
+    // Ruling 1: a tolerance of 1 would not have been enough. The engine's
+    // phase-12 convergence loop carries its own `const TOLERANCE = 1`, so the
+    // gap-fill is allowed to undershoot by dollars — and the undershoot SCALES
+    // with the plan. On this $100M household it lands at about -$5.33, which is
+    // past 1 and inside 10. Pinned as a range so the day the residue outgrows
+    // the tolerance this reds instead of the flag quietly lying.
+    const { years, rows } = build(narrowHouseholdPlan(100_000_000, 2_000_000));
+    const residue = worstCheckingResidue(years);
+    expect(residue).toBeLessThan(-1);
+    expect(residue).toBeGreaterThan(-10);
     expect(flaggedYears(rows)).toEqual([]);
   });
 
@@ -273,34 +425,74 @@ describe("depletion flag", () => {
   });
   it("counts engine-minted equity destination accounts as household money", () => {
     // The engine mints a household-owned taxable account on the first vest or
-    // exercise (`projection.ts:1428-1456`) and reports it only on
-    // `ProjectionYear.syntheticAccounts` — it is absent from `clientData`. No
-    // fixture plan can produce one, so this year is hand-built.
-    const clientData = buildClientData({ accounts: [defaultChecking] });
-    const shares: NonNullable<ProjectionYear["syntheticAccounts"]> = [
-      {
-        id: "equity-dest-plan-1",
-        name: "ACME shares",
-        category: "taxable",
-        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
-      },
-    ];
-    const overdrawnChecking = { "acct-checking": -50_000 };
+    // exercise and reports it ONLY on `ProjectionYear.syntheticAccounts` — it is
+    // absent from `clientData.accounts`. Everything below is engine-produced:
+    // an RSU plan whose four tranches vest 2027-2030 and are held, against a
+    // household with $1,000 of savings and a spending spike from 2032.
+    const clientData = buildClientData({
+      accounts: [
+        soAccount,
+        {
+          id: "acct-savings",
+          name: "Emergency Fund",
+          category: "cash",
+          subType: "savings",
+          titlingType: "jtwros",
+          value: 1_000,
+          basis: 1_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+        },
+      ],
+      savingsRules: [],
+      stockOptionPlans: [equityPlan],
+      expenses: [
+        ...sampleExpenses,
+        {
+          id: "exp-spike",
+          type: "living",
+          name: "Late splurge",
+          annualAmount: 400_000,
+          startYear: 2032,
+          endYear: 2040,
+          growthRate: 0,
+        },
+      ],
+      withdrawalStrategy: [
+        { accountId: "acct-savings", priorityOrder: 1, startYear: 2026, endYear: 2040 },
+      ],
+      planSettings: { ...basePlanSettings, planEndYear: 2040 },
+    });
+    const { years, rows } = build(clientData);
 
-    const withShares = buildMonthlyCashFlowRows(
-      [stubYear({ ledgers: { ...overdrawnChecking, "equity-dest-plan-1": 400_000 }, syntheticAccounts: shares })],
+    // The sidecar is REAL: id, category and owners all come out of
+    // `runProjection`, so a change to the engine's minted shape reds here rather
+    // than silently dropping the account out of the household sum.
+    const sidecar = years.find((y) => y.year === 2030)!.syntheticAccounts!;
+    expect(sidecar).toHaveLength(1);
+    expect(sidecar[0]).toMatchObject({
+      id: "equity-dest-so-equity",
+      category: "taxable",
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    });
+
+    // 2038 is the year the engine overdrafts the MINTED account itself:
+    // savings is at zero and the destination finishes -$431,600.
+    expect(years.find((y) => y.year === 2038)!.accountLedgers["equity-dest-so-equity"]!.endingValue)
+      .toBeLessThan(-400_000);
+    expect(flaggedYears(rows)[0]).toBe(2038);
+    expectContiguousToEnd(rows);
+
+    // Control — the same engine years with the sidecar removed. The destination
+    // drops out of the household set, its overdraft goes uncounted, and the
+    // alarm arrives a year late. So the 2038 above is the sidecar doing the
+    // work, not the rest of the portfolio.
+    const withoutSidecar = buildMonthlyCashFlowRows(
+      years.map((y) => ({ ...y, syntheticAccounts: undefined })),
       clientData,
       "nominal",
     );
-    expect(withShares[0].depleted).toBe(false);
-
-    // Control — without the shares the identical overdraft DOES flag, so the
-    // `false` above is the synthetic balance doing the work, not an inert stub.
-    const withoutShares = buildMonthlyCashFlowRows(
-      [stubYear({ ledgers: overdrawnChecking })],
-      clientData,
-      "nominal",
-    );
-    expect(withoutShares[0].depleted).toBe(true);
+    expect(flaggedYears(withoutSidecar)[0]).toBe(2039);
   });
 });
