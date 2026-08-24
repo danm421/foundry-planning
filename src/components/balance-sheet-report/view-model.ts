@@ -443,8 +443,13 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
   const slices: Slice[] = [];
 
   for (const acct of accounts) {
+    // An unmapped category has no in-estate column, but that is a statement
+    // about the ASSETS panel only — so the guard belongs on the in-estate
+    // slice below, not on the whole account. A 529 (education_savings) is
+    // owned solely by an external_beneficiary; skipping it here also skipped
+    // the out-of-estate branch written for exactly that owner kind, so the
+    // account vanished from the report entirely.
     const categoryKey = DB_TO_KEY[acct.category];
-    if (!categoryKey) continue;
     const value = accountValueForYear(yearData, acct.id, asOfMode);
     // Keep entity-owned accounts even at $0 so an entity's default-cash
     // account stays visible under its entity card — consistent with the
@@ -481,7 +486,15 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
           (o) => o.kind === "family_member" || o.kind === "entity",
         );
         if (view === "consolidated" && value > 0 && !absorbedByInEstateOwner) {
-          ooeAdd("ext", "Other (out of estate)", "external", value * owner.percent, 0);
+          // A 529 gets its own named row rather than joining the anonymous
+          // lump: it is the one external-beneficiary account an advisor funds
+          // deliberately, and `estate-flow-summary` already lists 529s as one
+          // out-of-estate heir entity per account under the account's name.
+          if (acct.category === "education_savings") {
+            ooeAdd(`ext:${acct.id}`, acct.name, "external", value * owner.percent, 0);
+          } else {
+            ooeAdd("ext", "Other (out of estate)", "external", value * owner.percent, 0);
+          }
         }
         continue;
       }
@@ -495,6 +508,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
         }
         continue;
       }
+      if (!categoryKey) continue; // no in-estate column for this category
       if (sliceValue <= 0 && owner.kind !== "entity") continue;
       // Derive percent from slice / account so multi-owner accounts surface
       // the projected (drifted) ownership rather than the static authored split.
