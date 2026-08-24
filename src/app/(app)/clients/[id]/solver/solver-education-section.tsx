@@ -29,17 +29,8 @@ interface Props {
 }
 
 function ownerFamilyMemberIds(acct: {
-  category?: string;
   owners?: { kind: string; familyMemberId?: string }[];
-  education529?: { beneficiaryFamilyMemberId?: string | null };
 }): string[] {
-  // 529s carry no family_member owners — the loader synthesizes a sentinel
-  // external_beneficiary owner instead. Fall back to the account's actual
-  // beneficiary so the dedicated-funding picker's ownership filter doesn't
-  // silently exclude them.
-  if (acct.category === "education_savings") {
-    return acct.education529?.beneficiaryFamilyMemberId ? [acct.education529.beneficiaryFamilyMemberId] : [];
-  }
   return (acct.owners ?? [])
     .filter((o) => o.kind === "family_member" && o.familyMemberId)
     .map((o) => o.familyMemberId!);
@@ -69,6 +60,10 @@ export function SolverEducationSection({
         category: a.category,
         subType: a.subType ?? "",
         ownerFamilyMemberIds: ownerFamilyMemberIds(a as never),
+        // A 529's owners are deliberately empty (out of estate); its
+        // beneficiary is who the money is FOR, and only labels the row.
+        beneficiaryFamilyMemberId: a.education529?.beneficiaryFamilyMemberId ?? null,
+        beneficiaryName: a.education529?.beneficiaryName ?? null,
       })),
     [workingTree.accounts],
   );

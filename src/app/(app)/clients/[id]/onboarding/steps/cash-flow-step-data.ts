@@ -184,16 +184,16 @@ export async function loadCashFlowStepData(
     isDefaultChecking: a.isDefaultChecking ?? null,
     ownerEntityId: controllingEntity(a) ?? null,
     owners: a.owners,
-    // 529s carry no family_member owners — the loader synthesizes a sentinel
-    // external_beneficiary owner instead (see engine/ownership.ts). Fall back
-    // to the account's actual beneficiary so the education goal's
-    // dedicated-funding picker doesn't silently exclude them.
-    ownerFamilyMemberIds:
-      a.category === "education_savings"
-        ? a.education529?.beneficiaryFamilyMemberId
-          ? [a.education529.beneficiaryFamilyMemberId]
-          : []
-        : a.owners.filter((o) => o.kind === "family_member").map((o) => o.familyMemberId),
+    ownerFamilyMemberIds: a.owners
+      .filter((o) => o.kind === "family_member")
+      .map((o) => o.familyMemberId),
+    // A 529 has no family_member owners at all — the loader replaces them with
+    // an out-of-estate sentinel (engine/ownership.ts). Its beneficiary is who
+    // the money is FOR, which is what the dedicated-funding picker labels rows
+    // with; it is deliberately NOT folded into ownerFamilyMemberIds, where an
+    // ownership filter would read it as a claim about who owns the account.
+    beneficiaryFamilyMemberId: a.education529?.beneficiaryFamilyMemberId ?? null,
+    beneficiaryName: a.education529?.beneficiaryName ?? null,
   }));
 
   return {

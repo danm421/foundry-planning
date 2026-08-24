@@ -18,6 +18,9 @@ export interface EducationGoalFormAccount {
   category: string;
   subType: string;
   ownerFamilyMemberIds?: string[];
+  /** 529 only — who the money is FOR, shown on the funding row. */
+  beneficiaryFamilyMemberId?: string | null;
+  beneficiaryName?: string | null;
 }
 
 interface Props {
@@ -55,6 +58,8 @@ export function SolverEducationGoalForm({
   const [new529NameDirty, setNew529NameDirty] = useState(false);
 
   const forLabel = beneficiaries.find((b) => b.familyMemberId === forFamilyMemberId)?.label ?? "";
+  // Names for the funding picker's "· for <beneficiary>" caption on 529 rows.
+  const familyMemberNames = Object.fromEntries(beneficiaries.map((b) => [b.familyMemberId, b.label]));
   const composed529Name = forLabel ? `${forLabel} — 529 Plan` : "529 Plan";
   const new529NameValue = new529NameDirty ? new529Name : composed529Name;
 
@@ -72,7 +77,7 @@ export function SolverEducationGoalForm({
           name: `${new529NameValue} (new)`,
           category: "education_savings",
           subType: "529",
-          ownerFamilyMemberIds: forFamilyMemberId ? [forFamilyMemberId] : [],
+          beneficiaryFamilyMemberId: forFamilyMemberId || null,
         },
       ]
     : accounts;
@@ -184,6 +189,7 @@ export function SolverEducationGoalForm({
             accounts={pickerAccounts}
             value={dedicatedAccountIds}
             onChange={setDedicatedAccountIds}
+            familyMemberNames={familyMemberNames}
           />
         </div>
 
