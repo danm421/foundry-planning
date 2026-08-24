@@ -21,6 +21,7 @@ import {
   WillCommitValidationError,
   type CommitWill,
 } from "@/lib/imports/commit/will-types";
+import type { ExtractedAccount } from "@/lib/extraction/types";
 import type { Annotated, ImportPayload } from "@/lib/imports/types";
 
 import { callsForTable, makeFakeTx, type FakeTxCall } from "./commit-test-helpers";
@@ -481,6 +482,224 @@ describe("commitAccounts", () => {
     const roth = (accountInserts[1] as { values: Record<string, unknown> }).values;
     expect(trad.rmdEnabled).toBe(true);
     expect(roth.rmdEnabled).toBe(false);
+  });
+
+  describe("529 / education_savings", () => {
+    const FAMILY = [
+      { id: "fm-client", role: "client" },
+      { id: "fm-kid", role: "child" },
+    ];
+
+    function payloadWith(account: Partial<Annotated<ExtractedAccount>>): ImportPayload {
+      return {
+        ...emptyPayload(),
+        accounts: [
+          {
+            name: "529 Plan",
+            category: "education_savings",
+            subType: "529",
+            owner: "client",
+            match: { kind: "new" },
+            ...account,
+          } as Annotated<ExtractedAccount>,
+        ],
+      };
+    }
+
+    it("forces rmdEnabled off and writes the beneficiary + grantor columns", async () => {
+      const { tx, calls, setSelectResult } = makeFakeTx();
+      setSelectResult("family_members", FAMILY);
+      await commitAccounts(
+        tx,
+        payloadWith({
+          // A stale `true` an older payload carried: the review step hides the
+          // control on a 529, so nobody could have cleared it by hand.
+          rmdEnabled: true,
+          beneficiaryFamilyMemberId: "fm-kid",
+          grantorFamilyMemberId: "fm-client",
+        }),
+        ctx,
+      );
+      const values = (callsForTable(calls, "accounts").filter((c) => c.op === "insert")[0] as {
+        values: Record<string, unknown>;
+      }).values;
+      expect(values.rmdEnabled).toBe(false);
+      expect(values.beneficiaryFamilyMemberId).toBe("fm-kid");
+      expect(values.beneficiaryName).toBeNull();
+      expect(values.grantorFamilyMemberId).toBe("fm-client");
+    });
+
+    it("writes NO account_owners rows for a 529", async () => {
+      // A 529 is out of the household estate and attributed to its
+      // beneficiary. An owners row would put the balance back in the estate
+      // through a second door — the same rule accounts-writes.ts enforces.
+      const { tx, calls, setSelectResult } = makeFakeTx();
+      setSelectResult("family_members", FAMILY);
+      await commitAccounts(tx, payloadWith({ beneficiaryFamilyMemberId: "fm-kid" }), ctx);
+      expect(callsForTable(calls, "account_owners")).toHaveLength(0);
+    });
+
+    it("still writes owners for a non-529 account", async () => {
+      const { tx, calls, setSelectResult } = makeFakeTx();
+      setSelectResult("family_members", FAMILY);
+      const payload: ImportPayload = {
+        ...emptyPayload(),
+        accounts: [
+          { name: "Brokerage", category: "taxable", owner: "client", match: { kind: "new" } },
+        ],
+      };
+      await commitAccounts(tx, payload, ctx);
+      expect(callsForTable(calls, "account_owners").filter((c) => c.op === "insert")).toHaveLength(1);
+    });
+
+    it("treats subType 529 alone as a 529 even when the category says taxable", async () => {
+      const { tx, calls, setSelectResult } = makeFakeTx();
+      setSelectResult("family_members", FAMILY);
+      await commitAccounts(
+        tx,
+        payloadWith({ category: "taxable", rmdEnabled: true, beneficiaryFamilyMemberId: "fm-kid" }),
+        ctx,
+      );
+      const values = (callsForTable(calls, "accounts").filter((c) => c.op === "insert")[0] as {
+        values: Record<string, unknown>;
+      }).values;
+      expect(values.category).toBe("education_savings");
+      expect(values.rmdEnabled).toBe(false);
+      expect(callsForTable(calls, "account_owners")).toHaveLength(0);
+    });
+
+    it("discards a beneficiary id this household does not have, AND its paired name", async () => {
+      // The payload is advisor-edited JSON, so an id in it is a claim. Writing
+      // it would be a cross-tenant FK pointing at another client's child.
+      //
+      // The paired NAME goes down with it. The review step writes exactly one
+      // of (id, name), so a name arriving alongside a rejected id is stale
+      // state, not a second opinion — falling back to it would attribute the
+      // 529 to whoever the stale string happens to spell. Both people are
+      // asserted because each is a separate resolution in the commit.
+      const { tx, calls, setSelectResult } = makeFakeTx();
+      setSelectResult("family_members", FAMILY);
+      const result = await commitAccounts(
+        tx,
+        payloadWith({
+          beneficiaryFamilyMemberId: "fm-someone-elses-kid",
+          beneficiaryName: "Emma",
+          grantorFamilyMemberId: "fm-someone-elses-parent",
+          grantorName: "Grandpa Joe",
+        }),
+        ctx,
+      );
+      const values = (callsForTable(calls, "accounts").filter((c) => c.op === "insert")[0] as {
+        values: Record<string, unknown>;
+      }).values;
+      expect(values.beneficiaryFamilyMemberId).toBeNull();
+      expect(values.beneficiaryName).toBeNull();
+      expect(values.grantorFamilyMemberId).toBeNull();
+      expect(values.grantorName).toBeNull();
+      expect(result.warnings.join(" ")).toMatch(/no designated beneficiary/);
+    });
+
+    it("keeps a free-text name when NO family member id was supplied at all", async () => {
+      // The counterweight to the test above: no id means nobody was picked, so
+      // the printed name is all there is and it stands on its own.
+      const { tx, calls, setSelectResult } = makeFakeTx();
+      setSelectResult("family_members", FAMILY);
+      const result = await commitAccounts(
+        tx,
+        payloadWith({ beneficiaryName: "Emma", grantorName: "Grandpa Joe" }),
+        ctx,
+      );
+      const values = (callsForTable(calls, "accounts").filter((c) => c.op === "insert")[0] as {
+        values: Record<string, unknown>;
+      }).values;
+      expect(values.beneficiaryName).toBe("Emma");
+      expect(values.beneficiaryFamilyMemberId).toBeNull();
+      expect(values.grantorName).toBe("Grandpa Joe");
+      expect(values.grantorFamilyMemberId).toBeNull();
+      expect(result.warnings).toHaveLength(0);
+    });
+
+    it("warns when a 529 commits with no beneficiary at all", async () => {
+      const { tx, setSelectResult } = makeFakeTx();
+      setSelectResult("family_members", FAMILY);
+      const result = await commitAccounts(tx, payloadWith({}), ctx);
+      expect(result.created).toBe(1);
+      expect(result.warnings.join(" ")).toMatch(/no designated beneficiary/);
+    });
+
+    it("clears existing owners when an exact match is reclassified into a 529", async () => {
+      const { tx, calls, setSelectResult } = makeFakeTx();
+      setSelectResult("family_members", FAMILY);
+      const payload: ImportPayload = {
+        ...emptyPayload(),
+        accounts: [
+          {
+            name: "College Fund",
+            category: "education_savings",
+            subType: "529",
+            rmdEnabled: true,
+            beneficiaryFamilyMemberId: "fm-kid",
+            match: { kind: "exact", existingId: "acct-1" },
+          } as Annotated<ExtractedAccount>,
+        ],
+      };
+      await commitAccounts(tx, payload, ctx);
+      const setValues = (callsForTable(calls, "accounts").filter((c) => c.op === "update")[0] as {
+        values: Record<string, unknown>;
+      }).values;
+      expect(setValues.rmdEnabled).toBe(false);
+      expect(setValues.beneficiaryFamilyMemberId).toBe("fm-kid");
+      expect(callsForTable(calls, "account_owners").filter((c) => c.op === "delete")).toHaveLength(1);
+    });
+
+    it("does NOT clear owners when the account belongs to another client", async () => {
+      // `existingId` arrives on payload JSON — it is a claim, not a fact — and
+      // account_owners carries no clientId of its own to scope a delete by.
+      // The scoped UPDATE is the only tenancy check available: when it matches
+      // nothing, the id is not ours and the owners rows must be left alone.
+      // Without the gate a forged payload wipes another firm's ownership.
+      const { tx, calls, setSelectResult, setUpdateResult } = makeFakeTx();
+      setSelectResult("family_members", FAMILY);
+      setUpdateResult("accounts", []); // the WHERE matched no row
+      const payload: ImportPayload = {
+        ...emptyPayload(),
+        accounts: [
+          {
+            name: "College Fund",
+            category: "education_savings",
+            subType: "529",
+            beneficiaryFamilyMemberId: "fm-kid",
+            match: { kind: "exact", existingId: "some-other-firms-account" },
+          } as Annotated<ExtractedAccount>,
+        ],
+      };
+      await commitAccounts(tx, payload, ctx);
+      expect(callsForTable(calls, "account_owners").filter((c) => c.op === "delete")).toHaveLength(0);
+    });
+
+    it("leaves an existing 529's beneficiary alone when the incoming row is not a 529", async () => {
+      // The update path never loads `before`, so a row the extraction failed to
+      // classify must not null out columns it knows nothing about.
+      const { tx, calls } = makeFakeTx();
+      const payload: ImportPayload = {
+        ...emptyPayload(),
+        accounts: [
+          {
+            name: "College Fund",
+            category: "taxable",
+            subType: "brokerage",
+            match: { kind: "exact", existingId: "acct-1" },
+          } as Annotated<ExtractedAccount>,
+        ],
+      };
+      await commitAccounts(tx, payload, ctx);
+      const setValues = (callsForTable(calls, "accounts").filter((c) => c.op === "update")[0] as {
+        values: Record<string, unknown>;
+      }).values;
+      expect(setValues).not.toHaveProperty("beneficiaryFamilyMemberId");
+      expect(setValues).not.toHaveProperty("beneficiaryName");
+      expect(callsForTable(calls, "account_owners").filter((c) => c.op === "delete")).toHaveLength(0);
+    });
   });
 
   it("respects an explicitly-extracted rmdEnabled flag over the sub-type default", async () => {

@@ -16,8 +16,9 @@
  *   - insert.values().returning() resolves to one mock row per inserted
  *     payload, with `id` keys filled from the table's name.
  *   - update.set.where() resolves to undefined.
- *   - update.set.where.returning() resolves to a mock row carrying any
- *     fields registered via `setSelectResult`.
+ *   - update.set.where.returning() resolves to one mock row by default, or to
+ *     whatever `setUpdateResult(tableName, rows)` registered — pass [] to model
+ *     an UPDATE whose WHERE matched nothing (a wrong-tenant id, a deleted row).
  *   - select.from.where() returns whatever was registered via
  *     `setSelectResult(tableName, rows)`, or [] by default.
  *   - delete.where() resolves to undefined.
@@ -70,11 +71,18 @@ export interface FakeTx {
   setInsertId(table: string, id: string): void;
   /** Provide an array of returned ids for sequential inserts into a table. */
   queueInsertIds(table: string, ids: string[]): void;
+  /**
+   * Register what `update(table).set(...).where(...).returning()` should
+   * resolve to. `[]` models a WHERE that matched no row — the shape a
+   * tenancy-scoped UPDATE takes when the id belongs to another client.
+   */
+  setUpdateResult(table: string, rows: unknown[]): void;
 }
 
 export function makeFakeTx(): FakeTx {
   const calls: FakeTxCall[] = [];
   const selectResults = new Map<string, unknown[]>();
+  const updateResults = new Map<string, unknown[]>();
   const insertIdMap = new Map<string, string>();
   const insertIdQueue = new Map<string, string[]>();
   let nextAutoId = 0;
@@ -116,7 +124,7 @@ export function makeFakeTx(): FakeTx {
           const promise = Promise.resolve();
           return Object.assign(promise, {
             returning: vi.fn(() =>
-              Promise.resolve([{ id: nextId(tName) }]),
+              Promise.resolve(updateResults.get(tName) ?? [{ id: nextId(tName) }]),
             ),
           });
         },
@@ -151,6 +159,9 @@ export function makeFakeTx(): FakeTx {
     },
     queueInsertIds(table, ids) {
       insertIdQueue.set(table, [...ids]);
+    },
+    setUpdateResult(table, rows) {
+      updateResults.set(table, rows);
     },
   };
 }

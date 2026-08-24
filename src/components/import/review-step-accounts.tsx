@@ -10,7 +10,8 @@ import { CurrencyInput } from "@/components/currency-input";
 import { GrowthRateField, parseGrowthSourceSelection } from "@/components/forms/growth-rate-field";
 import { inputClassName, selectClassName, fieldLabelClassName } from "@/components/forms/input-styles";
 import { OwnershipEditor } from "@/components/forms/ownership-editor";
-import { matchOwnersFromHint } from "@/lib/imports/owner-match";
+import { matchFamilyMemberByName, matchOwnersFromHint } from "@/lib/imports/owner-match";
+import { is529Account } from "@/lib/accounts/is-529";
 import type { GrowthSource } from "@/lib/investments/allocation";
 import type { AccountOwner } from "@/engine/ownership";
 import MatchColumn from "./match-column";
@@ -61,7 +62,10 @@ const SUB_TYPE_OPTIONS: { value: AccountSubType; label: string }[] = [
 ];
 
 // Mirrors the field map in src/lib/imports/commit/accounts.ts so the diff
-// preview matches what the commit step will actually write.
+// preview matches what the commit step will actually write. The 529
+// beneficiary/grantor columns are deliberately absent: they are stored as
+// family-member UUIDs, and a diff row reading "Beneficiary: 3f2a…" tells the
+// advisor less than no diff row at all.
 const ACCOUNT_FIELD_MAP: FieldMap<ExtractedAccount> = {
   name: "keep-existing",
   category: "replace",
@@ -151,13 +155,58 @@ export default function ReviewStepAccounts({
 
   const matchingEnabled = Boolean(matches && onMatchChange);
 
-  // Seed each row's owners[] from the AI name hint + coarse owner enum once the
-  // family roster loads. Rows the advisor has already given owners are left
-  // untouched. Re-runs only when the roster identity changes, not on row edits.
+  // Seed each row's people from the AI name hints once the family roster loads.
+  // Rows the advisor has already resolved are left untouched. Re-runs only when
+  // the roster identity changes, not on row edits.
+  //
+  // A 529 takes a different pair of people entirely: its designated beneficiary
+  // and its participant/grantor. It never gets owners[] — the commit writes no
+  // account_owners rows for one — so seeding ownership on a 529 would only
+  // manufacture a value nothing reads.
   useEffect(() => {
     if (familyMembers.length === 0) return;
     let changed = false;
+    /**
+     * Seed ONE of a 529's two people from the name the statement printed.
+     * Returns the (id, name) pair to write, or null when there is nothing to
+     * seed — the advisor already resolved this person, or nothing was printed.
+     *
+     * A confident single roster match becomes an id; anything else keeps the
+     * printed name as free text rather than guessing which child the money is
+     * for. Exactly one of the two is ever set, which is the invariant the
+     * commit step and the accounts table both rely on.
+     */
+    const seed = (
+      current: { id?: string | null; name?: string | null },
+      hint: string | undefined,
+      restrictTo?: Parameters<typeof matchFamilyMemberByName>[2],
+    ): { id: string | null; name: string | null } | null => {
+      if (current.id != null || current.name != null || !hint) return null;
+      const fm = matchFamilyMemberByName(hint, familyMembers, restrictTo);
+      return fm ? { id: fm.id, name: null } : { id: null, name: hint };
+    };
+
     const next = accounts.map((a) => {
+      if (is529Account(a)) {
+        let row = a;
+        const b = seed({ id: row.beneficiaryFamilyMemberId, name: row.beneficiaryName }, row.beneficiaryNameHint);
+        if (b) {
+          row = { ...row, beneficiaryFamilyMemberId: b.id, beneficiaryName: b.name };
+          changed = true;
+        }
+        // Household grantors are the client/spouse only — anyone else (a
+        // grandparent participant) funds it from outside the plan's cash flow.
+        const g = seed(
+          { id: row.grantorFamilyMemberId, name: row.grantorName },
+          row.grantorNameHint,
+          ["client", "spouse"],
+        );
+        if (g) {
+          row = { ...row, grantorFamilyMemberId: g.id, grantorName: g.name };
+          changed = true;
+        }
+        return row;
+      }
       if (a.owners && a.owners.length > 0) return a;
       const seeded = matchOwnersFromHint(a.ownerNameHint, a.owner, familyMembers);
       if (seeded.length === 0) return a;
@@ -173,6 +222,41 @@ export default function ReviewStepAccounts({
       i === index ? { ...a, [field]: value } : a
     );
     onChange(updated);
+  };
+
+  /**
+   * Category / sub-type edits, which can turn a row into (or out of) a 529.
+   * Reclassifying INTO a 529 drops the RMD flag: the checkbox disappears with
+   * the category, and a stale `true` left behind would ride into the commit
+   * where the advisor can no longer see it.
+   */
+  const updateClassification = (
+    index: number,
+    field: "category" | "subType",
+    value: AccountCategory | AccountSubType | undefined,
+  ) => {
+    onChange(
+      accounts.map((a, i) => {
+        if (i !== index) return a;
+        const next = { ...a, [field]: value };
+        return is529Account(next) ? { ...next, rmdEnabled: false } : next;
+      }),
+    );
+  };
+
+  const set529Person = (
+    index: number,
+    kind: "beneficiary" | "grantor",
+    familyMemberId: string | null,
+    name: string | null,
+  ) => {
+    // Spelled out per person rather than built from `${kind}FamilyMemberId`:
+    // computed keys would make the column names ungreppable.
+    const patch =
+      kind === "beneficiary"
+        ? { beneficiaryFamilyMemberId: familyMemberId, beneficiaryName: name }
+        : { grantorFamilyMemberId: familyMemberId, grantorName: name };
+    onChange(accounts.map((a, i) => (i === index ? { ...a, ...patch } : a)));
   };
 
   const addRow = () => {
@@ -230,6 +314,11 @@ export default function ReviewStepAccounts({
           const existingRow = existingId ? existingAccountsById?.[existingId] : undefined;
           const isExpanded = expanded.has(i);
           const isExcluded = excluded.has(i);
+          // A 529 is attributed to its designated beneficiary, is out of the
+          // household estate, and can never take an RMD — so this row swaps
+          // its ownership editor for the beneficiary/grantor pair and drops
+          // the RMD control entirely.
+          const is529 = is529Account(account);
           // Suppress the v1 name-overlap heuristic when match annotations are
           // present — the match column is the authoritative signal.
           const duplicate = matchingEnabled ? null : findDuplicate(account.name);
@@ -344,7 +433,9 @@ export default function ReviewStepAccounts({
                   <label className={fieldLabelClassName}>Category</label>
                   <select
                     value={account.category ?? ""}
-                    onChange={(e) => updateField(i, "category", e.target.value || undefined)}
+                    onChange={(e) =>
+                      updateClassification(i, "category", (e.target.value || undefined) as AccountCategory | undefined)
+                    }
                     className={account.category ? SELECT_CLASS : `${SELECT_CLASS} ${TINT_EMPTY}`}
                     // Long labels ("529 / Education") still clip in 3 columns; the
                     // tooltip is the documented fallback for a truncated control.
@@ -360,7 +451,9 @@ export default function ReviewStepAccounts({
                   <label className={fieldLabelClassName}>Type</label>
                   <select
                     value={account.subType ?? ""}
-                    onChange={(e) => updateField(i, "subType", e.target.value || undefined)}
+                    onChange={(e) =>
+                      updateClassification(i, "subType", (e.target.value || undefined) as AccountSubType | undefined)
+                    }
                     className={SELECT_CLASS}
                     title={SUB_TYPE_OPTIONS.find((o) => o.value === account.subType)?.label}
                   >
@@ -437,46 +530,96 @@ export default function ReviewStepAccounts({
                     inputMode="numeric"
                   />
                 </div>
-                <div className="col-span-5">
+                {/* A 529 has no RMD control, so the custodian claims the space
+                    the checkbox would have taken rather than leaving a gap. */}
+                <div className={is529 ? "col-span-9" : "col-span-5"}>
                   <label className={fieldLabelClassName}>Custodian</label>
                   <input
                     value={account.custodian ?? ""}
                     onChange={(e) => updateField(i, "custodian", e.target.value || undefined)}
                     className={INPUT_CLASS}
-                    placeholder="e.g. Fidelity"
+                    placeholder={is529 ? "e.g. Vanguard / state plan" : "e.g. Fidelity"}
                   />
                 </div>
                 {/* h-9 on the inner label matches the sibling inputs' height so the
                     checkbox sits on their centre line rather than floating. */}
-                <div className="col-span-4">
-                  <label className={fieldLabelClassName}>RMD</label>
-                  <label className="flex h-9 cursor-pointer items-center gap-2 text-[13px] text-ink-2">
-                    <input
-                      type="checkbox"
-                      checked={account.rmdEnabled ?? false}
-                      onChange={(e) => updateField(i, "rmdEnabled", e.target.checked)}
-                      className="h-4 w-4 rounded border-hair bg-card-2 text-accent focus:ring-2 focus:ring-accent/25"
-                    />
-                    Take RMDs
-                  </label>
-                </div>
+                {!is529 && (
+                  <div className="col-span-4">
+                    <label className={fieldLabelClassName}>RMD</label>
+                    <label className="flex h-9 cursor-pointer items-center gap-2 text-[13px] text-ink-2">
+                      <input
+                        type="checkbox"
+                        checked={account.rmdEnabled ?? false}
+                        onChange={(e) => updateField(i, "rmdEnabled", e.target.checked)}
+                        className="h-4 w-4 rounded border-hair bg-card-2 text-accent focus:ring-2 focus:ring-accent/25"
+                      />
+                      Take RMDs
+                    </label>
+                  </div>
+                )}
               </div>
 
-              {/* Ownership gets its own full-width band rather than a grid cell:
-                  inside the 6-col grid it only had ~1/3 of the drawer, so the
-                  preset bar wrapped into a vertical stack and stretched the
-                  whole grid row. Full width lets the presets flow left-to-right. */}
-              <div className="mt-3 border-t border-hair pt-3">
-                <OwnershipEditor
-                  familyMembers={familyMembers}
-                  entities={entities}
-                  value={(account.owners as AccountOwner[]) ?? []}
-                  onChange={(next) => updateField(i, "owners", next)}
-                  titlingType="jtwros"
-                  onTitlingTypeChange={() => {}}
-                  label="Owner(s)"
-                />
-              </div>
+              {/* People. A 529's two people are the beneficiary and the
+                  participant/grantor — it carries no account_owners rows at
+                  all, so the ownership editor would be a false affordance.
+                  Every other category gets its own full-width band rather than
+                  a grid cell: inside the 6-col grid it only had ~1/3 of the
+                  drawer, so the preset bar wrapped into a vertical stack and
+                  stretched the whole grid row. Full width lets the presets flow
+                  left-to-right. */}
+              {is529 ? (
+                <div className="mt-3 space-y-2 border-t border-hair pt-3">
+                  <div className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="text-xs font-medium uppercase tracking-wide text-ink-4">
+                      529 plan
+                    </span>
+                    <span className="text-[11px] text-ink-4">
+                      Held for the beneficiary — out of the household estate, and never subject to RMDs.
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-12 gap-x-2 gap-y-3">
+                    <div className="col-span-6">
+                      <Person529Field
+                        label="Beneficiary"
+                        required
+                        hint={account.beneficiaryNameHint}
+                        placeholder="e.g. grandchild's name"
+                        options={familyMembers}
+                        familyMemberId={account.beneficiaryFamilyMemberId}
+                        name={account.beneficiaryName}
+                        onChange={(id, nm) => set529Person(i, "beneficiary", id, nm)}
+                        missingMessage="Required — a 529 is attributed to its designated beneficiary."
+                      />
+                    </div>
+                    <div className="col-span-6">
+                      <Person529Field
+                        label="Grantor"
+                        hint={account.grantorNameHint}
+                        placeholder="e.g. grandparent's name"
+                        // Only the client/spouse can fund contributions out of
+                        // household cash flow; anyone else funds it from outside.
+                        options={familyMembers.filter((f) => f.role === "client" || f.role === "spouse")}
+                        familyMemberId={account.grantorFamilyMemberId}
+                        name={account.grantorName}
+                        onChange={(id, nm) => set529Person(i, "grantor", id, nm)}
+                        help="A household grantor funds contributions from plan cash flow. Anyone else funds it from outside."
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3 border-t border-hair pt-3">
+                  <OwnershipEditor
+                    familyMembers={familyMembers}
+                    entities={entities}
+                    value={(account.owners as AccountOwner[]) ?? []}
+                    onChange={(next) => updateField(i, "owners", next)}
+                    titlingType="jtwros"
+                    onTitlingTypeChange={() => {}}
+                    label="Owner(s)"
+                  />
+                </div>
+              )}
 
               {isExpanded && existingRow && (
                 <div className="mt-3 rounded border border-hair bg-card-2/40 p-3">
@@ -552,6 +695,93 @@ export default function ReviewStepAccounts({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/** Sentinel option: the person isn't on the family roster, so name them freehand. */
+const NAMED_PERSON = "__named__";
+
+/**
+ * One person on a 529 — its beneficiary or its grantor. The accounts table
+ * stores exactly one of (familyMemberId, name) for each, so this is a single
+ * roster picker with a "Someone else…" escape hatch rather than two rival
+ * controls: choosing either side clears the other, which is the invariant.
+ *
+ * `hint` is what the statement actually printed. It stays visible even after
+ * the pick resolves, so the advisor can check the match instead of trusting it.
+ *
+ * The canonical statement of these rules — id-or-name exclusivity, a
+ * client/spouse-only grantor, a required beneficiary — is the
+ * `category === "education_savings"` block in
+ * src/components/forms/add-account-form.tsx, which is where a 529 is edited for
+ * the rest of its life. This is a compact mirror for the review grid: a select
+ * with a "Someone else…" sentinel where the form uses a radio pair, because a
+ * review row has one grid cell, not a dialog. Change one, check the other.
+ */
+function Person529Field({
+  label,
+  required = false,
+  hint,
+  help,
+  placeholder,
+  options,
+  familyMemberId,
+  name,
+  onChange,
+  missingMessage,
+}: {
+  label: string;
+  required?: boolean;
+  hint?: string;
+  help?: string;
+  placeholder: string;
+  options: { id: string; firstName: string; lastName?: string | null }[];
+  familyMemberId?: string | null;
+  name?: string | null;
+  onChange: (familyMemberId: string | null, name: string | null) => void;
+  missingMessage?: string;
+}) {
+  const usingName = !familyMemberId && name != null;
+  const missing = required && !familyMemberId && !(name ?? "").trim();
+
+  return (
+    <div>
+      <label className={fieldLabelClassName}>
+        {label}
+        {required ? <span className="text-crit"> *</span> : null}
+      </label>
+      <select
+        aria-label={label}
+        value={familyMemberId ?? (usingName ? NAMED_PERSON : "")}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v === NAMED_PERSON) onChange(null, name ?? "");
+          else if (v === "") onChange(null, null);
+          else onChange(v, null);
+        }}
+        className={missing ? `${SELECT_CLASS} ${TINT_EMPTY}` : SELECT_CLASS}
+      >
+        <option value="">Select...</option>
+        {options.map((o) => (
+          <option key={o.id} value={o.id}>{o.firstName}</option>
+        ))}
+        <option value={NAMED_PERSON}>Someone else…</option>
+      </select>
+      {usingName && (
+        <input
+          aria-label={`${label} name`}
+          value={name ?? ""}
+          onChange={(e) => onChange(null, e.target.value)}
+          placeholder={placeholder}
+          className={`mt-1.5 ${missing ? EMPTY_CLASS : INPUT_CLASS}`}
+        />
+      )}
+      {hint ? <p className="mt-1 text-[11px] text-ink-4">Statement: {hint}</p> : null}
+      {missing && missingMessage ? (
+        <p className="mt-1 text-[11px] text-crit">{missingMessage}</p>
+      ) : null}
+      {!missing && help ? <p className="mt-1 text-[11px] text-ink-4">{help}</p> : null}
     </div>
   );
 }

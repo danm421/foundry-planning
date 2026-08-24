@@ -7,6 +7,15 @@ import type { Tx } from "./types";
 export interface FamilyRoleIds {
   clientFmId: string | null;
   spouseFmId: string | null;
+  /**
+   * Every family-member id in the household, for callers that accept a
+   * family-member id straight off the advisor-edited payload (the 529
+   * beneficiary / grantor). The payload is client-supplied JSON, so an id in
+   * it is a claim, not a fact — check it against this set before writing an FK.
+   * Optional so a hand-built FamilyRoleIds (tests, recommit) still type-checks;
+   * absent behaves as "trust nothing", which is the safe direction.
+   */
+  allFmIds?: Set<string>;
 }
 
 /**
@@ -28,6 +37,7 @@ export async function loadFamilyRoleIds(
   return {
     clientFmId: rows.find((r) => r.role === "client")?.id ?? null,
     spouseFmId: rows.find((r) => r.role === "spouse")?.id ?? null,
+    allFmIds: new Set(rows.map((r) => r.id)),
   };
 }
 

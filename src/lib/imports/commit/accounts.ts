@@ -2,7 +2,8 @@ import { and, eq, sql } from "drizzle-orm";
 
 import { accountOwners, accounts, lifeInsurancePolicies, sourceEnum } from "@/db/schema";
 import { isRmdEligibleSubType } from "@/engine/rmd";
-import type { AccountCategory, AccountSubType } from "@/lib/extraction/types";
+import { is529Account } from "@/lib/accounts/is-529";
+import type { AccountCategory, AccountSubType, ExtractedAccount } from "@/lib/extraction/types";
 import {
   RETIREMENT_SUBTYPES,
   validateOwnersShape,
@@ -50,8 +51,58 @@ const POLICY_TYPE_BY_SUBTYPE: Record<string, "term" | "whole" | "universal" | "v
 export function resolveAccountCategory(
   row: { name?: string; category?: AccountCategory; subType?: AccountSubType },
 ): AccountCategory {
-  if (row.subType === "529") return "education_savings";
+  if (is529Account(row)) return "education_savings";
   return row.category ?? "taxable";
+}
+
+/**
+ * The 529-only columns for a row, resolved against the household roster.
+ *
+ * A 529 is attributed to its designated BENEFICIARY and funded by its
+ * GRANTOR; each is stored as EITHER a household family-member id OR a plain
+ * name, never both (see the accounts-table comment). The ids arrive on
+ * advisor-edited payload JSON, so an id this household doesn't have is
+ * discarded rather than written — it would be a cross-tenant FK.
+ *
+ * A discarded id does not fall back to the paired name — BOTH halves are
+ * dropped. The two fields are the two halves of one choice, and the review step
+ * clears one when the advisor picks the other, so a name sitting behind a
+ * rejected id is stale, not a second opinion. The row then commits with no
+ * beneficiary at all, which warns rather than silently naming the wrong child.
+ */
+export function education529Columns(
+  row: Pick<
+    ExtractedAccount,
+    | "beneficiaryFamilyMemberId"
+    | "beneficiaryName"
+    | "grantorFamilyMemberId"
+    | "grantorName"
+  >,
+  allFmIds: Set<string> | undefined,
+): {
+  beneficiaryFamilyMemberId: string | null;
+  beneficiaryName: string | null;
+  grantorFamilyMemberId: string | null;
+  grantorName: string | null;
+} {
+  // A rejected id takes its paired name down with it — see the docstring. A
+  // missing id is a different case: nobody picked anybody, so the printed name
+  // is all there is and it stands on its own.
+  const resolve = (
+    id: string | null | undefined,
+    name: string | null | undefined,
+  ): { id: string | null; name: string | null } => {
+    if (id) return allFmIds?.has(id) ? { id, name: null } : { id: null, name: null };
+    return { id: null, name: name?.trim() || null };
+  };
+  const beneficiary = resolve(row.beneficiaryFamilyMemberId, row.beneficiaryName);
+  const grantor = resolve(row.grantorFamilyMemberId, row.grantorName);
+  return {
+    beneficiaryFamilyMemberId: beneficiary.id,
+    beneficiaryName: beneficiary.name,
+    grantorFamilyMemberId: grantor.id,
+    grantorName: grantor.name,
+  };
 }
 
 /**
@@ -70,6 +121,11 @@ export function resolveAccountCategory(
  *   category, subType: replace
  *   value, basis, accountNumberLast4, custodian: replace
  *   growthRate, rmdEnabled: replace-if-non-null
+ *
+ * 529s (`education_savings`, or any row whose subType is "529") deviate on
+ * three points, matching what accounts-writes.ts enforces for hand-entered
+ * ones: RMDs are forced off, the grantor/beneficiary columns are written from
+ * the review step's resolution, and NO account_owners rows are written.
  */
 export async function commitAccounts(
   tx: Tx,
@@ -93,6 +149,16 @@ export async function commitAccounts(
       // category is required by the schema; default to "taxable" when the
       // extraction failed to classify so the row is still committable.
       const subType = row.subType ?? "other";
+      const is529 = is529Account(row);
+      const edu529 = is529 ? education529Columns(row, family.allFmIds) : null;
+      if (edu529 && !edu529.beneficiaryFamilyMemberId && !edu529.beneficiaryName) {
+        // Not fatal — refusing the row would strand the whole import over one
+        // missing name — but the account lands unattributed, and the account
+        // form will refuse to save it until someone supplies a beneficiary.
+        result.warnings.push(
+          `${row.name}: 529 committed with no designated beneficiary — set one on the account.`,
+        );
+      }
       // Fresh row: unconditional write is safe — for a no-holdings/no-value row
       // the guard returns the column defaults (deriveFromHoldings=true, note=null),
       // and there is no existing `notes` to preserve.
@@ -116,7 +182,10 @@ export async function commitAccounts(
           // RMDs default ON for pre-tax retirement sub-types when the
           // extraction didn't capture an explicit flag — matches the
           // add-account form and quick-start wizard. Roth/non-retirement off.
-          rmdEnabled: row.rmdEnabled ?? isRmdEligibleSubType(subType),
+          // A 529 never takes one, whatever an older payload claims: the review
+          // step hides the control, so an inherited `true` would be invisible.
+          rmdEnabled: is529 ? false : row.rmdEnabled ?? isRmdEligibleSubType(subType),
+          ...(edu529 ?? {}),
           deriveFromHoldings: guard.deriveFromHoldings,
           notes: guard.note,
           source: externalProviderToSource(row.externalProvider),
@@ -129,7 +198,13 @@ export async function commitAccounts(
       const isRetirement = (RETIREMENT_SUBTYPES as readonly string[]).includes(
         subType,
       );
-      await writeImportedOwners(tx, inserted.id, row, ctx.clientId, family, isRetirement);
+      // 529s carry NO account_owners rows — the beneficiary columns above are
+      // authoritative and a sentinel owner is synthesized at engine-load time.
+      // Same rule as accounts-writes.ts; writing owners here would put the
+      // balance back into the household estate the beneficiary took it out of.
+      if (!is529) {
+        await writeImportedOwners(tx, inserted.id, row, ctx.clientId, family, isRetirement);
+      }
       await writeAccountHoldings(
         tx,
         inserted.id,
@@ -168,7 +243,7 @@ export async function commitAccounts(
     // subType edit to anything else, with category left untouched by the
     // review step, must NOT fall through resolveAccountCategory's `?? "taxable"`
     // default and clobber an existing category the advisor never touched.
-    if (row.category !== undefined || row.subType === "529") {
+    if (row.category !== undefined || is529Account(row)) {
       updates.category = resolveAccountCategory(row);
     }
     if (row.subType !== undefined) updates.subType = row.subType;
@@ -181,6 +256,15 @@ export async function commitAccounts(
     if (row.modelPortfolioId !== undefined) updates.modelPortfolioId = row.modelPortfolioId;
     if (row.tickerPortfolioId !== undefined) updates.tickerPortfolioId = row.tickerPortfolioId;
     if (row.rmdEnabled != null) updates.rmdEnabled = row.rmdEnabled;
+    // The incoming row is the ONLY evidence here — `before` isn't loaded — so
+    // the 529 columns are written only when the incoming row itself says 529.
+    // A non-529 row must not null them out: it would strip the beneficiary off
+    // an existing 529 the extraction simply failed to classify.
+    const updateIs529 = is529Account(row);
+    if (updateIs529) {
+      Object.assign(updates, education529Columns(row, family.allFmIds));
+      updates.rmdEnabled = false;
+    }
     if (row.holdings?.length) {
       const guard = accountHoldingsGuardrail(row);
       updates.deriveFromHoldings = guard.deriveFromHoldings;
@@ -196,7 +280,13 @@ export async function commitAccounts(
       updates.externalId = row.externalId ?? null;
       updates.lastSyncedAt = now;
     }
-    await tx
+    // `.returning()` is the tenancy gate for the owners delete below, not a
+    // convenience: `existingId` comes straight off payload JSON, and
+    // account_owners has no clientId of its own to scope a delete by. The
+    // UPDATE is already scoped, so an id belonging to another firm matches
+    // nothing and returns no rows — which is exactly the signal that this
+    // account is not ours to touch.
+    const updatedRows = await tx
       .update(accounts)
       .set(updates)
       .where(
@@ -205,7 +295,14 @@ export async function commitAccounts(
           eq(accounts.clientId, ctx.clientId),
           eq(accounts.scenarioId, ctx.scenarioId),
         ),
-      );
+      )
+      .returning({ id: accounts.id });
+    if (updateIs529 && updatedRows.length > 0) {
+      // Reclassifying an existing account INTO a 529 has to clear whatever
+      // ownership it used to carry, or the balance stays in the household
+      // estate through both doors at once.
+      await tx.delete(accountOwners).where(eq(accountOwners.accountId, existingId));
+    }
     await writeAccountHoldings(
       tx,
       existingId,
