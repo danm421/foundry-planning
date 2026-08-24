@@ -1,5 +1,6 @@
 import type { TaxResult, TaxYearParameters, IrmaaTier as TaxIrmaaTier } from "../lib/tax/types";
 import type { ThresholdFacts } from "../lib/tax/thresholds";
+import type { TaxRateStress } from "../lib/tax/rate-stress";
 import type { CapAdjustment } from "./contribution-limits";
 import type { ClientDeductionRow } from "../lib/tax/derive-deductions";
 import type { TrustSubType as LibTrustSubType } from "@/lib/entities/trust";
@@ -1457,6 +1458,12 @@ export interface PlanSettings {
    *  other expense types) reads it — the "Higher inflation" stressor hits
    *  living costs only. */
   livingExpenseInflationOverride?: number | null;
+  /** Stress test: add `points` (a decimal fraction — 0.03 = three percentage
+   *  points) to every federal marginal rate for projection years >=
+   *  `startYear`. Covers the ordinary, preferential, and trust schedules.
+   *  AMT, NIIT, state tax, and every threshold are deliberately unaffected —
+   *  see src/lib/tax/rate-stress.ts. */
+  taxRateStress?: TaxRateStress;
 }
 
 // ── Output Types ─────────────────────────────────────────────────────────────

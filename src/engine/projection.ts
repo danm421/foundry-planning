@@ -47,7 +47,7 @@ import {
   scheduleBoYBalance,
   type LiabilityScheduleMap,
 } from "./liability-schedules";
-import { createTaxResolver } from "../lib/tax/resolver";
+import { buildTaxResolver } from "../lib/tax/build-resolver";
 import type { TaxHouseholdInput, TaxYearParameters, FilingStatus } from "../lib/tax/types";
 import type { CapitalLossCarryforward } from "../lib/tax/capital-loss";
 import type { ThresholdFacts, ThresholdHousehold } from "../lib/tax/thresholds";
@@ -471,16 +471,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       "Falling back to flat mode. Run `npm run seed:tax-data` to populate."
     );
   }
-  const taxResolver = taxYearRows.length > 0
-    ? createTaxResolver(taxYearRows, {
-        taxInflationRate: planSettings.taxInflationRate != null
-          ? planSettings.taxInflationRate
-          : planSettings.inflationRate,
-        ssWageGrowthRate: planSettings.ssWageGrowthRate != null
-          ? planSettings.ssWageGrowthRate
-          : planSettings.inflationRate + 0.005,
-      })
-    : null;
+  const taxResolver = buildTaxResolver(taxYearRows, planSettings);
 
   // Mutable working list of entities. Death-event grantor-succession can flip
   // an irrevocable grantor trust (IDGT/SLAT) to non-grantor at IRC §671 when
