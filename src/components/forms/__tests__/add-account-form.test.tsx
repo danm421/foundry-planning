@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { BENEFICIARY_REQUIRED_MESSAGE } from "@/lib/accounts/is-529";
 import { createRef } from "react";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 
@@ -448,7 +449,7 @@ describe("AddAccountForm — 529 beneficiary submit gate", () => {
 
     // Inline required-beneficiary error is visible (beneficiaryMode defaults
     // to "family" with no member selected).
-    expect(screen.getByText(/requires a designated beneficiary/i)).toBeDefined();
+    expect(screen.getByText(BENEFICIARY_REQUIRED_MESSAGE)).toBeDefined();
 
     // The lifted submit state must disable the dialog's primary button.
     expect(submitStates.at(-1)?.canSubmit).toBe(false);
@@ -468,7 +469,7 @@ describe("AddAccountForm — 529 beneficiary submit gate", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "Beneficiary family member" }), {
       target: { value: "fm-spouse" },
     });
-    expect(screen.queryByText(/requires a designated beneficiary/i)).toBeNull();
+    expect(screen.queryByText(BENEFICIARY_REQUIRED_MESSAGE)).toBeNull();
     expect(submitStates.at(-1)?.canSubmit).toBe(true);
 
     // Submit now fires and carries the 529 fields with no owners[].

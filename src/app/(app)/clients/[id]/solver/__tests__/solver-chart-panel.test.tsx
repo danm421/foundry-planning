@@ -72,6 +72,42 @@ vi.mock("../solver-withdrawal-panel", () => ({
     <div data-testid="table-withdrawals">rows:{rows.length}</div>
   ),
 }));
+// The real row builder runs (importOriginal), wrapped so the "built only while
+// the Monthly sub-tab is open" claim in the panel is a checked one. A mock that
+// merely returned rows could not tell a lazy build from an eager one.
+const buildMonthlyRows = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/solver/monthly-cash-flow", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/solver/monthly-cash-flow")>();
+  buildMonthlyRows.mockImplementation(actual.buildMonthlyCashFlowRows);
+  return { ...actual, buildMonthlyCashFlowRows: buildMonthlyRows };
+});
+vi.mock("@/components/charts/solver-monthly-cash-flow-chart", () => ({
+  SolverMonthlyCashFlowChart: ({ rows }: { rows: { year: number }[] }) => (
+    <div data-testid="chart-monthly">rows:{rows.length}</div>
+  ),
+}));
+// Renders `rows` and `basis`, and offers a control that calls `onBasisChange`,
+// so the assertions can tell a wired-up panel from one handed the empty array
+// the other sub-tabs pass or a dead callback — same reasoning as the
+// withdrawal-panel mock above.
+vi.mock("../solver-monthly-cash-flow-panel", () => ({
+  SolverMonthlyCashFlowPanel: ({
+    rows,
+    basis,
+    onBasisChange,
+  }: {
+    rows: { year: number }[];
+    basis: string;
+    onBasisChange: (b: string) => void;
+  }) => (
+    <div data-testid="panel-monthly">
+      rows:{rows.length} basis:{basis}
+      <button type="button" onClick={() => onBasisChange(basis === "today" ? "nominal" : "today")}>
+        flip basis
+      </button>
+    </div>
+  ),
+}));
 vi.mock("../solver-monte-carlo-panel", () => ({
   SolverMonteCarloPanel: () => <div data-testid="solver-mc-panel" />,
 }));
@@ -104,7 +140,7 @@ vi.mock("../use-solver-full-projection", () => ({
   useSolverFullProjection: () => fullProjectionStub.current,
 }));
 
-import { SolverChartPanel, REPORT_TABS } from "../solver-chart-panel";
+import { SolverChartPanel, REPORT_TABS, type CashflowSubTab } from "../solver-chart-panel";
 
 const workingTree = {
   client: {
@@ -113,6 +149,9 @@ const workingTree = {
     dateOfBirth: "1960-01-01",
   },
   accounts: [],
+  // The Monthly sub-tab's row builder deflates every figure to plan-start
+  // dollars, so it reads these two off the working tree.
+  planSettings: { inflationRate: 0.03, planStartYear: 2026 },
 } as unknown as ClientData;
 
 // Two years, enough for the Withdrawals sub-tab's row builder to produce something
@@ -125,7 +164,18 @@ const withdrawalProjection = [2026, 2027].map(
       income: { socialSecurity: 0, salaries: 0 },
       withdrawals: { byAccount: {}, total: 0 },
       accountLedgers: {},
-      expenses: { living: 0 },
+      // Every bucket the Monthly row builder reads, not just `living`: a
+      // missing one makes that fixed cost NaN, and a missing `savings` throws.
+      expenses: {
+        living: 0,
+        taxes: 0,
+        liabilities: 0,
+        insurance: 0,
+        realEstate: 0,
+        other: 0,
+        discretionary: 0,
+      },
+      savings: { byAccount: {}, total: 0, employerTotal: 0 },
       portfolioAssets: { liquidTotal: 0 },
       totalIncome: 0,
       totalExpenses: 0,
@@ -169,6 +219,7 @@ function ControlledPanel({
   currentProjection?: ProjectionYear[];
 }) {
   const [activeReport, setActiveReport] = useState<ReportKey>(initialReport);
+  const [cashflowSubTab, setCashflowSubTab] = useState<CashflowSubTab>("cashflow");
   return (
     <SolverChartPanel
       currentProjection={currentProjection}
@@ -192,6 +243,8 @@ function ControlledPanel({
       mcRequested={false}
       activeSummary="retirement"
       onSummaryChange={() => undefined}
+      cashflowSubTab={cashflowSubTab}
+      onCashflowSubTabChange={setCashflowSubTab}
       selectedYear={null}
       onYearClick={() => undefined}
       layout={layout}
@@ -204,6 +257,7 @@ function ControlledPanel({
 describe("SolverChartPanel", () => {
   beforeEach(() => {
     fullProjectionStub.current = { projection: { years: [] }, loading: false };
+    buildMonthlyRows.mockClear();
   });
 
   it("shows the Portfolio chart by default", () => {
@@ -376,6 +430,8 @@ describe("SolverChartPanel", () => {
         mcRequested={false}
         activeSummary="retirement"
         onSummaryChange={() => undefined}
+        cashflowSubTab="cashflow"
+        onCashflowSubTabChange={() => undefined}
         selectedYear={null}
         onYearClick={() => undefined}
         baseGifts={[]}
@@ -579,5 +635,42 @@ describe("SolverChartPanel", () => {
     await userEvent.click(screen.getByRole("button", { name: "Flow Chart" }));
     expect(await screen.findByTestId("estate-flow-chart")).toBeInTheDocument();
     expect(screen.queryByText(/loading estate flow/i)).not.toBeInTheDocument();
+  });
+
+  it("offers a Monthly sub-tab under Cash Flow", () => {
+    render(<ControlledPanel initialReport="cashflow" />);
+    expect(screen.getByRole("button", { name: "Monthly" })).toBeInTheDocument();
+  });
+
+  it("does not offer the Monthly sub-tab on other reports", () => {
+    render(<ControlledPanel initialReport="portfolio" />);
+    expect(screen.queryByRole("button", { name: "Monthly" })).not.toBeInTheDocument();
+  });
+
+  it("renders the monthly chart and panel when the Monthly sub-tab is chosen", async () => {
+    render(<ControlledPanel initialReport="cashflow" currentProjection={withdrawalProjection} />);
+    await userEvent.click(screen.getByRole("button", { name: "Monthly" }));
+    expect(screen.getByTestId("chart-monthly")).toHaveTextContent("rows:2");
+    expect(screen.getByTestId("panel-monthly")).toHaveTextContent("rows:2");
+  });
+
+  // Two directions in one case, and it ends on the basis it started with: the
+  // store behind this is module-level, so a test that flipped it and walked
+  // away would decide what the next test sees.
+  it("hands the monthly panel today's dollars, and takes its choice back", async () => {
+    render(<ControlledPanel initialReport="cashflow" currentProjection={withdrawalProjection} />);
+    await userEvent.click(screen.getByRole("button", { name: "Monthly" }));
+    expect(screen.getByTestId("panel-monthly")).toHaveTextContent("basis:today");
+
+    await userEvent.click(screen.getByRole("button", { name: "flip basis" }));
+    expect(screen.getByTestId("panel-monthly")).toHaveTextContent("basis:nominal");
+
+    await userEvent.click(screen.getByRole("button", { name: "flip basis" }));
+    expect(screen.getByTestId("panel-monthly")).toHaveTextContent("basis:today");
+  });
+
+  it("builds no monthly rows while a different sub-tab is open", () => {
+    render(<ControlledPanel initialReport="cashflow" currentProjection={withdrawalProjection} />);
+    expect(buildMonthlyRows).not.toHaveBeenCalled();
   });
 });

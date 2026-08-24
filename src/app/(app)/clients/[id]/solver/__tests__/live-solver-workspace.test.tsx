@@ -99,6 +99,26 @@ vi.mock("@/components/charts/solver-cash-flow-chart", () => ({
 vi.mock("../solver-year-detail-panel", () => ({
   SolverYearDetailPanel: () => <div data-testid="year-detail" />,
 }));
+// The Cash Flow report's other two sub-tabs. `baseProps` carries a one-field
+// projection stub, so the real row builders would throw on the first
+// `y.expenses` — the sub-tab strip is what these tests reach, not the tables
+// under it. Spread the originals rather than returning a bare object:
+// `withdrawal-report` also exports `WITHDRAWAL_SOURCES` and
+// `activeWithdrawalSources`, which the withdrawal panel reads at render.
+vi.mock("@/lib/solver/monthly-cash-flow", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/solver/monthly-cash-flow")>()),
+  buildMonthlyCashFlowRows: () => [],
+}));
+vi.mock("@/lib/solver/withdrawal-report", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/solver/withdrawal-report")>()),
+  buildWithdrawalReportRows: () => [],
+}));
+vi.mock("@/components/charts/solver-monthly-cash-flow-chart", () => ({
+  SolverMonthlyCashFlowChart: () => <div data-testid="chart-monthly" />,
+}));
+vi.mock("@/components/charts/solver-withdrawal-chart", () => ({
+  SolverWithdrawalChart: () => <div data-testid="chart-withdrawal" />,
+}));
 
 const fetchMock = vi.fn();
 beforeEach(() => {
@@ -742,6 +762,39 @@ describe("LiveSolverWorkspace — KPI strip is Portfolio-only", () => {
 
     fireEvent.click(reportTabs().getByRole("tab", { name: "Portfolio" }));
     expect(screen.getByText("Ending Portfolio Assets")).toBeInTheDocument();
+  });
+});
+
+describe("LiveSolverWorkspace — the ANNUAL year detail under the MONTHLY table", () => {
+  it("keeps the drill on Cash Flow and Withdrawals and drops it on Monthly", () => {
+    // The drill reports one year in ANNUAL dollars. Under the Monthly table it
+    // put "Living Expenses $183,899" directly beneath an Available column
+    // reading $10,000 — the same money twelve months apart, with nothing on
+    // screen saying so. The sub-tab lives in SolverChartPanel and the drill is
+    // its SIBLING, which is why the workspace owns that state.
+    render(<LiveSolverWorkspace {...baseProps} />);
+    fireEvent.click(
+      within(screen.getByRole("tablist", { name: "Chart view" })).getByRole("tab", {
+        name: "Cash Flow",
+      }),
+    );
+
+    // Liveness: a year really is selected, so the drill has something to render
+    // and the `queryByTestId(...).toBeNull()` below cannot pass vacuously.
+    expect(screen.getByTestId("year-detail")).toBeInTheDocument();
+
+    // The sub-tab strip renders plain buttons, so these never collide with the
+    // report tabs (role="tab") that share their names.
+    fireEvent.click(screen.getByRole("button", { name: "Withdrawals" }));
+    expect(screen.getByTestId("year-detail")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Monthly" }));
+    expect(screen.queryByTestId("year-detail")).toBeNull();
+
+    // And back — the gate follows the sub-tab rather than unmounting the drill
+    // for the rest of the session.
+    fireEvent.click(screen.getByRole("button", { name: "Cash Flow" }));
+    expect(screen.getByTestId("year-detail")).toBeInTheDocument();
   });
 });
 

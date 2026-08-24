@@ -214,13 +214,20 @@ export async function commitGoals(
     if (resolvedAccountIds.length > 0) {
       await replaceDedicatedAccounts(tx, expenseId, resolvedAccountIds);
 
-      // Extraction captures no 529 beneficiary (ExtractedAccount has no such
-      // field), so the account commits with a null beneficiary and is
-      // attributed to nobody. The student the advisor confirmed on this goal is
-      // the best evidence there is. Only fill a NULL — never overwrite a
-      // beneficiary someone set deliberately. Decided from the state read at
-      // the top of this function (belt); the SQL isNull(...) conditions below
-      // repeat the same guard at the database (suspenders).
+      // A 529 statement now CAN carry a beneficiary: extraction reads the
+      // printed name and the review step resolves it, and `commitAccounts`
+      // runs before this module (COMMIT_TABS order), so the account may
+      // already be attributed by the time we get here. This is the fallback
+      // for the ones that are not — an older payload, a statement that never
+      // printed a beneficiary, or a hint nobody resolved. The student the
+      // advisor confirmed on this goal is then the best evidence there is.
+      //
+      // So: only fill a NULL — never overwrite a beneficiary someone set
+      // deliberately, and never overwrite the one the import review step just
+      // wrote. Decided from the state read at the top of this function (belt);
+      // the SQL isNull(...) conditions below repeat the same guard at the
+      // database (suspenders). Both guards are load-bearing now that the
+      // account path writes this column too.
       if (forFamilyMemberId) {
         for (const accountId of resolvedAccountIds) {
           const state = beneficiaryStateById.get(accountId);

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { AssetMixTab, type AssetClassOption } from "./asset-mix-tab";
 import { HoldingsTab } from "./holdings-tab";
+import { BENEFICIARY_REQUIRED_MESSAGE } from "@/lib/accounts/is-529";
 import { setAccountDeriveFromHoldings } from "@/lib/investments/holdings-client";
 import type { GrowthSource } from "@/lib/investments/allocation";
 import BeneficiariesTab from "./beneficiaries-tab";
@@ -1886,7 +1887,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                     />
                   )}
                   {educationBeneficiaryMissing && (
-                    <p className="text-xs text-red-400">A 529 requires a designated beneficiary.</p>
+                    <p className="text-xs text-red-400">{BENEFICIARY_REQUIRED_MESSAGE}</p>
                   )}
                 </div>
               </div>

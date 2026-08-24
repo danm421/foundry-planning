@@ -139,6 +139,31 @@ export function resolveOwnersFromHint(
 }
 
 /**
+ * Resolve a single-person name hint (a 529's designated beneficiary or its
+ * participant/grantor) to ONE family member. Pure.
+ *
+ * Deliberately stricter than `resolveOwnersFromHint`: there is no coarse enum
+ * to fall back on and no "somebody has to own it" default, so an unmatched or
+ * ambiguous hint returns null and the caller keeps the printed name as a free
+ * string. Guessing here would silently attribute a 529 — and its whole
+ * balance — to the wrong child.
+ *
+ * `restrictTo` narrows the roster (the grantor picker offers client/spouse
+ * only, mirroring the add-account form).
+ */
+export function matchFamilyMemberByName(
+  hint: string | undefined,
+  family: OwnerMatchFamilyMember[],
+  restrictTo?: OwnerMatchFamilyMember["role"][],
+): OwnerMatchFamilyMember | null {
+  if (!hint || !hint.trim()) return null;
+  const pool = restrictTo ? family.filter((fm) => restrictTo.includes(fm.role)) : family;
+  const tokens = tokenize(hint);
+  const matched = pool.filter((fm) => tokens.some((t) => nameMatches(t, fm.firstName)));
+  return matched.length === 1 ? matched[0] : null;
+}
+
+/**
  * Resolve account ownership from the statement's registration-name hint, the
  * coarse client/spouse/joint enum, and the client's family roster. Pure.
  *

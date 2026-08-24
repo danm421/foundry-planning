@@ -29,7 +29,7 @@ describe("ACCOUNT_STATEMENT_PROMPT", () => {
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("annuity");
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("lifePolicies");
     expect(ACCOUNT_STATEMENT_PROMPT).toContain("cashValue");
-    expect(ACCOUNT_STATEMENT_VERSION).toBe("2026-08-04.2");
+    expect(ACCOUNT_STATEMENT_VERSION).toBe("2026-08-24.1-529-beneficiary");
   });
 
   it("instructs a short account-TYPE name with no custodian, not the registration header", () => {
@@ -131,6 +131,44 @@ describe("account-statement prompt — education_savings", () => {
   it("routes 529 and Coverdell accounts to it explicitly", () => {
     expect(prompt).toMatch(/529[\s\S]{0,160}education_savings/);
     expect(prompt.toLowerCase()).toContain("coverdell");
+  });
+
+  // A 529 statement names TWO people and the whole feature turns on keeping
+  // them apart: the beneficiary is who the money is FOR (it decides whose
+  // education goal the balance funds), the participant is who FUNDS it. A
+  // prompt that collapses them attributes the account to the wrong person, and
+  // nothing downstream can tell — both are just names by then.
+  it("asks for the beneficiary and the participant as two separate hints", () => {
+    expect(prompt).toContain("beneficiaryNameHint");
+    expect(prompt).toContain("grantorNameHint");
+    // Both hints ride the shared account structure, so the holdings variant
+    // must carry them too — that is the variant a real statement upload uses.
+    const withHoldings = buildAccountStatementPrompt(true);
+    expect(withHoldings).toContain("beneficiaryNameHint");
+    expect(withHoldings).toContain("grantorNameHint");
+  });
+
+  it("teaches the beneficiary-vs-participant distinction by the words a statement prints", () => {
+    expect(prompt).toMatch(/designated beneficiary/i);
+    expect(prompt).toMatch(/participant/i);
+    // The labels a statement actually uses for each side.
+    expect(prompt).toMatch(/student/i);
+    expect(prompt).toMatch(/account owner/i);
+    expect(prompt).toMatch(/never collapse them into one/i);
+  });
+
+  it("keeps the coarse owner enum on the account owner, not the beneficiary", () => {
+    // Ownership still drives account_owners for every non-529 path, and a
+    // child beneficiary is never the household owner of anything.
+    expect(prompt).toMatch(/owner.{0,80}NOT the beneficiary/i);
+  });
+
+  it("forbids claiming an RMD on a 529", () => {
+    expect(prompt).toMatch(/529 has no required minimum distributions/i);
+  });
+
+  it("forbids inventing the second person when only one is printed", () => {
+    expect(prompt).toMatch(/do not guess the second name/i);
   });
 });
 

@@ -119,6 +119,25 @@ export interface ExtractedAccount {
   owners?: AccountOwner[];
   /** Individual positions, present only when holdings extraction was enabled. */
   holdings?: ExtractedHolding[];
+  /**
+   * ── 529 / education_savings only ──────────────────────────────────────────
+   * A 529 is attributed to its designated BENEFICIARY, not to household
+   * owners: `owners[]` is ignored for these rows and no account_owners rows
+   * are written (same rule as `accounts-writes.ts`). The 529's participant /
+   * account owner becomes the GRANTOR — the person whose cash flow funds the
+   * contributions.
+   *
+   * The `*NameHint` pair is what the statement printed, verbatim. The review
+   * step resolves each hint against the family roster into exactly ONE of the
+   * id / name pair below, and the commit step writes that pair to the
+   * accounts table's matching columns.
+   */
+  beneficiaryNameHint?: string;
+  beneficiaryFamilyMemberId?: string | null;
+  beneficiaryName?: string | null;
+  grantorNameHint?: string;
+  grantorFamilyMemberId?: string | null;
+  grantorName?: string | null;
   /** Set when the account originated from a third-party sync (e.g. Orion). */
   externalProvider?: string;
   externalId?: string;

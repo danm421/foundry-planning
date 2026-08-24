@@ -1,4 +1,4 @@
-export const ACCOUNT_STATEMENT_VERSION = "2026-08-04.2";
+export const ACCOUNT_STATEMENT_VERSION = "2026-08-24.1-529-beneficiary";
 export const ACCOUNT_STATEMENT_HOLDINGS_VERSION = "2026-08-04.1-grouped-holdings-report";
 
 const HOLDINGS_FIELD = `,
@@ -41,7 +41,9 @@ Return a JSON object with this exact structure:
       "value": 0,
       "basis": 0,
       "accountNumberLast4": "Last 4 characters of the account number, digits or alphanumeric",
-      "custodian": "Custodian / institution name (e.g. 'Fidelity', 'Charles Schwab')"${withHoldings ? HOLDINGS_FIELD : ""}
+      "custodian": "Custodian / institution name (e.g. 'Fidelity', 'Charles Schwab')",
+      "beneficiaryNameHint": "529 / education accounts ONLY. The designated beneficiary / student, copied verbatim. Omit on every other account.",
+      "grantorNameHint": "529 / education accounts ONLY. The account owner / participant / custodian-of-record, copied verbatim. Omit on every other account."${withHoldings ? HOLDINGS_FIELD : ""}
     }
   ],
   "lifePolicies": [
@@ -76,6 +78,12 @@ Extraction rules:
   - Bank / cash accounts -> category "cash", subType "checking" or "savings"
   - Annuities (e.g. "Prudential Annuity", or anything under an "Annuities" section) -> category "annuity", subType "other"
   - 529 plans, Coverdell ESAs, and any account described as a college / education savings account -> category "education_savings", subType "529"
+- 529 / EDUCATION STATEMENTS. These name TWO people and the distinction matters — never collapse them into one:
+  - The DESIGNATED BENEFICIARY (also printed as "Beneficiary", "Student", or "Designated Beneficiary") is who the money is for. Put that name in "beneficiaryNameHint", verbatim.
+  - The ACCOUNT OWNER (also printed as "Participant", "Account Owner", or "Custodian") is who funds and controls it — often a parent, sometimes a grandparent. Put that name in "grantorNameHint", verbatim.
+  - Still fill "ownerNameHint" with the registration line as written, and still set the coarse "owner" enum from the account owner (NOT the beneficiary).
+  - A 529 has no required minimum distributions, so never claim one.
+  - When the statement only names one person, fill the field it actually labels and omit the other — do not guess the second name.
   - Real estate (homes, condos, land, or anything under a "Real Estate" / "Real Estate Assets" section) -> category "real_estate". Use subType "primary_residence" for a home/condo the household lives in, "rental_property" for rentals, "commercial_property" for commercial real estate; default to "primary_residence" if unclear.
 - Life-insurance policies (whole, universal, variable, or term) go ONLY in the "lifePolicies" array, NOT in "accounts". Capture the death benefit as "faceValue" and the cash / surrender value as "cashValue" when both appear. Example: "Brighthouse ($3mm Face to Maggie) $588,000" -> faceValue 3000000, cashValue 588000, insuredPerson "spouse". Set policyType to "whole", "universal", or "variable" for cash-value policies (default "universal" if unspecified) and "term" only when clearly a term policy.
 - Use the total market value for "value", not individual position values

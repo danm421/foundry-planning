@@ -22,7 +22,7 @@ import { useSolverDraft, mutationMapFromDraft, type SolverDraft } from "./use-so
 import { deriveScenarioGaugeState } from "./scenario-gauge-state";
 import { shouldAutoRunMc, AUTO_RUN_DEBOUNCE_MS } from "./auto-run-mc";
 import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-chart";
-import { SolverChartPanel } from "./solver-chart-panel";
+import { SolverChartPanel, type CashflowSubTab } from "./solver-chart-panel";
 import { SolverKpiStrip } from "./solver-kpi-strip";
 import { SolverPaneToggle } from "./solver-pane-toggle";
 import { type InputTab, type ReportKey } from "./report-tab-link";
@@ -253,6 +253,9 @@ export function LiveSolverWorkspace({
     resolveActiveReport("portfolio", initialReportLayout),
   );
   const [activeSummary, setActiveSummary] = useState<SummaryKey>("retirement");
+  // Owned here, not in the chart panel, because the year-detail drill below
+  // is a sibling of that panel and has to know which table is showing.
+  const [cashflowSubTab, setCashflowSubTab] = useState<CashflowSubTab>("cashflow");
 
   // "View report" buttons in the left pane jump the right pane to their own
   // report. Below `lg` the two panes stack, so the report sits off-screen below
@@ -1580,6 +1583,8 @@ export function LiveSolverWorkspace({
               mcRequested={mcRequested}
               activeSummary={activeSummary}
               onSummaryChange={setActiveSummary}
+              cashflowSubTab={cashflowSubTab}
+              onCashflowSubTabChange={setCashflowSubTab}
               selectedYear={selectedYear}
               onYearClick={setSelectedYear}
               educationReturnStats={educationReturnStats}
@@ -1616,7 +1621,13 @@ export function LiveSolverWorkspace({
                 solveActive={activeSolve !== null}
               />
             ) : null}
-            {activeReport === "cashflow" && selectedYear != null
+            {/* Not on the Monthly sub-tab. This drill is ANNUAL — it would put
+                "Living Expenses $183,899" directly under a table whose Available
+                column reads $10,000, and the reader has no way to tell that the
+                two are the same number twelve months apart. The Withdrawals
+                sub-tab keeps it: its own table is annual too, and its year cells
+                say "Show this year in the year detail below". */}
+            {activeReport === "cashflow" && cashflowSubTab !== "monthly" && selectedYear != null
               ? (() => {
                   const y = currentProjection.find((r) => r.year === selectedYear);
                   return y ? (
