@@ -12,6 +12,7 @@ import { planHorizonFromLifeExpectancy } from "@/lib/plan-horizon";
 import { resolveRefYears } from "@/lib/year-refs";
 import { applyGiftsToClientData, giftEventBelongsTo, type EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { withSynthesizedPremiumGifts } from "@/lib/insurance-policies/premium-gift";
+import { withSynthesizedDisabilityPremiums } from "@/lib/insurance-policies/disability-premium-expense";
 import {
   entityCheckingId,
   makeEntityCheckingAccount,
@@ -444,6 +445,21 @@ export function applyMutations(
   // which minimal non-estate solver fixtures omit; no policy → no premium gift).
   if (result.accounts.some((a) => a.category === "life_insurance")) {
     result.giftEvents = withSynthesizedPremiumGifts(result).giftEvents;
+  }
+
+  // Re-derive disability premiums from the MUTATED tree. Waiver of premium reads
+  // planSettings.disabilityEvent, which the stress-disability mutation writes
+  // above — the loader ran this synthesizer BEFORE that, so without this the
+  // client collects the benefit and keeps paying a premium the insurer waived.
+  // (The projection recomputes the BENEFIT live on every run, which is why the
+  // two drifted apart.) Safe at this position: applyMutations never calls
+  // withSynthesizedPremiums, so the ORDERING INVARIANT on
+  // withSynthesizedDisabilityPremiums cannot be violated here. Idempotent, and
+  // it strips only `disability-premium-*` ids, so the life-insurance premiums
+  // are untouched. Guarded like the premium-gift re-derive above: minimal
+  // fixtures carry no policies, so this is a no-op for them.
+  if ((result.disabilityPolicies ?? []).length > 0) {
+    result.expenses = withSynthesizedDisabilityPremiums(result).expenses;
   }
 
   // A life-expectancy lever moves the plan horizon: the engine's year loop is

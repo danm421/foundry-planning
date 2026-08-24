@@ -2,7 +2,13 @@
 
 import { useState } from "react";
 
-import type { ClientData } from "@/engine/types";
+import type { ClientData, DisabilityPolicy } from "@/engine/types";
+import {
+  benefitForYear,
+  resolveCoverage,
+  resolveCoveredEarnings,
+  type ResolvedCoverage,
+} from "@/engine/disability-benefits";
 import type { SolverMutation, SolverMutationKey, SolverPerson } from "@/lib/solver/types";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { SolverSection } from "./solver-section";
@@ -21,6 +27,12 @@ const DEFAULT_SS_HAIRCUT_PCT = 0.23;
 const DEFAULT_SS_HAIRCUT_YEAR = 2034;
 const DEFAULT_CRASH_PCT = 0.3;
 const DEFAULT_EXEMPTION_CAP = 7_000_000;
+
+const money = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
 
 export function SolverStressTestTab({
   baseClientData,
@@ -114,7 +126,7 @@ export function SolverStressTestTab({
       {/* Disability */}
       <StressRow
         label="Disability"
-        hint="Stops the person's salary and business income from the chosen year forward. Percentage-of-salary savings stop automatically; flat-dollar contributions do not (adjust those manually)."
+        hint="Stops the person's salary and business income from the chosen year forward, and pays any disability policies they hold. Percentage-of-salary savings stop automatically; flat-dollar contributions do not (adjust those manually)."
         on={disabilityOn}
         onToggle={(checked) =>
           checked
@@ -154,6 +166,11 @@ export function SolverStressTestTab({
             }
           />
         </div>
+        <DisabilityCoverage
+          tree={workingTree}
+          person={ps.disabilityEvent?.person ?? "client"}
+          startYear={ps.disabilityEvent?.startYear ?? defaultEventYear}
+        />
       </StressRow>
 
       {/* Market crash */}
@@ -243,6 +260,149 @@ function StressRow({
         <FieldTooltip text={hint} />
       </div>
       {on ? <div className="mt-3">{children}</div> : null}
+    </div>
+  );
+}
+
+/** decimal 0.6 -> "60%", without the 0.6 x 100 float drift. */
+function pctLabel(d: number): string {
+  return `${Math.round(d * 1000) / 10}%`;
+}
+
+function benefitPeriodLabel(
+  period: NonNullable<DisabilityPolicy["longTerm"]>["benefitPeriod"],
+): string {
+  switch (period.mode) {
+    case "to_age":
+      return `to age ${period.age}`;
+    case "to_ssnra":
+      return "to Social Security full retirement age";
+    case "years":
+      return `for ${period.years} years`;
+    case "lifetime":
+      return "for life";
+  }
+}
+
+/** What the CONTRACT covers, as one sentence. Wording mirrors the Insurance
+ *  page's disability rows so one policy does not read two different ways. */
+function coverageSummary(policy: DisabilityPolicy): string {
+  const layers: string[] = [];
+  if (policy.shortTerm !== null) {
+    layers.push(
+      `${pctLabel(policy.shortTerm.benefitPct)} for ${policy.shortTerm.durationWeeks} weeks`,
+    );
+  }
+  if (policy.longTerm !== null) {
+    layers.push(
+      `${pctLabel(policy.longTerm.benefitPct)} ${benefitPeriodLabel(policy.longTerm.benefitPeriod)}`,
+    );
+  }
+  // The create/update schema rejects a policy with neither layer, so this is a
+  // guard against a row that reached the tree some other way. An empty string
+  // here would render a blank line that reads as coverage.
+  if (layers.length === 0) return "No short-term or long-term coverage set";
+  return layers.join(", then ");
+}
+
+/** At most one note per policy, most-blocking first. The precedence and the
+ *  SCOPE of each claim mirror `disability-panel.tsx` and
+ *  `disability-coverage-timeline.tsx` — three surfaces must not tell the
+ *  advisor three different stories about one policy. */
+function coverageNote(c: ResolvedCoverage): string | null {
+  if (c.unresolved === "missing_dob") {
+    // Scoped to the long-term layer deliberately: `resolveCoverage` builds the
+    // short-term window from `policy.shortTerm` alone and never reads a date of
+    // birth, so short-term still resolves and the projection still pays it.
+    return "No date of birth on file, so long-term coverage pays nothing.";
+  }
+  if (c.coveredEarnings <= 0 && (c.shortTerm !== null || c.longTerm !== null)) {
+    // Reachable, not theoretical: in salary mode `resolveCoveredEarnings`
+    // returns 0 whenever the insured has no salary row in the disability year
+    // (a non-earning spouse, or a disability set after the paycheck ends). The
+    // summary above is built from the contract, so it reads as real cover next
+    // to a $0 benefit unless we say why.
+    return "No covered earnings on file, so this pays nothing.";
+  }
+  return null;
+}
+
+/**
+ * What the selected person is actually covered for, and what the plan pays them
+ * in the first disability year.
+ *
+ * Every figure comes from `resolveCoveredEarnings` / `resolveCoverage` /
+ * `benefitForYear` — the same three functions the projection pays on. Nothing
+ * here re-derives a benefit from the policy's stored fields; a second
+ * derivation on the UI side is how a screen and its engine drift apart.
+ *
+ * `tree.incomes` is the PRE-CLIP salary. `applyDisabilityEvent` runs inside the
+ * projection, never on the solver's working tree, so the row the policy insures
+ * is still there. Reading post-clip incomes would yield $0 covered earnings and
+ * a benefit that looks present and pays nothing.
+ */
+function DisabilityCoverage({
+  tree,
+  person,
+  startYear,
+}: {
+  tree: ClientData;
+  person: SolverPerson;
+  startYear: number;
+}) {
+  const policies = (tree.disabilityPolicies ?? []).filter((p) => p.insured === person);
+
+  if (policies.length === 0) {
+    return (
+      <p className="mt-3 text-[12px] leading-snug text-ink-3">
+        No disability coverage on file — this stops the income and pays no benefit.
+      </p>
+    );
+  }
+
+  const { planSettings, client } = tree;
+  const resolved = policies.map((policy) => {
+    const coveredEarnings = resolveCoveredEarnings(policy, {
+      incomes: tree.incomes,
+      client,
+      startYear,
+      planStartYear: planSettings.planStartYear,
+      inflationRate: planSettings.inflationRate,
+    });
+    const coverage = resolveCoverage(
+      policy,
+      coveredEarnings,
+      startYear,
+      client,
+      planSettings.planEndYear,
+    );
+    return {
+      policy,
+      coverage,
+      firstYear: benefitForYear(coverage, startYear, startYear, policy.colaRate),
+    };
+  });
+  const total = resolved.reduce((sum, r) => sum + r.firstYear, 0);
+  // Named only when there is more than one, so the common single-policy case
+  // stays two short lines in a pane that is about 35% of the viewport.
+  const named = resolved.length > 1;
+
+  return (
+    <div className="mt-3 flex flex-col gap-1 text-[12px] leading-snug text-ink-2">
+      {resolved.map(({ policy, coverage }) => {
+        const note = coverageNote(coverage);
+        return (
+          <div key={policy.id} className="flex flex-col gap-1">
+            <p>
+              {named ? `${policy.name}: ${coverageSummary(policy)}` : coverageSummary(policy)}
+            </p>
+            {note !== null && <p className="text-crit">{note}</p>}
+          </div>
+        );
+      })}
+      <p>
+        Pays <span className="tabular text-ink">{money.format(total)}</span> in {startYear}
+      </p>
     </div>
   );
 }
