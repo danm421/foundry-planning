@@ -12,6 +12,10 @@ interface Props {
    *  cannot drift from the one actually enforced; the default names the sidebar,
    *  and a page where the tidbits ARE the page passes its own tail. */
   hint?: string;
+  /** The page's own default picks. Given, the picker offers "Reset to default";
+   *  omitted, it offers nothing — a reset button with nothing behind it would
+   *  silently clear the selection. */
+  defaults?: string[];
 }
 
 const TOPIC_LABELS: Record<TidbitTopic, string> = {
@@ -44,8 +48,15 @@ export function TidbitPicker({
   onChange,
   max = 2,
   hint = "they render beside the chart on this page.",
+  defaults,
 }: Props) {
   const atCap = value.length >= max;
+  // Order counts: the sidebar prints the picks top to bottom in the order they
+  // are stored, so a re-picked pair in the other order is NOT the default.
+  const isDefault =
+    defaults != null &&
+    value.length === defaults.length &&
+    value.every((id, i) => id === defaults[i]);
 
   function toggle(id: string) {
     if (value.includes(id)) {
@@ -83,7 +94,23 @@ export function TidbitPicker({
           </div>
         </OptionsGroup>
       ))}
-      <span className="text-[11px] text-ink-3">{`Pick up to ${max} — ${hint}`}</span>
+      <div className="flex items-center gap-4">
+        <span className="text-[11px] text-ink-3">{`Pick up to ${max} — ${hint}`}</span>
+        {defaults != null && (
+          <button
+            type="button"
+            disabled={isDefault}
+            className={`ml-auto text-[11px] underline ${
+              isDefault
+                ? "cursor-default text-ink-4 no-underline"
+                : "text-ink-3 hover:text-ink"
+            }`}
+            onClick={() => onChange([...defaults])}
+          >
+            Reset to default
+          </button>
+        )}
+      </div>
     </div>
   );
 }

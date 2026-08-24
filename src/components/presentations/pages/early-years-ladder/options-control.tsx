@@ -3,7 +3,10 @@
 import { OptionsRow, OptionsGroup } from "@/components/presentations/shared/options-layout";
 import { MilestoneAgesControl } from "@/components/presentations/shared/milestone-ages-control";
 import { TidbitPicker } from "@/components/presentations/shared/tidbit-picker";
-import type { EarlyYearsLadderPageOptions } from "@/lib/presentations/pages/early-years-ladder/types";
+import {
+  EARLY_YEARS_LADDER_OPTIONS_DEFAULT,
+  type EarlyYearsLadderPageOptions,
+} from "@/lib/presentations/pages/early-years-ladder/types";
 
 interface Props {
   value: EarlyYearsLadderPageOptions;
@@ -77,6 +80,7 @@ export function EarlyYearsLadderOptionsControl({ value, onChange }: Props) {
       <OptionsGroup label="Tidbits">
         <TidbitPicker
           value={value.tidbits}
+          defaults={EARLY_YEARS_LADDER_OPTIONS_DEFAULT.tidbits}
           onChange={(tidbits) => onChange({ ...value, tidbits })}
         />
       </OptionsGroup>

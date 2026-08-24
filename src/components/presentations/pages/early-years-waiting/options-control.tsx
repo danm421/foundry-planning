@@ -3,7 +3,10 @@
 import { OptionsRow, OptionsGroup } from "@/components/presentations/shared/options-layout";
 import { MilestoneAgesControl } from "@/components/presentations/shared/milestone-ages-control";
 import { TidbitPicker } from "@/components/presentations/shared/tidbit-picker";
-import type { EarlyYearsWaitingPageOptions } from "@/lib/presentations/pages/early-years-waiting/types";
+import {
+  EARLY_YEARS_WAITING_OPTIONS_DEFAULT,
+  type EarlyYearsWaitingPageOptions,
+} from "@/lib/presentations/pages/early-years-waiting/types";
 
 interface Props {
   value: EarlyYearsWaitingPageOptions;
@@ -66,6 +69,7 @@ export function EarlyYearsWaitingOptionsControl({ value, onChange }: Props) {
       <OptionsGroup label="Tidbits">
         <TidbitPicker
           value={value.tidbits}
+          defaults={EARLY_YEARS_WAITING_OPTIONS_DEFAULT.tidbits}
           onChange={(tidbits) => onChange({ ...value, tidbits })}
         />
       </OptionsGroup>

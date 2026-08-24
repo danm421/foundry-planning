@@ -3,6 +3,7 @@
 import { OptionsRow, OptionsGroup } from "@/components/presentations/shared/options-layout";
 import { TidbitPicker } from "@/components/presentations/shared/tidbit-picker";
 import {
+  EARLY_YEARS_TIDBITS_OPTIONS_DEFAULT,
   TIDBITS_PAGE_MAX,
   type EarlyYearsTidbitsPageOptions,
 } from "@/lib/presentations/pages/early-years-tidbits/types";
@@ -22,6 +23,7 @@ export function EarlyYearsTidbitsOptionsControl({ value, onChange }: Props) {
           max={TIDBITS_PAGE_MAX}
           hint="they fill this page, two to a row."
           value={value.tidbits}
+          defaults={EARLY_YEARS_TIDBITS_OPTIONS_DEFAULT.tidbits}
           onChange={(tidbits) => onChange({ ...value, tidbits })}
         />
       </OptionsGroup>

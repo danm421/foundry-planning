@@ -2,7 +2,10 @@
 
 import { OptionsRow, OptionsGroup } from "@/components/presentations/shared/options-layout";
 import { TidbitPicker } from "@/components/presentations/shared/tidbit-picker";
-import type { EarlyYearsStandingPageOptions } from "@/lib/presentations/pages/early-years-standing/types";
+import {
+  EARLY_YEARS_STANDING_OPTIONS_DEFAULT,
+  type EarlyYearsStandingPageOptions,
+} from "@/lib/presentations/pages/early-years-standing/types";
 
 interface Props {
   value: EarlyYearsStandingPageOptions;
@@ -26,6 +29,7 @@ export function EarlyYearsStandingOptionsControl({ value, onChange }: Props) {
       <OptionsGroup label="Tidbits">
         <TidbitPicker
           value={value.tidbits}
+          defaults={EARLY_YEARS_STANDING_OPTIONS_DEFAULT.tidbits}
           onChange={(tidbits) => onChange({ ...value, tidbits })}
         />
       </OptionsGroup>

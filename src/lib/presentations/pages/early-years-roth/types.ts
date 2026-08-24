@@ -45,4 +45,8 @@ export interface EarlyYearsRothPageOptions {
   tidbits: string[];
 }
 
-export const EARLY_YEARS_ROTH_OPTIONS_DEFAULT: EarlyYearsRothPageOptions = { tidbits: [] };
+// The two tax notes that answer the question in the page title: which rate to
+// pay, and why an early-career rate is usually the one worth paying.
+export const EARLY_YEARS_ROTH_OPTIONS_DEFAULT: EarlyYearsRothPageOptions = {
+  tidbits: ["taxes-roth-vs-traditional", "lowest-bracket-of-your-life"],
+};

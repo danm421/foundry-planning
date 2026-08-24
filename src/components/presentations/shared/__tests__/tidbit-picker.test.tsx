@@ -50,6 +50,54 @@ describe("TidbitPicker", () => {
     expect(screen.queryByText(/beside the chart/)).toBeNull();
   });
 
+  describe("Reset to default", () => {
+    it("puts the page's own defaults back, in their order", () => {
+      const onChange = vi.fn();
+      render(
+        <TidbitPicker value={[c.id]} onChange={onChange} max={2} defaults={[a.id, b.id]} />,
+      );
+      fireEvent.click(screen.getByText("Reset to default"));
+      expect(onChange).toHaveBeenCalledWith([a.id, b.id]);
+    });
+
+    // A picker with nothing behind the button would "reset" to empty, which is
+    // a clear, not a reset.
+    it("is not offered when the caller names no default", () => {
+      render(<TidbitPicker value={[a.id]} onChange={() => {}} max={2} />);
+      expect(screen.queryByText("Reset to default")).toBeNull();
+    });
+
+    it("is inert once the selection already IS the default", () => {
+      const onChange = vi.fn();
+      render(
+        <TidbitPicker value={[a.id, b.id]} onChange={onChange} max={2} defaults={[a.id, b.id]} />,
+      );
+      const button = screen.getByText("Reset to default") as HTMLButtonElement;
+      expect(button.disabled).toBe(true);
+      fireEvent.click(button);
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    // The sidebar prints the cards in stored order, so a pair re-picked the
+    // other way round is a DIFFERENT page and the reset still has work to do.
+    it("stays live when the same two are picked in the other order", () => {
+      render(
+        <TidbitPicker value={[b.id, a.id]} onChange={() => {}} max={2} defaults={[a.id, b.id]} />,
+      );
+      expect((screen.getByText("Reset to default") as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    // The button hands back a COPY: the array it is given is a module-level
+    // const shared by every advisor's options dialog on the page.
+    it("does not hand out the defaults array itself", () => {
+      const onChange = vi.fn();
+      const defaults = [a.id, b.id];
+      render(<TidbitPicker value={[]} onChange={onChange} max={2} defaults={defaults} />);
+      fireEvent.click(screen.getByText("Reset to default"));
+      expect(onChange.mock.calls[0][0]).not.toBe(defaults);
+    });
+  });
+
   it("always allows deselecting, even at the cap", () => {
     const onChange = vi.fn();
     render(<TidbitPicker value={[a.id, b.id]} onChange={onChange} max={2} />);

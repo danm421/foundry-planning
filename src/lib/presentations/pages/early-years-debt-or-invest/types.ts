@@ -46,9 +46,12 @@ export interface EarlyYearsDebtOrInvestPageOptions {
   tidbits: string[];
 }
 
+// The page compares one loan against one portfolio, so the notes are the two
+// that decide whether the extra payment is the right call at all: the rate, and
+// the cushion that keeps the payoff from bouncing back onto a card.
 export const EARLY_YEARS_DEBT_OR_INVEST_OPTIONS_DEFAULT: EarlyYearsDebtOrInvestPageOptions = {
   monthlyAmount: 500,
   liabilityId: null,
   milestoneAge: 65,
-  tidbits: [],
+  tidbits: ["debt-good-vs-costly", "debt-emergency-fund-first"],
 };

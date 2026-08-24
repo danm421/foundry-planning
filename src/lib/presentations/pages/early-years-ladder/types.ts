@@ -48,8 +48,11 @@ export interface EarlyYearsLadderPageOptions {
   tidbits: string[];
 }
 
+// The rungs are small percentage steps compounded over decades, which is
+// exactly what these two notes describe — and automating is how a client acts
+// on the chart.
 export const EARLY_YEARS_LADDER_OPTIONS_DEFAULT: EarlyYearsLadderPageOptions = {
   rungs: { mode: "relative", offsets: [0, 0.03, 0.06] },
   milestoneAges: [40, 50, 65],
-  tidbits: [],
+  tidbits: ["compounding-small-amounts", "compounding-automate"],
 };

@@ -57,10 +57,18 @@ function docProps(base: PageScenarioBundle) {
   };
 }
 
-function doc(pageIds: PresentationPageId[], base: PageScenarioBundle) {
+function doc(
+  pageIds: PresentationPageId[],
+  base: PageScenarioBundle,
+  options: Partial<Record<PresentationPageId, Record<string, unknown>>> = {},
+) {
   return PresentationDocument({
     ...docProps(base),
-    pages: pageIds.map((pageId) => ({ pageId, scenarioKey: "base" })),
+    pages: pageIds.map((pageId) => ({
+      pageId,
+      scenarioKey: "base",
+      ...(pageId in options ? { options: options[pageId] } : {}),
+    })),
   });
 }
 
@@ -105,8 +113,22 @@ describe("omitFromDeck", () => {
   // than the plan's own facts: an advisor who added the notes page and picked
   // nothing gets no sheet, not a heading over blank paper.
   it("drops the notes page when the advisor picked no tidbits", async () => {
-    const text = await textOf(doc(["cover", "toc", "earlyYearsTidbits"], bundle()));
+    // An EMPTY slot has to be spelled out: the page ships six defaults now, so
+    // a descriptor with no options at all is the fully-stocked page, not the
+    // cleared one this rule is about.
+    const text = await textOf(
+      doc(["cover", "toc", "earlyYearsTidbits"], bundle(), {
+        earlyYearsTidbits: { tidbits: [] },
+      }),
+    );
     expect(text).not.toContain("Things Worth Knowing");
+  });
+
+  it("keeps the notes page on its own defaults", async () => {
+    // The other half of the rule above: an advisor who adds the page and
+    // touches nothing gets a stocked sheet, not a dropped one.
+    const text = await textOf(doc(["cover", "toc", "earlyYearsTidbits"], bundle()));
+    expect(text).toContain("Things Worth Knowing");
   });
 
   it("keeps the notes page once something is picked", async () => {
@@ -137,7 +159,9 @@ describe("omitFromDeck", () => {
   // back rather than throwing. That sheet reaches a CLIENT, so it must not carry
   // instructions aimed at the advisor who built the deck.
   it("rescues the last page without printing build instructions at the client", async () => {
-    const text = await textOf(doc(["earlyYearsTidbits"], bundle()));
+    const text = await textOf(
+      doc(["earlyYearsTidbits"], bundle(), { earlyYearsTidbits: { tidbits: [] } }),
+    );
     expect(text).toContain("No notes were selected");
     expect(text).not.toContain("options");
   });

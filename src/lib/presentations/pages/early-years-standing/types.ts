@@ -45,7 +45,10 @@ export interface EarlyYearsStandingPageOptions {
   tidbits: string[];
 }
 
+// The match note next to the match line, and "save before you spend" next to
+// the savings rate this sheet just measured. No id on this deck is used twice —
+// `deck-tidbit-defaults.test.ts` is what holds that.
 export const EARLY_YEARS_STANDING_OPTIONS_DEFAULT: EarlyYearsStandingPageOptions = {
   showMatchLine: true,
-  tidbits: [],
+  tidbits: ["match-is-not-a-bonus", "behavior-pay-yourself-first"],
 };
