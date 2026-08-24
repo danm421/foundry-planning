@@ -38,3 +38,33 @@ describe("computeAmortizationSchedule reports its payment months", () => {
     expect(rows[0].payment).toBeCloseTo(1_000 * rows[0].paymentCount, 6);
   });
 });
+
+/**
+ * The identity above is deliberately taken on the origination year because the
+ * `endYear` dust-absorb step (`loan-math.ts:259-267`) breaks it: it adds the
+ * residual balance straight onto `payment` with no matching extra month. That
+ * is correct — the block runs after the month-counting loop closes — but nothing
+ * pinned it, and `src/lib/solver/monthly-allocation.ts` divides `payment` by
+ * `paymentCount` to place a loan's monthly outflow. An edit that incremented the
+ * counter inside the dust block would quietly hand the allocator a thirteenth
+ * month and stop it reconciling.
+ */
+describe("computeAmortizationSchedule — paymentCount vs the dust-absorb step", () => {
+  // The dust fixture from loan-math.test.ts:177. $300k at 6.5% for 360 months
+  // has a theoretical payment of ~$1896.203; storing $1896.20 leaves ~$4.50 of
+  // dust for the final year to absorb.
+  const underPaid = 1896.2;
+  const rows = computeAmortizationSchedule(300_000, 0.065, underPaid, 2026, 360);
+  const last = rows[rows.length - 1];
+  const penultimate = rows[rows.length - 2];
+
+  it("the final row really does absorb dust (otherwise this suite proves nothing)", () => {
+    expect(last.endingBalance).toBe(0);
+    expect(last.payment).toBeGreaterThan(underPaid * 12);
+    expect(last.payment - penultimate.payment).toBeGreaterThan(1);
+  });
+
+  it("counts twelve payments in the final year — the dust bought no extra month", () => {
+    expect(last.paymentCount).toBe(12);
+  });
+});
