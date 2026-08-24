@@ -581,6 +581,7 @@ describe("mutationsToScenarioChanges — stress overrides → plan_settings", ()
       { kind: "stress-disability", person: "client", startYear: 2032, endYear: 2036 },
       { kind: "stress-market-crash", year: 2030, drawdownPct: 0.4 },
       { kind: "stress-exemption-cap", cap: 7_000_000 },
+      { kind: "stress-tax-rates", points: 0.03, startYear: 2030 },
     ]);
 
     const ps = drafts.filter((d) => d.targetKind === "plan_settings");
@@ -595,6 +596,7 @@ describe("mutationsToScenarioChanges — stress overrides → plan_settings", ()
       },
       marketShock: { from: null, to: { year: 2030, drawdownPct: 0.4 } },
       lifetimeExemptionCap: { from: null, to: 7_000_000 },
+      taxRateStress: { from: null, to: { points: 0.03, startYear: 2030 } },
     });
   });
 

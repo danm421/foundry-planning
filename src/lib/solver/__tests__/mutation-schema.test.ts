@@ -131,6 +131,7 @@ const SAMPLES: SolverMutation[] = [
   { kind: "stress-disability", person: "client", startYear: 2030, endYear: null },
   { kind: "stress-disability", person: "client", startYear: 2030, endYear: 2034 },
   { kind: "stress-market-crash", year: 2030, drawdownPct: 0.3 },
+  { kind: "stress-tax-rates", points: 0.03, startYear: 2030 },
   { kind: "surplus-allocation", spendPct: 0.3, saveAccountId: null, spendAllUntilRetirement: false },
   {
     kind: "surplus-allocation",

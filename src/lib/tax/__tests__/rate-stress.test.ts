@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { applyTaxRateStress, withStatutoryRates, MAX_RATE_STRESS_POINTS } from "../rate-stress";
 import { rateStressParams } from "./fixtures";
+import type { TaxYearParameters } from "../types";
 
 const STRESS = { points: 0.03, startYear: 2030 };
 
@@ -57,19 +58,33 @@ describe("applyTaxRateStress", () => {
   it("leaves every parameter outside its scope untouched", () => {
     const out = applyTaxRateStress(rateStressParams(), STRESS, 2030);
     const before = rateStressParams();
-    // The spec freezes these by decision. The transform spreads `...params` and
-    // overrides only four fields, so this holds by construction — the test is
-    // here so a later "while we're in here" widening has to argue with it.
-    expect(out.niitRate).toBe(before.niitRate);
-    expect(out.stdDeduction).toEqual(before.stdDeduction);
-    expect(out.amtExemption).toEqual(before.amtExemption);
-    expect(out.amtBreakpoint2628).toEqual(before.amtBreakpoint2628);
-    expect(out.ssTaxRate).toBe(before.ssTaxRate);
-    expect(out.contribLimits).toEqual(before.contribLimits);
+    // EVERYTHING except the four keys the transform may write — not a hand-
+    // picked list. The earlier version named 6 of the ~19 top-level fields, so
+    // a widening that reached for any of the other 13 (niitThreshold, qbi,
+    // saversCredit, the state tables…) would have sailed through.
+    const MAY_CHANGE = [
+      "incomeBrackets", "capGainsBrackets",
+      "trustIncomeBrackets", "trustCapGainsBrackets",
+    ];
+    const outsideScope = (p: TaxYearParameters) =>
+      Object.fromEntries(Object.entries(p).filter(([k]) => !MAY_CHANGE.includes(k)));
+    expect(outsideScope(out)).toEqual(outsideScope(before));
+    // Vacuity guard: the compare above is worthless if it comes back empty.
+    expect(Object.keys(outsideScope(out)).length).toBeGreaterThan(10);
   });
 
-  it("leaves a zero rate at zero", () => {
-    const out = applyTaxRateStress(rateStressParams(), STRESS, 2030);
+  it("leaves a zero rate at zero on ORDINARY and preferential schedules alike", () => {
+    // `bump()` is shared by both schedules, but only the preferential ones
+    // carry a real 0% band, so the ordinary half of that rule was inferred
+    // rather than tested. A synthetic 0% ordinary tier makes it explicit.
+    const params = rateStressParams();
+    params.incomeBrackets.single = [
+      { from: 0, to: 1_000, rate: 0 },
+      { from: 1_000, to: null, rate: 0.10 },
+    ];
+    const out = applyTaxRateStress(params, STRESS, 2030);
+    expect(out.incomeBrackets.single[0].rate).toBe(0);
+    expect(out.incomeBrackets.single[1].rate).toBeCloseTo(0.13, 10);  // guards the above
     expect(out.trustCapGainsBrackets[0].rate).toBe(0);
   });
 
@@ -109,6 +124,29 @@ describe("withStatutoryRates", () => {
 
   it("passes an unstressed tier through unchanged", () => {
     const plain = { zeroPctTop: 99200, fifteenPctTop: 615900 };
-    expect(withStatutoryRates(plain)).toEqual(plain);
+    // toBe, not toEqual: the contract is the EARLY RETURN — the same object
+    // back, no allocation. A rebuilt copy is toEqual-identical and would slip
+    // straight past a structural comparison.
+    expect(withStatutoryRates(plain)).toBe(plain);
+  });
+});
+
+describe("applyTaxRateStress — payloads that never passed zod", () => {
+  // The solver's schema rejects these, but `applyChanges` writes a stored
+  // scenario value straight onto planSettings without re-validating, so the
+  // transform is the last line of defence.
+  it("ignores a stressor whose startYear is not a finite number", () => {
+    // `year < undefined` is false, so without the guard this stresses EVERY
+    // year — including years in the past.
+    for (const startYear of [undefined, Number.NaN] as unknown as number[]) {
+      const out = applyTaxRateStress(rateStressParams(), { points: 0.03, startYear }, 2030);
+      expect(out).toEqual(rateStressParams());
+    }
+  });
+
+  it("ignores a non-numeric points value", () => {
+    const out = applyTaxRateStress(rateStressParams(), { points: Number.NaN, startYear: 2030 }, 2030);
+    // Without effectivePoints' Number.isFinite check every rate becomes NaN.
+    expect(out).toEqual(rateStressParams());
   });
 });

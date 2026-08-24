@@ -56,9 +56,19 @@ describe("calcCapGainsTax — preferential rates come off the tier", () => {
   it("still taxes nothing inside the zero band, stressed or not", () => {
     expect(calcCapGainsTax(50_000, 0, STRESSED)).toBe(0);
   });
+
+  it("falls back per FIELD, not per tier, when only one rate is overridden", () => {
+    // Unreachable through the stressor today — `bumpCapGainsTier` always writes
+    // both — but `midRate ?? STATUTORY` / `topRate ?? STATUTORY` is a per-field
+    // claim, and nothing else tests it. A future partial override (a seeded row,
+    // a narrower stressor) would land here first.
+    const midOnly: CapGainsTier = { ...PLAIN, midRate: 0.18 };
+    expect(calcCapGainsTax(50_000, 100_000, midOnly)).toBeCloseTo(9_000, 6);   // override used
+    expect(calcCapGainsTax(100_000, 600_000, midOnly)).toBeCloseTo(20_000, 6); // statutory 20%
+  });
 });
 
-describe("the investment-rebalance surface keeps statutory rates", () => {
+describe("deriveEffectiveLtcgRate falls back to the statutory rate", () => {
   // deriveEffectiveLtcgRate is a REAL-TRADE estimate on the Investments screen,
   // not a projection. It must not inherit a hypothetical from the solver.
   //
@@ -91,8 +101,12 @@ describe("AMT is not stressed", () => {
   const plainResult = calculateTaxYear(amtBoundInput(plain));
   const stressedResult = calculateTaxYear(amtBoundInput(stressed));
 
-  it("has an AMT-bound baseline (guards every test below from vacuity)", () => {
-    expect(plainResult.flow.amtAdditional).toBeGreaterThan(0); // ~279,653
+  it("has an AMT-bound baseline on BOTH arms (guards every test below)", () => {
+    expect(plainResult.flow.amtAdditional).toBeGreaterThan(0);    // ~279,653
+    // The stressed arm too: if raising regular rates pushed it OFF AMT, the
+    // "identical total" test below would fail with a misleading message about
+    // the stressor reaching AMT, when the real cause was the crossover moving.
+    expect(stressedResult.flow.amtAdditional).toBeGreaterThan(0); // ~267,119
   });
 
   it("raises the regular capital-gains tax", () => {

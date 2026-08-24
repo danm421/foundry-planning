@@ -1,5 +1,5 @@
 import type { CapGainsTier } from "./types";
-import { STATUTORY_MID_RATE, STATUTORY_TOP_RATE } from "./rate-stress";
+import { STATUTORY_MID_RATE, STATUTORY_TOP_RATE } from "./constants";
 
 /**
  * Calculate LT capital gains tax (and qualified dividends, treated identically).

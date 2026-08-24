@@ -31,6 +31,12 @@ export interface TaxResolverSettings {
 /**
  * Build the resolver for a plan, or null when no `tax_year_parameters` rows
  * are loaded (flat-mode fallback — see projection.ts's own warning).
+ *
+ * The null is this function's own doing, and it is the whole reason to prefer
+ * it: `createTaxResolver` THROWS on the same empty input (its own first line,
+ * `no tax_year_parameters rows provided`), so a
+ * caller that reached past this factory would crash a projection where the
+ * intended behaviour is to fall back to flat mode.
  */
 export function buildTaxResolver(
   rows: TaxYearParameters[] | undefined,

@@ -72,6 +72,15 @@ export function floorToStep(value: number, step: number): number {
   return Math.floor(value / step) * step;
 }
 
+/** IRC §1(h) preferential rates, applied when a cap-gains tier carries no
+ *  override. Seeded `cap_gains_brackets` rows store only the two THRESHOLDS
+ *  (zeroPctTop, fifteenPctTop), so these two rates are the fallback every
+ *  preferential calculation lands on. They live here rather than beside the
+ *  rate stressor that first needed them: capGains.ts is a core primitive and
+ *  must not depend on a feature module for a statutory constant. */
+export const STATUTORY_MID_RATE = 0.15;
+export const STATUTORY_TOP_RATE = 0.20;
+
 // Statutorily-fixed values not stored in the spreadsheet (fixed by Congress
 // since 2013; intentionally NOT indexed for inflation).
 export const STATUTORY_FIXED = {

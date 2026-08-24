@@ -69,3 +69,29 @@ describe("buildTaxResolver", () => {
     expect(cg.topRate).toBeCloseTo(0.23, 10);
   });
 });
+
+describe("buildTaxResolver — the past-year fallback path", () => {
+  it("stresses a year EARLIER than the earliest seeded row", () => {
+    // resolver.ts has three return paths — exact year, past year, inflated
+    // future year — and the stressor has to be applied on all three. The
+    // past-year one is defensive (the engine validates planStartYear >=
+    // currentYear) and was the one no test reached: deleting its
+    // `applyTaxRateStress` call left every other test in this file green.
+    const r = buildTaxResolver([rateStressParams()], {
+      ...SETTINGS,
+      taxRateStress: { points: 0.03, startYear: 2019 },
+    })!;
+    // The single seeded row is 2026, so 2020 falls off the bottom.
+    expect(r.getYear(2020).sourceYear).toBe(2026);
+    expect(r.getYear(2020).params.incomeBrackets.married_joint[0].rate).toBeCloseTo(0.13, 10);
+  });
+
+  it("leaves a past year alone when the stressor starts later", () => {
+    // Guards the test above from passing on a transform that ignores startYear.
+    const r = buildTaxResolver([rateStressParams()], {
+      ...SETTINGS,
+      taxRateStress: { points: 0.03, startYear: 2030 },
+    })!;
+    expect(r.getYear(2020).params.incomeBrackets.married_joint[0].rate).toBe(0.10);
+  });
+});

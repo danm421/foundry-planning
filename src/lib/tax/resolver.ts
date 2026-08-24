@@ -31,6 +31,21 @@ export function createTaxResolver(
   const latest = sorted[sorted.length - 1];
   const cache = new Map<number, ResolvedYear>();
 
+  /** Every return path must do the same two things — apply the stressor and
+   *  cache the result — so they are written once. Three hand-rolled copies is
+   *  how a branch silently loses its `applyTaxRateStress` call while the other
+   *  two stay green (see build-resolver.test.ts's past-year test). */
+  const remember = (
+    year: number,
+    row: TaxYearParameters,
+    inflationFactor: number,
+    sourceYear: number,
+  ): ResolvedYear => {
+    const out = { params: applyTaxRateStress(row, stress, year), inflationFactor, sourceYear };
+    cache.set(year, out);
+    return out;
+  };
+
   return {
     getYear(year: number): ResolvedYear {
       const cached = cache.get(year);
@@ -38,20 +53,12 @@ export function createTaxResolver(
 
       // Exact match
       const exact = sorted.find((r) => r.year === year);
-      if (exact) {
-        // applyTaxRateStress never mutates, so `exact` — a caller-owned row —
-        // is safe to hand it. Unstressed years get the same object back.
-        const out = { params: applyTaxRateStress(exact, stress, year), inflationFactor: 1.0, sourceYear: year };
-        cache.set(year, out);
-        return out;
-      }
+      // applyTaxRateStress never mutates, so `exact` — a caller-owned row — is
+      // safe to hand it. Unstressed years get the same object back.
+      if (exact) return remember(year, exact, 1.0, year);
 
       // Past year — fall back to earliest (defensive; engine validates planStartYear >= currentYear)
-      if (year < sorted[0].year) {
-        const out = { params: applyTaxRateStress(sorted[0], stress, year), inflationFactor: 1.0, sourceYear: sorted[0].year };
-        cache.set(year, out);
-        return out;
-      }
+      if (year < sorted[0].year) return remember(year, sorted[0], 1.0, sorted[0].year);
 
       // Future year — inflate latest forward
       const yearsForward = year - latest.year;
@@ -63,9 +70,7 @@ export function createTaxResolver(
       // fifteenPctTop — it would silently drop the stressor's midRate/topRate,
       // leaving preferential rates unstressed while ordinary rates rose.
       const inflated = inflateParams(latest, generalFactor, ssFactor);
-      const out = { params: applyTaxRateStress(inflated, stress, year), inflationFactor: generalFactor, sourceYear: latest.year };
-      cache.set(year, out);
-      return out;
+      return remember(year, inflated, generalFactor, latest.year);
     },
   };
 }

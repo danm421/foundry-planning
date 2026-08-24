@@ -32,6 +32,20 @@ describe("stress-tax-rates mutation", () => {
     );
   });
 
+  it("ACCEPTS the ceiling itself — the bounds are inclusive", () => {
+    // The single most likely value to arrive from the UI: the row clamps with
+    // `Math.min(points, MAX_RATE_STRESS_POINTS)`, so anything typed above the
+    // ceiling is committed as EXACTLY the ceiling. A `.lt()` where the schema
+    // means `.max()` would reject the dial's own top setting while both
+    // rejection tests above stayed green.
+    expect(SOLVER_MUTATION_SCHEMA.parse({ ...M, points: MAX_RATE_STRESS_POINTS }))
+      .toEqual({ ...M, points: MAX_RATE_STRESS_POINTS });
+  });
+
+  it("ACCEPTS zero points — the floor is inclusive too", () => {
+    expect(SOLVER_MUTATION_SCHEMA.parse({ ...M, points: 0 })).toEqual({ ...M, points: 0 });
+  });
+
   it("rejects a negative points value, from the .min() bound itself", () => {
     const issues = rejectionIssues({ ...M, points: -0.01 });
     expect(issues).toContainEqual(
