@@ -33,6 +33,41 @@ export interface MonthlyCashFlowRow {
   portfolioDraw: number;
   /** The household's whole monthly lifestyle budget, living expenses included. */
   available: number;
+  split: MonthlyAvailableSplit;
+}
+
+/** Where the available money actually goes today. The three named parts each
+ *  come from the engine directly; `unexplained` is whatever they cannot account
+ *  for and is always shown as its own row — never folded into `available`. A
+ *  leftover number that doubles as a dumping ground is worse than no number. */
+export interface MonthlyAvailableSplit {
+  living: number;
+  surplusSpent: number;
+  surplusUnspent: number;
+  unexplained: number;
+}
+
+/**
+ * The surplus the household did not spend — transferred to a savings
+ * destination, or left sitting in checking.
+ *
+ * POSITIVE AMOUNTS ONLY, and that is load-bearing. `surplus_transfer` is booked
+ * as two legs: −saveAmount debited from checking (projection.ts:7175) and
+ * +saveAmount credited to the destination (:7200). Summing both nets to zero
+ * and silently reports "nothing saved" for every plan with a save destination.
+ * `surplus_retained` is a single positive leg on checking (:7215).
+ */
+function surplusUnspentAnnual(y: ProjectionYear): number {
+  let total = 0;
+  for (const ledger of Object.values(y.accountLedgers)) {
+    for (const entry of ledger.entries) {
+      if (entry.category !== "surplus_transfer" && entry.category !== "surplus_retained") {
+        continue;
+      }
+      if (entry.amount > 0) total += entry.amount;
+    }
+  }
+  return total;
 }
 
 /** Deflate to plan-start purchasing power. Returns 1 for the nominal basis and
@@ -79,6 +114,18 @@ export function buildMonthlyCashFlowRows(
     const income = y.totalIncome * k;
     const leftAfterFixed = income - fixed.total;
     const portfolioDraw = y.withdrawals.total * k;
+    const available = leftAfterFixed + portfolioDraw;
+
+    const living = y.expenses.living * k;
+    const surplusSpent = y.expenses.discretionary * k;
+    const surplusUnspent = surplusUnspentAnnual(y) * k;
+
+    const split: MonthlyAvailableSplit = {
+      living,
+      surplusSpent,
+      surplusUnspent,
+      unexplained: available - living - surplusSpent - surplusUnspent,
+    };
 
     return {
       year: y.year,
@@ -87,7 +134,8 @@ export function buildMonthlyCashFlowRows(
       fixed,
       leftAfterFixed,
       portfolioDraw,
-      available: leftAfterFixed + portfolioDraw,
+      available,
+      split,
     };
   });
 }
