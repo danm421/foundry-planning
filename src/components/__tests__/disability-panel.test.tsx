@@ -276,7 +276,11 @@ describe("DisabilityPanel", () => {
       ["no_earnings", /no covered earnings/i],
       ["missing_dob", /date of birth/i],
       ["gap", /months with no benefit/i],
-      ["overlap", /both (layers|policies) pay/i],
+      // The alternation this once carried tolerated the timeline saying
+      // "policies" where the row said "layers" — for one policy's own two
+      // layers. That was a copy defect, not a legitimate difference, so the
+      // tolerance is gone and this now catches a re-divergence.
+      ["overlap", /both layers pay/i],
     ] as const;
 
     /** The solver's pane reports a deliberate SUBSET: the two conditions that
@@ -374,7 +378,7 @@ describe("DisabilityPanel", () => {
         expected: "no_earnings",
       },
       {
-        // The case the old precedence got wrong on BOTH surfaces: adding a date
+        // The case the old precedence got wrong on ALL THREE surfaces: adding a date
         // of birth does not make this policy pay, so naming the DOB names a
         // remedy the data contradicts.
         name: "missing DOB AND zero covered earnings",

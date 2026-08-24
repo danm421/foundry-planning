@@ -32,6 +32,7 @@ import {
 } from "@/engine/disability-benefits";
 import type { ClientInfo, DisabilityPolicy } from "@/engine/types";
 import { WORKPLACE_DEFAULTS } from "@/lib/schemas/disability-policies";
+import { benefitPeriodText } from "@/lib/insurance-policies/disability-labels";
 
 export interface DisabilityPanelProps {
   clientId: string;
@@ -83,20 +84,24 @@ function durationLabel(weeks: number | null): string {
   return weeks == null ? "for a duration not yet set" : `for ${weeks} weeks`;
 }
 
+/** The FORM shape's wrapper over the shared `benefitPeriodText`. Only the two
+ *  "not yet set" arms are local: they exist because a half-filled form allows a
+ *  cleared field, and no saved policy can reach them. The wording of everything
+ *  else lives in one place, shared with the solver's Disability stressor. */
 function benefitPeriodLabel(row: DisabilityEditRow): string {
   switch (row.ltdBenefitPeriodMode) {
     case "to_age":
       return row.ltdBenefitPeriodAge == null
         ? "to an age not yet set"
-        : `to age ${row.ltdBenefitPeriodAge}`;
-    case "to_ssnra":
-      return "to Social Security full retirement age";
+        : benefitPeriodText({ mode: "to_age", age: row.ltdBenefitPeriodAge });
     case "years":
       return row.ltdBenefitPeriodYears == null
         ? "for a term not yet set"
-        : `for ${row.ltdBenefitPeriodYears} years`;
+        : benefitPeriodText({ mode: "years", years: row.ltdBenefitPeriodYears });
+    case "to_ssnra":
+      return benefitPeriodText({ mode: "to_ssnra" });
     case "lifetime":
-      return "for life";
+      return benefitPeriodText({ mode: "lifetime" });
   }
 }
 
@@ -104,11 +109,12 @@ function benefitPeriodLabel(row: DisabilityEditRow): string {
  *  how many layers the condition stops paying.
  *
  *  The precedence, the scope of each claim and the conditions themselves mirror
- *  `disability-coverage-timeline.tsx` exactly — the row and the timeline must
- *  not tell the advisor two different stories about one policy. Nothing but
- *  wording differs, and `disability-panel.test.tsx` renders BOTH surfaces on the
- *  same fixtures to keep it that way. Change one of these two functions and you
- *  must change the other. */
+ *  `disability-coverage-timeline.tsx` and the solver's `solver-stress-test-tab.tsx`
+ *  exactly — THREE surfaces must not tell the advisor three different stories
+ *  about one policy. Nothing but wording differs, and `disability-panel.test.tsx`
+ *  renders all three on the same fixtures to keep it that way. Change one of
+ *  these functions and you must change the other two. (The solver reports a
+ *  deliberate SUBSET: it has no room to explain a gap or an overlap.) */
 function coverageWarning(c: ResolvedCoverage): { tone: "crit" | "warn"; text: string } | null {
   if (c.coveredEarnings <= 0 && (c.shortTerm !== null || c.longTerm !== null)) {
     // FIRST because it kills BOTH layers: every band pays $0 and no field on

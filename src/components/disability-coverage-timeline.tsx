@@ -65,9 +65,12 @@ function combinedPct(c: ResolvedCoverage): number | null {
  *  The two co-occur on an ordinary half-finished onboarding (a spouse with
  *  neither a DOB nor salary rows). Reported the other way round, the advisor is
  *  told a date of birth fixes it, adds one, and the policy still pays nothing —
- *  a remedy the data contradicts. `disability-panel.tsx` carries the identical
- *  precedence, and `disability-panel.test.tsx` renders both surfaces on the
- *  same fixtures to keep them from drifting apart again. */
+ *  a remedy the data contradicts. `disability-panel.tsx` and the solver's
+ *  `solver-stress-test-tab.tsx` carry the identical precedence — THREE surfaces,
+ *  and `disability-panel.test.tsx` renders all three on the same fixtures to
+ *  keep them from drifting apart again. (The solver reports a deliberate SUBSET
+ *  of these conditions; the test encodes that as a subset, so it may stay silent
+ *  but may never name a different condition.) */
 function coverageAlert(c: ResolvedCoverage): { tone: "crit" | "warn"; message: string } | null {
   if (c.coveredEarnings <= 0 && (c.shortTerm !== null || c.longTerm !== null)) {
     // Reachable through the app, not theoretical: in salary mode
@@ -107,7 +110,10 @@ function coverageAlert(c: ResolvedCoverage): { tone: "crit" | "warn"; message: s
     const pct = combinedPct(c);
     return {
       tone: "warn",
-      message: `Both policies pay for ${c.seam.months.toFixed(1)} months${
+      // "layers", not "policies": this component resolves ONE policy, and the
+      // overlap is between its own short-term and long-term bands. The row on
+      // the Insurance page says it the same way.
+      message: `Both layers pay for ${c.seam.months.toFixed(1)} months${
         pct === null ? "" : ` — a combined ${pct}% of earnings`
       }.`,
     };

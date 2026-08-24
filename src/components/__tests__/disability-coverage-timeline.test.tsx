@@ -99,7 +99,7 @@ describe("DisabilityCoverageTimeline", () => {
 
   it("warns about an overlap and states the combined replacement", () => {
     render(<DisabilityCoverageTimeline coverage={cov(overlapping())} />);
-    expect(screen.getByRole("alert")).toHaveTextContent(/both policies pay/i);
+    expect(screen.getByRole("alert")).toHaveTextContent(/both layers pay/i);
     expect(screen.getByRole("alert")).toHaveTextContent(/120% of earnings/i);
   });
 
@@ -109,13 +109,13 @@ describe("DisabilityCoverageTimeline", () => {
     // (a non-earning spouse), and manual mode accepts a deliberate 0. The windows
     // are gated on the policy sections and the benefit period, never on earnings —
     // so they still exist and still overlap while every band pays $0/mo. Saying
-    // "both policies pay ... a combined 0% of earnings" there is nonsense.
+    // "both layers pay ... a combined 0% of earnings" there is nonsense.
     const { container } = render(
       <DisabilityCoverageTimeline coverage={resolveCoverage(overlapping(), 0, 2028, baseClient, 2055)} />,
     );
     expect(container.textContent).not.toMatch(/% of earnings/);
     expect(screen.getByRole("alert")).toHaveTextContent(/no covered earnings/i);
-    expect(screen.getByRole("alert")).not.toHaveTextContent(/both policies pay/i);
+    expect(screen.getByRole("alert")).not.toHaveTextContent(/both layers pay/i);
   });
 
   it("blames only long-term coverage when the benefit period cannot be resolved", () => {

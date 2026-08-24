@@ -10,6 +10,7 @@ import {
   type ResolvedCoverage,
 } from "@/engine/disability-benefits";
 import type { SolverMutation, SolverMutationKey, SolverPerson } from "@/lib/solver/types";
+import { benefitPeriodText } from "@/lib/insurance-policies/disability-labels";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { SolverSection } from "./solver-section";
 
@@ -264,21 +265,6 @@ function StressRow({
   );
 }
 
-function benefitPeriodLabel(
-  period: NonNullable<DisabilityPolicy["longTerm"]>["benefitPeriod"],
-): string {
-  switch (period.mode) {
-    case "to_age":
-      return `to age ${period.age}`;
-    case "to_ssnra":
-      return "to Social Security full retirement age";
-    case "years":
-      return `for ${period.years} years`;
-    case "lifetime":
-      return "for life";
-  }
-}
-
 /** What the CONTRACT covers, as one sentence. Wording mirrors the Insurance
  *  page's disability rows so one policy does not read two different ways. */
 function coverageSummary(policy: DisabilityPolicy): string {
@@ -290,7 +276,7 @@ function coverageSummary(policy: DisabilityPolicy): string {
   }
   if (policy.longTerm !== null) {
     layers.push(
-      `${pct(policy.longTerm.benefitPct)} ${benefitPeriodLabel(policy.longTerm.benefitPeriod)}`,
+      `${pct(policy.longTerm.benefitPct)} ${benefitPeriodText(policy.longTerm.benefitPeriod)}`,
     );
   }
   // The create/update schema rejects a policy with neither layer, so this is a
