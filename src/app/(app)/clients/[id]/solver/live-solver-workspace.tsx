@@ -141,6 +141,37 @@ const LEFT_TABS: {
 const SOLVER_LEFT_COLLAPSED_KEY = "foundry.solver.leftCollapsed";
 const SOLVER_INPUTS_PANE_ID = "solver-inputs-pane";
 
+// The projection budget is 30 requests/minute per FIRM and is shared with Monte
+// Carlo, which the solver also fires on every edit — so an advisor working the
+// levers spends it two at a time and reaches the ceiling inside a busy minute.
+// A 429 is transient by definition: wait out the window the server names and go
+// again, rather than leaving every report showing the previous edit's figures.
+const RECOMPUTE_RETRIES = 3;
+const RECOMPUTE_RETRY_FALLBACK_MS = 2_000;
+const RECOMPUTE_RETRY_MAX_MS = 15_000;
+
+function retryAfterMs(res: Response): number {
+  const seconds = Number(res.headers.get("retry-after"));
+  const ms =
+    Number.isFinite(seconds) && seconds > 0 ? seconds * 1_000 : RECOMPUTE_RETRY_FALLBACK_MS;
+  return Math.min(ms, RECOMPUTE_RETRY_MAX_MS);
+}
+
+/** Resolves after `ms`, or immediately once `signal` aborts. */
+function delay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+  });
+}
+
 export function LiveSolverWorkspace({
   clientId,
   userId,
@@ -1217,6 +1248,12 @@ export function LiveSolverWorkspace({
   }, [handleSolveCancel, retireSyntheticMutations]);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Every recompute takes a ticket; only the newest one may write the pane. The
+  // debounce alone can't guarantee that — it cancels a request that hasn't been
+  // SENT yet, but two in-flight recomputes can come back in either order, and a
+  // late one landing last leaves every report showing an older edit's figures
+  // with nothing left to trigger another run.
+  const recomputeSeqRef = useRef(0);
   useEffect(() => {
     if (activeSolve) return; // solve owns the projection while running
     if (mutations.length === 0) {
@@ -1225,31 +1262,47 @@ export function LiveSolverWorkspace({
       return;
     }
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    const seq = ++recomputeSeqRef.current;
+    const controller = new AbortController();
+    const superseded = () => seq !== recomputeSeqRef.current || controller.signal.aborted;
     debounceRef.current = setTimeout(async () => {
       setComputeStatus("computing");
-      try {
-        const res = await fetch(`/api/clients/${clientId}/solver/project`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ source: initialSource, mutations }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        // parseProjectionResponse (not res.json()) revives the projection's Map
-        // fields, which JSON drops — without it estate consumers crash on
-        // `field?.get(...)`. See projection-wire.ts.
-        const data = parseProjectionResponse<{ projection: ProjectionYear[] }>(
-          await res.text(),
-        );
-        setCurrentProjection(data.projection);
-        setComputeStatus("fresh");
-        setErrorMessage(null);
-      } catch (err) {
-        setComputeStatus("error");
-        setErrorMessage(err instanceof Error ? err.message : String(err));
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const res = await fetch(`/api/clients/${clientId}/solver/project`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ source: initialSource, mutations }),
+            signal: controller.signal,
+          });
+          if (res.status === 429 && attempt < RECOMPUTE_RETRIES) {
+            await delay(retryAfterMs(res), controller.signal);
+            if (superseded()) return;
+            continue;
+          }
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          // parseProjectionResponse (not res.json()) revives the projection's Map
+          // fields, which JSON drops — without it estate consumers crash on
+          // `field?.get(...)`. See projection-wire.ts.
+          const data = parseProjectionResponse<{ projection: ProjectionYear[] }>(
+            await res.text(),
+          );
+          if (superseded()) return;
+          setCurrentProjection(data.projection);
+          setComputeStatus("fresh");
+          setErrorMessage(null);
+          return;
+        } catch (err) {
+          if (superseded()) return;
+          setComputeStatus("error");
+          setErrorMessage(err instanceof Error ? err.message : String(err));
+          return;
+        }
       }
     }, 600);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      controller.abort();
     };
   }, [mutations, clientId, initialSource, initialSourceProjection, activeSolve]);
 

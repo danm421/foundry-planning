@@ -459,6 +459,19 @@ export function SolverChartPanel({
           </button>
         ) : null}
       </div>
+      {/* A failed recompute leaves every report showing the PREVIOUS edit's
+          figures, which reads as "my change did nothing". The workspace's error
+          banner explains it, but it renders below a full-height report — off
+          screen exactly when the report is long enough to matter. Say it here,
+          against the tabs, so the warning travels with the numbers. */}
+      {computeStatus === "error" ? (
+        <div
+          role="status"
+          className="mt-1.5 rounded-md border border-crit/40 bg-crit/10 px-2 py-1 text-[11px] text-crit"
+        >
+          Figures below are out of date — the recompute failed. Change a lever to retry.
+        </div>
+      ) : null}
       {showCustomize && onLayoutChange ? (
         <ReportCustomizePopover
           layout={effectiveLayout}

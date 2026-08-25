@@ -969,3 +969,70 @@ describe("LiveSolverWorkspace — both scroll panes are their own containing blo
     for (const pane of panes) expect(pane).toHaveClass("relative");
   });
 });
+
+describe("LiveSolverWorkspace — the reports must never sit on a stale recompute", () => {
+  const projectionOf = (total: number) => ({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({ projection: [{ year: 2026, portfolioAssets: { total } }] }),
+  });
+
+  // The projection budget is 30/min/FIRM and is shared with Monte Carlo, which
+  // the solver also fires per edit — so it is reachable in ordinary use. Before
+  // the retry, a 429 dropped the pane into `error` and left every report on the
+  // previous edit's figures: the levers moved, the numbers didn't, and only a
+  // banner below a full-height report said why.
+  it("retries a rate-limited recompute instead of stranding the reports", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: "Too many projection requests." }), {
+          status: 429,
+          headers: { "retry-after": "1" },
+        }),
+      )
+      .mockResolvedValue(projectionOf(2_222_222));
+
+    render(<LiveSolverWorkspace {...baseProps} />);
+    setCooperRetirementAge(68);
+
+    await waitFor(
+      () => expect(screen.getByTestId("chart-current-total")).toHaveTextContent("2222222"),
+      { timeout: 6000 },
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText(/Recompute failed/i)).not.toBeInTheDocument();
+  }, 15_000);
+
+  // Two edits, two in-flight recomputes, and the FIRST one comes back last —
+  // which is what a slow pooled DB read does in the field. Without the sequence
+  // guard its older projection wins the pane and nothing ever re-fires.
+  it("drops a superseded recompute that lands after a newer one", async () => {
+    let releaseStale: (() => void) | null = null;
+    fetchMock
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            releaseStale = () => resolve(projectionOf(111_111));
+          }),
+      )
+      .mockResolvedValue(projectionOf(999_999));
+
+    render(<LiveSolverWorkspace {...baseProps} />);
+
+    setCooperRetirementAge(66, 65);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1), { timeout: 2000 });
+    setCooperRetirementAge(67, 66);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2), { timeout: 2000 });
+    await waitFor(
+      () => expect(screen.getByTestId("chart-current-total")).toHaveTextContent("999999"),
+      { timeout: 2000 },
+    );
+
+    // The first request finally answers — with the figures for the edit before last.
+    await act(async () => {
+      releaseStale!();
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("chart-current-total")).toHaveTextContent("999999");
+  }, 15_000);
+});
