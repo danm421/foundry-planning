@@ -754,6 +754,36 @@ describe("buildViewModel — out-of-estate owner rows", () => {
     expect(other).toMatchObject({ ownerName: "Other (out of estate)", ownerType: "external", net: 20_000 });
   });
 
+  it("surfaces a 529 (education_savings, beneficiary-owned) as out-of-estate", () => {
+    // Regression: 529s are the real-world shape this branch was written for —
+    // a single external_beneficiary owner and no account_owners rows. The
+    // sibling test above uses category "taxable", so it never exercised the
+    // DB_TO_KEY lookup that drops an unmapped category before the
+    // external_beneficiary branch can run.
+    const acct529 = {
+      id: "a-529",
+      name: "Chris 529",
+      category: "education_savings",
+      owners: [
+        { kind: "external_beneficiary" as const, externalBeneficiaryId: "__529_beneficiary", percent: 1 },
+      ],
+    };
+    const vm = buildViewModel({
+      ...baseInput,
+      accounts: [...accounts, acct529],
+      projectionYears: [
+        priorYear,
+        { ...projectionYear, accountLedgers: { ...projectionYear.accountLedgers, "a-529": { beginningValue: 24_000, endingValue: 30_000 } } },
+      ],
+    });
+    const row = vm.outOfEstateOwnerRows.find((r) => r.ownerKey === "ext:a-529");
+    expect(row).toMatchObject({ ownerName: "Chris 529", ownerType: "external", net: 30_000 });
+    // Out of estate, so it must NOT inflate the household's in-estate totals.
+    expect(vm.totalAssets).toBe(buildViewModel(baseInput).totalAssets);
+    // ...and it must not appear in any in-estate category either.
+    expect(vm.assetCategories.flatMap((c) => c.rows).some((r) => r.accountId === "a-529")).toBe(false);
+  });
+
   it("does not double-count an external beneficiary's share when a family member co-owns the account", () => {
     const mixedAccount = {
       id: "a-mixed-ext",
