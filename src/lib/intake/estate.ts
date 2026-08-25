@@ -228,8 +228,11 @@ export const SUGGESTED_CHILD_DISTRIBUTION_TERMS: readonly string[] = [
 ];
 
 /** One line, for the note and the review card. */
+// Spelled out rather than slash-joined ("health/education/maintenance/support"):
+// that run is one unbreakable token to a text layout engine, and it pushed the
+// client's review card past the edge of a phone screen.
 export const SUGGESTED_CHILD_DISTRIBUTION_SUMMARY =
-  "Suggested schedule — health/education/maintenance/support, own trustee at 25, ⅓ at 25, ½ at 30, balance at 35";
+  "Suggested schedule — health, education, maintenance and support; own trustee at 25; ⅓ at 25, ½ at 30, balance at 35";
 
 /** The caveat shown under the suggested option: this covers in-estate assets
  *  only, and the out-of-estate work that comes later usually holds assets far

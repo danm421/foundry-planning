@@ -80,7 +80,10 @@ function Row({ label, value }: { label: string; value: string | number | undefin
   return (
     <div className={rowCls}>
       <span className="text-ink-3">{label}</span>
-      <span className="tabular text-ink">{value}</span>
+      {/* min-w-0 + break-words: a flex item will not shrink below the width of
+          its longest unbreakable token, so without these one long value blows
+          the card open and scrolls the whole page sideways on a phone. */}
+      <span className="tabular min-w-0 break-words text-right text-ink">{value}</span>
     </div>
   );
 }

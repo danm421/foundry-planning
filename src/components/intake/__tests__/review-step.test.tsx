@@ -111,3 +111,121 @@ describe("ReviewStep", () => {
     expect(screen.queryByRole("button", { name: /^edit/i })).not.toBeInTheDocument();
   });
 });
+
+// ─── Estate ──────────────────────────────────────────────────────────────────
+//
+// The estate card is the client's last chance to catch a wrong nomination
+// before it becomes an attorney-facing note, so it has to show what was
+// entered — and, just as load-bearing, must NOT show a Yes to a question
+// nobody answered.
+
+const estateDraft: IntakeDraft = {
+  family: richDraft.family,
+  estate: {
+    residence: {
+      addressLine1: "123 Maple St",
+      addressLine2: "Apt 2",
+      city: "Ann Arbor",
+      state: "MI",
+      postalCode: "48104",
+      isLegalResidence: false,
+      legalResidenceNote: "Florida",
+    },
+    fiduciaries: [
+      { role: "guardian", priority: "primary", name: "Sarah Klein" },
+      { role: "trustee", priority: "primary", name: "Dev Patel" },
+      { role: "executor", priority: "backup", name: "Dev Patel" },
+    ],
+    fiduciaryContacts: [],
+    childrenDistribution: { plan: "suggested" },
+  },
+};
+
+function estateProps(overrides: Partial<Parameters<typeof ReviewStep>[0]> = {}) {
+  return {
+    value: estateDraft,
+    onEdit: vi.fn(),
+    sections: ["family", "estate"] as const,
+    ...overrides,
+  };
+}
+
+describe("ReviewStep — estate", () => {
+  it("summarizes the address, the nominations and the children's schedule", () => {
+    render(<ReviewStep {...estateProps()} />);
+
+    expect(screen.getByText("123 Maple St, Apt 2, Ann Arbor, MI 48104")).toBeInTheDocument();
+    expect(screen.getByText("Guardian · First choice")).toBeInTheDocument();
+    expect(screen.getByText("Sarah Klein")).toBeInTheDocument();
+    expect(screen.getByText("Executor · Backup")).toBeInTheDocument();
+    // The one-line summary, which is the same wording the step showed — not a
+    // bare "chose the suggested schedule", which records nothing.
+    expect(
+      screen.getByText(/suggested schedule .* own trustee at 25; ⅓ at 25, ½ at 30, balance at 35/i),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a No answer as No, with where they actually reside", () => {
+    render(<ReviewStep {...estateProps()} />);
+    expect(screen.getByText("No — Florida")).toBeInTheDocument();
+  });
+
+  it("shows NOTHING for the legal-residence question when it was never answered", () => {
+    // The row must disappear, not render a Yes: an unasked question recorded as
+    // a Yes is how the wrong state's law ends up governing the documents.
+    const unanswered: IntakeDraft = {
+      ...estateDraft,
+      estate: {
+        ...estateDraft.estate,
+        residence: { ...estateDraft.estate?.residence, isLegalResidence: undefined, legalResidenceNote: undefined },
+      },
+    };
+    render(<ReviewStep {...estateProps({ value: unanswered })} />);
+
+    // The card is populated — this is not a vacuous absence.
+    expect(screen.getByText("123 Maple St, Apt 2, Ann Arbor, MI 48104")).toBeInTheDocument();
+    expect(screen.queryByText("Legal residence")).not.toBeInTheDocument();
+    expect(screen.queryByText("Yes")).not.toBeInTheDocument();
+  });
+
+  it("omits slots nobody was named for rather than showing blank rows", () => {
+    render(<ReviewStep {...estateProps()} />);
+    // Six slots exist; three were filled.
+    expect(screen.queryByText("Guardian · Backup")).not.toBeInTheDocument();
+    expect(screen.queryByText("Trustee · Backup")).not.toBeInTheDocument();
+    expect(screen.queryByText("Executor · First choice")).not.toBeInTheDocument();
+  });
+
+  it("hides the children's schedule row for a household with no children", () => {
+    const noKids: IntakeDraft = {
+      ...estateDraft,
+      family: { ...estateDraft.family, children: [] },
+    };
+    render(<ReviewStep {...estateProps({ value: noKids })} />);
+
+    expect(screen.queryByText("Children’s inheritance")).not.toBeInTheDocument();
+    // ...while the rest of the card still renders.
+    expect(screen.getByText("Guardian · First choice")).toBeInTheDocument();
+  });
+
+  it("says so plainly when the client skipped the whole step", () => {
+    render(<ReviewStep {...estateProps({ value: { family: richDraft.family } })} />);
+    expect(screen.getByText("No estate details entered.")).toBeInTheDocument();
+  });
+
+  it("drops the card entirely when the form does not collect Estate", () => {
+    // Not just an empty state: estateDraft is populated, so a rendered card
+    // would still show the address.
+    render(<ReviewStep {...estateProps({ sections: ["family"] })} />);
+    expect(screen.queryByText("123 Maple St, Apt 2, Ann Arbor, MI 48104")).not.toBeInTheDocument();
+    expect(screen.queryByText("No estate details entered.")).not.toBeInTheDocument();
+  });
+
+  it("jumps back to the Estate step from its Edit button", () => {
+    const onEdit = vi.fn();
+    render(<ReviewStep {...estateProps({ onEdit })} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Estate" }));
+    expect(onEdit).toHaveBeenCalledWith("estate");
+  });
+});

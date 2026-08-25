@@ -1201,3 +1201,307 @@ describe("applyIntake — risk", () => {
     expect(qs).toHaveLength(0);
   }, 30000);
 });
+
+// ── Estate ──────────────────────────────────────────────────────────────────
+//
+// The Estate step is the only one that asks for a phone number, an email and a
+// street address, and every one has an exact column on the CRM contact. What
+// makes the write delicate is that the client is LONG GONE by apply time: a
+// blank they never filled must not wipe a number already on file, and a typo'd
+// email must not overwrite a working address or fail the submit.
+
+describe("applyIntake — estate", () => {
+  const FIRM_E = "test-firm-apply-estate-2026";
+  const ADVISOR_E = "user_test_apply_estate";
+  let ids: { householdId?: string; clientId?: string; formId?: string } = {};
+
+  afterEach(async () => {
+    await cleanup(ids);
+    ids = {};
+  });
+
+  /** A payload carrying only the estate slice. */
+  function estatePayload(
+    estate: NonNullable<IntakePayload["estate"]>,
+  ): IntakePayload {
+    return {
+      accounts: [],
+      income: [],
+      property: [],
+      goals: { expenseGoals: [], topics: [] },
+      estate,
+      meta: { completedSections: [] },
+    };
+  }
+
+  async function contactRow(householdId: string, role: "primary" | "spouse") {
+    const [row] = await db
+      .select({
+        firstName: crmHouseholdContacts.firstName,
+        mobile: crmHouseholdContacts.mobile,
+        email: crmHouseholdContacts.email,
+        addressLine1: crmHouseholdContacts.addressLine1,
+        addressLine2: crmHouseholdContacts.addressLine2,
+        city: crmHouseholdContacts.city,
+        state: crmHouseholdContacts.state,
+        postalCode: crmHouseholdContacts.postalCode,
+      })
+      .from(crmHouseholdContacts)
+      .where(
+        and(
+          eq(crmHouseholdContacts.householdId, householdId),
+          eq(crmHouseholdContacts.role, role),
+        ),
+      );
+    return row;
+  }
+
+  it("writes the mobile, email and address onto the primary CRM contact", async () => {
+    const { householdId, clientId } = await seedJohnSmithHousehold(FIRM_E, ADVISOR_E);
+    const formId = await submitFormWithSections(
+      FIRM_E,
+      ADVISOR_E,
+      clientId,
+      ["estate"],
+      estatePayload({
+        contact: { primary: { mobile: "734-555-0100", email: "john@example.com" } },
+        residence: {
+          addressLine1: "123 Maple St",
+          addressLine2: "Apt 2",
+          city: "Ann Arbor",
+          state: "MI",
+          postalCode: "48104",
+          isLegalResidence: true,
+        },
+        fiduciaries: [{ role: "trustee", priority: "primary", name: "Sarah Klein" }],
+        fiduciaryContacts: [],
+      }),
+    );
+    ids = { householdId, clientId, formId };
+
+    await applyIntake({ formId, firmId: FIRM_E, actorId: ADVISOR_E });
+
+    const primary = await contactRow(householdId, "primary");
+    expect(primary.mobile).toBe("734-555-0100");
+    expect(primary.email).toBe("john@example.com");
+    expect(primary.addressLine1).toBe("123 Maple St");
+    expect(primary.addressLine2).toBe("Apt 2");
+    expect(primary.city).toBe("Ann Arbor");
+    expect(primary.state).toBe("MI");
+    expect(primary.postalCode).toBe("48104");
+  });
+
+  it("drops a malformed email instead of storing it — and stores everything else", async () => {
+    // The submit is not the place to bounce this: the client is gone, so a
+    // failed apply strands the whole form. The bad address survives on the CRM
+    // note, where an advisor can read and fix it.
+    const { householdId, clientId } = await seedJohnSmithHousehold(FIRM_E, ADVISOR_E);
+    const formId = await submitFormWithSections(
+      FIRM_E,
+      ADVISOR_E,
+      clientId,
+      ["estate"],
+      estatePayload({
+        contact: { primary: { mobile: "734-555-0100", email: "sarah at gmail" } },
+        fiduciaries: [],
+        fiduciaryContacts: [],
+      }),
+    );
+    ids = { householdId, clientId, formId };
+
+    await expect(
+      applyIntake({ formId, firmId: FIRM_E, actorId: ADVISOR_E }),
+    ).resolves.toEqual({ clientId });
+
+    const primary = await contactRow(householdId, "primary");
+    expect(primary.email).toBeNull();
+    // Not a blanket skip — the rest of the same patch still landed.
+    expect(primary.mobile).toBe("734-555-0100");
+  });
+
+  it("does not overwrite a stored email with a malformed one", async () => {
+    const { householdId, clientId } = await seedJohnSmithHousehold(FIRM_E, ADVISOR_E);
+    await db
+      .update(crmHouseholdContacts)
+      .set({ email: "john.smith@work.example" })
+      .where(
+        and(
+          eq(crmHouseholdContacts.householdId, householdId),
+          eq(crmHouseholdContacts.role, "primary"),
+        ),
+      );
+    const formId = await submitFormWithSections(
+      FIRM_E,
+      ADVISOR_E,
+      clientId,
+      ["estate"],
+      estatePayload({
+        contact: { primary: { email: "john.smith@" } },
+        fiduciaries: [],
+        fiduciaryContacts: [],
+      }),
+    );
+    ids = { householdId, clientId, formId };
+
+    await applyIntake({ formId, firmId: FIRM_E, actorId: ADVISOR_E });
+
+    const primary = await contactRow(householdId, "primary");
+    expect(primary.email).toBe("john.smith@work.example");
+  });
+
+  it("leaves a stored value alone when the client left that field blank", async () => {
+    // THE DESTRUCTIVE CASE. Everything on this step is optional, so most
+    // submits arrive with most fields empty. Sending them as blanks would let
+    // a client who filled in only their mobile erase the address on file.
+    const { householdId, clientId } = await seedJohnSmithHousehold(FIRM_E, ADVISOR_E);
+    await db
+      .update(crmHouseholdContacts)
+      .set({
+        mobile: "313-555-0199",
+        email: "john.smith@work.example",
+        addressLine1: "9 Old Orchard Rd",
+        city: "Detroit",
+        state: "MI",
+        postalCode: "48226",
+      })
+      .where(
+        and(
+          eq(crmHouseholdContacts.householdId, householdId),
+          eq(crmHouseholdContacts.role, "primary"),
+        ),
+      );
+    const formId = await submitFormWithSections(
+      FIRM_E,
+      ADVISOR_E,
+      clientId,
+      ["estate"],
+      // Only a new mobile. Empty strings for the rest — exactly what a step
+      // whose fields are all optional produces.
+      estatePayload({
+        contact: { primary: { mobile: "734-555-0100", email: "  " } },
+        residence: { addressLine1: "", city: "", postalCode: "" },
+        fiduciaries: [],
+        fiduciaryContacts: [],
+      }),
+    );
+    ids = { householdId, clientId, formId };
+
+    await applyIntake({ formId, firmId: FIRM_E, actorId: ADVISOR_E });
+
+    const primary = await contactRow(householdId, "primary");
+    expect(primary.mobile).toBe("734-555-0100");
+    expect(primary.email).toBe("john.smith@work.example");
+    expect(primary.addressLine1).toBe("9 Old Orchard Rd");
+    expect(primary.city).toBe("Detroit");
+    expect(primary.state).toBe("MI");
+    expect(primary.postalCode).toBe("48226");
+  });
+
+  it("puts the shared address on the primary only, never on the spouse", async () => {
+    // One address typed by a couple is not evidence that a spouse's separately
+    // recorded address is stale.
+    const { householdId, clientId } = await seedJohnSmithHousehold(FIRM_E, ADVISOR_E);
+    await db.insert(crmHouseholdContacts).values({
+      householdId,
+      role: "spouse",
+      firstName: "Jane",
+      lastName: "Smith",
+      addressLine1: "44 Lakeshore Dr",
+    });
+    const formId = await submitFormWithSections(
+      FIRM_E,
+      ADVISOR_E,
+      clientId,
+      ["estate"],
+      estatePayload({
+        contact: {
+          primary: { mobile: "734-555-0100" },
+          spouse: { mobile: "734-555-0200", email: "jane@example.com" },
+        },
+        residence: { addressLine1: "123 Maple St", city: "Ann Arbor", state: "MI" },
+        fiduciaries: [],
+        fiduciaryContacts: [],
+      }),
+    );
+    ids = { householdId, clientId, formId };
+
+    await applyIntake({ formId, firmId: FIRM_E, actorId: ADVISOR_E });
+
+    const spouse = await contactRow(householdId, "spouse");
+    expect(spouse.mobile).toBe("734-555-0200");
+    expect(spouse.email).toBe("jane@example.com");
+    expect(spouse.addressLine1).toBe("44 Lakeshore Dr");
+
+    const primary = await contactRow(householdId, "primary");
+    expect(primary.addressLine1).toBe("123 Maple St");
+  });
+
+  it("writes nothing when the form did not COLLECT estate, even with a payload", async () => {
+    // A prefilled form can carry an estate slice the client never saw.
+    const { householdId, clientId } = await seedJohnSmithHousehold(FIRM_E, ADVISOR_E);
+    const formId = await submitFormWithSections(
+      FIRM_E,
+      ADVISOR_E,
+      clientId,
+      ["accounts"],
+      {
+        ...estatePayload({
+          contact: { primary: { mobile: "734-555-0100", email: "stale@example.com" } },
+          residence: { addressLine1: "123 Stale St", city: "Nowhere", state: "MI" },
+          fiduciaries: [],
+          fiduciaryContacts: [],
+        }),
+        accounts: [
+          { name: "Real Brokerage", category: "taxable", value: 10_000, owner: "client" },
+        ],
+      },
+    );
+    ids = { householdId, clientId, formId };
+
+    await applyIntake({ formId, firmId: FIRM_E, actorId: ADVISOR_E });
+
+    // The section the form DOES collect applied — this is not a no-op apply.
+    const acctRows = await db
+      .select({ name: accounts.name })
+      .from(accounts)
+      .where(eq(accounts.clientId, clientId));
+    expect(acctRows.map((r) => r.name)).toContain("Real Brokerage");
+
+    const primary = await contactRow(householdId, "primary");
+    expect(primary.mobile).toBeNull();
+    expect(primary.email).toBeNull();
+    expect(primary.addressLine1).toBeNull();
+  });
+
+  it("cannot conjure a nameless spouse contact from a details-only patch", async () => {
+    // The upsert inserts only when a patch carries a first name. An estate-only
+    // form has none, so a household with no spouse row keeps having none rather
+    // than gaining a blank-named contact.
+    const { householdId, clientId } = await seedJohnSmithHousehold(FIRM_E, ADVISOR_E);
+    const formId = await submitFormWithSections(
+      FIRM_E,
+      ADVISOR_E,
+      clientId,
+      ["estate"],
+      estatePayload({
+        contact: { spouse: { mobile: "734-555-0200", email: "jane@example.com" } },
+        fiduciaries: [],
+        fiduciaryContacts: [],
+      }),
+    );
+    ids = { householdId, clientId, formId };
+
+    await applyIntake({ formId, firmId: FIRM_E, actorId: ADVISOR_E });
+
+    const rows = await db
+      .select({ id: crmHouseholdContacts.id })
+      .from(crmHouseholdContacts)
+      .where(
+        and(
+          eq(crmHouseholdContacts.householdId, householdId),
+          eq(crmHouseholdContacts.role, "spouse"),
+        ),
+      );
+    expect(rows).toHaveLength(0);
+  });
+});

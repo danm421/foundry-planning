@@ -265,7 +265,7 @@ export function EstateStep({ value, onChange, family }: EstateStepProps) {
                 <FieldTooltip text="The state you legally call home decides which state's law governs your will and trust. It is usually where you live most of the year — which can differ from a mailing address or a second home." />
               </span>
               <YesNo
-                name="estate-legal-residence"
+                label="Is this your legal residence?"
                 value={residence.isLegalResidence}
                 onChange={(next) => setResidence("isLegalResidence", next)}
               />
@@ -309,12 +309,19 @@ export function EstateStep({ value, onChange, family }: EstateStepProps) {
         <div className="space-y-3">
           {groupByRole(slots).map(([role, roleSlots]) => (
             <Card key={role}>
-              <p className="mb-1 flex items-center gap-1.5 text-[14px] font-medium text-ink">
+              {/* The role help is plain copy, not a `?` tooltip: this step is
+                  filled in on a phone, where there is no hover, and "what does
+                  a trustee actually do" is the one thing a client needs to read
+                  before they can answer. A centred tooltip anchored to a badge
+                  this far right also ran 52px past a 390px viewport. */}
+              <p className="text-[14px] font-medium text-ink">
                 {FIDUCIARY_ROLE_QUESTIONS[role]}
-                <FieldTooltip text={FIDUCIARY_ROLE_HELP[role]} />
               </p>
-              <p className="mb-4 text-[12px] uppercase tracking-[0.06em] text-ink-4">
+              <p className="mt-0.5 text-[12px] uppercase tracking-[0.06em] text-ink-4">
                 {FIDUCIARY_ROLE_LABELS[role]}
+              </p>
+              <p className="mb-4 mt-2 text-[13px] leading-relaxed text-ink-3">
+                {FIDUCIARY_ROLE_HELP[role]}
               </p>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {roleSlots.map((slot) => (
@@ -520,11 +527,14 @@ function PrincipalFields({
  *  cannot express "not answered yet", which is the state every one of these
  *  starts in. */
 function YesNo({
-  name,
+  label,
   value,
   onChange,
 }: {
-  name: string;
+  /** The QUESTION, verbatim. It is the group's only accessible name — the
+   *  visible text sits in a sibling span, so a screen reader that gets an id
+   *  slug here is told nothing about what Yes and No mean. */
+  label: string;
   value: boolean | undefined;
   onChange: (next: boolean) => void;
 }) {
@@ -536,7 +546,7 @@ function YesNo({
     <div
       className="flex items-center gap-0.5 rounded-full border border-hair bg-card-2 p-0.5"
       role="group"
-      aria-label={name}
+      aria-label={label}
     >
       <button type="button" aria-pressed={value === true} className={cls(value === true)} onClick={() => onChange(true)}>
         Yes
