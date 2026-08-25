@@ -2,7 +2,18 @@ import { describe, expect, it } from "vitest";
 
 import {
   FIDUCIARY_SLOTS,
+  beneficiaryShareTotal,
+  childDisplayName,
   childDistributionLabel,
+  estateBeneficiaryOptions,
+  formatNameList,
+  inheritanceSummaryLine,
+  nextOtherBeneficiaryRef,
+  predeceasedLabel,
+  resolveEstateBeneficiaries,
+  sharePercentLabel,
+  splitFullName,
+  toggleBeneficiary,
   estateHousehold,
   estateSlotsFor,
   fiduciaryContactLine,
@@ -232,5 +243,323 @@ describe("submit-time pruning", () => {
       },
     });
     expect(parsed.success).toBe(true);
+  });
+});
+
+
+// ─── Who inherits ────────────────────────────────────────────────────────────
+
+// Pinned rather than `new Date()` — an age assertion against the real clock
+// starts failing on somebody's birthday.
+const TODAY = new Date("2026-08-25T12:00:00Z");
+
+const FAMILY = {
+  primary: { firstName: "Matt", lastName: "Rowan", dateOfBirth: "1984-03-02" },
+  spouse: { firstName: "Sarah", lastName: "Rowan", dateOfBirth: "1985-11-20" },
+  children: [
+    { firstName: "Emma", lastName: "Rowan", dateOfBirth: "2018-04-10" },
+    { firstName: "Jack", lastName: "Rowan", dateOfBirth: "2021-01-05" },
+  ],
+} satisfies NonNullable<IntakeDraft["family"]>;
+
+describe("the beneficiary picklist", () => {
+  it("offers the spouse, then the Family step's children, then anyone added by hand", () => {
+    const inheritance = {
+      beneficiaries: [{ ref: "other:0", name: "Ruth Alvarez", relationship: "my sister" }],
+    };
+    expect(
+      estateBeneficiaryOptions(FAMILY, inheritance, TODAY).map((o) => [o.ref, o.name, o.detail]),
+    ).toEqual([
+      ["spouse", "Sarah Rowan", "Spouse or partner"],
+      ["child:0", "Emma Rowan", "Age 8"],
+      ["child:1", "Jack Rowan", "Age 5"],
+      ["other:0", "Ruth Alvarez", "my sister"],
+    ]);
+  });
+
+  it("drops the spouse once the client says everything goes to them first", () => {
+    // Otherwise the same fact is stated twice, and an attorney reading both has
+    // to ask which one the client meant.
+    const refs = estateBeneficiaryOptions(FAMILY, { spouseFirst: true }, TODAY).map((o) => o.ref);
+    expect(refs).not.toContain("spouse");
+    expect(refs).toEqual(["child:0", "child:1"]);
+  });
+
+  it("never offers a Family card the client opened and abandoned", () => {
+    const withBlank = {
+      ...FAMILY,
+      children: [...FAMILY.children, { firstName: "", lastName: "", dateOfBirth: "" }],
+    };
+    expect(estateBeneficiaryOptions(withBlank, undefined, TODAY)).toHaveLength(3);
+  });
+
+  it("marks only the rows the client has ticked", () => {
+    const options = estateBeneficiaryOptions(FAMILY, { beneficiaries: [{ ref: "child:1" }] }, TODAY);
+    expect(options.map((o) => o.selected)).toEqual([false, false, true]);
+  });
+
+  it("ticks and unticks a row", () => {
+    const make = (ref: string) => () => ({ ref });
+    const once = toggleBeneficiary([], "child:0", make("child:0"));
+    expect(once).toEqual([{ ref: "child:0" }]);
+    expect(toggleBeneficiary(once, "child:0", make("child:0"))).toEqual([]);
+  });
+
+  it("counts a hand-added ref past the highest ever used, not the row count", () => {
+    // Reusing a removed row's number would hand the fresh card the name and the
+    // share of the person the client just deleted.
+    expect(nextOtherBeneficiaryRef([{ ref: "other:0" }, { ref: "other:1" }])).toBe("other:2");
+    expect(nextOtherBeneficiaryRef([{ ref: "other:3" }, { ref: "child:0" }])).toBe("other:4");
+    expect(nextOtherBeneficiaryRef(undefined)).toBe("other:0");
+  });
+
+  it("splits a quick-added full name on the last space", () => {
+    expect(splitFullName("Emma Rowan")).toEqual({ firstName: "Emma", lastName: "Rowan" });
+    expect(splitFullName("  Mary Anne   Smith ")).toEqual({ firstName: "Mary Anne", lastName: "Smith" });
+    expect(splitFullName("Prince")).toEqual({ firstName: "Prince" });
+  });
+
+  it("reads a child's display name off the Family step, first name alone if that is all there is", () => {
+    expect(childDisplayName({ firstName: "Emma", lastName: "Rowan" })).toBe("Emma Rowan");
+    expect(childDisplayName({ firstName: "Emma" })).toBe("Emma");
+    expect(childDisplayName({ firstName: "", lastName: "" })).toBeNull();
+  });
+});
+
+describe("resolving the chosen beneficiaries", () => {
+  it("drops a row that names nobody, so the review card and the note agree with the prune", () => {
+    const inheritance = {
+      beneficiaries: [
+        { ref: "child:0" },
+        { ref: "child:7" }, // a child removed from the Family step since
+        { ref: "other:0", name: "  " }, // a card opened and abandoned
+      ],
+    };
+    expect(resolveEstateBeneficiaries(inheritance, FAMILY, TODAY).map((b) => b.name)).toEqual([
+      "Emma Rowan",
+    ]);
+  });
+
+  it("carries no percentage under an equal split, and the client's own under a custom one", () => {
+    const rows = [
+      { ref: "child:0", sharePercent: 60 },
+      { ref: "child:1", sharePercent: 40 },
+    ];
+    expect(
+      resolveEstateBeneficiaries({ beneficiaries: rows, sharing: "equal" }, FAMILY, TODAY).map(
+        (b) => b.sharePercent,
+      ),
+    ).toEqual([null, null]);
+    expect(
+      resolveEstateBeneficiaries({ beneficiaries: rows, sharing: "custom" }, FAMILY, TODAY).map(
+        (b) => b.sharePercent,
+      ),
+    ).toEqual([60, 40]);
+  });
+
+  it("totals the custom shares, and stays silent about an equal split", () => {
+    const rows = [
+      { ref: "child:0", sharePercent: 60 },
+      { ref: "child:1", sharePercent: 35 },
+    ];
+    expect(beneficiaryShareTotal({ beneficiaries: rows, sharing: "custom" })).toBe(95);
+    expect(beneficiaryShareTotal({ beneficiaries: rows, sharing: "equal" })).toBeNull();
+  });
+
+  it("trims a trailing zero off a share", () => {
+    expect(sharePercentLabel(60)).toBe("60%");
+    expect(sharePercentLabel(33.35)).toBe("33.4%");
+    expect(sharePercentLabel(null)).toBeNull();
+  });
+});
+
+describe("the inheritance summary line", () => {
+  const summary = (inheritance: NonNullable<EstateDraft["inheritance"]>) =>
+    inheritanceSummaryLine(inheritance, FAMILY, TODAY);
+
+  it("reads the way the will does for the standard married-with-children answer", () => {
+    expect(
+      summary({
+        spouseFirst: true,
+        sharing: "equal",
+        beneficiaries: [{ ref: "child:0" }, { ref: "child:1" }],
+      }),
+    ).toBe("Everything to Sarah Rowan first, then in equal shares to Emma Rowan and Jack Rowan");
+  });
+
+  it("drops 'in equal shares' when there is only one person to share with", () => {
+    expect(summary({ sharing: "equal", beneficiaries: [{ ref: "child:0" }] })).toBe(
+      "To Emma Rowan",
+    );
+  });
+
+  it("spells out a custom split", () => {
+    expect(
+      summary({
+        sharing: "custom",
+        beneficiaries: [
+          { ref: "child:0", sharePercent: 60 },
+          { ref: "other:0", name: "Ruth Alvarez", sharePercent: 40 },
+        ],
+      }),
+    ).toBe("To Emma Rowan (60%) and Ruth Alvarez (40%)");
+  });
+
+  it("still says what it knows when only the spouse question was answered", () => {
+    expect(summary({ spouseFirst: true, beneficiaries: [] })).toBe(
+      "Everything to Sarah Rowan first",
+    );
+    expect(summary({ beneficiaries: [] })).toBeNull();
+  });
+
+  it("never renders an unanswered predeceased question", () => {
+    expect(predeceasedLabel(undefined)).toBeNull();
+    expect(predeceasedLabel("to_their_children")).toBe("Their share passes to their own children");
+  });
+
+  it("joins names the way a sentence does", () => {
+    expect(formatNameList(["Emma"])).toBe("Emma");
+    expect(formatNameList(["Emma", "Jack"])).toBe("Emma and Jack");
+    expect(formatNameList(["Emma", "Jack", "Nora"])).toBe("Emma, Jack and Nora");
+    expect(formatNameList([])).toBe("");
+  });
+});
+
+describe("submit-time pruning of the beneficiary list", () => {
+  // The hazard this covers: a "child:<index>" ref is an index into the list AS
+  // SUBMITTED, and the prune drops blank cards out of the middle of that list.
+  // Without a re-index, every ref after the gap silently points at the wrong
+  // sibling — which would send the estate to the wrong child.
+  const withBlankSibling = {
+    family: {
+      primary: { firstName: "Matt", lastName: "Rowan", dateOfBirth: "1984-03-02" },
+      children: [
+        { firstName: "Emma", lastName: "Rowan", dateOfBirth: "2018-04-10" },
+        { firstName: "", lastName: "", dateOfBirth: "" },
+        { firstName: "Nora", lastName: "Rowan", dateOfBirth: "2023-06-01" },
+      ],
+    },
+    goals: {
+      expenseGoals: [
+        { name: "College", type: "education" as const, amount: 30000, years: 4, forWhom: "child:2" },
+      ],
+      topics: [],
+    },
+    estate: {
+      fiduciaries: [],
+      fiduciaryContacts: [],
+      inheritance: {
+        sharing: "equal" as const,
+        beneficiaries: [{ ref: "child:0" }, { ref: "child:2" }],
+      },
+    },
+    accounts: [],
+    income: [],
+    property: [],
+    meta: { completedSections: [] },
+  };
+
+  it("re-points every child ref when a blank sibling is dropped from the middle", () => {
+    const pruned = pruneIntakeBlankRows(withBlankSibling) as typeof withBlankSibling;
+    expect(pruned.family.children.map((c) => c.firstName)).toEqual(["Emma", "Nora"]);
+    // Both consumers of the ref move together — the goal and the beneficiary.
+    expect(pruned.goals.expenseGoals[0].forWhom).toBe("child:1");
+    expect(pruned.estate.inheritance.beneficiaries.map((b) => b.ref)).toEqual([
+      "child:0",
+      "child:1",
+    ]);
+    // And the re-pointed ref names the child the client actually chose.
+    expect(
+      resolveEstateBeneficiaries(
+        pruned.estate.inheritance,
+        pruned.family,
+        TODAY,
+      ).map((b) => b.name),
+    ).toEqual(["Emma Rowan", "Nora Rowan"]);
+  });
+
+  it("removes a beneficiary whose child was dropped, and keeps a goal that pointed at them", () => {
+    const orphaned = {
+      ...withBlankSibling,
+      goals: {
+        ...withBlankSibling.goals,
+        expenseGoals: [
+          { name: "College", type: "education" as const, amount: 30000, years: 4, forWhom: "child:1" },
+        ],
+      },
+      estate: {
+        ...withBlankSibling.estate,
+        inheritance: { sharing: "equal" as const, beneficiaries: [{ ref: "child:1" }] },
+      },
+    };
+    const pruned = pruneIntakeBlankRows(orphaned) as typeof withBlankSibling;
+    // The row was nothing but the pointer, so it goes.
+    expect(pruned.estate.inheritance.beneficiaries).toEqual([]);
+    // The goal keeps its amount and its year, and loses only the pointer.
+    expect(pruned.goals.expenseGoals[0].forWhom).toBeUndefined();
+    expect(pruned.goals.expenseGoals[0].amount).toBe(30000);
+  });
+
+  it("drops a hand-added card the client never named, and keeps a ticked child", () => {
+    const payload = {
+      ...withBlankSibling,
+      family: { ...withBlankSibling.family, children: [withBlankSibling.family.children[0]] },
+      goals: { expenseGoals: [], topics: [] },
+      estate: {
+        fiduciaries: [],
+        fiduciaryContacts: [],
+        inheritance: {
+          sharing: "equal" as const,
+          beneficiaries: [
+            { ref: "child:0" },
+            { ref: "other:0" },
+            { ref: "other:1", name: "Ruth Alvarez" },
+          ],
+        },
+      },
+    };
+    const pruned = pruneIntakeBlankRows(payload) as typeof payload;
+    expect(pruned.estate.inheritance.beneficiaries.map((b) => b.ref)).toEqual([
+      "child:0",
+      "other:1",
+    ]);
+  });
+
+  it("leaves a pruned payload that passes the strict submit schema", () => {
+    const pruned = pruneIntakeBlankRows(withBlankSibling);
+    expect(() =>
+      intakeSubmitSchemaFor(["family", "goals", "estate"]).parse(pruned),
+    ).not.toThrow();
+  });
+
+  it("round-trips a half-answered inheritance through the autosave schema", () => {
+    const draft = {
+      estate: {
+        inheritance: {
+          spouseFirst: true,
+          beneficiaries: [{ ref: "child:0" }, { ref: "other:0", name: "Ru" }],
+        },
+      },
+    };
+    expect(() => intakeDraftSchema.parse(draft)).not.toThrow();
+  });
+
+  it("counts a ticked beneficiary as an answered step", () => {
+    expect(isEstateEmpty({ inheritance: { beneficiaries: [{ ref: "child:0" }] } })).toBe(false);
+    expect(isEstateEmpty({ inheritance: { beneficiaries: [{ ref: "other:0" }] } })).toBe(true);
+    expect(isEstateEmpty({ inheritance: { ifPredeceased: "to_survivors" } })).toBe(false);
+  });
+});
+
+describe("the picklist away from a clock", () => {
+  it("names a child without an age when no clock is handed in", () => {
+    // The note, the review card and the advisor's diff render names and shares,
+    // never ages — so they read this module without a date, and it must stay
+    // pure rather than reaching for one of its own.
+    expect(estateBeneficiaryOptions(FAMILY, undefined).map((o) => o.detail)).toEqual([
+      "Spouse or partner",
+      "Child",
+      "Child",
+    ]);
   });
 });

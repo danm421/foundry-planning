@@ -58,6 +58,8 @@ const baseDiff: IntakeDiff = {
     address: null,
     legalResidence: null,
     nominations: [],
+    inheritance: null,
+    ifPredeceased: null,
     distribution: null,
     distributionNote: null,
   },

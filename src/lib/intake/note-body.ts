@@ -37,7 +37,11 @@ import {
   findContact,
   findFiduciary,
   formatEstateAddress,
+  inheritanceSummaryLine,
   legalResidenceLabel,
+  predeceasedLabel,
+  resolveEstateBeneficiaries,
+  sharePercentLabel,
 } from "@/lib/intake/estate";
 import { individualOwnerLabel } from "@/lib/owner-labels";
 
@@ -132,6 +136,12 @@ function detail(...parts: (string | null | undefined)[]): string {
  * does not. The wizard pre-fills an income row's name from its type, so most
  * households would otherwise get "Salary — Salary · $180,000/yr".
  */
+/** "Their share passes…" → "their share passes…", for a label read mid-sentence
+ *  rather than as a heading of its own. */
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
 function unlessEchoed(name: string, label: string): string | null {
   return name.trim().toLowerCase() === label.trim().toLowerCase() ? null : label;
 }
@@ -347,6 +357,24 @@ function estateLines(payload: IntakePayload): string[] {
   if (nominations.length > 0) {
     if (out.length > 0) out.push("");
     out.push("**Fiduciaries**", ...nominations);
+  }
+
+  // Who inherits, in the order the attorney reads it: the arrangement in one
+  // line, then anybody the Family section above does NOT already introduce —
+  // a sister, a godchild — so the name is not left unexplained.
+  const inheritance = estate.inheritance;
+  const summary = inheritanceSummaryLine(inheritance, payload.family ?? undefined);
+  const predeceased = predeceasedLabel(inheritance?.ifPredeceased);
+  if (summary || predeceased) {
+    if (out.length > 0) out.push("");
+    out.push("**Who inherits**");
+    if (summary) out.push(`- ${summary}`);
+    for (const person of resolveEstateBeneficiaries(inheritance, payload.family ?? undefined)) {
+      if (person.fromFamily) continue;
+      const share = sharePercentLabel(person.sharePercent);
+      out.push(`- ${detail(person.name, [person.detail, share].filter(Boolean).join(" · ") || null)}`);
+    }
+    if (predeceased) out.push(`- If one of them dies first: ${lowerFirst(predeceased)}`);
   }
 
   // The chosen schedule is spelled out rather than named. "Chose the suggested

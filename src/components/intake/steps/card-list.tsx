@@ -226,6 +226,151 @@ function parseInteger(typed: string): ParsedInput {
   return { raw, value: raw === "" ? undefined : Number(raw) };
 }
 
+// ─── Question chrome ──────────────────────────────────────────────────────────
+//
+// The three shapes every "answer a question" step reaches for. They live here,
+// with the field primitives, because the Estate step's two halves — the
+// nominations and the beneficiaries — both render them, and a second copy is
+// how two questions on one page end up looking like two different products.
+
+/** The small uppercase heading that opens a section of a step. */
+export function SectionHeading({ id, children }: { id: string; children: ReactNode }) {
+  return (
+    <h2
+      id={id}
+      className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3"
+    >
+      {children}
+    </h2>
+  );
+}
+
+/**
+ * A DOM-safe id fragment — "child:1" → "child-1", "Sarah Klein" → "sarah-klein".
+ *
+ * For ids ONLY, never identity: two names that slug the same are still two
+ * different people, and the join that decides which is which lives in
+ * `lib/intake/estate`.
+ */
+export function domId(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+/** A hairline card. Hierarchy comes from borders, never shadows. */
+export function StepCard({ children }: { children: ReactNode }) {
+  return (
+    <div className="rounded-[var(--radius-sm)] border border-hair bg-card p-5">
+      {children}
+    </div>
+  );
+}
+
+/**
+ * A big selectable card — one option in a `role="radiogroup"`.
+ *
+ * The whole card is the target. On a phone, a 14px radio dot is not, and these
+ * steps are filled in on a phone more often than not.
+ */
+export function ChoiceCard({
+  id,
+  title,
+  selected,
+  onSelect,
+  nested,
+  children,
+}: {
+  id: string;
+  title: string;
+  selected: boolean;
+  onSelect: () => void;
+  /** Sits INSIDE another card, so it takes the nested surface and tighter
+   *  padding rather than repeating the outer card's own. */
+  nested?: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <div
+      className={`rounded-[var(--radius-sm)] border transition-colors ${nested ? "p-4" : "p-5"} ${
+        selected
+          ? "border-accent bg-accent-wash/30"
+          : `border-hair ${nested ? "bg-card-2" : "bg-card"}`
+      }`}
+    >
+      <button
+        type="button"
+        id={id}
+        role="radio"
+        aria-checked={selected}
+        onClick={onSelect}
+        className="flex w-full items-start gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      >
+        <span
+          aria-hidden="true"
+          className={`mt-0.5 flex h-4 w-4 flex-none items-center justify-center rounded-full border ${
+            selected ? "border-accent" : "border-hair-2"
+          }`}
+        >
+          {selected && <span className="h-2 w-2 rounded-full bg-accent" />}
+        </span>
+        <span className="text-[14px] font-medium text-ink">{title}</span>
+      </button>
+      {children && <div className="pl-7">{children}</div>}
+    </div>
+  );
+}
+
+/**
+ * Two-tap yes/no.
+ *
+ * A segmented pair rather than a checkbox because a checkbox cannot express
+ * "not answered yet", which is the state every one of these starts in — and an
+ * unasked question must never be recorded as a yes.
+ */
+export function YesNo({
+  label,
+  value,
+  onChange,
+}: {
+  /** The QUESTION, verbatim. It is the group's only accessible name — the
+   *  visible text sits in a sibling element, so a screen reader handed an id
+   *  slug here is told nothing about what Yes and No mean. */
+  label: string;
+  value: boolean | undefined;
+  onChange: (next: boolean) => void;
+}) {
+  const cls = (active: boolean) =>
+    `rounded-full px-4 py-1.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+      active ? "bg-accent-wash font-medium text-accent" : "text-ink-3 hover:text-ink"
+    }`;
+  return (
+    <div
+      className="flex items-center gap-0.5 rounded-full border border-hair bg-card-2 p-0.5"
+      role="group"
+      aria-label={label}
+    >
+      <button
+        type="button"
+        aria-pressed={value === true}
+        className={cls(value === true)}
+        onClick={() => onChange(true)}
+      >
+        Yes
+      </button>
+      <button
+        type="button"
+        aria-pressed={value === false}
+        className={cls(value === false)}
+        onClick={() => onChange(false)}
+      >
+        No
+      </button>
+    </div>
+  );
+}
+
 // ─── Owner field ──────────────────────────────────────────────────────────────
 //
 // Shared by every step that asks "whose is this?" (income, accounts). Two rules

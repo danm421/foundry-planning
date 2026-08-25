@@ -288,6 +288,56 @@ export const intakeChildDistributionSchema = z.object({
   note: z.string().trim().max(2000).optional(),
 });
 
+// ── Who inherits ─────────────────────────────────────────────────────────────
+//
+// The beneficiaries of the ESTATE DOCUMENTS — who the will and trust leave the
+// residuary estate to. Deliberately NOT per-account designations (401(k), IRA,
+// life insurance): those pass outside the will, they are collected against the
+// account they hang off, and folding them in here would produce a list that
+// reads as one plan when it is two.
+//
+// `ref` is a STRUCTURAL reference, never a name, for the same reason the goals'
+// `forWhom` is one: a child on this form has no id until apply inserts them,
+// and a name breaks the moment the client goes back and fixes a spelling.
+//   - "spouse"        — the Family step's spouse
+//   - "child:<index>" — index into `family.children`
+//   - "other:<n>"     — somebody the family list does not hold. `n` is a
+//                       counter, not an index: the ROW carries their name, and
+//                       the ref only has to stay unique so two beneficiaries
+//                       called "John" remain distinguishable.
+export const ESTATE_BENEFICIARY_REF_RE = /^(spouse|child:\d{1,2}|other:\d{1,3})$/;
+
+export const INTAKE_INHERITANCE_SHARING = ["equal", "custom"] as const;
+export type IntakeInheritanceSharing = (typeof INTAKE_INHERITANCE_SHARING)[number];
+
+// What happens to a beneficiary's share if they die first. An attorney cannot
+// draft without it, and the two answers are genuinely different documents:
+// per stirpes sends the share down that branch of the family, per capita
+// re-splits it among whoever is left.
+export const INTAKE_PREDECEASED_RULES = ["to_their_children", "to_survivors"] as const;
+export type IntakePredeceasedRule = (typeof INTAKE_PREDECEASED_RULES)[number];
+
+// `name`, `relationship` and `dateOfBirth` are written for "other:" rows ONLY.
+// A child's name and DOB are READ from the Family step — copying them here
+// would give the same person two spellings the moment either is edited.
+export const intakeBeneficiarySchema = z.object({
+  ref: z.string().trim().regex(ESTATE_BENEFICIARY_REF_RE),
+  name: z.string().trim().max(120).optional(),
+  relationship: z.string().trim().max(80).optional(),
+  dateOfBirth: z.string().regex(ISO_DATE).optional(),
+  sharePercent: z.number().min(0).max(100).optional(),
+});
+
+// `sharePercent` is stored only under `sharing: "custom"` — an equal split is
+// DERIVED, so adding or removing a beneficiary re-divides on its own rather
+// than leaving a stale set of percentages that no longer sums to 100.
+export const intakeInheritanceSchema = z.object({
+  spouseFirst: z.boolean().optional(),
+  beneficiaries: z.array(intakeBeneficiarySchema).max(20).default([]),
+  sharing: z.enum(INTAKE_INHERITANCE_SHARING).optional(),
+  ifPredeceased: z.enum(INTAKE_PREDECEASED_RULES).optional(),
+});
+
 export const intakeEstateSchema = z.object({
   contact: z
     .object({
@@ -298,6 +348,10 @@ export const intakeEstateSchema = z.object({
   residence: intakeResidenceSchema.optional(),
   fiduciaries: z.array(intakeFiduciarySchema).max(12).default([]),
   fiduciaryContacts: z.array(intakeFiduciaryContactSchema).max(12).default([]),
+  // Optional rather than defaulted, like `estate` itself: a default would put
+  // an empty beneficiary list on every form that never asked the question, and
+  // `isEstateEmpty` would then read it as an answered section.
+  inheritance: intakeInheritanceSchema.optional(),
   childrenDistribution: intakeChildDistributionSchema.optional(),
 });
 
@@ -487,6 +541,25 @@ const intakeFiduciaryContactDraftSchema = z.object({
   email: draftStr(200),
 });
 
+// `ref` relaxes to a plain capped string here, unlike its strict twin. Nothing
+// in the UI can produce a malformed ref — they are generated, never typed — but
+// a draft saved by an older client must still round-trip the autosave rather
+// than 422 it, and an unknown ref shape is the submit validator's business.
+const intakeBeneficiaryDraftSchema = z.object({
+  ref: draftStr(40),
+  name: draftStr(120),
+  relationship: draftStr(80),
+  dateOfBirth: draftDate,
+  sharePercent: z.number().max(100).optional(),
+});
+
+const intakeInheritanceDraftSchema = z.object({
+  spouseFirst: z.boolean().optional(),
+  beneficiaries: z.array(intakeBeneficiaryDraftSchema).max(20).optional(),
+  sharing: z.enum(INTAKE_INHERITANCE_SHARING).optional(),
+  ifPredeceased: z.enum(INTAKE_PREDECEASED_RULES).optional(),
+});
+
 const intakeEstateDraftSchema = z.object({
   contact: z
     .object({
@@ -497,6 +570,7 @@ const intakeEstateDraftSchema = z.object({
   residence: intakeResidenceSchema.extend({ state: draftStr(2) }).optional(),
   fiduciaries: z.array(intakeFiduciaryDraftSchema).max(12).optional(),
   fiduciaryContacts: z.array(intakeFiduciaryContactDraftSchema).max(12).optional(),
+  inheritance: intakeInheritanceDraftSchema.optional(),
   childrenDistribution: intakeChildDistributionSchema.optional(),
 });
 
@@ -605,6 +679,24 @@ export function isBlankIntakeFiduciaryContactRow(row: {
 }
 
 /**
+ * A beneficiary row the client added by hand and never named.
+ *
+ * A row pointing at the spouse or at a child on the Family step is ALWAYS
+ * content — the ref is the whole answer, and those rows carry nothing else by
+ * design. Only a hand-added "other:" row can be empty.
+ */
+export function isBlankIntakeBeneficiaryRow(row: {
+  ref?: unknown;
+  name?: unknown;
+  relationship?: unknown;
+  dateOfBirth?: unknown;
+}): boolean {
+  const ref = typeof row.ref === "string" ? row.ref.trim() : "";
+  if (ref !== "" && !ref.startsWith("other:")) return false;
+  return blankStr(row.name) && blankStr(row.relationship) && blankStr(row.dateOfBirth);
+}
+
+/**
  * Canonical form for matching two spellings of one fiduciary's name.
  *
  * Lives here, with the prune that uses it, rather than in `estate.ts` — that
@@ -648,11 +740,34 @@ export function pruneIntakeBlankRows(payload: unknown): unknown {
   const family = p.family && typeof p.family === "object"
     ? (p.family as Record<string, unknown>)
     : undefined;
+  // Children are filtered AND every "child:<index>" ref that points at one is
+  // re-indexed to match. A ref is an index into the list as submitted, so a
+  // blank card dropped from the middle shifts every child after it — without
+  // this, a goal or a beneficiary silently re-points at the wrong sibling.
+  const childRefMap = new Map<number, number>();
   const children = family
-    ? rows<Record<string, unknown>>(family.children).filter(
-        (c) => !(blankStr(c.firstName) && blankStr(c.lastName) && blankStr(c.dateOfBirth)),
-      )
+    ? rows<Record<string, unknown>>(family.children).filter((c, i) => {
+        if (blankStr(c.firstName) && blankStr(c.lastName) && blankStr(c.dateOfBirth)) {
+          return false;
+        }
+        childRefMap.set(i, childRefMap.size);
+        return true;
+      })
     : undefined;
+
+  /**
+   * "child:2" → "child:1" once a blank sibling ahead of it is dropped; null
+   * when the child the ref named was itself dropped. Any other ref ("client",
+   * "spouse", "other:0") passes through untouched — as does every ref on a form
+   * that never collected Family, where nothing was re-indexed.
+   */
+  const remapChildRef = (ref: unknown): string | null => {
+    if (typeof ref !== "string") return null;
+    const match = ref.match(/^child:(\d{1,2})$/);
+    if (!match || !children) return ref;
+    const next = childRefMap.get(Number(match[1]));
+    return next === undefined ? null : `child:${next}`;
+  };
 
   // Goal cards are nested a level down, under `goals`, rather than being a
   // top-level array — so the spread has to rebuild the goals object, not just
@@ -669,6 +784,19 @@ export function pruneIntakeBlankRows(payload: unknown): unknown {
         (f) => !isBlankIntakeFiduciaryRow(f),
       )
     : undefined;
+  const inheritance =
+    estate && estate.inheritance && typeof estate.inheritance === "object"
+      ? (estate.inheritance as Record<string, unknown>)
+      : undefined;
+  // A beneficiary whose child ref no longer resolves is REMOVED, not blanked:
+  // unlike a goal, the row is nothing but the pointer.
+  const beneficiaries = inheritance
+    ? rows<Record<string, unknown>>(inheritance.beneficiaries)
+        .filter((b) => !isBlankIntakeBeneficiaryRow(b))
+        .map((b) => ({ ...b, ref: remapChildRef(b.ref) }))
+        .filter((b) => typeof b.ref === "string" && b.ref !== "")
+    : undefined;
+
   const namedKeys = new Set((fiduciaries ?? []).map((f) => fiduciaryContactKey(f.name)));
   const fiduciaryContacts = estate
     ? rows<Record<string, unknown>>(estate.fiduciaryContacts).filter(
@@ -681,10 +809,16 @@ export function pruneIntakeBlankRows(payload: unknown): unknown {
   const goals = p.goals && typeof p.goals === "object"
     ? (p.goals as Record<string, unknown>)
     : undefined;
+  // A goal whose beneficiary was dropped keeps the goal and loses the pointer:
+  // the amount and the year are still real answers.
   const expenseGoals = goals
-    ? rows<Record<string, unknown>>(goals.expenseGoals).filter(
-        (g) => !isBlankIntakeExpenseGoalRow(g),
-      )
+    ? rows<Record<string, unknown>>(goals.expenseGoals)
+        .filter((g) => !isBlankIntakeExpenseGoalRow(g))
+        .map((g) => {
+          if (g.forWhom === undefined) return g;
+          const next = remapChildRef(g.forWhom);
+          return next === g.forWhom ? g : { ...g, forWhom: next ?? undefined };
+        })
     : undefined;
 
   return {
@@ -702,6 +836,14 @@ export function pruneIntakeBlankRows(payload: unknown): unknown {
             ...estate,
             ...(Array.isArray(estate.fiduciaries) ? { fiduciaries } : {}),
             ...(Array.isArray(estate.fiduciaryContacts) ? { fiduciaryContacts } : {}),
+            ...(inheritance
+              ? {
+                  inheritance: {
+                    ...inheritance,
+                    ...(Array.isArray(inheritance.beneficiaries) ? { beneficiaries } : {}),
+                  },
+                }
+              : {}),
           },
         }
       : {}),

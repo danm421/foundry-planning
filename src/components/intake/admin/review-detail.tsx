@@ -348,6 +348,20 @@ export default function ReviewDetail({
             </div>
           )}
 
+          {(diff.estate.inheritance || diff.estate.ifPredeceased) && (
+            <div className="mt-3 border-t border-hair pt-3">
+              <p className="text-[13px] text-ink-3">Who inherits</p>
+              {diff.estate.inheritance && (
+                <p className="mt-1 text-[14px] text-ink">{diff.estate.inheritance}</p>
+              )}
+              {diff.estate.ifPredeceased && (
+                <p className="mt-1 text-[13px] text-ink-3">
+                  If one dies first: {diff.estate.ifPredeceased}
+                </p>
+              )}
+            </div>
+          )}
+
           {diff.estate.distribution && (
             <div className="mt-3 border-t border-hair pt-3">
               <p className="text-[13px] text-ink-3">How the children receive assets</p>

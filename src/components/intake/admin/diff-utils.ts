@@ -16,6 +16,8 @@ import {
   findContact,
   findFiduciary,
   formatEstateAddress,
+  inheritanceSummaryLine,
+  predeceasedLabel,
   legalResidenceLabel,
 } from "@/lib/intake/estate";
 import { RTQ_V1, scoreRtq } from "@/lib/risk/rtq";
@@ -90,6 +92,9 @@ export interface EstateDiff {
   address: string | null;
   legalResidence: string | null;
   nominations: { role: string; name: string; contact: string | null }[];
+  /** Who inherits, in one line. */
+  inheritance: string | null;
+  ifPredeceased: string | null;
   distribution: string | null;
   distributionNote: string | null;
 }
@@ -317,6 +322,8 @@ export function buildIntakeDiff(
     address: formatEstateAddress(se?.residence),
     legalResidence: legalResidenceLabel(se?.residence),
     nominations,
+    inheritance: inheritanceSummaryLine(se?.inheritance, submitted.family ?? undefined),
+    ifPredeceased: predeceasedLabel(se?.inheritance?.ifPredeceased),
     distribution,
     distributionNote: se?.childrenDistribution?.note?.trim() || null,
     answered: false,
@@ -326,6 +333,8 @@ export function buildIntakeDiff(
     estate.address !== null ||
     estate.legalResidence !== null ||
     nominations.length > 0 ||
+    estate.inheritance !== null ||
+    estate.ifPredeceased !== null ||
     distribution !== null;
 
   return { family, goals, accounts, income, property, expenseGoals, radar, estate, risk };

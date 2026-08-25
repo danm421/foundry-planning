@@ -370,6 +370,20 @@ export function IntakeWizard({
             value={value.estate}
             onChange={setEstate}
             family={value.family}
+            collectsFamily={activeSections.includes("family")}
+            // Both slices in ONE update. Calling `setFamily` and then
+            // `setEstate` would apply two patches to the same draft snapshot,
+            // and the second would silently drop the child the first added.
+            onAddFamilyChild={(child, estate) =>
+              onChange({
+                ...value,
+                family: {
+                  ...value.family,
+                  children: [...(value.family?.children ?? []), child],
+                },
+                estate,
+              })
+            }
           />
         );
       case "documents":

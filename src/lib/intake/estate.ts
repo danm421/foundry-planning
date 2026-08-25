@@ -11,8 +11,10 @@
  * than each spelling out "Guardian — backup" in their own words.
  */
 
+import { ageOnDate } from "@/lib/age-year";
 import {
   fiduciaryContactKey,
+  isBlankIntakeBeneficiaryRow,
   isBlankIntakeFiduciaryContactRow,
   isBlankIntakeFiduciaryRow,
   INTAKE_FIDUCIARY_PRIORITIES,
@@ -21,6 +23,7 @@ import {
   type IntakeFiduciaryPriority,
   type IntakeFiduciaryRole,
   type IntakePayload,
+  type IntakePredeceasedRule,
 } from "./schema";
 
 // ── Fiduciary slots ──────────────────────────────────────────────────────────
@@ -240,6 +243,298 @@ export const SUGGESTED_CHILD_DISTRIBUTION_SUMMARY =
 export const SUGGESTED_CHILD_DISTRIBUTION_CAVEAT =
   "This covers the assets in your estate. We'd look at out-of-estate planning later, which would most likely keep assets in trust for your children and grandchildren much longer.";
 
+/** "Emma", "Emma and Jack", "Emma, Jack and Nora". */
+export function formatNameList(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+// ── Who inherits ─────────────────────────────────────────────────────────────
+//
+// The section is a PICKLIST, not a blank form: almost every client leaves their
+// estate to the people already on the Family step, and re-typing those names is
+// both work and a second chance to spell them differently. So the children come
+// through as rows to tick, the spouse comes through when the client has not
+// already said "everything to them first", and anyone else is added by hand.
+//
+// Rows are matched by `ref` (see `ESTATE_BENEFICIARY_REF_RE`), never by name.
+
+type Inheritance = NonNullable<EstateSlice>["inheritance"];
+type BeneficiaryRow = NonNullable<NonNullable<Inheritance>["beneficiaries"]>[number];
+
+/** Row types re-exported for the step, which builds rows before it has a
+ *  narrowed draft slice to infer them from. */
+export type IntakeBeneficiaryRow = BeneficiaryRow;
+
+export const PREDECEASED_RULE_LABELS: Record<IntakePredeceasedRule, string> = {
+  to_their_children: "Their share passes to their own children",
+  to_survivors: "Their share is split between the others",
+};
+
+/** The question itself, in plain words. A client should never have to look up
+ *  "per stirpes" to answer it. */
+export const PREDECEASED_QUESTION = "If one of them dies before you, what should happen to their share?";
+
+export function predeceasedLabel(rule: IntakePredeceasedRule | undefined): string | null {
+  return rule ? PREDECEASED_RULE_LABELS[rule] : null;
+}
+
+/** "Emma Rowan" from a Family-step child, falling back to the first name alone.
+ *  Null when the row is nameless — a card the client opened and abandoned. */
+export function childDisplayName(
+  child: { firstName?: string; lastName?: string } | undefined,
+): string | null {
+  if (!child) return null;
+  const name = [child.firstName?.trim(), child.lastName?.trim()]
+    .filter(Boolean)
+    .join(" ");
+  return name || null;
+}
+
+export function findBeneficiary<T extends { ref?: string }>(
+  rows: readonly T[] | undefined,
+  ref: string,
+): T | undefined {
+  return rows?.find((r) => r.ref === ref);
+}
+
+/** Tick or untick one row. Unticking DISCARDS it — for a child or the spouse
+ *  the ref is the whole answer, and for a hand-added person the card goes with
+ *  them, which is what "remove" means on that row's button. */
+export function toggleBeneficiary<T extends { ref?: string }>(
+  rows: readonly T[] | undefined,
+  ref: string,
+  make: () => T,
+): T[] {
+  const list = rows ?? [];
+  return findBeneficiary(list, ref) ? list.filter((r) => r.ref !== ref) : [...list, make()];
+}
+
+/** Upsert one field on one row, preserving list order — which is add order, and
+ *  so the order the hand-added cards appear in. */
+export function setBeneficiary<T extends { ref?: string }>(
+  rows: readonly T[] | undefined,
+  ref: string,
+  next: T,
+): T[] {
+  const list = rows ?? [];
+  const idx = list.findIndex((r) => r.ref === ref);
+  if (idx === -1) return [...list, next];
+  return list.map((r, i) => (i === idx ? next : r));
+}
+
+/**
+ * The next free "other:<n>" ref.
+ *
+ * `n` is a counter past the highest ever used, NOT the row count: reusing a
+ * removed row's number would hand a fresh card the share and the name of the
+ * person the client just deleted.
+ */
+export function nextOtherBeneficiaryRef(rows: readonly { ref?: string }[] | undefined): string {
+  let max = -1;
+  for (const row of rows ?? []) {
+    const match = row.ref?.match(/^other:(\d{1,3})$/);
+    if (match) max = Math.max(max, Number(match[1]));
+  }
+  return `other:${max + 1}`;
+}
+
+/**
+ * "Mary Anne Smith" → { firstName: "Mary Anne", lastName: "Smith" }.
+ *
+ * The quick-add asks for ONE name field — a client adding their daughter mid-
+ * question should not be handed a two-field form — but `family.children` stores
+ * the two separately. Split on the LAST space, which is right far more often
+ * than it is wrong, and wrong in a way the Family step lets them correct.
+ */
+export function splitFullName(full: string): { firstName: string; lastName?: string } {
+  const trimmed = full.trim().replace(/\s+/g, " ");
+  const cut = trimmed.lastIndexOf(" ");
+  if (cut === -1) return { firstName: trimmed };
+  return { firstName: trimmed.slice(0, cut), lastName: trimmed.slice(cut + 1) };
+}
+
+/** One row of the picklist. */
+export interface EstateBeneficiaryOption {
+  ref: string;
+  /** Empty only for a hand-added row the client has not named yet. */
+  name: string;
+  /** The line under the name: "Age 8" for a child with a date of birth, the
+   *  relationship for anyone else, null when we know neither. */
+  detail: string | null;
+  /** Came off the Family step, so the name and date of birth are read-only
+   *  here — the Family step owns them. */
+  fromFamily: boolean;
+  selected: boolean;
+}
+
+/** "Age 8" — null without a clock, or when the date of birth is missing or
+ *  unparseable. The clock is optional because only the STEP shows ages: the
+ *  note, the review card and the advisor's diff read names and shares, and
+ *  threading a date through three surfaces that never display one would be the
+ *  only reason this module needed to know the time. */
+function ageDetail(dob: string | undefined, today: Date | undefined): string | null {
+  if (!today) return null;
+  const age = ageOnDate(dob, today);
+  return age === null || age < 0 ? null : `Age ${age}`;
+}
+
+/**
+ * Every row the picklist offers, in the order it renders them: the spouse, then
+ * the Family step's children in their own order, then anyone added by hand.
+ *
+ * The spouse is offered ONLY when the client has not said everything goes to
+ * them first — answering that question and then ticking them in the list below
+ * are two ways to say the same thing, and an attorney reading both would have
+ * to ask which one the client meant.
+ */
+export function estateBeneficiaryOptions(
+  family: Family,
+  inheritance: Inheritance,
+  today?: Date,
+): EstateBeneficiaryOption[] {
+  const rows = inheritance?.beneficiaries ?? [];
+  const isSelected = (ref: string) => findBeneficiary(rows, ref) !== undefined;
+  const out: EstateBeneficiaryOption[] = [];
+
+  const spouseName = childDisplayName(family?.spouse ?? undefined);
+  if (family?.spouse != null && inheritance?.spouseFirst !== true) {
+    out.push({
+      ref: "spouse",
+      name: spouseName ?? "Your spouse or partner",
+      detail: "Spouse or partner",
+      fromFamily: true,
+      selected: isSelected("spouse"),
+    });
+  }
+
+  (family?.children ?? []).forEach((child, index) => {
+    const name = childDisplayName(child);
+    // A blank card on the Family step is not a person yet. It would render as
+    // an unnamed tickbox, and submit prunes it anyway.
+    if (!name) return;
+    const ref = `child:${index}`;
+    out.push({
+      ref,
+      name,
+      detail: ageDetail(child.dateOfBirth, today) ?? "Child",
+      fromFamily: true,
+      selected: isSelected(ref),
+    });
+  });
+
+  for (const row of rows) {
+    if (!row.ref?.startsWith("other:")) continue;
+    out.push({
+      ref: row.ref,
+      name: row.name?.trim() ?? "",
+      detail: row.relationship?.trim() || ageDetail(row.dateOfBirth, today),
+      fromFamily: false,
+      selected: true,
+    });
+  }
+
+  return out;
+}
+
+/** A chosen beneficiary, resolved for display. */
+export interface EstateBeneficiary {
+  ref: string;
+  name: string;
+  detail: string | null;
+  /** Already described by the Family section, so the note need not re-introduce
+   *  them. False for a sister, a godchild, a charity. */
+  fromFamily: boolean;
+  /** The client's number under a custom split; null under an equal one, where
+   *  the share is "equally" rather than a percentage. */
+  sharePercent: number | null;
+}
+
+/**
+ * The chosen beneficiaries, in picklist order, resolved to what the note, the
+ * review card and the advisor's diff all render.
+ *
+ * A row whose ref names nobody — a child removed from the Family step after
+ * they were ticked, a hand-added card left nameless — is DROPPED rather than
+ * rendered as a blank. Submit prunes the same rows; this keeps the client's
+ * own review screen agreeing with what is filed.
+ */
+export function resolveEstateBeneficiaries(
+  inheritance: Inheritance,
+  family: Family,
+  today?: Date,
+): EstateBeneficiary[] {
+  const custom = inheritance?.sharing === "custom";
+  return estateBeneficiaryOptions(family, inheritance, today)
+    .filter((o) => o.selected && o.name.trim() !== "")
+    .map((o) => ({
+      ref: o.ref,
+      name: o.name,
+      detail: o.detail,
+      fromFamily: o.fromFamily,
+      sharePercent: custom
+        ? (findBeneficiary(inheritance?.beneficiaries, o.ref)?.sharePercent ?? null)
+        : null,
+    }));
+}
+
+/** What the custom shares add up to, or null when the client did not choose a
+ *  custom split. Shown as a running total — never enforced, because nothing in
+ *  this section is required and a half-answered form must still send. */
+export function beneficiaryShareTotal(inheritance: Inheritance): number | null {
+  if (inheritance?.sharing !== "custom") return null;
+  return (inheritance.beneficiaries ?? []).reduce(
+    (sum, row) => sum + (row.sharePercent ?? 0),
+    0,
+  );
+}
+
+/** "60%" · "33.5%" — trailing zeroes trimmed, so a whole number reads as one. */
+export function sharePercentLabel(percent: number | null | undefined): string | null {
+  if (percent == null || !Number.isFinite(percent)) return null;
+  return `${Number(percent.toFixed(1))}%`;
+}
+
+/**
+ * The whole answer in one line, for the review card and the advisor's diff.
+ *
+ * "Everything to Sarah first, then in equal shares to Emma and Jack" — built
+ * here rather than in each surface so the client's review screen and the note
+ * filed on the household can't describe the same answer two different ways.
+ */
+export function inheritanceSummaryLine(
+  inheritance: Inheritance,
+  family: Family,
+  today?: Date,
+): string | null {
+  const spouseFirst =
+    inheritance?.spouseFirst === true
+      ? `Everything to ${childDisplayName(family?.spouse ?? undefined) ?? "your spouse"} first`
+      : null;
+
+  const people = resolveEstateBeneficiaries(inheritance, family, today);
+  if (people.length === 0) return spouseFirst;
+
+  const custom = inheritance?.sharing === "custom";
+  const named = custom
+    ? formatNameList(
+        people.map((p) => {
+          const share = sharePercentLabel(p.sharePercent);
+          return share ? `${p.name} (${share})` : p.name;
+        }),
+      )
+    : formatNameList(people.map((p) => p.name));
+
+  // "in equal shares to X and Y" reads as the will does. A single beneficiary
+  // has nothing to share equally WITH, so the phrase is dropped.
+  const share = custom || people.length === 1 ? "to" : "in equal shares to";
+  return spouseFirst ? `${spouseFirst}, then ${share} ${named}` : `${capitalise(share)} ${named}`;
+}
+
+function capitalise(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 // ── Emptiness ────────────────────────────────────────────────────────────────
 
 /**
@@ -281,6 +576,13 @@ export function isEstateEmpty(estate: EstateSlice): boolean {
   if (!(estate.fiduciaryContacts ?? []).every(isBlankIntakeFiduciaryContactRow)) {
     return false;
   }
+
+  const i = estate.inheritance;
+  if (filled(i?.spouseFirst) || filled(i?.sharing) || filled(i?.ifPredeceased)) {
+    return false;
+  }
+  // A ticked child is content even though the row carries nothing but its ref.
+  if (!(i?.beneficiaries ?? []).every(isBlankIntakeBeneficiaryRow)) return false;
 
   const d = estate.childrenDistribution;
   return !(filled(d?.plan) || filled(d?.note));

@@ -264,10 +264,45 @@ describe("intakeNoteBody", () => {
     fiduciaryContacts: [
       { name: "Sarah Klein", relationship: "sister", city: "Ann Arbor, MI", phone: "734-555-0177" },
     ],
+    inheritance: {
+      spouseFirst: true,
+      sharing: "custom",
+      ifPredeceased: "to_their_children",
+      beneficiaries: [
+        { ref: "child:0", sharePercent: 40 },
+        { ref: "child:1", sharePercent: 40 },
+        { ref: "other:0", name: "Ruth Alvarez", relationship: "my sister", sharePercent: 20 },
+      ],
+    },
     childrenDistribution: { plan: "suggested" },
   };
 
   const WITH_ESTATE: IntakeSectionKey[] = [...ALL, "estate"];
+
+  it("records who inherits in one line, the way the will reads", () => {
+    const body = intakeNoteBody(payload({ estate: ESTATE }), WITH_ESTATE, {
+      currentYear: 2026,
+    })!;
+    expect(body).toContain("**Who inherits**");
+    expect(body).toContain(
+      "- Everything to John Doe first, then to Aiden Doe (40%), Mia Doe (40%) and Ruth Alvarez (20%)",
+    );
+    // Anyone the Family section above does NOT already introduce is named, so
+    // the attorney is not left with an unexplained person.
+    expect(body).toContain("- Ruth Alvarez · my sister · 20%");
+    // ...and anyone it DOES is not repeated.
+    expect(body).not.toContain("- Aiden Doe · ");
+    expect(body).toContain("- If one of them dies first: their share passes to their own children");
+  });
+
+  it("says nothing about who inherits when the question was never answered", () => {
+    const body = intakeNoteBody(
+      payload({ estate: { ...ESTATE, inheritance: undefined } }),
+      WITH_ESTATE,
+      { currentYear: 2026 },
+    )!;
+    expect(body).not.toContain("Who inherits");
+  });
 
   it("files every nomination with that person's contact details folded in", () => {
     const body = intakeNoteBody(payload({ estate: ESTATE }), WITH_ESTATE, {

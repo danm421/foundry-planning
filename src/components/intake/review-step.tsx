@@ -8,7 +8,9 @@ import {
   fiduciarySlotLabel,
   findFiduciary,
   formatEstateAddress,
+  inheritanceSummaryLine,
   isEstateEmpty,
+  predeceasedLabel,
   legalResidenceLabel,
 } from "@/lib/intake/estate";
 import type { IntakeSectionKey } from "@/lib/intake/sections";
@@ -249,6 +251,14 @@ export function ReviewStep({ value, sections, onEdit }: ReviewStepProps) {
                   />
                 ) : null;
               })}
+              <Row
+                label="Who inherits"
+                value={inheritanceSummaryLine(estate?.inheritance, family) ?? undefined}
+              />
+              <Row
+                label="If one dies first"
+                value={predeceasedLabel(estate?.inheritance?.ifPredeceased) ?? undefined}
+              />
               {estateHousehold(family).hasChildren && (
                 <Row
                   label="Children’s inheritance"
