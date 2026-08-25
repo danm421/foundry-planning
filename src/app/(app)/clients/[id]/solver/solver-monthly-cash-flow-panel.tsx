@@ -40,8 +40,11 @@ interface Props {
  * rows for the same year this panel captions, and the rule is not the obvious
  * one: with no year picked it opens on the first SHORTFALL year, not the first
  * year. A second copy that omitted the middle clause would caption one year and
- * list another's months on first open, silently — `selectedYear` is null every
- * time the Monthly sub-tab is opened.
+ * list another's months, silently. `selectedYear` is null on the first paint —
+ * `live-solver-workspace.tsx:717` defaults it to the first projection year in an
+ * effect, which runs after that render — and again whenever a recompute has not
+ * yet resolved it. The two sites have to agree in EVERY state, not only that
+ * one, which is why the rule is shared rather than restated.
  */
 export function selectMonthlyRow(
   rows: MonthlyCashFlowRow[],

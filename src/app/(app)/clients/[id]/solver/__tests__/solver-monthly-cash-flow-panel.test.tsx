@@ -544,9 +544,10 @@ describe("SolverMonthlyCashFlowPanel — month by month", () => {
 // implementation of it. The plan shipped a second copy in the chart panel
 // (`currentProjection.find(...) ?? currentProjection[0]`) with no shortfall
 // clause, which disagrees with the panel whenever `selectedYear` is null — its
-// value every time the Monthly sub-tab is opened. The table would then caption
-// one year and list another's twelve months, silently. The behaviour is not
-// renderable from here, so the guard is on the source.
+// value on the first paint, before the workspace effect that defaults it, and
+// again whenever a recompute has not yet resolved it. The table would then
+// caption one year and list another's twelve months, silently. The behaviour is
+// not renderable from here, so the guard is on the source.
 describe("the chart panel resolves the month year through the shared helper", () => {
   const source = readFileSync(
     resolve(process.cwd(), "src/app/(app)/clients/[id]/solver/solver-chart-panel.tsx"),

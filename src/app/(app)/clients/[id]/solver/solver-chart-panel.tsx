@@ -363,14 +363,25 @@ export function SolverChartPanel({
   // year whenever `selectedYear` is null. Resolved BY YEAR, never by index:
   // `buildMonthlyCashFlowRows` maps 1:1 today, but an index would retarget
   // silently if that ever stopped being true. Gated on the sub-tab like
-  // `monthlyRows` above, and memoized because a chart-height drag re-renders
-  // this panel on every pointermove.
+  // `monthlyRows` above AND on the toggle: both consumers — the table below and
+  // the month chart — render only in month view, and "Across the plan" is the
+  // default, so without the second gate the allocator would run on every year
+  // click for a chart and a table nobody is looking at. Memoized because a
+  // chart-height drag re-renders this panel on every pointermove.
   const monthRows = useMemo(() => {
-    if (!isMonthlySubTab) return [];
+    if (!isMonthlySubTab || monthlyView !== "months") return [];
     const selected = selectMonthlyRow(monthlyRows, selectedYear);
     const year = selected ? currentProjection.find((p) => p.year === selected.year) : undefined;
     return year ? buildMonthlyAllocation(year, workingTree, dollarBasis) : [];
-  }, [isMonthlySubTab, monthlyRows, selectedYear, currentProjection, workingTree, dollarBasis]);
+  }, [
+    isMonthlySubTab,
+    monthlyView,
+    monthlyRows,
+    selectedYear,
+    currentProjection,
+    workingTree,
+    dollarBasis,
+  ]);
 
   // The flow chart needs the FULL projection (death events + ledgers), not the
   // ProjectionYear[] this panel holds. Fetched only while the sub-tab is open.
@@ -712,6 +723,8 @@ export function SolverChartPanel({
             rows={monthlyRows}
             selectedYear={selectedYear}
             onYearClick={onYearClick}
+            monthRows={monthRows}
+            view={monthlyView}
           />
         ) : null}
         {tab === "taxBracket" ? (
