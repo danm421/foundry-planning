@@ -6,7 +6,10 @@ import type { SolverMutation } from "@/lib/solver/types";
 
 export interface EducationSolveOutput {
   additionalAnnual: number;
-  fundsFully: boolean;
+  reachesTarget: boolean;
+  /** Echoed back by the route (clamped), so the caller labels the result with
+   *  the target the search actually used — not one edited since. */
+  targetPct: number;
 }
 
 export function useEducationSolve(args: {
@@ -21,14 +24,14 @@ export function useEducationSolve(args: {
   mutationsRef.current = mutations;
 
   const run = useCallback(
-    async (goalId: string, accountId: string): Promise<EducationSolveOutput | null> => {
+    async (goalId: string, accountId: string, targetPct: number): Promise<EducationSolveOutput | null> => {
       const key = `${goalId}:${accountId}`;
       setPendingKey(key);
       try {
         const res = await fetch(`/api/clients/${clientId}/solver/education-solve`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ source, mutations: mutationsRef.current, goalId, accountId }),
+          body: JSON.stringify({ source, mutations: mutationsRef.current, goalId, accountId, targetPct }),
         });
         if (!res.ok) return null;
         return (await res.json()) as EducationSolveOutput;

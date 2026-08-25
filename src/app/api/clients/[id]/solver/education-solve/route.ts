@@ -4,10 +4,10 @@
 //
 // Live "solve" for the solver Education tab. Given a working tree (source +
 // unsaved mutations), an education goal, and a dedicated funding account, finds
-// the smallest additional annual contribution to that account that closes the
-// goal's shortfall. Runs the REAL engine projection server-side (heavy: a
-// bisection that re-projects per iteration). Pure COMPUTE route: reads the
-// client tree, never mutates.
+// the smallest additional annual contribution to that account that funds
+// `targetPct` of the goal (default: all of it). Runs the REAL engine projection
+// server-side (heavy: a bisection that re-projects per iteration). Pure COMPUTE
+// route: reads the client tree, never mutates.
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { runProjection } from "@/engine";
@@ -30,6 +30,8 @@ const BODY = z.object({
   mutations: z.array(SOLVER_MUTATION_SCHEMA),
   goalId: z.string().min(1),
   accountId: z.string().min(1),
+  /** Share of the goal to fund, 0–1. Absent = fund it fully. */
+  targetPct: z.number().min(0).max(1).optional(),
 });
 
 type RouteCtx = { params: Promise<{ id: string }> };
@@ -60,7 +62,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         { status: 400 },
       );
     }
-    const { source, mutations, goalId, accountId } = parsed.data;
+    const { source, mutations, goalId, accountId, targetPct } = parsed.data;
 
     // ── Working tree (source + live mutations), so the solve reflects unsaved
     //    solver changes — mirrors the life-insurance-summary route. ──
@@ -87,6 +89,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       accountId,
       currentYear,
       runProjection,
+      targetPct,
     });
 
     return NextResponse.json(result);

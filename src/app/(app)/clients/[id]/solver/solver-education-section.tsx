@@ -28,6 +28,26 @@ interface Props {
   onOpenReport?: () => void;
 }
 
+const DEFAULT_TARGET_PCT = 100;
+const MIN_TARGET_PCT = 1;
+
+/** What the solve found, in the advisor's words. A full-funding solve keeps the
+ *  familiar wording; a partial one names the target it was asked for. */
+function solveLabel(result: EducationSolveOutput): string {
+  const pct = Math.round(result.targetPct * 100);
+  const full = pct >= 100;
+  if (!result.reachesTarget) {
+    return full
+      ? "Can’t fully fund from this source alone within the horizon."
+      : `Can’t reach ${pct}% funded from this source alone within the horizon.`;
+  }
+  if (result.additionalAnnual <= 0) {
+    return full ? "Already fully funded — no change needed." : `Already ${pct}% funded — no change needed.`;
+  }
+  const amount = `+$${Math.round(result.additionalAnnual).toLocaleString()}/yr`;
+  return full ? `${amount} fully funds the gap` : `${amount} funds ${pct}% of this goal`;
+}
+
 function ownerFamilyMemberIds(acct: {
   owners?: { kind: string; familyMemberId?: string }[];
 }): string[] {
@@ -79,6 +99,9 @@ export function SolverEducationSection({
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [solveResult, setSolveResult] = useState<Record<string, EducationSolveOutput>>({});
+  // Per-source funding target, in whole percent. Absent = 100 (fund it fully) —
+  // an advisor covering only part of a bill dials this down before solving.
+  const [targetPct, setTargetPct] = useState<Record<string, number>>({});
   const { pendingKey, run } = useEducationSolve({ clientId, source, mutations });
 
   function upsertGoal(expense: Expense, newMutations: SolverMutation[]) {
@@ -127,7 +150,7 @@ export function SolverEducationSection({
 
   async function solveSource(goal: Expense, accountId: string) {
     const key = `${goal.id}:${accountId}`;
-    const out = await run(goal.id, accountId);
+    const out = await run(goal.id, accountId, (targetPct[key] ?? DEFAULT_TARGET_PCT) / 100);
     if (out) setSolveResult((prev) => ({ ...prev, [key]: out }));
   }
 
@@ -209,12 +232,32 @@ export function SolverEducationSection({
                           <div className="flex-1 truncate text-[12px] text-ink-2">
                             {acct?.name ?? accountId}
                           </div>
+                          <span className="shrink-0 whitespace-nowrap text-[11px] text-ink-3">Fund to</span>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            min={MIN_TARGET_PCT}
+                            max={100}
+                            step={5}
+                            aria-label={`Fund ${acct?.name ?? accountId} to percent`}
+                            value={targetPct[key] ?? DEFAULT_TARGET_PCT}
+                            onChange={(e) => {
+                              const n = parseInt(e.target.value, 10);
+                              if (Number.isNaN(n)) return;
+                              setTargetPct((prev) => ({
+                                ...prev,
+                                [key]: Math.min(100, Math.max(MIN_TARGET_PCT, n)),
+                              }));
+                            }}
+                            className="h-6 w-12 shrink-0 rounded border border-hair-2 bg-card-2 px-1 text-right text-[11px] text-ink tabular focus:border-accent focus:outline-none"
+                          />
+                          <span className="shrink-0 text-[11px] text-ink-3">%</span>
                           <button
                             type="button"
                             aria-label={`Solve ${acct?.name ?? accountId}`}
                             disabled={solving}
                             onClick={() => solveSource(goal, accountId)}
-                            className="rounded border border-hair-2 px-2 py-0.5 text-[11px] text-ink-3 hover:text-ink disabled:opacity-50"
+                            className="shrink-0 rounded border border-hair-2 px-2 py-0.5 text-[11px] text-ink-3 hover:text-ink disabled:opacity-50"
                           >
                             {solving ? "Solving…" : "Solve"}
                           </button>
@@ -230,23 +273,21 @@ export function SolverEducationSection({
                           onCommit={(n) => setContribution(accountId, n, goal.endYear)}
                         />
                         {result ? (
-                          result.fundsFully ? (
+                          result.reachesTarget ? (
                             <div className="mt-1 flex items-center gap-2 text-[11px] text-ink-2">
-                              <span>
-                                +${Math.round(result.additionalAnnual).toLocaleString()}/yr fully funds the gap
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => applySolve(goal, accountId, result.additionalAnnual)}
-                                className="rounded bg-accent/20 px-2 py-0.5 font-medium text-ink"
-                              >
-                                Apply
-                              </button>
+                              <span>{solveLabel(result)}</span>
+                              {result.additionalAnnual > 0 ? (
+                                <button
+                                  type="button"
+                                  onClick={() => applySolve(goal, accountId, result.additionalAnnual)}
+                                  className="rounded bg-accent/20 px-2 py-0.5 font-medium text-ink"
+                                >
+                                  Apply
+                                </button>
+                              ) : null}
                             </div>
                           ) : (
-                            <div className="mt-1 text-[11px] text-ink-3">
-                              Can’t fully fund from this source alone within the horizon.
-                            </div>
+                            <div className="mt-1 text-[11px] text-ink-3">{solveLabel(result)}</div>
                           )
                         ) : null}
                       </div>

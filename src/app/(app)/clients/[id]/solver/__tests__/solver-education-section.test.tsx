@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { SolverEducationSection } from "../solver-education-section";
 import type { ClientData, Expense } from "@/engine/types";
 
@@ -50,6 +50,36 @@ describe("SolverEducationSection", () => {
     expect(screen.getByText("College — Emma")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /remove college — emma/i }));
     expect(onChange).toHaveBeenCalledWith({ kind: "expense-upsert", id: "goal-1", value: null });
+  });
+
+  it("solves to the chosen funding percent, defaulting the input to 100", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ additionalAnnual: 1500, reachesTarget: true, targetPct: 0.7 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <SolverEducationSection
+        baseExpenses={[goal]}
+        workingTree={workingTree}
+        currentYear={2026}
+        clientId="c1"
+        source="base"
+        mutations={[]}
+        onChange={vi.fn()}
+      />,
+    );
+    const pctInput = screen.getByLabelText(/fund 529 — emma to percent/i) as HTMLInputElement;
+    expect(pctInput.value).toBe("100"); // fund it fully unless the advisor says otherwise
+
+    fireEvent.change(pctInput, { target: { value: "70" } });
+    fireEvent.click(screen.getByRole("button", { name: /solve 529 — emma/i }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ goalId: "goal-1", targetPct: 0.7 });
+    // The result names the target it solved for, not "fully funds".
+    expect(await screen.findByText(/\+\$1,500\/yr funds 70% of this goal/i)).toBeInTheDocument();
+    vi.unstubAllGlobals();
   });
 
   it("adds a goal with a new 529, emitting account → rule → expense in order", () => {
