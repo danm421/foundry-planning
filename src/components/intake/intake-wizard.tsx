@@ -7,6 +7,7 @@ import {
   type IntakeDraft,
 } from "@/lib/intake/schema";
 import { childBeneficiaryRef } from "@/lib/intake/goal-rows";
+import { isEstateEmpty } from "@/lib/intake/estate";
 import { WizardChrome } from "@/components/wizard-chrome";
 import {
   IntakeBrandingHeader,
@@ -18,6 +19,7 @@ import { AccountsStep } from "./steps/accounts-step";
 import { IncomeStep } from "./steps/income-step";
 import { PropertyStep } from "./steps/property-step";
 import { GoalsStep, type GoalBeneficiary } from "./steps/goals-step";
+import { EstateStep } from "./steps/estate-step";
 import { DocumentsStep } from "./steps/documents-step";
 import { RiskStep } from "./steps/risk-step";
 import { ReviewStep } from "./review-step";
@@ -73,7 +75,7 @@ export interface IntakeWizardProps {
 //   welcome → family → assets:accounts → assets:income → assets:property → goals → review
 
 interface StepDescriptor {
-  section: "welcome" | "family" | "assets" | "goals" | "documents" | "risk" | "review";
+  section: "welcome" | "family" | "assets" | "goals" | "estate" | "documents" | "risk" | "review";
   subStep?: "accounts" | "income" | "property";
   /** Chrome label (shown in progress bar + eyebrow) */
   label: string;
@@ -101,6 +103,9 @@ const STEP_BY_SECTION: Record<IntakeSectionKey, StepDescriptor> = {
   income:    sectionStep("income",    { section: "assets", subStep: "income", skipable: true }),
   property:  sectionStep("property",  { section: "assets", subStep: "property", skipable: true }),
   goals:     sectionStep("goals",     { section: "goals" }),
+  // Skipable: a client who has not settled on a guardian must still be able to
+  // send the rest of the form rather than abandoning it on this step.
+  estate:    sectionStep("estate",    { section: "estate", skipable: true }),
   documents: sectionStep("documents", { section: "documents", skipable: true }),
   // The only step whose chip and H1 differ: the progress bar lays every label
   // out on one row, so Risk stays compact there while the H1 reads in full.
@@ -124,7 +129,7 @@ function buildSteps(sections: readonly IntakeSectionKey[]): readonly StepDescrip
  */
 function indexOfSection(
   steps: readonly StepDescriptor[],
-  section: "family" | "accounts" | "income" | "property" | "goals" | "documents" | "risk",
+  section: "family" | "accounts" | "income" | "property" | "goals" | "estate" | "documents" | "risk",
 ): number {
   return steps.findIndex((s) => (s.subStep ?? s.section) === section);
 }
@@ -142,9 +147,11 @@ function useDraftSliceSetters(value: IntakeDraft, onChange: (next: IntakeDraft) 
     onChange({ ...value, property: patch });
   const setGoals: (patch: IntakeDraft["goals"]) => void = (patch) =>
     onChange({ ...value, goals: patch });
+  const setEstate: (patch: IntakeDraft["estate"]) => void = (patch) =>
+    onChange({ ...value, estate: patch });
   const setRisk: (patch: IntakeDraft["risk"]) => void = (patch) =>
     onChange({ ...value, risk: patch });
-  return { setFamily, setAccounts, setIncome, setProperty, setGoals, setRisk };
+  return { setFamily, setAccounts, setIncome, setProperty, setGoals, setEstate, setRisk };
 }
 
 // ─── Skip affordance ─────────────────────────────────────────────────────────
@@ -175,6 +182,9 @@ function offersSkip(
     return (draft.property ?? []).every(isBlankIntakePropertyRow) && !hasDoc("mortgage");
   }
   if (step.section === "documents") return documents.length === 0;
+  // Same rule as Income and Property, asked through the shared predicate so the
+  // label agrees with what the review card calls an empty step.
+  if (step.section === "estate") return isEstateEmpty(draft.estate);
   // Same rule as Income and Property: "Skip for now" only while the step is
   // genuinely empty. Once an answer exists, the label would read as "discard
   // what I just picked".
@@ -231,7 +241,7 @@ export function IntakeWizard({
   // 0 = welcome; then the selected sections in canonical order (Documents only
   // where uploads are offered); then review.
   const [flatIndex, setFlatIndex] = useState(0);
-  const { setFamily, setAccounts, setIncome, setProperty, setGoals, setRisk } =
+  const { setFamily, setAccounts, setIncome, setProperty, setGoals, setEstate, setRisk } =
     useDraftSliceSetters(value, onChange);
 
   // Live uploads are all three or none: a list with no token can't upload, and
@@ -271,7 +281,7 @@ export function IntakeWizard({
     if (!isFirst) setFlatIndex((i) => i - 1);
   }
   function goToSection(
-    section: "family" | "accounts" | "income" | "property" | "goals" | "documents" | "risk",
+    section: "family" | "accounts" | "income" | "property" | "goals" | "estate" | "documents" | "risk",
   ) {
     const idx = indexOfSection(steps, section);
     if (idx >= 0) setFlatIndex(idx);
@@ -352,6 +362,14 @@ export function IntakeWizard({
             value={value.goals}
             onChange={setGoals}
             beneficiaries={goalBeneficiaries(value)}
+          />
+        );
+      case "estate":
+        return (
+          <EstateStep
+            value={value.estate}
+            onChange={setEstate}
+            family={value.family}
           />
         );
       case "documents":

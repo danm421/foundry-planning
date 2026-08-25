@@ -2,7 +2,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { SectionPicker } from "../section-picker";
-import { DEFAULT_INTAKE_SECTIONS } from "@/lib/intake/sections";
+import { DEFAULT_INTAKE_SECTIONS, INTAKE_SECTIONS } from "@/lib/intake/sections";
 
 describe("SectionPicker", () => {
   it("selects the matching preset chip for the current value", () => {
@@ -58,9 +58,13 @@ describe("SectionPicker", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("offers every section as a checkbox, including risk", () => {
+  it("offers every section as a checkbox, including the opt-in ones", () => {
     render(<SectionPicker value={[...DEFAULT_INTAKE_SECTIONS]} onChange={vi.fn()} />);
+    // The opt-in sections are offered but unchecked by the default set.
     expect(screen.getByRole("checkbox", { name: /risk/i })).not.toBeChecked();
-    expect(screen.getAllByRole("checkbox")).toHaveLength(7);
+    expect(screen.getByRole("checkbox", { name: /estate/i })).not.toBeChecked();
+    // Counted off the canonical list rather than a literal: a section added
+    // upstream should widen this assertion, not break it.
+    expect(screen.getAllByRole("checkbox")).toHaveLength(INTAKE_SECTIONS.length);
   });
 });

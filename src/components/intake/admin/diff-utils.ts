@@ -7,6 +7,17 @@ import {
   goalTypeLabel,
 } from "@/lib/intake/goal-rows";
 import { incomeSpanLabel } from "@/lib/intake/income-years";
+import {
+  FIDUCIARY_SLOTS,
+  childDistributionLabel,
+  estateHouseholdFromPayload,
+  fiduciaryContactLine,
+  fiduciarySlotLabel,
+  findContact,
+  findFiduciary,
+  formatEstateAddress,
+  legalResidenceLabel,
+} from "@/lib/intake/estate";
 import { RTQ_V1, scoreRtq } from "@/lib/risk/rtq";
 import { band } from "@/lib/risk/scoring";
 // RiskLevel lives in risk-levels, NOT risk/labels — that module holds
@@ -64,6 +75,25 @@ export interface RiskDiff {
   note: string | null;
 }
 
+/**
+ * The Estate answers, resolved to the strings the card renders.
+ *
+ * Not a FieldDiff set like Family: apply writes the principals' phone, email
+ * and address onto the CRM contacts, but the NOMINATIONS have no row to be
+ * compared against — there is no fiduciary table. So this reads as "what the
+ * client told us", which is what the advisor takes to the attorney.
+ */
+export interface EstateDiff {
+  /** Nothing to render — the card is hidden entirely. */
+  answered: boolean;
+  principals: { name: string; detail: string }[];
+  address: string | null;
+  legalResidence: string | null;
+  nominations: { role: string; name: string; contact: string | null }[];
+  distribution: string | null;
+  distributionNote: string | null;
+}
+
 export interface IntakeDiff {
   family: FamilyDiff;
   goals: GoalsDiff;
@@ -73,6 +103,7 @@ export interface IntakeDiff {
   /** Funded goals — apply writes one goal-flagged expense row per entry. */
   expenseGoals: ListSectionDiff;
   radar: RadarDiff;
+  estate: EstateDiff;
   risk: RiskDiff;
 }
 
@@ -254,5 +285,48 @@ export function buildIntakeDiff(
     note: submitted.risk?.environmentNote ?? null,
   };
 
-  return { family, goals, accounts, income, property, expenseGoals, radar, risk };
+  // Estate. Every string is built by the shared helpers in `lib/intake/estate`,
+  // so the advisor's card, the client's own review screen and the CRM note apply
+  // files all describe an answer the same way.
+  const se = submitted.estate;
+  const principalDetail = (c: { mobile?: string; email?: string } | undefined) =>
+    [c?.mobile?.trim(), c?.email?.trim()].filter(Boolean).join(" · ");
+  const principals = (
+    [
+      { name: fullName(sf?.primary) ?? "Client", detail: principalDetail(se?.contact?.primary) },
+      { name: fullName(sf?.spouse) ?? "Spouse", detail: principalDetail(se?.contact?.spouse) },
+    ] as { name: string; detail: string }[]
+  ).filter((p) => p.detail !== "");
+
+  const nominations = FIDUCIARY_SLOTS.map((slot) => {
+    const name = findFiduciary(se?.fiduciaries, slot)?.name?.trim();
+    if (!name) return null;
+    return {
+      role: fiduciarySlotLabel(slot),
+      name,
+      contact: fiduciaryContactLine(findContact(se?.fiduciaryContacts, name)),
+    };
+  }).filter((n): n is { role: string; name: string; contact: string | null } => n !== null);
+
+  const distribution = estateHouseholdFromPayload(submitted.family).hasChildren
+    ? childDistributionLabel(se?.childrenDistribution)
+    : null;
+
+  const estate: EstateDiff = {
+    principals,
+    address: formatEstateAddress(se?.residence),
+    legalResidence: legalResidenceLabel(se?.residence),
+    nominations,
+    distribution,
+    distributionNote: se?.childrenDistribution?.note?.trim() || null,
+    answered: false,
+  };
+  estate.answered =
+    principals.length > 0 ||
+    estate.address !== null ||
+    estate.legalResidence !== null ||
+    nominations.length > 0 ||
+    distribution !== null;
+
+  return { family, goals, accounts, income, property, expenseGoals, radar, estate, risk };
 }

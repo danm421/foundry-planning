@@ -211,6 +211,96 @@ export const intakeGoalsSchema = z.object({
   topicsNote: z.string().trim().max(2000).optional(),
 });
 
+// ── Estate ───────────────────────────────────────────────────────────────────
+//
+// What an attorney needs before they can draft: how to reach the principals,
+// where they legally reside, who they nominate, and how the children inherit.
+//
+// Deliberately NO dollar amounts and NO re-asking of names or dates of birth —
+// the Family step and the plan already hold both, and an estate questionnaire
+// that re-asks for balances is the one clients abandon.
+//
+// Every field is optional even on submit. A client who knows their guardian but
+// hasn't settled on a trustee must be able to send what they have; a half-filled
+// estate section is exactly the conversation the advisor wants to have, and a
+// required field here would instead produce an unsent form.
+
+// The vocabularies live HERE rather than in `estate.ts` for the same reason
+// `INTAKE_GOAL_TYPES` does: estate.ts imports this module for them, so the
+// dependency only runs one way.
+export const INTAKE_FIDUCIARY_ROLES = ["guardian", "trustee", "executor"] as const;
+export type IntakeFiduciaryRole = (typeof INTAKE_FIDUCIARY_ROLES)[number];
+
+export const INTAKE_FIDUCIARY_PRIORITIES = ["primary", "backup"] as const;
+export type IntakeFiduciaryPriority = (typeof INTAKE_FIDUCIARY_PRIORITIES)[number];
+
+export const INTAKE_CHILD_DISTRIBUTION_PLANS = ["suggested", "custom"] as const;
+export type IntakeChildDistributionPlan =
+  (typeof INTAKE_CHILD_DISTRIBUTION_PLANS)[number];
+
+const intakePrincipalContactSchema = z.object({
+  mobile: z.string().trim().max(40).optional(),
+  email: z.string().trim().max(200).optional(),
+});
+
+// `name` is a single free-text field, not first/last: the client is naming
+// their sister, not filling in a system of record, and "Sarah Klein-Whitmore"
+// splits wrong more often than it splits right.
+export const intakeFiduciarySchema = z.object({
+  role: z.enum(INTAKE_FIDUCIARY_ROLES),
+  priority: z.enum(INTAKE_FIDUCIARY_PRIORITIES),
+  name: z.string().trim().min(1).max(120),
+});
+
+// Contact details hang off the PERSON, not the nomination — the same brother is
+// routinely both trustee and executor, and asking for his phone number twice is
+// how a form starts feeling like paperwork. Matched to nominations by name; see
+// `estate.ts` for the join.
+export const intakeFiduciaryContactSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  relationship: z.string().trim().max(80).optional(),
+  city: z.string().trim().max(120).optional(),
+  phone: z.string().trim().max(40).optional(),
+  email: z.string().trim().max(200).optional(),
+});
+
+// `isLegalResidence` answers "is this address your legal residence for document
+// purposes" — a snowbird's mailing address and their domicile are different
+// facts, and domicile is what decides which state's law governs the documents.
+// Undefined means UNANSWERED, which is why it is a tri-state boolean rather
+// than defaulting to true: an unasked question must not be recorded as a yes.
+//
+// The state here is NOT the plan's state of residence. That one drives state
+// tax and is owned by the Family step; overwriting it from a mailing address
+// would silently re-rate every projection.
+export const intakeResidenceSchema = z.object({
+  addressLine1: z.string().trim().max(200).optional(),
+  addressLine2: z.string().trim().max(200).optional(),
+  city: z.string().trim().max(120).optional(),
+  state: z.string().length(2).optional(),
+  postalCode: z.string().trim().max(12).optional(),
+  isLegalResidence: z.boolean().optional(),
+  legalResidenceNote: z.string().trim().max(300).optional(),
+});
+
+export const intakeChildDistributionSchema = z.object({
+  plan: z.enum(INTAKE_CHILD_DISTRIBUTION_PLANS).optional(),
+  note: z.string().trim().max(2000).optional(),
+});
+
+export const intakeEstateSchema = z.object({
+  contact: z
+    .object({
+      primary: intakePrincipalContactSchema.optional(),
+      spouse: intakePrincipalContactSchema.optional(),
+    })
+    .optional(),
+  residence: intakeResidenceSchema.optional(),
+  fiduciaries: z.array(intakeFiduciarySchema).max(12).default([]),
+  fiduciaryContacts: z.array(intakeFiduciaryContactSchema).max(12).default([]),
+  childrenDistribution: intakeChildDistributionSchema.optional(),
+});
+
 export const intakeMetaSchema = z.object({
   currentSection: z.string().max(40).optional(),
   completedSections: z.array(z.string().max(40)).max(10).default([]),
@@ -261,6 +351,10 @@ const intakeSubmitBaseSchema = z.object({
   // The default has to satisfy the OUTPUT type, so the two array members are
   // spelled out — `{}` no longer type-checks now that they're `.default([])`.
   goals: intakeGoalsSchema.default({ expenseGoals: [], topics: [] }),
+  // Optional rather than defaulted (goals above is defaulted): every consumer
+  // already has to handle "this form did not collect Estate", so a default
+  // would only produce an empty object that reads as an answered section.
+  estate: intakeEstateSchema.optional(),
   // Optional even when the Risk section IS selected: a client may legitimately
   // skip the step, and partial answers are stored but never scored. There is
   // deliberately no superRefine for risk.
@@ -376,6 +470,36 @@ const intakeGoalsDraftSchema = z.object({
   topicsNote: draftStr(2000),
 });
 
+// Estate's draft variants relax exactly two things: the fiduciary `name`
+// (an empty slot card must autosave) and the residence `state` (a half-typed
+// two-letter code). Everything else is already optional + capped on submit.
+const intakeFiduciaryDraftSchema = z.object({
+  role: z.enum(INTAKE_FIDUCIARY_ROLES),
+  priority: z.enum(INTAKE_FIDUCIARY_PRIORITIES),
+  name: draftStr(120),
+});
+
+const intakeFiduciaryContactDraftSchema = z.object({
+  name: draftStr(120),
+  relationship: draftStr(80),
+  city: draftStr(120),
+  phone: draftStr(40),
+  email: draftStr(200),
+});
+
+const intakeEstateDraftSchema = z.object({
+  contact: z
+    .object({
+      primary: intakePrincipalContactSchema.optional(),
+      spouse: intakePrincipalContactSchema.optional(),
+    })
+    .optional(),
+  residence: intakeResidenceSchema.extend({ state: draftStr(2) }).optional(),
+  fiduciaries: z.array(intakeFiduciaryDraftSchema).max(12).optional(),
+  fiduciaryContacts: z.array(intakeFiduciaryContactDraftSchema).max(12).optional(),
+  childrenDistribution: intakeChildDistributionSchema.optional(),
+});
+
 export const intakeDraftSchema = z.object({
   family: z.object({
     primary: intakePersonDraftSchema.optional(),
@@ -387,6 +511,7 @@ export const intakeDraftSchema = z.object({
   income: z.array(intakeIncomeDraftSchema).max(50).optional(),
   property: z.array(intakePropertyDraftSchema).max(50).optional(),
   goals: intakeGoalsDraftSchema.optional(),
+  estate: intakeEstateDraftSchema.optional(),
   risk: intakeRiskDraftSchema.optional(),
   meta: intakeMetaSchema.partial().optional(),
 }).strip();
@@ -455,6 +580,41 @@ export function isBlankIntakeExpenseGoalRow(row: {
 }
 
 /**
+ * A fiduciary slot the client opened but never named anyone in. `role` and
+ * `priority` are NOT content — they come from the slot itself, so counting them
+ * would make an untouched card unprunable and 422 the submit on `name.min(1)`.
+ */
+export function isBlankIntakeFiduciaryRow(row: { name?: unknown }): boolean {
+  return blankStr(row.name);
+}
+
+/** A contact card the client never typed into. The `name` is not content for
+ *  the same reason a slot's role isn't: it is copied from the nomination. */
+export function isBlankIntakeFiduciaryContactRow(row: {
+  relationship?: unknown;
+  city?: unknown;
+  phone?: unknown;
+  email?: unknown;
+}): boolean {
+  return (
+    blankStr(row.relationship) &&
+    blankStr(row.city) &&
+    blankStr(row.phone) &&
+    blankStr(row.email)
+  );
+}
+
+/**
+ * Canonical form for matching two spellings of one fiduciary's name.
+ *
+ * Lives here, with the prune that uses it, rather than in `estate.ts` — that
+ * module imports this one for the enums, so the dependency runs one way.
+ */
+export function fiduciaryContactKey(name: unknown): string {
+  return typeof name === "string" ? name.trim().toLowerCase() : "";
+}
+
+/**
  * Drop optional rows the user added but left entirely untouched, so a stray
  * blank card (e.g. "Add income" then "Skip for now") doesn't fail the strict
  * submit validator with a confusing "complete the required fields" message.
@@ -497,6 +657,27 @@ export function pruneIntakeBlankRows(payload: unknown): unknown {
   // Goal cards are nested a level down, under `goals`, rather than being a
   // top-level array — so the spread has to rebuild the goals object, not just
   // swap an array in.
+  // Estate: an unnamed slot goes, and so does a contact card nobody is named on
+  // any more — the residue of a client who typed "Sara", filled in her phone
+  // number, then corrected it to "Sarah". Keeping it would file an attorney-
+  // facing note listing a fiduciary who was never nominated.
+  const estate = p.estate && typeof p.estate === "object"
+    ? (p.estate as Record<string, unknown>)
+    : undefined;
+  const fiduciaries = estate
+    ? rows<Record<string, unknown>>(estate.fiduciaries).filter(
+        (f) => !isBlankIntakeFiduciaryRow(f),
+      )
+    : undefined;
+  const namedKeys = new Set((fiduciaries ?? []).map((f) => fiduciaryContactKey(f.name)));
+  const fiduciaryContacts = estate
+    ? rows<Record<string, unknown>>(estate.fiduciaryContacts).filter(
+        (c) =>
+          !isBlankIntakeFiduciaryContactRow(c) &&
+          namedKeys.has(fiduciaryContactKey(c.name)),
+      )
+    : undefined;
+
   const goals = p.goals && typeof p.goals === "object"
     ? (p.goals as Record<string, unknown>)
     : undefined;
@@ -514,6 +695,15 @@ export function pruneIntakeBlankRows(payload: unknown): unknown {
     ...(family ? { family: { ...family, ...(Array.isArray(family.children) ? { children } : {}) } } : {}),
     ...(goals
       ? { goals: { ...goals, ...(Array.isArray(goals.expenseGoals) ? { expenseGoals } : {}) } }
+      : {}),
+    ...(estate
+      ? {
+          estate: {
+            ...estate,
+            ...(Array.isArray(estate.fiduciaries) ? { fiduciaries } : {}),
+            ...(Array.isArray(estate.fiduciaryContacts) ? { fiduciaryContacts } : {}),
+          },
+        }
       : {}),
   };
 }

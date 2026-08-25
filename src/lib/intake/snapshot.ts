@@ -244,6 +244,48 @@ export async function snapshotClientToPayload(
     };
   }
 
+  // ── 5b. Seed the Estate step from what the CRM already knows ─────────────
+  //
+  // Mobile, email and street address all live on the household contact, so a
+  // returning client should be CONFIRMING them, not re-typing them. Only these
+  // three: the nominations and the distribution schedule have nowhere to come
+  // from, and `isLegalResidence` is deliberately left unanswered — a question
+  // nobody has asked must not arrive pre-answered.
+  //
+  // Gated on the section, like every other slice: seeding a step the form does
+  // not collect puts data in the payload the client never sees.
+  const estate: IntakePayload["estate"] = sections.includes("estate")
+    ? {
+        contact: {
+          primary: {
+            mobile: primaryContact.mobile ?? undefined,
+            email: primaryContact.email ?? undefined,
+          },
+          ...(spouseContact
+            ? {
+                spouse: {
+                  mobile: spouseContact.mobile ?? undefined,
+                  email: spouseContact.email ?? undefined,
+                },
+              }
+            : {}),
+        },
+        residence: {
+          addressLine1: primaryContact.addressLine1 ?? undefined,
+          addressLine2: primaryContact.addressLine2 ?? undefined,
+          city: primaryContact.city ?? undefined,
+          // The submit schema wants a USPS 2-letter code. A legacy row holding
+          // "Michigan" would fail it, so anything else is dropped and re-picked
+          // on the form rather than blocking the client's submit.
+          state:
+            primaryContact.state?.length === 2 ? primaryContact.state : undefined,
+          postalCode: primaryContact.postalCode ?? undefined,
+        },
+        fiduciaries: [],
+        fiduciaryContacts: [],
+      }
+    : undefined;
+
   // ── 6. Load children from family_members ─────────────────────────────────
   const childRows = await db
     .select()
@@ -348,6 +390,7 @@ export async function snapshotClientToPayload(
       accounts: sections.includes("accounts") ? payloadAccounts : [],
       income: sections.includes("income") ? payloadIncome : [],
       property: sections.includes("property") ? payloadProperty : [],
+      ...(estate ? { estate } : {}),
       goals: {
         clientRetirementAge: client.retirementAge ?? undefined,
         spouseRetirementAge: client.spouseRetirementAge ?? undefined,
@@ -381,6 +424,7 @@ export async function snapshotClientToPayload(
     accounts: [],
     income: [],
     property: [],
+    ...(estate ? { estate } : {}),
     goals: {
       clientRetirementAge: client.retirementAge ?? undefined,
       spouseRetirementAge: client.spouseRetirementAge ?? undefined,

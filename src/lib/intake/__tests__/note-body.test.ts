@@ -238,6 +238,72 @@ describe("intakeNoteBody", () => {
     expect(body).not.toContain("## Family");
   });
 
+  // ── Estate ────────────────────────────────────────────────────────────────
+  //
+  // The section with the least elsewhere to go: a nominated guardian has no row
+  // anywhere in the plan, so if it is not in the note it is nowhere.
+
+  const ESTATE: IntakePayload["estate"] = {
+    contact: {
+      primary: { mobile: "734-555-0100", email: "jane@example.com" },
+      spouse: { mobile: "734-555-0199" },
+    },
+    residence: {
+      addressLine1: "1200 Maple St",
+      city: "Ann Arbor",
+      state: "MI",
+      postalCode: "48104",
+      isLegalResidence: false,
+      legalResidenceNote: "Florida",
+    },
+    fiduciaries: [
+      { role: "guardian", priority: "primary", name: "Sarah Klein" },
+      { role: "trustee", priority: "primary", name: "Sarah Klein" },
+      { role: "executor", priority: "primary", name: "Tom Reyes" },
+    ],
+    fiduciaryContacts: [
+      { name: "Sarah Klein", relationship: "sister", city: "Ann Arbor, MI", phone: "734-555-0177" },
+    ],
+    childrenDistribution: { plan: "suggested" },
+  };
+
+  const WITH_ESTATE: IntakeSectionKey[] = [...ALL, "estate"];
+
+  it("files every nomination with that person's contact details folded in", () => {
+    const body = intakeNoteBody(payload({ estate: ESTATE }), WITH_ESTATE, {
+      currentYear: 2026,
+    })!;
+    expect(body).toContain("## Estate");
+    expect(body).toContain("Guardian · First choice: Sarah Klein · sister · Ann Arbor, MI · 734-555-0177");
+    // The same person named twice carries her details to both nominations —
+    // the form asked for them once.
+    expect(body).toContain("Trustee · First choice: Sarah Klein · sister");
+    // Somebody with no contact card still gets their nomination recorded.
+    expect(body).toContain("Executor · First choice: Tom Reyes");
+  });
+
+  it("records the address, the domicile answer and the agreed schedule in full", () => {
+    const body = intakeNoteBody(payload({ estate: ESTATE }), WITH_ESTATE, {
+      currentYear: 2026,
+    })!;
+    expect(body).toContain("1200 Maple St, Ann Arbor, MI 48104");
+    expect(body).toContain("Legal residence for document purposes: No — Florida");
+    expect(body).toContain("734-555-0100");
+    // The schedule's TERMS, not just its name: "chose the suggested schedule"
+    // read six months later is not a record of what was agreed.
+    expect(body).toContain("own trustee at 25");
+    expect(body).toContain("balance at 35");
+  });
+
+  it("omits the section entirely when the form did not collect it", () => {
+    // A prefilled form seeds contact details from the CRM whatever the advisor
+    // chose to collect, so rendering the payload rather than the SECTIONS would
+    // file estate answers the client was never shown.
+    const body = intakeNoteBody(payload({ estate: ESTATE }), ALL, { currentYear: 2026 })!;
+    expect(body).not.toContain("## Estate");
+    expect(body).not.toContain("Sarah Klein");
+  });
+
   it("is pure — the same input renders the same output", () => {
     const p = payload();
     expect(intakeNoteBody(p, ALL, { currentYear: 2026 })).toBe(
