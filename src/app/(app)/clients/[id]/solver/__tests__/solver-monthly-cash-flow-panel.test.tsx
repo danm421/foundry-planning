@@ -491,7 +491,13 @@ describe("SolverMonthlyCashFlowPanel — month by month", () => {
         onViewChange={noop}
       />,
     );
-    expect(screen.getByTestId("cash-on-hand-note")).toBeVisible();
+    // `toBeVisible()` CANNOT see this on its own: jsdom does not compute
+    // Tailwind's clip-based `sr-only`, so a note moved into an sr-only span
+    // passes it (measured — the assertion below is what reds). The ruling is
+    // that a SIGHTED advisor reads this, so the class is what has to be pinned.
+    const note = screen.getByTestId("cash-on-hand-note");
+    expect(note).toBeVisible();
+    expect(note.className).not.toMatch(/\bsr-only\b/);
     expect(screen.queryByText(/cash left in the account/i)).toBeNull();
     expect(screen.queryByText(/bank balance/i)).toBeNull();
   });
@@ -523,7 +529,14 @@ describe("SolverMonthlyCashFlowPanel — month by month", () => {
         onViewChange={noop}
       />,
     );
-    expect(screen.getByTestId("surplus-spent-note")).toHaveTextContent(/surplus/i);
+    // The figure is PER MONTH — `split.surplusSpent` is the year's discretionary
+    // spend over twelve, and the allocator takes that same twelfth out of each
+    // month's Net. A sentence that reads as the year's total understates by 12x,
+    // so the framing is pinned alongside the amount.
+    const surplus = screen.getByTestId("surplus-spent-note");
+    expect(surplus).toHaveTextContent(/surplus/i);
+    expect(surplus).toHaveTextContent("$3,000");
+    expect(surplus).toHaveTextContent(/each month/i);
   });
 });
 

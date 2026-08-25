@@ -313,12 +313,16 @@ export const SolverMonthlyCashFlowPanel = memo(function SolverMonthlyCashFlowPan
           {/* Only in the years it is true of. `net` subtracts a surplus-spending
               term that has no column of its own, so those rows genuinely do not
               add up across the columns shown. Discretionary spend is zero on most
-              plans, and an always-on footnote would read as true of every year. */}
+              plans, and an always-on footnote would read as true of every year.
+              "Each month" is load-bearing: `split.surplusSpent` is the year's
+              discretionary spend divided by twelve, like every other figure on
+              this panel, and the allocator subtracts that same twelfth from each
+              month's Net. Phrased as the year's total it would understate by 12x. */}
           {selected.split.surplusSpent > 0 ? (
             <p className="px-1 text-[11px] text-ink-3" data-testid="surplus-spent-note">
-              In {selected.year} the plan also spends {fmt.format(selected.split.surplusSpent)} of
-              surplus. That comes out of Net without a column of its own, so these rows will not
-              add across.
+              Each month in {selected.year} the plan also spends{" "}
+              {fmt.format(selected.split.surplusSpent)} of surplus. That comes out of Net without a
+              column of its own, so these rows will not add across.
             </p>
           ) : null}
         </div>
