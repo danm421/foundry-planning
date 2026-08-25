@@ -15,6 +15,7 @@ describe("buildEducationReport", () => {
     expect(report.name).toBe("College for Child");
     expect(report.dedicatedFundsUsed).toBe(30000);
     expect(report.totalShortfall).toBe(10000);
+    expect(report.totalGoalCost).toBe(40000); // accumulation years contribute nothing
     expect(report.coveredByCashFlow).toBe(false); // no cash-flow funding → default off
     expect(report.chart.labels).toEqual(["2026", "2033"]);
     expect(report.chart.remaining).toEqual([31800, 0]);
@@ -31,6 +32,7 @@ describe("buildEducationReport", () => {
     expect(report.coveredByCashFlow).toBe(true); // reads the goal's cash-flow funding setting
     expect(report.cashFlowFundsUsed).toBe(15000);
     expect(report.totalShortfall).toBe(10000); // unfunded only, not the cash-flow portion
+    expect(report.totalGoalCost).toBe(80000); // both expense years
     expect(report.chart.outOfPocket).toEqual([15000, 0]);
     expect(report.chart.shortfall).toEqual([0, 10000]);
   });

@@ -12,6 +12,9 @@ export interface EducationGoalReport {
   /** Total funded from household cash flow (out-of-pocket) across the goal. */
   cashFlowFundsUsed: number;
   totalShortfall: number;
+  /** Indexed cost of the goal across every expense year — the denominator for
+   *  "% funded". Zero while the goal is still in accumulation. */
+  totalGoalCost: number;
   /** The goal pays any uncovered cost from household cash flow (its
    *  `payShortfallOutOfPocket` setting). When true, cash flow is an available
    *  funding source, so the per-goal success gauge treats a dedicated-pool
@@ -47,6 +50,7 @@ export function buildEducationReport(
     dedicatedFundsUsed: rows.reduce((s, r) => s + r.dedicatedWithdrawal, 0),
     cashFlowFundsUsed: rows.reduce((s, r) => s + (r.outOfPocketWithdrawal ?? 0), 0),
     totalShortfall: rows.reduce((s, r) => s + r.shortfall, 0),
+    totalGoalCost: rows.reduce((s, r) => s + r.goalExpense, 0),
     coveredByCashFlow: byId.get(goalId)?.payShortfallOutOfPocket ?? false,
     chart: {
       labels: rows.map((r) => String(r.year)),

@@ -22,6 +22,16 @@ const FALLBACK_RETURN_STAT: EducationReturnStat = { arithMean: 0.06, stdDev: 0.1
 // supplied the scenario's own Monte Carlo seed (never Math.random/Date).
 const DEFAULT_EDUCATION_SEED = 1;
 
+/** Share of the goal's indexed cost that got funded — from any source. Derived
+ *  from the shortfall rather than from the withdrawals so a fully funded goal
+ *  reads exactly 100% (the two sums are floats). Rounds DOWN whenever anything
+ *  is unfunded, so the headline never says 100% next to a live shortfall. */
+function fundedLabel(totalGoalCost: number, totalShortfall: number): string {
+  if (totalGoalCost <= 0) return "—";
+  const pct = (1 - totalShortfall / totalGoalCost) * 100;
+  return `${totalShortfall > 0 ? Math.floor(pct) : Math.round(pct)}%`;
+}
+
 interface Props {
   years: ProjectionYear[];
   expenses: { id: string; name: string; payShortfallOutOfPocket?: boolean }[];
@@ -77,10 +87,16 @@ export function EducationReportPanel({ years, expenses, returnStats, seed }: Pro
                 </div>
               )}
               <div>
-                <span className="text-ink-3">Shortfall</span>{" "}
-                <span className="font-semibold text-crit">{formatCurrency(r.totalShortfall)}</span>
+                <span className="text-ink-3">% Funded</span>{" "}
+                <span className={`font-semibold ${r.totalShortfall > 0 ? "text-warn" : "text-ink"}`}>
+                  {fundedLabel(r.totalGoalCost, r.totalShortfall)}
+                </span>
               </div>
-              <SolverPosGauge state="ready" successPct={successByGoal[r.goalId] ?? null} />
+              <SolverPosGauge
+                state="ready"
+                successPct={successByGoal[r.goalId] ?? null}
+                label="Goal Confidence"
+              />
             </div>
           </div>
           <div className="h-64">

@@ -4,7 +4,7 @@ import { runEducationGoalMc } from "@/engine/education/education-mc";
 import type { EducationGoalReport } from "../education-report-data";
 
 const report = {
-  goalId: "edu", name: "College", dedicatedFundsUsed: 30000, cashFlowFundsUsed: 0, totalShortfall: 10000,
+  goalId: "edu", name: "College", dedicatedFundsUsed: 30000, cashFlowFundsUsed: 0, totalShortfall: 10000, totalGoalCost: 40000,
   coveredByCashFlow: false,
   chart: { labels: [], remaining: [], withdrawals: [], outOfPocket: [], shortfall: [] },
   rows: [
