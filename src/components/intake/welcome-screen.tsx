@@ -37,6 +37,11 @@ export function welcomeCards(sections: readonly IntakeSectionKey[]): WelcomeCard
   if (sections.includes("goals")) {
     cards.push(card("goals", "When you want to retire and what retirement should cost."));
   }
+  if (sections.includes("estate")) {
+    cards.push(
+      card("estate", "Who your documents should name, and how your children inherit."),
+    );
+  }
   if (sections.includes("documents")) {
     cards.push(card("documents", "Statements, tax returns, and anything else worth sharing."));
   }

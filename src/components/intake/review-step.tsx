@@ -1,13 +1,30 @@
 "use client";
 
 import { isBlankIntakeExpenseGoalRow, type IntakeDraft } from "@/lib/intake/schema";
+import {
+  FIDUCIARY_SLOTS,
+  childDistributionLabel,
+  estateHousehold,
+  fiduciarySlotLabel,
+  findFiduciary,
+  formatEstateAddress,
+  isEstateEmpty,
+  legalResidenceLabel,
+} from "@/lib/intake/estate";
 import type { IntakeSectionKey } from "@/lib/intake/sections";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 /** The sections this screen can summarize. Documents is reviewed on its own
  *  step, and Risk has no summary yet. */
-const REVIEWABLE_SECTIONS = ["family", "accounts", "income", "property", "goals"] as const;
+const REVIEWABLE_SECTIONS = [
+  "family",
+  "accounts",
+  "income",
+  "property",
+  "goals",
+  "estate",
+] as const;
 
 type ReviewableSection = (typeof REVIEWABLE_SECTIONS)[number];
 
@@ -63,7 +80,10 @@ function Row({ label, value }: { label: string; value: string | number | undefin
   return (
     <div className={rowCls}>
       <span className="text-ink-3">{label}</span>
-      <span className="tabular text-ink">{value}</span>
+      {/* min-w-0 + break-words: a flex item will not shrink below the width of
+          its longest unbreakable token, so without these one long value blows
+          the card open and scrolls the whole page sideways on a phone. */}
+      <span className="tabular min-w-0 break-words text-right text-ink">{value}</span>
     </div>
   );
 }
@@ -80,7 +100,7 @@ function formatMoney(n: number | undefined): string | undefined {
 // Edit jump-back affordances — no in-body Submit button.
 
 export function ReviewStep({ value, sections, onEdit }: ReviewStepProps) {
-  const { family, accounts, income, property, goals } = value;
+  const { family, accounts, income, property, goals, estate } = value;
 
   const collects = (s: ReviewableSection) => sections.includes(s);
   const anyReviewable = REVIEWABLE_SECTIONS.some(collects);
@@ -207,6 +227,38 @@ export function ReviewStep({ value, sections, onEdit }: ReviewStepProps) {
         </SectionCard>
       )}
 
+      {/* ── Estate ────────────────────────────────────────────────── */}
+      {collects("estate") && (
+        <SectionCard title="Estate" section="estate" onEdit={onEdit}>
+          {isEstateEmpty(estate) ? (
+            <p className="text-[13px] text-ink-4">No estate details entered.</p>
+          ) : (
+            <>
+              <Row label="Address" value={formatEstateAddress(estate?.residence) ?? undefined} />
+              <Row
+                label="Legal residence"
+                value={legalResidenceLabel(estate?.residence) ?? undefined}
+              />
+              {FIDUCIARY_SLOTS.map((slot) => {
+                const name = findFiduciary(estate?.fiduciaries, slot)?.name?.trim();
+                return name ? (
+                  <Row
+                    key={`${slot.role}-${slot.priority}`}
+                    label={fiduciarySlotLabel(slot)}
+                    value={name}
+                  />
+                ) : null;
+              })}
+              {estateHousehold(family).hasChildren && (
+                <Row
+                  label="Children’s inheritance"
+                  value={childDistributionLabel(estate?.childrenDistribution) ?? undefined}
+                />
+              )}
+            </>
+          )}
+        </SectionCard>
+      )}
     </div>
   );
 }

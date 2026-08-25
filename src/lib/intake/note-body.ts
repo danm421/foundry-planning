@@ -27,6 +27,18 @@ import {
   type IntakeSectionKey,
 } from "@/lib/intake/sections";
 import { intakeAccountTypeLabel } from "@/lib/intake/account-types";
+import {
+  FIDUCIARY_SLOTS,
+  SUGGESTED_CHILD_DISTRIBUTION_SUMMARY,
+  childDistributionLabel,
+  estateHouseholdFromPayload,
+  fiduciaryContactLine,
+  fiduciarySlotLabel,
+  findContact,
+  findFiduciary,
+  formatEstateAddress,
+  legalResidenceLabel,
+} from "@/lib/intake/estate";
 import { individualOwnerLabel } from "@/lib/owner-labels";
 
 // ── Wording ──────────────────────────────────────────────────────────────────
@@ -284,6 +296,80 @@ function propertyLines(payload: IntakePayload): string[] {
 }
 
 /**
+ * The Estate section, as the attorney-facing record.
+ *
+ * This is the section with the LEAST elsewhere to go: apply writes the
+ * principals' own phone, email and address onto their CRM contacts, but a
+ * nominated guardian has no row anywhere in the plan — the note is the only
+ * place a nomination is written down at all. So it is transcribed in full,
+ * contact details and distribution terms included, rather than summarised.
+ */
+function estateLines(payload: IntakePayload): string[] {
+  const estate = payload.estate;
+  if (!estate) return [];
+  const out: string[] = [];
+
+  const contact = estate.contact;
+  const principal = (
+    who: "primary" | "spouse",
+    name: string | null,
+  ): string | null => {
+    const c = contact?.[who];
+    const parts = detail(c?.mobile?.trim() || null, c?.email?.trim() || null);
+    return parts ? `- ${name ?? (who === "primary" ? "Client" : "Spouse")}: ${parts}` : null;
+  };
+
+  const household = estateHouseholdFromPayload(payload.family);
+  const contacts = [
+    principal("primary", fullName(payload.family?.primary)),
+    principal("spouse", fullName(payload.family?.spouse ?? undefined)),
+  ].filter((v): v is string => v !== null);
+  if (contacts.length > 0) out.push("**Contact**", ...contacts);
+
+  const address = formatEstateAddress(estate.residence);
+  const legal = legalResidenceLabel(estate.residence);
+  if (address || legal) {
+    if (out.length > 0) out.push("");
+    out.push("**Residence**");
+    if (address) out.push(`- ${address}`);
+    if (legal) out.push(`- Legal residence for document purposes: ${legal}`);
+  }
+
+  // Every named slot, in slot order, with that person's contact card folded in —
+  // the advisor reads one line per nomination rather than cross-referencing two
+  // lists the way the form collects them.
+  const nominations = FIDUCIARY_SLOTS.map((slot) => {
+    const name = findFiduciary(estate.fiduciaries, slot)?.name?.trim();
+    if (!name) return null;
+    const line = fiduciaryContactLine(findContact(estate.fiduciaryContacts, name));
+    return `- ${fiduciarySlotLabel(slot)}: ${detail(name, line)}`;
+  }).filter((v): v is string => v !== null);
+  if (nominations.length > 0) {
+    if (out.length > 0) out.push("");
+    out.push("**Fiduciaries**", ...nominations);
+  }
+
+  // The chosen schedule is spelled out rather than named. "Chose the suggested
+  // schedule", read six months later with no schedule attached, is not a record
+  // of what the client agreed to.
+  const distribution = estate.childrenDistribution;
+  const chosen = childDistributionLabel(distribution);
+  if (household.hasChildren && chosen) {
+    if (out.length > 0) out.push("");
+    out.push("**How the children receive assets**");
+    out.push(
+      distribution?.plan === "suggested"
+        ? `- ${SUGGESTED_CHILD_DISTRIBUTION_SUMMARY}`
+        : "- Their own instructions:",
+    );
+    const note = distribution?.note?.trim();
+    if (note) out.push(quote(note));
+  }
+
+  return out;
+}
+
+/**
  * Risk is summarised, never transcribed. The answers are `{questionId:
  * optionId}` pairs that mean nothing without the questionnaire in front of you,
  * and the SCORE already lands on the client's risk profile. What has nowhere
@@ -364,6 +450,7 @@ export function intakeNoteBody(
     accounts: () => accountsLines(payload),
     income: () => incomeLines(payload, opts.currentYear),
     property: () => propertyLines(payload),
+    estate: () => estateLines(payload),
     risk: () => riskLines(payload),
   };
 

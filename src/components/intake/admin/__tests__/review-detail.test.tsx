@@ -52,6 +52,15 @@ const baseDiff: IntakeDiff = {
   },
   expenseGoals: { baselineCount: 0, submittedCount: 0, submittedItems: [] },
   radar: { topics: [], note: undefined },
+  estate: {
+    answered: false,
+    principals: [],
+    address: null,
+    legalResidence: null,
+    nominations: [],
+    distribution: null,
+    distributionNote: null,
+  },
   risk: { answered: 0, total: 5, score: null, level: null, answers: [], note: null },
   accounts: {
     baselineCount: 2,

@@ -16,6 +16,7 @@ export const INTAKE_SECTIONS = [
   "income",
   "property",
   "goals",
+  "estate",
   "documents",
   "risk",
 ] as const;
@@ -38,6 +39,7 @@ export const INTAKE_SECTION_LABELS: Record<IntakeSectionKey, string> = {
   income: "Income",
   property: "Property",
   goals: "Goals",
+  estate: "Estate",
   documents: "Documents",
   risk: "Risk tolerance",
 };
@@ -123,6 +125,10 @@ export const INTAKE_SECTION_PRESETS = [
     label: "Full intake + risk",
     sections: [...DEFAULT_INTAKE_SECTIONS, "risk"],
   },
+  // Family rides along deliberately: the estate section leans on it for the
+  // children and the spouse, and the documents themselves are drafted off the
+  // legal names and dates of birth that step collects.
+  { key: "estate", label: "Estate details", sections: ["family", "estate"] },
   { key: "documents", label: "Documents only", sections: ["documents"] },
   { key: "risk", label: "Risk only", sections: ["risk"] },
 ] as const satisfies readonly {

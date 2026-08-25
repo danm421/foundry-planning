@@ -52,6 +52,7 @@ import { applyRtqPatch } from "@/lib/risk/apply-rtq";
 import { recomputeProfileTx } from "@/lib/risk/profile";
 import { loadExistingScores } from "@/lib/risk/existing-scores";
 import {
+  EMAIL_RE,
   intakeSubmitSchemaFor,
   maritalToFilingStatus,
   type IntakePayload,
@@ -331,6 +332,79 @@ async function applySectionsToClient(
         .where(and(eq(familyMembers.clientId, clientId), eq(familyMembers.role, "spouse")));
     }
   }
+
+  // ── Estate: contact details onto the CRM contacts ─────────────────────────
+  //
+  // The Estate step is the only one that asks for a phone number, an email and a
+  // street address, and every one of them has an exact column on the household
+  // contact. So they land as REAL contact data rather than only as prose in the
+  // note — an advisor who has to copy a mobile number out of a timeline note
+  // will keep the number on a sticky.
+  //
+  // Two rules make the write safe:
+  //   - Only keys the client actually FILLED are sent. The upsert writes every
+  //     key it is given, so including a blank would wipe a number already on
+  //     file with an answer the client never gave.
+  //   - A malformed email is dropped rather than stored. It stays in the note,
+  //     where the advisor can read and fix it; what it must not do is overwrite
+  //     a working address with "sarah at gmail" or fail the submit — the client
+  //     is long gone by apply time and cannot be asked to correct anything.
+  //
+  // The ADDRESS goes on the primary contact only. There is no household-level
+  // address column, and the form asks the couple for one shared address — which
+  // is not evidence that a spouse's separately-recorded address is stale.
+  const estate = sections.includes("estate") ? payload.estate : undefined;
+  if (estate) {
+    const text = (v: string | undefined) => {
+      const t = v?.trim();
+      return t ? t : undefined;
+    };
+    const email = (v: string | undefined) => {
+      const t = text(v);
+      return t !== undefined && EMAIL_RE.test(t) ? t : undefined;
+    };
+
+    const primaryPatch: Record<string, unknown> = {
+      mobile: text(estate.contact?.primary?.mobile),
+      email: email(estate.contact?.primary?.email),
+      addressLine1: text(estate.residence?.addressLine1),
+      addressLine2: text(estate.residence?.addressLine2),
+      city: text(estate.residence?.city),
+      state: text(estate.residence?.state),
+      postalCode: text(estate.residence?.postalCode),
+    };
+    const spousePatch: Record<string, unknown> = {
+      mobile: text(estate.contact?.spouse?.mobile),
+      email: email(estate.contact?.spouse?.email),
+    };
+    const filled = (patch: Record<string, unknown>) =>
+      Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
+
+    const primaryFilled = filled(primaryPatch);
+    const spouseFilled = filled(spousePatch);
+    if (Object.keys(primaryFilled).length > 0 || Object.keys(spouseFilled).length > 0) {
+      await upsertPrimaryAndSpouseContacts(
+        tx,
+        client.crmHouseholdId,
+        {
+          ...(Object.keys(primaryFilled).length > 0 ? { primary: primaryFilled } : {}),
+          ...(Object.keys(spouseFilled).length > 0 ? { spouse: spouseFilled } : {}),
+        },
+        // A detail-only patch carries no name, so the upsert cannot materialize
+        // a nameless row — an estate-only form updates the contacts that exist
+        // and inserts nothing. Passing the primary's stored last name is
+        // therefore belt-and-braces, not load-bearing.
+        null,
+      );
+      result.familyScalarsChanged = true;
+    }
+  }
+
+  // The nominations themselves — guardian, trustee, executor — deliberately do
+  // NOT become rows here. There is no fiduciary table, and minting `wills` rows
+  // from a questionnaire would assert that documents exist which nobody has
+  // drafted. They land in full on the CRM note (see `note-body.ts`), which is
+  // what the advisor takes to the attorney.
 
   // ── Retirement ages ───────────────────────────────────────────────────────
   // Persisted under GOALS, not Family: the client types both on the Goals step,

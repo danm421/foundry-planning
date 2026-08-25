@@ -297,6 +297,71 @@ export default function ReviewDetail({
         </div>
       )}
 
+      {/* ── Estate ──────────────────────────────────────────────────────── */}
+      {/* Hidden unless the client answered something, same rule as the radar
+          card above. The nominations are the part with no home in the plan —
+          apply files them on the CRM note, and this card is where the advisor
+          reads them before that happens. */}
+      {diff.estate.answered && (
+        <div className="rounded-[var(--radius-sm)] border border-hair bg-card p-5">
+          <h3 className={`${labelCls} mb-3`}>Estate</h3>
+          <div className="space-y-1">
+            {diff.estate.principals.map((p) => (
+              <div
+                key={p.name}
+                className="flex items-center justify-between gap-4 py-1 text-[14px]"
+              >
+                <span className="text-ink-3">{p.name}</span>
+                <span className="tabular text-ink">{p.detail}</span>
+              </div>
+            ))}
+            {diff.estate.address && (
+              <div className="flex items-center justify-between gap-4 py-1 text-[14px]">
+                <span className="text-ink-3">Address</span>
+                <span className="text-ink">{diff.estate.address}</span>
+              </div>
+            )}
+            {diff.estate.legalResidence && (
+              <div className="flex items-center justify-between gap-4 py-1 text-[14px]">
+                <span className="text-ink-3">Legal residence</span>
+                <span className="text-ink">{diff.estate.legalResidence}</span>
+              </div>
+            )}
+          </div>
+
+          {diff.estate.nominations.length > 0 && (
+            <div className="mt-3 space-y-1 border-t border-hair pt-3">
+              {diff.estate.nominations.map((n) => (
+                <div
+                  key={n.role}
+                  className="flex items-start justify-between gap-4 py-1 text-[14px]"
+                >
+                  <span className="text-ink-3">{n.role}</span>
+                  <span className="text-right">
+                    <span className="text-ink">{n.name}</span>
+                    {n.contact && (
+                      <span className="ml-2 text-[12px] text-ink-4">{n.contact}</span>
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {diff.estate.distribution && (
+            <div className="mt-3 border-t border-hair pt-3">
+              <p className="text-[13px] text-ink-3">How the children receive assets</p>
+              <p className="mt-1 text-[14px] text-ink">{diff.estate.distribution}</p>
+              {diff.estate.distributionNote && (
+                <p className="mt-2 whitespace-pre-wrap text-[14px] text-ink-2">
+                  {diff.estate.distributionNote}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Risk tolerance ──────────────────────────────────────────────── */}
       {/* Only when the client actually answered something. A partial sitting
           still shows: apply writes nothing for it, and the advisor needs to
