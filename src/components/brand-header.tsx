@@ -12,9 +12,12 @@ export default function BrandHeader({
   firmName,
 }: BrandHeaderProps): ReactElement {
   const { collapsed } = useSidebar();
+  // Fixed height in both states. The mark shrinks when the rail collapses, and
+  // a header that shrank with it would drag every nav icon up the screen on
+  // toggle — the icons are meant to stay put.
   return (
     <div
-      className={`flex items-center gap-3 border-b border-hair py-4 ${
+      className={`flex h-[116px] items-center gap-3 border-b border-hair ${
         collapsed ? "justify-center px-2" : "px-[var(--pad-card)]"
       }`}
     >

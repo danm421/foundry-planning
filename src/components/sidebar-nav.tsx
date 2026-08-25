@@ -23,13 +23,16 @@ interface NavItemSpec {
 }
 
 interface NavGroup {
-  label: string;
+  /** React key only. Groups are separated by a rule rather than a heading, so
+   *  the icons sit at the same height whether the sidebar is open or collapsed
+   *  — a heading that only exists when open pushed everything below it down. */
+  key: string;
   items: NavItemSpec[];
 }
 
 const NAV_GROUPS: NavGroup[] = [
   {
-    label: "WORKSPACE",
+    key: "workspace",
     items: [
       { icon: <HomeIcon />, label: "Home", href: "/home" },
       { icon: <ClientsIcon />, label: "Clients", href: "/clients" },
@@ -40,7 +43,7 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: "FIRM",
+    key: "firm",
     items: [
       { icon: <BellIcon />, label: "Alerts", href: "/alerts" },
       { icon: <SettingsIcon />, label: "Settings", href: "/settings" },
@@ -80,18 +83,14 @@ export default function SidebarNav({
 
   return (
     <nav className="flex flex-col gap-4 py-4">
-      {NAV_GROUPS.map((group) => (
-        <div key={group.label} className="flex flex-col">
-          {collapsed ? (
+      {NAV_GROUPS.map((group, groupIndex) => (
+        <div key={group.key} className="flex flex-col">
+          {/* Same separator in both states, and none above the first group —
+              the brand header's own rule already closes off the top. */}
+          {groupIndex > 0 ? (
             <div aria-hidden className="mx-3 mb-2 border-t border-hair" />
-          ) : (
-            <div className="px-[var(--pad-card)] pb-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink-4">
-              {group.label}
-            </div>
-          )}
-          {/* Collapsed: a gap between the compact hit targets so a near-miss
-              lands on nothing rather than on the neighbouring item. */}
-          <ul className={`flex flex-col${collapsed ? " gap-1" : ""}`}>
+          ) : null}
+          <ul className="flex flex-col">
             {group.items.map((item) => {
               const active = !item.placeholder && item.href
                 ? isActivePath(pathname, item.href)

@@ -9,13 +9,34 @@ vi.mock("next/navigation", () => ({
 
 import { usePathname } from "next/navigation";
 import SidebarNav from "../sidebar-nav";
+import { SidebarProvider } from "../sidebar-provider";
 
 describe("SidebarNav", () => {
-  it("renders the two group headers", () => {
+  it("renders no group heading — headings only exist when open, so they push the icons down", () => {
     (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/clients");
     const { container } = render(<SidebarNav clientsCount={0} unreadCount={0} />);
-    expect(container.textContent).toContain("WORKSPACE");
-    expect(container.textContent).toContain("FIRM");
+    expect(container.textContent).not.toContain("WORKSPACE");
+    expect(container.textContent).not.toContain("FIRM");
+  });
+
+  it("renders identical group chrome open or collapsed, so nothing above an icon changes height", () => {
+    (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/clients");
+    const chromeOf = (collapsed: boolean) => {
+      const { container } = render(
+        <SidebarProvider initialCollapsed={collapsed}>
+          <SidebarNav clientsCount={0} unreadCount={0} />
+        </SidebarProvider>,
+      );
+      const nav = container.querySelector("nav")!;
+      // Everything the nav renders other than the item rows themselves.
+      return Array.from(nav.querySelectorAll(":scope > div > *:not(ul)")).map(
+        (el) => el.outerHTML,
+      );
+    };
+    const collapsedChrome = chromeOf(true);
+    expect(collapsedChrome).toEqual(chromeOf(false));
+    // Vacuity guard: the comparison has to be looking at something.
+    expect(collapsedChrome).toHaveLength(1);
   });
 
   it("renders Home, Clients, Models, Tasks, Settings in order", () => {

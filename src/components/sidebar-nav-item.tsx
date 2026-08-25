@@ -29,8 +29,12 @@ export default function SidebarNavItem({
   // rather than the full-width row, so a click has to land near the icon
   // instead of anywhere in the column. Expanded rows stay full-width — the
   // label already makes the target obvious there.
+  // The 2px margin does two jobs: it leaves a gap between compact targets so a
+  // near-miss lands on nothing, and it makes the collapsed row exactly as tall
+  // as the expanded one (2 + 32 + 2 = 8 + 20 + 8), so icons don't shift on
+  // toggle.
   const rowShape = collapsed
-    ? "mx-auto h-8 w-8 justify-center rounded"
+    ? "mx-auto my-0.5 h-8 w-8 justify-center rounded"
     : "gap-3 px-[var(--pad-card)] py-2";
 
   if (placeholder) {
