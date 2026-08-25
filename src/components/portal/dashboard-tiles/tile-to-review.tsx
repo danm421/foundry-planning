@@ -4,16 +4,18 @@ import type { ReviewTxn } from "@/lib/portal/load-dashboard";
 import { TileFrame } from "./tile-frame";
 
 // Presentational: DashboardGrid owns the queue state so the rail panel's
-// "Mark as reviewed" and these checkmarks stay in sync. Edit controls
-// (checkboxes, mark-all) follow the same editEnabled gate as the transactions
-// list — hidden when the advisor has turned off portal editing.
+// "Mark as reviewed" and these checkmarks stay in sync. "Mark these reviewed"
+// clears only the rows on screen and DashboardGrid refills with the next page,
+// so the client works the backlog a page at a time instead of blessing rows
+// they never read. Edit controls follow the same editEnabled gate as the
+// transactions list — hidden when the advisor has turned off portal editing.
 export function TileToReview({
   items,
   count,
   error,
   editEnabled,
   onMarkReviewed,
-  onMarkAll,
+  onMarkPage,
   onOpen,
 }: {
   items: ReviewTxn[];
@@ -21,7 +23,7 @@ export function TileToReview({
   error: boolean;
   editEnabled: boolean;
   onMarkReviewed: (id: string) => void;
-  onMarkAll: () => void;
+  onMarkPage: () => void;
   onOpen: (id: string) => void;
 }): ReactElement {
   return (
@@ -35,10 +37,10 @@ export function TileToReview({
             {editEnabled && (
               <button
                 type="button"
-                onClick={onMarkAll}
+                onClick={onMarkPage}
                 className="rounded-md border border-hair px-2.5 py-1 text-[11px] font-medium text-ink-2 hover:border-accent hover:text-accent"
               >
-                Mark all reviewed
+                Mark these reviewed
               </button>
             )}
           </div>

@@ -10,7 +10,7 @@
 // the base-case projection through `buildGoalFunding`. That is the most
 // expensive thing on this page, so it runs inside the same Promise.all as the
 // queries and fails soft — see `loadGoalFunding`.
-import { and, desc, eq, gte, isNull, lte, ne, sql } from "drizzle-orm";
+import { and, eq, gte, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   accounts,
@@ -18,7 +18,6 @@ import {
   liabilities,
   plaidTransactions,
   scenarios,
-  transactionCategories,
 } from "@/db/schema";
 import { loadBudgetSummary, currentMonthRange } from "@/lib/portal/load-budget-data";
 import { loadRecurringsData } from "@/lib/portal/load-recurrings-data";
@@ -38,6 +37,7 @@ import {
   dueWithinDays,
   topCategories,
 } from "@/lib/portal/dashboard-summary";
+import { toReviewPage, toReviewCount } from "@/lib/portal/to-review-queue";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { ClientNotFoundError } from "@/lib/projection/load-client-data";
 import { retirementYearOf } from "@/lib/presentations/pages/retirement-summary/aggregate";
@@ -253,37 +253,8 @@ export async function loadPortalDashboard(
           )
           .groupBy(plaidTransactions.type)
       : Promise.resolve([]),
-    // Uncategorized expense count + sample ("to review").
-    share.shareTransactions
-      ? db
-          .select({
-            id: plaidTransactions.id,
-            date: plaidTransactions.date,
-            name: plaidTransactions.name,
-            merchantName: plaidTransactions.merchantName,
-            amount: plaidTransactions.amount,
-            accountName: accounts.name,
-            categoryId: plaidTransactions.categoryId,
-            categoryName: transactionCategories.name,
-            categoryColor: transactionCategories.color,
-          })
-          .from(plaidTransactions)
-          .leftJoin(accounts, eq(accounts.id, plaidTransactions.accountId))
-          .leftJoin(
-            transactionCategories,
-            eq(transactionCategories.id, plaidTransactions.categoryId),
-          )
-          .where(
-            and(
-              eq(plaidTransactions.clientId, clientId),
-              eq(plaidTransactions.excluded, false),
-              ne(plaidTransactions.type, "transfer"),
-              isNull(plaidTransactions.reviewedAt),
-            ),
-          )
-          .orderBy(desc(plaidTransactions.date), desc(plaidTransactions.id))
-          .limit(5)
-      : Promise.resolve([]),
+    // The "to review" page — same query the review-queue route refills from.
+    share.shareTransactions ? toReviewPage(clientId) : Promise.resolve([]),
     // Visible asset accounts for net worth (base-case scenario).
     scenario
       ? db
@@ -377,21 +348,8 @@ export async function loadPortalDashboard(
     now,
   });
 
-  // ---- To-review count (cheap COUNT alongside the sample) ----
-  const countRows = share.shareTransactions
-    ? await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(plaidTransactions)
-        .where(
-          and(
-            eq(plaidTransactions.clientId, clientId),
-            eq(plaidTransactions.excluded, false),
-            ne(plaidTransactions.type, "transfer"),
-            isNull(plaidTransactions.reviewedAt),
-          ),
-        )
-    : [];
-  const count = countRows[0]?.count ?? 0;
+  // ---- To-review count (cheap COUNT alongside the page) ----
+  const count = share.shareTransactions ? await toReviewCount(clientId) : 0;
 
   const recurringRows = recurringsData?.recurrings ?? [];
 
@@ -425,20 +383,7 @@ export async function loadPortalDashboard(
     },
     goals: goalFunding.goals,
     goalsProjected: goalFunding.projected,
-    toReview: {
-      count: count ?? 0,
-      sample: uncategorized.map((t) => ({
-        id: t.id,
-        date: t.date,
-        name: t.name,
-        merchantName: t.merchantName,
-        amount: Number(t.amount),
-        accountName: t.accountName,
-        categoryId: t.categoryId,
-        categoryName: t.categoryName,
-        categoryColor: t.categoryColor,
-      })),
-    },
+    toReview: { count, sample: uncategorized },
     topCategories: topCategories(budget.groups, 5),
     netThisMonth: {
       net: net.net,

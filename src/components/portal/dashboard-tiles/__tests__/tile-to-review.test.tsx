@@ -15,28 +15,28 @@ describe("TileToReview", () => {
   it("renders the count and reports checkmark clicks", () => {
     const onMark = vi.fn();
     render(
-      <TileToReview items={items} count={2} error={false} editEnabled onMarkReviewed={onMark} onMarkAll={() => {}} onOpen={() => {}} />,
+      <TileToReview items={items} count={2} error={false} editEnabled onMarkReviewed={onMark} onMarkPage={() => {}} onOpen={() => {}} />,
     );
     expect(screen.getByText("2")).toBeInTheDocument();
     fireEvent.click(screen.getAllByLabelText("Mark as reviewed")[0]);
     expect(onMark).toHaveBeenCalledWith("t1");
   });
 
-  it("reports mark-all clicks", () => {
-    const onMarkAll = vi.fn();
+  it("reports mark-this-page clicks", () => {
+    const onMarkPage = vi.fn();
     render(
-      <TileToReview items={items} count={2} error={false} editEnabled onMarkReviewed={() => {}} onMarkAll={onMarkAll} onOpen={() => {}} />,
+      <TileToReview items={items} count={20} error={false} editEnabled onMarkReviewed={() => {}} onMarkPage={onMarkPage} onOpen={() => {}} />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /mark all reviewed/i }));
-    expect(onMarkAll).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: /mark these reviewed/i }));
+    expect(onMarkPage).toHaveBeenCalledTimes(1);
   });
 
   it("hides edit controls when editing is disabled", () => {
     render(
-      <TileToReview items={items} count={2} error={false} editEnabled={false} onMarkReviewed={() => {}} onMarkAll={() => {}} onOpen={() => {}} />,
+      <TileToReview items={items} count={2} error={false} editEnabled={false} onMarkReviewed={() => {}} onMarkPage={() => {}} onOpen={() => {}} />,
     );
     expect(screen.queryByLabelText("Mark as reviewed")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /mark all reviewed/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /mark these reviewed/i })).not.toBeInTheDocument();
     // The rows themselves are still visible and openable.
     expect(screen.getByText("Amazon")).toBeInTheDocument();
   });
@@ -44,7 +44,7 @@ describe("TileToReview", () => {
   it("reports row opens and surfaces the error line", () => {
     const onOpen = vi.fn();
     render(
-      <TileToReview items={items} count={2} error editEnabled onMarkReviewed={() => {}} onMarkAll={() => {}} onOpen={onOpen} />,
+      <TileToReview items={items} count={2} error editEnabled onMarkReviewed={() => {}} onMarkPage={() => {}} onOpen={onOpen} />,
     );
     fireEvent.click(screen.getByText("Amazon"));
     expect(onOpen).toHaveBeenCalledWith("t1");
@@ -53,7 +53,7 @@ describe("TileToReview", () => {
 
   it("shows the caught-up state at zero", () => {
     render(
-      <TileToReview items={[]} count={0} error={false} editEnabled onMarkReviewed={() => {}} onMarkAll={() => {}} onOpen={() => {}} />,
+      <TileToReview items={[]} count={0} error={false} editEnabled onMarkReviewed={() => {}} onMarkPage={() => {}} onOpen={() => {}} />,
     );
     expect(screen.getByText(/caught up/)).toBeInTheDocument();
   });

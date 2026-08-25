@@ -80,15 +80,36 @@ const DTO: PortalDashboardDTO = {
 
 // The rail target is a sibling of the grid in the portal layout; the grid must
 // resolve it AFTER commit (never during render) and portal the panel into it.
-function LayoutLike({ editEnabled = false }: { editEnabled?: boolean }): ReactElement {
+function LayoutLike({
+  editEnabled = false,
+  dto = DTO,
+}: {
+  editEnabled?: boolean;
+  dto?: PortalDashboardDTO;
+}): ReactElement {
   return (
     <div>
       <main>
-        <DashboardGrid dto={DTO} editEnabled={editEnabled} />
+        <DashboardGrid dto={dto} editEnabled={editEnabled} />
       </main>
       <aside id="portal-detail" />
     </div>
   );
+}
+
+/** n rows of the to-review queue, newest-first like the loader hands them over. */
+function pageOf(start: number, len: number): PortalDashboardDTO["toReview"]["sample"] {
+  return Array.from({ length: len }, (_, i) => ({
+    id: `txn${start + i}`,
+    date: "2026-06-12",
+    name: `RAW ${start + i}`,
+    merchantName: `Merchant ${start + i}`,
+    amount: 10 + start + i,
+    accountName: "Checking",
+    categoryId: null,
+    categoryName: null,
+    categoryColor: null,
+  }));
 }
 
 function rail(): HTMLElement {
@@ -257,26 +278,79 @@ describe("DashboardGrid rail drill-downs", () => {
     expect(screen.getByText("Whole Foods")).toBeInTheDocument();
   });
 
-  it("clears the whole queue from the tile's mark-all button", async () => {
+  it("marks only the rows on screen, then refills with the next page", async () => {
+    // 12 in the backlog, 5 on screen: one click clears those 5 and the server
+    // hands back the next 5, so the client keeps going until it hits zero.
+    const page1 = pageOf(1, 5);
+    const page2 = pageOf(6, 5);
     type FakeFetch = (
       url: RequestInfo | URL,
       init?: RequestInit,
     ) => Promise<{ ok: boolean; json: () => Promise<unknown> }>;
     const fetchMock = vi.fn<FakeFetch>(() =>
-      Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, count: 1 }) }),
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ ok: true, marked: 5, items: page2, count: 7 }),
+      }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
-    render(<LayoutLike editEnabled />);
-    await user.click(screen.getByRole("button", { name: /mark all reviewed/i }));
-    // Optimistic: the queue empties to the caught-up state.
-    await waitFor(() => expect(screen.getByText(/caught up/)).toBeInTheDocument());
-    expect(screen.queryByText("Whole Foods")).not.toBeInTheDocument();
+    render(
+      <LayoutLike editEnabled dto={{ ...DTO, toReview: { count: 12, sample: page1 } }} />,
+    );
+    expect(screen.getByText("12")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /mark these reviewed/i }));
+
+    // Exactly the visible ids went up — nothing the client never saw.
     const post = fetchMock.mock.calls.find(([u]) =>
-      String(u).includes("/api/portal/transactions/review-all"),
+      String(u).includes("/api/portal/transactions/review-queue"),
     );
     expect(post).toBeTruthy();
     expect(post![1]?.method).toBe("POST");
+    expect(JSON.parse(String(post![1]!.body))).toEqual({
+      ids: ["txn1", "txn2", "txn3", "txn4", "txn5"],
+    });
+
+    // The next page lands and the count drops by the page, not to zero.
+    await waitFor(() => expect(screen.getByText("Merchant 6")).toBeInTheDocument());
+    expect(screen.queryByText("Merchant 1")).not.toBeInTheDocument();
+    expect(screen.getByText("7")).toBeInTheDocument();
+    expect(screen.queryByText(/caught up/)).not.toBeInTheDocument();
+  });
+
+  it("shows the caught-up state once the last page is marked", async () => {
+    type FakeFetch = (
+      url: RequestInfo | URL,
+      init?: RequestInit,
+    ) => Promise<{ ok: boolean; json: () => Promise<unknown> }>;
+    const fetchMock = vi.fn<FakeFetch>(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ ok: true, marked: 2, items: [], count: 0 }),
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<LayoutLike editEnabled dto={{ ...DTO, toReview: { count: 2, sample: pageOf(1, 2) } }} />);
+    await user.click(screen.getByRole("button", { name: /mark these reviewed/i }));
+    await waitFor(() => expect(screen.getByText(/caught up/)).toBeInTheDocument());
+  });
+
+  it("puts the page back when the batch POST fails", async () => {
+    type FakeFetch = (
+      url: RequestInfo | URL,
+      init?: RequestInit,
+    ) => Promise<{ ok: boolean; json: () => Promise<unknown> }>;
+    const fetchMock = vi.fn<FakeFetch>(() =>
+      Promise.resolve({ ok: false, json: () => Promise.resolve({}) }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<LayoutLike editEnabled dto={{ ...DTO, toReview: { count: 12, sample: pageOf(1, 5) } }} />);
+    await user.click(screen.getByRole("button", { name: /mark these reviewed/i }));
+    await waitFor(() => expect(screen.getByText(/Couldn.t save/)).toBeInTheDocument());
+    expect(screen.getByText("Merchant 1")).toBeInTheDocument();
+    expect(screen.getByText("12")).toBeInTheDocument();
   });
 
   it("opens the net-worth breakdown from the net-worth tile", async () => {

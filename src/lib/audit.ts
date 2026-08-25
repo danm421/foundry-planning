@@ -417,6 +417,7 @@ export type AuditAction =
   | "portal.transaction.create"
   | "portal.transaction.update"
   | "portal.transaction.review_all"
+  | "portal.transaction.review_batch"
   | "portal.transaction.delete"
   | "portal.rule.create"
   | "portal.rule.update"

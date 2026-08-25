@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { plaidTransactions, clients } from "@/db/schema";
 import { authErrorResponse } from "@/lib/authz";
@@ -9,13 +9,15 @@ import { requireAreaShared } from "@/lib/portal/privacy";
 import { requireEditEnabled } from "@/lib/portal/require-edit-enabled";
 import { requirePortalActiveSubscription } from "@/lib/portal/require-portal-subscription";
 import { recordUpdate } from "@/lib/audit/record-helpers";
+import { toReviewWhere } from "@/lib/portal/to-review-queue";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Marks every unreviewed transaction reviewed in one statement. The WHERE
- * mirrors the dashboard "to review" queue in load-dashboard.ts (non-excluded,
- * non-transfer, reviewedAt IS NULL) so the count clears to zero.
+ * Marks every unreviewed transaction reviewed in one statement, on the shared
+ * queue filter (see to-review-queue.ts) so the count clears to zero. The
+ * mobile app's "mark all" button; the web tile pages through review-queue
+ * instead, marking only rows the client has actually seen.
  */
 export async function POST(): Promise<Response> {
   try {
@@ -37,14 +39,7 @@ export async function POST(): Promise<Response> {
     const updated = await db
       .update(plaidTransactions)
       .set({ reviewedAt: new Date(), reviewedBy: clerkUserId, updatedAt: new Date() })
-      .where(
-        and(
-          eq(plaidTransactions.clientId, clientId),
-          eq(plaidTransactions.excluded, false),
-          ne(plaidTransactions.type, "transfer"),
-          isNull(plaidTransactions.reviewedAt),
-        ),
-      )
+      .where(toReviewWhere(clientId))
       .returning({ id: plaidTransactions.id });
 
     const count = updated.length;

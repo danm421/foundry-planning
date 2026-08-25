@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useState, type ReactElement } from "react";
-import type { PortalDashboardDTO } from "@/lib/portal/load-dashboard";
+import type { PortalDashboardDTO, ReviewTxn } from "@/lib/portal/load-dashboard";
 import { usePortalFetch } from "@/components/portal/portal-mode-context";
 import { PortalDetailPortal } from "@/components/portal/portal-detail-rail";
 import { TileMonthlySpending } from "./dashboard-tiles/tile-monthly-spending";
@@ -41,11 +41,42 @@ export function DashboardGrid({
   const [reviewCount, setReviewCount] = useState(dto.toReview.count);
   const [reviewError, setReviewError] = useState(false);
 
+  // Undoing an optimistic mark is the same three moves everywhere: put the
+  // rows back, put the count back, say it didn't save.
+  const revertTo = useCallback(
+    (items: ReviewTxn[], count: number) => () => {
+      setReviewItems(items);
+      setReviewCount(count);
+      setReviewError(true);
+    },
+    [],
+  );
+
+  // Both the refill GET and the batch POST answer with the same page shape —
+  // one reader so they can't drift apart. A response missing either field
+  // leaves that half of the optimistic state alone.
+  const applyQueuePage = useCallback((data: { items?: ReviewTxn[]; count?: number }) => {
+    if (Array.isArray(data.items)) setReviewItems(data.items);
+    if (typeof data.count === "number") setReviewCount(data.count);
+  }, []);
+
+  // Pulls the next page after a single checkmark so the tile stays full while
+  // the backlog drains. A failed refill keeps the optimistic queue — the count
+  // is still right, there are just fewer rows on screen until the next load.
+  const refillQueue = useCallback(async (): Promise<void> => {
+    try {
+      const res = await portalFetch(`/api/portal/transactions/review-queue`);
+      if (!res.ok) return;
+      applyQueuePage((await res.json()) as { items?: ReviewTxn[]; count?: number });
+    } catch {
+      /* keep what the optimistic update left on screen */
+    }
+  }, [portalFetch, applyQueuePage]);
+
   const markReviewed = useCallback(
     async (id: string): Promise<void> => {
       setReviewError(false);
-      const prevItems = reviewItems;
-      const prevCount = reviewCount;
+      const revert = revertTo(reviewItems, reviewCount);
       setReviewItems((xs) => xs.filter((t) => t.id !== id));
       setReviewCount((c) => Math.max(0, c - 1));
       setDetail((d) => (d?.kind === "transaction" && d.id === id ? null : d));
@@ -56,43 +87,46 @@ export function DashboardGrid({
           body: JSON.stringify({ reviewed: true }),
         });
         if (!res.ok) {
-          setReviewItems(prevItems);
-          setReviewCount(prevCount);
-          setReviewError(true);
+          revert();
+          return;
         }
+        void refillQueue();
       } catch {
-        setReviewItems(prevItems);
-        setReviewCount(prevCount);
-        setReviewError(true);
+        revert();
       }
     },
-    [reviewItems, reviewCount, portalFetch],
+    [reviewItems, reviewCount, portalFetch, refillQueue, revertTo],
   );
 
-  // Clears the whole backlog in one request (see the review-all route). The
-  // optimistic empty state reverts on failure like a single mark.
-  const markAllReviewed = useCallback(async (): Promise<void> => {
+  // Marks only the rows on screen, then takes the next page straight off the
+  // response — the client clears the backlog a page at a time rather than
+  // blessing rows they never read. Reverts to the previous page on failure.
+  const markPageReviewed = useCallback(async (): Promise<void> => {
+    const ids = reviewItems.map((t) => t.id);
+    if (ids.length === 0) return;
     setReviewError(false);
-    const prevItems = reviewItems;
-    const prevCount = reviewCount;
+    const revert = revertTo(reviewItems, reviewCount);
     setReviewItems([]);
-    setReviewCount(0);
-    setDetail((d) => (d?.kind === "transaction" ? null : d));
+    setReviewCount((c) => Math.max(0, c - ids.length));
+    setDetail((d) => (d?.kind === "transaction" && ids.includes(d.id) ? null : d));
     try {
-      const res = await portalFetch(`/api/portal/transactions/review-all`, {
+      const res = await portalFetch(`/api/portal/transactions/review-queue`, {
         method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ids }),
       });
       if (!res.ok) {
-        setReviewItems(prevItems);
-        setReviewCount(prevCount);
-        setReviewError(true);
+        revert();
+        return;
       }
+      const data = (await res.json()) as { items?: ReviewTxn[]; count?: number };
+      // A page with nothing left comes back as an empty list, so the marked
+      // rows leave the tile even if the server omits `items`.
+      applyQueuePage({ items: data.items ?? [], count: data.count });
     } catch {
-      setReviewItems(prevItems);
-      setReviewCount(prevCount);
-      setReviewError(true);
+      revert();
     }
-  }, [reviewItems, reviewCount, portalFetch]);
+  }, [reviewItems, reviewCount, portalFetch, applyQueuePage, revertTo]);
 
   return (
     <>
@@ -131,7 +165,7 @@ export function DashboardGrid({
                 error={reviewError}
                 editEnabled={editEnabled}
                 onMarkReviewed={(id) => void markReviewed(id)}
-                onMarkAll={() => void markAllReviewed()}
+                onMarkPage={() => void markPageReviewed()}
                 onOpen={(id) => setDetail({ kind: "transaction", id })}
               />
             ) : (
