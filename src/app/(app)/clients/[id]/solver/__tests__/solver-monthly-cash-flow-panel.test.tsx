@@ -56,6 +56,21 @@ function cell(year: number, header: string): HTMLElement {
   return within(rowFor(year)).getAllByRole("cell")[idx];
 }
 
+/** The month table's cell under a named column header, found by the month's own
+ *  label. Same resolution rule as `cell` above — through the header, so a moved
+ *  column carries its assertion with it instead of reading a neighbour. */
+function monthCell(label: string, header: string): HTMLElement {
+  const idx = screen
+    .getAllByRole("columnheader")
+    .findIndex((th) => th.textContent?.trim() === header);
+  if (idx < 0) throw new Error(`no column headed "${header}"`);
+  const tr = screen
+    .getAllByTestId("month-row")
+    .find((el) => within(el).queryByText(label) !== null);
+  if (!tr) throw new Error(`no month row for ${label}`);
+  return within(tr).getAllByRole("cell")[idx];
+}
+
 describe("SolverMonthlyCashFlowPanel", () => {
   it("shows the selected year's available figure as the headline", () => {
     render(
@@ -441,6 +456,50 @@ describe("SolverMonthlyCashFlowPanel — month by month", () => {
     expect(screen.getAllByTestId("month-row")).toHaveLength(12);
     expect(screen.getByText("Living")).toBeTruthy();
     expect(screen.getByText("Cash on hand")).toBeTruthy();
+  });
+
+  // Ten columns, ten fields, ten distinct values — so a cell that reads its
+  // neighbour's field changes the text instead of passing on a number the two
+  // happen to share. The year table above is pinned this way by its Other and
+  // Savings assertions; without this the month table was not, and three
+  // wrong-field mutations (Net showing Cash on hand, Income showing Living,
+  // Taxes showing Savings) all passed the suite.
+  it("gives every column its own field, in the order the header promises", () => {
+    render(
+      <SolverMonthlyCashFlowPanel
+        {...baseProps}
+        monthRows={[
+          monthRow(2, {
+            income: 8_111,
+            portfolioDraw: 1_222,
+            taxes: 1_333,
+            debt: 944,
+            savings: 555,
+            other: 466,
+            living: 5_077,
+            net: 758,
+            cashOnHand: 12_345,
+          }),
+        ]}
+        view="months"
+        onViewChange={noop}
+      />,
+    );
+    const expected: Array<[string, string]> = [
+      ["Month", "March"],
+      ["Income", "$8,111"],
+      ["Portfolio draw", "$1,222"],
+      ["Taxes", "$1,333"],
+      ["Debt", "$944"],
+      ["Savings", "$555"],
+      ["Other", "$466"],
+      ["Living", "$5,077"],
+      ["Net", "$758"],
+      ["Cash on hand", "$12,345"],
+    ];
+    for (const [header, value] of expected) {
+      expect(monthCell("March", header).textContent?.trim()).toBe(value);
+    }
   });
 
   it("reports a view change from the toggle", async () => {

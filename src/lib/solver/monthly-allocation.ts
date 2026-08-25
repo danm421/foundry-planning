@@ -124,8 +124,10 @@ export function buildMonthlyAllocation(
 
   // ── Income: per row, by its own month (or evenly when it has none) ────────
   for (const [key, amount] of Object.entries(year.income.bySource)) {
-    // `.has` not `.get() != null` — an unknown key and a row with no month
-    // both spread evenly, but only the known row may consult its month.
+    // A synthetic key with no matching row spreads evenly, exactly like a real
+    // row that carries no month. (`.has` is written out for the reader's sake,
+    // not for behaviour: the map's values are already `number | null`, so
+    // `.get(key) ?? null` answers identically — measured.)
     const month = incomeMonth.has(key) ? incomeMonth.get(key)! : null;
     add(acc.income, spread(amount * k, month));
     incomeExplained += amount;

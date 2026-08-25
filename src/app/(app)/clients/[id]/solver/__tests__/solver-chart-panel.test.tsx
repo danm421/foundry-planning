@@ -745,4 +745,18 @@ describe("SolverChartPanel", () => {
     expect(screen.getByTestId("panel-monthly")).toHaveTextContent("months:12 view:months");
     expect(screen.getByTestId("chart-monthly")).toHaveTextContent("months:12 view:months");
   });
+
+  // The basis toggle sits directly above the month table. A month grid built on
+  // the other basis would stand beside the year table showing different money
+  // and give no sign of it — and nothing else in the suite can see the third
+  // argument, so it is asserted here.
+  it("splits the year on the basis the advisor picked", async () => {
+    render(<ControlledPanel initialReport="cashflow" currentProjection={withdrawalProjection} />);
+    await userEvent.click(screen.getByRole("button", { name: "Monthly" }));
+    await userEvent.click(screen.getByRole("button", { name: "flip view" }));
+    expect(buildAllocation.mock.calls.at(-1)?.[2]).toBe("today");
+
+    await userEvent.click(screen.getByRole("button", { name: "flip basis" }));
+    expect(buildAllocation.mock.calls.at(-1)?.[2]).toBe("nominal");
+  });
 });
