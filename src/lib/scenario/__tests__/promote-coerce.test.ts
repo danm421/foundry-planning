@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { accounts } from "@/db/schema";
+import { accounts, incomes } from "@/db/schema";
 import { coerceForTable } from "../promote-coerce";
 
 describe("coerceForTable", () => {
@@ -20,5 +20,14 @@ describe("coerceForTable", () => {
     const out = coerceForTable(accounts, { growthRate: null, subType: "brokerage" });
     expect(out.growthRate).toBeNull();
     expect(out.subType).toBe("brokerage");
+  });
+
+  // Guard for the generic promote path (unlike save-to-base's hand-enumerated
+  // column lists, this walks getTableColumns and so already carries any new
+  // column by default) — pins that behavior for paymentMonth so a future
+  // rewrite of this coercer can't silently narrow it back to a fixed list.
+  it("carries paymentMonth through untouched, like any other integer column", () => {
+    const out = coerceForTable(incomes, { name: "Consulting", paymentMonth: 6 });
+    expect(out.paymentMonth).toBe(6);
   });
 });

@@ -106,7 +106,7 @@ function surplusUnspentAnnual(y: ProjectionYear): number {
  * while `portfolioAssets.liquidTotal` read -$80M to -$188M. With the backfill
  * the flag matches `liquidTotal` year-for-year on all eight runs.
  */
-function householdLiquidAccountIds(
+export function householdLiquidAccountIds(
   years: ProjectionYear[],
   clientData: ClientData,
 ): Set<string> {
@@ -213,7 +213,7 @@ function isDepleted(y: ProjectionYear, householdLiquidIds: Set<string>): boolean
 
 /** Deflate to plan-start purchasing power. Returns 1 for the nominal basis and
  *  for the plan's own first year, so the near-term figures are untouched. */
-function deflator(
+export function deflator(
   year: number,
   basis: DollarBasis,
   planSettings: ClientData["planSettings"],

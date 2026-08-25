@@ -81,29 +81,65 @@ vi.mock("@/lib/solver/monthly-cash-flow", async (importOriginal) => {
   buildMonthlyRows.mockImplementation(actual.buildMonthlyCashFlowRows);
   return { ...actual, buildMonthlyCashFlowRows: buildMonthlyRows };
 });
+// Same treatment for the month allocator, and for the same reason: "built only
+// once the advisor asks for the month view" is a claim, and only a spy on the
+// real function can tell a lazy build from an eager one.
+const buildAllocation = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/solver/monthly-allocation", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/solver/monthly-allocation")>();
+  buildAllocation.mockImplementation(actual.buildMonthlyAllocation);
+  return { ...actual, buildMonthlyAllocation: buildAllocation };
+});
+// Renders the month props too, so the assertions can see that ONE toggle drives
+// the chart and the table together — the spec's whole point.
 vi.mock("@/components/charts/solver-monthly-cash-flow-chart", () => ({
-  SolverMonthlyCashFlowChart: ({ rows }: { rows: { year: number }[] }) => (
-    <div data-testid="chart-monthly">rows:{rows.length}</div>
+  SolverMonthlyCashFlowChart: ({
+    rows,
+    monthRows,
+    view,
+  }: {
+    rows: { year: number }[];
+    monthRows?: unknown[];
+    view?: string;
+  }) => (
+    <div data-testid="chart-monthly">
+      rows:{rows.length} months:{monthRows?.length ?? 0} view:{view}
+    </div>
   ),
 }));
 // Renders `rows` and `basis`, and offers a control that calls `onBasisChange`,
 // so the assertions can tell a wired-up panel from one handed the empty array
 // the other sub-tabs pass or a dead callback — same reasoning as the
 // withdrawal-panel mock above.
-vi.mock("../solver-monthly-cash-flow-panel", () => ({
+vi.mock("../solver-monthly-cash-flow-panel", async (importActual) => ({
+  // `selectMonthlyRow` keeps its REAL implementation. It is the panel's own
+  // year-selection rule and this panel's month lookup runs through it, so a stub
+  // would let a wrong-year regression pass this file unseen. Only the component
+  // is replaced.
+  selectMonthlyRow: (await importActual<typeof import("../solver-monthly-cash-flow-panel")>())
+    .selectMonthlyRow,
   SolverMonthlyCashFlowPanel: ({
     rows,
     basis,
     onBasisChange,
+    monthRows,
+    view,
+    onViewChange,
   }: {
     rows: { year: number }[];
     basis: string;
     onBasisChange: (b: string) => void;
+    monthRows?: unknown[];
+    view?: string;
+    onViewChange?: (v: string) => void;
   }) => (
     <div data-testid="panel-monthly">
-      rows:{rows.length} basis:{basis}
+      rows:{rows.length} basis:{basis} months:{monthRows?.length ?? 0} view:{view}
       <button type="button" onClick={() => onBasisChange(basis === "today" ? "nominal" : "today")}>
         flip basis
+      </button>
+      <button type="button" onClick={() => onViewChange?.(view === "plan" ? "months" : "plan")}>
+        flip view
       </button>
     </div>
   ),
@@ -149,6 +185,12 @@ const workingTree = {
     dateOfBirth: "1960-01-01",
   },
   accounts: [],
+  // The month allocator reads all three lists to find each row's chosen payment
+  // month. They are required on ClientData, so a real working tree always has
+  // them; this stub predates the allocator and needs them spelled out.
+  incomes: [],
+  expenses: [],
+  liabilities: [],
   // The Monthly sub-tab's row builder deflates every figure to plan-start
   // dollars, so it reads these two off the working tree.
   planSettings: { inflationRate: 0.03, planStartYear: 2026 },
@@ -161,11 +203,13 @@ const withdrawalProjection = [2026, 2027].map(
     ({
       year,
       ages: { client: 66 },
-      income: { socialSecurity: 0, salaries: 0 },
+      income: { socialSecurity: 0, salaries: 0, bySource: {} },
       withdrawals: { byAccount: {}, total: 0 },
       accountLedgers: {},
       // Every bucket the Monthly row builder reads, not just `living`: a
       // missing one makes that fixed cost NaN, and a missing `savings` throws.
+      // `bySource`/`byLiability` are for the month ALLOCATOR, which walks them to
+      // place each row in its chosen month — it throws outright on undefined.
       expenses: {
         living: 0,
         taxes: 0,
@@ -174,6 +218,8 @@ const withdrawalProjection = [2026, 2027].map(
         realEstate: 0,
         other: 0,
         discretionary: 0,
+        bySource: {},
+        byLiability: {},
       },
       savings: { byAccount: {}, total: 0, employerTotal: 0 },
       portfolioAssets: { liquidTotal: 0 },
@@ -258,6 +304,7 @@ describe("SolverChartPanel", () => {
   beforeEach(() => {
     fullProjectionStub.current = { projection: { years: [] }, loading: false };
     buildMonthlyRows.mockClear();
+    buildAllocation.mockClear();
   });
 
   it("shows the Portfolio chart by default", () => {
@@ -672,5 +719,44 @@ describe("SolverChartPanel", () => {
   it("builds no monthly rows while a different sub-tab is open", () => {
     render(<ControlledPanel initialReport="cashflow" currentProjection={withdrawalProjection} />);
     expect(buildMonthlyRows).not.toHaveBeenCalled();
+  });
+
+  // "Across the plan" is the DEFAULT view, so an ungated memo would run the
+  // allocator — twelve months, every liability's schedule — on every year click
+  // for a chart and a table nobody is looking at.
+  it("splits no year into months until the advisor asks for the month view", async () => {
+    render(<ControlledPanel initialReport="cashflow" currentProjection={withdrawalProjection} />);
+    await userEvent.click(screen.getByRole("button", { name: "Monthly" }));
+    expect(buildMonthlyRows).toHaveBeenCalled();
+    expect(buildAllocation).not.toHaveBeenCalled();
+  });
+
+  // One toggle drives both surfaces. A wiring that moved the table and left the
+  // chart on the year view would show an advisor two different periods side by
+  // side and give no sign of it.
+  it("moves the chart and the table onto the months together", async () => {
+    render(<ControlledPanel initialReport="cashflow" currentProjection={withdrawalProjection} />);
+    await userEvent.click(screen.getByRole("button", { name: "Monthly" }));
+    expect(screen.getByTestId("chart-monthly")).toHaveTextContent("view:plan");
+    expect(screen.getByTestId("panel-monthly")).toHaveTextContent("months:0");
+
+    await userEvent.click(screen.getByRole("button", { name: "flip view" }));
+    expect(buildAllocation).toHaveBeenCalled();
+    expect(screen.getByTestId("panel-monthly")).toHaveTextContent("months:12 view:months");
+    expect(screen.getByTestId("chart-monthly")).toHaveTextContent("months:12 view:months");
+  });
+
+  // The basis toggle sits directly above the month table. A month grid built on
+  // the other basis would stand beside the year table showing different money
+  // and give no sign of it — and nothing else in the suite can see the third
+  // argument, so it is asserted here.
+  it("splits the year on the basis the advisor picked", async () => {
+    render(<ControlledPanel initialReport="cashflow" currentProjection={withdrawalProjection} />);
+    await userEvent.click(screen.getByRole("button", { name: "Monthly" }));
+    await userEvent.click(screen.getByRole("button", { name: "flip view" }));
+    expect(buildAllocation.mock.calls.at(-1)?.[2]).toBe("today");
+
+    await userEvent.click(screen.getByRole("button", { name: "flip basis" }));
+    expect(buildAllocation.mock.calls.at(-1)?.[2]).toBe("nominal");
   });
 });

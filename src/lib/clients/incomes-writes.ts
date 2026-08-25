@@ -102,6 +102,7 @@ export async function createIncomeForClient(args: {
       survivorAnnuityQtipElectOut: p.survivorAnnuityQtipElectOut ?? null,
       claimingAgeMonths: p.claimingAgeMonths ?? 0,
       claimingAgeMode: (p.claimingAgeMode ?? null) as IncomeRow["claimingAgeMode"],
+      paymentMonth: p.paymentMonth ?? null,
     })
     .returning();
 
@@ -205,6 +206,7 @@ export async function updateIncomeForClient(args: {
       ...(p.claimingAgeMode !== undefined && {
         claimingAgeMode: (p.claimingAgeMode ?? null) as IncomeRow["claimingAgeMode"],
       }),
+      ...(p.paymentMonth !== undefined && { paymentMonth: p.paymentMonth }),
       updatedAt: new Date(),
     })
     .where(and(eq(incomes.id, incomeId), eq(incomes.clientId, clientId)))

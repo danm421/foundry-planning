@@ -66,6 +66,10 @@ export interface IncomeView {
   piaMonthly?: string | null;
   survivorshipPct?: string | null;
   survivorAnnuityQtipElectOut?: boolean | null;
+  /** The "Paid in" month (1-12) the flow dialogs write; null spreads the year
+   *  evenly. A real persisted column, so the adapter must carry it or a form
+   *  hydrated from the effective tree silently clears it on save. */
+  paymentMonth?: number | null;
 }
 
 export function incomeEngineToView(income: EngineIncome): IncomeView {
@@ -94,6 +98,7 @@ export function incomeEngineToView(income: EngineIncome): IncomeView {
     piaMonthly: income.piaMonthly != null ? String(income.piaMonthly) : null,
     survivorshipPct: income.survivorshipPct != null ? String(income.survivorshipPct) : null,
     survivorAnnuityQtipElectOut: income.survivorAnnuityQtipElectOut ?? null,
+    paymentMonth: income.paymentMonth ?? null,
   };
 }
 
@@ -131,6 +136,10 @@ export interface ExpenseView {
    *  A real persisted column, so the adapter must carry it or a form hydrated
    *  from the effective tree silently clears it on save. */
   absorbsRemainingCashFlow?: boolean;
+  /** The "Paid in" month (1-12) the flow dialogs write; null spreads the year
+   *  evenly. A real persisted column, so the adapter must carry it or a form
+   *  hydrated from the effective tree silently clears it on save. */
+  paymentMonth?: number | null;
 }
 
 export function expenseEngineToView(expense: EngineExpense): ExpenseView {
@@ -158,6 +167,7 @@ export function expenseEngineToView(expense: EngineExpense): ExpenseView {
     dedicatedAccountIds: expense.dedicatedAccountIds ?? [],
     isGoal: expense.isGoal ?? false,
     absorbsRemainingCashFlow: expense.absorbsRemainingCashFlow ?? false,
+    paymentMonth: expense.paymentMonth ?? null,
   };
 }
 

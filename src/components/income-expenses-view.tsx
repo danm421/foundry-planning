@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import GrowthSourceRadio from "./forms/growth-source-radio";
 import { DedicatedFundingPicker } from "./forms/dedicated-funding-picker";
+import { PaymentMonthSelect } from "./forms/payment-month-select";
 import { StateSelect } from "@/components/state-select";
 import SavingsRuleDialog from "./forms/savings-rule-dialog";
 import SavingsRulesList from "./forms/savings-rules-list";
@@ -68,6 +69,8 @@ interface Income {
   linkedPropertyId?: string | null;
   survivorshipPct?: string | null;
   survivorAnnuityQtipElectOut?: boolean | null;
+  /** "Paid in" month (1-12); null spreads the year evenly. Presentation only. */
+  paymentMonth?: number | null;
 }
 
 type IncomeTaxType = "earned_income" | "ordinary_income" | "dividends" | "capital_gains" | "qbi" | "tax_exempt" | "stcg";
@@ -119,6 +122,8 @@ interface Expense {
   dedicatedAccountIds?: string[];
   isGoal?: boolean;
   absorbsRemainingCashFlow?: boolean;
+  /** "Paid in" month (1-12); null spreads the year evenly. Presentation only. */
+  paymentMonth?: number | null;
 }
 
 interface SavingsRule {
@@ -560,6 +565,7 @@ function IncomeDialog({
   const [qtipElectOut, setQtipElectOut] = useState<boolean>(
     editing?.survivorAnnuityQtipElectOut ?? false,
   );
+  const [paymentMonth, setPaymentMonth] = useState<number | null>(editing?.paymentMonth ?? null);
   const currentYear = new Date().getFullYear();
   const isEdit = Boolean(editing);
   const [taxType, setTaxType] = useState<IncomeTaxType>(
@@ -654,6 +660,7 @@ function IncomeDialog({
           : null,
       survivorAnnuityQtipElectOut:
         type === "deferred" && (owner === "client" || owner === "spouse") ? qtipElectOut : null,
+      paymentMonth,
     };
 
     try {
@@ -971,6 +978,10 @@ function IncomeDialog({
             )}
           </div>
 
+          {/* Full width, outside the Start/End Year grid: this is a whole-row
+              setting, not a third cell of the two-column year block. */}
+          <PaymentMonthSelect id="inc-payment-month" value={paymentMonth} onChange={setPaymentMonth} />
+
           {type === "deferred" && (owner === "client" || owner === "spouse") && (
             <div>
               <label className="block text-sm font-medium text-gray-300" htmlFor="inc-survivorship-pct">
@@ -1160,6 +1171,7 @@ function ExpenseDialog({
   const [growthRateDisplay, setGrowthRateDisplay] = useState<string>(
     String(pctFromDecimal(editing?.growthRate, 3))
   );
+  const [paymentMonth, setPaymentMonth] = useState<number | null>(editing?.paymentMonth ?? null);
   const currentYear = new Date().getFullYear();
   const isEdit = Boolean(editing);
 
@@ -1278,6 +1290,7 @@ function ExpenseDialog({
       dedicatedAccountIds: type === "education" ? dedicatedAccountIds : [],
       isGoal: type === "education" ? true : isGoal,
       absorbsRemainingCashFlow: absorbActive,
+      paymentMonth,
     };
 
     try {
@@ -1602,6 +1615,10 @@ function ExpenseDialog({
               </>
             )}
           </div>
+
+          {/* Full width, outside the Start/End Year grid — see the income
+              dialog's copy of this control. */}
+          <PaymentMonthSelect id="exp-payment-month" value={paymentMonth} onChange={setPaymentMonth} />
 
           {/* Living expenses are pure cash outflows — never a tax deduction —
               so the Tax Treatment selector only applies to insurance/other. */}

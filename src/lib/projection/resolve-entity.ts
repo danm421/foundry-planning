@@ -318,6 +318,7 @@ type RawIncome = {
   startYearRef?: string | null;
   endYearRef?: string | null;
   scheduleOverrides?: Record<number, number>;
+  paymentMonth?: number | null;
 };
 
 export function resolveIncomeFromRaw(
@@ -352,6 +353,7 @@ export function resolveIncomeFromRaw(
     startYearRef: raw.startYearRef ?? null,
     endYearRef: raw.endYearRef ?? null,
     growthSource: raw.growthSource ?? null,
+    paymentMonth: raw.paymentMonth ?? null,
   };
 }
 
@@ -384,6 +386,7 @@ type RawExpense = {
   dedicatedAccountIds?: string[];
   isGoal?: boolean | null;
   absorbsRemainingCashFlow?: boolean | null;
+  paymentMonth?: number | null;
 };
 
 function mapEndsAtMedicareEligibilityOwner(
@@ -421,6 +424,7 @@ export function resolveExpenseFromRaw(
     startYearRef: raw.startYearRef ?? null,
     endYearRef: raw.endYearRef ?? null,
     growthSource: raw.growthSource ?? null,
+    paymentMonth: raw.paymentMonth ?? null,
     isDefault: raw.isDefault ?? false,
     endsAtMedicareEligibilityOwner: mapEndsAtMedicareEligibilityOwner(raw.endsAtMedicareEligibilityOwner),
     payShortfallOutOfPocket: raw.payShortfallOutOfPocket ?? false,

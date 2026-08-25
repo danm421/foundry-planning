@@ -71,6 +71,21 @@ const claimingAgeMonthsOptional = z
     return v != null ? Number(v) : 0;
   });
 
+// paymentMonth: null or an integer 1-12. REJECTS out-of-range rather than
+// clamping: a silently clamped 13 would file a December row in January with
+// no warning. View-only metadata — nothing under src/engine reads it.
+const paymentMonthOptional = z
+  .union([z.number(), z.string()])
+  .nullable()
+  .optional()
+  .transform((v) => {
+    if (v === undefined) return undefined;
+    return v != null && v !== "" ? Number(v) : null;
+  })
+  .refine((v) => v == null || (Number.isInteger(v) && v >= 1 && v <= 12), {
+    message: "paymentMonth must be null or an integer from 1 to 12",
+  });
+
 // piaMonthly: null/absent → null; present → String(v).
 // Mirrors the route's `body.piaMonthly != null ? String(body.piaMonthly) : null`.
 const piaMonthlyOptional = z
@@ -157,6 +172,7 @@ export const incomeCreateSchema = z
     piaMonthly: piaMonthlyOptional.default(null),
     survivorshipPct: survivorshipPctOptional,
     survivorAnnuityQtipElectOut: survivorAnnuityQtipElectOutOptional,
+    paymentMonth: paymentMonthOptional,
     ...shared,
     ...nullableStringCreate,
   })
@@ -188,6 +204,7 @@ export const incomeUpdateSchema = z
     piaMonthly: piaMonthlyOptional,
     survivorshipPct: survivorshipPctOptional,
     survivorAnnuityQtipElectOut: survivorAnnuityQtipElectOutOptional,
+    paymentMonth: paymentMonthOptional,
     ...shared,
     ...nullableStringUpdate,
   })

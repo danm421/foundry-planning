@@ -52,6 +52,21 @@ const inflationStartYearOptional = z
   .nullable()
   .optional();
 
+// paymentMonth: null or an integer 1-12. REJECTS out-of-range rather than
+// clamping: a silently clamped 13 would file a December row in January with
+// no warning. View-only metadata — nothing under src/engine reads it.
+const paymentMonthOptional = z
+  .union([z.number(), z.string()])
+  .nullable()
+  .optional()
+  .transform((v) => {
+    if (v === undefined) return undefined;
+    return v != null && v !== "" ? Number(v) : null;
+  })
+  .refine((v) => v == null || (Number.isInteger(v) && v >= 1 && v <= 12), {
+    message: "paymentMonth must be null or an integer from 1 to 12",
+  });
+
 // Fields shared by both schemas verbatim (no create-only defaults attached).
 const shared = {
   ownerEntityId: uuidSchema.nullable().optional(),
@@ -97,6 +112,7 @@ export const expenseCreateSchema = z
     // via the route's `growthSource === "inflation" ? ... : "custom"` only when
     // present. To preserve prior behavior (always "custom" on create), default it.
     growthSource: growthSourceOptional.default("custom"),
+    paymentMonth: paymentMonthOptional,
     ...shared,
     payShortfallOutOfPocket: z.boolean().default(false),
     isGoal: z.boolean().default(false),
@@ -116,6 +132,7 @@ export const expenseUpdateSchema = z
     endYear: yearValueOptional,
     growthRate: numericStringOptional,
     growthSource: growthSourceOptional,
+    paymentMonth: paymentMonthOptional,
     ...shared,
   })
   .superRefine(refineBothOwner);
