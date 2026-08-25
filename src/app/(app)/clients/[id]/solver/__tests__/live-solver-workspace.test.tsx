@@ -947,3 +947,25 @@ describe("LiveSolverWorkspace — left-pane View report buttons", () => {
     ).toBeNull();
   });
 });
+
+describe("LiveSolverWorkspace — both scroll panes are their own containing block", () => {
+  // An absolutely-positioned descendant is only clipped by a scroller that is
+  // also its containing block. When these panes were unpositioned, the nearest
+  // positioned ancestor was the grid OUTSIDE them, so out-of-flow children —
+  // Tailwind's `sr-only`, which every table caption in here uses, is
+  // `position:absolute` — escaped the pane's clip and sat at their unscrolled
+  // document position. Below the fold that grew the DOCUMENT past the shell's
+  // 100dvh and the whole viewport-height surface scrolled: topbar away, footer
+  // lifted off the bottom, dead space beneath, and no more of either pane
+  // visible. Measured on the monthly cash-flow table (its caption lands ~900px
+  // down): 49px of stray document scroll at 1280x860, gone with `relative`.
+  //
+  // jsdom does no layout, so this pins the CLASS, not the geometry — it can
+  // only catch `relative` being dropped, never re-measure the overflow.
+  it("keeps `relative` on the inputs and reports panes", () => {
+    const { container } = render(<LiveSolverWorkspace {...baseProps} />);
+    const panes = container.querySelectorAll<HTMLElement>(".overflow-y-auto");
+    expect(panes.length).toBe(2);
+    for (const pane of panes) expect(pane).toHaveClass("relative");
+  });
+});

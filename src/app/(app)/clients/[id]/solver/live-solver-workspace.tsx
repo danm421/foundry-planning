@@ -1282,7 +1282,7 @@ export function LiveSolverWorkspace({
             the tab and form state survive a collapse. */}
         <div
           id={SOLVER_INPUTS_PANE_ID}
-          className={`min-h-0 overflow-x-hidden overflow-y-auto border-b border-hair lg:border-b-0${
+          className={`relative min-h-0 overflow-x-hidden overflow-y-auto border-b border-hair lg:border-b-0${
             leftCollapsed ? " lg:hidden" : ""
           }`}
         >
@@ -1515,8 +1515,19 @@ export function LiveSolverWorkspace({
           controls={SOLVER_INPUTS_PANE_ID}
         />
 
-        {/* RIGHT — reports, scroll as one document */}
-        <div ref={reportPaneRef} className="min-h-0 overflow-y-auto">
+        {/* RIGHT — reports, scroll as one document.
+            `relative` on both panes is load-bearing, not decoration: an
+            absolutely-positioned descendant is only clipped by a scroller that
+            is also its containing block. Without it the nearest positioned
+            ancestor was the grid *outside* both panes, so an out-of-flow child
+            (Tailwind's `sr-only` is `position:absolute` — every table caption
+            in here) escaped the pane's clip and sat at its unscrolled document
+            position. Below the fold that grew the *document* past 100dvh, and
+            the whole viewport-height shell scrolled: the topbar rode away and
+            the footer lifted off the bottom of the screen leaving dead space,
+            while the panes themselves showed no more content (see the monthly
+            cash-flow table, whose caption sits ~900px down). */}
+        <div ref={reportPaneRef} className="relative min-h-0 overflow-y-auto">
           <div className="space-y-4 p-4">
             {restoredBanner ? (
               <div
