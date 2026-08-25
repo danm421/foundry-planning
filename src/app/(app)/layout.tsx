@@ -77,8 +77,25 @@ export default async function AppLayout({
                 footer margin goes with it so the surface sits flush against the
                 footer. min-h-0 is required alongside: min-h-screen is 100vh and
                 would out-vote height:100dvh wherever browser chrome collapses.
-                lg-only: below that the panes stack and the page scrolls. */}
-            <div className="col-start-2 flex min-h-screen min-w-0 flex-col has-[[data-fills-viewport]]:lg:h-dvh has-[[data-fills-viewport]]:lg:min-h-0 has-[[data-fills-viewport]]:lg:[&>footer]:mt-0">
+                lg-only: below that the panes stack and the page scrolls.
+
+                relative + overflow-clip seal the surface at exactly that
+                height. A definite height alone does not: an out-of-flow box
+                (Tailwind's `sr-only` is position:absolute, as are tooltips and
+                menus) is only clipped by an ancestor that sits in its
+                CONTAINING-BLOCK chain, and with nothing positioned above it the
+                chain runs to the initial containing block — past this column.
+                Such a box then sits at its unscrolled document position, which
+                below the fold grows the DOCUMENT past 100dvh: the whole surface
+                scrolls, the topbar rides away and the footer lifts off the
+                bottom of the screen leaving dead space, while neither pane
+                shows any more content. `relative` makes this column that
+                containing block; `overflow-clip` (not hidden — hidden would add
+                a scroll container a focus jump could scroll) then clips at the
+                viewport edge, where the content was unreachable anyway. Fixed
+                overlays — Forge, the solve popovers, dialogs — are unaffected:
+                their containing block is the viewport, not this column. */}
+            <div className="col-start-2 flex min-h-screen min-w-0 flex-col has-[[data-fills-viewport]]:lg:relative has-[[data-fills-viewport]]:lg:h-dvh has-[[data-fills-viewport]]:lg:min-h-0 has-[[data-fills-viewport]]:lg:overflow-clip has-[[data-fills-viewport]]:lg:[&>footer]:mt-0">
               {impersonatedName && <ImpersonationBanner advisorName={impersonatedName} />}
               <Topbar />
               <div className="px-[var(--pad-card)] pt-[var(--pad-card)] empty:hidden">
