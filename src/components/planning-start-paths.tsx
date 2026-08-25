@@ -3,18 +3,19 @@
 import {
   ArrowRightIcon,
   ClipboardCheckIcon,
+  MailIcon,
   SparkleIcon,
 } from "@/components/icons";
 
 /**
- * The three ways an advisor can start a planning client. Shared by the
+ * The ways an advisor can start a planning client. Shared by the
  * `/clients/new` step-2 picker and the post-create prompt on `/crm/new`, so
  * the two pickers can't drift apart.
  *
  * The old "Quick Start" path (the `/clients/[id]/quick-start` wizard) was
  * sunset — Guided is the only wizard we offer now.
  */
-export type StartPath = "guided" | "import" | "empty";
+export type StartPath = "guided" | "import" | "intake" | "empty";
 
 export interface StartPathDef {
   id: StartPath;
@@ -35,6 +36,14 @@ export const START_PATHS: StartPathDef[] = [
     title: "AI import",
     subtitle: "Extract from documents",
     icon: <SparkleIcon width={18} height={18} />,
+  },
+  {
+    id: "intake",
+    title: "Intake form",
+    subtitle: "Email them a questionnaire",
+    // Mail, not the sidebar's Data Collection clipboard: at 18px that one is
+    // indistinguishable from the Guided card's clipboard sitting beside it.
+    icon: <MailIcon width={18} height={18} />,
   },
   {
     id: "empty",

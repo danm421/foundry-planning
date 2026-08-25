@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { db } from "@/db";
 import { clients, crmHouseholds, crmHouseholdContacts, firms } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
-import { searchClients, countClientsForFirm } from "../client-search";
+import { searchClients, countClientsForFirm, findClientRecipient } from "../client-search";
 
 const FIRM_A = "firm_search_a";
 const FIRM_B = "firm_search_b";
@@ -168,6 +168,44 @@ describe("searchClients", () => {
     }
     const results = await searchClients("anderson", FIRM_A, CALLER_A);
     expect(results.length).toBeLessThanOrEqual(8);
+  });
+});
+
+describe("findClientRecipient", () => {
+  it("returns the same recipient summary the typeahead does, by id", async () => {
+    const [fromSearch] = await searchClients("baxter", FIRM_A, CALLER_A);
+    const byId = await findClientRecipient(fromSearch.id, FIRM_A, CALLER_A);
+    // Same assembly, so the send card shows the household the same way whether
+    // the advisor searched for it or arrived on ?clientId=.
+    expect(byId).toEqual(fromSearch);
+    expect(byId?.householdTitle).toBe("Bob & Beth Baxter");
+  });
+
+  it("carries the primary's email, not the spouse's", async () => {
+    const [anderson] = await searchClients("anderson", FIRM_A, CALLER_A);
+    const byId = await findClientRecipient(anderson.id, FIRM_A, CALLER_A);
+    expect(byId?.primaryEmail).toBe("alice@anderson.test");
+
+    // The Baxter fixture carries an email on the SPOUSE only.
+    const [baxter] = await searchClients("baxter", FIRM_A, CALLER_A);
+    expect((await findClientRecipient(baxter.id, FIRM_A, CALLER_A))?.primaryEmail).toBeNull();
+  });
+
+  it("returns null for a client id belonging to another firm", async () => {
+    const [otherFirm] = await searchClients("zelenko", FIRM_B, CALLER_B);
+    expect(await findClientRecipient(otherFirm.id, FIRM_A, CALLER_A)).toBeNull();
+  });
+
+  it("returns null for a malformed id instead of raising", async () => {
+    // `clients.id` is a uuid column: an unguarded query on a query-string value
+    // makes Postgres throw, which would 500 the whole Data Collection page.
+    expect(await findClientRecipient("not-a-uuid", FIRM_A, CALLER_A)).toBeNull();
+  });
+
+  it("returns null for a well-formed id that matches nothing", async () => {
+    expect(
+      await findClientRecipient("00000000-0000-4000-8000-000000000000", FIRM_A, CALLER_A),
+    ).toBeNull();
   });
 });
 

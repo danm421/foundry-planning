@@ -37,23 +37,33 @@ const labelCls = "mb-1.5 block text-[12px] font-medium text-ink-2";
 
 export default function SendIntakeForm({
   defaultSections,
+  prefill = null,
 }: {
   /** The advisor's saved default, or null for the system default. Seeds the
    *  picker only — what gets stored is whatever is on screen when Send is
    *  pressed, so editing the saved default later never reshapes this form. */
   defaultSections: IntakeSectionKey[] | null;
+  /** A client handed over by `/data-collection?clientId=…` — the "Intake form"
+   *  start path lands here right after creating them. The card opens on the
+   *  existing-client kind with that household picked and addressed, so the
+   *  advisor's next action is Send. Every field stays editable, and the email
+   *  can still be blank: CRM contacts often carry no email. */
+  prefill?: ClientSearchResult | null;
 }) {
   const router = useRouter();
-  const [recipientKind, setRecipientKind] = useState<"prospect" | "client">("prospect");
-  // Prospect is the initial kind, so seed through the same family rule the
-  // create route enforces — the picker must never show a set it can't send.
-  const [sections, setSections] = useState<IntakeSectionKey[]>(() =>
-    forceFamilyForProspect(sectionsForForm(defaultSections), false),
+  const [recipientKind, setRecipientKind] = useState<"prospect" | "client">(
+    prefill ? "client" : "prospect",
   );
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [email, setEmail] = useState("");
-  const [selected, setSelected] = useState<ClientSearchResult | null>(null);
+  // Seed through the same family rule the create route enforces — the picker
+  // must never show a set it can't send. A prefilled send is a client send,
+  // which is the one kind that rule leaves alone.
+  const [sections, setSections] = useState<IntakeSectionKey[]>(() =>
+    forceFamilyForProspect(sectionsForForm(defaultSections), prefill !== null),
+  );
+  const [firstName, setFirstName] = useState(prefill?.primaryFirstName ?? "");
+  const [lastName, setLastName] = useState(prefill?.primaryLastName ?? "");
+  const [email, setEmail] = useState(prefill?.primaryEmail ?? "");
+  const [selected, setSelected] = useState<ClientSearchResult | null>(prefill);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [success, setSuccess] = useState(false);

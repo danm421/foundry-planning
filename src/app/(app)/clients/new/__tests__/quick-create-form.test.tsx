@@ -4,9 +4,10 @@ import { render, screen, waitFor, fireEvent, act } from "@testing-library/react"
 import QuickCreateForm from "../quick-create-form";
 
 let mockSearch = "";
+const pushMock = vi.fn();
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ push: pushMock, replace: vi.fn() }),
   useSearchParams: () => new URLSearchParams(mockSearch),
 }));
 vi.mock("@clerk/nextjs", () => ({
@@ -48,8 +49,25 @@ function stubHousehold(roles: Role[]) {
   stubHouseholds({ "hh-1": roles });
 }
 
+/** Household preview + a client-create POST that returns a known id. */
+function stubHouseholdAndCreate(roles: Role[], clientId: string) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string) => {
+      if (url === "/api/clients") {
+        return Promise.resolve({ ok: true, json: async () => ({ id: clientId }) });
+      }
+      if (url.includes("/households/hh-1")) {
+        return Promise.resolve({ ok: true, json: async () => householdPayload("hh-1", roles) });
+      }
+      return Promise.resolve({ ok: false, status: 404, json: async () => ({}) });
+    }),
+  );
+}
+
 beforeEach(() => {
   mockSearch = "";
+  pushMock.mockReset();
 });
 
 afterEach(() => {
@@ -204,4 +222,49 @@ it("re-derives filing status when the advisor switches to a different household"
       "married_joint",
     ),
   );
+});
+
+it("hands the new client to Data Collection on the intake path", async () => {
+  // The whole point of the path: the advisor lands on the send card with this
+  // client already chosen, rather than on the client's own pages. Routing to
+  // /clients/<id>/details (the empty path's destination) would leave them to
+  // find Data Collection and search the roster for someone they just created.
+  mockSearch = "crmHouseholdId=hh-1&path=intake";
+  stubHouseholdAndCreate(["primary"], "client-9");
+  const { container } = render(<QuickCreateForm />);
+
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: /continue to intake form/i })).toBeInTheDocument(),
+  );
+  fireEvent.submit(container.querySelector("form")!);
+
+  await waitFor(() => {
+    expect(pushMock).toHaveBeenCalledWith("/data-collection?clientId=client-9");
+  });
+});
+
+it("creates the intake-path client with defaults, asking for no planning fields", async () => {
+  // Same zero-field treatment as import/empty — the questionnaire is what
+  // collects the detail, so the picker must not put a wizard in front of it.
+  mockSearch = "crmHouseholdId=hh-1&path=intake";
+  stubHouseholdAndCreate(["primary", "spouse"], "client-9");
+  const { container } = render(<QuickCreateForm />);
+
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: /continue to intake form/i })).toBeInTheDocument(),
+  );
+  expect(screen.queryByLabelText(/filing status/i)).not.toBeInTheDocument();
+
+  fireEvent.submit(container.querySelector("form")!);
+
+  await waitFor(() => {
+    const post = vi.mocked(fetch).mock.calls.find(([url]) => url === "/api/clients");
+    expect(post).toBeDefined();
+    expect(JSON.parse(post![1]!.body as string)).toEqual({
+      crmHouseholdId: "hh-1",
+      retirementAge: 65,
+      lifeExpectancy: 95,
+      filingStatus: "married_joint",
+    });
+  });
 });

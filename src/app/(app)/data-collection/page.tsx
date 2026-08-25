@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { auth } from "@clerk/nextjs/server";
 import { requireOrgAndUser } from "@/lib/db-helpers";
+import { findClientRecipient } from "@/lib/client-search";
 import { listFormsForFirm, loadAdvisorDefaultSections } from "@/lib/intake/queries";
 import Queue, { type QueueGroup } from "@/components/intake/admin/queue";
 import SendIntakeForm from "@/components/intake/admin/send-intake-form";
@@ -8,10 +10,23 @@ import { ExternalLinkIcon, PencilIcon } from "@/components/icons";
 const headerActionCls =
   "inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-hair px-3 py-1.5 text-[13px] text-ink-2 transition-colors hover:border-hair-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
-export default async function DataCollectionPage() {
+export default async function DataCollectionPage({
+  searchParams,
+}: {
+  /** `?clientId=` arrives from the "Intake form" start path on /clients/new:
+   *  the advisor has just created this client and wants the send card already
+   *  addressed to them. Anything unknown to the firm is ignored — the card
+   *  falls back to its blank prospect form. */
+  searchParams: Promise<{ clientId?: string }>;
+}) {
   const { orgId, userId } = await requireOrgAndUser();
+  const { orgRole } = await auth();
+  const { clientId } = await searchParams;
   const forms = await listFormsForFirm(orgId);
   const defaultSections = await loadAdvisorDefaultSections(orgId, userId);
+  const prefill = clientId
+    ? await findClientRecipient(clientId, orgId, { userId, orgRole })
+    : null;
 
   // Order is the tab order: what you're waiting on, then what's waiting on you,
   // then the record. History stays a tab rather than a separate page so applied
@@ -81,7 +96,7 @@ export default async function DataCollectionPage() {
       </header>
 
       <div className="space-y-10">
-        <SendIntakeForm defaultSections={defaultSections} />
+        <SendIntakeForm defaultSections={defaultSections} prefill={prefill} />
         <Queue groups={groups} />
       </div>
     </div>

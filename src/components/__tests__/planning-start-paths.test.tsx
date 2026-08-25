@@ -3,11 +3,12 @@ import { it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { START_PATHS, PathCard, isStartPath } from "../planning-start-paths";
 
-it("exposes the three start paths in picker order", () => {
-  expect(START_PATHS.map((p) => p.id)).toEqual(["guided", "import", "empty"]);
+it("exposes the start paths in picker order", () => {
+  expect(START_PATHS.map((p) => p.id)).toEqual(["guided", "import", "intake", "empty"]);
   expect(START_PATHS.map((p) => p.title)).toEqual([
     "Guided Walkthrough",
     "AI import",
+    "Intake form",
     "Empty client",
   ]);
   // Card copy is fixed for this picker — pin the subtitles too, or the list can
@@ -15,12 +16,14 @@ it("exposes the three start paths in picker order", () => {
   expect(START_PATHS.map((p) => p.subtitle)).toEqual([
     "Full step-by-step wizard",
     "Extract from documents",
+    "Email them a questionnaire",
     "Skip the wizard, start blank",
   ]);
 });
 
-it("narrows only the three known ids", () => {
+it("narrows only the known ids", () => {
   expect(isStartPath("guided")).toBe(true);
+  expect(isStartPath("intake")).toBe(true);
   expect(isStartPath("empty")).toBe(true);
   // The sunset Quick Start path and the pre-rename "detailed" id must not
   // survive in stale `?path=` links.

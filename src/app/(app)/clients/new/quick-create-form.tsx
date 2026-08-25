@@ -71,6 +71,16 @@ const MONTH_OPTIONS: { value: number; label: string }[] = [
   { value: 12, label: "December" },
 ];
 
+/** What the step-2 submit button promises, per start path. Keyed by StartPath
+ *  so adding a path without deciding its label is a type error rather than a
+ *  card that silently submits as "Create client". */
+const SUBMIT_LABELS: Record<StartPath, string> = {
+  guided: "Start guided walkthrough",
+  import: "Continue to import",
+  intake: "Continue to intake form",
+  empty: "Create client",
+};
+
 interface PreviewContact {
   role: "primary" | "spouse" | "dependent" | "other";
   firstName: string;
@@ -171,6 +181,7 @@ export default function QuickCreateForm() {
     const firstName = String(data.get("firstName") ?? "").trim();
     const lastName = String(data.get("lastName") ?? "").trim();
     const dateOfBirth = String(data.get("dateOfBirth") ?? "");
+    const email = String(data.get("email") ?? "").trim();
     const spouseFirstName = createSpouse ? String(data.get("spouseFirstName") ?? "").trim() : "";
     const spouseLastName = createSpouse ? String(data.get("spouseLastName") ?? "").trim() : "";
     const spouseDob = createSpouse ? String(data.get("spouseDob") ?? "") : "";
@@ -191,7 +202,14 @@ export default function QuickCreateForm() {
     const pRes = await fetch(`/api/crm/households/${household.id}/contacts`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ role: "primary", firstName, lastName, dateOfBirth, state: newHouseholdState }),
+      body: JSON.stringify({
+        role: "primary",
+        firstName,
+        lastName,
+        dateOfBirth,
+        state: newHouseholdState,
+        ...(email ? { email } : {}),
+      }),
     });
     if (!pRes.ok) {
       const j = (await pRes.json().catch(() => ({}))) as { error?: string };
@@ -252,7 +270,7 @@ export default function QuickCreateForm() {
       preview?.contacts.some((c) => c.role === "spouse") ?? false;
 
     let payload: Record<string, unknown>;
-    if (path === "import" || path === "empty") {
+    if (path === "import" || path === "empty" || path === "intake") {
       payload = {
         crmHouseholdId: householdId,
         retirementAge: 65,
@@ -294,6 +312,14 @@ export default function QuickCreateForm() {
 
       if (path === "import") {
         router.push(`/clients/${created.id}/details/import/new`);
+        return;
+      }
+      if (path === "intake") {
+        // Hand the new client to the Data Collection sender, which reads the
+        // id and opens with this household already picked. Sending against a
+        // clientId is what makes the answers merge onto this plan — a prospect
+        // send would apply as a second household beside the one just created.
+        router.push(`/data-collection?clientId=${created.id}`);
         return;
       }
       if (path === "empty") {
@@ -376,6 +402,21 @@ export default function QuickCreateForm() {
                   onChange={(e) => setDob(e.target.value)}
                   className={inputClassName}
                 />
+              </div>
+              <div className="sm:col-span-2">
+                <label className={fieldLabelClassName} htmlFor="email">
+                  Email <span className="text-ink-4">(optional)</span>
+                </label>
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  maxLength={200}
+                  className={inputClassName}
+                />
+                <p className="mt-1 text-[12px] text-ink-4">
+                  Fills in the recipient when you send them an intake form.
+                </p>
               </div>
             </div>
 
@@ -489,13 +530,7 @@ export default function QuickCreateForm() {
         ? `${primary.firstName} ${primary.lastName}`
         : (preview?.name ?? "Selected household");
 
-  const submitLabel = submitting
-    ? "Creating…"
-    : path === "guided"
-      ? "Start guided walkthrough"
-      : path === "import"
-        ? "Continue to import"
-        : "Create client";
+  const submitLabel = submitting ? "Creating…" : path ? SUBMIT_LABELS[path] : "Create client";
 
   // Step 2: path picker + conditional planning fields.
   return (
@@ -679,11 +714,13 @@ export default function QuickCreateForm() {
             </>
           )}
 
-          {(path === "import" || path === "empty") && (
+          {(path === "import" || path === "empty" || path === "intake") && (
             <p className="text-[13px] leading-relaxed text-ink-3">
               {path === "import"
                 ? "We'll create the client, then take you to document import to extract their data. Retirement and tax assumptions start at sensible defaults — all editable later."
-                : "We'll create a blank client with default assumptions. You can fill in everything from the client's pages whenever you're ready."}
+                : path === "intake"
+                  ? "We'll create the client, then take you to Data Collection with their name and email filled in, ready to send. Their answers land in the review queue and merge onto this client when you apply them."
+                  : "We'll create a blank client with default assumptions. You can fill in everything from the client's pages whenever you're ready."}
             </p>
           )}
 

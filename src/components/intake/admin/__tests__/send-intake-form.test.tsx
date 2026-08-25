@@ -118,6 +118,60 @@ describe("SendIntakeForm", () => {
     expect(screen.getByLabelText(/^email/i)).toHaveValue("typed@example.com");
   });
 
+  it("opens addressed to a handed-over client, so the only step left is Send", async () => {
+    // The "Intake form" start path lands here with ?clientId= right after
+    // creating the client; the page resolves it to this prefill.
+    render(<SendIntakeForm defaultSections={null} prefill={HIT} />);
+
+    expect(screen.getByRole("button", { name: /existing client/i })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByText("Bob & Beth Baxter")).toBeInTheDocument();
+    // The roster typeahead is the thing being skipped — its absence is the
+    // point, not a side effect.
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/first name/i)).toHaveValue("Bob");
+    expect(screen.getByLabelText(/last name/i, { selector: "input" })).toHaveValue("Baxter");
+    expect(screen.getByLabelText(/^email/i)).toHaveValue("bob@baxter.test");
+
+    fireEvent.click(screen.getByRole("button", { name: /^send$/i }));
+
+    await waitFor(() => {
+      const post = vi
+        .mocked(fetch)
+        .mock.calls.find(([url]) => url === "/api/data-collection");
+      expect(post).toBeDefined();
+      // clientId is what makes the answers merge onto this plan instead of
+      // applying as a second household beside it.
+      expect(JSON.parse(post![1]!.body as string)).toMatchObject({
+        mode: "blank",
+        clientId: "client-1",
+        recipientName: "Bob Baxter",
+        recipientEmail: "bob@baxter.test",
+      });
+    });
+  });
+
+  it("leaves the email blank for the advisor when the handed-over client has none", () => {
+    // CRM contacts frequently carry no email, so the prefill is a head start,
+    // never a guarantee — the name must still arrive.
+    render(<SendIntakeForm defaultSections={null} prefill={{ ...HIT, primaryEmail: null }} />);
+
+    expect(screen.getByLabelText(/^email/i)).toHaveValue("");
+    expect(screen.getByLabelText(/first name/i)).toHaveValue("Bob");
+  });
+
+  it("treats a prefilled send as a client send, so Family stays unlocked", () => {
+    // Sections are seeded once at mount. Seeding them as a prospect would lock
+    // Family onto a send that carries a clientId — the one kind the prospect
+    // rule is meant to leave alone.
+    render(<SendIntakeForm defaultSections={["documents"]} prefill={HIT} />);
+
+    expect(screen.getByRole("checkbox", { name: /family/i })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /family/i })).not.toBeDisabled();
+  });
+
   it("blocks an existing-client send until a client is picked", async () => {
     render(<SendIntakeForm defaultSections={null} />);
     fireEvent.click(screen.getByRole("button", { name: /existing client/i }));

@@ -286,6 +286,7 @@ export async function createCrmHousehold(input: CreateCrmHouseholdInput) {
           firstName: c.firstName,
           lastName: c.lastName,
           dateOfBirth: resolveContactDateOfBirth(c.role, c.dateOfBirth),
+          email: c.email || null,
           // Seed the primary contact's address state from the household
           // residence so the contacts tab renders a state immediately.
           state: c.role === "primary" ? (input.state ?? null) : null,

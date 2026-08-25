@@ -107,3 +107,33 @@ it("bounces back without prompting when returnTo is set", async () => {
   );
   expect(screen.queryByRole("dialog", { name: /household created/i })).toBeNull();
 });
+
+it("sends an entered email on the primary contact", async () => {
+  // The only contact detail this form asks for, and only because it is what a
+  // later intake-form send addresses — without it the "Intake form" start path
+  // lands on Data Collection with a blank recipient.
+  const { container } = render(<CrmHouseholdForm mode="create" />);
+  fireEvent.change(screen.getByLabelText(/^email/i), {
+    target: { value: "john@smith.test" },
+  });
+  submitCreate(container);
+
+  await waitFor(() => expect(fetch).toHaveBeenCalled());
+  const body = JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string);
+  expect(body.contacts[0]).toMatchObject({
+    role: "primary",
+    firstName: "John",
+    email: "john@smith.test",
+  });
+});
+
+it("omits the email key entirely when the box is left blank", async () => {
+  // Blank must not be sent as "" — the schema tolerates it, but the contact
+  // row should carry NULL, not an empty string a later lookup treats as set.
+  const { container } = render(<CrmHouseholdForm mode="create" />);
+  submitCreate(container);
+
+  await waitFor(() => expect(fetch).toHaveBeenCalled());
+  const body = JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string);
+  expect(body.contacts[0]).not.toHaveProperty("email");
+});

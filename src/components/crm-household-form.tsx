@@ -49,6 +49,7 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
   // can derive live from them via buildHouseholdName.
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
   const [addSpouse, setAddSpouse] = useState(false);
   const [spouseFirstName, setSpouseFirstName] = useState("");
   const [spouseLastName, setSpouseLastName] = useState("");
@@ -97,6 +98,7 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         ...(dob ? { dateOfBirth: dob } : {}),
+        ...(email.trim() ? { email: email.trim() } : {}),
       },
     ];
     if (addSpouse && spouseFirstName.trim()) {
@@ -199,6 +201,23 @@ export function CrmHouseholdForm({ mode }: CrmHouseholdFormProps) {
                 </option>
               ))}
             </select>
+          </div>
+          <div className="sm:col-span-2">
+            <label className={fieldLabelClassName} htmlFor="email">
+              Email <span className="text-ink-4">(optional)</span>
+            </label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              maxLength={200}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className={inputClassName}
+            />
+            <p className="mt-1 text-[12px] text-ink-4">
+              Fills in the recipient when you send them an intake form.
+            </p>
           </div>
         </div>
 

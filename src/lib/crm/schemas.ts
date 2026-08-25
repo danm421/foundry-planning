@@ -19,6 +19,11 @@ export const createCrmHouseholdContactSchema = z.object({
   firstName: z.string().min(1).max(100),
   lastName: z.string().min(1).max(100),
   dateOfBirth: z.iso.date().optional(),
+  // Optional here, and frequently absent: it is the only contact detail the
+  // create form asks for, because it is what a later intake-form or portal
+  // send addresses. Empty string is accepted and stored as NULL so a blank
+  // input doesn't have to be stripped by every caller.
+  email: z.email().optional().or(z.literal("")),
 });
 
 // Canonical household residence: USPS 2-letter code (50 states + DC).
