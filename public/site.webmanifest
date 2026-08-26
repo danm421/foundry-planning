@@ -1,7 +1,7 @@
 {
   "name": "Foundry Planning",
   "short_name": "Foundry",
-  "description": "Cash-flow planning, calibrated for advisors.",
+  "description": "The planning workspace for advisors.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0b0c0f",

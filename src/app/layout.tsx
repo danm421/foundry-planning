@@ -23,7 +23,7 @@ const b612Mono = B612_Mono({
 
 export const metadata: Metadata = {
   title: "Foundry Planning",
-  description: "Cash flow-based financial planning for advisors",
+  description: "The planning workspace for advisors",
   manifest: "/site.webmanifest",
   icons: {
     icon: [

@@ -10,7 +10,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Project
 
-Foundry Planning — cash flow based financial planning for advisors. 
+Foundry Planning — the planning workspace for advisors: intake, modeling, tax, estate, and client-ready plans in one app.
 
 **Stack:** Next.js 16 (App Router) · React 19 · TypeScript · Neon Postgres + Drizzle · Clerk · Upstash Redis · Azure OpenAI (document extraction) · Vitest · Vercel · Tailwind v4 · Chart.js · TanStack Table · @react-pdf/renderer
 
