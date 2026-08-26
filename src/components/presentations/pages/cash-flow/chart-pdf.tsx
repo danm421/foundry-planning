@@ -2,7 +2,7 @@ import { View, Svg, G, Rect, Line, Polyline, Text as SvgText } from "@react-pdf/
 import type { ChartSpec } from "@/lib/presentations/charts/types";
 import { scaleLinear, scaleBand } from "d3-scale";
 import { PRESENTATION_THEME } from "@/lib/presentations/theme";
-import { stackRects } from "./chart-geom";
+import { legendSlot, stackRects } from "./chart-geom";
 
 export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
   const innerW = spec.width - spec.margin.left - spec.margin.right;
@@ -133,9 +133,11 @@ export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
         {/* Legend at bottom */}
         <G transform={`translate(${spec.margin.left}, ${spec.height - spec.margin.bottom + 28})`}>
           {spec.legend.items.map((item, i) => {
-            const itemX = i * 85;
+            // Wraps — see `legendSlot`. The second row sits inside the bottom
+            // margin the legend already lives in, so nothing needs to grow.
+            const slot = legendSlot(i);
             return (
-              <G key={`lg-${item.label}`} transform={`translate(${itemX}, 0)`}>
+              <G key={`lg-${item.label}`} transform={`translate(${slot.x}, ${slot.y})`}>
                 {item.kind === "swatch" ? (
                   <Rect x={0} y={-6} width={8} height={8} fill={item.color} />
                 ) : (

@@ -223,6 +223,33 @@ export function deflator(
   return 1 / (1 + rate) ** (year - planSettings.planStartYear);
 }
 
+/**
+ * Which year the month table is about.
+ *
+ * SHARED ON PURPOSE, and the rule is not the obvious one: with no year picked
+ * it opens on the first SHORTFALL year, not the first year. Three callers now
+ * depend on it — the solver's month panel, the chart panel that builds the
+ * twelve rows beside it, and the Monthly Cash Flow deck page — and a second
+ * copy that omitted the middle clause would caption one year and list another's
+ * months, silently. `selectedYear` is null on the first paint and again whenever
+ * a recompute has not yet resolved it, so the callers have to agree in EVERY
+ * state, not only the settled one.
+ *
+ * It lives here rather than beside the panel because the deck page renders in a
+ * route handler: importing it from a `"use client"` component would drag the
+ * whole panel into the PDF render path.
+ */
+export function selectMonthlyRow(
+  rows: MonthlyCashFlowRow[],
+  selectedYear: number | null,
+): MonthlyCashFlowRow | undefined {
+  return (
+    rows.find((r) => r.year === selectedYear) ??
+    rows.find((r) => r.income < r.fixed.total) ??
+    rows[0]
+  );
+}
+
 export function buildMonthlyCashFlowRows(
   years: ProjectionYear[],
   clientData: ClientData,

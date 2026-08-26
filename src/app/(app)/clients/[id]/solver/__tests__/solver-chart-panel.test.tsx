@@ -111,13 +111,11 @@ vi.mock("@/components/charts/solver-monthly-cash-flow-chart", () => ({
 // so the assertions can tell a wired-up panel from one handed the empty array
 // the other sub-tabs pass or a dead callback — same reasoning as the
 // withdrawal-panel mock above.
-vi.mock("../solver-monthly-cash-flow-panel", async (importActual) => ({
-  // `selectMonthlyRow` keeps its REAL implementation. It is the panel's own
-  // year-selection rule and this panel's month lookup runs through it, so a stub
-  // would let a wrong-year regression pass this file unseen. Only the component
-  // is replaced.
-  selectMonthlyRow: (await importActual<typeof import("../solver-monthly-cash-flow-panel")>())
-    .selectMonthlyRow,
+// `selectMonthlyRow` is deliberately NOT mocked: it lives in
+// `@/lib/solver/monthly-cash-flow` and this panel's month lookup runs through
+// it, so a stub would let a wrong-year regression pass this file unseen. Only
+// the component is replaced.
+vi.mock("../solver-monthly-cash-flow-panel", () => ({
   SolverMonthlyCashFlowPanel: ({
     rows,
     basis,

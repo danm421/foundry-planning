@@ -6,7 +6,8 @@ import { resolve } from "node:path";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { SolverMonthlyCashFlowPanel, selectMonthlyRow } from "../solver-monthly-cash-flow-panel";
+import { SolverMonthlyCashFlowPanel } from "../solver-monthly-cash-flow-panel";
+import { selectMonthlyRow } from "@/lib/solver/monthly-cash-flow";
 import type { MonthlyCashFlowRow } from "@/lib/solver/monthly-cash-flow";
 import type { MonthRow } from "@/lib/solver/monthly-allocation";
 

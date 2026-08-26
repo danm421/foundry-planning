@@ -20,11 +20,8 @@ import { SolverYearTablePanel } from "./solver-year-table-panel";
 import { SolverWithdrawalPanel } from "./solver-withdrawal-panel";
 import { buildWithdrawalReportRows } from "@/lib/solver/withdrawal-report";
 import { SolverMonthlyCashFlowChart } from "@/components/charts/solver-monthly-cash-flow-chart";
-import {
-  SolverMonthlyCashFlowPanel,
-  selectMonthlyRow,
-} from "./solver-monthly-cash-flow-panel";
-import { buildMonthlyCashFlowRows } from "@/lib/solver/monthly-cash-flow";
+import { SolverMonthlyCashFlowPanel } from "./solver-monthly-cash-flow-panel";
+import { buildMonthlyCashFlowRows, selectMonthlyRow } from "@/lib/solver/monthly-cash-flow";
 import { buildMonthlyAllocation } from "@/lib/solver/monthly-allocation";
 import { useDollarBasis } from "@/lib/solver/dollar-basis-store";
 import { EstateComparisonChart } from "@/components/charts/estate-comparison-chart";

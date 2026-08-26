@@ -94,6 +94,20 @@ import { buildNetCashFlowDrillData } from "@/lib/presentations/pages/cash-flow-n
 import { buildPortfolioGrowthDrillData } from "@/lib/presentations/pages/cash-flow-growth/view-model";
 import { buildPortfolioActivityDrillData } from "@/lib/presentations/pages/cash-flow-activity/view-model";
 import { buildPortfolioAssetsDrillData } from "@/lib/presentations/pages/cash-flow-assets/view-model";
+import { buildWithdrawalsDrillData } from "@/lib/presentations/pages/cash-flow-withdrawals/view-model";
+import { buildMonthlyCashFlowPageData } from "@/lib/presentations/pages/cash-flow-monthly/view-model";
+import {
+  MONTHLY_CASH_FLOW_OPTIONS_DEFAULT,
+  type MonthlyCashFlowPageData,
+  type MonthlyCashFlowPageOptions,
+} from "@/lib/presentations/pages/cash-flow-monthly/types";
+import {
+  monthlyCashFlowOptionsSchema,
+  summarizeMonthlyCashFlowOptions,
+  estimateMonthlyCashFlowPageCount,
+} from "@/lib/presentations/pages/cash-flow-monthly/options-schema";
+import { MonthlyCashFlowPagePdf } from "./pages/cash-flow-monthly/page-pdf";
+import { MonthlyCashFlowOptionsControl } from "./pages/cash-flow-monthly/options-control";
 import { buildTaxIncomeDrillData } from "@/lib/presentations/pages/income-tax-income/view-model";
 import { buildTaxFederalDrillData } from "@/lib/presentations/pages/income-tax-federal/view-model";
 import { buildTaxStateDrillData } from "@/lib/presentations/pages/income-tax-state/view-model";
@@ -1698,6 +1712,60 @@ export const earlyYearsTidbitsPage: PresentationPage<
   renderPdf: (input) => <EarlyYearsTidbitsPagePdf {...input} />,
 };
 
+export const cashFlowWithdrawalsPage: PresentationPage<DrillPageData, DrillPageOptions> = {
+  id: "cashFlowWithdrawals",
+  title: "Withdrawals",
+  // Names the axis on purpose. The Net Cash Flow sheet prints the same dollars
+  // split by asset category; an advisor picking between them in the launcher
+  // has only these two lines to tell them apart.
+  description:
+    "Portfolio draws by tax treatment — cash, taxable, tax-deferred, Roth — with the rate they draw the portfolio down at.",
+  category: "Cash Flow",
+  defaultOptions: DRILL_PAGE_OPTIONS_DEFAULT,
+  optionsSchema: drillOptionsSchema,
+  summarizeOptions: summarizeDrillOptions,
+  estimatePageCount: estimateDrillPageCount,
+  OptionsControl: DrillOptionsControl,
+  supportsScenarioOverride: true,
+  buildData: (ctx, options) =>
+    buildWithdrawalsDrillData({
+      years: ctx.years,
+      clientData: ctx.clientData,
+      options,
+      scenarioLabel: ctx.scenarioLabel,
+      clientName: ctx.clientName,
+      spouseName: ctx.spouseName,
+    }),
+  renderPdf: (input) => <DrillPagePdf {...input} />,
+};
+
+export const cashFlowMonthlyPage: PresentationPage<
+  MonthlyCashFlowPageData,
+  MonthlyCashFlowPageOptions
+> = {
+  id: "cashFlowMonthly",
+  title: "Monthly Cash Flow",
+  description:
+    "What the household has to live on each month: income, the portfolio draw that tops it up, and the costs already committed. Prints across the plan or month by month for one year.",
+  category: "Cash Flow",
+  defaultOptions: MONTHLY_CASH_FLOW_OPTIONS_DEFAULT,
+  optionsSchema: monthlyCashFlowOptionsSchema,
+  summarizeOptions: summarizeMonthlyCashFlowOptions,
+  estimatePageCount: estimateMonthlyCashFlowPageCount,
+  OptionsControl: MonthlyCashFlowOptionsControl,
+  supportsScenarioOverride: true,
+  buildData: (ctx, options) =>
+    buildMonthlyCashFlowPageData({
+      years: ctx.years,
+      clientData: ctx.clientData,
+      options,
+      scenarioLabel: ctx.scenarioLabel,
+      clientName: ctx.clientName,
+      spouseName: ctx.spouseName,
+    }),
+  renderPdf: (input) => <MonthlyCashFlowPagePdf {...input} />,
+};
+
 export const PRESENTATION_PAGES = {
   cover: coverPage,
   toc: tocPage,
@@ -1717,6 +1785,8 @@ export const PRESENTATION_PAGES = {
   cashFlowGrowth: cashFlowGrowthPage,
   cashFlowActivity: cashFlowActivityPage,
   cashFlowAssets: cashFlowAssetsPage,
+  cashFlowWithdrawals: cashFlowWithdrawalsPage,
+  cashFlowMonthly: cashFlowMonthlyPage,
   entityCashFlow: entityCashFlowPage,
   taxSummary: taxSummaryPage,
   taxComparison: taxComparisonPage,

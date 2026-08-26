@@ -2,7 +2,11 @@
 
 import { memo } from "react";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
-import type { DollarBasis, MonthlyCashFlowRow } from "@/lib/solver/monthly-cash-flow";
+import {
+  selectMonthlyRow,
+  type DollarBasis,
+  type MonthlyCashFlowRow,
+} from "@/lib/solver/monthly-cash-flow";
 import type { MonthRow } from "@/lib/solver/monthly-allocation";
 
 const fmt = new Intl.NumberFormat("en-US", {
@@ -31,30 +35,6 @@ interface Props {
    *  the toggle degrades to today's behaviour rather than to a blank table. */
   view?: "plan" | "months";
   onViewChange?: (v: "plan" | "months") => void;
-}
-
-/**
- * Which year the month table is about.
- *
- * EXPORTED AND SHARED ON PURPOSE. `solver-chart-panel.tsx` builds the twelve
- * rows for the same year this panel captions, and the rule is not the obvious
- * one: with no year picked it opens on the first SHORTFALL year, not the first
- * year. A second copy that omitted the middle clause would caption one year and
- * list another's months, silently. `selectedYear` is null on the first paint —
- * `live-solver-workspace.tsx:717` defaults it to the first projection year in an
- * effect, which runs after that render — and again whenever a recompute has not
- * yet resolved it. The two sites have to agree in EVERY state, not only that
- * one, which is why the rule is shared rather than restated.
- */
-export function selectMonthlyRow(
-  rows: MonthlyCashFlowRow[],
-  selectedYear: number | null,
-): MonthlyCashFlowRow | undefined {
-  return (
-    rows.find((r) => r.year === selectedYear) ??
-    rows.find((r) => r.income < r.fixed.total) ??
-    rows[0]
-  );
 }
 
 // Memoized for the same reason `SolverWithdrawalPanel` is: this table renders
