@@ -12,8 +12,12 @@ describe("scenario-changes options + estimate", () => {
     expect(scenarioChangesOptionsSchema.parse(SCENARIO_CHANGES_OPTIONS_DEFAULT)).toEqual(SCENARIO_CHANGES_OPTIONS_DEFAULT);
   });
 
-  it("summarize reflects the explanations toggle", () => {
-    expect(summarizeScenarioChangesOptions({ title: "X", showExplanations: true })).toBe("With details");
-    expect(summarizeScenarioChangesOptions({ title: "X", showExplanations: false })).toBe("Changes only");
+  it("summarize reflects the chosen scenario and the explanations toggle", () => {
+    expect(summarizeScenarioChangesOptions({ scenarioId: "s9", title: "X", showExplanations: true }))
+      .toBe("vs Base Case · With details");
+    expect(summarizeScenarioChangesOptions({ scenarioId: "s9", title: "X", showExplanations: false }))
+      .toBe("vs Base Case · Changes only");
+    expect(summarizeScenarioChangesOptions({ scenarioId: "", title: "X", showExplanations: true }))
+      .toBe("No scenario selected · With details");
   });
 });

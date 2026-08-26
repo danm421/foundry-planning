@@ -48,8 +48,8 @@ function endingPortfolio(result: ProjectionResult): number {
 }
 
 // Pages whose buildData depends on an optional context bundle that explain_report
-// does NOT load (investments / monteCarlo / lifeInsurance / scenarioChanges /
-// bundlesByRef). Built without it they return structurally-empty data the model
+// does NOT load (investments / monteCarlo / lifeInsurance / bundlesByRef).
+// Built without it they return structurally-empty data the model
 // could narrate as a real zero. Surface them as unavailable + redirect to the
 // dedicated tool instead of building ungrounded output.
 const PAGES_NEEDING_UNLOADED_CONTEXT = new Set<string>([
@@ -57,7 +57,7 @@ const PAGES_NEEDING_UNLOADED_CONTEXT = new Set<string>([
   "portfolioAnalysis",    // needs ctx.investments
   "monteCarlo",           // needs ctx.monteCarlo — use run_monte_carlo
   "lifeInsuranceSummary", // needs ctx.lifeInsurance
-  "scenarioChanges",      // needs ctx.scenarioChanges — use list_scenarios
+  "scenarioChanges",      // needs bundlesByRef — use list_scenarios
   "retirementComparison", // needs bundlesByRef — use compare_scenarios
   "earlyYearsLadder",     // needs bundlesByRef — one derived plan per rung
   "earlyYearsWaiting",    // needs bundlesByRef — one derived plan per start date

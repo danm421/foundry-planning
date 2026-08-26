@@ -369,33 +369,35 @@ export function PresentationsLauncher(props: Props) {
     }));
   }
 
-  // Deck positions (1-based) of any Retirement Comparison page that has no
-  // comparison scenario chosen. Such a page renders only a "Select a comparison
-  // scenario" placeholder, so the export is blocked until each one is set.
-  function retirementComparisonPagesMissingScenario(): number[] {
+  // Every comparison report (Plan / Retirement / Tax) carries its "compare to"
+  // scenario in its own options — the baseline is always Base Case. Unset, the
+  // sheet prints only a "Select a comparison scenario" placeholder, so name the
+  // offending rows and block the export until each one is chosen.
+  function comparisonPagesMissingScenario(): Array<{ title: string; position: number }> {
     return state.pages
-      .map((p, i) => ({ p, position: i + 1 }))
-      .filter(
-        ({ p }) =>
-          p.pageId === "retirementComparison" &&
-          !(p.options as RetirementComparisonOptions).scenarioId,
-      )
-      .map(({ position }) => position);
+      .map((p, i) => ({ page: PRESENTATION_PAGES[p.pageId], options: p.options, position: i + 1 }))
+      .filter(({ page, options }) => {
+        const inline = page.inlineScenarioOption;
+        return inline != null && !inline.get(options as never);
+      })
+      .map(({ page, position }) => ({ title: page.title, position }));
   }
 
   async function handleGenerate() {
     setError(null);
     setNotice(null);
     setExportWarning(null);
-    // Require a comparison on every Retirement Comparison page before exporting,
-    // otherwise the PDF would ship empty placeholder slides. Name the offending
-    // page(s) so the advisor knows which row to fix.
-    const missingComparison = retirementComparisonPagesMissingScenario();
+    // Require a comparison on every comparison page before exporting, otherwise
+    // the PDF would ship empty placeholder slides. Name the offending page(s)
+    // so the advisor knows which row to fix.
+    const missingComparison = comparisonPagesMissingScenario();
     if (missingComparison.length > 0) {
+      const named = missingComparison
+        .map((m) => `${m.title} (page ${m.position})`)
+        .join(", ");
+      const each = missingComparison.length > 1 ? " for each" : "";
       setError(
-        missingComparison.length === 1
-          ? `No comparison selected for the Retirement Comparison page (page ${missingComparison[0]}). Choose a comparison scenario before generating the PDF.`
-          : `No comparison selected for Retirement Comparison pages ${missingComparison.join(", ")}. Choose a comparison scenario for each before generating the PDF.`,
+        `No comparison selected for ${named}. Choose a comparison scenario${each} before generating the PDF.`,
       );
       return;
     }

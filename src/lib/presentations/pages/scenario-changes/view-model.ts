@@ -1,21 +1,42 @@
-import type { ScenarioChangesContext, ScenarioChangesOptions, ScenarioChangesPageData } from "./types";
+import type { BuildDataContext } from "@/components/presentations/registry";
+import { resolveScenarioRef, keyForRef } from "@/lib/scenario/presentation-refs";
+import type { ScenarioChangesOptions, ScenarioChangesPageData } from "./types";
 import { describeChange } from "./describe";
 import { groupUnits } from "./group";
 import { buildResolveContext, EMPTY_RESOLVE_DATA } from "./describe/resolve";
 
+function empty(
+  options: ScenarioChangesOptions,
+  emptyReason: NonNullable<ScenarioChangesPageData["emptyReason"]>,
+): ScenarioChangesPageData {
+  return {
+    title: options.title,
+    subtitle: "",
+    units: [],
+    showExplanations: options.showExplanations,
+    isEmpty: true,
+    emptyReason,
+  };
+}
+
 export function buildScenarioChangesData(
-  scenarioChanges: ScenarioChangesContext | undefined,
+  ctx: BuildDataContext,
   options: ScenarioChangesOptions,
 ): ScenarioChangesPageData {
-  const sc = scenarioChanges;
+  // Like the other comparison reports, the scenario lives in this page's own
+  // options rather than the deck's scenario picker: the baseline is always Base
+  // Case, so a per-page "base facts" override would have nothing to compare.
+  if (!options.scenarioId) return empty(options, "unselected");
 
-  if (!sc || sc.changes.length === 0) {
-    return { title: options.title, subtitle: "", units: [], showExplanations: options.showExplanations, isEmpty: true };
-  }
+  const bundle =
+    (ctx.bundlesByRef ?? {})[keyForRef(resolveScenarioRef(options.scenarioId))];
+  const sc = bundle?.scenarioChanges;
+
+  if (!sc || sc.changes.length === 0) return empty(options, "no-changes");
 
   const resolve = buildResolveContext(sc.resolve ?? EMPTY_RESOLVE_DATA);
-  const ctx = { targetNames: sc.targetNames, resolve };
-  const described = sc.changes.map((change) => ({ change, row: describeChange(change, ctx) }));
+  const describeCtx = { targetNames: sc.targetNames, resolve };
+  const described = sc.changes.map((change) => ({ change, row: describeChange(change, describeCtx) }));
   const units = groupUnits(described, sc.toggleGroups);
 
   return {

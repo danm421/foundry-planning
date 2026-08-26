@@ -193,6 +193,40 @@ describe("PresentationsLauncher", () => {
     expect(runsCall).toBeUndefined();
   });
 
+  it("blocks Generate and warns when a Plan Comparison page has no comparison selected", async () => {
+    render(
+      <PresentationsLauncher
+        clientId="c1"
+        currentUserId="me"
+        clientLastName="Sample"
+        householdId="hh-test"
+        scenarios={[]}
+        snapshots={[]}
+        initialTemplates={{ shared: [], mine: [], builtIn: [], builtInHidden: [] }}
+        investmentCatalog={{ groups: [], entities: [], portfolios: [], recommendedPortfolioId: null }}
+      />,
+    );
+    // Add a Plan Comparison page (defaults to no comparison scenario).
+    fireEvent.click(screen.getByRole("button", { name: /add page/i }));
+    fireEvent.change(screen.getByPlaceholderText(/search reports/i), {
+      target: { value: "plan comparison" },
+    });
+    fireEvent.click(screen.getByText("Plan Comparison"));
+
+    // The row offers the inline "Compare to…" picker, never a base-facts override.
+    expect(screen.getByLabelText(/Comparison scenario for Plan Comparison/i)).toBeTruthy();
+    expect(screen.queryByLabelText(/^Scenario for Plan Comparison$/i)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /Generate PDF/i }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/no comparison selected for plan comparison/i);
+    const runsCall = vi
+      .mocked(global.fetch)
+      .mock.calls.find((c) => String(c[0]).includes("/presentations/runs"));
+    expect(runsCall).toBeUndefined();
+  });
+
   it("Generate posts to the background /presentations/runs route and shows a notice", async () => {
     render(
       <PresentationsLauncher

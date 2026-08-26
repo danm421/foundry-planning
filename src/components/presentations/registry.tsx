@@ -238,7 +238,6 @@ import type { InvestmentProposalBundle } from "@/lib/presentations/investment-pr
 import type { InvestmentsBundle } from "@/lib/presentations/investments-bundle";
 import type { LifeInsuranceInventory } from "@/lib/insurance-policies/load-li-inventory";
 import type {
-  ScenarioChangesContext,
   ScenarioChangesPageData,
   ScenarioChangesOptions,
 } from "@/lib/presentations/pages/scenario-changes/types";
@@ -488,9 +487,6 @@ export interface BuildDataContext {
   /** Present only when the deck includes the Observations page; loaded
    *  conditionally in the export route. */
   observations?: ObservationsRowInput[];
-  /** Present only when the deck includes the Scenario Changes page and the
-   *  active ref is a live scenario; absent for base/snapshot decks. */
-  scenarioChanges?: ScenarioChangesContext;
   /** Present only when the deck includes the Plan Story page; the export route
    *  loads the story context and the advisor-reviewed chapter text. */
   planStory?: PlanStoryContextInput;
@@ -1305,15 +1301,29 @@ export const entitiesBalanceSheetPage: PresentationPage<BalanceSheetPageData, Ba
 export const scenarioChangesPage: PresentationPage<ScenarioChangesPageData, ScenarioChangesOptions> = {
   id: "scenarioChanges",
   title: "Plan Comparison",
-  description: "Plain-English table of the edits made in this scenario vs the base plan.",
+  description: "Plain-English table of the edits a chosen scenario makes to the base plan.",
   category: "Comparison",
   defaultOptions: SCENARIO_CHANGES_OPTIONS_DEFAULT,
   optionsSchema: scenarioChangesOptionsSchema,
   summarizeOptions: summarizeScenarioChangesOptions,
   estimatePageCount: estimateScenarioChangesPageCount,
   OptionsControl: ScenarioChangesOptionsControl,
-  supportsScenarioOverride: true,
-  buildData: (ctx, options) => buildScenarioChangesData(ctx.scenarioChanges, options),
+  // The baseline is always Base Case, so there is nothing for a per-page
+  // "base facts" override to compare — the scenario is picked inline instead,
+  // exactly as Retirement Comparison and Tax Comparison do.
+  supportsScenarioOverride: false,
+  // Only the chosen scenario, deliberately unlike its two siblings: they print
+  // base figures beside the scenario's, but this sheet lists the scenario's own
+  // edits, which are already recorded relative to base. Naming "base" here would
+  // buy an unread tree load + projection and burn one of the deck's six
+  // distinct-scenario slots.
+  requiredScenarioRefs: (o) => (o.scenarioId ? [o.scenarioId] : []),
+  inlineScenarioOption: {
+    get: (o) => o.scenarioId,
+    set: (o, scenarioId) => ({ ...o, scenarioId }),
+    placeholder: "Compare to…",
+  },
+  buildData: (ctx, options) => buildScenarioChangesData(ctx, options),
   renderPdf: (input) => <ScenarioChangesPagePdf {...input} />,
 };
 

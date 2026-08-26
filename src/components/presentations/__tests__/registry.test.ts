@@ -37,6 +37,40 @@ describe("PRESENTATION_PAGES", () => {
   });
 });
 
+// The launcher row renders ONE trailing scenario control per page, and the
+// Generate guard reads the same two fields to decide whether a comparison is
+// still unset. Both rules assume the fields are mutually exclusive; nothing in
+// the types enforces it, so pin it here — a page setting both would block
+// Generate over a control its row never shows.
+describe("scenario-control invariants", () => {
+  const pages = Object.values(PRESENTATION_PAGES);
+
+  it("no page offers both a scenario override and an inline scenario picker", () => {
+    const both = pages.filter((p) => p.supportsScenarioOverride && p.inlineScenarioOption);
+    expect(both.map((p) => p.id)).toEqual([]);
+  });
+
+  it("every inline scenario picker uses the same 'Compare to…' prompt", () => {
+    const inline = pages.filter((p) => p.inlineScenarioOption);
+    // Guards the assertion below from passing on an empty list.
+    expect(inline.length).toBeGreaterThanOrEqual(3);
+    for (const p of inline) {
+      expect(p.inlineScenarioOption!.placeholder).toBe("Compare to…");
+    }
+  });
+
+  // Every comparison report compares a scenario against Base Case, so none of
+  // them may take the deck's per-page scenario override ("base facts").
+  it("every Comparison report picks its scenario inline, never by override", () => {
+    const comparison = pages.filter((p) => p.category === "Comparison");
+    expect(comparison.length).toBeGreaterThanOrEqual(3);
+    for (const p of comparison) {
+      expect({ id: p.id, override: p.supportsScenarioOverride, inline: !!p.inlineScenarioOption })
+        .toEqual({ id: p.id, override: false, inline: true });
+    }
+  });
+});
+
 describe("blank page registration", () => {
   it("registers the blank page under Framing with no scenario override", () => {
     expect(PRESENTATION_PAGES.blank.category).toBe("Framing");

@@ -116,7 +116,11 @@ export function ScenarioChangesPagePdf({
     <PageFrame firmName={firmName} clientName={clientName} reportDate={reportDate} pageIndex={pageIndex} totalPages={totalPages}>
       <SectionHead title={data.title} subtitle={data.subtitle || undefined} eyebrow="PLAN COMPARISON" accent={accent} />
       {data.isEmpty ? (
-        <Text style={styles.empty}>This scenario matches the base plan — there are no changes to show.</Text>
+        <Text style={styles.empty}>
+          {data.emptyReason === "unselected"
+            ? "Select a comparison scenario to populate this page."
+            : "This scenario matches the base plan — there are no changes to show."}
+        </Text>
       ) : (
         <View style={styles.table}>
           <HeaderRow showDetails={data.showExplanations} />

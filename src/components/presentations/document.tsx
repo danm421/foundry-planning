@@ -176,7 +176,6 @@ export function PresentationDocument(props: PresentationDocumentProps) {
         observations: props.observations,
         planStory: p.planStory,
         proposal: p.proposal,
-        scenarioChanges: bundle.scenarioChanges,
         bundlesByRef,
       },
       options as never,

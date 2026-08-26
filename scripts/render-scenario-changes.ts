@@ -17,6 +17,8 @@ import { ScenarioChangesPagePdf } from "../src/components/presentations/pages/sc
 import { ensureFontsRegistered } from "../src/components/pdf/fonts";
 import { DEFAULT_ACCENT } from "../src/lib/presentations/theme";
 import type { ScenarioChangesContext } from "../src/lib/presentations/pages/scenario-changes/types";
+import type { BuildDataContext } from "../src/components/presentations/registry";
+import { keyForRef, resolveScenarioRef } from "../src/lib/scenario/presentation-refs";
 
 ensureFontsRegistered();
 
@@ -215,7 +217,18 @@ const ctx: ScenarioChangesContext = {
   ] as ScenarioChangesContext["changes"],
 };
 
-const data = buildScenarioChangesData(ctx, SCENARIO_CHANGES_OPTIONS_DEFAULT);
+// The page reads its scenario's bundle out of `bundlesByRef` — so the fixture
+// stands in as that one bundle's changes slot, keyed by the same helpers the
+// page uses to read it back, so the two can't drift apart.
+const SCENARIO_ID = "fixture-scenario";
+const data = buildScenarioChangesData(
+  {
+    bundlesByRef: {
+      [keyForRef(resolveScenarioRef(SCENARIO_ID))]: { scenarioChanges: ctx },
+    },
+  } as unknown as BuildDataContext,
+  { ...SCENARIO_CHANGES_OPTIONS_DEFAULT, scenarioId: SCENARIO_ID },
+);
 
 const element = ScenarioChangesPagePdf({
   data,

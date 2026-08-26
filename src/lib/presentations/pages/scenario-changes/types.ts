@@ -29,6 +29,10 @@ export type DisplayUnit =
   | { kind: "group"; label: string; rows: ChangeRow[] };
 
 export interface ScenarioChangesOptions {
+  /** The scenario whose edits are printed; the baseline is always Base Case.
+   *  "" = unset, which blocks the export the same way the other comparison
+   *  reports do. */
+  scenarioId: string;
   title: string;
   showExplanations: boolean;
 }
@@ -40,11 +44,14 @@ export interface ScenarioChangesPageData {
   showExplanations: boolean;
   /** True → render the empty state instead of the table. */
   isEmpty: boolean;
+  /** Which empty state to print: no scenario picked yet, vs. a picked scenario
+   *  that turned out to hold no edits. Absent when there is a table to print. */
+  emptyReason?: "unselected" | "no-changes";
 }
 
 /**
- * Injected into BuildDataContext by the export route, only when the deck
- * includes the Scenario Changes page and the active ref is a live scenario.
+ * Attached to the chosen scenario's bundle by the export route, only when the
+ * deck includes the Plan Comparison page and that ref is a live scenario.
  */
 export interface ScenarioChangesContext {
   changes: ScenarioChange[];
