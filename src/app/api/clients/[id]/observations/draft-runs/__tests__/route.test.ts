@@ -61,10 +61,16 @@ vi.mock("next/server", async () => {
 vi.mock("@/lib/scenario/loader", () => ({ loadEffectiveTree: mockLoadEffectiveTree }));
 vi.mock("@/engine/projection", () => ({ runProjectionWithEvents: mockRunProjectionWithEvents }));
 vi.mock("@/lib/compute-cache/monte-carlo", () => ({ getOrComputeMonteCarlo: mockGetOrComputeMonteCarlo }));
-vi.mock("@/lib/observations/draft", () => ({
-  buildObservationsFacts: mockBuildObservationsFacts,
-  generateObservationsDraft: mockGenerateObservationsDraft,
-}));
+// Only the two expensive calls are faked — `draftFailureMessage` stays real so
+// this suite proves what an advisor actually reads on a failed run.
+vi.mock("@/lib/observations/draft", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/observations/draft")>();
+  return {
+    ...actual,
+    buildObservationsFacts: mockBuildObservationsFacts,
+    generateObservationsDraft: mockGenerateObservationsDraft,
+  };
+});
 
 import { POST } from "../route";
 
@@ -161,14 +167,30 @@ describe("POST /api/clients/[id]/observations/draft-runs", () => {
     });
   });
 
-  it("marks the run failed when the background job throws", async () => {
+  it("marks the run failed with an advisor-readable reason when the background job throws", async () => {
     mockGenerateObservationsDraft.mockRejectedValue(new Error("model unavailable"));
     const res = await POST(req(), { params: Promise.resolve({ id: clientId }) });
     const json = await res.json();
     await Promise.all(afterTasks);
     const [row] = await db.select().from(generationRuns).where(eq(generationRuns.id, json.runId));
     expect(row.status).toBe("failed");
-    expect(row.error).toBe("model unavailable");
+    expect(row.error).toBe("The AI draft didn't finish. Please try again.");
+  });
+
+  // The panel prints run.error verbatim, so a parser exception carrying the
+  // model's whole JSON reply must never reach the row.
+  it("stores a short reason for a schema-validation failure, not the raw model output", async () => {
+    mockGenerateObservationsDraft.mockRejectedValue(
+      Object.assign(new Error('Failed to parse. Text: "{ \"suggestions\": [ ... ] }"'), {
+        lc_error_code: "OUTPUT_PARSING_FAILURE",
+      }),
+    );
+    const res = await POST(req(), { params: Promise.resolve({ id: clientId }) });
+    const json = await res.json();
+    await Promise.all(afterTasks);
+    const [row] = await db.select().from(generationRuns).where(eq(generationRuns.id, json.runId));
+    expect(row.status).toBe("failed");
+    expect(row.error).toBe("The AI draft came back in an unexpected format. Please try again.");
   });
 
   it("429s when the rate limiter denies, without creating a run", async () => {

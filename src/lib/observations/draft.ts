@@ -12,16 +12,22 @@ import { exactCurrency } from "@/lib/presentations/format";
 import { PLAN_TOKENS, resolveAllTokens, type TokenContext } from "@/lib/plan-text/tokens";
 import { OBSERVATION_TOPICS } from "@/lib/schemas/observations";
 
+// `title`, `owner` and `priority` are `.nullish()`, not `.nullable()`, so the
+// model may simply LEAVE THEM OUT — which is what it does for observations,
+// where an owner and a priority make no sense. `.nullable()` compiles to a
+// *required* JSON-schema property, so an omitted one failed validation and
+// killed the whole draft. Mirrors the storage contract in
+// src/lib/schemas/observations.ts, which has always accepted them as absent.
 export const ObservationSuggestionSchema = z.object({
   suggestions: z
     .array(
       z.object({
         section: z.enum(["observation", "next_step"]),
         topic: z.enum(OBSERVATION_TOPICS),
-        title: z.string().nullable(),
+        title: z.string().nullish(),
         body: z.string().min(1),
-        owner: z.enum(["advisor", "client", "joint"]).nullable(),
-        priority: z.enum(["high", "medium", "low"]).nullable(),
+        owner: z.enum(["advisor", "client", "joint"]).nullish(),
+        priority: z.enum(["high", "medium", "low"]).nullish(),
       }),
     )
     .min(1)
@@ -29,13 +35,25 @@ export const ObservationSuggestionSchema = z.object({
 });
 export type ObservationSuggestions = z.infer<typeof ObservationSuggestionSchema>;
 
+/** What the draft route hands on: every optional field settled to `null`, so
+ *  the UI's suggestion card and the create route see one shape. */
+export type ObservationSuggestion = {
+  section: "observation" | "next_step";
+  topic: (typeof OBSERVATION_TOPICS)[number];
+  title: string | null;
+  body: string;
+  owner: "advisor" | "client" | "joint" | null;
+  priority: "high" | "medium" | "low" | null;
+};
+
 const SYSTEM_PROMPT = `You are a financial planning analyst drafting the "Observations & Next Steps"
 section of a client-facing financial plan. Use ONLY the facts provided — never
 invent numbers or products. Write in plain, warm, professional language a
 client can read. No performance guarantees, no product recommendations, no
 "you must" — frame next steps as recommended actions.
 Produce 4–8 observations (statements of fact/finding, grouped by topic) and
-3–7 next steps (specific actions with an owner). Wherever a figure has a merge
+3–7 next steps (specific actions with an owner). Give every next step an owner
+and a priority; observations need neither. Wherever a figure has a merge
 token in the cheat-sheet, write the token (e.g. {{net_worth}}) instead of the
 number so the text stays current.`;
 
@@ -123,9 +141,44 @@ export function buildObservationsFacts(ctx: TokenContext): string {
  * against the "full" (reasoning) deployment — mirrors
  * generateMeetingPrepDraft (src/lib/crm/meeting-prep/generate.ts).
  */
-export async function generateObservationsDraft(facts: string): Promise<ObservationSuggestions> {
-  const result = await chatModel("full")
+export async function generateObservationsDraft(
+  facts: string,
+): Promise<{ suggestions: ObservationSuggestion[] }> {
+  const result = (await chatModel("full")
     .withStructuredOutput(ObservationSuggestionSchema)
-    .invoke([new SystemMessage(SYSTEM_PROMPT), new HumanMessage(facts)]);
-  return result as ObservationSuggestions;
+    .invoke([
+      new SystemMessage(SYSTEM_PROMPT),
+      new HumanMessage(facts),
+    ])) as ObservationSuggestions;
+  return {
+    suggestions: result.suggestions.map((s) => ({
+      section: s.section,
+      topic: s.topic,
+      body: s.body,
+      title: s.title ?? null,
+      owner: s.owner ?? null,
+      priority: s.priority ?? null,
+    })),
+  };
+}
+
+/**
+ * An advisor-facing reason a draft run failed. The raw error is NOT usable
+ * here: a schema-validation failure arrives as a LangChain OutputParserException
+ * whose message embeds the model's entire JSON reply, which the panel then
+ * printed verbatim. Callers log the real error; this is only what we store on
+ * the run for display.
+ */
+export function draftFailureMessage(err: unknown): string {
+  if (err instanceof Error && err.message === "ai_not_configured") {
+    return "AI drafting isn't set up for this environment.";
+  }
+  if (
+    typeof err === "object" &&
+    err !== null &&
+    (err as { lc_error_code?: string }).lc_error_code === "OUTPUT_PARSING_FAILURE"
+  ) {
+    return "The AI draft came back in an unexpected format. Please try again.";
+  }
+  return "The AI draft didn't finish. Please try again.";
 }

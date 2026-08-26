@@ -17,6 +17,7 @@ vi.mock("@/domain/forge/llm", () => ({ chatModel: mockChatModel }));
 // Import AFTER the mock is declared.
 import {
   buildObservationsFacts,
+  draftFailureMessage,
   generateObservationsDraft,
   ObservationSuggestionSchema,
 } from "../draft";
@@ -219,5 +220,73 @@ describe("generateObservationsDraft", () => {
     expect(messages[0].content).toMatch(/Use ONLY the facts provided/);
     expect(messages[1].content).toBe("FACT SHEET TEXT");
     expect(result).toEqual(fixture);
+  });
+
+  // The prod failure: the model omitted owner/priority on its observations
+  // (they only make sense on a next step) and the whole draft was rejected.
+  it("accepts suggestions that omit title/owner/priority, and settles them to null", async () => {
+    const modelReply = {
+      suggestions: [
+        {
+          section: "observation" as const,
+          topic: "cash-flow" as const,
+          title: "Current cash flow",
+          body: "Annual income is {{annual_income}}.",
+        },
+        {
+          section: "next_step" as const,
+          topic: "retirement" as const,
+          title: "Revisit the plan",
+          body: "Review plan confidence in six months.",
+          owner: "advisor" as const,
+          priority: "high" as const,
+        },
+      ],
+    };
+    expect(ObservationSuggestionSchema.safeParse(modelReply).success).toBe(true);
+
+    mockInvoke.mockResolvedValue(modelReply);
+    const result = await generateObservationsDraft("FACT SHEET TEXT");
+
+    expect(result.suggestions[0]).toEqual({
+      section: "observation",
+      topic: "cash-flow",
+      title: "Current cash flow",
+      body: "Annual income is {{annual_income}}.",
+      owner: null,
+      priority: null,
+    });
+    expect(result.suggestions[1].owner).toBe("advisor");
+    expect(result.suggestions[1].priority).toBe("high");
+  });
+
+  it("still rejects a suggestion with no body — the one field there is no sane default for", () => {
+    const parsed = ObservationSuggestionSchema.safeParse({
+      suggestions: [{ section: "observation", topic: "tax", body: "" }],
+    });
+    expect(parsed.success).toBe(false);
+  });
+});
+
+describe("draftFailureMessage", () => {
+  it("never leaks a parser exception's embedded model output", () => {
+    const err = Object.assign(
+      new Error('Failed to parse. Text: "{ \"suggestions\": [ ... ] }". Error: [...]'),
+      { lc_error_code: "OUTPUT_PARSING_FAILURE" },
+    );
+    const msg = draftFailureMessage(err);
+    expect(msg).toBe("The AI draft came back in an unexpected format. Please try again.");
+    expect(msg).not.toMatch(/suggestions|Failed to parse/);
+  });
+
+  it("names a missing AI configuration", () => {
+    expect(draftFailureMessage(new Error("ai_not_configured"))).toMatch(/isn't set up/);
+  });
+
+  it("falls back to a plain retry message for anything else", () => {
+    expect(draftFailureMessage(new Error("ECONNRESET"))).toBe(
+      "The AI draft didn't finish. Please try again.",
+    );
+    expect(draftFailureMessage("nope")).toBe("The AI draft didn't finish. Please try again.");
   });
 });

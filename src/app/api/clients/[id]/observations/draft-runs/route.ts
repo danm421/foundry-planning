@@ -7,7 +7,11 @@ import { checkObservationsAiRateLimit, rateLimitErrorResponse } from "@/lib/rate
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjectionWithEvents } from "@/engine/projection";
 import { getOrComputeMonteCarlo } from "@/lib/compute-cache/monte-carlo";
-import { buildObservationsFacts, generateObservationsDraft } from "@/lib/observations/draft";
+import {
+  buildObservationsFacts,
+  draftFailureMessage,
+  generateObservationsDraft,
+} from "@/lib/observations/draft";
 import {
   createQueuedRun,
   markAnalyzing,
@@ -102,9 +106,10 @@ export async function POST(
         const draft = await generateObservationsDraft(facts);
         await markDone(runId, null, { suggestions: draft.suggestions });
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "draft failed";
+        // The full error goes to the log; the run stores only what an advisor
+        // should read — a parser failure's message is the model's whole reply.
         console.error("[observations/draft-runs] background draft failed", err);
-        await markFailed(runId, msg);
+        await markFailed(runId, draftFailureMessage(err));
       }
     });
 
