@@ -33,6 +33,13 @@ const AZURE_SUFFIX = ".openai.azure.com";
  * (169.254.169.254, localhost), and stops lookalike suffixes like
  * `acme.openai.azure.com.evil.com` by requiring the suffix to END the hostname
  * and leave a non-empty instance in front of it.
+ *
+ * The value is then normalized to its ORIGIN, because what we validate must be
+ * what we persist. Microsoft Foundry (Azure's portal) shows a "Target URI" that
+ * carries a full path and `?api-version=`; an admin pastes that verbatim, and
+ * storing it raw would hand every downstream consumer a broken baseURL. The
+ * origin also drops any `user:pass@` userinfo, which must never reach the
+ * plaintext `scope` column.
  */
 export const azureEndpointSchema = z
   .string()
@@ -51,7 +58,9 @@ export const azureEndpointSchema = z
       return h.slice(0, -AZURE_SUFFIX.length).length > 0;
     },
     { message: "endpoint must be an https:// URL on an <instance>.openai.azure.com host" },
-  );
+  )
+  // Runs only once the refine above has passed, so `new URL` cannot throw here.
+  .transform((raw) => new URL(raw).origin);
 
 export type AzureSecret = { apiKey: string };
 export type AzureConfig = {
@@ -77,7 +86,19 @@ export function encodeAzureSecret(s: AzureSecret): string {
 }
 
 export function decodeAzureSecret(raw: string): AzureSecret {
-  return azureSecretSchema.parse(JSON.parse(raw));
+  // `raw` is the DECRYPTED secret blob. Node's JSON.parse embeds the first ~10
+  // characters of its input in the SyntaxError message, so a legacy raw key or a
+  // corrupt decrypt would put key bytes into any log line, audit field, or
+  // response body that surfaces `err.message`. Rethrow a fixed string instead.
+  // Zod's own errors report types and constraints, never values, so the schema
+  // parse below is safe to let through.
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("azure secret malformed");
+  }
+  return azureSecretSchema.parse(parsed);
 }
 
 export function encodeAzureConfig(c: AzureConfig): string {
