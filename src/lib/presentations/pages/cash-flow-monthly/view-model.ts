@@ -188,7 +188,7 @@ function planChartSpec(rows: MonthlyPlanRow[], markers: TableMarker[]): ChartSpe
   const stacks: DrillStackSeries[] = [
     stack("Taxes", rows.map((r) => r.taxes), dataLight.red),
     stack("Debt payments", rows.map((r) => r.debt), dataLight.yellow),
-    stack("Savings", rows.map((r) => r.savings), dataLight.blue),
+    stack("Savings", rows.map((r) => r.savings), dataLight.sky),
     // The table's own fold, not a second copy of it: the chart band and the
     // "Other" column are the same number by construction.
     stack("Other fixed", rows.map((r) => r.other), dataLight.grey),
@@ -216,12 +216,13 @@ function planChartSpec(rows: MonthlyPlanRow[], markers: TableMarker[]): ChartSpe
         // a per-series border, and crit #b91c1c against the Taxes band's
         // #c5392b is 7.6 ΔE76 — two large flat patches that read as one colour,
         // which is the collision `solver-monthly-cash-flow-chart.tsx` documents.
-        // Pink is unused in this chart and unmistakable against both; the
+        // Pink is unused in either sheet and unmistakable against both; the
         // MEANING is carried by the legend's own words, the table's glyph and
-        // the card's banner, never by the hue. (The MONTH sheet spends pink on
-        // its Living band — a band this chart does not have, on a page this one
-        // never shares. Each sheet's legend names its own bands, and no reader
-        // sees the two hues side by side.)
+        // the card's banner, never by the hue — which is what carries it for a
+        // colour-blind reader, since pink against the Available band's green is
+        // a documented deuteranope collision (11.8). The two are never both
+        // non-zero in one year, so they never stack against each other; they
+        // meet only in the legend, where they are named.
         dataLight.pink,
       ),
     );
@@ -246,7 +247,8 @@ function planChartSpec(rows: MonthlyPlanRow[], markers: TableMarker[]): ChartSpe
  * The same visual grammar on twelve months — the view changes the period, not
  * the way the chart is read. The top band is again the residual, so the gap to
  * the income line is still the draw; "Living", which the plan chart folds inside
- * Available, breaks out here and takes a hue no other band uses.
+ * Available, breaks out here and takes the family's deep blue — Savings, beside
+ * it, takes the light one.
  *
  * The six hues match `solver-monthly-cash-flow-chart.tsx` band for band, and its
  * SEPARATION note is where the choice is measured and argued.
@@ -261,9 +263,9 @@ function monthChartSpec(rows: MonthlyMonthRow[]): ChartSpec {
     stacks: [
       stack("Taxes", rows.map((m) => m.taxes), dataLight.red),
       stack("Debt", rows.map((m) => m.debt), dataLight.yellow),
-      stack("Savings", rows.map((m) => m.savings), dataLight.blue),
+      stack("Savings", rows.map((m) => m.savings), dataLight.sky),
       stack("Other", rows.map((m) => m.other), dataLight.grey),
-      stack("Living", rows.map((m) => m.living), dataLight.pink),
+      stack("Living", rows.map((m) => m.living), dataLight.blue),
       // A short month is the only band drawn below the zero line, and position
       // survives greyscale and colour-blindness alike.
       stack("Left over", rows.map(leftOver), dataLight.green),

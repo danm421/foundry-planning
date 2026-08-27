@@ -13,8 +13,11 @@ describe("dataScale", () => {
     const hues = dataScale(24, "dark").map((c) => Number(c.match(/oklch\([^ ]+ [^ ]+ ([\d.]+)\)/)![1]));
     expect(hues.some((h) => h > 165 && h < 195)).toBe(false);
   });
-  it("exposes the 9 named hues per theme", () => {
-    expect(Object.keys(data)).toHaveLength(9);
-    expect(Object.keys(dataLight)).toHaveLength(9);
+  it("exposes the 10 named hues per theme, with the same keys in both", () => {
+    // Six anchors + four fills. The count is a tripwire on the palette being
+    // extended in one theme and not the other, which is the shape a chart
+    // reading `dataLight.sky` would crash on in light mode alone.
+    expect(Object.keys(data)).toHaveLength(10);
+    expect(Object.keys(dataLight)).toEqual(Object.keys(data));
   });
 });
