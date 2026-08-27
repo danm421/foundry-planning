@@ -1,36 +1,44 @@
 import { AzureOpenAI } from "openai";
+import { resolveAiCredentials } from "@/lib/ai/resolve";
+import { azureClientOptions } from "@/lib/ai/client";
+import type { AiCredentials } from "@/lib/ai/credentials";
 
-let cachedClient: AzureOpenAI | null = null;
-let cachedKey = "";
+// Re-exported so existing importers (and azure-client.test.ts) keep their path.
+export { azureClientOptions };
 
-export function azureClientOptions(apiKey: string) {
-  return {
-    apiKey,
-    endpoint: process.env.AZURE_ENDPOINT ?? "",
-    apiVersion: process.env.AZURE_API_VERSION ?? "2024-12-01-preview",
-    // 55s keeps every call (and each multi-pass fan-out call) inside the 300s
-    // function budget; the SDK default is 10 minutes, which can outlive the
-    // function and strand a slot. maxRetries:1 stops a hung call retrying past
-    // the budget (SDK default is 2).
-    timeout: 55_000,
-    maxRetries: 1,
-  };
-}
+/** One cached client per distinct tenant+key, so a firm's client is reused
+ *  across calls without ever being handed to another firm. The key carries the
+ *  endpoint and the key itself — never "the last client we built" — which is
+ *  what keeps firm A's client out of firm B's call on a warm instance. */
+const clientCache = new Map<string, AzureOpenAI>();
 
-function getClient(): AzureOpenAI {
-  const apiKey = process.env.AZURE_API_KEY ?? "";
-
-  if (!apiKey) {
+/**
+ * Resolve whose tenant this call runs in, then build (or reuse) that tenant's
+ * client. Every AI call goes through here, so the resolver is asked EVERY time:
+ * a firm that connects its own resource is served from it on the very next call.
+ */
+async function getClient(): Promise<{ client: AzureOpenAI; creds: AiCredentials }> {
+  const creds = await resolveAiCredentials();
+  if (!creds.apiKey) {
     throw new Error(
-      "AZURE_API_KEY is not configured. Set it in .env.local to enable document extraction."
+      "Azure OpenAI is not configured. Set AZURE_API_KEY in .env.local, or connect your firm's own Azure resource in Settings → Integrations.",
     );
   }
+  const cacheKey = `${creds.endpoint}|${creds.apiVersion}|${creds.apiKey}`;
+  let client = clientCache.get(cacheKey);
+  if (!client) {
+    client = new AzureOpenAI(azureClientOptions(creds));
+    clientCache.set(cacheKey, client);
+  }
+  return { client, creds };
+}
 
-  if (cachedClient && cachedKey === apiKey) return cachedClient;
-
-  cachedClient = new AzureOpenAI(azureClientOptions(apiKey));
-  cachedKey = apiKey;
-  return cachedClient;
+/** Resolve the "mini"/"full" aliases against the caller's deployments. An
+ *  explicit deployment name passes through untouched. */
+function deploymentFor(creds: AiCredentials, model: "mini" | "full" | (string & {})): string {
+  if (model === "full") return creds.deployments.chat;
+  if (model === "mini") return creds.deployments.mini;
+  return model;
 }
 
 export interface AIExtractionResult {
@@ -43,22 +51,17 @@ export interface AIExtractionResult {
  * content and the model's `finish_reason` (so callers can detect a truncated
  * `"length"` completion and continue).
  *
- * `model` accepts the legacy "mini" / "full" aliases (resolved via env)
- * or an explicit deployment name like "gpt-5.4" — useful when a caller
- * wants to pin the model without depending on the AZURE_*_MODEL env vars.
+ * `model` accepts the "mini" / "full" aliases (resolved against whichever
+ * tenant this call runs in) or an explicit deployment name like "gpt-5.4" —
+ * useful when a caller wants to pin the model.
  */
 export async function callAIExtractionWithMeta(
   systemPrompt: string,
   userPrompt: string,
   model: "mini" | "full" | (string & {}) = "mini"
 ): Promise<AIExtractionResult> {
-  const client = getClient();
-  const modelName =
-    model === "full"
-      ? (process.env.AZURE_ANALYSIS_MODEL ?? "gpt-5.4")
-      : model === "mini"
-        ? (process.env.AZURE_MODEL ?? "gpt-5.4-mini")
-        : model;
+  const { client, creds } = await getClient();
+  const modelName = deploymentFor(creds, model);
 
   // Removed `x-ms-azureai-sensitivity: "high"` request header
   // (commit e2834b0). The header was added as defense-in-depth for
@@ -104,17 +107,16 @@ export async function callAIExtraction(
 }
 
 /**
- * Embed a single string via the Azure OpenAI embeddings deployment. No SDK
- * change — the cached AzureOpenAI client already exposes `.embeddings.create`.
- * Fails CLOSED when the embeddings deployment env is unset (mirrors the
- * extraction env discipline) and asserts the 1536-dim contract the pgvector
- * column requires, so a wrong deployment surfaces at the call site, not as a
- * DB error.
+ * Embed a single string via the caller's Azure OpenAI embeddings deployment. No
+ * SDK change — the cached AzureOpenAI client already exposes
+ * `.embeddings.create`. Fails CLOSED when the resolved credentials name no
+ * embeddings deployment, and asserts the 1536-dim contract the pgvector column
+ * requires, so a wrong deployment surfaces at the call site, not as a DB error.
  */
 export async function callAIEmbedding(input: string): Promise<number[]> {
-  const model = process.env.AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT;
+  const { client, creds } = await getClient();
+  const model = creds.deployments.embedding;
   if (!model) throw new Error("ai_embedding_not_configured");
-  const client = getClient();
   const response = await client.embeddings.create({ model, input });
   const vec = response.data[0]?.embedding;
   if (!vec || vec.length !== 1536) {
@@ -139,13 +141,8 @@ export async function callAIVisionTranscription(
   images: VisionImage[],
   model: "mini" | "full" | (string & {}) = "mini",
 ): Promise<string> {
-  const client = getClient();
-  const modelName =
-    model === "full"
-      ? (process.env.AZURE_ANALYSIS_MODEL ?? "gpt-5.4")
-      : model === "mini"
-        ? (process.env.AZURE_MODEL ?? "gpt-5.4-mini")
-        : model;
+  const { client, creds } = await getClient();
+  const modelName = deploymentFor(creds, model);
 
   const instruction =
     "Transcribe every page of this financial statement image verbatim. " +

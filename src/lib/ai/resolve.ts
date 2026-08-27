@@ -12,8 +12,9 @@
 // client data in our tenant.
 //
 // The single legitimate keyless caller is scripts/ingest-planning-kb.ts, which
-// embeds our OWN curated library. It calls foundrySystemCredentials()
-// explicitly, so the exception is visible in review.
+// embeds our OWN curated library. It opts in by setting __FOUNDRY_SYSTEM_AI,
+// read only inside the no-org branch below, so the exception is visible in
+// review and cannot reach a firm that has a connection.
 import { auth } from "@clerk/nextjs/server";
 import { getConnection } from "@/lib/integrations/connections";
 import { decodeAzureConfig, decodeAzureSecret, type AiCredentials } from "./credentials";
@@ -116,13 +117,44 @@ function firmCredentials(conn: { accessToken: string | null; scope: string | nul
 }
 
 /**
+ * The caller's Clerk org, or null when there isn't one.
+ *
+ * MEASURED, not assumed: outside a request `auth()` THROWS rather than
+ * returning a null org. Under `npx tsx` — the world scripts/ingest-planning-kb.ts
+ * runs in, with no request and no clerkMiddleware — it raises `server-only`'s
+ * "This module cannot be imported from a Client Component module." Letting that
+ * escape would deny the ingest script the no-org branch its own opt-in flag
+ * lives in, and break KB ingest.
+ *
+ * Swallowing the throw is safe in BOTH directions. It cannot soften the
+ * compliance promise: an unflagged caller whose org is unreadable still lands
+ * in the `!orgId` branch and still throws `ai_no_firm_context`, so a request
+ * whose auth() fails transiently never falls back to our key.
+ */
+async function currentOrgId(): Promise<string | null> {
+  try {
+    return (await auth()).orgId ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The firm's credentials if it has connected its own Azure OpenAI resource,
  * Foundry Planning's otherwise. Throws rather than falling back whenever the
  * answer is uncertain — see the module comment.
  */
 export async function resolveAiCredentials(): Promise<AiCredentials> {
-  const { orgId } = await auth();
-  if (!orgId) throw new Error("ai_no_firm_context");
+  const orgId = await currentOrgId();
+  if (!orgId) {
+    // The sanctioned system caller (scripts/ingest-planning-kb.ts), checked
+    // INSIDE this branch and never before it. Checked first, a stray
+    // __FOUNDRY_SYSTEM_AI in any server process would route a CONNECTED firm's
+    // client data into our tenant — the precise breach this feature exists to
+    // prevent. Here it can only ever fill a gap where there is no firm at all.
+    if (process.env.__FOUNDRY_SYSTEM_AI === "1") return foundrySystemCredentials();
+    throw new Error("ai_no_firm_context");
+  }
 
   const hit = cache.get(orgId);
   if (hit && hit.expiresAt > Date.now()) return hit.creds;

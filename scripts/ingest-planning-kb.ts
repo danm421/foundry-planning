@@ -72,6 +72,13 @@ async function countRows(): Promise<number> {
 }
 
 async function main() {
+  // This script ingests FOUNDRY PLANNING'S OWN curated planning library — no
+  // client data — and runs outside any request, so there is no firm to resolve.
+  // It is the only sanctioned caller of Foundry Planning's credentials outside a
+  // signed-in request. The resolver reads this flag ONLY when there is no org,
+  // so setting it can never divert a connected firm's data into our tenant.
+  process.env.__FOUNDRY_SYSTEM_AI = "1";
+
   if (!process.env.AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT) {
     throw new Error("AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT is not set — embed call fails closed.");
   }

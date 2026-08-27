@@ -324,6 +324,93 @@ describe("resolveAiCredentials", () => {
   });
 });
 
+// ---- The one sanctioned system caller ----
+//
+// `scripts/ingest-planning-kb.ts` embeds Foundry Planning's OWN curated library
+// outside any request. The flag it sets is read INSIDE the no-org branch and
+// never before it: checked first, a stray `__FOUNDRY_SYSTEM_AI` in any server
+// process would route a CONNECTED firm's client data into our tenant — the
+// exact breach this feature exists to prevent.
+
+describe("the __FOUNDRY_SYSTEM_AI system-caller hatch", () => {
+  it("serves Foundry's credentials to the sanctioned system caller without an org", async () => {
+    vi.stubEnv("__FOUNDRY_SYSTEM_AI", "1");
+    mockAuth.mockResolvedValue({ orgId: null });
+
+    const creds = await resolveAiCredentials();
+
+    expect(creds.source).toBe("foundry");
+    expect(creds.apiKey).toBe("foundry-key");
+    // There is no firm to read a connection for.
+    expect(mockGetConnection).not.toHaveBeenCalled();
+  });
+
+  it("does NOT override a firm's own connection — the flag only ever fills a no-org gap", async () => {
+    vi.stubEnv("__FOUNDRY_SYSTEM_AI", "1");
+    mockAuth.mockResolvedValue({ orgId: "org_acme" });
+    mockGetConnection.mockResolvedValue(connectedRow("firm-key"));
+
+    const creds = await resolveAiCredentials();
+
+    expect(creds.source).toBe("firm");
+    expect(creds.endpoint).toBe("https://acme-ria.openai.azure.com");
+    expect(creds.apiKey).toBe("firm-key");
+    expect(creds.apiKey).not.toBe("foundry-key");
+  });
+
+  it("does not stop a connected firm's BROKEN connection from throwing", async () => {
+    // The other half of the same rule: with the flag set, an unusable firm
+    // connection must still throw rather than quietly become our key.
+    vi.stubEnv("__FOUNDRY_SYSTEM_AI", "1");
+    mockAuth.mockResolvedValue({ orgId: "org_broken" });
+    mockGetConnection.mockResolvedValue({
+      status: "error",
+      accessToken: JSON.stringify({ apiKey: "firm-key" }),
+      scope: FIRM_CONFIG,
+    });
+
+    await expect(resolveAiCredentials()).rejects.toThrow("ai_firm_connection_unavailable");
+  });
+
+  it("ignores any value other than the exact flag", async () => {
+    vi.stubEnv("__FOUNDRY_SYSTEM_AI", "true");
+    mockAuth.mockResolvedValue({ orgId: null });
+
+    await expect(resolveAiCredentials()).rejects.toThrow("ai_no_firm_context");
+  });
+});
+
+// ---- auth() outside a request ----
+//
+// MEASURED, not assumed: under `npx tsx` (the KB ingest script's world — no
+// request, no clerkMiddleware) Clerk's `auth()` THROWS `server-only`'s "This
+// module cannot be imported from a Client Component module" rather than
+// returning a null org. An escaping throw would deny the script the no-org
+// branch its own opt-in flag lives in.
+
+describe("auth() throwing outside a request", () => {
+  const outsideARequest = () =>
+    new Error(
+      "This module cannot be imported from a Client Component module. It should only be used from a Server Component.",
+    );
+
+  it("is treated as NO ORG, so the sanctioned system caller still reaches its hatch", async () => {
+    vi.stubEnv("__FOUNDRY_SYSTEM_AI", "1");
+    mockAuth.mockRejectedValue(outsideARequest());
+
+    const creds = await resolveAiCredentials();
+
+    expect(creds.source).toBe("foundry");
+  });
+
+  it("still fails CLOSED when no flag is set — an unreadable org is never a licence to use our key", async () => {
+    mockAuth.mockRejectedValue(outsideARequest());
+
+    await expect(resolveAiCredentials()).rejects.toThrow("ai_no_firm_context");
+    expect(mockGetConnection).not.toHaveBeenCalled();
+  });
+});
+
 describe("foundrySystemCredentials", () => {
   it("reads Foundry Planning's own env and is labelled as such", () => {
     const creds = foundrySystemCredentials();
