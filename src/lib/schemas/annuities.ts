@@ -71,6 +71,24 @@ const nullableFraction = z
     return n;
   });
 
+/** A `NOT NULL DEFAULT '0'` rate column, not a nullable one — same
+ *  string/number coercion as `nullableFraction` (Task 9's form sends this
+ *  field alongside its nullable siblings, so it must tolerate the same
+ *  numeric-or-empty-string input), but an empty string or absent key falls
+ *  back to the DB's own default instead of becoming null. */
+const requiredFraction = z
+  .union([z.number(), z.string()])
+  .optional()
+  .transform((v, ctx) => {
+    if (v === undefined || v === "") return 0;
+    const n = Number(v);
+    if (!Number.isFinite(n) || n < 0 || n > 1) {
+      ctx.addIssue({ code: "custom", message: "Must be a fraction between 0 and 1" });
+      return z.NEVER;
+    }
+    return n;
+  });
+
 const nullableYear = year.nullable().optional();
 
 const base = {
@@ -85,7 +103,7 @@ const base = {
   // Accumulation-phase drags.
   surrenderChargePct: nullableFraction,
   surrenderEndYear: nullableYear,
-  annualFeePct: z.number().gte(0).lte(1).optional().default(0),
+  annualFeePct: requiredFraction,
 
   // Income phase.
   incomeMode: z.enum(INCOME_MODES).optional().default("none"),

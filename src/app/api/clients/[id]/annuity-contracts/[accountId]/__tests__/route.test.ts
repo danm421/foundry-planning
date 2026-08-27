@@ -129,6 +129,7 @@ vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 import { GET, PUT } from "../route";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
+import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 
 const CLIENT_A = "10000000-0000-4000-8000-000000000001";
 const CLIENT_B = "10000000-0000-4000-8000-000000000002";
@@ -237,6 +238,57 @@ describe("GET /api/clients/[id]/annuity-contracts/[accountId]", () => {
     const json = await res.json();
     expect(json).toBeNull();
   });
+
+  it("returns 401 (not 500) when requireOrgId rejects with a non-default message", async () => {
+    // requireOrgId() throws UnauthorizedError("Organization context required")
+    // on a missing org — a different message than the default "Unauthorized" —
+    // so a string-equality catch misses it. authErrorResponse maps by
+    // instanceof, not by message, so it must catch this too.
+    vi.mocked(requireOrgId).mockRejectedValueOnce(
+      new UnauthorizedError("Organization context required"),
+    );
+    const res = await GET(getReq(), params(CLIENT_A, ACCOUNT_A));
+    expect(res.status).toBe(401);
+    const json = await res.json();
+    expect(json.error).toBe("Unauthorized");
+  });
+
+  it("round-trips: a GET response can be PUT straight back with no 400", async () => {
+    state.annuityContracts.push({
+      accountId: ACCOUNT_A,
+      carrier: "Acme Life",
+      contractNumberLast4: "1234",
+      productType: "myga",
+      taxTreatment: "non_qualified",
+      costBasis: "50000.00",
+      surrenderChargePct: "0.0700",
+      surrenderEndYear: 2032,
+      annualFeePct: "0.0125",
+      incomeMode: "rider",
+      incomeStartYear: 2030,
+      incomeStartYearRef: null,
+      payoutStructure: "single_life",
+      survivorPct: null,
+      periodCertainYears: null,
+      benefitBase: "250000.00",
+      rollupRate: "0.0500",
+      rollupEndYear: 2028,
+      rollupRatchets: true,
+      riderFeePct: "0.0095",
+      payoutPct: null,
+      annuitizedPayment: null,
+      expectedReturnYears: null,
+    });
+    const getRes = await GET(getReq(), params(CLIENT_A, ACCOUNT_A));
+    expect(getRes.status).toBe(200);
+    const body = await getRes.json();
+    // Not part of the PUT body's schema — the caller already has it from the
+    // URL, and the schema is `.strict()`, so an accountId key would 400.
+    expect(body.accountId).toBeUndefined();
+
+    const putRes = await PUT(req(body), params(CLIENT_A, ACCOUNT_A));
+    expect(putRes.status).toBe(200);
+  });
 });
 
 describe("PUT /api/clients/[id]/annuity-contracts/[accountId]", () => {
@@ -310,6 +362,24 @@ describe("PUT /api/clients/[id]/annuity-contracts/[accountId]", () => {
     expect(res.status).toBe(200);
     const stored = state.annuityContracts.find((r) => r.accountId === ACCOUNT_A);
     expect(stored?.costBasis).toBeNull();
+  });
+
+  it("stores money and rate columns as DB-ready decimal strings, not numbers", async () => {
+    // The fake accepts either — only a real `numeric` column would reject a
+    // bare JS number — so this pins the `String(...)` conversion directly:
+    // dropping it (e.g. `costBasis: input.costBasis`) keeps the fake and all
+    // other tests green but silently breaks against real Postgres, and no
+    // database in this branch has this table yet to catch it that way.
+    const res = await PUT(
+      req({ costBasis: 50000, surrenderChargePct: 0.07, incomeMode: "none" }),
+      params(CLIENT_A, ACCOUNT_A),
+    );
+    expect(res.status).toBe(200);
+    const stored = state.annuityContracts.find((r) => r.accountId === ACCOUNT_A);
+    expect(stored?.costBasis).toBe("50000");
+    expect(typeof stored?.costBasis).toBe("string");
+    expect(stored?.surrenderChargePct).toBe("0.07");
+    expect(typeof stored?.surrenderChargePct).toBe("string");
   });
 
   it("upserts: a second PUT updates rather than duplicating", async () => {

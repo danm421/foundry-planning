@@ -42,11 +42,12 @@ async function findAnnuityAccount(clientId: string, accountId: string) {
 
 /** Decimal columns are strings on the wire from drizzle; convert to numbers
  *  (or null) for the JSON response. Field-for-field symmetric with
- *  `annuityContractSchema` so a GET response can be PUT straight back. */
+ *  `annuityContractSchema`'s body — no `accountId`, which the schema
+ *  `.strict()`-rejects as an unknown key and which the caller already has
+ *  from the URL — so a GET response can be PUT straight back unmodified. */
 function serializeContract(row: typeof annuityContracts.$inferSelect) {
   const num = (v: string | null): number | null => (v == null ? null : Number(v));
   return {
-    accountId: row.accountId,
     carrier: row.carrier,
     contractNumberLast4: row.contractNumberLast4,
     productType: row.productType,
@@ -94,9 +95,8 @@ export async function GET(
       .where(eq(annuityContracts.accountId, accountId));
     return NextResponse.json(row ? serializeContract(row) : null);
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const r = authErrorResponse(err);
+    if (r) return NextResponse.json(r.body, { status: r.status });
     console.error("GET /api/clients/[id]/annuity-contracts/[accountId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

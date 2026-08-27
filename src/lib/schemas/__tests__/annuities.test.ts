@@ -120,3 +120,49 @@ describe("annuityContractSchema — income-mode rules (mirror the DB CHECK const
     expect(r.success).toBe(true);
   });
 });
+
+describe("annuityContractSchema — annualFeePct accepts number/string/empty like its rate siblings", () => {
+  // annualFeePct is NOT NULL DEFAULT '0' in the DB — the only rate column
+  // that isn't nullable — but Task 9's form sends it from the same panel as
+  // its nullable siblings (surrenderChargePct, rollupRate, ...), and a React
+  // number input yields a string. It must tolerate the same numeric-or-empty
+  // input those five already do, falling back to the DB default (0) rather
+  // than null (which the NOT NULL column would reject).
+  it("parses a numeric string", () => {
+    const r = annuityContractSchema.safeParse({ annualFeePct: "0.0125" });
+    expect(r.success).toBe(true);
+    if (!r.success) return;
+    expect(r.data.annualFeePct).toBe(0.0125);
+  });
+
+  it("falls back to the DB default (0) on an empty string", () => {
+    const r = annuityContractSchema.safeParse({ annualFeePct: "" });
+    expect(r.success).toBe(true);
+    if (!r.success) return;
+    expect(r.data.annualFeePct).toBe(0);
+  });
+
+  it("falls back to 0 when absent", () => {
+    const r = annuityContractSchema.safeParse({});
+    expect(r.success).toBe(true);
+    if (!r.success) return;
+    expect(r.data.annualFeePct).toBe(0);
+  });
+
+  it("still accepts a plain number", () => {
+    const r = annuityContractSchema.safeParse({ annualFeePct: 0.02 });
+    expect(r.success).toBe(true);
+    if (!r.success) return;
+    expect(r.data.annualFeePct).toBe(0.02);
+  });
+
+  it("rejects an out-of-range value", () => {
+    const r = annuityContractSchema.safeParse({ annualFeePct: 1.5 });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects a non-numeric string", () => {
+    const r = annuityContractSchema.safeParse({ annualFeePct: "not a number" });
+    expect(r.success).toBe(false);
+  });
+});
