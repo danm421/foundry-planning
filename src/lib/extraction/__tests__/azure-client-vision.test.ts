@@ -7,7 +7,7 @@ const mockCreate = vi.fn().mockResolvedValue({
 vi.mock("openai", () => {
   class MockAzureOpenAI {
     chat = { completions: { create: mockCreate } };
-    constructor(_opts: unknown) {}
+    constructor() {}
   }
   return { AzureOpenAI: MockAzureOpenAI };
 });

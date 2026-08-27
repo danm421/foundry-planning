@@ -676,7 +676,7 @@ describe("scanned-PDF vision OCR fallback", () => {
     // perfectly legible screenshot to "try a text-based PDF" is a dead end.
     it("blames the reader, not the file, when OCR throws", async () => {
         mockedPdf.mockResolvedValueOnce("");
-        mockedVision.mockRejectedValueOnce(new Error("AZURE_API_KEY is not configured"));
+        mockedVision.mockRejectedValueOnce(new Error("ai_no_firm_context"));
 
         const result = await extractDocument(
             Buffer.from("scanned pdf"),

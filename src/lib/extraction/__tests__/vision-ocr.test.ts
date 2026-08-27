@@ -1,5 +1,5 @@
 // src/lib/extraction/__tests__/vision-ocr.test.ts
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const { renderPageAsImage, getDocumentProxy, createIsomorphicCanvasFactory } =
   vi.hoisted(() => ({
@@ -39,7 +39,6 @@ vi.mock("../azure-client", () => ({ callAIVisionTranscription }));
 import { visionOcrPdf, visionOcrImage } from "../vision-ocr";
 
 beforeEach(() => {
-  vi.stubEnv("AZURE_API_KEY", "test-key");
   renderPageAsImage.mockReset().mockResolvedValue(new ArrayBuffer(4));
   getDocumentProxy.mockReset();
   createIsomorphicCanvasFactory.mockReset().mockResolvedValue(FAKE_CANVAS_FACTORY);
@@ -51,6 +50,8 @@ beforeEach(() => {
   sharpChain.jpeg.mockClear();
   sharpChain.toBuffer.mockClear();
 });
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe("visionOcrPdf", () => {
   it("transcribes pages in batches and concatenates in order", async () => {
@@ -80,11 +81,44 @@ describe("visionOcrPdf", () => {
     expect(renderPageAsImage).toHaveBeenCalledTimes(3);
   });
 
-  it("fails closed when AZURE_API_KEY is unset", async () => {
+  it("does NOT require Foundry Planning's own key — a firm runs in its own tenant", async () => {
+    // The old guard here refused whenever OUR AZURE_API_KEY was absent, which
+    // has nothing to do with whether the caller's tenant works. Whose tenant
+    // this runs in is decided inside callAIVisionTranscription.
     vi.stubEnv("AZURE_API_KEY", "");
+    getDocumentProxy.mockResolvedValue({ numPages: 1 });
+    callAIVisionTranscription.mockResolvedValue("FIRM TENANT TEXT");
+
+    const res = await visionOcrPdf(Buffer.from("pdf"), { maxPages: 30, model: "mini" });
+
+    expect(res.text).toBe("FIRM TENANT TEXT");
+    expect(callAIVisionTranscription).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed on the resolver's refusal, and does not swallow it into empty text", async () => {
+    // This is what "fails closed" now means. Returning "" instead would hand
+    // the extraction pipeline a blank document as though the page were empty.
+    getDocumentProxy.mockResolvedValue({ numPages: 1 });
+    callAIVisionTranscription.mockRejectedValue(new Error("ai_no_firm_context"));
+
     await expect(
       visionOcrPdf(Buffer.from("pdf"), { maxPages: 30, model: "mini" }),
-    ).rejects.toThrow(/AZURE_API_KEY/);
+    ).rejects.toThrow("ai_no_firm_context");
+  });
+
+  it("propagates a refusal raised by a LATER batch, not just the first", async () => {
+    // The batches are pipelined: a rejection can land while the render loop has
+    // already moved on, so it has to survive both the Promise.race window and
+    // the final Promise.all.
+    getDocumentProxy.mockResolvedValue({ numPages: 6 });
+    callAIVisionTranscription
+      .mockResolvedValueOnce("BATCH-A")
+      .mockResolvedValueOnce("BATCH-B")
+      .mockRejectedValueOnce(new Error("ai_firm_connection_unavailable"));
+
+    await expect(
+      visionOcrPdf(Buffer.from("pdf"), { maxPages: 30, model: "mini", batchSize: 2, concurrency: 3 }),
+    ).rejects.toThrow("ai_firm_connection_unavailable");
   });
 
   it("opens the document with a real canvas factory so scanned (image) pages can paint", async () => {
@@ -176,10 +210,21 @@ describe("visionOcrImage", () => {
     expect(callAIVisionTranscription).toHaveBeenCalledWith(expect.any(Array), "full");
   });
 
-  it("fails closed when AZURE_API_KEY is unset", async () => {
+  it("does NOT require Foundry Planning's own key — a firm runs in its own tenant", async () => {
     vi.stubEnv("AZURE_API_KEY", "");
+    callAIVisionTranscription.mockResolvedValue("FIRM TENANT TEXT");
+
+    const out = await visionOcrImage(Buffer.from("x"), { model: "mini" });
+
+    expect(out).toBe("FIRM TENANT TEXT");
+    expect(callAIVisionTranscription).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed on the resolver's refusal, and does not swallow it into empty text", async () => {
+    callAIVisionTranscription.mockRejectedValue(new Error("ai_no_firm_context"));
+
     await expect(
       visionOcrImage(Buffer.from("x"), { model: "mini" }),
-    ).rejects.toThrow(/AZURE_API_KEY/);
+    ).rejects.toThrow("ai_no_firm_context");
   });
 });

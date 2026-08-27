@@ -5,7 +5,7 @@ const create = vi.fn();
 vi.mock("openai", () => {
   class MockAzureOpenAI {
     embeddings = { create };
-    constructor(_opts: unknown) {}
+    constructor() {}
   }
   return { AzureOpenAI: MockAzureOpenAI };
 });

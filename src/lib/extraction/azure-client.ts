@@ -3,9 +3,6 @@ import { resolveAiCredentials } from "@/lib/ai/resolve";
 import { azureClientOptions } from "@/lib/ai/client";
 import type { AiCredentials } from "@/lib/ai/credentials";
 
-// Re-exported so existing importers (and azure-client.test.ts) keep their path.
-export { azureClientOptions };
-
 /** One cached client per distinct tenant+key, so a firm's client is reused
  *  across calls without ever being handed to another firm. The key carries the
  *  endpoint and the key itself — never "the last client we built" — which is
@@ -19,11 +16,14 @@ const clientCache = new Map<string, AzureOpenAI>();
  */
 async function getClient(): Promise<{ client: AzureOpenAI; creds: AiCredentials }> {
   const creds = await resolveAiCredentials();
-  if (!creds.apiKey) {
-    throw new Error(
-      "Azure OpenAI is not configured. Set AZURE_API_KEY in .env.local, or connect your firm's own Azure resource in Settings → Integrations.",
-    );
-  }
+  // Defence in depth, and deliberately the same sentinel the credential sources
+  // already throw: foundrySystemCredentials() refuses an unset AZURE_API_KEY and
+  // azureSecretSchema requires min(1), so this is unreachable today. If it ever
+  // fires, callers that branch on ai_not_configured (the meeting-prep route,
+  // observations draft) must still recognise it — prose here would fall out of
+  // the closed set, and telling a connected firm to "set AZURE_API_KEY in
+  // .env.local" would be nonsense for them.
+  if (!creds.apiKey) throw new Error("ai_not_configured");
   const cacheKey = `${creds.endpoint}|${creds.apiVersion}|${creds.apiKey}`;
   let client = clientCache.get(cacheKey);
   if (!client) {

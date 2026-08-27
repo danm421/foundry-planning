@@ -29,16 +29,18 @@ export interface VisionOcrOptions {
  * batch's transcription is launched without awaiting it, so the next batch
  * renders while up to `concurrency` transcriptions are in flight. This bounds
  * both wall-clock time and peak memory — we never hold more than the in-flight
- * window of rendered JPEGs at once, rather than every page up front. Fails
- * closed when Azure is unconfigured.
+ * window of rendered JPEGs at once, rather than every page up front.
+ *
+ * No credential precondition of its own: whose Azure tenant this runs in is
+ * decided per call inside callAIVisionTranscription, and its refusal
+ * (ai_no_firm_context / ai_firm_connection_unavailable / ai_not_configured)
+ * propagates out of here untouched. Gating on Foundry Planning's own
+ * AZURE_API_KEY would refuse a firm whose own tenant is working perfectly.
  */
 export async function visionOcrPdf(
   buffer: Buffer,
   opts: VisionOcrOptions,
 ): Promise<VisionOcrResult> {
-  if (!process.env.AZURE_API_KEY) {
-    throw new Error("AZURE_API_KEY is not configured — vision OCR unavailable.");
-  }
   const batchSize = opts.batchSize ?? DEFAULT_BATCH;
   const concurrency = opts.concurrency ?? DEFAULT_CONCURRENCY;
 
@@ -122,17 +124,14 @@ export async function visionOcrPdf(
  * Transcribe a single uploaded image (PNG/JPEG screenshot or photo of a
  * statement) via the Azure OpenAI vision deployment. The sibling of
  * `visionOcrPdf` for images that never had a PDF wrapper — same downscale
- * bounds, same transcription call, no pdf.js/canvas involvement. Fails
- * closed when Azure is unconfigured; callers treat a throw as a per-file
- * extraction failure.
+ * bounds, same transcription call, no pdf.js/canvas involvement. Same
+ * credential story as visionOcrPdf: the resolver decides the tenant and its
+ * refusal propagates; callers treat a throw as a per-file extraction failure.
  */
 export async function visionOcrImage(
   buffer: Buffer,
   opts: { model: "mini" | "full" },
 ): Promise<string> {
-  if (!process.env.AZURE_API_KEY) {
-    throw new Error("AZURE_API_KEY is not configured — vision OCR unavailable.");
-  }
   const sharp = (await import("sharp")).default;
   const jpeg = await sharp(buffer)
     .resize({

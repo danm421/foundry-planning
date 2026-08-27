@@ -27,7 +27,8 @@ vi.mock("openai", () => {
 const mockResolve = vi.fn();
 vi.mock("@/lib/ai/resolve", () => ({ resolveAiCredentials: () => mockResolve() }));
 
-import { azureClientOptions, callAIExtraction, callAIExtractionWithMeta } from "../azure-client";
+import { callAIExtraction, callAIExtractionWithMeta } from "../azure-client";
+import { azureClientOptions } from "@/lib/ai/client";
 
 /** What the resolver returns for a firm that has NOT connected its own Azure
  *  resource: Foundry Planning's own tenant. */
@@ -50,7 +51,7 @@ const FIRM_CREDS = {
 };
 
 describe("azureClientOptions", () => {
-  it("bounds the request timeout inside the function budget and caps retries", () => {
+  it("passes the resolved credentials through and pins the timeout and retry budget", () => {
     const opts = azureClientOptions({
       apiKey: "test-key",
       endpoint: "https://test.openai.azure.com",
@@ -59,9 +60,12 @@ describe("azureClientOptions", () => {
     expect(opts.apiKey).toBe("test-key");
     expect(opts.endpoint).toBe("https://test.openai.azure.com");
     expect(opts.apiVersion).toBe("2024-12-01-preview");
-    expect(opts.timeout).toBeLessThanOrEqual(55_000);
-    expect(opts.timeout).toBeGreaterThan(0);
-    expect(opts.maxRetries).toBeLessThanOrEqual(1);
+    // Exact, not bounded: these two are the only cover these constants have, and
+    // a bound accepts timeout:1 / maxRetries:0 as happily as the real values.
+    // 55s keeps a call inside the 300s function budget (SDK default is 10min);
+    // maxRetries:1 stops a hung call retrying past it (SDK default is 2).
+    expect(opts.timeout).toBe(55_000);
+    expect(opts.maxRetries).toBe(1);
   });
 });
 
@@ -91,9 +95,15 @@ describe("callAIExtraction", () => {
     expect(createCall.model).toBe("gpt-5.4");
   });
 
-  it("throws when the resolved credentials carry no key", async () => {
+  it("throws the ai_not_configured SENTINEL when the resolved credentials carry no key", async () => {
+    // Not prose: src/app/api/crm/households/[id]/meeting-prep/runs/route.ts and
+    // src/lib/observations/draft.ts both branch on this exact string.
     mockResolve.mockResolvedValue({ ...FOUNDRY_CREDS, apiKey: "" });
-    await expect(callAIExtraction("sys", "user", "mini")).rejects.toThrow("AZURE_API_KEY");
+    let err: unknown;
+    await callAIExtraction("sys", "user", "mini").catch((e) => {
+      err = e;
+    });
+    expect((err as Error).message).toBe("ai_not_configured");
     expect(mockCreate).not.toHaveBeenCalled();
   });
 });
