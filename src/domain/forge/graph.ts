@@ -81,7 +81,6 @@ export function buildGraph(
     : buildGlobalTools(buildGlobalToolContext(authContext, conversationId));
   // clientId for audit metadata — undefined in global mode (recordAudit clientId is optional).
   const auditClientId = isClient ? authContext.clientId : undefined;
-  const model = chatModel().bindTools(tools);
   const toolNode = new ToolNode(tools);
   // Map for the approval node to invoke a confirmed write tool by name. The args
   // come from the model's validated tool_calls, so the uniform invoke signature
@@ -95,18 +94,24 @@ export function buildGraph(
     // when older turns are trimmed. The system prompt is the stable prefix (good
     // for Azure's automatic prompt caching).
     const window = compactHistory(state.messages);
+    // Built per turn rather than at graph-construction time: which Azure tenant
+    // a turn runs in is resolved per firm — cached for only ~60s when the firm
+    // has connected its own resource, and not cached at all otherwise — so a
+    // graph must not capture a model bound to whatever was current when it was
+    // built. This is also what keeps buildGraph SYNCHRONOUS: the model was only
+    // ever used inside this async node, so nothing above it has to await.
+    let turnModel = (await chatModel()).bindTools(tools);
     // Flag-gated multi-model tiering: a cheap mini-model classifies which tool
     // bundles the turn needs, so the full model is bound only to those. Default
     // OFF (validate via the eval harness before enabling); classifyIntent has a
     // full-tool fallback so a misclassification never hides every tool.
-    let turnModel = model;
     if (isClient && process.env.FORGE_TIERING_ENABLED === "true") {
       const lastHuman = [...state.messages].reverse().find((m) => m instanceof HumanMessage);
       const text =
         lastHuman && typeof lastHuman.content === "string" ? lastHuman.content : "";
       const clientToolCtx = buildToolContext(authContext, conversationId);
       const bundles = await classifyIntent(text);
-      turnModel = chatModel().bindTools(buildTools(clientToolCtx, bundles));
+      turnModel = (await chatModel()).bindTools(buildTools(clientToolCtx, bundles));
     }
     const response = await turnModel.invoke([system, ...window]);
     return { messages: [response] };

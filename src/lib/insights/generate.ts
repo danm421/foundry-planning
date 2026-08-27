@@ -59,7 +59,7 @@ export async function generateInsights(
 ): Promise<{ sections: GeneratedInsights; generatedAt: string }> {
   const { system, user } = buildInsightsPrompt(battery);
 
-  const model = chatModel("full").withStructuredOutput(GeneratedInsightsSchema, {
+  const model = (await chatModel("full")).withStructuredOutput(GeneratedInsightsSchema, {
     name: "client_360_profile",
   });
   const raw = (await model.invoke([

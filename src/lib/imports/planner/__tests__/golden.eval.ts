@@ -27,7 +27,25 @@
 //     wrong-answer assertion failure.
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { describe, it } from "vitest";
+import { describe, it, vi } from "vitest";
+
+// The planner now asks src/lib/ai/resolve.ts WHOSE Azure tenant a call belongs
+// to, and that resolver requires a signed-in firm: outside a request Clerk's
+// auth() yields no org, so it throws `ai_no_firm_context`. runPlanner turns any
+// throw into `null`, which this harness (correctly) treats as a hard failure —
+// so unmocked, every fixture would fail with "PLANNER IS UNAVAILABLE" no matter
+// how good the model's answer was.
+//
+// Pinning the resolver to `foundrySystemCredentials()` restores exactly the
+// pre-resolver behaviour of this lane: real Azure calls against the AZURE_* env
+// that HAS_CREDENTIALS below already gates on. It is the same judgement the
+// planning-KB ingest script makes with __FOUNDRY_SYSTEM_AI — our own fixtures,
+// our own tenant, no firm's client data involved.
+vi.mock("@/lib/ai/resolve", async (importActual) => {
+  const actual = await importActual<typeof import("@/lib/ai/resolve")>();
+  return { ...actual, resolveAiCredentials: async () => actual.foundrySystemCredentials() };
+});
+
 import { runPlanner } from "@/lib/imports/planner/run-planner";
 import { makePiaEstimator } from "@/lib/imports/planner/pia-estimator";
 import { emptyImportPayload } from "@/lib/imports/types";

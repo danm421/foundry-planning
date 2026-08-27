@@ -1,12 +1,14 @@
 // src/domain/forge/llm.ts
 import { AzureChatOpenAI } from "@langchain/openai";
 import { callAIEmbedding } from "@/lib/extraction/azure-client";
+import { resolveAiCredentials } from "@/lib/ai/resolve";
 
 /**
- * Azure config the forge chat model needs. Foundry's env differs from
- * ethos: AZURE_ENDPOINT is a FULL URL (https://<instance>.openai.azure.com),
- * not a bare resource name — see src/lib/extraction/azure-client.ts. We derive
- * the bare <instance> for AzureChatOpenAI's azureOpenAIApiInstanceName.
+ * Azure config the forge chat model needs. Every endpoint we hold — Foundry
+ * Planning's own (AZURE_ENDPOINT) and a connected firm's stored one alike — is
+ * a FULL URL (https://<instance>.openai.azure.com), not a bare resource name;
+ * see src/lib/extraction/azure-client.ts. We derive the bare <instance> for
+ * AzureChatOpenAI's azureOpenAIApiInstanceName.
  */
 export type ForgeAzureConfig = {
   instanceName: string;
@@ -37,25 +39,25 @@ export function instanceNameFromEndpoint(endpoint: string): string {
 }
 
 /**
- * Build the Azure config from env. `model` selects the deployment:
- *   "full" → AZURE_ANALYSIS_MODEL (gpt-5.4, reasoning-heavy turns)
- *   "mini" → AZURE_MODEL          (gpt-5.4-mini, cheap narration)
- * Throws `ai_not_configured` if any required env var is missing — same
- * sentinel string the extraction path uses, so callers can branch uniformly.
+ * Build the Azure config for the calling firm. `model` selects the deployment:
+ *   "full" → the firm's reasoning-heavy chat deployment
+ *   "mini" → the firm's cheap narration deployment
+ * Throws `ai_not_configured` if any required field is missing — the same
+ * sentinel the extraction path uses, so callers can branch uniformly. A firm
+ * with no connection resolves to Foundry Planning's own values, unchanged.
  */
-export function assertForgeAzureConfig(model: "full" | "mini"): ForgeAzureConfig {
-  const endpoint = process.env.AZURE_ENDPOINT;
-  const apiKey = process.env.AZURE_API_KEY;
-  const apiVersion = process.env.AZURE_API_VERSION;
-  const deployment =
-    model === "full" ? process.env.AZURE_ANALYSIS_MODEL : process.env.AZURE_MODEL;
-  if (!endpoint || !apiKey || !apiVersion || !deployment) {
+export async function assertForgeAzureConfig(
+  model: "full" | "mini",
+): Promise<ForgeAzureConfig> {
+  const creds = await resolveAiCredentials();
+  const deployment = model === "full" ? creds.deployments.chat : creds.deployments.mini;
+  if (!creds.endpoint || !creds.apiKey || !creds.apiVersion || !deployment) {
     throw new Error("ai_not_configured");
   }
   return {
-    instanceName: instanceNameFromEndpoint(endpoint),
-    apiKey,
-    apiVersion,
+    instanceName: instanceNameFromEndpoint(creds.endpoint),
+    apiKey: creds.apiKey,
+    apiVersion: creds.apiVersion,
     deployment,
   };
 }
@@ -76,9 +78,15 @@ export function assertForgeAzureConfig(model: "full" | "mini"): ForgeAzureConfig
  * on_chat_model_stream token deltas — without it invoke() makes one
  * non-streaming call and the reply arrives as a single chunk (the exact bug
  * ethos hit). Defaults to the full (gpt-5.4) deployment.
+ *
+ * ASYNC because building a model now needs a credential lookup: the deployment
+ * and key belong to whichever firm is calling, so they cannot be read off env
+ * at construct time.
  */
-export function chatModel(model: "full" | "mini" = "full"): AzureChatOpenAI {
-  const { instanceName, apiKey, apiVersion, deployment } = assertForgeAzureConfig(model);
+export async function chatModel(
+  model: "full" | "mini" = "full",
+): Promise<AzureChatOpenAI> {
+  const { instanceName, apiKey, apiVersion, deployment } = await assertForgeAzureConfig(model);
   return new AzureChatOpenAI({
     azureOpenAIApiKey: apiKey,
     azureOpenAIApiInstanceName: instanceName,

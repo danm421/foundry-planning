@@ -119,7 +119,7 @@ export async function generateMeetingPrepDraft(
     wantBrief
       ? (async () => {
           const m = buildBriefMessages(battery, setup);
-          const result = await chatModel("mini")
+          const result = await (await chatModel("mini"))
             .withStructuredOutput(PrepBriefDraftSchema)
             .invoke([new SystemMessage(m.system), new HumanMessage(m.human)]);
           return result as PrepBriefDraft;
@@ -128,7 +128,7 @@ export async function generateMeetingPrepDraft(
     wantAgenda
       ? (async () => {
           const m = buildAgendaMessages(battery, setup);
-          const result = await chatModel("mini")
+          const result = await (await chatModel("mini"))
             .withStructuredOutput(AgendaDraftSchema)
             .invoke([new SystemMessage(m.system), new HumanMessage(m.human)]);
           return result as AgendaDraft;

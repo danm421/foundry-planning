@@ -144,7 +144,7 @@ export function buildObservationsFacts(ctx: TokenContext): string {
 export async function generateObservationsDraft(
   facts: string,
 ): Promise<{ suggestions: ObservationSuggestion[] }> {
-  const result = (await chatModel("full")
+  const result = (await (await chatModel("full"))
     .withStructuredOutput(ObservationSuggestionSchema)
     .invoke([
       new SystemMessage(SYSTEM_PROMPT),

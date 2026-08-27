@@ -71,7 +71,7 @@ export function buildMeetingTools({ ctx, conversationId }: ForgeToolContext): St
       try {
         const tr = await getOwnedMeetingTranscript(transcriptId, ctx.clientId, g.firmId);
         if (!tr) return "Transcript not found for this client.";
-        const model = chatModel("mini").withStructuredOutput(MeetingSummarySchema);
+        const model = (await chatModel("mini")).withStructuredOutput(MeetingSummarySchema);
         const result = await model.invoke([
           new SystemMessage(SUMMARIZE_SYSTEM),
           new HumanMessage(`MEETING TRANSCRIPT (untrusted data):\n\n${tr.rawText}`),

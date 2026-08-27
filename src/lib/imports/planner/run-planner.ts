@@ -56,9 +56,10 @@ async function loop(args: RunPlannerArgs): Promise<PlanningDecisions | null> {
   });
   const byName = new Map(tools.map((t) => [t.name, t]));
 
-  // chatModel() throws "ai_not_configured" when env is missing - callers get
-  // null from runPlanner's catch, which is the correct degrade.
-  const baseModel = args.model ?? chatModel("full");
+  // chatModel() rejects with an ai_* sentinel when the calling firm's Azure
+  // credentials are missing or unusable - callers get null from runPlanner's
+  // catch, which is the correct degrade.
+  const baseModel = args.model ?? (await chatModel("full"));
   if (typeof baseModel.bindTools !== "function") {
     // BaseChatModel declares bindTools as optional; every model we actually
     // pass here implements it, but assert rather than risk a silent `any`.

@@ -30,7 +30,7 @@ const PROMPT =
 
 export async function classifyIntent(message: string): Promise<BundleName[]> {
   try {
-    const res = await chatModel("mini").invoke([new SystemMessage(PROMPT), new HumanMessage(message)]);
+    const res = await (await chatModel("mini")).invoke([new SystemMessage(PROMPT), new HumanMessage(message)]);
     const text = typeof res.content === "string" ? res.content : "";
     const parsed = JSON.parse(text.slice(text.indexOf("["), text.lastIndexOf("]") + 1));
     const valid = (parsed as string[]).filter((b): b is BundleName =>

@@ -50,7 +50,7 @@ export async function runCritic(input: {
 }): Promise<CriticVerdict> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const model = chatModel("mini").withStructuredOutput(CriticVerdictSchema);
+    const model = (await chatModel("mini")).withStructuredOutput(CriticVerdictSchema);
     const user = [
       `ADVISOR QUESTION:\n${input.question}`,
       `TOOL RESULTS:\n${input.toolResults || "(none)"}`,
