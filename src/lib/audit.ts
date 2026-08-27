@@ -151,6 +151,8 @@ export type AuditAction =
   | "account.stock_options.grant.create"
   | "account.stock_options.grant.update"
   | "account.stock_options.grant.delete"
+  // Annuities
+  | "account.annuity.update"
   // Life insurance
   | "insurance_policy.create"
   | "insurance_policy.update"
