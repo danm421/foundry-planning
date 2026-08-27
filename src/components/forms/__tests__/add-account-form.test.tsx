@@ -826,7 +826,7 @@ type FetchInit = { method?: string; body?: string } | undefined;
 /** Re-points the shared fetch mock at the annuity routes, keeping every other
  *  route's stock answer. `read` is what GET answers; `write` is what PUT does. */
 function mockAnnuityRoutes(
-  read: { ok: boolean; row?: unknown },
+  read: { ok: boolean; row?: unknown; status?: number },
   write: { ok: boolean; body?: unknown } = { ok: true },
 ) {
   fetchMock.mockImplementation(async (url: string, init: FetchInit) => {
@@ -835,8 +835,8 @@ function mockAnnuityRoutes(
       if ((init?.method ?? "GET") === "GET") {
         return {
           ok: read.ok,
-          status: read.ok ? 200 : 500,
-          json: async () => (read.ok ? (read.row ?? null) : { error: "Server error" }),
+          status: read.ok ? 200 : (read.status ?? 500),
+          json: async () => (read.ok ? (read.row ?? null) : { error: "Account not found" }),
         };
       }
       return {
@@ -1063,5 +1063,103 @@ describe("AddAccountForm — a failed contract write must not orphan the account
     );
 
     expect(accountCreates()).toHaveLength(1);
+  });
+});
+
+// ── Round 2 ─────────────────────────────────────────────────────────────────
+
+describe("AddAccountForm — an account the server does not call an annuity yet", () => {
+  // The route 404s whenever the STORED row is not already category "annuity"
+  // (`findAnnuityAccount`, shared by GET and PUT). That is the route saying
+  // "there is nothing here to read", the same answer as a null body — not "the
+  // read failed". Recategorizing an existing account to Annuity hits it every
+  // time, because the database row still says taxable until the save lands.
+  it("lets the advisor fill in a contract after recategorizing an account to Annuity", async () => {
+    mockAnnuityRoutes({ ok: false, status: 404 });
+    const formRef = createRef<AccountFormAutoSaveHandle>();
+    renderAnnuity("edit", formRef);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(ANNUITY_CONTRACT_URL));
+
+    // The panel, not the dead-end alert.
+    expect(screen.queryByText(/could not be loaded/i)).toBeNull();
+    expect(screen.getByLabelText(/^carrier$/i)).toBeInTheDocument();
+
+    // And the terms they type actually reach the server.
+    await act(async () => {
+      await formRef.current!.saveAsync();
+    });
+    await waitFor(() => expect(contractWrites()).toHaveLength(1));
+  });
+
+  // The other side of it: widening 404 must not have widened everything else,
+  // or C-1 is back.
+  it("still treats a genuine read failure as a failure", async () => {
+    mockAnnuityRoutes({ ok: false, status: 500 });
+    const formRef = createRef<AccountFormAutoSaveHandle>();
+    renderAnnuity("edit", formRef);
+
+    await waitFor(() => expect(screen.getByText(/could not be loaded/i)).toBeInTheDocument());
+    await act(async () => {
+      await formRef.current!.saveAsync();
+    });
+    expect(contractWrites()).toHaveLength(0);
+  });
+});
+
+describe("AddAccountForm — a contract that just loaded is not an edit", () => {
+  const incomeTab = () => screen.getByRole("button", { name: "Income & Guarantees" });
+
+  // The GET answers all 22 columns against a 5-key blank, so the moment a
+  // stored contract lands the form reads as dirty — and a tab click then fires
+  // a save the advisor never asked for.
+  it("does not fire an unrequested save when a tab is clicked after the contract loads", async () => {
+    mockAnnuityRoutes({ ok: true, row: STORED_CONTRACT });
+    renderAnnuity("edit");
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(ANNUITY_CONTRACT_URL));
+
+    fireEvent.click(incomeTab());
+    await waitFor(() => expect(incomeTab()).toHaveClass("text-accent"));
+
+    expect(
+      fetchMock.mock.calls.filter(
+        (args) => String(args[0]) === "/api/clients/client-123/accounts/acct-1",
+      ),
+    ).toHaveLength(0);
+    expect(contractWrites()).toHaveLength(0);
+  });
+
+  // The re-baseline has to be ONE-SHOT. Moving it past the loaded row must not
+  // turn into "this form is never dirty" — an edit the advisor makes after the
+  // load still has to save on a tab switch.
+  it("still saves an edit made after the contract has loaded", async () => {
+    mockAnnuityRoutes({ ok: true, row: STORED_CONTRACT });
+    renderAnnuity("edit");
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(ANNUITY_CONTRACT_URL));
+
+    fireEvent.change(screen.getByLabelText(/^carrier$/i), { target: { value: "Nationwide" } });
+    fireEvent.click(incomeTab());
+
+    await waitFor(() => expect(contractWrites()).toHaveLength(1));
+    expect(JSON.parse(contractWrites()[0][1].body as string)).toMatchObject({
+      carrier: "Nationwide",
+    });
+  });
+
+  // THE STRAND. A stored contract that names a joint payout without a survivor
+  // share is exactly what the pre-fix panel could write, so real rows are in
+  // this shape. Dirty-on-load + the I-3 gate meant `interceptTabChange` refused
+  // every tab click, and the one field that unblocks the form sits on the tab
+  // it would not open.
+  it("lets the advisor reach Income & Guarantees to fix a contract the gate is holding", async () => {
+    mockAnnuityRoutes({ ok: true, row: { ...STORED_CONTRACT, survivorPct: null } });
+    renderAnnuity("edit");
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(ANNUITY_CONTRACT_URL));
+
+    fireEvent.click(incomeTab());
+
+    await waitFor(() => expect(incomeTab()).toHaveClass("text-accent"));
+    // Not merely rendered — actually on screen: no ancestor is still `hidden`.
+    expect(screen.getByLabelText(/survivor share/i).closest("div.hidden")).toBeNull();
   });
 });

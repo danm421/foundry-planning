@@ -353,6 +353,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   // effect dependency it would re-run the effect, and the re-run's cleanup
   // would cancel the very fetch it had just started.
   const annuityLoadRef = useRef<string | null>(null);
+  // Set when a load actually replaces the contract in state, so the dirty-check
+  // baseline can be moved past it exactly once (see `isDirty` below).
+  const annuityRebaselineRef = useRef(false);
 
   // Auto-focus + select-all the Name input on create so the advisor can start
   // typing to replace any default. Skipped on edit and when the dialog is
@@ -750,6 +753,20 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // A contract that just arrived from the server is not an edit the advisor
+  // made, so it must not count as dirt. Deliberately an adjust-during-render:
+  // `baselineRef` is read to derive `isDirty` on THIS render, and doing it in
+  // an effect would leave the already-committed render — and the tab-click
+  // handler it produced — still holding the old baseline. Gated on "loaded" as
+  // well as the ref because the row and the state flip are batched, so seeing
+  // "loaded" proves the row is already in `currentSerialized`. Idempotent: the
+  // ref clears itself. Only the annuity load is re-baselined here; the form's
+  // mount-only baseline capture is pre-existing and left alone.
+  if (annuityRebaselineRef.current && annuityLoad === "loaded") {
+    annuityRebaselineRef.current = false;
+    baselineRef.current = currentSerialized;
+  }
+
   const isDirty = currentSerialized !== baselineRef.current;
   // A 529 must be attributed to a designated beneficiary — either a household
   // family member or a named outside person (mirrors the API's create/update
@@ -864,9 +881,29 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     setAnnuityLoad("loading");
     try {
       const res = await fetch(`/api/clients/${clientId}/annuity-contracts/${acctId}`);
+      // A 404 is the route saying "there is nothing here to read", not "the
+      // read failed" — the same answer as a null body. It is what an account
+      // the DATABASE does not yet call an annuity gets: a category the advisor
+      // has changed but not saved, or an id minted client-side in a scenario.
+      // Blocking the write on it would be pointless as well as hostile: the
+      // PUT is guarded by the very same `findAnnuityAccount` lookup, so
+      // whatever 404s the read 404s the write, and there is nothing on the
+      // server to erase.
+      if (res.status === 404) {
+        setAnnuityLoad("loaded");
+        return;
+      }
       if (!res.ok) throw new Error(`Contract read failed (${res.status})`);
       const row = (await res.json()) as AnnuityContractValue | null;
-      if (row) setAnnuityContract(row);
+      if (row) {
+        setAnnuityContract(row);
+        // A row that just arrived from the server is not an edit the advisor
+        // made. Left in the dirty comparison it opens the form dirty, which
+        // fires unrequested saves on a tab click — and, for a contract the
+        // Save gate holds, refuses the tab click outright and strands the
+        // advisor away from the one field that would unblock it.
+        annuityRebaselineRef.current = true;
+      }
       setAnnuityLoad("loaded");
     } catch {
       setAnnuityLoad("failed");
