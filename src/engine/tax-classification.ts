@@ -98,6 +98,22 @@ export function classifyTransferTax(input: TransferTaxInput): TransferTaxResult 
                earlyWithdrawalPenalty: 0, label: "tax_free_rollover" };
     }
     if (treatment === "qualified") {
+      // A qualified annuity is pre-tax RETIREMENT money in an insurance
+      // wrapper, so a move into another retirement account is a §408 rollover,
+      // not a §72 distribution. Mirror the retirement→retirement house rule
+      // below rather than contradicting it: tax-free unless the target is a
+      // Roth, which makes it a conversion — taxable, but never penalized.
+      // Without this the branch fabricates a five-figure tax bill on a
+      // six-figure IRA rollover. (Deliberately NOT extended to annuity →
+      // annuity: §1035 exchange modeling is out of scope for this feature.)
+      if (targetCategory === "retirement") {
+        if (ROTH_SUBTYPES.has(targetSubType)) {
+          return { taxableOrdinaryIncome: amount, capitalGain: 0, basisReturn: 0,
+                   earlyWithdrawalPenalty: 0, label: "roth_conversion" };
+        }
+        return { taxableOrdinaryIncome: 0, capitalGain: 0, basisReturn: 0,
+                 earlyWithdrawalPenalty: 0, label: "tax_free_rollover" };
+      }
       const penalty = earlyWithdrawalPenalty(amount, ownerAge);
       return { taxableOrdinaryIncome: amount, capitalGain: 0, basisReturn: 0,
                earlyWithdrawalPenalty: penalty,

@@ -185,4 +185,36 @@ describe("classifyTransferTax — annuity source", () => {
     expect(r.basisReturn).toBe(100_000);
     expect(r.capitalGain).toBe(0);
   });
+
+  // A QUALIFIED annuity is pre-tax retirement money in an insurance wrapper.
+  // Moving it into another retirement account is a §408 rollover, not a §72
+  // distribution — so the retirement→retirement house rule at the top of the
+  // file governs, not the annuity branch's own distribution path.
+  it("a qualified annuity rolled to a traditional IRA is tax-free, penalty-free, even at 50", () => {
+    const r = transfer({
+      sourceAnnuityTreatment: "qualified",
+      targetCategory: "retirement",
+      targetSubType: "traditional_ira",
+      ownerAge: 50,
+    });
+    expect(r.taxableOrdinaryIncome).toBe(0);
+    expect(r.capitalGain).toBe(0);
+    expect(r.basisReturn).toBe(0);
+    expect(r.earlyWithdrawalPenalty).toBe(0);
+    expect(r.label).toBe("tax_free_rollover");
+  });
+
+  it("a qualified annuity converted to a Roth IRA is fully taxable with NO penalty", () => {
+    const r = transfer({
+      sourceAnnuityTreatment: "qualified",
+      targetCategory: "retirement",
+      targetSubType: "roth_ira",
+      ownerAge: 50,
+    });
+    expect(r.taxableOrdinaryIncome).toBe(100_000);
+    expect(r.capitalGain).toBe(0);
+    expect(r.basisReturn).toBe(0);
+    expect(r.earlyWithdrawalPenalty).toBe(0);
+    expect(r.label).toBe("roth_conversion");
+  });
 });
