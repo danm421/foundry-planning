@@ -10,6 +10,12 @@ import { setAccountDeriveFromHoldings } from "@/lib/investments/holdings-client"
 import type { GrowthSource } from "@/lib/investments/allocation";
 import BeneficiariesTab from "./beneficiaries-tab";
 import GrantsTab from "./equity/grants-tab";
+import {
+  AnnuityTab,
+  EMPTY_ANNUITY_CONTRACT,
+  annuityContractIncomplete,
+  type AnnuityContractValue,
+} from "./annuity-tab";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
@@ -179,7 +185,7 @@ interface AddAccountFormProps {
   /** Existing account names for auto-increment default naming on create. */
   existingAccountNames?: string[];
   resolvedInflationRate?: number;
-  initialTab?: "details" | "savings" | "realization" | "asset_mix" | "rmd" | "beneficiaries" | "holdings" | "grants";
+  initialTab?: "details" | "savings" | "realization" | "asset_mix" | "rmd" | "beneficiaries" | "holdings" | "grants" | "annuity";
   /**
    * When true, only the Beneficiaries tab button renders and all other panels
    * are unmounted. Prevents accidental overwrite when `initial` is a lite shape
@@ -260,9 +266,9 @@ const CATEGORY_LABELS: Record<AccountCategory, string> = {
 const RETIREMENT_SUB_TYPES = new Set(["traditional_ira", "roth_ira", "401k", "403b", "529", "hsa"]);
 
 // Tabs backed by a nested resource keyed on the account id (holdings, grants,
-// beneficiaries). Opening one on a not-yet-saved account force-creates the
-// account first so the tab is immediately usable — no save + reopen.
-const RECORD_DEPENDENT_TABS = new Set(["holdings", "grants", "beneficiaries"]);
+// beneficiaries, annuity). Opening one on a not-yet-saved account force-creates
+// the account first so the tab is immediately usable — no save + reopen.
+const RECORD_DEPENDENT_TABS = new Set(["holdings", "grants", "beneficiaries", "annuity"]);
 
 /** Shown — and returned as the save error — when the equity editor is opened
  *  inside a scenario. See `equityScenarioBlocked` below for why. */
@@ -331,6 +337,13 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   // Tracks the server-assigned id for accounts that start as "create" but have
   // been auto-saved at least once (first save mints the row and returns the id).
   const [effectiveAccountId, setEffectiveAccountId] = useState<string | null>(initial?.id ?? null);
+
+  // Annuity contract (1:1 extension row on an `annuity` account). The panel in
+  // the Income & Guarantees tab is controlled and IO-free, so the load and the
+  // save both live here, alongside the account's own.
+  const [annuityContract, setAnnuityContract] =
+    useState<AnnuityContractValue>(EMPTY_ANNUITY_CONTRACT);
+  const [annuityLoadStarted, setAnnuityLoadStarted] = useState(false);
 
   // Auto-focus + select-all the Name input on create so the advisor can start
   // typing to replace any default. Skipped on edit and when the dialog is
@@ -402,7 +415,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const [accountRothValue, setAccountRothValue] = useState<string>(
     initial?.rothValue != null ? String(initial.rothValue) : "",
   );
-  const [activeTab, setActiveTab] = useState<"details" | "savings" | "realization" | "asset_mix" | "rmd" | "beneficiaries" | "holdings" | "grants">(
+  const [activeTab, setActiveTab] = useState<"details" | "savings" | "realization" | "asset_mix" | "rmd" | "beneficiaries" | "holdings" | "grants" | "annuity">(
     initialTab ?? "details",
   );
   const [subType, setSubType] = useState(
@@ -705,6 +718,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     rothRolloverEnabled,
     rothRolloverStartYear,
     rothRolloverAccountId,
+    annuityContract,
   }), [
     name, category, subType, hsaCoverage, owners, titlingType, parentBusinessId, accountValue, accountBasis,
     accountRothValue, growthSource, growthRatePct, realEstateGrowthSource,
@@ -718,7 +732,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     activationEnabled, activationYear, activationYearRef,
     grantorMode, grantorFamilyMemberId, grantorName, beneficiaryMode,
     beneficiaryFamilyMemberId, beneficiaryName, rothRolloverEnabled,
-    rothRolloverStartYear, rothRolloverAccountId,
+    rothRolloverStartYear, rothRolloverAccountId, annuityContract,
   ]);
 
   const baselineRef = useRef<string>("");
@@ -746,8 +760,15 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     ((defaultExerciseTiming === "specific_year" && !defaultExerciseYear) ||
       (defaultSellTiming === "hold_then_sell_year" && !defaultSellYear) ||
       (defaultSellTiming === "percent_per_year" && !(Number(defaultSellPercentPerYear) > 0)));
+  // The DB has three CHECK constraints on an annuity contract — a rider needs a
+  // benefit base, an annuitized contract needs a payment, and either needs a
+  // start. Hold the save until they're satisfied rather than letting the PUT
+  // come back 400; the tab shows which field is missing.
+  const annuityIncomplete =
+    category === "annuity" && annuityContractIncomplete(annuityContract);
   const canSave =
-    name.trim().length > 0 && !educationBeneficiaryMissing && !equityStrategyIncomplete;
+    name.trim().length > 0 && !educationBeneficiaryMissing && !equityStrategyIncomplete &&
+    !annuityIncomplete;
 
   // ── An in-progress grant must not be thrown away (audit F42) ───────────────
   // The grant editor saves through its own "Save Grant" button. The dialog's
@@ -826,6 +847,40 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     }
   }, [mode, initial?.id, clientId, allocationsLoaded, modelPortfolioId, portfolioAllocationsMap, catDefaultSource?.portfolioId]);
 
+  // Read the annuity contract once the account exists. A brand-new account has
+  // no row yet — the route answers `null` and the blank contract stands.
+  useEffect(() => {
+    if (category !== "annuity" || annuityLoadStarted || !effectiveAccountId) return;
+    setAnnuityLoadStarted(true);
+    let cancelled = false;
+    fetch(`/api/clients/${clientId}/annuity-contracts/${effectiveAccountId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((row: AnnuityContractValue | null) => {
+        if (!cancelled && row) setAnnuityContract(row);
+      })
+      .catch(() => {
+        // Leave the blank contract in place on a transient read failure.
+      });
+    return () => { cancelled = true; };
+  }, [category, annuityLoadStarted, effectiveAccountId, clientId]);
+
+  // Write the contract back. Not in scenario scope (there is no targetKind for
+  // it), so base mode only — same posture as the asset-mix allocations above.
+  // Unlike allocations this surfaces a failure: the tab is the ONLY way this
+  // data is entered, so a silent drop would lose the advisor's work.
+  const saveAnnuityContract = useCallback(async (acctId: string) => {
+    if (category !== "annuity" || writer.scenarioActive) return;
+    const res = await fetch(`/api/clients/${clientId}/annuity-contracts/${acctId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(annuityContract),
+    });
+    if (!res.ok) {
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(json.error ?? "Failed to save the annuity contract");
+    }
+  }, [category, writer.scenarioActive, clientId, annuityContract]);
+
   // Re-read the account's allocations from the server. Holdings mutations
   // re-derive the asset mix server-side (syncAccountFromHoldings), so after one
   // we pull the fresh rollup into customAllocations — that's what keeps the
@@ -882,6 +937,20 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   // owner. Joint / entity-owned / child-owned fall back to client retirement.
   const savingsRuleOwner = savingsRuleOwnerForAccount({ owners }, familyMembers);
   const defaultSavingsRefs = defaultSavingsRuleRefs(savingsRuleOwner);
+  // Annuity payout percentages are banded by the annuitant's age at the start
+  // year. `buildClientMilestones` sets `clientSS62 = birthYear + 62`, so this is
+  // an exact inverse — used only to place the age-band hint in the tab.
+  const annuityOwnerSS62 =
+    savingsRuleOwner === "spouse" ? milestones?.spouseSS62 : milestones?.clientSS62;
+  const annuityOwnerBirthYear = annuityOwnerSS62 != null ? annuityOwnerSS62 - 62 : undefined;
+  // A QLAC's premium IS the account's value, and a fresh benefit base opens at
+  // it. Kept as a number-or-undefined so a half-typed box reads as "unknown"
+  // rather than as zero.
+  const annuityAccountValueNum = Number(accountValue);
+  const annuityAccountValue =
+    accountValue.trim() !== "" && Number.isFinite(annuityAccountValueNum)
+      ? annuityAccountValueNum
+      : undefined;
   const initialSavingsStartYear =
     milestones && defaultSavingsRefs.startYearRef
       ? resolveMilestone(defaultSavingsRefs.startYearRef, milestones, "start") ?? currentYear
@@ -1176,6 +1245,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             body: JSON.stringify({ allocations: customAllocations }),
           });
         }
+        await saveAnnuityContract(targetId);
         baselineRef.current = currentSerialized;
         return { ok: true, recordId: targetId };
       } else {
@@ -1211,6 +1281,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             body: JSON.stringify({ allocations: customAllocations }),
           });
         }
+        await saveAnnuityContract(saved.id);
 
         setEffectiveAccountId(saved.id);
         onAutoSaved?.(saved.id);
@@ -1232,7 +1303,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     annualPropertyTax, propertyTaxGrowthRate, propertyTaxGrowthSource,
     effectiveAccountId, clientId, writer, showAssetMixTab, customAllocations, drivenByHoldings,
     currentSerialized, onAutoSaved, custodian, accountNumberLast4, isHsa, hsaCoverage,
-    saveEquityAccount, activationEnabled, activationYear, activationYearRef,
+    saveEquityAccount, saveAnnuityContract, activationEnabled, activationYear, activationYearRef,
     grantorMode, grantorFamilyMemberId, grantorName, beneficiaryMode,
     beneficiaryFamilyMemberId, beneficiaryName, rothRolloverEnabled,
     rothRolloverStartYear, rothRolloverAccountId,
@@ -1408,6 +1479,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             body: JSON.stringify({ allocations: customAllocations }),
           });
         }
+        await saveAnnuityContract(targetId);
       } else {
         // Mint the new id up-front so we can pass it to the writer's `entity`
         // payload (the unified route requires `entity.id`) and still know what
@@ -1449,6 +1521,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             body: JSON.stringify({ allocations: customAllocations }),
           });
         }
+        await saveAnnuityContract(account.id);
 
         // Create savings rule if savings tab filled (create-only). Routes
         // through the writer so a savings_rule add fires through the unified
@@ -1646,6 +1719,20 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               }`}
             >
               Grants
+            </button>
+          )}
+          {/* Income & Guarantees — annuity accounts only (Task 9) */}
+          {!lockTab && category === "annuity" && (
+            <button
+              type="button"
+              onClick={() => handleTabClick("annuity")}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+                activeTab === "annuity"
+                  ? "border-accent text-accent"
+                  : "border-transparent text-gray-300 hover:text-gray-200"
+              }`}
+            >
+              Income &amp; Guarantees
             </button>
           )}
           <button
@@ -2749,6 +2836,29 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               {GRANT_EDITOR_OPEN_MSG}
             </p>
           )}
+        </div>
+      )}
+
+      {/* Income & Guarantees tab — annuity accounts only (Task 9) */}
+      {!lockTab && category === "annuity" && (
+        <div className={activeTab === "annuity" ? "" : "hidden"}>
+          {writer.scenarioActive && (
+            <p className="mb-3 rounded bg-warn/10 px-3 py-2 text-xs text-warn">
+              Contract terms are part of the base plan — edits here aren&apos;t saved
+              while you&apos;re viewing a scenario.
+            </p>
+          )}
+          <AnnuityTab
+            accountId={effectiveAccountId}
+            clientId={clientId}
+            value={annuityContract}
+            onChange={setAnnuityContract}
+            accountValue={annuityAccountValue}
+            milestones={milestones}
+            clientFirstName={clientFirstName}
+            spouseFirstName={spouseFirstName}
+            ownerBirthYear={annuityOwnerBirthYear}
+          />
         </div>
       )}
 

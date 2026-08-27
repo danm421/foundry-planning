@@ -98,7 +98,7 @@ const PRODUCT_TYPE_LABELS: Record<AnnuityProductType, string> = {
 };
 
 const TAX_TREATMENT_LABELS: Record<AnnuityTaxTreatment, string> = {
-  qualified: "Qualified — IRA or plan money, never taxed yet",
+  qualified: "Qualified — IRA or plan money, not yet taxed",
   non_qualified: "Non-qualified — bought with money already taxed",
   tax_free: "Tax-free — Roth money",
 };
@@ -120,7 +120,7 @@ const INCOME_MODES: { mode: AnnuityIncomeMode; label: string; blurb: string }[] 
   {
     mode: "rider",
     label: "Income rider",
-    blurb: "A guaranteed cheque for life that keeps coming after the balance runs out.",
+    blurb: "A guaranteed payment for life that keeps coming after the balance runs out.",
   },
   {
     mode: "annuitized",
@@ -163,7 +163,7 @@ function useTypingBuffer(committed: string) {
 }
 
 function PercentField({
-  id, label, tooltip, value, onChange, placeholder, disabled,
+  id, label, tooltip, value, onChange, placeholder,
 }: {
   id: string;
   label: string;
@@ -171,7 +171,6 @@ function PercentField({
   value: number | null | undefined;
   onChange: (fraction: number | null) => void;
   placeholder?: string;
-  disabled?: boolean;
 }) {
   const buffer = useTypingBuffer(fractionToDisplay(value));
   return (
@@ -184,7 +183,6 @@ function PercentField({
         id={id}
         value={buffer.display}
         placeholder={placeholder}
-        disabled={disabled}
         onChange={(raw) => { buffer.onType(raw); onChange(displayToFraction(raw)); }}
         onBlur={buffer.onSettle}
       />
@@ -303,8 +301,10 @@ export function AnnuityTab({
     .reverse()
     .join(" · ");
 
-  const qlacOverCap =
-    value.productType === "qlac" && accountValue != null && accountValue > QLAC_PREMIUM_CAP_2026;
+  const qlacPremiumOverCap =
+    value.productType === "qlac" && accountValue != null && accountValue > QLAC_PREMIUM_CAP_2026
+      ? accountValue
+      : null;
 
   return (
     <div className="space-y-4">
@@ -361,12 +361,12 @@ export function AnnuityTab({
                 <option key={p} value={p}>{PRODUCT_TYPE_LABELS[p]}</option>
               ))}
             </select>
-            {qlacOverCap && (
+            {qlacPremiumOverCap != null && (
               <p className={NOTE_CLASS}>
                 A longevity annuity premium is capped at{" "}
                 <span className="tabular">${QLAC_PREMIUM_CAP_2026.toLocaleString("en-US")}</span>{" "}
                 for 2026. This account&apos;s value of{" "}
-                <span className="tabular">${accountValue!.toLocaleString("en-US")}</span>{" "}
+                <span className="tabular">${qlacPremiumOverCap.toLocaleString("en-US")}</span>{" "}
                 is above the cap — worth confirming against the contract.
               </p>
             )}
@@ -485,7 +485,7 @@ export function AnnuityTab({
                 <YearField
                   id="annuity-income-start"
                   label="Income starts"
-                  tooltip="First year the contract pays. Turning income on freezes the guarantee, so a later start buys a larger cheque."
+                  tooltip="First year the contract pays. Turning income on freezes the guarantee, so a later start buys a larger payment."
                   value={value.incomeStartYear}
                   onChange={(v) => onChange({ ...value, incomeStartYear: v, incomeStartYearRef: null })}
                 />
@@ -498,7 +498,7 @@ export function AnnuityTab({
                   <MoneyField
                     id="annuity-benefit-base"
                     label="Benefit base"
-                    tooltip="The figure the guaranteed cheque is a percentage of. It is not withdrawable and it is not the account balance."
+                    tooltip="The figure the guaranteed payment is a percentage of. It is not withdrawable and it is not the account balance."
                     value={value.benefitBase}
                     onChange={(v) => set("benefitBase", v)}
                   />
@@ -604,7 +604,7 @@ export function AnnuityTab({
                   <PercentField
                     id="annuity-survivor"
                     label="Survivor share"
-                    tooltip="Share of the payment that continues to the surviving spouse. 100% keeps the cheque the same."
+                    tooltip="Share of the payment that continues to the surviving spouse. 100% keeps the payment the same."
                     value={value.survivorPct}
                     onChange={(v) => set("survivorPct", v)}
                   />
