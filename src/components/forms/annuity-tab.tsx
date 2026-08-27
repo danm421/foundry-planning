@@ -5,7 +5,10 @@ import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import { GLWB_PAYOUT_BANDS, payoutPercentForAge } from "@/engine/annuity";
+import type { AnnuityContract } from "@/engine/annuity";
+import { resolveMilestone } from "@/lib/milestones";
 import type { ClientMilestones, YearRef } from "@/lib/milestones";
+import { AnnuityPreviewChart, annuityPreviewAgeAtStart } from "./annuity-preview-chart";
 import { FieldTooltip } from "./field-tooltip";
 import { fieldLabelClassName, inputClassName, selectClassName } from "./input-styles";
 
@@ -266,6 +269,47 @@ export function annuityContractIncomplete(v: AnnuityContractValue): boolean {
   if (v.payoutStructure === "joint_survivor" && v.survivorPct == null) return true;
   if (needsCertainTerm(v.payoutStructure) && v.periodCertainYears == null) return true;
   return v.incomeStartYear == null && v.incomeStartYearRef == null;
+}
+
+/**
+ * The panel spells "unset" as `null`; the engine's optional numbers are
+ * `number | undefined`. Every engine read of these fields is a `??` or a
+ * `!= null`, so the two spellings already behave identically — this only
+ * reconciles the types, and resolves a milestone-based income start into the
+ * calendar year the engine needs (it has no milestones of its own).
+ */
+function toEngineContract(
+  v: AnnuityContractValue,
+  milestones: ClientMilestones | undefined,
+): AnnuityContract {
+  const opt = (n: number | null | undefined) => n ?? undefined;
+  return {
+    carrier: v.carrier,
+    contractNumberLast4: v.contractNumberLast4,
+    productType: v.productType,
+    taxTreatment: v.taxTreatment,
+    costBasis: opt(v.costBasis),
+    surrenderChargePct: opt(v.surrenderChargePct),
+    surrenderEndYear: v.surrenderEndYear,
+    annualFeePct: v.annualFeePct,
+    incomeMode: v.incomeMode,
+    incomeStartYear:
+      v.incomeStartYear ??
+      (v.incomeStartYearRef && milestones
+        ? resolveMilestone(v.incomeStartYearRef, milestones, "start") ?? null
+        : null),
+    payoutStructure: v.payoutStructure,
+    survivorPct: v.survivorPct,
+    periodCertainYears: v.periodCertainYears,
+    benefitBase: opt(v.benefitBase),
+    rollupRate: opt(v.rollupRate),
+    rollupEndYear: v.rollupEndYear,
+    rollupRatchets: v.rollupRatchets,
+    riderFeePct: opt(v.riderFeePct),
+    payoutPct: opt(v.payoutPct),
+    annuitizedPayment: opt(v.annuitizedPayment),
+    expectedReturnYears: opt(v.expectedReturnYears),
+  };
 }
 
 const REQUIRED_CLASS = "mt-1 text-[11px] text-crit";
@@ -698,8 +742,17 @@ export function AnnuityTab({
         )}
       </fieldset>
 
-      {/* Task 10 mounts <AnnuityPreviewChart> here — the account-value /
-          guaranteed-income crossover. */}
+      {/* The preview waits on the same predicate the Save button does: a
+          half-described contract would draw a picture of a plan nobody has
+          finished describing. */}
+      {value.incomeMode !== "none" && !annuityContractIncomplete(value) && (
+        <AnnuityPreviewChart
+          contract={toEngineContract(value, milestones)}
+          accountValue={accountValue ?? null}
+          startYear={thisYear}
+          ownerAgeAtStart={annuityPreviewAgeAtStart(thisYear, ownerBirthYear)}
+        />
+      )}
     </div>
   );
 }
