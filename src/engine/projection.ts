@@ -2208,16 +2208,25 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         annuityStates[acct.id] ??
         initAnnuityState(acct.annuity, accountBalances[acct.id] ?? acct.value);
 
-      const ownerBirthYear =
-        isSpouseAccount(acct) && spouseBirthYear != null ? spouseBirthYear : clientBirthYear;
-      const ownerAge = year - ownerBirthYear;
-
-      // Alive unless this account owner's modelled death is already PAST. Death
+      // The life this contract is written on, pinned the FIRST year it is
+      // stepped. Alive unless that life's modelled death is already PAST; death
       // events apply below `years.push()`, so the death year itself still pays.
       // Defaults to ALIVE when the owner cannot be pinned to a side: silently
       // stopping income the carrier still owes is by far the worse error.
       const ownerSide: "client" | "spouse" = (annuitantSideByAccount[acct.id] ??=
         isSpouseAccount(acct) ? "spouse" : "client");
+      // Age comes off the PIN, not off `owners`, for the same reason isAlive
+      // does: a death event re-titles the account to the survivor, so
+      // `isSpouseAccount` flips afterwards. Read it live and a contract that
+      // activates after the annuitant's death locks the SURVIVOR's exclusion
+      // ratio and age-band payout rate — permanently, for the rest of the plan.
+      // The `spouseBirthYear != null` fallback is load-bearing: a spouse-titled
+      // contract in a household with no spouse DOB must still age off the
+      // client, or every age downstream is NaN.
+      const ownerBirthYear =
+        ownerSide === "spouse" && spouseBirthYear != null ? spouseBirthYear : clientBirthYear;
+      const ownerAge = year - ownerBirthYear;
+
       const ownerDeathYear =
         firstDeathDeceased === ownerSide
           ? firstDeathYear
@@ -2319,8 +2328,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         };
       }
       if (result.basisReturn > 0) {
+        // `"tax_free"` is the bySource convention every other non-taxable
+        // slice uses (withdrawal.ts, the education slice). It is the only
+        // string `rawTypeToCharacter` maps to the non_taxable character —
+        // anything else falls through to "ordinary", which the Tax Ledger then
+        // renders as TAXABLE. A §72 return of basis is not income.
         annuityBySource[`annuity_tax_free:${acct.id}`] = {
-          type: "non_taxable",
+          type: "tax_free",
           amount: result.basisReturn,
         };
       }

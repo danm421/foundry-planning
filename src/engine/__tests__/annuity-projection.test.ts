@@ -879,8 +879,14 @@ describe("projection — annuity contracts", () => {
     );
     const y = runProjection(input).find((y) => y.year === 2026)!;
 
+    // `"tax_free"` is the repo-wide bySource convention (withdrawal.ts and the
+    // education slice both emit it). It is what `rawTypeToCharacter` maps to
+    // the non_taxable character, and what the Tax-Free Retirement
+    // Distributions drill group collects. `"non_taxable"` matches no case
+    // there and falls through to `"ordinary"`, so it showed an advisor a
+    // return of basis as TAXABLE.
     expect(y.taxDetail!.bySource[`annuity_tax_free:${ANNUITY_ID}`]).toEqual({
-      type: "non_taxable",
+      type: "tax_free",
       amount: 10_000,
     });
     expect(y.taxDetail!.bySource[ANNUITY_KEY]).toBeUndefined();
@@ -1064,5 +1070,61 @@ describe("projection — annuity contracts", () => {
     // money the contract still owes.
     expect(at(certain, 2029)).toBeCloseTo(10_000, 2);
     expect(at(certain, 2030)).toBeCloseTo(10_000, 2);
+  });
+
+  it("a contract activating AFTER the annuitant's death prices off the annuitant's age, not the survivor's", () => {
+    // The twin of the isAlive pin. A death event RE-TITLES the account to the
+    // survivor, so `isSpouseAccount(acct)` flips sides afterwards. Derive the
+    // owner's AGE from that and a contract activating post-death silently
+    // prices off the SURVIVOR's age. Activation (step 3 of stepAnnuityYear)
+    // runs BEFORE the isAlive branch, so this really is reachable: the
+    // age-band payout rate is locked into `guaranteedIncome` for good.
+    //
+    // Client born 1952 dies in 2028. Spouse born 1975. Income starts 2030, and
+    // no `payoutPct` is stated, so the GLWB age band decides the rate:
+    //   annuitant (client) age 78 → the 75+ band, 6.0% → $12,000
+    //   survivor  (spouse) age 55 → the base band, 4.0% →  $8,000
+    // joint_survivor at 100% is what keeps the contract paying past the death
+    // so the locked rate is observable at all.
+    const run = (structure: "joint_survivor" | "single_life") =>
+      runProjection(
+        inputWithAnnuity(
+          {
+            productType: "fixed_indexed",
+            incomeMode: "rider",
+            incomeStartYear: 2030,
+            payoutStructure: structure,
+            survivorPct: structure === "joint_survivor" ? 1 : undefined,
+            benefitBase: 200_000,
+            // payoutPct deliberately ABSENT — the age band is the whole point.
+            rollupRatchets: false,
+            taxTreatment: "non_qualified",
+            costBasis: 0,
+            annualFeePct: 0,
+          },
+          200_000,
+          { planEndYear: 2032, lifeExpectancy: 76, spouseDob: "1975-01-01" },
+        ),
+      );
+
+    const joint = run("joint_survivor");
+    const at = (years: ReturnType<typeof runProjection>, yr: number) =>
+      years.find((y) => y.year === yr)?.income.bySource[ANNUITY_KEY] ?? 0;
+
+    // The death must actually be PROJECTED, or every assertion below is
+    // vacuous. `lifeExpectancy` — not `planEndAge` — is what fires it.
+    const deathYear = joint.find((y) => y.year === 2028);
+    expect(deathYear).toBeDefined();
+    expect(deathYear!.deathTransfers?.length ?? 0).toBeGreaterThan(0);
+    // ...and it must have reached THIS contract: the pin still reports the
+    // annuitant dead in 2030 even though the account now belongs to the
+    // spouse, so a single-life payout owes nothing.
+    expect(at(run("single_life"), 2030)).toBe(0);
+
+    // Nothing is paid before the stated start year.
+    expect(at(joint, 2029)).toBe(0);
+    // The annuitant's 75+ band, not the survivor's base band ($8,000).
+    expect(at(joint, 2030)).toBeCloseTo(12_000, 2);
+    expect(at(joint, 2031)).toBeCloseTo(12_000, 2);
   });
 });
