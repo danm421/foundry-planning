@@ -5,10 +5,9 @@ import { TaxDetailTooltip } from "./tax-detail-tooltip";
 import {
   detectRegimeTransitions,
   TRANSITION_BORDER_CLASS,
-  TRANSITION_TOOLTIPS,
+  regimeTooltip,
   pickBorderTransition,
 } from "./tax-regime-indicators";
-import type { TransitionType } from "./tax-regime-indicators";
 import { USPS_STATE_NAMES } from "@/lib/usps-states";
 import type { StateIncomeTaxResult } from "@/lib/tax/state-income";
 
@@ -205,8 +204,8 @@ export function TaxDetailStateTable({
               ? TRANSITION_BORDER_CLASS[pickBorderTransition(yearTransitions)]
               : "";
             const tooltip = yearTransitions
-              ?.map((t: TransitionType) => TRANSITION_TOOLTIPS[t])
-              .join("\n");
+              ? regimeTooltip(years, y, yearTransitions)
+              : undefined;
 
             return (
               <tr key={y.year} className="group">

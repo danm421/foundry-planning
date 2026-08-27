@@ -3,7 +3,7 @@ import type { CalcInput, TaxResult, FilingStatus } from "./types";
 import { calcFederalTax, calcMarginalRate, findMarginalTier } from "./federal";
 import { calcCapGainsTax } from "./capGains";
 import { withStatutoryRates } from "./rate-stress";
-import { calcAmtTentative, calcAmtAdditional } from "./amt";
+import { calcAmtTentative, calcAmtAdditional, amtApplies } from "./amt";
 import { calcNiit } from "./niit";
 import { calcFica, calcAdditionalMedicare, ficaWagesOf } from "./fica";
 import { calcQbiDeduction } from "./qbi";
@@ -17,7 +17,14 @@ import {
   emptyCapitalLossCarryforward,
 } from "./capital-loss";
 
-export function calculateTaxYear(input: CalcInput): TaxResult {
+/** Internal options. `probeNextDollar: false` is set only by the marginal-rate
+ *  probe below, so the probe's own run does not launch another one. */
+interface CalcOptions {
+  probeNextDollar?: boolean;
+}
+
+export function calculateTaxYear(input: CalcInput, opts: CalcOptions = {}): TaxResult {
+  const { probeNextDollar = true } = opts;
   const p = input.taxParams;
   const fs = input.filingStatus;
 
@@ -346,6 +353,21 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
     refundableCredits;
   const totalTax = totalFederalTax + stateTax + ficaResult.total;
 
+  // The true cost of the next dollar (F5). Only worth asking in a year AMT
+  // binds: everywhere else the bracket lookup already is the answer, and the
+  // probe doubles the cost of a tax year inside a Monte Carlo run.
+  //
+  // Measured AFTER the roll-up, so it carries the surtaxes and the credit
+  // floor, not just the bracket step. A $1 step rather than a round $1,000 so
+  // it cannot straddle a bracket boundary and return a blend matching nothing.
+  const nextDollarFederalRate =
+    probeNextDollar && amtApplies(amtAdditional)
+      ? calculateTaxYear(
+          { ...input, ordinaryIncome: input.ordinaryIncome + 1 },
+          { probeNextDollar: false },
+        ).flow.totalFederalTax - totalFederalTax
+      : undefined;
+
   return {
     income: {
       earnedIncome,
@@ -384,6 +406,7 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
     },
     diag: {
       marginalFederalRate: calcMarginalRate(incomeTaxBase, brackets),
+      nextDollarFederalRate,
       marginalBracketTier: findMarginalTier(incomeTaxBase, brackets) ?? brackets[0],
       incomeBracketsForFiling: brackets,
       effectiveFederalRate: grossTotalIncome > 0 ? totalFederalTax / grossTotalIncome : 0,

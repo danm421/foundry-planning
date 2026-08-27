@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectRegimeTransitions } from "../tax-regime-indicators";
+import { detectRegimeTransitions, regimeTooltip } from "../tax-regime-indicators";
 import type { ProjectionYear } from "@/engine";
 
 function makeYear(overrides: Partial<{
@@ -57,9 +57,17 @@ describe("detectRegimeTransitions", () => {
     expect(detectRegimeTransitions([])).toEqual({});
   });
 
-  it("returns empty map for single-year projection (no prior year to compare)", () => {
-    const result = detectRegimeTransitions([makeYear({ year: 2026, amtAdditional: 1000 })]);
+  // The year-over-year detectors still need a prior year. AMT deliberately no
+  // longer does: a client already in AMT in year one is the single most common
+  // AMT client there is, and the old "empty map" here was the bug (F20).
+  it("a single-year projection still produces no year-over-year transitions", () => {
+    const result = detectRegimeTransitions([makeYear({ year: 2026, niit: 500, fica: 0 })]);
     expect(result).toEqual({});
+  });
+
+  it("but a single-year projection in AMT is flagged", () => {
+    const result = detectRegimeTransitions([makeYear({ year: 2026, amtAdditional: 1000 })]);
+    expect(result[2026]).toEqual(["amt_first_year"]);
   });
 
   it("returns empty map when all years look the same", () => {
@@ -157,5 +165,113 @@ describe("detectRegimeTransitions", () => {
     ];
     // Should not crash; missing taxResult = no transitions detected
     expect(() => detectRegimeTransitions(years)).not.toThrow();
+  });
+});
+
+// ── F20 — the amber AMT marker told every client "high AGI" ──────────────────
+// For an option client the driver is the bargain element and the AGI on the
+// same row is often small, so the advisor reads it as a data-entry error. And
+// the detector started at the SECOND year, so a January option exercise in the
+// current year was never flagged at all.
+
+function amtYear(over: {
+  year: number; amtAdditional: number; amti?: number; isoSpread?: number;
+}): ProjectionYear {
+  const y = makeYear({ year: over.year, amtAdditional: over.amtAdditional });
+  (y.taxResult!.diag as { amti?: number }).amti = over.amti;
+  if (over.isoSpread != null) {
+    (y as { equityTaxImpact?: { isoSpread: number } }).equityTaxImpact = {
+      isoSpread: over.isoSpread,
+    } as ProjectionYear["equityTaxImpact"];
+  }
+  return y;
+}
+
+describe("detectRegimeTransitions — AMT in the projection's first year (F20)", () => {
+  it("flags AMT in year one, which the old second-year loop could never see", () => {
+    const years = [amtYear({ year: 2026, amtAdditional: 196_899, amti: 760_000, isoSpread: 700_000 })];
+    expect(detectRegimeTransitions(years)[2026]).toContain("amt_first_year");
+  });
+
+  it("does not re-flag the years after a spell that started in year one", () => {
+    const years = [
+      amtYear({ year: 2026, amtAdditional: 196_899 }),
+      amtYear({ year: 2027, amtAdditional: 120_000 }),
+    ];
+    const result = detectRegimeTransitions(years);
+    expect(result[2026]).toContain("amt_first_year");
+    expect(result[2027]).toBeUndefined();
+  });
+
+  it("still does not flag a year-one client with no AMT", () => {
+    expect(detectRegimeTransitions([amtYear({ year: 2026, amtAdditional: 0 })])[2026]).toBeUndefined();
+  });
+
+  it("ignores a sub-dollar excess in year one (shares the F37 gate)", () => {
+    expect(detectRegimeTransitions([amtYear({ year: 2026, amtAdditional: 0.4 })])[2026]).toBeUndefined();
+  });
+});
+
+describe("regimeTooltip — naming the driver that actually caused the AMT (F20)", () => {
+  // A quiet prior year, so the tooltip is entitled to say "first year".
+  const prior = makeYear({ year: 2025 });
+
+  it("names the option exercise, not AGI, when a bargain element is the driver", () => {
+    const y = amtYear({ year: 2026, amtAdditional: 196_899, amti: 760_000, isoSpread: 700_000 });
+    const t = regimeTooltip([prior, y], y, ["amt_first_year"]);
+    expect(t).toContain("option");
+    expect(t).toContain("$700,000");
+    expect(t).not.toContain("AGI");
+  });
+
+  it("keeps the exemption phase-out as a real cause for a gains-heavy client with no options", () => {
+    const y = amtYear({ year: 2026, amtAdditional: 18_360, amti: 2_060_000 });
+    const t = regimeTooltip([prior, y], y, ["amt_first_year"]);
+    expect(t).toContain("exemption");
+    expect(t).toContain("$2,060,000");
+    expect(t).not.toContain("option");
+  });
+
+  it("says 'AMT income', never 'AGI' — the two differ by a factor of twelve here", () => {
+    const y = amtYear({ year: 2026, amtAdditional: 196_899, amti: 760_000, isoSpread: 700_000 });
+    expect(regimeTooltip([prior, y], y, ["amt_first_year"])).toContain("AMT income");
+  });
+
+  it("does not claim 'first year' when there is no prior year to compare", () => {
+    const y = amtYear({ year: 2026, amtAdditional: 196_899, amti: 760_000, isoSpread: 700_000 });
+    expect(regimeTooltip([y], y, ["amt_first_year"]).toLowerCase()).not.toContain("first year");
+  });
+
+  it("does say 'first year' when the prior year genuinely had none", () => {
+    const y = amtYear({ year: 2027, amtAdditional: 196_899, amti: 760_000 });
+    expect(regimeTooltip([prior, y], y, ["amt_first_year"]).toLowerCase()).toContain("first year");
+  });
+
+  it("still returns the static copy for the non-AMT transitions", () => {
+    const y = makeYear({ year: 2027, niit: 500 });
+    expect(regimeTooltip([prior, y], y, ["niit_first_year"])).toContain("NIIT");
+  });
+
+  it("joins several transitions onto their own lines", () => {
+    const y = amtYear({ year: 2027, amtAdditional: 1000, amti: 900_000 });
+    const t = regimeTooltip([prior, y], y, ["amt_first_year", "niit_first_year"]);
+    expect(t.split("\n")).toHaveLength(2);
+  });
+});
+
+describe("detectRegimeTransitions — partially-built years", () => {
+  // Inspecting year zero brings half-built fixtures into reach that the old
+  // second-year start silently skipped. The three tax detail tables render
+  // exactly such fixtures, so this must not throw.
+  it("skips a year whose taxResult carries no flow", () => {
+    const bare = { year: 2026, ages: { client: 60 }, taxResult: {} } as unknown as ProjectionYear;
+    expect(() => detectRegimeTransitions([bare])).not.toThrow();
+    expect(detectRegimeTransitions([bare])).toEqual({});
+  });
+
+  it("still flags a good year that follows a flowless one", () => {
+    const bare = { year: 2026, ages: { client: 60 }, taxResult: {} } as unknown as ProjectionYear;
+    const good = makeYear({ year: 2027, amtAdditional: 5_000 });
+    expect(detectRegimeTransitions([bare, good])[2027]).toContain("amt_first_year");
   });
 });

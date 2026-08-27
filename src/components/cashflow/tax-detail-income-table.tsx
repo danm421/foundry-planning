@@ -5,10 +5,9 @@ import { TaxDetailTooltip } from "./tax-detail-tooltip";
 import {
   detectRegimeTransitions,
   TRANSITION_BORDER_CLASS,
-  TRANSITION_TOOLTIPS,
+  regimeTooltip,
   pickBorderTransition,
 } from "./tax-regime-indicators";
-import type { TransitionType } from "./tax-regime-indicators";
 import type { IncomeColumnKey } from "@/lib/tax/cell-drill/types";
 
 interface TaxDetailIncomeTableProps {
@@ -162,8 +161,8 @@ export function TaxDetailIncomeTable({
               ? TRANSITION_BORDER_CLASS[pickBorderTransition(yearTransitions)]
               : "";
             const tooltip = yearTransitions
-              ?.map((t: TransitionType) => TRANSITION_TOOLTIPS[t])
-              .join("\n");
+              ? regimeTooltip(years, y, yearTransitions)
+              : undefined;
 
             return (
               <tr key={y.year} className="group">

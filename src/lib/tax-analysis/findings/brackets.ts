@@ -2,11 +2,29 @@ import type { Finding, FindingContext } from "../types";
 import { fmtUsd, fmtPct } from "../format";
 import { n } from "../adapter";
 import { computeMagi, irmaaTiersFor, nextIrmaaCliff } from "../irmaa-util";
+import { amtApplies } from "@/lib/tax/amt";
 
 /** The bracket immediately above 0% — the rate these dollars would otherwise
  *  pay. Not a parameter: the 15% rung is the one a harvested gain escapes, and
  *  20% only applies far above any return with 0% headroom left. */
 const LTCG_NEXT_RATE = 0.15;
+
+/** The alternative minimum tax this return actually reports (Schedule 2 line
+ *  1), or 0. Read from the FILED return rather than from the engine's own
+ *  re-computation: this model is not given the items that create AMT, so its
+ *  reconstruction produces none for exactly the returns that matter here. */
+function filedAmt(ctx: FindingContext): number {
+  return ctx.facts.tax.amt ?? 0;
+}
+
+/** Appended to bracket-positioning prose. In an AMT year the next dollar of
+ *  ordinary income is priced by the tentative minimum, not by the bracket, so
+ *  "every additional dollar is taxed at Y%" is not true as written (F9). */
+function amtCaveat(ctx: FindingContext): string {
+  const amt = filedAmt(ctx);
+  if (!amtApplies(amt)) return "";
+  return ` This return also reports ${fmtUsd(amt)} of alternative minimum tax, and in an AMT year the next dollar of ordinary income is priced by the AMT calculation rather than by this bracket — so treat the rate above as the regular-tax rate only.`;
+}
 
 export function bracketPosition(ctx: FindingContext): Finding | null {
   const map = ctx.bracketMap;
@@ -21,9 +39,9 @@ export function bracketPosition(ctx: FindingContext): Finding | null {
     category: "brackets",
     headline: `Ordinary income tops out in the ${fmtPct(marginalRate)} bracket`,
     whatTheReturnShows: `Taxable income of ${fmtUsd(ti ?? taxBase)} (line 15) includes ${fmtUsd(map.capGains.preferentialBase)} of long-term gains and qualified dividends, which are taxed on their own schedule. That leaves ${fmtUsd(taxBase)} of ordinary taxable income, placing the return in the ${fmtPct(marginalRate)} federal bracket.`,
-    whyItMatters: atTop
+    whyItMatters: (atTop
       ? `This is the top federal bracket, so every additional dollar of ordinary income — a conversion, a bonus, an IRA distribution — is taxed at ${fmtPct(marginalRate)} with no further step up.`
-      : `Brackets are marginal, not cliffs: the next ${fmtUsd(headroomToNext)} of ordinary income is still taxed at ${fmtPct(marginalRate)}, and only dollars above that reach ${fmtPct(nextRate)}. That band is the cheapest remaining tax room this year has.`,
+      : `Brackets are marginal, not cliffs: the next ${fmtUsd(headroomToNext)} of ordinary income is still taxed at ${fmtPct(marginalRate)}, and only dollars above that reach ${fmtPct(nextRate)}. That band is the cheapest remaining tax room this year has.`) + amtCaveat(ctx),
     whatToConsider: atTop
       ? `Deferral rather than acceleration is the lever here — retirement-plan contributions, charitable timing, and loss harvesting each remove dollars taxed at ${fmtPct(marginalRate)}.`
       : `Treat ${fmtUsd(headroomToNext)} as this year's budget for voluntary ordinary income. The conversion and gain-harvesting findings below size specific moves against it.`,
@@ -41,6 +59,16 @@ export function rothHeadroom(ctx: FindingContext): Finding | null {
   if (!map) return null;
   const { marginalRate, headroomToNext, nextRate } = map.ordinary;
   if (headroomToNext == null || nextRate == null || headroomToNext < 1000) return null;
+
+  // F9: when the return itself reports AMT, this band does not price a
+  // conversion. The audit measured a quoted 24% band costing 42.9% in reality —
+  // $17,766 more than promised, on an irreversible transaction, printed as an
+  // "opportunity" on a client deliverable. Suppress the opportunity and say so.
+  // This stays suppression rather than a re-priced band until the
+  // reconstruction can rebuild AMT income from a filed return, which is the
+  // same missing input that keeps AMT out of the cross-check.
+  const amt = filedAmt(ctx);
+  if (amtApplies(amt)) return amtBlockedConversion(ctx, headroomToNext, marginalRate, amt);
 
   const rateDifferential = nextRate - marginalRate;
   const impact = headroomToNext * rateDifferential;
@@ -99,5 +127,35 @@ export function ltcgZeroHeadroom(ctx: FindingContext): Finding | null {
     ],
     estimatedImpact: impact,
     numbers: { headroom: room, zeroPctTop: map.capGains.zeroPctTop },
+  };
+}
+
+/**
+ * The Roth-headroom finding for a return that paid AMT. Same id, so it takes
+ * the opportunity's place rather than appearing alongside it — an advisor must
+ * not see both "room at 22%" and "that room is not priced at 22%".
+ */
+function amtBlockedConversion(
+  ctx: FindingContext,
+  headroomToNext: number,
+  marginalRate: number,
+  amt: number,
+): Finding {
+  return {
+    id: "roth-headroom",
+    severity: "watch",
+    category: "retirement",
+    headline: `Conversion room cannot be priced off the bracket — this return paid ${fmtUsd(amt)} of AMT`,
+    whatTheReturnShows: `Taxable income of ${fmtUsd(n(ctx.facts.deductions.taxableIncome))} (line 15) leaves ${fmtUsd(headroomToNext)} before the next ordinary bracket begins, but the return also reports ${fmtUsd(amt)} of alternative minimum tax (Schedule 2, line 1).`,
+    whyItMatters: `Ordinary-income headroom only prices a conversion in a year when the regular calculation is the one that binds. In a year that pays alternative minimum tax the next dollar is taxed under the AMT calculation instead, and inside the AMT exemption phase-out each such dollar also destroys part of that exemption — so the true cost of filling this band can be far above ${fmtPct(marginalRate)}. A conversion cannot be undone once the year closes.`,
+    whatToConsider: `Price any conversion for this client against a full AMT calculation for the year rather than against the ${fmtUsd(headroomToNext)} of bracket headroom. This analysis does not read the items that create AMT, so it cannot size that conversion for you.`,
+    lineRefs: [
+      { form: "Form 1040", line: "line 15", label: "Taxable income", amount: ctx.facts.deductions.taxableIncome },
+      { form: "Schedule 2", line: "line 1", label: "Alternative minimum tax", amount: amt },
+    ],
+    // No dollar claim: the whole point is that this year's cost is not knowable
+    // from the bracket, and a number here would be the defect all over again.
+    estimatedImpact: null,
+    numbers: { headroom: headroomToNext, rate: marginalRate, amt },
   };
 }

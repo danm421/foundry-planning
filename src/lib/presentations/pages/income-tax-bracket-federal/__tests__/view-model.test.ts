@@ -39,3 +39,68 @@ describe("buildTaxBracketFederalDrillData", () => {
     expect(d.table.rows[0].cells.changeInBase).toBe(0);
   });
 });
+
+// ── F5 — this page prints "Marginal Rate" and "Remaining in Bracket" directly
+// beside a "Roth Conversion" column, in a document the client keeps. In a year
+// AMT binds, both of those are claims about a rate that does not apply.
+describe("buildTaxBracketFederalDrillData — AMT years (F5)", () => {
+  function yearsWithAmt() {
+    const years = makeTaxYears();
+    const y2026 = years.find((y) => y.year === 2026)!;
+    y2026.taxResult!.flow.amtAdditional = 208_800;
+    (y2026.taxResult!.diag as { nextDollarFederalRate?: number }).nextDollarFederalRate = 0.42;
+    return years;
+  }
+
+  it("prints no bracket headroom for a year AMT binds", () => {
+    const d = buildTaxBracketFederalDrillData({
+      ...base, years: yearsWithAmt(), options: { range: "full", showCallout: false },
+    });
+    expect(d.table.rows.find((r) => r.year === 2026)!.cells.remainingInBracket).toBe(0);
+  });
+
+  it("says so in the footnote, naming the year", () => {
+    const d = buildTaxBracketFederalDrillData({
+      ...base, years: yearsWithAmt(), options: { range: "full", showCallout: false },
+    });
+    expect(d.footnote).toContain("AMT");
+    expect(d.footnote).toContain("2026");
+  });
+
+  it("leaves the footnote alone when no year has AMT", () => {
+    const d = buildTaxBracketFederalDrillData({
+      ...base, options: { range: "full", showCallout: false },
+    });
+    expect(d.footnote).not.toContain("AMT");
+  });
+
+  it("drops the headroom band out of the chart too, so the bar cannot claim room", () => {
+    const d = buildTaxBracketFederalDrillData({
+      ...base, years: yearsWithAmt(), options: { range: "full", showCallout: false },
+    });
+    const i = d.chartSpec!.xAxis.domain.indexOf(2026);
+    expect(d.chartSpec!.stacks.find((s) => s.seriesId === "remainingInBracket")!.values[i]).toBe(0);
+  });
+
+  it("keeps the ordinary years' headroom intact", () => {
+    const d = buildTaxBracketFederalDrillData({
+      ...base, years: yearsWithAmt(), options: { range: "full", showCallout: false },
+    });
+    const other = d.table.rows.find((r) => r.year !== 2026);
+    if (other) expect(other.cells.remainingInBracket).toBeGreaterThan(0);
+  });
+});
+
+describe("buildTaxBracketFederalDrillData — the footnote cannot run off the page", () => {
+  it("caps the year list and says how many it left out", () => {
+    const years = makeTaxYears();
+    // Every year in the fixture binds on AMT.
+    for (const y of years) y.taxResult!.flow.amtAdditional = 100_000;
+    const d = buildTaxBracketFederalDrillData({
+      ...base, years, options: { range: "full", showCallout: false },
+    });
+    const named = (d.footnote.match(/20\d\d/g) ?? []).length;
+    expect(named).toBeLessThanOrEqual(6);
+    if (years.length > 6) expect(d.footnote).toContain("more");
+  });
+});

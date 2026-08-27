@@ -4494,6 +4494,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           transferEarlyWithdrawalPenalty: 0,
           interestIncomeForTax,
           deductionBreakdownIn: deductionBreakdownResult ?? null,
+          // This probe reads `incomeTaxBase` and throws the rest away, and it
+          // runs once per convergence iteration — never pay for the
+          // next-dollar rate measurement here.
+          measureNextDollarRate: false,
           // primaryAge/spouseAge: senior deductions lower incomeTaxBase, which
           // sizes the conversion. retirementBreakdown is omitted — it feeds only
           // state exclusions (not this probe's federal incomeTaxBase) and is
@@ -6443,6 +6447,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           shortTerm: finalTaxInput.capitalGainsInTaxableIncome.shortTerm - equityStCapitalGains,
         },
         isoSpread: 0,
+        // Only the flow deltas are read out of this counterfactual.
+        measureNextDollarRate: false,
       };
       const counterfactual = computeTaxForYear(counterfactualInput);
       equityTaxImpact = diffEquityTaxImpact(

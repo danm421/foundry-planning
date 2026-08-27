@@ -1,6 +1,7 @@
 import type { ProjectionYear } from "@/engine/types";
 import type { BracketTier } from "./types";
 import type { StateIncomeTaxResult } from "./state-income";
+import { amtApplies } from "./amt";
 
 export interface TaxBracketRow {
   year: number;
@@ -13,8 +14,22 @@ export interface TaxBracketRow {
   /** Income filling the marginal tier above its `from`. */
   intoBracket: number;
   /** Headroom remaining in the marginal tier. `null` for the top tier
-   *  (`to === null`) — caller renders an em-dash. */
+   *  (`to === null`) and in any year `amtApplies` — caller renders an em-dash. */
   remainingInBracket: number | null;
+  /** Tentative minimum tax binds this year, so the next dollar of ordinary
+   *  income is priced by the AMT calculation and not by `marginalRate` — and
+   *  inside the exemption phase-out it costs the AMT rate plus the exemption
+   *  it destroys, a multiple that depends on the year's phase-out rate. The
+   *  tier headroom is therefore not room the client can use at the stated
+   *  price, and is suppressed above. Renderers must say so — a Roth conversion
+   *  sized off this row is the decision this column exists to inform. */
+  amtApplies: boolean;
+  /** What one more dollar of ordinary income actually costs this year, as a
+   *  fraction — the number `marginalRate` claims to be but is not once AMT
+   *  binds. `null` in an ordinary year (use `marginalRate`) and in the rare
+   *  AMT year whose tax result came from a probe that skipped the
+   *  measurement. */
+  nextDollarRate: number | null;
   /** YoY change in `incomeTaxBase`. First year = 0. Negative is allowed. */
   changeInBase: number;
 }
@@ -72,8 +87,9 @@ export function buildTaxBracketRows(years: ProjectionYear[]): TaxBracketRow[] {
     );
 
     const intoBracket = Math.max(0, incomeTaxBase - tier.from);
+    const yearHasAmt = amtApplies(taxResult.flow.amtAdditional);
     const remainingInBracket =
-      tier.to == null ? null : Math.max(0, tier.to - incomeTaxBase);
+      tier.to == null || yearHasAmt ? null : Math.max(0, tier.to - incomeTaxBase);
 
     const changeInBase = prevBase == null ? 0 : incomeTaxBase - prevBase;
 
@@ -87,6 +103,8 @@ export function buildTaxBracketRows(years: ProjectionYear[]): TaxBracketRow[] {
       marginalRate: tier.rate,
       intoBracket,
       remainingInBracket,
+      amtApplies: yearHasAmt,
+      nextDollarRate: taxResult.diag.nextDollarFederalRate ?? null,
       changeInBase,
     });
 

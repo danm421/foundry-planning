@@ -55,3 +55,53 @@ describe("buildDiagnostics", () => {
     expect(d.taxByType.state).toBe(11400);
   });
 });
+
+describe("buildDiagnostics — the AMT badge (F37)", () => {
+  it("does not call a sub-dollar excess an AMT year", () => {
+    const y = fixtureYear();
+    y.taxResult!.flow.amtAdditional = 0.4;
+    expect(buildDiagnostics(y, "married_joint").amt.bound).toBe(false);
+  });
+  it("still reports the cents so the ledger reconciles", () => {
+    const y = fixtureYear();
+    y.taxResult!.flow.amtAdditional = 0.4;
+    expect(buildDiagnostics(y, "married_joint").amt.additional).toBe(0.4);
+  });
+  it("binds from a whole dollar up", () => {
+    const y = fixtureYear();
+    y.taxResult!.flow.amtAdditional = 1;
+    expect(buildDiagnostics(y, "married_joint").amt.bound).toBe(true);
+  });
+});
+
+describe("buildDiagnostics — rate and headroom in an AMT year (F5)", () => {
+  function amtYear(nextDollarFederalRate?: number) {
+    const y = fixtureYear();
+    y.taxResult!.flow.amtAdditional = 208_800;
+    (y.taxResult!.diag as { nextDollarFederalRate?: number }).nextDollarFederalRate =
+      nextDollarFederalRate;
+    return y;
+  }
+
+  it("reports the true next-dollar rate, not the bracket lookup", () => {
+    expect(buildDiagnostics(amtYear(0.42), "married_joint").marginalRate).toBe(0.42);
+  });
+
+  it("drops the '$X to next bracket' hint — that room is not available at the stated rate", () => {
+    expect(buildDiagnostics(amtYear(0.42), "married_joint").bracketHeadroom).toBeNull();
+  });
+
+  it("falls back to the bracket rate when no measurement was taken", () => {
+    expect(buildDiagnostics(amtYear(), "married_joint").marginalRate).toBe(0.24);
+  });
+
+  it("still suppresses the headroom hint without a measurement", () => {
+    expect(buildDiagnostics(amtYear(), "married_joint").bracketHeadroom).toBeNull();
+  });
+
+  it("leaves an ordinary year's rate and headroom alone", () => {
+    const d = buildDiagnostics(fixtureYear(), "married_joint");
+    expect(d.marginalRate).toBe(0.24);
+    expect(d.bracketHeadroom).toBe(25_000);
+  });
+});

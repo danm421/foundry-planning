@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calcAmtTentative, calcAmtAdditional } from "../amt";
+import { calcAmtTentative, calcAmtAdditional, amtApplies } from "../amt";
 
 const PARAMS_2026_MFJ = {
   amtExemption: 140200,
@@ -142,5 +142,30 @@ describe("calcAmtAdditional", () => {
 
   it("returns the difference when AMT exceeds regular", () => {
     expect(calcAmtAdditional(50000, 30000)).toBe(20000);
+  });
+});
+
+describe("amtApplies — the one gate every AMT surface reads", () => {
+  it("is false at zero", () => {
+    expect(amtApplies(0)).toBe(false);
+  });
+
+  it("is false for a sub-dollar excess (F37: 40 cents printed '$0 — AMT applies')", () => {
+    expect(amtApplies(0.4)).toBe(false);
+    expect(amtApplies(0.99)).toBe(false);
+  });
+
+  it("is true from a whole dollar up", () => {
+    expect(amtApplies(1)).toBe(true);
+    expect(amtApplies(196_899)).toBe(true);
+  });
+
+  it("treats a missing figure as no AMT rather than throwing", () => {
+    expect(amtApplies(undefined)).toBe(false);
+    expect(amtApplies(null)).toBe(false);
+  });
+
+  it("is false for a negative figure", () => {
+    expect(amtApplies(-5)).toBe(false);
   });
 });

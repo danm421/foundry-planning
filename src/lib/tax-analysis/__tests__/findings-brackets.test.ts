@@ -60,3 +60,56 @@ describe("ltcgZeroHeadroom", () => {
     expect(f.whatToConsider).toContain("31 December");
   });
 });
+
+// ── F9 — "$86,200 of Roth conversion room at 22%" on a return that paid AMT ──
+// Both of these findings render on the client-facing Tax Analysis PDF. When the
+// return itself reports AMT, the ordinary bracket band does not price a
+// conversion: the audit measured a quoted 24% band actually costing 42.9%.
+function amtReturn(amt = 235_597) {
+  const facts = retireeMfj();
+  facts.tax.amt = amt;
+  return facts;
+}
+
+describe("rothHeadroom — a return that paid AMT (F9)", () => {
+  it("stops calling ordinary headroom an opportunity", () => {
+    const f = rothHeadroom(ctxFor(amtReturn()))!;
+    expect(f.severity).not.toBe("opportunity");
+  });
+
+  it("names the AMT the return actually reports", () => {
+    const f = rothHeadroom(ctxFor(amtReturn()))!;
+    expect(f.whatTheReturnShows + f.whyItMatters).toContain("$235,597");
+  });
+
+  it("no longer tells the advisor to size a conversion to the headroom", () => {
+    const f = rothHeadroom(ctxFor(amtReturn()))!;
+    expect(f.whatToConsider).not.toContain("Size the conversion to");
+  });
+
+  it("drops the dollar impact rather than quoting a rate that does not apply", () => {
+    expect(rothHeadroom(ctxFor(amtReturn()))!.estimatedImpact).toBeNull();
+  });
+
+  it("ignores a sub-dollar AMT figure (shares the F37 gate)", () => {
+    const f = rothHeadroom(ctxFor(amtReturn(0.4)))!;
+    expect(f.severity).toBe("opportunity");
+  });
+
+  it("is unchanged on a return with no AMT", () => {
+    const f = rothHeadroom(ctxFor())!;
+    expect(f.severity).toBe("opportunity");
+    expect(f.estimatedImpact).toBeCloseTo(1724, 6);
+  });
+});
+
+describe("bracketPosition — a return that paid AMT (F9)", () => {
+  it("stops claiming the next dollar is taxed at the bracket rate", () => {
+    const f = bracketPosition(ctxFor(amtReturn()))!;
+    expect(f.whyItMatters).toContain("AMT");
+  });
+
+  it("says nothing about AMT on a return that paid none", () => {
+    expect(bracketPosition(ctxFor())!.whyItMatters).not.toContain("AMT");
+  });
+});

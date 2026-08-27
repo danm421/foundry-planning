@@ -338,6 +338,21 @@ export interface TaxResult {
   };
   diag: {
     marginalFederalRate: number;
+    /** What one more dollar of ordinary income actually costs across the whole
+     *  federal return — the regular brackets, the tentative-minimum comparison,
+     *  the surtaxes and the credit floor — expressed as a fraction.
+     *
+     *  Present ONLY in a year AMT binds, where `marginalFederalRate` (a plain
+     *  bracket lookup) is not the price of the next dollar: the AMT rate is,
+     *  and inside the exemption phase-out each such dollar also destroys part
+     *  of the exemption. Absent everywhere else, because there the bracket rate
+     *  already is the answer and measuring it would double the cost of every
+     *  tax year in a projection. Callers fall back to `marginalFederalRate`.
+     *
+     *  Not a pure bracket rate and not a whole-return effective rate — it is
+     *  the next-dollar cost, and it is the number an advisor sizing a Roth
+     *  conversion is actually asking for. */
+    nextDollarFederalRate?: number;
     /** The full bracket tier the next dollar of ordinary income lands in.
      *  Lets reports show how much of the bracket is filled vs. remaining
      *  without re-walking BracketsByStatus and worrying about which filing

@@ -1299,3 +1299,66 @@ describe("calculateTaxYear — AMT parameters are picked by FILING STATUS", () =
     expect(result.flow.amtAdditional).toBeCloseTo(127_148, 0);
   });
 });
+
+// ── F5 — the "next dollar" rate an advisor sizes a Roth conversion against ──
+// `marginalFederalRate` is a bracket lookup and knows nothing about AMT. In a
+// year tentative minimum tax binds, the next dollar of ordinary income costs
+// the AMT rate — and inside the exemption phase-out it costs that rate plus
+// the exemption it destroys. The bracket number is wrong in both directions.
+
+describe("calculateTaxYear — nextDollarFederalRate (F5)", () => {
+  // Single filer, ordinary income modest, a large held ISO exercise. AMT binds
+  // hard: this is the shape the Stock Options module exists to model.
+  const amtInput = makeInput({
+    filingStatus: "single",
+    ordinaryIncome: 200_000,
+    isoSpread: 800_000,
+    flatStateRate: 0,
+  });
+
+  it("the fixture actually binds on AMT (guards against a vacuous test)", () => {
+    expect(calculateTaxYear(amtInput).flow.amtAdditional).toBeGreaterThan(0);
+  });
+
+  it("is absent in a year with no AMT — the bracket rate is already the answer", () => {
+    const ordinary = calculateTaxYear(makeInput({
+      filingStatus: "single", ordinaryIncome: 120_000, flatStateRate: 0,
+    }));
+    expect(ordinary.flow.amtAdditional).toBe(0);
+    expect(ordinary.diag.nextDollarFederalRate).toBeUndefined();
+  });
+
+  it("is present, and differs from the bracket rate, in an AMT year", () => {
+    const r = calculateTaxYear(amtInput);
+    expect(r.diag.nextDollarFederalRate).toBeDefined();
+    expect(r.diag.nextDollarFederalRate).not.toBeCloseTo(r.diag.marginalFederalRate, 4);
+  });
+
+  it("equals the actual federal tax delta of one more dollar of ordinary income", () => {
+    const base = calculateTaxYear(amtInput);
+    const plusOne = calculateTaxYear({ ...amtInput, ordinaryIncome: amtInput.ordinaryIncome + 1 });
+    const measured = plusOne.flow.totalFederalTax - base.flow.totalFederalTax;
+    expect(base.diag.nextDollarFederalRate).toBeCloseTo(measured, 6);
+  });
+
+  it("prices the next dollar at the AMT rate, not the ordinary bracket rate", () => {
+    const r = calculateTaxYear(amtInput);
+    // Ordinary income of 200k puts the bracket lookup at 24%/32%; the binding
+    // constraint is the 28% AMT band, so the true cost is higher.
+    expect(r.diag.nextDollarFederalRate!).toBeGreaterThan(0.26);
+  });
+
+  it("leaves marginalFederalRate alone — fill_up_bracket and three tests depend on it", () => {
+    const r = calculateTaxYear(amtInput);
+    expect(r.diag.marginalFederalRate).toBe(
+      calculateTaxYear({ ...amtInput, isoSpread: 0 }).diag.marginalFederalRate,
+    );
+  });
+
+  it("does not recurse: the probe itself carries no probe", () => {
+    // A probe that re-probed would not terminate; reaching this assertion at
+    // all is the proof. The explicit check keeps the intent legible.
+    const r = calculateTaxYear(amtInput);
+    expect(Number.isFinite(r.diag.nextDollarFederalRate!)).toBe(true);
+  });
+});

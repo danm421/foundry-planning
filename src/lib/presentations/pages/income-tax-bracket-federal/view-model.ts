@@ -14,6 +14,37 @@ import { PRESENTATION_THEME } from "../../theme";
 const DISCLAIMER =
   "This analysis is based on assumptions provided by you. Projections are hypothetical and not guaranteed. Actual results will vary.";
 
+/** Naming every year of a long AMT spell would run the 7pt footnote off the
+ *  page, so the list is capped — visibly, with a count, never silently. */
+const FOOTNOTE_YEAR_CAP = 6;
+
+/**
+ * A client keeps this page, and it prints Marginal Rate and Remaining in
+ * Bracket immediately beside a Roth Conversion column. In a year the
+ * alternative minimum tax binds, neither of those describes the price of the
+ * next dollar — so the page has to say which years those are. Named, not
+ * asterisked: there is no hover on paper.
+ */
+function amtFootnote(rows: { year: number; amtApplies: boolean }[]): string {
+  const years = rows.filter((r) => r.amtApplies).map((r) => r.year);
+  if (years.length === 0) return "";
+
+  const shown = years.slice(0, FOOTNOTE_YEAR_CAP);
+  const hidden = years.length - shown.length;
+  const joined =
+    shown.length === 1
+      ? String(shown[0])
+      : `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}`;
+  const list = hidden > 0 ? `${joined}, plus ${hidden} more` : joined;
+  const one = years.length === 1;
+
+  return (
+    `AMT applies in the following ${one ? "year" : "years"}: ${list}. In ${one ? "that year" : "those years"} ` +
+    `the next dollar of income is taxed at the AMT rate rather than the marginal rate shown, and no bracket ` +
+    `headroom is available at that rate — Remaining in Bracket is reported as zero. `
+  );
+}
+
 export interface BuildTaxBracketFederalDrillInput {
   years: ProjectionYear[];
   clientData: ClientData;
@@ -83,7 +114,7 @@ export function buildTaxBracketFederalDrillData(input: BuildTaxBracketFederalDri
     callout: computeCallout(options),
     chartSpec,
     table: { columns, rows, markers },
-    footnote: DISCLAIMER,
+    footnote: amtFootnote(bracketRows) + DISCLAIMER,
   };
 }
 

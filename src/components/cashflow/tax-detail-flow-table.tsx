@@ -7,10 +7,9 @@ import { TaxDetailTooltip } from "./tax-detail-tooltip";
 import {
   detectRegimeTransitions,
   TRANSITION_BORDER_CLASS,
-  TRANSITION_TOOLTIPS,
+  regimeTooltip,
   pickBorderTransition,
 } from "./tax-regime-indicators";
-import type { TransitionType } from "./tax-regime-indicators";
 
 interface TaxDetailFlowTableProps {
   years: ProjectionYear[];
@@ -144,8 +143,15 @@ export const FLOW_COLUMNS: Column[] = [
     key: "marginalRate",
     label: "Marginal Rate",
     tooltip:
-      "Federal marginal rate at this year's Taxable Income. The 'next dollar of income' rate.",
-    value: (y) => y.taxResult?.diag.marginalFederalRate ?? 0,
+      "What one more dollar of income costs in federal tax. Normally the bracket rate at this " +
+      "year's Taxable Income — but in a year AMT applies it is the AMT rate, which is higher, " +
+      "and higher again while the AMT exemption phases out.",
+    // The measured next-dollar rate wherever one exists (AMT years); the plain
+    // bracket lookup is already the answer everywhere else. Reading the bracket
+    // rate alone made this column contradict its own tooltip in exactly the
+    // years an advisor is sizing a Roth conversion (F5).
+    value: (y) =>
+      y.taxResult?.diag.nextDollarFederalRate ?? y.taxResult?.diag.marginalFederalRate ?? 0,
     formatter: (n) => pctFmt.format(n),
   },
 ];
@@ -576,8 +582,8 @@ export function TaxDetailFlowTable({
                 ? TRANSITION_BORDER_CLASS[pickBorderTransition(yearTransitions)]
                 : "";
               const tooltip = yearTransitions
-                ?.map((t: TransitionType) => TRANSITION_TOOLTIPS[t])
-                .join("\n");
+                ? regimeTooltip(years, y, yearTransitions)
+                : undefined;
 
               return (
                 <tr key={y.year} className="group">

@@ -2,6 +2,7 @@
 import type { ProjectionYear } from "@/engine/types";
 import type { FilingStatus } from "@/lib/tax/types";
 import type { TaxLedgerDiagnostics } from "./types";
+import { amtApplies } from "@/lib/tax/amt";
 
 const EMPTY: TaxLedgerDiagnostics = {
   agi: 0, taxableIncome: 0, totalFederalTax: 0, totalStateTax: 0, totalTax: 0,
@@ -24,9 +25,16 @@ export function buildDiagnostics(year: ProjectionYear, filingStatus: FilingStatu
   if (!tr) return EMPTY;
   const { flow, diag } = tr;
 
-  // Bracket headroom from the marginal tier ceiling.
+  // Bracket headroom from the marginal tier ceiling — but only when the
+  // bracket is the binding constraint. In an AMT year the next dollar is
+  // priced by the tentative minimum, so the tier ceiling is not room the
+  // client can use and the "$X to next bracket" hint is a false offer (F5).
+  const yearHasAmt = amtApplies(flow.amtAdditional);
   const tier = diag.marginalBracketTier;
-  const bracketHeadroom = tier && tier.to != null ? Math.max(0, tier.to - flow.incomeTaxBase) : null;
+  const bracketHeadroom =
+    !yearHasAmt && tier && tier.to != null
+      ? Math.max(0, tier.to - flow.incomeTaxBase)
+      : null;
 
   // NIIT: base = tax / rate; threshold distance vs (approx) MAGI = AGI.
   const niitRate = diag.bracketsUsed.niitRate;
@@ -50,11 +58,13 @@ export function buildDiagnostics(year: ProjectionYear, filingStatus: FilingStatu
     totalStateTax: flow.stateTax,
     totalTax: flow.totalTax,
     effectiveRate: diag.effectiveFederalRate,
-    marginalRate: diag.marginalFederalRate,
+    // The measured next-dollar rate where one exists (AMT years only); the
+    // bracket lookup is already correct everywhere else.
+    marginalRate: diag.nextDollarFederalRate ?? diag.marginalFederalRate,
     bracketHeadroom,
     niit: { active: niitActive, base: niitBase, thresholdDistance },
     irmaa: { tier: top?.irmaaTier ?? null, headroomToNextTier: top?.headroomToNextTier ?? null },
-    amt: { bound: flow.amtAdditional > 0, additional: flow.amtAdditional },
+    amt: { bound: yearHasAmt, additional: flow.amtAdditional },
     ssTaxablePercent,
     taxByType: {
       federalOrdinary: flow.regularFederalIncomeTax,

@@ -70,3 +70,22 @@ export function calcAmtTentative(
 export function calcAmtAdditional(tentativeAmt: number, regularTax: number): number {
   return Math.max(0, tentativeAmt - regularTax);
 }
+
+/**
+ * Dollars of AMT below which the charge is rounding noise rather than a
+ * regime the advisor should act on. The tentative-minimum comparison is a
+ * subtraction of two large numbers, so a client whose two tax figures land
+ * within pennies of each other produces a few cents of "AMT" that rounds to
+ * "$0 — AMT applies" on screen and paints an amber marker on the year.
+ */
+export const AMT_APPLIES_THRESHOLD = 1;
+
+/**
+ * The single answer to "is this an AMT year?". Every surface that flags,
+ * labels, footnotes or suppresses on account of AMT must ask this rather than
+ * testing `amtAdditional > 0` itself, so a year cannot read as an AMT year on
+ * one screen and an ordinary year on the next.
+ */
+export function amtApplies(amtAdditional: number | null | undefined): boolean {
+  return (amtAdditional ?? 0) >= AMT_APPLIES_THRESHOLD;
+}

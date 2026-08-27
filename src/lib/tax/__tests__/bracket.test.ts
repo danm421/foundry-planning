@@ -104,3 +104,73 @@ describe("buildTaxBracketRows", () => {
     expect(rows[0].spouseAge).toBeNull();
   });
 });
+
+// ── F5 — bracket headroom is not available at the stated rate in an AMT year ──
+// A year where tentative minimum tax binds pays the AMT rate on the next
+// dollar of ordinary income, not the bracket rate, so "Remaining in Bracket"
+// describes room the client cannot actually use at that price.
+
+function makeAmtYear(
+  year: number, base: number, tier: BracketTier, amtAdditional: number,
+  nextDollarFederalRate?: number,
+): ProjectionYear {
+  const y = makeYear(year, base, tier);
+  (y.taxResult!.flow as { amtAdditional?: number }).amtAdditional = amtAdditional;
+  (y.taxResult!.diag as { nextDollarFederalRate?: number }).nextDollarFederalRate =
+    nextDollarFederalRate;
+  return y;
+}
+
+describe("buildTaxBracketRows — AMT years (F5)", () => {
+  it("flags the year when AMT binds", () => {
+    const rows = buildTaxBracketRows([makeAmtYear(2028, 100_000, tier22, 208_800)]);
+    expect(rows[0].amtApplies).toBe(true);
+  });
+
+  it("suppresses the headroom figure rather than printing room at a rate the client cannot get", () => {
+    const rows = buildTaxBracketRows([makeAmtYear(2028, 100_000, tier22, 208_800)]);
+    expect(rows[0].remainingInBracket).toBeNull();
+  });
+
+  it("leaves an ordinary year's headroom untouched", () => {
+    const rows = buildTaxBracketRows([makeAmtYear(2028, 100_000, tier22, 0)]);
+    expect(rows[0].amtApplies).toBe(false);
+    expect(rows[0].remainingInBracket).toBe(101_050); // 201,050 − 100,000
+  });
+
+  it("does not flag a sub-dollar AMT excess (shares the F37 gate)", () => {
+    const rows = buildTaxBracketRows([makeAmtYear(2028, 100_000, tier22, 0.4)]);
+    expect(rows[0].amtApplies).toBe(false);
+    expect(rows[0].remainingInBracket).toBe(101_050);
+  });
+
+  it("treats a year with no AMT figure at all as an ordinary year", () => {
+    const rows = buildTaxBracketRows([makeYear(2028, 100_000, tier22)]);
+    expect(rows[0].amtApplies).toBe(false);
+    expect(rows[0].remainingInBracket).toBe(101_050);
+  });
+
+  it("still reports which tier the income sits in, so the row is readable", () => {
+    const rows = buildTaxBracketRows([makeAmtYear(2028, 100_000, tier22, 208_800)]);
+    expect(rows[0].marginalRate).toBe(0.22);
+    expect(rows[0].intoBracket).toBe(5_700); // 100,000 − 94,300
+  });
+});
+
+describe("buildTaxBracketRows — the true next-dollar rate (F5)", () => {
+  it("carries the measured rate so the row can name what a conversion costs", () => {
+    const rows = buildTaxBracketRows([makeAmtYear(2028, 100_000, tier22, 208_800, 0.42)]);
+    expect(rows[0].nextDollarRate).toBe(0.42);
+  });
+
+  it("is null in an ordinary year — the bracket rate is the answer there", () => {
+    const rows = buildTaxBracketRows([makeAmtYear(2028, 100_000, tier22, 0)]);
+    expect(rows[0].nextDollarRate).toBeNull();
+  });
+
+  it("is null when AMT binds but no rate was measured (a throwaway probe's result)", () => {
+    const rows = buildTaxBracketRows([makeAmtYear(2028, 100_000, tier22, 208_800)]);
+    expect(rows[0].amtApplies).toBe(true);
+    expect(rows[0].nextDollarRate).toBeNull();
+  });
+});

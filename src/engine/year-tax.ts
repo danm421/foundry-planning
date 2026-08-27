@@ -87,6 +87,11 @@ export interface YearTaxInput {
    *  Bracket mode only — flat mode models no credits, so the flat branch below
    *  ignores it. Absent ⇒ no credits, i.e. the pre-credit roll-up. */
   household?: TaxHouseholdInput;
+  /** Set false by throwaway probes (Roth-conversion sizing, counterfactuals)
+   *  that read one number off the result and discard the rest. Skips the
+   *  next-dollar marginal-rate measurement, which otherwise doubles the cost
+   *  of a tax year inside a convergence loop. Default true. */
+  measureNextDollarRate?: boolean;
 }
 
 export interface YearTaxOutput {
@@ -239,7 +244,7 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
         saltDeducted: deductionBreakdownOut?.belowLine.taxesPaid ?? 0,
         household: input.household,
         capitalLossCarryforwardIn,
-      })
+      }, { probeNextDollar: input.measureNextDollarRate !== false })
     : calculateTaxYearFlat({
         taxableIncome,
         flatFederalRate: planSettings.flatFederalRate,

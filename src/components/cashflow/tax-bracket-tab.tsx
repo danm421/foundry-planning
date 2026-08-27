@@ -29,6 +29,18 @@ function fmtAges(client: number, spouse: number | null): string {
   return spouse == null ? `${client}` : `${client}/${spouse}`;
 }
 
+/** Why the bracket columns do not apply in an AMT year. Names the measured
+ *  next-dollar rate when there is one; the sentence stands on its own when
+ *  there is not. */
+function amtCellTitle(year: number, marginalRate: number, nextDollarRate: number | null): string {
+  const bracket = `${Math.round(marginalRate * 100)}%`;
+  const actual = nextDollarRate == null ? "the AMT rate" : `${Math.round(nextDollarRate * 100)}%`;
+  return (
+    `AMT applies in ${year}. The next dollar of income is taxed at ${actual}, not ${bracket}, ` +
+    `so this bracket's remaining room is not room you can convert into at the rate shown.`
+  );
+}
+
 function fmtRate(rate: number): string {
   // 0.0525 -> "5.25%". Use 2 decimals for state (often non-integer); strip
   // trailing zeros so 5% reads as "5%".
@@ -144,7 +156,17 @@ function FederalTable({
                 </MaybeCell>
               </td>
               <td className="px-3 py-3 text-right">{fmtUsd(r.incomeTaxBase)}</td>
-              <td className="px-3 py-3 text-right">{Math.round(r.marginalRate * 100)}%</td>
+              <td className="px-3 py-3 text-right">
+                {Math.round(r.marginalRate * 100)}%
+                {r.amtApplies && (
+                  <span
+                    className="text-warn"
+                    title={amtCellTitle(r.year, r.marginalRate, r.nextDollarRate)}
+                  >
+                    *
+                  </span>
+                )}
+              </td>
               <td className="px-3 py-3 text-right">
                 <MaybeCell
                   onClick={onCellClick ? () => onCellClick(r.year, "intoBracket") : undefined}
@@ -154,7 +176,18 @@ function FederalTable({
                 </MaybeCell>
               </td>
               <td className="px-3 py-3 text-right">
-                {r.remainingInBracket == null ? "—" : fmtUsd(r.remainingInBracket)}
+                {r.amtApplies ? (
+                  <span
+                    className="text-warn"
+                    title={amtCellTitle(r.year, r.marginalRate, r.nextDollarRate)}
+                  >
+                    AMT
+                  </span>
+                ) : r.remainingInBracket == null ? (
+                  "—"
+                ) : (
+                  fmtUsd(r.remainingInBracket)
+                )}
               </td>
               <td
                 className={`px-3 py-3 text-right ${r.changeInBase < 0 ? "text-crit" : ""}`}
@@ -165,6 +198,13 @@ function FederalTable({
           ))}
         </tbody>
       </table>
+      {rows.some((r) => r.amtApplies) && (
+        <p className="px-3 pt-3 pb-1 text-xs text-ink-3">
+          <span className="text-warn">*</span> AMT applies in these years. The next dollar of
+          income is taxed at the AMT rate, not the bracket rate shown, so there is no bracket
+          headroom to convert into. Hover a marked year for that year&rsquo;s actual rate.
+        </p>
+      )}
       {rows.length === 0 && (
         <div className="px-3 py-10 text-center text-ink-4">
           No projection years to show.
