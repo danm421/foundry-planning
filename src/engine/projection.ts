@@ -2178,6 +2178,19 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             : null;
       const isAlive = ownerDeathYear == null || year <= ownerDeathYear;
 
+      // §72(b) prices a joint-and-survivor payout off the LAST-SURVIVOR
+      // expectancy, which needs both lives. Without this,
+      // `expectedReturnMultiple` (annuity/tax.ts) gates on
+      // `coAnnuitantAge != null` and falls through to the SINGLE-life table —
+      // a shorter expected return, a higher exclusion ratio, and understated
+      // taxable income every year until the §72(b)(2) cap bites. The
+      // co-annuitant is simply the other spouse. Passed unconditionally:
+      // only the joint_survivor branch reads it.
+      const coAnnuitantBirthYear =
+        ownerSide === "spouse" ? clientBirthYear : spouseBirthYear;
+      const coAnnuitantAge =
+        coAnnuitantBirthYear != null ? year - coAnnuitantBirthYear : undefined;
+
       const balanceBefore = accountBalances[acct.id] ?? 0;
       const result = stepAnnuityYear({
         contract: acct.annuity,
@@ -2192,6 +2205,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         state: { ...state, accountValue: balanceBefore },
         year,
         ownerAge,
+        coAnnuitantAge,
         growthRate: 0,
         isAlive,
       });

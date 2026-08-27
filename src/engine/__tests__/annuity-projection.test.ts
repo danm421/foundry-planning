@@ -5,6 +5,7 @@ import type { AnnuityContract } from "../annuity";
 import type { Account, ClientData, FamilyMember, Transfer } from "../types";
 
 const CLIENT_FM_ID = "00000000-0000-0000-0000-000000000001";
+const SPOUSE_FM_ID = "00000000-0000-0000-0000-000000000002";
 const ANNUITY_ID = "ann-1";
 const CHECKING_ID = "acc-checking";
 
@@ -30,6 +31,16 @@ interface FixtureOverrides {
   annuityGrowthRate?: number;
   transfers?: Transfer[];
   extraAccounts?: Account[];
+  /** Present ⇒ a married household: filing status flips to married_joint and a
+   *  spouse FamilyMember joins. Drives `coAnnuitantAge` on a joint payout. */
+  spouseDob?: string;
+  /** Both spouses' terminal age. Default 105 keeps every death past the
+   *  horizon; lower it to exercise the contract step's isAlive resolution. */
+  planEndAge?: number;
+  /** Overrides on the annuity account itself (e.g. `rmdEnabled`, `owners`). */
+  annuityAccountOverrides?: Partial<Account>;
+  /** Entities the plan owns. Needed for the entity-owned routing branch. */
+  entities?: ClientData["entities"];
 }
 
 /**
@@ -60,6 +71,10 @@ function inputWithAnnuity(
     annuityGrowthRate = 0,
     transfers = [],
     extraAccounts = [],
+    spouseDob,
+    planEndAge = 105,
+    annuityAccountOverrides = {},
+    entities = [],
   } = overrides;
 
   const owners = [
@@ -78,6 +93,7 @@ function inputWithAnnuity(
     rmdEnabled: false,
     owners,
     annuity: contract,
+    ...annuityAccountOverrides,
   };
 
   return {
@@ -85,11 +101,15 @@ function inputWithAnnuity(
       firstName: "Ada",
       lastName: "Guaranty",
       dateOfBirth,
-      filingStatus: "single",
+      filingStatus: spouseDob ? "married_joint" : "single",
       retirementAge: 65,
-      // Past the horizon on purpose: a death inside the plan would stop a
-      // single-life rider and confound "income continues" with "owner died".
-      planEndAge: 105,
+      // Default 105 puts every death past the horizon on purpose: a death
+      // inside the plan would stop a single-life rider and confound "income
+      // continues" with "owner died".
+      planEndAge,
+      ...(spouseDob
+        ? { spouseName: "Bo Guaranty", spouseDob, spouseRetirementAge: 65 }
+        : {}),
     },
     accounts: [
       {
@@ -141,7 +161,7 @@ function inputWithAnnuity(
       flatStateEstateRate: 0,
       residenceState: state,
     },
-    entities: [],
+    entities,
     deductions: [],
     transfers,
     assetTransactions: [],
@@ -158,6 +178,18 @@ function inputWithAnnuity(
         role: "client",
         dateOfBirth,
       } as FamilyMember,
+      ...(spouseDob
+        ? [
+            {
+              id: SPOUSE_FM_ID,
+              firstName: "Bo",
+              lastName: "Guaranty",
+              relationship: "other",
+              role: "spouse",
+              dateOfBirth: spouseDob,
+            } as FamilyMember,
+          ]
+        : []),
     ],
     externalBeneficiaries: [],
     taxYearRows: [TAX_YEAR_2026],
@@ -525,5 +557,52 @@ describe("projection — annuity contracts", () => {
     expect(ordinary(y2027)).toBeCloseTo(36_000, 2);
     // Spelled out so a regression reads as what it is, not as an off-by-$10k.
     expect(ordinary(y2027)).toBeGreaterThan(26_000);
+  });
+
+  it("a joint-and-survivor payout prices its exclusion off BOTH lives", () => {
+    // §72(b): the exclusion ratio is investment ÷ EXPECTED RETURN, and a
+    // joint-and-survivor payout's expected return is the LAST-SURVIVOR
+    // expectancy. A 36-year-old co-annuitant stretches that far beyond a
+    // 76-year-old one, so the same contract must exclude proportionally LESS of
+    // each payment and recognise MORE ordinary income.
+    //
+    // Without `coAnnuitantAge`, `expectedReturnMultiple` falls through to the
+    // single-life table on the owner's age alone (annuity/tax.ts:158 gates on
+    // `coAnnuitantAge != null`) and BOTH runs return the identical number —
+    // which is exactly what this test refuses to accept.
+    const jointContract: AnnuityContract = {
+      productType: "spia",
+      incomeMode: "annuitized",
+      incomeStartYear: 2026,
+      annuitizedPayment: 12_000,
+      payoutStructure: "joint_survivor",
+      survivorPct: 1,
+      taxTreatment: "non_qualified",
+      costBasis: 100_000,
+      annualFeePct: 0,
+      rollupRatchets: false,
+    };
+    const run = (dob: string) =>
+      runProjection(
+        inputWithAnnuity(jointContract, 150_000, {
+          spouseDob: dob,
+          planEndYear: 2027,
+        }),
+      ).find((y) => y.year === 2026)!;
+
+    const youngCo = run("1990-03-01"); // co-annuitant age 36
+    const oldCo = run("1950-03-01"); // co-annuitant age 76
+
+    const taxable = (y: (typeof youngCo)) =>
+      y.taxDetail!.bySource[ANNUITY_KEY]?.amount ?? 0;
+
+    // Both must be a real partial exclusion, not 0 and not the whole payment —
+    // otherwise "greater than" could be satisfied by a degenerate split.
+    for (const y of [youngCo, oldCo]) {
+      expect(taxable(y)).toBeGreaterThan(0);
+      expect(taxable(y)).toBeLessThan(12_000);
+    }
+    // The whole point: the two runs must DIFFER, and in this direction.
+    expect(taxable(youngCo)).toBeGreaterThan(taxable(oldCo));
   });
 });
