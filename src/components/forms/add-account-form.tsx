@@ -343,7 +343,16 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   // save both live here, alongside the account's own.
   const [annuityContract, setAnnuityContract] =
     useState<AnnuityContractValue>(EMPTY_ANNUITY_CONTRACT);
-  const [annuityLoadStarted, setAnnuityLoadStarted] = useState(false);
+  // How the read of that row went. "idle" means no read was ever needed — a
+  // brand-new account has no stored contract, which is NOT the same as one we
+  // failed to read. The save path turns on this distinction; see
+  // `annuityContractTrusted` below.
+  const [annuityLoad, setAnnuityLoad] =
+    useState<"idle" | "loading" | "loaded" | "failed">("idle");
+  // Which account id we have already started reading. A ref, not state: as an
+  // effect dependency it would re-run the effect, and the re-run's cleanup
+  // would cancel the very fetch it had just started.
+  const annuityLoadRef = useRef<string | null>(null);
 
   // Auto-focus + select-all the Name input on create so the advisor can start
   // typing to replace any default. Skipped on edit and when the dialog is
@@ -848,28 +857,46 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   }, [mode, initial?.id, clientId, allocationsLoaded, modelPortfolioId, portfolioAllocationsMap, catDefaultSource?.portfolioId]);
 
   // Read the annuity contract once the account exists. A brand-new account has
-  // no row yet — the route answers `null` and the blank contract stands.
+  // no row yet — the route answers `null`, which is a SUCCESSFUL read: there is
+  // simply nothing stored. Anything else (500, 401, network) is a failure, and
+  // the panel must say so rather than showing defaults that look like data.
+  const loadAnnuityContract = useCallback(async (acctId: string) => {
+    setAnnuityLoad("loading");
+    try {
+      const res = await fetch(`/api/clients/${clientId}/annuity-contracts/${acctId}`);
+      if (!res.ok) throw new Error(`Contract read failed (${res.status})`);
+      const row = (await res.json()) as AnnuityContractValue | null;
+      if (row) setAnnuityContract(row);
+      setAnnuityLoad("loaded");
+    } catch {
+      setAnnuityLoad("failed");
+    }
+  }, [clientId]);
+
   useEffect(() => {
-    if (category !== "annuity" || annuityLoadStarted || !effectiveAccountId) return;
-    setAnnuityLoadStarted(true);
-    let cancelled = false;
-    fetch(`/api/clients/${clientId}/annuity-contracts/${effectiveAccountId}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((row: AnnuityContractValue | null) => {
-        if (!cancelled && row) setAnnuityContract(row);
-      })
-      .catch(() => {
-        // Leave the blank contract in place on a transient read failure.
-      });
-    return () => { cancelled = true; };
-  }, [category, annuityLoadStarted, effectiveAccountId, clientId]);
+    if (category !== "annuity" || !effectiveAccountId) return;
+    if (annuityLoadRef.current === effectiveAccountId) return;
+    annuityLoadRef.current = effectiveAccountId;
+    void loadAnnuityContract(effectiveAccountId);
+  }, [category, effectiveAccountId, loadAnnuityContract]);
 
   // Write the contract back. Not in scenario scope (there is no targetKind for
   // it), so base mode only — same posture as the asset-mix allocations above.
   // Unlike allocations this surfaces a failure: the tab is the ONLY way this
   // data is entered, so a silent drop would lose the advisor's work.
+  // The contract in state may be written back only when it is the advisor's own
+  // data: either the stored row was read successfully, or there was never a row
+  // to read. A failed or in-flight read leaves column defaults on screen, and a
+  // full-replacement PUT of those erases a real contract. "idle" is the create
+  // case — the effect above flips it the moment an account id exists, before
+  // any user action can reach a save.
+  const annuityContractTrusted = annuityLoad === "idle" || annuityLoad === "loaded";
+
   const saveAnnuityContract = useCallback(async (acctId: string) => {
     if (category !== "annuity" || writer.scenarioActive) return;
+    // Silent by design: the panel is showing the "could not be loaded" notice
+    // instead of the fields, so there is nothing the advisor typed to lose.
+    if (!annuityContractTrusted) return;
     const res = await fetch(`/api/clients/${clientId}/annuity-contracts/${acctId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -894,7 +921,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
           .join(" — "),
       );
     }
-  }, [category, writer.scenarioActive, clientId, annuityContract]);
+  }, [category, writer.scenarioActive, clientId, annuityContract, annuityContractTrusted]);
 
   // Re-read the account's allocations from the server. Holdings mutations
   // re-derive the asset mix server-side (syncAccountFromHoldings), so after one
@@ -2863,17 +2890,37 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               while you&apos;re viewing a scenario.
             </p>
           )}
-          <AnnuityTab
-            accountId={effectiveAccountId}
-            clientId={clientId}
-            value={annuityContract}
-            onChange={setAnnuityContract}
-            accountValue={annuityAccountValue}
-            milestones={milestones}
-            clientFirstName={clientFirstName}
-            spouseFirstName={spouseFirstName}
-            ownerBirthYear={annuityOwnerBirthYear}
-          />
+          {annuityLoad === "failed" ? (
+            <div role="alert" className="rounded border border-crit/30 bg-crit/10 px-3 py-3 text-sm text-crit">
+              <p className="font-medium">This contract could not be loaded.</p>
+              <p className="mt-1 text-xs leading-snug">
+                None of the annuity&apos;s terms are on screen, so nothing here is being
+                saved — whatever is on file is left exactly as it is. Try again, or close
+                and reopen the account.
+              </p>
+              <button
+                type="button"
+                onClick={() => { if (effectiveAccountId) void loadAnnuityContract(effectiveAccountId); }}
+                className="mt-2 rounded border border-crit/30 px-2 py-1 text-xs font-medium hover:bg-crit/20"
+              >
+                Try again
+              </button>
+            </div>
+          ) : annuityLoad === "loading" ? (
+            <p className="text-sm text-gray-300">Loading the contract&hellip;</p>
+          ) : (
+            <AnnuityTab
+              accountId={effectiveAccountId}
+              clientId={clientId}
+              value={annuityContract}
+              onChange={setAnnuityContract}
+              accountValue={annuityAccountValue}
+              milestones={milestones}
+              clientFirstName={clientFirstName}
+              spouseFirstName={spouseFirstName}
+              ownerBirthYear={annuityOwnerBirthYear}
+            />
+          )}
         </div>
       )}
 

@@ -796,7 +796,6 @@ describe("AddAccountForm — real estate growth source defaults", () => {
 // the save is a full-replacement PUT. Everything below is about that pairing.
 
 const ANNUITY_CONTRACT_URL = "/api/clients/client-123/annuity-contracts/acct-1";
-const ACCOUNTS_URL = "/api/clients/client-123/accounts";
 
 const ANNUITY_INITIAL: AccountFormInitial = {
   ...BASE_INITIAL,
@@ -858,11 +857,6 @@ const contractWrites = () =>
     (args) => String(args[0]) === ANNUITY_CONTRACT_URL && (args[1] as FetchInit)?.method === "PUT",
   );
 
-const accountCreates = () =>
-  fetchMock.mock.calls.filter(
-    (args) => String(args[0]) === ACCOUNTS_URL && (args[1] as FetchInit)?.method === "POST",
-  );
-
 function renderAnnuity(
   mode: "create" | "edit",
   formRef?: ReturnType<typeof createRef<AccountFormAutoSaveHandle>>,
@@ -905,5 +899,112 @@ describe("AddAccountForm — annuity contract validation errors", () => {
       expect(screen.getByText(/surrenderChargePct/)).toBeInTheDocument(),
     );
     expect(screen.getByText(/Must be a fraction between 0 and 1/)).toBeInTheDocument();
+  });
+});
+
+describe("AddAccountForm — annuity contract load guard", () => {
+  // The PUT is a full replacement. When the read that fills the panel fails,
+  // the panel is showing column defaults for a contract that has real terms in
+  // it — and writing those back erases the carrier, the cost basis, the benefit
+  // base and the whole income rider, with nothing on screen to warn the
+  // advisor that anything was ever there.
+  it("refuses to write the contract back when the read that filled the panel failed", async () => {
+    mockAnnuityRoutes({ ok: false });
+    const formRef = createRef<AccountFormAutoSaveHandle>();
+    renderAnnuity("edit", formRef);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(ANNUITY_CONTRACT_URL));
+
+    await act(async () => {
+      await formRef.current!.saveAsync();
+    });
+
+    // The account itself still saves — only the contract is held back.
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/clients/client-123/accounts/acct-1",
+        expect.objectContaining({ method: "PUT" }),
+      ),
+    );
+    expect(contractWrites()).toHaveLength(0);
+  });
+
+  it("tells the advisor the panel is not showing their contract", async () => {
+    mockAnnuityRoutes({ ok: false });
+    renderAnnuity("edit");
+
+    await waitFor(() =>
+      expect(screen.getByText(/could not be loaded/i)).toBeInTheDocument(),
+    );
+  });
+
+  // The other half of the guard: a brand-new account has no stored contract to
+  // read, so "we never read one" must NOT be treated as "the read failed".
+  it("still writes the contract on a brand-new account — there was nothing to read", async () => {
+    mockAnnuityRoutes({ ok: true, row: null });
+    renderAnnuity("create");
+
+    fireEvent.submit(document.getElementById("add-account-form")!);
+
+    await waitFor(() => expect(contractWrites()).toHaveLength(1));
+  });
+
+  // A `null` row is a successful read (the account simply has no contract yet),
+  // not a failure — the write must go ahead on an existing account too.
+  it("treats an empty contract row as a successful read, not a failed one", async () => {
+    mockAnnuityRoutes({ ok: true, row: null });
+    const formRef = createRef<AccountFormAutoSaveHandle>();
+    renderAnnuity("edit", formRef);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(ANNUITY_CONTRACT_URL));
+    await act(async () => {
+      await formRef.current!.saveAsync();
+    });
+
+    await waitFor(() => expect(contractWrites()).toHaveLength(1));
+  });
+
+  it("writes back the contract it read, not the panel's blank defaults", async () => {
+    mockAnnuityRoutes({ ok: true, row: STORED_CONTRACT });
+    const formRef = createRef<AccountFormAutoSaveHandle>();
+    renderAnnuity("edit", formRef);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(ANNUITY_CONTRACT_URL));
+    await act(async () => {
+      await formRef.current!.saveAsync();
+    });
+
+    await waitFor(() => expect(contractWrites()).toHaveLength(1));
+    const body = JSON.parse(contractWrites()[0][1].body as string);
+    expect(body).toMatchObject({
+      carrier: "Athene",
+      costBasis: 250_000,
+      benefitBase: 500_000,
+      incomeMode: "rider",
+    });
+  });
+
+  // End of the I-3 chain: the gate is only worth anything if the save path
+  // honours it. A stored contract that names a joint payout without a survivor
+  // share must not be re-saved untouched.
+  it("holds the whole save when the loaded contract's joint payout has no survivor share", async () => {
+    mockAnnuityRoutes({ ok: true, row: { ...STORED_CONTRACT, survivorPct: null } });
+    const formRef = createRef<AccountFormAutoSaveHandle>();
+    renderAnnuity("edit", formRef);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(ANNUITY_CONTRACT_URL));
+
+    let result: { ok: boolean } | undefined;
+    await act(async () => {
+      result = await formRef.current!.saveAsync();
+    });
+
+    expect(result?.ok).toBe(false);
+    expect(
+      fetchMock.mock.calls.filter(
+        (args) => String(args[0]) === "/api/clients/client-123/accounts/acct-1",
+      ),
+    ).toHaveLength(0);
+    expect(contractWrites()).toHaveLength(0);
   });
 });
