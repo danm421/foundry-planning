@@ -46,6 +46,14 @@ export async function syncFirm(
   if (!conn || conn.status === "disconnected") {
     throw new Error(`${provider.label} is not connected for firm ${firmId}`);
   }
+  if (providerId === "azure_openai" || !provider.syncs) {
+    // A credentials-only provider (azure_openai) has no households to pull.
+    // Reaching here means a caller routed a sync at the wrong provider.
+    // Checking `providerId` here (not just `provider.syncs`) is what lets
+    // TypeScript narrow it below `import_origin`'s narrower enum at every
+    // `origin: providerId` write, without a cast.
+    throw new Error("provider_does_not_sync");
+  }
 
   // One resolved identity for ctx.userId, createdByUserId, AND every audit
   // actorId — guarantees recordAudit never falls back to Clerk auth() (works

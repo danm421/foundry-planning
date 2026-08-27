@@ -24,6 +24,7 @@ export async function GET(
     if (!rl.allowed) return rateLimitErrorResponse(rl, `Too many ${provider.label} requests. Please try again shortly.`);
 
     const activeProvider = provider;
+    if (!activeProvider.syncs) return new Response("Not found", { status: 404 });
     const ctxPromise = makeCallContext(firmId, activeProvider.id);
     const [households, links] = await Promise.all([
       ctxPromise.then((ctx) => activeProvider.client.getHouseholds(ctx)),

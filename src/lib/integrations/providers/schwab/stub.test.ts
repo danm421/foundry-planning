@@ -19,6 +19,9 @@ describe("Schwab transport stub", () => {
   });
 
   it("throws ProviderNotConfigured from every client read", async () => {
+    // schwab is a syncing provider, so `client` is always defined for it —
+    // narrow past the ProviderDefinition union rather than casting.
+    if (!schwabProvider.syncs) throw new Error("expected schwab to sync");
     await expect(schwabProvider.client.getHouseholds(ctx)).rejects.toThrow(ProviderNotConfigured);
     await expect(schwabProvider.client.getAccounts(ctx, "hh")).rejects.toThrow(ProviderNotConfigured);
     await expect(schwabProvider.client.getPositions(ctx, "a")).rejects.toThrow(ProviderNotConfigured);

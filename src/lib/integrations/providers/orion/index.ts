@@ -12,6 +12,7 @@ export const orionProvider: ProviderDefinition = {
   isEnabled: isOrionEnabled,
   authKind: "oauth",
   oauth: orionOAuth,
+  syncs: true,
   client: orionClient,
   registrationTable: ORION_REGISTRATIONS,
   autoCommitExact: true,

@@ -4,7 +4,7 @@ import type {
   AccountSubType,
 } from "@/lib/extraction/types";
 
-export const PROVIDER_IDS = ["orion", "schwab", "addepar"] as const;
+export const PROVIDER_IDS = ["orion", "schwab", "addepar", "azure_openai"] as const;
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 
 export type TokenResponse = {
@@ -73,7 +73,7 @@ export type RegistrationTable = Array<[RegExp, RegistrationMap]>;
 
 export type ProviderAuthKind = "oauth" | "byok";
 
-export interface ProviderDefinition {
+type ProviderBase = {
   id: ProviderId;
   label: string;
   scope: "firm";
@@ -82,6 +82,15 @@ export interface ProviderDefinition {
   authKind: ProviderAuthKind;
   /** Present only when authKind === "oauth". */
   oauth?: ProviderOAuth;
+};
+
+/**
+ * A provider that pulls households/accounts/positions into Foundry. Everything
+ * the sync pipeline needs lives behind `syncs: true`, so a non-syncing provider
+ * cannot silently supply an empty client and look like it works.
+ */
+export type SyncingProviderDefinition = ProviderBase & {
+  syncs: true;
   client: ProviderClient;
   registrationTable: RegistrationTable;
   /**
@@ -90,4 +99,11 @@ export interface ProviderDefinition {
    * nothing writes until the advisor commits.
    */
   autoCommitExact: boolean;
-}
+};
+
+/** A provider that only holds firm credentials — no households, accounts or positions. */
+export type NonSyncingProviderDefinition = ProviderBase & {
+  syncs: false;
+};
+
+export type ProviderDefinition = SyncingProviderDefinition | NonSyncingProviderDefinition;

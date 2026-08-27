@@ -312,7 +312,7 @@ export const transactionMatchTypeEnum = pgEnum("transaction_match_type", [
 
 export const importOriginEnum = pgEnum("import_origin", ["extraction", "orion", "schwab", "addepar"]);
 
-export const integrationProviderEnum = pgEnum("integration_provider", ["orion", "schwab", "addepar"]);
+export const integrationProviderEnum = pgEnum("integration_provider", ["orion", "schwab", "addepar", "azure_openai"]);
 
 export const integrationConnectionStatusEnum = pgEnum("integration_connection_status", [
   "connected",

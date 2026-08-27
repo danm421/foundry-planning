@@ -6,6 +6,7 @@ import { clients, plaidItems } from "@/db/schema";
 import { ForbiddenError, requireOrgAdminOrOwner } from "@/lib/authz";
 import { getConnection } from "@/lib/integrations/connections";
 import { listProviders } from "@/lib/integrations/registry";
+import type { SyncingProviderDefinition } from "@/lib/integrations/types";
 import { IntegrationConnectionCard } from "@/components/IntegrationConnectionCard";
 import { IntegrationHouseholdLinkTable } from "@/components/IntegrationHouseholdLinkTable";
 import { PlaidIntegrationTile } from "@/components/PlaidIntegrationTile";
@@ -22,7 +23,11 @@ export default async function IntegrationsPage(): Promise<ReactElement> {
   const { orgId: firmId } = await auth();
   if (!firmId) return <Forbidden requiredRole="admin or owner" />;
 
-  const providers = listProviders();
+  // Azure OpenAI is credentials-only — it gets its own card below, not the
+  // sync card + household table the custodial providers share.
+  const providers = listProviders().filter(
+    (p): p is SyncingProviderDefinition => p.syncs,
+  );
   const connections = await Promise.all(
     providers.map(async (p) => ({ provider: p, conn: await getConnection(firmId, p.id) })),
   );

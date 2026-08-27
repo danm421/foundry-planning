@@ -12,6 +12,7 @@ export const schwabProvider: ProviderDefinition = {
   isEnabled: isSchwabEnabled,
   authKind: "oauth",
   oauth: schwabOAuth,
+  syncs: true,
   client: schwabClient,
   registrationTable: SCHWAB_REGISTRATIONS,
   autoCommitExact: true,

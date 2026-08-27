@@ -1,5 +1,6 @@
 // src/lib/integrations/registry.ts
 import { addeparProvider } from "./providers/addepar";
+import { azureOpenAiProvider } from "./providers/azure-openai";
 import { orionProvider } from "./providers/orion";
 import { schwabProvider } from "./providers/schwab";
 import { PROVIDER_IDS, type ProviderDefinition, type ProviderId } from "./types";
@@ -8,6 +9,7 @@ const REGISTRY: Record<ProviderId, ProviderDefinition> = {
   orion: orionProvider,
   schwab: schwabProvider,
   addepar: addeparProvider,
+  azure_openai: azureOpenAiProvider,
 };
 
 export function isProviderId(value: string): value is ProviderId {

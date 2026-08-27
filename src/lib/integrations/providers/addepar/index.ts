@@ -10,6 +10,7 @@ export const addeparProvider: ProviderDefinition = {
   scope: "firm",
   isEnabled: isAddeparEnabled,
   authKind: "byok",
+  syncs: true,
   client: addeparClient,
   registrationTable: ADDEPAR_REGISTRATIONS,
   autoCommitExact: false,
