@@ -1,4 +1,5 @@
 import { rollBenefitBase, resolvePayoutPercent } from "./benefit-base";
+import { assertUnitRate, assertFiniteRate } from "./rates";
 import {
   splitLifo,
   splitAnnuitized,
@@ -6,7 +7,7 @@ import {
   expectedReturnMultiple,
   earlyWithdrawalPenalty,
 } from "./tax";
-import type { AnnuityContract, AnnuityState } from "./types";
+import type { AnnuityContract, AnnuityState, AnnuityTaxSplit } from "./types";
 
 /** Seed the per-year state from the contract and the account's opening balance. */
 export function initAnnuityState(
@@ -55,6 +56,16 @@ const ZERO = (state: AnnuityState): AnnuityYearResult => ({
 });
 
 /**
+ * §72(q)/(t) is waived on a distribution made after the owner's death. Only
+ * reachable now that a certain term keeps paying past death — and the old path
+ * would have charged the penalty against the DECEASED owner's age.
+ */
+const waivePenaltyAfterDeath = (
+  split: AnnuityTaxSplit,
+  isAlive: boolean,
+): AnnuityTaxSplit => (isAlive ? split : { ...split, earlyWithdrawalPenalty: 0 });
+
+/**
  * Advance one annuity contract by one projection year.
  *
  * Order matters and mirrors how a contract actually works:
@@ -82,6 +93,11 @@ export function stepAnnuityYear(input: AnnuityYearInput): AnnuityYearResult {
   // ── 1. Accumulation ──────────────────────────────────────────────────────
   // An annuitized contract has no account value left to grow.
   if (!annuitized || !state.incomeActive) {
+    // Guard BEFORE the arithmetic. `Math.max(0, NaN)` is `NaN`, so the zero
+    // floor below cannot catch bad data — one NaN rate would ride into every
+    // tax figure this function returns while still reporting real income.
+    assertFiniteRate("growthRate", growthRate);
+    assertUnitRate("annualFeePct", contract.annualFeePct);
     const netGrowth = growthRate - contract.annualFeePct;
     state.accountValue = Math.max(0, state.accountValue * (1 + netGrowth));
   }
@@ -97,8 +113,14 @@ export function stepAnnuityYear(input: AnnuityYearInput): AnnuityYearResult {
     });
     // The rider fee is quoted against the BENEFIT BASE but charged to the
     // account value — which is why a big base drains a small account faster.
-    if (contract.riderFeePct) {
-      state.accountValue = Math.max(0, state.accountValue - state.benefitBase * contract.riderFeePct);
+    // `!= null`, not a truthiness check: NaN is falsy, so `if (riderFeePct)`
+    // would skip both the guard and the fee and silently charge nothing.
+    if (contract.riderFeePct != null) {
+      assertUnitRate("riderFeePct", contract.riderFeePct);
+      state.accountValue = Math.max(
+        0,
+        state.accountValue - state.benefitBase * contract.riderFeePct,
+      );
     }
   }
 
@@ -107,14 +129,25 @@ export function stepAnnuityYear(input: AnnuityYearInput): AnnuityYearResult {
   // ── 3. Activation ────────────────────────────────────────────────────────
   if (!state.incomeActive) {
     state.incomeActive = true;
+    // A contract already in force when the projection starts activated in its
+    // STATED start year, not in the first year we happen to model. Restarting
+    // the clock here would price an existing SPIA off the owner's CURRENT age
+    // — a shorter remaining life expectancy, so a higher exclusion ratio and
+    // systematically understated late-life taxable income, which is the very
+    // error the §72(b)(2) cap exists to prevent. It also sets the period-certain
+    // clock, so a term that began in the past correctly has fewer years left.
+    const activationYear = contract.incomeStartYear ?? year;
+    const yearsInForce = year - activationYear;
+    const ageAtActivation = ownerAge - yearsInForce;
     if (annuitized) {
       state.guaranteedIncome = contract.annuitizedPayment ?? 0;
       const years =
         contract.expectedReturnYears ??
         expectedReturnMultiple({
           structure: contract.payoutStructure ?? "single_life",
-          ownerAge,
-          coAnnuitantAge,
+          ownerAge: ageAtActivation,
+          coAnnuitantAge:
+            coAnnuitantAge == null ? undefined : coAnnuitantAge - yearsInForce,
           periodCertainYears: contract.periodCertainYears,
         });
       state.lockedExclusionRatio = exclusionRatio(
@@ -124,33 +157,52 @@ export function stepAnnuityYear(input: AnnuityYearInput): AnnuityYearResult {
       // Annuitization surrenders the account value to the carrier.
       state.accountValue = 0;
     } else {
-      state.guaranteedIncome = state.benefitBase * resolvePayoutPercent(contract, ownerAge);
+      state.guaranteedIncome =
+        state.benefitBase * resolvePayoutPercent(contract, ageAtActivation);
     }
-    state.activationYear = year;
+    state.activationYear = activationYear;
   }
 
   // ── 4. This year's payment ───────────────────────────────────────────────
+  const structure = contract.payoutStructure;
+
+  // Years still owed under a stated certain term. `null` when the contract
+  // states no term, or before income begins — NOT zero, so a missing term
+  // never reads as an expired one.
+  const certainYearsLeft =
+    contract.periodCertainYears != null && state.activationYear != null
+      ? state.activationYear + contract.periodCertainYears - year
+      : null;
+  const insideCertainTerm = certainYearsLeft != null && certainYearsLeft > 0;
+  const certainTermExpired = certainYearsLeft != null && certainYearsLeft <= 0;
+
   let payment = state.guaranteedIncome;
 
   if (!isAlive) {
-    if (contract.payoutStructure === "joint_survivor") {
+    // A certain term is NOT life-contingent. Its remaining payments are
+    // guaranteed and run on to the beneficiary or the estate — stopping them at
+    // death drops money the contract owes, the same failure class as stopping a
+    // rider at the crossover.
+    const certainTermStillOwed =
+      insideCertainTerm &&
+      (structure === "period_certain" || structure === "life_with_period_certain");
+
+    if (structure === "joint_survivor") {
       payment = state.guaranteedIncome * (contract.survivorPct ?? 0);
-    } else {
+    } else if (!certainTermStillOwed) {
+      // single_life, cash_refund, an unstated structure, or a certain term that
+      // has already run out: nothing further is owed.
       return ZERO(state);
     }
+    // Otherwise the full guaranteed payment stands.
   }
 
-  // A pure period-certain term stops on schedule. `life_with_period_certain`
-  // deliberately does NOT stop here: for that structure the certain period is a
-  // floor, not a ceiling — it keeps paying for life, and death is handled above.
-  if (
-    contract.payoutStructure === "period_certain" &&
-    contract.periodCertainYears != null &&
-    state.activationYear != null &&
-    year - state.activationYear >= contract.periodCertainYears
-  ) {
-    return ZERO(state);
-  }
+  // A pure period-certain payout stops when its term ends, alive or dead — the
+  // term IS the contract. `life_with_period_certain` does not stop here while
+  // the annuitant lives: for that structure the certain period is a floor under
+  // a lifetime payout, not a ceiling. Once dead, the branch above has already
+  // ended it at the term.
+  if (structure === "period_certain" && certainTermExpired) return ZERO(state);
 
   if (payment <= 0) return ZERO(state);
 
@@ -170,19 +222,23 @@ export function stepAnnuityYear(input: AnnuityYearInput): AnnuityYearResult {
     // two copies of a tax constant is how one of them goes stale.
     return {
       income: payment, ordinaryIncome: payment, basisReturn: 0,
-      earlyWithdrawalPenalty: earlyWithdrawalPenalty(payment, ownerAge), state,
+      earlyWithdrawalPenalty: isAlive ? earlyWithdrawalPenalty(payment, ownerAge) : 0,
+      state,
     };
   }
 
   // Non-qualified.
   if (annuitized) {
-    const split = splitAnnuitized({
-      payment,
-      exclusionRatio: state.lockedExclusionRatio,
-      investmentInContract: state.investmentInContract,
-      cumulativeExcluded: state.cumulativeExcluded,
-      ownerAge,
-    });
+    const split = waivePenaltyAfterDeath(
+      splitAnnuitized({
+        payment,
+        exclusionRatio: state.lockedExclusionRatio,
+        investmentInContract: state.investmentInContract,
+        cumulativeExcluded: state.cumulativeExcluded,
+        ownerAge,
+      }),
+      isAlive,
+    );
     state.cumulativeExcluded += split.basisReturn;
     state.remainingBasis = Math.max(0, state.remainingBasis - split.basisReturn);
     return { income: payment, ...split, state };
@@ -190,12 +246,15 @@ export function stepAnnuityYear(input: AnnuityYearInput): AnnuityYearResult {
 
   // Rider income is a WITHDRAWAL, not annuitization — so it is taxed LIFO, not
   // by exclusion ratio. Advisors get this backwards constantly.
-  const split = splitLifo({
-    withdrawal: payment,
-    accountValue: state.accountValue,
-    remainingBasis: state.remainingBasis,
-    ownerAge,
-  });
+  const split = waivePenaltyAfterDeath(
+    splitLifo({
+      withdrawal: payment,
+      accountValue: state.accountValue,
+      remainingBasis: state.remainingBasis,
+      ownerAge,
+    }),
+    isAlive,
+  );
   state.remainingBasis = Math.max(0, state.remainingBasis - split.basisReturn);
   // Floor at zero — and keep paying. This is the crossover.
   state.accountValue = Math.max(0, state.accountValue - payment);
