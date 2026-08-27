@@ -767,6 +767,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     annuityStates[acct.id] = initAnnuityState(acct.annuity, accountBalances[acct.id] ?? acct.value);
   }
 
+  /** Which life a contract is written on, pinned the first year it is stepped.
+   *
+   *  It cannot be re-read from `owners` each year: a death event RE-TITLES the
+   *  account to the survivor, so `isSpouseAccount` flips sides afterwards and
+   *  the step reports the annuitant alive for as long as the SURVIVOR lives —
+   *  which made the isAlive branch unreachable in its false state, and kept a
+   *  single-life rider paying after the annuitant it was written on had died. */
+  const annuitantSideByAccount: Record<string, "client" | "spouse"> = {};
+
   /** Live §72 basis per annuity contract, for the tax classifiers that split a
    *  distribution. Rebuilt at each call site because the contract step and any
    *  earlier draw or transfer move it within the year. */
@@ -2207,7 +2216,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // events apply below `years.push()`, so the death year itself still pays.
       // Defaults to ALIVE when the owner cannot be pinned to a side: silently
       // stopping income the carrier still owes is by far the worse error.
-      const ownerSide: "client" | "spouse" = isSpouseAccount(acct) ? "spouse" : "client";
+      const ownerSide: "client" | "spouse" = (annuitantSideByAccount[acct.id] ??=
+        isSpouseAccount(acct) ? "spouse" : "client");
       const ownerDeathYear =
         firstDeathDeceased === ownerSide
           ? firstDeathYear

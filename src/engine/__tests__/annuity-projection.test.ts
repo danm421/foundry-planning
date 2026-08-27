@@ -34,9 +34,11 @@ interface FixtureOverrides {
   /** Present ⇒ a married household: filing status flips to married_joint and a
    *  spouse FamilyMember joins. Drives `coAnnuitantAge` on a joint payout. */
   spouseDob?: string;
-  /** Both spouses' terminal age. Default 105 keeps every death past the
-   *  horizon; lower it to exercise the contract step's isAlive resolution. */
   planEndAge?: number;
+  /** Terminal age. THIS — not `planEndAge` — is what the death helpers read
+   *  (`computeFinalDeathYear` returns null without it), so leaving it unset
+   *  means no death ever fires. Set it to exercise the isAlive resolution. */
+  lifeExpectancy?: number;
   /** Overrides on the annuity account itself (e.g. `rmdEnabled`, `owners`). */
   annuityAccountOverrides?: Partial<Account>;
   /** Entities the plan owns. Needed for the entity-owned routing branch. */
@@ -75,6 +77,7 @@ function inputWithAnnuity(
     planEndAge = 105,
     annuityAccountOverrides = {},
     entities = [],
+    lifeExpectancy,
   } = overrides;
 
   const owners = [
@@ -103,10 +106,11 @@ function inputWithAnnuity(
       dateOfBirth,
       filingStatus: spouseDob ? "married_joint" : "single",
       retirementAge: 65,
-      // Default 105 puts every death past the horizon on purpose: a death
+      planEndAge,
+      // Unset by default, so no death fires anywhere in this suite: a death
       // inside the plan would stop a single-life rider and confound "income
       // continues" with "owner died".
-      planEndAge,
+      ...(lifeExpectancy != null ? { lifeExpectancy } : {}),
       ...(spouseDob
         ? { spouseName: "Bo Guaranty", spouseDob, spouseRetirementAge: 65 }
         : {}),
@@ -813,5 +817,252 @@ describe("projection — annuity contracts", () => {
     expect(ordinary(y2027)).toBeCloseTo(50_000, 2);
     expect(ordinary(y2028)).toBeCloseTo(36_000, 2);
     expect(ordinary(y2028)).toBeGreaterThan(26_000);
+  });
+
+  it("the annual contract fee is charged ON TOP of the projection's own growth", () => {
+    // The one behaviour the "accountBalances is authoritative" design changed,
+    // and the reason every OTHER test here sets annualFeePct to 0: once the
+    // generic growth pass owns market return, the fee is the ONLY thing the
+    // contract still applies to the account value.
+    //
+    //   2026: 200,000 × 1.06 (growth pass) × 0.98 (contract fee) = 207,760
+    //   2027: 207,760 × 1.06 × 0.98                              = 215,821.088
+    //
+    // Handing the contract `acct.growthRate` instead of 0 would grow the
+    // balance twice and give 220,480 in 2026; ignoring the fee gives 212,000.
+    const input = inputWithAnnuity(
+      {
+        productType: "myga",
+        incomeMode: "none",
+        taxTreatment: "non_qualified",
+        costBasis: 200_000,
+        annualFeePct: 0.02,
+        rollupRatchets: false,
+      },
+      200_000,
+      { planEndYear: 2027, annuityGrowthRate: 0.06 },
+    );
+    const years = runProjection(input);
+    const y2026 = years.find((y) => y.year === 2026)!;
+    const y2027 = years.find((y) => y.year === 2027)!;
+
+    expect(y2026.portfolioAssets.annuityTotal).toBeCloseTo(207_760, 6);
+    expect(y2027.portfolioAssets.annuityTotal).toBeCloseTo(215_821.088, 6);
+
+    // The fee is booked on the account's own ledger, under its own label — a
+    // fee year pays no income, so it must not read as a distribution.
+    const feeEntry = y2026.accountLedgers[ANNUITY_ID]?.entries.find(
+      (e) => e.label === "Annuity contract fee (Deferred Annuity)",
+    );
+    expect(feeEntry).toBeDefined();
+    expect(feeEntry!.amount).toBeCloseTo(-4_240, 6); // 212,000 × 2%
+    expect(feeEntry!.basis).toBe(0);
+  });
+
+  it("a pure return of basis is booked tax-free, lands in Other Inflows, and hits the ledger", () => {
+    // Value == basis, so LIFO finds no gain and every dollar of rider income is
+    // a §72 return of basis: the `annuity_tax_free:` key, not the taxable one.
+    const input = inputWithAnnuity(
+      {
+        productType: "fixed_indexed",
+        incomeMode: "rider",
+        incomeStartYear: 2026,
+        benefitBase: 200_000,
+        payoutPct: 0.05,
+        rollupRatchets: false,
+        taxTreatment: "non_qualified",
+        costBasis: 200_000,
+        annualFeePct: 0,
+      },
+      200_000,
+      { planEndYear: 2026 },
+    );
+    const y = runProjection(input).find((y) => y.year === 2026)!;
+
+    expect(y.taxDetail!.bySource[`annuity_tax_free:${ANNUITY_ID}`]).toEqual({
+      type: "non_taxable",
+      amount: 10_000,
+    });
+    expect(y.taxDetail!.bySource[ANNUITY_KEY]).toBeUndefined();
+    // Non-taxable by construction: year-tax derives it as totalIncome − taxableIncome.
+    expect(y.taxResult!.income.ordinaryIncome).toBe(0);
+    expect(y.taxResult!.flow.totalTax).toBe(0);
+
+    // Gross cash is household income, bucketed as OTHER — the cash-flow surplus
+    // has to see it, and it is not salary, SS, or a capital gain.
+    expect(y.income.other).toBeCloseTo(10_000, 2);
+    expect(y.income.total).toBeCloseTo(10_000, 2);
+
+    // Source ledger: the contract paid out and the balance fell to match.
+    const annLedger = y.accountLedgers[ANNUITY_ID];
+    expect(annLedger.distributions).toBeCloseTo(10_000, 2);
+    expect(annLedger.endingValue).toBeCloseTo(190_000, 2);
+    const payout = annLedger.entries.find(
+      (e) => e.label === "Annuity distribution from Deferred Annuity",
+    );
+    expect(payout).toBeDefined();
+    expect(payout!.amount).toBeCloseTo(-10_000, 2);
+    expect(payout!.basis).toBe(0); // annuity basis lives on the contract, not basisMap
+
+    // Destination ledger: the cash really reached household checking.
+    const cashEntry = y.accountLedgers[CHECKING_ID]?.entries.find(
+      (e) => e.label === "Annuity income from Deferred Annuity",
+    );
+    expect(cashEntry).toBeDefined();
+    expect(cashEntry!.amount).toBeCloseTo(10_000, 2);
+  });
+
+  it("an RMD out of an annuity account reaches the state exclusion", () => {
+    // `rmdEnabled` has no category gate, so an RMD-enabled annuity IS
+    // constructible. Its RMD is keyed `<id>:rmd`, and an annuity is classified
+    // by CATEGORY — its subTypes are product names, so the ira/k401 subType
+    // tests can never reach it.
+    const input = inputWithAnnuity(
+      {
+        productType: "qlac",
+        incomeMode: "none",
+        taxTreatment: "qualified", // pre-tax wrapper: the whole RMD is ordinary
+        annualFeePct: 0,
+        rollupRatchets: false,
+      },
+      500_000,
+      { planEndYear: 2026, annuityAccountOverrides: { rmdEnabled: true } },
+    );
+    const y = runProjection(input).find((y) => y.year === 2026)!;
+
+    // GUARD: an RMD was actually taken (age 74, past the age-73 trigger).
+    const rmd = y.taxDetail!.bySource[`${ANNUITY_ID}:rmd`];
+    expect(rmd?.type).toBe("ordinary_income");
+    expect(rmd!.amount).toBeGreaterThan(0);
+
+    // Illinois exempts annuity income; the RMD must land in the annuity bucket.
+    const state = y.taxResult!.state!;
+    expect(state.subtractions.retirementIncome).toBeCloseTo(rmd!.amount, 2);
+    expect(state.stateTax).toBe(0);
+  });
+
+  it("an entity-owned contract routes its cash to the ENTITY, not the 1040", () => {
+    // §72(u) taxes a non-natural owner at the entity level, which this engine
+    // does not model. The contract must still step (so the balance sheet
+    // reconciles) but none of it may reach household income or household tax.
+    const TRUST_ID = "trust-1";
+    const TRUST_CASH = "trust-checking";
+    const entityOwners = [
+      { kind: "entity" as const, entityId: TRUST_ID, percent: 1 },
+    ];
+    const input = inputWithAnnuity(
+      {
+        productType: "fixed_indexed",
+        incomeMode: "rider",
+        incomeStartYear: 2026,
+        benefitBase: 200_000,
+        payoutPct: 0.05,
+        rollupRatchets: false,
+        taxTreatment: "non_qualified",
+        costBasis: 0, // every dollar would be ordinary income IF it were the household's
+        annualFeePct: 0,
+      },
+      200_000,
+      {
+        planEndYear: 2026,
+        annuityAccountOverrides: { owners: entityOwners },
+        entities: [
+          {
+            id: TRUST_ID,
+            name: "Family Trust",
+            includeInPortfolio: false,
+            isGrantor: false,
+            isIrrevocable: true,
+            entityType: "trust",
+          },
+        ],
+        extraAccounts: [
+          {
+            id: TRUST_CASH,
+            name: "Trust Checking",
+            category: "cash",
+            subType: "checking",
+            titlingType: "jtwros",
+            value: 0,
+            basis: 0,
+            growthRate: 0,
+            rmdEnabled: false,
+            isDefaultChecking: true,
+            owners: entityOwners,
+          },
+        ],
+      },
+    );
+    const y = runProjection(input).find((y) => y.year === 2026)!;
+
+    // Nothing on the household side: no income, no tax row, no exclusion.
+    expect(y.income.total).toBe(0);
+    expect(y.income.bySource[ANNUITY_KEY]).toBeUndefined();
+    expect(y.taxDetail!.bySource[ANNUITY_KEY]).toBeUndefined();
+    expect(y.taxDetail!.bySource[`annuity_tax_free:${ANNUITY_ID}`]).toBeUndefined();
+
+    // GUARD: the contract really did pay — otherwise "no household income"
+    // would be satisfied by a contract that simply never ran.
+    expect(y.accountLedgers[ANNUITY_ID].endingValue).toBeCloseTo(190_000, 2);
+
+    // The cash landed in the TRUST's checking.
+    const trustEntry = y.accountLedgers[TRUST_CASH]?.entries.find(
+      (e) => e.label === "Annuity income from Deferred Annuity",
+    );
+    expect(trustEntry).toBeDefined();
+    expect(trustEntry!.amount).toBeCloseTo(10_000, 2);
+  });
+
+  it("a death stops a single-life rider but NOT a certain term", () => {
+    // Two runs of the same contract in the same dying household, differing only
+    // in payout structure. Both share every other question — does the account
+    // still exist after the final death, is it still in workingAccounts — so
+    // any DIFFERENCE between them can only come from the isAlive resolution
+    // reaching `stepAnnuityYear`. Nothing else in this suite lets a death
+    // happen inside the plan.
+    const run = (structure: "single_life" | "period_certain") =>
+      runProjection(
+        inputWithAnnuity(
+          {
+            productType: "fixed_indexed",
+            incomeMode: "rider",
+            incomeStartYear: 2026,
+            payoutStructure: structure,
+            periodCertainYears: structure === "period_certain" ? 20 : undefined,
+            benefitBase: 200_000,
+            payoutPct: 0.05,
+            rollupRatchets: false,
+            taxTreatment: "non_qualified",
+            costBasis: 0,
+            annualFeePct: 0,
+          },
+          200_000,
+          // Married, and the CLIENT (who owns the contract) dies first in 2028.
+          // A single filer's death ends the projection outright — no years are
+          // emitted afterwards to observe — so only a first death can show
+          // this. The spouse's life expectancy defaults to 95 (born 1975), well
+          // past the horizon, so the plan runs on.
+          { planEndYear: 2031, lifeExpectancy: 76, spouseDob: "1975-01-01" },
+        ),
+      );
+    const at = (years: ReturnType<typeof runProjection>, yr: number) =>
+      years.find((y) => y.year === yr)?.income.bySource[ANNUITY_KEY] ?? 0;
+
+    const singleLife = run("single_life");
+    const certain = run("period_certain");
+
+    // Alive years are identical — the structures only diverge at death.
+    expect(at(singleLife, 2027)).toBeCloseTo(10_000, 2);
+    expect(at(certain, 2027)).toBeCloseTo(10_000, 2);
+    // The death year itself is still paid: death events apply below years.push().
+    expect(at(singleLife, 2028)).toBeCloseTo(10_000, 2);
+
+    // After death: a life-contingent payout owes nothing more...
+    expect(at(singleLife, 2029)).toBe(0);
+    expect(at(singleLife, 2030)).toBe(0);
+    // ...but a certain term runs on to the beneficiary. Stopping it would drop
+    // money the contract still owes.
+    expect(at(certain, 2029)).toBeCloseTo(10_000, 2);
+    expect(at(certain, 2030)).toBeCloseTo(10_000, 2);
   });
 });
