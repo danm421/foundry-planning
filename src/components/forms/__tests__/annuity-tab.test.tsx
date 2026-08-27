@@ -2,7 +2,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { AnnuityTab } from "../annuity-tab";
+import { AnnuityTab, annuityContractIncomplete } from "../annuity-tab";
 
 const noop = () => {};
 const blank = {
@@ -75,11 +75,67 @@ describe("AnnuityTab", () => {
     expect(screen.queryByText(/210,000/)).not.toBeInTheDocument();
   });
 
+  // `payout.ts` reads `payoutStructure` / `survivorPct` on EVERY income mode,
+  // not just an annuitized one — a joint rider that can't name its structure
+  // stops paying at the first death.
+  it("lets a rider name its payout structure, not just an annuitized contract", () => {
+    render(<AnnuityTab accountId="a" clientId="c"
+      value={{ ...blank, incomeMode: "rider", benefitBase: 100_000 }} onChange={noop} />);
+    expect(screen.getByLabelText(/payout structure/i)).toBeInTheDocument();
+  });
+
+  it("asks for the survivor share once the structure is joint", () => {
+    render(<AnnuityTab accountId="a" clientId="c"
+      value={{ ...blank, incomeMode: "rider", benefitBase: 100_000, payoutStructure: "joint_survivor" }}
+      onChange={noop} />);
+    expect(screen.getByLabelText(/survivor share/i)).toBeInTheDocument();
+  });
+
   it("emits the mode the advisor picks", async () => {
     const changes: { incomeMode?: string }[] = [];
     render(<AnnuityTab accountId="a" clientId="c" value={blank}
       onChange={(v) => changes.push(v)} />);
     await userEvent.click(screen.getByRole("radio", { name: /income rider/i }));
     expect(changes.at(-1)?.incomeMode).toBe("rider");
+  });
+});
+
+// The account dialog holds its Save button on this. It mirrors the three CHECK
+// constraints on `annuity_contracts`, so a false negative here is a 400 the
+// advisor sees instead of an inline "this field is required".
+describe("annuityContractIncomplete", () => {
+  it("passes a contract that isn't paying income", () => {
+    expect(annuityContractIncomplete(blank)).toBe(false);
+  });
+
+  it("flags a rider with no benefit base", () => {
+    expect(annuityContractIncomplete({
+      ...blank, incomeMode: "rider", incomeStartYear: 2032,
+    })).toBe(true);
+  });
+
+  it("flags an annuitized contract with no payment", () => {
+    expect(annuityContractIncomplete({
+      ...blank, incomeMode: "annuitized", incomeStartYear: 2032,
+    })).toBe(true);
+  });
+
+  it("flags income that starts neither on a year nor on a milestone", () => {
+    expect(annuityContractIncomplete({
+      ...blank, incomeMode: "rider", benefitBase: 100_000,
+    })).toBe(true);
+  });
+
+  it("takes a milestone in place of a start year", () => {
+    expect(annuityContractIncomplete({
+      ...blank, incomeMode: "rider", benefitBase: 100_000,
+      incomeStartYearRef: "client_retirement",
+    })).toBe(false);
+  });
+
+  it("passes a fully described annuitized contract", () => {
+    expect(annuityContractIncomplete({
+      ...blank, incomeMode: "annuitized", annuitizedPayment: 42_000, incomeStartYear: 2032,
+    })).toBe(false);
   });
 });

@@ -287,7 +287,9 @@ export function AnnuityTab({
     if (mode === "rider") {
       next.benefitBase = value.benefitBase ?? accountValue ?? null;
     }
-    if (mode === "annuitized") {
+    if (mode !== "none") {
+      // The engine reads `payoutStructure` on every income mode — it is what
+      // decides whether anything continues after the first death, rider or not.
       next.payoutStructure = value.payoutStructure ?? "single_life";
     }
     onChange(next);
@@ -316,7 +318,7 @@ export function AnnuityTab({
           <div>
             <div className="flex items-center gap-1.5">
               <label className={fieldLabelClassName} htmlFor="annuity-carrier">Carrier</label>
-              <FieldTooltip text="The insurance company that issued the contract. Shown on reports so the client recognises the policy." />
+              <FieldTooltip text="The insurance company that issued the contract — how the client recognizes the policy on a statement." />
             </div>
             <input
               id="annuity-carrier"
@@ -492,6 +494,66 @@ export function AnnuityTab({
               </div>
             )}
 
+            {/* Who the payments follow. Shown for BOTH modes: the engine reads
+                this on a rider too, and without it a joint rider stops paying
+                at the first death. */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <label className={fieldLabelClassName} htmlFor="annuity-structure">
+                    Payout structure
+                  </label>
+                  <FieldTooltip text="Who the payments follow and for how long. This is what decides whether anything continues after the first death." />
+                </div>
+                <select
+                  id="annuity-structure"
+                  className={selectClassName}
+                  value={value.payoutStructure ?? "single_life"}
+                  onChange={(e) => set("payoutStructure", e.target.value as AnnuityPayoutStructure)}
+                >
+                  {(Object.keys(PAYOUT_STRUCTURE_LABELS) as AnnuityPayoutStructure[]).map((s) => (
+                    <option key={s} value={s}>{PAYOUT_STRUCTURE_LABELS[s]}</option>
+                  ))}
+                </select>
+              </div>
+
+              {value.payoutStructure === "joint_survivor" && (
+                <PercentField
+                  id="annuity-survivor"
+                  label="Survivor share"
+                  tooltip="Share of the payment that continues to the surviving spouse. 100% keeps the payment the same."
+                  value={value.survivorPct}
+                  onChange={(v) => set("survivorPct", v)}
+                />
+              )}
+
+              {(value.payoutStructure === "life_with_period_certain" ||
+                value.payoutStructure === "period_certain") && (
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <label className={fieldLabelClassName} htmlFor="annuity-period-certain">
+                      Guaranteed years
+                    </label>
+                    <FieldTooltip text="Years the payment is guaranteed even if the annuitant dies first — it goes to the beneficiary instead." />
+                  </div>
+                  <input
+                    id="annuity-period-certain"
+                    type="number"
+                    min={0}
+                    max={50}
+                    className={inputClassName}
+                    value={value.periodCertainYears ?? ""}
+                    onChange={(e) =>
+                      set(
+                        "periodCertainYears",
+                        e.target.value === "" ? null : Number(e.target.value),
+                      )
+                    }
+                  />
+                </div>
+              )}
+            </div>
+
             {value.incomeMode === "rider" && (
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -512,7 +574,7 @@ export function AnnuityTab({
                 <PercentField
                   id="annuity-rollup-rate"
                   label="Roll-up rate"
-                  tooltip="Guaranteed yearly growth on the figure the cheque is sized from, for as long as income is deferred."
+                  tooltip="Guaranteed yearly growth on the figure the payment is sized from, for as long as income is deferred."
                   value={value.rollupRate}
                   onChange={(v) => set("rollupRate", v)}
                 />
@@ -580,61 +642,6 @@ export function AnnuityTab({
                     </p>
                   )}
                 </div>
-
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <label className={fieldLabelClassName} htmlFor="annuity-structure">
-                      Payout structure
-                    </label>
-                    <FieldTooltip text="Who the payments follow and for how long. This decides whether anything continues after the first death." />
-                  </div>
-                  <select
-                    id="annuity-structure"
-                    className={selectClassName}
-                    value={value.payoutStructure ?? "single_life"}
-                    onChange={(e) => set("payoutStructure", e.target.value as AnnuityPayoutStructure)}
-                  >
-                    {(Object.keys(PAYOUT_STRUCTURE_LABELS) as AnnuityPayoutStructure[]).map((s) => (
-                      <option key={s} value={s}>{PAYOUT_STRUCTURE_LABELS[s]}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {value.payoutStructure === "joint_survivor" && (
-                  <PercentField
-                    id="annuity-survivor"
-                    label="Survivor share"
-                    tooltip="Share of the payment that continues to the surviving spouse. 100% keeps the payment the same."
-                    value={value.survivorPct}
-                    onChange={(v) => set("survivorPct", v)}
-                  />
-                )}
-
-                {(value.payoutStructure === "life_with_period_certain" ||
-                  value.payoutStructure === "period_certain") && (
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <label className={fieldLabelClassName} htmlFor="annuity-period-certain">
-                        Guaranteed years
-                      </label>
-                      <FieldTooltip text="Years the payment is guaranteed even if the annuitant dies first — it goes to the beneficiary instead." />
-                    </div>
-                    <input
-                      id="annuity-period-certain"
-                      type="number"
-                      min={0}
-                      max={50}
-                      className={inputClassName}
-                      value={value.periodCertainYears ?? ""}
-                      onChange={(e) =>
-                        set(
-                          "periodCertainYears",
-                          e.target.value === "" ? null : Number(e.target.value),
-                        )
-                      }
-                    />
-                  </div>
-                )}
 
                 <div>
                   <div className="flex items-center gap-1.5">
