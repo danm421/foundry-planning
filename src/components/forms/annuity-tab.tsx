@@ -246,12 +246,25 @@ function YearField({
   );
 }
 
+/** The two structures whose payout is defined by a stated number of years. */
+function needsCertainTerm(structure: AnnuityPayoutStructure | null | undefined): boolean {
+  return structure === "life_with_period_certain" || structure === "period_certain";
+}
+
 /** Mirrors the three DB CHECK constraints the PUT route enforces, so the form
- *  can hold the Save button instead of letting the advisor hit a 400. */
+ *  can hold the Save button instead of letting the advisor hit a 400 — plus two
+ *  the database does NOT police. Postgres is happy to store a joint payout with
+ *  no survivor share, or a period-certain payout with no term; `payout.ts` then
+ *  reads `survivorPct ?? 0` (the survivor's income stops at the first death)
+ *  and treats a null term as "no term at all" (the payments never end while the
+ *  annuitant lives, and nothing carries to the beneficiary after). Those are
+ *  wrong plans, not rejected ones, so nothing downstream would ever complain. */
 export function annuityContractIncomplete(v: AnnuityContractValue): boolean {
   if (v.incomeMode === "none") return false;
   if (v.incomeMode === "rider" && v.benefitBase == null) return true;
   if (v.incomeMode === "annuitized" && v.annuitizedPayment == null) return true;
+  if (v.payoutStructure === "joint_survivor" && v.survivorPct == null) return true;
+  if (needsCertainTerm(v.payoutStructure) && v.periodCertainYears == null) return true;
   return v.incomeStartYear == null && v.incomeStartYearRef == null;
 }
 
@@ -518,17 +531,23 @@ export function AnnuityTab({
               </div>
 
               {value.payoutStructure === "joint_survivor" && (
-                <PercentField
-                  id="annuity-survivor"
-                  label="Survivor share"
-                  tooltip="Share of the payment that continues to the surviving spouse. 100% keeps the payment the same."
-                  value={value.survivorPct}
-                  onChange={(v) => set("survivorPct", v)}
-                />
+                <div>
+                  <PercentField
+                    id="annuity-survivor"
+                    label="Survivor share"
+                    tooltip="Share of the payment that continues to the surviving spouse. 100% keeps the payment the same."
+                    value={value.survivorPct}
+                    onChange={(v) => set("survivorPct", v)}
+                  />
+                  {value.survivorPct == null && (
+                    <p role="alert" className={REQUIRED_CLASS}>
+                      Required — left blank, this pays the survivor nothing.
+                    </p>
+                  )}
+                </div>
               )}
 
-              {(value.payoutStructure === "life_with_period_certain" ||
-                value.payoutStructure === "period_certain") && (
+              {needsCertainTerm(value.payoutStructure) && (
                 <div>
                   <div className="flex items-center gap-1.5">
                     <label className={fieldLabelClassName} htmlFor="annuity-period-certain">
@@ -550,6 +569,12 @@ export function AnnuityTab({
                       )
                     }
                   />
+                  {value.periodCertainYears == null && (
+                    <p role="alert" className={REQUIRED_CLASS}>
+                      Required — left blank, the payments never end while the annuitant lives, and
+                      nothing carries to the beneficiary after.
+                    </p>
+                  )}
                 </div>
               )}
             </div>

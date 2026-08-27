@@ -92,6 +92,40 @@ describe("AnnuityTab", () => {
     expect(screen.getByLabelText(/survivor share/i)).toBeInTheDocument();
   });
 
+  // `payout.ts` reads `survivorPct ?? 0` and treats a null term as "no term at
+  // all". A structure named but left un-sized is worse than one never named:
+  // the survivor's income stops dead, or the payments never end. Both fields
+  // must ANNOUNCE themselves, and the save must be held until they're answered.
+  it("says the survivor share is required until it is given one", () => {
+    const joint = {
+      ...blank, incomeMode: "rider" as const, benefitBase: 100_000,
+      payoutStructure: "joint_survivor" as const,
+    };
+    const { rerender } = render(
+      <AnnuityTab accountId="a" clientId="c" value={joint} onChange={noop} />,
+    );
+    expect(screen.getByText(/pays the survivor nothing/i)).toBeInTheDocument();
+    rerender(
+      <AnnuityTab accountId="a" clientId="c" value={{ ...joint, survivorPct: 0.5 }} onChange={noop} />,
+    );
+    expect(screen.queryByText(/pays the survivor nothing/i)).not.toBeInTheDocument();
+  });
+
+  it("says the guaranteed term is required until it is given one", () => {
+    const certain = {
+      ...blank, incomeMode: "annuitized" as const, annuitizedPayment: 40_000,
+      payoutStructure: "period_certain" as const,
+    };
+    const { rerender } = render(
+      <AnnuityTab accountId="a" clientId="c" value={certain} onChange={noop} />,
+    );
+    expect(screen.getByText(/never end while the annuitant lives/i)).toBeInTheDocument();
+    rerender(
+      <AnnuityTab accountId="a" clientId="c" value={{ ...certain, periodCertainYears: 10 }} onChange={noop} />,
+    );
+    expect(screen.queryByText(/never end while the annuitant lives/i)).not.toBeInTheDocument();
+  });
+
   it("emits the mode the advisor picks", async () => {
     const changes: { incomeMode?: string }[] = [];
     render(<AnnuityTab accountId="a" clientId="c" value={blank}
@@ -137,6 +171,51 @@ describe("annuityContractIncomplete", () => {
   it("passes a fully described annuitized contract", () => {
     expect(annuityContractIncomplete({
       ...blank, incomeMode: "annuitized", annuitizedPayment: 42_000, incomeStartYear: 2032,
+    })).toBe(false);
+  });
+
+  // Beyond the three DB CHECKs. Neither of these is constrained in Postgres,
+  // but `payout.ts` reads `survivorPct ?? 0` and treats a null term as no term
+  // — so a structure named without its number is a silently wrong plan, not a
+  // rejected one. Holding the save is the only thing that catches it.
+  const payingJoint = {
+    ...blank, incomeMode: "rider" as const, benefitBase: 100_000, incomeStartYear: 2032,
+    payoutStructure: "joint_survivor" as const,
+  };
+  const payingCertain = {
+    ...blank, incomeMode: "annuitized" as const, annuitizedPayment: 40_000, incomeStartYear: 2032,
+    payoutStructure: "period_certain" as const,
+  };
+
+  it("flags a joint payout that never says what the survivor gets", () => {
+    expect(annuityContractIncomplete(payingJoint)).toBe(true);
+  });
+
+  it("accepts a joint payout once the survivor share is named", () => {
+    expect(annuityContractIncomplete({ ...payingJoint, survivorPct: 0.5 })).toBe(false);
+  });
+
+  it("accepts a survivor share of zero — that is a real answer, not a blank", () => {
+    expect(annuityContractIncomplete({ ...payingJoint, survivorPct: 0 })).toBe(false);
+  });
+
+  it("flags a period-certain payout with no term", () => {
+    expect(annuityContractIncomplete(payingCertain)).toBe(true);
+  });
+
+  it("flags life-with-period-certain with no term", () => {
+    expect(annuityContractIncomplete({
+      ...payingCertain, payoutStructure: "life_with_period_certain",
+    })).toBe(true);
+  });
+
+  it("accepts a period-certain payout once the term is named", () => {
+    expect(annuityContractIncomplete({ ...payingCertain, periodCertainYears: 10 })).toBe(false);
+  });
+
+  it("asks for neither while the contract isn't paying income", () => {
+    expect(annuityContractIncomplete({
+      ...blank, payoutStructure: "joint_survivor",
     })).toBe(false);
   });
 });
