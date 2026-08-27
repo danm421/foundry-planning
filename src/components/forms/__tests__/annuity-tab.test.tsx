@@ -119,11 +119,11 @@ describe("AnnuityTab", () => {
     const { rerender } = render(
       <AnnuityTab accountId="a" clientId="c" value={certain} onChange={noop} />,
     );
-    expect(screen.getByText(/never end while the annuitant lives/i)).toBeInTheDocument();
+    expect(screen.getByText(/nothing carries to the beneficiary/i)).toBeInTheDocument();
     rerender(
       <AnnuityTab accountId="a" clientId="c" value={{ ...certain, periodCertainYears: 10 }} onChange={noop} />,
     );
-    expect(screen.queryByText(/never end while the annuitant lives/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/nothing carries to the beneficiary/i)).not.toBeInTheDocument();
   });
 
   it("emits the mode the advisor picks", async () => {

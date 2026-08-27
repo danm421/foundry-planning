@@ -880,10 +880,6 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     void loadAnnuityContract(effectiveAccountId);
   }, [category, effectiveAccountId, loadAnnuityContract]);
 
-  // Write the contract back. Not in scenario scope (there is no targetKind for
-  // it), so base mode only — same posture as the asset-mix allocations above.
-  // Unlike allocations this surfaces a failure: the tab is the ONLY way this
-  // data is entered, so a silent drop would lose the advisor's work.
   // The contract in state may be written back only when it is the advisor's own
   // data: either the stored row was read successfully, or there was never a row
   // to read. A failed or in-flight read leaves column defaults on screen, and a
@@ -892,6 +888,10 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   // any user action can reach a save.
   const annuityContractTrusted = annuityLoad === "idle" || annuityLoad === "loaded";
 
+  // Write the contract back. Not in scenario scope (there is no targetKind for
+  // it), so base mode only — same posture as the asset-mix allocations above.
+  // Unlike allocations this surfaces a failure: the tab is the ONLY way this
+  // data is entered, so a silent drop would lose the advisor's work.
   const saveAnnuityContract = useCallback(async (acctId: string) => {
     if (category !== "annuity" || writer.scenarioActive) return;
     // Silent by design: the panel is showing the "could not be loaded" notice

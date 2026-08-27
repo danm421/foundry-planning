@@ -571,8 +571,9 @@ export function AnnuityTab({
                   />
                   {value.periodCertainYears == null && (
                     <p role="alert" className={REQUIRED_CLASS}>
-                      Required — left blank, the payments never end while the annuitant lives, and
-                      nothing carries to the beneficiary after.
+                      Required — with no length the guarantee does nothing: nothing carries to
+                      the beneficiary, and a period-certain payout runs on for life instead of
+                      ending.
                     </p>
                   )}
                 </div>
