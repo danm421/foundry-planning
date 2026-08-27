@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
 import { TAX_YEAR_2026 } from "./_fixtures/tax-year-2026";
 import type { AnnuityContract } from "../annuity";
-import type { Account, ClientData, FamilyMember } from "../types";
+import type { Account, ClientData, FamilyMember, Transfer } from "../types";
 
 const CLIENT_FM_ID = "00000000-0000-0000-0000-000000000001";
 const ANNUITY_ID = "ann-1";
@@ -25,6 +25,11 @@ interface FixtureOverrides {
    *  legacy no-checking supplemental path (the second of the two
    *  `supplementalRetirementBreakdown` sites). */
   defaultChecking?: boolean;
+  /** Growth on the annuity account. 0 by default so a balance change can only
+   *  have come from the contract or a withdrawal. */
+  annuityGrowthRate?: number;
+  transfers?: Transfer[];
+  extraAccounts?: Account[];
 }
 
 /**
@@ -52,6 +57,9 @@ function inputWithAnnuity(
     livingExpense = 0,
     checkingValue = 25_000,
     defaultChecking = true,
+    annuityGrowthRate = 0,
+    transfers = [],
+    extraAccounts = [],
   } = overrides;
 
   const owners = [
@@ -66,7 +74,7 @@ function inputWithAnnuity(
     titlingType: "jtwros",
     value: accountValue,
     basis: accountValue,
-    growthRate: 0,
+    growthRate: annuityGrowthRate,
     rmdEnabled: false,
     owners,
     annuity: contract,
@@ -98,6 +106,7 @@ function inputWithAnnuity(
         owners,
       },
       annuityAccount,
+      ...extraAccounts,
     ],
     incomes: [],
     expenses:
@@ -134,7 +143,7 @@ function inputWithAnnuity(
     },
     entities: [],
     deductions: [],
-    transfers: [],
+    transfers,
     assetTransactions: [],
     gifts: [],
     giftEvents: [],
@@ -437,5 +446,84 @@ describe("projection — annuity contracts", () => {
     // 10% of the taxable slice. Dropping `result.earlyWithdrawalPenalty` on the
     // floor — as the naive wiring does — leaves this at 0.
     expect(y2026.taxResult!.flow.earlyWithdrawalPenalty).toBeCloseTo(1_000, 2);
+  });
+
+  it("a RECURRING transfer out of an annuity cannot re-shelter the same basis twice", () => {
+    // $200k value against $190k of §72 basis, growing 20%/yr, with $60k moved
+    // out to a brokerage each year.
+    //
+    //   2026: 200k → 240k. Gain 50k. LIFO: 50k ordinary + 10k of basis
+    //         returned → basis 190k → 180k, balance 180k.
+    //   2027: 180k → 216k. TRUE basis 180k → gain 36k → $36,000 ordinary.
+    //         STALE basis 190k → gain 26k → $26,000 ordinary.
+    //
+    // Reading `contract.costBasis` every year — the original figure, never
+    // decremented — under-reports year 2 by $10,000, and by more every year a
+    // recurring transfer runs.
+    const transfers: Transfer[] = [
+      {
+        id: "xfer-1",
+        name: "Annuity to brokerage",
+        sourceAccountId: ANNUITY_ID,
+        targetAccountId: "acc-brokerage",
+        amount: 60_000,
+        mode: "recurring",
+        startYear: 2026,
+        endYear: 2027,
+        growthRate: 0,
+        schedules: [],
+      },
+    ];
+    const input = inputWithAnnuity(
+      {
+        productType: "myga",
+        incomeMode: "none",
+        taxTreatment: "non_qualified",
+        costBasis: 190_000,
+        annualFeePct: 0,
+        rollupRatchets: false,
+      },
+      200_000,
+      {
+        planEndYear: 2027,
+        annuityGrowthRate: 0.20,
+        checkingValue: 200_000, // deep enough that no gap-fill draw is needed
+        transfers,
+        extraAccounts: [
+          {
+            id: "acc-brokerage",
+            name: "Brokerage",
+            category: "taxable",
+            subType: "brokerage",
+            titlingType: "jtwros",
+            value: 0,
+            basis: 0,
+            growthRate: 0,
+            rmdEnabled: false,
+            owners: [
+              { kind: "family_member", familyMemberId: CLIENT_FM_ID, percent: 1 },
+            ],
+          },
+        ],
+      },
+    );
+    const years = runProjection(input);
+    const y2026 = years.find((y) => y.year === 2026)!;
+    const y2027 = years.find((y) => y.year === 2027)!;
+
+    // GUARD: the balance must move only via the transfer, never a gap-fill draw.
+    expect(y2026.withdrawals.byAccount[ANNUITY_ID] ?? 0).toBe(0);
+    expect(y2027.withdrawals.byAccount[ANNUITY_ID] ?? 0).toBe(0);
+    expect(y2026.portfolioAssets.annuityTotal).toBeCloseTo(180_000, 2);
+    expect(y2027.portfolioAssets.annuityTotal).toBeCloseTo(156_000, 2);
+
+    const ordinary = (y: (typeof years)[number]) =>
+      y.taxDetail!.bySource["transfer:xfer-1"]?.amount ?? 0;
+
+    // Year 1 is identical either way — the bug only shows from year 2.
+    expect(ordinary(y2026)).toBeCloseTo(50_000, 2);
+    expect(ordinary(y2027)).toBeCloseTo(36_000, 2);
+    // Spelled out so a regression reads as what it is, not as an off-by-$10k.
+    expect(ordinary(y2027)).toBeGreaterThan(26_000);
   });
 });

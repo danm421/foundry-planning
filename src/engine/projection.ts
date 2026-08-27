@@ -2005,6 +2005,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       byTransfer: {},
     };
     if (data.transfers && data.transfers.length > 0) {
+      // Live §72 basis handed to the transfer classifier, so a RECURRING
+      // transfer out of a non-qualified annuity cannot re-shelter the same
+      // dollars every year. Transfers run BEFORE the contract step below, so
+      // these are start-of-year figures — the correct basis to charge against.
+      // `applyTransfers` mutates the map; the result is folded back onto the
+      // contract state, which owns this number for the rest of the year.
+      const annuityBasisMap: Record<string, number> = {};
+      for (const [id, st] of Object.entries(annuityStates)) {
+        annuityBasisMap[id] = st.remainingBasis;
+      }
       transferResult = applyTransfers({
         transfers: data.transfers,
         accounts: workingAccounts,
@@ -2012,11 +2022,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         basisMap,
         freshBasisMap,
         rothValueMap,
+        annuityBasisMap,
         accountLedgers,
         year,
         ownerAges: { client: ages.client, spouse: ages.spouse },
         spouseFamilyMemberId: spouseFmId,
       });
+      for (const [id, remainingBasis] of Object.entries(annuityBasisMap)) {
+        const st = annuityStates[id];
+        if (st && remainingBasis !== st.remainingBasis) {
+          annuityStates[id] = { ...st, remainingBasis };
+        }
+      }
     }
 
     // 4b. RMDs. Source account balance is decremented; the cash lands in the
