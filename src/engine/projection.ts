@@ -590,9 +590,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     entityId != null && entityMap[entityId]?.trustSubType === "crt";
 
   // Effective withdrawal strategy. If the user hasn't configured anything, fall back
-  // to a tax-efficient default: Cash → Taxable → Tax-Deferred → Roth. Illiquid
-  // categories (real estate, business, life insurance) and default-checking accounts
-  // are skipped. The household checking is always the target, never a source.
+  // to a tax-efficient default: Cash → Taxable → Tax-Deferred → Roth → Annuity.
+  // Illiquid categories (real estate, business, life insurance), annuitized contracts,
+  // and default-checking accounts are skipped. The household checking is always the
+  // target, never a source.
   // Copy the configured strategy (or build the default) into a fresh array we
   // own. Death events append life-insurance proceeds accounts to it mid-run
   // (see appendLoopMintedAccountsToWithdrawalStrategy); we must not mutate the caller's
