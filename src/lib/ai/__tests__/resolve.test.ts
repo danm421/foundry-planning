@@ -22,6 +22,16 @@ const FIRM_CONFIG = JSON.stringify({
   embeddingDeployment: "firm-embed",
 });
 
+/** A `connected` row carrying the given key, as getConnection returns it
+ *  (already decrypted). */
+function connectedRow(apiKey: string) {
+  return {
+    status: "connected",
+    accessToken: JSON.stringify({ apiKey }),
+    scope: FIRM_CONFIG,
+  };
+}
+
 function stubFoundryEnv() {
   vi.stubEnv("AZURE_ENDPOINT", "https://foundry.openai.azure.com");
   vi.stubEnv("AZURE_API_KEY", "foundry-key");
@@ -43,11 +53,7 @@ afterEach(() => vi.unstubAllEnvs());
 describe("resolveAiCredentials", () => {
   it("returns the FIRM's endpoint, key and deployments when connected", async () => {
     mockAuth.mockResolvedValue({ orgId: "org_acme" });
-    mockGetConnection.mockResolvedValue({
-      status: "connected",
-      accessToken: JSON.stringify({ apiKey: "firm-key" }),
-      scope: FIRM_CONFIG,
-    });
+    mockGetConnection.mockResolvedValue(connectedRow("firm-key"));
 
     const creds = await resolveAiCredentials();
 
@@ -118,6 +124,32 @@ describe("resolveAiCredentials", () => {
     await expect(resolveAiCredentials()).rejects.toThrow("ai_firm_connection_unavailable");
   });
 
+  it("THROWS when the connection READ itself fails — a DB or decrypt error is not a fallback", async () => {
+    mockAuth.mockResolvedValue({ orgId: "org_unreadable" });
+    // getConnection decrypts inside itself: a rotated or unset
+    // CREDENTIAL_ENCRYPTION_KEY, or a malformed envelope, rejects here rather
+    // than inside the codecs. We cannot tell whether this firm is connected, so
+    // reaching for our own key is exactly the wrong move.
+    mockGetConnection.mockRejectedValue(new Error("Unrecognized secret envelope"));
+
+    let creds: unknown;
+    let err: unknown;
+    await resolveAiCredentials().then(
+      (c) => {
+        creds = c;
+      },
+      (e) => {
+        err = e;
+      },
+    );
+
+    // No credentials of ANY source reached the caller...
+    expect(creds).toBeUndefined();
+    // ...and the failure arrived as the sentinel, not the raw crypto message.
+    expect((err as Error).message).toBe("ai_firm_connection_unavailable");
+    expect((err as Error).cause).toBeInstanceOf(Error);
+  });
+
   it("THROWS rather than falling back when a connected row has an unreadable config", async () => {
     mockAuth.mockResolvedValue({ orgId: "org_corrupt" });
     mockGetConnection.mockResolvedValue({
@@ -162,22 +194,46 @@ describe("resolveAiCredentials", () => {
   });
 
   // ---- Cache behaviour ----
+  //
+  // Only `source: "firm"` answers are cached. A cached `foundry` answer would
+  // keep serving OUR key to a firm that has just connected theirs, from every
+  // instance the connect mutation's clear did not reach.
+
+  it("serves a repeat call for a CONNECTED firm from cache, without a second read", async () => {
+    mockAuth.mockResolvedValue({ orgId: "org_cache" });
+    mockGetConnection.mockResolvedValue(connectedRow("firm-key"));
+
+    const first = await resolveAiCredentials();
+    const second = await resolveAiCredentials();
+
+    expect(mockGetConnection).toHaveBeenCalledTimes(1);
+    expect(second.apiKey).toBe(first.apiKey);
+  });
+
+  it("does NOT cache an unconnected firm — every call re-reads, so connecting takes effect at once", async () => {
+    mockAuth.mockResolvedValue({ orgId: "org_notyet" });
+    mockGetConnection.mockResolvedValue(null);
+
+    const before = await resolveAiCredentials();
+    expect(before.source).toBe("foundry");
+
+    // The firm connects. Another instance never saw the clear — but there is
+    // nothing cached to go stale, so the very next call is already theirs.
+    mockGetConnection.mockResolvedValue(connectedRow("brand-new-firm-key"));
+    const after = await resolveAiCredentials();
+
+    expect(mockGetConnection).toHaveBeenCalledTimes(2);
+    expect(after.source).toBe("firm");
+    expect(after.apiKey).toBe("brand-new-firm-key");
+  });
 
   it("caches per firm and never hands one firm another firm's credentials", async () => {
     mockAuth.mockResolvedValue({ orgId: "org_a" });
-    mockGetConnection.mockResolvedValue({
-      status: "connected",
-      accessToken: JSON.stringify({ apiKey: "key-a" }),
-      scope: FIRM_CONFIG,
-    });
+    mockGetConnection.mockResolvedValue(connectedRow("key-a"));
     const a = await resolveAiCredentials();
 
     mockAuth.mockResolvedValue({ orgId: "org_b" });
-    mockGetConnection.mockResolvedValue({
-      status: "connected",
-      accessToken: JSON.stringify({ apiKey: "key-b" }),
-      scope: FIRM_CONFIG,
-    });
+    mockGetConnection.mockResolvedValue(connectedRow("key-b"));
     const b = await resolveAiCredentials();
 
     expect(a.apiKey).toBe("key-a");
@@ -193,25 +249,11 @@ describe("resolveAiCredentials", () => {
 
   it("cannot serve a cached firm entry to a caller with no org context", async () => {
     mockAuth.mockResolvedValue({ orgId: "org_cached" });
-    mockGetConnection.mockResolvedValue({
-      status: "connected",
-      accessToken: JSON.stringify({ apiKey: "key-cached" }),
-      scope: FIRM_CONFIG,
-    });
+    mockGetConnection.mockResolvedValue(connectedRow("key-cached"));
     await resolveAiCredentials();
 
     mockAuth.mockResolvedValue({ orgId: null });
     await expect(resolveAiCredentials()).rejects.toThrow("ai_no_firm_context");
-  });
-
-  it("serves a repeat call from cache without a second connection read", async () => {
-    mockAuth.mockResolvedValue({ orgId: "org_cache" });
-    mockGetConnection.mockResolvedValue(null);
-
-    await resolveAiCredentials();
-    await resolveAiCredentials();
-
-    expect(mockGetConnection).toHaveBeenCalledTimes(1);
   });
 
   it("does not cache a failure — a repaired connection resolves on the next call", async () => {
@@ -223,11 +265,7 @@ describe("resolveAiCredentials", () => {
     });
     await expect(resolveAiCredentials()).rejects.toThrow("ai_firm_connection_unavailable");
 
-    mockGetConnection.mockResolvedValue({
-      status: "connected",
-      accessToken: JSON.stringify({ apiKey: "firm-key" }),
-      scope: FIRM_CONFIG,
-    });
+    mockGetConnection.mockResolvedValue(connectedRow("firm-key"));
     const creds = await resolveAiCredentials();
     expect(creds.source).toBe("firm");
     expect(creds.apiKey).toBe("firm-key");
@@ -235,24 +273,54 @@ describe("resolveAiCredentials", () => {
 
   it("re-reads after the cache is cleared for that firm", async () => {
     mockAuth.mockResolvedValue({ orgId: "org_clear" });
-    mockGetConnection.mockResolvedValue(null);
+    mockGetConnection.mockResolvedValue(connectedRow("key-before"));
 
     await resolveAiCredentials();
     clearAiCredentialCache("org_clear");
-    await resolveAiCredentials();
+    mockGetConnection.mockResolvedValue(connectedRow("key-after"));
+    const after = await resolveAiCredentials();
 
     expect(mockGetConnection).toHaveBeenCalledTimes(2);
+    expect(after.apiKey).toBe("key-after");
   });
 
   it("clearing one firm leaves another firm's cache entry alone", async () => {
     mockAuth.mockResolvedValue({ orgId: "org_keep" });
-    mockGetConnection.mockResolvedValue(null);
+    mockGetConnection.mockResolvedValue(connectedRow("key-keep"));
     await resolveAiCredentials();
 
     clearAiCredentialCache("org_other");
     await resolveAiCredentials();
 
     expect(mockGetConnection).toHaveBeenCalledTimes(1);
+  });
+
+  it("clearing with an EMPTY firm id is a no-op, not a clear-all", async () => {
+    mockAuth.mockResolvedValue({ orgId: "org_intact" });
+    mockGetConnection.mockResolvedValue(connectedRow("key-intact"));
+    await resolveAiCredentials();
+
+    // A caller that failed to populate its firm id must not wipe every firm.
+    clearAiCredentialCache("");
+    await resolveAiCredentials();
+
+    expect(mockGetConnection).toHaveBeenCalledTimes(1);
+  });
+
+  it("hands back frozen credentials, so a caller cannot corrupt the cached entry", async () => {
+    mockAuth.mockResolvedValue({ orgId: "org_frozen" });
+    mockGetConnection.mockResolvedValue(connectedRow("key-frozen"));
+
+    const creds = await resolveAiCredentials();
+    expect(() => {
+      creds.apiKey = "tampered";
+    }).toThrow();
+    expect(() => {
+      creds.deployments.chat = "tampered";
+    }).toThrow();
+
+    const again = await resolveAiCredentials();
+    expect(again.apiKey).toBe("key-frozen");
   });
 });
 
@@ -277,6 +345,13 @@ describe("foundrySystemCredentials", () => {
     stubFoundryEnv();
     vi.stubEnv("AZURE_MODEL", "");
     expect(() => foundrySystemCredentials()).toThrow("ai_not_configured");
+  });
+
+  it("falls back to the default api version when the env var is EMPTY, not just unset", () => {
+    // An empty string is unguarded below, so `??` would let "" through and build
+    // a client that 400s on every call.
+    vi.stubEnv("AZURE_API_VERSION", "");
+    expect(foundrySystemCredentials().apiVersion).toBe("2024-12-01-preview");
   });
 
   it("allows an empty embedding deployment — the embedding path fails closed on its own", () => {

@@ -18,25 +18,39 @@ import { auth } from "@clerk/nextjs/server";
 import { getConnection } from "@/lib/integrations/connections";
 import { decodeAzureConfig, decodeAzureSecret, type AiCredentials } from "./credentials";
 
-/** Keeps an AI call from costing a database round trip. Bounded by TTL rather
- *  than invalidation because several serverless instances may hold their own
- *  copy — an explicit clear only reaches the instance that ran the mutation. */
+/** Keeps a repeat AI call from costing a database round trip. Bounded by TTL
+ *  rather than invalidation because several serverless instances may hold their
+ *  own copy — an explicit clear only reaches the instance that ran the mutation. */
 const CACHE_TTL_MS = 60_000;
 
 type CacheEntry = { creds: AiCredentials; expiresAt: number };
 
-/** Keyed by the Clerk org id verbatim. A `Map` keyed on the raw string is the
- *  isolation: there is no derived key, no shared slot and no prototype chain, so
- *  a lookup for firm B can never reach firm A's entry. Only the success path
- *  writes here — a throw leaves no entry, so a transient failure cannot outlive
- *  itself as a cached rejection. */
+/**
+ * Keyed by the Clerk org id verbatim. A `Map` keyed on the raw string is the
+ * isolation: there is no derived key, no shared slot and no prototype chain, so
+ * a lookup for firm B can never reach firm A's entry.
+ *
+ * ONLY `source: "firm"` entries are stored, and that asymmetry is the point. If
+ * a `foundry` answer were cached, a firm that connects its own resource would
+ * keep getting OUR key for up to CACHE_TTL_MS from every warm instance that did
+ * not run the connect mutation — while their screen already says AI runs in
+ * their tenant. That is the precise breach this feature exists to prevent, so
+ * an unconnected firm re-reads its (indexed, firmId+provider) row every call
+ * instead; a fraction of a millisecond against an AI call costing hundreds.
+ *
+ * Staleness therefore only ever errs toward the firm's OWN tenant: a disconnect
+ * takes up to CACHE_TTL_MS to fall back to ours. That is the safe direction.
+ */
 const cache = new Map<string, CacheEntry>();
 
 /** Drop cached credentials. Called by connect/disconnect so the acting
  *  instance reflects the change immediately; other instances follow within
  *  CACHE_TTL_MS. Pass no argument to clear every firm (tests). */
 export function clearAiCredentialCache(firmId?: string): void {
-  if (firmId) cache.delete(firmId);
+  // Branch on presence, not truthiness: `clearAiCredentialCache("")` is a
+  // caller passing a firm id it failed to populate, not a request to wipe every
+  // firm's entry.
+  if (firmId !== undefined) cache.delete(firmId);
   else cache.clear();
 }
 
@@ -49,12 +63,15 @@ export function clearAiCredentialCache(firmId?: string): void {
 export function foundrySystemCredentials(): AiCredentials {
   const endpoint = process.env.AZURE_ENDPOINT ?? "";
   const apiKey = process.env.AZURE_API_KEY ?? "";
-  const apiVersion = process.env.AZURE_API_VERSION ?? "2024-12-01-preview";
+  // `||`, not `??`: an env var set to the empty string must take the default
+  // rather than survive as "" and build a client that 400s on every call. The
+  // siblings below are guarded instead, which `??` would let "" slip past.
+  const apiVersion = process.env.AZURE_API_VERSION || "2024-12-01-preview";
   const chat = process.env.AZURE_ANALYSIS_MODEL ?? "";
   const mini = process.env.AZURE_MODEL ?? "";
   const embedding = process.env.AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT ?? "";
   if (!endpoint || !apiKey || !chat || !mini) throw new Error("ai_not_configured");
-  return {
+  return Object.freeze({
     source: "foundry",
     endpoint,
     apiKey,
@@ -62,8 +79,8 @@ export function foundrySystemCredentials(): AiCredentials {
     // `embedding` is allowed to be empty here: callAIEmbedding fails closed with
     // ai_embedding_not_configured, and the chat paths must not be blocked by an
     // unset embeddings deployment.
-    deployments: { chat, mini, embedding },
-  };
+    deployments: Object.freeze({ chat, mini, embedding }),
+  } satisfies AiCredentials);
 }
 
 /**
@@ -80,17 +97,19 @@ function firmCredentials(conn: { accessToken: string | null; scope: string | nul
   try {
     const { apiKey } = decodeAzureSecret(conn.accessToken);
     const config = decodeAzureConfig(conn.scope);
-    return {
+    // Frozen because this object is what the cache holds: a caller mutating
+    // `creds.apiKey` would otherwise corrupt that firm's entry for the whole TTL.
+    return Object.freeze({
       source: "firm",
       endpoint: config.endpoint,
       apiKey,
       apiVersion: config.apiVersion,
-      deployments: {
+      deployments: Object.freeze({
         chat: config.chatDeployment,
         mini: config.miniDeployment,
         embedding: config.embeddingDeployment,
-      },
-    };
+      }),
+    } satisfies AiCredentials);
   } catch (cause) {
     throw new Error("ai_firm_connection_unavailable", { cause });
   }
@@ -108,7 +127,15 @@ export async function resolveAiCredentials(): Promise<AiCredentials> {
   const hit = cache.get(orgId);
   if (hit && hit.expiresAt > Date.now()) return hit.creds;
 
-  const conn = await getConnection(orgId, "azure_openai");
+  // getConnection decrypts the stored secret inside itself, so a rotated or
+  // unset CREDENTIAL_ENCRYPTION_KEY and a malformed envelope both surface here
+  // rather than in firmCredentials. A failed read means we cannot know whether
+  // this firm is connected, and "cannot know" is never a licence to use our own
+  // key — so it throws, under the same sentinel and with the original attached
+  // as `cause` rather than concatenated into the message.
+  const conn = await getConnection(orgId, "azure_openai").catch((cause: unknown) => {
+    throw new Error("ai_firm_connection_unavailable", { cause });
+  });
 
   let creds: AiCredentials;
   if (!conn || conn.status === "disconnected") {
@@ -125,6 +152,11 @@ export async function resolveAiCredentials(): Promise<AiCredentials> {
     throw new Error("ai_firm_connection_unavailable");
   }
 
-  cache.set(orgId, { creds, expiresAt: Date.now() + CACHE_TTL_MS });
+  // Firm entries only — see the `cache` comment. A foundry answer is recomputed
+  // every call so a newly connected firm is never served our key from a warm
+  // instance that missed the clear.
+  if (creds.source === "firm") {
+    cache.set(orgId, { creds, expiresAt: Date.now() + CACHE_TTL_MS });
+  }
   return creds;
 }
