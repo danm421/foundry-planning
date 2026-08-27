@@ -83,6 +83,7 @@ import { computeRoth529Rollover } from "./education/roth-rollover";
 import { executeWithdrawals, planSupplementalWithdrawal, categorizeDraw, supplementalDrawSources, type SupplementalDraw } from "./withdrawal";
 import { computeEducationDraw } from "./education/education-funding";
 import { calculateRMD } from "./rmd";
+import { initAnnuityState, stepAnnuityYear, type AnnuityState } from "./annuity";
 import { applyTransfers, type TransfersResult } from "./transfers";
 import { applyReinvestments } from "./reinvestments";
 import { applyRothConversions, fillUpBracketCeiling } from "./roth-conversions";
@@ -745,6 +746,25 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   for (const acct of data.accounts) {
     if (isPreActivation(acct, planSettings.planStartYear)) continue;
     accountBalances[acct.id] = acct.value;
+  }
+
+  // Per-contract annuity state, threaded across years alongside accountBalances.
+  // Seeded from `data.accounts` (not `workingAccounts`) to match the sibling
+  // ledgers above — same iteration, same `isPreActivation` skip, same key set.
+  // The year loop's contract step reads `workingAccounts`, so an account that
+  // has been sold or removed simply stops being stepped and its entry goes
+  // unread; a pre-activation contract picks up its state on the activation-join
+  // fallback below.
+  //
+  // The state's `accountValue` is a per-contract copy, NOT the authoritative
+  // balance: `accountBalances` is, because transfers, the growth pass and last
+  // year's withdrawals all land there. The step below re-seats the copy from the
+  // live balance every year for exactly that reason.
+  const annuityStates: Record<string, AnnuityState> = {};
+  for (const acct of data.accounts) {
+    if (isPreActivation(acct, planSettings.planStartYear)) continue;
+    if (acct.category !== "annuity" || !acct.annuity) continue;
+    annuityStates[acct.id] = initAnnuityState(acct.annuity, accountBalances[acct.id] ?? acct.value);
   }
 
   // Cumulative 529 → Roth rollovers per source account, across all years.
@@ -2108,6 +2128,153 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
+    // ── 4c. Annuity contracts ────────────────────────────────────────────────
+    // Runs after RMDs and before the withdrawal strategy: guaranteed income is
+    // cash the household already has, so spending it should not trigger a
+    // liquidation elsewhere.
+    let annuityGrossIncome = 0;
+    let annuityOrdinaryIncome = 0;
+    let annuityEarlyWithdrawalPenalty = 0;
+    const annuityBySource: Record<string, { type: string; amount: number }> = {};
+    const annuityIncomeBySource: Record<string, number> = {};
+    for (const acct of workingAccounts) {
+      if (acct.category !== "annuity" || !acct.annuity) continue;
+      // A contract that joined at its activation year has no seeded state yet.
+      const state =
+        annuityStates[acct.id] ??
+        initAnnuityState(acct.annuity, accountBalances[acct.id] ?? acct.value);
+
+      const ownerBirthYear =
+        isSpouseAccount(acct) && spouseBirthYear != null ? spouseBirthYear : clientBirthYear;
+      const ownerAge = year - ownerBirthYear;
+
+      // Alive unless this account owner's modelled death is already PAST. Death
+      // events apply below `years.push()`, so the death year itself still pays.
+      // Defaults to ALIVE when the owner cannot be pinned to a side: silently
+      // stopping income the carrier still owes is by far the worse error.
+      const ownerSide: "client" | "spouse" = isSpouseAccount(acct) ? "spouse" : "client";
+      const ownerDeathYear =
+        firstDeathDeceased === ownerSide
+          ? firstDeathYear
+          : finalDeceased === ownerSide
+            ? finalDeathYear
+            : null;
+      const isAlive = ownerDeathYear == null || year <= ownerDeathYear;
+
+      const balanceBefore = accountBalances[acct.id] ?? 0;
+      const result = stepAnnuityYear({
+        contract: acct.annuity,
+        // `accountBalances` — not the contract's own copy — is authoritative for
+        // the account value: the growth pass at step 4 has already applied this
+        // year's market return (honouring any Monte-Carlo returnsOverride), and
+        // transfers plus LAST year's withdrawals have already been debited there.
+        // Re-seat the copy on it, then pass a growth rate of 0 so the contract
+        // applies only its own drag — the annual fee — rather than growing a
+        // balance that has already grown. Without the re-seat, a supplemental
+        // withdrawal from an annuity is silently reverted the following year.
+        state: { ...state, accountValue: balanceBefore },
+        year,
+        ownerAge,
+        growthRate: 0,
+        isAlive,
+      });
+      annuityStates[acct.id] = result.state;
+
+      // The contract state is authoritative for the balance — a rider contract
+      // whose account value hit zero must show zero here even though it is
+      // still paying. That is the crossover, not a bug.
+      accountBalances[acct.id] = result.state.accountValue;
+
+      const ledger = accountLedgers[acct.id];
+      if (ledger && result.state.accountValue !== balanceBefore) {
+        const delta = result.state.accountValue - balanceBefore;
+        ledger.distributions -= delta;
+        ledger.endingValue += delta;
+        ledger.entries.push({
+          category: "withdrawal",
+          label:
+            result.income > 0
+              ? `Annuity distribution from ${acct.name}`
+              : `Annuity contract fee (${acct.name})`,
+          amount: delta,
+          sourceId: acct.id,
+          // §72 basis lives on the contract (`remainingBasis`), never in
+          // `basisMap` — the supplemental-withdrawal basis gate skips this
+          // category too — so no cost basis moves here.
+          basis: 0,
+        });
+      }
+
+      if (result.income <= 0) continue;
+
+      if (isFullyEntityOwned(acct)) {
+        // A non-natural owner is taxed under §72(u) at the entity level, which
+        // this engine does not model. Route the cash so the balance sheet still
+        // reconciles, and leave the tax alone rather than booking an entity's
+        // annuity as household income.
+        // FULLY entity-owned only: a jointly- or mixed-owned contract falls
+        // through to the household branch below. That over-books the entity's
+        // slice onto the 1040, but the alternative — `controllingFamilyMember`,
+        // which the RMD block can rely on because migration 0055 forces one
+        // owner on retirement accounts — returns null for a 50/50 client/spouse
+        // annuity and would drop that household's income entirely.
+        const entityOwner = acct.owners.find((o) => o.kind === "entity") as
+          | { kind: "entity"; entityId: string; percent: number }
+          | undefined;
+        creditCash(
+          entityOwner ? entityCheckingByEntityId[entityOwner.entityId] : undefined,
+          result.income,
+          { category: "income", label: `Annuity income from ${acct.name}`, sourceId: acct.id },
+        );
+        continue;
+      }
+
+      annuityGrossIncome += result.income;
+      annuityOrdinaryIncome += result.ordinaryIncome;
+      annuityEarlyWithdrawalPenalty += result.earlyWithdrawalPenalty;
+      annuityIncomeBySource[`annuity:${acct.id}`] = result.income;
+      if (result.ordinaryIncome > 0) {
+        annuityBySource[`annuity:${acct.id}`] = {
+          type: "ordinary_income",
+          amount: result.ordinaryIncome,
+        };
+      }
+      if (result.basisReturn > 0) {
+        annuityBySource[`annuity_tax_free:${acct.id}`] = {
+          type: "non_taxable",
+          amount: result.basisReturn,
+        };
+      }
+      // Route the cash to the household's default checking, the same way an
+      // income row lands.
+      creditCash(defaultChecking?.id, result.income, {
+        category: "income",
+        label: `Annuity income from ${acct.name}`,
+        sourceId: acct.id,
+      });
+    }
+    // Gross contract cash is household income. Only the §72 taxable slice is
+    // folded into `taxableIncome` / `taxDetail.ordinaryIncome` below, so the
+    // basis-return slice becomes non-taxable by construction — year-tax.ts
+    // derives non-taxable income as `totalIncome − taxableIncome`.
+    //
+    // NB the asymmetry with `householdRmdIncome`, which is deliberately kept OUT
+    // of `income.total` and added separately downstream. Annuity income is
+    // different: it is household cash the cash-flow surplus must see.
+    if (annuityGrossIncome > 0) {
+      income.other += annuityGrossIncome;
+      income.total += annuityGrossIncome;
+      Object.assign(income.bySource, annuityIncomeBySource);
+    }
+    // §72(t)/(q) on a pre-59½ contract distribution. `transferEarlyWithdrawalPenalty`
+    // is the YearTaxInput slot for every penalty recognised BEFORE the
+    // supplemental-withdrawal loop runs — year-tax.ts folds it straight into
+    // `flow.earlyWithdrawalPenalty` — so the annuity's belongs there for exactly
+    // the reason a transfer's does. Dropping it would let a pre-59½ annuity
+    // distribution book a penalty the projection silently discards.
+    const preSupplementalEarlyPenalty =
+      transferResult.earlyWithdrawalPenalty + annuityEarlyWithdrawalPenalty;
+
     // ── Roth Conversions (technique) — deferred application ────────────────
     // We initialize an empty result here so downstream taxableIncome / taxDetail
     // construction can reference it as a placeholder. The actual conversion
@@ -2149,6 +2316,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       income.capitalGains +
       income.trust +
       householdRmdIncome +
+      annuityOrdinaryIncome +
       grantorIncome.salaries +
       grantorIncome.business +
       grantorIncome.deferred +
@@ -2186,7 +2354,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // Subset of taxExempt — muni-bond interest only (needed for IRMAA MAGI).
       // Excludes business non_taxable pass-through (Roth-equivalent / RoC).
       taxExemptInterest: 0,
-      bySource: { ...realizationBySource, ...rmdBySource },
+      bySource: { ...realizationBySource, ...rmdBySource, ...annuityBySource },
     };
     // Map income entries to tax categories. Social Security is intentionally
     // excluded from this loop: `socialSecurityGross` is passed separately into
@@ -2534,6 +2702,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     }
     if (grantorRmdTaxable > 0) {
       taxDetail.ordinaryIncome += grantorRmdTaxable;
+    }
+    // Add the §72 taxable slice of this year's annuity distributions. Mirrors
+    // the RMD fold above: bracket mode reads `taxDetail`, flat mode reads the
+    // `taxableIncome` scalar, so both have to be told.
+    if (annuityOrdinaryIncome > 0) {
+      taxDetail.ordinaryIncome += annuityOrdinaryIncome;
     }
 
     // §664(c): net each CRT's share of this year's sale gains OUT of the
@@ -4625,8 +4799,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     //   db     = pension/deferred (Income.type === "deferred")
     //   ira    = traditional IRA distributions (subType = traditional_ira)
     //   k401   = 401k/403b distributions (subType = 401k | 403b)
-    //   annuity = (no current account subType maps here; reserved for future use)
-    // bySource keys: "<accountId>:rmd", "withdrawal:<accountId>", or "<incomeId>".
+    //   annuity = annuity contract distributions (rider income, annuitized
+    //             payments, and supplemental draws from an annuity account).
+    //             Feeds the state retirement-income exclusions in ~27 states —
+    //             see lib/tax/state-income/retirement-subtraction.ts.
+    // bySource keys: "<accountId>:rmd", "withdrawal:<accountId>",
+    // "annuity:<accountId>", or "<incomeId>".
     // NOTE: this captures RMDs (+ any scheduled draws already in bySource) but NOT
     // the spending-driven supplemental IRA/401(k) draws — those are planned later
     // in the convergence loop and folded into `supplementalRetirementBreakdown`
@@ -4638,15 +4816,26 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if (entry.type !== "ordinary_income" || entry.amount <= 0) continue;
         const rmdMatch = key.match(/^([^:]+):rmd$/);
         const withdrawalMatch = key.match(/^withdrawal:(.+)$/);
-        if (rmdMatch) {
+        const annuityMatch = key.match(/^annuity:(.+)$/);
+        if (annuityMatch) {
+          // Rider income and annuitized payments. The matching
+          // "annuity_tax_free:" key is a return of §72 basis, never ordinary
+          // income, so the type filter above already excluded it.
+          retirementBreakdown.annuity += entry.amount;
+        } else if (rmdMatch) {
           const acct = accountById.get(rmdMatch[1]);
           const sub = acct?.subType ?? "";
-          if (sub === "traditional_ira") retirementBreakdown.ira += entry.amount;
+          // An annuity is classified by CATEGORY, not subType — annuity
+          // accounts carry product subTypes ("other", "myga", …), none of which
+          // the ira/k401 tests below would ever match.
+          if (acct?.category === "annuity") retirementBreakdown.annuity += entry.amount;
+          else if (sub === "traditional_ira") retirementBreakdown.ira += entry.amount;
           else if (sub === "401k" || sub === "403b") retirementBreakdown.k401 += entry.amount;
         } else if (withdrawalMatch) {
           const acct = accountById.get(withdrawalMatch[1]);
           const sub = acct?.subType ?? "";
-          if (sub === "traditional_ira") retirementBreakdown.ira += entry.amount;
+          if (acct?.category === "annuity") retirementBreakdown.annuity += entry.amount;
+          else if (sub === "traditional_ira") retirementBreakdown.ira += entry.amount;
           else if (sub === "401k" || sub === "403b") retirementBreakdown.k401 += entry.amount;
         } else {
           // Income row keyed by incomeId
@@ -4673,7 +4862,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       capitalGainsInTaxableIncome: capGainsInTaxableIncome,
       charityGiftsThisYear,
       secaResult,
-      transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
+      transferEarlyWithdrawalPenalty: preSupplementalEarlyPenalty,
       interestIncomeForTax,
       deductionBreakdownIn: deductionBreakdownResult ?? null,
       // NB: retirementBreakdown/primaryAge/spouseAge must stay in sync with the
@@ -5943,7 +6132,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           capitalGainsInTaxableIncome: capGainsInTaxableIncome,
           charityGiftsThisYear,
           secaResult,
-          transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
+          transferEarlyWithdrawalPenalty: preSupplementalEarlyPenalty,
           interestIncomeForTax,
           deductionBreakdownIn: deductionBreakdownResult ?? null,
           retirementBreakdown,
@@ -6082,8 +6271,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         const supplementalRetirementBreakdown = { ...retirementBreakdown };
         for (const draw of supplementalPlan.draws) {
           if (draw.ordinaryIncome <= 0) continue;
-          const sub = accountById.get(draw.accountId)?.subType ?? "";
-          if (sub === "traditional_ira") supplementalRetirementBreakdown.ira += draw.ordinaryIncome;
+          const drawAcct = accountById.get(draw.accountId);
+          const sub = drawAcct?.subType ?? "";
+          // Annuities are classified by CATEGORY — their subTypes are product
+          // names, so the ira/k401 tests can never reach them.
+          if (drawAcct?.category === "annuity") supplementalRetirementBreakdown.annuity += draw.ordinaryIncome;
+          else if (sub === "traditional_ira") supplementalRetirementBreakdown.ira += draw.ordinaryIncome;
           else if (sub === "401k" || sub === "403b") supplementalRetirementBreakdown.k401 += draw.ordinaryIncome;
         }
 
@@ -6118,7 +6311,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           },
           charityGiftsThisYear,
           secaResult,
-          transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
+          transferEarlyWithdrawalPenalty: preSupplementalEarlyPenalty,
           interestIncomeForTax,
           deductionBreakdownIn: deductionBreakdownResult ?? null,
           retirementBreakdown: supplementalRetirementBreakdown,
@@ -6230,8 +6423,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           const supplementalRetirementBreakdown = { ...retirementBreakdown };
           for (const draw of supplementalPlan.draws) {
             if (draw.ordinaryIncome <= 0) continue;
-            const sub = accountById.get(draw.accountId)?.subType ?? "";
-            if (sub === "traditional_ira") supplementalRetirementBreakdown.ira += draw.ordinaryIncome;
+            const drawAcct = accountById.get(draw.accountId);
+            const sub = drawAcct?.subType ?? "";
+            // Annuities are classified by CATEGORY — see the sibling site above.
+            if (drawAcct?.category === "annuity") supplementalRetirementBreakdown.annuity += draw.ordinaryIncome;
+            else if (sub === "traditional_ira") supplementalRetirementBreakdown.ira += draw.ordinaryIncome;
             else if (sub === "401k" || sub === "403b") supplementalRetirementBreakdown.k401 += draw.ordinaryIncome;
           }
 
@@ -6262,7 +6458,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             },
             charityGiftsThisYear,
             secaResult,
-            transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
+            transferEarlyWithdrawalPenalty: preSupplementalEarlyPenalty,
             interestIncomeForTax,
             deductionBreakdownIn: deductionBreakdownResult ?? null,
             retirementBreakdown: supplementalRetirementBreakdown,
