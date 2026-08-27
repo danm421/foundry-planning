@@ -767,6 +767,35 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     annuityStates[acct.id] = initAnnuityState(acct.annuity, accountBalances[acct.id] ?? acct.value);
   }
 
+  /** Live §72 basis per annuity contract, for the tax classifiers that split a
+   *  distribution. Rebuilt at each call site because the contract step and any
+   *  earlier draw or transfer move it within the year. */
+  const annuityBasisSnapshot = (): Record<string, number> => {
+    const out: Record<string, number> = {};
+    for (const [id, st] of Object.entries(annuityStates)) out[id] = st.remainingBasis;
+    return out;
+  };
+
+  /** Consume §72 basis for a draw out of an annuity.
+   *
+   *  Annuity basis lives on the contract, NEVER in `basisMap` — the
+   *  taxable/cash gate beside every draw-application site skips this category —
+   *  so it decrements here or nowhere.
+   *
+   *  ⚠️ Call this ONLY where a plan is actually APPLIED. The tax-convergence
+   *  loop re-plans the same year many times; decrementing per iteration would
+   *  consume the same basis over and over. `planSupplementalWithdrawal` works
+   *  on a local copy for exactly this reason. */
+  const consumeAnnuityBasis = (accountId: string, basisReturn: number) => {
+    if (basisReturn <= 0) return;
+    const st = annuityStates[accountId];
+    if (!st) return;
+    annuityStates[accountId] = {
+      ...st,
+      remainingBasis: Math.max(0, st.remainingBasis - basisReturn),
+    };
+  };
+
   // Cumulative 529 → Roth rollovers per source account, across all years.
   // SECURE 2.0 §126 caps lifetime rollovers per beneficiary/account at
   // $35,000; this tracker persists across projection years so the pass can
@@ -1066,6 +1095,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         accountBalances[acct.id] = acct.value;
         basisMap[acct.id] = acct.basis;
         rothValueMap[acct.id] = acct.rothValue ?? 0;
+        // A joining annuity needs its contract state seeded HERE, not lazily in
+        // the contract step below: transfers and draws run first and consume
+        // §72 basis, and without an entry to write into, that consumption is
+        // dropped and the step re-seeds from the original costBasis every year.
+        if (acct.category === "annuity" && acct.annuity) {
+          annuityStates[acct.id] = initAnnuityState(acct.annuity, acct.value);
+        }
       }
     }
 
@@ -2011,10 +2047,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // these are start-of-year figures — the correct basis to charge against.
       // `applyTransfers` mutates the map; the result is folded back onto the
       // contract state, which owns this number for the rest of the year.
-      const annuityBasisMap: Record<string, number> = {};
-      for (const [id, st] of Object.entries(annuityStates)) {
-        annuityBasisMap[id] = st.remainingBasis;
-      }
+      const annuityBasisMap = annuityBasisSnapshot();
       transferResult = applyTransfers({
         transfers: data.transfers,
         accounts: workingAccounts,
@@ -2028,6 +2061,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         ownerAges: { client: ages.client, spouse: ages.spouse },
         spouseFamilyMemberId: spouseFmId,
       });
+      // Every contract has a state by now — the pre-loop seed covers accounts
+      // live at plan start, the activation-year join covers the rest — so a
+      // missing entry means the account carries no `annuity` contract at all
+      // (a technique-created `category: "annuity"` asset), and there is no §72
+      // basis to keep.
       for (const [id, remainingBasis] of Object.entries(annuityBasisMap)) {
         const st = annuityStates[id];
         if (st && remainingBasis !== st.remainingBasis) {
@@ -5611,6 +5649,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
               balance: accountBalances[id] ?? 0,
               basisMap,
               rothValueMap,
+              // Same live-basis read as the supplemental waterfall: an annuity
+              // named as a dedicated education account is drawn the same way.
+              annuityRemainingBasis: annuityStates[id]?.remainingBasis,
               ownerAge,
             });
           return { ordinaryIncome, capitalGains, basisReturn, earlyWithdrawalPenalty };
@@ -5621,6 +5662,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // school — it does NOT credit household checking.
       for (const d of drawResult.draws) {
         accountBalances[d.accountId] = (accountBalances[d.accountId] ?? 0) - d.amount;
+        // Education draws apply as they are planned (no convergence loop), so
+        // this is the one and only application of each draw.
+        consumeAnnuityBasis(d.accountId, d.basisReturn);
         // A taxable draw returns basis; reduce the source's basisMap so a later
         // sale doesn't re-tax the same dollars. The ledger entry must book the
         // CLAMPED delta (what basisMap actually shed) so the asset-ledger
@@ -6251,6 +6295,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           basisMap,
           freshBasisMap,
           rothValueMap,
+          // Read-only: this loop re-plans the year many times. The real
+          // decrement happens once, where the converged plan is applied.
+          annuityBasisMap: annuityBasisSnapshot(),
           accounts: workingAccounts,
           ages: { client: ages.client, spouse: ages.spouse ?? null },
           isSpouseAccount,
@@ -6423,6 +6470,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             basisMap,
             freshBasisMap,
             rothValueMap,
+            // Read-only — see the hasChecking loop above.
+            annuityBasisMap: annuityBasisSnapshot(),
             accounts: workingAccounts,
             ages: { client: ages.client, spouse: ages.spouse ?? null },
             isSpouseAccount,
@@ -6720,6 +6769,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         withdrawals.byAccount[draw.accountId] =
           (withdrawals.byAccount[draw.accountId] ?? 0) + draw.amount;
         withdrawals.total += draw.amount;
+        consumeAnnuityBasis(draw.accountId, draw.basisReturn);
 
         // Basis reduction for taxable/cash accounts uses the actual basisReturn
         // from categorizeDraw (fresh-basis-first ordering per spec 2026-05-11),
@@ -6866,6 +6916,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           withdrawals.byAccount[draw.accountId] =
             (withdrawals.byAccount[draw.accountId] ?? 0) + draw.amount;
           withdrawals.total += draw.amount;
+          consumeAnnuityBasis(draw.accountId, draw.basisReturn);
 
           const drawAccount = accountById.get(draw.accountId);
           const gatesBasis =

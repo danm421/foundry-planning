@@ -605,4 +605,213 @@ describe("projection — annuity contracts", () => {
     // The whole point: the two runs must DIFFER, and in this direction.
     expect(taxable(youngCo)).toBeGreaterThan(taxable(oldCo));
   });
+
+  // The converged plan is applied in TWO separate loops — the `hasChecking`
+  // convergence loop and the legacy no-checking branch. Round 1's transfer fix
+  // landed on one of two sibling sites and the whole-branch review missed it;
+  // this runs the identical proof through both.
+  it.each([
+    ["the hasChecking convergence loop", true],
+    ["the legacy no-checking path", false],
+  ] as const)(
+    "a spending draw consumes §72 basis, so the crossover payments are taxable — %s",
+    (_label, defaultChecking) => {
+      // The state-coherence half. A deferred contract is drained to fund living
+      // expenses, THEN its rider turns on and pays past a zero account value.
+      //
+      //   2026-27: $110k/yr of expenses against $20k of cash drains the whole
+      //            $200k contract — exactly, with nothing left unfunded (an
+      //            unfunded remainder pushes the legacy path's overdraft leg
+      //            onto the account and muddies the guard below). Every dollar
+      //            drawn is a return of basis (value == basis, so LIFO finds no
+      //            gain), so basis and value reach zero together.
+      //   2028:    the rider pays $20k out of the CARRIER's pocket. With no
+      //            account value and no basis left, `splitLifo`'s excess term
+      //            makes every dollar ordinary income.
+      //
+      // If the draws never decremented `remainingBasis`, 2028 reads a stale
+      // $200k of basis, finds no gain, and scores the whole payment as a
+      // TAX-FREE return of basis the household already recovered.
+      const input = inputWithAnnuity(
+        {
+          productType: "fixed_indexed",
+          incomeMode: "rider",
+          incomeStartYear: 2028,
+          benefitBase: 200_000,
+          payoutPct: 0.10,
+          rollupRatchets: false,
+          taxTreatment: "non_qualified",
+          costBasis: 200_000,
+          annualFeePct: 0,
+        },
+        200_000,
+        {
+          planEndYear: 2028,
+          livingExpense: 110_000,
+          checkingValue: 20_000,
+          defaultChecking,
+        },
+      );
+      const years = runProjection(input);
+      const y2027 = years.find((y) => y.year === 2027)!;
+      const y2028 = years.find((y) => y.year === 2028)!;
+
+      // GUARD: the draws really happened and really emptied the contract.
+      expect(y2027.withdrawals.byAccount[ANNUITY_ID] ?? 0).toBeGreaterThan(0);
+      expect(y2027.portfolioAssets.annuityTotal).toBe(0);
+
+      // The whole payment is ordinary income — the carrier is paying past a
+      // contract the household has already recovered every dollar of.
+      expect(y2028.taxDetail!.bySource[ANNUITY_KEY]).toEqual({
+        type: "ordinary_income",
+        amount: 20_000,
+      });
+      // ...and NOT a tax-free return of basis consumed years ago.
+      expect(y2028.taxDetail!.bySource[`annuity_tax_free:${ANNUITY_ID}`]).toBeUndefined();
+    },
+  );
+
+  it("a spending draw reads the LIVE §72 basis a transfer already consumed", () => {
+    // The read half, and proof the two halves compose: the transfer path writes
+    // the basis down, the draw path must read what it wrote.
+    //
+    //   2026: 200k → 240k (20% growth). A $150k transfer out: $50k of gain is
+    //         recognised and $100k of basis returned → basis 190k → 90k,
+    //         value 90k.
+    //   2027: 90k → 108k. TRUE basis 90k ⇒ $18,000 of gain, and a draw larger
+    //         than that recognises exactly $18,000.
+    //         STALE basis 190k ⇒ no gain at all ⇒ $0, tax-free.
+    //
+    // $18,000 is fixed by the GAIN, not by the draw size, so the exact
+    // converged draw amount cannot move it.
+    const input = inputWithAnnuity(
+      {
+        productType: "myga",
+        incomeMode: "none",
+        taxTreatment: "non_qualified",
+        costBasis: 190_000,
+        annualFeePct: 0,
+        rollupRatchets: false,
+      },
+      200_000,
+      {
+        planEndYear: 2027,
+        annuityGrowthRate: 0.20,
+        checkingValue: 60_000,
+        livingExpense: 45_000,
+        transfers: [
+          {
+            id: "xfer-setup",
+            name: "One-time move to brokerage",
+            sourceAccountId: ANNUITY_ID,
+            targetAccountId: "acc-brokerage",
+            amount: 150_000,
+            mode: "one_time",
+            startYear: 2026,
+            growthRate: 0,
+            schedules: [],
+          },
+        ],
+        extraAccounts: [
+          {
+            id: "acc-brokerage",
+            name: "Brokerage",
+            category: "taxable",
+            subType: "brokerage",
+            titlingType: "jtwros",
+            value: 0,
+            basis: 0,
+            growthRate: 0,
+            rmdEnabled: false,
+            owners: [
+              { kind: "family_member", familyMemberId: CLIENT_FM_ID, percent: 1 },
+            ],
+          },
+        ],
+      },
+    );
+    const years = runProjection(input);
+    const y2026 = years.find((y) => y.year === 2026)!;
+    const y2027 = years.find((y) => y.year === 2027)!;
+
+    // GUARDS: 2026 is the transfer alone (checking absorbs the tax), and 2027's
+    // draw is comfortably larger than the $18k of gain it must recognise.
+    expect(y2026.withdrawals.byAccount[ANNUITY_ID] ?? 0).toBe(0);
+    expect(y2026.portfolioAssets.annuityTotal).toBeCloseTo(90_000, 2);
+    expect(y2027.withdrawals.byAccount[ANNUITY_ID] ?? 0).toBeGreaterThan(18_000);
+
+    expect(y2027.taxDetail!.bySource[`withdrawal:${ANNUITY_ID}`]).toEqual({
+      type: "ordinary_income",
+      amount: expect.closeTo(18_000, 2),
+    });
+  });
+
+  it("an annuity that joins at its activation year still tracks basis across years", () => {
+    // Same re-shelter arithmetic as the recurring-transfer test, shifted onto a
+    // contract with `activationYear`. It is skipped by the pre-loop seed, so if
+    // the activation-year join does not seed its contract state the transfer
+    // path writes basis into a map entry that is then DROPPED, and the step
+    // re-seeds from the original costBasis every year.
+    const input = inputWithAnnuity(
+      {
+        productType: "myga",
+        incomeMode: "none",
+        taxTreatment: "non_qualified",
+        costBasis: 190_000,
+        annualFeePct: 0,
+        rollupRatchets: false,
+      },
+      200_000,
+      {
+        planEndYear: 2028,
+        annuityGrowthRate: 0.20,
+        checkingValue: 200_000,
+        annuityAccountOverrides: { activationYear: 2027 },
+        transfers: [
+          {
+            id: "xfer-1",
+            name: "Annuity to brokerage",
+            sourceAccountId: ANNUITY_ID,
+            targetAccountId: "acc-brokerage",
+            amount: 60_000,
+            mode: "recurring",
+            startYear: 2027,
+            endYear: 2028,
+            growthRate: 0,
+            schedules: [],
+          },
+        ],
+        extraAccounts: [
+          {
+            id: "acc-brokerage",
+            name: "Brokerage",
+            category: "taxable",
+            subType: "brokerage",
+            titlingType: "jtwros",
+            value: 0,
+            basis: 0,
+            growthRate: 0,
+            rmdEnabled: false,
+            owners: [
+              { kind: "family_member", familyMemberId: CLIENT_FM_ID, percent: 1 },
+            ],
+          },
+        ],
+      },
+    );
+    const years = runProjection(input);
+    const y2026 = years.find((y) => y.year === 2026)!;
+    const y2027 = years.find((y) => y.year === 2027)!;
+    const y2028 = years.find((y) => y.year === 2028)!;
+
+    // GUARD: the contract genuinely does not exist before 2027.
+    expect(y2026.portfolioAssets.annuityTotal).toBe(0);
+    expect(y2027.portfolioAssets.annuityTotal).toBeCloseTo(180_000, 2);
+
+    const ordinary = (y: (typeof y2027)) =>
+      y.taxDetail!.bySource["transfer:xfer-1"]?.amount ?? 0;
+    expect(ordinary(y2027)).toBeCloseTo(50_000, 2);
+    expect(ordinary(y2028)).toBeCloseTo(36_000, 2);
+    expect(ordinary(y2028)).toBeGreaterThan(26_000);
+  });
 });
