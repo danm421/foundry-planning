@@ -1008,3 +1008,60 @@ describe("AddAccountForm — annuity contract load guard", () => {
     expect(contractWrites()).toHaveLength(0);
   });
 });
+
+describe("AddAccountForm — a failed contract write must not orphan the account", () => {
+  const accountCreates = () =>
+    fetchMock.mock.calls.filter(
+      (args) =>
+        String(args[0]) === "/api/clients/client-123/accounts" &&
+        (args[1] as FetchInit)?.method === "POST",
+    );
+
+  // The contract PUT is the only follow-up on the create path that throws. If
+  // it fires before the form records the id the server just handed back, the
+  // account exists but the form still believes it doesn't — and the next Save
+  // mints a fresh uuid and creates the whole account a second time.
+  const failingContractWrite = () =>
+    mockAnnuityRoutes({ ok: true, row: null }, { ok: false, body: { error: "Server error" } });
+
+  it("edits, rather than re-creates, after a failed contract write on the tab-switch save", async () => {
+    failingContractWrite();
+    const formRef = createRef<AccountFormAutoSaveHandle>();
+    renderAnnuity("create", formRef);
+
+    await act(async () => {
+      await formRef.current!.saveAsync();
+    });
+    await act(async () => {
+      await formRef.current!.saveAsync();
+    });
+
+    expect(accountCreates()).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/clients/client-123/accounts/acct-1",
+      expect.objectContaining({ method: "PUT" }),
+    );
+    // Capturing the id first must not have silenced the contract write itself:
+    // the account id now exists, but the load guard's "nothing to read" case
+    // still has to hold for the create that is in flight.
+    expect(contractWrites().length).toBeGreaterThan(0);
+  });
+
+  it("edits, rather than re-creates, after a failed contract write on the dialog's own Save", async () => {
+    failingContractWrite();
+    renderAnnuity("create");
+
+    fireEvent.submit(document.getElementById("add-account-form")!);
+    await waitFor(() => expect(screen.getByText(/Server error/)).toBeInTheDocument());
+
+    fireEvent.submit(document.getElementById("add-account-form")!);
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/clients/client-123/accounts/acct-1",
+        expect.objectContaining({ method: "PUT" }),
+      ),
+    );
+
+    expect(accountCreates()).toHaveLength(1);
+  });
+});

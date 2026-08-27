@@ -1323,10 +1323,15 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             body: JSON.stringify({ allocations: customAllocations }),
           });
         }
-        await saveAnnuityContract(saved.id);
-
+        // Record the server's id BEFORE any follow-up that can throw. The
+        // contract write is the only one that does, and running it first left
+        // the account created server-side while the form still thought it was
+        // unsaved — so the next Save minted a new uuid and created the account
+        // all over again.
         setEffectiveAccountId(saved.id);
         onAutoSaved?.(saved.id);
+
+        await saveAnnuityContract(saved.id);
         baselineRef.current = currentSerialized;
         return { ok: true, recordId: saved.id };
       }
@@ -1553,6 +1558,11 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
           ? { id: newAccountId }
           : await res.json();
 
+        // Record the server's id before any follow-up that can throw, so a
+        // failed one leaves the advisor editing THIS account instead of
+        // creating a second copy of it on the next Save.
+        setEffectiveAccountId(account.id);
+
         // Save asset mix allocations for new account. Allocations are nested
         // and not in v1 scenario scope — base mode only. Skipped when holdings
         // drive the account (the holdings sync owns the mix).
@@ -1563,7 +1573,6 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             body: JSON.stringify({ allocations: customAllocations }),
           });
         }
-        await saveAnnuityContract(account.id);
 
         // Create savings rule if savings tab filled (create-only). Routes
         // through the writer so a savings_rule add fires through the unified
@@ -1626,6 +1635,11 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             console.error("Failed to create savings rule");
           }
         }
+
+        // Last, because it is the only follow-up here that throws: the savings
+        // rule is create-only, and a rejected contract used to skip it for good
+        // (the retry takes the edit branch, which never creates one).
+        await saveAnnuityContract(account.id);
       }
 
       router.refresh();
