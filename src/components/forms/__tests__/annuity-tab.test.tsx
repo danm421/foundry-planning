@@ -13,7 +13,9 @@ const blank = {
 describe("AnnuityTab", () => {
   it("warns when the cost basis is unset — correct LIFO is impossible without it", () => {
     render(<AnnuityTab accountId="a" clientId="c" value={blank} onChange={noop} />);
-    expect(screen.getByText(/cost basis/i)).toBeInTheDocument();
+    // Targets copy only the WARNING carries. /cost basis/i also matched the
+    // field's own <label>, so deleting the warning outright left this green.
+    expect(screen.getByText(/will look tax-free/i)).toBeInTheDocument();
   });
 
   it("hides rider and annuitization fields while the mode is 'none'", () => {
@@ -54,9 +56,8 @@ describe("AnnuityTab", () => {
   });
 
   // ── Beyond the brief ────────────────────────────────────────────────────────
-  // The first test above matches the *label* "Cost basis" as well as the
-  // warning, so it passes whether or not the warning renders. These two pin the
-  // warning itself, by copy only the warning carries.
+  // The test above proves the warning APPEARS. This one proves it also goes
+  // away — together they pin the condition, not just the copy.
 
   it("drops the cost-basis warning once a basis is entered", () => {
     const { rerender } = render(
