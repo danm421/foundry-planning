@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
@@ -100,6 +100,15 @@ describe("AnnuityPreviewChart", () => {
   const base = { contract, startYear: 2026, years: 30 };
   const html = (props: Parameters<typeof AnnuityPreviewChart>[0]) =>
     renderToStaticMarkup(createElement(AnnuityPreviewChart, props));
+  /**
+   * Markup with every tag — and therefore every attribute — removed. The chart's
+   * `aria-label` repeats the caption verbatim, so a `toContain` against raw
+   * markup is satisfied whether or not the sentence is on the FACE. Asserting
+   * what the advisor reads has to look at text nodes only. (Dropping the visible
+   * paragraph and keeping the aria-label passed every one of these before.)
+   */
+  const strip = (markup: string) => markup.replace(/<[^>]*>/g, " ");
+  const visible = (props: Parameters<typeof AnnuityPreviewChart>[0]) => strip(html(props));
 
   it("draws once it has both a balance and a real owner age", () => {
     expect(html({ ...base, accountValue: 100_000, ownerAgeAtStart: 60 })).toContain("<canvas");
@@ -108,13 +117,13 @@ describe("AnnuityPreviewChart", () => {
   it("draws nothing without an owner age, and names what is missing", () => {
     const out = html({ ...base, accountValue: 100_000, ownerAgeAtStart: null });
     expect(out).not.toContain("<canvas");
-    expect(out).toContain("date of birth");
+    expect(strip(out)).toContain("date of birth");
   });
 
   it("draws nothing without a balance, and names what is missing", () => {
     const out = html({ ...base, accountValue: null, ownerAgeAtStart: 60 });
     expect(out).not.toContain("<canvas");
-    expect(out).toContain("account balance");
+    expect(strip(out)).toContain("account balance");
   });
 
   // The panel accepts a milestone ("when Sam retires") in place of a calendar
@@ -127,18 +136,93 @@ describe("AnnuityPreviewChart", () => {
       accountValue: 100_000, ownerAgeAtStart: 60,
     });
     expect(out).not.toContain("<canvas");
-    expect(out).toContain("year income starts");
+    expect(strip(out)).toContain("year income starts");
   });
 
   // The panel emits a fraction on every keystroke, so typing "150" into a
   // percent box hands the engine 1.5 mid-word and its rate guard throws. A
   // half-typed percentage must not white-screen the form it is typed into.
   it("says so instead of crashing when a percentage is out of range", () => {
-    const out = html({
-      ...base, contract: { ...contract, annualFeePct: 1.5 },
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const out = html({
+        ...base, contract: { ...contract, annualFeePct: 1.5 },
+        accountValue: 100_000, ownerAgeAtStart: 60,
+      });
+      expect(out).not.toContain("<canvas");
+      expect(strip(out)).toContain("0–100%");
+      // A half-typed percentage is expected input, not a defect — it must not
+      // fill the console with warnings on every keystroke.
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  // Anything the engine throws that is NOT a rate guard is a bug, and telling
+  // the advisor to go and fix percentages that are already correct sends them
+  // after the wrong thing while leaving no trace of the real failure.
+  it("does not blame the percentages for a failure that is not theirs", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      // An annuitized contract whose stated start year is long past is priced
+      // off a negative age at activation, and the mortality table refuses it.
+      const out = html({
+        ...base,
+        contract: {
+          ...contract, incomeMode: "annuitized" as const,
+          annuitizedPayment: 40_000, incomeStartYear: 1900,
+        },
+        accountValue: 100_000, ownerAgeAtStart: 60,
+      });
+      expect(out).not.toContain("<canvas");
+      expect(strip(out)).toContain("could not be previewed");
+      expect(strip(out)).not.toContain("0–100%");
+      expect(warn).toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  // The growth rate decides the year the caption prints as fact, so it belongs
+  // on the face beside it — a hover tooltip is not disclosure.
+  it("prints the growth rate it drew with on the chart face", () => {
+    const own = visible({ ...base, accountValue: 100_000, ownerAgeAtStart: 60, growthRate: 0.07 });
+    expect(own).toContain("growth rate of");
+    expect(own).toContain("7%");
+
+    const fallback = visible({ ...base, accountValue: 100_000, ownerAgeAtStart: 60 });
+    expect(fallback).toContain("an illustration rate");
+    expect(fallback).toContain("4%");
+    // Liveness: the two say different things, so neither assertion is satisfied
+    // by the other's copy.
+    expect(fallback).not.toContain("growth rate of");
+  });
+
+  // Annuitizing hands the balance to the carrier on purpose. The panel already
+  // warns that it is irreversible; the chart repeating it as an alarm is noise.
+  it("calls an annuitized contract's zeroed balance the payments starting", () => {
+    const out = visible({
+      ...base,
+      contract: {
+        ...contract, incomeMode: "annuitized" as const, annuitizedPayment: 8_000,
+      },
       accountValue: 100_000, ownerAgeAtStart: 60,
     });
-    expect(out).not.toContain("<canvas");
-    expect(out).toContain("0–100%");
+    expect(out).toContain("The payments start in");
+    expect(out).not.toContain("The balance is gone");
+  });
+
+  // The no-crossover caption used to be asserted from the ABSENCE of a flag,
+  // which is silent about a balance that drained before any income started.
+  it("does not claim a balance still has money in it while it sits on zero", () => {
+    const out = visible({
+      ...base, years: 5,
+      contract: { ...contract, riderFeePct: 0.5 },
+      accountValue: 100_000, ownerAgeAtStart: 60, growthRate: 0,
+    });
+    expect(out).toContain("The balance runs out in");
+    expect(out).toContain("2027");
+    expect(out).not.toContain("still has money in it");
   });
 });

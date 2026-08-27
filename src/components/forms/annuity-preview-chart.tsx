@@ -139,20 +139,24 @@ const usd = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
+/** 0.045 -> "4.5%". Rounded because 0.07 * 100 is 7.000000000000001. */
+function formatPct(fraction: number): string {
+  return `${Number((fraction * 100).toFixed(2))}%`;
+}
+
 const NOTE_CLASS = "text-[11px] leading-snug text-ink-3";
 
 /** The heading stays put whether or not there is a picture under it, so the
  *  panel does not grow and shrink as the advisor fills the contract in. */
-function PreviewFrame({ growthRate, children }: { growthRate: number; children: ReactNode }) {
+function PreviewFrame({ children }: { children: ReactNode }) {
   return (
     <section className="space-y-3 rounded-md border border-hair p-4">
       <div className="flex items-center gap-1.5">
         <h3 className="text-sm font-semibold text-ink">Balance and income over time</h3>
-        <FieldTooltip
-          text={`An illustration, not a quote. It runs the contract exactly as entered above, assumes the balance grows ${Math.round(
-            growthRate * 100,
-          )}% a year before the contract's own fees, and assumes the owner is living throughout. Change a number above and the picture changes.`}
-        />
+        {/* The growth assumption is NOT in here — it decides the year printed on
+            the chart face, so it is printed there too. This carries only what
+            does not change a number. */}
+        <FieldTooltip text="An illustration, not a quote. It runs the contract exactly as entered above, applies the contract's own fees to the growth, and assumes the owner is living throughout. Change a number above and the picture changes." />
       </div>
       {children}
     </section>
@@ -171,9 +175,13 @@ export function AnnuityPreviewChart({
   startYear,
   ownerAgeAtStart,
   years,
-  growthRate = PREVIEW_GROWTH_RATE,
+  growthRate,
 }: AnnuityPreviewChartProps) {
   const theme = useThemeName();
+  // Kept apart so the face can say WHICH rate it drew: the account's own, or
+  // this module's illustration rate standing in for one.
+  const rate = growthRate ?? PREVIEW_GROWTH_RATE;
+  const rateIsTheAccounts = growthRate != null;
 
   // Refuse to guess. An invented age, an invented balance, or an income start
   // that never resolved all draw a picture that looks right and is not.
@@ -185,7 +193,7 @@ export function AnnuityPreviewChart({
   }
   if (accountValue == null || ownerAgeAtStart == null || missing.length > 0) {
     return (
-      <PreviewFrame growthRate={growthRate}>
+      <PreviewFrame>
         <p className={NOTE_CLASS}>Add {andList(missing)} to preview this contract.</p>
       </PreviewFrame>
     );
@@ -199,15 +207,25 @@ export function AnnuityPreviewChart({
       startYear,
       years: years ?? Math.max(10, PREVIEW_END_AGE - ownerAgeAtStart),
       ownerAgeAtStart,
-      growthRate,
+      growthRate: rate,
     });
-  } catch {
+  } catch (err) {
     // The engine rejects a rate outside 0-100%, and this panel emits one on
-    // every keystroke of "150". A half-typed percentage must not white-screen
-    // the form it is being typed into.
+    // every keystroke of "150", so a half-typed percentage must not white-screen
+    // the form it is being typed into. But that is the ONLY throw we can name:
+    // `src/engine/annuity/rates.ts` has no error class, so its two messages are
+    // the only handle, and anything else is a bug that must not be reported to
+    // the advisor as percentages they need to go and fix.
+    const message = err instanceof Error ? err.message : String(err);
+    const isRateGuard = /out of \[0,1\]|is not a finite rate/.test(message);
+    if (!isRateGuard) console.warn("Annuity preview could not be drawn:", err);
     return (
-      <PreviewFrame growthRate={growthRate}>
-        <p className={NOTE_CLASS}>Check the percentages above — one of them is outside 0–100%.</p>
+      <PreviewFrame>
+        <p className={NOTE_CLASS}>
+          {isRateGuard
+            ? "Check the percentages above — one of them is outside 0–100%."
+            : "This contract could not be previewed."}
+        </p>
       </PreviewFrame>
     );
   }
@@ -265,12 +283,52 @@ export function AnnuityPreviewChart({
     income,
   ];
 
+  const annuitized = contract.incomeMode === "annuitized";
+  const terminalBalance = rows[rows.length - 1].accountValue;
+  const firstEmpty = rows.find((r) => r.accountValue <= 0);
+
   // Split so the year can wear the numeral mono the brand requires, without a
   // second copy of the sentence drifting out of step with the screen reader's.
+  //
+  // Three different things can be true at the end of the run:
+  //  · the balance emptied while the payments carried on — the crossover;
+  //  · it never emptied;
+  //  · it emptied and nothing is being paid, because income has not started
+  //    (or never will inside the horizon). That last one used to be reported as
+  //    "still has money in it", asserted purely from the ABSENCE of a crossover
+  //    flag, printing a positive claim over a line sitting on zero.
   const finding = crossover
-    ? { lead: "The balance is gone from ", year: crossover.year, tail: " — the guaranteed income keeps paying." }
-    : { lead: "The balance still has money in it in ", year: lastYear, tail: "." };
+    ? annuitized
+      // Annuitizing SURRENDERS the balance in exchange for the payments — the
+      // advisor's own deliberate act, already warned about further up this
+      // panel. Calling it "the balance is gone" raises an alarm for a non-event.
+      ? {
+          lead: "The payments start in ",
+          year: crossover.year,
+          tail: " — the balance goes to the carrier in exchange for them.",
+        }
+      : {
+          lead: "The balance is gone from ",
+          year: crossover.year,
+          tail: " — the guaranteed income keeps paying.",
+        }
+    : terminalBalance > 0
+      ? { lead: "The balance still has money in it in ", year: lastYear, tail: "." }
+      : {
+          lead: "The balance runs out in ",
+          year: (firstEmpty ?? rows[rows.length - 1]).year,
+          tail: ", and no income is being paid.",
+        };
   const findingText = `${finding.lead}${finding.year}${finding.tail}`;
+
+  const assumption = rateIsTheAccounts
+    ? { lead: "Assumes this account's growth rate of ", pct: formatPct(rate), tail: " a year." }
+    : {
+        lead: "Assumes ",
+        pct: formatPct(rate),
+        tail: " growth a year — an illustration rate, not this account's.",
+      };
+  const assumptionText = `${assumption.lead}${assumption.pct}${assumption.tail}`;
 
   const options: ChartOptions<"line"> = {
     responsive: true,
@@ -298,7 +356,7 @@ export function AnnuityPreviewChart({
                 borderDash: [4, 4],
                 label: {
                   display: true,
-                  content: "Balance gone",
+                  content: annuitized ? "Payments start" : "Balance gone",
                   position: "start" as const,
                   backgroundColor: chrome.tooltipBg,
                   color: chrome.tick,
@@ -320,18 +378,27 @@ export function AnnuityPreviewChart({
   };
 
   return (
-    <PreviewFrame growthRate={growthRate}>
-      <p className={NOTE_CLASS}>
-        {finding.lead}
-        <span className="tabular">{finding.year}</span>
-        {finding.tail}
-      </p>
+    <PreviewFrame>
+      <div className="space-y-0.5">
+        <p className={NOTE_CLASS}>
+          {finding.lead}
+          <span className="tabular">{finding.year}</span>
+          {finding.tail}
+        </p>
+        {/* On the face, not in the tooltip: this rate decides the year printed
+            in the sentence above it. */}
+        <p className={NOTE_CLASS}>
+          {assumption.lead}
+          <span className="tabular">{assumption.pct}</span>
+          {assumption.tail}
+        </p>
+      </div>
       <div className="h-64 w-full">
         <Line
           data={{ labels: rows.map((r) => String(r.year)), datasets }}
           options={options}
           role="img"
-          aria-label={`Balance and guaranteed income from ${rows[0].year} to ${lastYear}. ${findingText}`}
+          aria-label={`Balance and guaranteed income from ${rows[0].year} to ${lastYear}. ${findingText} ${assumptionText}`}
         />
       </div>
     </PreviewFrame>

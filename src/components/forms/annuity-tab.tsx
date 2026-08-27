@@ -88,6 +88,11 @@ export interface AnnuityTabProps {
   spouseFirstName?: string;
   /** Annuitant's birth year — drives the age-band payout placeholder only. */
   ownerBirthYear?: number;
+  /** The account's own growth rate as a fraction. An annuity is not a
+   *  growth-dropdown category, so `add-account-form` already holds this as a
+   *  plain custom percent — no model-portfolio or category-default lookup is
+   *  involved. Omitted, the preview states its own illustration rate. */
+  growthRate?: number;
 }
 
 const PRODUCT_TYPE_LABELS: Record<AnnuityProductType, string> = {
@@ -272,16 +277,59 @@ export function annuityContractIncomplete(v: AnnuityContractValue): boolean {
 }
 
 /**
+ * The income start year, resolved the way the PROJECTION resolves it —
+ * `resolvedStart` in `src/lib/projection/load-client-data.ts:339`, which the
+ * annuity loader is called with at `:723`. The milestone ref WINS and the
+ * stored year is only its fallback, not the other way round. A contract
+ * carrying both `2032` and "when Sam retires" pays from the milestone in the
+ * plan, so the preview has to draw the milestone too or the picture and the
+ * projection disagree about the year the income switches on.
+ *
+ * One deliberate divergence: where the projection substitutes the plan's start
+ * year for a ref that will not resolve and no stored year, this returns null
+ * and the chart says the start year is missing. Refusing to draw beats drawing
+ * income that begins in a year nobody chose.
+ */
+function previewIncomeStartYear(
+  v: AnnuityContractValue,
+  milestones: ClientMilestones | undefined,
+): number | null {
+  const stored = v.incomeStartYear ?? null;
+  if (!v.incomeStartYearRef) return stored;
+  const resolved = milestones
+    ? resolveMilestone(v.incomeStartYearRef, milestones, "start")
+    : undefined;
+  return resolved ?? stored;
+}
+
+/**
+ * Every key of `AnnuityContract` made mandatory, values left as declared.
+ *
+ * The projection keeps its own copy of this mapping in
+ * `src/lib/annuities/load-annuity-contracts.ts:46`, and the two cannot be
+ * shared: that module imports `@/db` and Drizzle, which a client component must
+ * not drag into the browser bundle, and it converts Drizzle's decimal STRINGS
+ * where this converts the panel's nulls. What they do share is the field list —
+ * so this alias makes adding a field to the engine contract a compile error
+ * here, instead of leaving the preview silently one field behind the plan.
+ */
+type EveryAnnuityContractField = {
+  [K in keyof Required<AnnuityContract>]: AnnuityContract[K];
+};
+
+/**
  * The panel spells "unset" as `null`; the engine's optional numbers are
  * `number | undefined`. Every engine read of these fields is a `??` or a
  * `!= null`, so the two spellings already behave identically — this only
  * reconciles the types, and resolves a milestone-based income start into the
  * calendar year the engine needs (it has no milestones of its own).
+ *
+ * Exported for its tests: the field-coverage pin and the start-year precedence.
  */
-function toEngineContract(
+export function toEngineContract(
   v: AnnuityContractValue,
   milestones: ClientMilestones | undefined,
-): AnnuityContract {
+): EveryAnnuityContractField {
   const opt = (n: number | null | undefined) => n ?? undefined;
   return {
     carrier: v.carrier,
@@ -293,11 +341,7 @@ function toEngineContract(
     surrenderEndYear: v.surrenderEndYear,
     annualFeePct: v.annualFeePct,
     incomeMode: v.incomeMode,
-    incomeStartYear:
-      v.incomeStartYear ??
-      (v.incomeStartYearRef && milestones
-        ? resolveMilestone(v.incomeStartYearRef, milestones, "start") ?? null
-        : null),
+    incomeStartYear: previewIncomeStartYear(v, milestones),
     payoutStructure: v.payoutStructure,
     survivorPct: v.survivorPct,
     periodCertainYears: v.periodCertainYears,
@@ -323,6 +367,7 @@ export function AnnuityTab({
   clientFirstName,
   spouseFirstName,
   ownerBirthYear,
+  growthRate,
 }: AnnuityTabProps) {
   const thisYear = new Date().getFullYear();
   const set = <K extends keyof AnnuityContractValue>(
@@ -751,6 +796,7 @@ export function AnnuityTab({
           accountValue={accountValue ?? null}
           startYear={thisYear}
           ownerAgeAtStart={annuityPreviewAgeAtStart(thisYear, ownerBirthYear)}
+          growthRate={growthRate}
         />
       )}
     </div>

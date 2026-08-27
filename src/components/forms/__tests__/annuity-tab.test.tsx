@@ -2,7 +2,8 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { AnnuityTab, annuityContractIncomplete } from "../annuity-tab";
+import { AnnuityTab, annuityContractIncomplete, toEngineContract } from "../annuity-tab";
+import type { ClientMilestones } from "@/lib/milestones";
 
 const noop = () => {};
 const blank = {
@@ -126,6 +127,37 @@ describe("AnnuityTab", () => {
     expect(screen.queryByText(/nothing carries to the beneficiary/i)).not.toBeInTheDocument();
   });
 
+  // ── The preview mount ─────────────────────────────────────────────────────
+  // Nothing in this file used to reach the mount: every fixture above omits
+  // `incomeStartYear`, so `annuityContractIncomplete` is true for all of them
+  // and the branch never ran. Both of these stop short of Chart.js on purpose —
+  // with no balance and no birth year the chart returns its "what is missing"
+  // note before <Line> is constructed, and there is no `canvas` package here.
+
+  const complete = {
+    ...blank, incomeMode: "rider" as const, benefitBase: 100_000, incomeStartYear: 2032,
+  };
+  const heading = { name: /balance and income over time/i } as const;
+
+  it("mounts the preview once the contract is fully described", () => {
+    render(<AnnuityTab accountId="a" clientId="c" value={complete} onChange={noop} />);
+    expect(screen.getByRole("heading", heading)).toBeInTheDocument();
+    // It got as far as its own gate, which means the contract was mapped for it.
+    expect(screen.getByText(/to preview this contract/i)).toBeInTheDocument();
+  });
+
+  it("keeps the preview off while the contract is still incomplete", () => {
+    const { rerender } = render(
+      <AnnuityTab accountId="a" clientId="c"
+        value={{ ...complete, incomeStartYear: null }} onChange={noop} />,
+    );
+    expect(screen.queryByRole("heading", heading)).not.toBeInTheDocument();
+    // Liveness: the same tree with the one missing field supplied does mount,
+    // so the absence above is the gate and not a broken fixture.
+    rerender(<AnnuityTab accountId="a" clientId="c" value={complete} onChange={noop} />);
+    expect(screen.getByRole("heading", heading)).toBeInTheDocument();
+  });
+
   it("emits the mode the advisor picks", async () => {
     const changes: { incomeMode?: string }[] = [];
     render(<AnnuityTab accountId="a" clientId="c" value={blank}
@@ -217,5 +249,56 @@ describe("annuityContractIncomplete", () => {
     expect(annuityContractIncomplete({
       ...blank, payoutStructure: "joint_survivor",
     })).toBe(false);
+  });
+});
+
+// The panel maps the contract for the preview a second time — the projection's
+// own copy lives in `src/lib/annuities/load-annuity-contracts.ts`, which cannot
+// be imported here because it pulls in `@/db`. These pin the two things that
+// silently diverge: the field list, and how the income start is resolved.
+describe("toEngineContract", () => {
+  const milestones: ClientMilestones = {
+    planStart: 2026,
+    planEnd: 2066,
+    clientRetirement: 2039,
+    clientEnd: 2056,
+  };
+
+  const both = {
+    ...blank, incomeMode: "rider" as const, benefitBase: 100_000,
+    incomeStartYear: 2032, incomeStartYearRef: "client_retirement" as const,
+  };
+
+  // `resolvedStart` in load-client-data.ts is `if (!ref) return stored;` then
+  // `resolveMilestone(ref) ?? stored` — the REF wins. Reading them the other way
+  // round drew income from 2032 in the preview for a contract the plan starts
+  // paying in 2039.
+  it("resolves the income start the way the projection does — the milestone wins", () => {
+    expect(toEngineContract(both, milestones).incomeStartYear).toBe(2039);
+  });
+
+  it("falls back to the stored year, and only then", () => {
+    // Liveness for the test above: 2032 is a different year, and it is what a
+    // ref that cannot resolve — or no ref at all — leaves behind.
+    expect(toEngineContract(both, undefined).incomeStartYear).toBe(2032);
+    expect(toEngineContract({ ...both, incomeStartYearRef: null }, milestones).incomeStartYear)
+      .toBe(2032);
+    expect(toEngineContract({ ...both, incomeStartYear: null }, undefined).incomeStartYear)
+      .toBeNull();
+  });
+
+  // The type alias on the return makes a NEW engine field a compile error here.
+  // This catches the other direction: a field renamed or dropped from the map.
+  it("emits every field the engine contract declares", () => {
+    expect(Object.keys(toEngineContract(blank, milestones)).sort()).toEqual(
+      [
+        "annualFeePct", "annuitizedPayment", "benefitBase", "carrier",
+        "contractNumberLast4", "costBasis", "expectedReturnYears", "incomeMode",
+        "incomeStartYear", "payoutPct", "payoutStructure", "periodCertainYears",
+        "productType", "riderFeePct", "rollupEndYear", "rollupRate",
+        "rollupRatchets", "surrenderChargePct", "surrenderEndYear",
+        "survivorPct", "taxTreatment",
+      ].sort(),
+    );
   });
 });

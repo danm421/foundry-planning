@@ -1030,6 +1030,16 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     accountValue.trim() !== "" && Number.isFinite(annuityAccountValueNum)
       ? annuityAccountValueNum
       : undefined;
+  // An annuity is not one of the `usesGrowthDropdown` categories, so on save its
+  // growth rate is always `growthRatePct / 100` — already a plain number here,
+  // with no model-portfolio or category-default lookup behind it. Handed to the
+  // contract preview so the picture illustrates the rate the plan will use
+  // rather than a stand-in. Blank or unparsed reads as unknown, and the preview
+  // states its own illustration rate instead of quietly drawing 0% growth.
+  const annuityGrowthRate =
+    growthRatePct.trim() !== "" && Number.isFinite(Number(growthRatePct))
+      ? Number(growthRatePct) / 100
+      : undefined;
   const initialSavingsStartYear =
     milestones && defaultSavingsRefs.startYearRef
       ? resolveMilestone(defaultSavingsRefs.startYearRef, milestones, "start") ?? currentYear
@@ -2970,6 +2980,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               clientFirstName={clientFirstName}
               spouseFirstName={spouseFirstName}
               ownerBirthYear={annuityOwnerBirthYear}
+              growthRate={annuityGrowthRate}
             />
           )}
         </div>
