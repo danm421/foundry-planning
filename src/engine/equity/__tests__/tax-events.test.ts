@@ -110,6 +110,9 @@ describe("ISO disqualifying disposition", () => {
     const r = computeEquityYear(p, st, 2027);
     expect(r.ordinaryIncome).toBeCloseTo(9000, 2);
     expect(r.ficaExemptOrdinaryIncome).toBeCloseTo(9000, 2); // §3121(a)(22)
+    // …and the SAME dollars must not also sit in the AMT preference. IRC
+    // §56(b)(3): exercise and disposition in one tax year ⇒ no adjustment.
+    expect(r.isoSpread).toBeCloseTo(0, 2);
   });
 
   it("caps OI at the actual sale gain and books NO cap gain/loss when price falls but stays above strike", () => {
@@ -227,6 +230,7 @@ describe("FICA-exempt equity income (IRC §3121(a)(22))", () => {
     const r = computeEquityYear(p, st, 2027);
     expect(r.ordinaryIncome).toBeCloseTo(900_000, 2);
     expect(r.ficaExemptOrdinaryIncome).toBeCloseTo(900_000, 2);
+    expect(r.isoSpread).toBeCloseTo(0, 2); // §56(b)(3) — not also a preference
   });
 
   it("leaves an RSU vest fully FICA-bearing", () => {
@@ -304,5 +308,130 @@ describe("options the plan must not exercise", () => {
     const r = computeEquityYear(p, st, 2027);
     expect(r.strikeCashOutflow).toBe(0);   // was 100,000 spent to buy 50,000 of stock
     expect(r.acquisitions).toHaveLength(0);
+  });
+});
+
+describe("ISO same-year exercise-and-sell — the §56(b)(3) preference reversal", () => {
+  // IRC §56(b)(3), second sentence: where the disposition and the AMT inclusion
+  // fall in the SAME tax year, the AMT amount equals the regular-tax amount, so
+  // Form 6251 line 2i is zero. The cashless "exercise and sell" is the most
+  // common option transaction there is, and the app used to book its bargain
+  // element BOTH as a preference (at exercise) and as wages (at the sale) —
+  // inventing six figures of AMT on a transaction the law charges nothing for.
+  //
+  // ⚠️ Every case below calls `computeEquityYear` ONCE per year, which is how
+  // production drives it. The `exerciseAndPrep` helper above calls it twice for
+  // the same year; a reversal measured through that helper measures a lot that
+  // was exercised twice, not the behaviour being fixed.
+  //
+  // ⚠️ The reversal must be driven by the preference this lot ACTUALLY BOOKED,
+  // never by comparing dates — see the seeded-lot case at the end, which is the
+  // one a date comparison gets wrong.
+
+  function isoGrant(over: Partial<EquityGrant> = {}): EquityGrant {
+    return {
+      id: "g-56b3", grantNumber: "ISO-1", grantType: "iso", grantDate: "2024-01-15",
+      sharesGranted: 1000, has83bElection: false, fmvAtGrant: null, strikePrice: 10,
+      strikeDiscountPct: null, expirationYear: 2036, strategy: null, plannedEvents: [],
+      tranches: [{ id: "t1", vestDate: "2027-01-15", acquiredOn: null, priceAtAcquisition: null, shares: 1000, sharesExercised: 0, sharesSold: 0, strategy: null }],
+      ...over,
+    };
+  }
+
+  it("books ZERO preference when the whole lot is exercised and sold in one year", () => {
+    // 1,000 ISO at a $10 strike, FMV $100 → a $90,000 bargain element that is
+    // fully ordinary income on the disqualifying disposition and therefore not
+    // a preference at all.
+    const p = plan(isoGrant({ strategy: { exerciseTiming: "at_vest", sellTiming: "immediately" } }));
+    const st = createEquityState([p], PSY);
+    const r = computeEquityYear(p, st, 2027);
+    expect(r.ordinaryIncome).toBeCloseTo(90_000, 2);
+    expect(r.isoSpread).toBeCloseTo(0, 2);
+  });
+
+  it("keeps the UNSOLD share of the preference when only part of the lot is sold", () => {
+    // Sell 400 of 1,000 in the exercise year. The 400 sold shares' bargain
+    // element becomes wages; the 600 still held keep their preference.
+    //   preference booked 1,000 × $90 = 90,000, reversed 400 × $90 = 36,000
+    //   → 54,000 survives, and 36,000 is ordinary income.
+    const p = plan(isoGrant({
+      strategy: { exerciseTiming: "at_vest", sellTiming: "percent_per_year", sellPercentPerYear: 0.4, sellStartYear: 2027 },
+    }));
+    const st = createEquityState([p], PSY);
+    const r = computeEquityYear(p, st, 2027);
+    expect(r.ordinaryIncome).toBeCloseTo(36_000, 2);
+    expect(r.isoSpread).toBeCloseTo(54_000, 2);
+  });
+
+  it("leaves the exercise-year preference ALONE when the sale lands in a later year", () => {
+    // The mirror of the case above, and the reason the reversal is gated on the
+    // exercise year: a 2029 sale must not claw back 2029's (nonexistent)
+    // preference. Reversing unconditionally would push isoSpread NEGATIVE here
+    // and hand the client an AMT deduction the law does not give until the
+    // dual-basis adjustment at sale exists (audit F3, not in this phase).
+    const p = plan(isoGrant({
+      grantDate: "2028-06-01", // fails the two-year grant leg → disqualifying
+      strategy: { exerciseTiming: "at_vest", sellTiming: "hold_then_sell_year", sellYear: 2029 },
+    }));
+    const st = createEquityState([p], PSY);
+    const exYear = computeEquityYear(p, st, 2027);
+    expect(exYear.isoSpread).toBeCloseTo(90_000, 2); // booked in full at exercise
+    const saleYear = computeEquityYear(p, st, 2029);
+    expect(saleYear.ordinaryIncome).toBeCloseTo(90_000, 2);
+    expect(saleYear.isoSpread).toBe(0); // not negative, and not reversed twice
+  });
+
+  it("books no preference to reverse for a qualifying disposition years later", () => {
+    // Held long enough to satisfy both §422(a)(1) legs: pure long-term gain in
+    // the sale year, and the exercise year's preference stands untouched.
+    const p = plan(isoGrant({
+      strategy: { exerciseTiming: "at_vest", sellTiming: "hold_then_sell_year", sellYear: 2030 },
+    }));
+    const st = createEquityState([p], PSY);
+    expect(computeEquityYear(p, st, 2027).isoSpread).toBeCloseTo(90_000, 2);
+    const sale = computeEquityYear(p, st, 2030);
+    expect(sale.ordinaryIncome).toBe(0);
+    expect(sale.capitalGains).toBeCloseTo(90_000, 2);
+    expect(sale.isoSpread).toBe(0);
+  });
+
+  it("an NQSO exercise-and-sell in one year never touches the preference", () => {
+    const p = plan(isoGrant({
+      grantType: "nqso",
+      strategy: { exerciseTiming: "at_vest", sellTiming: "immediately" },
+    }));
+    const st = createEquityState([p], PSY);
+    const r = computeEquityYear(p, st, 2027);
+    expect(r.ordinaryIncome).toBeCloseTo(90_000, 2); // spread is wages at exercise
+    expect(r.isoSpread).toBe(0);
+  });
+
+  it("a PRE-PLAN seeded lot sold this year does not eat a real exercise's preference", () => {
+    // ⚠️⚠️ This is the case that makes a date comparison wrong, and it is why
+    // the reversal reads a RECORDED per-share preference off the lot.
+    //
+    // The seeded grant's shares were exercised on 1 Feb 2026 — inside the plan's
+    // first year — so `lot.exerciseDate` says 2026 and its 31 Dec 2026 sale is a
+    // same-year disqualifying disposition by every date test there is. But those
+    // shares were exercised BEFORE the plan began modelling anything, so no
+    // preference was ever booked for them. A date-driven reversal subtracts
+    // $45,000 that was never added, silently eating the $18,000 preference the
+    // OTHER grant legitimately booked this year and understating AMT.
+    const seeded = isoGrant({
+      id: "g-seed", grantNumber: "ISO-SEED", sharesGranted: 500,
+      strategy: { sellTiming: "hold_then_sell_year", sellYear: 2026 },
+      tranches: [{ id: "t1", vestDate: "2025-01-15", shares: 500, sharesExercised: 500, sharesSold: 0, acquiredOn: "2026-02-01", priceAtAcquisition: 100, strategy: null }],
+    });
+    const exercised = isoGrant({
+      id: "g-live", grantNumber: "ISO-LIVE", grantDate: "2024-03-01", sharesGranted: 200,
+      tranches: [{ id: "t1", vestDate: "2026-03-15", acquiredOn: null, priceAtAcquisition: null, shares: 200, sharesExercised: 0, sharesSold: 0, strategy: null }],
+    });
+    const p = plan(seeded, { grants: [seeded, exercised] });
+    const st = createEquityState([p], PSY);
+    const r = computeEquityYear(p, st, 2026);
+    // The seeded lot's disposition is wages: 500 × ($100 − $10).
+    expect(r.ordinaryIncome).toBeCloseTo(45_000, 2);
+    // …and the live exercise's preference survives INTACT: 200 × ($100 − $10).
+    expect(r.isoSpread).toBeCloseTo(18_000, 2);
   });
 });

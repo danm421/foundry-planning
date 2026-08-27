@@ -127,6 +127,7 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
   // §1212(b)(2): the carryover is computed as though only the usable slice of
   // the deduction was consumed. Must be UNFLOORED — clamping to zero here
   // would burn carryforward a zero-income year never actually used.
+  // ⚠️ AMTI (step 10) reads this too, for its own reason. Don't re-floor it.
   const taxableIncomeUnfloored =
     adjustedGrossIncome - belowLineDeductions - seniorBonus - qbiDeduction;
   const { carryforwardOut, carryforwardConsumed } = computeCarryforwardOut(
@@ -158,8 +159,10 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
   // Simplified AMTI: post-QBI taxable income + ISO bargain element (the one AMT
   // preference item wired in v1). Other preference items are still omitted.
   // The §199A QBI deduction IS allowed for AMT (IRC §199A(f)(2)), so we start
-  // from post-QBI taxableIncome — Form 6251 line 1 begins at Form 1040 taxable
-  // income, which is already net of QBI (there is no QBI add-back line). The
+  // from the post-QBI figure — Form 6251 line 1 begins at Form 1040 taxable
+  // income, which is already net of QBI (there is no QBI add-back line), and
+  // where that line is zero it takes AGI minus the deduction lines as a NEGATIVE
+  // amount, which is why the figure below is the unfloored one. The
   // standard deduction — including the §63(f) aged/blind add-on — is NOT allowed
   // for AMT (IRC §56(b)(1)(E) / Form 6251 line 2a), so when it was the deduction
   // taken the FULL standard deduction must be added back. For ITEMIZERS the
@@ -174,7 +177,12 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
   const amtAddBack = usedStandard
     ? stdDeduction                 // F12: full standard incl. §63(f)
     : (input.saltDeducted ?? 0);   // F7: Schedule A line 7 taxes (post-§164 cap)
-  const amti = taxableIncome + amtAddBack + (input.isoSpread ?? 0);
+  // UNFLOORED (see line 1 above): deductions in excess of income really do
+  // reduce AMT income before preference items are added. `taxableIncome` stays
+  // floored — regular tax and the bracket base correctly depend on that — and
+  // the zero guard inside calcAmtTentative becomes the load-bearing one, which
+  // is where it belongs.
+  const amti = taxableIncomeUnfloored + amtAddBack + (input.isoSpread ?? 0);
   const amtParams = filingAmtParams(fs, p);
   const tentativeAmt = calcAmtTentative(amti, amtParams, {
     year: input.year,

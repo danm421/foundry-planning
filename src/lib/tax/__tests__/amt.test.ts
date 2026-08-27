@@ -23,13 +23,17 @@ describe("calcAmtTentative", () => {
   });
 
   it("applies 26%/28% split when taxable AMTI crosses breakpoint", () => {
-    // AMTI 500000, taxable 359800
-    // 244500 * 26% + (359800-244500) * 28% = 63570 + 100884 = 164454
-    // (No phase-out at AMTI=500k; exempt stays full.)
-    expect(calcAmtTentative(500000, PARAMS_2026_MFJ, OBBBA)).toBeCloseTo(
-      244500 * 0.26 + (500000 - 140200 - 244500) * 0.28,
-      2,
-    );
+    // AMTI 500000, exempt 140200 (no phase-out at 500k) → taxable 359800.
+    // The 28% rate applies ONLY to the slab above the breakpoint, not to the
+    // whole base — the mistake this comment used to make, and the one an
+    // engineer reading it would have been primed to repeat:
+    //   244500 × 26%          =  63570
+    //   (359800 − 244500) × 28% =  32284
+    //                           = 95854
+    // Asserted as a literal on purpose. The expression this used to assert
+    // mirrored the implementation, so it agreed with the code by construction
+    // and could not have caught a rate swap.
+    expect(calcAmtTentative(500000, PARAMS_2026_MFJ, OBBBA)).toBeCloseTo(95_854, 2);
   });
 
   it("phases out exemption above $1M MFJ at 25% pre-OBBBA", () => {
@@ -61,32 +65,73 @@ describe("calcAmtTentative — Part III cap-gains stacking floor (Bug #19)", () 
 
   it("stacks LTCG on the regular ordinary base, not on post-exemption AMTI", () => {
     // AMTI 230000, exemption 140200 → taxableAmti 89800.
-    // ltcg 50000, ordinaryAmti = 89800 - 50000 = 39800.
+    // ltcg 50000, ordinaryAmti = 89800 − 50000 = 39800.
+    // Ordinary portion (26% on 39800) = 10348 under EITHER floor; only the
+    // gains slice moves, which is what makes the floor observable.
     //
-    // Buggy floor = ordinaryAmti 39800 < zeroPctTop 99200 → stack top
-    //   39800+50000 = 89800 < 99200 → all gains 0% → capGainsPortion 0.
-    // Correct floor = regularOrdinaryBase 150000 > 99200 → all 50000 in 15%
-    //   → 7500.
-    //
-    // Ordinary portion (26% on 39800) = 10348 in BOTH cases.
-    const ordinaryPortion = 39800 * 0.26;
-
-    const buggy = calcAmtTentative(230000, PARAMS_2026_MFJ, {
-      year: 2026,
-      ltcgPlusQdiv: 50000,
-      capGainsBrackets: MFJ_CAP_GAINS,
-    });
-    // Without threading the regular base, gains fall into 0% → no cap-gains tax.
-    expect(buggy).toBeCloseTo(ordinaryPortion, 2);
-
-    const fixed = calcAmtTentative(230000, PARAMS_2026_MFJ, {
+    // Correct floor — the REGULAR ordinary base of 150000, already above the
+    // 99200 zero-percent top, so all 50000 of gain sits in the 15% band:
+    //   10348 + 50000 × 15% = 17848.
+    const correct = calcAmtTentative(230000, PARAMS_2026_MFJ, {
       year: 2026,
       ltcgPlusQdiv: 50000,
       capGainsBrackets: MFJ_CAP_GAINS,
       regularOrdinaryBase: 150000,
     });
-    // Gains now correctly stacked above the 0% top → 50000 × 15% = 7500.
-    expect(fixed).toBeCloseTo(ordinaryPortion + 7500, 2);
+    expect(correct).toBeCloseTo(17_848, 2);
+
+    // Wrong floor — the post-exemption AMTI ordinary portion (39800). The stack
+    // then tops out at 89800, under 99200, so every dollar of gain reads as 0%
+    // and TMT is understated by the whole 7500. Both arms pass the floor
+    // EXPLICITLY: what is asserted here is that the argument drives the answer,
+    // not that some omitted-argument fallback is the behaviour we want.
+    const wrongFloor = calcAmtTentative(230000, PARAMS_2026_MFJ, {
+      year: 2026,
+      ltcgPlusQdiv: 50000,
+      capGainsBrackets: MFJ_CAP_GAINS,
+      regularOrdinaryBase: 39800,
+    });
+    expect(wrongFloor).toBeCloseTo(10_348, 2);
+  });
+
+  it("taxes the AMT gains slice above the 15% breakpoint at 20%", () => {
+    // Nothing anywhere reached the top preferential tier, so collapsing it to
+    // 15% used to change no test. AMTI 900000 (below the 1M phase-out start),
+    // 400000 of it long-term gain, regular ordinary base 500000.
+    //   taxable AMTI 759800 → ordinary slice 359800
+    //     ordinary: 244500 × 26% + 115300 × 28%        = 95854
+    //   gains stacked 500000 → 900000 against 99200 / 615900:
+    //     15%: (615900 − 500000) × 15%                 = 17385
+    //     20%: (900000 − 615900) × 20%                 = 56820
+    //   TMT = 170059.  At a flat 15% the answer would be 155854.
+    expect(
+      calcAmtTentative(900000, PARAMS_2026_MFJ, {
+        year: 2026,
+        ltcgPlusQdiv: 400000,
+        capGainsBrackets: MFJ_CAP_GAINS,
+        regularOrdinaryBase: 500000,
+      }),
+    ).toBeCloseTo(170_059, 2);
+  });
+
+  it("clamps the preferential slice to what survives the exemption", () => {
+    // The gains handed in are the ones inside AMTI, but the exemption comes off
+    // the base before Part III splits it — so the slice taxed at preferential
+    // rates can never exceed the post-exemption base (Form 6251). Removing that
+    // clamp used to change no test at all.
+    //   AMTI 200000 − exemption 140200 = 59800 of taxable AMTI, against 150000
+    //   of gains. Clamped: the whole 59800 is the gains slice, ordinary 0,
+    //   stacked 50000 → 109800 → (109800 − 99200) × 15% = 1590.
+    //   Unclamped, all 150000 would be taxed preferentially → 15120, nearly ten
+    //   times the tax, on a base that does not exist.
+    expect(
+      calcAmtTentative(200000, PARAMS_2026_MFJ, {
+        year: 2026,
+        ltcgPlusQdiv: 150000,
+        capGainsBrackets: MFJ_CAP_GAINS,
+        regularOrdinaryBase: 50000,
+      }),
+    ).toBeCloseTo(1_590, 2);
   });
 });
 

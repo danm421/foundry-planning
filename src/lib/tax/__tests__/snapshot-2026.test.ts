@@ -22,6 +22,9 @@ const snapshot = JSON.parse(
   capGainsBrackets: Record<string, CapGains>;
   trustIncomeBrackets: Tier[];
   trustCapGainsBrackets: Tier[];
+  amtExemption: { mfj: number; singleHoh: number; mfs: number };
+  amtBreakpoint2628: { mfjShoh: number; mfs: number };
+  amtPhaseoutStart: { mfj: number; singleHoh: number; mfs: number };
 }>;
 
 const y2026 = snapshot.find((y) => y.year === 2026)!;
@@ -106,5 +109,32 @@ describe("snapshot.json 2026 — IRS Rev. Proc. 2025-32 (Bugs #14/#31/#32)", () 
       { from: 3300, to: 16250, rate: 0.15 },
       { from: 16250, to: null, rate: 0.2 },
     ]);
+  });
+
+  // AMT — the three parameters that decide every alternative-minimum-tax figure
+  // in the app. This test pinned none of them, and its parsed type did not even
+  // declare them: a reseed that carried the phase-out threshold forward by
+  // inflation instead of applying the 2025 law's reset would have passed
+  // silently, at up to five figures per affected client per year.
+  //
+  // ⚠️ The separate-filer figures are EXACTLY HALF the joint ones in every
+  // seeded year, and the engine relies on that (`filingAmtParams`). Asserted
+  // here as arithmetic rather than as three more literals so a reseed that
+  // indexes them independently trips this test rather than drifting quietly.
+  //
+  // ⚠️ The 2026 26%/28% breakpoint is flagged in the source workbook itself as
+  // "derived from inflation trend; verify official table". It is pinned so it
+  // cannot move unnoticed — pinning it is NOT a claim that it was confirmed
+  // against the published revenue procedure. That confirmation is still owed.
+  it("AMT exemption, 26/28 breakpoint and phase-out start", () => {
+    expect(y2026.amtExemption).toEqual({ mfj: 140200, singleHoh: 90100, mfs: 70100 });
+    expect(y2026.amtBreakpoint2628).toEqual({ mfjShoh: 244500, mfs: 122250 });
+    expect(y2026.amtPhaseoutStart).toEqual({ mfj: 1000000, singleHoh: 500000, mfs: 500000 });
+  });
+
+  it("AMT separate-filer figures are exactly half the joint ones", () => {
+    expect(y2026.amtExemption.mfs).toBe(y2026.amtExemption.mfj / 2);
+    expect(y2026.amtBreakpoint2628.mfs).toBe(y2026.amtBreakpoint2628.mfjShoh / 2);
+    expect(y2026.amtPhaseoutStart.mfs).toBe(y2026.amtPhaseoutStart.mfj / 2);
   });
 });

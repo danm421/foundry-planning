@@ -4,7 +4,7 @@ import { useViewParam } from "@/hooks/use-view-param";
 import DialogTabs from "@/components/dialog-tabs";
 import VestingScheduleTable from "@/components/stock-options/vesting-schedule-table";
 import FutureActivityLedger from "@/components/stock-options/future-activity-ledger";
-import EquityTaxImpactTable from "@/components/stock-options/equity-tax-impact-table";
+import EquityTaxImpactTable, { type TaxMode } from "@/components/stock-options/equity-tax-impact-table";
 import type { VestingScheduleModel } from "@/engine/equity/vesting-schedule";
 import type { FutureActivityModel } from "@/engine/equity/future-activity";
 import type { EquityTaxImpactModel } from "@/engine/equity/tax-impact";
@@ -21,10 +21,13 @@ export default function StockOptionsReportView({
   vestingModel,
   futureActivityModel,
   taxImpactModel,
+  taxMode,
 }: {
   vestingModel: VestingScheduleModel;
   futureActivityModel: FutureActivityModel;
   taxImpactModel: EquityTaxImpactModel;
+  /** The plan's tax method — see `copyFor` in the Tax Impact table. */
+  taxMode: TaxMode;
 }) {
   const [activeTab, setActiveTab] = useViewParam<TabId>(
     ["vesting", "activity", "tax-impact"],
@@ -41,7 +44,7 @@ export default function StockOptionsReportView({
       <div className="px-[var(--pad-card)] pb-4 pt-3">
         {activeTab === "vesting" && <VestingScheduleTable model={vestingModel} />}
         {activeTab === "activity" && <FutureActivityLedger model={futureActivityModel} />}
-        {activeTab === "tax-impact" && <EquityTaxImpactTable model={taxImpactModel} />}
+        {activeTab === "tax-impact" && <EquityTaxImpactTable model={taxImpactModel} taxMode={taxMode} />}
       </div>
     </div>
   );

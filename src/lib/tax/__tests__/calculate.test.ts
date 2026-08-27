@@ -1166,3 +1166,136 @@ describe("calculateTaxYear — FICA-exempt wages (IRC §3121(a)(22))", () => {
       .toBeCloseTo(184_500 * 0.062 + 200_000 * 0.0145, 2);
   });
 });
+
+describe("calculateTaxYear — F7 AMTI starts from UNFLOORED taxable income", () => {
+  // Form 6251 line 1: enter the 1040 taxable-income line if positive, and if it
+  // is zero enter AGI minus the deduction lines AS A NEGATIVE AMOUNT. Deductions
+  // in excess of income genuinely reduce AMT income before preference items are
+  // added. Building AMTI from the zero-floored figure discards that capacity
+  // dollar for dollar and over-taxes the exact client an advisor sends into a
+  // low-income year to start an option holding clock.
+  //
+  // The floor stays on `taxableIncome` itself — regular tax and the bracket base
+  // correctly depend on it. Only the AMTI line reads the unfloored figure.
+
+  it("does not throw away deductions that exceed income (itemizer, single, 2026)", () => {
+    // $0 wages, $20,000 interest, itemises $55,000 of which $10,000 is SALT, and
+    // exercises options with a $400,000 bargain element.
+    //   taxable income floors to $0 (true value −$35,000) → regular tax $0.
+    //   AMTI  = −35,000 + 10,000 SALT add-back + 400,000 = 375,000
+    //   exemption 90,100 (AMTI below the 500,000 phase-out start) → 284,900
+    //   TMT   = 244,500 × 26% + 40,400 × 28% = 63,570 + 11,312 = 74,882
+    // Floored, AMTI would be 410,000 → taxable 319,900 → TMT 84,682, i.e.
+    // $9,800 (= 35,000 × 28%) of tax the client does not owe.
+    const result = calculateTaxYear(makeInput({
+      filingStatus: "single",
+      ordinaryIncome: 20_000,
+      itemizedDeductions: 55_000,
+      saltDeducted: 10_000,
+      isoSpread: 400_000,
+    }));
+    expect(result.flow.taxableIncome).toBe(0);      // the floor is still there
+    expect(result.flow.regularTaxCalc).toBe(0);
+    expect(result.flow.amtAdditional).toBeCloseTo(74_882, 0);
+  });
+
+  it("does not add the standard deduction back on top of a base already floored", () => {
+    // The same defect without any itemising: $10,000 of wages against a $16,100
+    // standard deduction, plus a $500,000 exercise.
+    //   AMTI  = −6,100 + 16,100 std add-back + 500,000 = 510,000
+    //   phase-out (510,000 − 500,000) × 50% = 5,000 → exemption 85,100
+    //   TMT   = 63,570 + 180,400 × 28% = 114,082
+    // Floored, AMTI would be 516,100 → TMT 116,644: $2,562 overcharged purely by
+    // adding back a deduction the floor had already swallowed.
+    const result = calculateTaxYear(makeInput({
+      filingStatus: "single",
+      earnedIncome: 10_000,
+      isoSpread: 500_000,
+    }));
+    expect(result.flow.taxableIncome).toBe(0);
+    expect(result.flow.amtAdditional).toBeCloseTo(114_082, 0);
+  });
+
+  it("pins the negative-income-PLUS-capital-gains combination (audit F7 caveat)", () => {
+    // ⚠️ TRIPWIRE. The gains figure handed to the AMT calculation is the RAW
+    // `capitalGains + dividends`, not the taxable-income-capped `preferentialBase`
+    // the regular cap-gains tax uses. Those two diverge exactly when deductions
+    // exceed ordinary income — which is the case this fix newly reaches — so the
+    // combination is pinned here rather than left to be discovered.
+    //
+    // Single 2026: $50,000 of long-term gains, $80,000 itemised (no SALT), a
+    // $400,000 exercise.
+    //   regular: taxable income floors to 0, preferentialBase = min(50,000, 0) = 0
+    //            → regular tax 0 and cap-gains tax 0.
+    //   AMTI = −30,000 + 0 + 400,000 = 370,000 → taxable AMTI 279,900
+    //   gains slice 50,000 stacked on the regular ordinary base of 0:
+    //            49,600 at 0% + 400 at 15% = 60
+    //   ordinary 229,900 (under the 244,500 breakpoint) × 26% = 59,774
+    //   TMT = 59,834.
+    //
+    // Were the CAPPED figure passed instead, the whole 370,000 would be ordinary
+    // for AMT and TMT would be 73,482 — a $13,648 swing. Changing which figure is
+    // passed is a real decision about Form 6251 Part III, not a tidy-up; this
+    // test exists to make that change announce itself.
+    const result = calculateTaxYear(makeInput({
+      filingStatus: "single",
+      longTermCapitalGains: 50_000,
+      itemizedDeductions: 80_000,
+      saltDeducted: 0,
+      isoSpread: 400_000,
+    }));
+    expect(result.flow.taxableIncome).toBe(0);
+    expect(result.flow.capitalGainsTax).toBe(0);
+    expect(result.flow.amtAdditional).toBeCloseTo(59_834, 0);
+  });
+});
+
+describe("calculateTaxYear — AMT parameters are picked by FILING STATUS", () => {
+  // `filingAmtParams` routes the exemption, the 26/28 breakpoint and the
+  // phase-out start off the filing status. Nothing tested that routing: pointing
+  // the separate-filer branch at the joint figures, or the single-filer
+  // phase-out start at the joint one, both used to leave the whole suite green.
+  // Both cases below sit INSIDE the phase-out ramp, so the exemption is partly —
+  // not fully — withdrawn and the pinned dollar figure moves if any of the three
+  // parameters is wrong.
+
+  it("a separate filer gets the halved exemption, breakpoint and phase-out start", () => {
+    // MFS 2026: exemption 70,100 · breakpoint 122,250 · phase-out start 500,000,
+    // each exactly half the joint figure. $200,000 of ordinary income and a
+    // $400,000 exercise:
+    //   taxable income 183,900 → regular tax 36,731
+    //   AMTI = 183,900 + 16,100 std add-back + 400,000 = 600,000
+    //   phase-out (600,000 − 500,000) × 50% = 50,000 → exemption 20,100
+    //   TMT = 122,250 × 26% + 457,650 × 28% = 31,785 + 128,142 = 159,927
+    //   additional AMT = 159,927 − 36,731 = 123,196
+    // On the JOINT figures the same client would show TMT 123,854 and additional
+    // AMT 87,123 — $36,073 of tax routed to the wrong schedule.
+    const result = calculateTaxYear(makeInput({
+      filingStatus: "married_separate",
+      ordinaryIncome: 200_000,
+      isoSpread: 400_000,
+    }));
+    expect(result.flow.regularTaxCalc).toBeCloseTo(36_731, 0);
+    expect(result.flow.amtAdditional).toBeCloseTo(123_196, 0);
+  });
+
+  it("a single filer's exemption starts phasing out at 500,000, not 1,000,000", () => {
+    // Single 2026: exemption 90,100 · breakpoint 244,500 · phase-out start
+    // 500,000. $150,000 of ordinary income and a $450,000 exercise put AMTI at
+    // 600,000 — inside the single ramp and nowhere near the joint one.
+    //   taxable income 133,900 → regular tax 24,734
+    //   AMTI = 133,900 + 16,100 + 450,000 = 600,000
+    //   phase-out (600,000 − 500,000) × 50% = 50,000 → exemption 40,100
+    //   TMT = 244,500 × 26% + 315,400 × 28% = 63,570 + 88,312 = 151,882
+    //   additional AMT = 151,882 − 24,734 = 127,148
+    // With the joint phase-out start the exemption would survive whole and the
+    // client would be undercharged $14,000.
+    const result = calculateTaxYear(makeInput({
+      filingStatus: "single",
+      ordinaryIncome: 150_000,
+      isoSpread: 450_000,
+    }));
+    expect(result.flow.regularTaxCalc).toBeCloseTo(24_734, 0);
+    expect(result.flow.amtAdditional).toBeCloseTo(127_148, 0);
+  });
+});

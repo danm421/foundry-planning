@@ -189,3 +189,29 @@ describe("tax-detail-flow-table — above-line columns", () => {
     expect(aboveLineColumns([zero]).map((c) => c.key)).toEqual(["al_total"]);
   });
 });
+
+describe("tax-detail-flow-table — the AMT column carries a real figure", () => {
+  // Every fixture in this file carried `amtAdditional: 0`, and so did the Stock
+  // Options tax-impact table's. Hard-wiring the AMT column to a constant zero in
+  // BOTH advisor-facing tables therefore left the entire component suite green —
+  // on the one tax column an option client opens these tables to read.
+  //   regularFed 30,000 + capGains 2,000 + AMT 45,000 + state 3,000 = 80,000
+  const withAmt = makeYear({ amtAdditional: 45_000, totalTax: 80_000 });
+
+  it("reads the year's additional AMT rather than a constant", () => {
+    const col = otherColumns([withAmt]).find((c) => c.key === "amtAdditional")!;
+    expect(col.value(withAmt)).toBe(45_000);
+    // …and still reports zero for a year that genuinely owes none, so the
+    // assertion above cannot be satisfied by a different constant.
+    expect(col.value(yNoCredits)).toBe(0);
+  });
+
+  it("counts AMT inside Other = Total Tax − Regular Federal", () => {
+    expect(computeOtherTaxes(withAmt)).toBe(50_000); // 2k gains + 45k AMT + 3k state
+    const cols = otherColumns([withAmt]);
+    const components = cols
+      .filter((c) => !["other_total", "trustTax", "beneficiaryTax"].includes(c.key))
+      .reduce((s, c) => s + c.value(withAmt), 0);
+    expect(components).toBe(computeOtherTaxes(withAmt));
+  });
+});

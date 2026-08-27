@@ -4,6 +4,7 @@ import { buildGrantTimeline, type EquityAction } from "./timeline";
 import { fmvCurve, resolveStrikePrice } from "./price-model";
 import { computeSellToCover } from "./withholding";
 import { isQualifyingIsoDisposition, isLongTermHolding } from "./holding-period";
+import { yearOf } from "./dates";
 
 /** One acquired-and-held lot — per ACQUISITION EVENT, not per tranche: a row
  *  partly exercised before the plan holds two. */
@@ -22,6 +23,13 @@ interface Lot {
    *  because this is the only place that knows FMV at exercise; first READ by
    *  G8 Plan 2 (audit F23). */
   amtBasisPerShare: number;
+  /** The AMT preference this lot ACTUALLY booked at exercise, per share — zero
+   *  for an RSU and for a `seed_held` lot exercised before the plan began.
+   *  §56(b)(3) zeroes the preference when the disposition lands in the exercise
+   *  year, and the reversal has to know what was booked rather than re-derive it
+   *  from a date: a seeded lot carries a real `exerciseDate` and no preference,
+   *  so a date-only test would subtract dollars nobody ever added. */
+  isoPreferencePerShare: number;
   /** Real dates. `exerciseDate` is null for an RSU — there is no exercise. */
   acquisitionDate: string;
   exerciseDate: string | null;
@@ -135,6 +143,7 @@ export function computeEquityYear(plan: StockOptionPlan, state: EquityState, yea
         grantId: a.grantId, trancheId: a.trancheId, grantType: grant.grantType, shares: a.shares,
         basisPerShare,
         amtBasisPerShare: fmvAtAcq,
+        isoPreferencePerShare: 0,   // exercised before the plan — nothing was booked
         acquisitionDate: a.date,
         exerciseDate: isRsu ? null : a.date,
         grantDate: grant.grantDate,
@@ -157,6 +166,7 @@ export function computeEquityYear(plan: StockOptionPlan, state: EquityState, yea
       state.lots.set(key, {
         grantId: a.grantId, trancheId: a.trancheId, grantType: "rsu", shares: retained,
         basisPerShare: f, amtBasisPerShare: f,
+        isoPreferencePerShare: 0,   // an RSU vest is wages, never a preference
         // `a.date` is the grant date for an 83(b) grant and the vest date
         // otherwise — timeline.ts owns that distinction, which is the whole
         // effect of the election on the holding period.
@@ -177,7 +187,8 @@ export function computeEquityYear(plan: StockOptionPlan, state: EquityState, yea
     if (a.kind === "exercise") {
       const f = fmv(year);
       const strike = resolveStrikePrice(grant, f);
-      const spread = ROUND(a.shares * Math.max(0, f - strike));
+      const bargainPerShare = Math.max(0, f - strike);
+      const spread = ROUND(a.shares * bargainPerShare);
       res.strikeCashOutflow += ROUND(a.shares * strike);
       let retained = a.shares;
       let cover = { coverShares: 0, proceeds: 0, retained: a.shares };
@@ -197,6 +208,9 @@ export function computeEquityYear(plan: StockOptionPlan, state: EquityState, yea
       state.lots.set(key, {
         grantId: a.grantId, trancheId: a.trancheId, grantType: grant.grantType, shares: retained,
         basisPerShare, amtBasisPerShare: f,
+        // Recorded so a same-year disposition can give back exactly what this
+        // exercise added — an NQSO adds nothing, so it has nothing to give back.
+        isoPreferencePerShare: grant.grantType === "iso" ? bargainPerShare : 0,
         acquisitionDate: a.date,
         exerciseDate: a.date,
         grantDate: grant.grantDate,
@@ -220,6 +234,24 @@ export function computeEquityYear(plan: StockOptionPlan, state: EquityState, yea
       res.saleBasisRemoved += ROUND(shares * lot.basisPerShare);
 
       if (lot.grantType === "iso" && lot.exerciseDate != null) {
+        // IRC §56(b)(3), second sentence (applying §422(c)(2)): where the
+        // disposition and the AMT inclusion fall in the SAME tax year, the AMT
+        // amount equals the regular-tax amount, so the Form 6251 line 2i
+        // adjustment is zero. Give back, pro-rata by shares sold, the
+        // preference these shares booked at exercise — the cashless
+        // exercise-and-sell was charging the same dollars twice, once here as
+        // a preference and once below as wages.
+        //
+        // ⚠️ Gated on the RECORDED preference, never on the date alone — see
+        // `isoPreferencePerShare` on the Lot for why a date test is wrong here.
+        //
+        // The FULL exercise-date bargain element comes back even when a price
+        // drop capped `oi` below it: the capped amount is what reaches taxable
+        // income, so reversing the full preference is what leaves AMT income
+        // sitting on the regular-tax figure the statute asks for.
+        if (lot.isoPreferencePerShare > 0 && yearOf(lot.exerciseDate) === year) {
+          res.isoSpread -= ROUND(shares * lot.isoPreferencePerShare);
+        }
         const qualifying = isQualifyingIsoDisposition({
           grantDate: lot.grantDate,
           exerciseDate: lot.exerciseDate,

@@ -48,6 +48,23 @@ const ISO_EXERCISE_YEAR = 2028; // FMV = 121, strike 10 → $555k AMT preference
 const RSU_SHARES = 1_000;
 const ISO_SHARES = 5_000;
 const ISO_STRIKE = 10;
+const ISO_SELL_YEAR = 2031; // >2y from the 2025 grant and >1y from exercise → qualifying
+/** Additional AMT in the exercise year when the shares are HELD, hand-derived
+ *  from TAX_YEAR_2026 so a rate, exemption or phase-out regression cannot hide
+ *  behind a "greater than zero" assertion:
+ *
+ *    taxable income  65,000 (80,000 salary − 15,000 standard deduction)
+ *    AMTI            65,000 + 15,000 std add-back + 555,000 spread = 635,000
+ *    phase-out       (635,000 − 618,700) × 50%  =  8,150  ← inside the ramp
+ *    exemption       88,100 − 8,150             = 79,950
+ *    taxable AMTI    635,000 − 79,950           = 555,050
+ *    TMT             239,100 × 26% + 315,950 × 28% = 62,166 + 88,466 = 150,632
+ *    regular tax     9,353
+ *    additional AMT  150,632 − 9,353            = 141,279
+ *
+ *  The client sits INSIDE the exemption phase-out band, so this figure also
+ *  pins the ramp end-to-end and not merely the 26/28 split. */
+const AMT_ON_EXERCISE_AND_HOLD = 141_279;
 
 const SO_ACCOUNT_ID = "so-equity";
 const DEST_ID = `equity-dest-${SO_ACCOUNT_ID}`; // auto-created destination
@@ -256,7 +273,10 @@ describe("equity compensation — end-to-end projection", () => {
     const expectedIsoSpread = ISO_SHARES * (fmv(ISO_EXERCISE_YEAR) - ISO_STRIKE); // 5,000 × 111 = 555,000
     expect(expectedIsoSpread).toBeGreaterThan(0);
     expect(yExercise.taxResult).toBeDefined();
-    expect(yExercise.taxResult!.flow.amtAdditional).toBeGreaterThan(0);
+    // Pinned, not just "greater than zero". A bare positivity check survives a
+    // wrong rate, a wrong exemption and a wrong phase-out alike — it only ever
+    // proved the preference reached the tax layer at all.
+    expect(yExercise.taxResult!.flow.amtAdditional).toBeCloseTo(AMT_ON_EXERCISE_AND_HOLD, 0);
     // The ISO exercise itself contributes NO regular earned income that year
     // (bargain element is AMT-only) — so earned income matches the baseline.
     expect(yExercise.taxDetail!.earnedIncome).toBeCloseTo(
@@ -368,5 +388,98 @@ describe("equity compensation — disqualifying ISO income is not payroll wages"
   it("still taxes it as income — the bracket tax rises", () => {
     expect(yIso.taxResult!.flow.regularFederalIncomeTax)
       .toBeGreaterThan(yBase.taxResult!.flow.regularFederalIncomeTax);
+  });
+});
+
+/** The no-equity control both blocks below measure against. One projection,
+ *  shared — the two pre-existing describes each run their own. */
+const NO_EQUITY = runProjection(buildData({ stockOptionPlans: [] }));
+
+describe("equity compensation — a cashless exercise-and-sell owes NO alternative minimum tax", () => {
+  // IRC §56(b)(3): where the disposition falls in the same tax year as the
+  // exercise, the AMT amount equals the regular-tax amount and Form 6251 line 2i
+  // is zero. The app used to book the bargain element BOTH as a preference (at
+  // exercise) and as wages (at the sale), so the same $555,000 sat inside AMT
+  // income twice and the plan charged six figures of tax that does not exist.
+  //
+  // This is the end-to-end proof: the whole projection, the real tax engine, and
+  // the same fixture the audit measured the phantom charge on.
+  const SAME_YEAR_SELL: StockOptionPlan = {
+    ...EQUITY_PLAN,
+    grants: [
+      {
+        ...EQUITY_PLAN.grants[1], // the ISO grant
+        strategy: { exerciseTiming: "at_vest", sellTiming: "immediately" },
+      },
+    ],
+  };
+
+  const sameYear = runProjection(buildData({ stockOptionPlans: [SAME_YEAR_SELL] }));
+  const yBase = NO_EQUITY.find((y) => y.year === ISO_EXERCISE_YEAR)!;
+  const ySell = sameYear.find((y) => y.year === ISO_EXERCISE_YEAR)!;
+
+  it("charges the same AMT as a plan with no equity at all — none", () => {
+    expect(yBase.taxResult!.flow.amtAdditional).toBe(0); // non-vacuous: the baseline owes none
+    expect(ySell.taxResult!.flow.amtAdditional).toBe(0);
+  });
+
+  it("still taxes the bargain element in full, as ordinary income", () => {
+    const expectedOi = ISO_SHARES * (fmv(ISO_EXERCISE_YEAR) - ISO_STRIKE); // 555,000
+    expect(ySell.taxDetail!.earnedIncome - yBase.taxDetail!.earnedIncome).toBeCloseTo(expectedOi, 2);
+    expect(ySell.taxResult!.flow.regularFederalIncomeTax)
+      .toBeGreaterThan(yBase.taxResult!.flow.regularFederalIncomeTax);
+  });
+});
+
+describe("equity compensation — selling an exercised lot in a LATER year", () => {
+  // No end-to-end fixture ever sold an option lot after exercising it: the plan
+  // exercised in 2028 and held forever. That left the whole sale path — and in
+  // particular the year-gating on the §56(b)(3) reversal — untested through the
+  // real projection.
+  //
+  // Exercise at vest in 2028, sell in 2031: more than two years from the 2025
+  // grant and more than one from the exercise, so the disposition QUALIFIES and
+  // the entire gain over the strike is long-term.
+  const EXERCISE_THEN_SELL: StockOptionPlan = {
+    ...EQUITY_PLAN,
+    grants: [
+      {
+        ...EQUITY_PLAN.grants[1], // the ISO grant
+        strategy: { exerciseTiming: "at_vest", sellTiming: "hold_then_sell_year", sellYear: ISO_SELL_YEAR },
+      },
+    ],
+  };
+  const sold = runProjection(buildData({ stockOptionPlans: [EXERCISE_THEN_SELL] }));
+  const at = (ys: ReturnType<typeof runProjection>, year: number) => ys.find((y) => y.year === year)!;
+
+  it("charges the exercise-year AMT in full — a sale three years out changes nothing in 2028", () => {
+    // The same literal the hold-forever plan is pinned to in the first describe:
+    // scheduling a later sale must not move the exercise year by a dollar.
+    expect(at(sold, ISO_EXERCISE_YEAR).taxResult!.flow.amtAdditional)
+      .toBeCloseTo(AMT_ON_EXERCISE_AND_HOLD, 0);
+  });
+
+  it("books the sale as a long-term capital gain over the STRIKE basis", () => {
+    // Qualifying disposition: no wages, and the basis is what the client paid to
+    // exercise — the strike — not the price at exercise.
+    const ySale = at(sold, ISO_SELL_YEAR);
+    const baseSale = at(NO_EQUITY, ISO_SELL_YEAR);
+    expect(ySale.taxDetail!.earnedIncome).toBeCloseTo(baseSale.taxDetail!.earnedIncome, 2);
+    const expectedGain = ISO_SHARES * (fmv(ISO_SELL_YEAR) - ISO_STRIKE);
+    expect(ySale.taxDetail!.capitalGains - baseSale.taxDetail!.capitalGains)
+      .toBeCloseTo(expectedGain, 2);
+  });
+
+  it("does not claw back the 2028 preference in the sale year", () => {
+    // ⚠️ The regression guard for the §56(b)(3) fix. Reversing the preference
+    // whenever an ISO lot is sold — rather than only when the sale lands in the
+    // exercise year — would push a NEGATIVE preference into 2031's AMT income
+    // and hand the client a deduction the law does not give until the dual-basis
+    // adjustment at sale exists (audit F3, deliberately not in this phase).
+    const ySale = at(sold, ISO_SELL_YEAR);
+    const baseSale = at(NO_EQUITY, ISO_SELL_YEAR);
+    expect(ySale.taxResult!.flow.amtAdditional)
+      .toBeGreaterThanOrEqual(baseSale.taxResult!.flow.amtAdditional);
+    expect(ySale.taxResult!.flow.taxableIncome).toBeGreaterThan(baseSale.taxResult!.flow.taxableIncome);
   });
 });

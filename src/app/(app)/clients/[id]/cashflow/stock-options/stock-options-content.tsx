@@ -48,11 +48,16 @@ export async function StockOptionsContent({ id, firmId, scenarioParam }: Props) 
     taxByYear,
   });
 
+  // `taxEngineMode` is OPTIONAL and unset means flat — projection.ts routes on
+  // the same test. What the table then does with it lives in its `copyFor`.
+  const taxMode = effectiveTree.planSettings.taxEngineMode === "bracket" ? "bracket" : "flat";
+
   return (
     <StockOptionsReportView
       vestingModel={vestingModel}
       futureActivityModel={futureActivityModel}
       taxImpactModel={taxImpactModel}
+      taxMode={taxMode}
     />
   );
 }
