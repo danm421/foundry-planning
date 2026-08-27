@@ -1,3 +1,5 @@
+import { splitLifo, earlyWithdrawalPenalty } from "./annuity/tax";
+
 export interface TransferTaxInput {
   sourceCategory: "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable" | "stock_options" | "education_savings";
   sourceSubType: string;
@@ -21,6 +23,12 @@ export interface TransferTaxInput {
    *  (taxable/cash sources only). 0/undefined preserves today's pro-rata
    *  behavior. */
   sourceFreshBasis?: number;
+  /** Annuity source only: the contract's tax treatment. Defaults to
+   *  non_qualified when the caller doesn't know. */
+  sourceAnnuityTreatment?: "qualified" | "non_qualified" | "tax_free";
+  /** Annuity source only: unrecovered §72 basis. Undefined ⇒ basis equals the
+   *  account value, so no phantom gain appears. */
+  sourceAnnuityBasis?: number;
 }
 
 export interface TransferTaxResult {
@@ -74,6 +82,39 @@ export function classifyTransferTax(input: TransferTaxInput): TransferTaxResult 
       basisReturn: amount,
       earlyWithdrawalPenalty: 0,
       label: "qualified_hsa_distribution",
+    };
+  }
+
+  // ── Annuity source ───────────────────────────────────────────────────────
+  // IRC §72, same rules as categorizeDraw. Gain-first (LIFO), ordinary income
+  // never capital gain, and the penalty falls on the taxable slice only. The
+  // treatment travels on the ACCOUNT (`sourceAnnuityTreatment`), not on
+  // `sourceSubType` — an annuity's subType carries the product, not the tax
+  // wrapper.
+  if (sourceCategory === "annuity") {
+    const treatment = input.sourceAnnuityTreatment ?? "non_qualified";
+    if (treatment === "tax_free") {
+      return { taxableOrdinaryIncome: 0, capitalGain: 0, basisReturn: amount,
+               earlyWithdrawalPenalty: 0, label: "tax_free_rollover" };
+    }
+    if (treatment === "qualified") {
+      const penalty = earlyWithdrawalPenalty(amount, ownerAge);
+      return { taxableOrdinaryIncome: amount, capitalGain: 0, basisReturn: 0,
+               earlyWithdrawalPenalty: penalty,
+               label: penalty > 0 ? "early_distribution" : "taxable_distribution" };
+    }
+    const split = splitLifo({
+      withdrawal: amount,
+      accountValue: sourceAccountValue,
+      remainingBasis: input.sourceAnnuityBasis ?? sourceAccountValue,
+      ownerAge,
+    });
+    return {
+      taxableOrdinaryIncome: split.ordinaryIncome,
+      capitalGain: 0,
+      basisReturn: split.basisReturn,
+      earlyWithdrawalPenalty: split.earlyWithdrawalPenalty,
+      label: split.earlyWithdrawalPenalty > 0 ? "early_distribution" : "taxable_distribution",
     };
   }
 

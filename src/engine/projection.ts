@@ -211,11 +211,11 @@ function legacyTaxType(
   }
 }
 
-// Tax-efficiency ranking by category alone — Cash → Taxable → Tax-Deferred → Roth.
-// Returns null for categories that can't be cleanly liquidated at year boundaries
-// (real estate, business, life insurance, stock_options). Shared by household and
-// entity-scoped withdrawal strategies; callers layer on their own ownership /
-// default-checking exclusions before consulting it.
+// Tax-efficiency ranking by category alone — Cash → Taxable → Tax-Deferred →
+// Roth → Annuity. Returns null for categories that can't be cleanly liquidated
+// at year boundaries (real estate, business, life insurance, stock_options).
+// Shared by household and entity-scoped withdrawal strategies; callers layer on
+// their own ownership / default-checking exclusions before consulting it.
 function categoryWithdrawalPriority(acct: Account): number | null {
   if (acct.category === "cash") return 1;
   if (acct.category === "taxable") return 2;
@@ -223,6 +223,14 @@ function categoryWithdrawalPriority(acct: Account): number | null {
     if (acct.subType === "roth_ira") return 4;
     // traditional_ira, 401k, 403b, 529, deferred, other → tax-deferred bucket
     return 3;
+  }
+  // Annuities rank LAST among spendable sources (below Roth at 4). Surrender
+  // charges, rider damage, and the ordinary-income character of the gain all
+  // make this the worst account to tap — but it IS tappable, which it was not
+  // before. An annuitized contract has no cash value left to draw.
+  if (acct.category === "annuity") {
+    if (acct.annuity?.incomeMode === "annuitized") return null;
+    return 5;
   }
   if (acct.category === "notes_receivable") return null; // notes amortize themselves
   if (acct.category === "stock_options") return null; // illiquid grants — not a drawdown source
@@ -270,7 +278,7 @@ function buildEntityWithdrawalStrategy(
   return strategy;
 }
 
-function buildDefaultWithdrawalStrategy(
+export function buildDefaultWithdrawalStrategy(
   accounts: Account[],
   planSettings: PlanSettings
 ): WithdrawalPriority[] {

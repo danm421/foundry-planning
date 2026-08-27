@@ -116,6 +116,8 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
       sourceAccountBasis: basisMap[transfer.sourceAccountId] ?? 0,
       sourceRothValue: rothValueMap?.[transfer.sourceAccountId] ?? 0,
       sourceFreshBasis: sourceFresh,
+      sourceAnnuityTreatment: sourceAccount.annuity?.taxTreatment,
+      sourceAnnuityBasis: sourceAccount.annuity?.costBasis,
       allTraditionalIraBasis,
       allTraditionalIraBalance,
       ownerAge,

@@ -1,3 +1,4 @@
+import { splitLifo, earlyWithdrawalPenalty } from "./annuity/tax";
 import type { WithdrawalPriority, Account } from "./types";
 
 interface WithdrawalResult {
@@ -100,6 +101,43 @@ export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
     return { ...empty, capitalGains, basisReturn };
   }
 
+  // Annuity: IRC §72. Two things here are the opposite of their neighbours and
+  // must not be "harmonized" away:
+  //   1. Ordering is gain-FIRST (LIFO, §72(e)(2)(B)). The Roth branch below is
+  //      basis-first; the taxable branch above is pro-rata.
+  //   2. The taxable slice is ORDINARY INCOME, never a capital gain — even
+  //      though the contract holds market investments.
+  if (account.category === "annuity") {
+    const contract = account.annuity;
+    const treatment = contract?.taxTreatment ?? "non_qualified";
+
+    if (treatment === "tax_free") return { ...empty, basisReturn: amount };
+
+    if (treatment === "qualified") {
+      // No after-tax basis in a qualified contract — the whole draw is OI, and
+      // the §72(t) penalty applies to all of it.
+      return {
+        ...empty,
+        ordinaryIncome: amount,
+        earlyWithdrawalPenalty: earlyWithdrawalPenalty(amount, ownerAge),
+      };
+    }
+
+    // An unknown cost basis means basis = balance: no gain, no invented tax.
+    const split = splitLifo({
+      withdrawal: amount,
+      accountValue: balance,
+      remainingBasis: contract?.costBasis ?? balance,
+      ownerAge,
+    });
+    return {
+      ...empty,
+      ordinaryIncome: split.ordinaryIncome,
+      basisReturn: split.basisReturn,
+      earlyWithdrawalPenalty: split.earlyWithdrawalPenalty,
+    };
+  }
+
   // Retirement: traditional vs Roth vs HSA
   if (account.category === "retirement") {
     // HSA: every draw that reaches here is tax-free — a qualified-medical /
@@ -138,8 +176,10 @@ export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
     return { ...empty, ordinaryIncome: amount, earlyWithdrawalPenalty: penalty };
   }
 
-  // real_estate / business / life_insurance — strategy walk filters these via categoryWithdrawalPriority,
-  // so they should never reach categorizeDraw. Return empty defensively.
+  // real_estate / business / life_insurance — strategy walk filters these via
+  // categoryWithdrawalPriority, so they should never reach categorizeDraw.
+  // (`annuity` used to fall through here and come out UNTAXED — see the branch
+  // above. Do not let a new category land in this default silently.)
   return empty;
 }
 
