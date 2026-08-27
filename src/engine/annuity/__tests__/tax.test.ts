@@ -93,6 +93,40 @@ describe("expectedReturnMultiple", () => {
     const joint = expectedReturnMultiple({ structure: "joint_survivor", ownerAge: 65, coAnnuitantAge: 65 });
     expect(joint).toBeGreaterThan(single);
   });
+
+  it("a fractional age is floored, not fed to the table as NaN", () => {
+    // The mortality table is indexed by integer age: lx[65.5] is undefined, so an
+    // unfloored age yields NaN — and NaN slips BOTH Math.max(1, NaN) here and
+    // exclusionRatio's `expectedReturn <= 0` guard, silently NaN-ing the tax line.
+    const m = expectedReturnMultiple({ structure: "single_life", ownerAge: 65.5 });
+    expect(Number.isNaN(m)).toBe(false);
+    expect(Number.isFinite(m)).toBe(true);
+    expect(m).toBeGreaterThan(15);
+    expect(m).toBeLessThan(30);
+
+    // The co-annuitant age reaches the same table and needs the same flooring.
+    const j = expectedReturnMultiple({ structure: "joint_survivor", ownerAge: 65.5, coAnnuitantAge: 62.5 });
+    expect(Number.isNaN(j)).toBe(false);
+    expect(Number.isFinite(j)).toBe(true);
+    expect(j).toBeGreaterThan(m);
+  });
+
+  it("a period_certain with no term falls back to life expectancy, never to one year", () => {
+    // periodCertainYears is nullable in AnnuityContract AND in the DB column. A
+    // multiple of 1 pins exclusionRatio at 1.0, so a blank field would hand the
+    // advisor a 100%-tax-free income stream until §72(b)(2) bites.
+    const single = expectedReturnMultiple({ structure: "single_life", ownerAge: 65 });
+    const nulled = expectedReturnMultiple({ structure: "period_certain", ownerAge: 65, periodCertainYears: null });
+    const undef = expectedReturnMultiple({ structure: "period_certain", ownerAge: 65 });
+    const zero = expectedReturnMultiple({ structure: "period_certain", ownerAge: 65, periodCertainYears: 0 });
+    expect(nulled).toBe(single);
+    expect(undef).toBe(single);
+    expect(zero).toBe(single);
+    // Cannot pass on the old `?? 1` behavior.
+    expect(nulled).toBeGreaterThan(10);
+    expect(undef).toBeGreaterThan(10);
+    expect(zero).toBeGreaterThan(10);
+  });
 });
 
 describe("earlyWithdrawalPenalty", () => {

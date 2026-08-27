@@ -106,6 +106,16 @@ export interface ExpectedReturnInput {
 
 const MAX_MULTIPLE_YEARS = 60;
 
+/** Curtate life expectancy: Σ_{t=1..∞} tPx, off the 2010CM table.
+ *  `age` must already be an integer — see the flooring note in the caller. */
+function curtateLifeExpectancy(age: number): number {
+  let sum = 0;
+  for (let t = 1; t <= MAX_MULTIPLE_YEARS; t++) {
+    sum += survivalProbability(age, t);
+  }
+  return sum;
+}
+
 /**
  * The §72 expected-return multiple — how many years of payments the contract
  * is expected to make.
@@ -116,17 +126,34 @@ const MAX_MULTIPLE_YEARS = 60;
  * figure via `expectedReturnYears`, which is why the override exists.
  */
 export function expectedReturnMultiple(input: ExpectedReturnInput): number {
-  const { structure, ownerAge, coAnnuitantAge, periodCertainYears } = input;
+  const { structure, periodCertainYears } = input;
+
+  // The mortality table is indexed by INTEGER age: `lx(65.5)` reads past the
+  // array and returns undefined, so survivalProbability yields NaN. NaN then
+  // slips every guard downstream — `Math.max(1, NaN)` is NaN, and a NaN
+  // expectedReturn slips `exclusionRatio`'s `expectedReturn <= 0` check — so
+  // every payment's split would go NaN with no error anywhere. The projection
+  // passes an integer age today, but this module's own earlyWithdrawalPenalty
+  // takes 59.5, which invites a fractional age from the very next caller.
+  // Floor both ages here, at the one place they meet the table.
+  const ownerAge = Math.floor(input.ownerAge);
+  const coAnnuitantAge =
+    input.coAnnuitantAge == null ? undefined : Math.floor(input.coAnnuitantAge);
 
   if (structure === "period_certain") {
-    return Math.max(1, periodCertainYears ?? 1);
+    if (periodCertainYears != null && periodCertainYears > 0) {
+      return Math.max(1, periodCertainYears);
+    }
+    // A missing or non-positive term is a DATA GAP, not a one-year contract —
+    // periodCertainYears is nullable in both AnnuityContract and the DB column.
+    // Returning 1 would pin the exclusion ratio at 1.0 and hand the advisor a
+    // 100%-tax-free income stream until §72(b)(2) bites, turning a blank field
+    // into tax-free income. Life expectancy is a far better guess for a term
+    // nobody filled in.
+    return Math.max(1, curtateLifeExpectancy(ownerAge));
   }
 
-  // Curtate life expectancy: Σ_{t=1..∞} tPx.
-  let single = 0;
-  for (let t = 1; t <= MAX_MULTIPLE_YEARS; t++) {
-    single += survivalProbability(ownerAge, t);
-  }
+  const single = curtateLifeExpectancy(ownerAge);
 
   if (structure === "joint_survivor" && coAnnuitantAge != null) {
     // Last-survivor expectancy: Σ (1 − (1−tPx)(1−tPy)). Always ≥ either single
