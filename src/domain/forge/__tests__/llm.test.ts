@@ -9,6 +9,7 @@ const mockResolve = vi.fn();
 vi.mock("@/lib/ai/resolve", () => ({ resolveAiCredentials: () => mockResolve() }));
 
 import { chatModel, instanceNameFromEndpoint } from "../llm";
+import type { AiCredentials } from "@/lib/ai/credentials";
 
 describe("instanceNameFromEndpoint", () => {
   it("extracts the instance subdomain from a full Azure endpoint URL", () => {
@@ -43,10 +44,16 @@ describe("chatModel", () => {
 
   /** A firm running in its OWN Azure tenant. Every value differs from the
    *  Foundry Planning env stubbed below, so a leak in either direction shows up
-   *  as a concrete wrong value rather than as an absence. */
-  function firmCreds() {
+   *  as a concrete wrong value rather than as an absence.
+   *
+   *  ANNOTATED, not inferred: `mockResolve` is a bare `vi.fn()` returning `any`,
+   *  so without this the fixture could drift out of shape with `AiCredentials`
+   *  — a renamed or newly-required field would leave this test green against a
+   *  stale shape while assertForgeAzureConfig broke in production. The
+   *  annotation turns that into a typecheck failure. */
+  function firmCreds(): AiCredentials {
     return {
-      source: "firm" as const,
+      source: "firm",
       endpoint: "https://acme-ria.openai.azure.com",
       apiKey: "firm-key",
       apiVersion: "2030-01-01",
@@ -87,6 +94,11 @@ describe("chatModel", () => {
     stubFoundryEnv();
     mockResolve.mockResolvedValue(firmCreds());
     const model = await chatModel("full");
+    // The key FIRST: instance and deployment address a tenant, but the key is
+    // what actually AUTHENTICATES to it — it is the compliance promise itself.
+    // Bind Foundry's key beside the firm's instance and every other assertion
+    // here still passes, so this line is the one that closes that hole.
+    expect(model.azureOpenAIApiKey).toBe("firm-key");
     expect(model.azureOpenAIApiInstanceName).toBe("acme-ria");
     expect(model.azureOpenAIApiDeploymentName).toBe("firm-chat");
     expect(model.azureOpenAIApiVersion).toBe("2030-01-01");

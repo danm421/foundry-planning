@@ -29,21 +29,32 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it, vi } from "vitest";
 
-// The planner now asks src/lib/ai/resolve.ts WHOSE Azure tenant a call belongs
-// to, and that resolver requires a signed-in firm: outside a request Clerk's
-// auth() yields no org, so it throws `ai_no_firm_context`. runPlanner turns any
-// throw into `null`, which this harness (correctly) treats as a hard failure —
-// so unmocked, every fixture would fail with "PLANNER IS UNAVAILABLE" no matter
-// how good the model's answer was.
+// This lane runs the REAL runPlanner, which now asks src/lib/ai/resolve.ts WHOSE
+// Azure tenant a call belongs to. There is no request here, so Clerk's auth()
+// yields no org and the resolver refuses with `ai_no_firm_context`. runPlanner
+// turns any throw into `null`, which this harness (correctly) treats as a hard
+// failure — so without the opt-in below, every fixture would report "PLANNER IS
+// UNAVAILABLE" no matter how good the model's answer was.
 //
-// Pinning the resolver to `foundrySystemCredentials()` restores exactly the
-// pre-resolver behaviour of this lane: real Azure calls against the AZURE_* env
-// that HAS_CREDENTIALS below already gates on. It is the same judgement the
-// planning-KB ingest script makes with __FOUNDRY_SYSTEM_AI — our own fixtures,
-// our own tenant, no firm's client data involved.
-vi.mock("@/lib/ai/resolve", async (importActual) => {
-  const actual = await importActual<typeof import("@/lib/ai/resolve")>();
-  return { ...actual, resolveAiCredentials: async () => actual.foundrySystemCredentials() };
+// The sanctioned answer is the one scripts/ingest-planning-kb.ts uses: declare
+// ourselves the system caller. The resolver reads this flag ONLY inside its
+// no-org branch, so it can never divert a CONNECTED firm's data into our tenant
+// — it can only fill a gap where there is no firm at all, which is exactly this
+// lane: our own scrubbed fixtures, our own tenant, no client data. It then
+// resolves to `foundrySystemCredentials()`, i.e. the same AZURE_* env that
+// HAS_CREDENTIALS below already gates on — this lane's pre-resolver behaviour.
+//
+// Deliberately NOT a `vi.mock` of the resolver: a mock would pin our tenant
+// unconditionally (this flag cannot — an org present still wins), and it would
+// leave the eval exercising zero lines of the real resolver, hiding a resolver
+// regression from the one lane that makes live calls.
+//
+// `vi.hoisted` so the assignment runs BEFORE the imports below are evaluated.
+// Verified it does not strictly need to — resolve.ts makes no top-level
+// process.env read; the flag is read inside resolveAiCredentials(), at call
+// time — but hoisting makes that a fact this file need not depend on.
+vi.hoisted(() => {
+  process.env.__FOUNDRY_SYSTEM_AI = "1";
 });
 
 import { runPlanner } from "@/lib/imports/planner/run-planner";
