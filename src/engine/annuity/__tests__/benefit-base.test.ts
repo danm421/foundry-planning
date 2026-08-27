@@ -55,6 +55,26 @@ describe("rollBenefitBase", () => {
     });
     expect(r).toBe(100_000);
   });
+
+  it("throws on a rollup rate outside [0,1] — a 6 meaning \"6%\" would compound the base 7x a year", () => {
+    expect(() => rollBenefitBase({
+      contract: base({ rollupRate: 6 }), currentBase: 100_000, accountValue: 95_000, year: 2030, incomeActive: false,
+    })).toThrow("rollupRate out of [0,1]: 6");
+  });
+
+  it("throws on a NaN rollup rate rather than poisoning every later year", () => {
+    expect(() => rollBenefitBase({
+      contract: base({ rollupRate: Number.NaN }), currentBase: 100_000, accountValue: 95_000, year: 2030, incomeActive: false,
+    })).toThrow("rollupRate out of [0,1]: NaN");
+  });
+
+  it("accepts the boundary rates 0 and 1", () => {
+    const roll = (rollupRate: number) => rollBenefitBase({
+      contract: base({ rollupRate }), currentBase: 100_000, accountValue: 0, year: 2030, incomeActive: false,
+    });
+    expect(roll(0)).toBe(100_000);
+    expect(roll(1)).toBe(200_000);
+  });
 });
 
 describe("payoutPercentForAge", () => {
@@ -80,5 +100,19 @@ describe("resolvePayoutPercent", () => {
 
   it("falls back to the band table when the contract has none", () => {
     expect(resolvePayoutPercent(base(), 65)).toBeCloseTo(0.05, 4);
+  });
+
+  it("throws on a payout percent outside [0,1] — a 5 meaning \"5%\" would guarantee 500% of the base for life", () => {
+    expect(() => resolvePayoutPercent(base({ payoutPct: 5 }), 65)).toThrow("payoutPct out of [0,1]: 5");
+  });
+
+  it("accepts the boundary percents 0 and 1", () => {
+    expect(resolvePayoutPercent(base({ payoutPct: 0 }), 65)).toBe(0);
+    expect(resolvePayoutPercent(base({ payoutPct: 1 }), 65)).toBe(1);
+  });
+
+  it("treats an explicit 0 as a real choice, not a missing value — no band-table fallback", () => {
+    expect(resolvePayoutPercent(base({ payoutPct: 0 }), 65)).toBe(0);
+    expect(payoutPercentForAge(65)).toBeCloseTo(0.05, 4);
   });
 });

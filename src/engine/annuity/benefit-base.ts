@@ -24,7 +24,11 @@ export function payoutPercentForAge(age: number): number {
 }
 
 export function resolvePayoutPercent(contract: AnnuityContract, ageAtActivation: number): number {
-  return contract.payoutPct ?? payoutPercentForAge(ageAtActivation);
+  const payoutPct = contract.payoutPct ?? payoutPercentForAge(ageAtActivation);
+  if (!Number.isFinite(payoutPct) || payoutPct < 0 || payoutPct > 1) {
+    throw new Error(`payoutPct out of [0,1]: ${payoutPct}`);
+  }
+  return payoutPct;
 }
 
 export interface RollupInput {
@@ -51,7 +55,12 @@ export function rollBenefitBase(input: RollupInput): number {
   if (incomeActive) return currentBase;
   if (contract.rollupEndYear != null && year > contract.rollupEndYear) return currentBase;
 
-  const rolled = currentBase * (1 + (contract.rollupRate ?? 0));
+  const rollupRate = contract.rollupRate ?? 0;
+  if (!Number.isFinite(rollupRate) || rollupRate < 0 || rollupRate > 1) {
+    throw new Error(`rollupRate out of [0,1]: ${rollupRate}`);
+  }
+
+  const rolled = currentBase * (1 + rollupRate);
   if (!contract.rollupRatchets) return rolled;
   return Math.max(rolled, accountValue);
 }
