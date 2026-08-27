@@ -352,7 +352,7 @@ export function SolverChartPanel({
     [isMonthlySubTab, currentProjection, workingTree, dollarBasis],
   );
 
-  const [monthlyView, setMonthlyView] = useState<"plan" | "months">("plan");
+  const [monthlyView, setMonthlyView] = useState<"plan" | "months">("months");
 
   // The twelve months of whichever year the panel below is captioning. The year
   // comes from `selectMonthlyRow` — the panel's OWN rule, shared rather than
@@ -361,9 +361,9 @@ export function SolverChartPanel({
   // `buildMonthlyCashFlowRows` maps 1:1 today, but an index would retarget
   // silently if that ever stopped being true. Gated on the sub-tab like
   // `monthlyRows` above AND on the toggle: both consumers — the table below and
-  // the month chart — render only in month view, and "Across the plan" is the
-  // default, so without the second gate the allocator would run on every year
-  // click for a chart and a table nobody is looking at. Memoized because a
+  // the month chart — render only in month view, so without the second gate the
+  // allocator would run on every year click for a chart and a table nobody is
+  // looking at once the advisor switches to "Across the plan". Memoized because a
   // chart-height drag re-renders this panel on every pointermove.
   const monthRows = useMemo(() => {
     if (!isMonthlySubTab || monthlyView !== "months") return [];

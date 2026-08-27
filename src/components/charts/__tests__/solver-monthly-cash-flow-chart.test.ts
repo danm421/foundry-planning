@@ -55,6 +55,45 @@ function row(over: Partial<MonthlyCashFlowRow> = {}): MonthlyCashFlowRow {
 /** The draw year: bars stack to 13,000 against a 10,000 income line. */
 const drawRow = () => row({ portfolioDraw: 3_000, available: 8_000, leftAfterFixed: 5_000 });
 
+/**
+ * CIE Lab, so band colours can be compared the way an eye compares them rather
+ * than by hex equality. Two bands can be "different colours" by `!==` and still
+ * be the same colour on screen — which is exactly the defect the pinned-hue
+ * assertions above cannot see, and exactly what shipped: Living #6a3fa0 sat
+ * 30.7 ΔE76 from Savings #2c5fa8 and advisors read them as one blue.
+ */
+function toLab(hex: string): [number, number, number] {
+  const srgb = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const [r, g, b] = srgb.map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  const xyz = [
+    (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047,
+    0.2126 * r + 0.7152 * g + 0.0722 * b,
+    (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883,
+  ];
+  const [fx, fy, fz] = xyz.map((t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116));
+  return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+}
+
+function deltaE76(a: string, b: string): number {
+  const [l1, a1, b1] = toLab(a);
+  const [l2, a2, b2] = toLab(b);
+  return Math.hypot(l1 - l2, a1 - a2, b1 - b2);
+}
+
+/** The closest pair among a set of band colours — the number that decides
+ *  whether a stack can be read at all. */
+function closestPair(hexes: string[]): { distance: number; pair: [string, string] } {
+  let worst = { distance: Infinity, pair: ["", ""] as [string, string] };
+  for (let i = 0; i < hexes.length; i++) {
+    for (let j = i + 1; j < hexes.length; j++) {
+      const distance = deltaE76(hexes[i], hexes[j]);
+      if (distance < worst.distance) worst = { distance, pair: [hexes[i], hexes[j]] };
+    }
+  }
+  return worst;
+}
+
+
 describe("buildMonthlyCashFlowChartData", () => {
   it("stacks the four fixed buckets plus available, and plots income as a line", () => {
     const data = buildMonthlyCashFlowChartData([row()], "dark");
@@ -190,7 +229,7 @@ describe("buildMonthlyCashFlowChartData", () => {
     // lets two bands collide on the same color and stay green.
     const bandColor: Record<string, string> = {
       Taxes: brandData.red,
-      "Debt payments": brandData.orange,
+      "Debt payments": brandData.yellow,
       Savings: brandData.blue,
       "Other fixed": brandData.grey,
     };
@@ -431,12 +470,53 @@ describe("buildMonthAllocationChartData", () => {
     const colorOf = (label: string) => d.datasets.find((s) => s.label === label)!.backgroundColor;
 
     expect(colorOf("Taxes")).toBe(brandData.red);
-    expect(colorOf("Debt")).toBe(brandData.orange);
+    expect(colorOf("Debt")).toBe(brandData.yellow);
     expect(colorOf("Savings")).toBe(brandData.blue);
     expect(colorOf("Other")).toBe(brandData.grey);
     // Green is the residual in both charts — Available there, Left over here.
-    expect(colorOf("Living")).toBe(brandData.purple);
+    expect(colorOf("Living")).toBe(brandData.pink);
     expect(colorOf("Left over")).toEqual(Array(12).fill(brandData.green));
+  });
+
+  // The month stack is six bands deep and is read by comparing neighbours, so
+  // the palette's real property is its CLOSEST PAIR — not that six tokens are
+  // spelled differently. The pinned hues above would stay green through a swap
+  // back to purple; this is the assertion that would not.
+  //
+  // 40 is a floor with the reason attached: the chosen set clears it at 42.0
+  // (dark) and 41.7 (light), and the two hues this replaced — purple/blue at
+  // 30.7 and orange/red at 26.7 — fail it. Both themes, because the light
+  // palette is a different nine colours and could regress on its own.
+  it.each(["dark", "light"] as const)("keeps every month band apart to the eye in %s", (theme) => {
+    const d = buildMonthAllocationChartData(twelveMonths(), theme);
+    const bands = d.datasets
+      .filter((s) => s.type === "bar")
+      .map((s) => (Array.isArray(s.backgroundColor) ? s.backgroundColor[0] : s.backgroundColor!));
+
+    expect(bands).toHaveLength(6);
+    // Liveness: a builder that collided two bands on one hex would otherwise
+    // hand a shorter set to `closestPair` and could pass on the survivors.
+    expect(new Set(bands).size).toBe(6);
+    // The residual band is a per-point ARRAY, so this reads its first month —
+    // and this pin says out loud that the month in question is a SOLVENT one.
+    // A fixture that went short in January would hand the crit stain to the
+    // comparison instead, and crit against Taxes red is a documented 7.6 that
+    // the below-zero position carries, not the hue.
+    expect(bands[5]).toBe(theme === "dark" ? brandData.green : brandDataLight.green);
+
+    const { distance, pair } = closestPair(bands);
+    expect({ pair, ok: distance >= 40 }).toEqual({ pair, ok: true });
+  });
+
+  // The guard is a claim about what it detects, so the claim is exercised: the
+  // palette this shipped with fails it, on the pair advisors actually reported.
+  it("would have caught the Living/Savings collision", () => {
+    const before = closestPair([
+      brandData.red, brandData.orange, brandData.blue,
+      brandData.grey, brandData.purple, brandData.green,
+    ]);
+    expect(before.distance).toBeLessThan(40);
+    expect(closestPair([brandData.blue, brandData.purple]).distance).toBeLessThan(40);
   });
 
   it("resolves the palette against the requested theme", () => {

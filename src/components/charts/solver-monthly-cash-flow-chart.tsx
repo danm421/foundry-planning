@@ -71,6 +71,27 @@ const DEPLETED_BORDER_WIDTH = 2;
 /** The selected year's outline, matching `SolverCashFlowChart`. */
 const SELECTED_BORDER_WIDTH = 2;
 
+/**
+ * SEPARATION — why these six brand hues and not the other three.
+ *
+ * Both stacks are read by comparing neighbouring bands, so the palette's job is
+ * to keep every pair apart, and the pair that decides that is the CLOSEST one.
+ * Measured in CIE Lab (ΔE76) over the dark palette, the set below —
+ * red · yellow · blue · grey · pink · green — has a closest pair of 42.0
+ * (red/pink). It is the widest set of six the nine-colour brand palette can
+ * produce with green held for the residual, and the two hues it drops were the
+ * two that were failing:
+ *
+ *   - purple #6a3fa0 for Living sat 30.7 from blue #2c5fa8 for Savings — and
+ *     2.6 under simulated deuteranopia, i.e. the same colour for a red-green
+ *     colour-blind reader. Two adjacent bands. Now pink, 56.9 from blue.
+ *   - orange #cf6a1f for Debt sat 26.7 from red #c0392b for Taxes, the tightest
+ *     pair in the whole chart and also two adjacent bands. Now yellow, 55.9.
+ *
+ * Teal is deliberately NOT in the set: it is 23.8 from the green the residual
+ * band owns, which would have been worse than what it replaced.
+ */
+
 interface MonthlyDataset {
   type: "bar" | "line";
   label: string;
@@ -146,7 +167,7 @@ export function buildMonthlyCashFlowChartData(
     labels: rows.map((r) => String(r.year)),
     datasets: [
       bar("Taxes", (r) => r.fixed.taxes, palette.red),
-      bar("Debt payments", (r) => r.fixed.liabilities, palette.orange),
+      bar("Debt payments", (r) => r.fixed.liabilities, palette.yellow),
       bar("Savings", (r) => r.fixed.savings, palette.blue),
       bar(
         "Other fixed",
@@ -199,6 +220,9 @@ const leftOver = (r: MonthRow) =>
  * re-coloured by the toggle. Green stays with the residual (Available's
  * counterpart); Living, which the year chart folds inside Available and this one
  * breaks out, takes a hue no band here uses.
+ *
+ * The six hues are chosen for SEPARATION, measured, not picked by eye — see the
+ * note on `SEPARATION` below.
  */
 export function buildMonthAllocationChartData(
   rows: MonthRow[],
@@ -227,10 +251,10 @@ export function buildMonthAllocationChartData(
     labels: rows.map((r) => r.label.slice(0, 3)),
     datasets: [
       bar("Taxes", (r) => r.taxes, palette.red),
-      bar("Debt", (r) => r.debt, palette.orange),
+      bar("Debt", (r) => r.debt, palette.yellow),
       bar("Savings", (r) => r.savings, palette.blue),
       bar("Other", (r) => r.other, palette.grey),
-      bar("Living", (r) => r.living, palette.purple),
+      bar("Living", (r) => r.living, palette.pink),
       // Stained where the month is short — the moment this whole view exists to
       // find. Colour is not the only carrier: a negative band is the only band
       // in the chart drawn below the zero line, and position survives greyscale

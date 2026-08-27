@@ -719,29 +719,39 @@ describe("SolverChartPanel", () => {
     expect(buildMonthlyRows).not.toHaveBeenCalled();
   });
 
-  // "Across the plan" is the DEFAULT view, so an ungated memo would run the
-  // allocator — twelve months, every liability's schedule — on every year click
-  // for a chart and a table nobody is looking at.
-  it("splits no year into months until the advisor asks for the month view", async () => {
+  // The months are the DEFAULT view, so the allocator runs as soon as the
+  // sub-tab opens — but once the advisor moves to "Across the plan" an ungated
+  // memo would keep running it — twelve months, every liability's schedule — on
+  // every year click for a chart and a table nobody is looking at.
+  it("splits no year into months once the advisor moves off the month view", async () => {
     render(<ControlledPanel initialReport="cashflow" currentProjection={withdrawalProjection} />);
     await userEvent.click(screen.getByRole("button", { name: "Monthly" }));
     expect(buildMonthlyRows).toHaveBeenCalled();
+    expect(buildAllocation).toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "flip view" }));
+    buildAllocation.mockClear();
+    // A basis flip is a dependency of the memo: ungated, it would re-run here.
+    // Flipped back before the case ends — the basis store is module-level, so a
+    // test that walked away from "nominal" would decide what the next one sees.
+    await userEvent.click(screen.getByRole("button", { name: "flip basis" }));
     expect(buildAllocation).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "flip basis" }));
   });
 
   // One toggle drives both surfaces. A wiring that moved the table and left the
   // chart on the year view would show an advisor two different periods side by
   // side and give no sign of it.
-  it("moves the chart and the table onto the months together", async () => {
+  it("opens both the chart and the table on the months, and moves them off together", async () => {
     render(<ControlledPanel initialReport="cashflow" currentProjection={withdrawalProjection} />);
     await userEvent.click(screen.getByRole("button", { name: "Monthly" }));
-    expect(screen.getByTestId("chart-monthly")).toHaveTextContent("view:plan");
-    expect(screen.getByTestId("panel-monthly")).toHaveTextContent("months:0");
+    expect(buildAllocation).toHaveBeenCalled();
+    expect(screen.getByTestId("chart-monthly")).toHaveTextContent("months:12 view:months");
+    expect(screen.getByTestId("panel-monthly")).toHaveTextContent("months:12 view:months");
 
     await userEvent.click(screen.getByRole("button", { name: "flip view" }));
-    expect(buildAllocation).toHaveBeenCalled();
-    expect(screen.getByTestId("panel-monthly")).toHaveTextContent("months:12 view:months");
-    expect(screen.getByTestId("chart-monthly")).toHaveTextContent("months:12 view:months");
+    expect(screen.getByTestId("chart-monthly")).toHaveTextContent("view:plan");
+    expect(screen.getByTestId("panel-monthly")).toHaveTextContent("months:0 view:plan");
   });
 
   // The basis toggle sits directly above the month table. A month grid built on
@@ -751,7 +761,6 @@ describe("SolverChartPanel", () => {
   it("splits the year on the basis the advisor picked", async () => {
     render(<ControlledPanel initialReport="cashflow" currentProjection={withdrawalProjection} />);
     await userEvent.click(screen.getByRole("button", { name: "Monthly" }));
-    await userEvent.click(screen.getByRole("button", { name: "flip view" }));
     expect(buildAllocation.mock.calls.at(-1)?.[2]).toBe("today");
 
     await userEvent.click(screen.getByRole("button", { name: "flip basis" }));

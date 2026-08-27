@@ -31,8 +31,9 @@ interface Props {
    *  that predate the toggle keep compiling; the one production caller always
    *  passes it. */
   monthRows?: MonthRow[];
-  /** Defaults to the table this panel has always shown, so a caller that forgets
-   *  the toggle degrades to today's behaviour rather than to a blank table. */
+  /** Defaults to the across-the-plan table, so a caller that forgets the toggle
+   *  degrades to a table that needs no `monthRows` rather than to a blank one.
+   *  The production caller opens on "months". */
   view?: "plan" | "months";
   onViewChange?: (v: "plan" | "months") => void;
 }
@@ -70,14 +71,14 @@ export const SolverMonthlyCashFlowPanel = memo(function SolverMonthlyCashFlowPan
       <div className="flex items-center justify-between gap-1">
         <div className="flex items-center gap-1" role="group" aria-label="Table view">
           <BasisButton
-            label="Across the plan"
-            active={view === "plan"}
-            onClick={() => onViewChange?.("plan")}
-          />
-          <BasisButton
             label="Month by month"
             active={view === "months"}
             onClick={() => onViewChange?.("months")}
+          />
+          <BasisButton
+            label="Across the plan"
+            active={view === "plan"}
+            onClick={() => onViewChange?.("plan")}
           />
         </div>
         <div className="flex items-center justify-end gap-1" role="group" aria-label="Dollar basis">
