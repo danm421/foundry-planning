@@ -790,3 +790,120 @@ describe("AddAccountForm — real estate growth source defaults", () => {
     expect(document.getElementById("propertyTaxGrowthRate")).not.toBeNull();
   });
 });
+
+// ── The annuity contract: read before you overwrite ─────────────────────────
+// The Income & Guarantees panel is the ONLY way a contract is described, and
+// the save is a full-replacement PUT. Everything below is about that pairing.
+
+const ANNUITY_CONTRACT_URL = "/api/clients/client-123/annuity-contracts/acct-1";
+const ACCOUNTS_URL = "/api/clients/client-123/accounts";
+
+const ANNUITY_INITIAL: AccountFormInitial = {
+  ...BASE_INITIAL,
+  name: "Athene Contract",
+  category: "annuity",
+  subType: "other",
+  growthRate: "0.04",
+};
+
+/** A contract with real terms in it — the thing a blank panel would erase. */
+const STORED_CONTRACT = {
+  carrier: "Athene",
+  contractNumberLast4: "4417",
+  productType: "fixed_indexed",
+  taxTreatment: "non_qualified",
+  costBasis: 250_000,
+  annualFeePct: 0.012,
+  incomeMode: "rider",
+  incomeStartYear: 2034,
+  payoutStructure: "joint_survivor",
+  survivorPct: 1,
+  benefitBase: 500_000,
+  rollupRatchets: true,
+};
+
+type FetchInit = { method?: string; body?: string } | undefined;
+
+/** Re-points the shared fetch mock at the annuity routes, keeping every other
+ *  route's stock answer. `read` is what GET answers; `write` is what PUT does. */
+function mockAnnuityRoutes(
+  read: { ok: boolean; row?: unknown },
+  write: { ok: boolean; body?: unknown } = { ok: true },
+) {
+  fetchMock.mockImplementation(async (url: string, init: FetchInit) => {
+    const u = String(url);
+    if (u.includes("annuity-contracts")) {
+      if ((init?.method ?? "GET") === "GET") {
+        return {
+          ok: read.ok,
+          status: read.ok ? 200 : 500,
+          json: async () => (read.ok ? (read.row ?? null) : { error: "Server error" }),
+        };
+      }
+      return {
+        ok: write.ok,
+        status: write.ok ? 200 : 400,
+        json: async () => write.body ?? { ok: true },
+      };
+    }
+    if (u.includes("savings-rules") || u.includes("allocations") || u.includes("holdings")) {
+      return { ok: true, json: async () => [] };
+    }
+    return { ok: true, json: async () => ({ id: "acct-1" }) };
+  });
+}
+
+const contractWrites = () =>
+  fetchMock.mock.calls.filter(
+    (args) => String(args[0]) === ANNUITY_CONTRACT_URL && (args[1] as FetchInit)?.method === "PUT",
+  );
+
+const accountCreates = () =>
+  fetchMock.mock.calls.filter(
+    (args) => String(args[0]) === ACCOUNTS_URL && (args[1] as FetchInit)?.method === "POST",
+  );
+
+function renderAnnuity(
+  mode: "create" | "edit",
+  formRef?: ReturnType<typeof createRef<AccountFormAutoSaveHandle>>,
+) {
+  return render(
+    <AddAccountForm
+      ref={formRef}
+      clientId="client-123"
+      category="annuity"
+      mode={mode}
+      initial={mode === "edit" ? ANNUITY_INITIAL : undefined}
+      familyMembers={FAMILY_MEMBERS}
+      entities={[]}
+      categoryDefaults={CATEGORY_DEFAULTS}
+    />,
+  );
+}
+
+describe("AddAccountForm — annuity contract validation errors", () => {
+  // A 400 from the PUT route is `{ error: "Validation failed", issues: [...] }`.
+  // Showing only `error` told the advisor nothing about WHICH box is wrong.
+  it("names the offending field when the contract PUT comes back 400", async () => {
+    mockAnnuityRoutes(
+      { ok: true, row: null },
+      {
+        ok: false,
+        body: {
+          error: "Validation failed",
+          issues: [
+            { path: "surrenderChargePct", message: "Must be a fraction between 0 and 1" },
+          ],
+        },
+      },
+    );
+
+    renderAnnuity("create");
+    fireEvent.submit(document.getElementById("add-account-form")!);
+
+    await waitFor(() =>
+      expect(screen.getByText(/surrenderChargePct/)).toBeInTheDocument(),
+    );
+    expect(screen.getByText(/Must be a fraction between 0 and 1/)).toBeInTheDocument();
+  });
+});

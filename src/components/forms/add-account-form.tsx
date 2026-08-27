@@ -876,8 +876,23 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       body: JSON.stringify(annuityContract),
     });
     if (!res.ok) {
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(json.error ?? "Failed to save the annuity contract");
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        issues?: { path: string; message: string }[];
+      };
+      // `parseBody` answers a 400 as { error: "Validation failed", issues: [...] }.
+      // Reading `error` alone threw that bare string at the advisor, naming no
+      // field — a surrender charge mistyped as 150 or a half-typed year both
+      // land here, and both are fixable in one keystroke once you know which
+      // box is wrong.
+      const detail = json.issues
+        ?.map((i) => (i.path ? `${i.path}: ${i.message}` : i.message))
+        .join("; ");
+      throw new Error(
+        [json.error ?? "Failed to save the annuity contract", detail]
+          .filter(Boolean)
+          .join(" — "),
+      );
     }
   }, [category, writer.scenarioActive, clientId, annuityContract]);
 
