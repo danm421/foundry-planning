@@ -29,7 +29,7 @@ export interface ThresholdReportRow {
    * `thresholdDisplay`; the two computed ceilings live here, one per side.
    * They render in the Alternative/Original columns, whose status cells carry
    * no signal for this row anyway — `statusFor("charitableLimit")` returns
-   * "full" unconditionally (thresholds.ts:260).
+   * "full" unconditionally (see `statusFor`).
    */
   alternativeThresholdDisplay?: string;
   originalThresholdDisplay?: string;
@@ -99,8 +99,8 @@ function formatAgiShare(share: number, facts: Omit<ThresholdFacts, "params"> | u
 }
 
 /**
- * Builds the 11-row Thresholds report comparing one year's Alternative (live
- * scenario) and Original (base plan) projections. Always emits all 11
+ * Builds the 12-row Thresholds report comparing one year's Alternative (live
+ * scenario) and Original (base plan) projections. Always emits all 12
  * `THRESHOLD_ITEMS` rows, in that order, and never filters: a row that
  * doesn't apply to this household still shows its range in the Threshold
  * column and "na" in both status columns — that is what keeps the report a

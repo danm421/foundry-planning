@@ -16,9 +16,10 @@ interface Props {
   workingTree: ClientData;
 }
 
-// Generic labels. Correct for the ten BENEFIT rows, where "out" means the
-// benefit has phased away. Wrong for a BURDEN row — a point threshold whose
-// "out" means a tax/limit now bites, not that something desirable is gone.
+// Generic labels. Correct for the ten rows THRESHOLD_ITEMS declares
+// `kind: "benefit"`, where "out" means the benefit has phased away. Wrong for
+// a burden, whose "out" means a tax now bites rather than that something
+// desirable is gone — see the override map below.
 const STATUS_LABEL: Record<ThresholdStatus, string> = {
   full: "Full",
   partial: "Partial",
@@ -26,27 +27,33 @@ const STATUS_LABEL: Record<ThresholdStatus, string> = {
   na: "N/A",
 };
 
-// Per-item overrides for burden-type items where the generic labels above
-// read backwards. `niit` is a point threshold (rangeFor(...).end == null):
-// "out" (income >= the threshold) means the 3.8% surtax applies; "full"
-// means it doesn't. "Phased Out" / "Full" would tell an advisor the exact
-// opposite of what's true.
+// Per-item overrides for the items THRESHOLD_ITEMS declares `kind: "burden"`,
+// where the generic labels above read backwards. For a burden, "out" means a
+// tax now BITES and "full" means it doesn't — "Phased Out" / "Full" would tell
+// an advisor the exact opposite of what's true.
 //
-// EVERY genuine point-threshold item — excluding charitableLimit, which
-// statusFor() always resolves to "full" and so never reaches this map — MUST
-// have an entry here. That invariant is pinned by a guard test in
-// solver-thresholds-panel.test.ts: it walks THRESHOLD_ITEMS, calls
-// rangeFor() for each, and fails the day a new point-threshold item (a range
-// whose `end` is null) ships without a deliberate label decision here.
+//  - `niit`: "out" (AGI >= the threshold) means the 3.8% surtax applies.
+//  - `amt`:  "out" means the household owes alternative minimum tax this year.
+//    Its neighbour `amtExemption` is a BENEFIT and keeps the generic labels —
+//    it reports only whether the exemption survived, and its green "Full" was
+//    being read as a verdict on AMT on a report whose purpose is a
+//    scan-for-red checklist. The two rows now say different things on purpose.
+//
+// EVERY burden item MUST have an entry here. That invariant is pinned by a
+// guard test in solver-thresholds-panel.test.ts, which walks THRESHOLD_ITEMS
+// and fails the day a burden ships without a deliberate label decision. It
+// reads the declared `kind` rather than sniffing rangeFor()'s shape: `amt` has
+// no computable range at all, so a shape-based guard could not see it.
 const ITEM_STATUS_LABEL_OVERRIDES: Partial<
   Record<ThresholdItemId, Partial<Record<ThresholdStatus, string>>>
 > = {
+  amt: { full: "Does Not Apply", out: "Applies" },
   niit: { full: "Does Not Apply", out: "Applies" },
 };
 
 /** Resolve the display label for one status cell, honoring any per-item
  *  override (see `ITEM_STATUS_LABEL_OVERRIDES` above). Exported so the guard
- *  test can assert every point-threshold item has a deliberate override. */
+ *  test can assert every burden item has a deliberate override. */
 export function resolveStatusLabel(id: ThresholdItemId, status: ThresholdStatus): string {
   return ITEM_STATUS_LABEL_OVERRIDES[id]?.[status] ?? STATUS_LABEL[status];
 }

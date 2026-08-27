@@ -38,7 +38,7 @@ const facts = (over: Partial<Facts> = {}): Facts => ({
   year: 2026, household,
   agi: 300000, magiForIraDeduction: 300000, magiForStudentLoan: 300000,
   magiForRoth: 300000, magiForCredits: 300000,
-  taxableIncomeBeforeQbi: 300000, amti: 300000,
+  taxableIncomeBeforeQbi: 300000, amti: 300000, amtAdditional: 0,
   ...over,
 });
 
@@ -57,12 +57,47 @@ describe("buildThresholdReport", () => {
     expect(roth.originalStatus).toBe("full");
   });
 
-  it("[R10.2] emits all 11 THRESHOLD_ITEMS, in order, with matching labels", () => {
+  it("[R10.2] emits all 12 THRESHOLD_ITEMS, in order, with matching labels", () => {
     const rows = buildThresholdReport({
       year: 2026, scenario: py(facts()), base: py(facts()), params, household,
     });
     expect(rows.map((r) => r.id)).toEqual(THRESHOLD_ITEMS.map((i) => i.id));
     expect(rows.map((r) => r.label)).toEqual(THRESHOLD_ITEMS.map((i) => i.label));
+  });
+
+  it("[F24] gives the AMT row an em-dash range and a per-side verdict off each side's own AMT", () => {
+    // The two sides must DIFFER, or swapping the Alternative/Original fields
+    // is the identity transform here. The Alternative owes AMT; the Original
+    // does not.
+    const rows = buildThresholdReport({
+      year: 2026,
+      scenario: py(facts({ amtAdditional: 208800 })),
+      base: py(facts({ amtAdditional: 0 })),
+      params, household,
+    });
+    const amt = rows.find((r) => r.id === "amt")!;
+    expect({
+      label: amt.label,
+      range: amt.thresholdDisplay,
+      alternative: amt.alternativeStatus,
+      original: amt.originalStatus,
+    }).toEqual({
+      label: "Alternative Minimum Tax",
+      // Not a threshold anyone crosses — the em-dash is the report's existing
+      // "no computable range" glyph, and printing a dollar figure here would
+      // invent an income level at which AMT starts.
+      range: "—",
+      alternative: "out",
+      original: "full",
+    });
+  });
+
+  it("[F24] sits directly under the AMT Exemption row, where the misread happened", () => {
+    const rows = buildThresholdReport({
+      year: 2026, scenario: py(facts()), base: py(facts()), params, household,
+    });
+    const ids = rows.map((r) => r.id);
+    expect(ids[ids.indexOf("amtExemption") + 1]).toBe("amt");
   });
 
   it("[R10.3] marks every originalStatus na with no base plan, without blanking alternativeStatus", () => {
@@ -86,9 +121,12 @@ describe("buildThresholdReport", () => {
     // facts; it is the PER-SIDE ceiling that has no AGI to compute from here.
     const charitable = rows.find((r) => r.id === "charitableLimit")!;
     expect(charitable.alternativeThresholdDisplay).toBe("—");
-    // Every OTHER row still renders a real range off the household argument —
+    // Every other row still renders a real range off the household argument —
     // it does not need thresholdFacts to know the household's filing status.
-    expect(rows.filter((r) => r.id !== "charitableLimit").every((r) => r.thresholdDisplay !== "—")).toBe(true);
+    // Exactly ONE row wears the "no computable range" em-dash: `amt`, which has
+    // no income threshold in any mode. Naming that set rather than filtering it
+    // away means a row that silently LOSES its range reddens here.
+    expect(rows.filter((r) => r.thresholdDisplay === "—").map((r) => r.id)).toEqual(["amt"]);
   });
 
   it("[R10.5] formats thresholdDisplay per R7's precedence", () => {
@@ -156,8 +194,7 @@ describe("buildThresholdReport", () => {
   // Alternative's ceiling under a header that reads as shared. The rule ("60%
   // of AGI") is what is genuinely shared; the two dollar ceilings move into
   // the two per-side columns, whose status cells carry no signal for this row
-  // (statusFor("charitableLimit") returns "full" unconditionally,
-  // thresholds.ts:260).
+  // (statusFor("charitableLimit") returns "full" unconditionally).
   // ══════════════════════════════════════════════════════════════════════════
 
   it("[C3] gives charitableLimit a per-side dollar ceiling and puts the RULE in the shared column", () => {

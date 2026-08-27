@@ -5,8 +5,6 @@ import userEvent from "@testing-library/user-event";
 import { resolveStatusLabel, SolverThresholdsPanel } from "../solver-thresholds-panel";
 import {
   THRESHOLD_ITEMS,
-  rangeFor,
-  isNaRange,
   type ThresholdFacts,
   type ThresholdHousehold,
 } from "@/lib/tax/thresholds";
@@ -57,14 +55,16 @@ const household: ThresholdHousehold = {
   coveredSelf: true, coveredSpouse: false,
 };
 
-describe("[F1] point-threshold label overrides", () => {
-  it("every genuine point-threshold item (end == null, excluding charitableLimit) has a deliberate label override", () => {
-    const year = 2026;
+describe("[F1] burden-row label overrides", () => {
+  it("every burden item has a deliberate label override", () => {
+    // Driven off the item's declared `kind`, NOT off the SHAPE of its range.
+    // The old guard inferred "burden" from `rangeFor(...).end === null` and
+    // skipped anything with no computable range at all — which is exactly the
+    // shape of the `amt` row F24 added, so it would have shipped with the
+    // generic "Full"/"Phased Out" labels and the guard would have stayed green.
     const checked: string[] = [];
     for (const item of THRESHOLD_ITEMS) {
-      if (item.id === "charitableLimit") continue; // statusFor() always resolves "full"; never reaches a label override
-      const range = rangeFor(item.id, year, params, household.filingStatus, household);
-      if (isNaRange(range) || range.end !== null) continue; // not a point threshold for this fixture
+      if (item.kind !== "burden") continue;
       checked.push(item.id);
       // A deliberate override means the label actually differs from the
       // generic default that reads backwards for a burden — merely equaling
@@ -72,8 +72,11 @@ describe("[F1] point-threshold label overrides", () => {
       expect(resolveStatusLabel(item.id, "out")).not.toBe("Phased Out");
       expect(resolveStatusLabel(item.id, "full")).not.toBe("Full");
     }
-    // Sanity: this fixture must actually exercise at least one point
-    // threshold, or the loop above is vacuously true.
+    // Sanity: the loop must actually run, or it is vacuously true. `toContain`
+    // rather than an exact roster — THRESHOLD_ITEMS is where the roster is
+    // pinned (thresholds.test.ts), and a correctly-implemented THIRD burden
+    // should satisfy this guard, not redden it.
+    expect(checked).toContain("amt");
     expect(checked).toContain("niit");
   });
 
@@ -84,10 +87,16 @@ describe("[F1] point-threshold label overrides", () => {
     expect(resolveStatusLabel("niit", "out")).toBe("Applies");
   });
 
-  it("non-point-threshold items keep the generic labels", () => {
+  it("[F24] amt renders the correct label in both directions", () => {
+    expect(resolveStatusLabel("amt", "full")).toBe("Does Not Apply");
+    expect(resolveStatusLabel("amt", "out")).toBe("Applies");
+  });
+
+  it("benefit items keep the generic labels", () => {
     // amtExemption and qbi are genuine phase-outs of a benefit — "Phased
     // Out" is correct for them, and they must NOT have been swept into the
-    // override map by an over-broad fix.
+    // override map by an over-broad fix. amtExemption in particular sits
+    // directly above the new amt row and is NOT a verdict on AMT.
     expect(resolveStatusLabel("amtExemption", "out")).toBe("Phased Out");
     expect(resolveStatusLabel("qbi", "full")).toBe("Full");
   });
@@ -105,7 +114,7 @@ const facts = (over: Partial<Facts> = {}): Facts => ({
   year: 2026, household,
   agi: 300000, magiForIraDeduction: 300000, magiForStudentLoan: 300000,
   magiForRoth: 300000, magiForCredits: 300000,
-  taxableIncomeBeforeQbi: 300000, amti: 300000,
+  taxableIncomeBeforeQbi: 300000, amti: 300000, amtAdditional: 0,
   ...over,
 });
 
@@ -129,11 +138,11 @@ function rowCells(label: string): (string | undefined)[] {
 /** ALTERNATIVE is over every threshold, ORIGINAL is under every one. The two
  *  sides must DIFFER on the rows asserted below or a column swap is the
  *  identity transform and these tests cannot see it. */
-const OVER = facts();                                    // AGI/MAGI 300,000
+const OVER = facts({ amtAdditional: 208800 });           // AGI/MAGI 300,000
 const UNDER = facts({
   agi: 200000, magiForIraDeduction: 200000, magiForStudentLoan: 200000,
   magiForRoth: 200000, magiForCredits: 200000,
-  taxableIncomeBeforeQbi: 200000, amti: 200000,
+  taxableIncomeBeforeQbi: 200000, amti: 200000, amtAdditional: 0,
 });
 
 describe("SolverThresholdsPanel", () => {
@@ -165,6 +174,31 @@ describe("SolverThresholdsPanel", () => {
     ]);
   });
 
+  it("[F24] prints Applies in red next to an intact, green AMT Exemption", () => {
+    renderPanel();
+    // The whole point of F24: on this fixture AMTI ($300,000) is nowhere near
+    // the $1,000,000 MFJ phase-out start, so the exemption row is legitimately
+    // "Full" and legitimately GREEN — while the household owes $208,800 of AMT.
+    // Asserting both rows in one test is deliberate: the defect was the two
+    // reading side by side, not either one alone.
+    expect(rowCells("AMT Exemption")).toEqual([
+      "AMT Exemption", "$1,000,000 - $1,280,400", "Full", "Full",
+    ]);
+    expect(rowCells("Alternative Minimum Tax")).toEqual([
+      "Alternative Minimum Tax", "—", "Applies", "Does Not Apply",
+    ]);
+  });
+
+  it("[F24] paints the AMT verdict with the report's critical colour, not its good one", () => {
+    renderPanel();
+    const row = screen.getByRole("cell", { name: "Alternative Minimum Tax" }).closest("tr")!;
+    const cells = within(row).getAllByRole("cell");
+    // A label swap alone would leave the row GREEN and still say "Applies" —
+    // on a scan-for-red checklist the colour is what the advisor actually reads.
+    expect(cells[2].querySelector("span")?.className).toContain("text-crit");
+    expect(cells[3].querySelector("span")?.className).toContain("text-good");
+  });
+
   it("labels the columns in the order the cells are written", () => {
     renderPanel();
     // Pins the OTHER half of the mapping: swapping the two <th>s would leave
@@ -187,7 +221,7 @@ describe("SolverThresholdsPanel", () => {
     ]);
   });
 
-  it("renders all 11 items, in THRESHOLD_ITEMS order", () => {
+  it("renders all 12 items, in THRESHOLD_ITEMS order", () => {
     renderPanel();
     const labels = screen.getAllByRole("row").slice(1)  // drop the header row
       .map((r) => within(r).getAllByRole("cell")[0].textContent?.trim());

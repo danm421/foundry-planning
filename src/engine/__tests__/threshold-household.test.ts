@@ -1298,6 +1298,59 @@ describe("thresholdFacts rides on the projection year", () => {
     }).toEqual({ niitCharged: true, applies: true, status: "out" });
   });
 
+  // ── F24: the AMT row must carry the engine's OWN charge ───────────────────
+  // The report shipped eleven rows and not one answered "did this household
+  // pay AMT?". `amtExemption` answers a NARROWER question — is the exemption
+  // intact — and its "full" renders GREEN on a report whose entire purpose is
+  // a scan-for-red checklist.
+
+  it("reports AMT applying in a year the engine charged it, while the exemption row stays full", () => {
+    // AMTI 600,000 is nowhere near this fixture's 1,237,450 MFJ phase-out
+    // start, so the exemption genuinely IS intact — that is the whole point.
+    // The AMT arises from the RATE gap: the seeded bracket table above tops
+    // out at 22% while AMT charges 26/28%, which is a compressed toy table but
+    // a real engine path, and this test asserts the WIRING, not the statute.
+    const y = runProjection(build({ incomes: [salary(600_000)] }))[0];
+    const facts = { ...y.thresholdFacts!, params: SEEDED_PARAMS[0] };
+    expect({
+      // The INSTRUMENT: the engine really did charge AMT this year, so a row
+      // reading "Does Not Apply" is a contradiction, not a judgement call.
+      // Hand-checked: regular 114,824 vs tentative minimum 124,858.
+      amtCharged: y.taxResult!.flow.amtAdditional,
+      // The value must ARRIVE on the facts — a hardcoded 0 in projection.ts
+      // would leave every other assertion here reading "full".
+      onFacts: facts.amtAdditional,
+      // ⚠️ "out" is this row's polarity for "the tax BITES" — amt is a burden,
+      // not a benefit being phased out.
+      amtStatus: statusFor("amt", facts),
+      exemptionStatus: statusFor("amtExemption", facts),
+    }).toEqual({
+      amtCharged: 10_034,
+      onFacts: 10_034,
+      amtStatus: "out",
+      exemptionStatus: "full",
+    });
+  });
+
+  it("reports AMT not applying at an income the same fixture owes none on", () => {
+    // The negative control, at an AMTI (400,000) ALSO below the phase-out
+    // start — so the exemption row reads "full" on both sides and only the
+    // amt row moves. Without this, a row hardwired to "out" would pass above.
+    const y = runProjection(build({ incomes: [salary(400_000)] }))[0];
+    const facts = { ...y.thresholdFacts!, params: SEEDED_PARAMS[0] };
+    expect({
+      amtCharged: y.taxResult!.flow.amtAdditional,
+      onFacts: facts.amtAdditional,
+      amtStatus: statusFor("amt", facts),
+      exemptionStatus: statusFor("amtExemption", facts),
+    }).toEqual({
+      amtCharged: 0,
+      onFacts: 0,
+      amtStatus: "full",
+      exemptionStatus: "full",
+    });
+  });
+
   // ── I2: the Saver's row must be gated on having actually contributed ───────
 
   it("gates the Saver's Credit row on a contribution, and still shows it for one", () => {

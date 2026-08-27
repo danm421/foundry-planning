@@ -35,7 +35,7 @@ const facts = (over: Partial<ThresholdFacts> = {}): ThresholdFacts => ({
   year: 2026, params, household,
   agi: 300000, magiForIraDeduction: 300000, magiForStudentLoan: 300000,
   magiForRoth: 300000, magiForCredits: 300000,
-  taxableIncomeBeforeQbi: 300000, amti: 300000,
+  taxableIncomeBeforeQbi: 300000, amti: 300000, amtAdditional: 0,
   ...over,
 });
 
@@ -204,6 +204,18 @@ describe("statusFor", () => {
     expect(statusFor("niit", facts({ agi: 200000 }))).toBe("full");
   });
 
+  it("resolves charitableLimit to full at ANY income — a percentage-of-AGI limit never phases out", () => {
+    // This status was asserted NOWHERE. The report renders the charitable row's
+    // two side columns as dollar CEILINGS rather than status cells, precisely
+    // because the status carries no signal — so flipping it to "out" changed
+    // nothing any test looked at, and the decision could be moved, deleted or
+    // inverted silently. Three incomes: below every range, far above every
+    // range, and the negative-AGI loss year the report has its own rule for.
+    expect(statusFor("charitableLimit", facts({ agi: 60_000 }))).toBe("full");
+    expect(statusFor("charitableLimit", facts({ agi: 9_000_000 }))).toBe("full");
+    expect(statusFor("charitableLimit", facts({ agi: -300_000 }))).toBe("full");
+  });
+
   it("is na when the household has no qualifying children", () => {
     expect(statusFor("ctc", facts({
       household: { ...household, qualifyingChildren: 0, otherDependents: 0 },
@@ -242,6 +254,76 @@ describe("statusFor", () => {
     expect(statusFor("aotc", facts({
       household: { ...household, filingStatus: "married_separate" },
     }))).toBe("na");
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// [F24] The report carried ELEVEN rows and not one of them answered "did this
+// household pay AMT?". `amtExemption` answers a narrower question — is the
+// exemption intact — and its "full" renders GREEN on a report whose whole
+// purpose is a scan-for-red checklist. A joint filer exercising $800,000 of
+// options lands below the $1,000,000 phase-out start, so the exemption IS
+// intact and the row IS green, while the same year owes roughly $208,800 of
+// AMT. The twelfth row is the verdict.
+// ════════════════════════════════════════════════════════════════════════════
+
+describe("[F24] the amt row", () => {
+  it("reads out while the exemption row reads full — the exact shape that hid a $208,800 charge", () => {
+    // AMTI $300,000 is far below the $1,000,000 MFJ phase-out start, so the
+    // exemption is untouched. Both assertions are on ONE fixture on purpose:
+    // the harm was the two claims coexisting, and asserting them apart would
+    // not show that.
+    const f = facts({ amti: 300000, amtAdditional: 208800 });
+    expect({ exemption: statusFor("amtExemption", f), amt: statusFor("amt", f) })
+      .toEqual({ exemption: "full", amt: "out" });
+  });
+
+  it("reads full when the household owes no AMT", () => {
+    expect(statusFor("amt", facts({ amtAdditional: 0 }))).toBe("full");
+  });
+
+  it("shares amtApplies()'s $1 gate rather than testing > 0 itself", () => {
+    // The same gate F37 put on the badge. Sub-dollar "AMT" is the residue of
+    // subtracting two large tax figures, not a regime to paint red.
+    expect(statusFor("amt", facts({ amtAdditional: 0.99 }))).toBe("full");
+    expect(statusFor("amt", facts({ amtAdditional: 1 }))).toBe("out");
+  });
+
+  it("is decided by the AMT charge alone, at an income that phases nothing out", () => {
+    // $60,000 of AGI/AMTI is under every range in the fixture, so a status
+    // derived from ANY income measure would read "full". Only reading
+    // `amtAdditional` produces "out" here.
+    expect(statusFor("amt", facts({
+      agi: 60000, amti: 60000, magiForRoth: 60000, magiForCredits: 60000,
+      magiForIraDeduction: 60000, magiForStudentLoan: 60000,
+      taxableIncomeBeforeQbi: 60000, amtAdditional: 42000,
+    }))).toBe("out");
+  });
+
+  it("has no income range — AMT is a comparison of two tax computations, not a threshold", () => {
+    expect(isNaRange(rangeFor("amt", 2026, params, "married_joint", household))).toBe(true);
+  });
+
+  it("applies to every household — it is never na", () => {
+    // Unlike the ten benefit rows, no household fact can switch this off: any
+    // filer can owe AMT. A `hasX` gate here would re-create F24 in a new shape.
+    for (const fs of ["married_joint", "single", "head_of_household", "married_separate"] as const) {
+      expect(statusFor("amt", facts({
+        amtAdditional: 5000,
+        household: { ...household, filingStatus: fs },
+      }))).toBe("out");
+    }
+  });
+});
+
+describe("THRESHOLD_ITEMS kinds", () => {
+  it("declares exactly the two burden rows — a burden is a tax that BITES at 'out'", () => {
+    // The panel's label overrides are driven off `kind`, so mis-declaring a
+    // row is what makes it read backwards. Naming both burdens explicitly
+    // (rather than counting them) means adding a third without a deliberate
+    // decision reddens here.
+    expect(THRESHOLD_ITEMS.filter((i) => i.kind === "burden").map((i) => i.id))
+      .toEqual(["amt", "niit"]);
   });
 });
 

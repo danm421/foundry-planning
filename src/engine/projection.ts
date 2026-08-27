@@ -7501,6 +7501,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             magiForCredits: reportMagis.magiForCredits,
             taxableIncomeBeforeQbi: finalTaxResult.diag.taxableIncomeBeforeQbi ?? 0,
             amti: finalTaxResult.diag.amti ?? 0,
+            // The `amt` row's verdict. Taken off `flow`, which is the charge
+            // the household actually pays, not off `diag.amti` one line up —
+            // that is the AMT income BASE, and a large base with a large
+            // regular tax owes no AMT at all.
+            amtAdditional: finalTaxResult.flow.amtAdditional,
           }
         : undefined;
 

@@ -6,18 +6,20 @@
  *
  * Three items do NOT test MAGI: QBI phases on taxable income before the QBI
  * deduction, the AMT exemption phases on AMTI, and the charitable limit is a
- * percentage of AGI. `ThresholdFacts` carries each income measure separately
- * rather than pretending one figure drives every row.
+ * percentage of AGI. A fourth, `amt`, tests no income at all — it reports the
+ * settled AMT charge. `ThresholdFacts` carries each measure separately rather
+ * than pretending one figure drives every row.
  */
 
 import type { FilingStatus, TaxYearParameters } from "./types";
 import { STATUTORY_FIXED, amtPhaseoutRate } from "./constants";
+import { amtApplies } from "./amt";
 
 export type ThresholdStatus = "full" | "partial" | "out" | "na";
 
 export type ThresholdItemId =
   | "charitableLimit" | "rothIra" | "iraDeductCovered" | "iraDeductSpousal"
-  | "studentLoanInterest" | "qbi" | "amtExemption" | "niit"
+  | "studentLoanInterest" | "qbi" | "amtExemption" | "amt" | "niit"
   | "aotc" | "ctc" | "saversCredit";
 
 export interface ThresholdRange {
@@ -63,26 +65,51 @@ export interface ThresholdFacts {
   magiForCredits: number;
   taxableIncomeBeforeQbi: number;
   amti: number;
+  /** The settled AMT charge for the year — tentative minimum tax less regular
+   *  tax, floored at zero (`TaxResult.flow.amtAdditional`). The ONLY field here
+   *  that is not an income measure, because the `amt` row is not an income
+   *  threshold: AMT bites when one tax computation exceeds another, at any
+   *  income. Read through `amtApplies()` so this row and every other AMT
+   *  surface agree on what counts as an AMT year. */
+  amtAdditional: number;
 }
 
 export interface ThresholdItem {
   id: ThresholdItemId;
   label: string;
+  /**
+   * What "out" MEANS for this row, and therefore how it must be labelled.
+   *
+   *  - `benefit`: something desirable phases away as income rises. "Full" is
+   *    good news, "Phased Out" is bad news — the generic labels are correct.
+   *  - `burden`: a tax or surtax that BITES once the row goes "out". The
+   *    generic labels read exactly backwards, so the renderer MUST carry a
+   *    per-item override (pinned by a guard test in the solver panel's suite).
+   *
+   * Declared here rather than inferred from the shape of `rangeFor`'s result:
+   * the old inference ("a point threshold is a burden") could not see `amt`,
+   * whose range is the NA sentinel because it has no income threshold at all.
+   */
+  kind: "benefit" | "burden";
 }
 
-/** Display order mirrors eMoney's report so the two read side by side. */
+/** Display order mirrors eMoney's report so the two read side by side, with
+ *  `amt` inserted directly beneath `amtExemption` — the exemption row reports
+ *  only whether the exemption survived, and read alone its green "Full" was
+ *  taken as a verdict on AMT itself. */
 export const THRESHOLD_ITEMS: readonly ThresholdItem[] = [
-  { id: "charitableLimit", label: "Qualified Charitable Contribution Limit" },
-  { id: "rothIra", label: "Roth IRA Contribution" },
-  { id: "iraDeductCovered", label: "IRA Contribution Deductibility - Covered Spouse" },
-  { id: "iraDeductSpousal", label: "IRA Contribution Deductibility - Non-covered Spouse" },
-  { id: "studentLoanInterest", label: "Student Loan Interest Deduction" },
-  { id: "qbi", label: "TCJA QBI Deduction" },
-  { id: "amtExemption", label: "AMT Exemption" },
-  { id: "niit", label: "Net Investment Income Tax" },
-  { id: "aotc", label: "American Opportunity Credit" },
-  { id: "ctc", label: "Child Tax Credit" },
-  { id: "saversCredit", label: "Saver's Credit" },
+  { id: "charitableLimit", label: "Qualified Charitable Contribution Limit", kind: "benefit" },
+  { id: "rothIra", label: "Roth IRA Contribution", kind: "benefit" },
+  { id: "iraDeductCovered", label: "IRA Contribution Deductibility - Covered Spouse", kind: "benefit" },
+  { id: "iraDeductSpousal", label: "IRA Contribution Deductibility - Non-covered Spouse", kind: "benefit" },
+  { id: "studentLoanInterest", label: "Student Loan Interest Deduction", kind: "benefit" },
+  { id: "qbi", label: "TCJA QBI Deduction", kind: "benefit" },
+  { id: "amtExemption", label: "AMT Exemption", kind: "benefit" },
+  { id: "amt", label: "Alternative Minimum Tax", kind: "burden" },
+  { id: "niit", label: "Net Investment Income Tax", kind: "burden" },
+  { id: "aotc", label: "American Opportunity Credit", kind: "benefit" },
+  { id: "ctc", label: "Child Tax Credit", kind: "benefit" },
+  { id: "saversCredit", label: "Saver's Credit", kind: "benefit" },
 ];
 
 const isMfj = (fs: FilingStatus) => fs === "married_joint";
@@ -166,6 +193,15 @@ export function rangeFor(
       return { start, end: start + exemption / amtPhaseoutRate(year) };
     }
 
+    case "amt":
+      // AMT has no income threshold to render. It is owed when the tentative
+      // minimum tax exceeds the regular tax, which depends on the MIX of
+      // income and preferences, not on a level of either — two households at
+      // the same AMTI can land on opposite sides. The report prints its
+      // "no computable range" em-dash rather than inventing a figure, and
+      // `statusFor` settles this row before it ever consults a range.
+      return NA_RANGE;
+
     case "niit": {
       const start = isMfj(filingStatus) ? params.niitThreshold.mfj
         : isMfs(filingStatus) ? params.niitThreshold.mfs
@@ -206,8 +242,15 @@ export function rangeFor(
   }
 }
 
-/** The income measure each item actually tests. */
-function incomeFor(item: ThresholdItemId, f: ThresholdFacts): number {
+/** The income measure each item actually tests. The two rangeless rows are
+ *  excluded at the TYPE level rather than given cases: `statusFor` settles both
+ *  before reaching this, and a case here would be an unreachable claim that
+ *  some income measure decides them. (`charitableLimit` used to have one, and
+ *  its `f.agi` was computed and then thrown away.) */
+function incomeFor(
+  item: Exclude<ThresholdItemId, "amt" | "charitableLimit">,
+  f: ThresholdFacts,
+): number {
   switch (item) {
     case "iraDeductCovered":
     case "iraDeductSpousal":      return f.magiForIraDeduction;
@@ -218,8 +261,7 @@ function incomeFor(item: ThresholdItemId, f: ThresholdFacts): number {
     case "qbi":                   return f.taxableIncomeBeforeQbi;
     case "amtExemption":          return f.amti;
     case "niit":
-    case "saversCredit":
-    case "charitableLimit":       return f.agi;
+    case "saversCredit":          return f.agi;
   }
 }
 
@@ -243,6 +285,9 @@ function applies(item: ThresholdItemId, f: ThresholdFacts): boolean {
     // independent reason the row can go dark.
     case "saversCredit":        return h.hasRetirementContributions
                                     && f.year <= STATUTORY_FIXED.saversCreditLastYear;
+    // No household fact switches AMT off: any filer can owe it. A `hasX` gate
+    // here would re-create the defect this row exists to fix, in a new shape.
+    case "amt":
     case "amtExemption":
     case "charitableLimit":     return true;
   }
@@ -251,13 +296,28 @@ function applies(item: ThresholdItemId, f: ThresholdFacts): boolean {
 export function statusFor(item: ThresholdItemId, f: ThresholdFacts): ThresholdStatus {
   if (!applies(item, f)) return "na";
 
+  // The two rows that are NOT "an income measure against a range", settled
+  // together and BEFORE the range lookup so there is one precedent to copy
+  // rather than two at different depths. Returning from this switch also
+  // narrows `item` for `incomeFor` below, so neither row can be handed an
+  // income measure that would not decide it.
+  switch (item) {
+    // AMT is a verdict on a completed tax computation, not a threshold
+    // crossing — see the `amt` case in `rangeFor`, which has no range to
+    // consult, and whose NA sentinel would otherwise read "N/A" for every
+    // household. `amtApplies` is the one gate every AMT surface asks, so the
+    // report and the year badge cannot disagree about whether AMT applied.
+    case "amt":
+      return amtApplies(f.amtAdditional) ? "out" : "full";
+    // A percentage-of-AGI limit is never "phased out" — it always applies.
+    case "charitableLimit":
+      return "full";
+  }
+
   const range = rangeFor(item, f.year, f.params, f.household.filingStatus, f.household);
   if (isNaRange(range)) return "na";
 
   const income = incomeFor(item, f);
-
-  // A percentage-of-AGI limit is never "phased out" — it always applies.
-  if (item === "charitableLimit") return "full";
 
   // Point thresholds: below is clean, at-or-above means the tax/limit bites.
   if (range.end == null) return income >= range.start ? "out" : "full";
