@@ -109,7 +109,10 @@ export async function POST(
           { status: 400 },
         );
       }
-      const { attestation: _a, ...creds } = parsedAzure.data;
+      // Nothing spreads `creds` — every downstream use names an explicit
+      // field — so this is exactly equivalent to destructuring off
+      // `attestation` and carries no unused-var warning.
+      const creds = parsedAzure.data;
 
       // Validate before persisting — same ordering as the Addepar path.
       const result = await verifyAzureConnection(credsToAiCredentials(creds));
