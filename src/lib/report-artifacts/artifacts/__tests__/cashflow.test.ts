@@ -230,6 +230,72 @@ describe("cashflowArtifact.fetchData (with mocked DB + projection)", () => {
     expect(sec.totals.total).toBe(1_600_000);
   });
 
+  it("assets section carries the rider-crossover footnote when a $0 annuity balance still pays income", async () => {
+    const { runProjection } = await import("@/engine") as unknown as { runProjection: ReturnType<typeof vi.fn> };
+    runProjection.mockReturnValue([
+      // Default fixtureYear() already has portfolioAssets.annuityTotal === 0;
+      // adding a live "annuity:<id>" income entry is what should trip the
+      // crossover — the guarantee paying after the account value is gone.
+      fixtureYear({
+        income: {
+          salaries: 200_000, socialSecurity: 0, business: 0, trust: 0, deferred: 0,
+          capitalGains: 0, other: 0, total: 200_000,
+          bySource: { "annuity:acct9": 10_000 },
+        },
+      }),
+    ]);
+    const { cashflowArtifact: art } = await import("../cashflow");
+    const { data } = await art.fetchData({
+      clientId: "c1", firmId: "f1",
+      opts: { scenarioId: null, yearStart: null, yearEnd: null },
+    });
+    expect(data.sections.assets.footnotes).toEqual([
+      "A contract with a lifetime income rider can show a $0 balance while still paying — the guarantee continues after the account value is exhausted.",
+    ]);
+  });
+
+  it("assets section omits the rider-crossover footnote when the annuity balance is not $0 (no crossover on the page)", async () => {
+    const { runProjection } = await import("@/engine") as unknown as { runProjection: ReturnType<typeof vi.fn> };
+    runProjection.mockReturnValue([
+      fixtureYear({
+        income: {
+          salaries: 200_000, socialSecurity: 0, business: 0, trust: 0, deferred: 0,
+          capitalGains: 0, other: 0, total: 200_000,
+          bySource: { "annuity:acct9": 10_000 },
+        },
+        portfolioAssets: {
+          taxable: { acct1: 500_000 }, cash: {}, retirement: {},
+          annuity: { acct9: 50_000 },
+          realEstate: {}, business: {}, lifeInsurance: {}, stockOptions: {},
+          taxableTotal: 500_000, cashTotal: 0, retirementTotal: 0,
+          annuityTotal: 50_000,
+          realEstateTotal: 0, businessTotal: 0, lifeInsuranceTotal: 0, stockOptionsTotal: 0,
+          trustsAndBusinesses: {}, trustsAndBusinessesTotal: 0,
+          accessibleTrustAssets: {}, accessibleTrustAssetsTotal: 0,
+          total: 550_000,
+          liquidTotal: 550_000,
+        },
+      }),
+    ]);
+    const { cashflowArtifact: art } = await import("../cashflow");
+    const { data } = await art.fetchData({
+      clientId: "c1", firmId: "f1",
+      opts: { scenarioId: null, yearStart: null, yearEnd: null },
+    });
+    expect(data.sections.assets.footnotes).toBeUndefined();
+  });
+
+  it("assets section omits the rider-crossover footnote when there is no annuity at all", async () => {
+    const { cashflowArtifact: art } = await import("../cashflow");
+    // Default runProjection mock from beforeEach: fixtureYear() with
+    // annuityTotal 0 and an empty income.bySource — no annuity income exists.
+    const { data } = await art.fetchData({
+      clientId: "c1", firmId: "f1",
+      opts: { scenarioId: null, yearStart: null, yearEnd: null },
+    });
+    expect(data.sections.assets.footnotes).toBeUndefined();
+  });
+
   it("M2: Other Inflows includes notes-receivable cash (matches on-screen noteTotal)", async () => {
     const { runProjection } = (await import("@/engine")) as unknown as {
       runProjection: ReturnType<typeof vi.fn>;

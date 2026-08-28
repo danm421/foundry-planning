@@ -27,6 +27,7 @@ export type CashflowSection = {
   headers: { id: string; label: string; align: "left" | "right"; format?: "money" | "percent" }[];
   rows: CashflowRow[];
   totals: Record<string, number>;
+  footnotes?: string[];
 };
 
 export type CashflowRow = {
@@ -368,6 +369,9 @@ function buildWithdrawalsSection(years: ProjectionYear[], c: ClientData): Cashfl
   return { id: "withdrawals", title: "Withdrawals", headers, rows, totals };
 }
 
+const ANNUITY_CROSSOVER_FOOTNOTE =
+  "A contract with a lifetime income rider can show a $0 balance while still paying — the guarantee continues after the account value is exhausted.";
+
 function buildAssetsSection(years: ProjectionYear[], c: ClientData): CashflowSection {
   const headers: CashflowSection["headers"] = [
     { id: "year", label: "Year", align: "left" },
@@ -412,13 +416,27 @@ function buildAssetsSection(years: ProjectionYear[], c: ClientData): CashflowSec
     accessibleTrustAssets: last.portfolioAssets.accessibleTrustAssetsTotal,
     total: last.portfolioAssets.total,
   } : {};
-  return { id: "assets", title: "Portfolio Detail", headers, rows, totals };
+
+  // A rider contract can hit a $0 account value and keep paying income — the
+  // guarantee outlives the balance. Flag it only when a printed row actually
+  // shows that state, so the ~99% of clients with no annuity never see it.
+  const hasCrossoverRow = years.some(
+    (y) =>
+      y.portfolioAssets.annuityTotal === 0 &&
+      Object.entries(y.income.bySource).some(
+        ([key, amount]) => /^annuity:/.test(key) && amount > 0,
+      ),
+  );
+  const footnotes = hasCrossoverRow ? [ANNUITY_CROSSOVER_FOOTNOTE] : undefined;
+
+  return { id: "assets", title: "Portfolio Detail", headers, rows, totals, footnotes };
 }
 
 const pdfStyles = StyleSheet.create({
   sectionTitle: { fontSize: 13, fontWeight: 700, marginTop: 12, marginBottom: 4 },
   scenarioLine: { fontSize: 10, color: PDF_THEME.ink2, marginBottom: 8 },
   break: { marginTop: 8 },
+  footnote: { fontSize: 8, color: PDF_THEME.ink2, marginTop: 4 },
 });
 
 // 0 renders as em-dash in compact PDF context; on-screen tables show "$0".
@@ -499,12 +517,17 @@ function renderSection(
       )}
       {showCharts && sectionChart && <ChartImage chart={sectionChart} maxWidth={480} />}
       {showData && (
-        <DataTable
-          columns={columns}
-          rows={rowsWithAge}
-          footerRow={footerRow}
-          compact={section.headers.length >= 10}
-        />
+        <>
+          <DataTable
+            columns={columns}
+            rows={rowsWithAge}
+            footerRow={footerRow}
+            compact={section.headers.length >= 10}
+          />
+          {section.footnotes?.map((note) => (
+            <Text key={note} style={pdfStyles.footnote}>{note}</Text>
+          ))}
+        </>
       )}
     </View>
   );
