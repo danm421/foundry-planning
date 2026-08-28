@@ -38,17 +38,25 @@ const DEFAULTS = {
  * Numbered Azure setup steps, shown inline where the firm connects. Two things
  * this copy MUST keep saying, because getting them wrong misleads the exact
  * buyer this feature is for:
- *  1. Zero data retention needs Microsoft's approval, and that approval is
- *     available only to customers managed by a Microsoft account team (in
- *     practice, Enterprise Agreement / Microsoft Customer Agreement customers)
- *     — not on pay-as-you-go. Until approved, Azure temporarily stores prompts
- *     and reviews them primarily by automated systems, with human review only
- *     when automated review can't reach a confident determination — which is
- *     WEAKER than Foundry Planning's current posture (zero retention today).
- *     Do not restate a specific day count for that retention window, and do
- *     not call human review the default: Microsoft dropped the published day
- *     figure in an Oct 2025 revision, and its current text says flagged
- *     content is sampled by automated means "instead of a human reviewer".
+ *  1. Zero data retention needs Microsoft's approval, which goes to customers
+ *     managed by a Microsoft account team (in practice, Enterprise Agreement /
+ *     Microsoft Customer Agreement customers) OR to firms under an eligible
+ *     program — everyone else may apply, with no promise of access, so a
+ *     pay-as-you-go firm should assume it does not have this. Until approved,
+ *     Azure temporarily stores prompts and reviews them primarily by automated
+ *     systems, with human review only when automated review can't reach a
+ *     confident determination — which is WEAKER than Foundry Planning's
+ *     current posture (zero retention today).
+ *
+ *     Three ways this sentence has already gone wrong, so: do not restate a
+ *     specific day count (Microsoft dropped the published figure in an Oct 2025
+ *     revision); do not call human review the default (its current text says
+ *     flagged content is sampled by automated means "instead of a human
+ *     reviewer"); and do not drop the "or under an eligible program" disjunct
+ *     to write a flat "only managed customers". Microsoft's own quoted text is
+ *     the authority here — NOT the paraphrases in the plan's
+ *     ms-docs-verification.md, whose suggested wording is what dropped that
+ *     disjunct in the first place.
  *  2. Microsoft's portal is now called "Microsoft Foundry", which collides with
  *     our product name. Never let "Foundry" stand alone in an Azure step.
  */
@@ -64,12 +72,17 @@ function SetupSteps() {
           Azure temporarily stores prompts for abuse monitoring &mdash; reviewed primarily
           by automated systems, with human review only when automated review can&rsquo;t
           reach a confident determination &mdash; unless Microsoft approves your
-          subscription for Modified Abuse Monitoring. That approval is available only to
-          customers managed by a Microsoft account team &mdash; in practice, Enterprise
-          Agreement or Microsoft Customer Agreement customers &mdash;{" "}
-          <span className="font-medium text-ink">not on pay-as-you-go</span>. On that
-          tier, connecting your own Azure gives you weaker retention than Foundry
-          Planning&rsquo;s current setup, which already has zero retention.
+          subscription for Modified Abuse Monitoring. That approval goes only to customers
+          managed by a Microsoft account team &mdash; in practice, Enterprise Agreement or
+          Microsoft Customer Agreement customers &mdash; or to firms under an eligible
+          program.{" "}
+          <span className="font-medium text-ink">
+            Assume you do not have it on pay-as-you-go
+          </span>
+          : Microsoft invites everyone else to apply on the same form and says it will
+          follow up about joining a program, but promises nothing beyond the follow-up.
+          Without that approval, connecting your own Azure gives you weaker retention than
+          Foundry Planning&rsquo;s current setup, which already has zero retention.
         </li>
         <li>
           <span className="font-medium text-ink">Confirm Azure access.</span> You need an Azure
@@ -100,11 +113,13 @@ function SetupSteps() {
         <li>
           <span className="font-medium text-ink">Check your quota tier.</span> Azure assigns
           every subscription an automatic Quota Tier (0&ndash;6) that sets your throughput.
-          Tier 1 and above already grants 300,000&ndash;1,000,000 tokens per minute on
-          GPT-5-family models — enough for a long statement&rsquo;s many parallel calls. The{" "}
+          At Tier 1, a GPT-5-family chat model gets 300,000 tokens per minute by default on a
+          DataZoneStandard deployment and 1,000,000 on a GlobalStandard one — enough for a
+          long statement&rsquo;s many parallel calls. The{" "}
           <span className="font-medium text-ink">Free Tier lists only four models</span>, and
           the two chat deployments above are not among them — a firm still on it needs a
-          quota-increase request before it can deploy them.
+          quota-increase request, or enough usage to trigger an automatic tier upgrade,
+          before it can deploy them.
         </li>
         <li>
           <span className="font-medium text-ink">Apply for Modified Abuse Monitoring</span> if

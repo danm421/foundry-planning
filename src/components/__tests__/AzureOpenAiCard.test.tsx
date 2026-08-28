@@ -124,14 +124,42 @@ describe("AzureOpenAiCard — disconnected", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /Test connection/i }));
 
-    // The labels are the only thing telling a firm WHICH deployment to fix, so
-    // assert them, not just the detail. The tick/cross prefix scopes these to
-    // the results list — the form's own field labels repeat the same words.
+    // The labels are the only thing telling a firm WHICH deployment to fix.
+    // ONE regex across all three rendered rows, in the fixture's array order
+    // (chat, mini, embedding) — three separate matches would be an unordered
+    // set, and a chat <-> mini swap would satisfy it. Only the failing row is
+    // bound to a label by its detail string; the passing pair needs the order.
+    // The tick/cross prefixes also scope this to the results list, whose rows
+    // render adjacent, since the form's field labels repeat the same words.
+    await waitFor(() =>
+      expect(container.textContent ?? "").toMatch(
+        /✓ Main model✓ Fast model✗ Search model — different model from the planning library/,
+      ),
+    );
+  });
+
+  it("frees the card again when the connect request rejects outright", async () => {
+    render(<AzureOpenAiCard status="disconnected" endpoint={null} chatDeployment={null} connectedAt={null} />);
+    fill();
+    // First call is the test (passes); every later call — the connect — rejects.
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true, checks: [] }) });
+    fetchMock.mockRejectedValue(new Error("network down"));
+    fireEvent.click(screen.getByRole("button", { name: /Test connection/i }));
+    fireEvent.click(screen.getByLabelText(/I understand/i));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^Connect$/i })).toHaveProperty("disabled", false),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Connect$/i }));
+
+    // Querying by accessible name is the point: a wedged card still reads
+    // "Connecting…", so the QUERY fails, not merely the disabled assertion.
     await waitFor(() => {
-      const text = container.textContent ?? "";
-      expect(text).toMatch(/✗ Search model — different model from the planning library/);
-      expect(text).toMatch(/✓ Main model/);
-      expect(text).toMatch(/✓ Fast model/);
+      expect(screen.getByRole("button", { name: /^Connect$/i })).toHaveProperty("disabled", false);
+      expect(screen.getByRole("button", { name: /^Test connection$/i })).toHaveProperty(
+        "disabled",
+        false,
+      );
     });
   });
 
@@ -211,20 +239,22 @@ describe("AzureOpenAiCard — Azure setup claims", () => {
       /only GPT-5-family/i,
       // The Free Tier table does list gpt-5-mini.
       /zero quota for any GPT-5/i,
+      // Microsoft's own sentence is "managed by a Microsoft account team OR
+      // under an eligible program", and it invites everyone else to apply.
+      /approval is available only to/,
+      // The 300k-1M range spans two DEPLOYMENT TYPES, not a tier ladder, and
+      // Microsoft states nothing at all about tiers 2-6.
+      /Tier 1 and above/,
+      /300,000–1,000,000 tokens per minute/,
+      // Usage can also trigger an automatic tier upgrade; the form is not the
+      // only way off the Free Tier.
+      /quota-increase request before it can deploy them/,
     ];
     for (const claim of retired) expect(text).not.toMatch(claim);
   });
 
-  it("states the corrected retention, review, registration and quota claims", () => {
+  it("states the corrected retention and eligibility claims", () => {
     const text = cardText();
-
-    // Connecting on pay-as-you-go is WEAKER than the firm's posture today.
-    // This is the buyer warning; asserting the whole sentence means deleting
-    // it reddens, which the old bare /pay-as-you-go/ match did not.
-    expect(text).toContain(
-      "not on pay-as-you-go. On that tier, connecting your own Azure gives you weaker retention " +
-        "than Foundry Planning’s current setup, which already has zero retention.",
-    );
 
     // Abuse-monitoring review is automated by default; human review is the
     // exception. Both surfaces must say so — the step, and the sentence the
@@ -239,15 +269,45 @@ describe("AzureOpenAiCard — Azure setup claims", () => {
       `I understand that Azure ${automatedReview} — unless my firm has been approved`,
     );
 
+    // Eligibility carries BOTH of Microsoft's disjuncts, and the open door for
+    // everyone else — while still telling a pay-as-you-go firm to assume no.
+    expect(text).toContain(
+      "That approval goes only to customers managed by a Microsoft account team — in practice, " +
+        "Enterprise Agreement or Microsoft Customer Agreement customers — or to firms under an " +
+        "eligible program. Assume you do not have it on pay-as-you-go: Microsoft invites " +
+        "everyone else to apply on the same form and says it will follow up about joining a " +
+        "program, but promises nothing beyond the follow-up.",
+    );
+
+    // The buyer warning itself. Asserting the whole sentence means deleting it
+    // reddens, which the old bare /pay-as-you-go/ match did not.
+    expect(text).toContain(
+      "Without that approval, connecting your own Azure gives you weaker retention than " +
+        "Foundry Planning’s current setup, which already has zero retention.",
+    );
+  });
+
+  it("states the corrected registration and quota claims", () => {
+    const text = cardText();
+
     // Registration is hedged the way Microsoft's own text hedges it.
     expect(text).toContain(
       "Some models gate on a one-time registration: Microsoft lists gpt-5 and gpt-5-codex as " +
         "gated, and gpt-5-mini, gpt-5-nano and gpt-5-chat as not.",
     );
 
-    // The Free Tier's table, and what it means for this card's own defaults.
+    // Each throughput figure is attached to the deployment type it belongs to.
     expect(text).toContain(
-      "Free Tier lists only four models, and the two chat deployments above are not among them",
+      "At Tier 1, a GPT-5-family chat model gets 300,000 tokens per minute by default on a " +
+        "DataZoneStandard deployment and 1,000,000 on a GlobalStandard one",
+    );
+
+    // The Free Tier's table, what it means for this card's own defaults, and
+    // both ways off it.
+    expect(text).toContain(
+      "Free Tier lists only four models, and the two chat deployments above are not among them " +
+        "— a firm still on it needs a quota-increase request, or enough usage to trigger an " +
+        "automatic tier upgrade, before it can deploy them.",
     );
   });
 });
