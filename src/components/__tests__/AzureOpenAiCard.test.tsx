@@ -256,8 +256,14 @@ describe("AzureOpenAiCard — Azure setup claims", () => {
       // says a representative starts it, and telling a firm that shuts the
       // self-serve door step 1 opened.
       /account representative starts this/,
+      // Step 7 gates on need. Any eligibility gate reads as "skip this step"
+      // to a pay-as-you-go firm, which is who the rest of the step is for.
+      /step 1’s test fits your firm/,
     ];
-    for (const claim of retired) expect(text).not.toMatch(claim);
+    // Collect, don't loop-and-assert: `expect` throws on the first failure, so
+    // a loop would stop there and a second returned claim would never be
+    // evaluated. Round 3 needed two half-mutations to work around exactly that.
+    expect(retired.filter((claim) => claim.test(text)).map(String)).toEqual([]);
   });
 
   it("states the corrected retention and eligibility claims", () => {
@@ -318,18 +324,36 @@ describe("AzureOpenAiCard — Azure setup claims", () => {
     );
   });
 
+  it("lists in step 5 exactly the deployments step 6 counts on", () => {
+    const { container } = render(
+      <AzureOpenAiCard status="disconnected" endpoint={null} chatDeployment={null} connectedAt={null} />,
+    );
+    // Step 6's "the two chat deployments above are not among them" is true only
+    // while step 5 lists exactly these three — two chat models and one search
+    // model. A fourth deployment, or a non-chat model in the pair, makes step 6
+    // wrong with every copy assertion still green.
+    const models = Array.from(container.querySelectorAll("ol ul > li")).map(
+      (el) => el.textContent ?? "",
+    );
+    expect(models).toEqual([
+      "gpt-5.4 — reads documents and drafts",
+      "gpt-5.4-mini — quick summaries",
+      "text-embedding-3-small — powers Forge search",
+    ]);
+  });
+
   it("keeps step 7's application route open to a firm with no account team", () => {
     const text = cardText();
     // Step 1 tells a pay-as-you-go firm Microsoft invites everyone else to
-    // apply on the same form; step 7 is where they would act on that, so it
-    // must not hand the process back to a representative they do not have.
-    // It also back-references step 1 as a TEST, not a verdict step 1 no
-    // longer issues.
+    // apply on the same form; step 7 is where they would act on that. So it
+    // must not hand the process back to a representative they do not have,
+    // and it must gate on NEED — any eligibility gate here reads as "skip
+    // this step" to the very firm the next sentence is addressed to.
     expect(text).toContain(
-      "Apply for Modified Abuse Monitoring if step 1’s test fits your firm and your compliance " +
-        "policy requires zero retention. You apply by completing Microsoft’s form, and it is " +
-        "the same form whether or not you are a managed customer. If you have a Microsoft " +
-        "account team, ask them first; if you do not, submit it yourself.",
+      "Apply for Modified Abuse Monitoring if your compliance policy requires zero retention. " +
+        "You apply by completing Microsoft’s form, and it is the same form whether or not you " +
+        "are a managed customer. If you have a Microsoft account team, ask them first; if you " +
+        "do not, submit it yourself.",
     );
   });
 });
