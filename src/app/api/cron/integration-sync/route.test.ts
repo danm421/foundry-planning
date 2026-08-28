@@ -9,6 +9,7 @@ import { GET } from "./route";
 
 const ORIGINAL_SCHWAB_ENABLED = process.env.SCHWAB_ENABLED;
 const ORIGINAL_ORION_ENABLED = process.env.ORION_ENABLED;
+const ORIGINAL_AZURE_BYOK_ENABLED = process.env.AZURE_BYOK_ENABLED;
 
 beforeEach(() => {
   process.env.CRON_SECRET = "s3cr3t";
@@ -26,6 +27,11 @@ afterEach(() => {
     delete process.env.ORION_ENABLED;
   } else {
     process.env.ORION_ENABLED = ORIGINAL_ORION_ENABLED;
+  }
+  if (ORIGINAL_AZURE_BYOK_ENABLED === undefined) {
+    delete process.env.AZURE_BYOK_ENABLED;
+  } else {
+    process.env.AZURE_BYOK_ENABLED = ORIGINAL_AZURE_BYOK_ENABLED;
   }
 });
 
@@ -67,5 +73,20 @@ describe("integration-sync cron", () => {
 
     expect(res.status).toBe(200);
     expect(syncFirm).not.toHaveBeenCalled();
+  });
+
+  it("skips a connected azure_openai pair — credentials-only, nothing to sync — without counting it as failed", async () => {
+    // Enabled (unlike the flag-off case above) so this proves the `syncs`
+    // filter itself, not just that the provider is off.
+    process.env.AZURE_BYOK_ENABLED = "true";
+    vi.mocked(listConnectedFirms).mockResolvedValue([{ firmId: "firm_1", providerId: "azure_openai" }]);
+
+    const res = await GET(req("Bearer s3cr3t"));
+
+    expect(res.status).toBe(200);
+    expect(syncFirm).not.toHaveBeenCalled();
+    const body = await res.json();
+    expect(body.firms).toBe(1);
+    expect(body.failed).toBe(0);
   });
 });

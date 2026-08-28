@@ -9,10 +9,22 @@ import { checkIntegrationOauthLimit, rateLimitErrorResponse } from "@/lib/rate-l
 import { encodeAddeparSecret, encodeAddeparConfig } from "@/lib/integrations/providers/addepar/credentials";
 import { testAddeparConnection } from "@/lib/integrations/providers/addepar/client";
 import { recordAudit } from "@/lib/audit";
+import { verifyAzureConnection } from "@/lib/ai/verify-connection";
+import { encodeAzureSecret, encodeAzureConfig } from "@/lib/ai/credentials";
+import { clearAiCredentialCache } from "@/lib/ai/resolve";
 import { resolveProvider } from "../_provider";
 import { addeparCredsSchema, buildAddeparTestContext } from "../_addepar";
+import { azureCredsSchema, credsToAiCredentials, firstFailureMessage } from "../_azure";
+
+// 4 sequential verification calls at 45s each (see VERIFY_TIMEOUT_MS in
+// src/lib/ai/verify-connection.ts) = 180s worst case, inside this budget.
+export const maxDuration = 300;
 
 const byokBody = addeparCredsSchema.extend({
+  attestation: z.literal(true, "attestation required"),
+});
+
+const azureBody = azureCredsSchema.extend({
   attestation: z.literal(true, "attestation required"),
 });
 
@@ -87,6 +99,51 @@ export async function POST(
     const rl = await checkIntegrationOauthLimit(`${provider.id}:${firmId}`);
     if (!rl.allowed) {
       return rateLimitErrorResponse(rl, `Too many ${provider.label} connection attempts. Please try again shortly.`);
+    }
+
+    if (provider.id === "azure_openai") {
+      const parsedAzure = azureBody.safeParse(await req.json());
+      if (!parsedAzure.success) {
+        return NextResponse.json(
+          { error: parsedAzure.error.issues[0]?.message ?? "Invalid input" },
+          { status: 400 },
+        );
+      }
+      const { attestation: _a, ...creds } = parsedAzure.data;
+
+      // Validate before persisting — same ordering as the Addepar path.
+      const result = await verifyAzureConnection(credsToAiCredentials(creds));
+      if (!result.ok) {
+        return NextResponse.json(
+          { error: firstFailureMessage(result.checks), checks: result.checks },
+          { status: 400 },
+        );
+      }
+
+      await upsertByokConnection({
+        firmId,
+        providerId: provider.id,
+        secretBlob: encodeAzureSecret({ apiKey: creds.apiKey }),
+        configBlob: encodeAzureConfig({
+          endpoint: creds.endpoint,
+          apiVersion: creds.apiVersion,
+          chatDeployment: creds.chatDeployment,
+          miniDeployment: creds.miniDeployment,
+          embeddingDeployment: creds.embeddingDeployment,
+        }),
+        userId,
+      });
+      // This instance now holds a stale "no connection" entry; other instances
+      // age out within the resolver's TTL.
+      clearAiCredentialCache(firmId);
+      await recordAudit({
+        action: "integration.connect",
+        resourceType: "integration_connection",
+        resourceId: firmId,
+        firmId,
+        metadata: { provider: provider.id, endpoint: creds.endpoint },
+      });
+      return NextResponse.json({ ok: true });
     }
 
     const parsed = byokBody.safeParse(await req.json());

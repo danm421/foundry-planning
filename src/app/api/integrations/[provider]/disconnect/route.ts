@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { requireOrgAdminOrOwner, authErrorResponse } from "@/lib/authz";
 import { disconnectConnection } from "@/lib/integrations/connections";
 import { recordAudit } from "@/lib/audit";
+import { clearAiCredentialCache } from "@/lib/ai/resolve";
 import { resolveProvider } from "../_provider";
 
 export async function POST(
@@ -21,6 +22,7 @@ export async function POST(
     }
 
     await disconnectConnection(firmId, provider.id);
+    if (provider.id === "azure_openai") clearAiCredentialCache(firmId);
     await recordAudit({
       action: "integration.disconnect",
       resourceType: "integration_connection",

@@ -91,8 +91,23 @@ function safeDetail(err: unknown, secrets: string[]): string {
   return msg.slice(0, 300);
 }
 
+/**
+ * Verification's own timeout — tighter than the production client's 55s.
+ * `verifyAzureConnection` makes 4 SEQUENTIAL network calls (chat, mini, the
+ * firm's embedding, and Foundry Planning's own reference embedding), and the
+ * connect/test routes declare `maxDuration = 300`. At the production
+ * `azureClientOptions` values (55s timeout × maxRetries:1 = 2 attempts) that's
+ * 4 × 110s = 440s worst case — past the budget, and a function-boundary 504
+ * would return NO checks at all, which is strictly less useful to an admin
+ * than a per-check timeout naming which deployment hung. So verification
+ * overrides to 45s and 0 retries here — `azureClientOptions` itself is left
+ * untouched so the production AI path keeps 55s/1-retry — for
+ * 4 × 45s = 180s worst case, inside the 300s budget.
+ */
+export const VERIFY_TIMEOUT_MS = 45_000;
+
 function clientFor(creds: AiCredentials): AzureOpenAI {
-  return new AzureOpenAI(azureClientOptions(creds));
+  return new AzureOpenAI({ ...azureClientOptions(creds), timeout: VERIFY_TIMEOUT_MS, maxRetries: 0 });
 }
 
 const PING_TOOL = {

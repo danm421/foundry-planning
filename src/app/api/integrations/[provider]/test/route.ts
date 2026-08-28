@@ -10,8 +10,14 @@ import { requireOrgAdminOrOwner, authErrorResponse } from "@/lib/authz";
 import { checkIntegrationOauthLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { testAddeparConnection } from "@/lib/integrations/providers/addepar/client";
 import { encodeAddeparSecret } from "@/lib/integrations/providers/addepar/credentials";
+import { verifyAzureConnection } from "@/lib/ai/verify-connection";
 import { resolveProvider } from "../_provider";
 import { addeparCredsSchema, buildAddeparTestContext } from "../_addepar";
+import { azureCredsSchema, credsToAiCredentials } from "../_azure";
+
+// 4 sequential verification calls at 45s each (see VERIFY_TIMEOUT_MS in
+// src/lib/ai/verify-connection.ts) = 180s worst case, inside this budget.
+export const maxDuration = 300;
 
 const body = addeparCredsSchema;
 
@@ -34,6 +40,21 @@ export async function POST(
     const rl = await checkIntegrationOauthLimit(`${provider.id}:${firmId}`);
     if (!rl.allowed) {
       return rateLimitErrorResponse(rl, `Too many ${provider.label} connection attempts. Please try again shortly.`);
+    }
+
+    if (provider.id === "azure_openai") {
+      const parsedAzure = azureCredsSchema.safeParse(await req.json());
+      if (!parsedAzure.success) {
+        return NextResponse.json(
+          { ok: false, error: parsedAzure.error.issues[0]?.message ?? "Invalid input" },
+          { status: 400 },
+        );
+      }
+      const result = await verifyAzureConnection(credsToAiCredentials(parsedAzure.data));
+      return NextResponse.json(
+        { ok: result.ok, checks: result.checks },
+        { status: result.ok ? 200 : 400 },
+      );
     }
 
     const parsed = body.safeParse(await req.json());
