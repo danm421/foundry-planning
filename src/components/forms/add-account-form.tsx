@@ -47,6 +47,7 @@ import ContributionCapCheckbox, {
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
 import { GrowthRateField, parseGrowthSourceSelection, ASSET_MIX_CATEGORIES } from "./growth-rate-field";
 import { growthDefaultCategory } from "@/lib/projection/resolve-growth-source";
+import { growthEditModeFor } from "@/lib/inline-edit/growth-options";
 import type { FundPortfolioOption } from "@/lib/investments/load-fund-portfolio-options";
 import { OwnershipEditor } from "./ownership-editor";
 import type { AccountOwner } from "@/engine/ownership";
@@ -541,7 +542,11 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   // and follow the same retirement alias — a variable annuity invested in the
   // firm's model had to be hand-typed, and stopped tracking that model the
   // moment the CMA moved.
-  const usesGrowthDropdown = ["taxable", "cash", "retirement", "education_savings", "annuity"].includes(category);
+  //
+  // The category list lives in `growth-options.ts`, which the Household Map's
+  // inline editor also reads. That module was written to mirror this form;
+  // asking it rather than keeping a second copy here makes the mirror real.
+  const usesGrowthDropdown = growthEditModeFor(category) === "full";
   const growthCategory = growthDefaultCategory(category);
   const [growthSource, setGrowthSource] = useState<GrowthSource>(
     (initial?.growthSource as GrowthSource) ?? "default"
@@ -939,12 +944,6 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     void loadAnnuityContract(effectiveAccountId);
   }, [category, effectiveAccountId, loadAnnuityContract]);
 
-  // The contract in state may be written back only when it is the advisor's own
-  // data: either the stored row was read successfully, or there was never a row
-  // to read. A failed or in-flight read leaves column defaults on screen, and a
-  // full-replacement PUT of those erases a real contract. "idle" is the create
-  // case — the effect above flips it the moment an account id exists, before
-  // any user action can reach a save.
   // Derived, never stored. The Account Type dropdown is the only editor of an
   // annuity's tax treatment, so keeping a second copy in `annuityContract`
   // state would let a loaded contract's column win over the account row the
@@ -959,6 +958,12 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       : { ...annuityContract, taxTreatment: fromSubType };
   }, [annuityContract, subType]);
 
+  // The contract in state may be written back only when it is the advisor's own
+  // data: either the stored row was read successfully, or there was never a row
+  // to read. A failed or in-flight read leaves column defaults on screen, and a
+  // full-replacement PUT of those erases a real contract. "idle" is the create
+  // case — the effect above flips it the moment an account id exists, before
+  // any user action can reach a save.
   const annuityContractTrusted = annuityLoad === "idle" || annuityLoad === "loaded";
 
   // Write the contract back. Not in scenario scope (there is no targetKind for

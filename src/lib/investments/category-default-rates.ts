@@ -86,18 +86,23 @@ export function categoryDefaultRates(
     return String(customRate);
   };
 
+  // 529s and annuities alias the retirement defaults — mirrors
+  // `growthDefaultCategory` in the engine's resolver. Named once so the three
+  // cannot drift apart; annuity followed real_estate until it gained a real
+  // growth dropdown, at which point a rate the projection did not agree with
+  // became a visible lie in the dropdown's "Plan default" label.
+  const retirementRate = investableEffectiveRate(
+    settings.growthSourceRetirement,
+    settings.modelPortfolioIdRetirement,
+    settings.defaultGrowthRetirement,
+  );
+
   return {
     taxable: investableEffectiveRate(settings.growthSourceTaxable, settings.modelPortfolioIdTaxable, settings.defaultGrowthTaxable),
     cash: investableEffectiveRate(settings.growthSourceCash, settings.modelPortfolioIdCash, settings.defaultGrowthCash),
-    retirement: investableEffectiveRate(settings.growthSourceRetirement, settings.modelPortfolioIdRetirement, settings.defaultGrowthRetirement),
-    // education_savings aliases the retirement defaults — mirrors
-    // `growthDefaultCategory` in the engine's resolver.
-    education_savings: investableEffectiveRate(settings.growthSourceRetirement, settings.modelPortfolioIdRetirement, settings.defaultGrowthRetirement),
-    // annuity aliases the retirement defaults — mirrors `growthDefaultCategory`
-    // in the engine's resolver. It followed real_estate until annuities gained
-    // a real growth dropdown, at which point a rate the projection did not
-    // agree with became a visible lie in the dropdown's "Plan default" label.
-    annuity: investableEffectiveRate(settings.growthSourceRetirement, settings.modelPortfolioIdRetirement, settings.defaultGrowthRetirement),
+    retirement: retirementRate,
+    education_savings: retirementRate,
+    annuity: retirementRate,
     real_estate: flatRate(settings.defaultGrowthRealEstate, settings.growthSourceRealEstate),
     business: flatRate(settings.defaultGrowthBusiness, settings.growthSourceBusiness),
     stock_options: flatRate(settings.defaultGrowthStockOptions, settings.growthSourceStockOptions),

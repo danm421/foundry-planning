@@ -550,7 +550,6 @@ describe("resolveSavingsRuleFromRaw", () => {
   });
 });
 
-
 describe("resolveAccountFromRaw — annuity growth", () => {
   function annuityOnPortfolio() {
     return resolveAccountFromRaw(
