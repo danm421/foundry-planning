@@ -101,14 +101,33 @@ describe("AnnuityPreviewChart", () => {
   const html = (props: Parameters<typeof AnnuityPreviewChart>[0]) =>
     renderToStaticMarkup(createElement(AnnuityPreviewChart, props));
   /**
-   * Markup with every tag — and therefore every attribute — removed. The chart's
-   * `aria-label` repeats the caption verbatim, so a `toContain` against raw
-   * markup is satisfied whether or not the sentence is on the FACE. Asserting
-   * what the advisor reads has to look at text nodes only. (Dropping the visible
-   * paragraph and keeping the aria-label passed every one of these before.)
+   * What the advisor actually READS on the chart face. Two things have to go,
+   * and each one has already made an assertion here vacuous:
+   *
+   *  · every tag, and therefore every attribute — the chart's `aria-label`
+   *    repeats the caption and the assumption verbatim, so a `toContain` on raw
+   *    markup passes whether or not the sentence is on the face;
+   *  · the CONTENT of `<span role="tooltip">` — `FieldTooltip` renders its
+   *    `text` unconditionally as a text node and hides it with CSS
+   *    (`invisible opacity-0`), never by absence. A tag-stripper alone leaves
+   *    hover copy sitting in "visible" text, which is exactly the defect F-5 is
+   *    about: an assumption on hover, its conclusion on the face. A pin that
+   *    cannot tell those apart is not a pin.
    */
-  const strip = (markup: string) => markup.replace(/<[^>]*>/g, " ");
+  const TOOLTIP_SPAN = /<span[^>]*\brole="tooltip"[^>]*>[\s\S]*?<\/span>/g;
+  const strip = (markup: string) => markup.replace(TOOLTIP_SPAN, " ").replace(/<[^>]*>/g, " ");
   const visible = (props: Parameters<typeof AnnuityPreviewChart>[0]) => strip(html(props));
+
+  // The guard on the guard. `strip()` is a CLAIM about what it hides, and if
+  // `TOOLTIP_SPAN` ever stops matching — a changed attribute order, a wrapper
+  // element — it fails open and every face assertion below silently goes back to
+  // accepting hover copy. This sentence exists ONLY in the tooltip, so it pins
+  // both halves: rendered in the markup, absent from the face.
+  it("strip() hides tooltip copy, so a face assertion cannot be met by hover text", () => {
+    const props = { ...base, accountValue: 100_000, ownerAgeAtStart: 60 };
+    expect(html(props)).toContain("An illustration, not a quote");
+    expect(visible(props)).not.toContain("An illustration, not a quote");
+  });
 
   it("draws once it has both a balance and a real owner age", () => {
     expect(html({ ...base, accountValue: 100_000, ownerAgeAtStart: 60 })).toContain("<canvas");
