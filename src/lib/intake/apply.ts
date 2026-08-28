@@ -63,6 +63,7 @@ import {
   goalExpenseType,
   goalYearWindow,
 } from "@/lib/intake/goal-rows";
+import { intakeFallbackSubType } from "@/lib/intake/account-types";
 import { intakeNoteBody } from "@/lib/intake/note-body";
 import { loadFormForFirm } from "@/lib/intake/queries";
 import { incomeYearWindow } from "@/lib/intake/income-years";
@@ -471,7 +472,7 @@ async function applySectionsToClient(
           scenarioId,
           name: account.name,
           category: account.category,
-          subType: account.subType ?? "other",
+          subType: account.subType ?? intakeFallbackSubType(account.category),
           value: String(account.value),
           basis: String(account.basis ?? 0),
           custodian: account.custodian ?? null,

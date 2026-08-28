@@ -21,7 +21,10 @@ export const SUBTYPES_BY_CATEGORY: Record<string, string[]> = {
   cash: ["checking", "savings", "other"],
   taxable: ["brokerage", "other"],
   retirement: ["traditional_ira", "roth_ira", "401k", "403b", "529", "other"],
-  annuity: ["other"],
+  // An annuity's sub-type IS its tax treatment (`account_sub_type` carries the
+  // same three values as `annuity_tax_treatment`). 'other' is no longer one
+  // the advisor's Account Type dropdown offers.
+  annuity: ["non_qualified", "qualified", "tax_free"],
   real_estate: ["primary_residence", "rental_property", "commercial_property", "other"],
   business: ["sole_proprietorship", "partnership", "s_corp", "c_corp", "llc", "other"],
   stock_options: ["other"],

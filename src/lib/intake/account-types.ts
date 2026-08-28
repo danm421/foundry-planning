@@ -50,6 +50,12 @@ export const INTAKE_ACCOUNT_SUB_TYPE_VALUES = [
   "universal_life",
   "variable_life",
   "other",
+  // Annuity tax treatments. In the tuple so the zod enum and the DB column
+  // agree, but deliberately NOT offered on the form — see the annuity group
+  // below and `intakeFallbackSubType`.
+  "qualified",
+  "non_qualified",
+  "tax_free",
 ] as const;
 
 export type IntakeAccountCategory = (typeof INTAKE_ACCOUNT_CATEGORY_VALUES)[number];
@@ -109,6 +115,11 @@ export const INTAKE_ACCOUNT_TYPES: IntakeAccountTypeGroup[] = [
     subTypes: [{ value: "529", label: "529 Plan" }],
   },
   {
+    // Empty on purpose. An annuity's sub-type IS its tax treatment — qualified,
+    // non-qualified or tax-free — and that is not something a household can
+    // answer unaided, which is the line this taxonomy is trimmed to. The
+    // advisor sets it on the account's own Type dropdown; intake lands the
+    // account on `intakeFallbackSubType`'s default.
     value: "annuity",
     label: "Annuity",
     subTypes: [],
@@ -156,6 +167,21 @@ export function defaultSubTypeForCategory(
   category: IntakeAccountCategory | undefined,
 ): IntakeAccountSubType | undefined {
   return groupFor(category).subTypes[0]?.value;
+}
+
+/**
+ * The sub-type an intake account lands on when the form asked for none.
+ *
+ * Annuities never take 'other': the advisor's Account Type dropdown offers
+ * only the three tax treatments, so an annuity left on 'other' would open with
+ * a Type select showing no matching option. `non_qualified` is the same
+ * default `annuity_contracts.tax_treatment` carries, and the advisor corrects
+ * it on the account.
+ */
+export function intakeFallbackSubType(
+  category: IntakeAccountCategory | undefined,
+): IntakeAccountSubType {
+  return category === "annuity" ? "non_qualified" : "other";
 }
 
 /** True when `subType` is one this category actually offers. */
