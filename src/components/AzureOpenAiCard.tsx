@@ -27,6 +27,22 @@ const CHECK_LABEL: Record<Check["name"], string> = {
   embedding: "Search model",
 };
 
+/** The per-deployment verdicts. Rendered in two places — under the connect form
+ *  and in the connected card after a re-check — so it lives in one component
+ *  rather than two copies of the same markup. */
+function CheckList({ checks }: { checks: Check[] }) {
+  return (
+    <ul className="flex flex-col gap-1 text-sm">
+      {checks.map((c) => (
+        <li key={c.name} className={c.ok ? "text-good" : "text-crit"}>
+          {c.ok ? "✓" : "✗"} {CHECK_LABEL[c.name]}
+          {c.detail ? ` — ${c.detail}` : ""}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 const DEFAULTS = {
   apiVersion: "2024-12-01-preview",
   chatDeployment: "gpt-5.4",
@@ -151,9 +167,21 @@ export function AzureOpenAiCard({ status, endpoint, chatDeployment, connectedAt 
   const router = useRouter();
   const { showToast } = useToast();
 
-  const [form, setForm] = useState({ endpoint: "", apiKey: "", ...DEFAULTS });
+  // In the `error` state the page already knows the endpoint and main-model
+  // deployment — settings/integrations/page.tsx decodes both from the stored
+  // config, which a status flip does not touch — so a firm reconnecting does
+  // not retype what we can already see. PREFILL ONLY: `tested` stays false, so
+  // a Test connection is still required before Connect, and the API key is
+  // never prefilled because it never reaches the client at all.
+  const prefill = status === "error";
+  const [form, setForm] = useState(() => ({
+    ...DEFAULTS,
+    apiKey: "",
+    endpoint: prefill && endpoint ? endpoint : "",
+    chatDeployment: prefill && chatDeployment ? chatDeployment : DEFAULTS.chatDeployment,
+  }));
   const [attested, setAttested] = useState(false);
-  const [busy, setBusy] = useState<"test" | "connect" | "disconnect" | null>(null);
+  const [busy, setBusy] = useState<"test" | "connect" | "disconnect" | "recheck" | null>(null);
   const [checks, setChecks] = useState<Check[] | null>(null);
   const [tested, setTested] = useState(false);
 
@@ -235,6 +263,32 @@ export function AzureOpenAiCard({ status, endpoint, chatDeployment, connectedAt 
     }
   }
 
+  // Re-verifies the STORED credentials, so it sends no body and needs no form.
+  // It is the only path that can clear an `error` badge, and the only way a
+  // Forge-side auth failure surfaces at all — extraction flips the badge on its
+  // own, but Forge calls the model deep inside LangChain.
+  //
+  // Its own `busy` value, not "test": in the error state Test connection and
+  // Re-check render together, and reusing "test" would make the Test button
+  // read "Testing…" while the advisor pressed Re-check. The reset lives in
+  // `finally` for the reason handleTest's comment gives.
+  async function handleRecheck() {
+    setBusy("recheck");
+    try {
+      const res = await fetch("/api/integrations/azure_openai/recheck", { method: "POST" });
+      const data = (await res.json().catch(() => null)) as
+        | { ok?: boolean; checks?: Check[] }
+        | null;
+      setChecks(data?.checks ?? null);
+      showToast({ message: data?.ok ? "Azure OpenAI is healthy." : "Azure OpenAI check failed." });
+      router.refresh();
+    } catch {
+      showToast({ message: "Couldn't reach Azure OpenAI to re-check." });
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const incomplete = !form.endpoint.trim() || !form.apiKey.trim();
   const canConnect = attested && tested && busy === null;
 
@@ -271,7 +325,18 @@ export function AzureOpenAiCard({ status, endpoint, chatDeployment, connectedAt 
         <p className="text-sm text-ink-3">
           Connecting changed where future AI work happens. It does not move work already done.
         </p>
-        <div>
+        {/* A re-check from the connected state can come back FAILING, and then
+            these rows are the only thing naming which deployment is at fault. */}
+        {checks ? <CheckList checks={checks} /> : null}
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            className="btn-ghost text-sm"
+            onClick={handleRecheck}
+            disabled={busy !== null}
+          >
+            {busy === "recheck" ? "Checking…" : "Re-check"}
+          </button>
           <button
             type="button"
             className="btn-ghost text-sm"
@@ -357,16 +422,7 @@ export function AzureOpenAiCard({ status, endpoint, chatDeployment, connectedAt 
           </div>
         </div>
 
-        {checks ? (
-          <ul className="flex flex-col gap-1 text-sm">
-            {checks.map((c) => (
-              <li key={c.name} className={c.ok ? "text-good" : "text-crit"}>
-                {c.ok ? "✓" : "✗"} {CHECK_LABEL[c.name]}
-                {c.detail ? ` — ${c.detail}` : ""}
-              </li>
-            ))}
-          </ul>
-        ) : null}
+        {checks ? <CheckList checks={checks} /> : null}
 
         <label htmlFor="azure-attestation" className="flex items-start gap-2 text-sm text-ink-2">
           <input
@@ -395,6 +451,18 @@ export function AzureOpenAiCard({ status, endpoint, chatDeployment, connectedAt 
           <button type="submit" className="btn-primary text-sm" disabled={!canConnect}>
             {busy === "connect" ? "Connecting…" : "Connect"}
           </button>
+          {/* Error state only. There is nothing stored to re-check when the
+              firm has never connected, and the route 404s on that. */}
+          {status === "error" ? (
+            <button
+              type="button"
+              className="btn-ghost text-sm"
+              onClick={handleRecheck}
+              disabled={busy !== null}
+            >
+              {busy === "recheck" ? "Checking…" : "Re-check"}
+            </button>
+          ) : null}
         </div>
       </form>
     </div>

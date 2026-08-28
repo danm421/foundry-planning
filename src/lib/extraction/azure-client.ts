@@ -1,6 +1,8 @@
 import { AzureOpenAI } from "openai";
+import { auth } from "@clerk/nextjs/server";
 import { resolveAiCredentials } from "@/lib/ai/resolve";
 import { azureClientOptions } from "@/lib/ai/client";
+import { isAzureAuthFailure, markAiConnectionError } from "@/lib/ai/connection-status";
 import type { AiCredentials } from "@/lib/ai/credentials";
 
 /** One cached client per distinct tenant+key, so a firm's client is reused
@@ -31,6 +33,44 @@ async function getClient(): Promise<{ client: AzureOpenAI; creds: AiCredentials 
     clientCache.set(cacheKey, client);
   }
   return { client, creds };
+}
+
+/**
+ * Runs one Azure SDK call and, when a FIRM's own key is what got rejected,
+ * flips that firm's connection to `error` — so the Integrations card explains
+ * why AI stopped instead of the advisor seeing an opaque failure forever.
+ *
+ * One helper rather than a copy at each of the three call sites below: `creds`
+ * is in scope at all three, and three verbatim copies of one branch drift.
+ *
+ * Three things it must never do:
+ *  - Flip on `source: "foundry"`. A rejection against Foundry Planning's own
+ *    key is OUR outage; flagging the firm's connection for it would send them
+ *    to re-check credentials that are fine.
+ *  - Replace the original error. The caller's message is what surfaces to the
+ *    advisor; this is bookkeeping beside it, never instead of it. `auth()`
+ *    THROWS outside a request context (measured — see the note in resolve.ts),
+ *    so the bookkeeping gets its own try even though markAiConnectionError
+ *    already promises not to throw.
+ *  - Widen past 401/403 — see isAzureAuthFailure.
+ */
+async function reportingAuthFailures<T>(
+  creds: AiCredentials,
+  call: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await call();
+  } catch (err) {
+    if (creds.source === "firm" && isAzureAuthFailure(err)) {
+      try {
+        const { orgId } = await auth();
+        if (orgId) await markAiConnectionError(orgId, "Azure rejected the API key.");
+      } catch {
+        // swallowed by design — the throw below is what the caller needs
+      }
+    }
+    throw err;
+  }
 }
 
 /** Resolve the "mini"/"full" aliases against the caller's deployments. An
@@ -74,16 +114,18 @@ export async function callAIExtractionWithMeta(
   // Microsoft, so dropping this header changes nothing about
   // retention posture. Re-add later only with a verified value
   // and a link to the relevant Azure doc.
-  const response = await client.chat.completions.create({
-    model: modelName,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    // 16k keeps completions inside our 60s function budget and caps cost
-    // exposure per request (see SECURITY_AUDIT.md §C7).
-    max_completion_tokens: 16000,
-  });
+  const response = await reportingAuthFailures(creds, () =>
+    client.chat.completions.create({
+      model: modelName,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      // 16k keeps completions inside our 60s function budget and caps cost
+      // exposure per request (see SECURITY_AUDIT.md §C7).
+      max_completion_tokens: 16000,
+    }),
+  );
 
   const choice = response.choices[0];
   const content = choice?.message?.content;
@@ -117,7 +159,9 @@ export async function callAIEmbedding(input: string): Promise<number[]> {
   const { client, creds } = await getClient();
   const model = creds.deployments.embedding;
   if (!model) throw new Error("ai_embedding_not_configured");
-  const response = await client.embeddings.create({ model, input });
+  const response = await reportingAuthFailures(creds, () =>
+    client.embeddings.create({ model, input }),
+  );
   const vec = response.data[0]?.embedding;
   if (!vec || vec.length !== 1536) {
     throw new Error("embedding_dim_mismatch");
@@ -158,11 +202,13 @@ export async function callAIVisionTranscription(
     })),
   ];
 
-  const response = await client.chat.completions.create({
-    model: modelName,
-    messages: [{ role: "user", content }] as unknown as Parameters<typeof client.chat.completions.create>[0]["messages"],
-    max_completion_tokens: 16000,
-  });
+  const response = await reportingAuthFailures(creds, () =>
+    client.chat.completions.create({
+      model: modelName,
+      messages: [{ role: "user", content }] as unknown as Parameters<typeof client.chat.completions.create>[0]["messages"],
+      max_completion_tokens: 16000,
+    }),
+  );
 
   const out = response.choices[0]?.message?.content;
   if (!out) {

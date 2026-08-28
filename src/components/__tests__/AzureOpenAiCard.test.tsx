@@ -432,13 +432,78 @@ describe("AzureOpenAiCard — connected", () => {
     const { container } = render(<AzureOpenAiCard {...props} />);
     expect(foundryViolations(container.textContent ?? "")).toEqual([]);
   });
+
+  it("re-checks the stored credentials without sending any body", async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ ok: true, checks: [] }) });
+    render(<AzureOpenAiCard {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Re-check$/i }));
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find((c) => String(c[0]).endsWith("/recheck"));
+      expect(call).toBeTruthy();
+      expect(call?.[1]).toMatchObject({ method: "POST" });
+      // Everything it verifies is already stored. A body here would be a second
+      // way to write credentials, bypassing the attestation Connect requires.
+      expect(call?.[1]).not.toHaveProperty("body");
+    });
+  });
+
+  it("names the failing deployment when a re-check comes back failing", async () => {
+    // The connected card renders no check rows until a re-check produces some,
+    // and without them a failing re-check is just a toast the advisor can't act
+    // on.
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: false,
+        checks: [
+          { name: "chat", ok: true },
+          { name: "mini", ok: true },
+          { name: "embedding", ok: false, detail: "different model from the planning library" },
+        ],
+      }),
+    });
+    const { container } = render(<AzureOpenAiCard {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Re-check$/i }));
+
+    await waitFor(() =>
+      expect(container.textContent ?? "").toMatch(
+        /✓ Main model✓ Fast model✗ Search model — different model from the planning library/,
+      ),
+    );
+  });
+
+  it("frees the card again when the re-check request rejects outright", async () => {
+    // Without the `finally`, a rejected fetch strands `busy` on "recheck" and
+    // disables Re-check AND Disconnect until the page reloads. Querying by
+    // accessible name is the point: a wedged card still reads "Checking…", so
+    // the QUERY fails, not merely the disabled assertion.
+    fetchMock.mockRejectedValue(new Error("network down"));
+    render(<AzureOpenAiCard {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Re-check$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /^Re-check$/i })).toHaveProperty("disabled", false);
+      expect(screen.getByRole("button", { name: /^Disconnect$/i })).toHaveProperty(
+        "disabled",
+        false,
+      );
+    });
+  });
 });
 
 describe("AzureOpenAiCard — error", () => {
   const props = {
     status: "error" as const,
     endpoint: "https://acme-ria.openai.azure.com",
-    chatDeployment: "gpt-5.4",
+    // NOT the card's own DEFAULTS.chatDeployment ("gpt-5.4"). A fixture equal
+    // to the default makes the prefill assertion below pass whether the prop is
+    // read or ignored — measured: it survived a mutation that dropped the
+    // prefill entirely.
+    chatDeployment: "acme-main-model",
     connectedAt: "2026-08-27T12:00:00.000Z",
   };
 
@@ -456,5 +521,81 @@ describe("AzureOpenAiCard — error", () => {
   it("never lets 'Foundry' stand alone anywhere in the card", () => {
     const { container } = render(<AzureOpenAiCard {...props} />);
     expect(foundryViolations(container.textContent ?? "")).toEqual([]);
+  });
+
+  it("prefills the endpoint and main model it was already handed", () => {
+    // A status flip does not touch the stored config, so the page still decodes
+    // both and passes them in. Making the firm retype an endpoint we are
+    // displaying two lines away is how a reconnect turns into a support ticket.
+    render(<AzureOpenAiCard {...props} />);
+    expect(screen.getByLabelText(/Azure endpoint/i)).toHaveProperty(
+      "value",
+      "https://acme-ria.openai.azure.com",
+    );
+    expect(screen.getByLabelText(/Main model deployment/i)).toHaveProperty(
+      "value",
+      "acme-main-model",
+    );
+  });
+
+  it("never prefills the API key, and still demands a fresh test", () => {
+    render(<AzureOpenAiCard {...props} />);
+    // The key never reaches the client at all — there is no prop carrying it.
+    expect(screen.getByLabelText(/^API key$/i)).toHaveProperty("value", "");
+    // Prefill is a convenience, not a pass: Connect stays shut until the
+    // credentials in the form have actually been verified.
+    expect(screen.getByRole("button", { name: /^Connect$/i })).toHaveProperty("disabled", true);
+  });
+
+  it("does not pre-tick the attestation for a reconnecting firm", () => {
+    // The attestation is a compliance record the server persists as the
+    // advisor's own answer. Prefilling the endpoint is a convenience;
+    // prefilling this would be signing on their behalf. Asserted separately
+    // from the Connect button, which stays disabled on the missing test alone
+    // and so cannot see a pre-ticked box.
+    render(<AzureOpenAiCard {...props} />);
+    expect(screen.getByLabelText(/I understand/i)).toHaveProperty("checked", false);
+  });
+
+  it("does not treat a prefilled form as already tested", () => {
+    // Ticking the attestation is the advisor's half; if `tested` were also
+    // carried over, Connect would go live on credentials nothing verified —
+    // including an api key field that is still empty.
+    render(<AzureOpenAiCard {...props} />);
+    fireEvent.click(screen.getByLabelText(/I understand/i));
+    expect(screen.getByRole("button", { name: /^Connect$/i })).toHaveProperty("disabled", true);
+  });
+
+  it("offers a Re-check beside Test connection", async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ ok: true, checks: [] }) });
+    render(<AzureOpenAiCard {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Re-check$/i }));
+
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).endsWith("/recheck"))).toBe(true),
+    );
+  });
+
+  it("does not make the Test button read 'Testing…' while a re-check runs", async () => {
+    // Both buttons are on screen here. Sharing one `busy` value would label the
+    // wrong control, telling the advisor a test they never started is running.
+    let release: (v: unknown) => void = () => {};
+    fetchMock.mockReturnValue(new Promise((r) => { release = r; }));
+    render(<AzureOpenAiCard {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Re-check$/i }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: /^Checking…$/i })).toBeTruthy());
+    expect(screen.getByRole("button", { name: /^Test connection$/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Testing…$/i })).toBeNull();
+
+    release({ ok: true, json: async () => ({ ok: true, checks: [] }) });
+  });
+
+  it("offers no Re-check when the firm has never connected", () => {
+    // There is nothing stored to re-check, and the route 404s on it.
+    render(<AzureOpenAiCard status="disconnected" endpoint={null} chatDeployment={null} connectedAt={null} />);
+    expect(screen.queryByRole("button", { name: /^Re-check$/i })).toBeNull();
   });
 });

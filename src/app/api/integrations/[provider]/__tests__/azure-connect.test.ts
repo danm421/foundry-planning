@@ -6,6 +6,8 @@ const mockUpsert = vi.fn();
 const mockDisconnect = vi.fn();
 const mockAudit = vi.fn();
 const mockClearCache = vi.fn();
+const mockGetConnection = vi.fn();
+const mockSetStatus = vi.fn();
 
 // This mock list is the routes' REAL import graph, not a guess — read from
 // the top of connect/route.ts, test/route.ts and disconnect/route.ts before
@@ -35,6 +37,9 @@ vi.mock("@/lib/integrations/connections", () => ({
   upsertByokConnection: (...a: unknown[]) => mockUpsert(...a),
   disconnectConnection: (...a: unknown[]) => mockDisconnect(...a),
   createOauthState: async () => {},
+  // recheck's two: it reads the stored row and writes the outcome back.
+  getConnection: (...a: unknown[]) => mockGetConnection(...a),
+  setConnectionStatus: (...a: unknown[]) => mockSetStatus(...a),
 }));
 vi.mock("@/lib/audit", () => ({ recordAudit: (...a: unknown[]) => mockAudit(...a) }));
 vi.mock("@/lib/ai/resolve", () => ({ clearAiCredentialCache: (...a: unknown[]) => mockClearCache(...a) }));
@@ -42,6 +47,7 @@ vi.mock("@/lib/ai/resolve", () => ({ clearAiCredentialCache: (...a: unknown[]) =
 import { POST as connectPost } from "../connect/route";
 import { POST as testPost } from "../test/route";
 import { POST as disconnectPost } from "../disconnect/route";
+import { POST as recheckPost } from "../recheck/route";
 
 const params = Promise.resolve({ provider: "azure_openai" });
 
@@ -68,6 +74,8 @@ beforeEach(() => {
   mockDisconnect.mockReset();
   mockAudit.mockReset();
   mockClearCache.mockReset();
+  mockGetConnection.mockReset();
+  mockSetStatus.mockReset();
 });
 
 afterEach(() => {
@@ -258,5 +266,203 @@ describe("POST disconnect", () => {
 
     expect(res.status).toBe(200);
     expect(mockClearCache).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Recheck re-verifies what is ALREADY STORED, so unlike connect and test it
+ * takes no body — everything it needs comes off the connection row. It is also
+ * the only path that can clear an `error` badge, and the only way a Forge-side
+ * auth failure is ever reflected at all.
+ *
+ * `@/lib/ai/credentials` is real here (see the header note), so the encoded
+ * blobs below are what the route genuinely has to decode.
+ */
+describe("POST recheck (azure_openai)", () => {
+  const STORED_CONFIG = JSON.stringify({
+    endpoint: VALID.endpoint,
+    apiVersion: VALID.apiVersion,
+    chatDeployment: VALID.chatDeployment,
+    miniDeployment: VALID.miniDeployment,
+    embeddingDeployment: VALID.embeddingDeployment,
+  });
+
+  function connectedRow(over: Partial<{ accessToken: string | null; scope: string | null; status: string }> = {}) {
+    return {
+      status: "connected",
+      accessToken: JSON.stringify({ apiKey: "stored-firm-key" }),
+      scope: STORED_CONFIG,
+      ...over,
+    };
+  }
+
+  it("404s for a non-azure provider", async () => {
+    // Addepar has no stored-credential verifier, so this route must not be a
+    // second, unaudited way to poke at its connection row.
+    vi.stubEnv("ADDEPAR_ENABLED", "true");
+    const res = await recheckPost(req({}), { params: Promise.resolve({ provider: "addepar" }) });
+
+    expect(res.status).toBe(404);
+    expect(mockGetConnection).not.toHaveBeenCalled();
+    expect(mockSetStatus).not.toHaveBeenCalled();
+  });
+
+  it("404s when the firm has no connection at all", async () => {
+    mockGetConnection.mockResolvedValue(null);
+
+    const res = await recheckPost(req({}), { params });
+
+    expect(res.status).toBe(404);
+    expect(mockVerify).not.toHaveBeenCalled();
+    // Nothing to flip: writing `error` on a firm that never connected would
+    // invent a row, and the card would offer a reconnect for nothing.
+    expect(mockSetStatus).not.toHaveBeenCalled();
+  });
+
+  it("404s on a DISCONNECTED connection rather than reviving it", async () => {
+    mockGetConnection.mockResolvedValue(connectedRow({ status: "disconnected" }));
+
+    const res = await recheckPost(req({}), { params });
+
+    expect(res.status).toBe(404);
+    expect(mockVerify).not.toHaveBeenCalled();
+    expect(mockSetStatus).not.toHaveBeenCalled();
+  });
+
+  it("verifies the STORED credentials, not anything sent in the request", async () => {
+    mockGetConnection.mockResolvedValue(connectedRow());
+    mockVerify.mockResolvedValue({ ok: true, checks: [] });
+
+    // A body is sent and must be ignored: accepting one would let an admin
+    // "recheck" a healthy connection into a badge for credentials that were
+    // never stored.
+    await recheckPost(req({ ...VALID, apiKey: "attacker-supplied" }), { params });
+
+    expect(mockVerify).toHaveBeenCalledWith({
+      source: "firm",
+      endpoint: VALID.endpoint,
+      apiKey: "stored-firm-key",
+      apiVersion: VALID.apiVersion,
+      deployments: {
+        chat: VALID.chatDeployment,
+        mini: VALID.miniDeployment,
+        embedding: VALID.embeddingDeployment,
+      },
+    });
+  });
+
+  it("clears the error badge and the credential cache when every check passes", async () => {
+    mockGetConnection.mockResolvedValue(connectedRow());
+    mockVerify.mockResolvedValue({ ok: true, checks: [] });
+
+    const res = await recheckPost(req({}), { params });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, checks: [] });
+    // `null` for the detail, not undefined and not a leftover message: the row
+    // is what the badge reads, and a stale "Main model: DeploymentNotFound"
+    // beside a green badge is worse than either alone.
+    expect(mockSetStatus).toHaveBeenCalledWith("org_acme", "azure_openai", "connected", null);
+    expect(mockClearCache).toHaveBeenCalledWith("org_acme");
+    expect(mockAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "integration.recheck",
+        firmId: "org_acme",
+        metadata: { provider: "azure_openai", ok: true },
+      }),
+    );
+  });
+
+  it("writes the first failure onto the row when a check fails", async () => {
+    mockGetConnection.mockResolvedValue(connectedRow());
+    mockVerify.mockResolvedValue({
+      ok: false,
+      checks: [
+        { name: "chat", ok: true },
+        { name: "mini", ok: false, detail: "DeploymentNotFound" },
+        { name: "embedding", ok: true },
+      ],
+    });
+
+    const res = await recheckPost(req({}), { params });
+    const body = await res.json();
+
+    expect(body.ok).toBe(false);
+    expect(body.checks).toHaveLength(3);
+    expect(mockSetStatus).toHaveBeenCalledWith(
+      "org_acme",
+      "azure_openai",
+      "error",
+      "Fast model: DeploymentNotFound",
+    );
+    expect(mockAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { provider: "azure_openai", ok: false } }),
+    );
+  });
+
+  it("clears the cache only AFTER the status write has landed", async () => {
+    // Same hazard disconnect guards against: clearing first lets a concurrent
+    // request re-read the pre-write row and put the stale entry straight back.
+    mockGetConnection.mockResolvedValue(connectedRow());
+    mockVerify.mockResolvedValue({ ok: true, checks: [] });
+
+    await recheckPost(req({}), { params });
+
+    expect(mockSetStatus.mock.invocationCallOrder[0]).toBeLessThan(
+      mockClearCache.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("treats an unreadable stored secret as a failed check, not a 500", async () => {
+    // This is the one button whose entire purpose is telling an admin what is
+    // wrong. "Internal server error" tells them nothing, and would leave the
+    // row on `connected` claiming AI works.
+    mockGetConnection.mockResolvedValue(connectedRow({ accessToken: null }));
+
+    const res = await recheckPost(req({}), { params });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: false, checks: [] });
+    expect(mockVerify).not.toHaveBeenCalled();
+    expect(mockSetStatus).toHaveBeenCalledWith(
+      "org_acme",
+      "azure_openai",
+      "error",
+      "Stored credentials could not be read. Reconnect to fix this.",
+    );
+  });
+
+  it("treats a corrupt stored config the same way, quoting none of it", async () => {
+    mockGetConnection.mockResolvedValue(connectedRow({ scope: "not json at all" }));
+
+    const res = await recheckPost(req({}), { params });
+
+    expect(res.status).toBe(200);
+    expect(mockSetStatus).toHaveBeenCalledWith(
+      "org_acme",
+      "azure_openai",
+      "error",
+      "Stored credentials could not be read. Reconnect to fix this.",
+    );
+    // JSON.parse's SyntaxError embeds the first ~10 characters of its input, so
+    // a message built from `err.message` would put stored bytes on the row —
+    // and the row is read back into a UI.
+    const detail = String(mockSetStatus.mock.calls[0][3]);
+    expect(detail).not.toContain("not json");
+    expect(detail).not.toContain('{"apiKey"');
+  });
+
+  it("never lets the stored api key into the response body", async () => {
+    mockGetConnection.mockResolvedValue(connectedRow());
+    mockVerify.mockResolvedValue({ ok: true, checks: [] });
+
+    const res = await recheckPost(req({}), { params });
+
+    // Constraint 7. AiCredentials bundles the key with the four fields a status
+    // UI wants, so one careless `NextResponse.json(creds)` leaks it; the type
+    // system gives no help here at all.
+    expect(JSON.stringify(await res.json())).not.toContain("stored-firm-key");
+    // Nor into the audit trail, which is read back by humans.
+    expect(JSON.stringify(mockAudit.mock.calls)).not.toContain("stored-firm-key");
   });
 });

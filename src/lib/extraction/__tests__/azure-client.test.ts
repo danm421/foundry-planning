@@ -20,12 +20,32 @@ vi.mock("openai", () => {
   };
 });
 
-// Only `resolveAiCredentials` is stubbed — it is the sole import
-// azure-client.ts makes from that module. `foundrySystemCredentials` is
-// SYNCHRONOUS, so stubbing it with the same async fake would hand a Promise to
-// a synchronous caller.
+// `resolveAiCredentials` is azure-client.ts's own import; `clearAiCredentialCache`
+// is what the real connection-status module calls (see the note below).
+// `foundrySystemCredentials` is SYNCHRONOUS, so stubbing it with the same async
+// fake would hand a Promise to a synchronous caller — it is not stubbed at all.
 const mockResolve = vi.fn();
-vi.mock("@/lib/ai/resolve", () => ({ resolveAiCredentials: () => mockResolve() }));
+const mockClearCache = vi.fn();
+vi.mock("@/lib/ai/resolve", () => ({
+  resolveAiCredentials: () => mockResolve(),
+  clearAiCredentialCache: (...a: unknown[]) => mockClearCache(...a),
+}));
+
+// `@/lib/ai/connection-status` is deliberately NOT mocked: the LEAVES it
+// reaches are, so the real `isAzureAuthFailure` and `markAiConnectionError` run
+// and the flip tests below prove the actual wiring rather than a stub of it.
+// Mocking the module instead would mean re-implementing the 401/403
+// discrimination here, which is the thing under test.
+//
+// Both leaf mocks are required, not decorative: the real
+// `@/lib/integrations/connections` reaches `@/db`, and azure-client.ts now
+// imports `auth` from Clerk to name the firm whose connection to flip.
+const mockSetStatus = vi.fn();
+vi.mock("@/lib/integrations/connections", () => ({
+  setConnectionStatus: (...a: unknown[]) => mockSetStatus(...a),
+}));
+const mockAuth = vi.fn();
+vi.mock("@clerk/nextjs/server", () => ({ auth: () => mockAuth() }));
 
 import { callAIExtraction, callAIExtractionWithMeta } from "../azure-client";
 import { azureClientOptions } from "@/lib/ai/client";
@@ -222,5 +242,128 @@ describe("per-firm credentials", () => {
     await callAIExtraction("sys", "user", "mini");
     expect(mockCreate.mock.calls[1][0].model).toBe("firm-mini");
     expect(mockResolve).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * The load-bearing behaviour of this path: a firm whose Azure rejects the key
+ * gets their connection flipped to `error`, so the Integrations card says why
+ * AI stopped instead of the advisor seeing an opaque failure forever.
+ *
+ * These run the REAL connection-status module (only the DB write and Clerk are
+ * stubbed), so the 401/403 discrimination, the firm-vs-Foundry gate, the firm
+ * id and the detail string are all genuinely under test.
+ */
+describe("a rejected key flips the firm's connection", () => {
+  /** An Azure SDK error carries the HTTP status on `.status`. */
+  function azureError(status: number): Error & { status: number } {
+    return Object.assign(new Error(`azure said ${status}`), { status });
+  }
+
+  beforeEach(() => {
+    mockCreate.mockReset();
+    mockResolve.mockReset();
+    mockSetStatus.mockReset();
+    mockClearCache.mockReset();
+    mockAuth.mockReset().mockResolvedValue({ orgId: "org_acme" });
+  });
+
+  it("flips the FIRM's connection on a 401, and rethrows the original untouched", async () => {
+    mockResolve.mockResolvedValue(FIRM_CREDS);
+    const original = azureError(401);
+    mockCreate.mockRejectedValue(original);
+
+    // `toBe`, not `toThrow`: identity is the assertion. Swallowing the Azure
+    // error and throwing our own would leave the caller — and the advisor —
+    // with a message about bookkeeping instead of about the failure.
+    await expect(callAIExtractionWithMeta("sys", "user", "mini")).rejects.toBe(original);
+
+    expect(mockSetStatus).toHaveBeenCalledWith(
+      "org_acme",
+      "azure_openai",
+      "error",
+      "Azure rejected the API key.",
+    );
+    expect(mockClearCache).toHaveBeenCalledWith("org_acme");
+  });
+
+  it("flips on a 403 too", async () => {
+    mockResolve.mockResolvedValue(FIRM_CREDS);
+    mockCreate.mockRejectedValue(azureError(403));
+
+    await expect(callAIExtractionWithMeta("sys", "user", "mini")).rejects.toThrow("azure said 403");
+    expect(mockSetStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT flip when FOUNDRY's key is the one rejected", async () => {
+    // A rejection against Foundry Planning's own key is our outage, not the
+    // firm's. Flagging their connection would send them to re-check
+    // credentials that are fine — and, worse, park their AI on a badge they
+    // cannot clear.
+    mockResolve.mockResolvedValue(FOUNDRY_CREDS);
+    const original = azureError(401);
+    mockCreate.mockRejectedValue(original);
+
+    await expect(callAIExtractionWithMeta("sys", "user", "mini")).rejects.toBe(original);
+
+    expect(mockSetStatus).not.toHaveBeenCalled();
+    expect(mockClearCache).not.toHaveBeenCalled();
+  });
+
+  it("does NOT flip a firm on a 429 — a quota problem is not a wrong key", async () => {
+    mockResolve.mockResolvedValue(FIRM_CREDS);
+    const original = azureError(429);
+    mockCreate.mockRejectedValue(original);
+
+    await expect(callAIExtractionWithMeta("sys", "user", "mini")).rejects.toBe(original);
+
+    expect(mockSetStatus).not.toHaveBeenCalled();
+  });
+
+  it("does NOT flip a firm on a 500 or a timeout", async () => {
+    mockResolve.mockResolvedValue(FIRM_CREDS);
+    mockCreate.mockRejectedValueOnce(azureError(500));
+    await expect(callAIExtractionWithMeta("sys", "user", "mini")).rejects.toThrow("azure said 500");
+
+    mockCreate.mockRejectedValueOnce(new Error("timed out"));
+    await expect(callAIExtractionWithMeta("sys", "user", "mini")).rejects.toThrow("timed out");
+
+    expect(mockSetStatus).not.toHaveBeenCalled();
+  });
+
+  it("still rethrows the original when the bookkeeping itself blows up", async () => {
+    // auth() THROWS outside a request context, and the DB can be down. Neither
+    // may replace the error the caller is handling.
+    mockResolve.mockResolvedValue(FIRM_CREDS);
+    mockAuth.mockRejectedValue(new Error("auth() outside a request"));
+    const original = azureError(401);
+    mockCreate.mockRejectedValue(original);
+
+    await expect(callAIExtractionWithMeta("sys", "user", "mini")).rejects.toBe(original);
+    expect(mockSetStatus).not.toHaveBeenCalled();
+  });
+
+  it("does not attempt a flip when there is no org to flip", async () => {
+    mockResolve.mockResolvedValue(FIRM_CREDS);
+    mockAuth.mockResolvedValue({ orgId: null });
+    const original = azureError(401);
+    mockCreate.mockRejectedValue(original);
+
+    await expect(callAIExtractionWithMeta("sys", "user", "mini")).rejects.toBe(original);
+    expect(mockSetStatus).not.toHaveBeenCalled();
+  });
+
+  it("leaves a successful call completely alone", async () => {
+    // The wrapper sits on the hot path of every extraction; a stray write on
+    // the success path would flip a healthy firm to `error`.
+    mockResolve.mockResolvedValue(FIRM_CREDS);
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: "{}" }, finish_reason: "stop" }],
+    });
+
+    await callAIExtractionWithMeta("sys", "user", "mini");
+
+    expect(mockSetStatus).not.toHaveBeenCalled();
+    expect(mockAuth).not.toHaveBeenCalled();
   });
 });

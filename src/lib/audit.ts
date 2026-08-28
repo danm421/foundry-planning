@@ -372,6 +372,7 @@ export type AuditAction =
   // Integration providers (Orion, Schwab)
   | "integration.connect"
   | "integration.disconnect"
+  | "integration.recheck" // an admin re-verified stored credentials
   | "integration.sync"
   // Client portal
   | "portal.invite.sent"
