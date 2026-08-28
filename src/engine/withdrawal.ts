@@ -1,4 +1,4 @@
-import { splitLifo, earlyWithdrawalPenalty } from "./annuity/tax";
+import { splitAnnuityDistribution } from "./annuity/tax";
 import type { WithdrawalPriority, Account } from "./types";
 
 interface WithdrawalResult {
@@ -114,35 +114,17 @@ export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
   //      though the contract holds market investments.
   if (account.category === "annuity") {
     const contract = account.annuity;
-    const treatment = contract?.taxTreatment ?? "non_qualified";
-
-    if (treatment === "tax_free") return { ...empty, basisReturn: amount };
-
-    if (treatment === "qualified") {
-      // No after-tax basis in a qualified contract — the whole draw is OI, and
-      // the §72(t) penalty applies to all of it.
-      return {
-        ...empty,
-        ordinaryIncome: amount,
-        earlyWithdrawalPenalty: earlyWithdrawalPenalty(amount, ownerAge),
-      };
-    }
-
     // Live basis first; the contract's original figure only when the caller
-    // tracks none. An unknown cost basis means basis = balance: no gain, no
-    // invented tax.
-    const split = splitLifo({
-      withdrawal: amount,
+    // tracks none. Both undefined means basis = balance — no gain, no invented
+    // tax — which `splitAnnuityDistribution` applies as its own default.
+    const split = splitAnnuityDistribution({
+      treatment: contract?.taxTreatment ?? "non_qualified",
+      amount,
       accountValue: balance,
-      remainingBasis: input.annuityRemainingBasis ?? contract?.costBasis ?? balance,
+      remainingBasis: input.annuityRemainingBasis ?? contract?.costBasis,
       ownerAge,
     });
-    return {
-      ...empty,
-      ordinaryIncome: split.ordinaryIncome,
-      basisReturn: split.basisReturn,
-      earlyWithdrawalPenalty: split.earlyWithdrawalPenalty,
-    };
+    return { ...empty, ...split };
   }
 
   // Retirement: traditional vs Roth vs HSA

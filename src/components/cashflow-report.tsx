@@ -826,6 +826,21 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       techniqueIncomeIds.push(proceedsKey);
     }
 
+    // Annuity contract income — rider payments and annuitized payments. The
+    // engine emits `bySource["annuity:<accountId>"]` and folds the cash into
+    // `income.other`, exactly as the two blocks around this one do. Without
+    // this registration the money is REAL and ANONYMOUS: "Other Inflows" sums
+    // `techniqueIncomeIds` and reads $0 while the Income → Other cell reads the
+    // full amount, so a $200k benefit base paying 9% shows $18,000/yr that is
+    // named nowhere on the report. `lib/solver/cashflow-year-detail.ts:86`
+    // already builds this label; this is the second of the two report surfaces.
+    for (const acct of clientData.accounts) {
+      if (acct.category !== "annuity") continue;
+      const annuityKey = `annuity:${acct.id}`;
+      incomeNames[annuityKey] = `Annuity Income: ${acct.name}`;
+      techniqueIncomeIds.push(annuityKey);
+    }
+
     // Equity-compensation net cash. The engine emits
     // bySource["equity-proceeds:<planAccountId>"] = the year's equity cash.
     // Register each plan so "Other Inflows" + the Level-1 drill surface it,

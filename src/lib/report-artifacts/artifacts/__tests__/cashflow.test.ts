@@ -262,6 +262,69 @@ describe("cashflowArtifact.fetchData (with mocked DB + projection)", () => {
     ]);
   });
 
+  // The two tests above run on a fixture with NO `ClientData.accounts`, where
+  // the account-list gate falls back to "don't know, do the scan". That means
+  // neither of them watches the gate itself: the category string could be
+  // typo'd and both stay green. These two supply a real accounts list, so the
+  // string is load-bearing in exactly one direction each.
+  it("finds the crossover through a populated account list (pins the category string)", async () => {
+    const { loadEffectiveTree } = await import("@/lib/scenario/loader") as unknown as
+      { loadEffectiveTree: ReturnType<typeof vi.fn> };
+    loadEffectiveTree.mockResolvedValue({
+      effectiveTree: {
+        client: { firstName: "Jane", lastName: "Doe", lifeExpectancy: 95, spouseLifeExpectancy: 95 },
+        accounts: [{ id: "acct9", name: "Deferred Annuity", category: "annuity" }],
+      } as unknown as ClientData,
+      warnings: [],
+    });
+    const { runProjection } = await import("@/engine") as unknown as { runProjection: ReturnType<typeof vi.fn> };
+    runProjection.mockReturnValue([
+      fixtureYear({
+        income: {
+          salaries: 200_000, socialSecurity: 0, business: 0, trust: 0, deferred: 0,
+          capitalGains: 0, other: 0, total: 200_000,
+          bySource: { "annuity:acct9": 10_000 },
+        },
+      }),
+    ]);
+    const { cashflowArtifact: art } = await import("../cashflow");
+    const { data } = await art.fetchData({
+      clientId: "c1", firmId: "f1",
+      opts: { scenarioId: null, yearStart: null, yearEnd: null },
+    });
+    expect(data.sections.assets.footnotes).toHaveLength(1);
+  });
+
+  it("skips the scan when the household owns no annuity", async () => {
+    const { loadEffectiveTree } = await import("@/lib/scenario/loader") as unknown as
+      { loadEffectiveTree: ReturnType<typeof vi.fn> };
+    loadEffectiveTree.mockResolvedValue({
+      effectiveTree: {
+        client: { firstName: "Jane", lastName: "Doe", lifeExpectancy: 95, spouseLifeExpectancy: 95 },
+        accounts: [{ id: "acct1", name: "Brokerage", category: "taxable" }],
+      } as unknown as ClientData,
+      warnings: [],
+    });
+    const { runProjection } = await import("@/engine") as unknown as { runProjection: ReturnType<typeof vi.fn> };
+    // The SAME crossover-shaped year as the test above. Only the account list
+    // differs, so this is the gate and nothing else.
+    runProjection.mockReturnValue([
+      fixtureYear({
+        income: {
+          salaries: 200_000, socialSecurity: 0, business: 0, trust: 0, deferred: 0,
+          capitalGains: 0, other: 0, total: 200_000,
+          bySource: { "annuity:acct9": 10_000 },
+        },
+      }),
+    ]);
+    const { cashflowArtifact: art } = await import("../cashflow");
+    const { data } = await art.fetchData({
+      clientId: "c1", firmId: "f1",
+      opts: { scenarioId: null, yearStart: null, yearEnd: null },
+    });
+    expect(data.sections.assets.footnotes).toBeUndefined();
+  });
+
   it("assets section omits the rider-crossover footnote when the annuity balance is not $0 (no crossover on the page)", async () => {
     const { runProjection } = await import("@/engine") as unknown as { runProjection: ReturnType<typeof vi.fn> };
     runProjection.mockReturnValue([

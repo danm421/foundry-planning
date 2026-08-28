@@ -238,6 +238,30 @@ function categoryWithdrawalPriority(acct: Account): number | null {
   return null;
 }
 
+/**
+ * Which state-exclusion retirement bucket a distribution from this account
+ * falls into, or null when it feeds none of them.
+ *
+ * ORDER IS LOAD-BEARING: category is tested before subType, because an annuity
+ * account carries a PRODUCT subType ("myga", "other", …) — never
+ * "traditional_ira" or "401k" — so a subType-first test would silently drop
+ * every annuity distribution out of the breakdown.
+ *
+ * One home for the rule. It is consulted from four places (the RMD and
+ * withdrawal arms of the tax-detail walk, and the two supplemental-draw loops
+ * in the convergence branches), which sit thousands of lines apart; written out
+ * four times, the ordering invariant was stated three times and assumed once.
+ */
+function retirementBucket(
+  acct: Account | undefined,
+): "annuity" | "ira" | "k401" | null {
+  if (!acct) return null;
+  if (acct.category === "annuity") return "annuity";
+  if (acct.subType === "traditional_ira") return "ira";
+  if (acct.subType === "401k" || acct.subType === "403b") return "k401";
+  return null;
+}
+
 // Tax-efficiency ranking applied when the user hasn't configured a withdrawal
 // strategy. Household checking is excluded because it's the target account,
 // not a source. Entity-owned accounts are excluded because they sit under
@@ -4915,21 +4939,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           // "annuity_tax_free:" key is a return of §72 basis, never ordinary
           // income, so the type filter above already excluded it.
           retirementBreakdown.annuity += entry.amount;
-        } else if (rmdMatch) {
-          const acct = accountById.get(rmdMatch[1]);
-          const sub = acct?.subType ?? "";
-          // An annuity is classified by CATEGORY, not subType — annuity
-          // accounts carry product subTypes ("other", "myga", …), none of which
-          // the ira/k401 tests below would ever match.
-          if (acct?.category === "annuity") retirementBreakdown.annuity += entry.amount;
-          else if (sub === "traditional_ira") retirementBreakdown.ira += entry.amount;
-          else if (sub === "401k" || sub === "403b") retirementBreakdown.k401 += entry.amount;
-        } else if (withdrawalMatch) {
-          const acct = accountById.get(withdrawalMatch[1]);
-          const sub = acct?.subType ?? "";
-          if (acct?.category === "annuity") retirementBreakdown.annuity += entry.amount;
-          else if (sub === "traditional_ira") retirementBreakdown.ira += entry.amount;
-          else if (sub === "401k" || sub === "403b") retirementBreakdown.k401 += entry.amount;
+        } else if (rmdMatch || withdrawalMatch) {
+          const bucket = retirementBucket(
+            accountById.get((rmdMatch ?? withdrawalMatch)![1]),
+          );
+          if (bucket) retirementBreakdown[bucket] += entry.amount;
         } else {
           // Income row keyed by incomeId
           const inc = incomeById.get(key);
@@ -6373,13 +6387,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         const supplementalRetirementBreakdown = { ...retirementBreakdown };
         for (const draw of supplementalPlan.draws) {
           if (draw.ordinaryIncome <= 0) continue;
-          const drawAcct = accountById.get(draw.accountId);
-          const sub = drawAcct?.subType ?? "";
-          // Annuities are classified by CATEGORY — their subTypes are product
-          // names, so the ira/k401 tests can never reach them.
-          if (drawAcct?.category === "annuity") supplementalRetirementBreakdown.annuity += draw.ordinaryIncome;
-          else if (sub === "traditional_ira") supplementalRetirementBreakdown.ira += draw.ordinaryIncome;
-          else if (sub === "401k" || sub === "403b") supplementalRetirementBreakdown.k401 += draw.ordinaryIncome;
+          const bucket = retirementBucket(accountById.get(draw.accountId));
+          if (bucket) supplementalRetirementBreakdown[bucket] += draw.ordinaryIncome;
         }
 
         const supplementalTaxFree = educationTaxFreeIncome + sumTaxFreeSlice(supplementalPlan.draws);
@@ -6527,12 +6536,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           const supplementalRetirementBreakdown = { ...retirementBreakdown };
           for (const draw of supplementalPlan.draws) {
             if (draw.ordinaryIncome <= 0) continue;
-            const drawAcct = accountById.get(draw.accountId);
-            const sub = drawAcct?.subType ?? "";
-            // Annuities are classified by CATEGORY — see the sibling site above.
-            if (drawAcct?.category === "annuity") supplementalRetirementBreakdown.annuity += draw.ordinaryIncome;
-            else if (sub === "traditional_ira") supplementalRetirementBreakdown.ira += draw.ordinaryIncome;
-            else if (sub === "401k" || sub === "403b") supplementalRetirementBreakdown.k401 += draw.ordinaryIncome;
+            const bucket = retirementBucket(accountById.get(draw.accountId));
+            if (bucket) supplementalRetirementBreakdown[bucket] += draw.ordinaryIncome;
           }
 
           const legacyTaxInput: YearTaxInput = {

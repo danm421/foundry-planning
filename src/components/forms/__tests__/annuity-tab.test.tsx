@@ -13,45 +13,45 @@ const blank = {
 
 describe("AnnuityTab", () => {
   it("warns when the cost basis is unset — correct LIFO is impossible without it", () => {
-    render(<AnnuityTab accountId="a" clientId="c" value={blank} onChange={noop} />);
+    render(<AnnuityTab value={blank} onChange={noop} />);
     // Targets copy only the WARNING carries. /cost basis/i also matched the
     // field's own <label>, so deleting the warning outright left this green.
     expect(screen.getByText(/will look tax-free/i)).toBeInTheDocument();
   });
 
   it("hides rider and annuitization fields while the mode is 'none'", () => {
-    render(<AnnuityTab accountId="a" clientId="c" value={blank} onChange={noop} />);
+    render(<AnnuityTab value={blank} onChange={noop} />);
     expect(screen.queryByLabelText(/benefit base/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/annual payment/i)).not.toBeInTheDocument();
   });
 
   it("shows rider fields when the mode is 'rider'", () => {
-    render(<AnnuityTab accountId="a" clientId="c" value={{ ...blank, incomeMode: "rider" }} onChange={noop} />);
+    render(<AnnuityTab value={{ ...blank, incomeMode: "rider" }} onChange={noop} />);
     expect(screen.getByLabelText(/benefit base/i)).toBeInTheDocument();
     expect(screen.queryByLabelText(/annual payment/i)).not.toBeInTheDocument();
   });
 
   it("shows annuitization fields when the mode is 'annuitized'", () => {
-    render(<AnnuityTab accountId="a" clientId="c" value={{ ...blank, incomeMode: "annuitized" }} onChange={noop} />);
+    render(<AnnuityTab value={{ ...blank, incomeMode: "annuitized" }} onChange={noop} />);
     expect(screen.getByLabelText(/annual payment/i)).toBeInTheDocument();
     expect(screen.queryByLabelText(/benefit base/i)).not.toBeInTheDocument();
   });
 
   it("warns that annuitizing is irreversible and zeroes the balance", () => {
-    render(<AnnuityTab accountId="a" clientId="c" value={{ ...blank, incomeMode: "annuitized" }} onChange={noop} />);
+    render(<AnnuityTab value={{ ...blank, incomeMode: "annuitized" }} onChange={noop} />);
     expect(screen.getByText(/no longer have a cash value|irreversible/i)).toBeInTheDocument();
   });
 
   it("emits percentages as fractions, not whole numbers", async () => {
     const changes: unknown[] = [];
-    render(<AnnuityTab accountId="a" clientId="c" value={{ ...blank, incomeMode: "rider", benefitBase: 100000 }}
+    render(<AnnuityTab value={{ ...blank, incomeMode: "rider", benefitBase: 100000 }}
       onChange={(v) => changes.push(v)} />);
     await userEvent.type(screen.getByLabelText(/roll-up rate/i), "6");
     expect(changes.at(-1)).toMatchObject({ rollupRate: 0.06 });
   });
 
   it("warns when a QLAC premium exceeds the 2026 cap", () => {
-    render(<AnnuityTab accountId="a" clientId="c"
+    render(<AnnuityTab
       value={{ ...blank, productType: "qlac" }} accountValue={250_000} onChange={noop} />);
     expect(screen.getByText(/210,000/)).toBeInTheDocument();
   });
@@ -62,17 +62,17 @@ describe("AnnuityTab", () => {
 
   it("drops the cost-basis warning once a basis is entered", () => {
     const { rerender } = render(
-      <AnnuityTab accountId="a" clientId="c" value={blank} onChange={noop} />,
+      <AnnuityTab value={blank} onChange={noop} />,
     );
     expect(screen.getByText(/will look tax-free/i)).toBeInTheDocument();
     rerender(
-      <AnnuityTab accountId="a" clientId="c" value={{ ...blank, costBasis: 80_000 }} onChange={noop} />,
+      <AnnuityTab value={{ ...blank, costBasis: 80_000 }} onChange={noop} />,
     );
     expect(screen.queryByText(/will look tax-free/i)).not.toBeInTheDocument();
   });
 
   it("stays quiet about the QLAC cap when the premium is under it", () => {
-    render(<AnnuityTab accountId="a" clientId="c"
+    render(<AnnuityTab
       value={{ ...blank, productType: "qlac" }} accountValue={190_000} onChange={noop} />);
     expect(screen.queryByText(/210,000/)).not.toBeInTheDocument();
   });
@@ -81,13 +81,13 @@ describe("AnnuityTab", () => {
   // not just an annuitized one — a joint rider that can't name its structure
   // stops paying at the first death.
   it("lets a rider name its payout structure, not just an annuitized contract", () => {
-    render(<AnnuityTab accountId="a" clientId="c"
+    render(<AnnuityTab
       value={{ ...blank, incomeMode: "rider", benefitBase: 100_000 }} onChange={noop} />);
     expect(screen.getByLabelText(/payout structure/i)).toBeInTheDocument();
   });
 
   it("asks for the survivor share once the structure is joint", () => {
-    render(<AnnuityTab accountId="a" clientId="c"
+    render(<AnnuityTab
       value={{ ...blank, incomeMode: "rider", benefitBase: 100_000, payoutStructure: "joint_survivor" }}
       onChange={noop} />);
     expect(screen.getByLabelText(/survivor share/i)).toBeInTheDocument();
@@ -103,11 +103,11 @@ describe("AnnuityTab", () => {
       payoutStructure: "joint_survivor" as const,
     };
     const { rerender } = render(
-      <AnnuityTab accountId="a" clientId="c" value={joint} onChange={noop} />,
+      <AnnuityTab value={joint} onChange={noop} />,
     );
     expect(screen.getByText(/pays the survivor nothing/i)).toBeInTheDocument();
     rerender(
-      <AnnuityTab accountId="a" clientId="c" value={{ ...joint, survivorPct: 0.5 }} onChange={noop} />,
+      <AnnuityTab value={{ ...joint, survivorPct: 0.5 }} onChange={noop} />,
     );
     expect(screen.queryByText(/pays the survivor nothing/i)).not.toBeInTheDocument();
   });
@@ -118,11 +118,11 @@ describe("AnnuityTab", () => {
       payoutStructure: "period_certain" as const,
     };
     const { rerender } = render(
-      <AnnuityTab accountId="a" clientId="c" value={certain} onChange={noop} />,
+      <AnnuityTab value={certain} onChange={noop} />,
     );
     expect(screen.getByText(/nothing carries to the beneficiary/i)).toBeInTheDocument();
     rerender(
-      <AnnuityTab accountId="a" clientId="c" value={{ ...certain, periodCertainYears: 10 }} onChange={noop} />,
+      <AnnuityTab value={{ ...certain, periodCertainYears: 10 }} onChange={noop} />,
     );
     expect(screen.queryByText(/nothing carries to the beneficiary/i)).not.toBeInTheDocument();
   });
@@ -140,7 +140,7 @@ describe("AnnuityTab", () => {
   const heading = { name: /balance and income over time/i } as const;
 
   it("mounts the preview once the contract is fully described", () => {
-    render(<AnnuityTab accountId="a" clientId="c" value={complete} onChange={noop} />);
+    render(<AnnuityTab value={complete} onChange={noop} />);
     expect(screen.getByRole("heading", heading)).toBeInTheDocument();
     // It got as far as its own gate, which means the contract was mapped for it.
     expect(screen.getByText(/to preview this contract/i)).toBeInTheDocument();
@@ -148,19 +148,19 @@ describe("AnnuityTab", () => {
 
   it("keeps the preview off while the contract is still incomplete", () => {
     const { rerender } = render(
-      <AnnuityTab accountId="a" clientId="c"
+      <AnnuityTab
         value={{ ...complete, incomeStartYear: null }} onChange={noop} />,
     );
     expect(screen.queryByRole("heading", heading)).not.toBeInTheDocument();
     // Liveness: the same tree with the one missing field supplied does mount,
     // so the absence above is the gate and not a broken fixture.
-    rerender(<AnnuityTab accountId="a" clientId="c" value={complete} onChange={noop} />);
+    rerender(<AnnuityTab value={complete} onChange={noop} />);
     expect(screen.getByRole("heading", heading)).toBeInTheDocument();
   });
 
   it("emits the mode the advisor picks", async () => {
     const changes: { incomeMode?: string }[] = [];
-    render(<AnnuityTab accountId="a" clientId="c" value={blank}
+    render(<AnnuityTab value={blank}
       onChange={(v) => changes.push(v)} />);
     await userEvent.click(screen.getByRole("radio", { name: /income rider/i }));
     expect(changes.at(-1)?.incomeMode).toBe("rider");

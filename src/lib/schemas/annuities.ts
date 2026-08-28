@@ -9,6 +9,15 @@ import { YEAR_REFS } from "@/lib/milestones";
  * defaults — there is no separate update schema.
  */
 
+/**
+ * IRS-indexed QLAC premium limit for 2026. ONE copy: the panel
+ * (`annuity-tab.tsx`) and the route (`annuity-contracts/[accountId]/route.ts`)
+ * both warn against it and neither blocks, so two copies would drift silently
+ * the January it is re-indexed — the form warning at the new cap, the API at
+ * the old one, with nothing comparing them.
+ */
+export const QLAC_PREMIUM_CAP_2026 = 210_000;
+
 const PRODUCT_TYPES = [
   "spia",
   "dia",
@@ -39,50 +48,63 @@ const PAYOUT_STRUCTURES = [
  * rather than reusing `money` from `./common`, which does not special-case
  * an empty string and would coerce it straight to 0.
  */
-const nullableAmount = z
-  .union([z.number(), z.string()])
-  .nullable()
-  .optional()
-  .transform((v, ctx) => {
-    if (v === undefined) return undefined;
-    if (v === null || v === "") return null;
-    const n = Number(v);
-    if (!Number.isFinite(n)) {
-      ctx.addIssue({ code: "custom", message: "Must be a finite number" });
-      return z.NEVER;
-    }
-    return n;
-  });
+const coercedNullable = (ok: (n: number) => boolean, message: string) =>
+  z
+    .union([z.number(), z.string()])
+    .nullable()
+    .optional()
+    .transform((v, ctx) => {
+      if (v === undefined) return undefined;
+      if (v === null || v === "") return null;
+      const n = Number(v);
+      if (!ok(n)) {
+        ctx.addIssue({ code: "custom", message });
+        return z.NEVER;
+      }
+      return n;
+    });
 
-/** Same NULL-not-0 treatment as `nullableAmount`, for fields stored as a
+const isFraction = (n: number) => Number.isFinite(n) && n >= 0 && n <= 1;
+
+/** Money that cannot sensibly be negative. */
+const nonNegativeAmount = coercedNullable(
+  (n) => Number.isFinite(n) && n >= 0,
+  "Must be zero or more",
+);
+
+/**
+ * `expected_return_years` is `numeric(6,2)` — 9999.99 is the widest the column
+ * holds. Without a bound, an absurd entry reaches Postgres and comes back as a
+ * bare "Internal server error" naming no field, because the tab-switch autosave
+ * bypasses the input's own `max` (it never touches the form element).
+ */
+const boundedYears = coercedNullable(
+  (n) => Number.isFinite(n) && n >= 0 && n <= 120,
+  "Must be between 0 and 120",
+);
+
+/** Same NULL-not-0 treatment as `nonNegativeAmount`, for fields stored as a
  *  fraction (0.05 = 5%) rather than a dollar amount. */
-const nullableFraction = z
-  .union([z.number(), z.string()])
-  .nullable()
-  .optional()
-  .transform((v, ctx) => {
-    if (v === undefined) return undefined;
-    if (v === null || v === "") return null;
-    const n = Number(v);
-    if (!Number.isFinite(n) || n < 0 || n > 1) {
-      ctx.addIssue({ code: "custom", message: "Must be a fraction between 0 and 1" });
-      return z.NEVER;
-    }
-    return n;
-  });
+const nullableFraction = coercedNullable(
+  isFraction,
+  "Must be a fraction between 0 and 1",
+);
 
 /** A `NOT NULL DEFAULT '0'` rate column, not a nullable one — same
  *  string/number coercion as `nullableFraction` (Task 9's form sends this
  *  field alongside its nullable siblings, so it must tolerate the same
  *  numeric-or-empty-string input), but an empty string or absent key falls
  *  back to the DB's own default instead of becoming null. */
+// Written out rather than derived from `coercedNullable`: this one is
+// deliberately NOT `.nullable()`, so an explicit `null` is a 400 rather than a
+// silent 0. Deriving it would widen that.
 const requiredFraction = z
   .union([z.number(), z.string()])
   .optional()
   .transform((v, ctx) => {
     if (v === undefined || v === "") return 0;
     const n = Number(v);
-    if (!Number.isFinite(n) || n < 0 || n > 1) {
+    if (!isFraction(n)) {
       ctx.addIssue({ code: "custom", message: "Must be a fraction between 0 and 1" });
       return z.NEVER;
     }
@@ -97,8 +119,10 @@ const base = {
   productType: z.enum(PRODUCT_TYPES).optional().default("fixed"),
   taxTreatment: z.enum(TAX_TREATMENTS).optional().default("non_qualified"),
   // Investment in the contract (§72 basis). NULL = "advisor hasn't told us
-  // yet" — see nullableAmount above for why an empty box must not become 0.
-  costBasis: nullableAmount,
+  // yet" — see `coercedNullable` above for why an empty box must not become
+  // 0. Non-negative because a NEGATIVE basis would otherwise pass a plain
+  // finite check and make the entire contract taxable.
+  costBasis: nonNegativeAmount,
 
   // Accumulation-phase drags.
   surrenderChargePct: nullableFraction,
@@ -108,13 +132,13 @@ const base = {
   // Income phase.
   incomeMode: z.enum(INCOME_MODES).optional().default("none"),
   incomeStartYear: nullableYear,
-  incomeStartYearRef: z.enum(YEAR_REFS as unknown as [string, ...string[]]).nullable().optional(),
+  incomeStartYearRef: z.enum(YEAR_REFS).nullable().optional(),
   payoutStructure: z.enum(PAYOUT_STRUCTURES).nullable().optional(),
   survivorPct: nullableFraction,
-  periodCertainYears: z.number().int().nonnegative().nullable().optional(),
+  periodCertainYears: z.number().int().nonnegative().max(120).nullable().optional(),
 
   // Rider (income_mode = 'rider').
-  benefitBase: nullableAmount,
+  benefitBase: nonNegativeAmount,
   rollupRate: nullableFraction,
   rollupEndYear: nullableYear,
   rollupRatchets: z.boolean().optional().default(true),
@@ -123,10 +147,10 @@ const base = {
   payoutPct: nullableFraction,
 
   // Annuitized (income_mode = 'annuitized').
-  annuitizedPayment: nullableAmount,
+  annuitizedPayment: nonNegativeAmount,
   // NULL = derive from the mortality table. Not a fraction — an expected
-  // number of years — so it reuses nullableAmount's plain finite-number check.
-  expectedReturnYears: nullableAmount,
+  // number of years — so it is bounded by the column width, not by [0,1].
+  expectedReturnYears: boundedYears,
 };
 
 /**
@@ -152,11 +176,15 @@ function refineAnnuityContract(
       message: "An income rider needs a benefit base.",
     });
   }
-  if (d.incomeMode === "annuitized" && d.annuitizedPayment == null) {
+  // `!(x > 0)`, not `== null`. A ZERO payment passes every null check in the
+  // stack — this one, the DB's `annuitized_payment IS NOT NULL`, and the form's
+  // — and the engine then surrenders the whole account value to the carrier for
+  // an income stream of nothing.
+  if (d.incomeMode === "annuitized" && !((d.annuitizedPayment ?? 0) > 0)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["annuitizedPayment"],
-      message: "An annuitized contract needs an annual payment.",
+      message: "An annuitized contract needs an annual payment above zero.",
     });
   }
   if (d.incomeMode !== "none" && d.incomeStartYear == null && d.incomeStartYearRef == null) {

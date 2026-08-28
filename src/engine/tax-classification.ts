@@ -1,4 +1,4 @@
-import { splitLifo, earlyWithdrawalPenalty } from "./annuity/tax";
+import { splitAnnuityDistribution } from "./annuity/tax";
 
 export interface TransferTaxInput {
   sourceCategory: "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable" | "stock_options" | "education_savings";
@@ -93,36 +93,31 @@ export function classifyTransferTax(input: TransferTaxInput): TransferTaxResult 
   // wrapper.
   if (sourceCategory === "annuity") {
     const treatment = input.sourceAnnuityTreatment ?? "non_qualified";
-    if (treatment === "tax_free") {
-      return { taxableOrdinaryIncome: 0, capitalGain: 0, basisReturn: amount,
+
+    // A qualified annuity is pre-tax RETIREMENT money in an insurance wrapper,
+    // so a move into another retirement account is a §408 rollover, not a §72
+    // distribution — decided BEFORE the §72 split below. Mirror the
+    // retirement→retirement house rule rather than contradicting it: tax-free
+    // unless the target is a Roth, which makes it a conversion — taxable, but
+    // never penalized. Without this the branch fabricates a five-figure tax
+    // bill on a six-figure IRA rollover. (Deliberately NOT extended to annuity
+    // → annuity: §1035 exchange modeling is out of scope for this feature.)
+    if (treatment === "qualified" && targetCategory === "retirement") {
+      if (ROTH_SUBTYPES.has(targetSubType)) {
+        return { taxableOrdinaryIncome: amount, capitalGain: 0, basisReturn: 0,
+                 earlyWithdrawalPenalty: 0, label: "roth_conversion" };
+      }
+      return { taxableOrdinaryIncome: 0, capitalGain: 0, basisReturn: 0,
                earlyWithdrawalPenalty: 0, label: "tax_free_rollover" };
     }
-    if (treatment === "qualified") {
-      // A qualified annuity is pre-tax RETIREMENT money in an insurance
-      // wrapper, so a move into another retirement account is a §408 rollover,
-      // not a §72 distribution. Mirror the retirement→retirement house rule
-      // below rather than contradicting it: tax-free unless the target is a
-      // Roth, which makes it a conversion — taxable, but never penalized.
-      // Without this the branch fabricates a five-figure tax bill on a
-      // six-figure IRA rollover. (Deliberately NOT extended to annuity →
-      // annuity: §1035 exchange modeling is out of scope for this feature.)
-      if (targetCategory === "retirement") {
-        if (ROTH_SUBTYPES.has(targetSubType)) {
-          return { taxableOrdinaryIncome: amount, capitalGain: 0, basisReturn: 0,
-                   earlyWithdrawalPenalty: 0, label: "roth_conversion" };
-        }
-        return { taxableOrdinaryIncome: 0, capitalGain: 0, basisReturn: 0,
-                 earlyWithdrawalPenalty: 0, label: "tax_free_rollover" };
-      }
-      const penalty = earlyWithdrawalPenalty(amount, ownerAge);
-      return { taxableOrdinaryIncome: amount, capitalGain: 0, basisReturn: 0,
-               earlyWithdrawalPenalty: penalty,
-               label: penalty > 0 ? "early_distribution" : "taxable_distribution" };
-    }
-    const split = splitLifo({
-      withdrawal: amount,
+
+    // IRC §72 proper, shared with `categorizeDraw` — see
+    // `splitAnnuityDistribution`.
+    const split = splitAnnuityDistribution({
+      treatment,
+      amount,
       accountValue: sourceAccountValue,
-      remainingBasis: input.sourceAnnuityBasis ?? sourceAccountValue,
+      remainingBasis: input.sourceAnnuityBasis,
       ownerAge,
     });
     return {
@@ -130,7 +125,12 @@ export function classifyTransferTax(input: TransferTaxInput): TransferTaxResult 
       capitalGain: 0,
       basisReturn: split.basisReturn,
       earlyWithdrawalPenalty: split.earlyWithdrawalPenalty,
-      label: split.earlyWithdrawalPenalty > 0 ? "early_distribution" : "taxable_distribution",
+      label:
+        treatment === "tax_free"
+          ? "tax_free_rollover"
+          : split.earlyWithdrawalPenalty > 0
+            ? "early_distribution"
+            : "taxable_distribution",
     };
   }
 

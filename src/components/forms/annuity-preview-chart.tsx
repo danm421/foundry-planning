@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import {
   CategoryScale,
   Chart as ChartJS,
@@ -139,6 +139,129 @@ const usd = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
+/** What one render of the preview has to say. The two non-`ok` arms are the
+ *  renders where no rows exist, which is why they live inside the same memo as
+ *  the rows themselves rather than in early returns above it. */
+type PreviewState =
+  | { kind: "missing"; missing: string[] }
+  | { kind: "failed"; isRateGuard: boolean }
+  | { kind: "ok"; rows: PreviewRow[] };
+
+/**
+ * Two blues would be indistinguishable and purple beside blue is a known
+ * colour-blind failure in this palette; blue / orange / green measures at worst
+ * 49.3 ΔE76 under simulated deuteranopia, well over the floor of 20. Each line
+ * also carries its own dash, so identity is never colour alone.
+ */
+function buildChartData(
+  rows: PreviewRow[],
+  palette: ReturnType<typeof dataPalette>,
+  chrome: ReturnType<typeof chartChrome>,
+  incomeMode: AnnuityContract["incomeMode"],
+): ChartData<"line"> {
+  const balance = {
+    label: "Balance",
+    data: rows.map((r) => r.accountValue),
+    borderColor: palette.blue,
+    backgroundColor: palette.blue,
+    borderWidth: 2,
+    // The crossover year is the only marked point on the chart, ringed in the
+    // surface colour so it reads as a marker rather than a kink in the line.
+    pointRadius: rows.map((r) => (r.isCrossover ? 4 : 0)),
+    pointBackgroundColor: palette.blue,
+    pointBorderColor: chrome.tooltipBg,
+    pointBorderWidth: 2,
+    tension: 0.2,
+  };
+  const guaranteedBase = {
+    label: "Guaranteed base",
+    data: rows.map((r) => r.benefitBase),
+    borderColor: palette.orange,
+    backgroundColor: palette.orange,
+    borderWidth: 2,
+    borderDash: [6, 4],
+    pointRadius: 0,
+    tension: 0.2,
+  };
+  const income = {
+    label: "Income each year",
+    data: rows.map((r) => r.income),
+    borderColor: palette.green,
+    backgroundColor: palette.green,
+    borderWidth: 2,
+    borderDash: [2, 3],
+    pointRadius: 0,
+    tension: 0.2,
+  };
+
+  return {
+    labels: rows.map((r) => String(r.year)),
+    datasets: [
+      balance,
+      // The guaranteed base only moves on a rider. An annuitized contract has
+      // no rollup, so the line would be a flat, meaningless third series.
+      ...(incomeMode === "rider" ? [guaranteedBase] : []),
+      income,
+    ],
+  };
+}
+
+/** `crossoverIndex` is -1 when there is no crossover, which is also what
+ *  suppresses the annotation. */
+function buildChartOptions(
+  chrome: ReturnType<typeof chartChrome>,
+  crossoverIndex: number,
+  annuitized: boolean,
+): ChartOptions<"line"> {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: "index", intersect: false },
+    plugins: {
+      legend: { position: "top", labels: { color: chrome.legend, boxWidth: 24 } },
+      tooltip: {
+        backgroundColor: chrome.tooltipBg,
+        titleColor: chrome.tooltipTitle,
+        bodyColor: chrome.tooltipBody,
+        callbacks: {
+          label: (ctx) => `${ctx.dataset.label}: ${usd.format((ctx.parsed.y as number) ?? 0)}`,
+        },
+      },
+      annotation:
+        crossoverIndex >= 0
+          ? {
+              annotations: {
+                crossover: {
+                  type: "line" as const,
+                  xMin: crossoverIndex,
+                  xMax: crossoverIndex,
+                  borderColor: chrome.grid,
+                  borderWidth: 1,
+                  borderDash: [4, 4],
+                  label: {
+                    display: true,
+                    content: annuitized ? "Payments start" : "Balance gone",
+                    position: "start" as const,
+                    backgroundColor: chrome.tooltipBg,
+                    color: chrome.tick,
+                    font: { size: 10 },
+                  },
+                },
+              },
+            }
+          : undefined,
+    },
+    scales: {
+      x: { ticks: { color: chrome.tick, maxTicksLimit: 10 }, grid: { color: chrome.grid } },
+      y: {
+        beginAtZero: true,
+        ticks: { color: chrome.tick, callback: (v) => `$${Math.round(Number(v) / 1000)}k` },
+        grid: { color: chrome.grid },
+      },
+    },
+  };
+}
+
 /** 0.045 -> "4.5%". Rounded because 0.07 * 100 is 7.000000000000001. */
 function formatPct(fraction: number): string {
   return `${Number((fraction * 100).toFixed(2))}%`;
@@ -183,46 +306,90 @@ export function AnnuityPreviewChart({
   const rate = growthRate ?? PREVIEW_GROWTH_RATE;
   const rateIsTheAccounts = growthRate != null;
 
-  // Refuse to guess. An invented age, an invented balance, or an income start
-  // that never resolved all draw a picture that looks right and is not.
-  const missing: string[] = [];
-  if (accountValue == null) missing.push("the account balance");
-  if (ownerAgeAtStart == null) missing.push("the owner's date of birth");
-  if (contract.incomeMode !== "none" && contract.incomeStartYear == null) {
-    missing.push("the year income starts");
-  }
-  if (accountValue == null || ownerAgeAtStart == null || missing.length > 0) {
+  // EVERY hook runs before the first early return below — the guard cases are
+  // exactly the renders where `rows` cannot be built, so folding them into the
+  // memo is what keeps hook order legal.
+  const preview = useMemo((): PreviewState => {
+    // Refuse to guess. An invented age, an invented balance, or an income start
+    // that never resolved all draw a picture that looks right and is not.
+    const missing: string[] = [];
+    if (accountValue == null) missing.push("the account balance");
+    if (ownerAgeAtStart == null) missing.push("the owner's date of birth");
+    if (contract.incomeMode !== "none" && contract.incomeStartYear == null) {
+      missing.push("the year income starts");
+    }
+    if (accountValue == null || ownerAgeAtStart == null || missing.length > 0) {
+      return { kind: "missing", missing };
+    }
+
+    try {
+      return {
+        kind: "ok",
+        rows: buildAnnuityPreviewRows({
+          contract,
+          accountValue,
+          startYear,
+          years: years ?? Math.max(10, PREVIEW_END_AGE - ownerAgeAtStart),
+          ownerAgeAtStart,
+          growthRate: rate,
+        }),
+      };
+    } catch (err) {
+      // The engine rejects a rate outside 0-100%, and this panel emits one on
+      // every keystroke of "150", so a half-typed percentage must not
+      // white-screen the form it is being typed into. But that is the ONLY
+      // throw we can name: `src/engine/annuity/rates.ts` has no error class, so
+      // its two messages are the only handle, and anything else is a bug that
+      // must not be reported to the advisor as percentages they need to go and
+      // fix.
+      const message = err instanceof Error ? err.message : String(err);
+      const isRateGuard = /out of \[0,1\]|is not a finite rate/.test(message);
+      if (!isRateGuard) console.warn("Annuity preview could not be drawn:", err);
+      return { kind: "failed", isRateGuard };
+    }
+  }, [contract, accountValue, startYear, years, ownerAgeAtStart, rate]);
+
+  // `dataPalette` returns one of two module-level constants, so it is already
+  // referentially stable per theme. `chartChrome` BUILDS A FRESH OBJECT every
+  // call, so it has to be memoized here — used raw it would bust both memos
+  // below on every render and defeat the whole point of them.
+  const palette = dataPalette(theme);
+  const chrome = useMemo(() => chartChrome(theme), [theme]);
+
+  // `data` and `options` are memoized because react-chartjs-2 keys its update
+  // effects on exactly these identities (`[redraw, options]`,
+  // `[redraw, data.labels]`, `[redraw, data.datasets]`). Rebuilt fresh, all
+  // three fire on EVERY render and end in `chart.update()` — a scale re-fit and
+  // a restarted 1s animation. This panel stays mounted (hidden) while the
+  // advisor is on the Details tab, so without this, typing the account name or
+  // balance drives a full chart update per keystroke on an invisible canvas.
+  const chartData = useMemo((): ChartData<"line"> | null => {
+    if (preview.kind !== "ok") return null;
+    return buildChartData(preview.rows, palette, chrome, contract.incomeMode);
+  }, [preview, palette, chrome, contract.incomeMode]);
+
+  const options = useMemo((): ChartOptions<"line"> | null => {
+    if (preview.kind !== "ok") return null;
+    return buildChartOptions(
+      chrome,
+      preview.rows.findIndex((r) => r.isCrossover),
+      contract.incomeMode === "annuitized",
+    );
+  }, [preview, chrome, contract.incomeMode]);
+
+  if (preview.kind === "missing") {
     return (
       <PreviewFrame>
-        <p className={NOTE_CLASS}>Add {andList(missing)} to preview this contract.</p>
+        <p className={NOTE_CLASS}>Add {andList(preview.missing)} to preview this contract.</p>
       </PreviewFrame>
     );
   }
 
-  let rows: PreviewRow[];
-  try {
-    rows = buildAnnuityPreviewRows({
-      contract,
-      accountValue,
-      startYear,
-      years: years ?? Math.max(10, PREVIEW_END_AGE - ownerAgeAtStart),
-      ownerAgeAtStart,
-      growthRate: rate,
-    });
-  } catch (err) {
-    // The engine rejects a rate outside 0-100%, and this panel emits one on
-    // every keystroke of "150", so a half-typed percentage must not white-screen
-    // the form it is being typed into. But that is the ONLY throw we can name:
-    // `src/engine/annuity/rates.ts` has no error class, so its two messages are
-    // the only handle, and anything else is a bug that must not be reported to
-    // the advisor as percentages they need to go and fix.
-    const message = err instanceof Error ? err.message : String(err);
-    const isRateGuard = /out of \[0,1\]|is not a finite rate/.test(message);
-    if (!isRateGuard) console.warn("Annuity preview could not be drawn:", err);
+  if (preview.kind === "failed") {
     return (
       <PreviewFrame>
         <p className={NOTE_CLASS}>
-          {isRateGuard
+          {preview.isRateGuard
             ? "Check the percentages above — one of them is outside 0–100%."
             : "This contract could not be previewed."}
         </p>
@@ -230,58 +397,10 @@ export function AnnuityPreviewChart({
     );
   }
 
-  const palette = dataPalette(theme);
-  const chrome = chartChrome(theme);
+  const rows = preview.rows;
   const crossoverIndex = rows.findIndex((r) => r.isCrossover);
   const crossover = crossoverIndex >= 0 ? rows[crossoverIndex] : null;
   const lastYear = rows[rows.length - 1].year;
-
-  // Two blues would be indistinguishable and purple beside blue is a known
-  // colour-blind failure in this palette; blue / orange / green measures at
-  // worst 49.3 ΔE76 under simulated deuteranopia, well over the floor of 20.
-  // Each line also carries its own dash, so identity is never colour alone.
-  const balance = {
-    label: "Balance",
-    data: rows.map((r) => r.accountValue),
-    borderColor: palette.blue,
-    backgroundColor: palette.blue,
-    borderWidth: 2,
-    // The crossover year is the only marked point on the chart, ringed in the
-    // surface colour so it reads as a marker rather than a kink in the line.
-    pointRadius: rows.map((r) => (r.isCrossover ? 4 : 0)),
-    pointBackgroundColor: palette.blue,
-    pointBorderColor: chrome.tooltipBg,
-    pointBorderWidth: 2,
-    tension: 0.2,
-  };
-  const guaranteedBase = {
-    label: "Guaranteed base",
-    data: rows.map((r) => r.benefitBase),
-    borderColor: palette.orange,
-    backgroundColor: palette.orange,
-    borderWidth: 2,
-    borderDash: [6, 4],
-    pointRadius: 0,
-    tension: 0.2,
-  };
-  const income = {
-    label: "Income each year",
-    data: rows.map((r) => r.income),
-    borderColor: palette.green,
-    backgroundColor: palette.green,
-    borderWidth: 2,
-    borderDash: [2, 3],
-    pointRadius: 0,
-    tension: 0.2,
-  };
-
-  const datasets: ChartData<"line">["datasets"] = [
-    balance,
-    // The guaranteed base only moves on a rider. An annuitized contract has no
-    // rollup, so the line would be a flat, meaningless third series.
-    ...(contract.incomeMode === "rider" ? [guaranteedBase] : []),
-    income,
-  ];
 
   const annuitized = contract.incomeMode === "annuitized";
   const terminalBalance = rows[rows.length - 1].accountValue;
@@ -330,53 +449,6 @@ export function AnnuityPreviewChart({
       };
   const assumptionText = `${assumption.lead}${assumption.pct}${assumption.tail}`;
 
-  const options: ChartOptions<"line"> = {
-    responsive: true,
-    maintainAspectRatio: false,
-    interaction: { mode: "index", intersect: false },
-    plugins: {
-      legend: { position: "top", labels: { color: chrome.legend, boxWidth: 24 } },
-      tooltip: {
-        backgroundColor: chrome.tooltipBg,
-        titleColor: chrome.tooltipTitle,
-        bodyColor: chrome.tooltipBody,
-        callbacks: {
-          label: (ctx) => `${ctx.dataset.label}: ${usd.format((ctx.parsed.y as number) ?? 0)}`,
-        },
-      },
-      annotation: crossover
-        ? {
-            annotations: {
-              crossover: {
-                type: "line" as const,
-                xMin: crossoverIndex,
-                xMax: crossoverIndex,
-                borderColor: chrome.grid,
-                borderWidth: 1,
-                borderDash: [4, 4],
-                label: {
-                  display: true,
-                  content: annuitized ? "Payments start" : "Balance gone",
-                  position: "start" as const,
-                  backgroundColor: chrome.tooltipBg,
-                  color: chrome.tick,
-                  font: { size: 10 },
-                },
-              },
-            },
-          }
-        : undefined,
-    },
-    scales: {
-      x: { ticks: { color: chrome.tick, maxTicksLimit: 10 }, grid: { color: chrome.grid } },
-      y: {
-        beginAtZero: true,
-        ticks: { color: chrome.tick, callback: (v) => `$${Math.round(Number(v) / 1000)}k` },
-        grid: { color: chrome.grid },
-      },
-    },
-  };
-
   return (
     <PreviewFrame>
       <div className="space-y-0.5">
@@ -395,8 +467,8 @@ export function AnnuityPreviewChart({
       </div>
       <div className="h-64 w-full">
         <Line
-          data={{ labels: rows.map((r) => String(r.year)), datasets }}
-          options={options}
+          data={chartData!}
+          options={options!}
           role="img"
           aria-label={`Balance and guaranteed income from ${rows[0].year} to ${lastYear}. ${findingText} ${assumptionText}`}
         />

@@ -356,6 +356,11 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   // Set when a load actually replaces the contract in state, so the dirty-check
   // baseline can be moved past it exactly once (see `isDirty` below).
   const annuityRebaselineRef = useRef(false);
+  /** The contract GET answered 404 — "nothing stored", which is TRUE for a new
+   *  account and FALSE for one recategorized away from Annuity and back. */
+  const annuityRead404Ref = useRef(false);
+  /** The advisor typed something into the contract panel this session. */
+  const annuityUserEditedRef = useRef(false);
 
   // Auto-focus + select-all the Name input on create so the advisor can start
   // typing to replace any default. Skipped on edit and when the dialog is
@@ -562,7 +567,11 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   // state, so they couldn't participate in dirty-tracking.
   const [growthRatePct, setGrowthRatePct] = useState<string>(() => {
     if (initial?.growthRate != null && initial.growthRate !== "") {
-      return (Number(initial.growthRate) * 100).toString();
+      // Same rounding as `initialGrowthPct` below: `0.07 * 100` is
+      // 7.000000000000001, so reopening a saved annuity account (they default
+      // to 7%) printed that in the box. `growth_rate` is `decimal(5,4)`, so
+      // rounding to 2dp of percent is lossless.
+      return (Math.round(Number(initial.growthRate) * 10000) / 100).toString();
     }
     const def = categoryDefaultSources?.[growthCategory]?.blendedReturn;
     return def != null ? String(def) : "7";
@@ -879,6 +888,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   // the panel must say so rather than showing defaults that look like data.
   const loadAnnuityContract = useCallback(async (acctId: string) => {
     setAnnuityLoad("loading");
+    annuityRead404Ref.current = false;
     try {
       const res = await fetch(`/api/clients/${clientId}/annuity-contracts/${acctId}`);
       // A 404 is the route saying "there is nothing here to read", not "the
@@ -890,6 +900,8 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
       // whatever 404s the read 404s the write, and there is nothing on the
       // server to erase.
       if (res.status === 404) {
+        // Remembered, not just swallowed: see the guard in saveAnnuityContract.
+        annuityRead404Ref.current = true;
         setAnnuityLoad("loaded");
         return;
       }
@@ -934,6 +946,25 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     // Silent by design: the panel is showing the "could not be loaded" notice
     // instead of the fields, so there is nothing the advisor typed to lose.
     if (!annuityContractTrusted) return;
+    // `annuityContractTrusted` covers a FAILED read. A 404 is a SUCCESSFUL
+    // "nothing stored" read — except in one case, where a real row exists and
+    // the read still 404s: an EXISTING account whose category was changed away
+    // from Annuity and back. Nothing deletes the `annuity_contracts` row on a
+    // category change, so the GET 404s (the DB still says the old category)
+    // while this save's own account PUT flips the category back FIRST — so by
+    // the time this runs `findAnnuityAccount` succeeds, and an untouched
+    // defaults object would overwrite the advisor's real contract.
+    //
+    // Narrow on purpose. A brand-new account still writes its defaults row
+    // (there is provably nothing to clobber), which is the behaviour
+    // `still writes the contract on a brand-new account` pins.
+    if (
+      mode === "edit" &&
+      annuityRead404Ref.current &&
+      !annuityUserEditedRef.current
+    ) {
+      return;
+    }
     const res = await fetch(`/api/clients/${clientId}/annuity-contracts/${acctId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -958,7 +989,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
           .join(" — "),
       );
     }
-  }, [category, writer.scenarioActive, clientId, annuityContract, annuityContractTrusted]);
+  }, [category, writer.scenarioActive, clientId, annuityContract, annuityContractTrusted, mode]);
 
   // Re-read the account's allocations from the server. Holdings mutations
   // re-derive the asset mix server-side (syncAccountFromHoldings), so after one
@@ -2971,10 +3002,11 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             <p className="text-sm text-gray-300">Loading the contract&hellip;</p>
           ) : (
             <AnnuityTab
-              accountId={effectiveAccountId}
-              clientId={clientId}
               value={annuityContract}
-              onChange={setAnnuityContract}
+              onChange={(next) => {
+                annuityUserEditedRef.current = true;
+                setAnnuityContract(next);
+              }}
               accountValue={annuityAccountValue}
               milestones={milestones}
               clientFirstName={clientFirstName}

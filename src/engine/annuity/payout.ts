@@ -154,8 +154,20 @@ export function stepAnnuityYear(input: AnnuityYearInput): AnnuityYearResult {
         state.investmentInContract,
         state.guaranteedIncome * years,
       );
-      // Annuitization surrenders the account value to the carrier.
-      state.accountValue = 0;
+      // §72(b)(2) counts exclusions ALREADY TAKEN, and a contract in payout
+      // before the plan starts has been taking them for `yearsInForce` years.
+      // Starting the count at 0 lets it exclude its entire investment a SECOND
+      // time and pushes the cap out by exactly that many years — a $200k SPIA
+      // bought at 65 and modeled from 10 years later stops excluding at 94
+      // instead of 84, understating ~$107k of late-life ordinary income. This
+      // is the same back-dating the age and the period-certain clock above
+      // already do; the cumulative count was the one that was missed.
+      state.cumulativeExcluded = Math.min(
+        state.investmentInContract,
+        state.lockedExclusionRatio * state.guaranteedIncome * yearsInForce,
+      );
+      // NOTE: the account value is NOT surrendered here — see the guarded
+      // surrender below, after this year's payment is known to be real.
     } else {
       state.guaranteedIncome =
         state.benefitBase * resolvePayoutPercent(contract, ageAtActivation);
@@ -188,7 +200,12 @@ export function stepAnnuityYear(input: AnnuityYearInput): AnnuityYearResult {
       (structure === "period_certain" || structure === "life_with_period_certain");
 
     if (structure === "joint_survivor") {
-      payment = state.guaranteedIncome * (contract.survivorPct ?? 0);
+      // The one rate that reached arithmetic unguarded. A percent-scaled `50`
+      // turns a $10,000 survivor payment into $500,000 with no error anywhere;
+      // Zod blocks it on the only write path today, so this is the same
+      // defense-in-depth every other rate in this module already has.
+      payment =
+        state.guaranteedIncome * assertUnitRate("survivorPct", contract.survivorPct ?? 0);
     } else if (!certainTermStillOwed) {
       // single_life, cash_refund, an unstated structure, or a certain term that
       // has already run out: nothing further is owed.
@@ -205,6 +222,17 @@ export function stepAnnuityYear(input: AnnuityYearInput): AnnuityYearResult {
   if (structure === "period_certain" && certainTermExpired) return ZERO(state);
 
   if (payment <= 0) return ZERO(state);
+
+  // Annuitization surrenders the account value to the carrier — but ONLY once a
+  // payment is real. This used to run up in the activation block, ABOVE the two
+  // guards above, so any annuitized contract that paid nothing in its
+  // activation year handed the carrier its whole balance and got nothing back,
+  // forever. Two reachable triggers, both of which pass every `== null` guard
+  // in the stack (Zod, the DB CHECK, and the form) because they are ZERO, not
+  // null: an `annuitizedPayment` of 0, and a period-certain term that ran out
+  // before the plan starts. Measured before the fix: a $250,000 SPIA went to $0
+  // with $0 of income in every year.
+  if (annuitized) state.accountValue = 0;
 
   // ── 5. Tax split ─────────────────────────────────────────────────────────
   if (contract.taxTreatment === "tax_free") {

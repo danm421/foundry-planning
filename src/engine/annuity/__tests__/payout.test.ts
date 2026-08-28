@@ -331,6 +331,51 @@ describe("stepAnnuityYear — a contract already in force", () => {
     );
   });
 
+  it("counts §72(b)(2) exclusions ALREADY TAKEN before the plan started", () => {
+    // A $200k single-life SPIA bought at 65 in 2016, paying $20k/yr, first
+    // modeled in 2026. It has already excluded ~10 years of basis. Starting the
+    // cumulative count at 0 would let it exclude its whole $200k investment a
+    // SECOND time and push the cap out by exactly those 10 years, understating
+    // late-life ordinary income by ~$107k.
+    const c = spia({
+      incomeStartYear: 2016,
+      payoutStructure: "single_life",
+      annuitizedPayment: 20_000,
+      costBasis: 200_000,
+    });
+    const activated = run(c, initAnnuityState(c, 200_000), 2026, 75);
+
+    const perPayment = activated.state.lockedExclusionRatio * 20_000;
+    // 10 payments already taken (2016-2025) SEEDED, plus 2026's own payment
+    // booked by the normal path = 11. Seeding 0 would leave just the 1.
+    expect(activated.state.cumulativeExcluded).toBeCloseTo(perPayment * 11, 2);
+    expect(activated.state.cumulativeExcluded).toBeGreaterThan(perPayment * 10);
+    // Never more than the investment itself — the cap is a ceiling, not a rate.
+    expect(activated.state.cumulativeExcluded).toBeLessThanOrEqual(200_000);
+  });
+
+  it("a contract activating THIS year has taken no exclusions yet", () => {
+    // The mirror of the test above: `yearsInForce` is 0, so the seeding must
+    // contribute nothing. Without this, seeding could silently tax a normal
+    // contract from its very first payment.
+    const c = spia({ incomeStartYear: 2030, payoutStructure: "single_life" });
+    const r = run(c, initAnnuityState(c, 100_000), 2030, 65);
+    expect(r.state.cumulativeExcluded).toBeCloseTo(r.basisReturn, 6);
+  });
+
+  it("quotes the rider band off the ACTIVATION-year age, not today's", () => {
+    // Ledger #108: nothing pinned this, so `ageAtActivation` could be swapped
+    // for `ownerAge` with the whole suite green. A rider that turned on at 62
+    // but is first modeled at 70 must still be quoted the 60+ band (4.5%), not
+    // the 70+ band (5.5%) — the difference is ~22% of the client's guaranteed
+    // income, for life. `payoutPct` is left unset so the BAND does the work.
+    const c = rider({ incomeStartYear: 2022, payoutPct: undefined });
+    const r = run(c, initAnnuityState(c, 100_000), 2030, 70);
+    // 100k base × 4.5% (the 60-64 band), NOT × 5.5% (the 70-74 band).
+    expect(r.state.guaranteedIncome).toBeCloseTo(4_500, 6);
+    expect(r.state.guaranteedIncome).not.toBeCloseTo(5_500, 6);
+  });
+
   it("counts a period-certain term from the stated start, so an old term has fewer years left", () => {
     // A 20-year certain term that began in 2025 owes its last payment in 2044.
     const c = spia({ incomeStartYear: 2025 });
@@ -338,6 +383,41 @@ describe("stepAnnuityYear — a contract already in force", () => {
     s = run(c, s, 2030, 70).state;
     expect(run(c, s, 2044, 84).income).toBeCloseTo(10_000, 2);
     expect(run(c, s, 2045, 85).income).toBe(0);
+  });
+});
+
+describe("stepAnnuityYear — a contract that pays nothing keeps its balance", () => {
+  // Annuitization surrenders the account value to the carrier. That is only
+  // ever right in exchange for a payment. Both cases below clear every `== null`
+  // guard in the stack (Zod, the DB CHECK, the form) because they are ZERO.
+  it("a $0 annuitized payment does not hand the balance to the carrier", () => {
+    const c = spia({ annuitizedPayment: 0, payoutStructure: "single_life" });
+    let s = initAnnuityState(c, 250_000);
+    for (const [year, age] of [[2030, 65], [2031, 66], [2032, 67]] as const) {
+      const r = run(c, s, year, age);
+      s = r.state;
+      expect(r.income).toBe(0);
+      // The money is still there. Before the fix this read 0 from 2030 on.
+      expect(s.accountValue).toBe(250_000);
+    }
+  });
+
+  it("a certain term that ran out before the plan starts does not either", () => {
+    // 20-year term starting in 2000 owed its last payment in 2019; the plan
+    // opens in 2026. Nothing is payable, so nothing is surrendered.
+    const c = spia({ incomeStartYear: 2000, periodCertainYears: 20 });
+    const r = run(c, initAnnuityState(c, 250_000), 2026, 90);
+    expect(r.income).toBe(0);
+    expect(r.state.accountValue).toBe(250_000);
+  });
+
+  it("but a real payment DOES surrender the balance", () => {
+    // The positive control: without it the two assertions above would also pass
+    // against an engine that never surrenders at all.
+    const c = spia({ payoutStructure: "single_life" });
+    const r = run(c, initAnnuityState(c, 250_000), 2030, 65);
+    expect(r.income).toBeCloseTo(10_000, 2);
+    expect(r.state.accountValue).toBe(0);
   });
 });
 

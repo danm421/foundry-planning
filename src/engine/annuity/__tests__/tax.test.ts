@@ -1,11 +1,101 @@
 import { describe, it, expect } from "vitest";
 import {
   splitLifo,
+  splitAnnuityDistribution,
   exclusionRatio,
   splitAnnuitized,
   earlyWithdrawalPenalty,
   expectedReturnMultiple,
 } from "../tax";
+
+describe("splitAnnuityDistribution — the three tax wrappers", () => {
+  // Ledger #158: every existing qualified-arm test drew 100k against a 400k
+  // gain, where LIFO ALSO returns 100% ordinary income — so the whole
+  // `qualified` branch could be deleted and every test stayed green. These
+  // draw PAST the gain, where the two rules finally disagree.
+  it("a qualified draw past the gain is STILL all ordinary income", () => {
+    const r = splitAnnuityDistribution({
+      treatment: "qualified",
+      amount: 450_000,
+      accountValue: 600_000,
+      remainingBasis: 200_000,
+      ownerAge: 65,
+    });
+    expect(r.ordinaryIncome).toBe(450_000);
+    expect(r.basisReturn).toBe(0);
+  });
+
+  it("...where a non-qualified draw of the same size returns basis", () => {
+    // The contrast that gives the assertion above its teeth: same numbers,
+    // different wrapper, 50k of the draw comes back tax-free under LIFO.
+    const r = splitAnnuityDistribution({
+      treatment: "non_qualified",
+      amount: 450_000,
+      accountValue: 600_000,
+      remainingBasis: 200_000,
+      ownerAge: 65,
+    });
+    expect(r.ordinaryIncome).toBe(400_000);
+    expect(r.basisReturn).toBe(50_000);
+  });
+
+  it("a tax-free draw is all basis, never penalized", () => {
+    const r = splitAnnuityDistribution({
+      treatment: "tax_free",
+      amount: 450_000,
+      accountValue: 600_000,
+      remainingBasis: 200_000,
+      ownerAge: 50,
+    });
+    expect(r.ordinaryIncome).toBe(0);
+    expect(r.basisReturn).toBe(450_000);
+    expect(r.earlyWithdrawalPenalty).toBe(0);
+  });
+
+  it("an unknown basis means basis EQUALS the account value — no invented gain", () => {
+    const r = splitAnnuityDistribution({
+      treatment: "non_qualified",
+      amount: 50_000,
+      accountValue: 300_000,
+      ownerAge: 65,
+    });
+    expect(r.ordinaryIncome).toBe(0);
+    expect(r.basisReturn).toBe(50_000);
+  });
+
+  it("the qualified penalty falls on the whole draw pre-59.5", () => {
+    const r = splitAnnuityDistribution({
+      treatment: "qualified",
+      amount: 100_000,
+      accountValue: 600_000,
+      remainingBasis: 200_000,
+      ownerAge: 50,
+    });
+    expect(r.earlyWithdrawalPenalty).toBeCloseTo(10_000, 6);
+  });
+});
+
+describe("exclusionRatio — the §72(b) cap at 1.0", () => {
+  it("never exceeds 1, so a payment can never be MORE than fully excluded", () => {
+    // $200k premium against 15 years of $10k payments is a 1.333 raw ratio.
+    // Uncapped, splitAnnuitized returns 10,000 - 13,333 = -$3,333 of ordinary
+    // income — a phantom deduction of ~$50k over the term. The Math.min is the
+    // only thing preventing it and nothing watched it.
+    expect(exclusionRatio(200_000, 150_000)).toBe(1);
+  });
+
+  it("a negative ordinary income is therefore impossible", () => {
+    const r = splitAnnuitized({
+      payment: 10_000,
+      exclusionRatio: exclusionRatio(200_000, 150_000),
+      investmentInContract: 200_000,
+      cumulativeExcluded: 0,
+      ownerAge: 70,
+    });
+    expect(r.ordinaryIncome).toBe(0);
+    expect(r.basisReturn).toBe(10_000);
+  });
+});
 
 describe("splitLifo — §72(e)(2)(B) gain-first ordering", () => {
   it("takes gain first: a $100k draw on a $600k/$200k-basis contract is all ordinary income", () => {

@@ -5,17 +5,16 @@ import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { parseBody } from "@/lib/schemas/common";
-import { annuityContractSchema } from "@/lib/schemas/annuities";
+import { annuityContractSchema, QLAC_PREMIUM_CAP_2026 } from "@/lib/schemas/annuities";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
 
 export const dynamic = "force-dynamic";
 
-// QLACs are capped by IRS regulation, currently indexed to $210,000 for 2026.
-// This is a soft warning, not an enforced limit — Foundry flags advisor
-// entry, it does not block it.
-const QLAC_PREMIUM_CAP_2026 = 210_000;
+// The QLAC cap is a soft warning, not an enforced limit — Foundry flags
+// advisor entry, it does not block it. The figure itself lives in
+// `@/lib/schemas/annuities` so the panel warns at the same number.
 
 /**
  * Tenant-isolation guard, reused by GET and PUT: confirm the target account
@@ -123,6 +122,10 @@ export async function PUT(
     if (!parsed.ok) return parsed.response;
     const input = parsed.data;
 
+    // Drizzle takes `numeric` columns as strings. Mirrors `num()` in
+    // `serializeContract` above, which does the read half.
+    const dec = (v: number | null | undefined) => (v == null ? null : String(v));
+
     // Every column named once here — reused for both the insert values and
     // the upsert's `set`, never a spread of the raw request body or
     // `parsed.data` (the mass-assignment pattern already flagged across ~30
@@ -132,31 +135,24 @@ export async function PUT(
       contractNumberLast4: input.contractNumberLast4 ?? null,
       productType: input.productType,
       taxTreatment: input.taxTreatment,
-      costBasis: input.costBasis != null ? String(input.costBasis) : null,
-      surrenderChargePct:
-        input.surrenderChargePct != null ? String(input.surrenderChargePct) : null,
+      costBasis: dec(input.costBasis),
+      surrenderChargePct: dec(input.surrenderChargePct),
       surrenderEndYear: input.surrenderEndYear ?? null,
       annualFeePct: String(input.annualFeePct),
       incomeMode: input.incomeMode,
       incomeStartYear: input.incomeStartYear ?? null,
-      // `YEAR_REFS` is asserted `[string, ...string[]]` in the schema so
-      // `z.enum` accepts a runtime-shared array, which widens the inferred
-      // type back to `string` — same cast insurance-policies.ts already
-      // applies to this exact enum column at its DB write site.
-      incomeStartYearRef: (input.incomeStartYearRef ?? null) as
-        (typeof annuityContracts.$inferInsert)["incomeStartYearRef"],
+      incomeStartYearRef: input.incomeStartYearRef ?? null,
       payoutStructure: input.payoutStructure ?? null,
-      survivorPct: input.survivorPct != null ? String(input.survivorPct) : null,
+      survivorPct: dec(input.survivorPct),
       periodCertainYears: input.periodCertainYears ?? null,
-      benefitBase: input.benefitBase != null ? String(input.benefitBase) : null,
-      rollupRate: input.rollupRate != null ? String(input.rollupRate) : null,
+      benefitBase: dec(input.benefitBase),
+      rollupRate: dec(input.rollupRate),
       rollupEndYear: input.rollupEndYear ?? null,
       rollupRatchets: input.rollupRatchets,
-      riderFeePct: input.riderFeePct != null ? String(input.riderFeePct) : null,
-      payoutPct: input.payoutPct != null ? String(input.payoutPct) : null,
-      annuitizedPayment: input.annuitizedPayment != null ? String(input.annuitizedPayment) : null,
-      expectedReturnYears:
-        input.expectedReturnYears != null ? String(input.expectedReturnYears) : null,
+      riderFeePct: dec(input.riderFeePct),
+      payoutPct: dec(input.payoutPct),
+      annuitizedPayment: dec(input.annuitizedPayment),
+      expectedReturnYears: dec(input.expectedReturnYears),
     };
 
     await db
@@ -174,8 +170,11 @@ export async function PUT(
     const accountValue = Number(target.value);
     if (input.productType === "qlac" && accountValue > QLAC_PREMIUM_CAP_2026) {
       warnings.push(
-        `QLAC premiums are capped at $210,000 for 2026 — this account's value of ` +
-          `$${accountValue.toLocaleString()} exceeds it.`,
+        // Interpolated, never re-typed: a hard-coded figure here would keep
+        // quoting the old cap the January the constant is re-indexed, while
+        // comparing against the new one.
+        `QLAC premiums are capped at $${QLAC_PREMIUM_CAP_2026.toLocaleString()} for 2026 — ` +
+          `this account's value of $${accountValue.toLocaleString()} exceeds it.`,
       );
     }
 

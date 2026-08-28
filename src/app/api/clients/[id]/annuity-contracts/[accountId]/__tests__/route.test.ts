@@ -317,7 +317,7 @@ describe("PUT /api/clients/[id]/annuity-contracts/[accountId]", () => {
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.issues).toContainEqual(
-      expect.objectContaining({ message: "An annuitized contract needs an annual payment." }),
+      expect.objectContaining({ message: "An annuitized contract needs an annual payment above zero." }),
     );
   });
 

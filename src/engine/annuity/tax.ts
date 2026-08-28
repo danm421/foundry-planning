@@ -1,5 +1,9 @@
 import { survivalProbability } from "../actuarial/mortality";
-import type { AnnuityPayoutStructure, AnnuityTaxSplit } from "./types";
+import type {
+  AnnuityPayoutStructure,
+  AnnuityTaxSplit,
+  AnnuityTaxTreatment,
+} from "./types";
 
 const EARLY_WITHDRAWAL_AGE = 59.5;
 const EARLY_WITHDRAWAL_PENALTY_RATE = 0.10;
@@ -53,6 +57,57 @@ export function splitLifo(input: LifoInput): AnnuityTaxSplit {
     basisReturn,
     earlyWithdrawalPenalty: earlyWithdrawalPenalty(ordinaryIncome, ownerAge),
   };
+}
+
+export interface AnnuityDistributionInput {
+  treatment: AnnuityTaxTreatment;
+  amount: number;
+  accountValue: number;
+  /** Live §72 basis. Undefined means basis EQUALS the account value — an
+   *  unknown cost basis must invent no gain and therefore no tax. */
+  remainingBasis?: number;
+  ownerAge: number;
+}
+
+/**
+ * The §72 treatment of one NON-ANNUITIZED distribution, by tax wrapper.
+ *
+ * The single home for this three-way rule. `categorizeDraw` (a spend) and
+ * `classifyTransferTax` (a transfer out) both reach it, and they used to spell
+ * it out separately — two independent statements of a statutory rule, in the
+ * one directory whose own comment warns that "two copies of a tax constant is
+ * how one of them goes stale."
+ *
+ * Callers keep whatever they wrap around this: `classifyTransferTax` still
+ * decides §408 rollover treatment BEFORE calling, and both callers still map
+ * the split onto their own result shape and label vocabulary.
+ *
+ * Not used by `stepAnnuityYear` — an annuitized payment is exclusion-ratio
+ * work with contract state to advance, which is `splitAnnuitized`'s job.
+ */
+export function splitAnnuityDistribution(input: AnnuityDistributionInput): AnnuityTaxSplit {
+  const { treatment, amount, accountValue, remainingBasis, ownerAge } = input;
+
+  if (treatment === "tax_free") {
+    return { ordinaryIncome: 0, basisReturn: amount, earlyWithdrawalPenalty: 0 };
+  }
+
+  if (treatment === "qualified") {
+    // No after-tax basis in a qualified contract — the whole draw is OI, and
+    // the §72(t) penalty applies to all of it.
+    return {
+      ordinaryIncome: amount,
+      basisReturn: 0,
+      earlyWithdrawalPenalty: earlyWithdrawalPenalty(amount, ownerAge),
+    };
+  }
+
+  return splitLifo({
+    withdrawal: amount,
+    accountValue,
+    remainingBasis: remainingBasis ?? accountValue,
+    ownerAge,
+  });
 }
 
 /** §72(b): investment in the contract ÷ expected return. Capped at 1 — a

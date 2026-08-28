@@ -65,7 +65,7 @@ describe("annuityContractSchema — the NULL cost-basis rule (non-negotiable)", 
   });
 
   it("rejects a non-numeric cost basis", () => {
-    expect(messages({ costBasis: "not a number" })).toContain("Must be a finite number");
+    expect(messages({ costBasis: "not a number" })).toContain("Must be zero or more");
   });
 });
 
@@ -87,7 +87,7 @@ describe("annuityContractSchema — income-mode rules (mirror the DB CHECK const
 
   it("rejects income_mode=annuitized with no annual payment", () => {
     expect(messages({ incomeMode: "annuitized", incomeStartYear: 2030 })).toContain(
-      "An annuitized contract needs an annual payment.",
+      "An annuitized contract needs an annual payment above zero.",
     );
   });
 

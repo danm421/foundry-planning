@@ -121,6 +121,36 @@ describe("loadAnnuityContractsByAccountIds", () => {
     expect(map.a1.annualFeePct).toBe(0.0125);
     expect(map.a1.benefitBase).toBe(150_000);
     expect(map.a1.rollupRate).toBe(0.06);
+
+    // The WHOLE mapping, not a sample of it. Ledger #129: the six optional
+    // pass-throughs (carrier, contractNumberLast4, payoutStructure,
+    // surrenderEndYear, periodCertainYears, rollupEndYear) could each be
+    // deleted from the object literal and still compile with every test green —
+    // only the five REQUIRED fields were tsc-guarded. A field silently dropped
+    // here reaches the engine as `undefined` and quietly changes the plan.
+    expect(map.a1).toEqual({
+      carrier: "Acme Life",
+      contractNumberLast4: "1234",
+      productType: "fixed_indexed",
+      taxTreatment: "non_qualified",
+      costBasis: 100_000,
+      surrenderChargePct: 0.07,
+      surrenderEndYear: 2032,
+      annualFeePct: 0.0125,
+      incomeMode: "rider",
+      incomeStartYear: 2030,
+      payoutStructure: "single_life",
+      survivorPct: null,
+      periodCertainYears: null,
+      benefitBase: 150_000,
+      rollupRate: 0.06,
+      rollupEndYear: 2035,
+      rollupRatchets: true,
+      riderFeePct: 0.01,
+      payoutPct: undefined,
+      annuitizedPayment: undefined,
+      expectedReturnYears: undefined,
+    });
   });
 
   it("leaves NULL money and rates undefined — never coerced to 0", async () => {

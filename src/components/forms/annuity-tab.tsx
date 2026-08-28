@@ -1,13 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import { GLWB_PAYOUT_BANDS, payoutPercentForAge } from "@/engine/annuity";
-import type { AnnuityContract } from "@/engine/annuity";
+// The four unions come from the engine, never a local copy.
+// `EveryAnnuityContractField` below makes a new engine FIELD a compile error
+// here; taking the unions from the engine makes a new engine VALUE one too — a
+// local copy would let `PRODUCT_TYPE_LABELS` keep compiling while the dropdown
+// sat a product behind the engine.
+import type {
+  AnnuityContract,
+  AnnuityProductType,
+  AnnuityTaxTreatment,
+  AnnuityIncomeMode,
+  AnnuityPayoutStructure,
+} from "@/engine/annuity";
+import { ageForYear } from "@/lib/age-year";
 import { resolveMilestone } from "@/lib/milestones";
 import type { ClientMilestones, YearRef } from "@/lib/milestones";
+import { QLAC_PREMIUM_CAP_2026 } from "@/lib/schemas/annuities";
 import { AnnuityPreviewChart, annuityPreviewAgeAtStart } from "./annuity-preview-chart";
 import { FieldTooltip } from "./field-tooltip";
 import { fieldLabelClassName, inputClassName, selectClassName } from "./input-styles";
@@ -23,18 +36,14 @@ import { fieldLabelClassName, inputClassName, selectClassName } from "./input-st
  * on save.
  */
 
-/** IRS-indexed QLAC premium limit for 2026. Kept identical to the route's own
- *  copy in `annuity-contracts/[accountId]/route.ts` — both warn, neither
- *  blocks. */
-export const QLAC_PREMIUM_CAP_2026 = 210_000;
-
-export type AnnuityProductType =
-  | "spia" | "dia" | "myga" | "fixed" | "fixed_indexed" | "variable" | "qlac";
-export type AnnuityTaxTreatment = "qualified" | "non_qualified" | "tax_free";
-export type AnnuityIncomeMode = "none" | "rider" | "annuitized";
-export type AnnuityPayoutStructure =
-  | "single_life" | "joint_survivor" | "life_with_period_certain"
-  | "period_certain" | "cash_refund";
+/** Re-exported for this panel's consumers. The definitions are the engine's —
+ *  see the import above. */
+export type {
+  AnnuityProductType,
+  AnnuityTaxTreatment,
+  AnnuityIncomeMode,
+  AnnuityPayoutStructure,
+};
 
 /** One annuity contract, shaped exactly like the PUT body. Rates are stored as
  *  fractions (0.06 = 6%); the panel displays whole numbers and converts. */
@@ -73,11 +82,6 @@ export const EMPTY_ANNUITY_CONTRACT: AnnuityContractValue = {
 };
 
 export interface AnnuityTabProps {
-  /** The contract's own key. Part of the panel's contract with its route; the
-   *  panel itself does no IO, so nothing here reads it today — Task 10's
-   *  preview and any future nested resource address the row by it. */
-  accountId: string | null;
-  clientId: string;
   value: AnnuityContractValue;
   onChange: (next: AnnuityContractValue) => void;
   /** The account's balance. A QLAC's premium is its value, and a fresh benefit
@@ -270,7 +274,9 @@ function needsCertainTerm(structure: AnnuityPayoutStructure | null | undefined):
 export function annuityContractIncomplete(v: AnnuityContractValue): boolean {
   if (v.incomeMode === "none") return false;
   if (v.incomeMode === "rider" && v.benefitBase == null) return true;
-  if (v.incomeMode === "annuitized" && v.annuitizedPayment == null) return true;
+  // `!(x > 0)`, not `== null` — a ZERO payment clears every null check in the
+  // stack and then costs the client the whole account value for no income.
+  if (v.incomeMode === "annuitized" && !((v.annuitizedPayment ?? 0) > 0)) return true;
   if (v.payoutStructure === "joint_survivor" && v.survivorPct == null) return true;
   if (needsCertainTerm(v.payoutStructure) && v.periodCertainYears == null) return true;
   return v.incomeStartYear == null && v.incomeStartYearRef == null;
@@ -375,6 +381,14 @@ export function AnnuityTab({
     next: AnnuityContractValue[K],
   ) => onChange({ ...value, [key]: next });
 
+  // Built here rather than inline in the JSX below: passed inline it would be a
+  // fresh object on every render of this panel, which busts the preview's own
+  // memos and puts its Chart.js instance back to updating per keystroke.
+  const previewContract = useMemo(
+    () => toEngineContract(value, milestones),
+    [value, milestones],
+  );
+
   /**
    * Switching the mode seeds the fields that mode makes mandatory, so the
    * contract is never left in a shape the DB's CHECK constraints reject. A
@@ -385,20 +399,18 @@ export function AnnuityTab({
     const next: AnnuityContractValue = { ...value, incomeMode: mode };
     if (mode !== "none") {
       next.incomeStartYear = value.incomeStartYear ?? (value.incomeStartYearRef ? null : thisYear + 1);
-    }
-    if (mode === "rider") {
-      next.benefitBase = value.benefitBase ?? accountValue ?? null;
-    }
-    if (mode !== "none") {
       // The engine reads `payoutStructure` on every income mode — it is what
       // decides whether anything continues after the first death, rider or not.
       next.payoutStructure = value.payoutStructure ?? "single_life";
+    }
+    if (mode === "rider") {
+      next.benefitBase = value.benefitBase ?? accountValue ?? null;
     }
     onChange(next);
   };
 
   const incomeStartYear = value.incomeStartYear ?? thisYear + 1;
-  const ageAtIncomeStart = ownerBirthYear != null ? incomeStartYear - ownerBirthYear : null;
+  const ageAtIncomeStart = ageForYear(ownerBirthYear ?? null, incomeStartYear);
   const bandPlaceholder =
     ageAtIncomeStart != null ? fractionToDisplay(payoutPercentForAge(ageAtIncomeStart)) : undefined;
   const bandSummary = GLWB_PAYOUT_BANDS.map((b) => `${b.minAge}+: ${fractionToDisplay(b.percent)}%`)
@@ -519,10 +531,14 @@ export function AnnuityTab({
             onChange={(v) => set("annualFeePct", v ?? 0)}
           />
 
+          {/* The tooltip says RECORDED, not applied. Nothing in `src/engine/`
+              reads `surrenderChargePct` or `surrenderEndYear`, and the old copy
+              ("Applied to withdrawals until the surrender period ends")
+              promised the advisor in writing that a charge would be deducted. */}
           <PercentField
             id="annuity-surrender-pct"
             label="Surrender charge"
-            tooltip="What the carrier keeps if the client cashes out early. Applied to withdrawals until the surrender period ends."
+            tooltip="What the carrier keeps if the client cashes out early. Recorded for reference — the projection does not deduct it yet."
             value={value.surrenderChargePct}
             onChange={(v) => set("surrenderChargePct", v)}
           />
@@ -792,7 +808,7 @@ export function AnnuityTab({
           finished describing. */}
       {value.incomeMode !== "none" && !annuityContractIncomplete(value) && (
         <AnnuityPreviewChart
-          contract={toEngineContract(value, milestones)}
+          contract={previewContract}
           accountValue={accountValue ?? null}
           startYear={thisYear}
           ownerAgeAtStart={annuityPreviewAgeAtStart(thisYear, ownerBirthYear)}

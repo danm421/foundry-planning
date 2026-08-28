@@ -1085,11 +1085,37 @@ describe("AddAccountForm — an account the server does not call an annuity yet"
     expect(screen.queryByText(/could not be loaded/i)).toBeNull();
     expect(screen.getByLabelText(/^carrier$/i)).toBeInTheDocument();
 
+    // The advisor actually FILLS SOMETHING IN — which is what this test is
+    // named for, and what separates it from the clobber case below. Without a
+    // real edit the save is correctly skipped.
+    fireEvent.change(screen.getByLabelText(/^carrier$/i), {
+      target: { value: "Nationwide" },
+    });
+
     // And the terms they type actually reach the server.
     await act(async () => {
       await formRef.current!.saveAsync();
     });
     await waitFor(() => expect(contractWrites()).toHaveLength(1));
+  });
+
+  // The other half of the same 404. `findAnnuityAccount` 404s for an account
+  // the DB does not YET call an annuity — and also for one it no longer calls
+  // an annuity, whose `annuity_contracts` row is still sitting there (nothing
+  // deletes it on a category change). The save's own account PUT flips the
+  // category back BEFORE this write, so the upsert would land on a real row.
+  // An untouched contract must therefore never be written in edit mode.
+  it("does not overwrite a stored contract when the advisor never opened the panel", async () => {
+    mockAnnuityRoutes({ ok: false, status: 404 });
+    const formRef = createRef<AccountFormAutoSaveHandle>();
+    renderAnnuity("edit", formRef);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(ANNUITY_CONTRACT_URL));
+
+    await act(async () => {
+      await formRef.current!.saveAsync();
+    });
+    expect(contractWrites()).toHaveLength(0);
   });
 
   // The other side of it: widening 404 must not have widened everything else,

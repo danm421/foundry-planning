@@ -420,13 +420,25 @@ function buildAssetsSection(years: ProjectionYear[], c: ClientData): CashflowSec
   // A rider contract can hit a $0 account value and keep paying income — the
   // guarantee outlives the balance. Flag it only when a printed row actually
   // shows that state, so the ~99% of clients with no annuity never see it.
-  const hasCrossoverRow = years.some(
-    (y) =>
-      y.portfolioAssets.annuityTotal === 0 &&
-      Object.entries(y.income.bySource).some(
-        ([key, amount]) => /^annuity:/.test(key) && amount > 0,
-      ),
-  );
+  //
+  // The account-list check leads so those clients skip the scan entirely: with
+  // no annuity, `annuityTotal === 0` is true in EVERY year, so the inner walk
+  // would run over all ~60 of them to answer a question the account list
+  // answers for free.
+  //
+  // `?? true` because `accounts` is required on ClientData but a thin fixture
+  // can still omit it, and "I don't know" has to mean "do the scan" — never
+  // "silently drop the footnote".
+  const hasAnnuity = c.accounts?.some((a) => a.category === "annuity") ?? true;
+  const hasCrossoverRow =
+    hasAnnuity &&
+    years.some(
+      (y) =>
+        y.portfolioAssets.annuityTotal === 0 &&
+        Object.keys(y.income.bySource).some(
+          (key) => key.startsWith("annuity:") && y.income.bySource[key] > 0,
+        ),
+    );
   const footnotes = hasCrossoverRow ? [ANNUITY_CROSSOVER_FOOTNOTE] : undefined;
 
   return { id: "assets", title: "Portfolio Detail", headers, rows, totals, footnotes };
