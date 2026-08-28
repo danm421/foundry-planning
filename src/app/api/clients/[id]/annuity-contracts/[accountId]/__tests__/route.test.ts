@@ -418,3 +418,35 @@ describe("PUT /api/clients/[id]/annuity-contracts/[accountId]", () => {
     );
   });
 });
+
+
+describe("PUT — the contract's tax treatment mirrors the account's sub-type", () => {
+  it("persists the account's sub-type, not the body's tax treatment", async () => {
+    // Two tables holding one fact drift. The account row is the editor; the
+    // contract column is its mirror, enforced here so no caller — not just the
+    // form — can push them apart.
+    const acct = state.accounts.find((a) => a.id === ACCOUNT_A)!;
+    acct.subType = "qualified";
+
+    const res = await PUT(
+      req({ productType: "myga", taxTreatment: "non_qualified" }),
+      params(CLIENT_A, ACCOUNT_A),
+    );
+
+    expect(res.status).toBe(200);
+    expect(state.annuityContracts[0].taxTreatment).toBe("qualified");
+  });
+
+  it("honours the body for a legacy sub-type the backfill script has not reached", async () => {
+    const acct = state.accounts.find((a) => a.id === ACCOUNT_A)!;
+    acct.subType = "other";
+
+    const res = await PUT(
+      req({ productType: "myga", taxTreatment: "tax_free" }),
+      params(CLIENT_A, ACCOUNT_A),
+    );
+
+    expect(res.status).toBe(200);
+    expect(state.annuityContracts[0].taxTreatment).toBe("tax_free");
+  });
+});

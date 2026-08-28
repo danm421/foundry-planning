@@ -5,7 +5,11 @@ import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { parseBody } from "@/lib/schemas/common";
-import { annuityContractSchema, QLAC_PREMIUM_CAP_2026 } from "@/lib/schemas/annuities";
+import {
+  annuityContractSchema,
+  annuityTaxTreatmentFromSubType,
+  QLAC_PREMIUM_CAP_2026,
+} from "@/lib/schemas/annuities";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
 import { crossFirmAuditMeta } from "@/lib/clients/cross-firm-audit";
@@ -126,6 +130,15 @@ export async function PUT(
     // `serializeContract` above, which does the read half.
     const dec = (v: number | null | undefined) => (v == null ? null : String(v));
 
+    // The account's sub-type IS the tax treatment — `account_sub_type` carries
+    // the same three values as `annuity_tax_treatment`. Derived from the row
+    // the tenant guard already loaded, so the contract column is a mirror of
+    // the account rather than an independently editable second copy that can
+    // drift from the Type dropdown the advisor actually sets. A legacy `other`
+    // sub-type (one the backfill script has not reached) has no opinion, and
+    // the body stands.
+    const taxTreatment = annuityTaxTreatmentFromSubType(target.subType) ?? input.taxTreatment;
+
     // Every column named once here — reused for both the insert values and
     // the upsert's `set`, never a spread of the raw request body or
     // `parsed.data` (the mass-assignment pattern already flagged across ~30
@@ -134,7 +147,7 @@ export async function PUT(
       carrier: input.carrier ?? null,
       contractNumberLast4: input.contractNumberLast4 ?? null,
       productType: input.productType,
-      taxTreatment: input.taxTreatment,
+      taxTreatment,
       costBasis: dec(input.costBasis),
       surrenderChargePct: dec(input.surrenderChargePct),
       surrenderEndYear: input.surrenderEndYear ?? null,
