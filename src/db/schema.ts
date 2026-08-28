@@ -171,6 +171,13 @@ export const accountSubTypeEnum = pgEnum("account_sub_type", [
   "sep_ira",
   "simple_ira",
   "401a",
+  // annuity sub types — the SAME three values as `annuityTaxTreatmentEnum`,
+  // spelled identically on purpose. An annuity's sub-type IS its tax
+  // treatment, so `accounts.sub_type` -> `annuity_contracts.tax_treatment` is
+  // the identity function and there is no translation table to drift.
+  "qualified",
+  "non_qualified",
+  "tax_free",
 ]);
 
 export const annuityProductTypeEnum = pgEnum("annuity_product_type", [
