@@ -34,7 +34,16 @@ export function credsToAiCredentials(input: AzureCredsInput): AiCredentials {
   };
 }
 
-/** One-line summary of the first failed check, for the toast. */
+/**
+ * One-line summary of the first failed check, for the toast — and, since the
+ * recheck route writes it onto the connection row, for the sentence the error
+ * card shows the admin.
+ *
+ * These three labels MUST match AzureOpenAiCard's CHECK_LABEL. They land on the
+ * same screen: the card renders this sentence directly above a check list built
+ * from its own labels, so "Embedding model" here beside "Search model" there
+ * reads as two different deployments failing.
+ */
 export function firstFailureMessage(checks: { name: string; ok: boolean; detail?: string }[]): string {
   const failed = checks.find((c) => !c.ok);
   if (!failed) return "Could not verify that Azure OpenAI connection.";
@@ -43,6 +52,6 @@ export function firstFailureMessage(checks: { name: string; ok: boolean; detail?
       ? "Main model"
       : failed.name === "mini"
         ? "Fast model"
-        : "Embedding model";
+        : "Search model";
   return `${label}: ${failed.detail ?? "check failed"}`;
 }

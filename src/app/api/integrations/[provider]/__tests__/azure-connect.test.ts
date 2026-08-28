@@ -8,6 +8,9 @@ const mockAudit = vi.fn();
 const mockClearCache = vi.fn();
 const mockGetConnection = vi.fn();
 const mockSetStatus = vi.fn();
+const mockRequireAdmin = vi.fn();
+const mockAuthErrorResponse = vi.fn();
+const mockRateLimit = vi.fn();
 
 // This mock list is the routes' REAL import graph, not a guess — read from
 // the top of connect/route.ts, test/route.ts and disconnect/route.ts before
@@ -24,12 +27,18 @@ const mockSetStatus = vi.fn();
 vi.mock("@clerk/nextjs/server", () => ({
   auth: async () => ({ orgId: "org_acme", userId: "user_1" }),
 }));
+// These two are vi.fn()s rather than fixed no-ops so a test can make the guard
+// REFUSE. Both default in beforeEach to what they returned as constants, so
+// every pre-existing test is unaffected; the org-scoping and rate-limit tests
+// at the bottom of this file are the only ones that change them. Without a
+// refusing case, `await requireOrgAdminOrOwner()` and the rate-limit check can
+// both be DELETED from a route with this whole file still green.
 vi.mock("@/lib/authz", () => ({
-  requireOrgAdminOrOwner: async () => {},
-  authErrorResponse: () => null,
+  requireOrgAdminOrOwner: () => mockRequireAdmin(),
+  authErrorResponse: (...a: unknown[]) => mockAuthErrorResponse(...a),
 }));
 vi.mock("@/lib/rate-limit", () => ({
-  checkIntegrationOauthLimit: async () => ({ allowed: true }),
+  checkIntegrationOauthLimit: (...a: unknown[]) => mockRateLimit(...a),
   rateLimitErrorResponse: () => new Response("rate limited", { status: 429 }),
 }));
 vi.mock("@/lib/ai/verify-connection", () => ({ verifyAzureConnection: (...a: unknown[]) => mockVerify(...a) }));
@@ -76,6 +85,10 @@ beforeEach(() => {
   mockClearCache.mockReset();
   mockGetConnection.mockReset();
   mockSetStatus.mockReset();
+  // The permissive defaults every other test in this file assumes.
+  mockRequireAdmin.mockReset().mockResolvedValue(undefined);
+  mockAuthErrorResponse.mockReset().mockReturnValue(null);
+  mockRateLimit.mockReset().mockResolvedValue({ allowed: true });
 });
 
 afterEach(() => {
@@ -110,7 +123,10 @@ describe("POST connect (azure_openai)", () => {
     const body = await res.json();
 
     expect(body.checks.find((c: { name: string }) => c.name === "embedding").ok).toBe(false);
-    expect(body.error).toBe("Embedding model: different model from the planning library");
+    // "Search model", not "Embedding model": this sentence is rendered on the
+    // same card as CHECK_LABEL's own rows, so the two must name the deployment
+    // identically or a single failure reads as two.
+    expect(body.error).toBe("Search model: different model from the planning library");
   });
 
   it("reports which check failed — chat, labelled 'Main model'", async () => {
@@ -450,6 +466,65 @@ describe("POST recheck (azure_openai)", () => {
     const detail = String(mockSetStatus.mock.calls[0][3]);
     expect(detail).not.toContain("not json");
     expect(detail).not.toContain('{"apiKey"');
+  });
+
+  it("refuses a caller who is not an org admin or owner, and writes nothing", async () => {
+    // Org scoping is a hard constraint, and this route both READS a firm's
+    // credentials and REWRITES its connection status. Without this case
+    // `await requireOrgAdminOrOwner()` can be deleted outright with the rest of
+    // this file green — /api/integrations sits outside the tenant-isolation
+    // sweep, so nothing else watches it.
+    mockRequireAdmin.mockRejectedValue(new Error("Forbidden"));
+    mockAuthErrorResponse.mockReturnValue({ status: 403, body: { error: "Forbidden" } });
+    mockGetConnection.mockResolvedValue(connectedRow());
+    mockVerify.mockResolvedValue({ ok: true, checks: [] });
+
+    const res = await recheckPost(req({}), { params });
+
+    expect(res.status).toBe(403);
+    // The refusal has to land BEFORE any effect. A 403 returned after the row
+    // was already rewritten would still be a scoping breach.
+    expect(mockGetConnection).not.toHaveBeenCalled();
+    expect(mockVerify).not.toHaveBeenCalled();
+    expect(mockSetStatus).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  it("refuses once rate limited, and writes nothing", async () => {
+    // Each call spends four sequential 45s Azure round trips. Without this
+    // case the limit check can be deleted and an admin can hold the function
+    // budget open by leaning on the button.
+    mockRateLimit.mockResolvedValue({ allowed: false });
+    mockGetConnection.mockResolvedValue(connectedRow());
+    mockVerify.mockResolvedValue({ ok: true, checks: [] });
+
+    const res = await recheckPost(req({}), { params });
+
+    expect(res.status).toBe(429);
+    expect(mockGetConnection).not.toHaveBeenCalled();
+    expect(mockVerify).not.toHaveBeenCalled();
+    expect(mockSetStatus).not.toHaveBeenCalled();
+  });
+
+  it("treats an UNDECRYPTABLE stored envelope as a failed check, not a 500", async () => {
+    // getConnection decrypts eagerly, so a rotated CREDENTIAL_ENCRYPTION_KEY, a
+    // cross-environment restore or a legacy row throws on the READ — before the
+    // decode guard. Same ruling as a corrupt blob: this is the one button whose
+    // purpose is explaining what is wrong.
+    mockGetConnection.mockRejectedValue(new Error("Unrecognized secret envelope"));
+
+    const res = await recheckPost(req({}), { params });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: false, checks: [] });
+    expect(mockVerify).not.toHaveBeenCalled();
+    expect(mockSetStatus).toHaveBeenCalledWith(
+      "org_acme",
+      "azure_openai",
+      "error",
+      "Stored credentials could not be read. Reconnect to fix this.",
+    );
+    expect(mockClearCache).toHaveBeenCalledWith("org_acme");
   });
 
   it("never lets the stored api key into the response body", async () => {

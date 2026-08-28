@@ -96,6 +96,11 @@ export default async function IntegrationsPage(): Promise<ReactElement> {
           endpoint={azureView?.endpoint ?? null}
           chatDeployment={azureView?.chatDeployment ?? null}
           connectedAt={azureConn?.connectedAt ? azureConn.connectedAt.toISOString() : null}
+          // Why the connection went to error. Only meaningful in that state —
+          // a `connected` row can still carry a stale message from the failure
+          // a later re-check cleared, and showing it beside a green badge would
+          // read as a live problem.
+          errorDetail={azureConn?.status === "error" ? azureConn.lastSyncError : null}
         />
       ) : null}
     </div>

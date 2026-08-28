@@ -12,6 +12,19 @@ interface Props {
   endpoint: string | null;
   chatDeployment: string | null;
   connectedAt: string | null;
+  /**
+   * Why the connection went to `error` — the `last_sync_error` the flip wrote.
+   * Without it the error state says only "can no longer reach your Azure
+   * resource" however specific the stored cause was, which is the generic AI
+   * failure this whole path exists to replace.
+   *
+   * Every writer to this column for azure_openai is a string we control:
+   * markAiConnectionError writes a fixed sentence, the recheck route writes
+   * either a fixed sentence or firstFailureMessage(), whose details come from
+   * verify-connection's safeDetail() — which splits the api key out and caps at
+   * 300 chars. A new writer must keep that property: this value is rendered.
+   */
+  errorDetail: string | null;
 }
 
 // Deliberately local, NOT imported from `@/lib/ai/verify-connection`'s
@@ -163,7 +176,13 @@ function SetupSteps() {
   );
 }
 
-export function AzureOpenAiCard({ status, endpoint, chatDeployment, connectedAt }: Props) {
+export function AzureOpenAiCard({
+  status,
+  endpoint,
+  chatDeployment,
+  connectedAt,
+  errorDetail,
+}: Props) {
   const router = useRouter();
   const { showToast } = useToast();
 
@@ -364,11 +383,20 @@ export function AzureOpenAiCard({ status, endpoint, chatDeployment, connectedAt 
       </div>
 
       {status === "error" ? (
-        <p className="text-sm text-ink-3">
-          Foundry Planning can no longer reach your Azure resource, so AI features are
-          paused. They will not fall back to Foundry Planning&rsquo;s own AI — reconnect
-          below to resume.
-        </p>
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-ink-3">
+            Foundry Planning can no longer reach your Azure resource, so AI features are
+            paused. They will not fall back to Foundry Planning&rsquo;s own AI — reconnect
+            below to resume.
+          </p>
+          {/* The specific cause, when the flip recorded one. This is the whole
+              point of flipping the badge rather than letting AI fail opaquely:
+              "Search model: DeploymentNotFound" tells an admin where to go,
+              "can no longer reach your Azure resource" does not. */}
+          {errorDetail ? (
+            <p className="text-sm text-crit">{errorDetail}</p>
+          ) : null}
+        </div>
       ) : (
         <p className="text-sm text-ink-3">
           Run Foundry Planning&rsquo;s AI inside your firm&rsquo;s own Azure tenant, under
@@ -448,11 +476,10 @@ export function AzureOpenAiCard({ status, endpoint, chatDeployment, connectedAt 
           >
             {busy === "test" ? "Testing…" : "Test connection"}
           </button>
-          <button type="submit" className="btn-primary text-sm" disabled={!canConnect}>
-            {busy === "connect" ? "Connecting…" : "Connect"}
-          </button>
-          {/* Error state only. There is nothing stored to re-check when the
-              firm has never connected, and the route 404s on that. */}
+          {/* Beside Test connection, BEFORE the primary CTA — a ghost button
+              trailing Connect reads as an afterthought. Error state only:
+              there is nothing stored to re-check when the firm has never
+              connected, and the route 404s on that. */}
           {status === "error" ? (
             <button
               type="button"
@@ -463,6 +490,9 @@ export function AzureOpenAiCard({ status, endpoint, chatDeployment, connectedAt 
               {busy === "recheck" ? "Checking…" : "Re-check"}
             </button>
           ) : null}
+          <button type="submit" className="btn-primary text-sm" disabled={!canConnect}>
+            {busy === "connect" ? "Connecting…" : "Connect"}
+          </button>
         </div>
       </form>
     </div>

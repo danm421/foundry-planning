@@ -292,7 +292,14 @@ describe("a rejected key flips the firm's connection", () => {
     mockCreate.mockRejectedValue(azureError(403));
 
     await expect(callAIExtractionWithMeta("sys", "user", "mini")).rejects.toThrow("azure said 403");
-    expect(mockSetStatus).toHaveBeenCalledTimes(1);
+    // Args, not just a count: "was called" would pass on the wrong firm, the
+    // wrong provider, or a status of "connected".
+    expect(mockSetStatus).toHaveBeenCalledWith(
+      "org_acme",
+      "azure_openai",
+      "error",
+      "Azure rejected the API key.",
+    );
   });
 
   it("does NOT flip when FOUNDRY's key is the one rejected", async () => {

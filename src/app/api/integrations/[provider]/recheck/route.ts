@@ -13,7 +13,11 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { requireOrgAdminOrOwner, authErrorResponse } from "@/lib/authz";
 import { checkIntegrationOauthLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
-import { getConnection, setConnectionStatus } from "@/lib/integrations/connections";
+import {
+  getConnection,
+  setConnectionStatus,
+  type IntegrationConnectionRow,
+} from "@/lib/integrations/connections";
 import { decodeAzureConfig, decodeAzureSecret, type AiCredentials } from "@/lib/ai/credentials";
 import { clearAiCredentialCache } from "@/lib/ai/resolve";
 import { verifyAzureConnection } from "@/lib/ai/verify-connection";
@@ -25,10 +29,13 @@ import { resolveProvider } from "../_provider";
 // src/lib/ai/verify-connection.ts) = 180s worst case, inside this budget.
 export const maxDuration = 300;
 
-/** What the status row records when the stored blobs will not decode. It names
- *  the cause and quotes NONE of the stored value: JSON.parse's SyntaxError
- *  embeds the first ~10 characters of its input, which is why decodeAzureSecret
- *  rethrows a fixed string in the first place. */
+/** What the status row records when the stored credentials cannot be read at
+ *  all — either the envelope will not DECRYPT or the decrypted blobs will not
+ *  DECODE. It names the cause and quotes NONE of the stored value: JSON.parse's
+ *  SyntaxError embeds the first ~10 characters of its input, which is why
+ *  decodeAzureSecret rethrows a fixed string in the first place. This string is
+ *  rendered to the admin (AzureOpenAiCard's error state), so it says what to do
+ *  next rather than naming an internal cause they cannot act on. */
 const UNREADABLE = "Stored credentials could not be read. Reconnect to fix this.";
 
 /**
@@ -78,7 +85,24 @@ export async function POST(
       return rateLimitErrorResponse(rl, "Too many checks. Please try again shortly.");
     }
 
-    const conn = await getConnection(firmId, "azure_openai");
+    // getConnection DECRYPTS eagerly (connections.ts -> crypto/secrets.ts, which
+    // throws "Unrecognized secret envelope"), so a rotated
+    // CREDENTIAL_ENCRYPTION_KEY, a cross-environment restore or a legacy row
+    // throws HERE — before the decode guard below ever runs. Same ruling: a
+    // stored credential that cannot be read is a FAILED CHECK, not a 500 from
+    // the one button whose whole purpose is explaining what is wrong.
+    //
+    // Flipping to `error` is safe on this path specifically: disconnectConnection
+    // blanks accessTokenEnc to "", and getConnection skips the decrypt on a
+    // falsy blob — so a row that can throw here necessarily still holds
+    // credentials, and is never one the firm deliberately disconnected.
+    let conn: IntegrationConnectionRow | null;
+    try {
+      conn = await getConnection(firmId, "azure_openai");
+    } catch {
+      await recordOutcome(firmId, false, UNREADABLE);
+      return NextResponse.json({ ok: false, checks: [] });
+    }
     if (!conn || conn.status === "disconnected") {
       return NextResponse.json({ error: "No Azure OpenAI connection." }, { status: 404 });
     }
