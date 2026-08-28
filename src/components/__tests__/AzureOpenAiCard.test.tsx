@@ -217,6 +217,17 @@ describe("AzureOpenAiCard — disconnected", () => {
  * direct text nodes, so the <li> and its <span> both match and the query
  * throws on ambiguity.
  */
+/**
+ * The one thing the quoted Microsoft text does establish about retention: by
+ * default, flagged prompts are stored and reviewed by automated means, with
+ * human eyes-on only as a fallback. Both the step and the attestation say it in
+ * these exact words, so they are asserted from one constant.
+ */
+const STORING_BY_DEFAULT =
+  "temporarily stores prompts for abuse monitoring by default — reviewed primarily by " +
+  "automated systems, with human review only when automated review can’t reach a confident " +
+  "determination";
+
 describe("AzureOpenAiCard — Azure setup claims", () => {
   function cardText() {
     const { container } = render(
@@ -259,6 +270,15 @@ describe("AzureOpenAiCard — Azure setup claims", () => {
       // Step 7 gates on need. Any eligibility gate reads as "skip this step"
       // to a pay-as-you-go firm, which is who the rest of the step is for.
       /step 1’s test fits your firm/,
+      // No quote establishes what approval DELIVERS — Microsoft's text goes as
+      // far as "apply to modify abuse monitoring", and "zero data retention" is
+      // blog wording its docs never use. So neither an "unless approved"
+      // carve-out on the storing sentence nor a gate promising zero retention.
+      // NOTE these are deliberately narrow: the card's TRUE claim about
+      // Foundry Planning's own zero retention must keep passing.
+      /policy requires zero retention/,
+      /unless Microsoft approves your subscription/,
+      /unless my firm has been approved/,
     ];
     // Collect, don't loop-and-assert: `expect` throws on the first failure, so
     // a loop would stop there and a second returned claim would never be
@@ -269,17 +289,12 @@ describe("AzureOpenAiCard — Azure setup claims", () => {
   it("states the corrected retention and eligibility claims", () => {
     const text = cardText();
 
-    // Abuse-monitoring review is automated by default; human review is the
-    // exception. Both surfaces must say so — the step, and the sentence the
-    // advisor actually attests to.
-    const automatedReview =
-      "temporarily stores prompts for abuse monitoring — reviewed primarily by automated " +
-      "systems, with human review only when automated review can’t reach a confident determination";
+    // Storing is the DEFAULT and review of it is automated; human review is the
+    // exception. What approval delivers is not ours to state, so the step says
+    // only that changing the default takes it.
     expect(text).toContain(
-      `Check what retention you can get. Azure ${automatedReview} — unless Microsoft approves`,
-    );
-    expect(text).toContain(
-      `I understand that Azure ${automatedReview} — unless my firm has been approved`,
+      `Check what retention you can get. Azure ${STORING_BY_DEFAULT}. Changing that takes ` +
+        "Microsoft’s approval of your subscription for Modified Abuse Monitoring.",
     );
 
     // Eligibility carries BOTH of Microsoft's disjuncts, and the open door for
@@ -324,6 +339,24 @@ describe("AzureOpenAiCard — Azure setup claims", () => {
     );
   });
 
+  it("makes the attestation acknowledge the default with no carve-out", () => {
+    const { container } = render(
+      <AzureOpenAiCard status="disconnected" endpoint={null} chatDeployment={null} connectedAt={null} />,
+    );
+    const label = container.querySelector('label[for="azure-attestation"]')?.textContent ?? "";
+    // This is the sentence the server persists as a compliance record, so it
+    // acknowledges Azure's default UNCONDITIONALLY. An "unless my firm has been
+    // approved…" carve-out would void the acknowledgment on a condition whose
+    // effect no Microsoft text establishes — the advisor would sign believing
+    // approval stops the storing, and we cannot back that.
+    expect(label).toContain(
+      `I understand that Azure ${STORING_BY_DEFAULT} — and that any change to that takes ` +
+        "Microsoft’s separate approval of my firm for Modified Abuse Monitoring. I am " +
+        "authorized to connect this resource.",
+    );
+    expect(label).not.toMatch(/unless/i);
+  });
+
   it("lists in step 5 exactly the deployments step 6 counts on", () => {
     const { container } = render(
       <AzureOpenAiCard status="disconnected" endpoint={null} chatDeployment={null} connectedAt={null} />,
@@ -348,12 +381,16 @@ describe("AzureOpenAiCard — Azure setup claims", () => {
     // apply on the same form; step 7 is where they would act on that. So it
     // must not hand the process back to a representative they do not have,
     // and it must gate on NEED — any eligibility gate here reads as "skip
-    // this step" to the very firm the next sentence is addressed to.
+    // this step" to the very firm the next sentence is addressed to. It gates
+    // on the storing step 1 establishes, never on an outcome for the program,
+    // and it sends the firm to Microsoft for the terms we cannot state.
     expect(text).toContain(
-      "Apply for Modified Abuse Monitoring if your compliance policy requires zero retention. " +
-        "You apply by completing Microsoft’s form, and it is the same form whether or not you " +
-        "are a managed customer. If you have a Microsoft account team, ask them first; if you " +
-        "do not, submit it yourself.",
+      "Apply for Modified Abuse Monitoring if your compliance policy will not accept prompts " +
+        "being stored for abuse monitoring. Approval modifies that monitoring for your " +
+        "subscription; what it changes is between your firm and Microsoft, so get the terms " +
+        "from them before you rely on it. You apply by completing Microsoft’s form, and it is " +
+        "the same form whether or not you are a managed customer. If you have a Microsoft " +
+        "account team, ask them first; if you do not, submit it yourself.",
     );
   });
 });

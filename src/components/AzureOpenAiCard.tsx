@@ -42,8 +42,8 @@ const DEFAULTS = {
  *     managed by a Microsoft account team (in practice, Enterprise Agreement /
  *     Microsoft Customer Agreement customers) OR to firms under an eligible
  *     program — everyone else may apply, with no promise of access, so a
- *     pay-as-you-go firm should assume it does not have this. Until approved,
- *     Azure temporarily stores prompts and reviews them primarily by automated
+ *     pay-as-you-go firm should assume it does not have this. By default Azure
+ *     temporarily stores prompts and reviews them primarily by automated
  *     systems, with human review only when automated review can't reach a
  *     confident determination — which is WEAKER than Foundry Planning's
  *     current posture (zero retention today).
@@ -52,8 +52,14 @@ const DEFAULTS = {
  *     specific day count (Microsoft dropped the published figure in an Oct 2025
  *     revision); do not call human review the default (its current text says
  *     flagged content is sampled by automated means "instead of a human
- *     reviewer"); and do not drop the "or under an eligible program" disjunct
- *     to write a flat "only managed customers". Microsoft's own quoted text is
+ *     reviewer"); do not say what APPROVAL DELIVERS — the quoted text goes as
+ *     far as "apply to modify abuse monitoring" and no further, and "zero data
+ *     retention"/"ZDR" is blog wording Microsoft's docs never use, so an
+ *     "unless approved" carve-out on the storing sentence is a promise we
+ *     cannot keep; and do not drop the "or under an eligible program" disjunct
+ *     to write a flat "only managed customers". (Foundry Planning's OWN zero
+ *     retention above is a claim about our product, it is true, and it stays.)
+ *     Microsoft's own quoted text is
  *     the authority here — NOT the paraphrases in the plan's
  *     ms-docs-verification.md, whose suggested wording is what dropped that
  *     disjunct in the first place.
@@ -69,13 +75,13 @@ function SetupSteps() {
       <ol className="mt-3 flex list-decimal flex-col gap-3 pl-5 text-sm text-ink-2">
         <li>
           <span className="font-medium text-ink">Check what retention you can get.</span>{" "}
-          Azure temporarily stores prompts for abuse monitoring &mdash; reviewed primarily
-          by automated systems, with human review only when automated review can&rsquo;t
-          reach a confident determination &mdash; unless Microsoft approves your
-          subscription for Modified Abuse Monitoring. That approval goes only to customers
-          managed by a Microsoft account team &mdash; in practice, Enterprise Agreement or
-          Microsoft Customer Agreement customers &mdash; or to firms under an eligible
-          program.{" "}
+          Azure temporarily stores prompts for abuse monitoring by default &mdash; reviewed
+          primarily by automated systems, with human review only when automated review
+          can&rsquo;t reach a confident determination. Changing that takes Microsoft&rsquo;s
+          approval of your subscription for Modified Abuse Monitoring. That approval goes
+          only to customers managed by a Microsoft account team &mdash; in practice,
+          Enterprise Agreement or Microsoft Customer Agreement customers &mdash; or to firms
+          under an eligible program.{" "}
           <span className="font-medium text-ink">
             Assume you do not have it on pay-as-you-go
           </span>
@@ -123,10 +129,12 @@ function SetupSteps() {
         </li>
         <li>
           <span className="font-medium text-ink">Apply for Modified Abuse Monitoring</span> if
-          your compliance policy requires zero retention. You apply by completing
-          Microsoft&rsquo;s form, and it is the same form whether or not you are a managed
-          customer. If you have a Microsoft account team, ask them first; if you do not,
-          submit it yourself.
+          your compliance policy will not accept prompts being stored for abuse monitoring.
+          Approval modifies that monitoring for your subscription; what it changes is between
+          your firm and Microsoft, so get the terms from them before you rely on it. You apply
+          by completing Microsoft&rsquo;s form, and it is the same form whether or not you are
+          a managed customer. If you have a Microsoft account team, ask them first; if you do
+          not, submit it yourself.
         </li>
         <li>
           <span className="font-medium text-ink">Copy your endpoint and one API key</span> from
@@ -366,11 +374,11 @@ export function AzureOpenAiCard({ status, endpoint, chatDeployment, connectedAt 
             checked={attested}
             onChange={(e) => setAttested(e.target.checked)}
           />
-          I understand that Azure temporarily stores prompts for abuse monitoring &mdash;
-          reviewed primarily by automated systems, with human review only when automated
-          review can&rsquo;t reach a confident determination &mdash; unless my firm has been
-          approved for Modified Abuse Monitoring, and that I am authorized to connect this
-          resource.
+          I understand that Azure temporarily stores prompts for abuse monitoring by default
+          &mdash; reviewed primarily by automated systems, with human review only when
+          automated review can&rsquo;t reach a confident determination &mdash; and that any
+          change to that takes Microsoft&rsquo;s separate approval of my firm for Modified
+          Abuse Monitoring. I am authorized to connect this resource.
         </label>
 
         <div className="flex flex-wrap items-center gap-3">
