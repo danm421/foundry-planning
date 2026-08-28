@@ -11,7 +11,7 @@ import { IntegrationConnectionCard } from "@/components/IntegrationConnectionCar
 import { IntegrationHouseholdLinkTable } from "@/components/IntegrationHouseholdLinkTable";
 import { PlaidIntegrationTile } from "@/components/PlaidIntegrationTile";
 import { AzureOpenAiCard } from "@/components/AzureOpenAiCard";
-import { decodeAzureConfig } from "@/lib/ai/credentials";
+import { decodeAzureConfig, type AzureConfig } from "@/lib/ai/credentials";
 import { isAzureOpenAiEnabled } from "@/lib/integrations/providers/azure-openai/flag";
 import Forbidden from "../forbidden";
 
@@ -38,11 +38,13 @@ export default async function IntegrationsPage(): Promise<ReactElement> {
   // Azure OpenAI is credentials-only. Read its connection separately and render
   // its own card — never the sync card, and never the household table.
   const azureConn = isAzureOpenAiEnabled() ? await getConnection(firmId, "azure_openai") : null;
-  let azureView: { endpoint: string; chatDeployment: string } | null = null;
+  // The whole decoded config, not a two-field slice: the connected card names
+  // every deployment the firm's AI runs on plus the pinned API version, because
+  // that card is what a firm shows its auditor.
+  let azureView: AzureConfig | null = null;
   if (azureConn?.scope) {
     try {
-      const cfg = decodeAzureConfig(azureConn.scope);
-      azureView = { endpoint: cfg.endpoint, chatDeployment: cfg.chatDeployment };
+      azureView = decodeAzureConfig(azureConn.scope);
     } catch {
       // A corrupt config must not blank the whole settings page.
       azureView = null;
@@ -94,7 +96,10 @@ export default async function IntegrationsPage(): Promise<ReactElement> {
         <AzureOpenAiCard
           status={azureConn?.status ?? "disconnected"}
           endpoint={azureView?.endpoint ?? null}
+          apiVersion={azureView?.apiVersion ?? null}
           chatDeployment={azureView?.chatDeployment ?? null}
+          miniDeployment={azureView?.miniDeployment ?? null}
+          embeddingDeployment={azureView?.embeddingDeployment ?? null}
           connectedAt={azureConn?.connectedAt ? azureConn.connectedAt.toISOString() : null}
           // Why the connection went to error. Only meaningful in that state —
           // a `connected` row can still carry a stale message from the failure

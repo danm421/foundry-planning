@@ -10,7 +10,17 @@ type Status = "connected" | "disconnected" | "error";
 interface Props {
   status: Status;
   endpoint: string | null;
+  /**
+   * The other four fields of the stored `AzureConfig`, decoded by
+   * settings/integrations/page.tsx. The connected card is the artifact a firm
+   * shows its auditor, so it has to name EVERY deployment its AI runs on and
+   * the API version it pins — not just the main one. Null whenever there is no
+   * stored config to read (never connected, or a corrupt `scope`).
+   */
+  apiVersion: string | null;
   chatDeployment: string | null;
+  miniDeployment: string | null;
+  embeddingDeployment: string | null;
   connectedAt: string | null;
   /**
    * Why the connection went to `error` — the `last_sync_error` the flip wrote.
@@ -179,7 +189,10 @@ function SetupSteps() {
 export function AzureOpenAiCard({
   status,
   endpoint,
+  apiVersion,
   chatDeployment,
+  miniDeployment,
+  embeddingDeployment,
   connectedAt,
   errorDetail,
 }: Props) {
@@ -308,7 +321,13 @@ export function AzureOpenAiCard({
     }
   }
 
-  const incomplete = !form.endpoint.trim() || !form.apiKey.trim();
+  // `form` IS the request body — handleTest posts it verbatim — so the button is
+  // enabled exactly when the body it would send satisfies azureCredsSchema
+  // (src/app/api/integrations/[provider]/_azure.ts), every field of which is
+  // `.min(1)`. Gating on endpoint and apiKey alone left Test connection live
+  // after an advisor cleared one of the four PREFILLED fields, and the 400 came
+  // back as a raw Zod message in the toast.
+  const incomplete = Object.values(form).some((v) => !v.trim());
   const canConnect = attested && tested && busy === null;
 
   if (status === "connected") {
@@ -328,6 +347,13 @@ export function AzureOpenAiCard({
         <dl className="grid gap-1 text-sm text-ink-2 sm:grid-cols-2">
           <div><dt className="inline text-ink-3">Endpoint: </dt><dd className="inline">{endpoint}</dd></div>
           <div><dt className="inline text-ink-3">Main model: </dt><dd className="inline">{chatDeployment}</dd></div>
+          {/* "Fast model" / "Search model", never "mini"/"embedding": these rows
+              sit on the same card as CHECK_LABEL's re-check verdicts and the
+              setup steps, and three names for one deployment reads as three
+              deployments. */}
+          <div><dt className="inline text-ink-3">Fast model: </dt><dd className="inline">{miniDeployment}</dd></div>
+          <div><dt className="inline text-ink-3">Search model: </dt><dd className="inline">{embeddingDeployment}</dd></div>
+          <div><dt className="inline text-ink-3">API version: </dt><dd className="inline">{apiVersion}</dd></div>
           {connectedAt ? (
             <div>
               <dt className="inline text-ink-3">Connected: </dt>

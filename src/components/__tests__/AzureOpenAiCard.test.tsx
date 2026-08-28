@@ -12,6 +12,20 @@ beforeEach(() => {
   global.fetch = fetchMock as unknown as typeof fetch;
 });
 
+/** What settings/integrations/page.tsx hands the card for a firm that has never
+ *  connected: a status and nothing else, because there is no stored config to
+ *  decode. Named once so adding a prop does not mean editing fourteen renders. */
+const DISCONNECTED = {
+  status: "disconnected" as const,
+  endpoint: null,
+  apiVersion: null,
+  chatDeployment: null,
+  miniDeployment: null,
+  embeddingDeployment: null,
+  connectedAt: null,
+  errorDetail: null,
+};
+
 function fill() {
   fireEvent.change(screen.getByLabelText(/Azure endpoint/i), {
     target: { value: "https://acme-ria.openai.azure.com" },
@@ -45,20 +59,20 @@ function foundryViolations(text: string): string[] {
 
 describe("AzureOpenAiCard — disconnected", () => {
   it("shows the Azure setup steps", () => {
-    render(<AzureOpenAiCard status="disconnected" endpoint={null} chatDeployment={null} connectedAt={null} errorDetail={null} />);
+    render(<AzureOpenAiCard {...DISCONNECTED} />);
     expect(screen.getByText(/Set up in Azure/i)).toBeTruthy();
   });
 
   it("names Azure's portal as Microsoft Foundry on first use", () => {
     const { container } = render(
-      <AzureOpenAiCard status="disconnected" endpoint={null} chatDeployment={null} connectedAt={null} errorDetail={null} />,
+      <AzureOpenAiCard {...DISCONNECTED} />,
     );
     expect(container.textContent ?? "").toMatch(/Microsoft Foundry \(Azure/);
   });
 
   it("never lets 'Foundry' stand alone anywhere in the card", () => {
     const { container } = render(
-      <AzureOpenAiCard status="disconnected" endpoint={null} chatDeployment={null} connectedAt={null} errorDetail={null} />,
+      <AzureOpenAiCard {...DISCONNECTED} />,
     );
     expect(foundryViolations(container.textContent ?? "")).toEqual([]);
   });
@@ -69,20 +83,14 @@ describe("AzureOpenAiCard — disconnected", () => {
     // it must not print beside a "Not connected" badge, where it would read as
     // a live failure of a connection that does not exist.
     render(
-      <AzureOpenAiCard
-        status="disconnected"
-        endpoint={null}
-        chatDeployment={null}
-        connectedAt={null}
-        errorDetail="Search model: DeploymentNotFound"
-      />,
+      <AzureOpenAiCard {...DISCONNECTED} errorDetail="Search model: DeploymentNotFound" />,
     );
     expect(screen.queryByText("Search model: DeploymentNotFound")).toBeNull();
   });
 
   it("promises as many setup steps in the summary as it renders", () => {
     const { container } = render(
-      <AzureOpenAiCard status="disconnected" endpoint={null} chatDeployment={null} connectedAt={null} errorDetail={null} />,
+      <AzureOpenAiCard {...DISCONNECTED} />,
     );
     // Step 5 nests a <ul> of three model names, so count the <ol>'s DIRECT
     // children — querySelectorAll("li") would return 11.
@@ -95,7 +103,7 @@ describe("AzureOpenAiCard — disconnected", () => {
   });
 
   it("keeps Connect disabled until a test passes", async () => {
-    render(<AzureOpenAiCard status="disconnected" endpoint={null} chatDeployment={null} connectedAt={null} errorDetail={null} />);
+    render(<AzureOpenAiCard {...DISCONNECTED} />);
     fill();
     expect(screen.getByRole("button", { name: /^Connect$/i })).toHaveProperty("disabled", true);
 
@@ -108,8 +116,36 @@ describe("AzureOpenAiCard — disconnected", () => {
     );
   });
 
+  it("keeps Test connection disabled while ANY field the server requires is blank", () => {
+    // The four model/version fields arrive PREFILLED, so the realistic failure
+    // is an advisor who clears one — and with the gate on endpoint+apiKey alone
+    // the button stayed live, the request 400'd on azureCredsSchema, and the
+    // toast showed the raw Zod message ("Too small: expected string to have
+    // >=1 characters"). Each field is cleared and restored in turn, so a gate
+    // that happens to cover one of them does not pass for all four.
+    render(<AzureOpenAiCard {...DISCONNECTED} />);
+    fill();
+    const testButton = () => screen.getByRole("button", { name: /Test connection/i });
+    expect(testButton()).toHaveProperty("disabled", false);
+
+    for (const label of [
+      /^API version$/i,
+      /^Main model deployment$/i,
+      /^Fast model deployment$/i,
+      /^Search model deployment$/i,
+      /^Azure endpoint$/i,
+      /^API key$/i,
+    ]) {
+      const field = screen.getByLabelText(label);
+      fireEvent.change(field, { target: { value: "   " } });
+      expect(testButton()).toHaveProperty("disabled", true);
+      fireEvent.change(field, { target: { value: "restored" } });
+      expect(testButton()).toHaveProperty("disabled", false);
+    }
+  });
+
   it("invalidates a passed test when a credential changes", async () => {
-    render(<AzureOpenAiCard status="disconnected" endpoint={null} chatDeployment={null} connectedAt={null} errorDetail={null} />);
+    render(<AzureOpenAiCard {...DISCONNECTED} />);
     fill();
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({ ok: true, checks: [] }) });
     fireEvent.click(screen.getByRole("button", { name: /Test connection/i }));
@@ -125,7 +161,7 @@ describe("AzureOpenAiCard — disconnected", () => {
 
   it("shows each failed check by name", async () => {
     const { container } = render(
-      <AzureOpenAiCard status="disconnected" endpoint={null} chatDeployment={null} connectedAt={null} errorDetail={null} />,
+      <AzureOpenAiCard {...DISCONNECTED} />,
     );
     fill();
     fetchMock.mockResolvedValue({
@@ -156,7 +192,7 @@ describe("AzureOpenAiCard — disconnected", () => {
   });
 
   it("frees the card again when the connect request rejects outright", async () => {
-    render(<AzureOpenAiCard status="disconnected" endpoint={null} chatDeployment={null} connectedAt={null} errorDetail={null} />);
+    render(<AzureOpenAiCard {...DISCONNECTED} />);
     fill();
     // First call is the test (passes); every later call — the connect — rejects.
     fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true, checks: [] }) });
@@ -181,7 +217,7 @@ describe("AzureOpenAiCard — disconnected", () => {
   });
 
   it("sends the advisor's attestation with the connect request", async () => {
-    render(<AzureOpenAiCard status="disconnected" endpoint={null} chatDeployment={null} connectedAt={null} errorDetail={null} />);
+    render(<AzureOpenAiCard {...DISCONNECTED} />);
     fill();
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({ ok: true, checks: [] }) });
     fireEvent.click(screen.getByRole("button", { name: /Test connection/i }));
@@ -205,7 +241,7 @@ describe("AzureOpenAiCard — disconnected", () => {
   });
 
   it("frees the card again when the test request rejects outright", async () => {
-    render(<AzureOpenAiCard status="disconnected" endpoint={null} chatDeployment={null} connectedAt={null} errorDetail={null} />);
+    render(<AzureOpenAiCard {...DISCONNECTED} />);
     fill();
     // A rejected fetch (network down, DNS, aborted navigation) must not strand
     // the card on "Testing…" with every button disabled until a page reload.
@@ -248,7 +284,7 @@ const STORING_BY_DEFAULT =
 describe("AzureOpenAiCard — Azure setup claims", () => {
   function cardText() {
     const { container } = render(
-      <AzureOpenAiCard status="disconnected" endpoint={null} chatDeployment={null} connectedAt={null} errorDetail={null} />,
+      <AzureOpenAiCard {...DISCONNECTED} />,
     );
     return container.textContent ?? "";
   }
@@ -358,7 +394,7 @@ describe("AzureOpenAiCard — Azure setup claims", () => {
 
   it("makes the attestation acknowledge the default with no carve-out", () => {
     const { container } = render(
-      <AzureOpenAiCard status="disconnected" endpoint={null} chatDeployment={null} connectedAt={null} errorDetail={null} />,
+      <AzureOpenAiCard {...DISCONNECTED} />,
     );
     const label = container.querySelector('label[for="azure-attestation"]')?.textContent ?? "";
     // This is the sentence the server persists as a compliance record, so it
@@ -382,7 +418,7 @@ describe("AzureOpenAiCard — Azure setup claims", () => {
 
   it("lists in step 5 exactly the deployments step 6 counts on", () => {
     const { container } = render(
-      <AzureOpenAiCard status="disconnected" endpoint={null} chatDeployment={null} connectedAt={null} errorDetail={null} />,
+      <AzureOpenAiCard {...DISCONNECTED} />,
     );
     // Step 6's "the two chat deployments above are not among them" is true only
     // while step 5 lists exactly these three — two chat models and one search
@@ -422,7 +458,13 @@ describe("AzureOpenAiCard — connected", () => {
   const props = {
     status: "connected" as const,
     endpoint: "https://acme-ria.openai.azure.com",
+    // None of these four equal the card's own DEFAULTS, for the reason spelled
+    // out on the error fixture below: a value equal to the default passes
+    // whether the prop is read or ignored.
+    apiVersion: "2031-07-01",
     chatDeployment: "gpt-5.4",
+    miniDeployment: "acme-fast-model",
+    embeddingDeployment: "acme-search-model",
     connectedAt: "2026-08-27T12:00:00.000Z",
     errorDetail: null,
   };
@@ -439,6 +481,31 @@ describe("AzureOpenAiCard — connected", () => {
     // only be the deployment we passed in.
     expect(screen.getByText(/^gpt-5\.4$/)).toBeTruthy();
     expect(screen.queryByLabelText(/API key/i)).toBeNull();
+  });
+
+  it("names every deployment the firm's AI runs on, and the pinned API version", () => {
+    // The spec calls the connected card "the artifact a firm shows its
+    // auditor". Naming only the main model leaves the fast and search
+    // deployments — and the API version the whole connection is pinned to —
+    // invisible to the person doing the audit.
+    const { container } = render(<AzureOpenAiCard {...props} />);
+    const dl = container.querySelector("dl")?.textContent ?? "";
+
+    // Label AND value together: the labels have to match CHECK_LABEL and the
+    // setup steps, because a re-check's verdict rows render on this same card
+    // and two names for one deployment read as two deployments.
+    expect(dl).toContain("Fast model: acme-fast-model");
+    expect(dl).toContain("Search model: acme-search-model");
+    expect(dl).toContain("API version: 2031-07-01");
+    expect(dl).toContain("Main model: gpt-5.4");
+    expect(dl).toContain("Endpoint: https://acme-ria.openai.azure.com");
+  });
+
+  it("never falls back to the storage-layer names for those deployments", () => {
+    const { container } = render(<AzureOpenAiCard {...props} />);
+    const dl = container.querySelector("dl")?.textContent ?? "";
+    expect(dl).not.toMatch(/mini/i);
+    expect(dl).not.toMatch(/embedding/i);
   });
 
   it("says connecting is not retroactive", () => {
@@ -522,6 +589,9 @@ describe("AzureOpenAiCard — error", () => {
     // read or ignored — measured: it survived a mutation that dropped the
     // prefill entirely.
     chatDeployment: "acme-main-model",
+    apiVersion: "2031-07-01",
+    miniDeployment: "acme-fast-model",
+    embeddingDeployment: "acme-search-model",
     connectedAt: "2026-08-27T12:00:00.000Z",
     errorDetail: "Search model: DeploymentNotFound",
   };
@@ -642,7 +712,7 @@ describe("AzureOpenAiCard — error", () => {
 
   it("offers no Re-check when the firm has never connected", () => {
     // There is nothing stored to re-check, and the route 404s on it.
-    render(<AzureOpenAiCard status="disconnected" endpoint={null} chatDeployment={null} connectedAt={null} errorDetail={null} />);
+    render(<AzureOpenAiCard {...DISCONNECTED} />);
     expect(screen.queryByRole("button", { name: /^Re-check$/i })).toBeNull();
   });
 });
