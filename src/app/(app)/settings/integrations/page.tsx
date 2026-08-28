@@ -10,6 +10,9 @@ import type { SyncingProviderDefinition } from "@/lib/integrations/types";
 import { IntegrationConnectionCard } from "@/components/IntegrationConnectionCard";
 import { IntegrationHouseholdLinkTable } from "@/components/IntegrationHouseholdLinkTable";
 import { PlaidIntegrationTile } from "@/components/PlaidIntegrationTile";
+import { AzureOpenAiCard } from "@/components/AzureOpenAiCard";
+import { decodeAzureConfig } from "@/lib/ai/credentials";
+import { isAzureOpenAiEnabled } from "@/lib/integrations/providers/azure-openai/flag";
 import Forbidden from "../forbidden";
 
 export default async function IntegrationsPage(): Promise<ReactElement> {
@@ -32,6 +35,20 @@ export default async function IntegrationsPage(): Promise<ReactElement> {
     providers.map(async (p) => ({ provider: p, conn: await getConnection(firmId, p.id) })),
   );
 
+  // Azure OpenAI is credentials-only. Read its connection separately and render
+  // its own card — never the sync card, and never the household table.
+  const azureConn = isAzureOpenAiEnabled() ? await getConnection(firmId, "azure_openai") : null;
+  let azureView: { endpoint: string; chatDeployment: string } | null = null;
+  if (azureConn?.scope) {
+    try {
+      const cfg = decodeAzureConfig(azureConn.scope);
+      azureView = { endpoint: cfg.endpoint, chatDeployment: cfg.chatDeployment };
+    } catch {
+      // A corrupt config must not blank the whole settings page.
+      azureView = null;
+    }
+  }
+
   const [plaidCounts] = await db
     .select({
       clientCount: countDistinct(plaidItems.clientId),
@@ -46,7 +63,7 @@ export default async function IntegrationsPage(): Promise<ReactElement> {
       <header className="flex flex-col gap-1">
         <h1 className="text-base font-medium text-ink">Integrations</h1>
         <p className="text-sm text-ink-3">
-          Connect custodians and data providers to sync accounts and holdings into Foundry.
+          Connect custodians and data providers to sync accounts and holdings into Foundry Planning.
         </p>
       </header>
 
@@ -72,6 +89,15 @@ export default async function IntegrationsPage(): Promise<ReactElement> {
         clientCount={plaidCounts?.clientCount ?? 0}
         institutionCount={plaidCounts?.institutionCount ?? 0}
       />
+
+      {isAzureOpenAiEnabled() ? (
+        <AzureOpenAiCard
+          status={azureConn?.status ?? "disconnected"}
+          endpoint={azureView?.endpoint ?? null}
+          chatDeployment={azureView?.chatDeployment ?? null}
+          connectedAt={azureConn?.connectedAt ? azureConn.connectedAt.toISOString() : null}
+        />
+      ) : null}
     </div>
   );
 }

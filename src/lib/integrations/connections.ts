@@ -16,6 +16,7 @@ export type IntegrationConnectionRow = {
   scope: string | null;
   lastSyncedAt: Date | null;
   lastSyncError: string | null;
+  connectedAt: Date;
 };
 
 export async function upsertConnection(input: {
@@ -105,6 +106,7 @@ export async function getConnection(
     scope: row.scope,
     lastSyncedAt: row.lastSyncedAt,
     lastSyncError: row.lastSyncError,
+    connectedAt: row.connectedAt,
   };
 }
 
