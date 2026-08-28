@@ -1,5 +1,13 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { vi } from "vitest";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import React from "react";
+import { renderToBuffer } from "@react-pdf/renderer";
+import { ArtifactDocument } from "@/components/pdf/artifact-document";
+import { ensureFontsRegistered } from "@/components/pdf/fonts";
 import type { ProjectionYear, ClientData } from "@/engine";
 import { cashflowArtifact } from "../cashflow";
 import type { CashflowData } from "../cashflow";
@@ -408,6 +416,106 @@ describe("cashflowArtifact.renderPdf", () => {
     });
     expect(node).not.toBeNull();
   });
+
+  // Real render: goes through the artifact's own renderPdf -> renderSection,
+  // wrapped in the same ArtifactDocument the production export route uses
+  // (src/app/api/clients/[id]/exports/pdf/route.tsx), then extracts real text
+  // via pdftotext (poppler) -- following the established repo pattern in
+  // src/components/presentations/shared/__tests__/detail-table-pdf.test.tsx.
+  // This is the only way to catch a `renderSection` refactor that silently
+  // drops the crossover footnote from the printed PDF: a hand-built
+  // CashflowData fixture only proves the DATA carries `footnotes`; only a
+  // real render proves the TEXT reaches the page.
+  async function pdfTextFor(
+    data: CashflowData,
+    variant: "data" | "chart" | "chart+data" | "csv",
+  ): Promise<string> {
+    ensureFontsRegistered();
+    const { cashflowArtifact: art } = await import("../cashflow");
+    const blocks = art.renderPdf({
+      data,
+      opts: { scenarioId: null, yearStart: null, yearEnd: null },
+      variant,
+      charts: [],
+    });
+    // `renderToBuffer` is typed to take a `ReactElement<DocumentProps>` (the
+    // `<Document>` react-pdf primitive), not an arbitrary wrapper component's
+    // element -- that's only ever satisfied in production because JSX widens
+    // to `JSX.Element` (`ReactElement<any, any>`). `React.createElement`
+    // keeps the precise `FunctionComponentElement<ArtifactDocumentProps>`
+    // type, which has no structural overlap with `DocumentProps`, so this
+    // cast reproduces the same widening JSX gives for free. `ArtifactDocument`
+    // renders a `<Document>` at its root (src/components/pdf/artifact-document.tsx),
+    // which is what `renderToBuffer` actually needs at runtime.
+    // `ArtifactDocumentProps.children` is required, not optional, so the
+    // vararg form of `React.createElement` (props, ...children) fails to
+    // resolve to the component overload at all -- TS falls through to an
+    // unrelated intrinsic-element overload with a nonsensical error. Putting
+    // `children` in the props object is the only way to satisfy that
+    // required field without JSX, which is what react/no-children-prop is
+    // built to flag -- but this file is `.ts`, so JSX isn't available (see
+    // the addendum: don't rename to `.tsx` to get it).
+    const pdf = await renderToBuffer(
+      // eslint-disable-next-line react/no-children-prop -- required prop, no JSX in a .ts file
+      React.createElement(ArtifactDocument, {
+        householdName: data.clientName,
+        artifactTitle: cashflowArtifact.title,
+        reportYear: data.yearRange[1],
+        firmName: "Test Firm",
+        asOf: new Date("2026-01-01"),
+        children: blocks,
+      }) as unknown as Parameters<typeof renderToBuffer>[0],
+    );
+    const dir = mkdtempSync(join(tmpdir(), "cashflow-pdf-"));
+    try {
+      const file = join(dir, "cashflow.pdf");
+      const text = join(dir, "cashflow.txt");
+      writeFileSync(file, pdf);
+      execFileSync("pdftotext", ["-layout", file, text]);
+      return readFileSync(text, "utf8");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  const crossoverData: CashflowData = {
+    clientName: "Doe Family",
+    scenarioLabel: "Base Case",
+    yearRange: [2026, 2026],
+    sections: {
+      base: { id: "base", title: "Cash Flow — Summary", headers: [], rows: [], totals: {} },
+      income: { id: "income", title: "Income Detail", headers: [], rows: [], totals: {} },
+      expenses: { id: "expenses", title: "Expenses Detail", headers: [], rows: [], totals: {} },
+      withdrawals: { id: "withdrawals", title: "Net Cash Flow Detail", headers: [], rows: [], totals: {} },
+      assets: {
+        id: "assets",
+        title: "Portfolio Detail",
+        headers: [
+          { id: "year", label: "Year", align: "left" },
+          { id: "age", label: "Age(s)", align: "left" },
+          { id: "annuity", label: "Annuity", align: "right" },
+          { id: "total", label: "Total", align: "right" },
+        ],
+        rows: [{ year: 2026, age: "60 / 58", cells: { annuity: 0, total: 0 } }],
+        totals: { annuity: 0, total: 0 },
+        footnotes: [
+          "A contract with a lifetime income rider can show a $0 balance while still paying — the guarantee continues after the account value is exhausted.",
+        ],
+      },
+    },
+  };
+
+  it("prints the rider-crossover footnote in the real rendered PDF (variant=data)", async () => {
+    const text = await pdfTextFor(crossoverData, "data");
+    expect(text).toContain(
+      "A contract with a lifetime income rider can show a $0 balance while still paying",
+    );
+  }, 20_000);
+
+  it("does not print the footnote on the chart-only variant (showData guard)", async () => {
+    const text = await pdfTextFor(crossoverData, "chart");
+    expect(text).not.toContain("lifetime income rider");
+  }, 20_000);
 });
 
 describe("cashflowArtifact.toCsv", () => {
