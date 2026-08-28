@@ -123,8 +123,10 @@ function SetupSteps() {
         </li>
         <li>
           <span className="font-medium text-ink">Apply for Modified Abuse Monitoring</span> if
-          step 1 said you&rsquo;re eligible and your compliance policy requires zero retention.
-          Your Microsoft account representative starts this.
+          step 1&rsquo;s test fits your firm and your compliance policy requires zero retention.
+          You apply by completing Microsoft&rsquo;s form, and it is the same form whether or not
+          you are a managed customer. If you have a Microsoft account team, ask them first; if
+          you do not, submit it yourself.
         </li>
         <li>
           <span className="font-medium text-ink">Copy your endpoint and one API key</span> from

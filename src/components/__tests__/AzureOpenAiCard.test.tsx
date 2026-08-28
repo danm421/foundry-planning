@@ -249,6 +249,13 @@ describe("AzureOpenAiCard — Azure setup claims", () => {
       // Usage can also trigger an automatic tier upgrade; the form is not the
       // only way off the Free Tier.
       /quota-increase request before it can deploy them/,
+      // Step 1 states a test now, not a verdict, so nothing there can have
+      // "said you're eligible".
+      /if step 1 said you’re eligible/,
+      // Microsoft's quoted text says you apply by completing a form — it never
+      // says a representative starts it, and telling a firm that shuts the
+      // self-serve door step 1 opened.
+      /account representative starts this/,
     ];
     for (const claim of retired) expect(text).not.toMatch(claim);
   });
@@ -308,6 +315,21 @@ describe("AzureOpenAiCard — Azure setup claims", () => {
       "Free Tier lists only four models, and the two chat deployments above are not among them " +
         "— a firm still on it needs a quota-increase request, or enough usage to trigger an " +
         "automatic tier upgrade, before it can deploy them.",
+    );
+  });
+
+  it("keeps step 7's application route open to a firm with no account team", () => {
+    const text = cardText();
+    // Step 1 tells a pay-as-you-go firm Microsoft invites everyone else to
+    // apply on the same form; step 7 is where they would act on that, so it
+    // must not hand the process back to a representative they do not have.
+    // It also back-references step 1 as a TEST, not a verdict step 1 no
+    // longer issues.
+    expect(text).toContain(
+      "Apply for Modified Abuse Monitoring if step 1’s test fits your firm and your compliance " +
+        "policy requires zero retention. You apply by completing Microsoft’s form, and it is " +
+        "the same form whether or not you are a managed customer. If you have a Microsoft " +
+        "account team, ask them first; if you do not, submit it yourself.",
     );
   });
 });
