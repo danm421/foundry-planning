@@ -32,7 +32,9 @@ export interface GrowthRateFieldProps {
   assetMixBlendedPct: number | null;
   /** Placeholder for the custom % input. */
   customPlaceholder?: string;
-  /** When true, hides the "Asset mix (custom)" option (e.g. for accounts with no holdings yet). */
+  /** When true, hides the "Asset mix (custom)" option for accounts that are not
+   *  already on one (e.g. accounts with no holdings yet). It never hides the
+   *  source the account actually stores — see `showAssetMix` below. */
   hideAssetMix?: boolean;
   /** Receives the raw <select> value ("default" | "mp:<id>" | "tp:<id>" | "asset_mix" | "inflation" | "custom"). */
   onSourceChange: (rawSelectValue: string) => void;
@@ -68,6 +70,16 @@ export function GrowthRateField({
   onSourceChange,
   onCustomPctChange,
 }: GrowthRateFieldProps) {
+  // A <select> whose value matches no <option> shows the FIRST one, so a
+  // dropdown that hides the source the account is actually on displays "Plan
+  // default" while the engine goes on using the mix — and the next save writes
+  // that lie back. `syncAccountFromHoldings` stamps "asset_mix" on ANY
+  // holdings-backed account, whatever its category, so cash / annuity / 529 /
+  // real-estate rows do reach this field already on one. Offer the stored
+  // source unconditionally; `hideAssetMix` and the category list only govern
+  // whether it can be picked ANEW.
+  const showAssetMix =
+    growthSource === "asset_mix" || (ASSET_MIX_CATEGORIES.includes(category) && !hideAssetMix);
   return (
     <div>
       <label className={fieldLabelClassName}>Growth Rate</label>
@@ -100,7 +112,7 @@ export function GrowthRateField({
             ))}
           </optgroup>
         )}
-        {ASSET_MIX_CATEGORIES.includes(category) && !hideAssetMix && (
+        {showAssetMix && (
           <option value="asset_mix">
             {assetMixBlendedPct !== null ? `${assetMixBlendedPct.toFixed(2)}% — ` : ""}Asset mix (custom)
           </option>

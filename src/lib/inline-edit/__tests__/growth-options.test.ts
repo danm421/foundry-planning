@@ -58,7 +58,8 @@ describe("growthOptionsFor", () => {
 
   it("omits both asset mix and inflation for annuity, keeping portfolios and custom", () => {
     // Asset mix also gates the Asset Mix and Holdings tabs in the real editor,
-    // and an annuity has no sub-account holdings to back either.
+    // so an annuity is not offered one it isn't already on. (An annuity that
+    // IS already on one keeps it — see the `currentSource` cases below.)
     const values = growthOptionsFor({ category: "annuity", ...ctx }).map((o) => o.value);
     expect(values).toEqual(["default", "mp:mp-1", "mp:mp-2", "tp:tp-1", "custom"]);
   });
@@ -86,6 +87,31 @@ describe("growthOptionsFor", () => {
 
   it("returns nothing for stock_options", () => {
     expect(growthOptionsFor({ category: "stock_options", ...ctx })).toEqual([]);
+  });
+
+  // `syncAccountFromHoldings` stamps growth_source = 'asset_mix' on ANY
+  // holdings-backed account, whatever its category. A dropdown that then
+  // refuses to render that option leaves the <select> with no matching
+  // <option>, so it displays the FIRST one while the engine goes on using the
+  // mix — and the next save writes the lie back. The stored source is
+  // therefore always offered, whatever the category says.
+  it("keeps asset mix for an annuity that is already on one", () => {
+    const values = growthOptionsFor({
+      category: "annuity", ...ctx, hideAssetMix: true, currentSource: "asset_mix",
+    }).map((o) => o.value);
+    expect(values).toContain("asset_mix");
+  });
+
+  it("keeps asset mix for a cash account that is already on one", () => {
+    const values = growthOptionsFor({
+      category: "cash", ...ctx, hideAssetMix: true, currentSource: "asset_mix",
+    }).map((o) => o.value);
+    expect(values).toContain("asset_mix");
+  });
+
+  it("still omits asset mix for an annuity that is not on one", () => {
+    const values = growthOptionsFor({ category: "annuity", ...ctx, currentSource: "default" }).map((o) => o.value);
+    expect(values).not.toContain("asset_mix");
   });
 
   it("hides asset mix when the account has no holdings to back it", () => {

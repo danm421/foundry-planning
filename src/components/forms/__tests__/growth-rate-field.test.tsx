@@ -27,3 +27,31 @@ describe("GrowthRateField — hideAssetMix", () => {
     expect(screen.queryByText(/Asset mix/i)).not.toBeInTheDocument();
   });
 });
+
+describe("GrowthRateField — an account already on an asset mix", () => {
+  // `syncAccountFromHoldings` stamps growth_source = 'asset_mix' on ANY
+  // holdings-backed account, whatever its category. When the dropdown then
+  // refuses to render that option the <select> has no matching <option>, so
+  // the browser displays the FIRST one ("Plan default") while the engine goes
+  // on using the mix — and the next save writes the lie back. The stored
+  // source is therefore always offered, whatever the category says.
+  it("offers Asset mix for an annuity that is already on one", () => {
+    render(<GrowthRateField {...base} category="annuity" growthSource="asset_mix" />);
+    expect(screen.getByText(/Asset mix/i)).toBeInTheDocument();
+  });
+
+  it("offers Asset mix for a cash account that is already on one", () => {
+    render(<GrowthRateField {...base} category="cash" growthSource="asset_mix" />);
+    expect(screen.getByText(/Asset mix/i)).toBeInTheDocument();
+  });
+
+  it("still offers it when hideAssetMix would otherwise suppress it", () => {
+    render(<GrowthRateField {...base} growthSource="asset_mix" hideAssetMix />);
+    expect(screen.getByText(/Asset mix/i)).toBeInTheDocument();
+  });
+
+  it("does NOT offer Asset mix to an annuity that is not on one", () => {
+    render(<GrowthRateField {...base} category="annuity" />);
+    expect(screen.queryByText(/Asset mix/i)).not.toBeInTheDocument();
+  });
+});

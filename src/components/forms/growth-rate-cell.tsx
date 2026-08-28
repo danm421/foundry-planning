@@ -116,19 +116,20 @@ export default function GrowthRateCell({
         // allocations, which the Map does not load (and must not fetch — see
         // the zero-client-fetch invariant in types.ts).
         //
-        // So the Map offers "Asset mix" ONLY to an account already using it.
-        // That keeps a mix-driven account displaying and round-tripping
-        // correctly, while refusing to let the advisor newly select a mix we
-        // can't confirm has holdings behind it — which would resolve through
-        // `resolver.resolveAccountMix` to an empty blend and silently zero the
-        // account's growth. Selecting a mix for the first time stays in the
-        // full dialog, one click away via the pencil.
+        // So the Map offers "Asset mix" ONLY to an account already using it —
+        // `currentSource` keeps a mix-driven account displaying and
+        // round-tripping correctly, while `hideAssetMix` refuses to let the
+        // advisor newly select a mix we can't confirm has holdings behind it,
+        // which would resolve through `resolver.resolveAccountMix` to an empty
+        // blend and silently zero the account's growth. Selecting a mix for the
+        // first time stays in the full dialog, one click away via the pencil.
         //
         // `assetMixBlendedPct: null` renders the option as a bare
         // "Asset mix (custom)" with no percentage, which is honest: we don't
         // have the blend here.
         assetMixBlendedPct: null,
-        hideAssetMix: row.growthSource !== "asset_mix",
+        hideAssetMix: true,
+        currentSource: row.growthSource,
       })}
     />
   );
