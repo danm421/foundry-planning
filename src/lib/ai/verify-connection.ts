@@ -31,19 +31,25 @@ export type ConnectionCheck = {
 };
 export type VerifyResult = { ok: boolean; checks: ConnectionCheck[] };
 
-/** Fixed, non-client text. Changing it changes nothing about correctness — the
- *  reference vector is computed live from the same constant. */
+/** Fixed, non-client text. Changing it changes nothing about correctness — both
+ *  vectors are embedded from this same constant inside one invocation, and no
+ *  derived vector is persisted. It says "Foundry Planning", not "Foundry":
+ *  this sentence lands in the FIRM's own Azure OpenAI request logs, where it is
+ *  read with none of our UI around it and a bare "Foundry" is ambiguous with
+ *  Microsoft Foundry. If a reference vector is ever cached rather than computed
+ *  live, this constant becomes load-bearing and changing it stops being free. */
 export const EMBEDDING_PROBE =
-  "Foundry embedding compatibility probe. This sentence is not client data.";
+  "Foundry Planning embedding compatibility probe. This sentence is not client data.";
 
 /**
  * How close the firm's probe vector must sit to ours before we accept that both
  * deployments run the same embedding model.
  *
  * UNMEASURED — this is a starting estimate, not an observation. Foundry
- * Planning has no embedding deployment configured (AZURE_OPENAI_EMBEDDINGS_-
- * DEPLOYMENT is absent from .env.local and from production), so there is no
- * reference vector to measure against and no same-model baseline on record.
+ * Planning has no embedding deployment configured:
+ * AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT is absent from .env.local and from
+ * production, so there is no reference vector to measure against and no
+ * same-model baseline on record.
  * The reasoning behind 0.99: one model embedding one fixed string in two
  * tenants should differ only by serving-side float noise, which lands far
  * inside a hundredth; two different models land near-orthogonal. Anything in
@@ -107,7 +113,9 @@ async function checkChat(
   creds: AiCredentials,
   which: "chat" | "mini",
 ): Promise<ConnectionCheck> {
-  const deployment = which === "chat" ? creds.deployments.chat : creds.deployments.mini;
+  // Indexed, not a ternary: `which` is already a key of AiDeployments, so the
+  // check cannot address the wrong deployment even by a typo.
+  const deployment = creds.deployments[which];
   try {
     const response = await clientFor(creds).chat.completions.create({
       model: deployment,

@@ -106,6 +106,18 @@ describe("cosineSimilarity", () => {
     expect(DIFFERENT_COSINE).toBeLessThan(MIN_EMBEDDING_COSINE);
   });
 
+  it("is scale-invariant — a longer vector in the same direction is still cosine 1", () => {
+    // Every vec(seed) fixture has the same norm (~sqrt(768)), so `na` and `nb`
+    // are interchangeable across all of them: a typo sourcing one norm from the
+    // wrong vector measures identically on every other test in this file. Only
+    // unequal magnitudes separate them — and that mutant fails OPEN, returning
+    // 2 for a pair whose true cosine is 1, which would scale a firm's
+    // un-normalized vectors UP past the threshold and accept them.
+    expect(cosineSimilarity([1, 0], [2, 0])).toBeCloseTo(1, 12);
+    expect(cosineSimilarity([2, 0], [1, 0])).toBeCloseTo(1, 12);
+    expect(cosineSimilarity([3, 4], [30, 40])).toBeCloseTo(1, 12);
+  });
+
   it("returns 0, never NaN, for degenerate input", () => {
     // NaN would be catastrophic: `NaN < MIN_EMBEDDING_COSINE` is FALSE, so a
     // degenerate reference vector would silently PASS the compatibility check.
@@ -180,6 +192,31 @@ describe("verifyAzureConnection", () => {
 
     const result = await verifyAzureConnection(FIRM);
     expect(result.checks.find((c) => c.name === "chat")!.ok).toBe(false);
+  });
+
+  it("fails a chat check when the response carries NO choice at all", async () => {
+    // Azure returns a choice with no message under content filtering, so this
+    // branch is reachable in production — and a "Test connection" that reports
+    // PASS on an empty response is the exact failure this feature prevents.
+    mockChatCreate.mockResolvedValue({ choices: [] });
+    mockEmbeddingsCreate.mockResolvedValue(embeddingReply(SAME_SEED));
+
+    const result = await verifyAzureConnection(FIRM);
+
+    expect(result.ok).toBe(false);
+    const chat = result.checks.find((c) => c.name === "chat")!;
+    expect(chat.ok).toBe(false);
+    expect(chat.detail).toMatch(/firm-chat/);
+  });
+
+  it("fails a chat check when the choice carries no message", async () => {
+    mockChatCreate.mockResolvedValue({ choices: [{}] });
+    mockEmbeddingsCreate.mockResolvedValue(embeddingReply(SAME_SEED));
+
+    const result = await verifyAzureConnection(FIRM);
+
+    expect(result.checks.find((c) => c.name === "chat")!.ok).toBe(false);
+    expect(result.checks.find((c) => c.name === "mini")!.ok).toBe(false);
   });
 
   it("fails the chat check when the deployment does not exist", async () => {
@@ -297,6 +334,26 @@ describe("verifyAzureConnection", () => {
 
     const result = await verifyAzureConnection(FIRM);
     expect(JSON.stringify(result)).not.toContain("firm-key");
+  });
+
+  it("never leaks the firm's key when the FIRM's OWN embedding call fails", async () => {
+    // The highest-traffic error path of the three checks: a firm with a bad key
+    // gets its 401 from the embeddings endpoint. Nothing else in this file
+    // rejects that call — the reference-leak test below resolves it first.
+    mockChatCreate.mockResolvedValue(goodChatReply());
+    mockEmbeddingsCreate.mockRejectedValue(
+      new Error("401 Access denied for https://acme-ria... api-key=firm-key"),
+    );
+
+    const result = await verifyAzureConnection(FIRM);
+
+    expect(result.ok).toBe(false);
+    const emb = result.checks.find((c) => c.name === "embedding")!;
+    expect(emb.ok).toBe(false);
+    expect(emb.detail).toBeTruthy();
+    expect(JSON.stringify(result)).not.toContain("firm-key");
+    // The reference call must never run once the firm's own call has failed.
+    expect(mockEmbeddingsCreate).toHaveBeenCalledTimes(1);
   });
 
   it("never leaks FOUNDRY PLANNING's own key when the reference call fails", async () => {
