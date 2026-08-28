@@ -16,6 +16,7 @@ import {
   annuityContractIncomplete,
   type AnnuityContractValue,
 } from "./annuity-tab";
+import { annuityTaxTreatmentFromSubType } from "@/lib/schemas/annuities";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
@@ -212,7 +213,10 @@ const SUB_TYPE_BY_CATEGORY: Record<AccountCategory, string[]> = {
   // "529" moved to its own education_savings category (Task 9+). Pre-migration
   // rows still carry retirement/529 until Task 12's backfill runs.
   retirement: ["traditional_ira", "roth_ira", "401k", "403b", "hsa", "other"],
-  annuity: ["other"],
+  // An annuity's Account Type IS its tax treatment — the most consequential
+  // fact about the contract, and the one the §72 math reads. Non-qualified
+  // first: it is the column default and the common case.
+  annuity: ["non_qualified", "qualified", "tax_free"],
   real_estate: ["primary_residence", "rental_property", "commercial_property"],
   business: ["sole_proprietorship", "partnership", "s_corp", "c_corp", "llc"],
   life_insurance: ["term", "whole_life", "universal_life", "variable_life"],
@@ -248,6 +252,9 @@ const SUB_TYPE_LABELS: Record<string, string> = {
   whole_life: "Whole Life",
   universal_life: "Universal Life",
   variable_life: "Variable Life",
+  non_qualified: "Non-qualified (after-tax money)",
+  qualified: "Qualified (IRA or plan money)",
+  tax_free: "Tax-free (Roth money)",
 };
 
 const CATEGORY_LABELS: Record<AccountCategory, string> = {
@@ -938,6 +945,20 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   // full-replacement PUT of those erases a real contract. "idle" is the create
   // case — the effect above flips it the moment an account id exists, before
   // any user action can reach a save.
+  // Derived, never stored. The Account Type dropdown is the only editor of an
+  // annuity's tax treatment, so keeping a second copy in `annuityContract`
+  // state would let a loaded contract's column win over the account row the
+  // advisor is looking at. `annuityContract` stays the dirty-tracking snapshot
+  // and the onChange target — `subType` is already in that snapshot, so
+  // changing the Type marks the form dirty on its own and must not count
+  // twice. A legacy `other` sub-type has no opinion and keeps what was stored.
+  const annuityContractResolved = useMemo(() => {
+    const fromSubType = annuityTaxTreatmentFromSubType(subType);
+    return fromSubType === null || annuityContract.taxTreatment === fromSubType
+      ? annuityContract
+      : { ...annuityContract, taxTreatment: fromSubType };
+  }, [annuityContract, subType]);
+
   const annuityContractTrusted = annuityLoad === "idle" || annuityLoad === "loaded";
 
   // Write the contract back. Not in scenario scope (there is no targetKind for
@@ -971,7 +992,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     const res = await fetch(`/api/clients/${clientId}/annuity-contracts/${acctId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(annuityContract),
+      body: JSON.stringify(annuityContractResolved),
     });
     if (!res.ok) {
       const json = (await res.json().catch(() => ({}))) as {
@@ -992,7 +1013,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
           .join(" — "),
       );
     }
-  }, [category, writer.scenarioActive, clientId, annuityContract, annuityContractTrusted, mode]);
+  }, [category, writer.scenarioActive, clientId, annuityContractResolved, annuityContractTrusted, mode]);
 
   // Re-read the account's allocations from the server. Holdings mutations
   // re-derive the asset mix server-side (syncAccountFromHoldings), so after one
@@ -3028,7 +3049,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
             <p className="text-sm text-gray-300">Loading the contract&hellip;</p>
           ) : (
             <AnnuityTab
-              value={annuityContract}
+              value={annuityContractResolved}
               onChange={(next) => {
                 annuityUserEditedRef.current = true;
                 setAnnuityContract(next);

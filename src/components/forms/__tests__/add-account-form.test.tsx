@@ -801,7 +801,9 @@ const ANNUITY_INITIAL: AccountFormInitial = {
   ...BASE_INITIAL,
   name: "Athene Contract",
   category: "annuity",
-  subType: "other",
+  // 'other' is no longer a type the annuity dropdown offers — an account left
+  // on it would render the Type select with no matching option.
+  subType: "non_qualified",
   growthRate: "0.04",
 };
 
@@ -1267,5 +1269,73 @@ describe("AddAccountForm — an annuity picks its growth like an investable acco
       expect(body.modelPortfolioId).toBe("mp-1");
       expect(body.growthRate).toBeNull();
     });
+  });
+});
+
+
+// ── The annuity's Account Type states the tax treatment ──────────────────────
+
+describe("AddAccountForm — the annuity Account Type states the tax treatment", () => {
+  it("offers exactly the three treatments and nothing else", () => {
+    mockAnnuityRoutes({ ok: true, row: null });
+    renderAnnuity("create");
+
+    const select = screen.getByLabelText("Account Type") as HTMLSelectElement;
+    expect(Array.from(select.options).map((o) => o.value)).toEqual([
+      "non_qualified",
+      "qualified",
+      "tax_free",
+    ]);
+  });
+
+  it("sends the chosen type as the contract's tax treatment, overriding what was stored", async () => {
+    // The stored contract says non_qualified; the advisor picks Qualified on
+    // the Details tab. The PUT must carry qualified — the account row is the
+    // editor and the contract column is its mirror.
+    mockAnnuityRoutes({ ok: true, row: STORED_CONTRACT });
+    const formRef = createRef<AccountFormAutoSaveHandle>();
+    renderAnnuity("edit", formRef);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(ANNUITY_CONTRACT_URL));
+
+    fireEvent.change(screen.getByLabelText("Account Type"), {
+      target: { value: "qualified" },
+    });
+    await act(async () => {
+      await formRef.current!.saveAsync();
+    });
+
+    await waitFor(() => expect(contractWrites()).toHaveLength(1));
+    const body = JSON.parse(contractWrites()[0][1].body as string);
+    expect(body.taxTreatment).toBe("qualified");
+    // The rest of the loaded contract still survives the derivation — this is
+    // an override of one field, not a rebuild of the body.
+    expect(body.carrier).toBe("Athene");
+    expect(body.benefitBase).toBe(500_000);
+  });
+
+  it("leaves the stored treatment alone for a legacy sub-type the backfill missed", async () => {
+    mockAnnuityRoutes({ ok: true, row: { ...STORED_CONTRACT, taxTreatment: "tax_free" } });
+    const formRef = createRef<AccountFormAutoSaveHandle>();
+    render(
+      <AddAccountForm
+        ref={formRef}
+        clientId="client-123"
+        category="annuity"
+        mode="edit"
+        initial={{ ...ANNUITY_INITIAL, subType: "other" }}
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+        categoryDefaults={CATEGORY_DEFAULTS}
+      />,
+    );
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(ANNUITY_CONTRACT_URL));
+    await act(async () => {
+      await formRef.current!.saveAsync();
+    });
+
+    await waitFor(() => expect(contractWrites()).toHaveLength(1));
+    expect(JSON.parse(contractWrites()[0][1].body as string).taxTreatment).toBe("tax_free");
   });
 });

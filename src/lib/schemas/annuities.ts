@@ -28,7 +28,26 @@ const PRODUCT_TYPES = [
   "qlac",
 ] as const;
 
-const TAX_TREATMENTS = ["qualified", "non_qualified", "tax_free"] as const;
+export const TAX_TREATMENTS = ["qualified", "non_qualified", "tax_free"] as const;
+
+export type AnnuityTaxTreatmentValue = (typeof TAX_TREATMENTS)[number];
+
+/**
+ * An annuity account's `sub_type` IS its tax treatment — `account_sub_type`
+ * carries the same three values, spelled identically. Returns null for any
+ * other sub-type (a legacy `other` row the backfill script has not reached),
+ * which every caller reads as "no opinion, keep whatever is stored".
+ *
+ * One home for the rule: the account form derives the PUT body from it and the
+ * route derives the persisted column from it, so the two cannot disagree.
+ */
+export function annuityTaxTreatmentFromSubType(
+  subType: string | null | undefined,
+): AnnuityTaxTreatmentValue | null {
+  return (TAX_TREATMENTS as readonly string[]).includes(subType ?? "")
+    ? (subType as AnnuityTaxTreatmentValue)
+    : null;
+}
 
 const INCOME_MODES = ["none", "rider", "annuitized"] as const;
 

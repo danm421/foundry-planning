@@ -19,6 +19,30 @@ describe("AnnuityTab", () => {
     expect(screen.getByText(/will look tax-free/i)).toBeInTheDocument();
   });
 
+  it("no longer offers its own tax-treatment control — Account Type owns it", () => {
+    // Two editors of one field is the bug factory `growth-options.ts` exists
+    // to prevent, and a contract column disagreeing with the account row the
+    // advisor is looking at is exactly that shape.
+    render(<AnnuityTab value={blank} onChange={noop} />);
+    expect(screen.queryByLabelText(/how it's taxed/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Roth money/i })).not.toBeInTheDocument();
+  });
+
+  // `selector: "p"` is load-bearing on both of these. The treatment labels also
+  // appear in the tooltip copy and, before this change, in the <option> list —
+  // so a bare getByText matched the old select and stayed green whether or not
+  // the read-only line existed at all.
+  it("states the treatment it was handed, so the cost-basis fields have context", () => {
+    render(<AnnuityTab value={{ ...blank, taxTreatment: "qualified" }} onChange={noop} />);
+    expect(screen.getByText(/IRA or plan money/i, { selector: "p" })).toBeInTheDocument();
+  });
+
+  it("follows the treatment it is given rather than a stored default", () => {
+    render(<AnnuityTab value={{ ...blank, taxTreatment: "tax_free" }} onChange={noop} />);
+    expect(screen.getByText(/Roth money/i, { selector: "p" })).toBeInTheDocument();
+    expect(screen.queryByText(/IRA or plan money/i, { selector: "p" })).not.toBeInTheDocument();
+  });
+
   it("hides rider and annuitization fields while the mode is 'none'", () => {
     render(<AnnuityTab value={blank} onChange={noop} />);
     expect(screen.queryByLabelText(/benefit base/i)).not.toBeInTheDocument();

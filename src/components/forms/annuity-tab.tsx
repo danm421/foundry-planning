@@ -488,21 +488,20 @@ export function AnnuityTab({
             )}
           </div>
 
+          {/* Read-only. The advisor sets this with the Account Type dropdown on
+              the Details tab — `account_sub_type` carries the same three values,
+              so the account row IS the treatment. A second editable copy here
+              would let this panel and the account row disagree about the one
+              fact §72 reads. */}
           <div>
             <div className="flex items-center gap-1.5">
-              <label className={fieldLabelClassName} htmlFor="annuity-tax">How it&apos;s taxed</label>
+              <span className={fieldLabelClassName}>How it&apos;s taxed</span>
               <FieldTooltip text="Money that was already taxed comes back partly tax-free. IRA and plan money is taxed in full; Roth money is not taxed at all." />
             </div>
-            <select
-              id="annuity-tax"
-              className={selectClassName}
-              value={value.taxTreatment}
-              onChange={(e) => set("taxTreatment", e.target.value as AnnuityTaxTreatment)}
-            >
-              {(Object.keys(TAX_TREATMENT_LABELS) as AnnuityTaxTreatment[]).map((t) => (
-                <option key={t} value={t}>{TAX_TREATMENT_LABELS[t]}</option>
-              ))}
-            </select>
+            <p className="text-[14px] text-ink">{TAX_TREATMENT_LABELS[value.taxTreatment]}</p>
+            <p className="mt-1 text-[11px] leading-snug text-ink-3">
+              Set with <span className="text-ink-2">Account Type</span> on the Details tab.
+            </p>
           </div>
 
           <div>
