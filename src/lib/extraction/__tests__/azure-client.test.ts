@@ -57,7 +57,7 @@ const FOUNDRY_CREDS = {
   endpoint: "https://test.openai.azure.com",
   apiKey: "test-key",
   apiVersion: "2024-12-01-preview",
-  deployments: { chat: "gpt-5.4", mini: "gpt-5.4-mini", embedding: "text-embedding-3-small" },
+  deployments: { chat: "gpt-5.4", mini: "foundry-mini", embedding: "text-embedding-3-small" },
 };
 
 /** A firm running in its OWN tenant. Every value differs from FOUNDRY_CREDS so
@@ -106,7 +106,7 @@ describe("callAIExtraction", () => {
   it("uses mini model by default", async () => {
     await callAIExtraction("sys", "user", "mini");
     const createCall = mockCreate.mock.calls[0][0];
-    expect(createCall.model).toBe("gpt-5.4-mini");
+    expect(createCall.model).toBe("foundry-mini");
   });
 
   it("uses full model when specified", async () => {
@@ -237,7 +237,7 @@ describe("per-firm credentials", () => {
     mockResolve.mockResolvedValueOnce(FOUNDRY_CREDS).mockResolvedValueOnce(FIRM_CREDS);
 
     await callAIExtraction("sys", "user", "mini");
-    expect(mockCreate.mock.calls[0][0].model).toBe("gpt-5.4-mini");
+    expect(mockCreate.mock.calls[0][0].model).toBe("foundry-mini");
 
     await callAIExtraction("sys", "user", "mini");
     expect(mockCreate.mock.calls[1][0].model).toBe("firm-mini");

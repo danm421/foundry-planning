@@ -218,6 +218,43 @@ describe("POST connect (azure_openai)", () => {
     const res = await connectPost(req({ ...VALID, attestation: true }), { params });
     expect(JSON.stringify(await res.json())).not.toContain("firm-key");
   });
+
+  it("refuses a caller who is not an org admin or owner, and writes nothing", async () => {
+    // Constraint 11: every mutation goes through authz.ts. This route PERSISTS
+    // a firm's Azure API key and writes an audit row, and /api/integrations sits
+    // outside the tenant-isolation sweep — so without this case
+    // `await requireOrgAdminOrOwner()` can be deleted from connect outright with
+    // the rest of this file green. Only `recheck` was covered before.
+    mockRequireAdmin.mockRejectedValue(new Error("Forbidden"));
+    mockAuthErrorResponse.mockReturnValue({ status: 403, body: { error: "Forbidden" } });
+    mockVerify.mockResolvedValue({ ok: true, checks: [] });
+
+    const res = await connectPost(req({ ...VALID, attestation: true }), { params });
+
+    expect(res.status).toBe(403);
+    // The refusal has to land BEFORE any effect — a 403 returned after the key
+    // was already stored is still a scoping breach.
+    expect(mockVerify).not.toHaveBeenCalled();
+    expect(mockUpsert).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+    expect(mockClearCache).not.toHaveBeenCalled();
+  });
+
+  it("refuses once rate limited, and writes nothing", async () => {
+    // Verification is four sequential Azure round trips at 45s each (see
+    // maxDuration = 300 on the route). Without this case the limit check can be
+    // deleted and an admin can hold the function budget open from the card.
+    mockRateLimit.mockResolvedValue({ allowed: false });
+    mockVerify.mockResolvedValue({ ok: true, checks: [] });
+
+    const res = await connectPost(req({ ...VALID, attestation: true }), { params });
+
+    expect(res.status).toBe(429);
+    expect(mockVerify).not.toHaveBeenCalled();
+    expect(mockUpsert).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+    expect(mockClearCache).not.toHaveBeenCalled();
+  });
 });
 
 describe("POST test (azure_openai)", () => {
@@ -247,6 +284,36 @@ describe("POST test (azure_openai)", () => {
     const body = await res.json();
     expect(body.ok).toBe(false);
     expect(body.checks).toHaveLength(3);
+  });
+
+  it("refuses a caller who is not an org admin or owner, and calls Azure not at all", async () => {
+    // This route stores nothing, so the thing worth guarding is the OUTBOUND
+    // call: it takes an arbitrary endpoint and api key from the body and makes
+    // Foundry Planning's server talk to them. Unguarded, any signed-in member
+    // of any firm can drive that. `verifyAzureConnection` is the whole effect,
+    // so "no downstream write" here means "no Azure call".
+    mockRequireAdmin.mockRejectedValue(new Error("Forbidden"));
+    mockAuthErrorResponse.mockReturnValue({ status: 403, body: { error: "Forbidden" } });
+    mockVerify.mockResolvedValue({ ok: true, checks: [] });
+
+    const res = await testPost(req(VALID), { params });
+
+    expect(res.status).toBe(403);
+    expect(mockVerify).not.toHaveBeenCalled();
+    expect(mockUpsert).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  it("refuses once rate limited, and calls Azure not at all", async () => {
+    mockRateLimit.mockResolvedValue({ allowed: false });
+    mockVerify.mockResolvedValue({ ok: true, checks: [] });
+
+    const res = await testPost(req(VALID), { params });
+
+    expect(res.status).toBe(429);
+    expect(mockVerify).not.toHaveBeenCalled();
+    expect(mockUpsert).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
   });
 });
 

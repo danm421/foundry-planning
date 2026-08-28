@@ -210,6 +210,46 @@ describe("resolveAiCredentials", () => {
     expect(second.apiKey).toBe(first.apiKey);
   });
 
+  it("re-reads once the cached entry has EXPIRED — the TTL is what bounds a disconnect", async () => {
+    // The cache is bounded by TTL, not by invalidation: `clearAiCredentialCache`
+    // only ever reaches the ONE serverless instance that ran the mutation, so
+    // every other warm instance keeps serving a disconnected firm's credentials
+    // until its own entry expires. CACHE_TTL_MS (60_000 in resolve.ts) is the
+    // whole of that bound — without the `expiresAt` comparison the cache is
+    // unbounded and a revoked connection lives for the life of the instance.
+    vi.useFakeTimers();
+    try {
+      mockAuth.mockResolvedValue({ orgId: "org_ttl" });
+      mockGetConnection.mockResolvedValue(connectedRow("key-stale"));
+
+      const first = await resolveAiCredentials();
+      expect(first.apiKey).toBe("key-stale");
+
+      // Still inside the window: the row has changed underneath us and the
+      // cache is expected to hide that. Without this half, a mutation setting
+      // the TTL to zero would satisfy the expiry half below while destroying
+      // the cache itself.
+      mockGetConnection.mockResolvedValue(connectedRow("key-rotated"));
+      vi.advanceTimersByTime(59_000);
+      const cached = await resolveAiCredentials();
+      expect(cached.apiKey).toBe("key-stale");
+      expect(mockGetConnection).toHaveBeenCalledTimes(1);
+
+      // Past CACHE_TTL_MS the entry is dead and the row is read again.
+      vi.advanceTimersByTime(2_000);
+      const fresh = await resolveAiCredentials();
+
+      // By VALUE first, and deliberately BEFORE the call count: `expect` throws,
+      // so a count assertion placed first would be the only thing an unbounded
+      // cache ever fails on, and "it read again" is the weaker of the two claims.
+      // What matters is that the caller got the NEW row.
+      expect(fresh.apiKey).toBe("key-rotated");
+      expect(mockGetConnection).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does NOT cache an unconnected firm — every call re-reads, so connecting takes effect at once", async () => {
     mockAuth.mockResolvedValue({ orgId: "org_notyet" });
     mockGetConnection.mockResolvedValue(null);

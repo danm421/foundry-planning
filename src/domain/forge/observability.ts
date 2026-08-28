@@ -5,6 +5,17 @@
 // would reintroduce the Azure reasoning-model 400). Default OFF until the
 // hosting/PII decision lands.
 //
+// THAT DECISION NOW HAS A SECOND HALF, and it is the harder one. A firm that has
+// connected its own Azure OpenAI resource is told, on the Integrations card,
+// that Forge runs inside their tenant under their own agreement with Microsoft.
+// These spans carry the prompts and completions of that same turn to Langfuse —
+// OUR observability vendor, under OUR agreement — which is precisely the export
+// the firm connected in order to avoid. Turning this on therefore is not just a
+// PII question about Foundry Planning's own tenant: whoever flips
+// FORGE_LANGFUSE_ENABLED must decide what happens for CONNECTED firms
+// (resolveAiCredentials().source === "firm"), and "trace everyone" is not an
+// available answer while the card makes that promise.
+//
 // SDK SHAPE (verified against @langfuse/langchain 5.4.1): this is the modern,
 // OpenTelemetry-based Langfuse SDK. The CallbackHandler emits OTEL spans; those
 // spans only reach Langfuse if a TracerProvider carrying a LangfuseSpanProcessor

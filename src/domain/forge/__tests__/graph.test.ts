@@ -7,16 +7,24 @@ import { MemorySaver } from "@langchain/langgraph";
 // number so the plain agent→END test doesn't trigger the verify branch.
 const invoke = vi.fn(async () => new AIMessage("The plan is on track."));
 const criticInvoke = vi.fn(async () => ({ ok: true, problems: [] }));
-vi.mock("../llm", () => ({
-  chatModel: () => ({
-    bindTools: () => ({ invoke }),
-    withStructuredOutput: () => ({ invoke: criticInvoke }),
-  }),
+// A spy, not a bare arrow: how MANY times a turn builds a model is a real cost
+// claim now that chatModel() resolves per-firm credentials and, for a firm in
+// its own Azure tenant, reads its connection row.
+const chatModel = vi.fn(() => ({
+  bindTools: () => ({ invoke }),
+  withStructuredOutput: () => ({ invoke: criticInvoke }),
 }));
-// Phase 0: no tools.
+vi.mock("../llm", () => ({ chatModel: () => chatModel() }));
+// Phase 0: no tools. Typed so the spy RECORDS both arguments — the tiering test
+// asserts which bundles were asked for, which a zero-arg spy would not capture.
+const buildTools = vi.fn<(ctx: unknown, bundles?: readonly string[]) => never[]>(() => []);
 vi.mock("../tools", () => ({
-  buildTools: () => [],
+  buildTools: (ctx: unknown, bundles?: readonly string[]) => buildTools(ctx, bundles),
   WRITE_TOOL_NAMES: new Set<string>(),
+}));
+const classifyIntent = vi.fn<(text: string) => Promise<string[]>>(async () => ["read"]);
+vi.mock("../dispatcher", () => ({
+  classifyIntent: (text: string) => classifyIntent(text),
 }));
 
 import { buildGraph } from "../graph";
@@ -63,5 +71,48 @@ describe("buildGraph", () => {
     expect(invoke).toHaveBeenCalledTimes(2);
     expect(out.verifyAttempts).toBe(1);
     expect(out.verifyDecision).toBe("caveat");
+  });
+
+  it("under tool tiering, builds ONE model per turn instead of one it discards", async () => {
+    // The classifier decides WHICH tools, then the model is built once and bound
+    // to them. Building a full-tool model first and overwriting it after the
+    // classifier returned cost a credential resolve and — for a firm running in
+    // its own Azure tenant — a connection read, every tiered turn, for an object
+    // that was thrown away. Nothing watched the flag at all before this.
+    vi.stubEnv("FORGE_TIERING_ENABLED", "true");
+    invoke.mockResolvedValue(new AIMessage("The plan is on track."));
+    try {
+      const g = buildGraph(authContext, new MemorySaver(), "conv-4", () => "SYSTEM");
+      // buildGraph itself builds the default tool set; count only the turn.
+      chatModel.mockClear();
+      buildTools.mockClear();
+
+      await g.invoke(
+        { messages: [new HumanMessage("what changed this month?")], authContext },
+        { configurable: { thread_id: "conv-4" }, recursionLimit: 10 },
+      );
+
+      expect(chatModel).toHaveBeenCalledTimes(1);
+      // And it was bound to the CLASSIFIED bundles, so the single build is the
+      // tiered one — not the full-tool model with the classifier skipped.
+      expect(classifyIntent).toHaveBeenCalledWith("what changed this month?");
+      expect(buildTools).toHaveBeenCalledWith(expect.anything(), ["read"]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("skips the classifier entirely when tiering is off", async () => {
+    invoke.mockResolvedValue(new AIMessage("The plan is on track."));
+    const g = buildGraph(authContext, new MemorySaver(), "conv-5", () => "SYSTEM");
+    chatModel.mockClear();
+
+    await g.invoke(
+      { messages: [new HumanMessage("what changed this month?")], authContext },
+      { configurable: { thread_id: "conv-5" }, recursionLimit: 10 },
+    );
+
+    expect(classifyIntent).not.toHaveBeenCalled();
+    expect(chatModel).toHaveBeenCalledTimes(1);
   });
 });
