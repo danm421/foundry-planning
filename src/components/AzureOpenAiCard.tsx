@@ -41,11 +41,14 @@ const DEFAULTS = {
  *  1. Zero data retention needs Microsoft's approval, and that approval is
  *     available only to customers managed by a Microsoft account team (in
  *     practice, Enterprise Agreement / Microsoft Customer Agreement customers)
- *     — not on pay-as-you-go. Until approved, Azure retains prompts with human
- *     review, which is WEAKER than Foundry Planning's current posture (zero
- *     retention today). Do not restate a specific day count for that
- *     retention window — Microsoft dropped the published figure in an
- *     Oct 2025 revision and no current page states one.
+ *     — not on pay-as-you-go. Until approved, Azure temporarily stores prompts
+ *     and reviews them primarily by automated systems, with human review only
+ *     when automated review can't reach a confident determination — which is
+ *     WEAKER than Foundry Planning's current posture (zero retention today).
+ *     Do not restate a specific day count for that retention window, and do
+ *     not call human review the default: Microsoft dropped the published day
+ *     figure in an Oct 2025 revision, and its current text says flagged
+ *     content is sampled by automated means "instead of a human reviewer".
  *  2. Microsoft's portal is now called "Microsoft Foundry", which collides with
  *     our product name. Never let "Foundry" stand alone in an Azure step.
  */
@@ -58,10 +61,12 @@ function SetupSteps() {
       <ol className="mt-3 flex list-decimal flex-col gap-3 pl-5 text-sm text-ink-2">
         <li>
           <span className="font-medium text-ink">Check what retention you can get.</span>{" "}
-          Azure retains prompts for abuse monitoring, with human review, unless Microsoft
-          approves your subscription for Modified Abuse Monitoring. That approval is
-          available only to customers managed by a Microsoft account team &mdash; in
-          practice, Enterprise Agreement or Microsoft Customer Agreement customers &mdash;{" "}
+          Azure temporarily stores prompts for abuse monitoring &mdash; reviewed primarily
+          by automated systems, with human review only when automated review can&rsquo;t
+          reach a confident determination &mdash; unless Microsoft approves your
+          subscription for Modified Abuse Monitoring. That approval is available only to
+          customers managed by a Microsoft account team &mdash; in practice, Enterprise
+          Agreement or Microsoft Customer Agreement customers &mdash;{" "}
           <span className="font-medium text-ink">not on pay-as-you-go</span>. On that
           tier, connecting your own Azure gives you weaker retention than Foundry
           Planning&rsquo;s current setup, which already has zero retention.
@@ -76,9 +81,9 @@ function SetupSteps() {
           your client data is processed.
         </li>
         <li>
-          <span className="font-medium text-ink">Register for gpt-5 or gpt-5-codex if you
-          plan to deploy either.</span> They&rsquo;re the only GPT-5-family models that gate
-          on a one-time registration — the mini, nano and chat variants need none.
+          <span className="font-medium text-ink">Register if Azure prompts you to.</span>{" "}
+          Some models gate on a one-time registration: Microsoft lists gpt-5 and gpt-5-codex
+          as gated, and gpt-5-mini, gpt-5-nano and gpt-5-chat as not.
           Microsoft&rsquo;s stated turnaround is 5&ndash;10 business days.
         </li>
         <li>
@@ -97,9 +102,9 @@ function SetupSteps() {
           every subscription an automatic Quota Tier (0&ndash;6) that sets your throughput.
           Tier 1 and above already grants 300,000&ndash;1,000,000 tokens per minute on
           GPT-5-family models — enough for a long statement&rsquo;s many parallel calls. The{" "}
-          <span className="font-medium text-ink">Free Tier grants zero quota for any
-          GPT-5-series model</span> — a firm still on it cannot deploy one at all, and
-          needs a quota-increase request first.
+          <span className="font-medium text-ink">Free Tier lists only four models</span>, and
+          the two chat deployments above are not among them — a firm still on it needs a
+          quota-increase request before it can deploy them.
         </li>
         <li>
           <span className="font-medium text-ink">Apply for Modified Abuse Monitoring</span> if
@@ -147,29 +152,47 @@ export function AzureOpenAiCard({ status, endpoint, chatDeployment, connectedAt 
     return { httpOk: res.ok, data };
   }
 
+  // The reset lives in `finally`: a rejected fetch (network down, DNS, an
+  // aborted navigation) would otherwise throw past `setBusy(null)` and leave
+  // `busy === "test"` forever, which disables Test connection, Connect and
+  // every way back — the card would be dead until the page reloads.
   async function handleTest() {
     setBusy("test");
-    const { httpOk, data } = await post("test", form);
-    setChecks(data?.checks ?? null);
-    setTested(httpOk && data?.ok === true);
-    if (!httpOk && !data?.checks) {
-      showToast({ message: data?.error ?? "Couldn't reach Azure with those details." });
+    try {
+      const { httpOk, data } = await post("test", form);
+      setChecks(data?.checks ?? null);
+      setTested(httpOk && data?.ok === true);
+      if (!httpOk && !data?.checks) {
+        showToast({ message: data?.error ?? "Couldn't reach Azure with those details." });
+      }
+    } catch {
+      setChecks(null);
+      setTested(false);
+      showToast({ message: "Couldn't reach Azure with those details." });
+    } finally {
+      setBusy(null);
     }
-    setBusy(null);
   }
 
   async function handleConnect(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy("connect");
-    const { httpOk, data } = await post("connect", { ...form, attestation: true });
-    if (httpOk) {
-      showToast({ message: "Azure OpenAI connected." });
-      router.refresh();
-    } else {
-      setChecks(data?.checks ?? null);
-      showToast({ message: data?.error ?? "Couldn't connect Azure OpenAI." });
+    try {
+      // `attestation` is the advisor's actual answer, never a literal — the
+      // server persists it as a compliance record.
+      const { httpOk, data } = await post("connect", { ...form, attestation: attested });
+      if (httpOk) {
+        showToast({ message: "Azure OpenAI connected." });
+        router.refresh();
+      } else {
+        setChecks(data?.checks ?? null);
+        showToast({ message: data?.error ?? "Couldn't connect Azure OpenAI." });
+      }
+    } catch {
+      showToast({ message: "Couldn't connect Azure OpenAI." });
+    } finally {
+      setBusy(null);
     }
-    setBusy(null);
   }
 
   async function handleDisconnect() {
@@ -326,9 +349,11 @@ export function AzureOpenAiCard({ status, endpoint, chatDeployment, connectedAt 
             checked={attested}
             onChange={(e) => setAttested(e.target.checked)}
           />
-          I understand that Azure retains prompts for abuse monitoring, with human review,
-          unless my firm has been approved for Modified Abuse Monitoring, and that I am
-          authorized to connect this resource.
+          I understand that Azure temporarily stores prompts for abuse monitoring &mdash;
+          reviewed primarily by automated systems, with human review only when automated
+          review can&rsquo;t reach a confident determination &mdash; unless my firm has been
+          approved for Modified Abuse Monitoring, and that I am authorized to connect this
+          resource.
         </label>
 
         <div className="flex flex-wrap items-center gap-3">
