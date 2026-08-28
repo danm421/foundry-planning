@@ -19,8 +19,8 @@ const ctx = {
 };
 
 describe("growthEditModeFor", () => {
-  it("gives the full dropdown to the four dropdown categories", () => {
-    for (const c of ["taxable", "cash", "retirement", "education_savings"]) {
+  it("gives the full dropdown to the five dropdown categories", () => {
+    for (const c of ["taxable", "cash", "retirement", "education_savings", "annuity"]) {
       expect(growthEditModeFor(c)).toBe("full");
     }
   });
@@ -29,8 +29,8 @@ describe("growthEditModeFor", () => {
     expect(growthEditModeFor("real_estate")).toBe("inflation_custom");
   });
 
-  it("gives annuity, business and notes_receivable custom only", () => {
-    for (const c of ["annuity", "business", "notes_receivable"]) {
+  it("gives business and notes_receivable custom only", () => {
+    for (const c of ["business", "notes_receivable"]) {
       expect(growthEditModeFor(c)).toBe("custom_only");
     }
   });
@@ -54,6 +54,13 @@ describe("growthOptionsFor", () => {
     const values = growthOptionsFor({ category: "cash", ...ctx }).map((o) => o.value);
     expect(values).not.toContain("asset_mix");
     expect(values).toContain("inflation");
+  });
+
+  it("omits both asset mix and inflation for annuity, keeping portfolios and custom", () => {
+    // Asset mix also gates the Asset Mix and Holdings tabs in the real editor,
+    // and an annuity has no sub-account holdings to back either.
+    const values = growthOptionsFor({ category: "annuity", ...ctx }).map((o) => o.value);
+    expect(values).toEqual(["default", "mp:mp-1", "mp:mp-2", "tp:tp-1", "custom"]);
   });
 
   it("omits both asset mix and inflation for education_savings", () => {

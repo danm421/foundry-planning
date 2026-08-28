@@ -1189,3 +1189,83 @@ describe("AddAccountForm — a contract that just loaded is not an edit", () => 
     expect(screen.getByLabelText(/survivor share/i).closest("div.hidden")).toBeNull();
   });
 });
+
+
+// ── An annuity picks its growth like any other investable account ────────────
+
+/** The growth-source `<select>`. `GrowthRateField`'s label carries no `htmlFor`
+ *  and its select no `id`, so it is found by the one option every category's
+ *  dropdown carries rather than by an association that does not exist. */
+function growthSourceSelect(): HTMLSelectElement {
+  const select = screen
+    .getAllByRole("combobox")
+    .find((el) =>
+      Array.from((el as HTMLSelectElement).options).some((o) => o.value === "default"),
+    );
+  if (!select) throw new Error("no growth-source select rendered");
+  return select as HTMLSelectElement;
+}
+
+describe("AddAccountForm — an annuity picks its growth like an investable account", () => {
+  it("offers portfolios and a plan default instead of a bare percent box", () => {
+    mockAnnuityRoutes({ ok: true, row: null });
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="annuity"
+        mode="create"
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+        modelPortfolios={[{ id: "mp-1", name: "Moderate", blendedReturn: 0.062 }]}
+        fundPortfolios={[{ id: "tp-1", name: "Core Four", blendedReturnPct: 5.9 }]}
+        categoryDefaults={CATEGORY_DEFAULTS}
+        resolvedInflationRate={0.025}
+      />,
+    );
+
+    const labels = Array.from(growthSourceSelect().options).map((o) => o.textContent ?? "");
+    expect(labels.some((l) => l.includes("Plan default"))).toBe(true);
+    expect(labels.some((l) => l.includes("Moderate"))).toBe(true);
+    expect(labels.some((l) => l.includes("Core Four"))).toBe(true);
+    expect(labels.some((l) => l.includes("Custom %"))).toBe(true);
+    // Asset mix would also switch on the Asset Mix and Holdings tabs, which an
+    // annuity has no sub-account holdings to fill.
+    expect(labels.some((l) => l.includes("Asset mix"))).toBe(false);
+    // The bare number box the annuity used to get is gone.
+    expect(screen.queryByLabelText("Growth Rate (%)")).toBeNull();
+  });
+
+  it("saves the chosen portfolio as the growth source, with no custom rate", async () => {
+    // A model portfolio that lived in `growth_rate` would be a frozen number
+    // that stops tracking the portfolio the moment the CMA moves.
+    mockAnnuityRoutes({ ok: true, row: null });
+    render(
+      <AddAccountForm
+        clientId="client-123"
+        category="annuity"
+        mode="create"
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+        modelPortfolios={[{ id: "mp-1", name: "Moderate", blendedReturn: 0.062 }]}
+        categoryDefaults={CATEGORY_DEFAULTS}
+        resolvedInflationRate={0.025}
+      />,
+    );
+
+    fireEvent.change(growthSourceSelect(), { target: { value: "mp:mp-1" } });
+    fireEvent.submit(document.getElementById("add-account-form")!);
+
+    await waitFor(() => {
+      const post = fetchMock.mock.calls.find(
+        (args) =>
+          String(args[0]) === "/api/clients/client-123/accounts" &&
+          (args[1] as FetchInit)?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      const body = JSON.parse((post![1] as FetchInit)!.body!);
+      expect(body.growthSource).toBe("model_portfolio");
+      expect(body.modelPortfolioId).toBe("mp-1");
+      expect(body.growthRate).toBeNull();
+    });
+  });
+});

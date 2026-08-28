@@ -530,8 +530,11 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   // 529s use the same growth-source dropdown as the investable categories (so
   // they participate in Monte Carlo via model/fund portfolios) but stay out of
   // the investments rollup; their "Plan default" follows the retirement
-  // category (growthDefaultCategory).
-  const usesGrowthDropdown = ["taxable", "cash", "retirement", "education_savings"].includes(category);
+  // category (growthDefaultCategory). Annuities are here for the same reason
+  // and follow the same retirement alias — a variable annuity invested in the
+  // firm's model had to be hand-typed, and stopped tracking that model the
+  // moment the CMA moved.
+  const usesGrowthDropdown = ["taxable", "cash", "retirement", "education_savings", "annuity"].includes(category);
   const growthCategory = growthDefaultCategory(category);
   const [growthSource, setGrowthSource] = useState<GrowthSource>(
     (initial?.growthSource as GrowthSource) ?? "default"
@@ -1061,16 +1064,39 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
     accountValue.trim() !== "" && Number.isFinite(annuityAccountValueNum)
       ? annuityAccountValueNum
       : undefined;
-  // An annuity is not one of the `usesGrowthDropdown` categories, so on save its
-  // growth rate is always `growthRatePct / 100` — already a plain number here,
-  // with no model-portfolio or category-default lookup behind it. Handed to the
-  // contract preview so the picture illustrates the rate the plan will use
-  // rather than a stand-in. Blank or unparsed reads as unknown, and the preview
-  // states its own illustration rate instead of quietly drawing 0% growth.
-  const annuityGrowthRate =
-    growthRatePct.trim() !== "" && Number.isFinite(Number(growthRatePct))
+  // The rate the projection will actually use for this contract — the same
+  // resolution `resolveAccountFromRaw` performs server-side. The preview draws
+  // an account-value / income crossover against it, so handing it a raw custom
+  // percent once the growth dropdown offers portfolios would put the picture
+  // and the plan back into disagreement. Blank or unparsed reads as unknown,
+  // and the preview states its own illustration rate rather than quietly
+  // drawing 0% growth.
+  //
+  // `blendedReturn` is a decimal fraction and `blendedReturnPct` is 0-100;
+  // `defaultPctForCategory` is 0-100 too. They are not interchangeable.
+  const annuityGrowthRate = useMemo(() => {
+    if (growthSource === "model_portfolio") {
+      return modelPortfolios?.find((mp) => mp.id === modelPortfolioId)?.blendedReturn;
+    }
+    if (growthSource === "ticker_portfolio") {
+      const pct = fundPortfolios?.find((fp) => fp.id === tickerPortfolioId)?.blendedReturnPct;
+      return pct != null ? pct / 100 : undefined;
+    }
+    if (growthSource === "default") {
+      return defaultPctForCategory != null ? defaultPctForCategory / 100 : undefined;
+    }
+    return growthRatePct.trim() !== "" && Number.isFinite(Number(growthRatePct))
       ? Number(growthRatePct) / 100
       : undefined;
+  }, [
+    growthSource,
+    modelPortfolios,
+    modelPortfolioId,
+    fundPortfolios,
+    tickerPortfolioId,
+    defaultPctForCategory,
+    growthRatePct,
+  ]);
   const initialSavingsStartYear =
     milestones && defaultSavingsRefs.startYearRef
       ? resolveMilestone(defaultSavingsRefs.startYearRef, milestones, "start") ?? currentYear

@@ -16,7 +16,7 @@ import { ASSET_MIX_CATEGORIES, INFLATION_CATEGORIES } from "@/components/forms/g
  *  scope for the Map entirely. */
 export type GrowthEditMode = "full" | "inflation_custom" | "custom_only" | "none";
 
-const FULL_DROPDOWN_CATEGORIES = ["taxable", "cash", "retirement", "education_savings"];
+const FULL_DROPDOWN_CATEGORIES = ["taxable", "cash", "retirement", "education_savings", "annuity"];
 
 export function growthEditModeFor(category: string): GrowthEditMode {
   if (FULL_DROPDOWN_CATEGORIES.includes(category)) return "full";
