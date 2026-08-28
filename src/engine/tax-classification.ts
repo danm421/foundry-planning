@@ -1,3 +1,5 @@
+import { splitAnnuityDistribution } from "./annuity/tax";
+
 export interface TransferTaxInput {
   sourceCategory: "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable" | "stock_options" | "education_savings";
   sourceSubType: string;
@@ -21,6 +23,12 @@ export interface TransferTaxInput {
    *  (taxable/cash sources only). 0/undefined preserves today's pro-rata
    *  behavior. */
   sourceFreshBasis?: number;
+  /** Annuity source only: the contract's tax treatment. Defaults to
+   *  non_qualified when the caller doesn't know. */
+  sourceAnnuityTreatment?: "qualified" | "non_qualified" | "tax_free";
+  /** Annuity source only: unrecovered §72 basis. Undefined ⇒ basis equals the
+   *  account value, so no phantom gain appears. */
+  sourceAnnuityBasis?: number;
 }
 
 export interface TransferTaxResult {
@@ -74,6 +82,55 @@ export function classifyTransferTax(input: TransferTaxInput): TransferTaxResult 
       basisReturn: amount,
       earlyWithdrawalPenalty: 0,
       label: "qualified_hsa_distribution",
+    };
+  }
+
+  // ── Annuity source ───────────────────────────────────────────────────────
+  // IRC §72, same rules as categorizeDraw. Gain-first (LIFO), ordinary income
+  // never capital gain, and the penalty falls on the taxable slice only. The
+  // treatment travels on the ACCOUNT (`sourceAnnuityTreatment`), not on
+  // `sourceSubType` — an annuity's subType carries the product, not the tax
+  // wrapper.
+  if (sourceCategory === "annuity") {
+    const treatment = input.sourceAnnuityTreatment ?? "non_qualified";
+
+    // A qualified annuity is pre-tax RETIREMENT money in an insurance wrapper,
+    // so a move into another retirement account is a §408 rollover, not a §72
+    // distribution — decided BEFORE the §72 split below. Mirror the
+    // retirement→retirement house rule rather than contradicting it: tax-free
+    // unless the target is a Roth, which makes it a conversion — taxable, but
+    // never penalized. Without this the branch fabricates a five-figure tax
+    // bill on a six-figure IRA rollover. (Deliberately NOT extended to annuity
+    // → annuity: §1035 exchange modeling is out of scope for this feature.)
+    if (treatment === "qualified" && targetCategory === "retirement") {
+      if (ROTH_SUBTYPES.has(targetSubType)) {
+        return { taxableOrdinaryIncome: amount, capitalGain: 0, basisReturn: 0,
+                 earlyWithdrawalPenalty: 0, label: "roth_conversion" };
+      }
+      return { taxableOrdinaryIncome: 0, capitalGain: 0, basisReturn: 0,
+               earlyWithdrawalPenalty: 0, label: "tax_free_rollover" };
+    }
+
+    // IRC §72 proper, shared with `categorizeDraw` — see
+    // `splitAnnuityDistribution`.
+    const split = splitAnnuityDistribution({
+      treatment,
+      amount,
+      accountValue: sourceAccountValue,
+      remainingBasis: input.sourceAnnuityBasis,
+      ownerAge,
+    });
+    return {
+      taxableOrdinaryIncome: split.ordinaryIncome,
+      capitalGain: 0,
+      basisReturn: split.basisReturn,
+      earlyWithdrawalPenalty: split.earlyWithdrawalPenalty,
+      label:
+        treatment === "tax_free"
+          ? "tax_free_rollover"
+          : split.earlyWithdrawalPenalty > 0
+            ? "early_distribution"
+            : "taxable_distribution",
     };
   }
 

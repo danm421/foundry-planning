@@ -35,6 +35,10 @@ const OTHER_INFLOW_PREFIXES = [
   "technique-proceeds:",
   "life-insurance-proceeds:",
   "equity-proceeds:",
+  // Annuity contract income: the engine books gross contract cash into
+  // `income.other`, so it belongs in Other Inflows, not the Income category
+  // (whose items are named income ROWS).
+  "annuity:",
 ];
 
 const EPSILON = 1; // sub-dollar reconciliation noise we don't surface
@@ -77,6 +81,9 @@ export function buildNameMaps(clientData: ClientData) {
   for (const acc of clientData.accounts ?? []) {
     if (acc.category === "life_insurance") {
       otherInflowNames[`life-insurance-proceeds:${acc.id}`] = `Life Insurance: ${acc.name}`;
+    }
+    if (acc.category === "annuity") {
+      otherInflowNames[`annuity:${acc.id}`] = `Annuity Income: ${acc.name}`;
     }
   }
   // NET cash, not sale proceeds: an exercise-and-hold pays the strike and

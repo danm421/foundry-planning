@@ -77,6 +77,7 @@ import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
 import { resolveInflationRate } from "@/lib/inflation";
 import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
 import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies";
+import { loadAnnuityContractsByAccountIds } from "@/lib/annuities/load-annuity-contracts";
 import { loadDisabilityPolicies } from "@/lib/insurance-policies/load-disability-policies";
 import { withSynthesizedPremiums } from "@/lib/insurance-policies/premium-expense";
 import { withSynthesizedPolicyIncome } from "@/lib/insurance-policies/policy-income";
@@ -710,6 +711,18 @@ export const loadClientDataWithContext = cache(
       .map((a) => a.id);
     const policiesByAccount = await loadPoliciesByAccountIds(lifeInsuranceAccountIds);
 
+    // ── Annuity contracts ──────────────────────────────────────────────────
+    // The stored income start year can legally be NULL when a milestone ref
+    // carries it, so resolve it here — the same way an account's activation
+    // year is resolved below.
+    const annuityAccountIds = accountRows
+      .filter((a) => a.category === "annuity")
+      .map((a) => a.id);
+    const annuityByAccount = await loadAnnuityContractsByAccountIds(
+      annuityAccountIds,
+      (ref, storedYear) => resolvedStart(ref, storedYear ?? settings.planStartYear),
+    );
+
     // ── Reinvestment base-allocation map ────────────────────────────────────
     // An account's BASE allocation (before any reinvestment), derived from the
     // account's effective growth source. A `default` source is resolved
@@ -762,6 +775,7 @@ export const loadClientDataWithContext = cache(
       resolvedInflationRate,
       beneficiariesByAccountId: accountBens,
       policiesByAccount,
+      annuityByAccount,
       ownersByAccountId,
       accountBaseAllocByAccountId,
       holdingsTotalsByAccountId,

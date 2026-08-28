@@ -3,7 +3,7 @@ import { resolveSourceLabel } from "../_shared";
 import type { CellDrillContext } from "../types";
 
 const ctx: CellDrillContext = {
-  accountNames: { acc_1: "Joint Brokerage", acc_2: "401k" },
+  accountNames: { acc_1: "Joint Brokerage", acc_2: "401k", acc_3: "Deferred Annuity" },
   incomes: [
     { id: "inc_1", name: "Spouse Salary", type: "salary", annualAmount: 0, startYear: 0, endYear: 0, growthRate: 0, owner: "spouse" } as never,
   ],
@@ -38,6 +38,22 @@ describe("resolveSourceLabel", () => {
 
   it("falls back to 'Roth Conversion' when no name map is provided", () => {
     expect(resolveSourceLabel("roth_conversion:cv_4", ctx)).toBe("Roth Conversion");
+  });
+
+  it("handles annuity:<acctId> and its tax-free twin", () => {
+    // Without a dedicated arm these fall through to the generic `split(":")`
+    // path, which reads the PREFIX as the account id — so the drill-down prints
+    // "annuity — <raw account uuid>" at the advisor.
+    expect(resolveSourceLabel("annuity:acc_3", ctx)).toBe("Deferred Annuity — Annuity Income");
+    expect(resolveSourceLabel("annuity_tax_free:acc_3", ctx)).toBe(
+      "Deferred Annuity — Annuity Income (tax-free)",
+    );
+  });
+
+  it("falls back to the raw account id for an annuity the context does not name", () => {
+    expect(resolveSourceLabel("annuity:acc_unknown", ctx)).toBe(
+      "acc_unknown — Annuity Income",
+    );
   });
 
   it("handles sale:<txId>", () => {

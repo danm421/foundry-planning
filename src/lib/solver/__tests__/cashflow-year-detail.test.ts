@@ -60,6 +60,7 @@ function makeClientData(): ClientData {
       { id: "acc-trust-ira", name: "Trust IRA", category: "retirement", owners: entityOwner },
       { id: "acc-brokerage", name: "Joint Brokerage", category: "taxable", owners: fmOwner },
       { id: "acc-401k", name: "401(k)", category: "retirement", owners: fmOwner },
+      { id: "acc-ann", name: "Deferred Annuity", category: "annuity", owners: fmOwner },
     ],
     liabilities: [{ id: "liab-mortgage", name: "Home Mortgage" }],
     expenses: [
@@ -101,6 +102,31 @@ describe("buildCashFlowYearDetail", () => {
     expect(rmds.items).toEqual([
       { id: "acc-ira", label: "Traditional IRA", amount: 15_000 },
     ]);
+  });
+
+  it("files annuity contract income under Other Inflows, by name", () => {
+    // The engine puts gross contract cash in `income.other`, so the detail view
+    // has to agree: without the prefix the row lands under "Income" — a
+    // category whose total is built from named income ROWS — and prints the raw
+    // `annuity:<uuid>` key as its label.
+    const year = makeYear({
+      income: {
+        ...makeYear().income,
+        other: 10_000,
+        bySource: { "inc-ss": 40_000, "inc-pen": 30_000, "annuity:acc-ann": 10_000 },
+      },
+    });
+    const d = buildCashFlowYearDetail(year, makeClientData());
+
+    const income = d.inflows.find((c) => c.key === "income")!;
+    expect(income.items.map((i) => i.id)).not.toContain("annuity:acc-ann");
+
+    const other = d.inflows.find((c) => c.key === "otherInflows")!;
+    expect(other.items).toContainEqual({
+      id: "annuity:acc-ann",
+      label: "Annuity Income: Deferred Annuity",
+      amount: 10_000,
+    });
   });
 
   it("lists liabilities and savings by name", () => {

@@ -173,6 +173,38 @@ export const accountSubTypeEnum = pgEnum("account_sub_type", [
   "401a",
 ]);
 
+export const annuityProductTypeEnum = pgEnum("annuity_product_type", [
+  "spia",           // single premium immediate
+  "dia",            // deferred income
+  "myga",           // multi-year guaranteed rate
+  "fixed",
+  "fixed_indexed",
+  "variable",
+  "qlac",           // qualified longevity annuity contract
+]);
+
+// How distributions are taxed. Orthogonal to product type — a SPIA can be
+// either qualified or non-qualified. Do NOT collapse these two axes.
+export const annuityTaxTreatmentEnum = pgEnum("annuity_tax_treatment", [
+  "qualified",      // IRA/401k-funded: 100% ordinary income, RMD applies
+  "non_qualified",  // after-tax: LIFO withdrawals, exclusion ratio once annuitized
+  "tax_free",       // Roth-funded: tax-free
+]);
+
+export const annuityIncomeModeEnum = pgEnum("annuity_income_mode", [
+  "none",           // still accumulating
+  "rider",          // GLWB — income off the benefit base, account value survives
+  "annuitized",     // irrevocably converted; account value goes to zero
+]);
+
+export const annuityPayoutStructureEnum = pgEnum("annuity_payout_structure", [
+  "single_life",
+  "joint_survivor",
+  "life_with_period_certain",
+  "period_certain",
+  "cash_refund",
+]);
+
 export const hsaCoverageEnum = pgEnum("hsa_coverage", ["self", "family"]);
 
 export const accountBusinessTypeEnum = pgEnum("account_business_type", [
@@ -2578,6 +2610,70 @@ export const stockOptionAccounts = pgTable("stock_option_accounts", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// ── Annuities ─────────────────────────────────────────────────────────────
+// 1:1 extension on an `annuity` account. Mirrors lifeInsurancePolicies.
+export const annuityContracts = pgTable("annuity_contracts", {
+  accountId: uuid("account_id")
+    .primaryKey()
+    .references(() => accounts.id, { onDelete: "cascade" }),
+  carrier: text("carrier"),
+  contractNumberLast4: text("contract_number_last4"),
+  productType: annuityProductTypeEnum("product_type").notNull().default("fixed"),
+  taxTreatment: annuityTaxTreatmentEnum("tax_treatment").notNull().default("non_qualified"),
+  // Investment in the contract (§72 basis). NULL = "advisor hasn't told us yet";
+  // the engine reads NULL as "basis equals value at plan start", which keeps a
+  // legacy account behaving exactly as it does today. The UI nags for a real
+  // number because correct LIFO is impossible without one.
+  costBasis: decimal("cost_basis", { precision: 15, scale: 2 }),
+  // Accumulation-phase drags.
+  surrenderChargePct: decimal("surrender_charge_pct", { precision: 5, scale: 4 }),
+  surrenderEndYear: integer("surrender_end_year"),
+  annualFeePct: decimal("annual_fee_pct", { precision: 5, scale: 4 }).notNull().default("0"),
+  // Income phase.
+  incomeMode: annuityIncomeModeEnum("income_mode").notNull().default("none"),
+  incomeStartYear: integer("income_start_year"),
+  incomeStartYearRef: yearRefEnum("income_start_year_ref"),
+  payoutStructure: annuityPayoutStructureEnum("payout_structure"),
+  survivorPct: decimal("survivor_pct", { precision: 5, scale: 4 }),
+  periodCertainYears: integer("period_certain_years"),
+  // Rider (income_mode = 'rider'). The benefit base is a phantom number used
+  // ONLY to compute income — it is never withdrawable as a lump sum.
+  benefitBase: decimal("benefit_base", { precision: 15, scale: 2 }),
+  rollupRate: decimal("rollup_rate", { precision: 5, scale: 4 }),
+  rollupEndYear: integer("rollup_end_year"),
+  rollupRatchets: boolean("rollup_ratchets").notNull().default(true),
+  riderFeePct: decimal("rider_fee_pct", { precision: 5, scale: 4 }),
+  // NULL = derive from the age band table in engine/annuity/benefit-base.ts.
+  payoutPct: decimal("payout_pct", { precision: 5, scale: 4 }),
+  // Annuitized (income_mode = 'annuitized').
+  annuitizedPayment: decimal("annuitized_payment", { precision: 15, scale: 2 }),
+  // NULL = derive from the mortality table. Advisor override for the §72
+  // expected-return multiple.
+  expectedReturnYears: decimal("expected_return_years", { precision: 6, scale: 2 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => ({
+  riderNeedsBase: check(
+    "annuity_rider_needs_benefit_base",
+    sql`(${t.incomeMode} != 'rider') OR (${t.benefitBase} IS NOT NULL)`,
+  ),
+  annuitizedNeedsPayment: check(
+    "annuity_annuitized_needs_payment",
+    sql`(${t.incomeMode} != 'annuitized') OR (${t.annuitizedPayment} IS NOT NULL)`,
+  ),
+  incomeNeedsStart: check(
+    "annuity_income_needs_start",
+    sql`(${t.incomeMode} = 'none') OR (${t.incomeStartYear} IS NOT NULL OR ${t.incomeStartYearRef} IS NOT NULL)`,
+  ),
+}));
+
+export const annuityContractsRelations = relations(annuityContracts, ({ one }) => ({
+  account: one(accounts, {
+    fields: [annuityContracts.accountId],
+    references: [accounts.id],
+  }),
+}));
 
 export const stockOptionGrants = pgTable("stock_option_grants", {
   id: uuid("id").defaultRandom().primaryKey(),

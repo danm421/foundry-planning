@@ -1,3 +1,4 @@
+import { splitAnnuityDistribution } from "./annuity/tax";
 import type { WithdrawalPriority, Account } from "./types";
 
 interface WithdrawalResult {
@@ -50,6 +51,11 @@ export interface CategorizeDrawInput {
   /** Live pre-draw Roth-designated portion for 401k/403b sources. Optional;
    *  callers that don't track rothValue can omit it (treated as 0). */
   rothValueMap?: Record<string, number>;
+  /** Annuity sources only: LIVE unrecovered §72 basis from the projection's
+   *  contract state. `Account.annuity.costBasis` is the ORIGINAL figure and is
+   *  never decremented, so falling back to it re-shelters basis the household
+   *  has already recovered — every year, for as long as the draws run. */
+  annuityRemainingBasis?: number;
   ownerAge: number;
 }
 
@@ -100,6 +106,27 @@ export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
     return { ...empty, capitalGains, basisReturn };
   }
 
+  // Annuity: IRC §72. Two things here are the opposite of their neighbours and
+  // must not be "harmonized" away:
+  //   1. Ordering is gain-FIRST (LIFO, §72(e)(2)(B)). The Roth branch below is
+  //      basis-first; the taxable branch above is pro-rata.
+  //   2. The taxable slice is ORDINARY INCOME, never a capital gain — even
+  //      though the contract holds market investments.
+  if (account.category === "annuity") {
+    const contract = account.annuity;
+    // Live basis first; the contract's original figure only when the caller
+    // tracks none. Both undefined means basis = balance — no gain, no invented
+    // tax — which `splitAnnuityDistribution` applies as its own default.
+    const split = splitAnnuityDistribution({
+      treatment: contract?.taxTreatment ?? "non_qualified",
+      amount,
+      accountValue: balance,
+      remainingBasis: input.annuityRemainingBasis ?? contract?.costBasis,
+      ownerAge,
+    });
+    return { ...empty, ...split };
+  }
+
   // Retirement: traditional vs Roth vs HSA
   if (account.category === "retirement") {
     // HSA: every draw that reaches here is tax-free — a qualified-medical /
@@ -138,8 +165,10 @@ export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
     return { ...empty, ordinaryIncome: amount, earlyWithdrawalPenalty: penalty };
   }
 
-  // real_estate / business / life_insurance — strategy walk filters these via categoryWithdrawalPriority,
-  // so they should never reach categorizeDraw. Return empty defensively.
+  // real_estate / business / life_insurance — strategy walk filters these via
+  // categoryWithdrawalPriority, so they should never reach categorizeDraw.
+  // (`annuity` used to fall through here and come out UNTAXED — see the branch
+  // above. Do not let a new category land in this default silently.)
   return empty;
 }
 
@@ -197,6 +226,11 @@ export interface PlanSupplementalWithdrawalInput {
    *  Caller is responsible for decrementing after the plan applies. */
   freshBasisMap?: Record<string, number>;
   rothValueMap?: Record<string, number>;
+  /** Live unrecovered §72 basis per annuity account. READ-ONLY: this function
+   *  is re-run many times per year by the caller's tax-convergence loop, so it
+   *  works on a local copy and never mutates the caller's map. The caller
+   *  decrements the real one ONCE, when the converged plan is applied. */
+  annuityBasisMap?: Record<string, number>;
   accounts: Account[];
   ages: { client: number; spouse: number | null };
   isSpouseAccount: (account: Account) => boolean;
@@ -204,7 +238,7 @@ export interface PlanSupplementalWithdrawalInput {
 }
 
 export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInput): SupplementalWithdrawalPlan {
-  const { shortfall, strategy, householdBalances, basisMap, freshBasisMap, rothValueMap, accounts, ages, isSpouseAccount, year } = input;
+  const { shortfall, strategy, householdBalances, basisMap, freshBasisMap, rothValueMap, annuityBasisMap, accounts, ages, isSpouseAccount, year } = input;
 
   const empty: SupplementalWithdrawalPlan = {
     byAccount: {}, total: 0, draws: [],
@@ -220,6 +254,10 @@ export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInpu
   // Local copy so we can decrement as we plan across multiple accounts and
   // a second draw from the same account in the same plan sees the depleted pool.
   const localFresh: Record<string, number> = { ...(freshBasisMap ?? {}) };
+  // Same reason as localFresh: a second draw from the same annuity inside ONE
+  // plan must see the basis the first draw already consumed. A local copy also
+  // keeps the caller's map untouched across convergence iterations.
+  const localAnnuityBasis: Record<string, number> = { ...(annuityBasisMap ?? {}) };
 
   const draws: SupplementalDraw[] = [];
   const byAccount: Record<string, number> = {};
@@ -244,11 +282,18 @@ export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInpu
       account, amount: drawAmount, balance: available,
       basisMap, rothValueMap, ownerAge,
       freshBasisRemaining: localFresh[account.id] ?? 0,
+      annuityRemainingBasis: localAnnuityBasis[account.id],
     });
 
     if (account.category === "taxable") {
       const consumed = Math.min(localFresh[account.id] ?? 0, drawAmount);
       localFresh[account.id] = Math.max(0, (localFresh[account.id] ?? 0) - consumed);
+    }
+    if (account.category === "annuity" && localAnnuityBasis[account.id] != null) {
+      localAnnuityBasis[account.id] = Math.max(
+        0,
+        localAnnuityBasis[account.id] - draw.basisReturn,
+      );
     }
 
     draws.push(draw);
