@@ -38,17 +38,20 @@ const DEFAULTS = {
  * Numbered Azure setup steps, shown inline where the firm connects. Two things
  * this copy MUST keep saying, because getting them wrong misleads the exact
  * buyer this feature is for:
- *  1. Zero data retention needs Microsoft's approval, which goes to customers
- *     managed by a Microsoft account team (in practice, Enterprise Agreement /
- *     Microsoft Customer Agreement customers) OR to firms under an eligible
- *     program — everyone else may apply, with no promise of access, so a
- *     pay-as-you-go firm should assume it does not have this. By default Azure
- *     temporarily stores prompts and reviews them primarily by automated
- *     systems, with human review only when automated review can't reach a
- *     confident determination — which is WEAKER than Foundry Planning's
- *     current posture (zero retention today).
+ *  1. Azure temporarily stores prompts for abuse monitoring BY DEFAULT, and
+ *     reviews them primarily by automated systems, with human review only when
+ *     automated review can't reach a confident determination — which is WEAKER
+ *     than Foundry Planning's current posture (zero retention today). Changing
+ *     that default takes Microsoft's approval of the firm's subscription for
+ *     Modified Abuse Monitoring, which goes to customers managed by a Microsoft
+ *     account team (in practice, Enterprise Agreement / Microsoft Customer
+ *     Agreement customers) OR to firms under an eligible program — everyone
+ *     else may apply, with no promise of access, so a pay-as-you-go firm should
+ *     assume it does not have this. What that approval actually changes is
+ *     between the firm and Microsoft; neither the step nor this comment names
+ *     an outcome for it.
  *
- *     Three ways this sentence has already gone wrong, so: do not restate a
+ *     Four ways this sentence has already gone wrong, so: do not restate a
  *     specific day count (Microsoft dropped the published figure in an Oct 2025
  *     revision); do not call human review the default (its current text says
  *     flagged content is sampled by automated means "instead of a human
@@ -59,10 +62,9 @@ const DEFAULTS = {
  *     cannot keep; and do not drop the "or under an eligible program" disjunct
  *     to write a flat "only managed customers". (Foundry Planning's OWN zero
  *     retention above is a claim about our product, it is true, and it stays.)
- *     Microsoft's own quoted text is
- *     the authority here — NOT the paraphrases in the plan's
- *     ms-docs-verification.md, whose suggested wording is what dropped that
- *     disjunct in the first place.
+ *     Microsoft's own quoted text is the authority here — NOT the paraphrases
+ *     in the plan's ms-docs-verification.md, whose suggested wording is what
+ *     dropped that disjunct in the first place.
  *  2. Microsoft's portal is now called "Microsoft Foundry", which collides with
  *     our product name. Never let "Foundry" stand alone in an Azure step.
  */

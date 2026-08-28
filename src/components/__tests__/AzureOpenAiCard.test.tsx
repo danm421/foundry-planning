@@ -349,7 +349,13 @@ describe("AzureOpenAiCard — Azure setup claims", () => {
     // approved…" carve-out would void the acknowledgment on a condition whose
     // effect no Microsoft text establishes — the advisor would sign believing
     // approval stops the storing, and we cannot back that.
-    expect(label).toContain(
+    //
+    // `toBe`, not `toContain`: the label IS this sentence and nothing else. A
+    // substring check passes with a carve-out appended, and the /unless/ line
+    // below is only a keyword tripwire — a carve-out worded without that word
+    // ("except where my firm has been approved…") slipped past both. The
+    // /unless/ assertion stays as documentation of the wording that got here.
+    expect(label).toBe(
       `I understand that Azure ${STORING_BY_DEFAULT} — and that any change to that takes ` +
         "Microsoft’s separate approval of my firm for Modified Abuse Monitoring. I am " +
         "authorized to connect this resource.",
