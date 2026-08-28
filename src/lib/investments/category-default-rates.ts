@@ -55,7 +55,7 @@ const FALLBACK_CATEGORY_DEFAULTS: CategoryDefaultRateMap = {
   cash: "0.02",
   retirement: "0.07",
   education_savings: "0.07",
-  annuity: "0.04",
+  annuity: "0.07",
   real_estate: "0.04",
   business: "0.05",
   stock_options: "0.07",
@@ -93,7 +93,11 @@ export function categoryDefaultRates(
     // education_savings aliases the retirement defaults — mirrors
     // `growthDefaultCategory` in the engine's resolver.
     education_savings: investableEffectiveRate(settings.growthSourceRetirement, settings.modelPortfolioIdRetirement, settings.defaultGrowthRetirement),
-    annuity: flatRate(settings.defaultGrowthRealEstate, settings.growthSourceRealEstate),
+    // annuity aliases the retirement defaults — mirrors `growthDefaultCategory`
+    // in the engine's resolver. It followed real_estate until annuities gained
+    // a real growth dropdown, at which point a rate the projection did not
+    // agree with became a visible lie in the dropdown's "Plan default" label.
+    annuity: investableEffectiveRate(settings.growthSourceRetirement, settings.modelPortfolioIdRetirement, settings.defaultGrowthRetirement),
     real_estate: flatRate(settings.defaultGrowthRealEstate, settings.growthSourceRealEstate),
     business: flatRate(settings.defaultGrowthBusiness, settings.growthSourceBusiness),
     stock_options: flatRate(settings.defaultGrowthStockOptions, settings.growthSourceStockOptions),

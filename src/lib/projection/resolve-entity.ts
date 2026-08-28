@@ -195,7 +195,15 @@ export function resolveAccountFromRaw(
     };
   }
 
-  if (raw.category === "retirement" || raw.category === "education_savings") {
+  // Tax-deferred and tax-free wrappers: a year's growth is not taxed as it is
+  // earned, so it carries no ordinary-income / dividend / cap-gain split. An
+  // annuity's inside build-up is taxed under §72 on the way OUT
+  // (engine/annuity/payout.ts, engine/withdrawal.ts) — never annually.
+  if (
+    raw.category === "retirement" ||
+    raw.category === "education_savings" ||
+    raw.category === "annuity"
+  ) {
     realization = undefined;
   }
 

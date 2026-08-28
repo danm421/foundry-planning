@@ -48,6 +48,53 @@ function makeCtx(overrides: Partial<{
   };
 }
 
+/** A resolver whose only model portfolio returns 5% and is 100% ordinary
+ *  income — so a realization model, if one ever leaked onto an annuity, would
+ *  be unmistakable rather than a plausible-looking zero. */
+function makeCtxWithPortfolio(): ResolutionContext {
+  const resolver = createGrowthSourceResolver({
+    planSettings: {
+      growthSourceTaxable: "default",
+      growthSourceCash: "default",
+      growthSourceRetirement: "default",
+      growthSourceRealEstate: "default",
+      growthSourceBusiness: "default",
+      growthSourceLifeInsurance: "default",
+      modelPortfolioIdTaxable: null,
+      modelPortfolioIdCash: null,
+      modelPortfolioIdRetirement: null,
+      defaultGrowthTaxable: "0.07",
+      defaultGrowthCash: "0.02",
+      defaultGrowthRetirement: "0.06",
+      defaultGrowthRealEstate: "0.04",
+      defaultGrowthBusiness: "0.05",
+      defaultGrowthLifeInsurance: "0.03",
+      inflationAssetClassId: null,
+    },
+    assetClasses: [
+      {
+        id: "ac-1",
+        geometricReturn: "0.05",
+        pctOrdinaryIncome: "1",
+        pctLtCapitalGains: "0",
+        pctQualifiedDividends: "0",
+        pctTaxExempt: "0",
+      },
+    ],
+    modelPortfolios: [{ id: "mp-1" }],
+    modelPortfolioAllocations: [{ portfolioId: "mp-1", assetClassId: "ac-1", weight: "1" }],
+    accountAssetAllocations: [],
+    clientCmaOverrides: [],
+  });
+  return {
+    resolver,
+    resolvedInflationRate: 0.025,
+    beneficiariesByAccountId: new Map(),
+    policiesByAccount: {},
+    ownersByAccountId: new Map(),
+  };
+}
+
 const baseRawAccount = {
   turnoverPct: "0",
   annualPropertyTax: "0",
@@ -500,5 +547,52 @@ describe("resolveSavingsRuleFromRaw", () => {
       makeCtx(),
     );
     expect(rule.growthRate).toBeCloseTo(0.05);
+  });
+});
+
+
+describe("resolveAccountFromRaw — annuity growth", () => {
+  function annuityOnPortfolio() {
+    return resolveAccountFromRaw(
+      {
+        ...baseRawAccount,
+        id: "a-annuity",
+        name: "Contract",
+        category: "annuity",
+        subType: "non_qualified",
+        value: "100000",
+        basis: "100000",
+        growthSource: "model_portfolio",
+        modelPortfolioId: "mp-1",
+        growthRate: null,
+      },
+      makeCtxWithPortfolio(),
+    );
+  }
+
+  it("resolves an annuity on a model portfolio to that portfolio's blended return", () => {
+    expect(annuityOnPortfolio().growthRate).toBeCloseTo(0.05, 10);
+  });
+
+  it("never gives an annuity a realization model — §72 taxes it on the way out, not annually", () => {
+    expect(annuityOnPortfolio().realization).toBeUndefined();
+  });
+
+  it("resolves an annuity on Plan default through the retirement category", () => {
+    const acct = resolveAccountFromRaw(
+      {
+        ...baseRawAccount,
+        id: "a-annuity-2",
+        name: "Contract",
+        category: "annuity",
+        subType: "qualified",
+        value: "100000",
+        basis: "100000",
+        growthSource: "default",
+        growthRate: null,
+      },
+      makeCtxWithPortfolio(),
+    );
+    expect(acct.growthRate).toBeCloseTo(0.06, 10);
   });
 });
