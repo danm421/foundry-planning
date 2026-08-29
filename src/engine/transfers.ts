@@ -33,6 +33,13 @@ export interface TransfersInput {
    *  conversions (handled in roth-conversions.ts; transfers don't currently
    *  surface as Roth conversions). */
   rothValueMap?: Record<string, number>;
+  /** Mutable. Live unrecovered §72 basis per annuity account, keyed by account
+   *  id — the projection's contract state, not `Account.annuity.costBasis`.
+   *  A transfer out of a non-qualified annuity CONSUMES basis, so a recurring
+   *  transfer must see less of it each year. Absent (or missing an entry) falls
+   *  back to the contract's original `costBasis`, which re-shelters the same
+   *  dollars for as many years as the transfer runs. */
+  annuityBasisMap?: Record<string, number>;
   accountLedgers: Record<string, AccountLedger>;
   year: number;
   ownerAges: { client: number; spouse?: number };
@@ -69,7 +76,7 @@ export interface TransfersResult {
  * Transfers occur after annual growth has been applied but before RMDs.
  */
 export function applyTransfers(input: TransfersInput): TransfersResult {
-  const { transfers, accounts, accountBalances, basisMap, freshBasisMap, rothValueMap, accountLedgers, year, ownerAges, spouseFamilyMemberId } = input;
+  const { transfers, accounts, accountBalances, basisMap, freshBasisMap, rothValueMap, annuityBasisMap, accountLedgers, year, ownerAges, spouseFamilyMemberId } = input;
 
   const result: TransfersResult = {
     taxableOrdinaryIncome: 0,
@@ -116,6 +123,11 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
       sourceAccountBasis: basisMap[transfer.sourceAccountId] ?? 0,
       sourceRothValue: rothValueMap?.[transfer.sourceAccountId] ?? 0,
       sourceFreshBasis: sourceFresh,
+      sourceAnnuityTreatment: sourceAccount.annuity?.taxTreatment,
+      // LIVE remaining §72 basis, falling back to the contract's original
+      // figure only when the caller tracks none.
+      sourceAnnuityBasis:
+        annuityBasisMap?.[transfer.sourceAccountId] ?? sourceAccount.annuity?.costBasis,
       allTraditionalIraBasis,
       allTraditionalIraBalance,
       ownerAge,
@@ -172,6 +184,19 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
       }
     } else {
       basisMoved = _updateBasis(transfer.sourceAccountId, transfer.targetAccountId, actualAmount, sourceBalance, basisMap);
+    }
+
+    // ── Consume annuity §72 basis ────────────────────────────────────────────
+    // Annuity basis lives on the contract, never in `basisMap` (whose
+    // taxable/cash gates skip this category entirely), so it decrements here or
+    // nowhere. Without this a recurring transfer re-shelters the SAME basis
+    // every year and under-reports ordinary income for the life of the transfer.
+    if (annuityBasisMap && sourceAccount.category === "annuity" && taxResult.basisReturn > 0) {
+      const before =
+        annuityBasisMap[transfer.sourceAccountId] ??
+        sourceAccount.annuity?.costBasis ??
+        sourceBalance;
+      annuityBasisMap[transfer.sourceAccountId] = Math.max(0, before - taxResult.basisReturn);
     }
 
     // ── Update rothValue map ─────────────────────────────────────────────────

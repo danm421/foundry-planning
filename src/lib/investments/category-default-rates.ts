@@ -55,7 +55,7 @@ const FALLBACK_CATEGORY_DEFAULTS: CategoryDefaultRateMap = {
   cash: "0.02",
   retirement: "0.07",
   education_savings: "0.07",
-  annuity: "0.04",
+  annuity: "0.07",
   real_estate: "0.04",
   business: "0.05",
   stock_options: "0.07",
@@ -86,14 +86,23 @@ export function categoryDefaultRates(
     return String(customRate);
   };
 
+  // 529s and annuities alias the retirement defaults — mirrors
+  // `growthDefaultCategory` in the engine's resolver. Named once so the three
+  // cannot drift apart; annuity followed real_estate until it gained a real
+  // growth dropdown, at which point a rate the projection did not agree with
+  // became a visible lie in the dropdown's "Plan default" label.
+  const retirementRate = investableEffectiveRate(
+    settings.growthSourceRetirement,
+    settings.modelPortfolioIdRetirement,
+    settings.defaultGrowthRetirement,
+  );
+
   return {
     taxable: investableEffectiveRate(settings.growthSourceTaxable, settings.modelPortfolioIdTaxable, settings.defaultGrowthTaxable),
     cash: investableEffectiveRate(settings.growthSourceCash, settings.modelPortfolioIdCash, settings.defaultGrowthCash),
-    retirement: investableEffectiveRate(settings.growthSourceRetirement, settings.modelPortfolioIdRetirement, settings.defaultGrowthRetirement),
-    // education_savings aliases the retirement defaults — mirrors
-    // `growthDefaultCategory` in the engine's resolver.
-    education_savings: investableEffectiveRate(settings.growthSourceRetirement, settings.modelPortfolioIdRetirement, settings.defaultGrowthRetirement),
-    annuity: flatRate(settings.defaultGrowthRealEstate, settings.growthSourceRealEstate),
+    retirement: retirementRate,
+    education_savings: retirementRate,
+    annuity: retirementRate,
     real_estate: flatRate(settings.defaultGrowthRealEstate, settings.growthSourceRealEstate),
     business: flatRate(settings.defaultGrowthBusiness, settings.growthSourceBusiness),
     stock_options: flatRate(settings.defaultGrowthStockOptions, settings.growthSourceStockOptions),

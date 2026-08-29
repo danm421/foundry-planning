@@ -16,7 +16,7 @@ import { ASSET_MIX_CATEGORIES, INFLATION_CATEGORIES } from "@/components/forms/g
  *  scope for the Map entirely. */
 export type GrowthEditMode = "full" | "inflation_custom" | "custom_only" | "none";
 
-const FULL_DROPDOWN_CATEGORIES = ["taxable", "cash", "retirement", "education_savings"];
+const FULL_DROPDOWN_CATEGORIES = ["taxable", "cash", "retirement", "education_savings", "annuity"];
 
 export function growthEditModeFor(category: string): GrowthEditMode {
   if (FULL_DROPDOWN_CATEGORIES.includes(category)) return "full";
@@ -39,8 +39,12 @@ export interface GrowthOptionsArgs {
   resolvedInflationRate: number;
   defaultPctForCategory: number | null;
   assetMixBlendedPct: number | null;
-  /** True when the account has no holdings to back an asset mix. */
+  /** True when the account has no holdings to back a NEWLY chosen asset mix.
+   *  Never suppresses the source the account already stores. */
   hideAssetMix: boolean;
+  /** The account's persisted `growth_source`. An account already on a source is
+   *  always offered it, whatever its category. */
+  currentSource?: string;
 }
 
 /**
@@ -88,7 +92,17 @@ export function growthOptionsFor(args: GrowthOptionsArgs): GrowthOption[] {
     if (fp.blendedReturnPct === null) continue; // needs classified holdings
     out.push({ value: `tp:${fp.id}`, label: `${fp.blendedReturnPct.toFixed(2)}% \u2014 ${fp.name}` });
   }
-  if (ASSET_MIX_CATEGORIES.includes(args.category) && !args.hideAssetMix) {
+  // A <select> whose value matches no option shows the FIRST one, so dropping
+  // the source the account is actually on makes the control read "Plan default"
+  // while the engine goes on using the mix — and the next save writes that lie
+  // back. `syncAccountFromHoldings` stamps "asset_mix" on ANY holdings-backed
+  // account, whatever its category, so cash / annuity / 529 / real-estate rows
+  // do arrive already on one. The category list and `hideAssetMix` govern only
+  // whether the mix can be picked ANEW.
+  if (
+    args.currentSource === "asset_mix" ||
+    (ASSET_MIX_CATEGORIES.includes(args.category) && !args.hideAssetMix)
+  ) {
     out.push({
       value: "asset_mix",
       label:

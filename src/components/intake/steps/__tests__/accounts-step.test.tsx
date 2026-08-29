@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import type { IntakeDraft } from "@/lib/intake/schema";
 import { AccountsStep } from "../accounts-step";
+import { intakeFallbackSubType, subTypesForCategory } from "@/lib/intake/account-types";
 
 type AccountsSlice = IntakeDraft["accounts"];
 
@@ -399,5 +400,20 @@ describe("AccountsStep", () => {
     expect(screen.getByText("$3,500")).toBeInTheDocument();
     expect(screen.getByText("Accounts")).toBeInTheDocument();
     expect(screen.getByText("2")).toBeInTheDocument();
+  });
+});
+
+describe("intake annuity sub-type", () => {
+  it("still does not ask a household how their annuity is taxed", () => {
+    // Qualified vs non-qualified is not something a client can answer
+    // unaided, which is the line this taxonomy is trimmed to.
+    expect(subTypesForCategory("annuity")).toEqual([]);
+  });
+
+  it("lands an annuity on non_qualified rather than 'other'", () => {
+    // 'other' is no longer a sub-type the advisor's Account Type dropdown
+    // offers, so an intake account left on it would open with a blank Type.
+    expect(intakeFallbackSubType("annuity")).toBe("non_qualified");
+    expect(intakeFallbackSubType("taxable")).toBe("other");
   });
 });

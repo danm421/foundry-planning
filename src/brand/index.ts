@@ -93,8 +93,15 @@ export const colorsLight = {
 } as const;
 
 // Deep Jewel data palette — six anchors (red·blue·green·yellow·grey·orange)
-// plus three fills (purple·teal·pink). Rich, darker-toned; reads as one premium
-// family. Lead charts with the anchors in order, add fills as series grow.
+// plus four fills (purple·teal·pink·sky). Rich, darker-toned; reads as one
+// premium family. Lead charts with the anchors in order, add fills as series
+// grow.
+//
+// `sky` is the family's second blue — light enough to sit beside `blue` in one
+// stack without the two reading as a single band (33.4 ΔE76 apart in normal
+// vision, 27.9 under simulated deuteranopia). It is a fill, not an anchor: it
+// is chosen by name where a chart wants two blues, never handed out by
+// `chartSeriesColors`, whose adjacency order stays the nine it has always been.
 export const data = {
   red:    "#c0392b",
   blue:   "#2c5fa8",
@@ -105,6 +112,7 @@ export const data = {
   purple: "#6a3fa0",
   teal:   "#1f8a86",
   pink:   "#a83f6a",
+  sky:    "#56a9dd",
 } as const;
 
 export const dataLight = {
@@ -117,6 +125,7 @@ export const dataLight = {
   purple: "#6c41a2",
   teal:   "#198b83",
   pink:   "#ab3f6b",
+  sky:    "#52a4d9",
 } as const;
 
 /** A Deep Jewel data palette key — the stable identity used to color a series. */

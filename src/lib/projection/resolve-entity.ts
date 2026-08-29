@@ -17,6 +17,7 @@ export interface ResolutionContext {
    *  empty for scenario-added entities (deferred for v1). */
   beneficiariesByAccountId?: Map<string, BeneficiaryRef[]>;
   policiesByAccount?: Record<string, Account["lifeInsurance"]>;
+  annuityByAccount?: Record<string, NonNullable<Account["annuity"]>>;
   ownersByAccountId?: Map<string, AccountOwner[]>;
   /** Per-account BASE (pre-reinvestment) asset-class allocation, keyed by
    *  account id. Populated by `loadClientData` from the raw account rows —
@@ -91,6 +92,8 @@ type RawAccount = {
   owners?: AccountOwner[];
   beneficiaries?: BeneficiaryRef[];
   lifeInsurance?: Account["lifeInsurance"];
+  /** Annuity contract detail, when the caller already has it inline. */
+  annuity?: Account["annuity"];
   /** Business-as-asset fields. Present only on top-level business accounts;
    *  null/undefined for everything else. The engine reads them when applying
    *  distribution sweep + pass-through tax incidence. */
@@ -192,7 +195,15 @@ export function resolveAccountFromRaw(
     };
   }
 
-  if (raw.category === "retirement" || raw.category === "education_savings") {
+  // Tax-deferred and tax-free wrappers: a year's growth is not taxed as it is
+  // earned, so it carries no ordinary-income / dividend / cap-gain split. An
+  // annuity's inside build-up is taxed under §72 on the way OUT
+  // (engine/annuity/payout.ts, engine/withdrawal.ts) — never annually.
+  if (
+    raw.category === "retirement" ||
+    raw.category === "education_savings" ||
+    raw.category === "annuity"
+  ) {
     realization = undefined;
   }
 
@@ -239,6 +250,7 @@ export function resolveAccountFromRaw(
       raw.lifeInsurance ?? ctx.policiesByAccount?.[raw.id],
       ctx.resolver,
     ),
+    annuity: raw.annuity ?? ctx.annuityByAccount?.[raw.id],
     titlingType: raw.titlingType,
     owners:
       raw.category === "education_savings"

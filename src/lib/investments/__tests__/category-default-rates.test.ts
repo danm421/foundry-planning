@@ -40,12 +40,20 @@ describe("categoryDefaultRates", () => {
     expect(rates.education_savings).toBe(rates.retirement);
   });
 
+  it("aliases annuity to the retirement defaults", () => {
+    const rates = categoryDefaultRates(settings, portfolios, 0.025);
+    expect(rates.annuity).toBe(rates.retirement);
+  });
+
   it("covers all ten categories", () => {
     expect(Object.keys(categoryDefaultRates(settings, portfolios, 0.025))).toHaveLength(10);
   });
 
   it("returns the hardcoded fallback map when the plan has no settings row", () => {
-    // Verbatim from the pre-extraction ternary's settings-falsy branch
+    // annuity was "0.04" (the real-estate rate) until 2026-08-28, when
+    // annuities gained a real growth dropdown and were aliased to the
+    // retirement defaults everywhere. Every other figure is still verbatim
+    // from the pre-extraction ternary's settings-falsy branch
     // (net-worth-content.tsx at base dd88d58bf) — checked against that
     // source, not against category-default-rates.ts's own constant, so a
     // transcription error in the constant can't confirm itself here.
@@ -54,7 +62,7 @@ describe("categoryDefaultRates", () => {
       cash: "0.02",
       retirement: "0.07",
       education_savings: "0.07",
-      annuity: "0.04",
+      annuity: "0.07",
       real_estate: "0.04",
       business: "0.05",
       stock_options: "0.07",

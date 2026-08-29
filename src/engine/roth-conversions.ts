@@ -177,6 +177,8 @@ export function applyRothConversions(input: RothConversionsInput): RothConversio
         sourceAccountValue: srcBalance,
         sourceAccountBasis: basisMap[src.id] ?? 0,
         sourceRothValue: rothValueMap?.[src.id] ?? 0,
+        sourceAnnuityTreatment: src.annuity?.taxTreatment,
+        sourceAnnuityBasis: src.annuity?.costBasis,
         allTraditionalIraBasis: workingPoolBasis,
         allTraditionalIraBalance: workingPoolBalance,
         ownerAge,

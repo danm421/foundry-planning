@@ -72,24 +72,33 @@ const DEPLETED_BORDER_WIDTH = 2;
 const SELECTED_BORDER_WIDTH = 2;
 
 /**
- * SEPARATION — why these six brand hues and not the other three.
+ * SEPARATION — why these six hues, and why the metric is not plain ΔE76.
  *
  * Both stacks are read by comparing neighbouring bands, so the palette's job is
  * to keep every pair apart, and the pair that decides that is the CLOSEST one.
- * Measured in CIE Lab (ΔE76) over the dark palette, the set below —
- * red · yellow · blue · grey · pink · green — has a closest pair of 42.0
- * (red/pink). It is the widest set of six the nine-colour brand palette can
- * produce with green held for the residual, and the two hues it drops were the
- * two that were failing:
+ * A pair is only as far apart as its WORST viewing condition, so separation
+ * here is `min(ΔE76 normal, ΔE76 under simulated deuteranopia)` — the guard in
+ * `__tests__/solver-monthly-cash-flow-chart.test.ts` measures exactly that, and
+ * the floor is 20. Every palette this chart has shipped and had to withdraw
+ * failed on the second half of that minimum, not the first:
  *
- *   - purple #6a3fa0 for Living sat 30.7 from blue #2c5fa8 for Savings — and
- *     2.6 under simulated deuteranopia, i.e. the same colour for a red-green
- *     colour-blind reader. Two adjacent bands. Now pink, 56.9 from blue.
- *   - orange #cf6a1f for Debt sat 26.7 from red #c0392b for Taxes, the tightest
- *     pair in the whole chart and also two adjacent bands. Now yellow, 55.9.
+ *   - purple #6a3fa0 for Living against blue #2c5fa8 for Savings: 30.7 in
+ *     normal vision, 2.6 under deuteranopia. Two adjacent bands, one colour for
+ *     a red-green colour-blind reader.
+ *   - pink #a83f6a for Living against the residual green #2a8a5e: 88.1 normal,
+ *     11.8 under deuteranopia. Pink-on-green is the textbook confusion, and
+ *     these two bands touch — Living sits directly under Left over.
+ *   - orange #cf6a1f for Debt against red #c0392b for Taxes: 26.7 normal, 17.7
+ *     deuteranope. Adjacent again, and the tightest pair in normal vision the
+ *     chart has carried.
  *
- * Teal is deliberately NOT in the set: it is 23.8 from the green the residual
- * band owns, which would have been worse than what it replaced.
+ * The set below — red · yellow · sky · grey · blue · green — clears the floor
+ * at 27.4 (dark) and 23.3 (light), and both of those are the pre-existing
+ * grey/green pair, not one this palette introduced. Savings and Living are two
+ * blues on purpose: `sky` #56a9dd against `blue` #2c5fa8 is 33.4 normal and
+ * 27.9 deuteranope, because they separate on LIGHTNESS (L* 21 apart), which is
+ * the one channel that survives every colour-vision deficiency and greyscale
+ * printing. Teal stays out: it is 23.3 from the green the residual owns.
  */
 
 interface MonthlyDataset {
@@ -168,7 +177,7 @@ export function buildMonthlyCashFlowChartData(
     datasets: [
       bar("Taxes", (r) => r.fixed.taxes, palette.red),
       bar("Debt payments", (r) => r.fixed.liabilities, palette.yellow),
-      bar("Savings", (r) => r.fixed.savings, palette.blue),
+      bar("Savings", (r) => r.fixed.savings, palette.sky),
       bar(
         "Other fixed",
         (r) => r.fixed.insurance + r.fixed.realEstate + r.fixed.other,
@@ -222,7 +231,7 @@ const leftOver = (r: MonthRow) =>
  * breaks out, takes a hue no band here uses.
  *
  * The six hues are chosen for SEPARATION, measured, not picked by eye — see the
- * note on `SEPARATION` below.
+ * note on `SEPARATION` above.
  */
 export function buildMonthAllocationChartData(
   rows: MonthRow[],
@@ -252,9 +261,9 @@ export function buildMonthAllocationChartData(
     datasets: [
       bar("Taxes", (r) => r.taxes, palette.red),
       bar("Debt", (r) => r.debt, palette.yellow),
-      bar("Savings", (r) => r.savings, palette.blue),
+      bar("Savings", (r) => r.savings, palette.sky),
       bar("Other", (r) => r.other, palette.grey),
-      bar("Living", (r) => r.living, palette.pink),
+      bar("Living", (r) => r.living, palette.blue),
       // Stained where the month is short — the moment this whole view exists to
       // find. Colour is not the only carrier: a negative band is the only band
       // in the chart drawn below the zero line, and position survives greyscale

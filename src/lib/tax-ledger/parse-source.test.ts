@@ -92,6 +92,45 @@ describe("parseHouseholdSource", () => {
       taxable: false,
     });
   });
+  it("parses an annuity return-of-basis slice as a NON-TAXABLE row", () => {
+    // The generic <acctId>:<kind> fallback rendered this as account
+    // "annuity_tax_free" / description "<ACCOUNT-UUID>" — and, because the
+    // engine's raw type fell through `rawTypeToCharacter`'s default, as
+    // TAXABLE. A §72 return of basis is not income; taxable:false is the
+    // load-bearing assertion here.
+    const r = parseHouseholdSource(
+      "annuity_tax_free:acct1",
+      { type: "tax_free", amount: 10_000 },
+      ctx,
+    );
+    expect(r).toMatchObject({
+      type: "Annuity Income",
+      description: "Return of basis (§72)",
+      character: "non_taxable",
+      account: "Traditional IRA",
+      amount: 10_000,
+      taxable: false,
+    });
+    expect(r.type).not.toBe("Investment Income");
+  });
+  it("parses an annuity taxable distribution without leaking the account UUID", () => {
+    const r = parseHouseholdSource(
+      "annuity:3f1b0c2a-0000-4000-8000-000000000001",
+      { type: "ordinary_income", amount: 12_000 },
+      ctx,
+    );
+    expect(r).toMatchObject({
+      type: "Annuity Income",
+      description: "Taxable distribution",
+      character: "ordinary",
+      amount: 12_000,
+      taxable: true,
+    });
+    expect(r.description).not.toBe("3f1b0c2a-0000-4000-8000-000000000001");
+    // A known account id resolves to its name rather than falling through.
+    const known = parseHouseholdSource("annuity:acct1", { type: "ordinary_income", amount: 12_000 }, ctx);
+    expect(known).toMatchObject({ account: "Traditional IRA", character: "ordinary", taxable: true });
+  });
   it("parses an equity vest", () => {
     const r = parseHouseholdSource("equity-vest:eq1", { type: "earned_income", amount: 20000 }, ctx);
     expect(r).toMatchObject({ type: "Equity Vest/Exercise", description: "RSU Plan", character: "earned" });

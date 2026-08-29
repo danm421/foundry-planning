@@ -19,6 +19,16 @@ export function resolveSourceLabel(sourceId: string, ctx: CellDrillContext): str
     const name = ctx.accountNames[acctId] ?? acctId;
     return `${name} — Withdrawal (tax-free)`;
   }
+  if (sourceId.startsWith("annuity_tax_free:")) {
+    const acctId = sourceId.slice("annuity_tax_free:".length);
+    const name = ctx.accountNames[acctId] ?? acctId;
+    return `${name} — Annuity Income (tax-free)`;
+  }
+  if (sourceId.startsWith("annuity:")) {
+    const acctId = sourceId.slice("annuity:".length);
+    const name = ctx.accountNames[acctId] ?? acctId;
+    return `${name} — Annuity Income`;
+  }
   if (sourceId.startsWith("education_tax_free:")) {
     return "Education funding — non-taxable distribution";
   }

@@ -62,11 +62,13 @@ export type ResolvedCategoryDefault = {
   };
 };
 
-/** 529s have no dedicated plan_settings growth columns — their category-level
- *  growth defaults follow the retirement category. Normalize before any
- *  category-keyed plan-settings lookup. */
+/** 529s and annuities have no dedicated plan_settings growth columns — their
+ *  category-level growth defaults follow the retirement category. Normalize
+ *  before any category-keyed plan-settings lookup. Without the alias an
+ *  annuity falls through `resolveCategoryDefault`'s unknown-category branch to
+ *  a hardcoded 5%, which the dropdown would then label as the plan's default. */
 export function growthDefaultCategory<T extends string>(category: T): T | "retirement" {
-  return category === "education_savings" ? "retirement" : category;
+  return category === "education_savings" || category === "annuity" ? "retirement" : category;
 }
 
 export function createGrowthSourceResolver(ctx: {

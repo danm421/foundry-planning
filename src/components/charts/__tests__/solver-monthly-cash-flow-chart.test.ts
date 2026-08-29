@@ -80,13 +80,58 @@ function deltaE76(a: string, b: string): number {
   return Math.hypot(l1 - l2, a1 - a2, b1 - b2);
 }
 
+/**
+ * Deuteranopia, simulated in LMS (Vienot/Brettel): the green cone response is
+ * rebuilt from the red and blue ones, which is what a red-green colour-blind
+ * reader's eye does. ~5% of men read these charts that way, and every palette
+ * this chart has had to withdraw looked fine until it was measured here.
+ */
+function deuteranope(hex: string): string {
+  const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const un = (c: number) =>
+    c <= 0.0031308 ? 12.92 * c : 1.055 * Math.max(c, 0) ** (1 / 2.4) - 0.055;
+  const [r, g, b] = [1, 3, 5].map((i) => lin(parseInt(hex.slice(i, i + 2), 16) / 255));
+  const l = 17.8824 * r + 43.5161 * g + 4.11935 * b;
+  const s = 0.0299566 * r + 0.184309 * g + 1.46709 * b;
+  const m = 0.494207 * l + 1.24827 * s; // the missing cone, reconstructed
+  const out = [
+    0.0809444479 * l - 0.130504409 * m + 0.116721066 * s,
+    -0.0102485335 * l + 0.0540193266 * m - 0.113614708 * s,
+    -0.000365296938 * l - 0.00412161469 * m + 0.693511405 * s,
+  ];
+  return `#${out
+    .map((v) =>
+      Math.round(Math.min(1, Math.max(0, un(v))) * 255)
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")}`;
+}
+
+/**
+ * How far apart two bands are IN THE WORST CASE — normal vision or
+ * deuteranopia, whichever reads them as closer. A pair is only as separated as
+ * its worst viewer, and taking the minimum is what makes one number cover both:
+ * plain ΔE76 passed purple/blue at 30.7 while a colour-blind advisor saw 2.6.
+ */
+function separation(a: string, b: string): number {
+  return Math.min(deltaE76(a, b), deltaE76(deuteranope(a), deuteranope(b)));
+}
+
+/**
+ * The separation a pair of bands has to clear. Named once and shared by the
+ * guard and by the tests that claim what the guard detects — a floor restated
+ * in three places can be lowered in one of them and still look proven.
+ */
+const SEPARATION_FLOOR = 20;
+
 /** The closest pair among a set of band colours — the number that decides
  *  whether a stack can be read at all. */
 function closestPair(hexes: string[]): { distance: number; pair: [string, string] } {
   let worst = { distance: Infinity, pair: ["", ""] as [string, string] };
   for (let i = 0; i < hexes.length; i++) {
     for (let j = i + 1; j < hexes.length; j++) {
-      const distance = deltaE76(hexes[i], hexes[j]);
+      const distance = separation(hexes[i], hexes[j]);
       if (distance < worst.distance) worst = { distance, pair: [hexes[i], hexes[j]] };
     }
   }
@@ -230,7 +275,7 @@ describe("buildMonthlyCashFlowChartData", () => {
     const bandColor: Record<string, string> = {
       Taxes: brandData.red,
       "Debt payments": brandData.yellow,
-      Savings: brandData.blue,
+      Savings: brandData.sky,
       "Other fixed": brandData.grey,
     };
     // Liveness: pinning two bands to the same token would make the pins vacuous.
@@ -471,10 +516,13 @@ describe("buildMonthAllocationChartData", () => {
 
     expect(colorOf("Taxes")).toBe(brandData.red);
     expect(colorOf("Debt")).toBe(brandData.yellow);
-    expect(colorOf("Savings")).toBe(brandData.blue);
+    expect(colorOf("Savings")).toBe(brandData.sky);
     expect(colorOf("Other")).toBe(brandData.grey);
+    // The two blues, and which is which: Living is the deep one, Savings the
+    // light one. Swapped, both the pins above and the separation guard below
+    // would stay green — the set is the same six hues either way.
+    expect(colorOf("Living")).toBe(brandData.blue);
     // Green is the residual in both charts — Available there, Left over here.
-    expect(colorOf("Living")).toBe(brandData.pink);
     expect(colorOf("Left over")).toEqual(Array(12).fill(brandData.green));
   });
 
@@ -483,10 +531,14 @@ describe("buildMonthAllocationChartData", () => {
   // spelled differently. The pinned hues above would stay green through a swap
   // back to purple; this is the assertion that would not.
   //
-  // 40 is a floor with the reason attached: the chosen set clears it at 42.0
-  // (dark) and 41.7 (light), and the two hues this replaced — purple/blue at
-  // 30.7 and orange/red at 26.7 — fail it. Both themes, because the light
-  // palette is a different nine colours and could regress on its own.
+  // The floor is a number with the reason attached, measured on `separation`
+  // (the worse
+  // of normal vision and deuteranopia, above). The chosen set clears it at 27.4
+  // (dark) and 23.3 (light) — and in both themes that closest pair is grey
+  // against the residual green, a pair this palette inherited rather than
+  // introduced. Every palette the chart has withdrawn fails the same floor:
+  // purple/blue at 2.6, pink/green at 11.8, orange/red at 17.7. Both themes,
+  // because the light palette is a different set of hex and could regress alone.
   it.each(["dark", "light"] as const)("keeps every month band apart to the eye in %s", (theme) => {
     const d = buildMonthAllocationChartData(twelveMonths(), theme);
     const bands = d.datasets
@@ -505,18 +557,38 @@ describe("buildMonthAllocationChartData", () => {
     expect(bands[5]).toBe(theme === "dark" ? brandData.green : brandDataLight.green);
 
     const { distance, pair } = closestPair(bands);
-    expect({ pair, ok: distance >= 40 }).toEqual({ pair, ok: true });
+    expect({ pair, ok: distance >= SEPARATION_FLOOR }).toEqual({ pair, ok: true });
   });
 
-  // The guard is a claim about what it detects, so the claim is exercised: the
-  // palette this shipped with fails it, on the pair advisors actually reported.
-  it("would have caught the Living/Savings collision", () => {
-    const before = closestPair([
+  // The guard is a claim about what it detects, so the claim is exercised
+  // against the collisions this chart actually shipped and withdrew, not
+  // against a colour pair invented to fail. Every one of them was green under
+  // the previous guard's plain ΔE76 on at least one theme, which is why the
+  // METRIC and not just the floor had to move. Both themes, because the light
+  // palette is a different set of hex and could have held where the dark one
+  // broke.
+  it.each([
+    ["purple Living beside blue Savings", "purple", "blue"],
+    ["pink Living beside the green residual", "pink", "green"],
+    ["orange Debt beside red Taxes", "orange", "red"],
+  ] as const)("would have caught %s", (_name, a, b) => {
+    expect(separation(brandData[a], brandData[b])).toBeLessThan(SEPARATION_FLOOR);
+    expect(separation(brandDataLight[a], brandDataLight[b])).toBeLessThan(SEPARATION_FLOOR);
+  });
+
+  // And in the six-band sets they actually sat in: a guard that only caught a
+  // pair in isolation would not have caught it where it shipped.
+  it("would have caught both withdrawn palettes as whole sets", () => {
+    const purpleEra = [
       brandData.red, brandData.orange, brandData.blue,
       brandData.grey, brandData.purple, brandData.green,
-    ]);
-    expect(before.distance).toBeLessThan(40);
-    expect(closestPair([brandData.blue, brandData.purple]).distance).toBeLessThan(40);
+    ];
+    const pinkEra = [
+      brandData.red, brandData.yellow, brandData.blue,
+      brandData.grey, brandData.pink, brandData.green,
+    ];
+    expect(closestPair(purpleEra).distance).toBeLessThan(SEPARATION_FLOOR);
+    expect(closestPair(pinkEra).distance).toBeLessThan(SEPARATION_FLOOR);
   });
 
   it("resolves the palette against the requested theme", () => {

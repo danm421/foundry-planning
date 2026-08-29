@@ -889,6 +889,9 @@ export interface Account {
   propertyTaxGrowthRate?: number;
   insuredPerson?: "client" | "spouse" | "joint" | null;
   lifeInsurance?: LifeInsurancePolicy;
+  /** Annuity contract detail. Present only for `category === "annuity"`.
+   *  Drives tax treatment, guarantees, and annuitization in engine/annuity/. */
+  annuity?: import("./annuity/types").AnnuityContract;
   // CMA realization model — present when account uses a model portfolio or has overrides
   realization?: {
     pctOrdinaryIncome: number;

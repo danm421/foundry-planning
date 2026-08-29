@@ -76,6 +76,14 @@ export function parseHouseholdSource(
     const acctId = key.slice("withdrawal_tax_free:".length);
     return { type: "Withdrawal", description: "Non-taxable distribution", character, account: ctx.accountNames[acctId] ?? acctId, amount, taxable };
   }
+  if (key.startsWith("annuity_tax_free:")) {
+    const acctId = key.slice("annuity_tax_free:".length);
+    return { type: "Annuity Income", description: "Return of basis (§72)", character, account: ctx.accountNames[acctId] ?? acctId, amount, taxable };
+  }
+  if (key.startsWith("annuity:")) {
+    const acctId = key.slice("annuity:".length);
+    return { type: "Annuity Income", description: "Taxable distribution", character, account: ctx.accountNames[acctId] ?? acctId, amount, taxable };
+  }
   if (key.startsWith("education_tax_free:")) {
     return { type: "Education Funding", description: "Non-taxable distribution", character, account: null, amount, taxable };
   }

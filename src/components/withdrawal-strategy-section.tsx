@@ -380,7 +380,7 @@ export default function WithdrawalStrategySection({
           <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-300">
             Withdrawal Strategy
           </h3>
-          <HelpTip text="When household income can't cover expenses and savings, the projection pulls from these accounts in priority order. If left empty, the default order is Cash → Taxable → Tax-Deferred → Roth (illiquid accounts are skipped)." />
+          <HelpTip text="When household income can't cover expenses and savings, the projection pulls from these accounts in priority order. If left empty, the default order is Cash → Taxable → Tax-Deferred → Roth → Annuities, so an annuity is only surrendered as a last resort. Illiquid accounts are skipped, and an annuitized contract is never touched — that money is already with the carrier." />
         </div>
         {canEdit && (
           <button

@@ -1,6 +1,6 @@
 {
-  "id": "b7c362cf-cd1f-438f-8ed6-63ea04e924f8",
-  "prevId": "c0fe2c8b-f0d3-4851-beb9-d9e1f88802bb",
+  "id": "425b1d76-eda8-435a-8de2-95350d82cb9f",
+  "prevId": "02d1b633-e439-420c-b925-e5b1eabcc2bd",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1613,6 +1613,208 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.annuity_contracts": {
+      "name": "annuity_contracts",
+      "schema": "",
+      "columns": {
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "carrier": {
+          "name": "carrier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contract_number_last4": {
+          "name": "contract_number_last4",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "product_type": {
+          "name": "product_type",
+          "type": "annuity_product_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'fixed'"
+        },
+        "tax_treatment": {
+          "name": "tax_treatment",
+          "type": "annuity_tax_treatment",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'non_qualified'"
+        },
+        "cost_basis": {
+          "name": "cost_basis",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "surrender_charge_pct": {
+          "name": "surrender_charge_pct",
+          "type": "numeric(5, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "surrender_end_year": {
+          "name": "surrender_end_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "annual_fee_pct": {
+          "name": "annual_fee_pct",
+          "type": "numeric(5, 4)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "income_mode": {
+          "name": "income_mode",
+          "type": "annuity_income_mode",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'none'"
+        },
+        "income_start_year": {
+          "name": "income_start_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "income_start_year_ref": {
+          "name": "income_start_year_ref",
+          "type": "year_ref",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payout_structure": {
+          "name": "payout_structure",
+          "type": "annuity_payout_structure",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "survivor_pct": {
+          "name": "survivor_pct",
+          "type": "numeric(5, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "period_certain_years": {
+          "name": "period_certain_years",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "benefit_base": {
+          "name": "benefit_base",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rollup_rate": {
+          "name": "rollup_rate",
+          "type": "numeric(5, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rollup_end_year": {
+          "name": "rollup_end_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rollup_ratchets": {
+          "name": "rollup_ratchets",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "rider_fee_pct": {
+          "name": "rider_fee_pct",
+          "type": "numeric(5, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payout_pct": {
+          "name": "payout_pct",
+          "type": "numeric(5, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "annuitized_payment": {
+          "name": "annuitized_payment",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expected_return_years": {
+          "name": "expected_return_years",
+          "type": "numeric(6, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "annuity_contracts_account_id_accounts_id_fk": {
+          "name": "annuity_contracts_account_id_accounts_id_fk",
+          "tableFrom": "annuity_contracts",
+          "tableTo": "accounts",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "annuity_rider_needs_benefit_base": {
+          "name": "annuity_rider_needs_benefit_base",
+          "value": "(\"annuity_contracts\".\"income_mode\" != 'rider') OR (\"annuity_contracts\".\"benefit_base\" IS NOT NULL)"
+        },
+        "annuity_annuitized_needs_payment": {
+          "name": "annuity_annuitized_needs_payment",
+          "value": "(\"annuity_contracts\".\"income_mode\" != 'annuitized') OR (\"annuity_contracts\".\"annuitized_payment\" IS NOT NULL)"
+        },
+        "annuity_income_needs_start": {
+          "name": "annuity_income_needs_start",
+          "value": "(\"annuity_contracts\".\"income_mode\" = 'none') OR (\"annuity_contracts\".\"income_start_year\" IS NOT NULL OR \"annuity_contracts\".\"income_start_year_ref\" IS NOT NULL)"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.asset_class_correlations": {
@@ -22269,7 +22471,52 @@
         "money_market",
         "sep_ira",
         "simple_ira",
-        "401a"
+        "401a",
+        "qualified",
+        "non_qualified",
+        "tax_free"
+      ]
+    },
+    "public.annuity_income_mode": {
+      "name": "annuity_income_mode",
+      "schema": "public",
+      "values": [
+        "none",
+        "rider",
+        "annuitized"
+      ]
+    },
+    "public.annuity_payout_structure": {
+      "name": "annuity_payout_structure",
+      "schema": "public",
+      "values": [
+        "single_life",
+        "joint_survivor",
+        "life_with_period_certain",
+        "period_certain",
+        "cash_refund"
+      ]
+    },
+    "public.annuity_product_type": {
+      "name": "annuity_product_type",
+      "schema": "public",
+      "values": [
+        "spia",
+        "dia",
+        "myga",
+        "fixed",
+        "fixed_indexed",
+        "variable",
+        "qlac"
+      ]
+    },
+    "public.annuity_tax_treatment": {
+      "name": "annuity_tax_treatment",
+      "schema": "public",
+      "values": [
+        "qualified",
+        "non_qualified",
+        "tax_free"
       ]
     },
     "public.asset_transaction_type": {
@@ -22878,8 +23125,7 @@
       "values": [
         "orion",
         "schwab",
-        "addepar",
-        "azure_openai"
+        "addepar"
       ]
     },
     "public.integration_sync_trigger": {

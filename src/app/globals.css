@@ -69,7 +69,7 @@
   --color-alloc-alt: var(--data-purple);
   --color-alloc-other: var(--data-grey);
 
-  /* Deep Jewel data palette — six anchors + three fills, dark theme. */
+  /* Deep Jewel data palette — six anchors + four fills, dark theme. */
   --data-red: #c0392b;
   --data-blue: #2c5fa8;
   --data-green: #2a8a5e;
@@ -79,6 +79,8 @@
   --data-purple: #6a3fa0;
   --data-teal: #1f8a86;
   --data-pink: #a83f6a;
+  /* The family's second blue, for a stack that needs two. */
+  --data-sky: #56a9dd;
 
   /* Aliases */
   --positive: var(--color-good);
@@ -164,6 +166,7 @@
   --data-purple: #6c41a2;
   --data-teal: #198b83;
   --data-pink: #ab3f6b;
+  --data-sky: #52a4d9;
 
   color-scheme: light;
 }
@@ -239,6 +242,7 @@
   --color-data-purple: var(--data-purple);
   --color-data-teal: var(--data-teal);
   --color-data-pink: var(--data-pink);
+  --color-data-sky: var(--data-sky);
 
   --color-positive: var(--positive);
   --color-negative: var(--negative);

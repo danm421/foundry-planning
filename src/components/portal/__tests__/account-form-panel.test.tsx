@@ -2,7 +2,24 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
 
-import { AccountFormPanel, emptyAccountForm } from "../account-form-panel";
+import { AccountFormPanel, emptyAccountForm, SUBTYPES_BY_CATEGORY } from "../account-form-panel";
+
+describe("AccountFormPanel — annuity sub-types", () => {
+  it("offers an annuity the three tax treatments, not 'other'", () => {
+    // Left on ["other"], the portal would keep writing the one sub-type the
+    // advisor's Account Type dropdown no longer offers — which renders that
+    // select with no matching option.
+    expect(SUBTYPES_BY_CATEGORY.annuity).toEqual([
+      "non_qualified",
+      "qualified",
+      "tax_free",
+    ]);
+  });
+
+  it("starts a new annuity on non-qualified", () => {
+    expect(emptyAccountForm("annuity").subType).toBe("non_qualified");
+  });
+});
 
 describe("AccountFormPanel", () => {
   // POST /api/portal/accounts rejects any category outside

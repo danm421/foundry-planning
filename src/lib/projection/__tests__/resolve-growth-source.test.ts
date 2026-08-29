@@ -50,6 +50,17 @@ const modelPortfolioAllocations = [
   { portfolioId: "p-60-40", assetClassId: "bond", weight: "0.4" },
 ];
 
+function makeResolver() {
+  return createGrowthSourceResolver({
+    planSettings,
+    assetClasses,
+    modelPortfolios,
+    modelPortfolioAllocations,
+    accountAssetAllocations: [],
+    clientCmaOverrides: [],
+  });
+}
+
 describe("createGrowthSourceResolver", () => {
   it("resolvePortfolio blends geometric return and realization splits by weight", () => {
     const r = createGrowthSourceResolver({
@@ -137,5 +148,25 @@ describe("createGrowthSourceResolver", () => {
     const allocMap = r.tickerPortfolioAllocMap("tp1");
     expect(allocMap).toBeDefined();
     expect(allocMap!.get("us-eq")).toBeCloseTo(0.5, 6);
+  });
+
+  it("resolves an annuity's category default through the retirement settings", () => {
+    // No plan_settings column describes an annuity. Without the alias the
+    // resolver's unknown-category fallback returns a hardcoded 5%, which would
+    // be a silently wrong number on every annuity left on Plan default.
+    const r = makeResolver();
+    expect(r.resolveCategoryDefault("annuity").rate).toBe(
+      r.resolveCategoryDefault("retirement").rate,
+    );
+    expect(r.getCategoryGrowthSource("annuity")).toBe(
+      r.getCategoryGrowthSource("retirement"),
+    );
+    expect(r.categoryDefaultPortfolioId("annuity")).toBe(
+      r.categoryDefaultPortfolioId("retirement"),
+    );
+  });
+
+  it("does not resolve an annuity to the 5% unknown-category fallback", () => {
+    expect(makeResolver().resolveCategoryDefault("annuity").rate).not.toBe(0.05);
   });
 });
