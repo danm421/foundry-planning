@@ -256,23 +256,32 @@ export function annotateReconciliation(
   currentYear: number,
 ): { payload: ImportPayload; reconciled: ReconciledEmployer[] } {
   const candidates = payload.incomes.filter((r) => !r.reconciliation);
-  const reconciled = groupCompensation(candidates, files).map((g) =>
-    reconcileGroup(g, files, currentYear),
-  );
+  const groups = groupCompensation(candidates, files);
+  const reconciled = groups.map((g) => reconcileGroup(g, files, currentYear));
 
-  const bySupersededKey = new Map<string, Supersede>();
-  for (const r of reconciled) {
-    for (const s of r.supersedes) bySupersededKey.set(`${s.sourceFileId}|${s.rowName}`, s);
-  }
-
+  // Resolve each group's `supersedes` against THAT group's own rows only.
+  // Scoping the lookup per group (rather than one map shared across every
+  // group) matters because the key is `sourceFileId|rowName` — a combined
+  // document covering two employers, or a generic row label like "Wages",
+  // can repeat that same pair in a DIFFERENT group. A shared map would let
+  // the second group's Supersede overwrite the first's, stamping a row with
+  // another employer's reason text. `group.incomes` holds the same row
+  // objects as `payload.incomes`, so marking them here still mutates the
+  // payload in place — no second scan over `payload.incomes` is needed.
   let markedAny = false;
-  for (const row of payload.incomes) {
-    if (row.reconciliation) continue;
-    const hit = bySupersededKey.get(`${row.__provenance?.sourceFileId ?? ""}|${row.name}`);
-    if (!hit) continue;
-    row.reconciliation = { supersededBy: hit.rowName, reason: hit.reason };
-    markedAny = true;
-  }
+  groups.forEach((group, i) => {
+    const r = reconciled[i];
+    if (r.supersedes.length === 0) return;
+    const bySupersededKey = new Map<string, Supersede>();
+    for (const s of r.supersedes) bySupersededKey.set(`${s.sourceFileId}|${s.rowName}`, s);
+    for (const row of group.incomes) {
+      if (row.reconciliation) continue;
+      const hit = bySupersededKey.get(`${fileIdOf(row)}|${row.name}`);
+      if (!hit) continue;
+      row.reconciliation = { supersededBy: hit.rowName, reason: hit.reason };
+      markedAny = true;
+    }
+  });
 
   if (markedAny) {
     for (const r of reconciled) {

@@ -40,6 +40,7 @@ const FILES: Record<string, FileMeta> = {
   stub1: { documentType: "pay_stub", fileName: "2026-08-14_payslip.pdf" },
   stub2: { documentType: "pay_stub", fileName: "2026-07-31_payslip.pdf" },
   w2:    { documentType: "tax_return", fileName: "W2_2025.pdf" },
+  combo: { documentType: "tax_return", fileName: "combined_household_wages.pdf" },
 };
 
 function inc(
@@ -338,5 +339,31 @@ describe("annotateReconciliation", () => {
     const twice = annotateReconciliation(once.payload, FILES, 2026);
     expect(twice.payload.incomes.filter((r) => r.reconciliation)).toHaveLength(1);
     expect(twice.payload.warnings).toHaveLength(1);
+  });
+
+  // Regression: the superseded-row lookup used to be ONE map shared across
+  // every group, keyed `sourceFileId|rowName`. A combined document covering
+  // two employers with a generic row label ("Wages") repeats that same key
+  // in two DIFFERENT groups, so the second group's Supersede used to
+  // overwrite the first's in the map — stamping a row with another
+  // employer's reason text. Both groups here share the SAME `combo` file id
+  // and the SAME losing row name ("Wages") to reproduce that collision.
+  it("scopes the superseded-row lookup to its own group — a shared file id across two employers must not collide", () => {
+    const rows: Annotated<ExtractedIncome>[] = [
+      inc("stub1", { name: "Base Pay" }),
+      inc("combo", { name: "Wages", basis: "actual" }),
+      inc("stub2", { owner: "spouse", employer: "Other Hospital", name: "Base Salary" }),
+      inc("combo", { owner: "spouse", employer: "Other Hospital", name: "Wages", basis: "actual" }),
+    ];
+    const { payload } = annotateReconciliation(payloadWith(rows), FILES, 2026);
+    const marked = payload.incomes.filter((r) => r.reconciliation);
+    expect(marked).toHaveLength(2);
+
+    const mountSinaiRow = marked.find((r) => r.employer === "The Mount Sinai Hospital");
+    const otherHospitalRow = marked.find((r) => r.employer === "Other Hospital");
+    expect(mountSinaiRow?.reconciliation?.reason).toContain("The Mount Sinai Hospital");
+    expect(mountSinaiRow?.reconciliation?.reason).not.toContain("Other Hospital");
+    expect(otherHospitalRow?.reconciliation?.reason).toContain("Other Hospital");
+    expect(otherHospitalRow?.reconciliation?.reason).not.toContain("The Mount Sinai Hospital");
   });
 });
