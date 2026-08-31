@@ -1,14 +1,16 @@
 "use client";
 
 import type { ExtractedIncome, IncomeType } from "@/lib/extraction/types";
+import type { Annotated } from "@/lib/imports/types";
 import type { ClientMilestones, YearRef } from "@/lib/milestones";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import SourceBadge from "./source-badge";
 
-// Layered on top of CurrencyInput/PercentInput's own inputClassName baseline
-// to flag fields the AI didn't extract.
+// The file's amber flag pair. Layered on top of CurrencyInput/PercentInput's
+// own inputClassName baseline to flag fields the AI didn't extract, and reused
+// on the superseded-row badge (which supplies its own `border` width).
 const TINT_EMPTY = "bg-amber-900/20 border-amber-600/50";
 
 const INCOME_TYPE_OPTIONS: { value: IncomeType; label: string }[] = [
@@ -28,8 +30,14 @@ const OWNER_OPTIONS = [
 ];
 
 interface ReviewStepIncomesProps {
-  incomes: ExtractedIncome[];
-  onChange: (incomes: ExtractedIncome[]) => void;
+  /**
+   * Annotated, not bare `ExtractedIncome`: a row the reconciler judged a
+   * duplicate measurement of another row's earnings carries `reconciliation`,
+   * and the bare type cannot see it. Both call sites already hold annotated
+   * rows.
+   */
+  incomes: Annotated<ExtractedIncome>[];
+  onChange: (incomes: Annotated<ExtractedIncome>[]) => void;
   defaultStartYear: number;
   defaultEndYear: number;
   milestones?: ClientMilestones;
@@ -101,7 +109,37 @@ export default function ReviewStepIncomes({
 
       <div className="space-y-3">
         {incomes.map((income, i) => (
-          <div key={i} className="rounded-lg border border-gray-700 bg-gray-900 p-3">
+          <div
+            key={i}
+            // A superseded row is recessed and hairlined amber, never dropped:
+            // commitIncomes skips it, so the advisor has to be able to see the
+            // row, read why, and correct the call if the reconciler got it
+            // wrong. Every field below stays editable.
+            className={`rounded-lg border p-3 ${
+              income.reconciliation
+                ? "border-amber-600/50 bg-gray-900/40"
+                : "border-gray-700 bg-gray-900"
+            }`}
+          >
+            {income.reconciliation && (
+              <div className="mb-2.5 border-b border-amber-600/30 pb-2.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  {income.name && (
+                    <span className="text-sm font-medium text-gray-100">{income.name}</span>
+                  )}
+                  <span
+                    className={`rounded border ${TINT_EMPTY} px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-amber-300`}
+                  >
+                    Won&apos;t be imported
+                  </span>
+                </div>
+                {income.reconciliation.reason && (
+                  <p className="mt-1 max-w-prose text-xs leading-snug text-gray-300">
+                    {income.reconciliation.reason}
+                  </p>
+                )}
+              </div>
+            )}
             <div className="grid grid-cols-6 gap-2">
               <div className="col-span-2">
                 <label className="mb-1 block text-xs text-gray-300">Name</label>
