@@ -88,11 +88,25 @@ const CLIENT_DATA_NO_EDUCATION = {
   expenses: [(CLIENT_DATA.expenses as unknown[])[1]],
 } as unknown as ClientData;
 
+// `liabilityBalancesBoY` is the mortgage amortized to the start of the plan
+// year; CLIENT_DATA.liabilities[0].balance is the older as-of figure the
+// advisor typed. They differ on purpose so a fact sheet that itemizes the raw
+// balance is distinguishable from one that itemizes what {{total_liabilities}}
+// actually sums.
 const FIRST_YEAR = {
   year: 2026,
   ages: { client: 55, spouse: 53 },
-  liabilityBalancesBoY: { l1: 300_000 },
-  portfolioAssets: { total: 1_000_000, liquidTotal: 900_000 },
+  liabilityBalancesBoY: { l1: 288_000 },
+  portfolioAssets: {
+    taxable: { a1: 900_000 },
+    realEstate: { h1: 100_000 },
+    total: 1_000_000,
+    liquidTotal: 900_000,
+  },
+  accountLedgers: {
+    a1: { beginningValue: 800_000, endingValue: 900_000 },
+    h1: { beginningValue: 95_000, endingValue: 100_000 },
+  },
   totalIncome: 200_000,
   expenses: { total: 90_000 },
   savings: { total: 40_000 },
@@ -103,6 +117,7 @@ const LAST_YEAR = {
   ages: { client: 89, spouse: 87 },
   liabilityBalancesBoY: {},
   portfolioAssets: { total: 3_000_000, liquidTotal: 2_800_000 },
+  accountLedgers: {},
   totalIncome: 0,
   expenses: { total: 0 },
   savings: { total: 0 },
@@ -142,7 +157,7 @@ describe("buildObservationsFacts", () => {
   it("includes the full merge-token cheat-sheet with id + label pairs", () => {
     const facts = buildObservationsFacts(CTX);
     expect(facts).toContain("{{net_worth}} — Net worth (today)");
-    expect(facts).toContain("{{annual_income}} — Annual income (today)");
+    expect(facts).toContain("{{annual_income}} — Annual income (this year)");
     expect(facts).toContain("{{mc_success}} — Plan confidence");
   });
 
@@ -155,10 +170,28 @@ describe("buildObservationsFacts", () => {
     expect(facts).toContain("CA");
   });
 
-  it("lists liabilities by name and balance", () => {
+  it("itemizes liabilities at the balance {{total_liabilities}} sums, not the raw as-of balance", () => {
+    // Line items that don't add up to the token the model is told to quote is
+    // how a client-facing paragraph ends up contradicting its own arithmetic.
     const facts = buildObservationsFacts(CTX);
     expect(facts).toContain("Mortgage");
-    expect(facts).toContain("$300,000");
+    expect(facts).toContain("$288,000");
+    expect(facts).not.toContain("$300,000");
+  });
+
+  it("grounds the balance-sheet figures as of today, not the end of plan year 1", () => {
+    const facts = buildObservationsFacts(CTX);
+    // BoY liquid = 800,000; BoY total assets = 895,000; less 288,000 of debt.
+    expect(facts).toContain("Portfolio assets (today): $800,000");
+    expect(facts).toContain("Net worth (today): $607,000");
+    // The end-of-year snapshot must not leak in anywhere.
+    expect(facts).not.toContain("$900,000");
+    expect(facts).not.toContain("$712,000");
+  });
+
+  it("labels the cash-flow figures as full-year totals so they read as flows", () => {
+    const facts = buildObservationsFacts(CTX);
+    expect(facts).toMatch(/full-year total/i);
   });
 
   it("includes education goals when the client carries them", () => {

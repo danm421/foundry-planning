@@ -46,6 +46,27 @@ export type PortfolioCategoryBucket =
   | "stockOptions";
 
 /**
+ * The eight category buckets that compose `portfolioAssets.total` — the legacy
+ * IIP-only asset side of net worth. Declared here for the same reason as
+ * {@link LIQUID_PORTFOLIO_BUCKETS}: `total` and its beginning-of-year twin must
+ * be summed over identical membership or the two measure different things.
+ *
+ * `trustsAndBusinesses` and `accessibleTrustAssets` are deliberately absent —
+ * they are ownership routings layered on top of the categories, and `total`
+ * has never counted them.
+ */
+export const TOTAL_PORTFOLIO_BUCKETS = [
+  "taxable",
+  "cash",
+  "retirement",
+  "annuity",
+  "realEstate",
+  "business",
+  "lifeInsurance",
+  "stockOptions",
+] as const satisfies readonly PortfolioCategoryBucket[];
+
+/**
  * Account category → portfolio bucket. Exported because the post-withdrawal
  * entity-share re-bucket pass in `projection.ts` needs the identical mapping;
  * a second copy there is how `annuity` silently became `taxable` on split-owned
@@ -253,6 +274,24 @@ export function liquidPortfolioBoy(
   return sumWeighted(year, liquidPortfolioWeights(year), (led) => led.beginningValue);
 }
 
+/**
+ * Beginning-of-year `portfolioAssets.total`, one year back — the "as of today"
+ * asset side of net worth in plan year 1. Same roll-forward/ledger-fallback
+ * shape as {@link liquidPortfolioBoy}, over the wider `total` membership.
+ */
+export function portfolioTotalBoy(
+  year: DatedPortfolioYear,
+  years: readonly DatedPortfolioYear[],
+): number {
+  const prev = years.find((y) => y.year === year.year - 1);
+  if (prev) return prev.portfolioAssets.total;
+  return sumWeighted(
+    year,
+    bucketWeights(year, TOTAL_PORTFOLIO_BUCKETS),
+    (led) => led.beginningValue,
+  );
+}
+
 /** Per-account fraction of the whole-account ledger that rolls into `liquidTotal`. */
 export function liquidPortfolioWeights(py: PortfolioYear): Map<string, number> {
   return bucketWeights(py, LIQUID_PORTFOLIO_BUCKETS);
@@ -269,9 +308,13 @@ export function liquidBucketWeights(
   return bucketWeights(py, [bucket]);
 }
 
+/** Any bucket a weight can be taken over: the liquid set plus the eight
+ *  category buckets that compose `portfolioAssets.total`. */
+type SnapshotBucket = LiquidPortfolioBucket | PortfolioCategoryBucket;
+
 function bucketWeights(
   py: PortfolioYear,
-  buckets: readonly LiquidPortfolioBucket[],
+  buckets: readonly SnapshotBucket[],
 ): Map<string, number> {
   const owned = new Map<string, number>();
   for (const bucket of buckets) {

@@ -7,7 +7,11 @@ const NAMED = "compounding-runway";
 /** `compounding-small-amounts` quotes `{{portfolio_assets}}`. */
 const MONEY = "compounding-small-amounts";
 
-function plan(firstName: string, liquid: number) {
+/** `liquidToday` is the BEGINNING-of-year portfolio — what {{portfolio_assets}}
+ *  prints. The end-of-year bucket is deliberately double it, so a resolver that
+ *  reads the year's closing snapshot shows up as a wrong number rather than as
+ *  a passing test. */
+function plan(firstName: string, liquidToday: number) {
   return {
     clientData: {
       planSettings: { planStartYear: 2026, inflationRate: 0, taxEngineMode: "bracket" },
@@ -25,7 +29,14 @@ function plan(firstName: string, liquid: number) {
           savings: { byAccount: {}, total: 0, employerTotal: 0 },
           expenses: { taxes: 0, total: 0 },
           totalIncome: 0,
-          portfolioAssets: { liquidTotal: liquid, total: liquid },
+          portfolioAssets: {
+            taxable: { a1: liquidToday * 2 },
+            liquidTotal: liquidToday * 2,
+            total: liquidToday * 2,
+          },
+          accountLedgers: {
+            a1: { beginningValue: liquidToday, endingValue: liquidToday * 2 },
+          },
         },
       ],
     },

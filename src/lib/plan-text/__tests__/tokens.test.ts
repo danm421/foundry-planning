@@ -25,13 +25,25 @@ const clientData = {
   },
 } as unknown as ClientData;
 
+// Year 1 is deliberately "grown": every EoY bucket sits above its ledger's
+// beginningValue, so a resolver that reads the end-of-year snapshot instead of
+// the beginning-of-year one produces a visibly different number.
 const firstYear = {
   year: 2026,
   ages: { client: 55 },
   totalIncome: 150000,
   expenses: { total: 120000 },
   savings: { total: 30000 },
-  portfolioAssets: { total: 2500000, liquidTotal: 1800000 },
+  portfolioAssets: {
+    taxable: { a1: 1800000 },
+    realEstate: { h1: 700000 },
+    total: 2500000,
+    liquidTotal: 1800000,
+  },
+  accountLedgers: {
+    a1: { beginningValue: 1500000, endingValue: 1800000 },
+    h1: { beginningValue: 650000, endingValue: 700000 },
+  },
   liabilityBalancesBoY: { l1: 400000 },
   hypotheticalEstateTax: {
     year: 2026,
@@ -46,6 +58,7 @@ const lastYear = {
   expenses: { total: 60000 },
   savings: { total: 0 },
   portfolioAssets: { total: 3200000, liquidTotal: 3000000 },
+  accountLedgers: {},
   liabilityBalancesBoY: {},
   hypotheticalEstateTax: {
     year: 2056,
@@ -65,10 +78,36 @@ describe("resolveAllTokens", () => {
     expect(values.household_names).toBe("Sam & Alex");
   });
 
-  it("resolves net_worth as portfolioAssets.total minus liabilities", () => {
+  // The "(today)" balance-sheet tokens read the BEGINNING of plan year 1 —
+  // the advisor-entered balances — not the end of it. Reading years[0]'s
+  // portfolioAssets snapshot (which is end-of-year) credited the household
+  // with a full year of growth and savings it does not have yet, and paired
+  // those grown assets with beginning-of-year liabilities.
+  it("resolves net_worth from beginning-of-year assets, not the end-of-year snapshot", () => {
     const values = resolveAllTokens(baseCtx);
-    // 2,500,000 - 400,000 = 2,100,000
-    expect(values.net_worth).toBe("$2,100,000");
+    // (1,500,000 + 650,000) - 400,000 = 1,750,000
+    expect(values.net_worth).toBe("$1,750,000");
+  });
+
+  it("resolves portfolio_assets from the beginning-of-year liquid total", () => {
+    const values = resolveAllTokens(baseCtx);
+    expect(values.portfolio_assets).toBe("$1,500,000");
+  });
+
+  it("resolves total_liabilities from the beginning-of-year liability balances", () => {
+    const values = resolveAllTokens(baseCtx);
+    expect(values.total_liabilities).toBe("$400,000");
+  });
+
+  it("keeps the cash-flow tokens on year-1 totals — a flow has no today value", () => {
+    const values = resolveAllTokens(baseCtx);
+    expect(values.annual_income).toBe("$150,000");
+    expect(values.annual_spending).toBe("$120,000");
+  });
+
+  it("still reports the end-of-plan portfolio from the last year's snapshot", () => {
+    const values = resolveAllTokens(baseCtx);
+    expect(values.ending_portfolio).toBe("$3,000,000");
   });
 
   it("resolves annual_savings from years[0].savings.total", () => {
@@ -108,7 +147,7 @@ describe("renderTokens", () => {
       "Net worth is {{net_worth}} ({{nope}})",
       values,
     );
-    expect(result).toBe("Net worth is $2,100,000 (—)");
+    expect(result).toBe("Net worth is $1,750,000 (—)");
   });
 });
 
