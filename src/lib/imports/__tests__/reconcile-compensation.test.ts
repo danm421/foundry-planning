@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { money, groupCompensation, type FileMeta } from "../reconcile-compensation";
+import { money, groupCompensation, reconcileGroup, type FileMeta } from "../reconcile-compensation";
 import type { Annotated } from "../types";
 import type { ExtractedIncome } from "@/lib/extraction/types";
 
@@ -106,5 +106,82 @@ describe("groupCompensation", () => {
 
   it("excludes non-employment income types", () => {
     expect(groupCompensation([inc("stub1", { type: "social_security" })], FILES)).toEqual([]);
+  });
+});
+
+describe("reconcileGroup", () => {
+  it("collapses two paystubs of the same job to ONE figure, never their sum", () => {
+    const group = groupCompensation([inc("stub1"), inc("stub2")], FILES)[0];
+    const r = reconcileGroup(group, FILES, 2026);
+    expect(r.recurring?.amount).toBe(239_550);
+    expect(r.recurring?.display).toBe("$239,550");
+    expect(r.supersedes).toHaveLength(1);
+    expect(r.confidence).toBe("high");
+  });
+
+  it("prefers the annualized paystub for an OPEN year", () => {
+    const group = groupCompensation(
+      [inc("stub1", { annualAmount: 239_550 }),
+       inc("w2", { annualAmount: 250_000, basis: "actual" })],
+      FILES,
+    )[0];
+    const r = reconcileGroup(group, FILES, 2026);
+    expect(r.recurring?.amount).toBe(239_550);
+    expect(r.recurring?.basis).toContain("annualized");
+  });
+
+  it("prefers the W-2 actual for a CLOSED year", () => {
+    const group = groupCompensation(
+      [inc("stub1", { sourceTaxYear: 2025, annualAmount: 239_550 }),
+       inc("w2", { sourceTaxYear: 2025, annualAmount: 250_000, basis: "actual" })],
+      FILES,
+    )[0];
+    const r = reconcileGroup(group, FILES, 2026);
+    expect(r.recurring?.amount).toBe(250_000);
+    expect(r.recurring?.basis).toContain("actual");
+  });
+
+  it("keeps variable pay separate and does not fold it into recurring", () => {
+    const group = groupCompensation(
+      [inc("stub1"),
+       inc("stub1", { name: "Incentive", annualAmount: 20_925, recurrence: "variable" })],
+      FILES,
+    )[0];
+    const r = reconcileGroup(group, FILES, 2026);
+    expect(r.recurring?.amount).toBe(239_550);
+    expect(r.variable?.amount).toBe(20_925);
+    expect(r.total.amount).toBe(260_475);
+  });
+
+  it("flags needs-review when two same-kind documents disagree beyond 1%", () => {
+    const group = groupCompensation(
+      [inc("stub1", { annualAmount: 239_550 }),
+       inc("stub2", { annualAmount: 300_000 })],
+      FILES,
+    )[0];
+    const r = reconcileGroup(group, FILES, 2026);
+    expect(r.confidence).toBe("needs-review");
+    expect(r.conflicts.join(" ")).toContain("$300,000");
+  });
+
+  it("stays high-confidence when they agree within 1%", () => {
+    const group = groupCompensation(
+      [inc("stub1", { annualAmount: 239_550 }),
+       inc("stub2", { annualAmount: 239_600 })],
+      FILES,
+    )[0];
+    expect(reconcileGroup(group, FILES, 2026).confidence).toBe("high");
+  });
+
+  it("names every superseded row with a reason", () => {
+    const group = groupCompensation([inc("stub1"), inc("stub2")], FILES)[0];
+    const r = reconcileGroup(group, FILES, 2026);
+    expect(r.supersedes[0].reason).toMatch(/same employer/i);
+    expect(r.supersedes[0].sourceFileId).toBeTruthy();
+  });
+
+  it("supersedes nothing when the group has a single row", () => {
+    const group = groupCompensation([inc("stub1")], FILES)[0];
+    expect(reconcileGroup(group, FILES, 2026).supersedes).toEqual([]);
   });
 });

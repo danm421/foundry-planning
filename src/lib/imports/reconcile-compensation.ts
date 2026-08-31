@@ -86,3 +86,105 @@ export function groupCompensation(
   }
   return [...groups.values()];
 }
+
+export type Supersede = { rowName: string; sourceFileId: string; reason: string };
+
+export type ReconciledEmployer = {
+  employer: string;
+  owner: Owner;
+  taxYear: number;
+  recurring?: Money;
+  variable?: Money;
+  total: Money;
+  supersedes: Supersede[];
+  conflicts: string[];
+  confidence: "high" | "needs-review";
+};
+
+/** Two figures are "the same" within 1% — the tolerance cross-document amount
+ *  comparisons elsewhere in the import pipeline already use. */
+const AMOUNT_TOLERANCE_PCT = 0.01;
+
+function withinTolerance(a: number, b: number): boolean {
+  const base = Math.max(Math.abs(a), Math.abs(b));
+  return base === 0 ? true : Math.abs(a - b) / base <= AMOUNT_TOLERANCE_PCT;
+}
+
+function fileIdOf(row: Annotated<ExtractedIncome>): string {
+  return row.__provenance?.sourceFileId ?? "";
+}
+
+/**
+ * Reconcile one (employer, owner, year) group into a single compensation
+ * picture. The governing rule: a W-2 and that employer's paystubs are the SAME
+ * earnings measured two ways — reconciled, never summed. Recurring and variable
+ * pay are different lines of the same job, so those DO add.
+ */
+export function reconcileGroup(
+  group: CompGroup,
+  files: Record<string, FileMeta>,
+  currentYear: number,
+): ReconciledEmployer {
+  const yearIsClosed = group.taxYear < currentYear;
+  const conflicts: string[] = [];
+  const supersedes: Supersede[] = [];
+
+  const rowsBy = (r: "recurring" | "variable") =>
+    group.incomes.filter((x) => (x.recurrence ?? "recurring") === r);
+
+  // Winner within a set of rows describing the SAME line: for a closed year
+  // prefer a reported figure ("actual"); for an open year prefer the
+  // annualized run-rate, which reflects today's pay rather than a stale total.
+  const pick = (rows: Annotated<ExtractedIncome>[]): Annotated<ExtractedIncome> | undefined => {
+    if (rows.length === 0) return undefined;
+    const preferred = yearIsClosed ? "actual" : "annualized";
+    return rows.find((r) => r.basis === preferred) ?? rows[0];
+  };
+
+  const build = (kind: "recurring" | "variable"): Money | undefined => {
+    const rows = rowsBy(kind);
+    const winner = pick(rows);
+    if (!winner || winner.annualAmount == null) return undefined;
+
+    for (const loser of rows) {
+      if (loser === winner) continue;
+      supersedes.push({
+        rowName: loser.name,
+        sourceFileId: fileIdOf(loser),
+        reason:
+          `Same employer (${group.employer}), same year (${group.taxYear}) as ` +
+          `"${winner.name}" — the same earnings measured twice, not additional pay.`,
+      });
+      if (loser.annualAmount != null && !withinTolerance(loser.annualAmount, winner.annualAmount)) {
+        conflicts.push(
+          `"${winner.name}" (${money(winner.annualAmount, "", []).display}) and ` +
+            `"${loser.name}" (${money(loser.annualAmount, "", []).display}) disagree by more ` +
+            `than 1%; the ${winner.basis ?? "first"} figure was used.`,
+        );
+      }
+    }
+
+    const docKind = files[fileIdOf(winner)]?.documentType ?? "unknown document";
+    const basis = `${winner.basis ?? "actual"} (${docKind}, ${group.taxYear})`;
+    return money(winner.annualAmount, basis, [fileIdOf(winner)]);
+  };
+
+  const recurring = build("recurring");
+  const variable = build("variable");
+  const totalAmount = (recurring?.amount ?? 0) + (variable?.amount ?? 0);
+
+  return {
+    employer: group.employer,
+    owner: group.owner,
+    taxYear: group.taxYear,
+    recurring,
+    variable,
+    total: money(totalAmount, "recurring + variable", [
+      ...(recurring?.fromFiles ?? []),
+      ...(variable?.fromFiles ?? []),
+    ]),
+    supersedes,
+    conflicts,
+    confidence: conflicts.length > 0 ? "needs-review" : "high",
+  };
+}
