@@ -13,6 +13,14 @@ import type {
   TaxTreatmentBreakdown,
 } from "./types";
 
+/** The retirement age the plan is built on, or null when it is unusable —
+ *  the same guard `retirementYearOf` applies, so the KPI and the horizon
+ *  labels can never disagree about whether a side has a retirement. */
+function retirementAgeOf(clientData: ClientData): number | null {
+  const { retirementAge } = clientData.client;
+  return Number.isFinite(retirementAge) ? retirementAge : null;
+}
+
 function retirementYearOf(clientData: ClientData): number | null {
   const { retirementAge, dateOfBirth } = clientData.client;
   const birthYear = new Date(dateOfBirth).getUTCFullYear();
@@ -89,6 +97,8 @@ export function buildRetirementComparisonData(
   // "the base plan at retirement".
   const retirementYear = retirementYearOf(scnBundle.clientData) ?? scenarioYears[0]?.year ?? 0;
   const baseRetirementYear = retirementYearOf(baseBundle.clientData) ?? baseYears[0]?.year ?? retirementYear;
+  const baseRetirementAge = retirementAgeOf(baseBundle.clientData);
+  const scnRetirementAge = retirementAgeOf(scnBundle.clientData);
   const endOfLifeYear = scenarioYears[scenarioYears.length - 1]?.year ?? retirementYear;
   // Charts never reach back before the plan's current year — i.e. the
   // projection's first year. An already-retired client has a retirementYear in
@@ -169,7 +179,26 @@ export function buildRetirementComparisonData(
   const scnDownside = endingP20(scnBundle.monteCarlo?.summary.byYear);
   const maxSpendAvailable = baseBundle.maxSpend != null && scnBundle.maxSpend != null;
 
+  const retirementAgeDelta =
+    baseRetirementAge != null && scnRetirementAge != null
+      ? scnRetirementAge - baseRetirementAge
+      : null;
+
   const kpis: KpiCard[] = [
+    {
+      // Retirement age leads the strip: it is the change the advisor made, and
+      // every card after it is a consequence of it.
+      label: "Retirement age",
+      base: baseRetirementAge == null ? "—" : String(baseRetirementAge),
+      scenario: scnRetirementAge == null ? "—" : String(scnRetirementAge),
+      delta:
+        retirementAgeDelta == null || retirementAgeDelta === 0
+          ? ""
+          : `${retirementAgeDelta > 0 ? "+" : "−"}${Math.abs(retirementAgeDelta)} ${
+              Math.abs(retirementAgeDelta) === 1 ? "yr" : "yrs"
+            }`,
+      show: baseRetirementAge != null && scnRetirementAge != null,
+    },
     {
       label: "Plan confidence",
       base: baseSuccess == null ? "—" : `${Math.round(baseSuccess * 100)}%`,

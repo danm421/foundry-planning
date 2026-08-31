@@ -105,6 +105,47 @@ describe("buildRetirementSummaryData", () => {
   });
 });
 
+// `incomeInRetirement` drops Social Security on purpose — it has its own panel
+// beside this one — so the flat empty state contradicted a populated SS panel.
+describe("buildRetirementSummaryData — the income empty state knows about the SS panel", () => {
+  const year = makeYear(2031, {
+    portfolioAssets: { liquidTotal: 100, cashTotal: 0, taxableTotal: 0, retirementTotal: 0, cash: {}, taxable: {}, retirement: {} },
+  });
+
+  it("points at the Social Security panel when one is rendered", () => {
+    const data = buildRetirementSummaryData(
+      ctx({
+        years: [year] as never,
+        clientData: {
+          client: { dateOfBirth: "1966-01-01", retirementAge: 65, spouseDob: null, spouseRetirementAge: null },
+          clientName: "John Doe", spouseName: null,
+          accounts: [],
+          incomes: [{
+            id: "ss", name: "Social Security", type: "social_security", owner: "client",
+            annualAmount: 40000, piaMonthly: 3000, claimingAge: 67, growthRate: 0,
+          }],
+          expenses: [],
+          planSettings: {},
+        } as never,
+      }),
+      RETIREMENT_SUMMARY_OPTIONS_DEFAULT,
+    );
+    expect(data.socialSecurity.client).not.toBeNull();
+    expect(data.income).toHaveLength(0);
+    expect(data.incomeEmptyCopy).toContain("Social Security");
+    expect(data.incomeEmptyCopy).not.toBe("No income streams continue past retirement.");
+  });
+
+  it("keeps the flat wording when there is no Social Security panel", () => {
+    const data = buildRetirementSummaryData(
+      ctx({ years: [year] as never }),
+      RETIREMENT_SUMMARY_OPTIONS_DEFAULT,
+    );
+    expect(data.socialSecurity.client).toBeNull();
+    expect(data.incomeEmptyCopy).toBe("No income streams continue past retirement.");
+  });
+});
+
 describe("buildRetirementSummaryData — the funding bar and the narrative share one denominator", () => {
   // Retirement year 2031 (DOB 1966 + age 65). SS 40k, RMD 60k, no withdrawals,
   // 50k of expenses — an over-funded year, so the raw inflow (100k) is twice

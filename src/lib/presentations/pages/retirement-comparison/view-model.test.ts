@@ -41,10 +41,11 @@ function bundle(
   maxSpend: number,
   accounts: { id: string; subType: string }[] = [],
   endP20 = 100,
+  retirementAge = 65,
 ) {
   return {
     clientData: {
-      client: { dateOfBirth: "1965-01-01", retirementAge: 65 },
+      client: { dateOfBirth: "1965-01-01", retirementAge },
       planSettings: { planStartYear: 2026, inflationRate: 0.0 }, // 0% inflation → flat series
       accounts,
     },
@@ -96,25 +97,58 @@ describe("buildRetirementComparisonData", () => {
     expect(d.maxSpend.series.length).toBeGreaterThan(0);
   });
 
-  it("builds the 4 headline KPIs that improve", () => {
+  it("builds the 5 headline KPIs that improve, retirement age first", () => {
     const d = buildRetirementComparisonData(ctx, opts);
     const labels = d.kpis.map((k) => k.label);
     expect(labels).toEqual([
+      "Retirement age",
       "Plan confidence",
       "Legacy to heirs",
       "Max sustainable spend",
       "Downside ending balance",
     ]);
-    const success = d.kpis[0];
+    const success = d.kpis[1];
     expect(success.base).toBe("73%");
     expect(success.scenario).toBe("91%");
     expect(success.delta).toBe("+18 pts");
-    const maxSpend = d.kpis[2];
+    const maxSpend = d.kpis[3];
     expect(maxSpend.base).toBe("$90K/yr");
     expect(maxSpend.scenario).toBe("$110K/yr");
-    const downside = d.kpis[3];
+    const downside = d.kpis[4];
     expect(downside.base).toBe("$1.5M");
     expect(downside.scenario).toBe("$13.9M");
+  });
+
+  // Retiring five years earlier is the headline change an advisor makes, and
+  // the strip never named it — the deck showed only its consequences.
+  it("prints each plan's retirement age, and a signed year delta", () => {
+    const earlier = {
+      bundlesByRef: {
+        base: bundle(baseYears, 0.73, 90_000, [], 1_500_000, 65),
+        "scenario:s1": bundle(scnYears, 0.91, 110_000, scnAccounts, 13_900_000, 60),
+      },
+    } as unknown as BuildDataContext;
+    const age = buildRetirementComparisonData(earlier, opts).kpis[0];
+    expect(age.label).toBe("Retirement age");
+    expect(age.base).toBe("65");
+    expect(age.scenario).toBe("60");
+    expect(age.delta).toBe("−5 yrs");
+    expect(age.show).toBe(true);
+  });
+
+  it("leaves the delta blank when neither plan moves the retirement age", () => {
+    // Both fixtures retire at 65 — a "+0 yrs" chip would be noise.
+    expect(buildRetirementComparisonData(ctx, opts).kpis[0].delta).toBe("");
+  });
+
+  it("singularises a one-year move", () => {
+    const oneYear = {
+      bundlesByRef: {
+        base: bundle(baseYears, 0.73, 90_000, [], 1_500_000, 65),
+        "scenario:s1": bundle(scnYears, 0.91, 110_000, scnAccounts, 13_900_000, 66),
+      },
+    } as unknown as BuildDataContext;
+    expect(buildRetirementComparisonData(oneYear, opts).kpis[0].delta).toBe("+1 yr");
   });
 
   it("splits at-retirement assets by tax treatment for the scenario", () => {

@@ -85,7 +85,13 @@ export function buildAllocationDonutSpec(h: AllocationDonutInput, view: DonutVie
   // For combined view: shade each class within its type using per-type index.
   // shadeForClassInType(typeId, index, totalClassesInType) — 3-arg form.
   const classSegs: DonutSegment[] = (() => {
-    const raw = h.byAssetClass;
+    // Taxonomy order, the SAME key the comparison table sorts by. Sources
+    // hand this over in their own order — `portfolioToNormalized` sorts by
+    // value descending — so the legend used to list REIT 6th against the
+    // table's 9th, on one page, for one number.
+    const raw = [...h.byAssetClass].sort(
+      (a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name),
+    );
 
     if (view === "combined") {
       // Count how many classes share each type (denominator for shading).

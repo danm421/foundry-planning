@@ -129,6 +129,7 @@ const POPULATED: RetirementSummaryPageData = {
   },
   living: { today: 72_000, retirement: 96_000 },
   otherExpenses: { insurance: 12_000, realEstate: 8_000, liabilities: 0, other: 0 },
+  incomeEmptyCopy: "No income streams continue past retirement.",
   income: [
     { id: "rental-1", label: "Rental income", type: "rental", amount: 24_000 },
   ],

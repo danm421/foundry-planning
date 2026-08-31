@@ -37,7 +37,17 @@ export function editRow(
     const f = fields[0];
     const { from, to } = payload[f] ?? { from: null, to: null };
     const what = spec.whatMode === "field" ? fieldLabel(f) : `${name} · ${fieldLabel(f)}`;
-    return { area: spec.area, what, op: "edit", before: fmtValue(from), after: fmtValue(to), detail: [spec.whyEdit] };
+    // `restatesRow`: `what` names the field and the before/after COLUMNS carry
+    // the move, so "Adjusts this expense." adds nothing to the changes table.
+    // The detail still ships, because the Plan Story chapter has no columns —
+    // it prints `what` + `detail[0]` and nothing else, so dropping the clause
+    // there costs the strategy its own words and falls back to the generic
+    // "this changes your spending". Table hides it; chapter keeps it.
+    return {
+      area: spec.area, what, op: "edit",
+      before: fmtValue(from), after: fmtValue(to),
+      detail: [spec.whyEdit], restatesRow: true,
+    };
   }
 
   const what = spec.whatMode === "field" ? capitalize(spec.noun) : name;

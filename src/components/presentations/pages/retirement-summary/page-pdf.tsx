@@ -180,16 +180,21 @@ export function RetirementSummaryPagePdf(input: RenderPdfInput<RetirementSummary
           ) : null}
           <View style={[s.panel, { flex: 1 }]}>
             <Text style={s.h4}>Retirement spending</Text>
-            <StatRow lbl="Living — today" val={fmtUsd(data.living.today)} />
-            <StatRow lbl="Living — at retirement" val={fmtUsd(data.living.retirement)} />
+            {/* Two spellings of ONE budget, linked by the arrow. "today" alone
+                read as current spending — the Client Profile's "Current" column
+                is a different, smaller number (it includes the current-living
+                row this figure excludes), so the same word named two figures. */}
+            <StatRow lbl="Living — today's $" val={fmtUsd(data.living.today)} />
+            <StatRow lbl="Living — at retirement" val={`→ ${fmtUsd(data.living.retirement)}`} />
             {data.otherExpenses.insurance > 0 ? <StatRow lbl="Insurance" val={fmtUsd(data.otherExpenses.insurance)} /> : null}
             {data.otherExpenses.realEstate > 0 ? <StatRow lbl="Property tax" val={fmtUsd(data.otherExpenses.realEstate)} /> : null}
             {data.otherExpenses.liabilities > 0 ? <StatRow lbl="Debt service" val={fmtUsd(data.otherExpenses.liabilities)} /> : null}
+            <Text style={s.note}>Living is the retirement budget, not current spending: today&apos;s dollars, then the same budget at retirement.</Text>
           </View>
           <View style={[s.panel, { flex: 1 }]}>
             <Text style={s.h4}>Income in retirement</Text>
             {data.income.length ? data.income.map((r) => <StatRow key={r.id} lbl={r.label} val={fmtUsd(r.amount)} />)
-              : <Text style={s.note}>No income streams continue past retirement.</Text>}
+              : <Text style={s.note}>{data.incomeEmptyCopy}</Text>}
             {data.transactions.length ? (
               <>
                 <Text style={[s.h4, { marginTop: 8 }]}>Asset transactions</Text>

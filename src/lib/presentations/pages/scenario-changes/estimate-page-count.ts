@@ -1,4 +1,4 @@
-import type { ScenarioChangesPageData } from "./types";
+import { visibleDetail, type ScenarioChangesPageData } from "./types";
 
 // Measured against real renders (see estimate-page-count.test.ts, which pins
 // every constant here by rendering the page and counting the sheets react-pdf
@@ -34,10 +34,10 @@ export function estimateScenarioChangesPageCount(data?: ScenarioChangesPageData)
   const blocks: number[] = [];
   for (const unit of data.units) {
     if (unit.kind === "row") {
-      blocks.push(rowHeight(showDetails ? unit.row.detail.length : 0));
+      blocks.push(rowHeight(visibleDetail(unit.row, showDetails).length));
     } else {
       blocks.push(GROUP_BAND_PT);
-      for (const r of unit.rows) blocks.push(rowHeight(showDetails ? r.detail.length : 0));
+      for (const r of unit.rows) blocks.push(rowHeight(visibleDetail(r, showDetails).length));
     }
   }
 

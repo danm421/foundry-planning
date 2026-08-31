@@ -187,6 +187,7 @@ const FULL: RetirementSummaryPageData = {
   socialSecurity: { client: ssClient("Rachel Sheskier"), spouse: ssClient("Daniel Sheskier") },
   living: { today: 100_000, retirement: 194_000 },
   otherExpenses: { insurance: 14_000, realEstate: 22_000, liabilities: 31_000, other: 0 },
+  incomeEmptyCopy: "No income streams continue past retirement.",
   income: [
     { id: "i1", label: "Rental — Beacon St", type: "rental", amount: 42_000 },
     { id: "i2", label: "Consulting", type: "other", amount: 18_000 },

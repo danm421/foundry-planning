@@ -67,6 +67,11 @@ export interface RetirementSummaryPageData {
   living: LivingExpenseCompare;
   otherExpenses: OtherRetirementExpenses;
   income: RetirementIncomeRow[];
+  /** What to print when `income` is empty. Social Security is deliberately
+   *  excluded from `income` because it has its own panel — so the flat "no
+   *  income streams continue past retirement" printed next to a populated
+   *  Social Security panel, contradicting it. */
+  incomeEmptyCopy: string;
   transactions: AssetTxnRow[];
   /** Takeaways for the assets/outlook sheet. */
   narrative: string[];
@@ -113,6 +118,10 @@ export function buildRetirementSummaryData(
   const living = livingExpensesTodayVsRetirement(years, clientData, retYear);
   const otherExpenses = otherRetirementExpenses(years, retYear);
   const income = incomeInRetirement(years, clientData, retYear);
+  const hasSocialSecurity = socialSecurity.client != null || socialSecurity.spouse != null;
+  const incomeEmptyCopy = hasSocialSecurity
+    ? "Social Security is the only income that continues past retirement — see the panel to the left."
+    : "No income streams continue past retirement.";
   const transactions = assetTransactionsInRetirement(years, retYear);
 
   // Cash-flow chart for page 2: reuse the standalone Cash Flow page builder
@@ -180,7 +189,7 @@ export function buildRetirementSummaryData(
       totalSpend: funding.totalSpending,
     },
     liquid, bars, byType, byTaxType, funding, fundingSources, socialSecurity,
-    living, otherExpenses, income, transactions,
+    living, otherExpenses, income, incomeEmptyCopy, transactions,
     narrative: narrative.outlook, fundingNarrative: narrative.funding,
     cashFlowChartSpec,
   };

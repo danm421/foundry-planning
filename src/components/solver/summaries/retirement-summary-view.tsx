@@ -293,7 +293,7 @@ export function RetirementSummaryView({ data }: { data: RetirementSummaryPageDat
     return <SummaryEmpty message="No data for this scenario yet." />;
   }
 
-  const { kpis, bars, liquid, byType, byTaxType, funding, fundingSources, socialSecurity, living, otherExpenses, income, transactions, narrative, fundingNarrative, cashFlowChartSpec } = data;
+  const { kpis, bars, liquid, byType, byTaxType, funding, fundingSources, socialSecurity, living, otherExpenses, income, incomeEmptyCopy, transactions, narrative, fundingNarrative, cashFlowChartSpec } = data;
 
   const palette = dataPalette(theme);
 
@@ -458,14 +458,18 @@ export function RetirementSummaryView({ data }: { data: RetirementSummaryPageDat
                 { key: "value", header: "Amount", align: "right" },
               ]}
               rows={[
-                { label: "Living — today", value: fmtUsd(living.today) },
-                { label: "Living — at retirement", value: fmtUsd(living.retirement) },
+                { label: "Living — today's $", value: fmtUsd(living.today) },
+                { label: "Living — at retirement", value: `→ ${fmtUsd(living.retirement)}` },
                 ...(otherExpenses.insurance > 0 ? [{ label: "Insurance", value: fmtUsd(otherExpenses.insurance) }] : []),
                 ...(otherExpenses.realEstate > 0 ? [{ label: "Property tax", value: fmtUsd(otherExpenses.realEstate) }] : []),
                 ...(otherExpenses.liabilities > 0 ? [{ label: "Debt service", value: fmtUsd(otherExpenses.liabilities) }] : []),
                 ...(otherExpenses.other > 0 ? [{ label: "Other", value: fmtUsd(otherExpenses.other) }] : []),
               ]}
             />
+            <p className="mt-2 text-[11px] text-ink-3">
+              Living is the retirement budget, not current spending: today&apos;s dollars, then
+              the same budget at retirement.
+            </p>
           </div>
         </SummarySection>
 
@@ -481,7 +485,7 @@ export function RetirementSummaryView({ data }: { data: RetirementSummaryPageDat
                 rows={income.map((r) => ({ label: r.label, amount: fmtUsd(r.amount) }))}
               />
             ) : (
-              <p className="text-[12px] text-ink-3">No income streams continue past retirement.</p>
+              <p className="text-[12px] text-ink-3">{incomeEmptyCopy}</p>
             )}
 
             {transactions.length > 0 ? (
