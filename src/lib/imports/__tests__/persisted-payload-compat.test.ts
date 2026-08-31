@@ -225,3 +225,38 @@ describe("a pre-branch ExtractionResult has no `savings` key either", () => {
     expect(payload.accounts).toHaveLength(1);
   });
 });
+
+import type { ExtractedIncome, ExtractedSavings } from "@/lib/extraction/types";
+
+describe("reconciliation fact fields", () => {
+  it("accepts an income row carrying the new optional facts", () => {
+    const row: ExtractedIncome = {
+      type: "salary",
+      name: "Rachel Marie Sheskier - Salary at The Mount Sinai Hospital",
+      annualAmount: 239_549.96,
+      employer: "The Mount Sinai Hospital",
+      sourceTaxYear: 2026,
+      basis: "annualized",
+      recurrence: "recurring",
+    };
+    expect(row.employer).toBe("The Mount Sinai Hospital");
+    expect(row.basis).toBe("annualized");
+  });
+
+  it("accepts a savings row carrying employer", () => {
+    const row: ExtractedSavings = {
+      name: "TSA 403B",
+      destinationAccountName: "The Mount Sinai Hospital 403(b)",
+      employer: "The Mount Sinai Hospital",
+      annualAmount: 26_000,
+      contributionRole: "employee",
+    };
+    expect(row.employer).toBe("The Mount Sinai Hospital");
+  });
+
+  it("still accepts a row with none of them (pre-change payloads)", () => {
+    const row: ExtractedIncome = { type: "salary", name: "Legacy", annualAmount: 1 };
+    expect(row.employer).toBeUndefined();
+    expect(row.sourceTaxYear).toBeUndefined();
+  });
+});
