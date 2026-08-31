@@ -35,6 +35,7 @@ import Row from "@/components/income-expenses/row";
 import Group from "@/components/income-expenses/group";
 import { FieldTooltip } from "@/components/forms/field-tooltip";
 import { isRetirementLivingExpense } from "@/lib/solver/living-expense";
+import { toSalaryOptions } from "@/lib/savings/salary-options";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -2571,6 +2572,7 @@ export default function IncomeExpensesView({
           ownerNames={ownerNames}
           familyMembers={familyMembers}
           resolvedInflationRate={resolvedInflationRate}
+          salaries={toSalaryOptions(incomeList, ownerNames)}
         />
       )}
 

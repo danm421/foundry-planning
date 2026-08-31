@@ -11,6 +11,7 @@ import { accountToInitial } from "@/components/balance-sheet-view";
 import { useRouter } from "next/navigation";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
 import SavingsRuleDialog, { type SavingsRuleRow } from "@/components/forms/savings-rule-dialog";
+import { toSalaryOptions } from "@/lib/savings/salary-options";
 import { approximateMilestones } from "@/lib/household-map/approximate-milestones";
 import type { HouseholdMapProps, MapColumn, MapItem } from "@/lib/household-map/types";
 import type { GoalSocialSecurity, LifeExpectancyOwner } from "@/lib/household-map/goals";
@@ -565,6 +566,12 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
           schedule={savingsEditing ? props.savingsSchedules[savingsEditing.id] : undefined}
           familyMembers={props.familyMemberOptions}
           resolvedInflationRate={props.resolvedInflationRate}
+          // `ownerNames` isn't a prop this view carries — built inline the
+          // same way the two `AddAccountDialog` call sites below already do.
+          salaries={toSalaryOptions(Object.values(incomeRows), {
+            clientName: people.client.firstName,
+            spouseName: people.spouse?.firstName ?? null,
+          })}
         />
       )}
 
