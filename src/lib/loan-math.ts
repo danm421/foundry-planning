@@ -84,6 +84,14 @@ export function calcInterestOnlyPayment(
 }
 
 /**
+ * How close a payment must sit to accrued interest before it counts as
+ * interest-only. A payment persisted at two decimal places never equals the
+ * true accrual exactly, and the difference is a fraction of a cent — real
+ * enough to compound over 360 months if it is treated as under-payment.
+ */
+export const INTEREST_ONLY_TOLERANCE = 0.01;
+
+/**
  * True when `monthlyPayment` covers the accrued interest and nothing more.
  * Tolerant to a cent so a payment persisted at 2dp still reads as interest-only.
  * A loan with no balance or no rate is never interest-only — its accrued
@@ -96,7 +104,7 @@ export function isInterestOnlyPayment(
 ): boolean {
   const interestOnly = calcInterestOnlyPayment(balance, annualRate);
   if (interestOnly <= 0) return false;
-  return Math.abs(monthlyPayment - interestOnly) < 0.01;
+  return Math.abs(monthlyPayment - interestOnly) < INTEREST_ONLY_TOLERANCE;
 }
 
 /**
@@ -124,6 +132,8 @@ export interface AmortizationScheduleRow {
   beginningBalance: number;
   payment: number;
   interest: number;
+  /** Principal repaid this year. NEGATIVE when the payment did not cover
+   *  accrued interest and the shortfall capitalized into the balance. */
   principal: number;
   extraPayment: number;
   endingBalance: number;
@@ -232,7 +242,18 @@ export function computeAmortizationSchedule(
 
       const monthlyInterest = bal * r;
       const scheduled = Math.min(monthlyPayment, bal + monthlyInterest);
-      const principalFromPayment = Math.max(0, scheduled - monthlyInterest);
+      // A payment that covers accrued interest to the cent is interest-only BY
+      // INTENT, and its principal is exactly zero — see INTEREST_ONLY_TOLERANCE.
+      // Below that tolerance the payment is genuinely short, and the shortfall
+      // CAPITALIZES: principal goes negative and the balance grows. That is what
+      // an income-driven student loan does, and what calcOriginalBalance above
+      // already assumes when it back-solves an origination balance. Flooring
+      // this at zero made the two disagree and discarded the balance the advisor
+      // entered — measured at $15,205 on a five-year-old loan.
+      const principalFromPayment =
+        Math.abs(scheduled - monthlyInterest) < INTEREST_ONLY_TOLERANCE
+          ? 0
+          : scheduled - monthlyInterest;
 
       yearInterest += monthlyInterest;
       yearScheduledPayment += scheduled;

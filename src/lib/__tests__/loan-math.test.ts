@@ -290,3 +290,52 @@ describe("computeAmortizationSchedule — mid-year origination pays its real ter
     expect(total).toBeCloseTo(PMT * 60, 0);
   });
 });
+
+describe("computeAmortizationSchedule — negative amortization", () => {
+  // $120,000 of graduate debt at 6.5% on an income-driven plan paying $450/mo
+  // against $650/mo of accrued interest. The shortfall capitalizes.
+  it("grows the balance when the payment does not cover accrued interest", () => {
+    const rows = computeAmortizationSchedule(120000, 0.065, 450, 2026, 240);
+
+    expect(rows[0].endingBalance).toBeCloseTo(122472.81, 1);
+    expect(rows[0].interest).toBeCloseTo(7872.81, 1);
+    // Negative principal IS the capitalized shortfall.
+    expect(rows[0].principal).toBeCloseTo(-2472.81, 1);
+  });
+
+  it("round-trips against calcOriginalBalance", () => {
+    // The advisor enters TODAY's balance on a five-year-old loan. Back-solving
+    // origination and simulating forward must return the figure they entered.
+    // Before this fix the forward pass held the balance flat and landed
+    // $15,205 low — silently discarding the advisor's own input.
+    const entered = 138000;
+    const origination = calcOriginalBalance(entered, 0.065, 450, 60);
+    const rows = computeAmortizationSchedule(origination, 0.065, 450, 2021, 240);
+
+    const balanceAtYearSix = rows.find((r) => r.year === 2026)!.beginningBalance;
+    expect(balanceAtYearSix).toBeCloseTo(entered, 2);
+  });
+
+  it("leaves a zero-interest loan amortizing normally", () => {
+    // No interest means no shortfall to capitalize: principal is the whole
+    // payment, exactly as before. $120,000 over 240 months is $500/mo.
+    const rows = computeAmortizationSchedule(120000, 0, 500, 2026, 240);
+
+    expect(rows[0].principal).toBeCloseTo(6000, 2);
+    expect(rows[0].endingBalance).toBeCloseTo(114000, 2);
+    expect(rows[rows.length - 1].endingBalance).toBe(0);
+  });
+
+  it("leaves an interest-only loan exactly flat", () => {
+    // A payment equal to accrued interest is interest-only BY INTENT. A payment
+    // stored at two decimals differs from the true accrual by a fraction of a
+    // cent; without the tolerance that fraction capitalizes and compounds.
+    const payment = calcInterestOnlyPayment(750000, 0.0625);
+    const rows = computeAmortizationSchedule(750000, 0.0625, payment, 2026, 360);
+
+    for (const row of rows.slice(0, -1)) {
+      expect(row.principal).toBeCloseTo(0, 6);
+      expect(row.endingBalance).toBeCloseTo(750000, 6);
+    }
+  });
+});
