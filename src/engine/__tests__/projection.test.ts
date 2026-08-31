@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
-import { buildClientData, basePlanSettings, baseClient, sampleExpenses, sampleAccounts, sampleLiabilities, sampleSavingsRules, FIXTURE_TAX_PARAMS } from "./fixtures";
+import { buildClientData, basePlanSettings, baseClient, sampleExpenses, sampleAccounts, sampleLiabilities, sampleIncomes, sampleSavingsRules, FIXTURE_TAX_PARAMS } from "./fixtures";
 import type { ClientData, ClientInfo, Account, PlanSettings } from "../types";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
 import { buildLiabilitySchedules } from "../liability-schedules";
@@ -93,6 +93,7 @@ describe("runProjection", () => {
   const CLIENT_SALARY = 150000;
   const SPOUSE_SALARY = 100000;
   const CLIENT_SALARY_INCOME_ID = "inc-salary-john";
+  const SPOUSE_SALARY_INCOME_ID = "inc-salary-jane";
 
   // acct-401k re-titled 50/50 across both principals — the shape that resolves
   // to a salary base of 0 on the "owner" path. Every test using it must also
@@ -177,6 +178,56 @@ describe("runProjection", () => {
     const match = ledger.entries.filter((e) => e.category === "employer_match");
     expect(match[0].amount).toBeCloseTo(
       (CLIENT_SALARY + SPOUSE_SALARY) * 0.06 * 0.5,
+      2,
+    );
+  });
+
+  // The four above all run on the joint-owned account, where the owner path
+  // resolves to 0. These two run on the CLIENT-owned fixture account, where it
+  // resolves to John's 150k — the common production shape, and the only place a
+  // branch gated on "the owner path came back empty" would be caught.
+  it("salaryBasis 'selected' overrides a non-zero owner salary rather than filling a zero", () => {
+    const data = buildClientData({
+      savingsRules: [{
+        ...sampleSavingsRules[0],
+        annualPercent: 0.1,
+        salaryBasis: "selected",
+        salaryIncomeIds: [SPOUSE_SALARY_INCOME_ID],
+      }],
+    });
+    const result = runProjection(data);
+    const ledger = result[0].accountLedgers["acct-401k"];
+    const contributions = ledger.entries.filter((e) => e.category === "savings_contribution");
+    // Jane's 100k, NOT the account owner John's 150k the owner path would give.
+    expect(contributions[0].amount).toBeCloseTo(SPOUSE_SALARY * 0.1, 2);
+  });
+
+  it("salaryBasis 'all' sums every personal salary, jointly-owned pay included", () => {
+    // No other test in this file carries a jointly-owned salary row, so an
+    // "all" that summed only salaryByOwner.client + .spouse would come back
+    // JOINT_SALARY light everywhere else and nothing would notice.
+    const JOINT_SALARY = 50000;
+    const data = buildClientData({
+      incomes: [
+        ...sampleIncomes,
+        {
+          id: "inc-salary-joint",
+          type: "salary",
+          name: "Joint Consulting Salary",
+          annualAmount: JOINT_SALARY,
+          startYear: 2026,
+          endYear: 2035,
+          growthRate: 0.03,
+          owner: "joint",
+        },
+      ],
+      savingsRules: [{ ...sampleSavingsRules[0], annualPercent: 0.1, salaryBasis: "all" }],
+    });
+    const result = runProjection(data);
+    const ledger = result[0].accountLedgers["acct-401k"];
+    const contributions = ledger.entries.filter((e) => e.category === "savings_contribution");
+    expect(contributions[0].amount).toBeCloseTo(
+      (CLIENT_SALARY + SPOUSE_SALARY + JOINT_SALARY) * 0.1,
       2,
     );
   });
