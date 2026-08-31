@@ -4,7 +4,7 @@ export default function WarningsBanner({ warnings }: { warnings: string[] }) {
   return (
     <div
       role="status"
-      className="rounded border border-amber-700/50 bg-amber-900/20 px-3 py-2 text-sm text-amber-200"
+      className="rounded border border-warn/40 bg-warn/10 px-3 py-2 text-sm text-warn"
     >
       <ul className="list-disc space-y-1 pl-4">
         {warnings.map((w, i) => (
