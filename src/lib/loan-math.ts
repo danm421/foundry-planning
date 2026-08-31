@@ -242,16 +242,14 @@ export function computeAmortizationSchedule(
 
       const monthlyInterest = bal * r;
       const scheduled = Math.min(monthlyPayment, bal + monthlyInterest);
-      // A payment that covers accrued interest to the cent is interest-only BY
-      // INTENT, and its principal is exactly zero — see INTEREST_ONLY_TOLERANCE.
-      // Below that tolerance the payment is genuinely short, and the shortfall
-      // CAPITALIZES: principal goes negative and the balance grows. That is what
-      // an income-driven student loan does, and what calcOriginalBalance above
-      // already assumes when it back-solves an origination balance. Flooring
-      // this at zero made the two disagree and discarded the balance the advisor
-      // entered — measured at $15,205 on a five-year-old loan.
+      // Compare the CONTRACTUAL monthlyPayment to interest, not the capped
+      // `scheduled` — in the payoff month `scheduled` is capped to exactly
+      // pay off the balance, which would make `scheduled - monthlyInterest`
+      // read as interest-only there too. Within INTEREST_ONLY_TOLERANCE the
+      // payment is interest-only by intent, so principal is exactly zero;
+      // beyond it the shortfall capitalizes and the balance grows.
       const principalFromPayment =
-        Math.abs(scheduled - monthlyInterest) < INTEREST_ONLY_TOLERANCE
+        Math.abs(monthlyPayment - monthlyInterest) < INTEREST_ONLY_TOLERANCE
           ? 0
           : scheduled - monthlyInterest;
 

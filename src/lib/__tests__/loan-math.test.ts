@@ -327,9 +327,11 @@ describe("computeAmortizationSchedule — negative amortization", () => {
   });
 
   it("leaves an interest-only loan exactly flat", () => {
-    // A payment equal to accrued interest is interest-only BY INTENT. A payment
-    // stored at two decimals differs from the true accrual by a fraction of a
-    // cent; without the tolerance that fraction capitalizes and compounds.
+    // calcInterestOnlyPayment computes balance * rate / 12 — the same
+    // expression the loop uses for accrued interest — so this fixture's
+    // payment matches accrual EXACTLY (difference is precisely 0). It pins
+    // the exact-match case; the next test pins the 2dp-rounded case, where
+    // INTEREST_ONLY_TOLERANCE is actually exercised.
     const payment = calcInterestOnlyPayment(750000, 0.0625);
     const rows = computeAmortizationSchedule(750000, 0.0625, payment, 2026, 360);
 
@@ -337,5 +339,62 @@ describe("computeAmortizationSchedule — negative amortization", () => {
       expect(row.principal).toBeCloseTo(0, 6);
       expect(row.endingBalance).toBeCloseTo(750000, 6);
     }
+  });
+
+  it("treats a 2dp-rounded interest-only payment as flat, not a drifting shortfall", () => {
+    // $1,250,000 @ 7.25%: true monthly accrual is 7552.083333…, but a payment
+    // is persisted at two decimals — 7552.08 — a third-of-a-cent shortfall
+    // every month. Without INTEREST_ONLY_TOLERANCE that fraction capitalizes
+    // and compounds over 360 months into a real drift (verified: the balance
+    // reaches 1250003.94). With the tolerance it reads as interest-only and
+    // the balance holds exactly flat the whole term.
+    const rows = computeAmortizationSchedule(1250000, 0.0725, 7552.08, 2026, 360);
+
+    for (const row of rows.slice(0, -1)) {
+      expect(row.endingBalance).toBe(1250000);
+    }
+  });
+
+  it("does not stick at a sub-cent residue and skip payoff", () => {
+    // The payoff month caps `scheduled` at bal + monthlyInterest, so
+    // `scheduled - monthlyInterest` always equals `bal` exactly there —
+    // comparing the CAPPED payment to interest would call every early
+    // payoff "interest-only" at the finish line, leaving a sub-cent residue
+    // that never satisfies `bal <= 0` and emitting phantom rows all the way
+    // to the contractual end. Comparing the CONTRACTUAL monthlyPayment
+    // avoids that: in the payoff month it is far from monthlyInterest, so
+    // the tolerance branch does not fire and principal = bal closes the loan.
+    const rows = computeAmortizationSchedule(579508.61, 0.02, 36994.19, 2026, 84);
+
+    expect(rows).toHaveLength(2);
+    expect(rows[rows.length - 1].endingBalance).toBe(0);
+  });
+
+  it("compounds instead of holding flat when a liability has a term but no payment", () => {
+    // isHeldFlatLiability guards on termMonths, not on monthlyPayment, so a
+    // liability with $0 saved for its payment still reaches this schedule.
+    // Measured on a real production liability (Loan #1, General Purpose):
+    // $9,840 @ 8.5%, $0/mo, 360 months. This is the capitalization thesis
+    // taken to its limit — CONSCIOUSLY accepted here, not guarded. A guard
+    // belongs on isHeldFlatLiability, which is engine-wide and out of this
+    // task's scope.
+    const rows = computeAmortizationSchedule(9840, 0.085, 0, 2026, 360);
+
+    // Every year but the last capitalizes the full unpaid interest as
+    // negative principal — nothing is ever paid toward it.
+    for (const row of rows.slice(0, -1)) {
+      expect(row.principal).toBeLessThan(0);
+    }
+
+    // The pre-existing "absorb rounding dust" step (built for a few cents of
+    // residual, not $115k of never-paid growth) still fires at the
+    // contractual end: it reports the whole compounded balance as that
+    // year's payment and zeroes the balance, even though the borrower never
+    // paid a cent. That quirk predates this task and is out of scope here;
+    // this test documents it rather than silently accepting an untested
+    // final row.
+    const last = rows[rows.length - 1];
+    expect(last.payment).toBeCloseTo(124894.19, 2);
+    expect(last.endingBalance).toBe(0);
   });
 });
