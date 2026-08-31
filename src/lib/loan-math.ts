@@ -157,15 +157,6 @@ export interface ScheduleExtraPayment {
 }
 
 /**
- * Full amortization schedule from loan parameters + optional extra payments.
- * Returns one row per year from startYear until payoff or contractual end.
- *
- * `startMonth` (1-12) is the calendar month the loan originates in. A loan that
- * starts mid-year only makes `12 − startMonth + 1` payments in its first
- * calendar year, so the startYear row simulates that many months instead of a
- * full 12. Defaults to 1 (January) — a January origination is unchanged.
- */
-/**
  * Last calendar year `computeAmortizationSchedule` will emit a row for — the
  * year the loan's final payment falls in.
  *
@@ -209,6 +200,15 @@ export function scheduleEndYear(
  */
 const FORGIVENESS_MIN = 1;
 
+/**
+ * Full amortization schedule from loan parameters + optional extra payments.
+ * Returns one row per year from startYear until payoff or contractual end.
+ *
+ * `startMonth` (1-12) is the calendar month the loan originates in. A loan that
+ * starts mid-year only makes `12 − startMonth + 1` payments in its first
+ * calendar year, so the startYear row simulates that many months instead of a
+ * full 12. Defaults to 1 (January) — a January origination is unchanged.
+ */
 export function computeAmortizationSchedule(
   balance: number,
   annualRate: number,
@@ -256,11 +256,14 @@ export function computeAmortizationSchedule(
       const monthlyInterest = bal * r;
       const scheduled = Math.min(monthlyPayment, bal + monthlyInterest);
       // Compare the CONTRACTUAL monthlyPayment to interest, not the capped
-      // `scheduled` — in the payoff month `scheduled` is capped to exactly
-      // pay off the balance, which would make `scheduled - monthlyInterest`
-      // read as interest-only there too. Within INTEREST_ONLY_TOLERANCE the
+      // `scheduled` — the cap makes `scheduled - monthlyInterest` equal `bal`
+      // exactly, so once a payoff leaves a sub-cent floating-point residue
+      // behind, that residue would itself read as interest-only and principal
+      // would stick at zero forever. Within INTEREST_ONLY_TOLERANCE the
       // payment is interest-only by intent, so principal is exactly zero;
-      // beyond it the shortfall capitalizes and the balance grows.
+      // outside the tolerance the payment is taken at face value — above
+      // interest it amortizes the balance down, below interest the shortfall
+      // capitalizes and the balance grows.
       const principalFromPayment =
         Math.abs(monthlyPayment - monthlyInterest) < INTEREST_ONLY_TOLERANCE
           ? 0

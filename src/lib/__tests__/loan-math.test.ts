@@ -357,13 +357,13 @@ describe("computeAmortizationSchedule — negative amortization", () => {
 
   it("does not stick at a sub-cent residue and skip payoff", () => {
     // The payoff month caps `scheduled` at bal + monthlyInterest, so
-    // `scheduled - monthlyInterest` always equals `bal` exactly there —
-    // comparing the CAPPED payment to interest would call every early
-    // payoff "interest-only" at the finish line, leaving a sub-cent residue
-    // that never satisfies `bal <= 0` and emitting phantom rows all the way
-    // to the contractual end. Comparing the CONTRACTUAL monthlyPayment
-    // avoids that: in the payoff month it is far from monthlyInterest, so
-    // the tolerance branch does not fire and principal = bal closes the loan.
+    // `scheduled - monthlyInterest` equals `bal` exactly there. Payoff itself
+    // survives either comparison — `bal` is thousands, far outside the
+    // tolerance. What breaks is the month AFTER: the cap leaves a sub-cent
+    // floating-point residue (measured: 3.6e-12), and comparing the CAPPED
+    // payment reads that residue as "interest-only", so principal sticks at
+    // zero, `bal <= 0` is never satisfied, and phantom rows run to the
+    // contractual end. The CONTRACTUAL monthlyPayment never sits that close.
     const rows = computeAmortizationSchedule(579508.61, 0.02, 36994.19, 2026, 84);
 
     expect(rows).toHaveLength(2);
