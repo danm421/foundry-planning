@@ -21,6 +21,7 @@ export default async function LiabilitiesStep({ clientId, firmId }: LiabilitiesS
       clientId={clientId}
       accounts={data.accountProps}
       liabilities={data.liabilityProps}
+      incomes={data.incomeProps}
       entities={data.entityOptions}
       familyMembers={data.familyMemberRows}
       categoryDefaults={data.categoryDefaults}

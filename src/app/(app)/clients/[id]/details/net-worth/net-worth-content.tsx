@@ -27,6 +27,7 @@ import type { GrowthContext } from "@/lib/investments/growth-context";
 import { controllingEntity } from "@/engine/ownership";
 import { buildAccountRows, loadAccountMetaRows, linkedSourceMapFrom } from "@/lib/accounts/load-account-rows";
 import { categoryDefaultRates } from "@/lib/investments/category-default-rates";
+import { buildIncomeRows } from "@/lib/balance-sheet/build-income-rows";
 
 interface NetWorthContentProps {
   clientId: string;
@@ -318,19 +319,7 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
       accounts={accountProps}
       liabilities={liabilityProps}
       notesReceivable={notesReceivableRows}
-      incomes={effectiveTree.incomes.map((i) => ({
-        id: i.id,
-        type: i.type,
-        name: i.name,
-        annualAmount: i.annualAmount,
-        owner: i.owner,
-        ownerEntityId: i.ownerEntityId ?? null,
-        ownerAccountId: i.ownerAccountId ?? null,
-        startYear: i.startYear,
-        endYear: i.endYear,
-        growthRate: i.growthRate,
-        inflationStartYear: i.inflationStartYear ?? null,
-      }))}
+      incomes={buildIncomeRows(effectiveTree.incomes)}
       expenses={effectiveTree.expenses.map((e) => ({
         id: e.id,
         name: e.name,

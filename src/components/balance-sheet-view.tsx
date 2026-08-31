@@ -144,33 +144,37 @@ export interface LiabilityRow {
   parentAccountId?: string | null;
 }
 
+/** An income as the balance sheet renders it. Two consumers: the "Incomes"
+ *  pill inside an expanded business row reads the subset whose `ownerAccountId`
+ *  points at a business shown here, and the Add/Edit Account dialog turns the
+ *  salaries into the choices a percent-of-salary savings rule can be based on.
+ *  The optional schedule fields (startYear/endYear/growthRate/
+ *  inflationStartYear) drive the Custom-schedule placeholder math in
+ *  BusinessFlowsTab. */
+export interface IncomeRow {
+  id: string;
+  /** Income kind. `toSalaryOptions` offers only `"salary"` rows. */
+  type: string;
+  name: string;
+  annualAmount: number | string;
+  owner: string;
+  /** Set when a trust or business owns the income; those are never a
+   *  household deferral's salary base. */
+  ownerEntityId?: string | null;
+  ownerAccountId?: string | null;
+  startYear?: number | null;
+  endYear?: number | null;
+  growthRate?: number | null;
+  inflationStartYear?: number | null;
+}
+
 interface BalanceSheetViewProps {
   clientId: string;
   accounts: AccountRow[];
   liabilities: LiabilityRow[];
   notesReceivable?: NoteReceivable[];
-  /** Every income in the plan. Two consumers: the "Incomes" pill inside an
-   *  expanded business row reads the subset whose `ownerAccountId` points at a
-   *  business shown here, and the Add/Edit Account dialog turns the salaries
-   *  into the choices a percent-of-salary savings rule can be based on. The
-   *  optional schedule fields (startYear/endYear/growthRate/inflationStartYear)
-   *  drive the Custom-schedule placeholder math in BusinessFlowsTab. */
-  incomes?: {
-    id: string;
-    /** Income kind. `toSalaryOptions` offers only `"salary"` rows. */
-    type: string;
-    name: string;
-    annualAmount: number | string;
-    owner: string;
-    /** Set when a trust or business owns the income; those are never a
-     *  household deferral's salary base. */
-    ownerEntityId?: string | null;
-    ownerAccountId?: string | null;
-    startYear?: number | null;
-    endYear?: number | null;
-    growthRate?: number | null;
-    inflationStartYear?: number | null;
-  }[];
+  /** Every income in the plan. Built by `buildIncomeRows`. */
+  incomes?: IncomeRow[];
   /** Expenses attached to business accounts, shown in the BusinessFlowsTab. */
   expenses?: {
     id: string;

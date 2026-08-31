@@ -161,10 +161,16 @@ describe("AddAccountForm — savings salary basis", () => {
     expect(screen.getByText(/salary basis/i)).toBeInTheDocument();
   });
 
-  it("does not offer it on a traditional IRA", () => {
+  it("takes the panel away again when the account type stops being payroll-deduction", () => {
     // IRAs aren't payroll-deduction vehicles, so they have no percent mode and
-    // nothing to base one on. PERCENT_CONTRIB_SUB_TYPES is the gate.
+    // nothing to base one on. PERCENT_CONTRIB_SUB_TYPES is the gate — and it
+    // has to stay live, so the switch below is a REAL one: `traditional_ira`
+    // is already the default retirement subtype, so starting there would fire
+    // no onChange and prove only that the gate holds on first render.
     renderForm();
+    pickSubType("401k");
+    expect(contribToggles().getByRole("button", { name: /% of salary/i })).toBeInTheDocument();
+
     pickSubType("traditional_ira");
     expect(screen.queryByRole("button", { name: /% of salary/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/salary basis/i)).not.toBeInTheDocument();

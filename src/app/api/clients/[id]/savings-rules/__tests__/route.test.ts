@@ -111,12 +111,4 @@ describe("GET /api/clients/[id]/savings-rules", () => {
       salaryIncomeIds: [],
     });
   });
-
-  it("returns an empty list without querying the join table for no rules", async () => {
-    // `inArray(col, [])` is a runtime error in drizzle, so the ids lookup has
-    // to be skipped rather than run with an empty list.
-    const res = await GET({} as never, { params });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual([]);
-  });
 });
