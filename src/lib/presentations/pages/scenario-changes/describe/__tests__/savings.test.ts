@@ -33,3 +33,43 @@ describe("savings_rule describer", () => {
     expect(row.detail.join(" ")).toContain("$20k → $25k");
   });
 });
+
+describe("savings_rule describer — salary basis", () => {
+  it("names the basis instead of printing income ids", () => {
+    // fmtValue joins a string array with commas, so an unhandled
+    // salaryIncomeIds field puts raw UUIDs on a client-facing page — the same
+    // leak the [object Object] comment in format.ts documents.
+    const row = describeChange(
+      ch({
+        opType: "edit",
+        payload: {
+          salaryBasis: { from: "owner", to: "selected" },
+          salaryIncomeIds: { from: [], to: ["9f8c1111-2222-4333-8444-555566667777", "1a2b1111-2222-4333-8444-555566667777"] },
+        },
+      }),
+      ctx,
+    );
+    const d = row.detail.join(" ");
+    expect(d).toContain("Account owner's salary");
+    expect(d).toContain("Selected salaries");
+    expect(d).toContain("2 salaries");
+    expect(d).not.toContain("9f8c");
+  });
+
+  it("labels a single selected salary in the singular and names the 'all' basis", () => {
+    const row = describeChange(
+      ch({
+        opType: "edit",
+        payload: {
+          salaryBasis: { from: "selected", to: "all" },
+          salaryIncomeIds: { from: ["9f8c1111-2222-4333-8444-555566667777"], to: [] },
+        },
+      }),
+      ctx,
+    );
+    const d = row.detail.join(" ");
+    expect(d).toContain("All salaries");
+    expect(d).toContain("1 salary → 0 salaries");
+    expect(d).not.toContain("9f8c");
+  });
+});

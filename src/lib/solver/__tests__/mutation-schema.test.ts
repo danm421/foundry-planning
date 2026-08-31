@@ -126,6 +126,18 @@ const SAMPLES: SolverMutation[] = [
     accountId: "00000000-0000-4000-8000-000000000003",
     year: 2035,
   },
+  {
+    kind: "savings-salary-basis",
+    accountId: "00000000-0000-4000-8000-000000000003",
+    basis: "selected",
+    incomeIds: ["00000000-0000-4000-8000-000000000004"],
+  },
+  {
+    kind: "savings-salary-basis",
+    accountId: "00000000-0000-4000-8000-000000000003",
+    basis: "all",
+    incomeIds: [],
+  },
   { kind: "stress-inflation", rate: 0.05 },
   { kind: "stress-ss-haircut", pct: 0.23, startYear: 2034 },
   { kind: "stress-disability", person: "client", startYear: 2030, endYear: null },

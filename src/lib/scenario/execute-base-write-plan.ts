@@ -1,7 +1,7 @@
 // src/lib/scenario/execute-base-write-plan.ts
 //
 // IO. Applies a BaseWritePlan to the base-case rows inside an open transaction.
-// FK-safe order: insert parents (accounts first) → other inserts → updates →
+// FK-safe order: insert parents (accounts, then incomes) → other inserts → updates →
 // singleton updates → removes (children/cascades cleared by DB ON DELETE
 // CASCADE). Synthetic add ids are remapped to DB-generated uuids so dependent
 // references resolve. Scope columns (clientId, scenarioId) are injected and
@@ -62,14 +62,18 @@ export async function executeBaseWritePlan(
   };
   const idRemap = new Map<string, string>();
   // Child writers/updaters remap same-batch synthetic references (e.g. an
-  // expense's dedicatedAccountIds pointing at an account added in this plan)
-  // through the shared idRemap — populated account-first by the sort below.
+  // expense's dedicatedAccountIds pointing at an account added in this plan,
+  // or a savings rule's salaryIncomeIds pointing at a new salary) through the
+  // shared idRemap — populated parents-first by the sort below.
   const childCtx = { clientId: ctx.clientId, baseScenarioId: ctx.baseScenarioId, idRemap };
 
-  // Insert accounts first (most things FK to them), then everything else.
-  const inserts = [...plan.inserts].sort(
-    (a, b) => (a.kind === "account" ? 0 : 1) - (b.kind === "account" ? 0 : 1),
-  );
+  // FK-safe insert order: accounts first (most things FK to them), then
+  // incomes (a savings rule's salary-basis join rows FK to incomes.id and are
+  // resolved through idRemap, which is only populated once the income row
+  // exists), then everything else. Array#sort is stable, so ties keep the
+  // plan's own order.
+  const insertRank = (kind: string) => (kind === "account" ? 0 : kind === "income" ? 1 : 2);
+  const inserts = [...plan.inserts].sort((a, b) => insertRank(a.kind) - insertRank(b.kind));
   for (const ins of inserts) {
     const entry = PROMOTE_TABLE_REGISTRY[ins.kind];
     if (!entry) throw new Error(`promote: no table for kind ${ins.kind}`);

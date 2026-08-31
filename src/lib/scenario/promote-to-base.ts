@@ -33,10 +33,11 @@ import { loadScenarioChanges, loadScenarioToggleGroups } from "@/lib/scenario/ch
 import { createSnapshot } from "@/lib/scenario/snapshot";
 import { recordAudit } from "@/lib/audit";
 import type { ToggleState } from "@/engine/scenario/types";
-import { assertAccountsInClient } from "@/lib/db-scoping";
+import { assertAccountsInClient, assertIncomesInClient } from "@/lib/db-scoping";
 import {
   scenarioChangesToBaseWrites,
   collectExternalDedicatedAccountIds,
+  collectExternalSalaryIncomeIds,
 } from "./scenario-changes-to-base-writes";
 import { executeBaseWritePlan } from "./execute-base-write-plan";
 import {
@@ -119,6 +120,18 @@ export async function promoteScenarioToBase(args: PromoteArgs): Promise<PromoteR
       collectExternalDedicatedAccountIds(plan),
     );
     if (!dedicatedCheck.ok) throw new PromoteError("invalid_ref", dedicatedCheck.reason);
+
+    // Same guard for savings_rule_salary_incomes.income_id, also a GLOBAL FK.
+    // Deliberately checked HERE and not inside the child writer: the writer
+    // runs inside the transaction below and assertIncomesInClient reads through
+    // the module `db`, which cannot see this transaction's uncommitted rows —
+    // so a promotion that adds a salary AND a rule that uses it would be
+    // rejected. The collector excludes exactly those in-batch ids.
+    const salaryCheck = await assertIncomesInClient(
+      clientId,
+      collectExternalSalaryIncomeIds(plan),
+    );
+    if (!salaryCheck.ok) throw new PromoteError("invalid_ref", salaryCheck.reason);
 
     await db.transaction(async (tx) => {
       counts = await executeBaseWritePlan(tx, plan, { clientId, baseScenarioId });

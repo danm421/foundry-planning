@@ -9,9 +9,31 @@ const DOLLAR_FIELDS = new Set(["annualAmount", "employerMatchAmount", "employerM
 /** Payload fields that carry a 0–1 fraction — rendered as a percent via pct(). */
 const PERCENT_FIELDS = new Set(["annualPercent", "rothPercent", "employerMatchPct"]);
 
+/** Payload fields that carry a list of ids. fmtValue would join them with
+ *  commas and put raw UUIDs on a client-facing page, so they render as a
+ *  count. The describe context has no income-name resolver. */
+const COUNT_FIELDS = new Set(["salaryIncomeIds"]);
+
+const SALARY_BASIS_LABELS: Record<string, string> = {
+  owner: "Account owner's salary",
+  all: "All salaries",
+  selected: "Selected salaries",
+};
+
+const count = (v: unknown) =>
+  Array.isArray(v) ? `${v.length} ${v.length === 1 ? "salary" : "salaries"}` : "—";
+
+const basisLabel = (v: unknown) =>
+  typeof v === "string" ? (SALARY_BASIS_LABELS[v] ?? v) : "—";
+
 /** One DETAILS segment per changed field: "Label: <from> → <to>", compact for money/percent. */
 function transitionSegment(field: string, from: unknown, to: unknown): string {
-  const fmt = DOLLAR_FIELDS.has(field) ? money : PERCENT_FIELDS.has(field) ? pct : fmtValue;
+  const fmt =
+    field === "salaryBasis" ? basisLabel
+    : COUNT_FIELDS.has(field) ? count
+    : DOLLAR_FIELDS.has(field) ? money
+    : PERCENT_FIELDS.has(field) ? pct
+    : fmtValue;
   return `${fieldLabel(field)}: ${fmt(from)} → ${fmt(to)}`;
 }
 

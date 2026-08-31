@@ -10,6 +10,8 @@ import {
 import type { SolveLeverKey } from "@/lib/solver/solve-types";
 import { activeSavingsRules } from "@/lib/solver/active-savings-rules";
 import { supportsRothSplit } from "@/components/forms/contribution-amount-fields";
+import type { SalaryOption } from "@/components/forms/salary-basis-fields";
+import { toSalaryOptions } from "@/lib/savings/salary-options";
 import { FieldHintPopover, type HintRow } from "@/components/forms/field-hint-popover";
 import { SolverBaseHint } from "./solver-base-hint";
 import { RothSplitControl } from "./solver-roth-split-control";
@@ -48,6 +50,7 @@ function savingsResetKeys(accountId: string): SolverMutationKey[] {
   return [
     mutationKey({ kind: "savings-contribution", accountId, annualAmount: 0 }),
     mutationKey({ kind: "savings-annual-percent", accountId, percent: null }),
+    mutationKey({ kind: "savings-salary-basis", accountId, basis: "owner", incomeIds: [] }),
     mutationKey({ kind: "savings-roth-percent", accountId, rothPercent: 0 }),
     mutationKey({ kind: "savings-contribute-max", accountId, value: false }),
     mutationKey({ kind: "savings-growth-rate", accountId, rate: 0 }),
@@ -86,6 +89,19 @@ export function SolverRowSavingsContributions({
     baseClientData.planSettings?.inflationRate ??
     0.03;
 
+  // Salaries a percent-of-salary rule can be based on, for the edit dialog's
+  // Salary basis panel. Built from the WORKING tree, not the base one: every
+  // other value the dialog seeds comes from the working plan, and a salary the
+  // advisor added this session has to be selectable this session.
+  // Optional-chained the same way mutations-to-scenario-changes.ts is: minimal
+  // trees omit the client singleton, and toSalaryOptions falls back to
+  // "Client"/"Spouse" labels when it has no names.
+  const owner = workingClientData.client;
+  const salaryOptions = toSalaryOptions(
+    workingClientData.incomes ?? [],
+    owner ? { clientName: owner.firstName, spouseName: owner.spouseName ?? null } : undefined,
+  );
+
   return (
     <div className="space-y-2.5">
       <div className="text-[13px] font-medium text-ink">Savings Contributions</div>
@@ -105,6 +121,7 @@ export function SolverRowSavingsContributions({
               workingRule={workingRule}
               workingAccount={workingAccount}
               resolvedInflationRate={resolvedInflationRate}
+              salaries={salaryOptions}
               activeSolve={activeSolve}
               onSolveStart={onSolveStart}
               onSolveCancel={onSolveCancel}
@@ -124,6 +141,7 @@ export function SolverRowSavingsContributions({
               workingRule={rule}
               workingAccount={account}
               resolvedInflationRate={resolvedInflationRate}
+              salaries={salaryOptions}
               activeSolve={activeSolve}
               onSolveStart={onSolveStart}
               onSolveCancel={onSolveCancel}
@@ -212,6 +230,7 @@ function Editable({
   workingRule,
   workingAccount,
   resolvedInflationRate,
+  salaries,
   activeSolve,
   onSolveStart,
   onSolveCancel,
@@ -224,6 +243,7 @@ function Editable({
   workingRule: SavingsRule;
   workingAccount: Account | undefined;
   resolvedInflationRate: number;
+  salaries: readonly SalaryOption[];
   activeSolve: ActiveSolve | null;
   onSolveStart: (target: SolveLeverKey, targetPoS: number) => void;
   onSolveCancel: () => void;
@@ -394,6 +414,7 @@ function Editable({
           account={workingAccount}
           workingRule={workingRule}
           resolvedInflationRate={resolvedInflationRate}
+          salaries={salaries}
         />
       ) : null}
     </div>

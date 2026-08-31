@@ -61,6 +61,15 @@ export type SolverMutation =
   | { kind: "ss-cola"; person: SolverPerson; rate: number }
   | { kind: "savings-contribution"; accountId: string; annualAmount: number }
   | { kind: "savings-annual-percent"; accountId: string; percent: number | null }
+  /** Which salaries a percent-of-salary contribution (and a percent employer
+   *  match) resolves against. The union is spelled out rather than importing
+   *  Task 4's `SalaryBasis` — lib/solver must not depend on a component module. */
+  | {
+      kind: "savings-salary-basis";
+      accountId: string;
+      basis: "owner" | "all" | "selected";
+      incomeIds: string[];
+    }
   | { kind: "savings-roth-percent"; accountId: string; rothPercent: number }
   | { kind: "savings-contribute-max"; accountId: string; value: boolean }
   | { kind: "savings-growth-rate"; accountId: string; rate: number }
@@ -127,6 +136,7 @@ export type SolverMutationKey =
   | `ss-cola:${SolverPerson}`
   | `savings-contribution:${string}`
   | `savings-annual-percent:${string}`
+  | `savings-salary-basis:${string}`
   | `savings-roth-percent:${string}`
   | `savings-contribute-max:${string}`
   | `savings-growth-rate:${string}`
@@ -200,6 +210,8 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
       return `savings-contribution:${m.accountId}`;
     case "savings-annual-percent":
       return `savings-annual-percent:${m.accountId}`;
+    case "savings-salary-basis":
+      return `savings-salary-basis:${m.accountId}`;
     case "savings-roth-percent":
       return `savings-roth-percent:${m.accountId}`;
     case "savings-contribute-max":

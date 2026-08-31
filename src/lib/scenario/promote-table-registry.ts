@@ -36,6 +36,7 @@ import {
   writeExpenseChildren,
   updateExpenseChildren,
   writeSavingsRuleChildren,
+  updateSavingsRuleChildren,
   writeTransferChildren,
   writeRothConversionChildren,
   writeReinvestmentChildren,
@@ -49,9 +50,9 @@ export type PromoteTx = Parameters<
 >[0];
 
 /** Context threaded into child writers/updaters. `idRemap` maps synthetic add
- *  ids → DB-generated uuids; the executor inserts accounts first, so any
- *  same-batch account reference is already remapped by the time a dependent
- *  kind's writer runs. */
+ *  ids → DB-generated uuids; the executor inserts accounts and then incomes
+ *  first, so any same-batch account or income reference is already remapped by
+ *  the time a dependent kind's writer runs. */
 export interface ChildWriterCtx {
   clientId: string;
   baseScenarioId: string;
@@ -99,7 +100,11 @@ export const PROMOTE_TABLE_REGISTRY: Partial<Record<TargetKind, RegistryEntry>> 
     childUpdater: updateExpenseChildren,
   },
   liability: { table: liabilities, childWriter: writeLiabilityChildren },
-  savings_rule: { table: savingsRules, childWriter: writeSavingsRuleChildren },
+  savings_rule: {
+    table: savingsRules,
+    childWriter: writeSavingsRuleChildren,
+    childUpdater: updateSavingsRuleChildren,
+  },
   withdrawal_strategy: { table: withdrawalStrategies },
   transfer: { table: transfers, childWriter: writeTransferChildren },
   reinvestment: { table: reinvestments, childWriter: writeReinvestmentChildren },
