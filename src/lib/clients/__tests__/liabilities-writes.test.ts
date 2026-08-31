@@ -84,6 +84,25 @@ d("liabilities-writes core", () => {
     expect(res.data.startMonth).toBe(1);
     expect(res.data.termUnit).toBe("annual");
     expect(res.data.isInterestDeductible).toBe(false);
+    expect(res.data.forgiveAtTermEnd).toBe(false);
+  });
+
+  it("create with forgiveAtTermEnd: true → persists true", async () => {
+    const res = await createLiabilityForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      input: {
+        name: "Forgiven-at-term liability",
+        startYear: 2026,
+        termMonths: 240,
+        forgiveAtTermEnd: true,
+      },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    createdIds.push(res.data.id);
+    expect(res.data.forgiveAtTermEnd).toBe(true);
   });
 
   it("create with explicit owners[] → {ok:true} and a liabilityOwners row is written", async () => {
@@ -229,6 +248,61 @@ d("liabilities-writes core", () => {
     expect(res.data.name).toBe("Update target");
     expect(res.data.startYear).toBe(2026);
     expect(res.data.termMonths).toBe(240);
+  });
+
+  it("update flips forgiveAtTermEnd on an existing row", async () => {
+    const created = await createLiabilityForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      input: { name: "Forgiveness flip target", startYear: 2026, termMonths: 240 },
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    createdIds.push(created.data.id);
+    expect(created.data.forgiveAtTermEnd).toBe(false);
+
+    const res = await updateLiabilityForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      liabilityId: created.data.id,
+      input: { forgiveAtTermEnd: true },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.forgiveAtTermEnd).toBe(true);
+  });
+
+  it("update omitting forgiveAtTermEnd leaves the stored value unchanged", async () => {
+    const created = await createLiabilityForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      input: {
+        name: "Forgiveness untouched target",
+        startYear: 2026,
+        termMonths: 240,
+        forgiveAtTermEnd: true,
+      },
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    createdIds.push(created.data.id);
+    expect(created.data.forgiveAtTermEnd).toBe(true);
+
+    // Update a DIFFERENT field only — forgiveAtTermEnd is omitted from the payload.
+    const res = await updateLiabilityForClient({
+      clientId: COOPER_CLIENT_ID,
+      firmId: COOPER_FIRM_ID,
+      actorId: ACTOR_ID,
+      liabilityId: created.data.id,
+      input: { name: "Forgiveness untouched target (renamed)" },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.name).toBe("Forgiveness untouched target (renamed)");
+    expect(res.data.forgiveAtTermEnd).toBe(true);
   });
 
   it("update owners[] → delete+reinsert replaces the liabilityOwners rows", async () => {
