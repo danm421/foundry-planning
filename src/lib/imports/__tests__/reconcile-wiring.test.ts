@@ -98,12 +98,12 @@ describe("reconciliation covers both payload builders", () => {
 // pass are mocked, matching the convention in
 // src/lib/imports/assemble/__tests__/run-assemble.test.ts. This is what lets
 // these tests actually exercise the wiring the two blocks above cannot.
-const whereSpy = vi.fn((_cond: unknown) => Promise.resolve());
-const setSpy = vi.fn((_v: unknown) => ({ where: whereSpy }));
+const whereSpy = vi.fn(() => Promise.resolve());
+const setSpy = vi.fn<(row: unknown) => { where: typeof whereSpy }>(() => ({ where: whereSpy }));
 vi.mock("@/db", () => ({
   db: { update: vi.fn(() => ({ set: setSpy })) },
 }));
-const recordAudit = vi.fn((_args: unknown) => Promise.resolve());
+const recordAudit = vi.fn<(args: unknown) => Promise<void>>(() => Promise.resolve());
 vi.mock("@/lib/audit", () => ({ recordAudit: (a: unknown) => recordAudit(a) }));
 // PASSTHROUGH: return the payload arg unchanged so rows keep whatever
 // annotateReconciliation stamped on them.
@@ -164,5 +164,34 @@ describe("orchestrator wiring: the persisted payload carries reconciliation", ()
     expect(incomes).toHaveLength(2); // both rows kept, never dropped
     expect(incomes.filter((r) => !r.reconciliation)).toHaveLength(1);
     expect(incomes.filter((r) => r.reconciliation)).toHaveLength(1);
+  });
+
+  // Negative case for the two tests above: a bug that stamped exactly one
+  // arbitrary income row (rather than correctly identifying duplicates)
+  // would pass both "exactly one unmarked" assertions above. This proves
+  // the wiring doesn't just mark SOME row — it leaves genuinely distinct
+  // employers alone.
+  it("ASSEMBLE path (runAssemble): two distinct employers both survive unmarked", async () => {
+    const other = { ...SALARY, employer: "Other Hospital", name: "Salary at Other" };
+
+    await runAssemble({
+      importId: "imp3",
+      clientId: "c1",
+      firmId: "org1",
+      mode: "new",
+      scenarioId: "sc1",
+      fileResults: {
+        stub1: result({ extracted: { ...result().extracted, incomes: [SALARY] } }),
+        stub2: result({ extracted: { ...result().extracted, incomes: [other] } }),
+      },
+      hasSpouse: false,
+    });
+
+    expect(setSpy).toHaveBeenCalledTimes(1);
+    const persisted = setSpy.mock.calls[0][0] as PersistedCall;
+    const incomes = persisted.payloadJson.payload.incomes;
+    expect(incomes).toHaveLength(2);
+    expect(incomes.filter((r) => !r.reconciliation)).toHaveLength(2);
+    expect(incomes.some((r) => r.reconciliation)).toBe(false);
   });
 });
