@@ -184,4 +184,65 @@ describe("reconcileGroup", () => {
     const group = groupCompensation([inc("stub1")], FILES)[0];
     expect(reconcileGroup(group, FILES, 2026).supersedes).toEqual([]);
   });
+
+  // Regression for review finding 1: a winner picked purely on `basis` can
+  // have no `annualAmount` (it's optional), which used to make `build()`
+  // bail before ever looking at the other row — reporting recurring: undefined
+  // / total: $0 at "high" confidence even though a usable figure existed.
+  it("does not silently report $0 when the preferred-basis row has no amount", () => {
+    const group = groupCompensation(
+      [inc("stub1", { annualAmount: undefined }),
+       inc("w2", { annualAmount: 250_000, basis: "actual" })],
+      FILES,
+    )[0];
+    const r = reconcileGroup(group, FILES, 2026);
+    expect(r.recurring?.amount).toBe(250_000);
+    expect(r.total.amount).toBe(250_000);
+    // the amount-less row is still tracked, not silently dropped
+    expect(r.supersedes).toHaveLength(1);
+  });
+
+  // Regression for review finding 2: two rows from the SAME document (e.g.
+  // base salary + shift differential on one paystub) are not two documents
+  // measuring the same earnings — the "measured twice" reason is false for
+  // same-file rows, so they must not be superseded against each other.
+  it("does not supersede two recurring lines from the SAME document", () => {
+    const group = groupCompensation(
+      [inc("stub1"),
+       inc("stub1", { name: "Shift Differential", annualAmount: 5_000 })],
+      FILES,
+    )[0];
+    const r = reconcileGroup(group, FILES, 2026);
+    expect(r.supersedes).toEqual([]);
+  });
+
+  it("treats exactly 1% disagreement as within tolerance", () => {
+    const group = groupCompensation(
+      [inc("stub1", { annualAmount: 200_000 }),
+       inc("stub2", { annualAmount: 198_000, basis: "actual" })],
+      FILES,
+    )[0];
+    const r = reconcileGroup(group, FILES, 2026);
+    expect(r.confidence).toBe("high");
+  });
+
+  it("flags needs-review just over the 1% tolerance boundary", () => {
+    const group = groupCompensation(
+      [inc("stub1", { annualAmount: 200_000 }),
+       inc("stub2", { annualAmount: 197_999, basis: "actual" })],
+      FILES,
+    )[0];
+    const r = reconcileGroup(group, FILES, 2026);
+    expect(r.confidence).toBe("needs-review");
+  });
+
+  it("falls back to the first row when none carries the preferred basis", () => {
+    const group = groupCompensation(
+      [inc("stub1", { basis: undefined }),
+       inc("stub2", { basis: undefined, annualAmount: 239_600 })],
+      FILES,
+    )[0];
+    const r = reconcileGroup(group, FILES, 2026);
+    expect(r.recurring?.amount).toBe(239_550);
+  });
 });

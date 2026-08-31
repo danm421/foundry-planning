@@ -65,7 +65,10 @@ export function groupCompensation(
   incomes: Annotated<ExtractedIncome>[],
   files: Record<string, FileMeta>,
 ): CompGroup[] {
-  void files; // reserved for Task 5's document-kind preference
+  // `files` is unused here — kept for signature symmetry with
+  // `reconcileGroup`, which Task 6's call site invokes with the same
+  // (incomes, files) shape immediately after grouping.
+  void files;
   const groups = new Map<string, CompGroup>();
   for (const row of incomes) {
     if (!row.employer || row.sourceTaxYear == null) continue;
@@ -101,8 +104,11 @@ export type ReconciledEmployer = {
   confidence: "high" | "needs-review";
 };
 
-/** Two figures are "the same" within 1% — the tolerance cross-document amount
- *  comparisons elsewhere in the import pipeline already use. */
+/** Two figures are "the same" within 1% — the tolerance
+ *  src/lib/imports/assemble/merge-across-files.ts already uses for
+ *  cross-document amounts. Duplicated rather than imported, to keep this
+ *  module standalone and pure (see the file header) — if that tolerance
+ *  ever changes, check this one too so the two don't silently drift apart. */
 const AMOUNT_TOLERANCE_PCT = 0.01;
 
 function withinTolerance(a: number, b: number): boolean {
@@ -143,11 +149,22 @@ export function reconcileGroup(
 
   const build = (kind: "recurring" | "variable"): Money | undefined => {
     const rows = rowsBy(kind);
-    const winner = pick(rows);
+    // Pick only from rows that actually carry an amount — `annualAmount` is
+    // optional, so a row matching the preferred `basis` but missing it must
+    // not win and silently suppress a sibling that DOES have one (that
+    // produced a confidently-wrong $0). The full, unfiltered `rows` is still
+    // walked below so an amount-less row is tracked, not dropped.
+    const usable = rows.filter((r) => r.annualAmount != null);
+    const winner = pick(usable);
     if (!winner || winner.annualAmount == null) return undefined;
 
     for (const loser of rows) {
       if (loser === winner) continue;
+      // Two rows from the SAME document are not "the same earnings measured
+      // twice" — one document listing base pay and a shift differential is
+      // two distinct lines, not a duplicate measurement. Only rows from
+      // DIFFERENT files (a W-2 vs. that employer's paystubs) get reconciled.
+      if (fileIdOf(loser) === fileIdOf(winner)) continue;
       supersedes.push({
         rowName: loser.name,
         sourceFileId: fileIdOf(loser),
