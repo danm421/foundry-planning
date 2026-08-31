@@ -111,13 +111,18 @@ export default function ReviewStepIncomes({
         {incomes.map((income, i) => (
           <div
             key={i}
-            // A superseded row is recessed and hairlined amber, never dropped:
-            // commitIncomes skips it, so the advisor has to be able to see the
-            // row, read why, and correct the call if the reconciler got it
-            // wrong. Every field below stays editable.
+            // A superseded row is recessed a step below its peers' bg-gray-900
+            // and hairlined amber, never dropped: commitIncomes skips it, so the
+            // advisor has to be able to see the row and read why. The recess is
+            // an OPAQUE darker gray, not a translucent tint of the peer surface:
+            // every other surface in this row is hardcoded dark, so a
+            // translucent one would be the row's only theme-dependent value and
+            // would composite against the light-theme canvas — bleaching the one
+            // sentence this notice exists to make readable. The fields below
+            // stay editable.
             className={`rounded-lg border p-3 ${
               income.reconciliation
-                ? "border-amber-600/50 bg-gray-900/40"
+                ? "border-amber-600/50 bg-gray-950"
                 : "border-gray-700 bg-gray-900"
             }`}
           >

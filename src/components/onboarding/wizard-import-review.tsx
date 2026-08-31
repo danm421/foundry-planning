@@ -315,7 +315,7 @@ export default function WizardImportReview({
           <div className="space-y-6">
             <ReviewStepIncomes
               incomes={incomes}
-              onChange={(i) => setIncomes(i as Annotated<ExtractedIncome>[])}
+              onChange={(i) => setIncomes(i)}
               defaultStartYear={currentYear}
               defaultEndYear={currentYear + 30}
             />

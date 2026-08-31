@@ -25,10 +25,13 @@ describe("ReviewStepIncomes reconciliation notice", () => {
     expect(screen.getByText(/W-2 Wages - Mount Sinai/)).toBeInTheDocument();
     expect(screen.getByText(/the same earnings measured twice/i)).toBeInTheDocument();
     expect(screen.getByText(/won.t be imported/i)).toBeInTheDocument();
-    // Mark, never drop: the superseded row keeps its editable fields alongside
-    // the row that beat it, so the advisor can still correct the decision.
+    // Mark, never drop: the superseded row is still rendered beside the row that
+    // beat it, and de-emphasis is visual only — the fields stay ENABLED, so a
+    // later `disabled={!!income.reconciliation}` fails here rather than shipping.
     expect(screen.getAllByPlaceholderText("Income source name")).toHaveLength(2);
     expect(screen.getByDisplayValue("250,000")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("250,000")).toBeEnabled();
+    expect(screen.getByDisplayValue("W-2 Wages - Mount Sinai")).toBeEnabled();
   });
 
   it("leaves an unreconciled list unflagged", () => {
