@@ -156,6 +156,14 @@ export interface ExtractedIncome {
   growthRate?: number;
   owner?: "client" | "spouse" | "joint";
   claimingAge?: number;
+  /** Employer/payer exactly as printed on the source document. Reconciliation grouping key. */
+  employer?: string;
+  /** Calendar year the source document reports on (W-2 tax year; paystub pay-period year). */
+  sourceTaxYear?: number;
+  /** How annualAmount was arrived at: "actual" = as printed, "annualized" = derived. */
+  basis?: "actual" | "annualized";
+  /** Whether the line recurs each period, or is irregular (bonus, incentive, commission). */
+  recurrence?: "recurring" | "variable";
 }
 
 export interface ExtractedExpense {
@@ -195,6 +203,8 @@ export interface ExtractedSavings {
   name: string;
   /** The account this funds. Resolved to accountId by name at commit. */
   destinationAccountName: string;
+  /** Employer as printed on the source document. Matches ExtractedIncome.employer. */
+  employer?: string;
   owner?: "client" | "spouse" | "joint";
   annualAmount?: number;
   /** Fraction of the owner's salary, e.g. 0.10 for "10.0% of salary". */

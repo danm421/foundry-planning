@@ -47,6 +47,16 @@ export async function commitIncomes(
   for (const row of otherRows) {
     const kind = row.match?.kind ?? "new";
 
+    // Reconciliation judged this row a duplicate MEASUREMENT of another row's
+    // earnings (a W-2 and that employer's paystubs describe the same job).
+    // Importing both is the double-count this guard exists to stop. The row is
+    // still present in the payload and shown on the review screen with its
+    // reason — skipped here, never dropped there.
+    if (row.reconciliation) {
+      result.skipped += 1;
+      continue;
+    }
+
     if (kind === "fuzzy") {
       result.skipped += 1;
       continue;

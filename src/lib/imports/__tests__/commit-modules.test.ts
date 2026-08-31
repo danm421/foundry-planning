@@ -1845,3 +1845,45 @@ describe("commitWills", () => {
     expect(callsForTable(calls, "will_bequests").filter((c) => c.op === "insert")).toHaveLength(1);
   });
 });
+
+describe("commitIncomes skips reconciled duplicates", () => {
+  it("inserts one row when the other is marked superseded", async () => {
+    const payload = emptyPayload();
+    payload.incomes = [
+      { type: "salary", name: "Salary at Mount Sinai", annualAmount: 239_550,
+        owner: "client", match: { kind: "new" } },
+      { type: "salary", name: "W-2 Wages - Mount Sinai", annualAmount: 250_000,
+        owner: "client", match: { kind: "new" },
+        reconciliation: { supersededBy: "Salary at Mount Sinai", reason: "same employer" } },
+    ];
+    const { tx, calls } = makeFakeTx();
+    const result = await commitIncomes(tx, payload, ctx);
+    const inserts = callsForTable(calls, "incomes").filter((c) => c.op === "insert");
+    expect(result.created).toBe(1);
+    expect(inserts).toHaveLength(1);
+  });
+
+  it("counts a superseded row as skipped, not silently dropped", async () => {
+    const payload = emptyPayload();
+    payload.incomes = [
+      { type: "salary", name: "A", annualAmount: 1, owner: "client", match: { kind: "new" } },
+      { type: "salary", name: "B", annualAmount: 1, owner: "client", match: { kind: "new" },
+        reconciliation: { supersededBy: "A", reason: "same employer" } },
+    ];
+    const { tx } = makeFakeTx();
+    const result = await commitIncomes(tx, payload, ctx);
+    expect(result.skipped).toBe(1);
+  });
+
+  it("inserts both when neither is marked", async () => {
+    const payload = emptyPayload();
+    payload.incomes = [
+      { type: "salary", name: "A", annualAmount: 1, owner: "client", match: { kind: "new" } },
+      { type: "salary", name: "B", annualAmount: 2, owner: "client", match: { kind: "new" } },
+    ];
+    const { tx, calls } = makeFakeTx();
+    const result = await commitIncomes(tx, payload, ctx);
+    expect(result.created).toBe(2);
+    expect(callsForTable(calls, "incomes").filter((c) => c.op === "insert")).toHaveLength(2);
+  });
+});
