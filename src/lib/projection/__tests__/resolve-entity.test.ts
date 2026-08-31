@@ -508,22 +508,24 @@ describe("resolveExpenseFromRaw", () => {
   });
 });
 
+const baseRawSavingsRule = {
+  id: "s1",
+  accountId: "a1",
+  annualAmount: "20000",
+  annualPercent: null,
+  isDeductible: true,
+  applyContributionLimit: true,
+  contributeMax: false,
+  startYear: 2025,
+  endYear: 2050,
+  growthSource: "custom",
+  growthRate: "0.05",
+};
+
 describe("resolveSavingsRuleFromRaw", () => {
   it("uses inflation rate when growthSource is 'inflation'", () => {
     const rule = resolveSavingsRuleFromRaw(
-      {
-        id: "s1",
-        accountId: "a1",
-        annualAmount: "20000",
-        annualPercent: null,
-        isDeductible: true,
-        applyContributionLimit: true,
-        contributeMax: false,
-        startYear: 2025,
-        endYear: 2050,
-        growthSource: "inflation",
-        growthRate: null,
-      },
+      { ...baseRawSavingsRule, growthSource: "inflation", growthRate: null },
       makeCtx({ inflationRate: 0.025 }),
     );
     expect(rule.growthRate).toBeCloseTo(0.025);
@@ -531,22 +533,40 @@ describe("resolveSavingsRuleFromRaw", () => {
 
   it("uses explicit growthRate when source is not inflation", () => {
     const rule = resolveSavingsRuleFromRaw(
-      {
-        id: "s2",
-        accountId: "a1",
-        annualAmount: "20000",
-        annualPercent: null,
-        isDeductible: false,
-        applyContributionLimit: true,
-        contributeMax: false,
-        startYear: 2025,
-        endYear: 2050,
-        growthSource: "custom",
-        growthRate: "0.05",
-      },
+      { ...baseRawSavingsRule, id: "s2", isDeductible: false },
       makeCtx(),
     );
     expect(rule.growthRate).toBeCloseTo(0.05);
+  });
+});
+
+describe("resolveSavingsRuleFromRaw — salary basis", () => {
+  const ctx = makeCtx();
+
+  it("defaults to owner with an empty list when the raw row says nothing", () => {
+    const rule = resolveSavingsRuleFromRaw({ ...baseRawSavingsRule }, ctx);
+    expect(rule.salaryBasis).toBe("owner");
+    expect(rule.salaryIncomeIds).toEqual([]);
+  });
+
+  it("carries a selected list through", () => {
+    const rule = resolveSavingsRuleFromRaw(
+      { ...baseRawSavingsRule, salaryBasis: "selected", salaryIncomeIds: ["inc-1", "inc-2"] },
+      ctx,
+    );
+    expect(rule.salaryBasis).toBe("selected");
+    expect(rule.salaryIncomeIds).toEqual(["inc-1", "inc-2"]);
+  });
+
+  it("degrades selected-with-no-ids to owner", () => {
+    // The write path never produces this. The FK cascade can: delete every
+    // salary a rule named and the mode outlives its list. Falling back to the
+    // owner derivation is the only reading that isn't a silent zero.
+    const rule = resolveSavingsRuleFromRaw(
+      { ...baseRawSavingsRule, salaryBasis: "selected", salaryIncomeIds: [] },
+      ctx,
+    );
+    expect(rule.salaryBasis).toBe("owner");
   });
 });
 
