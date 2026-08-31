@@ -153,11 +153,10 @@ export function ForgePanel({
   const [threads, setThreads] = useState<Thread[]>([]);
   const [input, setInput] = useState("");
   const [loadingThread, setLoadingThread] = useState(false);
-  // The conversation-history list is collapsible so it never buries an active
-  // chat. `null` = follow the default (open only when no conversation is
-  // happening); a boolean = an explicit user toggle. Reset to null on
-  // new-chat / thread-switch so the default takes over again.
-  const [historyOverride, setHistoryOverride] = useState<boolean | null>(null);
+  // The conversation-history list starts collapsed and only opens when the
+  // advisor clicks History — a long list otherwise buries the composer.
+  // Collapses again on new-chat / thread-switch.
+  const [historyOpen, setHistoryOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [attached, setAttached] = useState<File[]>([]);
@@ -416,7 +415,7 @@ export function ForgePanel({
     handledPlanBuildRef.current = null;
     setInput("");
     resetTranscriptState();
-    setHistoryOverride(null);
+    setHistoryOpen(false);
   }
 
   async function processTranscript(text: string, source: "paste" | "explicit") {
@@ -451,8 +450,8 @@ export function ForgePanel({
 
   async function selectThread(id: string) {
     if (busy || loadingThread || id === conversationId) return;
-    // Let the history collapse back to its default once the thread loads.
-    setHistoryOverride(null);
+    // Collapse the history again so the loaded thread is what's on screen.
+    setHistoryOpen(false);
     setLoadingThread(true);
     setPendingApproval(null);
     setResolvedApproval(null);
@@ -708,11 +707,7 @@ export function ForgePanel({
 
   const lastMsg = messages[messages.length - 1];
   const streamingEmpty = busy && lastMsg?.role === "assistant" && lastMsg.text === "";
-  // A conversation is "happening" once it has messages (or is loading one). In
-  // that state the history list collapses by default so it doesn't push the
-  // chat down; an explicit toggle (historyOverride) wins either way.
-  const inConversation = messages.length > 0 || loadingThread;
-  const showHistory = threads.length > 0 && (historyOverride ?? !inConversation);
+  const showHistory = threads.length > 0 && historyOpen;
   const scenarioLabel = scenarioId ? scenarioNames[scenarioId] ?? "Scenario" : "Base case";
   const pageLabel = pageLabelForPath(pathname);
 
@@ -784,7 +779,7 @@ export function ForgePanel({
             {threads.length > 0 && (
               <button
                 type="button"
-                onClick={() => setHistoryOverride(!showHistory)}
+                onClick={() => setHistoryOpen(!historyOpen)}
                 aria-expanded={showHistory}
                 className="ml-auto flex items-center gap-1 rounded-[var(--radius-sm)] px-2 py-1 text-[12px] font-medium text-ink-3 hover:bg-card-hover hover:text-ink"
               >
@@ -1233,12 +1228,15 @@ export function ForgePanel({
           )}
 
           {attached.length > 0 && (
-            <div className="mb-2 space-y-1.5">
+            /* One horizontal strip — attachments scroll sideways instead of
+               stacking, so ten files cost the same vertical space as one. */
+            <div className="mb-2 flex gap-1.5 overflow-x-auto pb-1">
               {attached.map((f, i) => (
                 <div
                   key={i}
                   data-testid="forge-attachment"
-                  className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-2.5 py-1.5"
+                  title={`${f.name} · ${formatBytes(f.size)}`}
+                  className="flex max-w-[13rem] shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] border border-hair bg-card-2 px-2 py-1"
                 >
                   <svg
                     aria-hidden
@@ -1255,7 +1253,7 @@ export function ForgePanel({
                     <path d="M14 3v4a1 1 0 0 0 1 1h4" />
                     <path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" />
                   </svg>
-                  <span className="min-w-0 flex-1 truncate text-[12px] text-ink">{f.name}</span>
+                  <span className="min-w-0 truncate text-[12px] text-ink">{f.name}</span>
                   <span className="shrink-0 text-[11px] text-ink-4">{formatBytes(f.size)}</span>
                   <button
                     type="button"
