@@ -9,6 +9,7 @@ import { makePiaEstimator } from "@/lib/imports/planner/pia-estimator";
 import { PLANNER_VERSION } from "@/lib/imports/planner/prompt";
 import { runPlanner } from "@/lib/imports/planner/run-planner";
 import type { ImportPayload } from "@/lib/imports/types";
+import { annotateReconciliation } from "../reconcile-compensation";
 import { fillAssumptions } from "./gap-fill";
 import { deriveGoals } from "./goals";
 import { applyIncomeTimingDefaults } from "./income-timing";
@@ -156,8 +157,18 @@ export async function runAssemble(args: RunAssembleArgs): Promise<RunAssembleRes
   const { importId, clientId, firmId, mode, scenarioId, fileResults, known, hasSpouse, taxReturn } = args;
 
   const { payload, mergedFileCount } = mergeAcrossFiles(fileResults);
+  const { payload: reconciledPayload } = annotateReconciliation(
+    payload,
+    Object.fromEntries(
+      Object.entries(fileResults).map(([id, r]) => [
+        id,
+        { documentType: r.documentType, fileName: r.fileName },
+      ]),
+    ),
+    new Date().getUTCFullYear(),
+  );
   const { payload: timedPayload, normalized: timingNormalizations } =
-    applyIncomeTimingDefaults(payload);
+    applyIncomeTimingDefaults(reconciledPayload);
   for (const n of timingNormalizations) {
     timedPayload.warnings.push(`${n.incomeName}: ${n.reason}`);
   }
