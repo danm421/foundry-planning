@@ -1,4 +1,4 @@
-export const PAY_STUB_VERSION = "2026-08-04.2";
+export const PAY_STUB_VERSION = "2026-08-31.1";
 
 export const PAY_STUB_PROMPT = `You are a financial document extraction assistant.
 Extract structured data from the following pay stub or earnings statement.
@@ -10,7 +10,11 @@ Return a JSON object with this exact structure:
       "type": "salary",
       "name": "Descriptive name (e.g. 'John - Salary at Acme Corp')",
       "annualAmount": 0,
-      "owner": "one of: client, spouse, joint"
+      "owner": "one of: client, spouse, joint",
+      "employer": "Employer name exactly as printed",
+      "sourceTaxYear": 2026,
+      "basis": "annualized",
+      "recurrence": "one of: recurring, variable"
     }
   ],
   "savings": [
@@ -21,7 +25,8 @@ Return a JSON object with this exact structure:
       "annualAmount": 0,
       "employerMatchAmount": 0,
       "rothPercent": 0,
-      "contributionRole": "one of: employee, employer"
+      "contributionRole": "one of: employee, employer",
+      "employer": "Employer name exactly as printed"
     }
   ]
 }
@@ -49,6 +54,19 @@ Extraction rules:
 - If the employee name suggests client vs spouse, set owner accordingly; default to "client"
 - "incomes" holds GROSS pay only. Never subtract deductions or taxes from it, and
   never add an income row for a deduction, a tax, or a benefit.
+- "employer" is the employer name exactly as printed on the stub. Copy it; do
+  not normalize, abbreviate, or expand it.
+- "sourceTaxYear" is the calendar year of the pay-period END date (the P/P End
+  column), as a 4-digit number.
+- "basis" is "annualized" for any figure you multiplied by the pay frequency or
+  derived from YTD ÷ periods; "actual" for a figure copied as printed.
+- "recurrence" is "recurring" for a regular/base earnings line that appears
+  every period, and "variable" for a bonus, incentive, commission, or overtime
+  line. This is the same distinction the multiplier rules above already draw:
+  every line you annualized is "recurring", every line you carried from YTD
+  unmultiplied is "variable".
+- On the savings rows, "employer" repeats the same employer string, so a
+  deferral can be tied back to the job that funds it.
 
 Retirement contribution rules ("savings"):
 - Extract ONLY retirement plan contributions: 401(k), 403(b), 457, TSP, SIMPLE,

@@ -1,4 +1,4 @@
-export const TAX_RETURN_VERSION = "2026-08-06.1";
+export const TAX_RETURN_VERSION = "2026-08-31.1";
 
 export const TAX_RETURN_PROMPT = `You are a financial document extraction assistant.
 Extract structured data from the following tax return (1040, K-1, or related schedules).
@@ -10,7 +10,10 @@ Return a JSON object with this exact structure:
       "type": "one of: salary, social_security, business, capital_gains, trust, other",
       "name": "Descriptive name (e.g. 'W-2 Wages - Acme Corp', 'Schedule C - Consulting')",
       "annualAmount": 0,
-      "owner": "one of: client, spouse, joint"
+      "owner": "one of: client, spouse, joint",
+      "employer": "Employer/payer name exactly as printed",
+      "sourceTaxYear": 2025,
+      "basis": "actual"
     }
   ],
   "entities": [
@@ -49,5 +52,9 @@ Extraction rules:
 - Extract EVERY income source you find, including ones that net to a loss —
   report a loss as a negative annualAmount. Never omit a source because it is
   small or negative; an advisor needs to see it to plan against it.
+- "employer" is the employer or payer name as printed (W-2 box c, 1099 payer).
+  "sourceTaxYear" is the tax year the form reports (W-2 box for the year, the
+  1040 header year) — NOT the year it was filed or received. "basis" is always
+  "actual" on a tax form: these figures are reported amounts, never derived.
 
 Return ONLY valid JSON. No explanation, no markdown.`;
