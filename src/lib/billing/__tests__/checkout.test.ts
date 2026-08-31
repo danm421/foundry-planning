@@ -86,7 +86,27 @@ describe("buildCheckoutSessionParams", () => {
     expect(params.success_url).toBe(
       "https://example.test/checkout/success?session_id={CHECKOUT_SESSION_ID}",
     );
-    expect(params.cancel_url).toBe("https://example.test/pricing");
+  });
+
+  it("cancels back to the storefront's pricing page, not the app origin", () => {
+    // The app has no /pricing route — `${origin}/pricing` 404s the buyer the
+    // moment they hit "back" in Stripe. Pricing lives on the marketing site.
+    const params = buildCheckoutSessionParams({
+      priceKey: "seatAnnual",
+      origin: "https://example.test",
+    });
+    expect(params.cancel_url).toBe("https://foundryplanning.com/pricing");
+  });
+
+  it("accepts promotion codes at checkout", () => {
+    // /admin/promo-codes mints Stripe promotion codes for buyers to type at
+    // checkout. Without this flag Stripe never renders the field, so every
+    // code ops creates is unredeemable.
+    const params = buildCheckoutSessionParams({
+      priceKey: "seatAnnual",
+      origin: "https://example.test",
+    });
+    expect(params.allow_promotion_codes).toBe(true);
   });
 
   it("enables automatic_tax and runs in subscription mode", () => {
