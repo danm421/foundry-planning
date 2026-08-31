@@ -398,3 +398,57 @@ describe("computeAmortizationSchedule — negative amortization", () => {
     expect(last.endingBalance).toBe(0);
   });
 });
+
+describe("computeAmortizationSchedule — forgiveness at end of term", () => {
+  // Same income-driven loan as the negative-amortization block: $120,000 at
+  // 6.5%, $450/mo, 240-month term, growing to $218,084.19 by maturity.
+  const balance = 120000;
+  const rate = 0.065;
+  const payment = 450;
+
+  it("balloons the remainder when the flag is off", () => {
+    const rows = computeAmortizationSchedule(balance, rate, payment, 2026, 240);
+    const last = rows[rows.length - 1];
+
+    expect(last.forgivenAmount).toBe(0);
+    expect(last.payment).toBeCloseTo(223484.19, 1);
+    expect(last.endingBalance).toBe(0);
+  });
+
+  it("writes the remainder off instead of paying it when the flag is on", () => {
+    const rows = computeAmortizationSchedule(
+      balance, rate, payment, 2026, 240, [], 1, true
+    );
+    const last = rows[rows.length - 1];
+
+    expect(last.forgivenAmount).toBeCloseTo(218084.19, 1);
+    // The forgiven balance is NOT a cash flow: the year pays twelve normal
+    // payments and nothing more.
+    expect(last.payment).toBeCloseTo(5400, 2);
+    expect(last.endingBalance).toBe(0);
+  });
+
+  it("reports nothing forgiven on every year before the last", () => {
+    const rows = computeAmortizationSchedule(
+      balance, rate, payment, 2026, 240, [], 1, true
+    );
+    for (const row of rows.slice(0, -1)) {
+      expect(row.forgivenAmount).toBe(0);
+    }
+  });
+
+  it("absorbs rounding dust as payment rather than reporting it forgiven", () => {
+    // A loan whose payment amortizes it to (near) zero leaves cents, not a
+    // forgiven balance. $300,000 at 6.5% over 180 months is $2,613.322096/mo;
+    // stored at two decimals as $2,613.32 it under-pays by a third of a cent a
+    // month, leaving $0.64 at maturity. Under FORGIVENESS_MIN, so it is
+    // absorbed into the final payment exactly as an unflagged loan would.
+    const rows = computeAmortizationSchedule(
+      300000, 0.065, 2613.32, 2026, 180, [], 1, true
+    );
+    const last = rows[rows.length - 1];
+
+    expect(last.forgivenAmount).toBe(0);
+    expect(last.endingBalance).toBe(0);
+  });
+});

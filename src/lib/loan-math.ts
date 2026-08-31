@@ -136,6 +136,10 @@ export interface AmortizationScheduleRow {
    *  accrued interest and the shortfall capitalized into the balance. */
   principal: number;
   extraPayment: number;
+  /** Balance written off at the contractual end because the loan is flagged
+   *  `forgiveAtTermEnd`. Zero on every row except, at most, the last. NOT a
+   *  cash flow — it never enters `payment`. */
+  forgivenAmount: number;
   endingBalance: number;
   /** Calendar month (1-12) of this year's FIRST payment. An October-originated
    *  loan reports 10 in its origination year and 1 in every year after. */
@@ -197,6 +201,14 @@ export function scheduleEndYear(
   return startYear + Math.ceil((termMonths + startMonth - 1) / 12) - 1;
 }
 
+/**
+ * Below a dollar, a residue at the end of the term is rounding dust from a
+ * payment stored at two decimals — not a forgiven balance. Absorb it into the
+ * final payment the way an unflagged loan does, so a loan that amortizes
+ * cleanly does not report "$0.42 forgiven".
+ */
+const FORGIVENESS_MIN = 1;
+
 export function computeAmortizationSchedule(
   balance: number,
   annualRate: number,
@@ -204,7 +216,8 @@ export function computeAmortizationSchedule(
   startYear: number,
   termMonths: number,
   extraPayments: ScheduleExtraPayment[] = [],
-  startMonth = 1
+  startMonth = 1,
+  forgiveAtTermEnd = false
 ): AmortizationScheduleRow[] {
   const endYear = scheduleEndYear(startYear, termMonths, startMonth);
   const rows: AmortizationScheduleRow[] = [];
@@ -275,13 +288,21 @@ export function computeAmortizationSchedule(
       }
     }
 
-    // Contractual end: absorb any rounding dust so the final period
-    // always pays the balance to zero rather than leaving a residual
-    // from monthly-payment rounding (e.g. $1896.20 stored for a loan
-    // whose theoretical payment is $1896.203...).
+    // Contractual end. Two outcomes:
+    //  - Forgiven: the remainder is written off, not paid. Payment and principal
+    //    stay at their real levels, so the year does not report six figures of
+    //    cash leaving a household that never spent it.
+    //  - Otherwise: absorb the remainder into the final payment. Right for
+    //    rounding dust, and right for an interest-only loan, whose principal
+    //    genuinely IS due as a balloon at maturity.
+    let forgivenAmount = 0;
     if (year === endYear && bal > 0) {
-      yearScheduledPayment += bal;
-      yearPrincipal += bal;
+      if (forgiveAtTermEnd && bal >= FORGIVENESS_MIN) {
+        forgivenAmount = bal;
+      } else {
+        yearScheduledPayment += bal;
+        yearPrincipal += bal;
+      }
       bal = 0;
     }
 
@@ -292,6 +313,7 @@ export function computeAmortizationSchedule(
       interest: yearInterest,
       principal: yearPrincipal,
       extraPayment: yearExtraPayment,
+      forgivenAmount,
       endingBalance: bal,
       firstPaymentMonth: year === startYear ? startMonth : 1,
       paymentCount: monthsPaidThisYear,
