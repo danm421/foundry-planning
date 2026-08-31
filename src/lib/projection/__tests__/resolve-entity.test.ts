@@ -7,6 +7,8 @@ import {
   type ResolutionContext,
 } from "../resolve-entity";
 import { createGrowthSourceResolver } from "../resolve-growth-source";
+import { runProjection } from "@/engine/projection";
+import { buildClientData } from "@/engine/__tests__/fixtures";
 
 function makeCtx(overrides: Partial<{
   inflationRate: number;
@@ -567,6 +569,28 @@ describe("resolveSavingsRuleFromRaw — salary basis", () => {
       ctx,
     );
     expect(rule.salaryBasis).toBe("owner");
+  });
+
+  it("carries 'all' through to a household-total contribution the owner path could not produce", () => {
+    // Regression for the branch's headline case: if the "all" arm above ever
+    // gets deleted (falling through to "selected"/"owner"), this raw row
+    // resolves to "owner" instead — same string shape, silently wrong. A field
+    // check alone ("salaryBasis" === "all") would already catch that, but the
+    // fixture below proves it end to end: acct-401k is owned solely by the
+    // client (John, $150k), and the spouse (Jane, $100k) earns a different
+    // amount. "owner" can only ever see John's $150k; only "all" sums both.
+    const rule = resolveSavingsRuleFromRaw(
+      { ...baseRawSavingsRule, accountId: "acct-401k", annualPercent: "0.1", salaryBasis: "all" },
+      ctx,
+    );
+    expect(rule.salaryBasis).toBe("all");
+
+    const data = buildClientData({ savingsRules: [rule] });
+    const result = runProjection(data);
+    const ledger = result[0].accountLedgers["acct-401k"];
+    const contributions = ledger.entries.filter((e) => e.category === "savings_contribution");
+    // John $150k + Jane $100k = $250k; the owner path tops out at John's $150k.
+    expect(contributions[0].amount).toBeCloseTo(250000 * 0.1, 2);
   });
 });
 
