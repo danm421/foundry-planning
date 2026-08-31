@@ -76,6 +76,17 @@ export interface RetirementSummaryPageData {
   cashFlowChartSpec: ChartSpec;
 }
 
+/** The compact cash-flow panel on the funding sheet.
+ *
+ *  194 = 8 (top) + 130 (plot) + 56 (bottom). The plot is the same 130pt the
+ *  earlier 210pt panel drew; the 16pt that went was top margin, whose only
+ *  tenants were the marker labels (drawn at y = -4) that this panel drops.
+ *  The funding sheet is the deck's tightest page and needs that room.
+ *
+ *  Exported because the pagination guard (render-smoke.test.tsx) builds its own
+ *  fixture spec: measuring a box the deck does not print is measuring nothing. */
+export const FUNDING_CHART_BOX = { width: 500, height: 194, marginTop: 8 } as const;
+
 export function buildRetirementSummaryData(
   ctx: BuildDataContext,
   _options: RetirementSummaryOptions,
@@ -118,14 +129,15 @@ export function buildRetirementSummaryData(
   });
   const cashFlowChartSpec: ChartSpec = {
     ...cf.chartSpec,
-    width: 500,
-    height: 210,
+    width: FUNDING_CHART_BOX.width,
+    height: FUNDING_CHART_BOX.height,
     // The chart is sliced to [retirement..end-of-life], so both timeline markers land
     // on the domain edges: the retirement line duplicates the leftmost bar and the
     // end-of-life label clips past the right edge. Drop both for the compact page-2 panel.
     markers: cf.chartSpec.markers.filter(
       (m) => m.iconKind !== "retirement" && m.iconKind !== "endOfLife",
     ),
+    margin: { ...cf.chartSpec.margin, top: FUNDING_CHART_BOX.marginTop },
   };
 
   const mcRate = ctx.monteCarlo?.summary.successRate ?? null;

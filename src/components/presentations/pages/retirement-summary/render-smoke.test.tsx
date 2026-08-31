@@ -23,6 +23,7 @@ import { ensureFontsRegistered } from "@/components/presentations/shared/fonts";
 import { DEFAULT_ACCENT } from "@/lib/presentations/theme";
 import { RetirementSummaryPagePdf } from "./page-pdf";
 import type { ChartSpec } from "@/lib/presentations/charts/types";
+import { FUNDING_CHART_BOX } from "@/lib/presentations/pages/retirement-summary/view-model";
 import type { RetirementSummaryPageData } from "@/lib/presentations/pages/retirement-summary/view-model";
 import type { SsClient } from "@/lib/presentations/pages/retirement-summary/social-security";
 
@@ -69,9 +70,11 @@ const YEARS = Array.from({ length: 31 }, (_, i) => 2054 + i);
 
 const chartSpec: ChartSpec = {
   kind: "stackedBarWithLine",
-  width: 500,
-  height: 210,
-  margin: { top: 10, right: 12, bottom: 26, left: 46 },
+  // The box the deck actually prints, not a look-alike — a guard measuring a
+  // panel 16pt taller than the shipped one cannot see the sheet it overflows.
+  width: FUNDING_CHART_BOX.width,
+  height: FUNDING_CHART_BOX.height,
+  margin: { top: FUNDING_CHART_BOX.marginTop, right: 16, bottom: 56, left: 64 },
   xAxis: {
     domain: YEARS,
     ticks: YEARS.filter((y) => y % 5 === 0),

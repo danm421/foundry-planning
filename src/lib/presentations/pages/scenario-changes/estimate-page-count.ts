@@ -8,7 +8,12 @@ import type { ScenarioChangesPageData } from "./types";
 //
 // A change row is `wrap={false}`, so it moves whole: capacity is a simple
 // division, not a fill.
-const FIRST_SHEET_PT = 552; // under the title block
+// Re-measured after the section head shrank from ~46pt to ~37pt (one template
+// across the deck). Rendering 1..70 rows at 1, 2 and 3 detail lines puts the
+// first sheet's true capacity in [553.5, 572.25)pt; 562 sits mid-bracket.
+// ⚠️ This constant is COUPLED to SectionHead's height — change that and
+// re-measure, do not adjust by arithmetic.
+const FIRST_SHEET_PT = 562; // under the title block
 const LATER_SHEET_PT = 650; // under the repeating column header
 const ROW_MIN_PT = 30.3; // the area/what/change stack, whatever the details say
 const DETAIL_LINE_PT = 10.125;

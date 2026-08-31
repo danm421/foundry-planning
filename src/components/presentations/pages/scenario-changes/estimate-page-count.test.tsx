@@ -70,22 +70,23 @@ async function actualSheets(data: ScenarioChangesPageData): Promise<number> {
 }
 
 describe("estimateScenarioChangesPageCount", () => {
-  // Both sides of every sheet boundary measured for one, two and three detail
-  // lines — the shapes the describe-layer actually emits.
+  // Both sides of every sheet boundary, measured — not guessed — by rendering
+  // 1..70 rows at one, two and three detail lines and recording where the sheet
+  // count steps. Re-run that sweep whenever the section head's height changes.
   const CASES: Array<{ rows: number; detail: number }> = [
     { rows: 1, detail: 1 },
     { rows: 18, detail: 1 },
     { rows: 19, detail: 1 },
     { rows: 39, detail: 1 },
     { rows: 40, detail: 1 },
-    { rows: 17, detail: 2 },
     { rows: 18, detail: 2 },
-    { rows: 38, detail: 2 },
+    { rows: 19, detail: 2 },
     { rows: 39, detail: 2 },
-    { rows: 16, detail: 3 },
-    { rows: 37, detail: 3 },
-    { rows: 58, detail: 3 },
-    { rows: 59, detail: 3 },
+    { rows: 40, detail: 2 },
+    { rows: 13, detail: 3 },
+    { rows: 14, detail: 3 },
+    { rows: 28, detail: 3 },
+    { rows: 29, detail: 3 },
   ];
 
   it.each(CASES)("matches the render for $rows rows of $detail detail line(s)", async ({ rows, detail }) => {

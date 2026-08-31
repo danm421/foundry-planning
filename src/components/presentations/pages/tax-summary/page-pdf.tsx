@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet } from "@react-pdf/renderer";
 import { PageFrame } from "@/components/presentations/shared/page-frame";
+import { SectionHead } from "@/components/presentations/shared/section-head";
 import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
 import type { RenderPdfInput } from "@/components/presentations/registry";
 import type { TaxSummaryPageData } from "@/lib/presentations/pages/tax-summary/view-model";
@@ -7,8 +8,6 @@ import { fmtUsd, fmtPct } from "@/lib/presentations/pages/tax-summary/aggregate"
 import { TaxSummaryChartPdf } from "./chart-pdf";
 
 const s = StyleSheet.create({
-  title: { fontSize: 16, fontWeight: 700, marginBottom: 2 },
-  subtitle: { fontSize: 8, color: T.ink2, marginBottom: 6 },
   kpis: { flexDirection: "row", gap: 8, marginBottom: 8 },
   // space-between pins the value to the card bottom so values align across 1- vs 2-line labels
   kpi: { flex: 1, justifyContent: "space-between", backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderRadius: 3, padding: 6 },
@@ -57,11 +56,10 @@ const COMP_SEGMENTS = [
 ];
 
 export function TaxSummaryPagePdf(input: RenderPdfInput<TaxSummaryPageData>) {
-  const { data, firmName, clientName, reportDate, pageIndex, totalPages } = input;
+  const { data, firmName, clientName, reportDate, pageIndex, totalPages, accent } = input;
   return (
     <PageFrame firmName={firmName} clientName={clientName} reportDate={reportDate} pageIndex={pageIndex} totalPages={totalPages} orientation="landscape">
-      <Text style={s.title}>{data.title}</Text>
-      <Text style={s.subtitle}>{data.subtitle}</Text>
+      <SectionHead title={data.title} subtitle={data.subtitle} accent={accent} />
 
       {data.isEmpty ? (
         <Text style={s.empty}>No tax data available for this scenario.</Text>
