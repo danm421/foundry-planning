@@ -5,7 +5,7 @@
 // mergers document themselves as deterministic; this module must not break that.
 
 import type { DocumentType, ExtractedIncome } from "@/lib/extraction/types";
-import type { Annotated } from "./types";
+import type { Annotated, ImportPayload } from "./types";
 
 /** One reconciled figure. `display` is pre-rounded on purpose — see the module
  *  header in the spec: Forge's grounding check compares digit strings exactly,
@@ -237,4 +237,53 @@ export function reconcileGroup(
     conflicts,
     confidence: conflicts.length > 0 ? "needs-review" : "high",
   };
+}
+
+/**
+ * Run reconciliation over a built payload and stamp superseded income rows.
+ *
+ * Called from BOTH payload builders' consumers — run-matching.ts (classic
+ * import) and run-assemble.ts (plan builder) — because they merge differently
+ * and both leak. Keeping this a separate pass rather than an edit inside either
+ * merger is what makes one implementation cover both paths.
+ *
+ * Idempotent: rows already carrying `reconciliation` are skipped, and the
+ * warning is only added for a row newly marked.
+ */
+export function annotateReconciliation(
+  payload: ImportPayload,
+  files: Record<string, FileMeta>,
+  currentYear: number,
+): { payload: ImportPayload; reconciled: ReconciledEmployer[] } {
+  const candidates = payload.incomes.filter((r) => !r.reconciliation);
+  const reconciled = groupCompensation(candidates, files).map((g) =>
+    reconcileGroup(g, files, currentYear),
+  );
+
+  const bySupersededKey = new Map<string, Supersede>();
+  for (const r of reconciled) {
+    for (const s of r.supersedes) bySupersededKey.set(`${s.sourceFileId}|${s.rowName}`, s);
+  }
+
+  let markedAny = false;
+  for (const row of payload.incomes) {
+    if (row.reconciliation) continue;
+    const hit = bySupersededKey.get(`${row.__provenance?.sourceFileId ?? ""}|${row.name}`);
+    if (!hit) continue;
+    row.reconciliation = { supersededBy: hit.rowName, reason: hit.reason };
+    markedAny = true;
+  }
+
+  if (markedAny) {
+    for (const r of reconciled) {
+      if (r.supersedes.length === 0) continue;
+      payload.warnings.push(
+        `${r.employer} (${r.taxYear}): ${r.supersedes.length + 1} documents describe the same ` +
+          `earnings. Using ${r.total.display}; the duplicate row${r.supersedes.length > 1 ? "s are" : " is"} ` +
+          `marked and will not be imported.`,
+      );
+    }
+  }
+
+  return { payload, reconciled };
 }

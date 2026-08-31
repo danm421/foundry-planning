@@ -30,6 +30,9 @@ export type MatchKind = MatchAnnotation["kind"];
 export type Annotated<T> = T & {
   __provenance?: Provenance;
   match?: MatchAnnotation;
+  /** Set when reconciliation judged this row a duplicate measurement of another
+   *  row's earnings. The row is KEPT and shown; commitIncomes skips it. */
+  reconciliation?: { supersededBy: string; reason: string };
 };
 
 /**

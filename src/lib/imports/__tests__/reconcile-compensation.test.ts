@@ -1,6 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { money, groupCompensation, reconcileGroup, type FileMeta } from "../reconcile-compensation";
+import {
+  money,
+  groupCompensation,
+  reconcileGroup,
+  annotateReconciliation,
+  type FileMeta,
+} from "../reconcile-compensation";
 import type { Annotated } from "../types";
+import { emptyImportPayload } from "../types";
 import type { ExtractedIncome } from "@/lib/extraction/types";
 
 describe("money", () => {
@@ -276,5 +283,60 @@ describe("reconcileGroup", () => {
     expect(r.confidence).toBe("needs-review");
     expect(r.conflicts).toHaveLength(1);
     expect(r.conflicts[0]).toContain("$241,000");
+  });
+});
+
+describe("annotateReconciliation", () => {
+  function payloadWith(rows: Annotated<ExtractedIncome>[]) {
+    const p = emptyImportPayload();
+    p.incomes = rows;
+    return p;
+  }
+
+  it("marks the superseded row but KEEPS it in the payload", () => {
+    const { payload } = annotateReconciliation(
+      payloadWith([inc("stub1"), inc("stub2")]), FILES, 2026,
+    );
+    expect(payload.incomes).toHaveLength(2);
+    const marked = payload.incomes.filter((r) => r.reconciliation);
+    expect(marked).toHaveLength(1);
+    expect(marked[0].reconciliation?.reason).toMatch(/same employer/i);
+  });
+
+  it("leaves the surviving row unmarked", () => {
+    const { payload } = annotateReconciliation(
+      payloadWith([inc("stub1"), inc("stub2")]), FILES, 2026,
+    );
+    expect(payload.incomes.filter((r) => !r.reconciliation)).toHaveLength(1);
+  });
+
+  it("adds one warning naming both documents", () => {
+    const { payload } = annotateReconciliation(
+      payloadWith([inc("stub1"), inc("stub2")]), FILES, 2026,
+    );
+    expect(payload.warnings.join(" ")).toContain("The Mount Sinai Hospital");
+  });
+
+  it("marks nothing when the rows are genuinely different jobs", () => {
+    const { payload } = annotateReconciliation(
+      payloadWith([inc("stub1"), inc("stub2", { employer: "Other Hospital" })]), FILES, 2026,
+    );
+    expect(payload.incomes.some((r) => r.reconciliation)).toBe(false);
+  });
+
+  it("leaves rows lacking the facts completely untouched", () => {
+    const { payload } = annotateReconciliation(
+      payloadWith([inc("stub1", { employer: undefined }), inc("stub2", { employer: undefined })]),
+      FILES, 2026,
+    );
+    expect(payload.incomes.some((r) => r.reconciliation)).toBe(false);
+    expect(payload.warnings).toEqual([]);
+  });
+
+  it("is idempotent — running twice marks the same single row", () => {
+    const once = annotateReconciliation(payloadWith([inc("stub1"), inc("stub2")]), FILES, 2026);
+    const twice = annotateReconciliation(once.payload, FILES, 2026);
+    expect(twice.payload.incomes.filter((r) => r.reconciliation)).toHaveLength(1);
+    expect(twice.payload.warnings).toHaveLength(1);
   });
 });
