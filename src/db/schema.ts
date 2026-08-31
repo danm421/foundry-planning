@@ -3100,6 +3100,11 @@ export const liabilities = pgTable("liabilities", {
     onDelete: "set null",
   }),
   isInterestDeductible: boolean("is_interest_deductible").notNull().default(false),
+  // When true the projection writes off whatever balance remains at the end of
+  // the term instead of paying it — income-driven student loan forgiveness,
+  // most commonly. Inert on held-flat rows: they have no term and build no
+  // schedule. See engine/liability-schedules.ts.
+  forgiveAtTermEnd: boolean("forgive_at_term_end").notNull().default(false),
   // Parent business account that owns this liability. Null for liabilities
   // owned only by individuals or trusts (via liability_owners).
   parentAccountId: uuid("parent_account_id").references(() => accounts.id, {
