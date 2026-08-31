@@ -245,4 +245,36 @@ describe("reconcileGroup", () => {
     const r = reconcileGroup(group, FILES, 2026);
     expect(r.recurring?.amount).toBe(239_550);
   });
+
+  // Regression for review round 2: reconciliation happens at the DOCUMENT
+  // level. One document (stub1) reports two recurring lines that are its own
+  // distinct pieces of pay (base + shift differential) — those SUM. A second
+  // document (w2) reports the combined figure as one row — it loses (open
+  // year prefers the annualized document) and is superseded, but the winning
+  // figure must be the winning DOCUMENT'S SUM, not just one of its two rows.
+  it("sums two rows from the SAME document, then supersedes the other document's combined figure", () => {
+    const group = groupCompensation(
+      [inc("stub1"),
+       inc("stub1", { name: "Shift Differential", annualAmount: 5_000 }),
+       inc("w2", { annualAmount: 244_550, basis: "actual" })],
+      FILES,
+    )[0];
+    const r = reconcileGroup(group, FILES, 2026);
+    expect(r.recurring?.amount).toBe(244_550);
+    expect(r.supersedes).toHaveLength(1);
+    expect(r.supersedes[0].sourceFileId).toBe("w2");
+  });
+
+  it("raises exactly ONE conflict per losing document, naming its SUM", () => {
+    const group = groupCompensation(
+      [inc("stub1"),
+       inc("stub1", { name: "Shift Differential", annualAmount: 5_000 }),
+       inc("w2", { annualAmount: 241_000, basis: "actual" })],
+      FILES,
+    )[0];
+    const r = reconcileGroup(group, FILES, 2026);
+    expect(r.confidence).toBe("needs-review");
+    expect(r.conflicts).toHaveLength(1);
+    expect(r.conflicts[0]).toContain("$241,000");
+  });
 });

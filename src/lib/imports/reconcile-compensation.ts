@@ -124,7 +124,11 @@ function fileIdOf(row: Annotated<ExtractedIncome>): string {
  * Reconcile one (employer, owner, year) group into a single compensation
  * picture. The governing rule: a W-2 and that employer's paystubs are the SAME
  * earnings measured two ways — reconciled, never summed. Recurring and variable
- * pay are different lines of the same job, so those DO add.
+ * pay are different lines of the same job, so those DO add. Reconciliation
+ * happens at the DOCUMENT level: rows sharing one sourceFileId (e.g. base pay
+ * and a shift differential on one paystub) are that document's own distinct
+ * lines and SUM; only different documents' totals are reconciled against
+ * each other.
  */
 export function reconcileGroup(
   group: CompGroup,
@@ -149,41 +153,70 @@ export function reconcileGroup(
 
   const build = (kind: "recurring" | "variable"): Money | undefined => {
     const rows = rowsBy(kind);
-    // Pick only from rows that actually carry an amount — `annualAmount` is
-    // optional, so a row matching the preferred `basis` but missing it must
-    // not win and silently suppress a sibling that DOES have one (that
-    // produced a confidently-wrong $0). The full, unfiltered `rows` is still
-    // walked below so an amount-less row is tracked, not dropped.
-    const usable = rows.filter((r) => r.annualAmount != null);
-    const winner = pick(usable);
-    if (!winner || winner.annualAmount == null) return undefined;
 
-    for (const loser of rows) {
-      if (loser === winner) continue;
-      // Two rows from the SAME document are not "the same earnings measured
-      // twice" — one document listing base pay and a shift differential is
-      // two distinct lines, not a duplicate measurement. Only rows from
-      // DIFFERENT files (a W-2 vs. that employer's paystubs) get reconciled.
-      if (fileIdOf(loser) === fileIdOf(winner)) continue;
-      supersedes.push({
-        rowName: loser.name,
-        sourceFileId: fileIdOf(loser),
-        reason:
-          `Same employer (${group.employer}), same year (${group.taxYear}) as ` +
-          `"${winner.name}" — the same earnings measured twice, not additional pay.`,
-      });
-      if (loser.annualAmount != null && !withinTolerance(loser.annualAmount, winner.annualAmount)) {
+    // Bucket by DOCUMENT: rows sharing a sourceFileId are one document's own
+    // account of this pay class — base pay plus a shift differential on one
+    // paystub is two distinct lines, not two measurements of the same thing,
+    // so within a document they SUM. Only different documents' totals get
+    // reconciled against each other.
+    const byFile = new Map<string, Annotated<ExtractedIncome>[]>();
+    for (const row of rows) {
+      const fid = fileIdOf(row);
+      const bucket = byFile.get(fid);
+      if (bucket) bucket.push(row);
+      else byFile.set(fid, [row]);
+    }
+    const documents = [...byFile.values()];
+    const sumOf = (doc: Annotated<ExtractedIncome>[]) =>
+      doc.reduce((sum, r) => sum + (r.annualAmount ?? 0), 0);
+
+    // A document can only WIN if it has at least one usable row — an
+    // all-blank document has nothing to contribute as the figure.
+    const usableDocuments = documents.filter((doc) => doc.some((r) => r.annualAmount != null));
+    if (usableDocuments.length === 0) return undefined;
+
+    // Winning DOCUMENT, chosen by the same basis preference `pick` already
+    // applies to rows — represented by each document's first row, since
+    // every row from one document shares that document's basis.
+    const winnerRep = pick(usableDocuments.map((doc) => doc[0]));
+    if (!winnerRep) return undefined;
+    const winnerFileId = fileIdOf(winnerRep);
+    const winnerDoc = documents.find((doc) => fileIdOf(doc[0]) === winnerFileId);
+    if (!winnerDoc) return undefined;
+    const winnerSum = sumOf(winnerDoc);
+
+    for (const doc of documents) {
+      if (doc === winnerDoc) continue;
+      // Every row of a LOSING document is superseded, including an
+      // amount-less row — tracked, never silently dropped (Finding 1).
+      // Same-file rows never reach this branch: they're bucketed into
+      // `winnerDoc` itself, so the whole document is skipped as one unit —
+      // no per-row same-file check is needed.
+      for (const loser of doc) {
+        supersedes.push({
+          rowName: loser.name,
+          sourceFileId: fileIdOf(loser),
+          reason:
+            `Same employer (${group.employer}), same year (${group.taxYear}) as ` +
+            `"${winnerRep.name}" — the same earnings measured twice, not additional pay.`,
+        });
+      }
+      // Compare ONCE per losing document — its SUM against the winner's SUM,
+      // not per row. A document with no usable row has nothing to compare.
+      if (!doc.some((r) => r.annualAmount != null)) continue;
+      const docSum = sumOf(doc);
+      if (!withinTolerance(docSum, winnerSum)) {
         conflicts.push(
-          `"${winner.name}" (${money(winner.annualAmount, "", []).display}) and ` +
-            `"${loser.name}" (${money(loser.annualAmount, "", []).display}) disagree by more ` +
-            `than 1%; the ${winner.basis ?? "first"} figure was used.`,
+          `"${winnerRep.name}" (${money(winnerSum, "", []).display}) and ` +
+            `"${doc[0].name}" (${money(docSum, "", []).display}) disagree by more ` +
+            `than 1%; the ${winnerRep.basis ?? "first"} figure was used.`,
         );
       }
     }
 
-    const docKind = files[fileIdOf(winner)]?.documentType ?? "unknown document";
-    const basis = `${winner.basis ?? "actual"} (${docKind}, ${group.taxYear})`;
-    return money(winner.annualAmount, basis, [fileIdOf(winner)]);
+    const docKind = files[winnerFileId]?.documentType ?? "unknown document";
+    const basis = `${winnerRep.basis ?? "actual"} (${docKind}, ${group.taxYear})`;
+    return money(winnerSum, basis, [winnerFileId]);
   };
 
   const recurring = build("recurring");
