@@ -29,6 +29,7 @@ const BASE_INITIAL: LiabilityFormInitial = {
   startMonth: 1,
   termMonths: 360,
   termUnit: "annual",
+  forgiveAtTermEnd: false,
   owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
 };
 

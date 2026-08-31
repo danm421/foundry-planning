@@ -225,6 +225,7 @@ export async function loadBalanceSheetStepData(clientId: string, firmId: string)
       linkedPropertyId: l.linkedPropertyId ?? null,
       ownerEntityId: controllingEntity(l) ?? null,
       isInterestDeductible: l.isInterestDeductible ?? false,
+      forgiveAtTermEnd: l.forgiveAtTermEnd ?? false,
       owners: l.owners,
       parentAccountId: l.parentAccountId ?? null,
     };

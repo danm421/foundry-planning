@@ -118,6 +118,7 @@ const PLAID_LIABILITY: LiabilityRow = {
   startMonth: 1,
   termMonths: 12,
   termUnit: "annual",
+  forgiveAtTermEnd: false,
   linkedSource: "plaid",
 };
 
@@ -131,6 +132,7 @@ const MANUAL_LIABILITY: LiabilityRow = {
   startMonth: 1,
   termMonths: 360,
   termUnit: "monthly",
+  forgiveAtTermEnd: false,
   linkedSource: null,
 };
 

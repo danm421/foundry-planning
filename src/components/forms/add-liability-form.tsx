@@ -42,7 +42,7 @@ export interface LiabilityFormInitial {
   owners?: AccountOwner[];
   startYearRef?: string | null;
   isInterestDeductible?: boolean;
-  forgiveAtTermEnd?: boolean;
+  forgiveAtTermEnd: boolean;
   /** Parent business account when this liability is a sub-liability of a business. */
   parentAccountId?: string | null;
 }

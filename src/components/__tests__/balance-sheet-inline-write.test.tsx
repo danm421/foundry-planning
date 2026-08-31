@@ -136,6 +136,7 @@ const LIABILITY = {
   startMonth: 1,
   termMonths: 360,
   termUnit: "monthly",
+  forgiveAtTermEnd: false,
   balanceAsOfYear: 2020,
   balanceAsOfMonth: 1,
   owners: [{ kind: "family_member" as const, familyMemberId: CLIENT_FM, percent: 1 }],

@@ -77,6 +77,7 @@ interface LiabilityAmortizationTabProps {
   termMonths: number;
   balanceAsOfMonth?: number;
   balanceAsOfYear?: number;
+  forgiveAtTermEnd?: boolean;
 }
 
 export default function LiabilityAmortizationTab({
@@ -90,6 +91,7 @@ export default function LiabilityAmortizationTab({
   termMonths,
   balanceAsOfMonth,
   balanceAsOfYear,
+  forgiveAtTermEnd,
 }: LiabilityAmortizationTabProps) {
   const theme = useThemeName();
   const chrome = chartChrome(theme);
@@ -162,9 +164,10 @@ export default function LiabilityAmortizationTab({
       startYear,
       term,
       scheduleExtraPayments,
-      startMonth || 1
+      startMonth || 1,
+      forgiveAtTermEnd ?? false
     );
-  }, [originalBalance, balance, interestRate, monthlyPayment, startYear, startMonth, termMonths, scheduleExtraPayments]);
+  }, [originalBalance, balance, interestRate, monthlyPayment, startYear, startMonth, termMonths, scheduleExtraPayments, forgiveAtTermEnd]);
 
   // Chart data
   const chartData = useMemo(() => {
@@ -288,11 +291,17 @@ export default function LiabilityAmortizationTab({
         payment: acc.payment + row.payment,
         interest: acc.interest + row.interest,
         principal: acc.principal + row.principal,
+        forgivenAmount: acc.forgivenAmount + row.forgivenAmount,
         extraPayment: acc.extraPayment + row.extraPayment,
       }),
-      { payment: 0, interest: 0, principal: 0, extraPayment: 0 }
+      { payment: 0, interest: 0, principal: 0, forgivenAmount: 0, extraPayment: 0 }
     );
   }, [schedule]);
+
+  const forgiven = useMemo(
+    () => schedule.find((row) => row.forgivenAmount > 0) ?? null,
+    [schedule]
+  );
 
   if (loading) {
     return (
@@ -351,7 +360,16 @@ export default function LiabilityAmortizationTab({
                   <td className="px-3 py-2">{row.year}</td>
                   <td className="px-3 py-2 text-right">{fmt(row.payment)}</td>
                   <td className="px-3 py-2 text-right">{fmt(row.interest)}</td>
-                  <td className="px-3 py-2 text-right">{fmt(row.principal)}</td>
+                  <td className="px-3 py-2 text-right">
+                    {row.forgivenAmount > 0 ? (
+                      <span className="text-good">
+                        {fmt(row.forgivenAmount)}{" "}
+                        <span className="text-ink-3">forgiven</span>
+                      </span>
+                    ) : (
+                      fmt(row.principal)
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-right">
                     {editingYear === row.year ? (
                       <div className="flex items-center justify-end gap-1">
@@ -437,12 +455,23 @@ export default function LiabilityAmortizationTab({
               <td className="px-3 py-2">Total</td>
               <td className="px-3 py-2 text-right">{fmt(totals.payment)}</td>
               <td className="px-3 py-2 text-right">{fmt(totals.interest)}</td>
-              <td className="px-3 py-2 text-right">{fmt(totals.principal)}</td>
+              <td className="px-3 py-2 text-right">
+                {totals.forgivenAmount > 0
+                  ? `${fmt(totals.principal)} + ${fmt(totals.forgivenAmount)} forgiven`
+                  : fmt(totals.principal)}
+              </td>
               <td className="px-3 py-2 text-right">{fmt(totals.extraPayment)}</td>
               <td className="px-3 py-2 text-right">-</td>
             </tr>
           </tfoot>
         </table>
+        {forgiven && (
+          <p className="mt-3 px-3 text-sm text-ink-2">
+            <span className="font-medium text-good">{fmt(forgiven.forgivenAmount)}</span>{" "}
+            forgiven in {forgiven.year} — the balance left at the end of the term
+            is written off, not paid.
+          </p>
+        )}
       </div>
     </div>
   );
