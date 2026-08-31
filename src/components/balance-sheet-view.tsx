@@ -134,6 +134,11 @@ export interface LiabilityRow {
   linkedPropertyId?: string | null;
   ownerEntityId?: string | null;
   isInterestDeductible?: boolean;
+  /** Required on purpose, unlike its neighbour above: this is what forces both
+   *  server-side `liabilityProps` mappings to carry the value. Making it
+   *  optional to match `isInterestDeductible?` would silently re-open the
+   *  bug where editing a liability dropped its forgiveness flag, and `tsc`
+   *  would stay green while it happened. */
   forgiveAtTermEnd: boolean;
   /** External integration that feeds this liability (plaid). Null/undefined =
    *  manually entered. Drives the linked indicator next to the name. */

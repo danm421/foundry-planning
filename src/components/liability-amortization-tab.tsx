@@ -361,13 +361,12 @@ export default function LiabilityAmortizationTab({
                   <td className="px-3 py-2 text-right">{fmt(row.payment)}</td>
                   <td className="px-3 py-2 text-right">{fmt(row.interest)}</td>
                   <td className="px-3 py-2 text-right">
-                    {row.forgivenAmount > 0 ? (
-                      <span className="text-good">
-                        {fmt(row.forgivenAmount)}{" "}
-                        <span className="text-ink-3">forgiven</span>
+                    {fmt(row.principal)}
+                    {row.forgivenAmount > 0 && (
+                      <span className="text-ink-3">
+                        {" ("}
+                        <span className="text-good">{fmt(row.forgivenAmount)}</span> forgiven)
                       </span>
-                    ) : (
-                      fmt(row.principal)
                     )}
                   </td>
                   <td className="px-3 py-2 text-right">
@@ -465,14 +464,14 @@ export default function LiabilityAmortizationTab({
             </tr>
           </tfoot>
         </table>
-        {forgiven && (
-          <p className="mt-3 px-3 text-sm text-ink-2">
-            <span className="font-medium text-good">{fmt(forgiven.forgivenAmount)}</span>{" "}
-            forgiven in {forgiven.year} — the balance left at the end of the term
-            is written off, not paid.
-          </p>
-        )}
       </div>
+      {forgiven && (
+        <p className="mt-3 px-3 text-sm text-ink-2">
+          <span className="font-medium text-good">{fmt(forgiven.forgivenAmount)}</span>{" "}
+          forgiven in {forgiven.year} — the balance left at the end of the term
+          is written off, not paid.
+        </p>
+      )}
     </div>
   );
 }
