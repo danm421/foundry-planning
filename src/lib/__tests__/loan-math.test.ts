@@ -450,5 +450,28 @@ describe("computeAmortizationSchedule — forgiveness at end of term", () => {
 
     expect(last.forgivenAmount).toBe(0);
     expect(last.endingBalance).toBe(0);
+    // Pins dust-absorption specifically on the FLAGGED path. Deleting the
+    // else branch's `yearScheduledPayment += bal;` (so a flagged loan's
+    // final payment stays at 12 * 2613.32 = 31,359.84 instead of absorbing
+    // the $0.64 residue) leaves forgivenAmount/endingBalance unchanged and
+    // only test 1 (the unflagged case) would catch it.
+    expect(last.payment).toBeCloseTo(31360.48, 2);
+  });
+
+  it("forgiveness outranks the interest-only balloon for a flagged loan", () => {
+    // An interest-only payment never amortizes principal, so the balloon due
+    // at maturity IS the whole original balance. That is exactly what
+    // forgiveAtTermEnd writes off: the forgiveness branch fires first and the
+    // interest-only balloon logic never gets a balance to absorb.
+    const ioPayment = calcInterestOnlyPayment(500000, 0.06); // 2500/mo
+    const rows = computeAmortizationSchedule(
+      500000, 0.06, ioPayment, 2026, 60, [], 1, true
+    );
+    const last = rows[rows.length - 1];
+
+    expect(last.forgivenAmount).toBe(500000);
+    expect(last.payment).toBe(30000);
+    expect(last.principal).toBe(0);
+    expect(last.endingBalance).toBe(0);
   });
 });
