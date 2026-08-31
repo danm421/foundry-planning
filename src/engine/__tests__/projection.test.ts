@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
-import { buildClientData, basePlanSettings, baseClient, sampleExpenses, sampleAccounts, sampleLiabilities, FIXTURE_TAX_PARAMS } from "./fixtures";
+import { buildClientData, basePlanSettings, baseClient, sampleExpenses, sampleAccounts, sampleLiabilities, sampleSavingsRules, FIXTURE_TAX_PARAMS } from "./fixtures";
 import type { ClientData, ClientInfo, Account, PlanSettings } from "../types";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
 import { buildLiabilitySchedules } from "../liability-schedules";
@@ -84,6 +84,101 @@ describe("runProjection", () => {
     const ledger = result[0].accountLedgers["acct-401k"];
     const matchEntries = ledger.entries.filter((e) => e.category === "employer_match");
     expect(matchEntries).toHaveLength(0);
+  });
+
+  // ── Percent-of-salary basis ───────────────────────────────────────────────
+  // Fixture salaries: John (client) 150k on "inc-salary-john", Jane (spouse)
+  // 100k on "inc-salary-jane". 2026 is planStartYear, so neither has grown yet
+  // in result[0] and the expected figures are the raw fixture amounts.
+  const CLIENT_SALARY = 150000;
+  const SPOUSE_SALARY = 100000;
+  const CLIENT_SALARY_INCOME_ID = "inc-salary-john";
+
+  // acct-401k re-titled 50/50 across both principals — the shape that resolves
+  // to a salary base of 0 on the "owner" path. Every test using it must also
+  // cap planEndYear before RMD age, for the reason spelled out in the
+  // joint-owned employer-match test above.
+  const jointOwned401kAccounts: Account[] = sampleAccounts.map((a) =>
+    a.id === "acct-401k"
+      ? {
+          ...a,
+          owners: [
+            { kind: "family_member" as const, familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+            { kind: "family_member" as const, familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+          ],
+        }
+      : a
+  );
+
+  it("salaryBasis 'all' funds a joint account off both salaries", () => {
+    // The regression this feature exists for: a joint 401(k) on a percent rule
+    // resolves against a salary base of 0 today, so it contributes nothing and
+    // matches nothing, silently.
+    const data = buildClientData({
+      accounts: jointOwned401kAccounts,
+      savingsRules: [{ ...sampleSavingsRules[0], annualPercent: 0.1, salaryBasis: "all" }],
+      planSettings: { ...basePlanSettings, planEndYear: 2040 },
+    });
+    const result = runProjection(data);
+    const ledger = result[0].accountLedgers["acct-401k"];
+    const contributions = ledger.entries.filter((e) => e.category === "savings_contribution");
+    expect(contributions[0].amount).toBeCloseTo(
+      (CLIENT_SALARY + SPOUSE_SALARY) * 0.1,
+      2,
+    );
+  });
+
+  it("salaryBasis 'selected' resolves against only the named salaries", () => {
+    const data = buildClientData({
+      accounts: jointOwned401kAccounts,
+      savingsRules: [{
+        ...sampleSavingsRules[0],
+        annualPercent: 0.1,
+        salaryBasis: "selected",
+        salaryIncomeIds: [CLIENT_SALARY_INCOME_ID],
+      }],
+      planSettings: { ...basePlanSettings, planEndYear: 2040 },
+    });
+    const result = runProjection(data);
+    const ledger = result[0].accountLedgers["acct-401k"];
+    const contributions = ledger.entries.filter((e) => e.category === "savings_contribution");
+    expect(contributions[0].amount).toBeCloseTo(CLIENT_SALARY * 0.1, 2);
+  });
+
+  it("a selected income id that no longer exists contributes zero", () => {
+    const data = buildClientData({
+      accounts: jointOwned401kAccounts,
+      savingsRules: [{
+        ...sampleSavingsRules[0],
+        annualPercent: 0.1,
+        salaryBasis: "selected",
+        salaryIncomeIds: [CLIENT_SALARY_INCOME_ID, "deleted-income-id"],
+      }],
+      planSettings: { ...basePlanSettings, planEndYear: 2040 },
+    });
+    const result = runProjection(data);
+    const ledger = result[0].accountLedgers["acct-401k"];
+    const contributions = ledger.entries.filter((e) => e.category === "savings_contribution");
+    expect(contributions[0].amount).toBeCloseTo(CLIENT_SALARY * 0.1, 2);
+  });
+
+  it("salaryBasis 'all' drives the employer match too, not just the contribution", () => {
+    // One setting, both percentages — the whole reason the panel is a single
+    // control. If this passes while the contribution test fails, the branch was
+    // added in the wrong place. Fixture rule: employerMatchPct 0.5 on an
+    // employerMatchCap of 0.06.
+    const data = buildClientData({
+      accounts: jointOwned401kAccounts,
+      savingsRules: [{ ...sampleSavingsRules[0], annualPercent: 0.1, salaryBasis: "all" }],
+      planSettings: { ...basePlanSettings, planEndYear: 2040 },
+    });
+    const result = runProjection(data);
+    const ledger = result[0].accountLedgers["acct-401k"];
+    const match = ledger.entries.filter((e) => e.category === "employer_match");
+    expect(match[0].amount).toBeCloseTo(
+      (CLIENT_SALARY + SPOUSE_SALARY) * 0.06 * 0.5,
+      2,
+    );
   });
 
   it("grows account balances year over year", () => {
