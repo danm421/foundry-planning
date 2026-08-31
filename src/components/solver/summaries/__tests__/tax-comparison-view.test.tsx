@@ -14,7 +14,7 @@ const DATA: TaxComparisonPageData = {
     { label: "Lifetime Total Tax", base: "$1.2M", scenario: "$0.9M", delta: "−$300K", direction: 1, show: true },
   ],
   chart: [
-    { year: 2025, federalOrdinary: 10000, capGains: 2000, state: 3000, total: 15000, baseTotal: 18000 },
+    { year: 2025, federalOrdinary: 10000, capGains: 2000, state: 3000, payroll: 0, total: 15000, baseTotal: 18000 },
   ],
   bracket: null,
   composition: null,

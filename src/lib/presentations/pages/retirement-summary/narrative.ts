@@ -1,5 +1,5 @@
 // src/lib/presentations/pages/retirement-summary/narrative.ts
-import { fmtUsd, fmtPct } from "./aggregate";
+import { fmtUsd, fmtPct, printsAsZero } from "./aggregate";
 
 export interface RetirementNarrativeInput {
   monteCarloSuccess: number | null;
@@ -20,8 +20,9 @@ export function buildRetirementNarrative(input: RetirementNarrativeInput): strin
   const lines: string[] = [opener];
   const signals: string[] = [];
 
-  // 1. Shortfall — highest priority warning.
-  if (input.shortfall > 0) {
+  // 1. Shortfall — highest priority warning. Guarded on the DISPLAYED figure:
+  // see printsAsZero.
+  if (!printsAsZero(input.shortfall)) {
     signals.push(`Projected spending exceeds available funding by ${fmtUsd(input.shortfall)} over retirement — a shortfall the plan does not currently cover.`);
   }
 

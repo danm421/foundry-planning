@@ -28,10 +28,11 @@ import {
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
 // ── Stacked "Taxes paid by year" chart ───────────────────────────────────────
-const SERIES: { label: string; key: keyof Pick<TaxYearBar, "federalOrdinary" | "state" | "capGains">; colorKey: "blue" | "teal" | "orange" }[] = [
-  { label: "Federal", key: "federalOrdinary", colorKey: "blue" },
-  { label: "State", key: "state", colorKey: "teal" },
+const SERIES: { label: string; key: keyof Pick<TaxYearBar, "federalOrdinary" | "state" | "capGains" | "payroll">; colorKey: "blue" | "teal" | "orange" | "grey" }[] = [
+  { label: "Federal (ordinary)", key: "federalOrdinary", colorKey: "blue" },
   { label: "Capital gains", key: "capGains", colorKey: "orange" },
+  { label: "State", key: "state", colorKey: "teal" },
+  { label: "Payroll", key: "payroll", colorKey: "grey" },
 ];
 
 function TaxYearsChart({ bars }: { bars: TaxYearBar[] }) {
@@ -153,9 +154,10 @@ export function TaxSummaryView({ data }: { data: TaxSummaryPageData }) {
   return (
     <SummaryLayout title={data.title} subtitle={data.subtitle}>
       <SummaryKpiRow>
-        <SummaryKpiCard label="Lifetime Federal Tax" value={fmtUsd(data.kpis.lifetimeFederal)} />
-        <SummaryKpiCard label="Lifetime State Tax" value={fmtUsd(data.kpis.lifetimeState)} />
-        <SummaryKpiCard label="Lifetime Capital Gains Tax" value={fmtUsd(data.kpis.lifetimeCapGains)} />
+        <SummaryKpiCard label="Federal (ordinary)" value={fmtUsd(data.kpis.lifetimeFederalOrdinary)} />
+        <SummaryKpiCard label="Capital Gains Tax" value={fmtUsd(data.kpis.lifetimeCapGains)} />
+        <SummaryKpiCard label="State Tax" value={fmtUsd(data.kpis.lifetimeState)} />
+        <SummaryKpiCard label="Payroll Tax" value={fmtUsd(data.kpis.lifetimePayroll)} />
         <SummaryKpiCard label="Lifetime Total Tax" value={fmtUsd(data.kpis.lifetimeTotal)} />
         <SummaryKpiCard label="Lifetime Effective Rate" value={fmtPct(data.kpis.effectiveRate)} />
       </SummaryKpiRow>

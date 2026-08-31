@@ -16,7 +16,7 @@ import {
 } from "chart.js";
 import { Bar, Chart } from "react-chartjs-2";
 import type { RetirementSummaryPageData } from "@/lib/presentations/pages/retirement-summary/view-model";
-import { fmtUsd, fmtUsdMonthly } from "@/lib/presentations/pages/retirement-summary/aggregate";
+import { fmtUsd, fmtUsdMonthly, printsAsZero } from "@/lib/presentations/pages/retirement-summary/aggregate";
 import type { PortfolioBar } from "@/lib/presentations/pages/retirement-summary/aggregate";
 import type { SsClient } from "@/lib/presentations/pages/retirement-summary/social-security";
 import type { ChartSpec } from "@/lib/presentations/charts/types";
@@ -409,7 +409,8 @@ export function RetirementSummaryView({ data }: { data: RetirementSummaryPageDat
                     label: <span className="font-semibold text-ink">Total cost of retirement</span>,
                     value: <span className="font-semibold text-ink tabular-nums">{fmtUsd(funding.totalSpending)}</span>,
                   },
-                  ...(funding.shortfall > 0
+                  // Guarded on the printed figure — see printsAsZero.
+                  ...(!printsAsZero(funding.shortfall)
                     ? [{ label: <span className="text-crit">Shortfall (unfunded)</span>, value: <span className="tabular-nums text-crit">{fmtUsd(funding.shortfall)}</span> }]
                     : []),
                 ]}

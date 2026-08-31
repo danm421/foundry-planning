@@ -23,6 +23,20 @@ describe("buildRetirementNarrative", () => {
     expect(buildRetirementNarrative(base).some((l) => l.toLowerCase().includes("shortfall"))).toBe(false);
   });
 
+  // A6: `shortfall > 0` was true for a fraction of a cent of accumulated
+  // per-year rounding, so a 100%-confidence plan printed "spending exceeds
+  // available funding by $0 — a shortfall the plan does not currently cover".
+  // The guard has to reason about the figure the reader sees, not the raw one.
+  it("stays quiet about a shortfall that prints as $0", () => {
+    const lines = buildRetirementNarrative({ ...base, shortfall: 0.34 });
+    expect(lines.some((l) => l.toLowerCase().includes("shortfall"))).toBe(false);
+  });
+
+  it("still warns about the smallest shortfall that prints as a real number", () => {
+    const lines = buildRetirementNarrative({ ...base, shortfall: 1 });
+    expect(lines.some((l) => l.includes("$1"))).toBe(true);
+  });
+
   it("omits the Monte Carlo number when unavailable", () => {
     const lines = buildRetirementNarrative({ ...base, monteCarloSuccess: null });
     expect(lines[0]).not.toContain("%");

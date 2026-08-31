@@ -15,10 +15,11 @@ function makeYear(
     year,
     ages: { client: 65, spouse: null },
     accountLedgers: { ira: { endingValue: 400_000 }, roth: { endingValue: 100_000 } },
+    portfolioAssets: { cash: {}, taxable: {}, retirement: { ira: 400_000, roth: 100_000 } },
     medicare: { totalIrmaaSurcharge: opts.irmaa ?? 0 },
     taxDetail: { capitalGains: opts.gain ?? 0 },
     taxResult: {
-      flow: { totalFederalTax: totalTax * 0.75, stateTax: totalTax * 0.25, capitalGainsTax: 0, totalTax, incomeTaxBase: 120_000 },
+      flow: { totalFederalTax: totalTax * 0.75, stateTax: totalTax * 0.25, capitalGainsTax: 0, fica: 0, totalTax, incomeTaxBase: 120_000 },
       income: { grossTotalIncome: 150_000 },
       diag: {
         marginalFederalRate: marginalRate,
@@ -39,7 +40,13 @@ function bundle(years: ProjectionYear[], rothEnding: number, scenarioLabel: stri
       ],
       planSettings: { taxEngineMode },
     },
-    projection: { years: years.map((y) => ({ ...y, accountLedgers: { ira: { endingValue: 400_000 }, roth: { endingValue: rothEnding } } })) },
+    projection: {
+      years: years.map((y) => ({
+        ...y,
+        accountLedgers: { ira: { endingValue: 400_000 }, roth: { endingValue: rothEnding } },
+        portfolioAssets: { cash: {}, taxable: {}, retirement: { ira: 400_000, roth: rothEnding } },
+      })),
+    },
     scenarioLabel,
   } as never;
 }
@@ -65,11 +72,13 @@ describe("buildTaxComparisonData", () => {
     expect(d.isEmpty).toBe(true);
   });
 
-  it("builds five delta KPIs with lower-is-better favorability", () => {
+  it("builds six delta KPIs with lower-is-better favorability", () => {
     const d = buildTaxComparisonData(ctxFor("bracket"), opts);
     expect(d.isEmpty).toBe(false);
+    // A3: the four amount rows are disjoint slices of the total below them —
+    // federal net of capital gains, and payroll itemized rather than implied.
     expect(d.kpis.map((k) => k.label)).toEqual([
-      "Lifetime Federal Tax", "Lifetime State Tax", "Lifetime Capital Gains Tax",
+      "Federal (ordinary)", "Capital Gains Tax", "State Tax", "Payroll Tax",
       "Lifetime Total Tax", "Lifetime Effective Rate",
     ]);
     const total = d.kpis.find((k) => k.label === "Lifetime Total Tax")!;

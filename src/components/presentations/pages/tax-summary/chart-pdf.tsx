@@ -6,6 +6,7 @@ const SEGMENTS: Array<{ key: keyof TaxYearBar; label: string; color: string }> =
   { key: "federalOrdinary", label: "Federal (ordinary)", color: T.crit },
   { key: "capGains", label: "Capital gains", color: T.accent },
   { key: "state", label: "State", color: T.steel },
+  { key: "payroll", label: "Payroll", color: T.ink3 },
 ];
 
 export function TaxSummaryChartPdf({ bars }: { bars: TaxYearBar[] }) {

@@ -68,9 +68,12 @@ export function TaxSummaryPagePdf(input: RenderPdfInput<TaxSummaryPageData>) {
       ) : (
         <>
           <View style={s.kpis}>
-            <Kpi lbl="Lifetime Federal Tax" val={fmtUsd(data.kpis.lifetimeFederal)} />
-            <Kpi lbl="Lifetime State Tax" val={fmtUsd(data.kpis.lifetimeState)} />
-            <Kpi lbl="Lifetime Capital Gains Tax" val={fmtUsd(data.kpis.lifetimeCapGains)} />
+            {/* Four disjoint parts that add to the total beside them, in the
+                same order and wording as the chart legend below. */}
+            <Kpi lbl="Federal (ordinary)" val={fmtUsd(data.kpis.lifetimeFederalOrdinary)} />
+            <Kpi lbl="Capital Gains Tax" val={fmtUsd(data.kpis.lifetimeCapGains)} />
+            <Kpi lbl="State Tax" val={fmtUsd(data.kpis.lifetimeState)} />
+            <Kpi lbl="Payroll Tax" val={fmtUsd(data.kpis.lifetimePayroll)} />
             <Kpi lbl="Lifetime Total Tax" val={fmtUsd(data.kpis.lifetimeTotal)} />
             <Kpi lbl="Lifetime Effective Rate" val={fmtPct(data.kpis.effectiveRate)} />
           </View>

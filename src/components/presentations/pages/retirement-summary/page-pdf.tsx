@@ -5,7 +5,7 @@ import { dataLight } from "@/brand";
 import type { RenderPdfInput } from "@/components/presentations/registry";
 import type { RetirementSummaryPageData } from "@/lib/presentations/pages/retirement-summary/view-model";
 import type { SsClient } from "@/lib/presentations/pages/retirement-summary/social-security";
-import { fmtUsd, fmtUsdMonthly } from "@/lib/presentations/pages/retirement-summary/aggregate";
+import { fmtUsd, fmtUsdMonthly, printsAsZero } from "@/lib/presentations/pages/retirement-summary/aggregate";
 import { PortfolioBarsPdf, SplitBarPdf } from "./chart-pdf";
 import { CashflowChartPdf } from "../cash-flow/chart-pdf";
 
@@ -152,7 +152,8 @@ export function RetirementSummaryPagePdf(input: RenderPdfInput<RetirementSummary
             color: [T.steel, T.good, T.accentMuted, dataLight.blue, T.accent, T.crit, T.good][i % 7],
           }))} />
           <StatRow lbl="Total cost of retirement" val={fmtUsd(f.totalSpending)} />
-          {f.shortfall > 0 ? <StatRow lbl="Shortfall (unfunded)" val={fmtUsd(f.shortfall)} /> : null}
+          {/* Guarded on the printed figure — see printsAsZero. */}
+          {printsAsZero(f.shortfall) ? null : <StatRow lbl="Shortfall (unfunded)" val={fmtUsd(f.shortfall)} />}
         </View>
 
         <View style={s.twoCol}>

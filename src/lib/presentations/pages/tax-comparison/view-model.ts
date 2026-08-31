@@ -35,6 +35,7 @@ export interface TaxComparisonChartYear {
   federalOrdinary: number;
   capGains: number;
   state: number;
+  payroll: number;
   total: number;
   baseTotal: number;
 }
@@ -111,9 +112,13 @@ export function buildTaxComparisonData(
 
   // ── KPI strip (five cost metrics, lower-is-better) ──
   const kpis: TaxComparisonKpi[] = [
-    kpiUsd("Lifetime Federal Tax", baseTotals.lifetimeFederal, scnTotals.lifetimeFederal),
-    kpiUsd("Lifetime State Tax", baseTotals.lifetimeState, scnTotals.lifetimeState),
-    kpiUsd("Lifetime Capital Gains Tax", baseTotals.lifetimeCapGains, scnTotals.lifetimeCapGains),
+    // Disjoint parts that add to the total below them — federal here is net of
+    // the capital-gains slice, and payroll tax is itemized rather than hiding
+    // inside the total. See computeLifetimeTotals.
+    kpiUsd("Federal (ordinary)", baseTotals.lifetimeFederalOrdinary, scnTotals.lifetimeFederalOrdinary),
+    kpiUsd("Capital Gains Tax", baseTotals.lifetimeCapGains, scnTotals.lifetimeCapGains),
+    kpiUsd("State Tax", baseTotals.lifetimeState, scnTotals.lifetimeState),
+    kpiUsd("Payroll Tax", baseTotals.lifetimePayroll, scnTotals.lifetimePayroll),
     kpiUsd("Lifetime Total Tax", baseTotals.lifetimeTotal, scnTotals.lifetimeTotal),
     kpiRate("Lifetime Effective Rate", baseTotals.effectiveRate, scnTotals.effectiveRate),
   ];
@@ -125,6 +130,7 @@ export function buildTaxComparisonData(
     federalOrdinary: b.federalOrdinary,
     capGains: b.capGains,
     state: b.state,
+    payroll: b.payroll,
     total: b.total,
     baseTotal: baseTotalByYear.get(b.year) ?? 0,
   }));

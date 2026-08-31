@@ -28,7 +28,10 @@ function makeYear(year: number, over: Record<string, unknown> = {}) {
   return {
     year,
     ages: { client: year - 1966, spouse: null },
-    portfolioAssets: { liquidTotal: 1000, cashTotal: 100, taxableTotal: 500, retirementTotal: 400 },
+    portfolioAssets: {
+      liquidTotal: 1000, cashTotal: 100, taxableTotal: 500, retirementTotal: 400,
+      cash: {}, taxable: {}, retirement: {},
+    },
     accountLedgers: {},
     income: {
       salaries: 0, socialSecurity: 40000, business: 0, deferred: 0,
@@ -54,7 +57,7 @@ describe("buildRetirementSummaryData", () => {
   it("flags married when a spouse SS income exists / spouse present", () => {
     const data = buildRetirementSummaryData(
       ctx({
-        years: [makeYear(2031, { portfolioAssets: { liquidTotal: 1, cashTotal: 0, taxableTotal: 0, retirementTotal: 0 } })] as never,
+        years: [makeYear(2031, { portfolioAssets: { liquidTotal: 1, cashTotal: 0, taxableTotal: 0, retirementTotal: 0, cash: {}, taxable: {}, retirement: {} } })] as never,
         spouseName: "Jane Doe",
       }),
       RETIREMENT_SUMMARY_OPTIONS_DEFAULT,
@@ -66,7 +69,7 @@ describe("buildRetirementSummaryData", () => {
   it("surfaces the Monte Carlo success rate as a KPI string when present", () => {
     const data = buildRetirementSummaryData(
       ctx({
-        years: [makeYear(2031, { portfolioAssets: { liquidTotal: 100, cashTotal: 0, taxableTotal: 0, retirementTotal: 0 } })] as never,
+        years: [makeYear(2031, { portfolioAssets: { liquidTotal: 100, cashTotal: 0, taxableTotal: 0, retirementTotal: 0, cash: {}, taxable: {}, retirement: {} } })] as never,
         monteCarlo: { summary: { successRate: 0.9 } } as never,
       }),
       RETIREMENT_SUMMARY_OPTIONS_DEFAULT,

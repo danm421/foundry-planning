@@ -13,13 +13,14 @@ function makeYear(year: number, marginalRate: number, opts: Partial<{ conversion
       ira: { endingValue: 400_000 },
       roth: { endingValue: 100_000 },
     },
+    portfolioAssets: { cash: {}, taxable: {}, retirement: { ira: 400_000, roth: 100_000 } },
     medicare: { totalIrmaaSurcharge: opts.irmaa ?? 0 },
     taxDetail: { capitalGains: opts.gain ?? 0 },
     rothConversions: opts.conversionGross
       ? [{ id: "c1", name: "Fill 22%", gross: opts.conversionGross, taxable: opts.conversionTaxable ?? opts.conversionGross }]
       : undefined,
     taxResult: {
-      flow: { totalFederalTax: 20_000, stateTax: 4_000, capitalGainsTax: 1_000, totalTax: 24_000, incomeTaxBase: 120_000 },
+      flow: { totalFederalTax: 20_000, stateTax: 4_000, capitalGainsTax: 1_000, fica: 3_000, totalTax: 27_000, incomeTaxBase: 120_000 },
       income: { grossTotalIncome: 150_000 },
       diag: {
         marginalFederalRate: marginalRate,
@@ -49,8 +50,8 @@ describe("buildTaxSummaryData", () => {
 
     expect(data.isEmpty).toBe(false);
     expect(data.bracketMode).toBe(true);
-    expect(data.kpis.lifetimeFederal).toBe(40_000);
-    expect(data.kpis.lifetimeTotal).toBe(48_000);
+    expect(data.kpis.lifetimeFederalOrdinary).toBe(38_000);
+    expect(data.kpis.lifetimeTotal).toBe(54_000);
     expect(data.chart).toHaveLength(2);
     expect(data.bracket?.yearsBelowLow).toBe(1);   // 0.12
     expect(data.bracket?.yearsAboveHigh).toBe(1);  // 0.32
@@ -66,8 +67,26 @@ describe("buildTaxSummaryData", () => {
     expect(data.bracket).toBeNull();
   });
 
+  // A3: the four amount tiles sit in one row under "Lifetime Total Tax". A
+  // reader adds them; they have to reach the total printed beside them.
+  it("prints tax parts that add up to the total beside them", () => {
+    const years = [makeYear(2030, 0.12), makeYear(2031, 0.32)];
+    const { kpis } = buildTaxSummaryData(ctxFor(years, "bracket"), TAX_SUMMARY_OPTIONS_DEFAULT);
+    expect(kpis.lifetimeFederalOrdinary).toBe(38_000); // 40,000 federal − 2,000 gains
+    expect(kpis.lifetimeCapGains).toBe(2_000);
+    expect(kpis.lifetimeState).toBe(8_000);
+    expect(kpis.lifetimePayroll).toBe(6_000);
+    expect(
+      kpis.lifetimeFederalOrdinary + kpis.lifetimeCapGains + kpis.lifetimeState + kpis.lifetimePayroll,
+    ).toBe(kpis.lifetimeTotal);
+  });
+
   it("returns an empty state when no year has a taxResult", () => {
-    const years = [{ year: 2030, accountLedgers: {} } as unknown as ProjectionYear];
+    const years = [{
+      year: 2030,
+      accountLedgers: {},
+      portfolioAssets: { cash: {}, taxable: {}, retirement: {} },
+    } as unknown as ProjectionYear];
     const data = buildTaxSummaryData(ctxFor(years, "bracket"), TAX_SUMMARY_OPTIONS_DEFAULT);
     expect(data.isEmpty).toBe(true);
   });
