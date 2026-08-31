@@ -366,4 +366,126 @@ describe("annotateReconciliation", () => {
     expect(otherHospitalRow?.reconciliation?.reason).toContain("Other Hospital");
     expect(otherHospitalRow?.reconciliation?.reason).not.toContain("The Mount Sinai Hospital");
   });
+
+  // Regression for final-review I6 (and deferred minor F5): supersedes were
+  // resolved through a `sourceFileId|rowName` key built from BOTH recurrence
+  // classes, so a row was marked iff SOME supersede shared its file id and
+  // name. Paystub P here yields two rows both named "Wages" — a recurring
+  // $100,000 WINNER and a variable $10,000 loser — so the key stamped P's
+  // winning base salary too, and `commitIncomes` then silently skipped a real
+  // salary. Marking by row identity is what keeps the $100,000 row importable.
+  it("does not mark a WINNER whose own document lost the OTHER recurrence class with a same-named row", () => {
+    const pRecurring = inc("stub1", { name: "Wages", annualAmount: 100_000 });
+    const pVariable = inc("stub1", {
+      name: "Wages",
+      annualAmount: 10_000,
+      recurrence: "variable",
+      basis: "actual",
+    });
+    const qVariable = inc("stub2", {
+      name: "Wages",
+      annualAmount: 12_000,
+      recurrence: "variable",
+      basis: "annualized",
+    });
+    const { payload } = annotateReconciliation(
+      payloadWith([pRecurring, pVariable, qVariable]), FILES, 2026,
+    );
+    expect(pRecurring.reconciliation).toBeUndefined();
+    expect(pVariable.reconciliation).toBeDefined();
+    expect(qVariable.reconciliation).toBeUndefined();
+    expect(payload.incomes.filter((r) => r.reconciliation)).toHaveLength(1);
+  });
+
+  // Regression for final-review I1: `supersededBy` was read off the marked
+  // row's OWN Supersede entry, so every marked row recorded being superseded
+  // by itself. The winner's name survived only inside the reason prose.
+  it("records the WINNING row's name in supersededBy, not the marked row's own name", () => {
+    const { payload } = annotateReconciliation(
+      payloadWith([
+        inc("stub1", { name: "Base Salary" }),
+        inc("stub2", { name: "Salary", basis: "actual" }),
+      ]),
+      FILES, 2026,
+    );
+    const marked = payload.incomes.filter((r) => r.reconciliation);
+    expect(marked).toHaveLength(1);
+    expect(marked[0].name).toBe("Salary");
+    expect(marked[0].reconciliation?.supersededBy).toBe("Base Salary");
+    expect(marked[0].reconciliation?.supersededBy).not.toBe(marked[0].name);
+  });
+
+  // Regression for final-review I2: the sentence counted superseded ROWS, so
+  // ONE losing paystub carrying a base line and an overtime line announced
+  // "3 documents describe the same earnings" when two were uploaded.
+  it("counts DOCUMENTS, not superseded rows, in the warning", () => {
+    const { payload } = annotateReconciliation(
+      payloadWith([
+        inc("stub1", { name: "Base Pay", annualAmount: 200_000 }),
+        inc("stub1", {
+          name: "Overtime", annualAmount: 10_000, recurrence: "variable", basis: "actual",
+        }),
+        inc("stub2", { name: "Base Pay", annualAmount: 200_000 }),
+        inc("stub2", {
+          name: "Overtime", annualAmount: 10_000, recurrence: "variable", basis: "actual",
+        }),
+      ]),
+      FILES, 2026,
+    );
+    expect(payload.incomes.filter((r) => r.reconciliation)).toHaveLength(2);
+    const warning = payload.warnings.join(" ");
+    expect(warning).toContain("2 documents describe the same earnings");
+    expect(warning).not.toContain("3 documents");
+    // two superseded ROWS, so the row clause stays plural
+    expect(warning).toContain("the duplicate rows are marked");
+  });
+
+  // The same over-count pointing the other way: the recurring and variable
+  // classes can be won by DIFFERENT documents, so "superseded files + 1"
+  // reports three documents for two paystubs. The count is taken over the
+  // documents that actually contributed — the winners plus the superseded.
+  it("still says 2 documents when recurring and variable are won by different documents", () => {
+    const { payload } = annotateReconciliation(
+      payloadWith([
+        inc("stub1", { name: "Base Pay", annualAmount: 200_000, basis: "annualized" }),
+        inc("stub1", {
+          name: "Overtime", annualAmount: 10_000, recurrence: "variable", basis: "actual",
+        }),
+        inc("stub2", { name: "Base Pay", annualAmount: 200_000, basis: "actual" }),
+        inc("stub2", {
+          name: "Overtime", annualAmount: 10_000, recurrence: "variable", basis: "annualized",
+        }),
+      ]),
+      FILES, 2026,
+    );
+    // one row of each document loses, so both documents appear in `supersedes`
+    expect(payload.incomes.filter((r) => r.reconciliation)).toHaveLength(2);
+    expect(payload.warnings.join(" ")).toContain("2 documents describe the same earnings");
+  });
+
+  // Regression for final-review I3: `reconcileGroup` computed conflicts[] and
+  // set confidence "needs-review", but nothing read either — both call sites
+  // destructure `{ payload }` and discard `reconciled[]`. A 40% disagreement
+  // produced exactly the same reassuring sentence as a perfect match.
+  it("puts a needs-review disagreement on the payload, naming BOTH figures", () => {
+    const { payload } = annotateReconciliation(
+      payloadWith([
+        inc("stub1", { name: "Salary (stub 1)", annualAmount: 150_000 }),
+        inc("stub2", { name: "Salary (stub 2)", annualAmount: 210_000 }),
+      ]),
+      FILES, 2026,
+    );
+    const warnings = payload.warnings.join(" ");
+    expect(warnings).toContain("$150,000");
+    expect(warnings).toContain("$210,000");
+    expect(warnings).toContain("disagree by more than 1%");
+  });
+
+  it("adds no conflict warning when the documents agree", () => {
+    const { payload } = annotateReconciliation(
+      payloadWith([inc("stub1"), inc("stub2")]), FILES, 2026,
+    );
+    expect(payload.warnings).toHaveLength(1);
+    expect(payload.warnings.join(" ")).not.toContain("disagree");
+  });
 });

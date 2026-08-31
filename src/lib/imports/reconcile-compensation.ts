@@ -90,7 +90,21 @@ export function groupCompensation(
   return [...groups.values()];
 }
 
-export type Supersede = { rowName: string; sourceFileId: string; reason: string };
+/** One superseded row. `row` is the ACTUAL payload row object, not a copy:
+ *  `annotateReconciliation` marks by object IDENTITY. A `sourceFileId|rowName`
+ *  key cannot tell two same-named rows of one document apart, so it marked a
+ *  WINNER in one recurrence class whenever that document lost the OTHER class
+ *  with a same-named row — and `commitIncomes` then silently skipped a real
+ *  salary, which is the exact defect class this module exists to eliminate. */
+export type Supersede = {
+  rowName: string;
+  sourceFileId: string;
+  reason: string;
+  /** Name of the row that WON. Never this row's own name. */
+  supersededBy: string;
+  /** The superseded row itself. Marked in place, never dropped. */
+  row: Annotated<ExtractedIncome>;
+};
 
 export type ReconciledEmployer = {
   employer: string;
@@ -196,6 +210,8 @@ export function reconcileGroup(
         supersedes.push({
           rowName: loser.name,
           sourceFileId: fileIdOf(loser),
+          supersededBy: winnerRep.name,
+          row: loser,
           reason:
             `Same employer (${group.employer}), same year (${group.taxYear}) as ` +
             `"${winnerRep.name}" — the same earnings measured twice, not additional pay.`,
@@ -259,39 +275,39 @@ export function annotateReconciliation(
   const groups = groupCompensation(candidates, files);
   const reconciled = groups.map((g) => reconcileGroup(g, files, currentYear));
 
-  // Resolve each group's `supersedes` against THAT group's own rows only.
-  // Scoping the lookup per group (rather than one map shared across every
-  // group) matters because the key is `sourceFileId|rowName` — a combined
-  // document covering two employers, or a generic row label like "Wages",
-  // can repeat that same pair in a DIFFERENT group. A shared map would let
-  // the second group's Supersede overwrite the first's, stamping a row with
-  // another employer's reason text. `group.incomes` holds the same row
-  // objects as `payload.incomes`, so marking them here still mutates the
-  // payload in place — no second scan over `payload.incomes` is needed.
-  let markedAny = false;
-  groups.forEach((group, i) => {
-    const r = reconciled[i];
-    if (r.supersedes.length === 0) return;
-    const bySupersededKey = new Map<string, Supersede>();
-    for (const s of r.supersedes) bySupersededKey.set(`${s.sourceFileId}|${s.rowName}`, s);
-    for (const row of group.incomes) {
-      if (row.reconciliation) continue;
-      const hit = bySupersededKey.get(`${fileIdOf(row)}|${row.name}`);
-      if (!hit) continue;
-      row.reconciliation = { supersededBy: hit.rowName, reason: hit.reason };
-      markedAny = true;
-    }
-  });
+  for (const r of reconciled) {
+    if (r.supersedes.length === 0) continue;
 
-  if (markedAny) {
-    for (const r of reconciled) {
-      if (r.supersedes.length === 0) continue;
-      payload.warnings.push(
-        `${r.employer} (${r.taxYear}): ${r.supersedes.length + 1} documents describe the same ` +
-          `earnings. Using ${r.total.display}; the duplicate row${r.supersedes.length > 1 ? "s are" : " is"} ` +
-          `marked and will not be imported.`,
-      );
+    // Mark by ROW IDENTITY. Each Supersede carries the superseded row object
+    // itself, and those are the same objects `payload.incomes` holds, so
+    // setting the field here mutates the payload in place — no scan, and no
+    // `sourceFileId|rowName` key that can stamp the wrong row (see Supersede).
+    for (const s of r.supersedes) {
+      s.row.reconciliation = { supersededBy: s.supersededBy, reason: s.reason };
     }
+
+    // Count DISTINCT DOCUMENTS, not superseded rows: one losing paystub with a
+    // base line and an overtime line contributes two supersedes on its own,
+    // which used to announce three documents when two were uploaded. The
+    // winning documents are read off `total.fromFiles` rather than assumed to
+    // be one, because the recurring and variable classes can be won by
+    // DIFFERENT documents — "losers + 1" over-counts that case the same way.
+    // The ROW count still drives "row is" / "rows are".
+    const documentCount = new Set([
+      ...r.supersedes.map((s) => s.sourceFileId),
+      ...r.total.fromFiles,
+    ]).size;
+    payload.warnings.push(
+      `${r.employer} (${r.taxYear}): ${documentCount} documents describe the same ` +
+        `earnings. Using ${r.total.display}; the duplicate row${r.supersedes.length > 1 ? "s are" : " is"} ` +
+        `marked and will not be imported.`,
+    );
+
+    // A `needs-review` disagreement has to reach the advisor with BOTH figures
+    // (spec §2). It can only travel on the payload: both call sites destructure
+    // `{ payload }` and discard `reconciled[]`, so a conflict left on the
+    // returned object is read by nobody.
+    for (const conflict of r.conflicts) payload.warnings.push(conflict);
   }
 
   return { payload, reconciled };
