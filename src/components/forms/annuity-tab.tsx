@@ -48,11 +48,18 @@ export type {
 /** One annuity contract, shaped exactly like the PUT body. Rates are stored as
  *  fractions (0.06 = 6%); the panel displays whole numbers and converts. */
 export interface AnnuityContractValue {
+  /** Carried, never edited here. The panel dropped the carrier name, the
+   *  contract number, and the surrender schedule: nothing in `src/engine/`
+   *  reads any of the four, so they were boxes of typing that changed no
+   *  number in the plan. They stay on the value so a contract saved before
+   *  this change round-trips through GET → PUT with whatever it already
+   *  holds, instead of being blanked by the first save afterwards. */
   carrier?: string | null;
   contractNumberLast4?: string | null;
   productType: AnnuityProductType;
   taxTreatment: AnnuityTaxTreatment;
   costBasis?: number | null;
+  /** Carried, not edited — see the note on `carrier` above. */
   surrenderChargePct?: number | null;
   surrenderEndYear?: number | null;
   annualFeePct: number;
@@ -263,23 +270,86 @@ function needsCertainTerm(structure: AnnuityPayoutStructure | null | undefined):
   return structure === "life_with_period_certain" || structure === "period_certain";
 }
 
-/** Mirrors the three DB CHECK constraints the PUT route enforces, so the form
- *  can hold the Save button instead of letting the advisor hit a 400 — plus two
- *  the database does NOT police. Postgres is happy to store a joint payout with
- *  no survivor share, or a period-certain payout with no term; `payout.ts` then
- *  reads `survivorPct ?? 0` (the survivor's income stops at the first death)
- *  and treats a null term as "no term at all" (the payments never end while the
- *  annuitant lives, and nothing carries to the beneficiary after). Those are
- *  wrong plans, not rejected ones, so nothing downstream would ever complain. */
+/**
+ * Everything this contract must answer before the plan can model its income,
+ * in the order the fields appear. ONE list: the checklist the panel shows and
+ * the predicate the Save button holds on are the same array, so what the
+ * advisor is told to fill in cannot drift from what actually blocks them.
+ *
+ * Mirrors the three DB CHECK constraints the PUT route enforces, so the form
+ * can hold the Save button instead of letting the advisor hit a 400 — plus two
+ * the database does NOT police. Postgres is happy to store a joint payout with
+ * no survivor share, or a period-certain payout with no term; `payout.ts` then
+ * reads `survivorPct ?? 0` (the survivor's income stops at the first death)
+ * and treats a null term as "no term at all" (the payments never end while the
+ * annuitant lives, and nothing carries to the beneficiary after). Those are
+ * wrong plans, not rejected ones, so nothing downstream would ever complain.
+ */
+export function annuityRequirements(
+  v: AnnuityContractValue,
+): { label: string; met: boolean }[] {
+  if (v.incomeMode === "none") return [];
+  const list = [
+    {
+      label: "Income starts",
+      met: v.incomeStartYear != null || v.incomeStartYearRef != null,
+    },
+  ];
+  if (v.incomeMode === "rider") {
+    list.push({ label: "Benefit base", met: v.benefitBase != null });
+  }
+  if (v.incomeMode === "annuitized") {
+    // `> 0`, not `!= null` — a ZERO payment clears every null check in the
+    // stack and then costs the client the whole account value for no income.
+    list.push({ label: "Annual payment", met: (v.annuitizedPayment ?? 0) > 0 });
+  }
+  if (v.payoutStructure === "joint_survivor") {
+    list.push({ label: "Survivor share", met: v.survivorPct != null });
+  }
+  if (needsCertainTerm(v.payoutStructure)) {
+    list.push({ label: "Guaranteed years", met: v.periodCertainYears != null });
+  }
+  return list;
+}
+
+/** The Save gate: every requirement above, answered. */
 export function annuityContractIncomplete(v: AnnuityContractValue): boolean {
-  if (v.incomeMode === "none") return false;
-  if (v.incomeMode === "rider" && v.benefitBase == null) return true;
-  // `!(x > 0)`, not `== null` — a ZERO payment clears every null check in the
-  // stack and then costs the client the whole account value for no income.
-  if (v.incomeMode === "annuitized" && !((v.annuitizedPayment ?? 0) > 0)) return true;
-  if (v.payoutStructure === "joint_survivor" && v.survivorPct == null) return true;
-  if (needsCertainTerm(v.payoutStructure) && v.periodCertainYears == null) return true;
-  return v.incomeStartYear == null && v.incomeStartYearRef == null;
+  return annuityRequirements(v).some((r) => !r.met);
+}
+
+/**
+ * What a complete contract looks like, named and ticked off as it fills in.
+ * Standing, not conditional on a blank: the point is to tell the advisor what
+ * this annuity needs BEFORE they go hunting for it, and the per-field notes
+ * below still carry the consequence of leaving one out.
+ */
+function RequirementChecklist({ items }: { items: { label: string; met: boolean }[] }) {
+  return (
+    <div>
+      <p className="text-[11px] uppercase tracking-[0.08em] text-ink-3">
+        To model this income
+      </p>
+      <ul className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
+        {items.map((r) => (
+          <li
+            key={r.label}
+            className={
+              "flex items-center gap-1.5 text-[12px] " +
+              (r.met ? "text-ink-2" : "text-crit")
+            }
+          >
+            {/* Colour only on the tick — an unmet row is already crit, and the
+                open circle inherits it. */}
+            <span aria-hidden className={r.met ? "text-good" : undefined}>
+              {r.met ? "✓" : "○"}
+            </span>
+            {r.label}
+            <span className="sr-only">{r.met ? " — set" : " — still needed"}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 /**
@@ -422,137 +492,20 @@ export function AnnuityTab({
       ? accountValue
       : null;
 
+  const requirements = annuityRequirements(value);
+  // §72 reads the cost basis only on a non-qualified contract: a qualified
+  // draw is ordinary income in full and a Roth one is tax-free, and
+  // `payout.ts` returns from both branches before it ever looks at the basis
+  // or the exclusion ratio. Asking for either on those two wrappers is asking
+  // for a number the plan will not read.
+  const basisMatters = value.taxTreatment === "non_qualified";
+
   return (
     <div className="space-y-4">
-      {/* ── Contract ───────────────────────────────────────────────────────── */}
-      <fieldset className="space-y-3 rounded-md border border-hair p-4">
-        <legend className="px-2 text-sm font-semibold text-ink">Contract</legend>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <div className="flex items-center gap-1.5">
-              <label className={fieldLabelClassName} htmlFor="annuity-carrier">Carrier</label>
-              <FieldTooltip text="The insurance company that issued the contract — how the client recognizes the policy on a statement." />
-            </div>
-            <input
-              id="annuity-carrier"
-              type="text"
-              className={inputClassName}
-              value={value.carrier ?? ""}
-              placeholder="e.g. Athene"
-              onChange={(e) => set("carrier", e.target.value === "" ? null : e.target.value)}
-            />
-          </div>
-
-          <div>
-            <div className="flex items-center gap-1.5">
-              <label className={fieldLabelClassName} htmlFor="annuity-last4">Contract number (last 4)</label>
-              <FieldTooltip text="Last four digits only, so the policy can be matched to a statement without storing the full number." />
-            </div>
-            <input
-              id="annuity-last4"
-              type="text"
-              inputMode="numeric"
-              maxLength={4}
-              className={inputClassName}
-              value={value.contractNumberLast4 ?? ""}
-              onChange={(e) =>
-                set("contractNumberLast4", e.target.value === "" ? null : e.target.value)
-              }
-            />
-          </div>
-
-          <div>
-            <div className="flex items-center gap-1.5">
-              <label className={fieldLabelClassName} htmlFor="annuity-product">Product type</label>
-              <FieldTooltip text="Sets what the contract is expected to do. A longevity annuity is the only one the IRS caps by premium." />
-            </div>
-            <select
-              id="annuity-product"
-              className={selectClassName}
-              value={value.productType}
-              onChange={(e) => set("productType", e.target.value as AnnuityProductType)}
-            >
-              {(Object.keys(PRODUCT_TYPE_LABELS) as AnnuityProductType[]).map((p) => (
-                <option key={p} value={p}>{PRODUCT_TYPE_LABELS[p]}</option>
-              ))}
-            </select>
-            {qlacPremiumOverCap != null && (
-              <p className={NOTE_CLASS}>
-                A longevity annuity premium is capped at{" "}
-                <span className="tabular">${QLAC_PREMIUM_CAP_2026.toLocaleString("en-US")}</span>{" "}
-                for 2026. This account&apos;s value of{" "}
-                <span className="tabular">${qlacPremiumOverCap.toLocaleString("en-US")}</span>{" "}
-                is above the cap — worth confirming against the contract.
-              </p>
-            )}
-          </div>
-
-          {/* Read-only. The advisor sets this with the Account Type dropdown on
-              the Details tab — `account_sub_type` carries the same three values,
-              so the account row IS the treatment. A second editable copy here
-              would let this panel and the account row disagree about the one
-              fact §72 reads. */}
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className={fieldLabelClassName}>How it&apos;s taxed</span>
-              <FieldTooltip text="Money that was already taxed comes back partly tax-free. IRA and plan money is taxed in full; Roth money is not taxed at all." />
-            </div>
-            <p className="text-[14px] text-ink">{TAX_TREATMENT_LABELS[value.taxTreatment]}</p>
-            <p className="mt-1 text-[11px] leading-snug text-ink-3">
-              Set with <span className="text-ink-2">Account Type</span> on the Details tab.
-            </p>
-          </div>
-
-          <div>
-            <MoneyField
-              id="annuity-cost-basis"
-              label="Cost basis"
-              tooltip="The money the client put in that has already been taxed. Withdrawals come out of growth first, so the wrong figure taxes the wrong dollars."
-              value={value.costBasis}
-              onChange={(v) => set("costBasis", v)}
-              placeholder="Ask the carrier"
-            />
-            {value.costBasis == null && (
-              <p className={NOTE_CLASS}>
-                Not on file — until it&apos;s set, the plan treats the whole balance as money the
-                client has already paid tax on, so withdrawals will look tax-free when they may not
-                be.
-              </p>
-            )}
-          </div>
-
-          <PercentField
-            id="annuity-fee"
-            label="Annual contract fee"
-            tooltip="Mortality, expense, and administration charges the carrier takes off the balance every year."
-            value={value.annualFeePct}
-            onChange={(v) => set("annualFeePct", v ?? 0)}
-          />
-
-          {/* The tooltip says RECORDED, not applied. Nothing in `src/engine/`
-              reads `surrenderChargePct` or `surrenderEndYear`, and the old copy
-              ("Applied to withdrawals until the surrender period ends")
-              promised the advisor in writing that a charge would be deducted. */}
-          <PercentField
-            id="annuity-surrender-pct"
-            label="Surrender charge"
-            tooltip="What the carrier keeps if the client cashes out early. Recorded for reference — the projection does not deduct it yet."
-            value={value.surrenderChargePct}
-            onChange={(v) => set("surrenderChargePct", v)}
-          />
-
-          <YearField
-            id="annuity-surrender-end"
-            label="Surrender charge ends"
-            tooltip="Last year the surrender charge applies. After this the balance is free to move."
-            value={value.surrenderEndYear}
-            onChange={(v) => set("surrenderEndYear", v)}
-          />
-        </div>
-      </fieldset>
-
-      {/* ── Income ─────────────────────────────────────────────────────────── */}
+      {/* ── Income ───────────────────────────────────────────────────────────
+          First, and deliberately. The mode picked here decides which fields
+          below the projection even reads, so it leads; the contract's
+          accounting details follow it. */}
       <fieldset className="space-y-3 rounded-md border border-hair p-4">
         <legend className="px-2 text-sm font-semibold text-ink">Income</legend>
 
@@ -582,6 +535,8 @@ export function AnnuityTab({
 
         {value.incomeMode !== "none" && (
           <div className="space-y-3 border-t border-hair pt-3">
+            <RequirementChecklist items={requirements} />
+
             {milestones ? (
               <div className="max-w-xs">
                 <MilestoneYearPicker
@@ -702,6 +657,15 @@ export function AnnuityTab({
                 </div>
 
                 <PercentField
+                  id="annuity-payout-pct"
+                  label="Payout rate"
+                  tooltip={`Share of the benefit base paid each year once income starts. Left blank, the age band at the start year is used — ${bandSummary}.`}
+                  value={value.payoutPct}
+                  onChange={(v) => set("payoutPct", v)}
+                  placeholder={bandPlaceholder}
+                />
+
+                <PercentField
                   id="annuity-rollup-rate"
                   label="Roll-up rate"
                   tooltip="Guaranteed yearly growth on the figure the payment is sized from, for as long as income is deferred."
@@ -723,15 +687,6 @@ export function AnnuityTab({
                   tooltip="What the guarantee costs each year. Usually charged against the benefit base, not the balance."
                   value={value.riderFeePct}
                   onChange={(v) => set("riderFeePct", v)}
-                />
-
-                <PercentField
-                  id="annuity-payout-pct"
-                  label="Payout rate"
-                  tooltip={`Share of the benefit base paid each year once income starts. Left blank, the age band at the start year is used — ${bandSummary}.`}
-                  value={value.payoutPct}
-                  onChange={(v) => set("payoutPct", v)}
-                  placeholder={bandPlaceholder}
                 />
 
                 {/* The tooltip sits OUTSIDE the label: text nested inside a
@@ -773,33 +728,119 @@ export function AnnuityTab({
                   )}
                 </div>
 
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <label className={fieldLabelClassName} htmlFor="annuity-expected-years">
-                      Expected payout years
-                    </label>
-                    <FieldTooltip text="How many years of payments the tax-free portion is spread over. Leave blank to use the IRS life-expectancy table." />
+                {/* Only a non-qualified contract has an exclusion ratio to
+                    spread, so this is the only wrapper the figure changes. */}
+                {basisMatters && (
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <label className={fieldLabelClassName} htmlFor="annuity-expected-years">
+                        Expected payout years
+                      </label>
+                      <FieldTooltip text="How many years of payments the tax-free portion is spread over. Leave blank to use the IRS life-expectancy table." />
+                    </div>
+                    <input
+                      id="annuity-expected-years"
+                      type="number"
+                      min={1}
+                      max={70}
+                      className={inputClassName}
+                      value={value.expectedReturnYears ?? ""}
+                      placeholder="IRS table"
+                      onChange={(e) =>
+                        set(
+                          "expectedReturnYears",
+                          e.target.value === "" ? null : Number(e.target.value),
+                        )
+                      }
+                    />
                   </div>
-                  <input
-                    id="annuity-expected-years"
-                    type="number"
-                    min={1}
-                    max={70}
-                    className={inputClassName}
-                    value={value.expectedReturnYears ?? ""}
-                    placeholder="IRS table"
-                    onChange={(e) =>
-                      set(
-                        "expectedReturnYears",
-                        e.target.value === "" ? null : Number(e.target.value),
-                      )
-                    }
-                  />
-                </div>
+                )}
               </div>
             )}
           </div>
         )}
+      </fieldset>
+
+      {/* ── Contract ─────────────────────────────────────────────────────────
+          Only what the projection reads. The carrier name, the contract
+          number, and the surrender schedule used to live here; none of them
+          reaches `src/engine/`, so they were four boxes of typing that changed
+          nothing in the plan. The account's own name carries the policy's
+          identity. */}
+      <fieldset className="space-y-3 rounded-md border border-hair p-4">
+        <legend className="px-2 text-sm font-semibold text-ink">Contract</legend>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <div className="flex items-center gap-1.5">
+              <label className={fieldLabelClassName} htmlFor="annuity-product">Product type</label>
+              <FieldTooltip text="Sets what the contract is expected to do. A longevity annuity is the only one the IRS caps by premium." />
+            </div>
+            <select
+              id="annuity-product"
+              className={selectClassName}
+              value={value.productType}
+              onChange={(e) => set("productType", e.target.value as AnnuityProductType)}
+            >
+              {(Object.keys(PRODUCT_TYPE_LABELS) as AnnuityProductType[]).map((p) => (
+                <option key={p} value={p}>{PRODUCT_TYPE_LABELS[p]}</option>
+              ))}
+            </select>
+            {qlacPremiumOverCap != null && (
+              <p className={NOTE_CLASS}>
+                A longevity annuity premium is capped at{" "}
+                <span className="tabular">${QLAC_PREMIUM_CAP_2026.toLocaleString("en-US")}</span>{" "}
+                for 2026. This account&apos;s value of{" "}
+                <span className="tabular">${qlacPremiumOverCap.toLocaleString("en-US")}</span>{" "}
+                is above the cap — worth confirming against the contract.
+              </p>
+            )}
+          </div>
+
+          {/* Read-only. The advisor sets this with the Account Type dropdown on
+              the Details tab — `account_sub_type` carries the same three values,
+              so the account row IS the treatment. A second editable copy here
+              would let this panel and the account row disagree about the one
+              fact §72 reads. */}
+          <div>
+            <div className="flex items-center gap-1.5">
+              <span className={fieldLabelClassName}>How it&apos;s taxed</span>
+              <FieldTooltip text="Money that was already taxed comes back partly tax-free. IRA and plan money is taxed in full; Roth money is not taxed at all." />
+            </div>
+            <p className="text-[14px] text-ink">{TAX_TREATMENT_LABELS[value.taxTreatment]}</p>
+            <p className="mt-1 text-[11px] leading-snug text-ink-3">
+              Set with <span className="text-ink-2">Account Type</span> on the Details tab.
+            </p>
+          </div>
+
+          {basisMatters && (
+            <div>
+              <MoneyField
+                id="annuity-cost-basis"
+                label="Cost basis"
+                tooltip="The money the client put in that has already been taxed. Withdrawals come out of growth first, so the wrong figure taxes the wrong dollars."
+                value={value.costBasis}
+                onChange={(v) => set("costBasis", v)}
+                placeholder="Ask the carrier"
+              />
+              {value.costBasis == null && (
+                <p className={NOTE_CLASS}>
+                  Not on file — until it&apos;s set, the plan treats the whole balance as money the
+                  client has already paid tax on, so withdrawals will look tax-free when they may
+                  not be.
+                </p>
+              )}
+            </div>
+          )}
+
+          <PercentField
+            id="annuity-fee"
+            label="Annual contract fee"
+            tooltip="Mortality, expense, and administration charges the carrier takes off the balance every year."
+            value={value.annualFeePct}
+            onChange={(v) => set("annualFeePct", v ?? 0)}
+          />
+        </div>
       </fieldset>
 
       {/* The preview waits on the same predicate the Save button does: a

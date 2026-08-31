@@ -2,7 +2,13 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { AnnuityTab, annuityContractIncomplete, toEngineContract } from "../annuity-tab";
+import {
+  AnnuityTab,
+  annuityContractIncomplete,
+  annuityRequirements,
+  toEngineContract,
+  type AnnuityContractValue,
+} from "../annuity-tab";
 import type { ClientMilestones } from "@/lib/milestones";
 
 const noop = () => {};
@@ -182,12 +188,132 @@ describe("AnnuityTab", () => {
     expect(screen.getByRole("heading", heading)).toBeInTheDocument();
   });
 
+  // ── Only what the plan reads ──────────────────────────────────────────────
+  // Four controls came off this panel because nothing in `src/engine/` reads
+  // the column behind them. Each of these names the field, so re-adding one is
+  // a deliberate act rather than a quiet regression.
+
+  it("no longer asks for the carrier or the contract number", () => {
+    render(<AnnuityTab value={blank} onChange={noop} />);
+    expect(screen.queryByLabelText(/^carrier$/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/contract number/i)).not.toBeInTheDocument();
+  });
+
+  it("no longer asks for a surrender schedule the projection never applies", () => {
+    render(<AnnuityTab value={blank} onChange={noop} />);
+    expect(screen.queryByLabelText(/surrender charge/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/surrender charge ends/i)).not.toBeInTheDocument();
+  });
+
+  // `payout.ts` returns from the tax_free and qualified branches before it ever
+  // reads the basis or the exclusion ratio, so on those two wrappers both boxes
+  // ask for a number the plan will not use.
+  it("asks for a cost basis only where §72 reads one", () => {
+    const { rerender } = render(<AnnuityTab value={blank} onChange={noop} />);
+    expect(screen.getByLabelText(/cost basis/i)).toBeInTheDocument();
+
+    rerender(<AnnuityTab value={{ ...blank, taxTreatment: "qualified" }} onChange={noop} />);
+    expect(screen.queryByLabelText(/cost basis/i)).not.toBeInTheDocument();
+    // The nag goes with the field — a warning about a number nobody is being
+    // asked for is worse than no warning.
+    expect(screen.queryByText(/will look tax-free/i)).not.toBeInTheDocument();
+
+    rerender(<AnnuityTab value={{ ...blank, taxTreatment: "tax_free" }} onChange={noop} />);
+    expect(screen.queryByLabelText(/cost basis/i)).not.toBeInTheDocument();
+  });
+
+  it("asks for expected payout years only on a non-qualified annuitized contract", () => {
+    const annuitized = { ...blank, incomeMode: "annuitized" as const };
+    const { rerender } = render(<AnnuityTab value={annuitized} onChange={noop} />);
+    expect(screen.getByLabelText(/expected payout years/i)).toBeInTheDocument();
+
+    rerender(<AnnuityTab
+      value={{ ...annuitized, taxTreatment: "qualified" }} onChange={noop} />);
+    expect(screen.queryByLabelText(/expected payout years/i)).not.toBeInTheDocument();
+  });
+
+  // ── The checklist ─────────────────────────────────────────────────────────
+
+  it("names what the contract still needs before it can be modelled", () => {
+    render(<AnnuityTab
+      value={{ ...blank, incomeMode: "rider", incomeStartYear: 2032 }} onChange={noop} />);
+    const list = screen.getByRole("list");
+    expect(list).toHaveTextContent(/Income starts — set/);
+    expect(list).toHaveTextContent(/Benefit base — still needed/);
+  });
+
+  it("ticks a requirement off once it is answered", () => {
+    const rider = { ...blank, incomeMode: "rider" as const, incomeStartYear: 2032 };
+    const { rerender } = render(<AnnuityTab value={rider} onChange={noop} />);
+    expect(screen.getByRole("list")).toHaveTextContent(/Benefit base — still needed/);
+
+    rerender(<AnnuityTab value={{ ...rider, benefitBase: 500_000 }} onChange={noop} />);
+    expect(screen.getByRole("list")).toHaveTextContent(/Benefit base — set/);
+  });
+
+  it("keeps the checklist off a contract that is not paying income", () => {
+    render(<AnnuityTab value={blank} onChange={noop} />);
+    expect(screen.queryByText(/to model this income/i)).not.toBeInTheDocument();
+  });
+
   it("emits the mode the advisor picks", async () => {
     const changes: { incomeMode?: string }[] = [];
     render(<AnnuityTab value={blank}
       onChange={(v) => changes.push(v)} />);
     await userEvent.click(screen.getByRole("radio", { name: /income rider/i }));
     expect(changes.at(-1)?.incomeMode).toBe("rider");
+  });
+});
+
+// The checklist an advisor reads and the gate that blocks them are the same
+// array. Asserting the two AGREE would be a tautology — `annuityContractIncomplete`
+// is defined as `annuityRequirements(...).some(r => !r.met)`, so it cannot
+// disagree however wrong the list gets. These pin the list against the answers
+// stated by hand instead; the `annuityContractIncomplete` suite below then
+// covers the gate on the same shapes from the other side.
+describe("annuityRequirements", () => {
+  const labelsOf = (v: AnnuityContractValue) => annuityRequirements(v).map((r) => r.label);
+  const unmetOf = (v: AnnuityContractValue) =>
+    annuityRequirements(v).filter((r) => !r.met).map((r) => r.label);
+
+  it("names nothing while the contract is not paying income", () => {
+    expect(annuityRequirements(blank)).toEqual([]);
+  });
+
+  it("names the fields the mode and the structure make mandatory", () => {
+    expect(labelsOf({ ...blank, incomeMode: "rider", payoutStructure: "joint_survivor" }))
+      .toEqual(["Income starts", "Benefit base", "Survivor share"]);
+    expect(labelsOf({ ...blank, incomeMode: "annuitized", payoutStructure: "period_certain" }))
+      .toEqual(["Income starts", "Annual payment", "Guaranteed years"]);
+  });
+
+  it("marks a blank rider's fields unmet and a filled one's met", () => {
+    expect(unmetOf({ ...blank, incomeMode: "rider" }))
+      .toEqual(["Income starts", "Benefit base"]);
+    expect(unmetOf({ ...blank, incomeMode: "rider", incomeStartYear: 2032, benefitBase: 1 }))
+      .toEqual([]);
+  });
+
+  it("counts a milestone as an answered start year", () => {
+    expect(unmetOf({
+      ...blank, incomeMode: "rider", benefitBase: 1, incomeStartYearRef: "client_retirement",
+    })).toEqual([]);
+  });
+
+  // The zero trap, from the checklist's side: a $0 payment satisfies every
+  // `!= null` in the stack and then costs the client the whole account value.
+  it("does not count a zero annual payment as answered", () => {
+    expect(unmetOf({
+      ...blank, incomeMode: "annuitized", incomeStartYear: 2032, annuitizedPayment: 0,
+    })).toEqual(["Annual payment"]);
+  });
+
+  // A survivor share of zero, by contrast, IS a real answer.
+  it("counts a survivor share of zero as answered", () => {
+    expect(unmetOf({
+      ...blank, incomeMode: "rider", incomeStartYear: 2032, benefitBase: 1,
+      payoutStructure: "joint_survivor", survivorPct: 0,
+    })).toEqual([]);
   });
 });
 

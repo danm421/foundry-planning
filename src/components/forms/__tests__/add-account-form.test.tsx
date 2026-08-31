@@ -1085,13 +1085,13 @@ describe("AddAccountForm — an account the server does not call an annuity yet"
 
     // The panel, not the dead-end alert.
     expect(screen.queryByText(/could not be loaded/i)).toBeNull();
-    expect(screen.getByLabelText(/^carrier$/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^product type$/i)).toBeInTheDocument();
 
     // The advisor actually FILLS SOMETHING IN — which is what this test is
     // named for, and what separates it from the clobber case below. Without a
     // real edit the save is correctly skipped.
-    fireEvent.change(screen.getByLabelText(/^carrier$/i), {
-      target: { value: "Nationwide" },
+    fireEvent.change(screen.getByLabelText(/^product type$/i), {
+      target: { value: "myga" },
     });
 
     // And the terms they type actually reach the server.
@@ -1165,12 +1165,16 @@ describe("AddAccountForm — a contract that just loaded is not an edit", () => 
     renderAnnuity("edit");
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(ANNUITY_CONTRACT_URL));
 
-    fireEvent.change(screen.getByLabelText(/^carrier$/i), { target: { value: "Nationwide" } });
+    fireEvent.change(screen.getByLabelText(/^product type$/i), { target: { value: "myga" } });
     fireEvent.click(incomeTab());
 
     await waitFor(() => expect(contractWrites()).toHaveLength(1));
     expect(JSON.parse(contractWrites()[0][1].body as string)).toMatchObject({
-      carrier: "Nationwide",
+      productType: "myga",
+      // The carrier is no longer an editable field on the panel, and the write
+      // still carries the one the read handed it. Dropping a control must not
+      // start blanking the column behind it.
+      carrier: "Athene",
     });
   });
 
