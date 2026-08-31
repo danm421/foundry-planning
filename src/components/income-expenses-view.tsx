@@ -144,6 +144,8 @@ interface SavingsRule {
   employerMatchAmount: string | null;
   startYearRef?: string | null;
   endYearRef?: string | null;
+  salaryBasis?: string | null;
+  salaryIncomeIds?: string[] | null;
 }
 
 interface Account {

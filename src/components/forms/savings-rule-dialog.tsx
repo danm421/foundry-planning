@@ -422,7 +422,16 @@ export default function SavingsRuleDialog({
             startYear: Number(body.startYear),
             endYear: Number(body.endYear),
           } as unknown as SavingsRuleRow)
-        : ((await res.json()) as SavingsRuleRow);
+        : {
+            // The DB row round-trips `salaryBasis` (a column) but not
+            // `salaryIncomeIds` (a join table the write routes don't re-query
+            // on save) — without patching it in from what we just sent, a
+            // "selected" rule saved and reopened in the SAME session would
+            // collapse to "owner" before the next full page load re-fetches
+            // the join rows.
+            ...((await res.json()) as SavingsRuleRow),
+            salaryIncomeIds: body.salaryIncomeIds,
+          };
 
       // First-create only: persist any staged schedule rows. Subsequent saves
       // skip this — the Schedule tab manages its own persistence after the
@@ -732,7 +741,7 @@ export default function SavingsRuleDialog({
                 and match fields it would appear and disappear in the MIDDLE
                 of the form and shove the year pickers up and down on every
                 mode toggle. */}
-            {(contribMode === "percent" || matchMode === "percent") && (
+            {(contribMode === "percent" || (showEmployerMatch && matchMode === "percent")) && (
               <div className="col-span-2">
                 <SalaryBasisFields
                   value={salaryBasis}

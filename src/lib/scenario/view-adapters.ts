@@ -191,6 +191,13 @@ export interface SavingsRuleView {
   employerMatchAmount: string | null;
   startYearRef?: string | null;
   endYearRef?: string | null;
+  /** Which salaries the percent contribution + employer match resolve
+   *  against. Carried through so reopening a rule shows what it was actually
+   *  built on — omitting it collapses every rule to "owner" on open,
+   *  silently discarding an advisor's "all"/"selected" choice on next save. */
+  salaryBasis?: string | null;
+  /** Populated only when salaryBasis is "selected"; empty otherwise. */
+  salaryIncomeIds?: string[] | null;
 }
 
 export function savingsRuleEngineToView(rule: EngineSavingsRule): SavingsRuleView {
@@ -212,6 +219,8 @@ export function savingsRuleEngineToView(rule: EngineSavingsRule): SavingsRuleVie
     employerMatchAmount: rule.employerMatchAmount != null ? String(rule.employerMatchAmount) : null,
     startYearRef: rule.startYearRef ?? null,
     endYearRef: rule.endYearRef ?? null,
+    salaryBasis: rule.salaryBasis ?? null,
+    salaryIncomeIds: rule.salaryIncomeIds ?? [],
   };
 }
 

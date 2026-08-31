@@ -17,7 +17,10 @@ export function toSalaryOptions(
   }[],
   ownerNames: { clientName: string; spouseName: string | null } | undefined,
 ): SalaryOption[] {
-  const first = (full: string | null | undefined) => full?.split(" ")[0] ?? null;
+  // Truthiness, not `??`: an empty-string name (not just a missing one)
+  // must also fall through to the "Spouse"/"Client" default below, or an
+  // empty `ownerNames.spouseName` renders the row as "Base Salary — ".
+  const first = (full: string | null | undefined) => full?.split(" ")[0] || null;
   return incomes
     .filter((i) => i.type === "salary" && i.ownerEntityId == null)
     .map((i) => ({
