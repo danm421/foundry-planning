@@ -68,7 +68,11 @@ export interface RetirementSummaryPageData {
   otherExpenses: OtherRetirementExpenses;
   income: RetirementIncomeRow[];
   transactions: AssetTxnRow[];
+  /** Takeaways for the assets/outlook sheet. */
   narrative: string[];
+  /** Takeaways about how retirement is paid for — captioned under the funding
+   *  bar on the income/spending sheet, never repeated in `narrative`. */
+  fundingNarrative: string[];
   cashFlowChartSpec: ChartSpec;
 }
 
@@ -164,6 +168,8 @@ export function buildRetirementSummaryData(
       totalSpend: funding.totalSpending,
     },
     liquid, bars, byType, byTaxType, funding, fundingSources, socialSecurity,
-    living, otherExpenses, income, transactions, narrative, cashFlowChartSpec,
+    living, otherExpenses, income, transactions,
+    narrative: narrative.outlook, fundingNarrative: narrative.funding,
+    cashFlowChartSpec,
   };
 }

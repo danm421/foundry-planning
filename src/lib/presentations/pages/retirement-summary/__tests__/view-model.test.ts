@@ -149,7 +149,9 @@ describe("buildRetirementSummaryData — the funding bar and the narrative share
     );
     const barTotal = data.fundingSources.reduce((s, r) => s + r.value, 0);
     const ss = data.fundingSources.find((r) => r.label === "Social Security")!;
-    const narrativeLine = data.narrative.find((l) => l.includes("largest funding source"))!;
+    // The funding takeaway captions the funding bar (sheet two), so it lives
+    // in `fundingNarrative`, not the outlook takeaways on sheet one.
+    const narrativeLine = data.fundingNarrative.find((l) => l.includes("largest funding source"))!;
     expect(narrativeLine).toContain(`${Math.round((ss.value / barTotal) * 100)}%`);
     expect(narrativeLine).toContain("40%");
     // The unfunded remainder is a segment, so the bar accounts for the whole cost.

@@ -33,6 +33,10 @@ const s = StyleSheet.create({
   narrText: { fontSize: 8, color: T.ink, lineHeight: 1.35, marginBottom: 1.5 },
   empty: { fontSize: 11, color: T.ink2, textAlign: "center", marginTop: 60 },
   note: { fontSize: 6.5, color: T.ink3, marginTop: 4 },
+  // The funding takeaway sits under the bar it describes, as a caption
+  // rather than a second bordered callout: sheet two has ~20pt of slack and
+  // a callout costs 30, which is what spilled a blank third sheet.
+  caption: { fontSize: 7, color: T.ink2, lineHeight: 1.35, marginTop: 4 },
 });
 
 function Kpi({ lbl, val }: { lbl: string; val: string }) {
@@ -158,6 +162,9 @@ export function RetirementSummaryPagePdf(input: RenderPdfInput<RetirementSummary
               bar looks smaller than the client's actual distributions.
               Guarded on the printed figure — see printsAsZero. */}
           {printsAsZero(f.reinvestedSurplus) ? null : <StatRow lbl="Reinvested surplus (not spent)" val={fmtUsd(f.reinvestedSurplus)} />}
+          {data.fundingNarrative.map((line, i) => (
+            <Text key={i} style={s.caption}>{line}</Text>
+          ))}
         </View>
 
         <View style={s.twoCol}>
@@ -199,7 +206,6 @@ export function RetirementSummaryPagePdf(input: RenderPdfInput<RetirementSummary
           <Text style={s.note}>Highlighted row = the age the plan has them claiming. Amounts in today&apos;s dollars.</Text>
         ) : null}
 
-        <Narrative lines={[data.narrative[0]]} />
       </PageFrame>
     </>
   );

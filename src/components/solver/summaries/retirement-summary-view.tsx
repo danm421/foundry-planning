@@ -293,7 +293,7 @@ export function RetirementSummaryView({ data }: { data: RetirementSummaryPageDat
     return <SummaryEmpty message="No data for this scenario yet." />;
   }
 
-  const { kpis, bars, liquid, byType, byTaxType, funding, fundingSources, socialSecurity, living, otherExpenses, income, transactions, narrative, cashFlowChartSpec } = data;
+  const { kpis, bars, liquid, byType, byTaxType, funding, fundingSources, socialSecurity, living, otherExpenses, income, transactions, narrative, fundingNarrative, cashFlowChartSpec } = data;
 
   const palette = dataPalette(theme);
 
@@ -419,6 +419,12 @@ export function RetirementSummaryView({ data }: { data: RetirementSummaryPageDat
                 ]}
               />
             </div>
+            {/* The funding takeaways caption the bar they describe, the way the
+                PDF's second sheet does — they are deliberately not in
+                `narrative`, which belongs to the assets/outlook section. */}
+            {fundingNarrative.map((line, i) => (
+              <p key={i} className="mt-3 text-[12px] leading-snug text-ink-3">{line}</p>
+            ))}
           </div>
         </SummarySection>
       ) : null}
