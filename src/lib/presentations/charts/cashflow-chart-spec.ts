@@ -1,4 +1,5 @@
 import { extent, ticks } from "d3-array";
+import { niceAxisMax, axisTicks, bandLabelIndices } from "./axis";
 import type { CashFlowTableRow, TableMarker } from "../types";
 import type { ChartSpec } from "./types";
 import { PRESENTATION_THEME } from "../theme";
@@ -26,12 +27,26 @@ export function buildCashFlowChartSpec(
   // fractional tick d3 emits for short ranges (e.g. 2026.5 from a 3-year span)
   // resolves to undefined → pinned to the leftmost bar. Keep only integer years
   // that exist in the domain.
-  const xTicks =
+  const evenTicks =
     xExtent[0] === undefined
       ? []
       : ticks(xExtent[0], xExtent[1], 6).filter(
           (t) => Number.isInteger(t) && years.includes(t),
         );
+  // The evenly spaced run stops wherever d3 leaves it, so a 2055-2084 chart
+  // labelled up to 2080 and left its last four bars unnamed. Pin the final
+  // year and drop any regular label that would collide with it.
+  const everyBands =
+    evenTicks.length > 1
+      ? Math.max(1, years.indexOf(evenTicks[1]) - years.indexOf(evenTicks[0]))
+      : Math.max(1, years.length);
+  const xTicks = bandLabelIndices(years.length, {
+    every: everyBands,
+    minGap: 2,
+    pinned: evenTicks.map((t) => years.indexOf(t)),
+  })
+    .map((i) => years[i])
+    .filter((y): y is number => y !== undefined);
 
   // Stacks bottom→top, matching the in-app Cash Flow chart.
   // chartStack order is [SS, Salaries, Other Inflows, RMDs, Withdrawals].
@@ -66,8 +81,8 @@ export function buildCashFlowChartSpec(
   );
   const expenseMax = Math.max(0, ...lines[0].values);
   const yMax = Math.max(expenseMax, ...stackTotals, 1);
-  const yDomainMax = niceCeiling(yMax * 1.05);
-  const yTicks = ticks(0, yDomainMax, 5);
+  const yDomainMax = niceAxisMax(yMax * 1.05);
+  const yTicks = axisTicks(yDomainMax);
 
   // Markers — colors resolved here.
   const specMarkers: ChartSpec["markers"] = markers.map((m) => ({
@@ -108,8 +123,3 @@ export function buildCashFlowChartSpec(
   };
 }
 
-function niceCeiling(v: number): number {
-  if (v <= 0) return 1;
-  const magnitude = Math.pow(10, Math.floor(Math.log10(v)));
-  return Math.ceil(v / magnitude) * magnitude;
-}

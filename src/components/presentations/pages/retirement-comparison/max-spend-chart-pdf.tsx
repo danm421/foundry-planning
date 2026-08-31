@@ -21,8 +21,22 @@ export function MaxSpendChartPdf({ series, width = 500 }: { series: MaxSpendPoin
     series.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(sel(p)).toFixed(1)}`).join(" ");
 
   const first = series[0], last = series[n - 1];
-  const endLabel = (v: number, color: string) => (
-    <SvgText x={x(n - 1) + 4} y={y(v) + 2.5} textAnchor="start" style={{ fontSize: 7, fontWeight: 600, fill: color, fontFamily: MONO }}>
+  // The two plans can converge — $693K over $673K — and then the end labels
+  // print on top of each other. Spread them just far enough to read, keeping
+  // whichever line is higher on top.
+  const MIN_LABEL_GAP = 9;
+  const endY = (() => {
+    const s = y(last.scenario) + 2.5;
+    const b = y(last.base) + 2.5;
+    if (Math.abs(s - b) >= MIN_LABEL_GAP) return { scenario: s, base: b };
+    const mid = (s + b) / 2;
+    const half = MIN_LABEL_GAP / 2;
+    return s <= b
+      ? { scenario: mid - half, base: mid + half }
+      : { scenario: mid + half, base: mid - half };
+  })();
+  const endLabel = (v: number, at: number, color: string) => (
+    <SvgText x={x(n - 1) + 4} y={at} textAnchor="start" style={{ fontSize: 7, fontWeight: 600, fill: color, fontFamily: MONO }}>
       {fmtAxisUsd(v)}
     </SvgText>
   );
@@ -40,8 +54,8 @@ export function MaxSpendChartPdf({ series, width = 500 }: { series: MaxSpendPoin
         <SvgText x={x(0)} y={y(first.base) + 9} textAnchor="start" style={{ fontSize: 6.5, fill: CURRENT, fontFamily: MONO }}>{fmtAxisUsd(first.base)}</SvgText>
 
         {/* end-value labels (to the right of each endpoint) */}
-        {endLabel(last.scenario, PROPOSED)}
-        {endLabel(last.base, CURRENT)}
+        {endLabel(last.scenario, endY.scenario, PROPOSED)}
+        {endLabel(last.base, endY.base, CURRENT)}
 
         {/* year ticks */}
         {[0, n - 1].map((i) => (

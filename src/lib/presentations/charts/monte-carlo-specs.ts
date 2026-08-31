@@ -2,6 +2,7 @@ import { ticks } from "d3-array";
 import { PRESENTATION_THEME as T } from "../theme";
 import type { MonteCarloSummary } from "@/engine";
 import type { HistogramSeries } from "@/lib/monte-carlo/histogram-series";
+import { niceAxisMax } from "./axis";
 
 type Margin = { top: number; right: number; bottom: number; left: number };
 
@@ -12,11 +13,6 @@ function margin(left: number): Margin {
   return { top: 20, right: 16, bottom: 40, left };
 }
 
-function niceCeiling(v: number): number {
-  if (v <= 0) return 1;
-  const magnitude = Math.pow(10, Math.floor(Math.log10(v)));
-  return Math.ceil(v / magnitude) * magnitude;
-}
 
 // ── Fan chart ────────────────────────────────────────────────────────────────
 export interface FanChartSpec {
@@ -57,7 +53,7 @@ export function buildFanChartSpec(input: BuildFanChartSpecInput): FanChartSpec {
   const median = byYear.map((r) => r.balance.p50);
 
   const yMaxRaw = Math.max(1, ...upper, ...(deterministic ?? []));
-  const yDomainMax = niceCeiling(yMaxRaw * 1.05);
+  const yDomainMax = niceAxisMax(yMaxRaw * 1.05);
   const xTicks = years.length <= 8 ? years : ticks(years[0], years[years.length - 1], 8);
 
   return {
@@ -104,7 +100,7 @@ export function buildHistogramChartSpec(series: HistogramSeries): HistogramChart
   const x0 = bins.length ? bins[0].x0 : 0;
   const x1 = bins.length ? bins[bins.length - 1].x1 : 1;
   const yMax = Math.max(1, ...bins.map((b) => b.count));
-  const yDomainMax = niceCeiling(yMax * 1.1);
+  const yDomainMax = niceAxisMax(yMax * 1.1);
 
   const percentileMarkers = [
     { value: series.p5, label: "P5", emphasis: false },

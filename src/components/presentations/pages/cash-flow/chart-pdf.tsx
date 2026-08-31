@@ -2,7 +2,7 @@ import { View, Svg, G, Rect, Line, Polyline, Text as SvgText } from "@react-pdf/
 import type { ChartSpec } from "@/lib/presentations/charts/types";
 import { scaleLinear, scaleBand } from "d3-scale";
 import { PRESENTATION_THEME } from "@/lib/presentations/theme";
-import { legendSlot, stackRects } from "./chart-geom";
+import { legendLayout, legendSlot, LEGEND_LABEL_X, stackRects } from "./chart-geom";
 
 export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
   const innerW = spec.width - spec.margin.left - spec.margin.right;
@@ -18,6 +18,10 @@ export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
     .range([innerH, 0]);
 
   const barWidth = x.bandwidth();
+
+  // The legend starts at the left margin, so the room it has is the plot's own
+  // width — never the canvas's.
+  const legend = legendLayout(spec.legend.items.length, innerW);
 
   return (
     <View>
@@ -133,9 +137,9 @@ export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
         {/* Legend at bottom */}
         <G transform={`translate(${spec.margin.left}, ${spec.height - spec.margin.bottom + 28})`}>
           {spec.legend.items.map((item, i) => {
-            // Wraps — see `legendSlot`. The second row sits inside the bottom
+            // Wraps — see `legendLayout`. A second row sits inside the bottom
             // margin the legend already lives in, so nothing needs to grow.
-            const slot = legendSlot(i);
+            const slot = legendSlot(i, legend);
             return (
               <G key={`lg-${item.label}`} transform={`translate(${slot.x}, ${slot.y})`}>
                 {item.kind === "swatch" ? (
@@ -144,7 +148,7 @@ export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
                   <Line x1={0} x2={10} y1={-2} y2={-2} stroke={item.color} strokeWidth={1.5} />
                 )}
                 <SvgText
-                  x={14}
+                  x={LEGEND_LABEL_X}
                   y={2}
                   style={{ fontFamily: "Inter", fontSize: 7, fill: PRESENTATION_THEME.ink2 }}
                 >
