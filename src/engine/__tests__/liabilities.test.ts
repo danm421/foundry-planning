@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { computeLiabilities, amortizeLiability } from "../liabilities";
+import { buildLiabilitySchedules } from "../liability-schedules";
+import type { Liability } from "../types";
 import { sampleLiabilities } from "./fixtures";
 
 describe("amortizeLiability", () => {
@@ -101,5 +103,41 @@ describe("amortizeLiability with extra payments", () => {
     const result = amortizeLiability(liab, 2027);
     expect(result.annualPayment).toBe(0);
     expect(result.endingBalance).toBe(0);
+  });
+});
+
+// $120,000 of graduate debt at 6.5% on an income-driven plan paying $450/mo
+// against $650/mo of accrued interest. The balance grows to $218,084.19 by the
+// end of the 240-month term.
+const idrLoan: Liability = {
+  id: "liab-idr",
+  name: "Grad school loans",
+  balance: 120000,
+  interestRate: 0.065,
+  monthlyPayment: 450,
+  startYear: 2026,
+  startMonth: 1,
+  termMonths: 240,
+  balanceAsOfYear: 2026,
+  balanceAsOfMonth: 1,
+  extraPayments: [],
+  owners: [],
+};
+
+describe("computeLiabilities — a forgiven loan", () => {
+  it("reports a normal payment and a zero balance in the forgiveness year", () => {
+    const forgiven: Liability = { ...idrLoan, forgiveAtTermEnd: true };
+    const result = computeLiabilities(
+      [forgiven],
+      2045,
+      undefined,
+      buildLiabilitySchedules([forgiven]),
+    );
+
+    // The write-off is not cash. The year's outflow is twelve payments and
+    // nothing more, even though the balance falls $218,084.19 to zero.
+    expect(result.byLiability["liab-idr"]).toBeCloseTo(5400, 2);
+    expect(result.totalPayment).toBeCloseTo(5400, 2);
+    expect(result.updatedLiabilities[0].balance).toBe(0);
   });
 });

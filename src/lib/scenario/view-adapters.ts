@@ -277,6 +277,7 @@ export interface LiabilityViewEngineFields {
   linkedPropertyId: string | null;
   ownerEntityId: string | null;
   isInterestDeductible: boolean;
+  forgiveAtTermEnd: boolean;
 }
 
 export function liabilityEngineToView(liability: EngineLiability): LiabilityViewEngineFields {
@@ -294,6 +295,7 @@ export function liabilityEngineToView(liability: EngineLiability): LiabilityView
     linkedPropertyId: liability.linkedPropertyId ?? null,
     ownerEntityId: controllingEntity(liability) ?? null,
     isInterestDeductible: liability.isInterestDeductible ?? false,
+    forgiveAtTermEnd: liability.forgiveAtTermEnd ?? false,
   };
 }
 

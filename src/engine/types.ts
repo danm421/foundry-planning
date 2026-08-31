@@ -1166,6 +1166,10 @@ export interface Liability {
    *  for household-originated liabilities. */
   ownerFamilyMemberId?: string;
   isInterestDeductible?: boolean;
+  /** When true the schedule writes off whatever balance remains at the end of
+   *  the term instead of paying it. Inert on held-flat rows — they build no
+   *  schedule. */
+  forgiveAtTermEnd?: boolean;
   /** Debt-type discriminator. `credit_card` → held flat (non-amortizing) by
    *  the engine. Null/absent → amortizing term loan (legacy behavior). */
   liabilityType?: LiabilityType | null;

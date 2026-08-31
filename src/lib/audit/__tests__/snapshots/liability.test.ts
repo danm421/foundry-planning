@@ -25,6 +25,7 @@ const row: typeof liabilities.$inferSelect = {
   linkedPropertyId: null,
   parentAccountId: null,
   isInterestDeductible: true,
+  forgiveAtTermEnd: false,
   // Phase 2 columns — nullable
   liabilityType: null,
   minimumPayment: null,
