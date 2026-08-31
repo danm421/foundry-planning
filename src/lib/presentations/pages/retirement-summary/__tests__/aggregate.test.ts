@@ -17,6 +17,10 @@ function pa(over: Partial<ProjectionYear["portfolioAssets"]>) {
 function yr(year: number, over: Partial<ProjectionYear>): ProjectionYear {
   return { year, portfolioAssets: pa({}), accountLedgers: {}, expenses: {} as never, ...over } as unknown as ProjectionYear;
 }
+/** Minimal account ledger: only the two values the BoY roll-forward reads. */
+function led(beginningValue: number, endingValue: number) {
+  return { beginningValue, endingValue, growth: 0, contributions: 0, distributions: 0 } as never;
+}
 
 describe("fmtUsd / fmtPct", () => {
   it("formats compactly", () => {
@@ -41,13 +45,48 @@ describe("retirementYearOf", () => {
 });
 
 describe("liquidThreePoints", () => {
-  it("reads liquidTotal at now, retirement, and last year", () => {
+  // "Now" is the only one of the three that means *today*. A projection row is
+  // an END-of-year snapshot, so reading year 1's `liquidTotal` handed the KPI a
+  // balance that already includes a full year of growth, savings and
+  // withdrawals — money the client does not have yet. Retirement and end-of-life
+  // are genuinely future points, so those stay on the end-of-year figure.
+  it("reads today's balance for `now` — before year 1's growth", () => {
     const years = [
-      yr(2026, { portfolioAssets: pa({ liquidTotal: 2_400_000 }) }),
+      yr(2026, {
+        portfolioAssets: pa({ taxable: { brk: 2_400_000 }, taxableTotal: 2_400_000, liquidTotal: 2_400_000 }),
+        accountLedgers: { brk: led(2_000_000, 2_400_000) },
+      }),
       yr(2031, { portfolioAssets: pa({ liquidTotal: 3_100_000 }) }),
       yr(2056, { portfolioAssets: pa({ liquidTotal: 1_800_000 }) }),
     ];
-    expect(liquidThreePoints(years, 2031)).toEqual({ now: 2_400_000, retirement: 3_100_000, endOfLife: 1_800_000 });
+    expect(liquidThreePoints(years, 2031)).toEqual({
+      now: 2_000_000,
+      retirement: 3_100_000,
+      endOfLife: 1_800_000,
+    });
+  });
+
+  // Only the buckets that compose `liquidTotal` count. A house is on the ledger
+  // like everything else, so an unfiltered beginning-value sum would quietly
+  // report net worth as the liquid portfolio.
+  it("excludes illiquid accounts from `now`", () => {
+    const years = [
+      yr(2026, {
+        portfolioAssets: pa({
+          cash: { chk: 100_000 },
+          cashTotal: 100_000,
+          realEstate: { house: 900_000 },
+          realEstateTotal: 900_000,
+          liquidTotal: 100_000,
+        }),
+        accountLedgers: { chk: led(90_000, 100_000), house: led(850_000, 900_000) },
+      }),
+    ];
+    expect(liquidThreePoints(years, 2026).now).toBe(90_000);
+  });
+
+  it("is 0 with no projection years", () => {
+    expect(liquidThreePoints([], 2031)).toEqual({ now: 0, retirement: 0, endOfLife: 0 });
   });
 });
 

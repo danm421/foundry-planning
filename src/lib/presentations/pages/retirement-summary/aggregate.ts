@@ -1,5 +1,6 @@
 // src/lib/presentations/pages/retirement-summary/aggregate.ts
 import type { ClientData, ProjectionYear } from "@/engine/types";
+import { liquidPortfolioBoy } from "@/engine/portfolio-snapshot";
 import { isRetirementLivingExpense } from "@/lib/solver/living-expense";
 
 // ── Formatting (single source; page-pdf + chart import these) ────────────────
@@ -39,7 +40,13 @@ function retirementYearRow(years: ProjectionYear[], retirementYear: number): Pro
 export interface LiquidThreePoints { now: number; retirement: number; endOfLife: number; }
 
 export function liquidThreePoints(years: ProjectionYear[], retirementYear: number): LiquidThreePoints {
-  const now = years[0]?.portfolioAssets.liquidTotal ?? 0;
+  // A projection row is an END-of-year snapshot. "Now" means today, before the
+  // first year's growth, savings and withdrawals have happened, so it is the
+  // beginning-of-year-1 balance — rebuilt from the same liquid buckets that
+  // compose `liquidTotal` so the three checkpoints stay one measure. The other
+  // two are genuinely future points and keep their end-of-year figure.
+  const first = years[0];
+  const now = first ? liquidPortfolioBoy(first, years) : 0;
   const ret = retirementYearRow(years, retirementYear)?.portfolioAssets.liquidTotal ?? 0;
   const eol = years[years.length - 1]?.portfolioAssets.liquidTotal ?? 0;
   return { now, retirement: ret, endOfLife: eol };
