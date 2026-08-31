@@ -320,8 +320,11 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
       notesReceivable={notesReceivableRows}
       incomes={effectiveTree.incomes.map((i) => ({
         id: i.id,
+        type: i.type,
         name: i.name,
         annualAmount: i.annualAmount,
+        owner: i.owner,
+        ownerEntityId: i.ownerEntityId ?? null,
         ownerAccountId: i.ownerAccountId ?? null,
         startYear: i.startYear,
         endYear: i.endYear,

@@ -85,6 +85,15 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
 
   const milestones = approximateMilestones(people, goals, new Date().getFullYear());
 
+  // Salaries a percent-of-salary savings rule can be based on. Shared by the
+  // rule dialog and both Add/Edit Account mounts below. `ownerNames` isn't a
+  // prop this view carries, so it's built from `people` the same way the
+  // account dialogs' own `ownerNames` are.
+  const salaryOptions = toSalaryOptions(Object.values(incomeRows), {
+    clientName: people.client.firstName,
+    spouseName: people.spouse?.firstName ?? null,
+  });
+
   const writer = useScenarioWriter(clientId);
   const router = useRouter();
   const withScenario = useScenarioPreservingHref();
@@ -566,12 +575,7 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
           schedule={savingsEditing ? props.savingsSchedules[savingsEditing.id] : undefined}
           familyMembers={props.familyMemberOptions}
           resolvedInflationRate={props.resolvedInflationRate}
-          // `ownerNames` isn't a prop this view carries — built inline the
-          // same way the two `AddAccountDialog` call sites below already do.
-          salaries={toSalaryOptions(Object.values(incomeRows), {
-            clientName: people.client.firstName,
-            spouseName: people.spouse?.firstName ?? null,
-          })}
+          salaries={salaryOptions}
         />
       )}
 
@@ -592,6 +596,7 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
           clientName: people.client.firstName,
           spouseName: people.spouse?.firstName ?? null,
         }}
+        salaries={salaryOptions}
         clientFirstName={people.client.firstName}
         spouseFirstName={people.spouse?.firstName}
         milestones={milestones}
@@ -623,6 +628,7 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
             clientName: people.client.firstName,
             spouseName: people.spouse?.firstName ?? null,
           }}
+          salaries={salaryOptions}
           clientFirstName={people.client.firstName}
           spouseFirstName={people.spouse?.firstName}
           milestones={milestones}
