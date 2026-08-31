@@ -75,3 +75,69 @@ describe("lifetimeFunding", () => {
     expect(f.shortfall).toBe(0);
   });
 });
+
+describe("lifetimeFunding — sources are capped at what actually funded spending", () => {
+  const accounts = [
+    acct("cash1", "cash", "savings"),
+    acct("ira1", "retirement", "traditional_ira"),
+  ];
+
+  it("does not count forced RMD cash beyond the year's expenses as funding", () => {
+    // SS 30k + a forced 40k RMD against 50k of expenses. Only 50k funded
+    // spending; the other 20k was reinvested, not spent.
+    const years = [
+      yr(2031, {
+        income: { socialSecurity: 30_000, salaries: 0, business: 0, deferred: 0, capitalGains: 0, trust: 0, other: 0 },
+        withdrawals: { byAccount: {}, total: 0 },
+        accountLedgers: { ira1: { rmdAmount: 40_000 } },
+        totalExpenses: 50_000,
+      }),
+    ];
+    const f = lifetimeFunding(years as ProjectionYear[], accounts, 2031);
+    expect(f.socialSecurity).toBe(30_000);
+    expect(f.rmds).toBe(20_000);          // capped: 50k − 30k already covered by SS
+    expect(f.reinvestedSurplus).toBe(20_000);
+    expect(f.totalFunded).toBe(50_000);
+  });
+
+  it("makes the funding sources plus the shortfall reconcile to total spending", () => {
+    const years = [
+      yr(2031, {
+        income: { socialSecurity: 30_000, salaries: 0, business: 0, deferred: 0, capitalGains: 0, trust: 0, other: 0 },
+        withdrawals: { byAccount: {}, total: 0 },
+        accountLedgers: { ira1: { rmdAmount: 40_000 } },
+        totalExpenses: 50_000,
+      }),
+      yr(2032, {
+        income: { socialSecurity: 30_000, salaries: 0, business: 0, deferred: 0, capitalGains: 0, trust: 0, other: 0 },
+        withdrawals: { byAccount: { cash1: 5_000 }, total: 5_000 },
+        accountLedgers: { ira1: { rmdAmount: 0 } },
+        totalExpenses: 60_000, // funded 35k → 25k short
+      }),
+    ];
+    const f = lifetimeFunding(years as ProjectionYear[], accounts, 2031);
+    const sources =
+      f.socialSecurity + f.otherIncome + f.rmds +
+      f.withdrawalsCash + f.withdrawalsTaxable + f.withdrawalsPreTax + f.withdrawalsRoth;
+    expect(sources).toBe(f.totalFunded);
+    expect(f.totalFunded + f.shortfall).toBe(f.totalSpending);
+    expect(f.shortfall).toBe(25_000);
+  });
+
+  it("draws sources in engine order — income, then forced RMDs, then withdrawals", () => {
+    // Expenses are covered by SS alone; everything after it is surplus.
+    const years = [
+      yr(2031, {
+        income: { socialSecurity: 90_000, salaries: 0, business: 0, deferred: 0, capitalGains: 0, trust: 0, other: 0 },
+        withdrawals: { byAccount: { cash1: 4_000 }, total: 4_000 },
+        accountLedgers: { ira1: { rmdAmount: 7_000 } },
+        totalExpenses: 50_000,
+      }),
+    ];
+    const f = lifetimeFunding(years as ProjectionYear[], accounts, 2031);
+    expect(f.socialSecurity).toBe(50_000);
+    expect(f.rmds).toBe(0);
+    expect(f.withdrawalsCash).toBe(0);
+    expect(f.reinvestedSurplus).toBe(51_000); // 40k SS + 7k RMD + 4k withdrawal
+  });
+});

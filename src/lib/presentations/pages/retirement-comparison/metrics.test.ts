@@ -25,7 +25,7 @@ describe("buildRetirementComparisonMetrics", () => {
     const m = buildRetirementComparisonMetrics({
       baseYears, scenarioYears: scnYears,
       baseSuccess: 0.72, scenarioSuccess: 0.91,
-      retirementYear: 2026,
+      baseRetirementYear: 2026, scenarioRetirementYear: 2026,
     });
     // 2026: base 90, scenario 120 → floor 90, scenarioAhead 30, baseAhead 0
     const y2026 = m.overlay.find((o) => o.year === 2026)!;
@@ -38,19 +38,43 @@ describe("buildRetirementComparisonMetrics", () => {
     const m = buildRetirementComparisonMetrics({
       baseYears, scenarioYears: scnYears,
       baseSuccess: 0.72, scenarioSuccess: 0.91,
-      retirementYear: 2026,
+      baseRetirementYear: 2026, scenarioRetirementYear: 2026,
     });
-    expect(m.matrix.retirementYear).toBe(2026);
-    expect(m.matrix.endOfLifeYear).toBe(2027);
+    expect(m.matrix.baseRetirementYear).toBe(2026);
+    expect(m.matrix.scenarioRetirementYear).toBe(2026);
+    expect(m.matrix.baseEndYear).toBe(2027);
+    expect(m.matrix.scenarioEndYear).toBe(2027);
     expect(m.matrix.scenarioAtEnd.total).toBe(150);
     expect(m.matrix.baseAtRetirement.total).toBe(90);
+  });
+
+  it("reads each plan at its own retirement year", () => {
+    const m = buildRetirementComparisonMetrics({
+      baseYears, scenarioYears: scnYears,
+      baseSuccess: 0.72, scenarioSuccess: 0.91,
+      baseRetirementYear: 2027, scenarioRetirementYear: 2025,
+    });
+    expect(m.matrix.baseAtRetirement.total).toBe(80);      // base in 2027
+    expect(m.matrix.scenarioAtRetirement.total).toBe(100); // scenario in 2025
+    expect(m.matrix.baseRetirementYear).toBe(2027);
+    expect(m.matrix.scenarioRetirementYear).toBe(2025);
+  });
+
+  it("reports the year it fell back to when a projection runs short", () => {
+    const m = buildRetirementComparisonMetrics({
+      baseYears, scenarioYears: scnYears,
+      baseSuccess: null, scenarioSuccess: null,
+      baseRetirementYear: 2099, scenarioRetirementYear: 2026,
+    });
+    expect(m.matrix.baseRetirementYear).toBe(2027); // last row, not 2099
+    expect(m.matrix.baseAtRetirement.total).toBe(80);
   });
 
   it("emits a PoS KPI with a points delta and good direction", () => {
     const m = buildRetirementComparisonMetrics({
       baseYears, scenarioYears: scnYears,
       baseSuccess: 0.72, scenarioSuccess: 0.91,
-      retirementYear: 2026,
+      baseRetirementYear: 2026, scenarioRetirementYear: 2026,
     });
     const pos = m.kpis.find((k) => k.label === "Plan Confidence")!;
     expect(pos.base).toBe("72%");

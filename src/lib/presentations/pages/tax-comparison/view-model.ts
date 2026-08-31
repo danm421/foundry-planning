@@ -29,7 +29,14 @@ export interface BracketComparisonRow {
   direction: 1 | -1 | 0;
 }
 export interface CompositionSide { roth: number; preTax: number; taxable: number; total: number }
-export interface CompositionComparison { year: number; base: CompositionSide; scenario: CompositionSide }
+export interface CompositionComparison {
+  /** Each plan retires in its own year, and each side is measured at its own —
+   *  printing only the scenario's year dated the base column wrongly. */
+  baseYear: number;
+  scenarioYear: number;
+  base: CompositionSide;
+  scenario: CompositionSide;
+}
 export interface TaxComparisonChartYear {
   year: number;
   federalOrdinary: number;
@@ -176,7 +183,8 @@ export function buildTaxComparisonData(
   const composition: CompositionComparison | null =
     baseComp || scnComp
       ? {
-          year: scnComp?.year ?? baseComp!.year,
+          baseYear: baseComp?.year ?? scnComp!.year,
+          scenarioYear: scnComp?.year ?? baseComp!.year,
           base: baseComp ? { roth: baseComp.roth, preTax: baseComp.preTax, taxable: baseComp.taxable, total: baseComp.total } : EMPTY_SIDE,
           scenario: scnComp ? { roth: scnComp.roth, preTax: scnComp.preTax, taxable: scnComp.taxable, total: scnComp.total } : EMPTY_SIDE,
         }

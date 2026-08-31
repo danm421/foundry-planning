@@ -58,9 +58,11 @@ export function buildRetirementComparisonAiPrompt(args: RetirementComparisonAiAr
     .map((k) => `- ${k.label}: Base ${k.base} → Scenario ${k.scenario} (${k.deltaLabel}).`)
     .join("\n");
   const m = args.matrix;
+  // Each side carries its own year: the two plans retire in different years, and
+  // handing the model one year for both invited it to narrate a false like-for-like.
   const matrixLines = [
-    `At retirement (${m.retirementYear}): Base ${fmtUsd(m.baseAtRetirement.total)} → Scenario ${fmtUsd(m.scenarioAtRetirement.total)}.`,
-    `At end of life (${m.endOfLifeYear}): Base ${fmtUsd(m.baseAtEnd.total)} → Scenario ${fmtUsd(m.scenarioAtEnd.total)}.`,
+    `At retirement: Base ${fmtUsd(m.baseAtRetirement.total)} in ${m.baseRetirementYear} → Scenario ${fmtUsd(m.scenarioAtRetirement.total)} in ${m.scenarioRetirementYear}.`,
+    `At end of life: Base ${fmtUsd(m.baseAtEnd.total)} in ${m.baseEndYear} → Scenario ${fmtUsd(m.scenarioAtEnd.total)} in ${m.scenarioEndYear}.`,
   ].join("\n");
   const changeBlock = args.changeLines.length
     ? args.changeLines.map((l) => `- ${l}`).join("\n")

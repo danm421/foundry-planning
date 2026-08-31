@@ -15,6 +15,7 @@ import { MaxSpendChartPdf } from "./max-spend-chart-pdf";
 import { ConfidenceRangeChartPdf } from "./confidence-range-chart-pdf";
 import { TaxTreatmentChartPdf } from "./tax-treatment-chart-pdf";
 import { MONO } from "./chart-axis";
+import { horizonYearsLabel } from "@/lib/presentations/shared/horizon-label";
 
 const s = StyleSheet.create({
   verdict: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderLeftWidth: 3, borderLeftColor: T.good, borderRadius: 3, padding: 10, marginBottom: 10 },
@@ -99,11 +100,11 @@ export function RetirementComparisonPagePdf(input: RenderPdfInput<RetirementComp
 
         <View style={s.panel}>
           <Text style={s.h4}>Portfolio assets over time — proposed vs. current</Text>
-          <OverlayBarsPdf bars={data.overlay} retirementYear={data.atRetirement.year} />
+          <OverlayBarsPdf bars={data.overlay} retirementYear={data.atRetirement.scenarioYear} />
         </View>
 
         <View style={s.panel}>
-          <Text style={s.h4}>{`At retirement (${data.atRetirement.year}) — portfolio assets by tax treatment`}</Text>
+          <Text style={s.h4}>{`At retirement (${horizonYearsLabel(data.atRetirement.baseYear, data.atRetirement.scenarioYear, "current")}) — portfolio assets by tax treatment`}</Text>
           <TaxTreatmentChartPdf data={data.atRetirement} />
         </View>
       </PageFrame>
@@ -181,7 +182,7 @@ export function RetirementComparisonPagePdf(input: RenderPdfInput<RetirementComp
 
         {data.showPortfolioMatrix ? (
           <View style={s.panel}>
-            <Text style={s.h4}>{`At end of life (${data.atEndOfLife.year}) — portfolio assets by tax treatment`}</Text>
+            <Text style={s.h4}>{`At end of life (${horizonYearsLabel(data.atEndOfLife.baseYear, data.atEndOfLife.scenarioYear, "current")}) — portfolio assets by tax treatment`}</Text>
             <TaxTreatmentChartPdf data={data.atEndOfLife} compact />
           </View>
         ) : null}

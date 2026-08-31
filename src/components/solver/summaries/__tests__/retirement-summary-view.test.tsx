@@ -87,6 +87,7 @@ const POPULATED: RetirementSummaryPageData = {
     shortfall: 0,
     totalSpending: 2_400_000,
     totalFunded: 2_400_000,
+    reinvestedSurplus: 0,
   },
   fundingSources: [
     { label: "Social Security", value: 480_000 },

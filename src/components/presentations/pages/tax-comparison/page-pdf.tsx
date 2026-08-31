@@ -9,6 +9,7 @@ import type {
 } from "@/lib/presentations/pages/tax-comparison/view-model";
 import { fmtUsd } from "@/lib/presentations/pages/tax-summary/aggregate";
 import { TaxComparisonChartPdf } from "./chart-pdf";
+import { horizonYearsLabel } from "@/lib/presentations/shared/horizon-label";
 
 const s = StyleSheet.create({
   title: { fontSize: 16, fontWeight: 700, marginBottom: 2 },
@@ -135,7 +136,7 @@ export function TaxComparisonPagePdf(input: RenderPdfInput<TaxComparisonPageData
 
               {data.composition && (data.composition.base.total > 0 || data.composition.scenario.total > 0) ? (
                 <View style={{ marginTop: 10 }}>
-                  <Text style={s.h4}>{`Account composition at retirement (${data.composition.year})`}</Text>
+                  <Text style={s.h4}>{`Account composition at retirement (${horizonYearsLabel(data.composition.baseYear, data.composition.scenarioYear)})`}</Text>
                   <Text style={s.compTrackLbl}>Base</Text>
                   <SplitBar side={data.composition.base} />
                   <Text style={s.compTrackLbl}>Proposed</Text>

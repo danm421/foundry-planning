@@ -316,7 +316,8 @@ export function RetirementSummaryView({ data }: { data: RetirementSummaryPageDat
   const fundingSegments: SplitSegment[] = fundingRows.map((r, i) => ({
     label: r.label,
     value: r.value,
-    color: FUNDING_COLORS[i % FUNDING_COLORS.length] ?? palette.grey,
+    // The unfunded remainder is a gap, not a source — grey, never a source colour.
+    color: r.unfunded ? palette.grey : FUNDING_COLORS[i % FUNDING_COLORS.length] ?? palette.grey,
   }));
 
   const hasSs = socialSecurity.client != null || socialSecurity.spouse != null;
@@ -409,9 +410,11 @@ export function RetirementSummaryView({ data }: { data: RetirementSummaryPageDat
                     label: <span className="font-semibold text-ink">Total cost of retirement</span>,
                     value: <span className="font-semibold text-ink tabular-nums">{fmtUsd(funding.totalSpending)}</span>,
                   },
+                  // Forced RMD cash the plan never had to spend — without it
+                  // the bar reads smaller than the client's distributions.
                   // Guarded on the printed figure — see printsAsZero.
-                  ...(!printsAsZero(funding.shortfall)
-                    ? [{ label: <span className="text-crit">Shortfall (unfunded)</span>, value: <span className="tabular-nums text-crit">{fmtUsd(funding.shortfall)}</span> }]
+                  ...(!printsAsZero(funding.reinvestedSurplus)
+                    ? [{ label: <span className="text-ink-3">Reinvested surplus (not spent)</span>, value: <span className="tabular-nums text-ink-3">{fmtUsd(funding.reinvestedSurplus)}</span> }]
                     : []),
                 ]}
               />

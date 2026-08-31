@@ -15,7 +15,10 @@ export interface RetirementComparisonMetricsInput {
   scenarioYears: ProjectionYear[];
   baseSuccess: number | null;     // 0..1 or null when MC unavailable
   scenarioSuccess: number | null;
-  retirementYear: number;
+  /** Each plan retires in its own year — one shared year measured the base
+   *  plan mid-accumulation and reported it as its retirement portfolio. */
+  baseRetirementYear: number;
+  scenarioRetirementYear: number;
 }
 
 export interface RetirementComparisonMetrics {
@@ -29,21 +32,28 @@ const fmtPct = (v: number | null): string => (v == null ? "—" : `${Math.round(
 const signed = (v: number, fmt: (n: number) => string) =>
   v >= 0 ? `+${fmt(v)}` : `−${fmt(Math.abs(v))}`;
 
-function cellAt(years: ProjectionYear[], year: number): PortfolioMatrixCell {
+/** The requested year's cell, plus the year it actually came from — a
+ *  projection that runs short falls back to its last row, and the page must
+ *  label the year it measured rather than the one it asked for. */
+function cellAt(years: ProjectionYear[], year: number): { cell: PortfolioMatrixCell; year: number } {
   const y = years.find((r) => r.year === year) ?? years[years.length - 1];
   const pa = y.portfolioAssets;
   return {
-    total: pa.liquidTotal,
-    cash: pa.cashTotal,
-    retirement: pa.retirementTotal,
-    taxable: pa.taxableTotal,
+    cell: {
+      total: pa.liquidTotal,
+      cash: pa.cashTotal,
+      retirement: pa.retirementTotal,
+      taxable: pa.taxableTotal,
+    },
+    year: y.year,
   };
 }
 
 export function buildRetirementComparisonMetrics(
   input: RetirementComparisonMetricsInput,
 ): RetirementComparisonMetrics {
-  const { baseYears, scenarioYears, baseSuccess, scenarioSuccess, retirementYear } = input;
+  const { baseYears, scenarioYears, baseSuccess, scenarioSuccess,
+          baseRetirementYear, scenarioRetirementYear } = input;
 
   // Overlay (blue floor / green scenario-ahead / grey base-ahead), keyed on scenario years.
   const baseByYear = new Map(baseYears.map((y) => [y.year, Math.max(0, liquidPortfolioTotal(y))]));
@@ -58,14 +68,20 @@ export function buildRetirementComparisonMetrics(
     };
   });
 
-  const endOfLifeYear = scenarioYears[scenarioYears.length - 1]?.year ?? retirementYear;
+  const endOfLifeYear = scenarioYears[scenarioYears.length - 1]?.year ?? scenarioRetirementYear;
+  const baseRet = cellAt(baseYears, baseRetirementYear);
+  const scnRet = cellAt(scenarioYears, scenarioRetirementYear);
+  const baseEol = cellAt(baseYears, endOfLifeYear);
+  const scnEol = cellAt(scenarioYears, endOfLifeYear);
   const matrix: PortfolioMatrix = {
-    retirementYear,
-    endOfLifeYear,
-    baseAtRetirement: cellAt(baseYears, retirementYear),
-    scenarioAtRetirement: cellAt(scenarioYears, retirementYear),
-    baseAtEnd: cellAt(baseYears, endOfLifeYear),
-    scenarioAtEnd: cellAt(scenarioYears, endOfLifeYear),
+    baseRetirementYear: baseRet.year,
+    scenarioRetirementYear: scnRet.year,
+    baseEndYear: baseEol.year,
+    scenarioEndYear: scnEol.year,
+    baseAtRetirement: baseRet.cell,
+    scenarioAtRetirement: scnRet.cell,
+    baseAtEnd: baseEol.cell,
+    scenarioAtEnd: scnEol.cell,
   };
 
   // KPIs.

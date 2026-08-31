@@ -51,12 +51,15 @@ const data: RetirementComparisonPageData = {
   ],
   overlay,
   atRetirement: {
-    year: 2037,
+    // The two plans retire five years apart — the header must name both.
+    baseYear: 2042,
+    scenarioYear: 2037,
     base: { cash: 352_000, taxable: 1_700_000, preTax: 2_050_000, roth: 100_000, hsa: 50_000 },
     scenario: { cash: 683_000, taxable: 3_500_000, preTax: 1_600_000, roth: 600_000, hsa: 80_000 },
   },
   atEndOfLife: {
-    year: 2070,
+    baseYear: 2070,
+    scenarioYear: 2070,
     base: { cash: 736_000, taxable: 5_700_000, preTax: 4_200_000, roth: 150_000, hsa: 0 },
     scenario: { cash: 29_000, taxable: 20_400_000, preTax: 12_000_000, roth: 1_900_000, hsa: 0 },
   },

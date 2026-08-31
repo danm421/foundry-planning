@@ -108,9 +108,39 @@ describe("buildTaxComparisonData", () => {
 
   it("compares Roth/pre-tax/taxable composition at retirement", () => {
     const c = buildTaxComparisonData(ctxFor("bracket"), opts).composition!;
-    expect(c.year).toBe(2030);
+    expect(c.baseYear).toBe(2030);
+    expect(c.scenarioYear).toBe(2030);
     expect(c.base.roth).toBe(100_000);
     expect(c.scenario.roth).toBe(350_000);
+  });
+
+  it("names each side's own retirement year when the two plans differ", () => {
+    // The scenario retires a year later. The page used to print only the
+    // scenario's year over both columns, dating the base figure wrongly.
+    const scnBundle = bundle(scnYears, 350_000, "Retire a year later", "bracket") as unknown as {
+      clientData: { client: { retirementAge: number } };
+    };
+    scnBundle.clientData.client.retirementAge = 66; // retires 2031
+    const ctx = {
+      bundlesByRef: { base: bundle(baseYears, 100_000, "Base Case", "bracket"), "scenario:s1": scnBundle },
+    } as unknown as BuildDataContext;
+    const c = buildTaxComparisonData(ctx, opts).composition!;
+    expect(c.baseYear).toBe(2030);
+    expect(c.scenarioYear).toBe(2031);
+  });
+
+  it("dates each side by the year it measured, not the year it asked for", () => {
+    // The scenario's retirement year is past the end of its projection;
+    // computeRetirementComposition falls back to the first row.
+    const scnBundle = bundle(scnYears, 350_000, "Retire much later", "bracket") as unknown as {
+      clientData: { client: { retirementAge: number } };
+    };
+    scnBundle.clientData.client.retirementAge = 80; // 2045 — not projected
+    const ctx = {
+      bundlesByRef: { base: bundle(baseYears, 100_000, "Base Case", "bracket"), "scenario:s1": scnBundle },
+    } as unknown as BuildDataContext;
+    const c = buildTaxComparisonData(ctx, opts).composition!;
+    expect(c.scenarioYear).toBe(2030);
   });
 
   it("opens the narrative with the lifetime-tax reduction", () => {

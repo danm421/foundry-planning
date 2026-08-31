@@ -149,11 +149,15 @@ export function RetirementSummaryPagePdf(input: RenderPdfInput<RetirementSummary
           <Text style={s.h4}>{`How retirement is funded (${data.kpis.retirementYear}–${data.bars[data.bars.length - 1]?.year ?? data.kpis.retirementYear})`}</Text>
           <SplitBarPdf segments={fundingRows.map((r, i) => ({
             label: r.label, value: r.value,
-            color: [T.steel, T.good, T.accentMuted, dataLight.blue, T.accent, T.crit, T.good][i % 7],
+            // The unfunded remainder is a gap, not a source — grey, never a
+            // source colour, and never counted in the source rotation.
+            color: r.unfunded ? T.hair2 : [T.steel, T.good, T.accentMuted, dataLight.blue, T.accent, T.crit, T.good][i % 7],
           }))} />
           <StatRow lbl="Total cost of retirement" val={fmtUsd(f.totalSpending)} />
-          {/* Guarded on the printed figure — see printsAsZero. */}
-          {printsAsZero(f.shortfall) ? null : <StatRow lbl="Shortfall (unfunded)" val={fmtUsd(f.shortfall)} />}
+          {/* Forced RMD cash the plan never had to spend. Without this row the
+              bar looks smaller than the client's actual distributions.
+              Guarded on the printed figure — see printsAsZero. */}
+          {printsAsZero(f.reinvestedSurplus) ? null : <StatRow lbl="Reinvested surplus (not spent)" val={fmtUsd(f.reinvestedSurplus)} />}
         </View>
 
         <View style={s.twoCol}>

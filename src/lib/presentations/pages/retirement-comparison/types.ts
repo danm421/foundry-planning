@@ -41,8 +41,13 @@ export interface PortfolioMatrixCell {
 }
 
 export interface PortfolioMatrix {
-  retirementYear: number;
-  endOfLifeYear: number;
+  /** The year each side was actually measured at. The two plans retire in
+   *  different years, and a projection that runs short is read at its last
+   *  row — so neither horizon can be labelled with a single number. */
+  baseRetirementYear: number;
+  scenarioRetirementYear: number;
+  baseEndYear: number;
+  scenarioEndYear: number;
   baseAtRetirement: PortfolioMatrixCell;
   scenarioAtRetirement: PortfolioMatrixCell;
   baseAtEnd: PortfolioMatrixCell;
@@ -91,7 +96,9 @@ export interface KpiCard {
  *  plans. Drives the page-1 at-retirement comparison and the page-2 condensed
  *  end-of-life table. Zero buckets are hidden at render time. */
 export interface TaxTreatmentBreakdown {
-  year: number;
+  /** The year each side was actually measured at — see PortfolioMatrix. */
+  baseYear: number;
+  scenarioYear: number;
   base: TaxBuckets;
   scenario: TaxBuckets;
 }

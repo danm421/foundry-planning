@@ -6,7 +6,7 @@ import { buildCashFlowPageData } from "../cash-flow/view-model";
 import {
   retirementYearOf, liquidThreePoints, portfolioBars, assetsByType, assetsByTaxType,
   livingExpensesTodayVsRetirement, otherRetirementExpenses, incomeInRetirement,
-  assetTransactionsInRetirement, fmtPct,
+  assetTransactionsInRetirement, fmtPct, printsAsZero,
   type PortfolioBar, type AssetsByType, type AssetsByTaxType, type LiquidThreePoints,
   type LivingExpenseCompare, type OtherRetirementExpenses, type RetirementIncomeRow, type AssetTxnRow,
 } from "./aggregate";
@@ -14,9 +14,12 @@ import { buildSocialSecurity, type SsBreakdown, type SsClient } from "./social-s
 import { lifetimeFunding, type FundingBreakdown } from "@/lib/retirement/retirement-funding";
 import { buildRetirementNarrative } from "./narrative";
 
-/** Lifetime funding sources in display order — the single source of truth for
- *  both the dominant-source narrative signal and the page's funding bar. */
-export interface FundingSource { label: string; value: number; }
+/** One segment of the lifetime funding bar, in display order — the single
+ *  source of truth for both the dominant-source narrative signal and the page's
+ *  funding bar. The trailing `unfunded` segment is the shortfall, not a source:
+ *  it is there so the bar accounts for the whole cost of retirement and the
+ *  percentage it shows is the same percentage the narrative prints. */
+export interface FundingSource { label: string; value: number; unfunded?: boolean; }
 
 const FUNDING_KEYS: Array<{ key: keyof FundingBreakdown; label: string }> = [
   { key: "socialSecurity", label: "Social Security" },
@@ -84,7 +87,13 @@ export function buildRetirementSummaryData(
   const byType = assetsByType(years, retYear);
   const byTaxType = assetsByTaxType(years, clientData, retYear);
   const funding = lifetimeFunding(years, clientData.accounts, retYear);
-  const fundingSources: FundingSource[] = FUNDING_KEYS.map((f) => ({ label: f.label, value: funding[f.key] as number }));
+  const sources: FundingSource[] = FUNDING_KEYS.map((f) => ({ label: f.label, value: funding[f.key] as number }));
+  // Sources are capped at what they actually funded, so they sum to
+  // totalSpending − shortfall. Adding the shortfall back closes the bar on the
+  // cost of retirement, which is the denominator the narrative uses.
+  const fundingSources: FundingSource[] = printsAsZero(funding.shortfall)
+    ? sources
+    : [...sources, { label: "Unfunded", value: funding.shortfall, unfunded: true }];
   const socialSecurity = buildSocialSecurity(clientData, nowYear, ctx.clientName, ctx.spouseName ?? "Spouse");
   const living = livingExpensesTodayVsRetirement(years, clientData, retYear);
   const otherExpenses = otherRetirementExpenses(years, retYear);
@@ -118,7 +127,7 @@ export function buildRetirementSummaryData(
   const mcRate = ctx.monteCarlo?.summary.successRate ?? null;
 
   // Narrative inputs.
-  const dominant = fundingSources.reduce<FundingSource | null>(
+  const dominant = sources.reduce<FundingSource | null>(
     (best, c) => (best == null || c.value > best.value ? c : best), null);
   const dominantSource =
     dominant && funding.totalSpending > 0

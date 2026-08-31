@@ -26,6 +26,7 @@ import type {
 import { fmtUsdCompact } from "@/lib/presentations/pages/retirement-comparison/format";
 import { chartChrome, dataPalette, useThemeName } from "@/lib/chart-colors";
 import { SummaryLayout, SummarySection, SummaryKpiRow, SummaryTable, SummaryEmpty } from "./primitives";
+import { horizonYearsLabel } from "@/lib/presentations/shared/horizon-label";
 
 ChartJS.register(
   CategoryScale, LinearScale, BarElement, LineElement, PointElement,
@@ -177,11 +178,11 @@ export function RetirementComparisonView({ data }: { data: RetirementComparisonP
         </SummarySection>
       ) : null}
 
-      <SummarySection heading={`Assets by tax treatment at retirement (${data.atRetirement.year})`}>
+      <SummarySection heading={`Assets by tax treatment at retirement (${horizonYearsLabel(data.atRetirement.baseYear, data.atRetirement.scenarioYear)})`}>
         <TreatmentTable breakdown={data.atRetirement} />
       </SummarySection>
 
-      <SummarySection heading={`Assets by tax treatment at end of life (${data.atEndOfLife.year})`}>
+      <SummarySection heading={`Assets by tax treatment at end of life (${horizonYearsLabel(data.atEndOfLife.baseYear, data.atEndOfLife.scenarioYear)})`}>
         <TreatmentTable breakdown={data.atEndOfLife} />
       </SummarySection>
     </SummaryLayout>
