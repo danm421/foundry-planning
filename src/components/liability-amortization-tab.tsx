@@ -77,7 +77,7 @@ interface LiabilityAmortizationTabProps {
   termMonths: number;
   balanceAsOfMonth?: number;
   balanceAsOfYear?: number;
-  forgiveAtTermEnd?: boolean;
+  forgiveAtTermEnd: boolean;
 }
 
 export default function LiabilityAmortizationTab({
@@ -165,7 +165,14 @@ export default function LiabilityAmortizationTab({
       term,
       scheduleExtraPayments,
       startMonth || 1,
-      forgiveAtTermEnd ?? false
+      // A real term is required, not the `|| 360` fallback above. The form
+      // gates the checkbox's `disabled` but not its `checked`, so a liability
+      // whose term was cleared after the box was ticked still posts `true`.
+      // The engine holds such a row flat (isHeldFlatLiability covers
+      // termMonths <= 0) and builds no schedule at all, so modelling
+      // forgiveness here would draw a write-off ~30 years out that the
+      // projection does not have.
+      forgiveAtTermEnd && termMonths > 0
     );
   }, [originalBalance, balance, interestRate, monthlyPayment, startYear, startMonth, termMonths, scheduleExtraPayments, forgiveAtTermEnd]);
 
