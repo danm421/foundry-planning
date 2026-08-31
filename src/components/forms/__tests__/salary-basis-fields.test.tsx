@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
@@ -33,6 +33,24 @@ describe("SalaryBasisFields", () => {
       expect(box).toBeChecked();
       expect(box).toBeDisabled();
     }
+  });
+
+  it("unchecking All salaries emits the owner fallback, not a leaked id list", async () => {
+    // incomeIds is non-empty here on purpose: with an empty array a leak bug
+    // (`incomeIds: value.incomeIds` instead of a hardcoded `[]`) would emit the
+    // exact same payload as the correct code and this assertion would not
+    // distinguish them. A stale/non-empty list alongside basis "all" is the
+    // shape that actually exposes the leak.
+    const onChange = vi.fn();
+    render(
+      <SalaryBasisFields
+        value={{ basis: "all", incomeIds: ["inc-1", "inc-2", "inc-3"] }}
+        onChange={onChange}
+        salaries={SALARIES}
+      />,
+    );
+    await userEvent.click(screen.getByLabelText(/all salaries/i));
+    expect(onChange).toHaveBeenCalledWith({ basis: "owner", incomeIds: [] });
   });
 
   it("checking every individual box promotes to All salaries", async () => {
