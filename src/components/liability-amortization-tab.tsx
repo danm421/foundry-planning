@@ -463,7 +463,7 @@ export default function LiabilityAmortizationTab({
               <td className="px-3 py-2 text-right">{fmt(totals.interest)}</td>
               <td className="px-3 py-2 text-right">
                 {totals.forgivenAmount > 0
-                  ? `${fmt(totals.principal)} + ${fmt(totals.forgivenAmount)} forgiven`
+                  ? `${fmt(totals.principal)} (${fmt(totals.forgivenAmount)} forgiven)`
                   : fmt(totals.principal)}
               </td>
               <td className="px-3 py-2 text-right">{fmt(totals.extraPayment)}</td>
