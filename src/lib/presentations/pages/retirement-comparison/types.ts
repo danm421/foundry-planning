@@ -89,6 +89,12 @@ export interface KpiCard {
   base: string;       // formatted
   scenario: string;   // formatted
   delta: string;      // formatted signed delta, e.g. "+16 pts" / "+$23.6M"
+  /** Whether the move is favorable, for coloring: 1 good, -1 bad, 0 neutral.
+   *  The sign of the delta cannot stand in for this — retiring earlier prints
+   *  "−5 yrs" and is good — and two of these five metrics point opposite ways,
+   *  so the renderers have nothing to derive it from. Set in the view-model
+   *  beside each delta so both surfaces color the same number the same way. */
+  direction: 1 | -1 | 0;
   show: boolean;
 }
 

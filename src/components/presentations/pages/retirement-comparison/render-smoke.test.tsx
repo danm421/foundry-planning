@@ -44,10 +44,10 @@ const data: RetirementComparisonPageData = {
   isEmpty: false,
   verdict: { headline: "99% chance your plan fully funds your life — up from 83%." },
   kpis: [
-    { label: "Plan confidence", base: "83%", scenario: "99%", delta: "+16 pts", show: true },
-    { label: "Legacy to heirs", base: "$10.8M", scenario: "$34.4M", delta: "+$23.6M", show: true },
-    { label: "Max sustainable spend", base: "$92K/yr", scenario: "$214K/yr", delta: "+$122K/yr", show: true },
-    { label: "Downside ending balance", base: "$1.5M", scenario: "$13.9M", delta: "+$12.4M", show: true },
+    { label: "Plan confidence", base: "83%", scenario: "99%", delta: "+16 pts", direction: 1, show: true },
+    { label: "Legacy to heirs", base: "$10.8M", scenario: "$34.4M", delta: "+$23.6M", direction: 0, show: true },
+    { label: "Max sustainable spend", base: "$92K/yr", scenario: "$214K/yr", delta: "+$122K/yr", direction: 1, show: true },
+    { label: "Downside ending balance", base: "$1.5M", scenario: "$13.9M", delta: "+$12.4M", direction: 1, show: true },
   ],
   overlay,
   atRetirement: {

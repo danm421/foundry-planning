@@ -47,7 +47,10 @@ const s = StyleSheet.create({
   kpiBase: { fontSize: 8, color: T.ink3, fontFamily: MONO },
   kpiArrow: { fontSize: 8, color: T.ink3, marginHorizontal: 3 },
   kpiScn: { fontSize: 13, fontWeight: 600, color: T.ink, fontFamily: MONO },
-  kpiDelta: { fontSize: 7.5, fontWeight: 600, color: T.good, marginTop: 3, fontFamily: MONO },
+  // Colour comes from the card's `direction`, not from here — the delta used to
+  // be unconditionally T.good, which printed a 17-point DROP in plan confidence
+  // in the success colour.
+  kpiDelta: { fontSize: 7.5, fontWeight: 600, marginTop: 3, fontFamily: MONO },
 
   note: { fontSize: 6.5, color: T.ink3, marginTop: 4, lineHeight: 1.3 },
 
@@ -56,6 +59,10 @@ const s = StyleSheet.create({
   placeholder: { fontSize: 8, color: T.ink3, fontStyle: "italic" },
   empty: { fontSize: 11, color: T.ink2, textAlign: "center", marginTop: 60 },
 });
+
+function deltaColor(direction: 1 | -1 | 0): string {
+  return direction === 1 ? T.good : direction === -1 ? T.crit : T.ink;
+}
 
 function KpiCardView({ card }: { card: KpiCard }) {
   return (
@@ -67,7 +74,7 @@ function KpiCardView({ card }: { card: KpiCard }) {
           <Text style={s.kpiArrow}>→</Text>
           <Text style={s.kpiScn}>{card.scenario}</Text>
         </View>
-        {card.delta ? <Text style={s.kpiDelta}>{card.delta}</Text> : null}
+        {card.delta ? <Text style={[s.kpiDelta, { color: deltaColor(card.direction) }]}>{card.delta}</Text> : null}
       </View>
     </View>
   );

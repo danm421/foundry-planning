@@ -33,6 +33,11 @@ ChartJS.register(
   LineController, BarController, Tooltip, Legend,
 );
 
+// Neutral (0) uses full ink to match the canonical PDF renderer
+// (presentations/pages/retirement-comparison/page-pdf.tsx), so identical KPI
+// data reads consistently across the live view and the exported PDF.
+const dirClass = (d: 1 | -1 | 0) => (d === 1 ? "text-good" : d === -1 ? "text-crit" : "text-ink");
+
 function ComparisonKpiCard({ kpi }: { kpi: KpiCardData }) {
   if (!kpi.show) return null;
   return (
@@ -42,7 +47,7 @@ function ComparisonKpiCard({ kpi }: { kpi: KpiCardData }) {
       <div className="mt-auto">
         <div className="mt-1 flex items-baseline gap-2">
           <span className="text-lg font-semibold text-ink">{kpi.scenario}</span>
-          {kpi.delta ? <span className="text-[12px] font-medium text-good">{kpi.delta}</span> : null}
+          {kpi.delta ? <span className={`text-[12px] font-medium ${dirClass(kpi.direction)}`}>{kpi.delta}</span> : null}
         </div>
         <div className="text-[11px] text-ink-3">Base {kpi.base}</div>
       </div>

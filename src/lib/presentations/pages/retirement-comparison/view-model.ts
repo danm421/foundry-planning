@@ -74,6 +74,19 @@ function signedUsd(delta: number): string {
   return `${delta >= 0 ? "+" : "−"}${fmtUsdCompact(Math.abs(delta))}`;
 }
 
+/** Higher-is-better: an increase is favorable. Mirrors `costDirection` in the
+ *  Tax Comparison view-model, which is the same idea pointing the other way. */
+function benefitDirection(delta: number | null): 1 | -1 | 0 {
+  if (delta == null) return 0;
+  return delta > 0 ? 1 : delta < 0 ? -1 : 0;
+}
+
+/** Lower-is-better: a decrease is favorable. */
+function costDirection(delta: number | null): 1 | -1 | 0 {
+  if (delta == null) return 0;
+  return delta < 0 ? 1 : delta > 0 ? -1 : 0;
+}
+
 export function buildRetirementComparisonData(
   ctx: BuildDataContext,
   options: RetirementComparisonOptions,
@@ -197,6 +210,9 @@ export function buildRetirementComparisonData(
           : `${retirementAgeDelta > 0 ? "+" : "−"}${Math.abs(retirementAgeDelta)} ${
               Math.abs(retirementAgeDelta) === 1 ? "yr" : "yrs"
             }`,
+      // Retiring earlier prints a negative delta and is the good outcome, so
+      // the sign is the opposite of the tone.
+      direction: costDirection(retirementAgeDelta),
       show: baseRetirementAge != null && scnRetirementAge != null,
     },
     {
@@ -204,6 +220,7 @@ export function buildRetirementComparisonData(
       base: baseSuccess == null ? "—" : `${Math.round(baseSuccess * 100)}%`,
       scenario: scnSuccess == null ? "—" : `${Math.round(scnSuccess * 100)}%`,
       delta: successPts == null ? "" : `${successPts >= 0 ? "+" : "−"}${Math.abs(successPts)} pts`,
+      direction: benefitDirection(successPts),
       show: successPts != null,
     },
     {
@@ -211,6 +228,10 @@ export function buildRetirementComparisonData(
       base: fmtUsdCompact(baseLegacy),
       scenario: fmtUsdCompact(scnLegacy),
       delta: signedUsd(scnLegacy - baseLegacy),
+      // Neutral on purpose. Less legacy is exactly what a client who chose to
+      // raise their own spending bought with it, and the deck does not know
+      // which they intended — so it states the move without judging it.
+      direction: 0,
       show: true,
     },
     {
@@ -218,6 +239,7 @@ export function buildRetirementComparisonData(
       base: `${fmtUsdCompact(baseToday)}/yr`,
       scenario: `${fmtUsdCompact(scnToday)}/yr`,
       delta: `${signedUsd(scnToday - baseToday)}/yr`,
+      direction: maxSpendAvailable ? benefitDirection(scnToday - baseToday) : 0,
       show: maxSpendAvailable,
     },
     {
@@ -225,6 +247,10 @@ export function buildRetirementComparisonData(
       base: baseDownside == null ? "—" : fmtUsdCompact(baseDownside),
       scenario: scnDownside == null ? "—" : fmtUsdCompact(scnDownside),
       delta: baseDownside == null || scnDownside == null ? "" : signedUsd(scnDownside - baseDownside),
+      direction:
+        baseDownside == null || scnDownside == null
+          ? 0
+          : benefitDirection(scnDownside - baseDownside),
       show: baseDownside != null && scnDownside != null,
     },
   ];

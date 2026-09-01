@@ -119,6 +119,40 @@ describe("buildRetirementComparisonData", () => {
     expect(downside.scenario).toBe("$13.9M");
   });
 
+  // The strip printed every delta in the success colour whichever way it moved,
+  // and the renderers had nothing to branch on. Direction is the fix, and the
+  // sign of the delta is NOT a stand-in for it — see the retirement-age case.
+  it("marks an all-improving scenario good, and legacy neutral either way", () => {
+    const d = buildRetirementComparisonData(ctx, opts);
+    expect(d.kpis.map((k) => [k.label, k.direction])).toEqual([
+      ["Retirement age", 0],            // both retire at 65 — no move, no tone
+      ["Plan confidence", 1],
+      ["Legacy to heirs", 0],           // neutral by design, though it ROSE here
+      ["Max sustainable spend", 1],
+      ["Downside ending balance", 1],
+    ]);
+  });
+
+  it("marks a scenario that gives up confidence, spend and downside bad", () => {
+    // Every figure moves the other way from `ctx`: 73% → 60% confidence,
+    // $110K → $70K of spend, $13.9M → $0.4M of downside balance, and less
+    // legacy. Only legacy should hold its tone.
+    const worse = {
+      bundlesByRef: {
+        base: bundle(scnYears, 0.73, 110_000, scnAccounts, 13_900_000, 65),
+        "scenario:s1": bundle(baseYears, 0.6, 70_000, [], 400_000, 65),
+      },
+    } as unknown as BuildDataContext;
+    const d = buildRetirementComparisonData(worse, opts);
+    expect(d.kpis.map((k) => [k.label, k.delta, k.direction])).toEqual([
+      ["Retirement age", "", 0],
+      ["Plan confidence", "−13 pts", -1],
+      ["Legacy to heirs", "−$890K", 0],
+      ["Max sustainable spend", "−$40K/yr", -1],
+      ["Downside ending balance", "−$13.5M", -1],
+    ]);
+  });
+
   // Retiring five years earlier is the headline change an advisor makes, and
   // the strip never named it — the deck showed only its consequences.
   it("prints each plan's retirement age, and a signed year delta", () => {
@@ -134,6 +168,20 @@ describe("buildRetirementComparisonData", () => {
     expect(age.scenario).toBe("60");
     expect(age.delta).toBe("−5 yrs");
     expect(age.show).toBe(true);
+    // The tone is the OPPOSITE of the sign here: five years earlier is good.
+    expect(age.direction).toBe(1);
+  });
+
+  it("marks a later retirement age bad, mirroring the earlier-is-good case", () => {
+    const later = {
+      bundlesByRef: {
+        base: bundle(baseYears, 0.73, 90_000, [], 1_500_000, 65),
+        "scenario:s1": bundle(scnYears, 0.91, 110_000, scnAccounts, 13_900_000, 70),
+      },
+    } as unknown as BuildDataContext;
+    const age = buildRetirementComparisonData(later, opts).kpis[0];
+    expect(age.delta).toBe("+5 yrs");
+    expect(age.direction).toBe(-1);
   });
 
   it("leaves the delta blank when neither plan moves the retirement age", () => {
