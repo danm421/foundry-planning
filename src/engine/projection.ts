@@ -3807,6 +3807,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // applySavingsRules via itemProrationGate, so re-applying it here would
     // double-discount. The tax-side salary number (`income.salaries`) IS
     // prorated — that comes from computeIncome and is used for tax/cashflow.
+    //
+    // Salary per income id, for rules that name specific salaries. Built inside
+    // the salaryByOwner loop on purpose: it inherits that loop's filters —
+    // personal salaries only, inside their year range, grown to the year, and
+    // deliberately UNPRORATED for a partial retirement year. A separately-built
+    // map would re-introduce the double-proration the comment above warns about.
+    const salaryByIncomeId: Record<string, number> = {};
     for (const inc of currentIncomes) {
       if (inc.type !== "salary") continue;
       if (inc.ownerEntityId != null) continue;
@@ -3815,12 +3822,26 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const inflateFrom = inc.inflationStartYear ?? inc.startYear;
       const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom);
       salaryByOwner[inc.owner] += amount;
+      salaryByIncomeId[inc.id] = (salaryByIncomeId[inc.id] ?? 0) + amount;
     }
     const totalHouseholdSalary =
       salaryByOwner.client + salaryByOwner.spouse + salaryByOwner.joint;
     // `accountById` is declared once at function scope above the year loop.
     const salaryByRuleId: Record<string, number> = {};
     for (const rule of data.savingsRules) {
+      if (rule.salaryBasis === "all") {
+        salaryByRuleId[rule.id] = totalHouseholdSalary;
+        continue;
+      }
+      if (rule.salaryBasis === "selected" && rule.salaryIncomeIds?.length) {
+        // An id missing from the map contributes 0: the income was deleted, or
+        // it is outside its own start/end years this year. Both are correct.
+        salaryByRuleId[rule.id] = rule.salaryIncomeIds.reduce(
+          (sum, id) => sum + (salaryByIncomeId[id] ?? 0),
+          0,
+        );
+        continue;
+      }
       const acct = accountById.get(rule.accountId);
       if (acct) {
         const cfm = controllingFamilyMember(acct);

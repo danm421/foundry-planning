@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { scenarios, savingsRules } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { scenarios, savingsRules, savingsRuleSalaryIncomes } from "@/db/schema";
+import { eq, and, inArray, asc } from "drizzle-orm";
 import { requireOrgAndUser } from "@/lib/db-helpers";
 import { verifyClientAccess, requireClientEditAccess } from "@/lib/clients/authz";
 import { requireActiveSubscriptionForFirm, authErrorResponse } from "@/lib/authz";
@@ -40,7 +40,32 @@ export async function GET(
       .from(savingsRules)
       .where(and(eq(savingsRules.clientId, id), eq(savingsRules.scenarioId, scenarioId)));
 
-    return NextResponse.json(rows);
+    // A rule's salary basis is stored in two halves: `salaryBasis` is a column
+    // on the row above, but the salaries a "selected" basis names live in a
+    // join table. Returning the column alone is worse than returning neither —
+    // the Savings tab seeds its panel from `salaryIncomeIds`, finds none, falls
+    // back to "owner", and the next Save Changes deletes the advisor's picks.
+    const ruleIds = rows.map((r) => r.id);
+    const salaryIncomeRows = ruleIds.length
+      ? await db
+          .select()
+          .from(savingsRuleSalaryIncomes)
+          .where(inArray(savingsRuleSalaryIncomes.savingsRuleId, ruleIds))
+          .orderBy(
+            asc(savingsRuleSalaryIncomes.savingsRuleId),
+            asc(savingsRuleSalaryIncomes.sortOrder),
+          )
+      : [];
+    const salaryIncomeIdsByRuleId = new Map<string, string[]>();
+    for (const r of salaryIncomeRows) {
+      const ids = salaryIncomeIdsByRuleId.get(r.savingsRuleId) ?? [];
+      ids.push(r.incomeId);
+      salaryIncomeIdsByRuleId.set(r.savingsRuleId, ids);
+    }
+
+    return NextResponse.json(
+      rows.map((r) => ({ ...r, salaryIncomeIds: salaryIncomeIdsByRuleId.get(r.id) ?? [] })),
+    );
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

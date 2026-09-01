@@ -77,6 +77,7 @@ vi.mock("@/db", async () => {
 import { getTableName } from "drizzle-orm";
 import {
   accounts,
+  incomes,
   liabilities,
   entities,
   externalBeneficiaries,
@@ -89,6 +90,7 @@ import {
 import {
   assertAccountsInClient,
   assertBusinessAccountsInClient,
+  assertIncomesInClient,
   assertLiabilitiesInClient,
   assertEntitiesInClient,
   assertFamilyMembersInClient,
@@ -158,6 +160,20 @@ describe("assertBusinessAccountsInClient", () => {
   it("rejects a business account owned by another client (clientId filter guard)", async () => {
     setTable(accounts, [{ id: A, client_id: "cB", category: "business" }]);
     expect((await assertBusinessAccountsInClient("cA", [A])).ok).toBe(false);
+  });
+});
+
+describe("assertIncomesInClient", () => {
+  it("is ok when the income belongs to the client", async () => {
+    setTable(incomes, [{ id: A, client_id: "cA" }]);
+    expect((await assertIncomesInClient("cA", [A])).ok).toBe(true);
+  });
+
+  it("rejects an income owned by another client (clientId filter guard)", async () => {
+    setTable(incomes, [{ id: A, client_id: "cB" }]);
+    const res = await assertIncomesInClient("cA", [A]);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.reason).toContain(A);
   });
 });
 

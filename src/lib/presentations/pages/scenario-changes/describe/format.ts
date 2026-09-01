@@ -29,6 +29,8 @@ const FIELD_LABELS: Record<string, string> = {
   balance: "Balance",
   percentage: "Percentage",
   rate: "Rate",
+  salaryBasis: "Salary basis",
+  salaryIncomeIds: "Salaries used",
 };
 
 export function fieldLabel(field: string): string {

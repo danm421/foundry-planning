@@ -40,7 +40,10 @@ const s = StyleSheet.create({
   // space-between pins the value block to the card bottom so values align across 1- vs 2-line labels
   kpi: { flex: 1, justifyContent: "space-between", backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderRadius: 3, padding: 8 },
   kpiLbl: { fontSize: 6.5, color: T.ink2, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3, lineHeight: 1.2 },
-  kpiVals: { flexDirection: "row", alignItems: "baseline", marginTop: 5 },
+  // wrap: at five cards a card is ~82pt wide, and a rate-valued pair
+  // ("$170K/yr → $175K/yr") needs ~114pt. Without this the scenario value
+  // overprints the arrow and runs past the card border into its neighbour.
+  kpiVals: { flexDirection: "row", flexWrap: "wrap", alignItems: "baseline", marginTop: 5 },
   kpiBase: { fontSize: 8, color: T.ink3, fontFamily: MONO },
   kpiArrow: { fontSize: 8, color: T.ink3, marginHorizontal: 3 },
   kpiScn: { fontSize: 13, fontWeight: 600, color: T.ink, fontFamily: MONO },

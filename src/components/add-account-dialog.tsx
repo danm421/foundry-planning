@@ -4,6 +4,7 @@ import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import DialogShell from "./dialog-shell";
 import AddAccountForm, { AccountFormInitial, EntityOption, CategoryDefaults, ModelPortfolioOption, BusinessOption } from "./forms/add-account-form";
+import type { SalaryOption } from "./forms/salary-basis-fields";
 import type { FundPortfolioOption } from "@/lib/investments/load-fund-portfolio-options";
 import AddNoteReceivableForm, { NoteReceivableFormInitial } from "./forms/add-note-receivable-form";
 import { type AssetClassOption } from "./forms/asset-mix-tab";
@@ -33,6 +34,9 @@ interface AddAccountDialogProps {
   modelPortfolios?: ModelPortfolioOption[];
   fundPortfolios?: FundPortfolioOption[];
   ownerNames?: { clientName: string; spouseName: string | null };
+  /** Salary incomes a percent-of-salary savings rule can be based on. Without
+   *  it the rule's Salary basis panel says the plan has no salaries. */
+  salaries?: readonly SalaryOption[];
   assetClasses?: AssetClassOption[];
   portfolioAllocationsMap?: Record<string, { assetClassId: string; weight: number }[]>;
   categoryDefaultSources?: Record<string, { source: string; portfolioId?: string; portfolioName?: string; blendedReturn?: number }>;
@@ -71,6 +75,7 @@ export default function AddAccountDialog({
   modelPortfolios,
   fundPortfolios,
   ownerNames,
+  salaries,
   assetClasses,
   portfolioAllocationsMap,
   categoryDefaultSources,
@@ -180,6 +185,7 @@ export default function AddAccountDialog({
               modelPortfolios={modelPortfolios}
               fundPortfolios={fundPortfolios}
               ownerNames={ownerNames}
+              salaries={salaries}
               assetClasses={assetClasses}
               portfolioAllocationsMap={portfolioAllocationsMap}
               categoryDefaultSources={categoryDefaultSources}

@@ -319,6 +319,17 @@ describe("isBaseSavableMutation", () => {
     expect(isBaseSavableMutation({ kind: "relocation-upsert", id: "r", value: null })).toBe(false);
     expect(isBaseSavableMutation({ kind: "stress-exemption-cap", cap: 5_000_000 })).toBe(false);
   });
+
+  it("is false for savings-salary-basis (the join-table choice has no ColumnPatch case)", () => {
+    // Regression for the data-loss finding: this kind has no case in
+    // mutationsToBaseUpdates (salaryIncomeIds is a join table, not a scalar
+    // column ColumnPatch can carry), so it must not report base-savable —
+    // otherwise Save-to-base would drop the advisor's salary basis silently
+    // AND clear it from the working set.
+    expect(
+      isBaseSavableMutation({ kind: "savings-salary-basis", accountId: "acct1", basis: "selected", incomeIds: ["inc1"] }),
+    ).toBe(false);
+  });
 });
 
 // Completeness guard: every mutation kind that reports base-savable MUST produce

@@ -468,6 +468,8 @@ type RawSavingsRule = {
   startYearRef?: string | null;
   endYearRef?: string | null;
   scheduleOverrides?: Record<number, number>;
+  salaryBasis?: string | null;
+  salaryIncomeIds?: string[] | null;
 };
 
 export function resolveSavingsRuleFromRaw(
@@ -495,5 +497,16 @@ export function resolveSavingsRuleFromRaw(
     startYearRef: raw.startYearRef ?? null,
     endYearRef: raw.endYearRef ?? null,
     growthSource: raw.growthSource ?? null,
+    // "selected" with nothing selected is not a state the write path can
+    // create, but the FK cascade can: delete every salary a rule named and the
+    // mode outlives its list. Collapse it here so the engine only ever sees a
+    // basis it can act on.
+    salaryBasis:
+      raw.salaryBasis === "all"
+        ? "all"
+        : raw.salaryBasis === "selected" && (raw.salaryIncomeIds?.length ?? 0) > 0
+          ? "selected"
+          : "owner",
+    salaryIncomeIds: raw.salaryIncomeIds ?? [],
   };
 }

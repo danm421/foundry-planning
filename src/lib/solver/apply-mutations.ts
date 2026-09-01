@@ -178,6 +178,14 @@ export function applyMutations(
         );
         break;
       }
+      case "savings-salary-basis": {
+        result.savingsRules = result.savingsRules.map((r) =>
+          r.accountId === m.accountId
+            ? { ...r, salaryBasis: m.basis, salaryIncomeIds: m.incomeIds }
+            : r,
+        );
+        break;
+      }
       case "savings-roth-percent": {
         result.savingsRules = result.savingsRules.map((r) =>
           r.accountId === m.accountId ? { ...r, rothPercent: m.rothPercent } : r,

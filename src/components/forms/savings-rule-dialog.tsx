@@ -30,6 +30,11 @@ import DeductibleContributionCheckbox, {
 import ContributionCapCheckbox, {
   supportsContributionCap,
 } from "./contribution-cap-checkbox";
+import SalaryBasisFields, {
+  type SalaryBasisValue,
+  type SalaryOption,
+  inferSalaryBasis,
+} from "./salary-basis-fields";
 import DialogShell from "@/components/dialog-shell";
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
 
@@ -86,6 +91,8 @@ export interface SavingsRuleRow {
   startYearRef?: string | null;
   endYearRef?: string | null;
   rothPercent?: string | null;
+  salaryBasis?: string | null;
+  salaryIncomeIds?: string[] | null;
 }
 
 export interface ClientInfoForDialog {
@@ -123,6 +130,10 @@ interface SavingsRuleDialogProps {
    *  client / spouse / joint. Without it every rule defaults to the client. */
   familyMembers?: readonly { id: string; role: string }[];
   resolvedInflationRate: number;
+  /** Salary incomes offered as the percent's basis. Scenario-effective where
+   *  the caller has them — a base-scoped list would omit a scenario-added
+   *  salary, the same trap `household-map-view` calls out for SS incomes. */
+  salaries?: readonly SalaryOption[];
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -140,6 +151,7 @@ export default function SavingsRuleDialog({
   ownerNames,
   familyMembers,
   resolvedInflationRate,
+  salaries,
 }: SavingsRuleDialogProps) {
   type SavTabId = "details" | "schedule";
   const router = useRouter();
@@ -267,6 +279,10 @@ export default function SavingsRuleDialog({
   );
   const [matchMode, setMatchMode] = useState<MatchMode>(initialMatchMode);
 
+  const [salaryBasis, setSalaryBasis] = useState<SalaryBasisValue>(
+    inferSalaryBasis(editing?.salaryBasis, editing?.salaryIncomeIds),
+  );
+
   const initialContribMode: ContributionMode = inferContributionMode(
     editing?.annualPercent ?? null,
     editing?.contributeMax ?? null,
@@ -348,6 +364,10 @@ export default function SavingsRuleDialog({
       employerMatchCap:
         showEmployerMatch && matchMode === "percent" && matchCap ? String(Number(matchCap) / 100) : null,
       employerMatchAmount: showEmployerMatch && matchMode === "flat" && matchAmount ? matchAmount : null,
+      // Sent whether or not the panel is visible: a rule flipped to flat
+      // dollars keeps the salaries it was built on.
+      salaryBasis: salaryBasis.basis,
+      salaryIncomeIds: salaryBasis.incomeIds,
     };
   }
 
@@ -402,7 +422,16 @@ export default function SavingsRuleDialog({
             startYear: Number(body.startYear),
             endYear: Number(body.endYear),
           } as unknown as SavingsRuleRow)
-        : ((await res.json()) as SavingsRuleRow);
+        : {
+            // The DB row round-trips `salaryBasis` (a column) but not
+            // `salaryIncomeIds` (a join table the write routes don't re-query
+            // on save) — without patching it in from what we just sent, a
+            // "selected" rule saved and reopened in the SAME session would
+            // collapse to "owner" before the next full page load re-fetches
+            // the join rows.
+            ...((await res.json()) as SavingsRuleRow),
+            salaryIncomeIds: body.salaryIncomeIds,
+          };
 
       // First-create only: persist any staged schedule rows. Subsequent saves
       // skip this — the Schedule tab manages its own persistence after the
@@ -704,6 +733,21 @@ export default function SavingsRuleDialog({
                     setEndYearRef(null);
                   }}
                   className={inputClassName}
+                />
+              </div>
+            )}
+            {/* Placed last, not beside the toggles it responds to (R15): the
+                panel is conditionally rendered, so up near the contribution
+                and match fields it would appear and disappear in the MIDDLE
+                of the form and shove the year pickers up and down on every
+                mode toggle. */}
+            {(contribMode === "percent" || (showEmployerMatch && matchMode === "percent")) && (
+              <div className="col-span-2">
+                <SalaryBasisFields
+                  value={salaryBasis}
+                  onChange={(next) => { setSalaryBasis(next); setDirty(true); }}
+                  salaries={salaries ?? []}
+                  idPrefix="sr"
                 />
               </div>
             )}

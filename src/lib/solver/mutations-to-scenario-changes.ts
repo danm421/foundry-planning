@@ -352,6 +352,21 @@ export function mutationsToScenarioChanges(
         );
         break;
       }
+      case "savings-salary-basis": {
+        const rule = savingsRuleFor(m.accountId);
+        if (!rule) break;
+        // `?? "owner"` / `?? []`: a rule that predates the salary-basis column
+        // carries neither field, and a `from: undefined` would render as an
+        // em dash for a rule that has always used the account owner's salary.
+        accumulateSavings(m.accountId, "salaryBasis", rule.salaryBasis ?? "owner", m.basis);
+        accumulateSavings(
+          m.accountId,
+          "salaryIncomeIds",
+          rule.salaryIncomeIds ?? [],
+          m.incomeIds,
+        );
+        break;
+      }
       case "savings-roth-percent": {
         const rule = savingsRuleFor(m.accountId);
         if (!rule) break;

@@ -34,6 +34,7 @@ import {
   modelPortfolios,
   planSettings,
   savingsRules,
+  savingsRuleSalaryIncomes,
   savingsScheduleOverrides,
   scenarios,
   taxYearParameters,
@@ -260,7 +261,7 @@ export const loadClientDataWithContext = cache(
     const expenseIds = expenseRows.map((e) => e.id);
     const savingsRuleIds = savingsRuleRows.map((s) => s.id);
 
-    const [incomeOverrideRows, expenseOverrideRows, savingsOverrideRows, dedicatedAccountRows] = await Promise.all([
+    const [incomeOverrideRows, expenseOverrideRows, savingsOverrideRows, dedicatedAccountRows, salaryIncomeRows] = await Promise.all([
       incomeIds.length > 0
         ? db.select().from(incomeScheduleOverrides).where(inArray(incomeScheduleOverrides.incomeId, incomeIds))
         : Promise.resolve([]),
@@ -277,6 +278,13 @@ export const loadClientDataWithContext = cache(
             .where(inArray(expenseDedicatedAccounts.expenseId, expenseIds))
             .orderBy(asc(expenseDedicatedAccounts.expenseId), asc(expenseDedicatedAccounts.sortOrder))
         : Promise.resolve([]),
+      savingsRuleIds.length > 0
+        ? db
+            .select()
+            .from(savingsRuleSalaryIncomes)
+            .where(inArray(savingsRuleSalaryIncomes.savingsRuleId, savingsRuleIds))
+            .orderBy(asc(savingsRuleSalaryIncomes.savingsRuleId), asc(savingsRuleSalaryIncomes.sortOrder))
+        : Promise.resolve([]),
     ]);
 
     const dedicatedByExpenseId = new Map<string, string[]>();
@@ -284,6 +292,13 @@ export const loadClientDataWithContext = cache(
       const arr = dedicatedByExpenseId.get(r.expenseId) ?? [];
       arr.push(r.accountId);
       dedicatedByExpenseId.set(r.expenseId, arr);
+    }
+
+    const salaryIncomeIdsByRuleId = new Map<string, string[]>();
+    for (const r of salaryIncomeRows) {
+      const arr = salaryIncomeIdsByRuleId.get(r.savingsRuleId) ?? [];
+      arr.push(r.incomeId);
+      salaryIncomeIdsByRuleId.set(r.savingsRuleId, arr);
     }
 
     // Build lookup maps: entityId → Record<year, amount>. Plain objects (not
@@ -979,6 +994,8 @@ export const loadClientDataWithContext = cache(
           startYearRef: s.startYearRef,
           endYearRef: s.endYearRef,
           scheduleOverrides: savingsOverrideMap.get(s.id),
+          salaryBasis: s.salaryBasis,
+          salaryIncomeIds: salaryIncomeIdsByRuleId.get(s.id) ?? [],
         },
         resolutionCtx,
       ),

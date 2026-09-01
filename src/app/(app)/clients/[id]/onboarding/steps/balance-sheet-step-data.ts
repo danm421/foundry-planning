@@ -19,6 +19,7 @@ import type { AccountRow, LiabilityRow } from "@/components/balance-sheet-view";
 import { buildClientMilestones } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { buildIncomeRows } from "@/lib/balance-sheet/build-income-rows";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 
 /** Bundle of props the wizard's Accounts and Liabilities steps both need.
@@ -231,6 +232,11 @@ export async function loadBalanceSheetStepData(clientId: string, firmId: string)
     };
   });
 
+  // Same rows the Net Worth page builds, from the `effectiveTree` this loader
+  // already has — no extra query. Without them the Add Account dialog's Salary
+  // basis panel tells a wizard user the plan has no salaries.
+  const incomeProps = buildIncomeRows(effectiveTree.incomes);
+
   const entityIds = entityRows.map((e) => e.id);
   const entityOwnerRows =
     entityIds.length > 0
@@ -344,6 +350,7 @@ export async function loadBalanceSheetStepData(clientId: string, firmId: string)
   return {
     accountProps,
     liabilityProps,
+    incomeProps,
     entityOptions,
     familyMemberRows,
     categoryDefaults,

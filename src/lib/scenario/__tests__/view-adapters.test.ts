@@ -299,6 +299,37 @@ describe("view-adapters", () => {
       expect(view.employerMatchCap).toBe("0.06");
       expect(view.employerMatchAmount).toBeNull();
     });
+
+    it("carries salaryBasis and salaryIncomeIds through, defaulting an unset basis to null/[]", () => {
+      // Task 5's round-trip bug: this mapping originally dropped both fields
+      // entirely, so every rule reopened in the UI silently reset to "owner"
+      // on its next save. Pinned at the adapter level, not just via the
+      // dialog integration test that first caught it.
+      const selected: EngineSavingsRule = {
+        id: "s2",
+        accountId: "acc1",
+        annualAmount: 0,
+        isDeductible: false,
+        startYear: 2025,
+        endYear: 2040,
+        salaryBasis: "selected",
+        salaryIncomeIds: ["inc-1", "inc-2"],
+      };
+      const view = savingsRuleEngineToView(selected);
+      expect(view.salaryBasis).toBe("selected");
+      expect(view.salaryIncomeIds).toEqual(["inc-1", "inc-2"]);
+
+      const unset: EngineSavingsRule = {
+        id: "s3",
+        accountId: "acc1",
+        annualAmount: 0,
+        isDeductible: false,
+        startYear: 2025,
+        endYear: 2040,
+      };
+      expect(savingsRuleEngineToView(unset).salaryBasis).toBeNull();
+      expect(savingsRuleEngineToView(unset).salaryIncomeIds).toEqual([]);
+    });
   });
 
   describe("accountEngineToView", () => {

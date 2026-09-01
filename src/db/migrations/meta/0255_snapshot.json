@@ -1,6 +1,6 @@
 {
-  "id": "bddfe2c2-4bee-4bc7-9b33-735b0bc2b8be",
-  "prevId": "0ed7f12f-64cc-4900-9b15-438aa4d2b207",
+  "id": "3d748f52-c10f-4751-af03-ab53137c7508",
+  "prevId": "bddfe2c2-4bee-4bc7-9b33-735b0bc2b8be",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -12113,6 +12113,13 @@
         },
         "is_interest_deductible": {
           "name": "is_interest_deductible",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "forgive_at_term_end": {
+          "name": "forgive_at_term_end",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
