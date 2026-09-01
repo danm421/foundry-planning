@@ -161,9 +161,12 @@ export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
                 ) : (
                   <Line x1={0} x2={10} y1={-2} y2={-2} stroke={item.color} strokeWidth={1.5} />
                 )}
+                {/* Left-anchored on purpose: the label reads rightward away
+                    from the swatch or rule it belongs to. */}
                 <SvgText
                   x={LEGEND_LABEL_X}
                   y={2}
+                  textAnchor="start"
                   style={{ fontFamily: "Inter", fontSize: 7, fill: PRESENTATION_THEME.ink2 }}
                 >
                   {item.label}

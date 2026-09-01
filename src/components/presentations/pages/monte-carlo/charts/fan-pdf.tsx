@@ -63,7 +63,8 @@ export function FanChartPdf({ spec, scale = 1, legend = false }: { spec: FanChar
             return (
               <G key={`mk-${mk.atYear}`}>
                 <Line x1={cx} x2={cx} y1={0} y2={innerH} stroke={spec.colors.marker} strokeWidth={1} strokeDasharray="3 3" />
-                <SvgText x={cx + 2} y={8} style={{ fontFamily: "Inter", fontSize: 6 * scale, fill: spec.colors.marker }}>{mk.label}</SvgText>
+                {/* Left-anchored on purpose: the label sits BESIDE its rule, not on it. */}
+                <SvgText x={cx + 2} y={8} textAnchor="start" style={{ fontFamily: "Inter", fontSize: 6 * scale, fill: spec.colors.marker }}>{mk.label}</SvgText>
               </G>
             );
           })}

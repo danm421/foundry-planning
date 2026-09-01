@@ -2,6 +2,7 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 import noRawHex from "./eslint-rules/no-raw-hex.mjs";
+import svgTextAnchor from "./eslint-rules/svg-text-anchor.mjs";
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -33,6 +34,19 @@ const eslintConfig = defineConfig([
     ],
     plugins: { brand: { rules: { "no-raw-hex": noRawHex } } },
     rules: { "brand/no-raw-hex": "error" },
+  },
+  {
+    // Every label a react-pdf chart draws must say which way it runs. The
+    // anchor defect this catches — an axis label printed across its own plot,
+    // or centred half a step off the bar it names — is invisible to tsc, to
+    // the rest of eslint, and to a render smoke that asserts a byte length; it
+    // was found five times by hand before this rule existed. The rule's own
+    // header has the mechanics. Whole-`src` scope on purpose: it keys on the
+    // `@react-pdf/renderer` import, so it is inert everywhere else, and a new
+    // chart is exactly the file that would otherwise be missed.
+    files: ["src/**/*.{ts,tsx}"],
+    plugins: { charts: { rules: { "svg-text-anchor": svgTextAnchor } } },
+    rules: { "charts/svg-text-anchor": "error" },
   },
   {
     files: ["src/lib/presentations/**/*.{ts,tsx}"],

@@ -39,11 +39,12 @@ export function HistogramPdf({ spec, scale = 1 }: { spec: HistogramChartSpec; sc
             return (
               <G key={`pm-${mk.label}`}>
                 <Line x1={cx} x2={cx} y1={0} y2={innerH} stroke={col} strokeWidth={mk.emphasis ? 1.2 : 0.75} strokeDasharray={mk.emphasis ? undefined : "2 2"} />
-                <SvgText x={cx + 2} y={8} style={{ fontFamily: "Inter", fontSize: 6 * scale, fill: col }}>{mk.label}</SvgText>
+                {/* Left-anchored on purpose: the label sits BESIDE its rule, not on it. */}
+                <SvgText x={cx + 2} y={8} textAnchor="start" style={{ fontFamily: "Inter", fontSize: 6 * scale, fill: col }}>{mk.label}</SvgText>
               </G>
             );
           })}
-          <SvgText x={0} y={innerH + 12} style={{ fontFamily: "JetBrains Mono", fontSize: 7 * scale, fill: spec.colors.axis }}>{compactCurrency(spec.xDomain[0])}</SvgText>
+          <SvgText x={0} y={innerH + 12} textAnchor="start" style={{ fontFamily: "JetBrains Mono", fontSize: 7 * scale, fill: spec.colors.axis }}>{compactCurrency(spec.xDomain[0])}</SvgText>
           {/* The two ends of the domain, pinned to the plot's edges. The high
               one is right-anchored; it used to be nudged back by a hand-guessed
               30pt, which is what an anchor exists to replace. */}

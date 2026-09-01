@@ -44,10 +44,13 @@ export function HumanCapitalChartPdf({
     <View>
       <Svg width={width} height={height}>
         {bars.map((b, i) => (
+          // Left-anchored on purpose: the row label starts at the plot's
+          // left edge, above its own bar, and reads rightward.
           <SvgText
             key={b.label}
             x={padL}
             y={i * rowH + 12}
+            textAnchor="start"
             style={{ fontSize: 7.5, fill: T.ink2 }}
           >
             {b.label}
@@ -64,10 +67,13 @@ export function HumanCapitalChartPdf({
           />
         ))}
         {bars.map((b, i) => (
+          // Left-anchored on purpose: the value starts 6pt past the end of
+          // its own bar and reads rightward into the 78pt reserved above.
           <SvgText
             key={b.label}
             x={padL + widthOf(b.value) + 6}
             y={i * rowH + 18 + barH - 6}
+            textAnchor="start"
             style={{ fontSize: 10, fill: T.ink, fontFamily: MONO }}
           >
             {fmtAxisUsd(b.value)}
