@@ -2,10 +2,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/db", () => ({ db: { select: vi.fn() } }));
+vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn().mockResolvedValue(undefined) }));
 
 import { db } from "@/db";
+import { recordAudit } from "@/lib/audit";
 import { liabilities } from "@/db/schema";
-import { toLiabilitySnapshot } from "../../snapshots/liability";
+import { recordUpdate } from "../../record-helpers";
+import {
+  toLiabilitySnapshot,
+  LIABILITY_FIELD_LABELS,
+} from "../../snapshots/liability";
 
 const row: typeof liabilities.$inferSelect = {
   id: "lia1",
@@ -39,6 +45,7 @@ const row: typeof liabilities.$inferSelect = {
 };
 
 beforeEach(() => {
+  vi.mocked(recordAudit).mockClear();
   vi.mocked(db.select).mockReturnValue({
     from: vi.fn().mockReturnValue({
       where: vi.fn().mockResolvedValue([]),
@@ -69,5 +76,43 @@ describe("toLiabilitySnapshot", () => {
 
     const snap = await toLiabilitySnapshot({ ...row, linkedPropertyId: "acc1" });
     expect(snap.linkedProperty).toEqual({ id: "acc1", display: "House" });
+  });
+});
+
+// Writing off a client's remaining balance is a compliance-relevant edit, so an
+// update that touches ONLY that flag must still land in the audit log.
+// `recordUpdate` returns early on zero changes, so the flag missing from the
+// snapshot means the whole write silently disappears — this drives the real
+// snapshot, the real label map and the real recordUpdate to catch that.
+describe("auditing an update that flips only forgiveAtTermEnd", () => {
+  it("writes one audit row carrying the readable label", async () => {
+    const before = await toLiabilitySnapshot(row);
+    const after = await toLiabilitySnapshot({ ...row, forgiveAtTermEnd: true });
+
+    await recordUpdate({
+      action: "liability.update",
+      resourceType: "liability",
+      resourceId: row.id,
+      clientId: row.clientId,
+      firmId: "firm1",
+      before,
+      after,
+      fieldLabels: LIABILITY_FIELD_LABELS,
+    });
+
+    expect(recordAudit).toHaveBeenCalledTimes(1);
+    const call = vi.mocked(recordAudit).mock.calls[0]![0];
+    expect(call.metadata).toEqual({
+      kind: "update",
+      changes: [
+        {
+          field: "forgiveAtTermEnd",
+          label: "Forgive balance at end of term",
+          from: false,
+          to: true,
+          format: "text",
+        },
+      ],
+    });
   });
 });
