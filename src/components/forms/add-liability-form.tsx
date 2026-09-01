@@ -15,6 +15,7 @@ import {
   isInterestOnlyPayment,
 } from "@/lib/loan-math";
 import { CurrencyInput } from "@/components/currency-input";
+import { HelpTip } from "@/components/help-tip";
 import { PercentInput } from "@/components/percent-input";
 import { inputClassName, inputBaseClassName, selectClassName, selectBaseClassName, fieldLabelClassName } from "./input-styles";
 import { OwnershipEditor } from "./ownership-editor";
@@ -695,10 +696,8 @@ const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFor
             className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
           />
           Interest is tax-deductible
+          <HelpTip text="When checked, the annual interest portion flows into your itemized deductions (e.g., mortgage interest)." />
         </label>
-        <p className="mt-1 ml-6 text-xs text-gray-400">
-          When checked, the annual interest portion flows into your itemized deductions (e.g., mortgage interest).
-        </p>
       </div>
 
       {/* Row 8: Forgiveness at end of term */}
@@ -716,12 +715,14 @@ const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFor
             className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent disabled:opacity-40"
           />
           Forgive remaining balance at end of term
+          <HelpTip
+            text={
+              hasTerm
+                ? "For repayment programs that write off whatever is left after the final scheduled payment — income-driven student loan plans, most commonly. The balance drops to zero instead of being paid off."
+                : "Add a loan term first — there has to be an end of term to forgive at."
+            }
+          />
         </label>
-        <p className="mt-1 ml-6 text-xs text-gray-400">
-          {hasTerm
-            ? "For repayment programs that write off whatever is left after the final scheduled payment — income-driven student loan plans, most commonly. The balance drops to zero instead of being paid off."
-            : "Add a loan term first — there has to be an end of term to forgive at."}
-        </p>
       </div>
 
     </form>
