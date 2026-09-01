@@ -405,6 +405,52 @@ describe("loadStoryContext", () => {
     expect(display(ctx, "base.shortfallYear")).toBe("2050");
   });
 
+  /**
+   * A year the plan funds EXACTLY still lands a few picodollars short, because
+   * `shortfall` differences two independently accumulated float sums. These two
+   * tests use 5.8208e-11 — the residue measured on live plans, reproduced here
+   * by splitting the inflow the way the engine does rather than by subtracting
+   * an epsilon.
+   */
+  const residueYear = (y: number) => ({
+    // 40000.1 + 229999.8 + 0.1 sums to a hair under totalExpenses (270_000).
+    ...year(y, 0, 0, 0, 229_999.8),
+    income: { socialSecurity: 40_000.1, salaries: 229_999.8, business: 0, deferred: 0, capitalGains: 0, trust: 0, other: 0 },
+    withdrawals: { total: 0.1 },
+  });
+
+  it("skips a float-residue year and names the first year that is really short", async () => {
+    fx.years = {
+      base: [year(2026, 400_000, 100_000, 700_000), residueYear(2030), year(2040, 100_000, 0, 0, 10_000)],
+    };
+    const ctx = await loadStoryContext({
+      clientId: "c1",
+      firmId: "f1",
+      proposedRef: null,
+      scenarioLabel: "Base Case",
+      documentRole: "standalone",
+    });
+    // Guarding on `> 0` names 2030 — a shortfall of 0.000000000058 dollars, a
+    // decade before the plan is actually short.
+    expect(display(ctx, "base.shortfallYear")).toBe("2040");
+  });
+
+  it("names no shortfall year when every shortfall is float residue", async () => {
+    // The worst case: the chapter narrates a shortfall year INSTEAD of the
+    // legacy figure, so a residue here deletes the good news and invents bad.
+    fx.years = {
+      base: [year(2026, 400_000, 100_000, 700_000), residueYear(2030), residueYear(2040)],
+    };
+    const ctx = await loadStoryContext({
+      clientId: "c1",
+      firmId: "f1",
+      proposedRef: null,
+      scenarioLabel: "Base Case",
+      documentRole: "standalone",
+    });
+    expect(ctx.facts.some((f) => f.id === "base.shortfallYear")).toBe(false);
+  });
+
   it("carries the household's goals and drops the life milestones", async () => {
     const ctx = await loadStoryContext({
       clientId: "c1",

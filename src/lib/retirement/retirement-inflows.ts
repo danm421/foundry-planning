@@ -52,3 +52,23 @@ export function retirementInflows(y: ProjectionYear): RetirementInflows {
   const shortfall = Math.max(0, y.totalExpenses - total);
   return { socialSecurity, salaries, otherInflows: other, rmds, withdrawals, total, shortfall };
 }
+
+/**
+ * Is this year's shortfall real money, or is it float residue?
+ *
+ * `shortfall` is `Math.max(0, totalExpenses - total)` over two independently
+ * accumulated sums, so a year the plan funds exactly lands a few picodollars
+ * above zero rather than on it. On live plans the residue spans 1e-11 to about
+ * half a dollar — every one of which prints as "$0".
+ *
+ * Any guard that decides whether to SAY something about a shortfall has to ask
+ * this, never `shortfall > 0`; see `printsAsZero` in the Retirement Summary,
+ * which is the same rule bound to that page's own formatter. This one cannot be
+ * bound to a formatter, because its callers narrate a YEAR and print no dollar
+ * figure at all — so it is pinned instead to the whole-dollar boundary that
+ * every currency formatter in the app shares, and `retirement-inflows.test.ts`
+ * holds all three of them to it.
+ */
+export function isMaterialShortfall(shortfall: number): boolean {
+  return Math.round(shortfall) > 0;
+}

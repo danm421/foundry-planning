@@ -13,6 +13,19 @@ function toneOf(pct: number): { bar: string; text: string } {
   return { bar: "bg-crit", text: "text-crit" };
 }
 
+/**
+ * Does this gap disappear into "$0" once it is printed?
+ *
+ * `funded` is a float sum against a float cost, so a goal the plan funds in
+ * full lands nanodollars short of it — enough for `gap > 0`, and the caption
+ * then read "$0 short of $14,855,141" under a full green bar on a live plan.
+ * Deriving the test from the same `fmtUsd` that renders the figure is what
+ * keeps the two from ever disagreeing again.
+ */
+function printsAsZero(n: number): boolean {
+  return fmtUsd(n) === "$0";
+}
+
 function yearRange(goal: PortalGoalFunding): string | null {
   if (goal.startYear == null) return null;
   if (goal.endYear == null || goal.endYear === goal.startYear) return `${goal.startYear}`;
@@ -40,9 +53,9 @@ function GoalRow({ goal }: { goal: PortalGoalFunding }): ReactElement {
       <div className="mt-1 flex items-baseline justify-between gap-3 text-[11px] text-ink-3">
         <span className="tabular">{years ?? ""}</span>
         <span className="tabular">
-          {gap > 0
-            ? `${fmtUsd(gap)} short of ${fmtUsd(goal.cost)}`
-            : `${fmtUsd(goal.cost)} funded`}
+          {printsAsZero(gap)
+            ? `${fmtUsd(goal.cost)} funded`
+            : `${fmtUsd(gap)} short of ${fmtUsd(goal.cost)}`}
         </span>
       </div>
     </li>

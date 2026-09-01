@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import type { ProjectionYear, AccountLedger } from "@/engine/types";
-import { retirementInflows } from "../retirement-inflows";
+import { retirementInflows, isMaterialShortfall } from "../retirement-inflows";
+import { fmtUsd as reportUsd } from "@/lib/presentations/pages/retirement-summary/aggregate";
+import { formatCurrency as advisorUsd } from "@/components/monte-carlo/lib/format";
+import { fmtUsd as portalUsd } from "@/lib/portal/format";
 
 function ledger(rmdAmount: number): AccountLedger {
   return { rmdAmount } as AccountLedger;
@@ -110,5 +113,40 @@ describe("retirementInflows", () => {
       yr({ salaries: 200_000, totalExpenses: 100_000 }),
     );
     expect(r.shortfall).toBe(0);
+  });
+});
+
+describe("isMaterialShortfall", () => {
+  // The residues measured on live plans: pure float noise at 1e-11..1e-9, and
+  // sub-dollar sums up to about half a dollar. Every one printed "$0".
+  it("rejects the float residue a fully funded year leaves behind", () => {
+    for (const n of [0, 1.4552e-11, 2.9104e-11, 5.8208e-11, 7.451e-9, 0.0096, 0.209, 0.4999]) {
+      expect(isMaterialShortfall(n)).toBe(false);
+    }
+  });
+
+  it("accepts a shortfall the reader can actually see", () => {
+    for (const n of [0.5, 0.63, 1, 26.87, 1_565.1, 1_743_582]) {
+      expect(isMaterialShortfall(n)).toBe(true);
+    }
+  });
+
+  /**
+   * The predicate is a hand-written threshold, not a formatter call — its
+   * callers narrate a YEAR and print no dollar figure, so there is no local
+   * `fmt*` to derive it from. This is what keeps it honest: every currency
+   * formatter that renders a shortfall must agree with it about which amounts
+   * disappear into "$0". If any of them changes its rounding, this reddens.
+   */
+  it("agrees with every formatter that renders a shortfall", () => {
+    const amounts = [0, 1.4552e-11, 7.451e-9, 0.209, 0.4999, 0.5, 0.63, 1, 26.87, 1_565.1];
+    for (const n of amounts) {
+      const material = isMaterialShortfall(n);
+      // The Retirement Summary's abbreviated formatter, the advisor year
+      // table's full-dollar one, and the portal's Intl one.
+      expect([n, reportUsd(n) !== "$0"]).toEqual([n, material]);
+      expect([n, advisorUsd(n) !== "$0"]).toEqual([n, material]);
+      expect([n, portalUsd(n) !== "$0"]).toEqual([n, material]);
+    }
   });
 });

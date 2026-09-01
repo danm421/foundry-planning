@@ -24,7 +24,7 @@ import { buildBaseResolveData, buildAssetTxResolveData } from "@/lib/scenario/sc
 import { describeChange } from "@/lib/presentations/pages/scenario-changes/describe";
 import { buildResolveContext } from "@/lib/presentations/pages/scenario-changes/describe/resolve";
 import { liquidPortfolioTotal } from "@/engine/monteCarlo/trial";
-import { retirementInflows } from "@/lib/retirement/retirement-inflows";
+import { retirementInflows, isMaterialShortfall } from "@/lib/retirement/retirement-inflows";
 import { liquidPortfolioTotal as balanceSheetLiquidTotal } from "@/lib/presentations/pages/balance-sheet/view-model";
 import { buildViewModel } from "@/components/balance-sheet-report/view-model";
 import { buildViewModelInputs } from "@/lib/balance-sheet/build-view-model-inputs";
@@ -297,9 +297,16 @@ function storyGoals(effectiveTree: ClientData, today: Date): StoryGoal[] {
  * second definition here would put a different year on the client's page than
  * the one the advisor sees on screen — and the advisor would be the one asked
  * about it.
+ *
+ * `isMaterialShortfall` rather than `> 0` for the same reason the Retirement
+ * Summary asks `printsAsZero`: the per-year shortfall carries float residue, so
+ * `> 0` names the first year the plan rounds off a fraction of a cent instead of
+ * the first year it actually runs short. On live plans that is up to four
+ * decades early, and on a plan with no shortfall at all it invents one — which
+ * this chapter then narrates INSTEAD of the legacy figure.
  */
 function firstShortfallYear(years: ProjectionYear[]): number | null {
-  return years.find((y) => retirementInflows(y).shortfall > 0)?.year ?? null;
+  return years.find((y) => isMaterialShortfall(retirementInflows(y).shortfall))?.year ?? null;
 }
 
 /**
