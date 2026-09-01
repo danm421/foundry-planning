@@ -5,18 +5,18 @@ import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
 import type { LiChart } from "@/lib/presentations/pages/life-insurance-summary/view-model";
 import { fmtUsd } from "@/lib/presentations/pages/life-insurance-summary/aggregate";
 
-const W = 520;
-const H = 200;
-const M = { top: 16, right: 14, bottom: 28, left: 44 };
+/** The chart's canvas and plot box. Exported with `liChartGeom` so the geometry
+ *  guard measures against the numbers the component draws with. */
+export const LI_CHART_BOX = {
+  width: 520,
+  height: 200,
+  margin: { top: 16, right: 14, bottom: 28, left: 44 },
+};
+const { width: W, height: H, margin: M } = LI_CHART_BOX;
 
-export function LiNeedChartPdf({ chart, married }: { chart: LiChart; married: boolean }) {
-  if (chart.rows.length === 0) {
-    return (
-      <View>
-        <SvgText style={{ fontFamily: "Inter", fontSize: 8, fill: T.ink3 }}>—</SvgText>
-      </View>
-    );
-  }
+/** Everything the chart derives from its data before drawing: the two scales,
+ *  the y ticks, and which years get an x label. */
+export function liChartGeom(chart: LiChart, married: boolean) {
   const innerW = W - M.left - M.right;
   const innerH = H - M.top - M.bottom;
 
@@ -33,12 +33,32 @@ export function LiNeedChartPdf({ chart, married }: { chart: LiChart; married: bo
   const top = Math.ceil(maxNeed / 250_000) * 250_000;
 
   const x = scaleBand<number>().domain(years).range([0, innerW]).padding(0.25);
-  const y = scaleLinear().domain([0, top]).range([innerH, 0]);
-  const band = x.bandwidth();
 
-  const ticks = [0, top * 0.25, top * 0.5, top * 0.75, top];
-  // Show at most ~8 x labels.
-  const labelStep = Math.max(1, Math.ceil(years.length / 8));
+  return {
+    innerW,
+    innerH,
+    years,
+    spouseNeedOf,
+    coverageLine,
+    x,
+    y: scaleLinear().domain([0, top]).range([innerH, 0]),
+    band: x.bandwidth(),
+    ticks: [0, top * 0.25, top * 0.5, top * 0.75, top],
+    // Show at most ~8 x labels.
+    labelStep: Math.max(1, Math.ceil(years.length / 8)),
+  };
+}
+
+export function LiNeedChartPdf({ chart, married }: { chart: LiChart; married: boolean }) {
+  if (chart.rows.length === 0) {
+    return (
+      <View>
+        <SvgText style={{ fontFamily: "Inter", fontSize: 8, fill: T.ink3 }}>—</SvgText>
+      </View>
+    );
+  }
+  const { innerW, innerH, years, spouseNeedOf, coverageLine, x, y, band, ticks, labelStep }
+    = liChartGeom(chart, married);
 
   return (
     <View>
@@ -109,14 +129,19 @@ export function LiNeedChartPdf({ chart, married }: { chart: LiChart; married: bo
               })()
             : null}
 
-          {/* X labels */}
+          {/* X labels — centred with `textAnchor`, the way the y ticks above are
+              anchored. @react-pdf ignores `textAlign` on an SvgText outright, so
+              the `textAlign: "center"` this used to carry did nothing: the years
+              kept SVG's default `start` and ran right from the bar's midpoint,
+              landing half a label — most of a band — past the bar they name. */}
           {years.map((yr, i) =>
             i % labelStep === 0 ? (
               <SvgText
                 key={`xl${yr}`}
                 x={(x(yr) ?? 0) + band / 2}
                 y={innerH + 12}
-                style={{ fontFamily: "Inter", fontSize: 6.5, fill: T.ink3, textAlign: "center" }}
+                textAnchor="middle"
+                style={{ fontFamily: "Inter", fontSize: 6.5, fill: T.ink3 }}
               >
                 {String(yr)}
               </SvgText>

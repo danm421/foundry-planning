@@ -33,9 +33,13 @@
 // sibling. It says so rather than skipping: a measurement that quietly opts out
 // is worse than one that is absent, because the suite goes on reporting green.
 import { describe, it, expect } from "vitest";
-import { renderToBuffer, Document, Page } from "@react-pdf/renderer";
-import { ensureFontsRegistered } from "@/components/presentations/shared/fonts";
-import { wordBoxes, BBOX_EPS as EPS, type Word } from "@/components/presentations/shared/test-utils/pdf-bbox";
+import {
+  renderChartWords as renderWords,
+  labelBox as box,
+  assertGutterHolds,
+  assertCentred,
+  BBOX_EPS as EPS,
+} from "@/components/presentations/shared/test-utils/axis-geometry";
 import { compactCurrency } from "@/lib/presentations/format";
 import {
   buildFanChartSpec,
@@ -47,96 +51,17 @@ import { FanChartPdf } from "../fan-pdf";
 import { HistogramPdf } from "../histogram-pdf";
 import { SuccessPdf } from "../success-pdf";
 
-type Spec = { width: number; height: number; margin: { left: number; right: number } };
-
-/** Render one chart alone on an unpadded sheet, so page coordinates ARE the
- *  chart's own SVG coordinates and the plot origin is `spec.margin.left`. */
-async function renderWords(spec: Spec, chart: React.ReactElement): Promise<Word[]> {
-  ensureFontsRegistered();
-  const pdf = await renderToBuffer(
-    <Document>
-      <Page size={[spec.width, spec.height]} style={{ padding: 0 }}>
-        {chart}
-      </Page>
-    </Document>,
-  );
-  return wordBoxes(pdf, 1);
-}
-
-/** The box of a label the chart drew. Required to match exactly one word on the
- *  sheet — a miss means the guard is measuring nothing, a second hit means it is
- *  measuring some other text and saying nothing about this one.
- *
- *  Zero hits also catches a label pushed clean off the sheet, because here the
- *  sheet IS the SVG viewport and a word past it is dropped from the render
- *  outright; one only PARTLY off is still listed, with a negative `xMin`, which
- *  is what `assertGutterHolds` reads. ⚠️ Neither generalises to a real page: the
- *  chart is narrower than the sheet there, and a run clipped at the viewport
- *  keeps its full extent in the text layer — the ink is gone but the words are
- *  not. Only a raster sees that one. */
-function box(words: Word[], label: string): Word {
-  const hits = words.filter((w) => w.text === label);
-  expect(
-    hits.length,
-    `"${label}" matched ${hits.length} words on the sheet, not 1`
-      + (hits.length === 0 ? " — either it was never drawn, or it ran off the sheet and was dropped" : ""),
-  ).toBe(1);
-  return hits[0];
-}
-
-/** Every y-axis tick label sits in the left gutter: right-anchored, so it ends
- *  just short of the plot and grows leftward into the margin it was given. */
-function assertGutterHolds(spec: Spec, words: Word[], labels: string[]) {
-  const origin = spec.margin.left;
-  const boxes = labels.map((text) => ({ text, b: box(words, text) }));
-
-  const intruding = boxes
-    .filter((f) => f.b.xMax > origin + EPS)
-    .map((f) => `y-axis tick "${f.text}" runs to ${f.b.xMax.toFixed(1)}pt, ${(f.b.xMax - origin).toFixed(1)}pt into the plot (origin ${origin}pt)`);
-  expect(intruding).toEqual([]);
-
-  // The other wall: right-anchored labels grow leftward, so one wider than the
-  // gutter runs off the canvas instead of overprinting. This is the assertion
-  // the left margin is now sized by.
-  const clipped = boxes
-    .filter((f) => f.b.xMin < -EPS)
-    .map((f) => `y-axis tick "${f.text}" starts at ${f.b.xMin.toFixed(1)}pt, off the left edge of a ${spec.width}pt canvas (gutter ${origin}pt)`);
-  expect(clipped).toEqual([]);
-}
-
-/** How far a label's centre may sit from the thing it names. The defects this
- *  catches are half a label wide — measured on this family at 8.4pt on the fan's
- *  years, half a step, and 3.4pt on the success chart's year labels — while a
- *  correctly anchored label lands within hundredths of a point. So a point is
- *  loose enough for glyph side bearings and still an order of magnitude tighter
- *  than the thing it is looking for.
- *
- *  The cash-flow guard declares its own, at the same value: the number is shared
- *  but the evidence for it is not, and the evidence is what makes it reviewable.
- *  Its assertions stay separate for a sharper reason — that guard tolerates a
- *  label it cannot find and reports the misses as a batch, where this one
- *  requires every match to be unique up front. Merging them would have to pick
- *  one of those policies. */
-const CENTRE_EPS = 1;
-
-function assertCentred(
-  spec: Spec,
-  labels: Array<{ what: string; centre: number; b: Word }>,
-  step: number,
-) {
-  const adrift = labels
-    .map((l) => ({ ...l, off: (l.b.xMin + l.b.xMax) / 2 - l.centre }))
-    .filter((l) => Math.abs(l.off) > CENTRE_EPS)
-    .map((l) => `${l.what} is centred ${l.off.toFixed(1)}pt (${(l.off / step).toFixed(2)} steps) off the point it names`);
-  expect(adrift).toEqual([]);
-
-  // A centred label grows BOTH ways, so one on an end bar can reach past the
-  // canvas — where, on this bare sheet, it stops being drawn altogether.
-  const offCanvas = labels
-    .filter((l) => l.b.xMin < -EPS || l.b.xMax > spec.width + EPS)
-    .map((l) => `${l.what} spans ${l.b.xMin.toFixed(1)}–${l.b.xMax.toFixed(1)}pt on a canvas ${spec.width}pt wide`);
-  expect(offCanvas).toEqual([]);
-}
+// The measuring mechanics — render one chart alone, find its label, assert the
+// gutter and the centring — live in `shared/test-utils/axis-geometry`, shared
+// with the portfolio-analysis and life-insurance guards, which want this same
+// STRICT policy: every label found, every match unique, so nothing can pass
+// vacuously. `pages/cash-flow/chart-axis-geometry.test.tsx` keeps its own
+// lenient variant; that is a policy difference, not duplication.
+//
+// The evidence for `CENTRE_EPS` on THIS family, which is the part worth
+// reading: the defects it caught here were 8.4pt on the fan's years — half a
+// step — and 3.4pt on the success chart's year labels, against correctly
+// anchored labels landing within hundredths of a point.
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 // Shaped like a real run: a 30-year projection of a multi-million-dollar

@@ -16,32 +16,46 @@ function Marker({ x, y, color, style }: { x: number; y: number; color: string; s
   return <Circle cx={x} cy={y} r={r} fill={color} />;
 }
 
-export function ScatterPdf({ spec }: { spec: ScatterSpec }) {
+/** The plot box and the two scales the chart lays out with. Exported so the
+ *  geometry guard measures against the same numbers the component draws with,
+ *  rather than a second copy that can drift away from it. */
+export function scatterGeom(spec: ScatterSpec) {
   const innerW = spec.width - spec.margin.left - spec.margin.right;
   const innerH = spec.height - spec.margin.top - spec.margin.bottom;
-  const x = scaleLinear().domain(spec.xAxis.domain).range([0, innerW]);
-  const y = scaleLinear().domain(spec.yAxis.domain).range([innerH, 0]);
+  return {
+    innerW,
+    innerH,
+    x: scaleLinear().domain(spec.xAxis.domain).range([0, innerW]),
+    y: scaleLinear().domain(spec.yAxis.domain).range([innerH, 0]),
+  };
+}
+
+export function ScatterPdf({ spec }: { spec: ScatterSpec }) {
+  const { innerW, innerH, x, y } = scatterGeom(spec);
   return (
     <View>
       <Svg width={spec.width} height={spec.height}>
         <G transform={`translate(${spec.margin.left}, ${spec.margin.top})`}>
+          {/* Axis ticks are anchored, never nudged: the y labels end 6pt short
+              of the plot and grow left into the gutter; the x labels centre on
+              the gridline they name. */}
           {spec.yAxis.ticks.map((t) => (
             <G key={`y${t}`}>
               <Line x1={0} x2={innerW} y1={y(t)} y2={y(t)} stroke={spec.gridlineColor} strokeWidth={0.5} />
-              <SvgText x={-6} y={y(t) + 3} style={{ fontFamily: "JetBrains Mono", fontSize: 7, fill: T.ink3 }}>{spec.yAxis.labelFormat(t)}</SvgText>
+              <SvgText x={-6} y={y(t) + 3} textAnchor="end" style={{ fontFamily: "JetBrains Mono", fontSize: 7, fill: T.ink3 }}>{spec.yAxis.labelFormat(t)}</SvgText>
             </G>
           ))}
           {spec.xAxis.ticks.map((t) => (
             <G key={`x${t}`}>
               <Line x1={x(t)} x2={x(t)} y1={0} y2={innerH} stroke={spec.gridlineColor} strokeWidth={0.5} />
-              <SvgText x={x(t)} y={innerH + 12} style={{ fontFamily: "JetBrains Mono", fontSize: 7, fill: T.ink3 }}>{spec.xAxis.labelFormat(t)}</SvgText>
+              <SvgText x={x(t)} y={innerH + 12} textAnchor="middle" style={{ fontFamily: "JetBrains Mono", fontSize: 7, fill: T.ink3 }}>{spec.xAxis.labelFormat(t)}</SvgText>
             </G>
           ))}
           {/* x-axis title */}
-          <SvgText x={innerW / 2} y={innerH + 30} style={{ fontFamily: "Inter", fontSize: 8, fill: T.ink2, textAnchor: "middle" }}>{spec.xAxis.title}</SvgText>
+          <SvgText x={innerW / 2} y={innerH + 30} textAnchor="middle" style={{ fontFamily: "Inter", fontSize: 8, fill: T.ink2 }}>{spec.xAxis.title}</SvgText>
           {/* y-axis title — rotated -90° around its anchor point */}
           <G transform={`rotate(-90, -38, ${innerH / 2})`}>
-            <SvgText x={-38} y={innerH / 2} style={{ fontFamily: "Inter", fontSize: 8, fill: T.ink2, textAnchor: "middle" }}>{spec.yAxis.title}</SvgText>
+            <SvgText x={-38} y={innerH / 2} textAnchor="middle" style={{ fontFamily: "Inter", fontSize: 8, fill: T.ink2 }}>{spec.yAxis.title}</SvgText>
           </G>
           {spec.points.map((p) => (
             <Marker key={p.key} x={x(p.x)} y={y(p.y)} color={p.color} style={p.pointStyle} />
