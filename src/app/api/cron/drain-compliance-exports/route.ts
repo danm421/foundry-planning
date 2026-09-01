@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 // time and stay under STALE_RUN_MS (see generation-runs.ts).
 export const maxDuration = 800;
 
-/** GET /api/cron/drain-compliance-exports — every-minute Vercel Cron (vercel.ts). */
+/** GET /api/cron/drain-compliance-exports — every-15-minute Vercel Cron (vercel.ts). */
 export async function GET(req: NextRequest): Promise<Response> {
   const secret = process.env.CRON_SECRET;
   const authz = req.headers.get("authorization");

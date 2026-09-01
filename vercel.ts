@@ -56,8 +56,17 @@ export const config: VercelConfig = {
       schedule: "0 11 * * *",
     },
     {
+      // Every 15 min, NOT every minute. Neon's Launch plan scales a compute to
+      // zero after 5 minutes idle and that timeout is not configurable lower,
+      // so a once-a-minute hit meant the production database never suspended —
+      // it ran continuously from Aug 19 to Sep 1, and idle compute was 88% of
+      // the Neon bill. This drain is a firm-wide bulk job (a deck per
+      // household, 4 rendered per pass under an 8-minute budget) that nobody
+      // waits on interactively, so a start delay of up to 15 minutes is free.
+      // 15 also matches STALE_RUN_MS, so the orphan sweep in drain.ts still
+      // observes a stuck run within one cycle of it going stale.
       path: "/api/cron/drain-compliance-exports",
-      schedule: "* * * * *",
+      schedule: "*/15 * * * *",
     },
     {
       path: "/api/cron/prune-plaid-webhook-events",
