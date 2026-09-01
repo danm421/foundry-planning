@@ -84,6 +84,7 @@ import { recordAudit } from "@/lib/audit";
 const CLIENT_ID = "00000000-0000-4000-8000-000000000001";
 const FIRM_ID = "00000000-0000-4000-8000-000000000099";
 
+const PORTFOLIO_ID = "00000000-0000-4000-8000-000000000001";
 const ACCT = {
   id: "synthetic-new",
   name: "John — Taxable",
@@ -170,6 +171,86 @@ describe("POST /api/clients/[id]/solver/save-to-base", () => {
         metadata: expect.objectContaining({ source: "solver", accountInserts: 1 }),
       }),
     );
+  });
+
+  it("persists the growth BASIS on insert, not just the resolved rate", async () => {
+    // Without growth_source + model_portfolio_id the column default ("default")
+    // wins on the next load and resolve-entity re-derives growth from the
+    // CATEGORY — silently discarding the portfolio the advisor picked in the
+    // Solver and the rate the projection they approved was run on.
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [
+          {
+            kind: "account-upsert",
+            id: "synthetic-new",
+            value: {
+              ...ACCT,
+              growthRate: 0.062,
+              growthSource: "model_portfolio",
+              modelPortfolioId: PORTFOLIO_ID,
+            },
+          },
+        ],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    expect(inserts[0].values).toMatchObject({
+      growthRate: "0.062",
+      growthSource: "model_portfolio",
+      modelPortfolioId: PORTFOLIO_ID,
+    });
+  });
+
+  it("clears a stale portfolio link when the account moves off a portfolio", async () => {
+    vi.mocked(loadEffectiveTree).mockResolvedValue({
+      effectiveTree: { accounts: [{ ...ACCT }], savingsRules: [] },
+      warnings: [],
+    } as never);
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [
+          {
+            kind: "account-upsert",
+            id: "synthetic-new",
+            value: { ...ACCT, growthSource: "default", modelPortfolioId: null },
+          },
+        ],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    // Leaving the old id behind would silently re-link the account to the
+    // portfolio the advisor just switched away from.
+    expect(updates[0].set).toMatchObject({
+      growthSource: "default",
+      modelPortfolioId: null,
+    });
+  });
+
+  it("pins a rate-only account to 'custom' rather than letting it revert", async () => {
+    // A lever that MINTS an account (the Roth-conversion form) may hand over a
+    // resolved rate with no basis. The column default would re-derive growth
+    // from the category and discard that rate — so the write boundary backstops
+    // it to "custom", honouring the rate the approved projection actually ran on.
+    vi.mocked(loadEffectiveTree).mockResolvedValue({
+      effectiveTree: { accounts: [], savingsRules: [] },
+      warnings: [],
+    } as never);
+    const res = await POST(
+      makeRequest({
+        source: "base",
+        mutations: [
+          { kind: "account-upsert", id: "synthetic-new", value: { ...ACCT, growthRate: 0.08 } },
+        ],
+      }),
+      ctx as never,
+    );
+    expect(res.status).toBe(200);
+    expect(inserts[0].values).toMatchObject({ growthRate: "0.08", growthSource: "custom" });
   });
 
   it("classifies an account already in the source tree as an update and re-materializes its owners", async () => {

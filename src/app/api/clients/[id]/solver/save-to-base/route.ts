@@ -127,6 +127,33 @@ async function insertExpenseDedicatedRows(
   );
 }
 
+/** The account's growth BASIS columns, written alongside the resolved rate.
+ *
+ *  The column defaults to "default", which makes resolve-entity re-derive
+ *  growth from the plan's CATEGORY on the next load and discard whatever rate
+ *  was written — so an account saved with a rate and no basis silently reverts
+ *  to a number the advisor never approved. Every account loaded through
+ *  resolve-entity now carries its basis, but a lever that MINTS an account
+ *  (quick-add, the Roth-conversion form, a 529) may hand us only a rate. Those
+ *  fall back to "custom", which pins the rate they resolved. That is a
+ *  boundary-level backstop, and it always writes: a builder that knows the real
+ *  basis should still pass it, because "custom" freezes a rate the advisor may
+ *  have chosen as "Plan default" and expected to keep tracking.
+ *
+ *  `modelPortfolioId` is cleared on every non-portfolio source — leaving a
+ *  stale id behind would silently re-link an account the advisor just moved
+ *  off that portfolio. */
+function accountGrowthBasis(a: Account): {
+  growthSource: typeof accounts.$inferInsert.growthSource;
+  modelPortfolioId: string | null;
+} {
+  const source = a.growthSource ?? "custom";
+  return {
+    growthSource: source as typeof accounts.$inferInsert.growthSource,
+    modelPortfolioId: source === "model_portfolio" ? (a.modelPortfolioId ?? null) : null,
+  };
+}
+
 function accountInsertValues(
   a: Account,
   clientId: string,
@@ -148,6 +175,11 @@ function accountInsertValues(
     hsaCoverage: a.hsaCoverage ?? null,
     // null = inherit the default growth rate for this category from plan_settings.
     growthRate: a.growthRate != null ? String(a.growthRate) : null,
+    // The growth BASIS, not just the resolved rate. Without these the column
+    // default ("default") wins on reload and resolve-entity re-derives growth
+    // from the category default — silently discarding the portfolio the advisor
+    // picked in the Solver and the rate the projection they approved was run on.
+    ...accountGrowthBasis(a),
     rmdEnabled: a.rmdEnabled ?? false,
     priorYearEndValue: a.priorYearEndValue != null ? String(a.priorYearEndValue) : null,
     titlingType: a.titlingType ?? "jtwros",
@@ -391,6 +423,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             rothValue: decOrZero(a.rothValue),
             hsaCoverage: a.hsaCoverage ?? null,
             growthRate: a.growthRate != null ? String(a.growthRate) : null,
+            ...accountGrowthBasis(a),
             rmdEnabled: a.rmdEnabled ?? false,
             priorYearEndValue:
               a.priorYearEndValue != null ? String(a.priorYearEndValue) : null,

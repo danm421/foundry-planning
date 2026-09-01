@@ -39,6 +39,15 @@ export interface QuickAddArgs {
   startYear: number;
   endYear: number;
   growthRate: number;
+  /** Tax realization implied by the growth basis (a model portfolio's mix).
+   *  Absent for the plan's category default, which resolve-entity re-derives. */
+  realization?: Account["realization"];
+  /** The growth BASIS ("default" | "model_portfolio"), carried so Save-to-base
+   *  can persist WHY the account grows at this rate, not just the number. Left
+   *  unset, the accounts column defaults to "default" and the rate above is
+   *  silently discarded on the next load. */
+  growthSource?: string;
+  modelPortfolioId?: string | null;
   accountId: string;
   ruleId: string;
   activationYear?: number | null;
@@ -60,6 +69,9 @@ export function buildQuickAddAccount(args: QuickAddArgs): { account: Account; ru
     owners: [{ kind: "family_member", familyMemberId: args.ownerFamilyMemberId, percent: 1 }],
     activationYear: args.activationYear ?? null,
     activationYearRef: args.activationYearRef ?? null,
+    ...(args.realization ? { realization: args.realization } : {}),
+    growthSource: args.growthSource ?? "custom",
+    modelPortfolioId: args.modelPortfolioId ?? null,
   };
   const rule: SavingsRule = {
     id: args.ruleId,
@@ -83,6 +95,10 @@ export interface AdditionalSavingsArgs {
   /** When the savings are invested in a model portfolio, the resolved tax
    *  realization (mirrors resolve-entity's model-portfolio account path). */
   realization?: Account["realization"];
+  /** The portfolio the savings are invested in. Persisted as the account's
+   *  growth basis so a saved "Additional Savings" account keeps earning that
+   *  portfolio's return instead of reverting to the category default. */
+  modelPortfolioId?: string | null;
 }
 
 /**
@@ -104,6 +120,8 @@ export function buildAdditionalSavingsAccount(args: AdditionalSavingsArgs): { ac
     titlingType: "jtwros",
     owners: [{ kind: "family_member", familyMemberId: args.ownerFamilyMemberId, percent: 1 }],
     ...(args.realization ? { realization: args.realization } : {}),
+    growthSource: args.modelPortfolioId ? "model_portfolio" : "custom",
+    modelPortfolioId: args.modelPortfolioId ?? null,
   };
   const rule: SavingsRule = {
     id: args.ruleId,
@@ -192,6 +210,7 @@ export function buildQuickAdd529(args: QuickAdd529Args): { account: Account; rul
     value: args.balance,
     basis: args.balance,
     growthRate: args.growthRate,
+    growthSource: "custom",
     rmdEnabled: false,
     titlingType: "jtwros",
     owners: [

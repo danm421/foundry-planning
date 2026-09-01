@@ -11,7 +11,12 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Account, SavingsRule } from "@/engine/types";
 import type { SolverMutation } from "@/lib/solver/types";
+import type { ClientMilestones } from "@/lib/milestones";
 import { SolverSavingsEditDialog } from "../solver-savings-edit-dialog";
+
+const MILESTONES: ClientMilestones = {
+  planStart: 2026, planEnd: 2075, clientRetirement: 2044, clientEnd: 2060,
+};
 
 const ACCOUNT = {
   id: "acct-401k",
@@ -49,6 +54,7 @@ function renderDialog(workingRule: SavingsRule) {
       workingRule={workingRule}
       resolvedInflationRate={0.03}
       salaries={SALARIES}
+      milestones={MILESTONES}
     />,
   );
   return onEmit;

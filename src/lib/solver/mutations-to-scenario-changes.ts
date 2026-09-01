@@ -460,12 +460,18 @@ export function mutationsToScenarioChanges(
         const rule = savingsRuleFor(m.accountId);
         if (!rule) break;
         accumulateSavings(m.accountId, "startYear", rule.startYear, m.year);
+        if ("ref" in m) {
+          accumulateSavings(m.accountId, "startYearRef", rule.startYearRef ?? null, m.ref ?? null);
+        }
         break;
       }
       case "savings-end-year": {
         const rule = savingsRuleFor(m.accountId);
         if (!rule) break;
         accumulateSavings(m.accountId, "endYear", rule.endYear, m.year);
+        if ("ref" in m) {
+          accumulateSavings(m.accountId, "endYearRef", rule.endYearRef ?? null, m.ref ?? null);
+        }
         break;
       }
       case "account-upsert": {

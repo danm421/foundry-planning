@@ -83,8 +83,14 @@ export type SolverMutation =
       cap: number | null;
     }
   | { kind: "savings-employer-match-amount"; accountId: string; amount: number }
-  | { kind: "savings-start-year"; accountId: string; year: number }
-  | { kind: "savings-end-year"; accountId: string; year: number }
+  /** `ref` is the milestone the year is anchored to ("client_retirement", …),
+   *  or null for a hand-typed calendar year. Typed as a plain string to match
+   *  `SavingsRule.startYearRef` in the engine, which is deliberately opaque
+   *  there; the wire schema narrows it to the twelve real anchors. The resolved
+   *  year is what the engine reads — the ref is what re-anchors the saved rule
+   *  when the household's retirement date later moves. */
+  | { kind: "savings-start-year"; accountId: string; year: number; ref?: string | null }
+  | { kind: "savings-end-year"; accountId: string; year: number; ref?: string | null }
   | { kind: "life-expectancy"; person: SolverPerson; age: number }
   | { kind: "roth-conversion-upsert"; id: string; value: RothConversion | null }
   | { kind: "asset-transaction-upsert"; id: string; value: AssetTransaction | null }

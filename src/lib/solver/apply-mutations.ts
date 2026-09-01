@@ -244,15 +244,22 @@ export function applyMutations(
         );
         break;
       }
+      // `ref` is written whenever the mutation carries the key at all — an
+      // explicit `null` means "the advisor typed a calendar year", which has to
+      // CLEAR a ref the rule already had. Only an absent key leaves it alone.
       case "savings-start-year": {
         result.savingsRules = result.savingsRules.map((r) =>
-          r.accountId === m.accountId ? { ...r, startYear: m.year } : r,
+          r.accountId === m.accountId
+            ? { ...r, startYear: m.year, ...("ref" in m ? { startYearRef: m.ref } : {}) }
+            : r,
         );
         break;
       }
       case "savings-end-year": {
         result.savingsRules = result.savingsRules.map((r) =>
-          r.accountId === m.accountId ? { ...r, endYear: m.year } : r,
+          r.accountId === m.accountId
+            ? { ...r, endYear: m.year, ...("ref" in m ? { endYearRef: m.ref } : {}) }
+            : r,
         );
         break;
       }

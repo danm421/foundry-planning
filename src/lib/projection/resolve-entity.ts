@@ -21,9 +21,10 @@ export interface ResolutionContext {
   ownersByAccountId?: Map<string, AccountOwner[]>;
   /** Per-account BASE (pre-reinvestment) asset-class allocation, keyed by
    *  account id. Populated by `loadClientData` from the raw account rows —
-   *  the engine `Account` type does not carry `growthSource` /
-   *  `modelPortfolioId`, so the scenario overlay reuses this map to re-resolve
-   *  reinvestment `soldFractionByAccount` after `applyScenarioChanges`.
+   *  the engine `Account` carries `growthSource` / `modelPortfolioId` only as
+   *  view-only metadata, never the resolved allocation, so the scenario overlay
+   *  reuses this map to re-resolve reinvestment `soldFractionByAccount` after
+   *  `applyScenarioChanges`.
    *  Accounts absent from the map resolve to a conservative full turnover. */
   accountBaseAllocByAccountId?: Map<string, Map<string, number> | undefined>;
   /** Per-account authoritative value/basis sums from the holdings rollup.
@@ -40,9 +41,10 @@ export interface ResolutionContext {
     clientOverride: { geometricReturn: number | string } | null;
   };
   /** Account ids whose resolved `growthRate` came from the inflation rate
-   *  (growthSource === "inflation"). The engine `Account` drops `growthSource`,
-   *  so the scenario overlay reuses this set to re-resolve those accounts when
-   *  a scenario changes inflation. */
+   *  (growthSource === "inflation"). Kept as an explicit set rather than read
+   *  off the account's view-only `growthSource`, because a "default" source
+   *  can resolve to inflation via the category default. The scenario overlay
+   *  reuses it to re-resolve those accounts when a scenario changes inflation. */
   accountGrowthFromInflation?: Set<string>;
   /** Account ids whose resolved `propertyTaxGrowthRate` came from the inflation
    *  rate (propertyTaxGrowthSource === "inflation"). */
@@ -274,6 +276,11 @@ export function resolveAccountFromRaw(
     flowMode: raw.flowMode ?? undefined,
     businessTaxTreatment: raw.businessTaxTreatment ?? null,
     parentAccountId: raw.parentAccountId ?? null,
+    // View-only passthrough. `growthRate` / `realization` above are already
+    // resolved from these; they ride along only so an editor that rewrites the
+    // whole account can put the same basis back (see Account in engine/types).
+    growthSource: raw.growthSource ?? null,
+    modelPortfolioId: raw.modelPortfolioId ?? null,
   };
 }
 

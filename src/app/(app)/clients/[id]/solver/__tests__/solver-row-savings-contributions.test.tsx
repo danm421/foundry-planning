@@ -2,7 +2,12 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import type { ClientData, SavingsRule } from "@/engine";
+import type { ClientMilestones } from "@/lib/milestones";
 import { SolverRowSavingsContributions, savingsDetailRows } from "../solver-row-savings-contributions";
+
+const MILESTONES: ClientMilestones = {
+  planStart: 2026, planEnd: 2075, clientRetirement: 2044, clientEnd: 2060,
+};
 
 function clientData(overrides: Partial<ClientData> = {}): ClientData {
   return {
@@ -31,6 +36,7 @@ function renderWorking(base: ClientData, working: ClientData) {
       activeSolve={null}
       onSolveStart={vi.fn()}
       onSolveCancel={vi.fn()}
+      milestones={MILESTONES}
     />,
   );
 }
@@ -62,6 +68,7 @@ describe("SolverRowSavingsContributions working-added rows", () => {
         activeSolve={null}
         onSolveStart={vi.fn()}
         onSolveCancel={vi.fn()}
+        milestones={MILESTONES}
         visibleSelfFundingAccts={new Set(["acct-min"])}
       />,
     );

@@ -9,6 +9,9 @@ import {
 } from "@/lib/solver/types";
 import type { SolveLeverKey } from "@/lib/solver/solve-types";
 import { activeSavingsRules } from "@/lib/solver/active-savings-rules";
+import type { ClientMilestones } from "@/lib/milestones";
+import type { AccountAssetMix } from "@/engine/monteCarlo/trial";
+import type { SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
 import { supportsRothSplit } from "@/components/forms/contribution-amount-fields";
 import type { SalaryOption } from "@/components/forms/salary-basis-fields";
 import { toSalaryOptions } from "@/lib/savings/salary-options";
@@ -42,6 +45,34 @@ interface Props {
   onSolveCancel: () => void;
   /** fundFromExpenseReduction accounts the advisor chose to surface as boxes. */
   visibleSelfFundingAccts?: Set<string>;
+  /** The firm's model portfolios, for the dialog's account-growth picker. */
+  portfolios?: readonly SolverModelPortfolio[];
+  /** The plan's resolved default growth rate per account category. */
+  categoryGrowthDefaults?: { taxable: number; retirement: number; cash: number };
+  registerAccountMix?: (accountId: string, mix: AccountAssetMix[]) => void;
+  /** Resolved household milestones, for the dialog's Timeline pickers. */
+  milestones: ClientMilestones;
+  clientFirstName?: string;
+  spouseFirstName?: string;
+}
+
+/** Plan default growth for an account's category, or null when the plan has no
+ *  default to name. 529s and annuities follow retirement, mirroring the
+ *  engine's `growthDefaultCategory` alias. Real estate / business / life
+ *  insurance DO have plan defaults, but none are threaded here — returning the
+ *  retirement rate for them would label a number that is not their default, so
+ *  they return null and the picker omits the "Plan default" option instead. */
+function categoryDefaultRate(
+  category: string,
+  defaults: { taxable: number; retirement: number; cash: number } | undefined,
+): number | null {
+  if (!defaults) return null;
+  if (category === "cash") return defaults.cash;
+  if (category === "taxable") return defaults.taxable;
+  if (category === "retirement" || category === "education_savings" || category === "annuity") {
+    return defaults.retirement;
+  }
+  return null;
 }
 
 /** Every per-account savings mutation key the inline inputs + edit dialog can
@@ -61,6 +92,11 @@ function savingsResetKeys(accountId: string): SolverMutationKey[] {
     mutationKey({ kind: "savings-employer-match-amount", accountId, amount: 0 }),
     mutationKey({ kind: "savings-start-year", accountId, year: 0 }),
     mutationKey({ kind: "savings-end-year", accountId, year: 0 }),
+    // Deliberately NOT `account-upsert:<accountId>`, which the growth picker
+    // writes. That key is account-scoped, not rule-scoped: the revocable-trust
+    // and education-goal levers write it for the same account, so clearing it
+    // here would silently drop THEIR work too. A growth change therefore
+    // survives a reset of the contribution — reverted from the picker instead.
   ];
 }
 
@@ -74,6 +110,12 @@ export function SolverRowSavingsContributions({
   onSolveStart,
   onSolveCancel,
   visibleSelfFundingAccts,
+  portfolios,
+  categoryGrowthDefaults,
+  registerAccountMix,
+  milestones,
+  clientFirstName,
+  spouseFirstName,
 }: Props) {
   const baseActive = activeSavingsRules(baseClientData.savingsRules, currentYear);
   const visible = visibleSelfFundingAccts ?? new Set<string>();
@@ -122,6 +164,12 @@ export function SolverRowSavingsContributions({
               workingAccount={workingAccount}
               resolvedInflationRate={resolvedInflationRate}
               salaries={salaryOptions}
+              portfolios={portfolios}
+              categoryGrowthDefaults={categoryGrowthDefaults}
+              registerAccountMix={registerAccountMix}
+              milestones={milestones}
+              clientFirstName={clientFirstName}
+              spouseFirstName={spouseFirstName}
               activeSolve={activeSolve}
               onSolveStart={onSolveStart}
               onSolveCancel={onSolveCancel}
@@ -142,6 +190,12 @@ export function SolverRowSavingsContributions({
               workingAccount={account}
               resolvedInflationRate={resolvedInflationRate}
               salaries={salaryOptions}
+              portfolios={portfolios}
+              categoryGrowthDefaults={categoryGrowthDefaults}
+              registerAccountMix={registerAccountMix}
+              milestones={milestones}
+              clientFirstName={clientFirstName}
+              spouseFirstName={spouseFirstName}
               activeSolve={activeSolve}
               onSolveStart={onSolveStart}
               onSolveCancel={onSolveCancel}
@@ -231,6 +285,12 @@ function Editable({
   workingAccount,
   resolvedInflationRate,
   salaries,
+  portfolios,
+  categoryGrowthDefaults,
+  registerAccountMix,
+  milestones,
+  clientFirstName,
+  spouseFirstName,
   activeSolve,
   onSolveStart,
   onSolveCancel,
@@ -244,6 +304,12 @@ function Editable({
   workingAccount: Account | undefined;
   resolvedInflationRate: number;
   salaries: readonly SalaryOption[];
+  portfolios?: readonly SolverModelPortfolio[];
+  categoryGrowthDefaults?: { taxable: number; retirement: number; cash: number };
+  registerAccountMix?: (accountId: string, mix: AccountAssetMix[]) => void;
+  milestones: ClientMilestones;
+  clientFirstName?: string;
+  spouseFirstName?: string;
   activeSolve: ActiveSolve | null;
   onSolveStart: (target: SolveLeverKey, targetPoS: number) => void;
   onSolveCancel: () => void;
@@ -415,6 +481,15 @@ function Editable({
           workingRule={workingRule}
           resolvedInflationRate={resolvedInflationRate}
           salaries={salaries}
+          portfolios={portfolios}
+          categoryDefaultRate={categoryDefaultRate(
+            workingAccount.category,
+            categoryGrowthDefaults,
+          )}
+          registerAccountMix={registerAccountMix}
+          milestones={milestones}
+          clientFirstName={clientFirstName}
+          spouseFirstName={spouseFirstName}
         />
       ) : null}
     </div>

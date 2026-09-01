@@ -28,7 +28,16 @@ import SalaryBasisFields, {
   type SalaryBasisValue,
   type SalaryOption,
 } from "@/components/forms/salary-basis-fields";
+import MilestoneYearPicker from "@/components/milestone-year-picker";
+import { coerceYearRef, type ClientMilestones, type YearRef } from "@/lib/milestones";
+import type { SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
+import type { AccountAssetMix } from "@/engine/monteCarlo/trial";
 import type { SolverMutation } from "@/lib/solver/types";
+import {
+  SolverAccountGrowthSelect,
+  accountGrowthSelectValue,
+  resolveAccountGrowthChoice,
+} from "./solver-account-growth-select";
 
 interface Props {
   open: boolean;
@@ -41,6 +50,18 @@ interface Props {
   /** The plan's salaries, for the "which salaries?" panel. Built by the parent
    *  row from the WORKING tree, so a salary added this session is selectable. */
   salaries?: readonly SalaryOption[];
+  /** The firm's model portfolios, for the account-growth picker. */
+  portfolios?: readonly SolverModelPortfolio[];
+  /** The plan's resolved default growth rate for this account's category, or
+   *  null when the plan has no default to name for it. */
+  categoryDefaultRate?: number | null;
+  /** Register the picked portfolio's asset mix so Monte Carlo randomizes this
+   *  account on that allocation instead of the flat deterministic rate. */
+  registerAccountMix?: (accountId: string, mix: AccountAssetMix[]) => void;
+  /** Resolved household milestones, for the Timeline year pickers. */
+  milestones: ClientMilestones;
+  clientFirstName?: string;
+  spouseFirstName?: string;
 }
 
 export function SolverSavingsEditDialog({
@@ -51,6 +72,12 @@ export function SolverSavingsEditDialog({
   workingRule,
   resolvedInflationRate,
   salaries,
+  portfolios,
+  categoryDefaultRate,
+  registerAccountMix,
+  milestones,
+  clientFirstName,
+  spouseFirstName,
 }: Props) {
   const showPercentMode = supportsPercentContribution(account.category, account.subType);
   const showMaxMode = supportsMaxContribution(account.category, account.subType);
@@ -129,6 +156,27 @@ export function SolverSavingsEditDialog({
 
   const [startYear, setStartYear] = useState<number>(workingRule.startYear);
   const [endYear, setEndYear] = useState<number>(workingRule.endYear);
+  // coerced, not cast: the engine types these as opaque strings, so a stale or
+  // hand-edited token would otherwise reach MilestoneYearPicker as a valid ref.
+  const [startYearRef, setStartYearRef] = useState<YearRef | null>(
+    coerceYearRef(workingRule.startYearRef) ?? null,
+  );
+  const [endYearRef, setEndYearRef] = useState<YearRef | null>(
+    coerceYearRef(workingRule.endYearRef) ?? null,
+  );
+
+  // Account growth. Seeded from the account's stored basis; `null` means it is
+  // on a source this picker cannot offer (a custom rate, a per-account asset
+  // mix, holdings) and the select shows "as entered" until the advisor moves it.
+  const growthPortfolios = portfolios ?? [];
+  const initialGrowthValue = accountGrowthSelectValue(
+    account,
+    growthPortfolios,
+    categoryDefaultRate ?? null,
+  );
+  const [accountGrowthValue, setAccountGrowthValue] = useState<string | null>(
+    initialGrowthValue,
+  );
 
   const initialSalaryBasis = inferSalaryBasis(
     workingRule.salaryBasis,
@@ -278,11 +326,43 @@ export function SolverSavingsEditDialog({
     }
 
     // Timeline ---------------------------------------------------------
-    if (startYear !== workingRule.startYear) {
-      out.push({ kind: "savings-start-year", accountId, year: startYear });
+    // The ref rides with the year, so anchoring to "Rachel Retirement" survives
+    // the save and re-anchors when her retirement date later moves. Emitted when
+    // EITHER the year or the anchor changed — switching from a milestone to the
+    // same hand-typed year still has to clear the ref.
+    const baseStartRef = coerceYearRef(workingRule.startYearRef) ?? null;
+    const baseEndRef = coerceYearRef(workingRule.endYearRef) ?? null;
+    if (startYear !== workingRule.startYear || startYearRef !== baseStartRef) {
+      out.push({ kind: "savings-start-year", accountId, year: startYear, ref: startYearRef });
     }
-    if (endYear !== workingRule.endYear) {
-      out.push({ kind: "savings-end-year", accountId, year: endYear });
+    if (endYear !== workingRule.endYear || endYearRef !== baseEndRef) {
+      out.push({ kind: "savings-end-year", accountId, year: endYear, ref: endYearRef });
+    }
+
+    // Account growth ----------------------------------------------------
+    // Rewrites the whole account (there is no per-field account lever), so it
+    // is emitted only on an actual change — an upsert of an unchanged account
+    // would still re-materialize its owner rows on Save-to-base.
+    if (accountGrowthValue !== null && accountGrowthValue !== initialGrowthValue) {
+      const choice = resolveAccountGrowthChoice(
+        accountGrowthValue,
+        growthPortfolios,
+        categoryDefaultRate ?? null,
+      );
+      if (choice) {
+        out.push({
+          kind: "account-upsert",
+          id: accountId,
+          value: {
+            ...account,
+            growthRate: choice.growthRate,
+            realization: choice.realization,
+            growthSource: choice.growthSource,
+            modelPortfolioId: choice.modelPortfolioId,
+          },
+        });
+        registerAccountMix?.(accountId, choice.mix);
+      }
     }
 
     // Salary basis -----------------------------------------------------
@@ -456,10 +536,29 @@ export function SolverSavingsEditDialog({
         </fieldset>
       )}
 
-      {/* Growth */}
+      {/* Account growth — what the BALANCE earns. Placed above contribution
+          growth because it is the number advisors come here looking for. */}
+      {growthPortfolios.length > 0 || categoryDefaultRate != null ? (
+        <fieldset className="mb-4">
+          <legend className="text-[12px] font-medium text-ink-2 mb-2">
+            Account growth
+          </legend>
+          <SolverAccountGrowthSelect
+            id={`solver-acct-growth-${account.id}`}
+            label="Grows at"
+            value={accountGrowthValue}
+            portfolios={growthPortfolios}
+            categoryDefaultRate={categoryDefaultRate ?? null}
+            currentRate={account.growthRate}
+            onChange={setAccountGrowthValue}
+          />
+        </fieldset>
+      ) : null}
+
+      {/* Contribution growth — how the yearly CONTRIBUTION escalates. */}
       <fieldset className="mb-4">
         <legend className="text-[12px] font-medium text-ink-2 mb-2">
-          Growth
+          Contribution growth
         </legend>
         <div className="flex gap-1 text-xs mb-3">
           <ModeButton
@@ -477,7 +576,9 @@ export function SolverSavingsEditDialog({
         </div>
         {growthSource === "custom" ? (
           <div>
-            <label className={fieldLabelClassName}>Annual growth rate (%)</label>
+            <label className={fieldLabelClassName}>
+              Contribution increases per year (%)
+            </label>
             <input
               type="number"
               step={0.25}
@@ -488,7 +589,7 @@ export function SolverSavingsEditDialog({
           </div>
         ) : (
           <p className="text-[13px] text-ink-3">
-            Follows the plan&rsquo;s inflation rate (
+            The contribution rises with the plan&rsquo;s inflation rate (
             {(resolvedInflationRate * 100).toFixed(2)}% currently).
           </p>
         )}
@@ -583,41 +684,50 @@ export function SolverSavingsEditDialog({
         </fieldset>
       )}
 
-      {/* Timeline */}
+      {/* Timeline — the same anchored pickers the cash-flow rows use
+          ("Rachel Retirement", "Last Year", a duration). */}
       <fieldset className="mb-2">
         <legend className="text-[12px] font-medium text-ink-2 mb-2">
           Timeline
         </legend>
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={fieldLabelClassName}>Start year</label>
-            <input
-              type="number"
-              min={1950}
-              max={2150}
-              value={startYear}
-              onChange={(e) => {
-                const n = parseInt(e.target.value, 10);
-                if (!Number.isNaN(n)) setStartYear(n);
-              }}
-              className={inputClassName}
-            />
-          </div>
-          <div>
-            <label className={fieldLabelClassName}>End year</label>
-            <input
-              type="number"
-              min={1950}
-              max={2150}
-              value={endYear}
-              onChange={(e) => {
-                const n = parseInt(e.target.value, 10);
-                if (!Number.isNaN(n)) setEndYear(n);
-              }}
-              className={inputClassName}
-            />
-          </div>
+          <MilestoneYearPicker
+            id={`solver-sr-start-${account.id}`}
+            name="startYear"
+            label="Start year"
+            value={startYear}
+            yearRef={startYearRef}
+            milestones={milestones}
+            clientFirstName={clientFirstName}
+            spouseFirstName={spouseFirstName}
+            position="start"
+            onChange={(y, ref) => {
+              setStartYear(y);
+              setStartYearRef(ref);
+            }}
+          />
+          <MilestoneYearPicker
+            id={`solver-sr-end-${account.id}`}
+            name="endYear"
+            label="End year"
+            value={endYear}
+            yearRef={endYearRef}
+            milestones={milestones}
+            clientFirstName={clientFirstName}
+            spouseFirstName={spouseFirstName}
+            position="end"
+            startYearForDuration={startYear}
+            onChange={(y, ref) => {
+              setEndYear(y);
+              setEndYearRef(ref);
+            }}
+          />
         </div>
+        {endYear < startYear && (
+          <p className="mt-2 text-[12px] text-warn">
+            End year is before the start year — this rule contributes nothing.
+          </p>
+        )}
       </fieldset>
 
       {/* Placed last, not beside the toggles it responds to: the panel is
