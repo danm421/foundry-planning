@@ -1,23 +1,19 @@
-import { redirect } from "next/navigation";
 import { SignUp } from "@clerk/nextjs";
 import { dark } from "@clerk/themes";
 import { normalizePlan } from "@/lib/billing/checkout";
 
 /**
- * Two very different people arrive at this URL.
+ * Two very different people arrive at this URL, and both now get the form.
  *
- * Invited ones — a portal client from `sendPortalInvite`, or the firm admin
- * the checkout webhook invites — arrive carrying a Clerk hand-off param
- * (`__clerk_ticket`, `__clerk_status`, …) and need the sign-up form. So does
- * anyone Clerk has already walked into a child step of this catch-all
- * (`/sign-up/verify-email-address`, `/continue`, `/sso-callback`), which it
- * navigates to with no query params at all.
+ * Invited ones — a portal client from `sendPortalInvite`, or the firm admin the
+ * sales-path checkout webhook invites — arrive carrying a Clerk hand-off param
+ * (`__clerk_ticket`, `__clerk_status`, …), as does anyone Clerk has walked into
+ * a child step of this catch-all. They already belong to a firm, so Clerk's own
+ * post-sign-up destination is correct and we must NOT override it.
  *
- * Everyone else arrives from the storefront's "Start trial" buttons. Signing
- * them up here would mint a Clerk account with no firm and no subscription,
- * and self-serve org creation is disabled — so they would dead-end on
- * /select-organization. They need Stripe Checkout, which is what actually
- * provisions a firm and emails them an invitation.
+ * Everyone else came from the storefront's "Start trial". They get the account
+ * first, then `/welcome`, where they name their firm and pay. Their Clerk org
+ * is deliberately not created until the payment lands — see the spec.
  */
 function isClerkFlow(
   query: Record<string, string | string[] | undefined>,
@@ -36,9 +32,9 @@ export default async function SignUpPage({
 }) {
   const [query, { "sign-up": segments }] = await Promise.all([searchParams, params]);
 
-  if (!isClerkFlow(query, segments)) {
-    redirect(`/api/checkout/start?plan=${normalizePlan(query.plan)}`);
-  }
+  const forceRedirectUrl = isClerkFlow(query, segments)
+    ? undefined
+    : `/welcome?plan=${normalizePlan(query.plan)}`;
 
   return (
     <section className="rise-in relative rounded-2xl border border-[var(--color-accent)]/40 bg-gradient-to-b from-[var(--color-accent)]/[0.06] to-transparent p-7 shadow-[0_30px_80px_-30px_rgba(31,158,140,0.35)] sm:p-9">
@@ -58,6 +54,8 @@ export default async function SignUpPage({
 
       <div className="mt-7 [&_.cl-rootBox]:w-full [&_.cl-cardBox]:w-full [&_.cl-card]:!bg-transparent [&_.cl-card]:!border-0 [&_.cl-card]:!p-0 [&_.cl-card]:!shadow-none [&_.cl-header]:hidden [&_.cl-footer]:!bg-transparent">
         <SignUp
+          forceRedirectUrl={forceRedirectUrl}
+          signInUrl="/sign-in"
           appearance={{
             theme: dark,
             variables: {

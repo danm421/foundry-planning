@@ -48,10 +48,15 @@ const isPublicRoute = createRouteMatcher([
 ]);
 
 // The org picker is the one authenticated route that signed-in-but-
-// org-less users are allowed to reach without being bounced further.
+// org-less users are allowed to reach without being bounced further —
+// plus /welcome, the setup step, where a self-serve buyer names their firm
+// before paying. They are org-less there BY DESIGN: creating the Clerk org
+// before the payment lands would put them in the `missing` subscription state,
+// which this middleware blocks unconditionally.
 const isOrgPickerRoute = createRouteMatcher([
   "/select-organization(.*)",
   "/beta/redeem(.*)",
+  "/welcome(.*)",
 ]);
 
 const isPortalRoute = createRouteMatcher(["/portal(.*)", "/api/portal(.*)"]);
