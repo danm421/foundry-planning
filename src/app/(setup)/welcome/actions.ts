@@ -58,12 +58,22 @@ export async function saveSignupProfile(input: {
   const colour = validatePrimaryColor(input.primaryColor);
   if (!colour.ok) return colour;
 
-  await writePendingSignup(who.userId, {
-    firmName,
-    advisorName: input.advisorName.trim(),
-    primaryColor: colour.value,
-    plan: input.plan,
-  });
+  try {
+    await writePendingSignup(who.userId, {
+      firmName,
+      advisorName: input.advisorName.trim(),
+      primaryColor: colour.value,
+      plan: input.plan,
+    });
+  } catch (err) {
+    // writePendingSignup makes two unguarded Clerk API calls and, unlike
+    // readPendingSignup, has no internal fail-soft recovery — a transient
+    // Clerk failure would otherwise throw out of a server action and take
+    // the whole page down via the error boundary, losing the firm name the
+    // buyer just typed.
+    console.error("[welcome] could not save signup profile:", err);
+    return { ok: false, error: "Could not save your details. Please try again." };
+  }
   return { ok: true };
 }
 
@@ -98,7 +108,16 @@ export async function uploadSignupLogo(
     return { ok: false, error: "Upload failed. Please try again." };
   }
 
-  await writePendingSignup(who.userId, { logoUrl: url });
+  try {
+    await writePendingSignup(who.userId, { logoUrl: url });
+  } catch (err) {
+    // The blob is already stored at this point — but if the stash write
+    // fails, the profile never references it, so it would be invisible to
+    // everything downstream. Report the honest inline error rather than
+    // returning ok: true for a logo the buyer can't actually see saved.
+    console.error("[welcome] could not save logo url:", err);
+    return { ok: false, error: "Upload failed. Please try again." };
+  }
   return { ok: true, url };
 }
 

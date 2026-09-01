@@ -93,6 +93,20 @@ describe("saveSignupProfile", () => {
     const res = await saveSignupProfile({ firmName: "Acme", advisorName: "Dana", primaryColor: null, plan: "annual" });
     expect(res).toEqual({ ok: false, error: "You already have a workspace." });
   });
+
+  // R14: writePendingSignup makes two unguarded Clerk API calls and has no
+  // internal fail-soft recovery (unlike readPendingSignup, which is
+  // explicitly documented fail-soft). Left bare, a rejection here throws out
+  // of the server action and takes the whole page down via the error
+  // boundary — losing the firm name the buyer just typed. This awaits the
+  // action directly rather than wrapping it in expect(...).resolves: if the
+  // try/catch were removed, `await saveSignupProfile(...)` itself would
+  // reject and this test would fail, not merely see a different value.
+  it("returns an inline error instead of throwing when the stash write fails", async () => {
+    mockWrite.mockRejectedValueOnce(new Error("clerk down"));
+    const res = await saveSignupProfile({ firmName: "Acme", advisorName: "Dana", primaryColor: null, plan: "annual" });
+    expect(res).toEqual({ ok: false, error: "Could not save your details. Please try again." });
+  });
 });
 
 describe("uploadSignupLogo", () => {
@@ -123,6 +137,19 @@ describe("uploadSignupLogo", () => {
 
   it("surfaces a storage failure inline instead of crashing the page", async () => {
     mockPutSignupAsset.mockRejectedValue(new Error("blob down"));
+    const res = await uploadSignupLogo(pngFormData());
+    expect(res).toEqual({ ok: false, error: "Upload failed. Please try again." });
+  });
+
+  // R14: the blob is already stored by the time writePendingSignup runs, so a
+  // rejection here would otherwise either throw out of the server action
+  // (unguarded) or, if swallowed carelessly, return ok: true for a logo the
+  // profile never actually references — stranding it invisibly. Awaits the
+  // action directly (not wrapped in expect(...).resolves) so removing the
+  // try/catch fails this test via a rejected promise, not a value mismatch.
+  it("returns an inline error instead of throwing when the stash write fails after a successful upload", async () => {
+    mockPutSignupAsset.mockResolvedValue({ url: "https://blob.example/logo.png" });
+    mockWrite.mockRejectedValueOnce(new Error("clerk down"));
     const res = await uploadSignupLogo(pngFormData());
     expect(res).toEqual({ ok: false, error: "Upload failed. Please try again." });
   });
