@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
+import { auth, clerkClient } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { firms, subscriptions } from "@/db/schema";
 import { getStripe } from "@/lib/billing/stripe-client";
@@ -64,7 +65,7 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   const rows = await db
-    .select({ firmName: firms.displayName })
+    .select({ firmId: firms.firmId, firmName: firms.displayName })
     .from(subscriptions)
     .innerJoin(firms, eq(subscriptions.firmId, firms.firmId))
     .where(eq(subscriptions.stripeCustomerId, customerId))
@@ -74,10 +75,38 @@ export async function GET(req: Request): Promise<Response> {
     return NextResponse.json({ ready: false });
   }
 
+  const firmId = rows[0]!.firmId;
+
+  // The DB row is NOT the readiness signal. checkout-session-completed stamps
+  // the Clerk org's public_metadata last, and proxy.ts blocks a `missing`
+  // subscription state unconditionally — so activating the org between those
+  // two writes sends a buyer who just paid to the billing lockout. Ready means
+  // "they can actually get in", which is the stamped metadata.
+  let stamped = false;
+  try {
+    const cc = await clerkClient();
+    const org = await cc.organizations.getOrganization({ organizationId: firmId });
+    const meta = (org.publicMetadata ?? {}) as { subscription_status?: unknown };
+    stamped = typeof meta.subscription_status === "string";
+  } catch (err) {
+    console.error("[checkout/status] could not read the Clerk org:", err);
+    return NextResponse.json({ ready: false });
+  }
+  if (!stamped) {
+    return NextResponse.json({ ready: false });
+  }
+
+  // The firm id goes only to the buyer themselves — it is what /checkout/success
+  // passes to setActive(). Everyone else (the sales path, or a stranger holding
+  // the session id) gets today's masked shape.
+  const { userId } = await auth();
+  const isBuyer = !!userId && userId === session.client_reference_id;
+
   return NextResponse.json({
     ready: true,
     firmName: rows[0]!.firmName,
     buyerEmail: maskEmail(buyerEmail),
+    ...(isBuyer ? { firmId } : {}),
   });
 }
 
