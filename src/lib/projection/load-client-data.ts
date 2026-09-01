@@ -959,6 +959,7 @@ export const loadClientDataWithContext = cache(
       balanceAsOfYear: l.balanceAsOfYear ?? undefined,
       linkedPropertyId: l.linkedPropertyId ?? undefined,
       isInterestDeductible: l.isInterestDeductible,
+      forgiveAtTermEnd: l.forgiveAtTermEnd,
       extraPayments: extraPaymentRows
         .filter((ep) => ep.liabilityId === l.id)
         .map((ep) => ({

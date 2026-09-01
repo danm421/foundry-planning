@@ -84,6 +84,14 @@ export function calcInterestOnlyPayment(
 }
 
 /**
+ * How close a payment must sit to accrued interest before it counts as
+ * interest-only. A payment persisted at two decimal places never equals the
+ * true accrual exactly, and the difference is a fraction of a cent — real
+ * enough to compound over 360 months if it is treated as under-payment.
+ */
+export const INTEREST_ONLY_TOLERANCE = 0.01;
+
+/**
  * True when `monthlyPayment` covers the accrued interest and nothing more.
  * Tolerant to a cent so a payment persisted at 2dp still reads as interest-only.
  * A loan with no balance or no rate is never interest-only — its accrued
@@ -96,7 +104,7 @@ export function isInterestOnlyPayment(
 ): boolean {
   const interestOnly = calcInterestOnlyPayment(balance, annualRate);
   if (interestOnly <= 0) return false;
-  return Math.abs(monthlyPayment - interestOnly) < 0.01;
+  return Math.abs(monthlyPayment - interestOnly) < INTEREST_ONLY_TOLERANCE;
 }
 
 /**
@@ -124,8 +132,14 @@ export interface AmortizationScheduleRow {
   beginningBalance: number;
   payment: number;
   interest: number;
+  /** Principal repaid this year. NEGATIVE when the payment did not cover
+   *  accrued interest and the shortfall capitalized into the balance. */
   principal: number;
   extraPayment: number;
+  /** Balance written off at the contractual end because the loan is flagged
+   *  `forgiveAtTermEnd`. Zero on every row except, at most, the last. NOT a
+   *  cash flow — it never enters `payment`. */
+  forgivenAmount: number;
   endingBalance: number;
   /** Calendar month (1-12) of this year's FIRST payment. An October-originated
    *  loan reports 10 in its origination year and 1 in every year after. */
@@ -142,15 +156,6 @@ export interface ScheduleExtraPayment {
   amount: number;
 }
 
-/**
- * Full amortization schedule from loan parameters + optional extra payments.
- * Returns one row per year from startYear until payoff or contractual end.
- *
- * `startMonth` (1-12) is the calendar month the loan originates in. A loan that
- * starts mid-year only makes `12 − startMonth + 1` payments in its first
- * calendar year, so the startYear row simulates that many months instead of a
- * full 12. Defaults to 1 (January) — a January origination is unchanged.
- */
 /**
  * Last calendar year `computeAmortizationSchedule` will emit a row for — the
  * year the loan's final payment falls in.
@@ -187,6 +192,23 @@ export function scheduleEndYear(
   return startYear + Math.ceil((termMonths + startMonth - 1) / 12) - 1;
 }
 
+/**
+ * Below a dollar, a residue at the end of the term is rounding dust from a
+ * payment stored at two decimals — not a forgiven balance. Absorb it into the
+ * final payment the way an unflagged loan does, so a loan that amortizes
+ * cleanly does not report "$0.42 forgiven".
+ */
+const FORGIVENESS_MIN = 1;
+
+/**
+ * Full amortization schedule from loan parameters + optional extra payments.
+ * Returns one row per year from startYear until payoff or contractual end.
+ *
+ * `startMonth` (1-12) is the calendar month the loan originates in. A loan that
+ * starts mid-year only makes `12 − startMonth + 1` payments in its first
+ * calendar year, so the startYear row simulates that many months instead of a
+ * full 12. Defaults to 1 (January) — a January origination is unchanged.
+ */
 export function computeAmortizationSchedule(
   balance: number,
   annualRate: number,
@@ -194,7 +216,8 @@ export function computeAmortizationSchedule(
   startYear: number,
   termMonths: number,
   extraPayments: ScheduleExtraPayment[] = [],
-  startMonth = 1
+  startMonth = 1,
+  forgiveAtTermEnd = false
 ): AmortizationScheduleRow[] {
   const endYear = scheduleEndYear(startYear, termMonths, startMonth);
   const rows: AmortizationScheduleRow[] = [];
@@ -232,7 +255,19 @@ export function computeAmortizationSchedule(
 
       const monthlyInterest = bal * r;
       const scheduled = Math.min(monthlyPayment, bal + monthlyInterest);
-      const principalFromPayment = Math.max(0, scheduled - monthlyInterest);
+      // Compare the CONTRACTUAL monthlyPayment to interest, not the capped
+      // `scheduled` — the cap makes `scheduled - monthlyInterest` equal `bal`
+      // exactly, so once a payoff leaves a sub-cent floating-point residue
+      // behind, that residue would itself read as interest-only and principal
+      // would stick at zero forever. Within INTEREST_ONLY_TOLERANCE the
+      // payment is interest-only by intent, so principal is exactly zero;
+      // outside the tolerance the payment is taken at face value — above
+      // interest it amortizes the balance down, below interest the shortfall
+      // capitalizes and the balance grows.
+      const principalFromPayment =
+        Math.abs(monthlyPayment - monthlyInterest) < INTEREST_ONLY_TOLERANCE
+          ? 0
+          : scheduled - monthlyInterest;
 
       yearInterest += monthlyInterest;
       yearScheduledPayment += scheduled;
@@ -256,13 +291,21 @@ export function computeAmortizationSchedule(
       }
     }
 
-    // Contractual end: absorb any rounding dust so the final period
-    // always pays the balance to zero rather than leaving a residual
-    // from monthly-payment rounding (e.g. $1896.20 stored for a loan
-    // whose theoretical payment is $1896.203...).
+    // Contractual end. Two outcomes:
+    //  - Forgiven: the remainder is written off, not paid. Payment and principal
+    //    stay at their real levels, so the year does not report six figures of
+    //    cash leaving a household that never spent it.
+    //  - Otherwise: absorb the remainder into the final payment. Right for
+    //    rounding dust, and right for an interest-only loan, whose principal
+    //    genuinely IS due as a balloon at maturity.
+    let forgivenAmount = 0;
     if (year === endYear && bal > 0) {
-      yearScheduledPayment += bal;
-      yearPrincipal += bal;
+      if (forgiveAtTermEnd && bal >= FORGIVENESS_MIN) {
+        forgivenAmount = bal;
+      } else {
+        yearScheduledPayment += bal;
+        yearPrincipal += bal;
+      }
       bal = 0;
     }
 
@@ -273,6 +316,7 @@ export function computeAmortizationSchedule(
       interest: yearInterest,
       principal: yearPrincipal,
       extraPayment: yearExtraPayment,
+      forgivenAmount,
       endingBalance: bal,
       firstPaymentMonth: year === startYear ? startMonth : 1,
       paymentCount: monthsPaidThisYear,

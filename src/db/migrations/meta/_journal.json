@@ -1786,6 +1786,13 @@
       "when": 1788204640908,
       "tag": "0254_graceful_william_stryker",
       "breakpoints": true
+    },
+    {
+      "idx": 255,
+      "version": "7",
+      "when": 1788210054144,
+      "tag": "0255_liability_forgive_at_term_end",
+      "breakpoints": true
     }
   ]
 }

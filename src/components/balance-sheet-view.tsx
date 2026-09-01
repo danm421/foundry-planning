@@ -135,6 +135,12 @@ export interface LiabilityRow {
   linkedPropertyId?: string | null;
   ownerEntityId?: string | null;
   isInterestDeductible?: boolean;
+  /** Required on purpose, unlike its neighbour above: this is what forces both
+   *  server-side `liabilityProps` mappings to carry the value. Making it
+   *  optional to match `isInterestDeductible?` would silently re-open the
+   *  bug where editing a liability dropped its forgiveness flag, and `tsc`
+   *  would stay green while it happened. */
+  forgiveAtTermEnd: boolean;
   /** External integration that feeds this liability (plaid). Null/undefined =
    *  manually entered. Drives the linked indicator next to the name. */
   linkedSource?: LinkedSource | null;
@@ -381,6 +387,7 @@ function liabilityToInitial(l: LiabilityRow): LiabilityFormInitial {
     linkedPropertyId: l.linkedPropertyId ?? null,
     ownerEntityId: l.ownerEntityId ?? null,
     isInterestDeductible: l.isInterestDeductible,
+    forgiveAtTermEnd: l.forgiveAtTermEnd,
     owners: l.owners,
     parentAccountId: l.parentAccountId ?? null,
   };
@@ -417,7 +424,7 @@ function currentYearBalance(l: LiabilityRow): number {
   const origBal = calcOriginalBalance(bal, rate, pmt, elapsedMonths);
   const currentYear = new Date().getFullYear();
   if (currentYear <= l.startYear) return origBal;
-  const schedule = computeAmortizationSchedule(origBal, rate, pmt, l.startYear, l.termMonths, [], l.startMonth);
+  const schedule = computeAmortizationSchedule(origBal, rate, pmt, l.startYear, l.termMonths, [], l.startMonth, l.forgiveAtTermEnd);
   const row = schedule.find((r) => r.year === currentYear - 1);
   if (row) return row.endingBalance;
   // If current year is past the loan term, balance is 0

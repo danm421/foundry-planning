@@ -1,0 +1,1 @@
+ALTER TABLE "liabilities" ADD COLUMN "forgive_at_term_end" boolean DEFAULT false NOT NULL;

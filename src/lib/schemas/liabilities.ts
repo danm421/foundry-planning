@@ -98,6 +98,7 @@ export const liabilityCreateSchema = z.object({
   balanceAsOfMonth: coerceOrNullOptional.default(null),
   balanceAsOfYear: coerceOrNullOptional.default(null),
   isInterestDeductible: z.boolean().optional().default(false),
+  forgiveAtTermEnd: z.boolean().optional().default(false),
   ...nullableFkCreate,
   ...shared,
 });
@@ -116,6 +117,7 @@ export const liabilityUpdateSchema = z.object({
   balanceAsOfMonth: coerceOrNullOptional,
   balanceAsOfYear: coerceOrNullOptional,
   isInterestDeductible: z.boolean().optional(),
+  forgiveAtTermEnd: z.boolean().optional(),
   ...nullableFkUpdate,
   ...shared,
 });

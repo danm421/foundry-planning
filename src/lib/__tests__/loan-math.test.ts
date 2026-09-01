@@ -290,3 +290,188 @@ describe("computeAmortizationSchedule — mid-year origination pays its real ter
     expect(total).toBeCloseTo(PMT * 60, 0);
   });
 });
+
+describe("computeAmortizationSchedule — negative amortization", () => {
+  // $120,000 of graduate debt at 6.5% on an income-driven plan paying $450/mo
+  // against $650/mo of accrued interest. The shortfall capitalizes.
+  it("grows the balance when the payment does not cover accrued interest", () => {
+    const rows = computeAmortizationSchedule(120000, 0.065, 450, 2026, 240);
+
+    expect(rows[0].endingBalance).toBeCloseTo(122472.81, 1);
+    expect(rows[0].interest).toBeCloseTo(7872.81, 1);
+    // Negative principal IS the capitalized shortfall.
+    expect(rows[0].principal).toBeCloseTo(-2472.81, 1);
+  });
+
+  it("round-trips against calcOriginalBalance", () => {
+    // The advisor enters TODAY's balance on a five-year-old loan. Back-solving
+    // origination and simulating forward must return the figure they entered.
+    // Before this fix the forward pass held the balance flat and landed
+    // $15,205 low — silently discarding the advisor's own input.
+    const entered = 138000;
+    const origination = calcOriginalBalance(entered, 0.065, 450, 60);
+    const rows = computeAmortizationSchedule(origination, 0.065, 450, 2021, 240);
+
+    const balanceAtYearSix = rows.find((r) => r.year === 2026)!.beginningBalance;
+    expect(balanceAtYearSix).toBeCloseTo(entered, 2);
+  });
+
+  it("leaves a zero-interest loan amortizing normally", () => {
+    // No interest means no shortfall to capitalize: principal is the whole
+    // payment, exactly as before. $120,000 over 240 months is $500/mo.
+    const rows = computeAmortizationSchedule(120000, 0, 500, 2026, 240);
+
+    expect(rows[0].principal).toBeCloseTo(6000, 2);
+    expect(rows[0].endingBalance).toBeCloseTo(114000, 2);
+    expect(rows[rows.length - 1].endingBalance).toBe(0);
+  });
+
+  it("leaves an interest-only loan exactly flat", () => {
+    // calcInterestOnlyPayment computes balance * rate / 12 — the same
+    // expression the loop uses for accrued interest — so this fixture's
+    // payment matches accrual EXACTLY (difference is precisely 0). It pins
+    // the exact-match case; the next test pins the 2dp-rounded case, where
+    // INTEREST_ONLY_TOLERANCE is actually exercised.
+    const payment = calcInterestOnlyPayment(750000, 0.0625);
+    const rows = computeAmortizationSchedule(750000, 0.0625, payment, 2026, 360);
+
+    for (const row of rows.slice(0, -1)) {
+      expect(row.principal).toBeCloseTo(0, 6);
+      expect(row.endingBalance).toBeCloseTo(750000, 6);
+    }
+  });
+
+  it("treats a 2dp-rounded interest-only payment as flat, not a drifting shortfall", () => {
+    // $1,250,000 @ 7.25%: true monthly accrual is 7552.083333…, but a payment
+    // is persisted at two decimals — 7552.08 — a third-of-a-cent shortfall
+    // every month. Without INTEREST_ONLY_TOLERANCE that fraction capitalizes
+    // and compounds over 360 months into a real drift (verified: the balance
+    // reaches 1250003.94). With the tolerance it reads as interest-only and
+    // the balance holds exactly flat the whole term.
+    const rows = computeAmortizationSchedule(1250000, 0.0725, 7552.08, 2026, 360);
+
+    for (const row of rows.slice(0, -1)) {
+      expect(row.endingBalance).toBe(1250000);
+    }
+  });
+
+  it("does not stick at a sub-cent residue and skip payoff", () => {
+    // The payoff month caps `scheduled` at bal + monthlyInterest, so
+    // `scheduled - monthlyInterest` equals `bal` exactly there. Payoff itself
+    // survives either comparison — `bal` is thousands, far outside the
+    // tolerance. What breaks is the month AFTER: the cap leaves a sub-cent
+    // floating-point residue (measured: 3.6e-12), and comparing the CAPPED
+    // payment reads that residue as "interest-only", so principal sticks at
+    // zero, `bal <= 0` is never satisfied, and phantom rows run to the
+    // contractual end. The CONTRACTUAL monthlyPayment never sits that close.
+    const rows = computeAmortizationSchedule(579508.61, 0.02, 36994.19, 2026, 84);
+
+    expect(rows).toHaveLength(2);
+    expect(rows[rows.length - 1].endingBalance).toBe(0);
+  });
+
+  it("compounds instead of holding flat when a liability has a term but no payment", () => {
+    // isHeldFlatLiability guards on termMonths, not on monthlyPayment, so a
+    // liability with $0 saved for its payment still reaches this schedule.
+    // Measured on a real production liability (Loan #1, General Purpose):
+    // $9,840 @ 8.5%, $0/mo, 360 months. This is the capitalization thesis
+    // taken to its limit — CONSCIOUSLY accepted here, not guarded. A guard
+    // belongs on isHeldFlatLiability, which is engine-wide and out of this
+    // task's scope.
+    const rows = computeAmortizationSchedule(9840, 0.085, 0, 2026, 360);
+
+    // Every year but the last capitalizes the full unpaid interest as
+    // negative principal — nothing is ever paid toward it.
+    for (const row of rows.slice(0, -1)) {
+      expect(row.principal).toBeLessThan(0);
+    }
+
+    // The pre-existing "absorb rounding dust" step (built for a few cents of
+    // residual, not $115k of never-paid growth) still fires at the
+    // contractual end: it reports the whole compounded balance as that
+    // year's payment and zeroes the balance, even though the borrower never
+    // paid a cent. That quirk predates this task and is out of scope here;
+    // this test documents it rather than silently accepting an untested
+    // final row.
+    const last = rows[rows.length - 1];
+    expect(last.payment).toBeCloseTo(124894.19, 2);
+    expect(last.endingBalance).toBe(0);
+  });
+});
+
+describe("computeAmortizationSchedule — forgiveness at end of term", () => {
+  // Same income-driven loan as the negative-amortization block: $120,000 at
+  // 6.5%, $450/mo, 240-month term, growing to $218,084.19 by maturity.
+  const balance = 120000;
+  const rate = 0.065;
+  const payment = 450;
+
+  it("balloons the remainder when the flag is off", () => {
+    const rows = computeAmortizationSchedule(balance, rate, payment, 2026, 240);
+    const last = rows[rows.length - 1];
+
+    expect(last.forgivenAmount).toBe(0);
+    expect(last.payment).toBeCloseTo(223484.19, 1);
+    expect(last.endingBalance).toBe(0);
+  });
+
+  it("writes the remainder off instead of paying it when the flag is on", () => {
+    const rows = computeAmortizationSchedule(
+      balance, rate, payment, 2026, 240, [], 1, true
+    );
+    const last = rows[rows.length - 1];
+
+    expect(last.forgivenAmount).toBeCloseTo(218084.19, 1);
+    // The forgiven balance is NOT a cash flow: the year pays twelve normal
+    // payments and nothing more.
+    expect(last.payment).toBeCloseTo(5400, 2);
+    expect(last.endingBalance).toBe(0);
+  });
+
+  it("reports nothing forgiven on every year before the last", () => {
+    const rows = computeAmortizationSchedule(
+      balance, rate, payment, 2026, 240, [], 1, true
+    );
+    for (const row of rows.slice(0, -1)) {
+      expect(row.forgivenAmount).toBe(0);
+    }
+  });
+
+  it("absorbs rounding dust as payment rather than reporting it forgiven", () => {
+    // A loan whose payment amortizes it to (near) zero leaves cents, not a
+    // forgiven balance. $300,000 at 6.5% over 180 months is $2,613.322096/mo;
+    // stored at two decimals as $2,613.32 it under-pays by a third of a cent a
+    // month, leaving $0.64 at maturity. Under FORGIVENESS_MIN, so it is
+    // absorbed into the final payment exactly as an unflagged loan would.
+    const rows = computeAmortizationSchedule(
+      300000, 0.065, 2613.32, 2026, 180, [], 1, true
+    );
+    const last = rows[rows.length - 1];
+
+    expect(last.forgivenAmount).toBe(0);
+    expect(last.endingBalance).toBe(0);
+    // Pins dust-absorption specifically on the FLAGGED path. Deleting the
+    // else branch's `yearScheduledPayment += bal;` (so a flagged loan's
+    // final payment stays at 12 * 2613.32 = 31,359.84 instead of absorbing
+    // the $0.64 residue) leaves forgivenAmount/endingBalance unchanged and
+    // only test 1 (the unflagged case) would catch it.
+    expect(last.payment).toBeCloseTo(31360.48, 2);
+  });
+
+  it("forgiveness outranks the interest-only balloon for a flagged loan", () => {
+    // An interest-only payment never amortizes principal, so the balloon due
+    // at maturity IS the whole original balance. That is exactly what
+    // forgiveAtTermEnd writes off: the forgiveness branch fires first and the
+    // interest-only balloon logic never gets a balance to absorb.
+    const ioPayment = calcInterestOnlyPayment(500000, 0.06); // 2500/mo
+    const rows = computeAmortizationSchedule(
+      500000, 0.06, ioPayment, 2026, 60, [], 1, true
+    );
+    const last = rows[rows.length - 1];
+
+    expect(last.forgivenAmount).toBe(500000);
+    expect(last.payment).toBe(30000);
+    expect(last.principal).toBe(0);
+    expect(last.endingBalance).toBe(0);
+  });
+});

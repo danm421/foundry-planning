@@ -1850,6 +1850,16 @@ describe("distributeUnlinkedLiabilities", () => {
     expect(newRow.balance).toBeCloseTo(10_000, 2);
   });
 
+  it("carries forgiveAtTermEnd onto the heir's row", () => {
+    const liabilities = [mkLiability({ forgiveAtTermEnd: true })];
+    const result = distributeUnlinkedLiabilities(liabilities, 2050, "client", [childA]);
+
+    expect(result.updatedLiabilities).toHaveLength(1);
+    const newRow = result.updatedLiabilities[0];
+    expect(newRow.ownerFamilyMemberId).toBe("child-a");
+    expect(newRow.forgiveAtTermEnd).toBe(true);
+  });
+
   it("splits unlinked debt equally across multiple living children", () => {
     const liabilities = [mkLiability()];
     const result = distributeUnlinkedLiabilities(liabilities, 2050, "client", [childA, childB]);
@@ -1926,6 +1936,18 @@ describe("distributeFirstDeathUnlinkedLiabilities", () => {
     const newRow = r.updatedLiabilities.find((l) => l.id !== "liab-cc")!;
     expect(controllingFamilyMember(newRow)).toBe(LEGACY_FM_SPOUSE);
     expect(newRow.balance).toBeCloseTo(10_000, 2);
+  });
+
+  it("carries forgiveAtTermEnd onto the surviving spouse's row", () => {
+    const liabs = [mkLiability({ forgiveAtTermEnd: true })];
+
+    const r = distributeFirstDeathUnlinkedLiabilities(
+      liabs, LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE, 2030, "client", [],
+    );
+
+    const newRow = r.updatedLiabilities.find((l) => l.id !== "liab-cc")!;
+    expect(newRow).toBeDefined();
+    expect(newRow.forgiveAtTermEnd).toBe(true);
   });
 
   it("splits a joint debt: deceased's half goes to spouse via default order, survivor's half retitles in place", () => {

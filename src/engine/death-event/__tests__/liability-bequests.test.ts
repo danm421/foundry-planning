@@ -177,6 +177,48 @@ describe("applyLiabilityBequests — entity recipient", () => {
   });
 });
 
+describe("applyLiabilityBequests — forgiveness survives the bequest", () => {
+  it("family_member recipient: the heir's row keeps forgiveAtTermEnd", () => {
+    const liab = baseLiability({ forgiveAtTermEnd: true });
+    const fam = baseFam();
+    const will = baseWill([{
+      id: "beq-1", name: "Visa", kind: "liability", assetMode: null, accountId: null,
+      liabilityId: liab.id, entityId: null, percentage: 100, condition: "always", sortOrder: 0,
+      recipients: [{ recipientKind: "family_member", recipientId: fam.id, percentage: 100, sortOrder: 0 }],
+    }]);
+
+    const result = applyLiabilityBequests({
+      will, deceased: "client", liabilities: [liab], familyMembers: [fam], entities: [], year: 2050,
+    });
+
+    expect(result.newLiabilityRows).toHaveLength(1);
+    expect(result.newLiabilityRows[0].forgiveAtTermEnd).toBe(true);
+  });
+
+  it("entity recipient: the entity's row keeps forgiveAtTermEnd", () => {
+    const liab = baseLiability({ forgiveAtTermEnd: true });
+    const entity: EntitySummary = {
+      id: "ent-1",
+      includeInPortfolio: false,
+      isGrantor: true,
+      isIrrevocable: false,
+      grantor: "client",
+    };
+    const will = baseWill([{
+      id: "beq-1", name: "Visa", kind: "liability", assetMode: null, accountId: null,
+      liabilityId: liab.id, entityId: null, percentage: 100, condition: "always", sortOrder: 0,
+      recipients: [{ recipientKind: "entity", recipientId: entity.id, percentage: 100, sortOrder: 0 }],
+    }]);
+
+    const result = applyLiabilityBequests({
+      will, deceased: "client", liabilities: [liab], familyMembers: [], entities: [entity], year: 2050,
+    });
+
+    expect(result.newLiabilityRows).toHaveLength(1);
+    expect(result.newLiabilityRows[0].forgiveAtTermEnd).toBe(true);
+  });
+});
+
 describe("applyLiabilityBequests — defensive skip cases", () => {
   it("bequest target has linkedPropertyId → warning, bequest skipped", () => {
     const liab = baseLiability({ linkedPropertyId: "acct-99" });

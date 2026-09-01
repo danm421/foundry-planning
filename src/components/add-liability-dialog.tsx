@@ -184,6 +184,7 @@ export default function AddLiabilityDialog({
             startYear={liveValues.startYear}
             startMonth={liveValues.startMonth}
             termMonths={liveValues.termMonths}
+            forgiveAtTermEnd={liveValues.forgiveAtTermEnd}
             balanceAsOfMonth={liveValues.balanceAsOfMonth}
             balanceAsOfYear={liveValues.balanceAsOfYear}
           />

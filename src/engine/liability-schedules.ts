@@ -41,6 +41,7 @@ export function buildLiabilitySchedule(
     liability.termMonths,
     extras,
     liability.startMonth,
+    liability.forgiveAtTermEnd ?? false,
   );
 }
 

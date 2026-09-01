@@ -1283,6 +1283,7 @@ export function distributeUnlinkedLiabilities(
           startYear: liab.startYear,
           startMonth: liab.startMonth,
           termMonths: liab.termMonths,
+          forgiveAtTermEnd: liab.forgiveAtTermEnd,
           extraPayments: [],
           ownerFamilyMemberId: rec.id,  // signals "distributed-to-heir" semantics
           isInterestDeductible: liab.isInterestDeductible,
@@ -1420,6 +1421,7 @@ export function distributeFirstDeathUnlinkedLiabilities(
           startYear: liab.startYear,
           startMonth: liab.startMonth,
           termMonths: liab.termMonths,
+          forgiveAtTermEnd: liab.forgiveAtTermEnd,
           extraPayments: [],
           ...(isSurvivorRecipient ? {} : { ownerFamilyMemberId: recFmId }),
           isInterestDeductible: liab.isInterestDeductible,

@@ -98,6 +98,7 @@ const LIABILITY = {
   startMonth: 1,
   termMonths: 360,
   termUnit: "monthly",
+  forgiveAtTermEnd: false,
 };
 
 const CATEGORY_DEFAULTS: CategoryDefaults = {

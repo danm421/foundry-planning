@@ -42,6 +42,7 @@ export interface LiabilityFormInitial {
   owners?: AccountOwner[];
   startYearRef?: string | null;
   isInterestDeductible?: boolean;
+  forgiveAtTermEnd: boolean;
   /** Parent business account when this liability is a sub-liability of a business. */
   parentAccountId?: string | null;
 }
@@ -60,6 +61,7 @@ export interface LiabilityFormValues {
   termMonths: number;
   balanceAsOfMonth?: number;
   balanceAsOfYear?: number;
+  forgiveAtTermEnd: boolean;
 }
 
 interface AddLiabilityFormProps {
@@ -133,6 +135,7 @@ const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFor
     initial?.parentAccountId ?? initialParentAccountId ?? null,
   );
   const [isInterestDeductible, setIsInterestDeductible] = useState(initial?.isInterestDeductible ?? false);
+  const [forgiveAtTermEnd, setForgiveAtTermEnd] = useState(initial?.forgiveAtTermEnd ?? false);
   // Controlled state for previously-uncontrolled fields. The auto-save hook
   // needs to compare current vs last-saved snapshots and gate validation, so
   // every meaningful input must be readable as a value here, not just via
@@ -222,8 +225,9 @@ const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFor
       termMonths: isNaN(termMonths) ? 0 : termMonths,
       balanceAsOfMonth,
       balanceAsOfYear,
+      forgiveAtTermEnd,
     });
-  }, [balance, interestRatePct, monthlyPayment, startYear, startMonth, termValue, termUnit, balanceAsOfMonth, balanceAsOfYear, onValuesChange]);
+  }, [balance, interestRatePct, monthlyPayment, startYear, startMonth, termValue, termUnit, balanceAsOfMonth, balanceAsOfYear, forgiveAtTermEnd, onValuesChange]);
 
   // ============================================================================
   // Calculator handlers
@@ -300,6 +304,7 @@ const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFor
       parentAccountId: parentBusinessId,
       startYearRef,
       isInterestDeductible,
+      forgiveAtTermEnd,
     };
   }
 
@@ -391,6 +396,7 @@ const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFor
   const lastSavedSnapshotRef = useRef<string>(JSON.stringify(buildBody()));
   const isDirty = JSON.stringify(buildBody()) !== lastSavedSnapshotRef.current;
   const canSave = name.trim().length > 0 && !(isInterestDeductible && !linkedPropertyId);
+  const hasTerm = Number(termValue) > 0;
 
   useEffect(() => {
     onAutoSaveStateChange?.({ isDirty, canSave });
@@ -418,7 +424,7 @@ const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFor
     // The state values that matter (name, balance, etc.) are captured by
     // closure on every render anyway, so listing them is sufficient.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [canSave, name, balance, interestRatePct, monthlyPayment, startYear, startMonth, termValue, termUnit, balanceAsOfMonth, balanceAsOfYear, linkedPropertyId, owners, parentBusinessId, startYearRef, isInterestDeductible, effectiveLiabilityId],
+    [canSave, name, balance, interestRatePct, monthlyPayment, startYear, startMonth, termValue, termUnit, balanceAsOfMonth, balanceAsOfYear, linkedPropertyId, owners, parentBusinessId, startYearRef, isInterestDeductible, forgiveAtTermEnd, effectiveLiabilityId],
   );
 
   // ============================================================================
@@ -692,6 +698,29 @@ const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFor
         </label>
         <p className="mt-1 ml-6 text-xs text-gray-400">
           When checked, the annual interest portion flows into your itemized deductions (e.g., mortgage interest).
+        </p>
+      </div>
+
+      {/* Row 8: Forgiveness at end of term */}
+      <div>
+        <label
+          className={`flex items-center gap-2 text-sm ${
+            hasTerm ? "text-gray-300" : "text-gray-500"
+          }`}
+        >
+          <input
+            type="checkbox"
+            checked={forgiveAtTermEnd}
+            disabled={!hasTerm}
+            onChange={(e) => setForgiveAtTermEnd(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent disabled:opacity-40"
+          />
+          Forgive remaining balance at end of term
+        </label>
+        <p className="mt-1 ml-6 text-xs text-gray-400">
+          {hasTerm
+            ? "For repayment programs that write off whatever is left after the final scheduled payment — income-driven student loan plans, most commonly. The balance drops to zero instead of being paid off."
+            : "Add a loan term first — there has to be an end of term to forgive at."}
         </p>
       </div>
 

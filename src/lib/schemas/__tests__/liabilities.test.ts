@@ -196,3 +196,25 @@ describe("liabilityUpdateSchema — truly partial (regression guard)", () => {
     expect(Object.keys(liabilityUpdateSchema.parse({})).length).toBe(0);
   });
 });
+
+describe("forgiveAtTermEnd", () => {
+  const base = { name: "Grad school loans", startYear: 2026, termMonths: 240 };
+
+  it("defaults to false when the payload omits it", () => {
+    const r = liabilityCreateSchema.safeParse(base);
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.forgiveAtTermEnd).toBe(false);
+  });
+
+  it("accepts true on create", () => {
+    const r = liabilityCreateSchema.safeParse({ ...base, forgiveAtTermEnd: true });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.forgiveAtTermEnd).toBe(true);
+  });
+
+  it("stays undefined on update when omitted, so the column is left alone", () => {
+    const r = liabilityUpdateSchema.safeParse({ name: "Renamed" });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.forgiveAtTermEnd).toBeUndefined();
+  });
+});

@@ -29,6 +29,7 @@ const BASE_INITIAL: LiabilityFormInitial = {
   startMonth: 1,
   termMonths: 360,
   termUnit: "annual",
+  forgiveAtTermEnd: false,
   owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
 };
 
@@ -134,6 +135,34 @@ describe("AddLiabilityForm — submit payload", () => {
 
     // Should NOT include legacy ownerEntityId
     expect(body).not.toHaveProperty("ownerEntityId");
+  });
+
+  it("carries forgiveAtTermEnd through on edit when the advisor has enabled it", async () => {
+    render(
+      <AddLiabilityForm
+        clientId="client-123"
+        mode="edit"
+        initial={{ ...BASE_INITIAL, forgiveAtTermEnd: true }}
+        familyMembers={FAMILY_MEMBERS}
+        entities={[]}
+      />,
+    );
+
+    fireEvent.submit(document.getElementById("add-liability-form")!);
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/clients/client-123/liabilities/liab-1",
+        expect.objectContaining({ method: "PUT" }),
+      ),
+    );
+
+    const call = fetchMock.mock.calls.find(
+      (args) => String(args[0]) === "/api/clients/client-123/liabilities/liab-1",
+    );
+    expect(call).toBeDefined();
+    const body = JSON.parse(call![1].body as string);
+    expect(body.forgiveAtTermEnd).toBe(true);
   });
 });
 

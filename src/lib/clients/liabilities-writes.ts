@@ -150,6 +150,7 @@ export async function createLiabilityForClient(args: {
         linkedPropertyId: p.linkedPropertyId,
         startYearRef: p.startYearRef as LiabilityRow["startYearRef"],
         isInterestDeductible: p.isInterestDeductible,
+        forgiveAtTermEnd: p.forgiveAtTermEnd,
         parentAccountId: p.parentAccountId,
       })
       .returning();
@@ -273,6 +274,9 @@ export async function updateLiabilityForClient(args: {
         ...(p.balanceAsOfYear !== undefined && { balanceAsOfYear: p.balanceAsOfYear }),
         ...(p.isInterestDeductible !== undefined && {
           isInterestDeductible: p.isInterestDeductible,
+        }),
+        ...(p.forgiveAtTermEnd !== undefined && {
+          forgiveAtTermEnd: p.forgiveAtTermEnd,
         }),
         ...(p.linkedPropertyId !== undefined && { linkedPropertyId: p.linkedPropertyId ?? null }),
         ...(p.parentAccountId !== undefined && { parentAccountId: p.parentAccountId ?? null }),

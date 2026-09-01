@@ -219,6 +219,7 @@ export async function NetWorthContent({ clientId: id, scenarioParam }: NetWorthC
       linkedPropertyId: l.linkedPropertyId ?? null,
       ownerEntityId: controllingEntity(l) ?? null,
       isInterestDeductible: l.isInterestDeductible ?? false,
+      forgiveAtTermEnd: l.forgiveAtTermEnd ?? false,
       linkedSource: meta?.plaidItemId != null ? "plaid" : null,
       owners: l.owners,
       parentAccountId: l.parentAccountId ?? null,

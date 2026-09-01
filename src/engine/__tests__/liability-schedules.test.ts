@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildLiabilitySchedule,
+  buildLiabilitySchedules,
   scheduleBoYBalance,
 } from "../liability-schedules";
 import type { Liability } from "../types";
@@ -70,5 +71,49 @@ describe("buildLiabilitySchedule — January origination is unchanged", () => {
     const schedule = buildLiabilitySchedule(januaryMortgage);
     const boy2026 = scheduleBoYBalance(schedule, 2026);
     expect(boy2026).toBeCloseTo(276196.46, 1);
+  });
+});
+
+// $120,000 of graduate debt at 6.5% on an income-driven plan paying $450/mo
+// against $650/mo of accrued interest. The balance grows to $218,084.19 by the
+// end of the 240-month term.
+const idrLoan: Liability = {
+  id: "liab-idr",
+  name: "Grad school loans",
+  balance: 120000,
+  interestRate: 0.065,
+  monthlyPayment: 450,
+  startYear: 2026,
+  startMonth: 1,
+  termMonths: 240,
+  balanceAsOfYear: 2026,
+  balanceAsOfMonth: 1,
+  extraPayments: [],
+  owners: [],
+};
+
+describe("buildLiabilitySchedule — forgiveness", () => {
+  it("passes the flag through to the schedule", () => {
+    const schedule = buildLiabilitySchedule({ ...idrLoan, forgiveAtTermEnd: true });
+    const last = schedule[schedule.length - 1];
+
+    expect(last.forgivenAmount).toBeCloseTo(218084.19, 1);
+    expect(last.payment).toBeCloseTo(5400, 2);
+    expect(last.endingBalance).toBe(0);
+  });
+
+  it("balloons when the flag is absent", () => {
+    const schedule = buildLiabilitySchedule(idrLoan);
+    const last = schedule[schedule.length - 1];
+
+    expect(last.forgivenAmount).toBe(0);
+    expect(last.payment).toBeCloseTo(223484.19, 1);
+  });
+
+  it("leaves a term-less row held flat, flag or no flag", () => {
+    const map = buildLiabilitySchedules([
+      { ...idrLoan, termMonths: 0, forgiveAtTermEnd: true },
+    ]);
+    expect(map.has("liab-idr")).toBe(false);
   });
 });
