@@ -36,7 +36,13 @@ export default async function WelcomePage({
         primaryColor: saved?.primaryColor ?? null,
         logoUrl: saved?.logoUrl ?? null,
       }}
-      plan={normalizePlan(saved?.plan ?? plan)}
+      // An explicit `?plan=` is a deliberate, current act and outranks the
+      // stash: a buyer who started annual, balked at the price on Stripe and
+      // came back through a MONTHLY storefront link must be charged monthly —
+      // nothing on this page names the plan, so they would never see it. The
+      // stash stays the fallback when the URL says nothing, which is how a
+      // resume (and /select-organization's bare /welcome link) keeps working.
+      plan={plan === undefined ? normalizePlan(saved?.plan) : normalizePlan(plan)}
     />
   );
 }
