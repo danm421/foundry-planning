@@ -36,21 +36,32 @@ const EMPTY: PendingSignup = {
   updatedAt: "",
 };
 
-function coerce(raw: unknown): PendingSignup | null {
-  if (!raw || typeof raw !== "object") return null;
+/**
+ * Type-check every field of a stored stash, with no judgement about whether the
+ * record is usable yet. This is the MERGE base: the branding panel uploads a
+ * logo the instant a file is picked, which is before the firm name is saved on
+ * submit, so a merge that started from the strict `coerce()` below would read
+ * that legitimately-nameless stash as absent and write the logo back as null.
+ */
+function coerceFields(raw: unknown): PendingSignup {
+  if (!raw || typeof raw !== "object") return EMPTY;
   const r = raw as Record<string, unknown>;
-  const firmName = typeof r.firmName === "string" ? r.firmName : "";
-  // A stash with no firm name cannot provision anything — treat it as absent
-  // rather than letting a half-written record reach the webhook.
-  if (!firmName.trim()) return null;
   return {
-    firmName,
+    firmName: typeof r.firmName === "string" ? r.firmName : "",
     advisorName: typeof r.advisorName === "string" ? r.advisorName : "",
     plan: r.plan === "monthly" ? "monthly" : "annual",
     primaryColor: typeof r.primaryColor === "string" ? r.primaryColor : null,
     logoUrl: typeof r.logoUrl === "string" ? r.logoUrl : null,
     updatedAt: typeof r.updatedAt === "string" ? r.updatedAt : "",
   };
+}
+
+function coerce(raw: unknown): PendingSignup | null {
+  const fields = coerceFields(raw);
+  // A stash with no firm name cannot provision anything — treat it as absent
+  // rather than letting a half-written record reach the webhook. A READ rule
+  // only: see coerceFields() for why the merge must not apply it.
+  return fields.firmName.trim() ? fields : null;
 }
 
 async function readRawMetadata(
@@ -77,13 +88,18 @@ export async function readPendingSignup(
  * Merge `patch` onto whatever is already stashed and persist it. Merging is
  * load-bearing: the branding panel saves a logo while the name fields are still
  * being typed, and a replacing write would silently drop the firm name.
+ *
+ * The merge reads through `coerceFields`, NOT `coerce`. The setup step's real
+ * order of operations writes the logo first and the firm name second, so for
+ * the whole of that window the stored stash is nameless — and merging onto
+ * `coerce() ?? EMPTY` would discard every field saved before the name.
  */
 export async function writePendingSignup(
   userId: string,
   patch: Partial<PendingSignup>,
 ): Promise<PendingSignup> {
   const meta = await readRawMetadata(userId);
-  const current = coerce(meta[KEY]) ?? EMPTY;
+  const current = coerceFields(meta[KEY]);
   const next: PendingSignup = {
     ...current,
     ...patch,

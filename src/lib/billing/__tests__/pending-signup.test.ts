@@ -82,6 +82,56 @@ describe("pending signup stash", () => {
     });
   });
 
+  // The merge test above seeds a stash that ALREADY has a firm name — the only
+  // case in which the old merge worked. The setup step's real order is the
+  // opposite: the branding panel fires the upload the instant a file is picked,
+  // and the firm name is not saved until "Continue to payment". So this replays
+  // both writes, in that order, against one stored record. Under the old merge
+  // the second write read the nameless stash through coerce(), got null, fell
+  // back to EMPTY, and wrote logoUrl: null — every first-time buyer who
+  // uploaded a logo was provisioned with no branding at all.
+  it("keeps a logo saved BEFORE the firm name — the setup step's real order", async () => {
+    const stored: Record<string, unknown> = {};
+    mockGetUser.mockImplementation(async () => ({ privateMetadata: stored }));
+    mockUpdateUserMetadata.mockImplementation(
+      async (_userId: string, arg: { privateMetadata: Record<string, unknown> }) => {
+        Object.assign(stored, arg.privateMetadata);
+      },
+    );
+
+    // 1. onLogoChosen → uploadSignupLogo. Nothing has saved a name yet.
+    await writePendingSignup("user_1", { logoUrl: "https://blob.example/logo.png" });
+    // 2. onContinue → saveSignupProfile. Its patch carries no logoUrl.
+    const next = await writePendingSignup("user_1", {
+      firmName: "Acme Wealth",
+      advisorName: "Dana Reed",
+      primaryColor: "#0f7d6c",
+      plan: "monthly",
+    });
+
+    expect(next.logoUrl).toBe("https://blob.example/logo.png");
+    expect(next.firmName).toBe("Acme Wealth");
+    // And what the webhook will actually read back off the stored record.
+    expect(await readPendingSignup("user_1")).toMatchObject({
+      firmName: "Acme Wealth",
+      logoUrl: "https://blob.example/logo.png",
+      primaryColor: "#0f7d6c",
+      plan: "monthly",
+    });
+  });
+
+  it("still hides a nameless stash from readers, logo or no logo", async () => {
+    // The counterpart guard: making the MERGE tolerant of a nameless stash must
+    // not make the READ tolerant of one. This is what stops a half-written
+    // record reaching the webhook and provisioning a nameless firm.
+    mockGetUser.mockResolvedValue({
+      privateMetadata: {
+        pending_signup: { firmName: "  ", logoUrl: "https://blob.example/logo.png" },
+      },
+    });
+    expect(await readPendingSignup("user_1")).toBeNull();
+  });
+
   it("preserves other private metadata when writing", async () => {
     mockGetUser.mockResolvedValue({
       privateMetadata: { some_other_key: "keep me" },

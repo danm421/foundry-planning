@@ -467,6 +467,26 @@ describe("profile-first path (session carries client_reference_id)", () => {
     expect(mockCreateInvite).not.toHaveBeenCalled();
   });
 
+  it("refuses a nameless stash outright, even one carrying a logo", async () => {
+    // The merge inside writePendingSignup is deliberately tolerant of a stash
+    // with no firm name yet (the logo is saved before the name). The READ this
+    // handler makes must stay strict, or a buyer who abandoned mid-form would
+    // be provisioned as a nameless firm branded with a half-finished profile.
+    mockGetUser.mockResolvedValue({
+      privateMetadata: {
+        pending_signup: { firmName: "", logoUrl: "https://blob.example/logo.png" },
+      },
+    });
+    await handleCheckoutSessionCompleted(evt());
+    expect(mockCreateOrg).toHaveBeenCalledWith({
+      name: "Unnamed Firm",
+      createdBy: "user_buyer",
+    });
+    expect(mockFirmInsert).toHaveBeenCalledWith(
+      expect.objectContaining({ logoUrl: null, primaryColor: null }),
+    );
+  });
+
   it("is idempotent — a redelivery mints no second org and no invitation", async () => {
     mockSubLookup.mockResolvedValue([{ firmId: "org_existing" }]);
     await handleCheckoutSessionCompleted(evt());
