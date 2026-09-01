@@ -20,7 +20,17 @@ function respond(body: unknown) {
 }
 
 beforeEach(() => {
-  mockSetActive.mockReset().mockResolvedValue(undefined);
+  // A real Clerk setActive() is a network round trip, not an already-resolved
+  // promise. An instantly-resolved mock lets the awaited setActive() call
+  // race React's own scheduled re-render + passive-effect cleanup — and that
+  // race is non-deterministic here (measured: a bare `setTimeout(fn, 0)`
+  // mock let the cancel-on-cleanup defect slip through 2-4 times per 10 runs).
+  // A real, if small, delay reliably lets React's cleanup land first, which
+  // is what actually happens in production (the cleanup is cheap; a network
+  // round trip is not) and is the exact window the defect dies in.
+  mockSetActive.mockReset().mockImplementation(
+    () => new Promise((resolve) => setTimeout(resolve, 20)),
+  );
   mockPush.mockReset();
 });
 
@@ -41,7 +51,9 @@ describe("checkout success", () => {
   });
 
   it("offers a manual way in when activation fails, rather than dead-ending", async () => {
-    mockSetActive.mockRejectedValue(new Error("nope"));
+    mockSetActive.mockImplementation(
+      () => new Promise((_, reject) => setTimeout(() => reject(new Error("nope")), 20)),
+    );
     respond({ ready: true, firmName: "Acme Wealth", buyerEmail: "d***@a.example", firmId: "org_new" });
     render(<SuccessPolling sessionId="cs_test_123" />);
     expect(await screen.findByRole("link", { name: /continue to your workspace/i }))
