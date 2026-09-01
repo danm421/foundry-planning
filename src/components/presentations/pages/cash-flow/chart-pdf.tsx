@@ -40,12 +40,18 @@ export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
             />
           ))}
 
-          {/* Y-axis tick labels */}
+          {/* Y-axis tick labels. Anchored at their RIGHT edge, so the label
+              ends 6pt left of the plot and grows leftward into the margin.
+              Left at SVG's default `start` it began 6pt left of the plot and
+              ran rightward THROUGH it — every label printed over the first two
+              bars. Widening margin.left cannot fix that: it moves the plot and
+              the label together. */}
           {spec.yAxis.ticks.map((t) => (
             <SvgText
               key={`yl-${t}`}
               x={-6}
               y={y(t) + 3}
+              textAnchor="end"
               style={{ fontFamily: "JetBrains Mono", fontSize: 7, fill: PRESENTATION_THEME.ink3 }}
             >
               {spec.yAxis.labelFormat(t)}
