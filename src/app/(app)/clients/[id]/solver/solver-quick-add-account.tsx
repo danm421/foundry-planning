@@ -119,7 +119,7 @@ export function SolverQuickAddAccount({
       });
       onChange({ kind: "account-upsert", id: account.id, value: account });
       onChange({ kind: "savings-rule-upsert", id: rule.id, value: rule });
-      if (growth.mix.length > 0) registerAccountMix?.(account.id, growth.mix);
+      registerAccountMix?.(account.id, growth.mix);
     } else if (selectedExisting) {
       const rule = buildSavingsRuleForAccount({
         account: {

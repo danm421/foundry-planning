@@ -51,7 +51,7 @@ interface Props {
   categoryGrowthDefaults?: { taxable: number; retirement: number; cash: number };
   registerAccountMix?: (accountId: string, mix: AccountAssetMix[]) => void;
   /** Resolved household milestones, for the dialog's Timeline pickers. */
-  milestones?: ClientMilestones;
+  milestones: ClientMilestones;
   clientFirstName?: string;
   spouseFirstName?: string;
 }
@@ -92,11 +92,11 @@ function savingsResetKeys(accountId: string): SolverMutationKey[] {
     mutationKey({ kind: "savings-employer-match-amount", accountId, amount: 0 }),
     mutationKey({ kind: "savings-start-year", accountId, year: 0 }),
     mutationKey({ kind: "savings-end-year", accountId, year: 0 }),
-    // The account-growth picker writes the ACCOUNT, not the rule. Reset is
-    // documented as clearing the whole group so a partial edit can't
-    // half-revert — leaving the account on the picked portfolio while the
-    // contribution snaps back to base would be exactly that.
-    mutationKey({ kind: "account-upsert", id: accountId, value: null }),
+    // Deliberately NOT `account-upsert:<accountId>`, which the growth picker
+    // writes. That key is account-scoped, not rule-scoped: the revocable-trust
+    // and education-goal levers write it for the same account, so clearing it
+    // here would silently drop THEIR work too. A growth change therefore
+    // survives a reset of the contribution — reverted from the picker instead.
   ];
 }
 
@@ -144,17 +144,6 @@ export function SolverRowSavingsContributions({
     owner ? { clientName: owner.firstName, spouseName: owner.spouseName ?? null } : undefined,
   );
 
-  // One bundle rather than six props repeated across the two Editable call
-  // sites (base rules and scenario-added rules).
-  const dialogCtx: EditDialogContext = {
-    portfolios,
-    categoryGrowthDefaults,
-    registerAccountMix,
-    milestones,
-    clientFirstName,
-    spouseFirstName,
-  };
-
   return (
     <div className="space-y-2.5">
       <div className="text-[13px] font-medium text-ink">Savings Contributions</div>
@@ -175,7 +164,12 @@ export function SolverRowSavingsContributions({
               workingAccount={workingAccount}
               resolvedInflationRate={resolvedInflationRate}
               salaries={salaryOptions}
-              dialogCtx={dialogCtx}
+              portfolios={portfolios}
+              categoryGrowthDefaults={categoryGrowthDefaults}
+              registerAccountMix={registerAccountMix}
+              milestones={milestones}
+              clientFirstName={clientFirstName}
+              spouseFirstName={spouseFirstName}
               activeSolve={activeSolve}
               onSolveStart={onSolveStart}
               onSolveCancel={onSolveCancel}
@@ -196,7 +190,12 @@ export function SolverRowSavingsContributions({
               workingAccount={account}
               resolvedInflationRate={resolvedInflationRate}
               salaries={salaryOptions}
-              dialogCtx={dialogCtx}
+              portfolios={portfolios}
+              categoryGrowthDefaults={categoryGrowthDefaults}
+              registerAccountMix={registerAccountMix}
+              milestones={milestones}
+              clientFirstName={clientFirstName}
+              spouseFirstName={spouseFirstName}
               activeSolve={activeSolve}
               onSolveStart={onSolveStart}
               onSolveCancel={onSolveCancel}
@@ -279,15 +278,6 @@ function contributionMagnitude(rule: SavingsRule): number {
   return rule.annualAmount;
 }
 
-interface EditDialogContext {
-  portfolios?: readonly SolverModelPortfolio[];
-  categoryGrowthDefaults?: { taxable: number; retirement: number; cash: number };
-  registerAccountMix?: (accountId: string, mix: AccountAssetMix[]) => void;
-  milestones?: ClientMilestones;
-  clientFirstName?: string;
-  spouseFirstName?: string;
-}
-
 function Editable({
   label,
   baseRule,
@@ -295,7 +285,12 @@ function Editable({
   workingAccount,
   resolvedInflationRate,
   salaries,
-  dialogCtx,
+  portfolios,
+  categoryGrowthDefaults,
+  registerAccountMix,
+  milestones,
+  clientFirstName,
+  spouseFirstName,
   activeSolve,
   onSolveStart,
   onSolveCancel,
@@ -309,7 +304,12 @@ function Editable({
   workingAccount: Account | undefined;
   resolvedInflationRate: number;
   salaries: readonly SalaryOption[];
-  dialogCtx: EditDialogContext;
+  portfolios?: readonly SolverModelPortfolio[];
+  categoryGrowthDefaults?: { taxable: number; retirement: number; cash: number };
+  registerAccountMix?: (accountId: string, mix: AccountAssetMix[]) => void;
+  milestones: ClientMilestones;
+  clientFirstName?: string;
+  spouseFirstName?: string;
   activeSolve: ActiveSolve | null;
   onSolveStart: (target: SolveLeverKey, targetPoS: number) => void;
   onSolveCancel: () => void;
@@ -481,15 +481,15 @@ function Editable({
           workingRule={workingRule}
           resolvedInflationRate={resolvedInflationRate}
           salaries={salaries}
-          portfolios={dialogCtx.portfolios}
+          portfolios={portfolios}
           categoryDefaultRate={categoryDefaultRate(
             workingAccount.category,
-            dialogCtx.categoryGrowthDefaults,
+            categoryGrowthDefaults,
           )}
-          registerAccountMix={dialogCtx.registerAccountMix}
-          milestones={dialogCtx.milestones}
-          clientFirstName={dialogCtx.clientFirstName}
-          spouseFirstName={dialogCtx.spouseFirstName}
+          registerAccountMix={registerAccountMix}
+          milestones={milestones}
+          clientFirstName={clientFirstName}
+          spouseFirstName={spouseFirstName}
         />
       ) : null}
     </div>

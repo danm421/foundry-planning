@@ -231,23 +231,26 @@ describe("POST /api/clients/[id]/solver/save-to-base", () => {
     });
   });
 
-  it("leaves the growth columns untouched for a lever that carries no basis", async () => {
-    // The revocable-trust lever spreads whole accounts to retitle them; it must
-    // not blank a growth source it never asked about.
+  it("pins a rate-only account to 'custom' rather than letting it revert", async () => {
+    // A lever that MINTS an account (the Roth-conversion form) may hand over a
+    // resolved rate with no basis. The column default would re-derive growth
+    // from the category and discard that rate — so the write boundary backstops
+    // it to "custom", honouring the rate the approved projection actually ran on.
     vi.mocked(loadEffectiveTree).mockResolvedValue({
-      effectiveTree: { accounts: [{ ...ACCT }], savingsRules: [] },
+      effectiveTree: { accounts: [], savingsRules: [] },
       warnings: [],
     } as never);
     const res = await POST(
       makeRequest({
         source: "base",
-        mutations: [{ kind: "account-upsert", id: "synthetic-new", value: { ...ACCT, name: "In Trust" } }],
+        mutations: [
+          { kind: "account-upsert", id: "synthetic-new", value: { ...ACCT, growthRate: 0.08 } },
+        ],
       }),
       ctx as never,
     );
     expect(res.status).toBe(200);
-    expect(updates[0].set).not.toHaveProperty("growthSource");
-    expect(updates[0].set).not.toHaveProperty("modelPortfolioId");
+    expect(inserts[0].values).toMatchObject({ growthRate: "0.08", growthSource: "custom" });
   });
 
   it("classifies an account already in the source tree as an update and re-materializes its owners", async () => {

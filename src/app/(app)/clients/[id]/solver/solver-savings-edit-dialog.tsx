@@ -29,7 +29,7 @@ import SalaryBasisFields, {
   type SalaryOption,
 } from "@/components/forms/salary-basis-fields";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
-import type { ClientMilestones, YearRef } from "@/lib/milestones";
+import { coerceYearRef, type ClientMilestones, type YearRef } from "@/lib/milestones";
 import type { SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
 import type { AccountAssetMix } from "@/engine/monteCarlo/trial";
 import type { SolverMutation } from "@/lib/solver/types";
@@ -58,9 +58,8 @@ interface Props {
   /** Register the picked portfolio's asset mix so Monte Carlo randomizes this
    *  account on that allocation instead of the flat deterministic rate. */
   registerAccountMix?: (accountId: string, mix: AccountAssetMix[]) => void;
-  /** Resolved household milestones, for the Timeline year pickers. Absent →
-   *  the pickers fall back to plain year inputs. */
-  milestones?: ClientMilestones;
+  /** Resolved household milestones, for the Timeline year pickers. */
+  milestones: ClientMilestones;
   clientFirstName?: string;
   spouseFirstName?: string;
 }
@@ -157,11 +156,13 @@ export function SolverSavingsEditDialog({
 
   const [startYear, setStartYear] = useState<number>(workingRule.startYear);
   const [endYear, setEndYear] = useState<number>(workingRule.endYear);
+  // coerced, not cast: the engine types these as opaque strings, so a stale or
+  // hand-edited token would otherwise reach MilestoneYearPicker as a valid ref.
   const [startYearRef, setStartYearRef] = useState<YearRef | null>(
-    (workingRule.startYearRef as YearRef | null) ?? null,
+    coerceYearRef(workingRule.startYearRef) ?? null,
   );
   const [endYearRef, setEndYearRef] = useState<YearRef | null>(
-    (workingRule.endYearRef as YearRef | null) ?? null,
+    coerceYearRef(workingRule.endYearRef) ?? null,
   );
 
   // Account growth. Seeded from the account's stored basis; `null` means it is
@@ -329,8 +330,8 @@ export function SolverSavingsEditDialog({
     // the save and re-anchors when her retirement date later moves. Emitted when
     // EITHER the year or the anchor changed — switching from a milestone to the
     // same hand-typed year still has to clear the ref.
-    const baseStartRef = (workingRule.startYearRef as YearRef | null) ?? null;
-    const baseEndRef = (workingRule.endYearRef as YearRef | null) ?? null;
+    const baseStartRef = coerceYearRef(workingRule.startYearRef) ?? null;
+    const baseEndRef = coerceYearRef(workingRule.endYearRef) ?? null;
     if (startYear !== workingRule.startYear || startYearRef !== baseStartRef) {
       out.push({ kind: "savings-start-year", accountId, year: startYear, ref: startYearRef });
     }
@@ -683,80 +684,44 @@ export function SolverSavingsEditDialog({
         </fieldset>
       )}
 
-      {/* Timeline. With milestones loaded these are the same anchored pickers
-          the cash-flow rows use ("Rachel Retirement", "Last Year", a duration);
-          without them (minimal fixtures) they degrade to plain year inputs. */}
+      {/* Timeline — the same anchored pickers the cash-flow rows use
+          ("Rachel Retirement", "Last Year", a duration). */}
       <fieldset className="mb-2">
         <legend className="text-[12px] font-medium text-ink-2 mb-2">
           Timeline
         </legend>
         <div className="grid grid-cols-2 gap-3">
-          {milestones ? (
-            <>
-              <MilestoneYearPicker
-                id={`solver-sr-start-${account.id}`}
-                name="startYear"
-                label="Start year"
-                value={startYear}
-                yearRef={startYearRef}
-                milestones={milestones}
-                clientFirstName={clientFirstName}
-                spouseFirstName={spouseFirstName}
-                position="start"
-                onChange={(y, ref) => {
-                  setStartYear(y);
-                  setStartYearRef(ref);
-                }}
-              />
-              <MilestoneYearPicker
-                id={`solver-sr-end-${account.id}`}
-                name="endYear"
-                label="End year"
-                value={endYear}
-                yearRef={endYearRef}
-                milestones={milestones}
-                clientFirstName={clientFirstName}
-                spouseFirstName={spouseFirstName}
-                position="end"
-                startYearForDuration={startYear}
-                onChange={(y, ref) => {
-                  setEndYear(y);
-                  setEndYearRef(ref);
-                }}
-              />
-            </>
-          ) : (
-            <>
-              <div>
-                <label className={fieldLabelClassName}>Start year</label>
-                <input
-                  type="number"
-                  min={1950}
-                  max={2150}
-                  value={startYear}
-                  onChange={(e) => {
-                    const n = parseInt(e.target.value, 10);
-                    if (!Number.isNaN(n)) setStartYear(n);
-                  }}
-                  className={inputClassName}
-                />
-              </div>
-              <div>
-                <label className={fieldLabelClassName}>End year</label>
-                <input
-                  type="number"
-                  min={1950}
-                  max={2150}
-                  value={endYear}
-                  onChange={(e) => {
-                    const n = parseInt(e.target.value, 10);
-                    if (!Number.isNaN(n)) setEndYear(n);
-                  }}
-                  className={inputClassName}
-                />
-              </div>
-            </>
-          )}
+          <MilestoneYearPicker
+            id={`solver-sr-start-${account.id}`}
+            name="startYear"
+            label="Start year"
+            value={startYear}
+            yearRef={startYearRef}
+            milestones={milestones}
+            clientFirstName={clientFirstName}
+            spouseFirstName={spouseFirstName}
+            position="start"
+            onChange={(y, ref) => {
+              setStartYear(y);
+              setStartYearRef(ref);
+            }}
+          />
+          <MilestoneYearPicker
+            id={`solver-sr-end-${account.id}`}
+            name="endYear"
+            label="End year"
+            value={endYear}
+            yearRef={endYearRef}
+            milestones={milestones}
+            clientFirstName={clientFirstName}
+            spouseFirstName={spouseFirstName}
+            position="end"
+            startYearForDuration={startYear}
+            onChange={(y, ref) => {
+              setEndYear(y);
+              setEndYearRef(ref);
+            }}
+          />
         </div>
         {endYear < startYear && (
           <p className="mt-2 text-[12px] text-warn">

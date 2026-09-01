@@ -175,12 +175,4 @@ describe("SolverSavingsEditDialog — timeline", () => {
     const start = emitted(onEmit).find((m) => m.kind === "savings-start-year");
     expect(start).toMatchObject({ year: 2044, ref: null });
   });
-
-  it("falls back to plain year inputs when no milestones are supplied", () => {
-    renderDialog({ milestones: undefined });
-    expect(screen.getByText("Start year")).toBeTruthy();
-    expect(
-      screen.queryByRole("option", { name: /Rachel Retirement/ }),
-    ).toBeNull();
-  });
 });

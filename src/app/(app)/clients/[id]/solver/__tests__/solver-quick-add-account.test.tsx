@@ -148,6 +148,9 @@ describe("SolverQuickAddAccount — growth basis", () => {
     expect(account.growthRate).toBe(0.06);
     expect(account.growthSource).toBe("default");
     expect(account.modelPortfolioId).toBeNull();
-    expect(registerAccountMix).not.toHaveBeenCalled();
+    // Registered with an EMPTY mix, which the workspace reads as "clear any
+    // stored allocation" — a deterministic source must not leave a stale
+    // allocation randomizing this account in Monte Carlo.
+    expect(registerAccountMix).toHaveBeenCalledWith(account.id, []);
   });
 });

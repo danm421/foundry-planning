@@ -660,9 +660,19 @@ export function LiveSolverWorkspace({
   // IRA minted from the Roth-conversion dialog). Reuses the savingsAccountMixes
   // map so the mix rides the same extraAccountMixes → MC path, draft persistence,
   // and stale-account cleanup as synthetic Additional-Savings accounts.
+  // An EMPTY mix clears the entry rather than storing it. `extraAccountMixes`
+  // only prunes accounts that vanish from the working tree, so moving an
+  // existing account back to a deterministic source (Plan default) would
+  // otherwise leave its old allocation randomizing that account in MC forever.
+  // Callers used to each guard this themselves; one of them forgot.
   const registerDraftAccountMix = useCallback(
     (accountId: string, mix: AccountAssetMix[]) =>
-      setSavingsAccountMixes((prev) => new Map(prev).set(accountId, mix)),
+      setSavingsAccountMixes((prev) => {
+        const next = new Map(prev);
+        if (mix.length === 0) next.delete(accountId);
+        else next.set(accountId, mix);
+        return next;
+      }),
     [],
   );
 

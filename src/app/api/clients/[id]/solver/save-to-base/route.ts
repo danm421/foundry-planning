@@ -128,19 +128,29 @@ async function insertExpenseDedicatedRows(
 }
 
 /** The account's growth BASIS columns, written alongside the resolved rate.
- *  Omitted entirely when the upsert carries no basis, so an update never blanks
- *  a source the Solver never touched. `modelPortfolioId` is cleared on every
- *  other source: leaving a stale id behind would silently re-link the account
- *  to a portfolio the advisor just switched away from. */
+ *
+ *  The column defaults to "default", which makes resolve-entity re-derive
+ *  growth from the plan's CATEGORY on the next load and discard whatever rate
+ *  was written — so an account saved with a rate and no basis silently reverts
+ *  to a number the advisor never approved. Every account loaded through
+ *  resolve-entity now carries its basis, but a lever that MINTS an account
+ *  (quick-add, the Roth-conversion form, a 529) may hand us only a rate. Those
+ *  fall back to "custom", which pins the rate they resolved. That is a
+ *  boundary-level backstop, and it always writes: a builder that knows the real
+ *  basis should still pass it, because "custom" freezes a rate the advisor may
+ *  have chosen as "Plan default" and expected to keep tracking.
+ *
+ *  `modelPortfolioId` is cleared on every non-portfolio source — leaving a
+ *  stale id behind would silently re-link an account the advisor just moved
+ *  off that portfolio. */
 function accountGrowthBasis(a: Account): {
-  growthSource?: typeof accounts.$inferInsert.growthSource;
-  modelPortfolioId?: string | null;
+  growthSource: typeof accounts.$inferInsert.growthSource;
+  modelPortfolioId: string | null;
 } {
-  if (a.growthSource == null) return {};
-  const growthSource = a.growthSource as typeof accounts.$inferInsert.growthSource;
+  const source = a.growthSource ?? "custom";
   return {
-    growthSource,
-    modelPortfolioId: a.growthSource === "model_portfolio" ? (a.modelPortfolioId ?? null) : null,
+    growthSource: source as typeof accounts.$inferInsert.growthSource,
+    modelPortfolioId: source === "model_portfolio" ? (a.modelPortfolioId ?? null) : null,
   };
 }
 
