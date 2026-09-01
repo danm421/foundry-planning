@@ -17,11 +17,8 @@
 // goes on reporting green.
 import { describe, it, expect } from "vitest";
 import { renderToBuffer, Document } from "@react-pdf/renderer";
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { ensureFontsRegistered } from "@/components/presentations/shared/fonts";
+import { wordBoxes, BBOX_EPS as EPS, type Word } from "@/components/presentations/shared/test-utils/pdf-bbox";
 import { SECTION_ACCENTS } from "@/lib/presentations/theme";
 import { RetirementComparisonPagePdf } from "./page-pdf";
 import { kpiCardBoxes } from "./kpi-geom";
@@ -29,38 +26,6 @@ import type {
   KpiCard,
   RetirementComparisonPageData,
 } from "@/lib/presentations/pages/retirement-comparison/types";
-
-interface Word { text: string; xMin: number; xMax: number; yMin: number; yMax: number }
-
-/** Every glyph run on page `page` of the rendered PDF, with the box it occupies. */
-function wordBoxes(pdf: Buffer, page: number): Word[] {
-  const dir = mkdtempSync(join(tmpdir(), "kpi-strip-bbox-"));
-  const file = join(dir, "sheet.pdf");
-  try {
-    writeFileSync(file, pdf);
-    let xhtml: string;
-    try {
-      xhtml = execFileSync("pdftotext", ["-bbox", "-f", String(page), "-l", String(page), file, "-"], { encoding: "utf8" });
-    } catch (cause) {
-      throw new Error(
-        "this measurement needs `pdftotext` (poppler) on PATH — `brew install poppler`",
-        { cause },
-      );
-    }
-    const out: Word[] = [];
-    for (const line of xhtml.split("\n")) {
-      const w = /<word xMin="([\d.-]+)" yMin="([\d.-]+)" xMax="([\d.-]+)" yMax="([\d.-]+)">(.*)<\/word>/.exec(line);
-      if (w) out.push({ text: w[5], xMin: +w[1], yMin: +w[2], xMax: +w[3], yMax: +w[4] });
-    }
-    return out;
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-/** Glyph boxes sit a fraction of a point outside the layout box they were laid
- *  out in; the overflow this file exists to catch is tens of points. */
-const EPS = 0.5;
 
 /**
  * The strip's vertical band, found from the render's own structure rather than
