@@ -46,10 +46,23 @@ export function wordBoxes(pdf: Buffer, page?: number): Word[] {
     const out: Word[] = [];
     for (const line of xhtml.split("\n")) {
       const w = /<word xMin="([\d.-]+)" yMin="([\d.-]+)" xMax="([\d.-]+)" yMax="([\d.-]+)">(.*)<\/word>/.exec(line);
-      if (w) out.push({ text: w[5], xMin: +w[1], yMin: +w[2], xMax: +w[3], yMax: +w[4] });
+      if (w) out.push({ text: unescapeXml(w[5]), xMin: +w[1], yMin: +w[2], xMax: +w[3], yMax: +w[4] });
     }
     return out;
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/** `pdftotext -bbox` emits XHTML, so a drawn "&" arrives as "&amp;" and never
+ *  matches the label a caller is looking for — and real labels have them
+ *  ("Rachel & Adam — Retirement"). `&amp;` is undone last, or "&amp;lt;" would
+ *  decode twice. Poppler escapes only these five. */
+function unescapeXml(text: string): string {
+  return text
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
 }
