@@ -127,6 +127,23 @@ async function insertExpenseDedicatedRows(
   );
 }
 
+/** The account's growth BASIS columns, written alongside the resolved rate.
+ *  Omitted entirely when the upsert carries no basis, so an update never blanks
+ *  a source the Solver never touched. `modelPortfolioId` is cleared on every
+ *  other source: leaving a stale id behind would silently re-link the account
+ *  to a portfolio the advisor just switched away from. */
+function accountGrowthBasis(a: Account): {
+  growthSource?: typeof accounts.$inferInsert.growthSource;
+  modelPortfolioId?: string | null;
+} {
+  if (a.growthSource == null) return {};
+  const growthSource = a.growthSource as typeof accounts.$inferInsert.growthSource;
+  return {
+    growthSource,
+    modelPortfolioId: a.growthSource === "model_portfolio" ? (a.modelPortfolioId ?? null) : null,
+  };
+}
+
 function accountInsertValues(
   a: Account,
   clientId: string,
@@ -148,6 +165,11 @@ function accountInsertValues(
     hsaCoverage: a.hsaCoverage ?? null,
     // null = inherit the default growth rate for this category from plan_settings.
     growthRate: a.growthRate != null ? String(a.growthRate) : null,
+    // The growth BASIS, not just the resolved rate. Without these the column
+    // default ("default") wins on reload and resolve-entity re-derives growth
+    // from the category default — silently discarding the portfolio the advisor
+    // picked in the Solver and the rate the projection they approved was run on.
+    ...accountGrowthBasis(a),
     rmdEnabled: a.rmdEnabled ?? false,
     priorYearEndValue: a.priorYearEndValue != null ? String(a.priorYearEndValue) : null,
     titlingType: a.titlingType ?? "jtwros",
@@ -391,6 +413,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             rothValue: decOrZero(a.rothValue),
             hsaCoverage: a.hsaCoverage ?? null,
             growthRate: a.growthRate != null ? String(a.growthRate) : null,
+            ...accountGrowthBasis(a),
             rmdEnabled: a.rmdEnabled ?? false,
             priorYearEndValue:
               a.priorYearEndValue != null ? String(a.priorYearEndValue) : null,

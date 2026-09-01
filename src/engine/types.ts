@@ -915,6 +915,16 @@ export interface Account {
    *  isNonProbateAccount and the report badge. Does NOT change ownership,
    *  gross-estate inclusion, or will distribution. */
   revocableTrustName?: string | null;
+  /**
+   * View-only metadata carried through from the DB row (like SavingsRule's
+   * startYearRef/growthSource). Engine math NEVER reads these — `growthRate`
+   * and `realization` above are already resolved from them at load time. They
+   * exist so an editor that rewrites a whole account (the Solver's
+   * account-upsert lever) can carry the account's growth BASIS back to the
+   * database instead of silently re-defaulting it to the category rate.
+   */
+  growthSource?: string | null;
+  modelPortfolioId?: string | null;
   /** For business-owned child accounts: the id of the parent business account. */
   parentAccountId?: string | null;
   /** Business-as-asset fields. Present only when `category === "business"` and

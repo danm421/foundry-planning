@@ -1145,6 +1145,7 @@ export function LiveSolverWorkspace({
         endYear: retirementYearForOwner(owner.familyMemberId),
         growthRate: portfolio.growthRate,
         realization: portfolio.realization,
+        modelPortfolioId: portfolio.id,
         accountId,
         ruleId,
       });
@@ -1443,6 +1444,12 @@ export function LiveSolverWorkspace({
                 onSolveStart={handleSolveStart}
                 onSolveCancel={handleSolveCancel}
                 visibleSelfFundingAccts={visibleSelfFundingAccts}
+                portfolios={modelPortfolios}
+                categoryGrowthDefaults={categoryGrowthDefaults}
+                registerAccountMix={registerDraftAccountMix}
+                milestones={milestones}
+                clientFirstName={clientName}
+                spouseFirstName={spouseName}
               />
               <SolverQuickAddAccount
                 owners={ownerOptions}
@@ -1451,6 +1458,8 @@ export function LiveSolverWorkspace({
                 retirementYearForOwner={retirementYearForOwner}
                 growthForType={(t) => growthForType(t, categoryGrowthDefaults)}
                 milestones={milestones}
+                portfolios={modelPortfolios}
+                registerAccountMix={registerDraftAccountMix}
                 onChange={pushMutation}
               />
               <SolverMinSavingsPanel

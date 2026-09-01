@@ -3,7 +3,13 @@
 import { useState } from "react";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import type { ClientMilestones, YearRef } from "@/lib/milestones";
+import type { AccountAssetMix } from "@/engine/monteCarlo/trial";
+import type { SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
 import type { SolverMutation } from "@/lib/solver/types";
+import {
+  CATEGORY_DEFAULT,
+  resolveAccountGrowthChoice,
+} from "./solver-account-growth-select";
 import {
   buildQuickAddAccount,
   buildSavingsRuleForAccount,
@@ -36,6 +42,11 @@ interface Props {
   growthForType: (type: QuickAddType) => number;
   /** Resolved milestones, for the "Activates" year picker. */
   milestones: ClientMilestones;
+  /** The firm's model portfolios, for the growth picker. */
+  portfolios?: readonly SolverModelPortfolio[];
+  /** Register the picked portfolio's asset mix so Monte Carlo randomizes the
+   *  new account on that allocation rather than a flat deterministic rate. */
+  registerAccountMix?: (accountId: string, mix: AccountAssetMix[]) => void;
   onChange: (m: SolverMutation) => void;
 }
 
@@ -43,7 +54,8 @@ const TYPE_ORDER: QuickAddType[] = ["taxable", "ira", "roth_ira", "cash"];
 const NEW_ACCOUNT = "__new__";
 
 export function SolverQuickAddAccount({
-  owners, existingAccounts, currentYear, retirementYearForOwner, growthForType, milestones, onChange,
+  owners, existingAccounts, currentYear, retirementYearForOwner, growthForType, milestones,
+  portfolios, registerAccountMix, onChange,
 }: Props) {
   const [open, setOpen] = useState(false);
   const defaultSelection = existingAccounts[0]?.id ?? NEW_ACCOUNT;
@@ -56,6 +68,11 @@ export function SolverQuickAddAccount({
   const [activationEnabled, setActivationEnabled] = useState(false);
   const [activationYear, setActivationYear] = useState(currentYear);
   const [activationYearRef, setActivationYearRef] = useState<YearRef | null>(null);
+  // Growth basis for a NEW account: the plan's category default, or one of the
+  // firm's model portfolios. Existing accounts keep whatever they already grow
+  // at — this form only mints a savings rule for those.
+  const [growthValue, setGrowthValue] = useState<string>(CATEGORY_DEFAULT);
+  const growthPortfolios = portfolios ?? [];
 
   const isNew = selection === NEW_ACCOUNT;
   const selectedExisting = existingAccounts.find((a) => a.id === selection);
@@ -72,11 +89,17 @@ export function SolverQuickAddAccount({
     setType("taxable"); setOwnerId(owners[0]?.familyMemberId ?? "");
     setName(""); setNameDirty(false); setAmount("");
     setActivationEnabled(false); setActivationYear(currentYear); setActivationYearRef(null);
+    setGrowthValue(CATEGORY_DEFAULT);
   }
 
   function submit() {
     const annualAmount = Number(amount) || 0;
     if (isNew) {
+      // Falls back to the category default when the chosen portfolio is gone,
+      // so a stale pick mints an account on the plan default rather than 0%.
+      const growth =
+        resolveAccountGrowthChoice(growthValue, growthPortfolios, growthForType(type)) ??
+        resolveAccountGrowthChoice(CATEGORY_DEFAULT, growthPortfolios, growthForType(type))!;
       const { account, rule } = buildQuickAddAccount({
         type,
         ownerFamilyMemberId: ownerId,
@@ -85,7 +108,10 @@ export function SolverQuickAddAccount({
         annualAmount,
         startYear: currentYear,
         endYear,
-        growthRate: growthForType(type),
+        growthRate: growth.growthRate,
+        realization: growth.realization,
+        growthSource: growth.growthSource,
+        modelPortfolioId: growth.modelPortfolioId,
         accountId: crypto.randomUUID(),
         ruleId: crypto.randomUUID(),
         activationYear: activationEnabled ? activationYear : null,
@@ -93,6 +119,7 @@ export function SolverQuickAddAccount({
       });
       onChange({ kind: "account-upsert", id: account.id, value: account });
       onChange({ kind: "savings-rule-upsert", id: rule.id, value: rule });
+      if (growth.mix.length > 0) registerAccountMix?.(account.id, growth.mix);
     } else if (selectedExisting) {
       const rule = buildSavingsRuleForAccount({
         account: {
@@ -177,6 +204,24 @@ export function SolverQuickAddAccount({
                 onChange={(e) => { setNameDirty(true); setName(e.target.value); }}
                 className="mt-1 w-full rounded border border-hair-2 bg-card px-2 py-1 text-ink"
               />
+            </label>
+            <label className="col-span-2 text-[12px] text-ink-3">
+              Grows at
+              <select
+                aria-label="Grows at"
+                value={growthValue}
+                onChange={(e) => setGrowthValue(e.target.value)}
+                className="mt-1 w-full rounded border border-hair-2 bg-card px-2 py-1 text-ink"
+              >
+                <option value={CATEGORY_DEFAULT}>
+                  {(growthForType(type) * 100).toFixed(2)}% — Plan default
+                </option>
+                {growthPortfolios.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {(p.growthRate * 100).toFixed(2)}% — {p.name}
+                  </option>
+                ))}
+              </select>
             </label>
             <div className="col-span-2">
               <label className="flex items-center gap-2 text-[12px] text-ink-3">

@@ -346,11 +346,16 @@ export function mutationsToBaseUpdates(
       case "savings-employer-match-amount":
         savingsPatch(m.accountId).employerMatchAmount = dec(m.amount);
         break;
+      // The ref column is written whenever the mutation carries the key, an
+      // explicit null included — picking a plain calendar year has to clear the
+      // milestone anchor, or the stored rule silently re-anchors on next load.
       case "savings-start-year":
         savingsPatch(m.accountId).startYear = m.year;
+        if ("ref" in m) savingsPatch(m.accountId).startYearRef = m.ref ?? null;
         break;
       case "savings-end-year":
         savingsPatch(m.accountId).endYear = m.year;
+        if ("ref" in m) savingsPatch(m.accountId).endYearRef = m.ref ?? null;
         break;
 
       // ── Full-entity upserts ───────────────────────────────────────────
@@ -465,6 +470,8 @@ function foldPatchIntoRule(rule: SavingsRule, set: ColumnPatch): void {
       case "employerMatchAmount": rule.employerMatchAmount = num(v) ?? undefined; break;
       case "startYear": rule.startYear = num(v) ?? rule.startYear; break;
       case "endYear": rule.endYear = num(v) ?? rule.endYear; break;
+      case "startYearRef": rule.startYearRef = (v as string | null) ?? null; break;
+      case "endYearRef": rule.endYearRef = (v as string | null) ?? null; break;
       case "contributeMax": rule.contributeMax = Boolean(v); break;
       case "isDeductible": rule.isDeductible = Boolean(v); break;
       case "applyContributionLimit": rule.applyContributionLimit = Boolean(v); break;

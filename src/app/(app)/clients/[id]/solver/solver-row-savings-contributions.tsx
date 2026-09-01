@@ -9,6 +9,9 @@ import {
 } from "@/lib/solver/types";
 import type { SolveLeverKey } from "@/lib/solver/solve-types";
 import { activeSavingsRules } from "@/lib/solver/active-savings-rules";
+import type { ClientMilestones } from "@/lib/milestones";
+import type { AccountAssetMix } from "@/engine/monteCarlo/trial";
+import type { SolverModelPortfolio } from "@/lib/solver/model-portfolio-config";
 import { supportsRothSplit } from "@/components/forms/contribution-amount-fields";
 import type { SalaryOption } from "@/components/forms/salary-basis-fields";
 import { toSalaryOptions } from "@/lib/savings/salary-options";
@@ -42,6 +45,34 @@ interface Props {
   onSolveCancel: () => void;
   /** fundFromExpenseReduction accounts the advisor chose to surface as boxes. */
   visibleSelfFundingAccts?: Set<string>;
+  /** The firm's model portfolios, for the dialog's account-growth picker. */
+  portfolios?: readonly SolverModelPortfolio[];
+  /** The plan's resolved default growth rate per account category. */
+  categoryGrowthDefaults?: { taxable: number; retirement: number; cash: number };
+  registerAccountMix?: (accountId: string, mix: AccountAssetMix[]) => void;
+  /** Resolved household milestones, for the dialog's Timeline pickers. */
+  milestones?: ClientMilestones;
+  clientFirstName?: string;
+  spouseFirstName?: string;
+}
+
+/** Plan default growth for an account's category, or null when the plan has no
+ *  default to name. 529s and annuities follow retirement, mirroring the
+ *  engine's `growthDefaultCategory` alias. Real estate / business / life
+ *  insurance DO have plan defaults, but none are threaded here — returning the
+ *  retirement rate for them would label a number that is not their default, so
+ *  they return null and the picker omits the "Plan default" option instead. */
+function categoryDefaultRate(
+  category: string,
+  defaults: { taxable: number; retirement: number; cash: number } | undefined,
+): number | null {
+  if (!defaults) return null;
+  if (category === "cash") return defaults.cash;
+  if (category === "taxable") return defaults.taxable;
+  if (category === "retirement" || category === "education_savings" || category === "annuity") {
+    return defaults.retirement;
+  }
+  return null;
 }
 
 /** Every per-account savings mutation key the inline inputs + edit dialog can
@@ -61,6 +92,11 @@ function savingsResetKeys(accountId: string): SolverMutationKey[] {
     mutationKey({ kind: "savings-employer-match-amount", accountId, amount: 0 }),
     mutationKey({ kind: "savings-start-year", accountId, year: 0 }),
     mutationKey({ kind: "savings-end-year", accountId, year: 0 }),
+    // The account-growth picker writes the ACCOUNT, not the rule. Reset is
+    // documented as clearing the whole group so a partial edit can't
+    // half-revert — leaving the account on the picked portfolio while the
+    // contribution snaps back to base would be exactly that.
+    mutationKey({ kind: "account-upsert", id: accountId, value: null }),
   ];
 }
 
@@ -74,6 +110,12 @@ export function SolverRowSavingsContributions({
   onSolveStart,
   onSolveCancel,
   visibleSelfFundingAccts,
+  portfolios,
+  categoryGrowthDefaults,
+  registerAccountMix,
+  milestones,
+  clientFirstName,
+  spouseFirstName,
 }: Props) {
   const baseActive = activeSavingsRules(baseClientData.savingsRules, currentYear);
   const visible = visibleSelfFundingAccts ?? new Set<string>();
@@ -102,6 +144,17 @@ export function SolverRowSavingsContributions({
     owner ? { clientName: owner.firstName, spouseName: owner.spouseName ?? null } : undefined,
   );
 
+  // One bundle rather than six props repeated across the two Editable call
+  // sites (base rules and scenario-added rules).
+  const dialogCtx: EditDialogContext = {
+    portfolios,
+    categoryGrowthDefaults,
+    registerAccountMix,
+    milestones,
+    clientFirstName,
+    spouseFirstName,
+  };
+
   return (
     <div className="space-y-2.5">
       <div className="text-[13px] font-medium text-ink">Savings Contributions</div>
@@ -122,6 +175,7 @@ export function SolverRowSavingsContributions({
               workingAccount={workingAccount}
               resolvedInflationRate={resolvedInflationRate}
               salaries={salaryOptions}
+              dialogCtx={dialogCtx}
               activeSolve={activeSolve}
               onSolveStart={onSolveStart}
               onSolveCancel={onSolveCancel}
@@ -142,6 +196,7 @@ export function SolverRowSavingsContributions({
               workingAccount={account}
               resolvedInflationRate={resolvedInflationRate}
               salaries={salaryOptions}
+              dialogCtx={dialogCtx}
               activeSolve={activeSolve}
               onSolveStart={onSolveStart}
               onSolveCancel={onSolveCancel}
@@ -224,6 +279,15 @@ function contributionMagnitude(rule: SavingsRule): number {
   return rule.annualAmount;
 }
 
+interface EditDialogContext {
+  portfolios?: readonly SolverModelPortfolio[];
+  categoryGrowthDefaults?: { taxable: number; retirement: number; cash: number };
+  registerAccountMix?: (accountId: string, mix: AccountAssetMix[]) => void;
+  milestones?: ClientMilestones;
+  clientFirstName?: string;
+  spouseFirstName?: string;
+}
+
 function Editable({
   label,
   baseRule,
@@ -231,6 +295,7 @@ function Editable({
   workingAccount,
   resolvedInflationRate,
   salaries,
+  dialogCtx,
   activeSolve,
   onSolveStart,
   onSolveCancel,
@@ -244,6 +309,7 @@ function Editable({
   workingAccount: Account | undefined;
   resolvedInflationRate: number;
   salaries: readonly SalaryOption[];
+  dialogCtx: EditDialogContext;
   activeSolve: ActiveSolve | null;
   onSolveStart: (target: SolveLeverKey, targetPoS: number) => void;
   onSolveCancel: () => void;
@@ -415,6 +481,15 @@ function Editable({
           workingRule={workingRule}
           resolvedInflationRate={resolvedInflationRate}
           salaries={salaries}
+          portfolios={dialogCtx.portfolios}
+          categoryDefaultRate={categoryDefaultRate(
+            workingAccount.category,
+            dialogCtx.categoryGrowthDefaults,
+          )}
+          registerAccountMix={dialogCtx.registerAccountMix}
+          milestones={dialogCtx.milestones}
+          clientFirstName={dialogCtx.clientFirstName}
+          spouseFirstName={dialogCtx.spouseFirstName}
         />
       ) : null}
     </div>

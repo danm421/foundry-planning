@@ -10,6 +10,7 @@
 import { z } from "zod";
 import { isUSPSStateCode } from "@/lib/usps-states";
 import { MAX_RATE_STRESS_POINTS } from "@/lib/tax/rate-stress";
+import { YEAR_REFS } from "@/lib/milestones";
 
 const PERSON = z.enum(["client", "spouse"]);
 
@@ -27,6 +28,10 @@ const INCOME_TAX_TYPE = z.enum([
 ]);
 
 const YEAR = z.number().int().min(1950).max(2150);
+// The savings-rule year anchors. Enumerated (not a free string) because the
+// value lands in the `year_ref` Postgres enum column — an unrecognised token
+// would fail the whole Save-to-base transaction at the DB layer.
+const YEAR_REF = z.enum(YEAR_REFS);
 const MONEY = z.number().min(0).max(100_000_000);
 const RATE = z.number().min(-1).max(2); // decimal (-100% to 200%) — leave slack for what-ifs
 
@@ -448,11 +453,13 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     kind: z.literal("savings-start-year"),
     accountId: z.string().uuid(),
     year: YEAR,
+    ref: YEAR_REF.nullable().optional(),
   }),
   z.object({
     kind: z.literal("savings-end-year"),
     accountId: z.string().uuid(),
     year: YEAR,
+    ref: YEAR_REF.nullable().optional(),
   }),
 
   // Technique upserts
