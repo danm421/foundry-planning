@@ -146,9 +146,24 @@ describe("buildCheckoutSessionParams", () => {
     // subscription Checkout always materializes a Customer automatically.
     expect(params.customer_creation).toBeUndefined();
     expect(params.mode).toBe("subscription");
-    // Absent on purpose: naming payment_method_types would pin Checkout to card
-    // only and hide Link, Cash App Pay, and Amazon Pay, which the Stripe
-    // Dashboard has enabled. Dynamic payment methods needs the field unset.
-    expect(params.payment_method_types).toBeUndefined();
+    // Pinned on purpose. Naming payment_method_types overrides dynamic payment
+    // methods, which is exactly the intent: card (Apple Pay and Google Pay ride
+    // on it) and ACH bank debit only. Klarna, Cash App Pay, Link and Amazon Pay
+    // are enabled in the Stripe Dashboard and must NOT reach a buyer.
+    expect(params.payment_method_types).toEqual(["card", "us_bank_account"]);
+  });
+
+  it("collects a shipping address, which is what makes the wallets appear", () => {
+    // Nothing ships. Stripe hides BOTH Apple Pay and Google Pay on a Checkout
+    // Session using Stripe Tax unless a shipping address is collected, so
+    // dropping this silently removes the wallets from the buyer's screen —
+    // with no error and no other visible change.
+    const params = buildCheckoutSessionParams({
+      priceKey: "seatAnnual",
+      origin: "https://example.test",
+    });
+    expect(params.shipping_address_collection).toEqual({
+      allowed_countries: ["US"],
+    });
   });
 });

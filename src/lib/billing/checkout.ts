@@ -82,15 +82,41 @@ export function buildCheckoutSessionParams(args: {
       ? { client_reference_id: args.clientReferenceId }
       : {}),
     automatic_tax: { enabled: true },
+    // Not about shipping — this is what makes Apple Pay and Google Pay appear.
+    // Stripe hides both wallets on any Checkout Session that uses Stripe Tax
+    // unless a shipping address is collected (or the customer already has one
+    // saved). Stripe's docs name only Google Pay; measured 2026-09-01 on two
+    // otherwise-identical test sessions, Apple Pay is hidden by the same rule —
+    // without this line the express row is Link alone.
+    //
+    // The visible cost: Checkout retitles its first section "Shipping
+    // information" and requires a full name + address. Hosted Checkout gives no
+    // way to relabel it. Accepted deliberately to get the wallets.
+    //
+    // US-only because the product is US-only (federal + state tax, Social
+    // Security, US estate rules) and Stripe Tax is registered per US state.
+    // Note this is a narrowing: billing-address collection accepted any
+    // country, so a non-US buyer can no longer self-serve.
+    shipping_address_collection: { allowed_countries: ["US"] },
     // /admin/promo-codes mints Stripe promotion codes for buyers to type here.
     // Without this the field never renders and every code ops issues is dead.
     allow_promotion_codes: true,
     success_url: `${args.origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: STOREFRONT_PRICING_URL,
-    // payment_method_types is deliberately omitted. Naming it pins Checkout to
-    // that list and hides every other method the Stripe Dashboard has enabled;
-    // omitting it lets dynamic payment methods offer Link, Cash App Pay, and
-    // Amazon Pay alongside card. Which ones appear is a Dashboard toggle, not a
-    // deploy. Apple Pay and Google Pay have no enum — they ride on card either way.
+    // Pinned on purpose, and pinning is the only lever there is: Stripe has no
+    // deny-list. Naming payment_method_types OVERRIDES dynamic payment methods —
+    // Checkout offers exactly this list and ignores every other method the
+    // Dashboard has enabled. Left unset, Stripe resolved
+    // ["card","klarna","link","cashapp","amazon_pay"], putting buy-now-pay-later
+    // in front of advisors buying a business subscription.
+    //
+    // Apple Pay and Google Pay have no enum of their own — they ride on "card",
+    // so this list neither enables nor blocks them. What does gate them is
+    // shipping_address_collection above plus their Dashboard toggles, under
+    // Settings -> Payment methods.
+    //
+    // Cost of pinning: a method enabled in the Dashboard later needs a deploy
+    // to appear here.
+    payment_method_types: ["card", "us_bank_account"],
   };
 }
