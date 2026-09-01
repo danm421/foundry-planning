@@ -79,6 +79,10 @@ export function buildCheckoutSessionParams(args: {
     allow_promotion_codes: true,
     success_url: `${args.origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: STOREFRONT_PRICING_URL,
-    payment_method_types: ["card"],
+    // payment_method_types is deliberately omitted. Naming it pins Checkout to
+    // that list and hides every other method the Stripe Dashboard has enabled;
+    // omitting it lets dynamic payment methods offer Link, Cash App Pay, and
+    // Amazon Pay alongside card. Which ones appear is a Dashboard toggle, not a
+    // deploy. Apple Pay and Google Pay have no enum — they ride on card either way.
   };
 }

@@ -120,6 +120,9 @@ describe("buildCheckoutSessionParams", () => {
     // subscription Checkout always materializes a Customer automatically.
     expect(params.customer_creation).toBeUndefined();
     expect(params.mode).toBe("subscription");
-    expect(params.payment_method_types).toEqual(["card"]);
+    // Absent on purpose: naming payment_method_types would pin Checkout to card
+    // only and hide Link, Cash App Pay, and Amazon Pay, which the Stripe
+    // Dashboard has enabled. Dynamic payment methods needs the field unset.
+    expect(params.payment_method_types).toBeUndefined();
   });
 });
