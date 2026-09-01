@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useOrganizationList } from "@clerk/nextjs";
+import { useAuth, useOrganizationList } from "@clerk/nextjs";
 import { LANDING_PATH } from "@/lib/routes";
 
 type Status =
@@ -15,9 +15,27 @@ type Status =
 
 const POLL_INTERVAL_MS = 1500;
 const MAX_ATTEMPTS = 30;
+// Clerk's setActive() rejects on a network failure, which the catch below turns
+// into a real way in — but a request that neither resolves nor rejects would
+// leave the buyer on "Opening your workspace…" for good. Cap it.
+const ACTIVATION_TIMEOUT_MS = 15000;
+
+const SUPPORT_EMAIL = "support@foundryplanning.com";
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expiry = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("timed out")), ms);
+  });
+  return Promise.race([promise, expiry]).finally(() => clearTimeout(timer));
+}
 
 export default function SuccessPolling({ sessionId }: { sessionId: string }) {
   const [status, setStatus] = useState<Status>({ kind: "polling" });
+  // Bumped by "Check again" on the timeout screen. Re-running the poller is the
+  // ONLY onward route we give a self-serve buyer there: they have already paid,
+  // and every other way off this page walks them back into a second Checkout.
+  const [pollCycle, setPollCycle] = useState(0);
 
   useEffect(() => {
     let attempt = 0;
@@ -67,7 +85,14 @@ export default function SuccessPolling({ sessionId }: { sessionId: string }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [sessionId]);
+  }, [sessionId, pollCycle]);
+
+  // The self-serve buyer made their account BEFORE paying, so they are signed
+  // in and still org-less while their firm is being provisioned. The sales-path
+  // buyer has no account at all yet — an invitation email is what makes them
+  // one — which is why the two get different copy below.
+  const { isSignedIn, orgId } = useAuth();
+  const isSelfServeBuyer = !!isSignedIn && !orgId;
 
   const { setActive } = useOrganizationList();
   const router = useRouter();
@@ -92,7 +117,7 @@ export default function SuccessPolling({ sessionId }: { sessionId: string }) {
     void (async () => {
       setStatus({ kind: "entering" });
       try {
-        await setActive({ organization: orgId });
+        await withTimeout(setActive({ organization: orgId }), ACTIVATION_TIMEOUT_MS);
         router.push(LANDING_PATH);
       } catch (err) {
         console.error("[checkout-success] setActive failed:", err);
@@ -180,6 +205,44 @@ export default function SuccessPolling({ sessionId }: { sessionId: string }) {
   }
 
   if (status.kind === "timeout") {
+    // A self-serve buyer gets NO invitation email — removing it is the whole
+    // point of this flow — so promising one here would send them to an inbox
+    // that never fills. Worse, they are signed in and org-less, so every route
+    // off this page runs through /select-organization to /welcome and into a
+    // SECOND Checkout: a second firm and a second subscription for someone who
+    // has already paid. The only affordance we give them is another look.
+    if (isSelfServeBuyer) {
+      return (
+        <div className="text-center">
+          <h1 className="text-2xl font-semibold tracking-tight text-ink">
+            Still setting up your firm<span className="dot">.</span>
+          </h1>
+          <p className="mt-4 text-ink-2">
+            Your payment went through — there is nothing to pay again. Setup is
+            taking longer than usual, and your workspace opens by itself the
+            moment it is ready.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setStatus({ kind: "polling" });
+              setPollCycle((cycle) => cycle + 1);
+            }}
+            className="btn-primary mt-7"
+          >
+            Check again
+          </button>
+          <p className="mt-8 text-xs text-ink-3">
+            Still nothing after a few minutes? Email{" "}
+            <a className="text-accent hover:underline" href={`mailto:${SUPPORT_EMAIL}`}>
+              {SUPPORT_EMAIL}
+            </a>{" "}
+            and we will finish it for you.
+          </p>
+        </div>
+      );
+    }
+
     return (
       <div className="text-center">
         <h1 className="text-2xl font-semibold tracking-tight text-ink">
@@ -188,11 +251,8 @@ export default function SuccessPolling({ sessionId }: { sessionId: string }) {
         <p className="mt-4 text-ink-2">
           Your sign-in invite will arrive within a few minutes. If you don&rsquo;t
           see it, email{" "}
-          <a
-            className="text-accent hover:underline"
-            href="mailto:support@foundryplanning.com"
-          >
-            support@foundryplanning.com
+          <a className="text-accent hover:underline" href={`mailto:${SUPPORT_EMAIL}`}>
+            {SUPPORT_EMAIL}
           </a>{" "}
           with your purchase email.
         </p>
