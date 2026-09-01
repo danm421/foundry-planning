@@ -398,6 +398,12 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     percent: z.number().min(0).max(1).nullable(),
   }),
   z.object({
+    kind: z.literal("savings-salary-basis"),
+    accountId: z.string().uuid(),
+    basis: z.enum(["owner", "all", "selected"]),
+    incomeIds: z.array(z.string().uuid()),
+  }),
+  z.object({
     kind: z.literal("savings-roth-percent"),
     accountId: z.string().uuid(),
     rothPercent: z.number().min(0).max(1),

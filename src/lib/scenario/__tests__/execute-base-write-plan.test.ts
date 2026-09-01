@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { accounts, incomes, planSettings, gifts, expenseDedicatedAccounts } from "@/db/schema";
+import {
+  accounts,
+  incomes,
+  planSettings,
+  gifts,
+  expenseDedicatedAccounts,
+  savingsRules,
+  savingsRuleSalaryIncomes,
+} from "@/db/schema";
 import { executeBaseWritePlan } from "../execute-base-write-plan";
 import type { BaseWritePlan } from "../promote-to-base-types";
 
@@ -95,6 +103,42 @@ describe("executeBaseWritePlan", () => {
     await executeBaseWritePlan(tx as never, plan, { clientId: "c1", baseScenarioId: "base1" });
     expect(ops[0].table).toBe(accounts);
     expect(ops[1].table).toBe(incomes);
+  });
+
+  it("inserts incomes before the rows that FK to them (savings-rule salary basis)", async () => {
+    // savings_rule_salary_incomes.income_id FKs to incomes.id, and the child
+    // writer resolves synthetic ids through idRemap — which is only populated
+    // once the income row itself has been inserted. Without incomes ranked
+    // ahead of savings rules the writer would emit the raw synthetic id and
+    // the FK would reject an otherwise legal promotion.
+    const plan: BaseWritePlan = {
+      ...emptyPlan(),
+      inserts: [
+        {
+          kind: "savings_rule",
+          targetId: "s1",
+          raw: { id: "s1", accountId: "a-syn", salaryIncomeIds: ["i-syn"] },
+        },
+        { kind: "income", targetId: "i-syn", raw: { id: "i-syn", name: "Salary" } },
+        { kind: "account", targetId: "a-syn", raw: { id: "a-syn", name: "401(k)" } },
+      ],
+    };
+    const { tx, ops } = makeTx();
+    await executeBaseWritePlan(tx as never, plan, { clientId: "c1", baseScenarioId: "base1" });
+    const insertTables = ops.filter((o) => o.op === "insert").map((o) => o.table);
+    expect(insertTables).toEqual([
+      accounts,
+      incomes,
+      savingsRules,
+      savingsRuleSalaryIncomes,
+    ]);
+    // db-1 = account, db-2 = income, db-3 = savings rule
+    const joinInsert = ops.find(
+      (o) => o.op === "insert" && o.table === savingsRuleSalaryIncomes,
+    )!;
+    expect(joinInsert.arg).toEqual([
+      { savingsRuleId: "db-3", incomeId: "db-2", sortOrder: 0 },
+    ]);
   });
 
   it("updates a base row with a scoped set carrying updatedAt", async () => {

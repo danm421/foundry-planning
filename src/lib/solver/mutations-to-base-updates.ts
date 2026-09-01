@@ -51,6 +51,13 @@ const NON_BASE_SAVABLE = new Set<SolverMutation["kind"]>([
   // base-write path here (see promote-table-registry: extra_payment is a
   // nested-only kind). It round-trips via save-as-scenario instead.
   "debt-paydown",
+  // Same story: "selected" lives in savings_rule_salary_incomes, a child table
+  // this helper's ColumnPatch shape cannot carry (it is scalar columns only)
+  // and the route's `.set()` cannot write. Reporting savable would make
+  // Save-to-base drop the choice AND clear it from the working set. It
+  // round-trips via save-as-scenario, which writes the join rows on promotion
+  // (promote-child-writers.writeSavingsRuleChildren).
+  "savings-salary-basis",
   "stress-inflation",
   "stress-ss-haircut",
   "stress-disability",

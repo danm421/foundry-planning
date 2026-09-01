@@ -33,3 +33,116 @@ describe("savings_rule describer", () => {
     expect(row.detail.join(" ")).toContain("$20k → $25k");
   });
 });
+
+describe("savings_rule describer — salary basis", () => {
+  it("names the basis instead of printing income ids", () => {
+    // fmtValue joins a string array with commas, so an unhandled
+    // salaryIncomeIds field puts raw UUIDs on a client-facing page — the same
+    // leak the [object Object] comment in format.ts documents.
+    const row = describeChange(
+      ch({
+        opType: "edit",
+        payload: {
+          salaryBasis: { from: "owner", to: "selected" },
+          salaryIncomeIds: { from: [], to: ["9f8c1111-2222-4333-8444-555566667777", "1a2b1111-2222-4333-8444-555566667777"] },
+        },
+      }),
+      ctx,
+    );
+    const d = row.detail.join(" ");
+    expect(d).toContain("Account owner's salary");
+    expect(d).toContain("Selected salaries");
+    expect(d).toContain("2 salaries");
+    expect(d).not.toContain("9f8c");
+  });
+
+  it("labels a single selected salary in the singular and names the 'all' basis", () => {
+    const row = describeChange(
+      ch({
+        opType: "edit",
+        payload: {
+          salaryBasis: { from: "selected", to: "all" },
+          salaryIncomeIds: { from: ["9f8c1111-2222-4333-8444-555566667777"], to: [] },
+        },
+      }),
+      ctx,
+    );
+    const d = row.detail.join(" ");
+    expect(d).toContain("All salaries");
+    expect(d).toContain("1 salary → 0 salaries");
+    expect(d).not.toContain("9f8c");
+  });
+});
+
+describe("savings_rule describer — a no-op id list is not a change", () => {
+  const ID_A = "9f8c1111-2222-4333-8444-555566667777";
+  const ID_B = "1a2b1111-2222-4333-8444-555566667777";
+
+  it("owner → all drops the untouched 'Salaries used' segment", () => {
+    // accumulateSavings skips only on `from === to`, and two arrays are never
+    // ===, so THE most common salary-basis edit records an untouched
+    // salaryIncomeIds. Rendering it put "0 salaries → 0 salaries" on a
+    // client-facing deck beside every real change.
+    const row = describeChange(
+      ch({
+        opType: "edit",
+        payload: {
+          salaryBasis: { from: "owner", to: "all" },
+          salaryIncomeIds: { from: [], to: [] },
+        },
+      }),
+      ctx,
+    );
+    const d = row.detail.join(" ");
+    expect(d).toContain("Account owner's salary → All salaries");
+    expect(d).not.toContain("0 salaries");
+    expect(d).not.toContain("Salaries used");
+  });
+
+  it("keeps the segment when the ids changed but the COUNT did not", () => {
+    // The case that kills the naive "drop it when the formatted values match"
+    // fix: both sides format as "1 salary", so a formatted compare would hide
+    // a real one-for-one swap on a diff page.
+    const row = describeChange(
+      ch({
+        opType: "edit",
+        payload: { salaryIncomeIds: { from: [ID_A], to: [ID_B] } },
+      }),
+      ctx,
+    );
+    const d = row.detail.join(" ");
+    expect(d).toContain("Salaries used: 1 salary → 1 salary");
+    expect(d).not.toContain("9f8c");
+    expect(d).not.toContain("1a2b");
+  });
+
+  it("keeps the segment when the same ids are REORDERED", () => {
+    // sortOrder is positional and the engine sums in list order, so a reorder
+    // is a real edit even though both sides are "2 salaries".
+    const row = describeChange(
+      ch({
+        opType: "edit",
+        payload: { salaryIncomeIds: { from: [ID_A, ID_B], to: [ID_B, ID_A] } },
+      }),
+      ctx,
+    );
+    expect(row.detail.join(" ")).toContain("Salaries used: 2 salaries → 2 salaries");
+  });
+
+  it("renders a non-array value rather than swallowing it", () => {
+    const row = describeChange(
+      ch({ opType: "edit", payload: { salaryIncomeIds: { from: null, to: [ID_A] } } }),
+      ctx,
+    );
+    expect(row.detail.join(" ")).toContain("Salaries used: — → 1 salary");
+  });
+
+  it("falls back to the spec's edit line when every segment drops out", () => {
+    const row = describeChange(
+      ch({ opType: "edit", payload: { salaryIncomeIds: { from: [ID_A], to: [ID_A] } } }),
+      ctx,
+    );
+    expect(row.detail.join(" ")).toContain("Adjusts this savings contribution.");
+    expect(row.detail.join(" ")).not.toContain("Salaries used");
+  });
+});

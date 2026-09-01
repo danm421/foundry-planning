@@ -13,6 +13,10 @@
 //     an advisor's employer match on every client edit.
 //   • `growthRate` guards on `!= null`, not `!== undefined`, unlike its
 //     neighbours. Lifted verbatim — it decides which payloads clear the rate.
+//   • `salaryBasis` writes TWO places: the column here, and the rule's rows in
+//     savings_rule_salary_incomes via replaceSalaryIncomes. Both are gated on
+//     the payload having MENTIONED the basis, so a four-key portal edit leaves
+//     an advisor's selection intact.
 //   • DELETE runs inside a transaction with pruneOrphanScenarioChanges, same as
 //     incomes-writes.ts / expenses-writes.ts — lifted from the route's existing
 //     db.transaction wrapper so a deleted rule doesn't strand scenario_changes
@@ -20,10 +24,11 @@
 import { db } from "@/db";
 import { savingsRules } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
-import { assertAccountsInClient } from "@/lib/db-scoping";
+import { assertAccountsInClient, assertIncomesInClient } from "@/lib/db-scoping";
 import { recordAudit } from "@/lib/audit";
 import { pruneOrphanScenarioChanges } from "@/lib/scenario/prune-changes";
 import { baseCaseScenarioId } from "./base-case";
+import { replaceSalaryIncomes } from "./salary-basis-incomes";
 import { writeError, type EntityWriteResult } from "./entity-write-result";
 
 type SavingsRuleRow = typeof savingsRules.$inferSelect;
@@ -55,6 +60,24 @@ interface SavingsRuleInput {
   employerMatchAmount?: string | null;
   startYearRef?: string | null;
   endYearRef?: string | null;
+  salaryBasis?: "owner" | "all" | "selected";
+  salaryIncomeIds?: string[];
+}
+
+/**
+ * The basis to STORE, or undefined when the payload never mentioned one (which
+ * every partial patch must leave untouched).
+ *
+ * "selected" with nothing selected is not a basis. projection.ts guards on
+ * `salaryIncomeIds?.length` and falls through to the owner path, so storing
+ * "selected" anyway would leave the rule labelled one way and computed another
+ * — a percent quietly resolving against the account owner. Store what the
+ * engine will actually do; the advisor sees the radio move back.
+ */
+function basisToStore(p: SavingsRuleInput): SavingsRuleInput["salaryBasis"] {
+  if (p.salaryBasis === undefined) return undefined;
+  if (p.salaryBasis === "selected" && !p.salaryIncomeIds?.length) return "owner";
+  return p.salaryBasis;
 }
 
 export async function createSavingsRuleForClient(args: {
@@ -80,6 +103,16 @@ export async function createSavingsRuleForClient(args: {
   const acctCheck = await assertAccountsInClient(clientId, [p.accountId]);
   if (!acctCheck.ok) return writeError(400, acctCheck.reason);
 
+  const salaryBasis = basisToStore(p) ?? "owner";
+
+  // savings_rule_salary_incomes.income_id is an unrestricted FK — same reason
+  // expenses-writes.ts runs assertAccountsInClient over its dedicated-account
+  // list before writing it.
+  if (salaryBasis === "selected") {
+    const incCheck = await assertIncomesInClient(clientId, p.salaryIncomeIds ?? []);
+    if (!incCheck.ok) return writeError(400, incCheck.reason);
+  }
+
   const [rule] = await db
     .insert(savingsRules)
     .values({
@@ -101,8 +134,16 @@ export async function createSavingsRuleForClient(args: {
       employerMatchAmount: p.employerMatchAmount ?? null,
       startYearRef: (p.startYearRef ?? null) as SavingsRuleRow["startYearRef"],
       endYearRef: (p.endYearRef ?? null) as SavingsRuleRow["endYearRef"],
+      salaryBasis,
     })
     .returning();
+
+  // Only "selected" owns a list. "all" means every salary including ones added
+  // later, so storing today's ids would quietly freeze it. A fresh rule has no
+  // rows to clear, so there is nothing to do on the other two.
+  if (salaryBasis === "selected") {
+    await db.transaction((tx) => replaceSalaryIncomes(tx, rule.id, p.salaryIncomeIds ?? []));
+  }
 
   await recordAudit({
     action: "savings_rule.create",
@@ -133,6 +174,15 @@ export async function updateSavingsRuleForClient(args: {
   if (p.accountId !== undefined) {
     const acctCheck = await assertAccountsInClient(clientId, [p.accountId]);
     if (!acctCheck.ok) return writeError(400, acctCheck.reason);
+  }
+
+  // undefined exactly when the payload omitted `salaryBasis`, so the guard
+  // below reads the same as its neighbours.
+  const salaryBasis = basisToStore(p);
+
+  if (salaryBasis === "selected") {
+    const incCheck = await assertIncomesInClient(clientId, p.salaryIncomeIds ?? []);
+    if (!incCheck.ok) return writeError(400, incCheck.reason);
   }
 
   // TRUE PARTIAL PATCH — see the header note. Do not collapse these guards.
@@ -171,12 +221,26 @@ export async function updateSavingsRuleForClient(args: {
       ...(p.endYearRef !== undefined && {
         endYearRef: p.endYearRef as SavingsRuleRow["endYearRef"],
       }),
+      ...(salaryBasis !== undefined && { salaryBasis }),
       updatedAt: new Date(),
     })
     .where(and(eq(savingsRules.id, ruleId), eq(savingsRules.clientId, clientId)))
     .returning();
 
   if (!updated) return writeError(404, "Savings rule not found");
+
+  // A basis that moves off "selected" drops its rows; a "selected" payload
+  // replaces them. An omitted basis touches nothing — the portal's simplified
+  // form must not wipe an advisor's selection.
+  if (salaryBasis !== undefined) {
+    await db.transaction((tx) =>
+      replaceSalaryIncomes(
+        tx,
+        ruleId,
+        salaryBasis === "selected" ? (p.salaryIncomeIds ?? []) : [],
+      ),
+    );
+  }
 
   await recordAudit({
     action: "savings_rule.update",

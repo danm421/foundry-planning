@@ -560,6 +560,18 @@ export const itemGrowthSourceEnum = pgEnum("item_growth_source", [
   "inflation",
 ]);
 
+// Which salaries a percent-of-salary savings rule resolves against.
+//   owner    — the controlling family member of the destination account.
+//              The historical behaviour and the default; see projection.ts.
+//   all      — every personal (non-entity) salary in the plan, including any
+//              added later.
+//   selected — the salaries named in savings_rule_salary_incomes.
+export const savingsSalaryBasisEnum = pgEnum("savings_salary_basis", [
+  "owner",
+  "all",
+  "selected",
+]);
+
 export const openItemPriorityEnum = pgEnum("open_item_priority", [
   "low",
   "medium",
@@ -3324,12 +3336,39 @@ export const savingsRules = pgTable("savings_rules", {
   // annualPercent. Only meaningful for retirement subtypes.
   contributeMax: boolean("contribute_max").notNull().default(false),
   annualLimit: decimal("annual_limit", { precision: 15, scale: 2 }),
+  // Which salaries this rule's percent-of-salary contribution AND employer
+  // match resolve against. Both read one number (projection.ts salaryByRuleId),
+  // so one setting governs both. Defaults to the pre-existing derivation.
+  salaryBasis: savingsSalaryBasisEnum("salary_basis").notNull().default("owner"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => ({
   // Engine load path filters savings_rules by (client_id, scenario_id) (audit F7).
   clientScenarioIdx: index("savings_rules_client_scenario_idx").on(t.clientId, t.scenarioId),
 }));
+
+// The salaries a savings rule's percent resolves against, when
+// savings_rules.salary_basis = 'selected'. Join table rather than a uuid[]
+// column so a deleted income removes itself from every rule that named it —
+// same shape, and same cascade, as expense_dedicated_accounts.
+export const savingsRuleSalaryIncomes = pgTable(
+  "savings_rule_salary_incomes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    savingsRuleId: uuid("savings_rule_id")
+      .notNull()
+      .references(() => savingsRules.id, { onDelete: "cascade" }),
+    incomeId: uuid("income_id")
+      .notNull()
+      .references(() => incomes.id, { onDelete: "cascade" }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("savings_rule_salary_incomes_rule_sort_idx").on(t.savingsRuleId, t.sortOrder),
+    unique("savings_rule_salary_incomes_uniq").on(t.savingsRuleId, t.incomeId),
+  ],
+);
 
 export const clientOpenItems = pgTable(
   "client_open_items",

@@ -44,6 +44,10 @@ import DeductibleContributionCheckbox, {
 import ContributionCapCheckbox, {
   supportsContributionCap,
 } from "./contribution-cap-checkbox";
+import SalaryBasisFields, {
+  type SalaryBasisValue,
+  type SalaryOption,
+} from "./salary-basis-fields";
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
 import { GrowthRateField, parseGrowthSourceSelection, ASSET_MIX_CATEGORIES } from "./growth-rate-field";
 import { growthDefaultCategory } from "@/lib/projection/resolve-growth-source";
@@ -176,6 +180,9 @@ interface AddAccountFormProps {
   categoryDefaults?: CategoryDefaults;
   /** Real names used in the owner dropdown. Falls back to "Client"/"Spouse" if absent. */
   ownerNames?: { clientName: string; spouseName: string | null };
+  /** Salary incomes offered as a percent-of-salary rule's basis, on the
+   *  create-mode Savings form and in the rule dialog edit mode opens. */
+  salaries?: readonly SalaryOption[];
   modelPortfolios?: ModelPortfolioOption[];
   fundPortfolios?: FundPortfolioOption[];
   assetClasses?: AssetClassOption[];
@@ -320,6 +327,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   familyMembers = [],
   categoryDefaults,
   ownerNames,
+  salaries,
   modelPortfolios,
   fundPortfolios,
   assetClasses,
@@ -1165,6 +1173,12 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
   const [savingsGrowthRateDisplay, setSavingsGrowthRateDisplay] = useState<string>("0");
   const [matchMode, setMatchMode] = useState<MatchMode>("none");
   const [contribMode, setContribMode] = useState<ContributionMode>("amount");
+  // Which salaries the create-mode rule's percent (and its match) resolve
+  // against. "owner" is today's behaviour and stays the default.
+  const [savingsSalaryBasis, setSavingsSalaryBasis] = useState<SalaryBasisValue>({
+    basis: "owner",
+    incomeIds: [],
+  });
   const [isDeductible, setIsDeductible] = useState<boolean>(defaultDeductibleForSubtype(subType));
   // Reset the deductibility default whenever the subtype changes in create mode.
   useEffect(() => {
@@ -1743,6 +1757,8 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                 : null,
             employerMatchAmount:
               showEmployerMatch && matchMode === "flat" && matchAmount ? matchAmount : null,
+            salaryBasis: savingsSalaryBasis.basis,
+            salaryIncomeIds: savingsSalaryBasis.incomeIds,
           };
 
           const newSavingsRuleId =
@@ -2867,6 +2883,18 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                 idPrefix="acct-sr"
               />
             )}
+
+            {/* Last in the section, mirroring the rule dialog: the panel is
+                conditionally rendered, and higher up it would appear and
+                disappear in the middle of the form on every mode toggle. */}
+            {(contribMode === "percent" || (showEmployerMatch && matchMode === "percent")) && (
+              <SalaryBasisFields
+                value={savingsSalaryBasis}
+                onChange={setSavingsSalaryBasis}
+                salaries={salaries ?? []}
+                idPrefix="acct-sr"
+              />
+            )}
           </div>
         </div>
       )}
@@ -3106,6 +3134,7 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
         ownerNames={ownerNames ? { clientName: ownerNames.clientName, spouseName: ownerNames.spouseName } : undefined}
         familyMembers={familyMembers}
         resolvedInflationRate={resolvedInflationRate}
+        salaries={salaries}
       />
     )}
 

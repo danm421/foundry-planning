@@ -23,6 +23,11 @@ import {
 } from "@/components/forms/contribution-amount-fields";
 import { supportsDeductibility } from "@/components/forms/deductible-contribution-checkbox";
 import { supportsContributionCap } from "@/components/forms/contribution-cap-checkbox";
+import SalaryBasisFields, {
+  inferSalaryBasis,
+  type SalaryBasisValue,
+  type SalaryOption,
+} from "@/components/forms/salary-basis-fields";
 import type { SolverMutation } from "@/lib/solver/types";
 
 interface Props {
@@ -33,6 +38,9 @@ interface Props {
   workingRule: SavingsRule;
   /** Used as the default rate when switching growth source from custom → inflation. */
   resolvedInflationRate: number;
+  /** The plan's salaries, for the "which salaries?" panel. Built by the parent
+   *  row from the WORKING tree, so a salary added this session is selectable. */
+  salaries?: readonly SalaryOption[];
 }
 
 export function SolverSavingsEditDialog({
@@ -42,6 +50,7 @@ export function SolverSavingsEditDialog({
   account,
   workingRule,
   resolvedInflationRate,
+  salaries,
 }: Props) {
   const showPercentMode = supportsPercentContribution(account.category, account.subType);
   const showMaxMode = supportsMaxContribution(account.category, account.subType);
@@ -120,6 +129,12 @@ export function SolverSavingsEditDialog({
 
   const [startYear, setStartYear] = useState<number>(workingRule.startYear);
   const [endYear, setEndYear] = useState<number>(workingRule.endYear);
+
+  const initialSalaryBasis = inferSalaryBasis(
+    workingRule.salaryBasis,
+    workingRule.salaryIncomeIds,
+  );
+  const [salaryBasis, setSalaryBasis] = useState<SalaryBasisValue>(initialSalaryBasis);
 
   const title = useMemo(() => `${account.name} Savings`, [account.name]);
 
@@ -268,6 +283,22 @@ export function SolverSavingsEditDialog({
     }
     if (endYear !== workingRule.endYear) {
       out.push({ kind: "savings-end-year", accountId, year: endYear });
+    }
+
+    // Salary basis -----------------------------------------------------
+    // Element-wise, not a bare `!==`: two arrays are never equal by identity,
+    // so a plain compare would emit a no-op mutation on every save and spend
+    // one of the 30/min-per-firm projection recomputes for nothing.
+    const idsChanged =
+      initialSalaryBasis.incomeIds.length !== salaryBasis.incomeIds.length ||
+      initialSalaryBasis.incomeIds.some((id, i) => id !== salaryBasis.incomeIds[i]);
+    if (initialSalaryBasis.basis !== salaryBasis.basis || idsChanged) {
+      out.push({
+        kind: "savings-salary-basis",
+        accountId,
+        basis: salaryBasis.basis,
+        incomeIds: salaryBasis.incomeIds,
+      });
     }
 
     if (out.length > 0) onEmit(out);
@@ -588,6 +619,21 @@ export function SolverSavingsEditDialog({
           </div>
         </div>
       </fieldset>
+
+      {/* Placed last, not beside the toggles it responds to: the panel is
+          conditionally rendered, so up beside the contribution and match modes
+          it would appear and disappear in the MIDDLE of the dialog and shove
+          the year pickers up and down on every mode toggle. */}
+      {(contribMode === "percent" || (showEmployerMatch && matchMode === "percent")) && (
+        <div className="mt-4">
+          <SalaryBasisFields
+            value={salaryBasis}
+            onChange={setSalaryBasis}
+            salaries={salaries ?? []}
+            idPrefix="solver-sr"
+          />
+        </div>
+      )}
     </DialogShell>
   );
 }

@@ -888,3 +888,32 @@ describe("applyMutations — surplus allocation", () => {
     expect(out.planSettings.surplusSpendAllUntilRetirement).toBe(false);
   });
 });
+
+describe("applyMutations — savings salary basis", () => {
+  it("savings-salary-basis rewrites the rule's basis and ids", () => {
+    const result = applyMutations(makeBase(), [
+      {
+        kind: "savings-salary-basis",
+        accountId: "account-401k-cooper",
+        basis: "selected",
+        incomeIds: ["income-salary-cooper"],
+      },
+    ]);
+    const rule = result.savingsRules.find((r) => r.accountId === "account-401k-cooper");
+    expect(rule?.salaryBasis).toBe("selected");
+    expect(rule?.salaryIncomeIds).toEqual(["income-salary-cooper"]);
+  });
+
+  it("leaves every other rule's basis alone", () => {
+    const result = applyMutations(makeBase(), [
+      {
+        kind: "savings-salary-basis",
+        accountId: "account-401k-cooper",
+        basis: "all",
+        incomeIds: [],
+      },
+    ]);
+    const other = result.savingsRules.find((r) => r.accountId !== "account-401k-cooper");
+    expect(other?.salaryBasis).toBeUndefined();
+  });
+});

@@ -18,6 +18,7 @@ import { LiabilityFormInitial } from "./forms/add-liability-form";
 import type { NoteReceivableFormInitial } from "./forms/add-note-receivable-form";
 import { computeAmortizationSchedule, calcOriginalBalance } from "@/lib/loan-math";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
+import { toSalaryOptions } from "@/lib/savings/salary-options";
 import { LIQUID_PORTFOLIO_CATEGORIES } from "@/engine/portfolio-snapshot";
 import type { ClientMilestones } from "@/lib/milestones";
 import type { AccountOwner } from "@/engine/ownership";
@@ -143,26 +144,37 @@ export interface LiabilityRow {
   parentAccountId?: string | null;
 }
 
+/** An income as the balance sheet renders it. Two consumers: the "Incomes"
+ *  pill inside an expanded business row reads the subset whose `ownerAccountId`
+ *  points at a business shown here, and the Add/Edit Account dialog turns the
+ *  salaries into the choices a percent-of-salary savings rule can be based on.
+ *  The optional schedule fields (startYear/endYear/growthRate/
+ *  inflationStartYear) drive the Custom-schedule placeholder math in
+ *  BusinessFlowsTab. */
+export interface IncomeRow {
+  id: string;
+  /** Income kind. `toSalaryOptions` offers only `"salary"` rows. */
+  type: string;
+  name: string;
+  annualAmount: number | string;
+  owner: string;
+  /** Set when a trust or business owns the income; those are never a
+   *  household deferral's salary base. */
+  ownerEntityId?: string | null;
+  ownerAccountId?: string | null;
+  startYear?: number | null;
+  endYear?: number | null;
+  growthRate?: number | null;
+  inflationStartYear?: number | null;
+}
+
 interface BalanceSheetViewProps {
   clientId: string;
   accounts: AccountRow[];
   liabilities: LiabilityRow[];
   notesReceivable?: NoteReceivable[];
-  /** Incomes attached to business accounts, used to render the "Incomes"
-   *  pill inside an expanded business row. Only rows with ownerAccountId
-   *  pointing at a business shown here are surfaced. The optional schedule
-   *  fields (startYear/endYear/growthRate/inflationStartYear) drive the
-   *  Custom-schedule placeholder math in BusinessFlowsTab. */
-  incomes?: {
-    id: string;
-    name: string;
-    annualAmount: number | string;
-    ownerAccountId?: string | null;
-    startYear?: number | null;
-    endYear?: number | null;
-    growthRate?: number | null;
-    inflationStartYear?: number | null;
-  }[];
+  /** Every income in the plan. Built by `buildIncomeRows`. */
+  incomes?: IncomeRow[];
   /** Expenses attached to business accounts, shown in the BusinessFlowsTab. */
   expenses?: {
     id: string;
@@ -773,6 +785,10 @@ export default function BalanceSheetView({
     arr.push(l);
     childLiabilitiesByParentId.set(l.parentAccountId, arr);
   }
+  // Salaries a percent-of-salary savings rule can be based on, for the
+  // Add/Edit Account dialog's Savings tab.
+  const salaryOptions = toSalaryOptions(incomes, ownerNames);
+
   const incomesByOwnerAccountId = new Map<string, { id: string; name: string }[]>();
   for (const i of incomes) {
     if (!i.ownerAccountId) continue;
@@ -1526,6 +1542,7 @@ export default function BalanceSheetView({
         modelPortfolios={modelPortfolios}
         fundPortfolios={fundPortfolios}
         ownerNames={ownerNames}
+        salaries={salaryOptions}
         assetClasses={assetClasses}
         portfolioAllocationsMap={portfolioAllocationsMap}
         categoryDefaultSources={categoryDefaultSources}
@@ -1555,6 +1572,7 @@ export default function BalanceSheetView({
         modelPortfolios={modelPortfolios}
         fundPortfolios={fundPortfolios}
         ownerNames={ownerNames}
+        salaries={salaryOptions}
         assetClasses={assetClasses}
         categoryDefaultSources={categoryDefaultSources}
         portfolioAllocationsMap={portfolioAllocationsMap}

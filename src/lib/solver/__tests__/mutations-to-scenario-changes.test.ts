@@ -699,3 +699,48 @@ describe("mutationsToScenarioChanges — surplus allocation → plan_settings", 
     expect(same).toHaveLength(0);
   });
 });
+
+describe("savings-salary-basis → savings_rule diff", () => {
+  it("records a basis diff whose `from` is 'owner' on a rule that predates the column", () => {
+    // The fixture rule carries neither salaryBasis nor salaryIncomeIds — the
+    // pre-migration shape every existing plan has. Without the `?? "owner"` /
+    // `?? []` defaults the diff would read `from: undefined`, and the
+    // scenario-changes page would render "—" as the before value for a rule
+    // that has always resolved against the account owner's salary.
+    const drafts = mutationsToScenarioChanges(makeSource(), CLIENT_ID, [
+      {
+        kind: "savings-salary-basis",
+        accountId: "account-401k",
+        basis: "selected",
+        incomeIds: ["income-ss-cooper"],
+      },
+    ]);
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]).toMatchObject({
+      opType: "edit",
+      targetKind: "savings_rule",
+      targetId: "savings-401k-cooper",
+      payload: {
+        salaryBasis: { from: "owner", to: "selected" },
+        salaryIncomeIds: { from: [], to: ["income-ss-cooper"] },
+      },
+    });
+  });
+
+  it("coalesces the basis into the same savings_rule row as a percent edit", () => {
+    const drafts = mutationsToScenarioChanges(makeSource(), CLIENT_ID, [
+      { kind: "savings-annual-percent", accountId: "account-401k", percent: 0.1 },
+      {
+        kind: "savings-salary-basis",
+        accountId: "account-401k",
+        basis: "all",
+        incomeIds: [],
+      },
+    ]);
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0].payload).toMatchObject({
+      annualPercent: { from: null, to: 0.1 },
+      salaryBasis: { from: "owner", to: "all" },
+    });
+  });
+});

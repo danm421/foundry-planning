@@ -120,3 +120,30 @@ export function collectExternalDedicatedAccountIds(plan: BaseWritePlan): string[
   }
   return [...ids];
 }
+
+/** Every income id a promoted savings rule's percent resolves against,
+ *  EXCLUDING ids satisfied by an income inserted in the same plan (those are
+ *  synthetic and get remapped to their generated uuid inside the promote txn —
+ *  and a `db`-scoped tenant read, which runs OUTSIDE that transaction, could
+ *  not see them anyway, so asserting on them would reject a legal promotion).
+ *  The savings_rule_salary_incomes.income_id FK is GLOBAL (no tenant column),
+ *  so the caller must tenant-check these before executing the plan — the same
+ *  guard collectExternalDedicatedAccountIds exists for. */
+export function collectExternalSalaryIncomeIds(plan: BaseWritePlan): string[] {
+  const insertedSyntheticIds = new Set(
+    plan.inserts.filter((i) => i.kind === "income").map((i) => i.targetId),
+  );
+  const ids = new Set<string>();
+  const add = (raw: unknown) => {
+    for (const id of (raw as string[] | undefined) ?? []) {
+      if (!insertedSyntheticIds.has(id)) ids.add(id);
+    }
+  };
+  for (const ins of plan.inserts) {
+    if (ins.kind === "savings_rule") add(ins.raw.salaryIncomeIds);
+  }
+  for (const u of plan.updates) {
+    if (u.kind === "savings_rule") add(u.set.salaryIncomeIds);
+  }
+  return [...ids];
+}

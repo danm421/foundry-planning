@@ -1,6 +1,6 @@
 // src/lib/scenario/__tests__/promote-child-writers.test.ts
 import { describe, it, expect } from "vitest";
-import { expenseDedicatedAccounts } from "@/db/schema";
+import { expenseDedicatedAccounts, savingsRuleSalaryIncomes } from "@/db/schema";
 import {
   writeAccountChildren,
   writeLiabilityChildren,
@@ -8,6 +8,7 @@ import {
   writeExpenseChildren,
   updateExpenseChildren,
   writeSavingsRuleChildren,
+  updateSavingsRuleChildren,
   writeTransferChildren,
   writeRothConversionChildren,
   writeReinvestmentChildren,
@@ -290,7 +291,7 @@ describe("writeSavingsRuleChildren", () => {
   it("writes savings schedule overrides", async () => {
     const { tx, inserted } = makeTx();
     const raw = { scheduleOverrides: { 2033: 6000, 2034: 7000 } };
-    await writeSavingsRuleChildren(tx as never, "sr-id", raw);
+    await writeSavingsRuleChildren(tx as never, "sr-id", raw, makeCtx());
     expect(inserted).toHaveLength(2);
     for (const row of inserted) {
       expect((row.values as Record<string, unknown>).savingsRuleId).toBe("sr-id");
@@ -299,8 +300,120 @@ describe("writeSavingsRuleChildren", () => {
 
   it("skips when no scheduleOverrides", async () => {
     const { tx, inserted } = makeTx();
-    await writeSavingsRuleChildren(tx as never, "sr2", {});
+    await writeSavingsRuleChildren(tx as never, "sr2", {}, makeCtx());
     expect(inserted).toHaveLength(0);
+  });
+
+  it("writes salary-income join rows in list order (array index = sortOrder)", async () => {
+    const { tx, inserted } = makeTx();
+    const raw = { salaryIncomeIds: ["inc-b", "inc-a"] };
+    await writeSavingsRuleChildren(tx as never, "sr-id", raw, makeCtx());
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0].table).toBe(savingsRuleSalaryIncomes);
+    expect(inserted[0].values).toEqual([
+      { savingsRuleId: "sr-id", incomeId: "inc-b", sortOrder: 0 },
+      { savingsRuleId: "sr-id", incomeId: "inc-a", sortOrder: 1 },
+    ]);
+  });
+
+  it("still writes salary rows when the rule has no schedule overrides", async () => {
+    const { tx, inserted } = makeTx();
+    await writeSavingsRuleChildren(
+      tx as never,
+      "sr-id",
+      { scheduleOverrides: { 2033: 6000 }, salaryIncomeIds: ["inc-a"] },
+      makeCtx(),
+    );
+    // one override row + one salary-income batch
+    expect(inserted).toHaveLength(2);
+    expect(inserted[1].table).toBe(savingsRuleSalaryIncomes);
+  });
+
+  it("does not touch the salary join table when salaryIncomeIds is absent or empty", async () => {
+    const { tx, inserted, deleted } = makeTx();
+    await writeSavingsRuleChildren(tx as never, "sr1", {}, makeCtx());
+    await writeSavingsRuleChildren(tx as never, "sr2", { salaryIncomeIds: [] }, makeCtx());
+    expect(inserted).toHaveLength(0);
+    expect(deleted).toHaveLength(0);
+  });
+
+  it("remaps a same-batch synthetic income id via ctx.idRemap", async () => {
+    // The scope guard runs BEFORE the transaction and deliberately skips ids
+    // satisfied by an in-batch income insert; those arrive here as synthetic
+    // ids and MUST be resolved, or the FK to incomes.id rejects the promotion.
+    const { tx, inserted } = makeTx();
+    await writeSavingsRuleChildren(
+      tx as never,
+      "sr-id",
+      { salaryIncomeIds: ["syn-inc", "inc-a"] },
+      makeCtx(new Map([["syn-inc", "db-inc"]])),
+    );
+    expect(inserted[0].values).toEqual([
+      { savingsRuleId: "sr-id", incomeId: "db-inc", sortOrder: 0 },
+      { savingsRuleId: "sr-id", incomeId: "inc-a", sortOrder: 1 },
+    ]);
+  });
+
+  it("dedupes repeated ids (the table's UNIQUE(rule, income) would 500)", async () => {
+    const { tx, inserted } = makeTx();
+    await writeSavingsRuleChildren(
+      tx as never,
+      "sr-id",
+      { salaryIncomeIds: ["inc-a", "inc-a", "inc-b"] },
+      makeCtx(),
+    );
+    expect(inserted[0].values).toEqual([
+      { savingsRuleId: "sr-id", incomeId: "inc-a", sortOrder: 0 },
+      { savingsRuleId: "sr-id", incomeId: "inc-b", sortOrder: 1 },
+    ]);
+  });
+});
+
+// ── updateSavingsRuleChildren ──────────────────────────────────────────────
+
+describe("updateSavingsRuleChildren", () => {
+  it("no-ops when salaryIncomeIds is not in the edit set", async () => {
+    const { tx, inserted, deleted } = makeTx();
+    await updateSavingsRuleChildren(tx as never, "sr-id", { annualPercent: 0.1 }, makeCtx());
+    expect(inserted).toHaveLength(0);
+    expect(deleted).toHaveLength(0);
+  });
+
+  it("rewrites the salary rows (delete-then-reinsert) in list order", async () => {
+    const { tx, inserted, deleted } = makeTx();
+    await updateSavingsRuleChildren(
+      tx as never,
+      "sr-id",
+      { salaryBasis: "selected", salaryIncomeIds: ["inc-b", "inc-a"] },
+      makeCtx(),
+    );
+    expect(deleted).toHaveLength(1);
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0].values).toEqual([
+      { savingsRuleId: "sr-id", incomeId: "inc-b", sortOrder: 0 },
+      { savingsRuleId: "sr-id", incomeId: "inc-a", sortOrder: 1 },
+    ]);
+  });
+
+  it("clears the salary rows when the edit set carries an empty or undefined value", async () => {
+    const { tx, inserted, deleted } = makeTx();
+    await updateSavingsRuleChildren(tx as never, "s1", { salaryIncomeIds: [] }, makeCtx());
+    await updateSavingsRuleChildren(tx as never, "s2", { salaryIncomeIds: undefined }, makeCtx());
+    expect(deleted).toHaveLength(2);
+    expect(inserted).toHaveLength(0);
+  });
+
+  it("remaps synthetic ids via ctx.idRemap", async () => {
+    const { tx, inserted } = makeTx();
+    await updateSavingsRuleChildren(
+      tx as never,
+      "sr-id",
+      { salaryIncomeIds: ["syn-inc"] },
+      makeCtx(new Map([["syn-inc", "db-inc"]])),
+    );
+    expect(inserted[0].values).toEqual([
+      { savingsRuleId: "sr-id", incomeId: "db-inc", sortOrder: 0 },
+    ]);
   });
 });
 

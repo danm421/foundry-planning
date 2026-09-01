@@ -25,6 +25,7 @@ import {
   willBequestRecipients,
   willResiduaryRecipients,
 } from "@/db/schema";
+import { replaceSalaryIncomes } from "@/lib/clients/salary-basis-incomes";
 import { coerceForTable } from "./promote-coerce";
 import type { PromoteTx, ChildWriterCtx } from "./promote-table-registry";
 
@@ -182,15 +183,30 @@ export async function updateExpenseChildren(
 
 // ── SavingsRule children ───────────────────────────────────────────────────
 
-/** Inserts savingsScheduleOverrides rows from raw.scheduleOverrides. */
+/** The salary ids a rule's percent resolves against, with same-batch synthetic
+ *  income ids resolved to their DB uuids. The tenant guard for these runs
+ *  BEFORE the promote transaction (promote-to-base.ts) on exactly the ids that
+ *  are NOT satisfied by an in-batch income insert — a `db`-scoped read cannot
+ *  see this transaction's uncommitted rows, so checking them here would reject
+ *  a legal promotion. Mirrors the dedicated-account guard. */
+function salaryIncomeIdsFrom(ids: unknown, idRemap: Map<string, string>): string[] {
+  if (!Array.isArray(ids)) return [];
+  return ids
+    .filter((v): v is string => typeof v === "string" && v.length > 0)
+    .map((id) => idRemap.get(id) ?? id);
+}
+
+/** Inserts savingsScheduleOverrides rows from raw.scheduleOverrides, and
+ *  savingsRuleSalaryIncomes rows from raw.salaryIncomeIds (which salaries a
+ *  percent-of-salary contribution resolves against). */
 export async function writeSavingsRuleChildren(
   tx: PromoteTx,
   parentId: string,
   raw: Record<string, unknown>,
+  ctx: ChildWriterCtx,
 ): Promise<void> {
   const overrides = raw.scheduleOverrides as Record<number, number> | undefined;
-  if (!overrides) return;
-  for (const [year, amount] of Object.entries(overrides)) {
+  for (const [year, amount] of Object.entries(overrides ?? {})) {
     const values = coerceForTable(savingsScheduleOverrides, {
       savingsRuleId: parentId,
       year: Number(year),
@@ -198,6 +214,31 @@ export async function writeSavingsRuleChildren(
     });
     await tx.insert(savingsScheduleOverrides).values(values as never);
   }
+
+  const salaryIds = salaryIncomeIdsFrom(raw.salaryIncomeIds, ctx.idRemap);
+  // Nothing to replace on a row that was just inserted, so skip the write
+  // entirely rather than issuing a delete that can never match.
+  if (salaryIds.length > 0) await replaceSalaryIncomes(tx, parentId, salaryIds);
+}
+
+/** Rewrites savingsRuleSalaryIncomes after a savings-rule EDIT. The edit set
+ *  only carries `salaryIncomeIds` when the scenario changed it (field diff), so
+ *  absence means "leave the base rows alone"; a present-but-empty/undefined
+ *  value means the basis moved off "selected" and the rows are cleared.
+ *  Delete-then-reinsert via the shared replaceSalaryIncomes, exactly as
+ *  updateExpenseChildren does for dedicated accounts. */
+export async function updateSavingsRuleChildren(
+  tx: PromoteTx,
+  parentId: string,
+  set: Record<string, unknown>,
+  ctx: ChildWriterCtx,
+): Promise<void> {
+  if (!("salaryIncomeIds" in set)) return;
+  await replaceSalaryIncomes(
+    tx,
+    parentId,
+    salaryIncomeIdsFrom(set.salaryIncomeIds, ctx.idRemap),
+  );
 }
 
 // ── Transfer children ──────────────────────────────────────────────────────

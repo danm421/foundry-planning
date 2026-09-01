@@ -1779,6 +1779,13 @@
       "when": 1788006058446,
       "tag": "0253_polite_christian_walker",
       "breakpoints": true
+    },
+    {
+      "idx": 254,
+      "version": "7",
+      "when": 1788204640908,
+      "tag": "0254_graceful_william_stryker",
+      "breakpoints": true
     }
   ]
 }

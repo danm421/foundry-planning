@@ -4,6 +4,7 @@ import type { ScenarioChange, ToggleGroup } from "@/engine/scenario/types";
 import {
   scenarioChangesToBaseWrites,
   collectExternalDedicatedAccountIds,
+  collectExternalSalaryIncomeIds,
 } from "../scenario-changes-to-base-writes";
 import type { BaseWritePlan } from "../promote-to-base-types";
 
@@ -206,5 +207,59 @@ describe("collectExternalDedicatedAccountIds", () => {
       }),
     );
     expect(ids).toEqual(["a1"]);
+  });
+});
+
+describe("collectExternalSalaryIncomeIds", () => {
+  const plan = (over: Partial<BaseWritePlan>): BaseWritePlan => ({
+    inserts: [],
+    updates: [],
+    singletonUpdates: [],
+    removes: [],
+    ...over,
+  });
+
+  it("collects salary-income ids from savings_rule inserts and updates", () => {
+    const ids = collectExternalSalaryIncomeIds(
+      plan({
+        inserts: [
+          { kind: "savings_rule", targetId: "s1", raw: { salaryIncomeIds: ["i1", "i2"] } },
+        ],
+        updates: [{ kind: "savings_rule", id: "s2", set: { salaryIncomeIds: ["i3"] } }],
+      }),
+    );
+    expect(ids.sort()).toEqual(["i1", "i2", "i3"]);
+  });
+
+  it("skips ids satisfied by an in-batch income insert (remapped in-txn)", () => {
+    // The tenant check runs through the module `db`, OUTSIDE the promote
+    // transaction, so it cannot see an income this same batch is inserting.
+    // Asserting on it would reject a perfectly legal promotion.
+    const ids = collectExternalSalaryIncomeIds(
+      plan({
+        inserts: [
+          { kind: "income", targetId: "syn-inc", raw: {} },
+          { kind: "savings_rule", targetId: "s1", raw: { salaryIncomeIds: ["syn-inc", "i1"] } },
+        ],
+      }),
+    );
+    expect(ids).toEqual(["i1"]);
+  });
+
+  it("dedupes and ignores non-savings_rule rows and absent fields", () => {
+    const ids = collectExternalSalaryIncomeIds(
+      plan({
+        inserts: [
+          { kind: "savings_rule", targetId: "s1", raw: { salaryIncomeIds: ["i1", "i1"] } },
+          { kind: "savings_rule", targetId: "s2", raw: {} },
+          { kind: "expense", targetId: "e1", raw: { salaryIncomeIds: ["nope"] } },
+        ],
+        updates: [
+          { kind: "savings_rule", id: "s3", set: { annualPercent: 0.1 } },
+          { kind: "income", id: "i9", set: { salaryIncomeIds: ["nope2"] } },
+        ],
+      }),
+    );
+    expect(ids).toEqual(["i1"]);
   });
 });

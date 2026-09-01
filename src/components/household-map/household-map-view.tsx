@@ -11,6 +11,7 @@ import { accountToInitial } from "@/components/balance-sheet-view";
 import { useRouter } from "next/navigation";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
 import SavingsRuleDialog, { type SavingsRuleRow } from "@/components/forms/savings-rule-dialog";
+import { toSalaryOptions } from "@/lib/savings/salary-options";
 import { approximateMilestones } from "@/lib/household-map/approximate-milestones";
 import type { HouseholdMapProps, MapColumn, MapItem } from "@/lib/household-map/types";
 import type { GoalSocialSecurity, LifeExpectancyOwner } from "@/lib/household-map/goals";
@@ -83,6 +84,15 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
   const [addAccountOpen, setAddAccountOpen] = useState(false);
 
   const milestones = approximateMilestones(people, goals, new Date().getFullYear());
+
+  // Salaries a percent-of-salary savings rule can be based on. Shared by the
+  // rule dialog and both Add/Edit Account mounts below. `ownerNames` isn't a
+  // prop this view carries, so it's built from `people` the same way the
+  // account dialogs' own `ownerNames` are.
+  const salaryOptions = toSalaryOptions(Object.values(incomeRows), {
+    clientName: people.client.firstName,
+    spouseName: people.spouse?.firstName ?? null,
+  });
 
   const writer = useScenarioWriter(clientId);
   const router = useRouter();
@@ -565,6 +575,7 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
           schedule={savingsEditing ? props.savingsSchedules[savingsEditing.id] : undefined}
           familyMembers={props.familyMemberOptions}
           resolvedInflationRate={props.resolvedInflationRate}
+          salaries={salaryOptions}
         />
       )}
 
@@ -585,6 +596,7 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
           clientName: people.client.firstName,
           spouseName: people.spouse?.firstName ?? null,
         }}
+        salaries={salaryOptions}
         clientFirstName={people.client.firstName}
         spouseFirstName={people.spouse?.firstName}
         milestones={milestones}
@@ -616,6 +628,7 @@ export default function HouseholdMapView(props: HouseholdMapProps) {
             clientName: people.client.firstName,
             spouseName: people.spouse?.firstName ?? null,
           }}
+          salaries={salaryOptions}
           clientFirstName={people.client.firstName}
           spouseFirstName={people.spouse?.firstName}
           milestones={milestones}

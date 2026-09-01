@@ -1208,6 +1208,14 @@ export interface SavingsRule {
    *  applicable IRS limit (401k/403b deferral or IRA base+catch-up). When
    *  false, the rule bypasses the cap entirely. */
   applyContributionLimit?: boolean;
+  /** Which salaries the percent-of-salary contribution and the employer match
+   *  resolve against. "owner" (default) derives one salary from the controlling
+   *  family member of the destination account — the historical behaviour, and
+   *  the reason a jointly-owned account resolves to zero. "all" sums every
+   *  personal salary. "selected" sums `salaryIncomeIds`. */
+  salaryBasis?: "owner" | "all" | "selected";
+  /** Income ids summed when salaryBasis is "selected". Empty otherwise. */
+  salaryIncomeIds?: string[];
   startYear: number;
   endYear: number;
   /** Resolved growth rate for this savings rule (inflation-linked or explicit). */
