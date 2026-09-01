@@ -90,8 +90,46 @@ describe("/sign-up", () => {
     expect(screen.getByTestId("clerk-sign-up")).not.toHaveAttribute("data-force-redirect");
   });
 
+  it("promises the trial only to the buyer who is actually starting one", async () => {
+    const el = await visit({ plan: "monthly" });
+    render(el as React.ReactElement);
+    expect(screen.getByText(/14-day free trial/i)).toBeInTheDocument();
+  });
+
+  it("does not tell an invited portal client they are starting a trial", async () => {
+    // An advisor's client arrives on a ticket to read their plan. They are
+    // buying nothing and have nothing to cancel; the trial line is simply untrue
+    // for them, and it is the first thing under the heading.
+    const el = await visit({ __clerk_ticket: "tkt_1" });
+    render(el as React.ReactElement);
+    expect(screen.queryByText(/14-day free trial/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/cancel anytime/i)).not.toBeInTheDocument();
+  });
+
   it("does NOT force-redirect inside a Clerk child step", async () => {
+    // An invited user's ticket is gone from the URL by the time Clerk has
+    // walked them into a child step, so a bare segment must keep deferring to
+    // Clerk's own destination — forcing THEM to /welcome is the worse failure.
     const el = await visit({}, ["verify-email-address"]);
+    render(el as React.ReactElement);
+    expect(screen.getByTestId("clerk-sign-up")).not.toHaveAttribute("data-force-redirect");
+  });
+
+  it("keeps sending the buyer to /welcome when a child step still names their plan", async () => {
+    // The other half of the same call. A child step that still carries `?plan=`
+    // could only have come from the storefront — no invitation link sets it —
+    // so dropping the destination there sends a paying buyer to /clients, out
+    // through the org picker's "not linked to a firm" screen, and back round.
+    const el = await visit({ plan: "monthly" }, ["verify-email-address"]);
+    render(el as React.ReactElement);
+    expect(screen.getByTestId("clerk-sign-up")).toHaveAttribute(
+      "data-force-redirect",
+      "/welcome?plan=monthly",
+    );
+  });
+
+  it("still defers to Clerk for a ticketed user, plan in the URL or not", async () => {
+    const el = await visit({ __clerk_ticket: "tkt_1", plan: "monthly" }, ["verify-email-address"]);
     render(el as React.ReactElement);
     expect(screen.getByTestId("clerk-sign-up")).not.toHaveAttribute("data-force-redirect");
   });

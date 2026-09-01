@@ -19,8 +19,17 @@ function isClerkFlow(
   query: Record<string, string | string[] | undefined>,
   segments: string[] | undefined,
 ): boolean {
-  if (segments && segments.length > 0) return true;
-  return Object.keys(query).some((key) => key.startsWith("__clerk_"));
+  if (Object.keys(query).some((key) => key.startsWith("__clerk_"))) return true;
+  // A child step of this catch-all (`/sign-up/verify-email-address`, …). Clerk
+  // walks BOTH kinds of visitor through these, and an invited user's ticket may
+  // be gone from the URL by the time they get here — so a bare segment is not
+  // evidence of either one. Default to Clerk's own destination, which is the
+  // safe answer for an invited user, UNLESS the URL still carries the
+  // storefront's `?plan=`: only a self-serve buyer ever has that, and no
+  // invitation link sets it. When Clerk does not carry the query string
+  // forward, this reads exactly as it did before.
+  if (segments && segments.length > 0) return query.plan === undefined;
+  return false;
 }
 
 export default async function SignUpPage({
@@ -32,7 +41,12 @@ export default async function SignUpPage({
 }) {
   const [query, { "sign-up": segments }] = await Promise.all([searchParams, params]);
 
-  const forceRedirectUrl = isClerkFlow(query, segments)
+  // True for anyone Clerk itself put here: an invited portal client, an invited
+  // firm admin, or a step Clerk walked a visitor into. False only for someone
+  // who arrived from the storefront under their own steam — the buyer.
+  const clerkFlow = isClerkFlow(query, segments);
+
+  const forceRedirectUrl = clerkFlow
     ? undefined
     : `/welcome?plan=${normalizePlan(query.plan)}`;
 
@@ -48,9 +62,14 @@ export default async function SignUpPage({
       <h1 className="text-balance text-3xl font-semibold leading-[1.1] tracking-[-0.02em] text-[var(--color-ink)] sm:text-4xl">
         Create your account<span className="dot">.</span>
       </h1>
-      <p className="mt-2 text-sm text-[var(--color-ink-3)]">
-        14-day free trial · cancel anytime
-      </p>
+      {/* Only the self-serve buyer is starting a trial. An advisor's portal
+          client arrives here on an invitation, buys nothing, and has nothing to
+          cancel — telling them otherwise is a plain misstatement of fact. */}
+      {clerkFlow ? null : (
+        <p className="mt-2 text-sm text-[var(--color-ink-3)]">
+          14-day free trial · cancel anytime
+        </p>
+      )}
 
       <div className="mt-7 [&_.cl-rootBox]:w-full [&_.cl-cardBox]:w-full [&_.cl-card]:!bg-transparent [&_.cl-card]:!border-0 [&_.cl-card]:!p-0 [&_.cl-card]:!shadow-none [&_.cl-header]:hidden [&_.cl-footer]:!bg-transparent">
         <SignUp
