@@ -112,7 +112,7 @@ describe("checkout success", () => {
 
     it("offers another look rather than a route back into a second Checkout", async () => {
       // They are signed in and org-less, so /select-organization → "Set up your
-      // firm" → /welcome → "Continue to payment" is a second org and a second
+      // firm" → /welcome → "Continue" is a second org and a second
       // subscription for someone who has already paid. "Check again" re-polls.
       vi.useFakeTimers();
       respond({ ready: false });

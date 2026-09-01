@@ -318,7 +318,7 @@ export async function checkCheckoutSessionRateLimit(
 // account, and production Clerk sign-up is `public` — so this is effectively
 // open to the internet, and every call writes a 2 MB PUBLIC blob that nothing
 // ever reclaims. Its own bucket, not the checkout one: a throttled logo must
-// never spend the budget that "Continue to payment" needs, because branding is
+// never spend the budget that "Continue" needs, because branding is
 // optional and can never block the card. 10/min/user is several logos' worth of
 // second thoughts and nothing like enough to fill a blob store.
 const getSignupLogoLimiter = buildLimiter(10, "1 m", "rl:signup-logo");

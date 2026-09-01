@@ -13,7 +13,7 @@ import { deriveColorFromFile } from "./derive-logo-color";
  * in, the likelier they are to finish at the card — so every field here has to
  * visibly buy them something, which is what the live cover preview is for.
  *
- * Branding is optional and must never gate the card: "Continue to payment" is
+ * Branding is optional and must never gate the card: "Continue" is
  * live the moment the firm name is non-empty, and an upload still in flight
  * delays the button rather than failing it.
  */
@@ -105,7 +105,7 @@ export function SetupForm({
   /** Sampler for the logo's colour. Injectable because jsdom decodes no image,
    *  so the suggestion and the guard below it are otherwise unwatchable. */
   deriveColor?: (file: File) => Promise<string | null>;
-  /** Where "Continue to payment" sends them. Injectable for the same reason. */
+  /** Where "Continue" sends them. Injectable for the same reason. */
   navigate?: (url: string) => void;
 }) {
   const [firmName, setFirmName] = useState(initial.firmName);
@@ -380,7 +380,7 @@ export function SetupForm({
                 </>
               ) : (
                 <>
-                  Continue to payment
+                  Continue
                   <ArrowRightIcon width={16} height={16} />
                 </>
               )}

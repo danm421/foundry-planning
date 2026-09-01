@@ -42,14 +42,14 @@ beforeEach(() => {
 describe("the setup step", () => {
   it("will not continue without a firm name — nothing can provision without it", () => {
     render(<SetupForm initial={EMPTY} plan="annual" />);
-    expect(screen.getByRole("button", { name: /continue to payment/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^continue$/i })).toBeDisabled();
   });
 
   it("continues on the firm name alone, with branding untouched", async () => {
     // Branding is OPTIONAL. If it can ever gate the card, this design has failed.
     render(<SetupForm initial={EMPTY} plan="annual" />);
     await userEvent.type(screen.getByLabelText(/firm name/i), "Acme Wealth");
-    expect(screen.getByRole("button", { name: /continue to payment/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /^continue$/i })).toBeEnabled();
   });
 
   it("shows the firm name on the report preview as it is typed", async () => {
@@ -62,7 +62,7 @@ describe("the setup step", () => {
   it("saves the profile and hands off to Stripe", async () => {
     render(<SetupForm initial={EMPTY} plan="annual" navigate={mockNavigate} />);
     await userEvent.type(screen.getByLabelText(/firm name/i), "Acme Wealth");
-    await userEvent.click(screen.getByRole("button", { name: /continue to payment/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^continue$/i }));
     await waitFor(() =>
       expect(mockSave).toHaveBeenCalledWith(
         // `plan` is asserted here, not just firmName: it is a value this form
@@ -85,7 +85,7 @@ describe("the setup step", () => {
     // so a monthly buyer whose plan never leaves this form pays the annual price.
     render(<SetupForm initial={EMPTY} plan="monthly" navigate={mockNavigate} />);
     await userEvent.type(screen.getByLabelText(/firm name/i), "Acme Wealth");
-    await userEvent.click(screen.getByRole("button", { name: /continue to payment/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^continue$/i }));
     await waitFor(() =>
       expect(mockSave).toHaveBeenCalledWith(
         expect.objectContaining({ plan: "monthly" }),
@@ -98,7 +98,7 @@ describe("the setup step", () => {
     render(<SetupForm initial={{ ...EMPTY, firmName: "Acme" }} plan="annual" />);
     await userEvent.upload(screen.getByLabelText(/logo/i), logoFile());
     expect(await screen.findByText(/2 MB or smaller/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /continue to payment/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /^continue$/i })).toBeEnabled();
   });
 
   it("waits for an in-flight upload, and is not sunk by one that throws", async () => {
@@ -115,7 +115,7 @@ describe("the setup step", () => {
     );
     render(<SetupForm initial={{ ...EMPTY, firmName: "Acme" }} plan="annual" navigate={mockNavigate} />);
     await userEvent.upload(screen.getByLabelText(/logo/i), logoFile());
-    await userEvent.click(screen.getByRole("button", { name: /continue to payment/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^continue$/i }));
 
     expect(mockSave).not.toHaveBeenCalled();
 

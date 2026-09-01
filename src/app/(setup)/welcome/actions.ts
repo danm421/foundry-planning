@@ -90,7 +90,7 @@ export async function uploadSignupLogo(
   // Clerk sign-up is `public` — so without a budget anyone can mint unbounded
   // 2 MB public blobs. Keyed on the user, exactly like startSignupCheckout, but
   // on its OWN bucket: a throttled logo must never eat the budget the card
-  // needs. Denied is an inline message, never a blocked "Continue to payment".
+  // needs. Denied is an inline message, never a blocked "Continue".
   const rl = await checkSignupLogoRateLimit(`user:${who.userId}`);
   if (!rl.allowed) {
     return { ok: false, error: "Too many uploads. Please wait a moment and try again." };

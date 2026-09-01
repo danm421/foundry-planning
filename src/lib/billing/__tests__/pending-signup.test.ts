@@ -85,7 +85,7 @@ describe("pending signup stash", () => {
   // The merge test above seeds a stash that ALREADY has a firm name — the only
   // case in which the old merge worked. The setup step's real order is the
   // opposite: the branding panel fires the upload the instant a file is picked,
-  // and the firm name is not saved until "Continue to payment". So this replays
+  // and the firm name is not saved until "Continue". So this replays
   // both writes, in that order, against one stored record. Under the old merge
   // the second write read the nameless stash through coerce(), got null, fell
   // back to EMPTY, and wrote logoUrl: null — every first-time buyer who
