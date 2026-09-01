@@ -63,19 +63,45 @@ describe("buildCheckoutSessionParams", () => {
     expect(params.subscription_data).toEqual({ trial_period_days: 14 });
   });
 
-  it("omits consent_collection (app-side acceptance recorded in tos_acceptances) and sets a firm_name custom field", () => {
+  it("no longer collects firm name in Stripe (we collect it in our own UI)", () => {
+    // Two copies of the firm name is how the two copies disagree. The setup
+    // step owns it now; Stripe must not ask again.
     const params = buildCheckoutSessionParams({
       priceKey: "seatMonthly",
       origin: "https://app.foundryplanning.com",
     });
+    expect(params.custom_fields).toBeUndefined();
     expect(params.consent_collection).toBeUndefined();
-    expect(params.custom_fields).toEqual([
-      {
-        key: "firm_name",
-        label: { type: "custom", custom: "Firm Name" },
-        type: "text",
-      },
-    ]);
+  });
+
+  it("carries the Clerk userId as client_reference_id when given one", () => {
+    // This is what lets the webhook add the RIGHT PERSON to the new org
+    // instead of emailing an invitation to whatever address Stripe collected.
+    const params = buildCheckoutSessionParams({
+      priceKey: "seatAnnual",
+      origin: "https://app.foundryplanning.com",
+      clientReferenceId: "user_2abcDEF",
+    });
+    expect(params.client_reference_id).toBe("user_2abcDEF");
+  });
+
+  it("omits client_reference_id for the sales path", () => {
+    // Hand-built runbook sessions have no Clerk user yet; the webhook keys its
+    // invitation branch on the ABSENCE of this field.
+    const params = buildCheckoutSessionParams({
+      priceKey: "seatAnnual",
+      origin: "https://app.foundryplanning.com",
+    });
+    expect(params.client_reference_id).toBeUndefined();
+  });
+
+  it("keeps allow_promotion_codes and the storefront cancel_url (both live fixes)", () => {
+    const params = buildCheckoutSessionParams({
+      priceKey: "seatAnnual",
+      origin: "https://app.foundryplanning.com",
+    });
+    expect(params.allow_promotion_codes).toBe(true);
+    expect(params.cancel_url).toBe("https://foundryplanning.com/pricing");
   });
 
   it("templates success_url with the literal {CHECKOUT_SESSION_ID} token", () => {

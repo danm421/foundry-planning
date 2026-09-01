@@ -53,6 +53,14 @@ export const PLAN_PRICE_KEY: Record<CheckoutPlan, CheckoutPriceKey> = {
 export function buildCheckoutSessionParams(args: {
   priceKey: CheckoutPriceKey;
   origin: string;
+  /**
+   * The Clerk userId of the signed-in buyer, on the self-serve path. Its
+   * presence is what tells `checkout-session-completed` to add this person to
+   * the new org directly instead of emailing an invitation. Omitted by the
+   * sales path (`docs/founding-pricing-runbook.md`), which has no Clerk user
+   * yet — that path keeps the Stripe custom field + invitation.
+   */
+  clientReferenceId?: string;
 }): SessionCreateParams {
   const catalog = getPriceCatalog();
   const priceId = catalog[args.priceKey];
@@ -62,17 +70,16 @@ export function buildCheckoutSessionParams(args: {
   // tos_acceptances row (userId, firmId, version, IP, timestamp). The
   // checkout-session-completed handler always writes that row when the
   // checkout completes, so consent is always recorded.
+  //
+  // The firm name is NOT collected here. /welcome collects it, where it can be
+  // validated and a typo is fixable, and stashes it for the webhook.
   return {
     mode: "subscription",
     line_items,
     subscription_data: { trial_period_days: 14 },
-    custom_fields: [
-      {
-        key: "firm_name",
-        label: { type: "custom", custom: "Firm Name" },
-        type: "text",
-      },
-    ],
+    ...(args.clientReferenceId
+      ? { client_reference_id: args.clientReferenceId }
+      : {}),
     automatic_tax: { enabled: true },
     // /admin/promo-codes mints Stripe promotion codes for buyers to type here.
     // Without this the field never renders and every code ops issues is dead.
