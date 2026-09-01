@@ -41,5 +41,6 @@ export async function toLiabilitySnapshot(
     termUnit: row.termUnit,
     linkedProperty,
     isInterestDeductible: row.isInterestDeductible,
+    forgiveAtTermEnd: row.forgiveAtTermEnd,
   };
 }

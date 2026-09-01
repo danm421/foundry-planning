@@ -80,6 +80,7 @@ export const LIABILITY_FIELD_LABELS: FieldLabels = {
   termUnit: { label: "Term unit", format: "text" },
   linkedProperty: { label: "Linked property", format: "reference" },
   isInterestDeductible: { label: "Interest deductible", format: "text" },
+  forgiveAtTermEnd: { label: "Forgive balance at end of term", format: "text" },
 };
 
 export const EXTRA_PAYMENT_FIELD_LABELS: FieldLabels = {
