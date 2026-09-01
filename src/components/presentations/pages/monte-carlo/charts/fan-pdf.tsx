@@ -1,16 +1,18 @@
 import { View, Text, Svg, G, Line, Polyline, Polygon, Text as SvgText } from "@react-pdf/renderer";
-import { scalePoint, scaleLinear } from "d3-scale";
+import { scaleLinear } from "d3-scale";
 import { compactCurrency } from "@/lib/presentations/format";
 import type { FanChartSpec } from "@/lib/presentations/charts/monte-carlo-specs";
+import { Y_TICK_GAP } from "@/lib/presentations/charts/monte-carlo-specs";
+import { fanXScale, innerWidth } from "./chart-geom";
 
 export function FanChartPdf({ spec, scale = 1, legend = false }: { spec: FanChartSpec; scale?: number; legend?: boolean }) {
   const W = spec.width * scale;
   const H = spec.height * scale;
   const m = spec.margin;
-  const innerW = W - m.left - m.right;
+  const innerW = innerWidth(spec, scale);
   const innerH = H - m.top - m.bottom;
 
-  const x = scalePoint<number>().domain(spec.years).range([0, innerW]);
+  const x = fanXScale(spec, scale);
   const y = scaleLinear().domain(spec.yDomain).range([innerH, 0]).clamp(true);
 
   const upperPts = spec.years.map((yr, i) => `${x(yr) ?? 0},${y(spec.band.upper[i])}`);
@@ -41,7 +43,11 @@ export function FanChartPdf({ spec, scale = 1, legend = false }: { spec: FanChar
           {spec.yTicks.map((t) => (
             <G key={`yg-${t}`}>
               <Line x1={0} x2={innerW} y1={y(t)} y2={y(t)} stroke={spec.colors.grid} strokeWidth={0.5} />
-              <SvgText x={-6} y={y(t) + 3} style={{ fontFamily: "JetBrains Mono", fontSize: 7 * scale, fill: spec.colors.axis }}>
+              {/* Right-anchored, so the label ends 6pt short of the plot and
+                  grows leftward into the gutter. Under SVG's default `start`
+                  anchor it began there and ran the other way: "$6.0M" printed
+                  15pt INTO the band. */}
+              <SvgText x={-Y_TICK_GAP} y={y(t) + 3} textAnchor="end" style={{ fontFamily: "JetBrains Mono", fontSize: 7 * scale, fill: spec.colors.axis }}>
                 {compactCurrency(t)}
               </SvgText>
             </G>
@@ -65,7 +71,10 @@ export function FanChartPdf({ spec, scale = 1, legend = false }: { spec: FanChar
             const cx = x(t);
             if (cx == null) return null;
             return (
-              <SvgText key={`xl-${t}`} x={cx} y={innerH + 12} style={{ fontFamily: "JetBrains Mono", fontSize: 7 * scale, fill: spec.colors.axis }}>
+              // Centred on the point it names. Left at `start` the year began
+              // at its own point and ran right, landing most of a step on —
+              // nothing looks broken, the chart just names the wrong year.
+              <SvgText key={`xl-${t}`} x={cx} y={innerH + 12} textAnchor="middle" style={{ fontFamily: "JetBrains Mono", fontSize: 7 * scale, fill: spec.colors.axis }}>
                 {String(t)}
               </SvgText>
             );

@@ -2,12 +2,14 @@ import { View, Svg, G, Line, Rect, Text as SvgText } from "@react-pdf/renderer";
 import { scaleLinear } from "d3-scale";
 import { compactCurrency } from "@/lib/presentations/format";
 import type { HistogramChartSpec } from "@/lib/presentations/charts/monte-carlo-specs";
+import { Y_TICK_GAP } from "@/lib/presentations/charts/monte-carlo-specs";
+import { innerWidth } from "./chart-geom";
 
 export function HistogramPdf({ spec, scale = 1 }: { spec: HistogramChartSpec; scale?: number }) {
   const W = spec.width * scale;
   const H = spec.height * scale;
   const m = spec.margin;
-  const innerW = W - m.left - m.right;
+  const innerW = innerWidth(spec, scale);
   const innerH = H - m.top - m.bottom;
 
   const x = scaleLinear().domain(spec.xDomain).range([0, innerW]).clamp(true);
@@ -20,7 +22,9 @@ export function HistogramPdf({ spec, scale = 1 }: { spec: HistogramChartSpec; sc
           {spec.yTicks.map((t) => (
             <G key={`yg-${t}`}>
               <Line x1={0} x2={innerW} y1={y(t)} y2={y(t)} stroke={spec.colors.grid} strokeWidth={0.5} />
-              <SvgText x={-6} y={y(t) + 3} style={{ fontFamily: "JetBrains Mono", fontSize: 7 * scale, fill: spec.colors.axis }}>{String(t)}</SvgText>
+              {/* Right-anchored: the count ends 6pt short of the plot and grows
+                  leftward into the gutter. `start` ran it into the bins. */}
+              <SvgText x={-Y_TICK_GAP} y={y(t) + 3} textAnchor="end" style={{ fontFamily: "JetBrains Mono", fontSize: 7 * scale, fill: spec.colors.axis }}>{String(t)}</SvgText>
             </G>
           ))}
           {spec.bins.map((b, i) => {
@@ -40,7 +44,10 @@ export function HistogramPdf({ spec, scale = 1 }: { spec: HistogramChartSpec; sc
             );
           })}
           <SvgText x={0} y={innerH + 12} style={{ fontFamily: "JetBrains Mono", fontSize: 7 * scale, fill: spec.colors.axis }}>{compactCurrency(spec.xDomain[0])}</SvgText>
-          <SvgText x={innerW - 30} y={innerH + 12} style={{ fontFamily: "JetBrains Mono", fontSize: 7 * scale, fill: spec.colors.axis }}>{compactCurrency(spec.xDomain[1])}</SvgText>
+          {/* The two ends of the domain, pinned to the plot's edges. The high
+              one is right-anchored; it used to be nudged back by a hand-guessed
+              30pt, which is what an anchor exists to replace. */}
+          <SvgText x={innerW} y={innerH + 12} textAnchor="end" style={{ fontFamily: "JetBrains Mono", fontSize: 7 * scale, fill: spec.colors.axis }}>{compactCurrency(spec.xDomain[1])}</SvgText>
         </G>
       </Svg>
     </View>

@@ -6,13 +6,42 @@ import { niceAxisMax } from "./axis";
 
 type Margin = { top: number; right: number; bottom: number; left: number };
 
-// All three charts share the same canvas size + vertical margins; only the
-// left gutter varies with the y-axis label width.
-const BASE = { width: 540, height: 300 } as const;
-function margin(left: number): Margin {
-  return { top: 20, right: 16, bottom: 40, left };
-}
+/** Gap between a y-axis label's right edge and the plot. The charts draw their
+ *  labels right-anchored at `x={-Y_TICK_GAP}`, and the left gutter below is
+ *  sized around it, so the two cannot drift apart. */
+export const Y_TICK_GAP = 6;
 
+/** JetBrains Mono at 7pt, measured off a render rather than assumed: "$6.0M"
+ *  came back 21.0pt wide and "350" 12.6pt — 4.2pt per character, both times. */
+const MONO_7PT_ADVANCE = 4.2;
+
+/** The widest y-axis label these three charts can print. The fan's is
+ *  `compactCurrency`, which has no billions branch, so a $2B portfolio reads
+ *  "$2000.0M" — 8 characters. The histogram's trial counts and the success
+ *  chart's percentages are all shorter. */
+const MAX_Y_LABEL_CHARS = 8;
+
+// All three charts share one canvas and one set of margins.
+//
+// The left gutter holds the y-axis labels, which are right-anchored and grow
+// leftward from the plot, so it has to fit the widest one plus the gap.
+//
+// It used to be tuned per chart to 64 / 56 / 44 "with the y-axis label width",
+// which under the old `start` anchor was inert: the label began at the plot edge
+// and ran into the plot, so the gutter it was given changed nothing about where
+// it landed. Now that the anchor is right the number is load-bearing, and one
+// number covers all three — `chart-axis-geometry.test.tsx` renders a billions
+// deck and fails if a label outgrows it.
+const BASE = {
+  width: 540,
+  height: 300,
+  margin: {
+    top: 20,
+    right: 16,
+    bottom: 40,
+    left: Math.ceil(MAX_Y_LABEL_CHARS * MONO_7PT_ADVANCE + Y_TICK_GAP),
+  } satisfies Margin,
+} as const;
 
 // ── Fan chart ────────────────────────────────────────────────────────────────
 export interface FanChartSpec {
@@ -58,7 +87,6 @@ export function buildFanChartSpec(input: BuildFanChartSpecInput): FanChartSpec {
 
   return {
     ...BASE,
-    margin: margin(64),
     years,
     xTicks,
     yDomain: [0, yDomainMax],
@@ -112,7 +140,6 @@ export function buildHistogramChartSpec(series: HistogramSeries): HistogramChart
 
   return {
     ...BASE,
-    margin: margin(56),
     bins,
     xDomain: [x0, x1],
     yDomain: [0, yDomainMax],
@@ -158,7 +185,6 @@ export function buildSuccessChartSpec(input: BuildSuccessChartSpecInput): Succes
   const labelEvery = bars.length <= 12 ? 1 : Math.ceil(bars.length / 12);
   return {
     ...BASE,
-    margin: margin(44),
     bars,
     labelEvery,
     colors: { grid: T.hair, axis: T.ink3 },
