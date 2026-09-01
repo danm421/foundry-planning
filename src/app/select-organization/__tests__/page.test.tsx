@@ -48,7 +48,7 @@ describe("/select-organization", () => {
     expect(cta).toHaveAttribute("href", "/welcome");
   });
 
-  it("tells the firmless visitor how to get in via their firm, not just via a card", async () => {
+  it("tells the firmless visitor how to get in via their firm, or reach support", async () => {
     withClerk({ memberships: 0 });
     render(await SelectOrganizationPage());
     expect(screen.getByText(/invite/i)).toBeInTheDocument();

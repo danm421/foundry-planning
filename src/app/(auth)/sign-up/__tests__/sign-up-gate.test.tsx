@@ -9,8 +9,18 @@ const redirectMock = vi.fn((url: string) => {
 });
 vi.mock("next/navigation", () => ({ redirect: (url: string) => redirectMock(url) }));
 vi.mock("@clerk/nextjs", () => ({
-  SignUp: ({ forceRedirectUrl }: { forceRedirectUrl?: string }) => (
-    <div data-testid="clerk-sign-up" data-force-redirect={forceRedirectUrl} />
+  SignUp: ({
+    forceRedirectUrl,
+    signInUrl,
+  }: {
+    forceRedirectUrl?: string;
+    signInUrl?: string;
+  }) => (
+    <div
+      data-testid="clerk-sign-up"
+      data-force-redirect={forceRedirectUrl}
+      data-sign-in-url={signInUrl}
+    />
   ),
 }));
 vi.mock("@clerk/themes", () => ({ dark: {} }));
@@ -36,6 +46,15 @@ describe("/sign-up", () => {
     expect(redirectMock).not.toHaveBeenCalled();
   });
 
+  it("points 'Already have an account?' at /sign-in for every visitor, invited ones included", async () => {
+    const el = await visit({});
+    render(el as React.ReactElement);
+    expect(screen.getByTestId("clerk-sign-up")).toHaveAttribute(
+      "data-sign-in-url",
+      "/sign-in",
+    );
+  });
+
   it("sends a visitor on to the setup step after they sign up", async () => {
     const el = await visit({});
     render(el as React.ReactElement);
@@ -58,6 +77,15 @@ describe("/sign-up", () => {
     // A portal client or a sales-path firm admin arrives with a Clerk ticket.
     // Forcing them to /welcome would drop them into a signup they aren't in.
     const el = await visit({ __clerk_ticket: "tkt_1" });
+    render(el as React.ReactElement);
+    expect(screen.getByTestId("clerk-sign-up")).not.toHaveAttribute("data-force-redirect");
+  });
+
+  it("does NOT force-redirect for any Clerk hand-off param, not just the ticket", async () => {
+    // isClerkFlow matches the whole __clerk_ prefix, not one literal key — a
+    // narrower check would let a __clerk_status/__clerk_handshake hand-off
+    // through to /welcome and strand an invited user in a signup they aren't in.
+    const el = await visit({ __clerk_status: "sign_up" });
     render(el as React.ReactElement);
     expect(screen.getByTestId("clerk-sign-up")).not.toHaveAttribute("data-force-redirect");
   });

@@ -26,8 +26,9 @@ const STOREFRONT_PRICING_URL = "https://foundryplanning.com/pricing";
  * the price the site shows by default, so an unnamed — or unrecognized — plan
  * resolves to annual rather than erroring a buyer out of the funnel.
  *
- * Shared by /sign-up (which forwards the choice) and /api/checkout/start
- * (which prices it), so the two can never disagree about what a plan is.
+ * Shared by /sign-up and /api/checkout/start (which only forward the choice
+ * along) and /welcome's `startSignupCheckout` (which prices it), so none of
+ * them can disagree about what a plan is.
  */
 export type CheckoutPlan = "annual" | "monthly";
 

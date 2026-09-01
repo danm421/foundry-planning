@@ -3,8 +3,7 @@ import { normalizePlan } from "@/lib/billing/checkout";
 
 /**
  * Kept as a doorway, not a checkout. The storefront may still deep-link this
- * path, and it shipped four hours before this change — so it stays reachable and
- * forwards to where signup now begins.
+ * path, so it stays reachable and forwards to where signup now begins.
  *
  * Card-first checkout is gone from the app: a buyer who paid before we knew who
  * they were had to be reached by invitation email, which is the drop-off this

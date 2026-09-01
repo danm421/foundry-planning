@@ -7,9 +7,7 @@ const ENV = {
 } as const;
 
 function makeRequest(query = "") {
-  return new Request(`https://app.example.test/api/checkout/start${query}`, {
-    headers: { "x-forwarded-for": "203.0.113.7" },
-  });
+  return new Request(`https://app.example.test/api/checkout/start${query}`);
 }
 
 describe("GET /api/checkout/start", () => {

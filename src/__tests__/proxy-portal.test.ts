@@ -197,6 +197,20 @@ describe("proxy portal branching", () => {
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toContain("/select-organization");
   });
+
+  it("lets an org-less self-serve buyer reach /welcome instead of bouncing to /select-organization", async () => {
+    // /welcome is where a self-serve buyer names their firm before paying — they
+    // are org-less there by design. If it ever drops out of isOrgPickerRoute,
+    // this branch bounces every such buyer to /select-organization and the
+    // whole profile-first funnel dies silently, with no test catching it.
+    getPortalClientIdMock.mockResolvedValue(null);
+    claimPortalBindingMock.mockResolvedValue(null);
+    const res = await captured.handler!(
+      authWith("u1", null) as never,
+      makeReq("/welcome"),
+    );
+    expect(res.status).not.toBe(307);
+  });
 });
 
 describe("proxy soft-route: intake redirect", () => {
