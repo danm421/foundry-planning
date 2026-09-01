@@ -9,7 +9,19 @@ const redirectMock = vi.fn((url: string) => {
 });
 vi.mock("next/navigation", () => ({ redirect: (url: string) => redirectMock(url) }));
 vi.mock("@clerk/nextjs", () => ({
-  SignUp: () => <div data-testid="clerk-sign-up" />,
+  SignUp: ({
+    forceRedirectUrl,
+    signInUrl,
+  }: {
+    forceRedirectUrl?: string;
+    signInUrl?: string;
+  }) => (
+    <div
+      data-testid="clerk-sign-up"
+      data-force-redirect={forceRedirectUrl}
+      data-sign-in-url={signInUrl}
+    />
+  ),
 }));
 vi.mock("@clerk/themes", () => ({ dark: {} }));
 
@@ -24,62 +36,101 @@ async function visit(query: Query, segments?: string[]) {
   });
 }
 
-async function redirectTargetFor(query: Query): Promise<string> {
-  await expect(visit(query)).rejects.toThrow(/NEXT_REDIRECT/);
-  return redirectMock.mock.calls.at(-1)![0];
-}
-
 describe("/sign-up", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("sends a visitor with no invitation to checkout instead of minting an orphan account", async () => {
-    // A bare Clerk account has no firm and no subscription, and org creation is
-    // disabled — it dead-ends at /select-organization. Checkout is the way in.
-    expect(await redirectTargetFor({})).toBe("/api/checkout/start?plan=annual");
-  });
-
-  it("defaults to the annual plan, matching the price the storefront shows", async () => {
-    expect(await redirectTargetFor({ plan: "annual" })).toBe(
-      "/api/checkout/start?plan=annual",
-    );
-  });
-
-  it("carries a monthly choice through to checkout", async () => {
-    expect(await redirectTargetFor({ plan: "monthly" })).toBe(
-      "/api/checkout/start?plan=monthly",
-    );
-  });
-
-  it("ignores an unrecognized plan rather than forwarding it", async () => {
-    expect(await redirectTargetFor({ plan: "lifetime" })).toBe(
-      "/api/checkout/start?plan=annual",
-    );
-  });
-
-  it("still shows the sign-up form to someone holding a Clerk invitation ticket", async () => {
-    // Portal-client invites and the firm-admin invite the Stripe webhook sends
-    // both land here as `${APP_URL}/sign-up?__clerk_ticket=…`. Redirecting them
-    // to checkout would make every invitation in the product unredeemable.
-    render(await visit({ __clerk_ticket: "tkt_abc" }));
-    expect(redirectMock).not.toHaveBeenCalled();
+  it("shows a visitor the account form — the account now comes first", async () => {
+    const el = await visit({});
+    render(el as React.ReactElement);
     expect(screen.getByTestId("clerk-sign-up")).toBeInTheDocument();
-  });
-
-  it("shows the form for any Clerk hand-off param, not just the ticket", async () => {
-    render(await visit({ __clerk_status: "sign_up" }));
     expect(redirectMock).not.toHaveBeenCalled();
-    expect(screen.getByTestId("clerk-sign-up")).toBeInTheDocument();
   });
 
-  it.each([["verify-email-address"], ["continue"], ["sso-callback"]])(
-    "keeps rendering the form at /sign-up/%s, mid-flow",
-    async (step) => {
-      // Clerk walks its own sign-up through child segments of this catch-all,
-      // and carries no query params doing it. Bouncing those steps to checkout
-      // would strand every invited user halfway through creating their account.
-      render(await visit({}, [step]));
-      expect(redirectMock).not.toHaveBeenCalled();
-      expect(screen.getByTestId("clerk-sign-up")).toBeInTheDocument();
-    },
-  );
+  it("points 'Already have an account?' at /sign-in for every visitor, invited ones included", async () => {
+    const el = await visit({});
+    render(el as React.ReactElement);
+    expect(screen.getByTestId("clerk-sign-up")).toHaveAttribute(
+      "data-sign-in-url",
+      "/sign-in",
+    );
+  });
+
+  it("sends a visitor on to the setup step after they sign up", async () => {
+    const el = await visit({});
+    render(el as React.ReactElement);
+    expect(screen.getByTestId("clerk-sign-up")).toHaveAttribute(
+      "data-force-redirect",
+      "/welcome?plan=annual",
+    );
+  });
+
+  it("carries the plan the storefront chose", async () => {
+    const el = await visit({ plan: "monthly" });
+    render(el as React.ReactElement);
+    expect(screen.getByTestId("clerk-sign-up")).toHaveAttribute(
+      "data-force-redirect",
+      "/welcome?plan=monthly",
+    );
+  });
+
+  it("does NOT force-redirect an invited user — they belong to a firm already", async () => {
+    // A portal client or a sales-path firm admin arrives with a Clerk ticket.
+    // Forcing them to /welcome would drop them into a signup they aren't in.
+    const el = await visit({ __clerk_ticket: "tkt_1" });
+    render(el as React.ReactElement);
+    expect(screen.getByTestId("clerk-sign-up")).not.toHaveAttribute("data-force-redirect");
+  });
+
+  it("does NOT force-redirect for any Clerk hand-off param, not just the ticket", async () => {
+    // isClerkFlow matches the whole __clerk_ prefix, not one literal key — a
+    // narrower check would let a __clerk_status/__clerk_handshake hand-off
+    // through to /welcome and strand an invited user in a signup they aren't in.
+    const el = await visit({ __clerk_status: "sign_up" });
+    render(el as React.ReactElement);
+    expect(screen.getByTestId("clerk-sign-up")).not.toHaveAttribute("data-force-redirect");
+  });
+
+  it("promises the trial only to the buyer who is actually starting one", async () => {
+    const el = await visit({ plan: "monthly" });
+    render(el as React.ReactElement);
+    expect(screen.getByText(/14-day free trial/i)).toBeInTheDocument();
+  });
+
+  it("does not tell an invited portal client they are starting a trial", async () => {
+    // An advisor's client arrives on a ticket to read their plan. They are
+    // buying nothing and have nothing to cancel; the trial line is simply untrue
+    // for them, and it is the first thing under the heading.
+    const el = await visit({ __clerk_ticket: "tkt_1" });
+    render(el as React.ReactElement);
+    expect(screen.queryByText(/14-day free trial/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/cancel anytime/i)).not.toBeInTheDocument();
+  });
+
+  it("does NOT force-redirect inside a Clerk child step", async () => {
+    // An invited user's ticket is gone from the URL by the time Clerk has
+    // walked them into a child step, so a bare segment must keep deferring to
+    // Clerk's own destination — forcing THEM to /welcome is the worse failure.
+    const el = await visit({}, ["verify-email-address"]);
+    render(el as React.ReactElement);
+    expect(screen.getByTestId("clerk-sign-up")).not.toHaveAttribute("data-force-redirect");
+  });
+
+  it("keeps sending the buyer to /welcome when a child step still names their plan", async () => {
+    // The other half of the same call. A child step that still carries `?plan=`
+    // could only have come from the storefront — no invitation link sets it —
+    // so dropping the destination there sends a paying buyer to /clients, out
+    // through the org picker's "not linked to a firm" screen, and back round.
+    const el = await visit({ plan: "monthly" }, ["verify-email-address"]);
+    render(el as React.ReactElement);
+    expect(screen.getByTestId("clerk-sign-up")).toHaveAttribute(
+      "data-force-redirect",
+      "/welcome?plan=monthly",
+    );
+  });
+
+  it("still defers to Clerk for a ticketed user, plan in the URL or not", async () => {
+    const el = await visit({ __clerk_ticket: "tkt_1", plan: "monthly" }, ["verify-email-address"]);
+    render(el as React.ReactElement);
+    expect(screen.getByTestId("clerk-sign-up")).not.toHaveAttribute("data-force-redirect");
+  });
 });

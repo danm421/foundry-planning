@@ -314,6 +314,27 @@ export async function checkCheckoutSessionRateLimit(
   return safeLimit(limiter, key);
 }
 
+// Signup logo uploads at /welcome. Reachable by ANY signed-in org-less Clerk
+// account, and production Clerk sign-up is `public` — so this is effectively
+// open to the internet, and every call writes a 2 MB PUBLIC blob that nothing
+// ever reclaims. Its own bucket, not the checkout one: a throttled logo must
+// never spend the budget that "Continue to payment" needs, because branding is
+// optional and can never block the card. 10/min/user is several logos' worth of
+// second thoughts and nothing like enough to fill a blob store.
+const getSignupLogoLimiter = buildLimiter(10, "1 m", "rl:signup-logo");
+
+/**
+ * Check whether `key` (a Clerk userId) may upload a signup logo.
+ * Budget: 10/min/user. Fail-closed like every other limiter.
+ */
+export async function checkSignupLogoRateLimit(
+  key: string,
+): Promise<RateLimitResult> {
+  const limiter = getSignupLogoLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
 /**
  * Public Checkout-status polling. 60/min/IP — must comfortably accommodate
  * the success page polling 30× over ~45s (≈1.5s interval) plus the buyer

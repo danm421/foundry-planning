@@ -60,3 +60,29 @@ export async function putAdvisorBrandingAsset(
 export async function deleteBrandingAsset(url: string): Promise<void> {
   await del(url, { token: publicBlobToken() });
 }
+
+type PutSignupArgs = Omit<PutArgs, "firmId"> & { userId: string };
+
+/**
+ * Upload a branding asset for a buyer who has no firm yet, under
+ *   signups/<userId>/branding/<kind>
+ *
+ * The `firms/<firmId>/` prefix used by `putBrandingAsset` is unavailable here —
+ * the org is deliberately not created until the payment lands. That is safe for
+ * data deletion: `purge-firm.ts` deletes branding blobs by the URL stored on the
+ * firms row, not by prefix listing, and `checkout-session-completed` copies this
+ * URL onto that row. A signup that never pays leaves an orphan blob (tracked in
+ * future-work), which is the only residue.
+ */
+export async function putSignupBrandingAsset(
+  args: PutSignupArgs,
+): Promise<{ url: string }> {
+  const pathname = `signups/${args.userId}/branding/${args.kind}`;
+  const result = await put(pathname, args.bytes, {
+    access: "public",
+    addRandomSuffix: true,
+    contentType: args.contentType,
+    token: publicBlobToken(),
+  });
+  return { url: result.url };
+}

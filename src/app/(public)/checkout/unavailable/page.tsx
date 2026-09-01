@@ -4,10 +4,12 @@ export const metadata = {
 };
 
 /**
- * Where /api/checkout/start sends a buyer when it cannot mint a Stripe
- * Checkout session — a Stripe outage, or an environment missing its price
- * IDs (previews and local dev, where they are deliberately absent). The
- * underlying error goes to the logs; the buyer gets a way forward.
+ * A standing explanation page for a buyer whose Stripe Checkout attempt
+ * failed. Nothing in the app redirects here automatically: the setup step's
+ * `startSignupCheckout` server action handles a Stripe failure inline,
+ * returning an error string to the form instead of navigating away. This
+ * page stays reachable as a direct link — e.g. from a support reply — so
+ * there is still somewhere to point a buyer who hits a dead end.
  */
 export default function CheckoutUnavailablePage() {
   return (

@@ -66,8 +66,8 @@ function NoFirmNotice() {
         isn&rsquo;t in one yet.
       </p>
 
-      <a href="/api/checkout/start?plan=annual" className="btn-primary mt-7">
-        Start your 14-day trial
+      <a href="/welcome" className="btn-primary mt-7">
+        Set up your firm
       </a>
 
       <p className="mt-6 text-sm leading-relaxed text-ink-3">

@@ -27,6 +27,24 @@ Two paths — pick whichever fits the lead:
 
 ### 1. Hand-built Checkout session (preferred — buyer self-serves payment)
 
+> **Never set `client_reference_id` on this session.** Its ABSENCE is what
+> selects the sales path. When it is present, `checkout.session.completed`
+> treats the sale as a self-serve signup: it reads a firm profile off that Clerk
+> user, creates the org with `createdBy` set to them, and sends **no invitation
+> email** — so a sales buyer, who has no Foundry account yet, never hears from
+> us. Worse, a value that is not a real Clerk user id makes
+> `createOrganization({ createdBy })` throw, and the webhook then retries
+> forever. If you want your own tracking handle on the session, put it in
+> `--metadata[...]`, which nothing branches on.
+
+> **Known breakage (2026-09-01): the command below fails as written.**
+> `--consent-collection[terms_of_service]=required` is rejected by Stripe
+> because no Terms-of-service URL is set on the account
+> (Settings → Public details → Terms of service). Either set that URL first, or
+> drop the `--consent-collection` line for this session — but note that dropping
+> it means Stripe records no ToS acceptance, so capture the buyer's agreement
+> some other way. Fixing the Stripe account itself is tracked separately.
+
 ```bash
 # Pick the founding price ID from the Stripe dashboard. It corresponds to
 # env var STRIPE_PRICE_ID_SEAT_FOUNDING_ANNUAL in Vercel envs (production).

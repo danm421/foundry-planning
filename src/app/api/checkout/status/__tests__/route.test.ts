@@ -12,6 +12,16 @@ vi.mock("@/db", () => ({
     select: vi.fn(),
   },
 }));
+const mockGetOrganization = vi.fn();
+const mockAuth = vi.fn();
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: () => mockAuth(),
+  clerkClient: async () => ({
+    organizations: {
+      getOrganization: (...a: unknown[]) => mockGetOrganization(...a),
+    },
+  }),
+}));
 
 import { GET } from "../route";
 import { getStripe } from "@/lib/billing/stripe-client";
@@ -27,7 +37,7 @@ function makeRequest(sessionId: string | null) {
   });
 }
 
-function mockSelectChain(rows: Array<{ firmName: string }>) {
+function mockSelectChain(rows: Array<{ firmId: string; firmName: string }>) {
   const limit = vi.fn().mockResolvedValue(rows);
   const where = vi.fn().mockReturnValue({ limit });
   const innerJoin = vi.fn().mockReturnValue({ where });
@@ -77,7 +87,13 @@ describe("GET /api/checkout/status", () => {
         },
       },
     } as never);
-    mockSelectChain([{ firmName: "Acme Wealth" }]);
+    mockSelectChain([{ firmId: "org_new", firmName: "Acme Wealth" }]);
+    // Readiness now also depends on the Clerk org's stamped billing status.
+    mockGetOrganization.mockResolvedValue({
+      publicMetadata: { subscription_status: "trialing" },
+    });
+    // Not the buyer — so firmId must not leak into the response shape below.
+    mockAuth.mockResolvedValue({ userId: null });
 
     const res = await GET(makeRequest("cs_test_abc123def456ghi789"));
     expect(res.status).toBe(200);
@@ -125,5 +141,69 @@ describe("GET /api/checkout/status", () => {
     });
     const res = await GET(makeRequest("cs_test_abc123def456ghi789"));
     expect(res.status).toBe(429);
+  });
+
+  describe("readiness waits for the org to be usable", () => {
+    beforeEach(() => {
+      mockAuth.mockResolvedValue({ userId: null });
+      vi.mocked(getStripe).mockReturnValue({
+        checkout: {
+          sessions: {
+            retrieve: vi.fn().mockResolvedValue({
+              id: "cs_test_abc123def456ghi789",
+              client_reference_id: "user_buyer",
+              customer: "cus_1",
+              customer_details: { email: "dana@acme.example" },
+            }),
+          },
+        },
+      } as never);
+      // DB row already exists — the old readiness signal.
+      mockSelectChain([{ firmId: "org_new", firmName: "Acme Wealth" }]);
+    });
+
+    it("is NOT ready while the firm exists but its billing status is unstamped", async () => {
+      // This is the lockout race: activating here sends a paying buyer to
+      // /settings/billing, because proxy.ts blocks a `missing` state outright.
+      mockGetOrganization.mockResolvedValue({ publicMetadata: {} });
+      const res = await GET(makeRequest("cs_test_abc123def456ghi789"));
+      expect(await res.json()).toEqual({ ready: false });
+    });
+
+    it("is NOT ready when Clerk cannot be read, rather than guessing", async () => {
+      mockGetOrganization.mockRejectedValue(new Error("clerk down"));
+      const res = await GET(makeRequest("cs_test_abc123def456ghi789"));
+      expect(await res.json()).toEqual({ ready: false });
+    });
+
+    it("is ready once the billing status is stamped", async () => {
+      mockGetOrganization.mockResolvedValue({
+        publicMetadata: { subscription_status: "trialing" },
+      });
+      const res = await GET(makeRequest("cs_test_abc123def456ghi789"));
+      const body = await res.json();
+      expect(body.ready).toBe(true);
+      expect(body.firmName).toBe("Acme Wealth");
+    });
+
+    it("hands the firm id to the buyer, so their session can activate it", async () => {
+      mockGetOrganization.mockResolvedValue({
+        publicMetadata: { subscription_status: "trialing" },
+      });
+      mockAuth.mockResolvedValue({ userId: "user_buyer" });
+      const res = await GET(makeRequest("cs_test_abc123def456ghi789"));
+      expect((await res.json()).firmId).toBe("org_new");
+    });
+
+    it("withholds the firm id from anyone who is not the buyer", async () => {
+      // The endpoint is unauthenticated — a checkout session id is its only
+      // credential. A stranger holding that id gets today's masked shape.
+      mockGetOrganization.mockResolvedValue({
+        publicMetadata: { subscription_status: "trialing" },
+      });
+      mockAuth.mockResolvedValue({ userId: "user_someone_else" });
+      const res = await GET(makeRequest("cs_test_abc123def456ghi789"));
+      expect((await res.json()).firmId).toBeUndefined();
+    });
   });
 });

@@ -252,6 +252,11 @@ export type AuditAction =
   | "billing.reconcile_healed"
   | "billing.access_denied"
   | "billing.dispute_closed"
+  // Self-serve signup: the buyer's firm provisioned, but pinning them to
+  // org:admin failed. Non-fatal by design (the webhook still returns 200), so
+  // this row is the only durable trace that someone is stranded at the retired
+  // org:owner role and will be 403'd on firm config and team invites.
+  | "billing.org_role_pin_failed"
   // Ops console (cross-org staff actions; actorId = ops user, firmId = target)
   | "ops.entitlement.granted"
   | "ops.entitlement.revoked"

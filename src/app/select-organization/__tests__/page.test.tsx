@@ -36,15 +36,19 @@ describe("/select-organization", () => {
   it("offers a trial instead of a form that cannot succeed, when the user belongs to no firm", async () => {
     // Clerk org creation is disabled instance-wide, so the picker's "create
     // organization" form always errors with "not enabled for this user".
+    //
+    // The href is /welcome, not a fresh checkout link: a buyer who abandoned
+    // at the card still has their profile and logo stashed, and /welcome
+    // prefills both rather than starting them over.
     withClerk({ memberships: 0 });
     render(await SelectOrganizationPage());
 
     expect(screen.queryByTestId("org-picker")).not.toBeInTheDocument();
-    const cta = screen.getByRole("link", { name: /start.*trial/i });
-    expect(cta).toHaveAttribute("href", "/api/checkout/start?plan=annual");
+    const cta = screen.getByRole("link", { name: /set up your firm/i });
+    expect(cta).toHaveAttribute("href", "/welcome");
   });
 
-  it("tells the firmless visitor how to get in via their firm, not just via a card", async () => {
+  it("tells the firmless visitor how to get in via their firm, or reach support", async () => {
     withClerk({ memberships: 0 });
     render(await SelectOrganizationPage());
     expect(screen.getByText(/invite/i)).toBeInTheDocument();

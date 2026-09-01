@@ -14,7 +14,11 @@ vi.mock("@vercel/blob", () => ({
 }));
 vi.mock("@/lib/blob-store", () => ({ publicBlobToken: () => "vercel_blob_rw_TEST" }));
 
-import { putAdvisorBrandingAsset, putBrandingAsset } from "../blob";
+import {
+  putAdvisorBrandingAsset,
+  putBrandingAsset,
+  putSignupBrandingAsset,
+} from "../blob";
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
 
@@ -106,5 +110,27 @@ describe("putAdvisorBrandingAsset", () => {
       contentType: "image/png",
     });
     expect(out).toEqual({ url: "https://s1.public.blob.vercel-storage.com/real-Ab9.png" });
+  });
+});
+
+describe("putSignupBrandingAsset", () => {
+  it("keys the path on the Clerk userId, because there is no firm yet", async () => {
+    mockPut.mockResolvedValue({ url: "https://blob.example/x.png" });
+    const { url } = await putSignupBrandingAsset({
+      userId: "user_2abc",
+      kind: "logo",
+      bytes: Buffer.from([1, 2, 3]),
+      contentType: "image/png",
+    });
+    expect(mockPut).toHaveBeenCalledWith(
+      "signups/user_2abc/branding/logo",
+      expect.anything(),
+      expect.objectContaining({
+        access: "public",
+        addRandomSuffix: true,
+        contentType: "image/png",
+      }),
+    );
+    expect(url).toBe("https://blob.example/x.png");
   });
 });
