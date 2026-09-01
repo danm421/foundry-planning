@@ -1,17 +1,14 @@
 import { View, Svg, G, Rect, Line, Polyline, Text as SvgText } from "@react-pdf/renderer";
 import type { ChartSpec } from "@/lib/presentations/charts/types";
-import { scaleLinear, scaleBand } from "d3-scale";
+import { scaleLinear } from "d3-scale";
 import { PRESENTATION_THEME } from "@/lib/presentations/theme";
-import { legendLayout, legendSlot, LEGEND_LABEL_X, stackRects } from "./chart-geom";
+import { bandScale, legendLayout, legendSlot, LEGEND_LABEL_X, stackRects } from "./chart-geom";
 
 export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
   const innerW = spec.width - spec.margin.left - spec.margin.right;
   const innerH = spec.height - spec.margin.top - spec.margin.bottom;
 
-  const x = scaleBand<number>()
-    .domain(spec.xAxis.domain)
-    .range([0, innerW])
-    .padding(0.2);
+  const x = bandScale(spec);
 
   const y = scaleLinear()
     .domain(spec.yAxis.domain)
@@ -113,9 +110,15 @@ export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
                   strokeWidth={1}
                   strokeDasharray="3 3"
                 />
+                {/* Centred on `cx`, the same bar centre the dashed line above
+                    is drawn at. Under SVG's default `start` anchor the label
+                    began at the centre and ran right, so its own centre landed
+                    a full bar-step on — it annotated the bar AFTER the one it
+                    marks. */}
                 <SvgText
                   x={cx}
                   y={-4}
+                  textAnchor="middle"
                   style={{ fontFamily: "Inter", fontSize: 6, fill: m.color }}
                 >
                   {m.label}
@@ -124,7 +127,11 @@ export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
             );
           })}
 
-          {/* X-axis ticks */}
+          {/* X-axis ticks. Centred, so each year sits under the bar it names —
+              left at `start` the label ran rightward from the bar centre and
+              its own centre landed 8.4pt on, silently naming the wrong year on
+              every tick. Anchoring also pulls the last tick back out of the
+              right margin. */}
           {spec.xAxis.ticks.map((t) => {
             const cx = (x(t) ?? 0) + barWidth / 2;
             return (
@@ -132,6 +139,7 @@ export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
                 key={`xl-${t}`}
                 x={cx}
                 y={innerH + 12}
+                textAnchor="middle"
                 style={{ fontFamily: "JetBrains Mono", fontSize: 7, fill: PRESENTATION_THEME.ink3 }}
               >
                 {spec.xAxis.labelFormat(t)}

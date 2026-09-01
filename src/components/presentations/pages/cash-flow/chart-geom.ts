@@ -3,6 +3,24 @@
 // tracked separately so diverging series (e.g. Portfolio Activity) render
 // correctly. For all-positive data this matches a single-cumulative stack.
 
+import { scaleBand } from "d3-scale";
+import type { ChartSpec } from "@/lib/presentations/charts/types";
+
+/**
+ * The band scale the bars are laid out on.
+ *
+ * Exported so a geometry guard can ask where a bar actually is without
+ * restating the range or the padding. The x-axis and marker labels have to sit
+ * on a bar centre, and a test that recomputed that centre from its own copy of
+ * these numbers would go on passing after the chart's changed underneath it.
+ */
+export function bandScale(spec: ChartSpec) {
+  return scaleBand<number>()
+    .domain(spec.xAxis.domain)
+    .range([0, spec.width - spec.margin.left - spec.margin.right])
+    .padding(0.2);
+}
+
 export interface BarRect {
   y: number;       // top edge in pixel space
   height: number;
