@@ -19,17 +19,19 @@ function respond(body: unknown) {
   );
 }
 
+// A real Clerk setActive() is a network round trip, not an already-resolved
+// promise. An instantly-resolved mock lets the awaited setActive() call
+// race React's own scheduled re-render + passive-effect cleanup — and that
+// race is non-deterministic here (measured: a bare `setTimeout(fn, 0)` mock
+// let the cancel-on-cleanup defect slip through 2-4 times per 10 runs). A
+// real, if small, delay reliably lets React's cleanup land first, which is
+// what actually happens in production (the cleanup is cheap; a network
+// round trip is not) and is the exact window the defect dies in.
+const NETWORK_DELAY_MS = 20;
+
 beforeEach(() => {
-  // A real Clerk setActive() is a network round trip, not an already-resolved
-  // promise. An instantly-resolved mock lets the awaited setActive() call
-  // race React's own scheduled re-render + passive-effect cleanup — and that
-  // race is non-deterministic here (measured: a bare `setTimeout(fn, 0)`
-  // mock let the cancel-on-cleanup defect slip through 2-4 times per 10 runs).
-  // A real, if small, delay reliably lets React's cleanup land first, which
-  // is what actually happens in production (the cleanup is cheap; a network
-  // round trip is not) and is the exact window the defect dies in.
   mockSetActive.mockReset().mockImplementation(
-    () => new Promise((resolve) => setTimeout(resolve, 20)),
+    () => new Promise((resolve) => setTimeout(resolve, NETWORK_DELAY_MS)),
   );
   mockPush.mockReset();
 });
@@ -52,7 +54,7 @@ describe("checkout success", () => {
 
   it("offers a manual way in when activation fails, rather than dead-ending", async () => {
     mockSetActive.mockImplementation(
-      () => new Promise((_, reject) => setTimeout(() => reject(new Error("nope")), 20)),
+      () => new Promise((_, reject) => setTimeout(() => reject(new Error("nope")), NETWORK_DELAY_MS)),
     );
     respond({ ready: true, firmName: "Acme Wealth", buyerEmail: "d***@a.example", firmId: "org_new" });
     render(<SuccessPolling sessionId="cs_test_123" />);

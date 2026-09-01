@@ -101,7 +101,17 @@ export default function SuccessPolling({ sessionId }: { sessionId: string }) {
     })();
   }, [status, setActive, router]);
 
-  if (status.kind === "entering") {
+  // A ready-with-firmId state is momentary: the activation effect below
+  // flips it to "entering" on its very next run, but effects fire after
+  // paint, and this update originates from a fetch resolution (not a
+  // discrete event), so React can paint "ready" first. Folding the
+  // condition in here — rather than only branching on "entering" — makes
+  // that one-frame flash of the invitation copy structurally impossible:
+  // a ready-with-firmId state can no longer reach the invite JSX at all.
+  // (Not covered by a test: jsdom doesn't paint, so no test in this file
+  // can observe a pre-paint frame either way — this structural fix is the
+  // stronger guarantee.)
+  if (status.kind === "entering" || (status.kind === "ready" && status.firmId)) {
     return (
       <div className="text-center">
         <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-accent border-t-transparent" />
