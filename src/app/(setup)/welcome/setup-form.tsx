@@ -6,7 +6,7 @@ import { resolveAccentColor } from "@/components/pdf/theme";
 import type { CheckoutPlan } from "@/lib/billing/checkout";
 import { saveSignupProfile, startSignupCheckout, uploadSignupLogo } from "./actions";
 import { CoverPreview } from "./cover-preview";
-import { dominantColorFromPixels } from "./dominant-color";
+import { deriveColorFromFile } from "./derive-logo-color";
 
 /**
  * The setup step. The premise is that the more of themselves an advisor puts
@@ -38,8 +38,6 @@ const PRESETS: ReadonlyArray<readonly [label: string, hex: string]> = [
   ["Plum", "#4a3b63"],
 ];
 /* eslint-enable brand/no-raw-hex */
-
-const SAMPLE_PX = 64;
 
 /** Inline Lucide `image` — lucide-react is not a dependency in this repo. */
 function ImageIcon(props: SVGProps<SVGSVGElement>) {
@@ -86,37 +84,11 @@ function Spinner() {
   );
 }
 
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("could not decode image"));
-    img.src = src;
-  });
-}
-
-/**
- * Draw the logo into a small offscreen canvas and read its dominant colour, so
- * the advisor never has to think about hex codes. Any failure — a browser that
- * blocks canvas reads, an image it cannot decode — degrades to the manual
- * picker, never to a broken page.
- */
-async function deriveColorFromFile(file: File): Promise<string | null> {
-  const url = URL.createObjectURL(file);
-  try {
-    const img = await loadImage(url);
-    const canvas = document.createElement("canvas");
-    canvas.width = SAMPLE_PX;
-    canvas.height = SAMPLE_PX;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return null;
-    ctx.drawImage(img, 0, 0, SAMPLE_PX, SAMPLE_PX);
-    return dominantColorFromPixels(ctx.getImageData(0, 0, SAMPLE_PX, SAMPLE_PX).data);
-  } catch {
-    return null;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+/** The hand-off to Stripe. Named so a test can pass its own: jsdom cannot
+ *  navigate, and assigning window.location.href there prints a warning
+ *  instead of proving the buyer was sent anywhere. */
+function navigateTo(url: string) {
+  window.location.href = url;
 }
 
 const INPUT_CLASS =
@@ -125,9 +97,16 @@ const INPUT_CLASS =
 export function SetupForm({
   initial,
   plan,
+  deriveColor = deriveColorFromFile,
+  navigate = navigateTo,
 }: {
   initial: SetupInitial;
   plan: CheckoutPlan;
+  /** Sampler for the logo's colour. Injectable because jsdom decodes no image,
+   *  so the suggestion and the guard below it are otherwise unwatchable. */
+  deriveColor?: (file: File) => Promise<string | null>;
+  /** Where "Continue to payment" sends them. Injectable for the same reason. */
+  navigate?: (url: string) => void;
 }) {
   const [firmName, setFirmName] = useState(initial.firmName);
   const [advisorName, setAdvisorName] = useState(initial.advisorName);
@@ -139,8 +118,14 @@ export function SetupForm({
   const [dragging, setDragging] = useState(false);
 
   const uploadInFlight = useRef<Promise<void> | undefined>(undefined);
-  const userPickedColor = useRef(false);
+  // A colour restored from the stash is one they picked, on an earlier visit.
+  // Starting this at false let a later logo upload silently overwrite it.
+  const userPickedColor = useRef(initial.primaryColor !== null);
   const objectUrl = useRef<string | null>(null);
+  // The logo the stash actually holds. A failed upload leaves the stash
+  // untouched, so the preview must fall back to this rather than to nothing —
+  // otherwise it shows no logo while the webhook still provisions the old one.
+  const savedLogoUrl = useRef<string | null>(initial.logoUrl);
 
   const canContinue = firmName.trim() !== "";
 
@@ -162,7 +147,14 @@ export function SetupForm({
       setBusy(false);
       return;
     }
-    window.location.href = started.url;
+    navigate(started.url);
+  }
+
+  /** Hand back the memory behind one preview URL, unless a newer file has
+   *  already claimed the slot. */
+  function releaseObjectUrl(url: string) {
+    URL.revokeObjectURL(url);
+    if (objectUrl.current === url) objectUrl.current = null;
   }
 
   function onLogoChosen(file: File) {
@@ -173,7 +165,7 @@ export function SetupForm({
     if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
     objectUrl.current = localUrl;
     setLogoUrl(localUrl);
-    void deriveColorFromFile(file).then((hex) => {
+    void deriveColor(file).then((hex) => {
       // Only ever a SUGGESTION — never overwrite a colour they picked themselves.
       if (hex && !userPickedColor.current) setPrimaryColor(hex);
     });
@@ -183,17 +175,19 @@ export function SetupForm({
       .then((res) => {
         if (!res.ok) {
           setLogoError(res.error);
-          setLogoUrl(null);
+          setLogoUrl(savedLogoUrl.current);
           return;
         }
+        savedLogoUrl.current = res.url;
         setLogoUrl(res.url); // swap the object URL for the durable blob URL
       })
       .catch(() => {
         // A thrown server action must not take the submit down with it: the
         // whole contract is that branding can never block the card.
         setLogoError("Upload failed. Please try again.");
-        setLogoUrl(null);
-      });
+        setLogoUrl(savedLogoUrl.current);
+      })
+      .finally(() => releaseObjectUrl(localUrl));
   }
 
   function pickColor(hex: string) {
@@ -205,7 +199,15 @@ export function SetupForm({
     <section className="rise-in w-full py-4">
       <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,21rem)] lg:gap-14">
         {/* ── Your firm ─────────────────────────────────────────────── */}
-        <div>
+        {/* A real form: on a two-field page, Enter is the natural way to
+            submit. The button is disabled until the firm name is non-empty, so
+            implicit submission stays inert until there is something to send. */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void onContinue();
+          }}
+        >
           <div className="mb-5 flex items-center gap-3">
             <span className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-ink-3">
               Set up
@@ -366,10 +368,9 @@ export function SetupForm({
               ) : null}
             </div>
             <button
-              type="button"
+              type="submit"
               disabled={!canContinue || busy}
               aria-busy={busy}
-              onClick={onContinue}
               className="btn-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 sm:w-auto sm:self-start"
             >
               {busy ? (
@@ -388,7 +389,7 @@ export function SetupForm({
               14-day free trial · cancel anytime · card required
             </p>
           </div>
-        </div>
+        </form>
 
         {/* ── What it buys them ────────────────────────────────────── */}
         <div className="mx-auto w-full max-w-[21rem] lg:sticky lg:top-8 lg:self-start">

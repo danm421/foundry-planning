@@ -15,16 +15,14 @@ export default async function WelcomePage({
 }: {
   searchParams: Promise<{ plan?: string | string[] }>;
 }) {
-  const { userId, orgId } = await auth();
-  if (!userId) redirect("/sign-up");
+  const [{ userId, orgId }, { plan }] = await Promise.all([auth(), searchParams]);
+  // Carry the chosen plan through the bounce: a monthly buyer sent to a
+  // plan-less /sign-up comes back defaulted to annual and pays the wrong price.
+  if (!userId) redirect(plan ? `/sign-up?plan=${normalizePlan(plan)}` : "/sign-up");
   // Someone who already has a firm has finished this flow. Never show it twice.
   if (orgId) redirect(LANDING_PATH);
 
-  const [{ plan }, saved, user] = await Promise.all([
-    searchParams,
-    readPendingSignup(userId),
-    currentUser(),
-  ]);
+  const [saved, user] = await Promise.all([readPendingSignup(userId), currentUser()]);
 
   // Resumability: someone who abandoned at the card and signed back in gets
   // their profile, their logo, and their colour exactly as they left them.

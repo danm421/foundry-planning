@@ -24,9 +24,12 @@ const PAGE_H = 792;
 const NAVY_TOP_X = 200;
 const NAVY_BOT_X = 320;
 const STRIPE_OFFSETS = [-12, -24, -36];
-// Cream-panel flow, straight off the printed cover: logoBox marginTop 150,
-// then the prepared-for block 130 below it. The logo box has a fixed height so
-// the composition cannot shift when an image finishes loading.
+// Cream-panel flow, APPROXIMATING the printed cover: logoBox marginTop 150,
+// then the prepared-for block 130 below it. The real logoBox has no fixed
+// height — it flows at the logo's natural height, so the 130pt gap starts
+// wherever that logo happens to end. Here the box is pinned to LOGO_H, which
+// costs that one degree of fidelity and buys a composition that cannot shift
+// when an image finishes loading.
 const LOGO_TOP = 150;
 const LOGO_H = 90;
 
@@ -79,7 +82,8 @@ export function CoverPreview({
         backgroundColor: CREAM,
       }}
     >
-      {/* Geometry, point-for-point with the printed cover. */}
+      {/* Background geometry: the same vertices, stripes and foot bar the
+          printed cover draws, on the same 612×792 page. */}
       <svg
         aria-hidden
         className="absolute inset-0 h-full w-full"
@@ -196,6 +200,9 @@ export function CoverPreview({
             className="mx-auto w-[95%]"
             style={{ height: pt(1), backgroundColor: accent, marginTop: pt(14), marginBottom: pt(14) }}
           />
+          {/* The largest of clientNameSize()'s three steps. The real cover
+              would drop this 23-character sample to 24pt; the preview is a
+              likeness of the composition, not a second renderer. */}
           <p className="font-semibold" style={{ fontSize: pt(30), color: CHROME.navy }}>
             {SAMPLE_CLIENT}
           </p>
