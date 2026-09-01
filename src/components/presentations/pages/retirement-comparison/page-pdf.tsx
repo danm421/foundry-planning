@@ -15,6 +15,7 @@ import { MaxSpendChartPdf } from "./max-spend-chart-pdf";
 import { ConfidenceRangeChartPdf } from "./confidence-range-chart-pdf";
 import { TaxTreatmentChartPdf } from "./tax-treatment-chart-pdf";
 import { MONO } from "./chart-axis";
+import { KPI_BORDER, KPI_GAP, KPI_PAD } from "./kpi-geom";
 import { horizonYearsLabel } from "@/lib/presentations/shared/horizon-label";
 
 const s = StyleSheet.create({
@@ -36,9 +37,13 @@ const s = StyleSheet.create({
   metricLabel: { fontSize: 8, color: T.ink2 },
   metricVal: { fontSize: 9, fontWeight: 600, color: T.ink, fontFamily: MONO },
 
-  kpiRow: { flexDirection: "row", gap: 6, marginBottom: 10 },
+  // Gap, border and padding come from ./kpi-geom so the guard that measures a
+  // real render derives the card boxes from the SAME numbers the page lays out
+  // with; restating them here is how a guard starts measuring a page the
+  // product never prints.
+  kpiRow: { flexDirection: "row", gap: KPI_GAP, marginBottom: 10 },
   // space-between pins the value block to the card bottom so values align across 1- vs 2-line labels
-  kpi: { flex: 1, justifyContent: "space-between", backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderRadius: 3, padding: 8 },
+  kpi: { flex: 1, justifyContent: "space-between", backgroundColor: T.card, borderWidth: KPI_BORDER, borderColor: T.hair2, borderRadius: 3, padding: KPI_PAD },
   kpiLbl: { fontSize: 6.5, color: T.ink2, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3, lineHeight: 1.2 },
   // wrap: at five cards a card is ~82pt wide, and a rate-valued pair
   // ("$170K/yr → $175K/yr") needs ~114pt. Without this the scenario value

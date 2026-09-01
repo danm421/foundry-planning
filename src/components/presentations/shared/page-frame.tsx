@@ -3,6 +3,16 @@ import { PRESENTATION_THEME } from "@/lib/presentations/theme";
 import { SHORT_DISCLAIMER } from "@/lib/presentations/disclaimers";
 import type { ReactNode } from "react";
 
+/** LETTER, the size every page in the deck is rendered at. */
+export const PAGE_WIDTH_PORTRAIT = 612;
+/** The paper's horizontal padding, both sides — so the content box a page body
+ *  lays out in is `PAGE_WIDTH_PORTRAIT - 2 * PAGE_PAD_X` wide.
+ *
+ *  Exported, and read below rather than restated, so a layout guard can measure
+ *  the box the frame ACTUALLY uses. A guard that hand-builds its own page spec
+ *  measures a page the product never prints. */
+export const PAGE_PAD_X = 43;
+
 const styles = StyleSheet.create({
   page: {
     backgroundColor: PRESENTATION_THEME.paper,
@@ -14,8 +24,8 @@ const styles = StyleSheet.create({
     // and this padding is the ONLY thing keeping flowing content out of it —
     // see `footer`.
     paddingBottom: 72,
-    paddingLeft: 43,
-    paddingRight: 43,
+    paddingLeft: PAGE_PAD_X,
+    paddingRight: PAGE_PAD_X,
   },
   headerRow: {
     flexDirection: "row",
@@ -45,7 +55,7 @@ const styles = StyleSheet.create({
   //
   // `left`/`right` are re-applied because an absolutely positioned child is
   // placed against the page box, not inside its horizontal padding.
-  footer: { position: "absolute", bottom: 42, left: 43, right: 43 },
+  footer: { position: "absolute", bottom: 42, left: PAGE_PAD_X, right: PAGE_PAD_X },
   footerHair: {
     height: 0.75,
     backgroundColor: PRESENTATION_THEME.hair2,
