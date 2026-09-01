@@ -29,12 +29,20 @@ export interface BracketComparisonRow {
   direction: 1 | -1 | 0;
 }
 export interface CompositionSide { roth: number; preTax: number; taxable: number; total: number }
-export interface CompositionComparison { year: number; base: CompositionSide; scenario: CompositionSide }
+export interface CompositionComparison {
+  /** Each plan retires in its own year, and each side is measured at its own —
+   *  printing only the scenario's year dated the base column wrongly. */
+  baseYear: number;
+  scenarioYear: number;
+  base: CompositionSide;
+  scenario: CompositionSide;
+}
 export interface TaxComparisonChartYear {
   year: number;
   federalOrdinary: number;
   capGains: number;
   state: number;
+  payroll: number;
   total: number;
   baseTotal: number;
 }
@@ -111,9 +119,13 @@ export function buildTaxComparisonData(
 
   // ── KPI strip (five cost metrics, lower-is-better) ──
   const kpis: TaxComparisonKpi[] = [
-    kpiUsd("Lifetime Federal Tax", baseTotals.lifetimeFederal, scnTotals.lifetimeFederal),
-    kpiUsd("Lifetime State Tax", baseTotals.lifetimeState, scnTotals.lifetimeState),
-    kpiUsd("Lifetime Capital Gains Tax", baseTotals.lifetimeCapGains, scnTotals.lifetimeCapGains),
+    // Disjoint parts that add to the total below them — federal here is net of
+    // the capital-gains slice, and payroll tax is itemized rather than hiding
+    // inside the total. See computeLifetimeTotals.
+    kpiUsd("Federal (ordinary)", baseTotals.lifetimeFederalOrdinary, scnTotals.lifetimeFederalOrdinary),
+    kpiUsd("Capital Gains Tax", baseTotals.lifetimeCapGains, scnTotals.lifetimeCapGains),
+    kpiUsd("State Tax", baseTotals.lifetimeState, scnTotals.lifetimeState),
+    kpiUsd("Payroll Tax", baseTotals.lifetimePayroll, scnTotals.lifetimePayroll),
     kpiUsd("Lifetime Total Tax", baseTotals.lifetimeTotal, scnTotals.lifetimeTotal),
     kpiRate("Lifetime Effective Rate", baseTotals.effectiveRate, scnTotals.effectiveRate),
   ];
@@ -125,6 +137,7 @@ export function buildTaxComparisonData(
     federalOrdinary: b.federalOrdinary,
     capGains: b.capGains,
     state: b.state,
+    payroll: b.payroll,
     total: b.total,
     baseTotal: baseTotalByYear.get(b.year) ?? 0,
   }));
@@ -170,7 +183,8 @@ export function buildTaxComparisonData(
   const composition: CompositionComparison | null =
     baseComp || scnComp
       ? {
-          year: scnComp?.year ?? baseComp!.year,
+          baseYear: baseComp?.year ?? scnComp!.year,
+          scenarioYear: scnComp?.year ?? baseComp!.year,
           base: baseComp ? { roth: baseComp.roth, preTax: baseComp.preTax, taxable: baseComp.taxable, total: baseComp.total } : EMPTY_SIDE,
           scenario: scnComp ? { roth: scnComp.roth, preTax: scnComp.preTax, taxable: scnComp.taxable, total: scnComp.total } : EMPTY_SIDE,
         }

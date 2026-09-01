@@ -15,6 +15,32 @@ type SessionCreateParams = NonNullable<
 >;
 type SessionLineItem = NonNullable<SessionCreateParams["line_items"]>[number];
 
+// Pricing lives on the marketing site, not in the app. Cancelling out of
+// Stripe has to land back where the buyer started; `${origin}/pricing` would
+// 404 them on app.foundryplanning.com, which has no such route.
+const STOREFRONT_PRICING_URL = "https://foundryplanning.com/pricing";
+
+/**
+ * The plan vocabulary the storefront speaks. Its pricing toggle emits
+ * `?plan=annual` and `?plan=monthly`; its nav button emits neither. Annual is
+ * the price the site shows by default, so an unnamed — or unrecognized — plan
+ * resolves to annual rather than erroring a buyer out of the funnel.
+ *
+ * Shared by /sign-up (which forwards the choice) and /api/checkout/start
+ * (which prices it), so the two can never disagree about what a plan is.
+ */
+export type CheckoutPlan = "annual" | "monthly";
+
+export function normalizePlan(raw: string | string[] | undefined | null): CheckoutPlan {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value === "monthly" ? "monthly" : "annual";
+}
+
+export const PLAN_PRICE_KEY: Record<CheckoutPlan, CheckoutPriceKey> = {
+  annual: "seatAnnual",
+  monthly: "seatMonthly",
+};
+
 /**
  * Build the Stripe Checkout session params for a public buyer flow.
  * Pure function — no Stripe API calls, no DB. The route handler wraps
@@ -48,8 +74,11 @@ export function buildCheckoutSessionParams(args: {
       },
     ],
     automatic_tax: { enabled: true },
+    // /admin/promo-codes mints Stripe promotion codes for buyers to type here.
+    // Without this the field never renders and every code ops issues is dead.
+    allow_promotion_codes: true,
     success_url: `${args.origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${args.origin}/pricing`,
+    cancel_url: STOREFRONT_PRICING_URL,
     payment_method_types: ["card"],
   };
 }

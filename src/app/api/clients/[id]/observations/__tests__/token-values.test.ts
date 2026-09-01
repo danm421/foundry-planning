@@ -96,11 +96,19 @@ const FAKE_CLIENT_DATA = {
   planSettings: {},
 } as unknown as ClientData;
 
+// The "(today)" tokens read the BEGINNING of the year, so the ledger — not the
+// closing `portfolioAssets` snapshot — is what net_worth/portfolio_assets come
+// from. The two differ here on purpose.
 const FAKE_YEAR = {
   year: 2026,
   ages: { client: 50 },
   liabilityBalancesBoY: {},
-  portfolioAssets: { total: 1_000_000, liquidTotal: 900_000 },
+  portfolioAssets: {
+    taxable: { a1: 1_000_000 },
+    total: 1_000_000,
+    liquidTotal: 900_000,
+  },
+  accountLedgers: { a1: { beginningValue: 800_000, endingValue: 1_000_000 } },
   totalIncome: 100_000,
   expenses: { total: 50_000 },
   savings: { total: 20_000 },
@@ -152,7 +160,7 @@ describe("GET /api/clients/[id]/observations/token-values", () => {
     const res = await GET(makeReq(), { params: Promise.resolve({ id: clientId }) });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.values.net_worth).toBe("$1,000,000");
+    expect(body.values.net_worth).toBe("$800,000");
     expect(body.values.mc_success).toBe("87%");
   });
 
@@ -174,7 +182,7 @@ describe("GET /api/clients/[id]/observations/token-values", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.values.mc_success).toBeNull();
-    expect(body.values.net_worth).toBe("$1,000,000");
+    expect(body.values.net_worth).toBe("$800,000");
   });
 
   it("scopes data loads by the CLIENT's firm, not the caller's org, for shared access", async () => {

@@ -1,17 +1,16 @@
 import { View, Text, StyleSheet } from "@react-pdf/renderer";
 import { PageFrame } from "@/components/presentations/shared/page-frame";
+import { SectionHead } from "@/components/presentations/shared/section-head";
 import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
 import { dataLight } from "@/brand";
 import type { RenderPdfInput } from "@/components/presentations/registry";
 import type { RetirementSummaryPageData } from "@/lib/presentations/pages/retirement-summary/view-model";
 import type { SsClient } from "@/lib/presentations/pages/retirement-summary/social-security";
-import { fmtUsd, fmtUsdMonthly } from "@/lib/presentations/pages/retirement-summary/aggregate";
+import { fmtUsd, fmtUsdMonthly, printsAsZero } from "@/lib/presentations/pages/retirement-summary/aggregate";
 import { PortfolioBarsPdf, SplitBarPdf } from "./chart-pdf";
 import { CashflowChartPdf } from "../cash-flow/chart-pdf";
 
 const s = StyleSheet.create({
-  title: { fontSize: 16, fontWeight: 700, marginBottom: 2 },
-  subtitle: { fontSize: 8, color: T.ink2, marginBottom: 6 },
   kpis: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 },
   // space-between pins the value to the card bottom so values align across 1- vs 2-line labels
   kpi: { flexBasis: "31%", justifyContent: "space-between", backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderRadius: 3, padding: 6 },
@@ -33,6 +32,10 @@ const s = StyleSheet.create({
   narrText: { fontSize: 8, color: T.ink, lineHeight: 1.35, marginBottom: 1.5 },
   empty: { fontSize: 11, color: T.ink2, textAlign: "center", marginTop: 60 },
   note: { fontSize: 6.5, color: T.ink3, marginTop: 4 },
+  // The funding takeaway sits under the bar it describes, as a caption
+  // rather than a second bordered callout: sheet two has ~20pt of slack and
+  // a callout costs 30, which is what spilled a blank third sheet.
+  caption: { fontSize: 7, color: T.ink2, lineHeight: 1.35, marginTop: 4 },
 });
 
 function Kpi({ lbl, val }: { lbl: string; val: string }) {
@@ -74,12 +77,12 @@ function SsColumn({ c }: { c: SsClient }) {
 }
 
 export function RetirementSummaryPagePdf(input: RenderPdfInput<RetirementSummaryPageData>) {
-  const { data, firmName, clientName, reportDate, pageIndex, totalPages } = input;
+  const { data, firmName, clientName, reportDate, pageIndex, totalPages, accent } = input;
 
   if (data.isEmpty) {
     return (
       <PageFrame firmName={firmName} clientName={clientName} reportDate={reportDate} pageIndex={pageIndex} totalPages={totalPages} orientation="portrait">
-        <Text style={s.title}>{data.title}</Text>
+        <SectionHead title={data.title} subtitle={data.subtitle} accent={accent} />
         <Text style={s.empty}>No retirement data available for this scenario.</Text>
       </PageFrame>
     );
@@ -92,8 +95,7 @@ export function RetirementSummaryPagePdf(input: RenderPdfInput<RetirementSummary
     <>
       {/* ── PAGE 1 — Assets & Outlook ── */}
       <PageFrame firmName={firmName} clientName={clientName} reportDate={reportDate} pageIndex={pageIndex} totalPages={totalPages} orientation="portrait">
-        <Text style={s.title}>{data.title}</Text>
-        <Text style={s.subtitle}>{data.subtitle}</Text>
+        <SectionHead title={data.title} subtitle={data.subtitle} accent={accent} />
 
         <View style={s.kpis}>
           {/* Row 1: outlook — Monte Carlo, retirement timing, lifetime spend */}
@@ -138,7 +140,7 @@ export function RetirementSummaryPagePdf(input: RenderPdfInput<RetirementSummary
 
       {/* ── PAGE 2 — Income, Spending & Funding ── */}
       <PageFrame firmName={firmName} clientName={clientName} reportDate={reportDate} pageIndex={pageIndex} totalPages={totalPages} orientation="portrait">
-        <Text style={s.title}>Income, Spending &amp; Funding</Text>
+        <SectionHead title="Income, Spending & Funding" accent={accent} />
 
         <View style={s.panel}>
           <Text style={s.h4}>Cash flow in retirement</Text>
@@ -149,10 +151,18 @@ export function RetirementSummaryPagePdf(input: RenderPdfInput<RetirementSummary
           <Text style={s.h4}>{`How retirement is funded (${data.kpis.retirementYear}–${data.bars[data.bars.length - 1]?.year ?? data.kpis.retirementYear})`}</Text>
           <SplitBarPdf segments={fundingRows.map((r, i) => ({
             label: r.label, value: r.value,
-            color: [T.steel, T.good, T.accentMuted, dataLight.blue, T.accent, T.crit, T.good][i % 7],
+            // The unfunded remainder is a gap, not a source — grey, never a
+            // source colour, and never counted in the source rotation.
+            color: r.unfunded ? T.hair2 : [T.steel, T.good, T.accentMuted, dataLight.blue, T.accent, T.crit, T.good][i % 7],
           }))} />
           <StatRow lbl="Total cost of retirement" val={fmtUsd(f.totalSpending)} />
-          {f.shortfall > 0 ? <StatRow lbl="Shortfall (unfunded)" val={fmtUsd(f.shortfall)} /> : null}
+          {/* Forced RMD cash the plan never had to spend. Without this row the
+              bar looks smaller than the client's actual distributions.
+              Guarded on the printed figure — see printsAsZero. */}
+          {printsAsZero(f.reinvestedSurplus) ? null : <StatRow lbl="Reinvested surplus (not spent)" val={fmtUsd(f.reinvestedSurplus)} />}
+          {data.fundingNarrative.map((line, i) => (
+            <Text key={i} style={s.caption}>{line}</Text>
+          ))}
         </View>
 
         <View style={s.twoCol}>
@@ -170,16 +180,21 @@ export function RetirementSummaryPagePdf(input: RenderPdfInput<RetirementSummary
           ) : null}
           <View style={[s.panel, { flex: 1 }]}>
             <Text style={s.h4}>Retirement spending</Text>
-            <StatRow lbl="Living — today" val={fmtUsd(data.living.today)} />
-            <StatRow lbl="Living — at retirement" val={fmtUsd(data.living.retirement)} />
+            {/* Two spellings of ONE budget, linked by the arrow. "today" alone
+                read as current spending — the Client Profile's "Current" column
+                is a different, smaller number (it includes the current-living
+                row this figure excludes), so the same word named two figures. */}
+            <StatRow lbl="Living — today's $" val={fmtUsd(data.living.today)} />
+            <StatRow lbl="Living — at retirement" val={`→ ${fmtUsd(data.living.retirement)}`} />
             {data.otherExpenses.insurance > 0 ? <StatRow lbl="Insurance" val={fmtUsd(data.otherExpenses.insurance)} /> : null}
             {data.otherExpenses.realEstate > 0 ? <StatRow lbl="Property tax" val={fmtUsd(data.otherExpenses.realEstate)} /> : null}
             {data.otherExpenses.liabilities > 0 ? <StatRow lbl="Debt service" val={fmtUsd(data.otherExpenses.liabilities)} /> : null}
+            <Text style={s.note}>Living is the retirement budget, not current spending: today&apos;s dollars, then the same budget at retirement.</Text>
           </View>
           <View style={[s.panel, { flex: 1 }]}>
             <Text style={s.h4}>Income in retirement</Text>
             {data.income.length ? data.income.map((r) => <StatRow key={r.id} lbl={r.label} val={fmtUsd(r.amount)} />)
-              : <Text style={s.note}>No income streams continue past retirement.</Text>}
+              : <Text style={s.note}>{data.incomeEmptyCopy}</Text>}
             {data.transactions.length ? (
               <>
                 <Text style={[s.h4, { marginTop: 8 }]}>Asset transactions</Text>
@@ -194,7 +209,6 @@ export function RetirementSummaryPagePdf(input: RenderPdfInput<RetirementSummary
           <Text style={s.note}>Highlighted row = the age the plan has them claiming. Amounts in today&apos;s dollars.</Text>
         ) : null}
 
-        <Narrative lines={[data.narrative[0]]} />
       </PageFrame>
     </>
   );

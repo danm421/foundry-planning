@@ -828,8 +828,8 @@ describe("chart facts", () => {
       { year: 2040, cash: 10_000, taxable: 30_000, retirement: 460_000, total: 500_000 },
     ],
     tax: [
-      { year: 2026, federalOrdinary: 10_000, capGains: 0, state: 2_000, total: 12_000 },
-      { year: 2035, federalOrdinary: 40_000, capGains: 5_000, state: 8_000, total: 53_000 },
+      { year: 2026, federalOrdinary: 10_000, capGains: 0, state: 2_000, payroll: 0, total: 12_000 },
+      { year: 2035, federalOrdinary: 40_000, capGains: 5_000, state: 8_000, payroll: 0, total: 53_000 },
     ],
     // All three charts carry bars, so the invariant at the end of this block is
     // asked the interesting question. `view-model.ts#chartFor` returns an estate

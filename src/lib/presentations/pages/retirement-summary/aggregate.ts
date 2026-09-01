@@ -2,6 +2,7 @@
 import type { ClientData, ProjectionYear } from "@/engine/types";
 import { liquidPortfolioBoy } from "@/engine/portfolio-snapshot";
 import { isRetirementLivingExpense } from "@/lib/solver/living-expense";
+import { assetsByTaxTypeAt, type AssetsByTaxType } from "@/lib/presentations/shared/tax-type-composition";
 
 // ── Formatting (single source; page-pdf + chart import these) ────────────────
 export function fmtUsd(n: number): string {
@@ -13,6 +14,19 @@ export function fmtUsd(n: number): string {
 export function fmtPct(fraction: number): string {
   return `${Math.round(fraction * 100)}%`;
 }
+/**
+ * Does this amount disappear into "$0" once it is printed?
+ *
+ * Every "only mention this if there is one" guard has to ask THIS, not `x > 0`.
+ * The lifetime shortfall accumulates a per-year `Math.max(0, …)` residue, so a
+ * fully funded plan carries a fraction of a cent — enough for `> 0`, and the
+ * page then warned about "a shortfall the plan does not currently cover" beside
+ * the figure "$0".
+ */
+export function printsAsZero(n: number): boolean {
+  return fmtUsd(n) === "$0";
+}
+
 // Full-dollar format for monthly amounts (e.g. Social Security), where the
 // thousands-rounding of fmtUsd would flatten the 62–70 benefit gradient.
 export function fmtUsdMonthly(n: number): string {
@@ -76,9 +90,9 @@ export function assetsByType(years: ProjectionYear[], retirementYear: number): A
 }
 
 // ── Assets at retirement: by tax type ────────────────────────────────────────
-// Mirrors tax-summary/aggregate.ts:computeRetirementComposition. Roth includes
-// full roth_ira balances + the designated-Roth slice inside 401k/403b.
-export interface AssetsByTaxType { roth: number; preTax: number; taxable: number; total: number; }
+// Shares one helper with tax-summary/aggregate.ts:computeRetirementComposition,
+// which prints the same split on the Tax pages.
+export type { AssetsByTaxType };
 
 export function assetsByTaxType(
   years: ProjectionYear[],
@@ -86,24 +100,9 @@ export function assetsByTaxType(
   retirementYear: number,
 ): AssetsByTaxType {
   const py = retirementYearRow(years, retirementYear);
-  let roth = 0, preTax = 0, taxable = 0;
-  if (py) {
-    for (const a of clientData.accounts) {
-      const led = py.accountLedgers[a.id];
-      const ev = led?.endingValue ?? 0;
-      if (a.category === "retirement") {
-        const rothPortion =
-          a.subType === "roth_ira" ? ev
-          : a.subType === "401k" || a.subType === "403b" ? (led?.rothValueEoY ?? 0)
-          : 0;
-        roth += rothPortion;
-        preTax += ev - rothPortion;
-      } else if (a.category === "taxable") {
-        taxable += ev;
-      }
-    }
-  }
-  return { roth, preTax, taxable, total: roth + preTax + taxable };
+  return py
+    ? assetsByTaxTypeAt(py, clientData.accounts)
+    : { roth: 0, preTax: 0, taxable: 0, total: 0 };
 }
 
 // ── Living expenses: today vs retirement year ────────────────────────────────

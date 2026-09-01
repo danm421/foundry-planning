@@ -21,6 +21,29 @@ export interface ChangeRow {
   after: string;
   /** Ordered fact segments shown in the DETAILS column (one rendered line each). */
   detail: string[];
+  /** True when `detail` only restates what `what` + `before`/`after` already
+   *  say — a single-field edit's "Adjusts this expense.". The changes TABLE
+   *  suppresses it (it has those columns); the Plan Story chapter still reads
+   *  it (it has only `what` and `detail[0]`). Consumers that measure a row's
+   *  height must apply the same rule the renderer does. */
+  restatesRow?: true;
+}
+
+/**
+ * The detail lines the changes TABLE prints for a row.
+ *
+ * A `restatesRow` detail is suppressed HERE AND ONLY HERE: the Plan Story
+ * chapter reads `row.detail` directly, because it has no before/after columns
+ * for the clause to restate.
+ *
+ * ⚠️ The renderer and `estimateScenarioChangesPageCount` must BOTH call this.
+ * The estimator drives the Contents page numbers, so a renderer that hides a
+ * line the estimator still measures shifts every entry after it — the same
+ * failure that had "Tax Summary … 8" pointing at page 9.
+ */
+export function visibleDetail(row: ChangeRow, showDetails: boolean): string[] {
+  if (!showDetails || row.restatesRow) return [];
+  return row.detail;
 }
 
 /** A flat row, or a labeled cluster of rows sharing a toggle group. */

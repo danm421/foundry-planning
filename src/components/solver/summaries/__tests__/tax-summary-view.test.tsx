@@ -10,15 +10,16 @@ const POPULATED: TaxSummaryPageData = {
   isEmpty: false,
   bracketMode: true,
   kpis: {
-    lifetimeFederal: 840_000,
+    lifetimeFederalOrdinary: 780_000,
     lifetimeState: 120_000,
     lifetimeCapGains: 60_000,
-    lifetimeTotal: 1_020_000,
+    lifetimePayroll: 60_000,
+    lifetimeTotal: 1_020_000, // 780k + 60k + 120k + 60k
     effectiveRate: 0.22,
   },
   chart: [
-    { year: 2025, federalOrdinary: 30_000, capGains: 2_000, state: 4_000, total: 36_000 },
-    { year: 2026, federalOrdinary: 32_000, capGains: 2_500, state: 4_200, total: 38_700 },
+    { year: 2025, federalOrdinary: 30_000, capGains: 2_000, state: 4_000, payroll: 0, total: 36_000 },
+    { year: 2026, federalOrdinary: 32_000, capGains: 2_500, state: 4_200, payroll: 0, total: 38_700 },
   ],
   bracket: {
     yearsBelowLow: 5,

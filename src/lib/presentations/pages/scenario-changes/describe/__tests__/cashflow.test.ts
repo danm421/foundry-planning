@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { describeChange } from "../index";
 import { buildResolveContext, EMPTY_RESOLVE_DATA } from "../resolve";
+import { visibleDetail } from "../../types";
 
 describe("cashflow/estate describers", () => {
   it("income add: type, amount, owner, window", () => {
@@ -31,6 +32,27 @@ describe("cashflow/estate describers", () => {
     expect(row.what).toContain("Retirement Living Expenses");
     expect(row.before).toBe("$100k");
     expect(row.after).toBe("$150k");
+    // `what` names the field and the columns carry the move, so the clause
+    // only restates the row — flagged, so the TABLE hides it while the Plan
+    // Story chapter (which has no columns) can still quote it.
+    expect(row.restatesRow).toBe(true);
+    expect(visibleDetail(row, true)).toEqual([]);
+    expect(row.detail).toEqual(["Adjusts this expense."]);
+  });
+
+  it("multi-field edit keeps a detail line per field", () => {
+    const row = describeChange(
+      {
+        id: "c", scenarioId: "s", opType: "edit", targetKind: "expense",
+        targetId: "e", toggleGroupId: null, orderIndex: 0,
+        payload: { annualAmount: { from: 100000, to: 150000 }, endYear: { from: 2040, to: 2050 } },
+      },
+      { targetNames: { "expense:e": "Travel" }, resolve: buildResolveContext(EMPTY_RESOLVE_DATA) },
+    );
+    expect(row.restatesRow).toBeUndefined();
+    expect(visibleDetail(row, true)).toHaveLength(2);
+    expect(row.detail.join(" ")).toContain("$100k → $150k");
+    expect(row.detail.join(" ")).not.toContain("Adjusts this expense.");
   });
 
   it("liability add: balance, rate, payment", () => {

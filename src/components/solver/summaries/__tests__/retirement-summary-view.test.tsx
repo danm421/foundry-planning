@@ -87,6 +87,7 @@ const POPULATED: RetirementSummaryPageData = {
     shortfall: 0,
     totalSpending: 2_400_000,
     totalFunded: 2_400_000,
+    reinvestedSurplus: 0,
   },
   fundingSources: [
     { label: "Social Security", value: 480_000 },
@@ -128,6 +129,7 @@ const POPULATED: RetirementSummaryPageData = {
   },
   living: { today: 72_000, retirement: 96_000 },
   otherExpenses: { insurance: 12_000, realEstate: 8_000, liabilities: 0, other: 0 },
+  incomeEmptyCopy: "No income streams continue past retirement.",
   income: [
     { id: "rental-1", label: "Rental income", type: "rental", amount: 24_000 },
   ],
@@ -137,6 +139,9 @@ const POPULATED: RetirementSummaryPageData = {
   narrative: [
     "92% plan confidence gives this plan a strong likelihood of funding retirement through age 90.",
     "Social Security claiming at 67 generates $2,000/mo — delaying to 70 would add 24% more per month.",
+  ],
+  fundingNarrative: [
+    "RMDs is the largest funding source, covering 62% of lifetime retirement spending.",
   ],
   cashFlowChartSpec: CHART_SPEC,
 };
@@ -167,6 +172,8 @@ describe("RetirementSummaryView", () => {
     expect(container.textContent).toContain("Vacation property");
     // narrative
     expect(container.textContent).toContain("Takeaways");
+    // the funding takeaway captions the funding bar, not the takeaway list
+    expect(container.textContent).toContain("largest funding source");
   });
 
   it("renders the empty state", () => {

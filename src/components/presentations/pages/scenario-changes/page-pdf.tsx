@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet } from "@react-pdf/renderer";
-import type { ScenarioChangesPageData, ChangeRow, DisplayUnit } from "@/lib/presentations/pages/scenario-changes/types";
+import { visibleDetail, type ScenarioChangesPageData, type ChangeRow, type DisplayUnit } from "@/lib/presentations/pages/scenario-changes/types";
 import type { RenderPdfInput } from "@/components/presentations/registry";
 import { PRESENTATION_THEME } from "@/lib/presentations/theme";
 import { PageFrame } from "../../shared/page-frame";
@@ -76,6 +76,7 @@ function ChangeCell({ row }: { row: ChangeRow }) {
 }
 
 function Row({ row, showDetails, indent }: { row: ChangeRow; showDetails: boolean; indent?: boolean }) {
+  const detail = visibleDetail(row, showDetails);
   return (
     <View style={styles.row} wrap={false}>
       <Text style={[styles.area, { width: COL.area }]}>{row.area}</Text>
@@ -83,9 +84,9 @@ function Row({ row, showDetails, indent }: { row: ChangeRow; showDetails: boolea
         {indent ? `↳ ${row.what}` : row.what}
       </Text>
       <ChangeCell row={row} />
-      {showDetails && row.detail.length > 0 && (
+      {detail.length > 0 && (
         <View style={styles.detailWrap}>
-          {row.detail.map((line, i) => (
+          {detail.map((line, i) => (
             <Text key={i} style={styles.detailLine}>{line}</Text>
           ))}
         </View>

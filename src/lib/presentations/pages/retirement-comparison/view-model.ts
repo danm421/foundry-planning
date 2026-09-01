@@ -13,6 +13,14 @@ import type {
   TaxTreatmentBreakdown,
 } from "./types";
 
+/** The retirement age the plan is built on, or null when it is unusable —
+ *  the same guard `retirementYearOf` applies, so the KPI and the horizon
+ *  labels can never disagree about whether a side has a retirement. */
+function retirementAgeOf(clientData: ClientData): number | null {
+  const { retirementAge } = clientData.client;
+  return Number.isFinite(retirementAge) ? retirementAge : null;
+}
+
 function retirementYearOf(clientData: ClientData): number | null {
   const { retirementAge, dateOfBirth } = clientData.client;
   const birthYear = new Date(dateOfBirth).getUTCFullYear();
@@ -21,7 +29,7 @@ function retirementYearOf(clientData: ClientData): number | null {
 }
 
 const EMPTY_BUCKETS: TaxBuckets = { cash: 0, taxable: 0, preTax: 0, roth: 0, hsa: 0 };
-const EMPTY_BREAKDOWN: TaxTreatmentBreakdown = { year: 0, base: EMPTY_BUCKETS, scenario: EMPTY_BUCKETS };
+const EMPTY_BREAKDOWN: TaxTreatmentBreakdown = { baseYear: 0, scenarioYear: 0, base: EMPTY_BUCKETS, scenario: EMPTY_BUCKETS };
 
 const EMPTY = (title: string): RetirementComparisonPageData => ({
   title, subtitle: "", isEmpty: true,
@@ -44,7 +52,13 @@ function verdictHeadline(base: number | null, scn: number | null): string {
   return `${s}% chance your plan fully funds your life (was ${b}%).`;
 }
 
-/** The projection year matching `year`, or the last year if it runs short. */
+/**
+ * The projection year matching `year`, or the last year if it runs short.
+ *
+ * Callers must label the horizon with the returned row's `.year`, never the
+ * year they asked for — the fallback is silent, and a page that asks for 2054
+ * but is handed 2050 would otherwise print a number under the wrong date.
+ */
 function yearAt(years: ProjectionYear[], year: number): ProjectionYear {
   return years.find((r) => r.year === year) ?? years[years.length - 1];
 }
@@ -77,7 +91,14 @@ export function buildRetirementComparisonData(
 
   const baseYears = baseBundle.projection.years;
   const scenarioYears = scnBundle.projection.years;
+  // Each plan is measured at its OWN retirement. Applying the scenario's year
+  // to both sides reported the base plan's mid-accumulation portfolio as its
+  // retirement portfolio — the deck then carried two different answers for
+  // "the base plan at retirement".
   const retirementYear = retirementYearOf(scnBundle.clientData) ?? scenarioYears[0]?.year ?? 0;
+  const baseRetirementYear = retirementYearOf(baseBundle.clientData) ?? baseYears[0]?.year ?? retirementYear;
+  const baseRetirementAge = retirementAgeOf(baseBundle.clientData);
+  const scnRetirementAge = retirementAgeOf(scnBundle.clientData);
   const endOfLifeYear = scenarioYears[scenarioYears.length - 1]?.year ?? retirementYear;
   // Charts never reach back before the plan's current year — i.e. the
   // projection's first year. An already-retired client has a retirementYear in
@@ -88,7 +109,8 @@ export function buildRetirementComparisonData(
   const scnSuccess = scnBundle.monteCarlo?.summary.successRate ?? null;
 
   const metrics = buildRetirementComparisonMetrics({
-    baseYears, scenarioYears, baseSuccess, scenarioSuccess: scnSuccess, retirementYear,
+    baseYears, scenarioYears, baseSuccess, scenarioSuccess: scnSuccess,
+    baseRetirementYear, scenarioRetirementYear: retirementYear,
   });
 
   // ── Max sustainable spending: inflate the solved real (today's $) figure forward. ──
@@ -128,15 +150,22 @@ export function buildRetirementComparisonData(
   // ── Portfolio assets by tax treatment (per plan, at each horizon) ──
   const baseAccounts: Account[] = baseBundle.clientData.accounts ?? [];
   const scnAccounts: Account[] = scnBundle.clientData.accounts ?? [];
+  // Each side labels the row it was actually read from — see yearAt.
+  const baseAtRet = yearAt(baseYears, baseRetirementYear);
+  const scnAtRet = yearAt(scenarioYears, retirementYear);
+  const baseAtEol = yearAt(baseYears, endOfLifeYear);
+  const scnAtEol = yearAt(scenarioYears, endOfLifeYear);
   const atRetirement: TaxTreatmentBreakdown = {
-    year: retirementYear,
-    base: buildTaxBuckets(yearAt(baseYears, retirementYear), baseAccounts),
-    scenario: buildTaxBuckets(yearAt(scenarioYears, retirementYear), scnAccounts),
+    baseYear: baseAtRet.year,
+    scenarioYear: scnAtRet.year,
+    base: buildTaxBuckets(baseAtRet, baseAccounts),
+    scenario: buildTaxBuckets(scnAtRet, scnAccounts),
   };
   const atEndOfLife: TaxTreatmentBreakdown = {
-    year: endOfLifeYear,
-    base: buildTaxBuckets(yearAt(baseYears, endOfLifeYear), baseAccounts),
-    scenario: buildTaxBuckets(yearAt(scenarioYears, endOfLifeYear), scnAccounts),
+    baseYear: baseAtEol.year,
+    scenarioYear: scnAtEol.year,
+    base: buildTaxBuckets(baseAtEol, baseAccounts),
+    scenario: buildTaxBuckets(scnAtEol, scnAccounts),
   };
 
   // ── Page-1 headline KPI strip — the metrics that improve ──
@@ -150,7 +179,26 @@ export function buildRetirementComparisonData(
   const scnDownside = endingP20(scnBundle.monteCarlo?.summary.byYear);
   const maxSpendAvailable = baseBundle.maxSpend != null && scnBundle.maxSpend != null;
 
+  const retirementAgeDelta =
+    baseRetirementAge != null && scnRetirementAge != null
+      ? scnRetirementAge - baseRetirementAge
+      : null;
+
   const kpis: KpiCard[] = [
+    {
+      // Retirement age leads the strip: it is the change the advisor made, and
+      // every card after it is a consequence of it.
+      label: "Retirement age",
+      base: baseRetirementAge == null ? "—" : String(baseRetirementAge),
+      scenario: scnRetirementAge == null ? "—" : String(scnRetirementAge),
+      delta:
+        retirementAgeDelta == null || retirementAgeDelta === 0
+          ? ""
+          : `${retirementAgeDelta > 0 ? "+" : "−"}${Math.abs(retirementAgeDelta)} ${
+              Math.abs(retirementAgeDelta) === 1 ? "yr" : "yrs"
+            }`,
+      show: baseRetirementAge != null && scnRetirementAge != null,
+    },
     {
       label: "Plan confidence",
       base: baseSuccess == null ? "—" : `${Math.round(baseSuccess * 100)}%`,

@@ -4,6 +4,7 @@
 // routes and the PDF pipeline, so no Next/DB imports here.
 import type { ClientData, ClientInfo } from "@/engine/types";
 import type { ProjectionResult } from "@/engine/projection";
+import { liquidPortfolioBoy, portfolioTotalBoy } from "@/engine/portfolio-snapshot";
 import { exactCurrency } from "@/lib/presentations/format";
 
 export interface TokenContext {
@@ -110,16 +111,26 @@ export const PLAN_TOKENS: PlanToken[] = [
     id: "net_worth",
     label: "Net worth (today)",
     category: "Balance Sheet",
+    // "Today" means the START of plan year 1 — the advisor-entered balances,
+    // before the first year of growth, savings and withdrawals runs. A
+    // projection year's `portfolioAssets` is an END-of-year snapshot, so
+    // reading it here handed the client a net worth they do not have yet AND
+    // paired it with `liabilityBalancesBoY`, which is beginning-of-year: the
+    // two sides of the subtraction were a year apart.
     resolve: safe(({ projection }) => {
       const firstYear = projection.years[0];
       const liabilities = sumValues(firstYear.liabilityBalancesBoY);
-      return exactCurrency(firstYear.portfolioAssets.total - liabilities);
+      return exactCurrency(
+        portfolioTotalBoy(firstYear, projection.years) - liabilities,
+      );
     }),
   },
   {
     id: "total_liabilities",
     label: "Total liabilities (today)",
     category: "Balance Sheet",
+    // Already beginning-of-year, and the one balance-sheet token that always
+    // was — it is the yardstick the other two now match.
     resolve: safe(({ projection }) => {
       const firstYear = projection.years[0];
       return exactCurrency(sumValues(firstYear.liabilityBalancesBoY));
@@ -129,13 +140,20 @@ export const PLAN_TOKENS: PlanToken[] = [
     id: "portfolio_assets",
     label: "Portfolio assets (today)",
     category: "Balance Sheet",
+    // Beginning-of-year-1 `liquidTotal` — the same figure the cash-flow
+    // report's "Portfolio (BoY)" column shows, not the end-of-year balance in
+    // the row beside it.
     resolve: safe(({ projection }) =>
-      exactCurrency(projection.years[0].portfolioAssets.liquidTotal),
+      exactCurrency(liquidPortfolioBoy(projection.years[0], projection.years)),
     ),
   },
+  // Cash-flow tokens are FLOWS: a full year of money moving, not a balance at
+  // a moment. They read "(this year)" rather than "(today)" because there is
+  // no point-in-time equivalent to fall back to the way the Balance Sheet
+  // tokens do.
   {
     id: "annual_income",
-    label: "Annual income (today)",
+    label: "Annual income (this year)",
     category: "Cash Flow",
     resolve: safe(({ projection }) =>
       exactCurrency(projection.years[0].totalIncome),
@@ -143,7 +161,7 @@ export const PLAN_TOKENS: PlanToken[] = [
   },
   {
     id: "annual_spending",
-    label: "Annual spending (today)",
+    label: "Annual spending (this year)",
     category: "Cash Flow",
     resolve: safe(({ projection }) =>
       exactCurrency(projection.years[0].expenses.total),
@@ -151,7 +169,7 @@ export const PLAN_TOKENS: PlanToken[] = [
   },
   {
     id: "annual_savings",
-    label: "Annual savings (today)",
+    label: "Annual savings (this year)",
     category: "Cash Flow",
     resolve: safe(({ projection }) =>
       exactCurrency(projection.years[0].savings.total),

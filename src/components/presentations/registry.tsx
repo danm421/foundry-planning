@@ -556,6 +556,11 @@ export interface PresentationPage<TData, TOptions> {
   optionsSchema: z.ZodType<TOptions>;
   summarizeOptions: (options: TOptions) => string;
   estimatePageCount: (data: TData, options: TOptions) => number;
+  /** Optional: a page that prints several differently-titled sheets names each
+   *  one here, so the Contents lists the sheet a reader is actually looking for
+   *  instead of only the first. `offset` is 0-based from this page's own start
+   *  sheet. Omitted → the Contents gets one entry, `title`, at offset 0. */
+  tocSections?: (data: TData, options: TOptions) => Array<{ title: string; offset: number }>;
   // Optional: pages without per-instance configuration (e.g., TOC) omit this.
   OptionsControl?: ComponentType<{ value: TOptions; onChange: (next: TOptions) => void }>;
   // False for framing pages (Cover, TOC) that don't render scenario-specific data.
@@ -1349,7 +1354,16 @@ export const retirementComparisonPage: PresentationPage<RetirementComparisonPage
   defaultOptions: RETIREMENT_COMPARISON_OPTIONS_DEFAULT,
   optionsSchema: retirementComparisonOptionsSchema,
   summarizeOptions: summarizeRetirementComparisonOptions,
-  estimatePageCount: () => estimateRetirementComparisonPageCount(),
+  estimatePageCount: (data) => estimateRetirementComparisonPageCount(data),
+  // Sheet two carries the spending/confidence charts and the tax-treatment
+  // table under its own heading; the Contents names it so a reader can find it.
+  tocSections: (data) =>
+    data.isEmpty
+      ? [{ title: "Retirement Comparison", offset: 0 }]
+      : [
+          { title: "Retirement Comparison", offset: 0 },
+          { title: "Retirement Comparison — detail", offset: 1 },
+        ],
   OptionsControl: RetirementComparisonOptionsControl,
   supportsScenarioOverride: false,
   requiredScenarioRefs: (o) => (o.scenarioId ? ["base", o.scenarioId] : ["base"]),
@@ -1418,7 +1432,14 @@ export const retirementSummaryPage: PresentationPage<RetirementSummaryPageData, 
   defaultOptions: RETIREMENT_SUMMARY_OPTIONS_DEFAULT,
   optionsSchema: retirementSummaryOptionsSchema,
   summarizeOptions: summarizeRetirementSummaryOptions,
-  estimatePageCount: () => estimateRetirementSummaryPageCount(),
+  estimatePageCount: (data) => estimateRetirementSummaryPageCount(data),
+  tocSections: (data) =>
+    data.isEmpty
+      ? [{ title: "Retirement Summary", offset: 0 }]
+      : [
+          { title: "Retirement Summary", offset: 0 },
+          { title: "Income, Spending & Funding", offset: 1 },
+        ],
   supportsScenarioOverride: true,
   buildData: (ctx, options) => buildRetirementSummaryData(ctx, options),
   renderPdf: (input) => <RetirementSummaryPagePdf {...input} />,

@@ -676,7 +676,7 @@ export default function ReviewWizard({
         {currentTab === "incomes" && (
           <ReviewStepIncomes
             incomes={incomes}
-            onChange={(i) => setIncomes(i as Annotated<ExtractedIncome>[])}
+            onChange={(i) => setIncomes(i)}
             defaultStartYear={defaultStartYear}
             defaultEndYear={defaultEndYear}
             milestones={milestones}

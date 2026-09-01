@@ -730,6 +730,7 @@ const CHART_SHEETS: PlanStoryPageData = {
           federalOrdinary: 40_000 + i * 500,
           capGains: 8_000,
           state: 12_000,
+          payroll: 0,
           total: 60_000 + i * 500,
         })),
       },

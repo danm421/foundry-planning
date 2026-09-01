@@ -1230,7 +1230,7 @@ describe("a chartWithProse chapter", () => {
   });
 
   it("draws the tax chart on the tax chapter and nothing on a chapter with no chart", () => {
-    const tax = [{ year: 2026, federalOrdinary: 4, capGains: 1, state: 1, total: 6 }];
+    const tax = [{ year: 2026, federalOrdinary: 4, capGains: 1, state: 1, payroll: 0, total: 6 }];
     const data = buildPlanStoryData(
       deckCtx(input({ hasProposal: true, charts: { portfolio: [], tax, estate: null } })),
       PROPOSED,

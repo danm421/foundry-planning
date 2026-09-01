@@ -139,15 +139,19 @@ export async function generateRetirementComparisonAi(
   ]);
 
   const client = scn.effectiveTree.client;
-  const retirementYear =
-    new Date(client.dateOfBirth).getUTCFullYear() + client.retirementAge;
+
+  // Each plan retires in its own year — a scenario that moves the retirement
+  // age must not date the base plan's portfolio by the scenario's year.
+  const retirementYearOf = (c: { dateOfBirth: string; retirementAge: number }) =>
+    new Date(c.dateOfBirth).getUTCFullYear() + c.retirementAge;
 
   const metrics = buildRetirementComparisonMetrics({
     baseYears: base.projection.years,
     scenarioYears: scn.projection.years,
     baseSuccess: base.successRate,
     scenarioSuccess: scn.successRate,
-    retirementYear,
+    baseRetirementYear: retirementYearOf(base.effectiveTree.client),
+    scenarioRetirementYear: retirementYearOf(scn.effectiveTree.client),
   });
 
   // Change descriptions and the (cold-cache-expensive) max-spend solves are

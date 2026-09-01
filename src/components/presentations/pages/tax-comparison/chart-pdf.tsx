@@ -1,11 +1,13 @@
 import { View, Svg, G, Rect, Polyline, Text as SvgText, Text } from "@react-pdf/renderer";
 import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
 import type { TaxComparisonChartYear } from "@/lib/presentations/pages/tax-comparison/view-model";
+import { bandLabelIndices } from "@/lib/presentations/charts/axis";
 
 const SEGMENTS: Array<{ key: keyof TaxComparisonChartYear; label: string; color: string }> = [
   { key: "federalOrdinary", label: "Federal (ordinary)", color: T.crit },
   { key: "capGains", label: "Capital gains", color: T.accent },
   { key: "state", label: "State", color: T.steel },
+  { key: "payroll", label: "Payroll", color: T.ink3 },
 ];
 
 export function TaxComparisonChartPdf({ years }: { years: TaxComparisonChartYear[] }) {
@@ -19,6 +21,12 @@ export function TaxComparisonChartPdf({ years }: { years: TaxComparisonChartYear
   // Span both series so the base line never clips above the scenario stacks.
   const maxTotal = Math.max(1, ...years.map((y) => Math.max(y.total, y.baseTotal)));
   const labelEvery = Math.max(1, Math.ceil(n / 8));
+  // A 3-character label is about 12pt of 6pt type, and two need air between
+  // them. The evenly spaced run used to stop wherever it landed, so the last
+  // bars had no year against them.
+  const labelled = new Set(
+    bandLabelIndices(years.length, { every: labelEvery, minGap: Math.ceil(16 / slot) }),
+  );
   const linePoints = years
     .map((y, i) => {
       const cx = leftPad + i * slot + slot / 2;
@@ -42,7 +50,7 @@ export function TaxComparisonChartPdf({ years }: { years: TaxComparisonChartYear
                 yCursor -= segH;
                 return <Rect key={seg.key} x={x} y={yCursor} width={barWidth} height={segH} fill={seg.color} />;
               })}
-              {i % labelEvery === 0 ? (
+              {labelled.has(i) ? (
                 <SvgText x={x + barWidth / 2} y={plotH + 12} textAnchor="middle" style={{ fontSize: 6, fill: T.ink2 }}>
                   {`'${String(y.year).slice(2)}`}
                 </SvgText>

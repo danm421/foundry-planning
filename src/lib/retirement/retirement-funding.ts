@@ -4,6 +4,12 @@
 // retirement year's cash toward expenses into Social Security, other income,
 // RMDs, and supplemental withdrawals (by tax bucket), then sums retirement→EOL.
 //
+// Each source is capped at what it actually paid for: a forced RMD larger than
+// the year's expenses gets reinvested, not spent, so counting it in full made
+// the funding bar total more than the retirement it funds. The surplus is
+// reported separately. Invariant: the seven sources sum to `totalFunded`, and
+// `totalFunded + shortfall === totalSpending`.
+//
 // Withdrawal bucketing: the engine does not expose the designated-Roth slice
 // inside a 401k/403b draw, so those accounts count fully as pre-tax. Roth =
 // roth_ira accounts only.
@@ -38,8 +44,11 @@ export interface FundingBreakdown {
   shortfall: number;
   /** Sum of totalExpenses across retirement years. */
   totalSpending: number;
-  /** Everything funded (all sources except shortfall). */
+  /** Everything the sources actually funded. Equals totalSpending - shortfall. */
   totalFunded: number;
+  /** Inflow that arrived but was not needed to meet the year's expenses —
+   *  mostly forced RMDs, which the engine sweeps back into the portfolio. */
+  reinvestedSurplus: number;
 }
 
 export function lifetimeFunding(
@@ -53,7 +62,7 @@ export function lifetimeFunding(
   const f: FundingBreakdown = {
     socialSecurity: 0, otherIncome: 0, rmds: 0,
     withdrawalsCash: 0, withdrawalsTaxable: 0, withdrawalsPreTax: 0, withdrawalsRoth: 0,
-    shortfall: 0, totalSpending: 0, totalFunded: 0,
+    shortfall: 0, totalSpending: 0, totalFunded: 0, reinvestedSurplus: 0,
   };
 
   for (const y of years) {
@@ -70,17 +79,32 @@ export function lifetimeFunding(
         case "roth": wRoth += amt; break;
       }
     }
-    const funded = ss + other + rmds + wCash + wTax + wPre + wRoth;
-    f.socialSecurity += ss;
-    f.otherIncome += other;
-    f.rmds += rmds;
-    f.withdrawalsCash += wCash;
-    f.withdrawalsTaxable += wTax;
-    f.withdrawalsPreTax += wPre;
-    f.withdrawalsRoth += wRoth;
+    const inflow = ss + other + rmds + wCash + wTax + wPre + wRoth;
+
+    // Draw each source against the year's expenses in the order the engine
+    // supplies the cash: income first, then the RMD it is forced to distribute,
+    // then discretionary withdrawals. Anything left over never funded spending
+    // — it was reinvested — so counting it would make the funding bar total
+    // more than the retirement it is supposed to pay for.
+    let remaining = y.totalExpenses;
+    const draw = (amount: number) => {
+      const used = Math.min(remaining, amount);
+      remaining -= used;
+      return used;
+    };
+
+    f.socialSecurity += draw(ss);
+    f.otherIncome += draw(other);
+    f.rmds += draw(rmds);
+    f.withdrawalsCash += draw(wCash);
+    f.withdrawalsTaxable += draw(wTax);
+    f.withdrawalsPreTax += draw(wPre);
+    f.withdrawalsRoth += draw(wRoth);
+
     f.totalSpending += y.totalExpenses;
-    f.totalFunded += funded;
-    f.shortfall += Math.max(0, y.totalExpenses - funded);
+    f.totalFunded += Math.min(y.totalExpenses, inflow);
+    f.shortfall += Math.max(0, y.totalExpenses - inflow);
+    f.reinvestedSurplus += Math.max(0, inflow - y.totalExpenses);
   }
   return f;
 }

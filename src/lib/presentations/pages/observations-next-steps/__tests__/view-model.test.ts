@@ -8,7 +8,9 @@ import { buildObservationsPageData, type ObservationsRowInput } from "../view-mo
 import { OBSERVATIONS_PAGE_OPTIONS_DEFAULT } from "../options-schema";
 
 // Fixture ctx mirrors src/lib/plan-text/__tests__/tokens.test.ts — net_worth
-// resolves to $2,100,000 (2,500,000 portfolio assets - 400,000 liabilities).
+// resolves to $1,750,000 (2,150,000 of beginning-of-year assets - 400,000 of
+// liabilities). The end-of-year buckets sit above the ledgers' beginning
+// values so the "(today)" tokens can't quietly pick up year 1's growth.
 const clientData = {
   client: {
     firstName: "Sam",
@@ -27,7 +29,16 @@ const firstYear = {
   totalIncome: 150000,
   expenses: { total: 120000 },
   savings: { total: 30000 },
-  portfolioAssets: { total: 2500000, liquidTotal: 1800000 },
+  portfolioAssets: {
+    taxable: { a1: 1800000 },
+    realEstate: { h1: 700000 },
+    total: 2500000,
+    liquidTotal: 1800000,
+  },
+  accountLedgers: {
+    a1: { beginningValue: 1500000, endingValue: 1800000 },
+    h1: { beginningValue: 650000, endingValue: 700000 },
+  },
   liabilityBalancesBoY: { l1: 400000 },
   hypotheticalEstateTax: {
     year: 2026,
@@ -111,7 +122,7 @@ describe("buildObservationsPageData", () => {
     expect(withCompleted.nextSteps[0].status).toBe("done");
   });
 
-  it("resolves a {{net_worth}} token in an observation body to $2,100,000 in the parsed blocks", () => {
+  it("resolves a {{net_worth}} token in an observation body to $1,750,000 in the parsed blocks", () => {
     const data = buildObservationsPageData({
       rows,
       ctx,
@@ -120,7 +131,7 @@ describe("buildObservationsPageData", () => {
     const estateGroup = data.topicGroups.find((g) => g.topic === "estate");
     expect(estateGroup).toBeDefined();
     const text = flattenText(estateGroup!.items[0]);
-    expect(text).toContain("$2,100,000");
+    expect(text).toContain("$1,750,000");
   });
 
   it("filters topic groups by the topics option", () => {

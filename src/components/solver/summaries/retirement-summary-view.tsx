@@ -16,7 +16,7 @@ import {
 } from "chart.js";
 import { Bar, Chart } from "react-chartjs-2";
 import type { RetirementSummaryPageData } from "@/lib/presentations/pages/retirement-summary/view-model";
-import { fmtUsd, fmtUsdMonthly } from "@/lib/presentations/pages/retirement-summary/aggregate";
+import { fmtUsd, fmtUsdMonthly, printsAsZero } from "@/lib/presentations/pages/retirement-summary/aggregate";
 import type { PortfolioBar } from "@/lib/presentations/pages/retirement-summary/aggregate";
 import type { SsClient } from "@/lib/presentations/pages/retirement-summary/social-security";
 import type { ChartSpec } from "@/lib/presentations/charts/types";
@@ -293,7 +293,7 @@ export function RetirementSummaryView({ data }: { data: RetirementSummaryPageDat
     return <SummaryEmpty message="No data for this scenario yet." />;
   }
 
-  const { kpis, bars, liquid, byType, byTaxType, funding, fundingSources, socialSecurity, living, otherExpenses, income, transactions, narrative, cashFlowChartSpec } = data;
+  const { kpis, bars, liquid, byType, byTaxType, funding, fundingSources, socialSecurity, living, otherExpenses, income, incomeEmptyCopy, transactions, narrative, fundingNarrative, cashFlowChartSpec } = data;
 
   const palette = dataPalette(theme);
 
@@ -316,7 +316,8 @@ export function RetirementSummaryView({ data }: { data: RetirementSummaryPageDat
   const fundingSegments: SplitSegment[] = fundingRows.map((r, i) => ({
     label: r.label,
     value: r.value,
-    color: FUNDING_COLORS[i % FUNDING_COLORS.length] ?? palette.grey,
+    // The unfunded remainder is a gap, not a source — grey, never a source colour.
+    color: r.unfunded ? palette.grey : FUNDING_COLORS[i % FUNDING_COLORS.length] ?? palette.grey,
   }));
 
   const hasSs = socialSecurity.client != null || socialSecurity.spouse != null;
@@ -409,12 +410,21 @@ export function RetirementSummaryView({ data }: { data: RetirementSummaryPageDat
                     label: <span className="font-semibold text-ink">Total cost of retirement</span>,
                     value: <span className="font-semibold text-ink tabular-nums">{fmtUsd(funding.totalSpending)}</span>,
                   },
-                  ...(funding.shortfall > 0
-                    ? [{ label: <span className="text-crit">Shortfall (unfunded)</span>, value: <span className="tabular-nums text-crit">{fmtUsd(funding.shortfall)}</span> }]
+                  // Forced RMD cash the plan never had to spend — without it
+                  // the bar reads smaller than the client's distributions.
+                  // Guarded on the printed figure — see printsAsZero.
+                  ...(!printsAsZero(funding.reinvestedSurplus)
+                    ? [{ label: <span className="text-ink-3">Reinvested surplus (not spent)</span>, value: <span className="tabular-nums text-ink-3">{fmtUsd(funding.reinvestedSurplus)}</span> }]
                     : []),
                 ]}
               />
             </div>
+            {/* The funding takeaways caption the bar they describe, the way the
+                PDF's second sheet does — they are deliberately not in
+                `narrative`, which belongs to the assets/outlook section. */}
+            {fundingNarrative.map((line, i) => (
+              <p key={i} className="mt-3 text-[12px] leading-snug text-ink-3">{line}</p>
+            ))}
           </div>
         </SummarySection>
       ) : null}
@@ -448,14 +458,18 @@ export function RetirementSummaryView({ data }: { data: RetirementSummaryPageDat
                 { key: "value", header: "Amount", align: "right" },
               ]}
               rows={[
-                { label: "Living — today", value: fmtUsd(living.today) },
-                { label: "Living — at retirement", value: fmtUsd(living.retirement) },
+                { label: "Living — today's $", value: fmtUsd(living.today) },
+                { label: "Living — at retirement", value: `→ ${fmtUsd(living.retirement)}` },
                 ...(otherExpenses.insurance > 0 ? [{ label: "Insurance", value: fmtUsd(otherExpenses.insurance) }] : []),
                 ...(otherExpenses.realEstate > 0 ? [{ label: "Property tax", value: fmtUsd(otherExpenses.realEstate) }] : []),
                 ...(otherExpenses.liabilities > 0 ? [{ label: "Debt service", value: fmtUsd(otherExpenses.liabilities) }] : []),
                 ...(otherExpenses.other > 0 ? [{ label: "Other", value: fmtUsd(otherExpenses.other) }] : []),
               ]}
             />
+            <p className="mt-2 text-[11px] text-ink-3">
+              Living is the retirement budget, not current spending: today&apos;s dollars, then
+              the same budget at retirement.
+            </p>
           </div>
         </SummarySection>
 
@@ -471,7 +485,7 @@ export function RetirementSummaryView({ data }: { data: RetirementSummaryPageDat
                 rows={income.map((r) => ({ label: r.label, amount: fmtUsd(r.amount) }))}
               />
             ) : (
-              <p className="text-[12px] text-ink-3">No income streams continue past retirement.</p>
+              <p className="text-[12px] text-ink-3">{incomeEmptyCopy}</p>
             )}
 
             {transactions.length > 0 ? (

@@ -4,6 +4,7 @@ import { dataLight } from "@/brand";
 import { niceAxis, fmtAxisUsd, MONO } from "./chart-axis";
 import { ChartLegend } from "./chart-legend-pdf";
 import type { OverlayBar } from "@/lib/presentations/pages/retirement-comparison/types";
+import { bandLabelIndices } from "@/lib/presentations/charts/axis";
 
 const FLOOR = dataLight.blue;   // #2d61aa — common to both
 const AHEAD = dataLight.green;  // #1f8d5f — scenario ahead
@@ -38,6 +39,16 @@ export function OverlayBarsPdf({ bars, retirementYear }: { bars: OverlayBar[]; r
   const presentSegs = SEGMENTS.filter((seg) => bars.some((b) => b[seg.key] > 0));
   const lastIdx = bars.length - 1;
   const retIdx = bars.findIndex((b) => b.year === retirementYear);
+  // The retirement year is pinned wherever it falls, so it used to land beside
+  // a regular label and print `'49'50`; the last bar is pinned too, so the axis
+  // reaches the data. A 3-character label is about 12pt of 6pt mono.
+  const labelled = new Set(
+    bandLabelIndices(bars.length, {
+      every: labelEvery,
+      minGap: Math.ceil(16 / slot),
+      pinned: retIdx >= 0 ? [retIdx] : [],
+    }),
+  );
 
   return (
     <View>
@@ -71,7 +82,7 @@ export function OverlayBarsPdf({ bars, retirementYear }: { bars: OverlayBar[]; r
                   {fmtAxisUsd(totals[i])}
                 </SvgText>
               ) : null}
-              {i % labelEvery === 0 || isRet ? (
+              {labelled.has(i) ? (
                 <SvgText x={x + barWidth / 2} y={plotBottom + 10} textAnchor="middle" style={{ fontSize: 6, fill: isRet ? T.ink : T.ink3, fontWeight: isRet ? 600 : 400, fontFamily: MONO }}>
                   {`'${String(b.year).slice(2)}`}
                 </SvgText>

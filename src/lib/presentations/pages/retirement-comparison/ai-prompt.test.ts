@@ -13,7 +13,8 @@ describe("buildRetirementComparisonAiPrompt", () => {
       { label: "Ending Portfolio Assets", base: "$4.1M", scenario: "$5.3M", deltaLabel: "+$1.2M", direction: 1 as const },
     ],
     matrix: {
-      retirementYear: 2028, endOfLifeYear: 2060,
+      baseRetirementYear: 2030, scenarioRetirementYear: 2028,
+      baseEndYear: 2060, scenarioEndYear: 2060,
       baseAtRetirement: { total: 4_100_000, cash: 1, retirement: 1, taxable: 1 },
       scenarioAtRetirement: { total: 4_300_000, cash: 1, retirement: 1, taxable: 1 },
       baseAtEnd: { total: 2_000_000, cash: 1, retirement: 1, taxable: 1 },
@@ -44,7 +45,8 @@ const kpis: ComparisonKpi[] = [
   { label: "Plan Confidence", base: "73%", scenario: "91%", deltaLabel: "+18 pts", direction: 1 },
 ];
 const matrix: PortfolioMatrix = {
-  retirementYear: 2040, endOfLifeYear: 2070,
+  baseRetirementYear: 2045, scenarioRetirementYear: 2040,
+  baseEndYear: 2070, scenarioEndYear: 2070,
   baseAtRetirement: { total: 1, cash: 0, retirement: 0, taxable: 0 },
   scenarioAtRetirement: { total: 1, cash: 0, retirement: 0, taxable: 0 },
   baseAtEnd: { total: 1, cash: 0, retirement: 0, taxable: 0 },

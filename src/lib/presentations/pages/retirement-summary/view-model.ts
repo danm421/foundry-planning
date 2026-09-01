@@ -6,7 +6,7 @@ import { buildCashFlowPageData } from "../cash-flow/view-model";
 import {
   retirementYearOf, liquidThreePoints, portfolioBars, assetsByType, assetsByTaxType,
   livingExpensesTodayVsRetirement, otherRetirementExpenses, incomeInRetirement,
-  assetTransactionsInRetirement, fmtPct,
+  assetTransactionsInRetirement, fmtPct, printsAsZero,
   type PortfolioBar, type AssetsByType, type AssetsByTaxType, type LiquidThreePoints,
   type LivingExpenseCompare, type OtherRetirementExpenses, type RetirementIncomeRow, type AssetTxnRow,
 } from "./aggregate";
@@ -14,9 +14,12 @@ import { buildSocialSecurity, type SsBreakdown, type SsClient } from "./social-s
 import { lifetimeFunding, type FundingBreakdown } from "@/lib/retirement/retirement-funding";
 import { buildRetirementNarrative } from "./narrative";
 
-/** Lifetime funding sources in display order — the single source of truth for
- *  both the dominant-source narrative signal and the page's funding bar. */
-export interface FundingSource { label: string; value: number; }
+/** One segment of the lifetime funding bar, in display order — the single
+ *  source of truth for both the dominant-source narrative signal and the page's
+ *  funding bar. The trailing `unfunded` segment is the shortfall, not a source:
+ *  it is there so the bar accounts for the whole cost of retirement and the
+ *  percentage it shows is the same percentage the narrative prints. */
+export interface FundingSource { label: string; value: number; unfunded?: boolean; }
 
 const FUNDING_KEYS: Array<{ key: keyof FundingBreakdown; label: string }> = [
   { key: "socialSecurity", label: "Social Security" },
@@ -64,10 +67,30 @@ export interface RetirementSummaryPageData {
   living: LivingExpenseCompare;
   otherExpenses: OtherRetirementExpenses;
   income: RetirementIncomeRow[];
+  /** What to print when `income` is empty. Social Security is deliberately
+   *  excluded from `income` because it has its own panel — so the flat "no
+   *  income streams continue past retirement" printed next to a populated
+   *  Social Security panel, contradicting it. */
+  incomeEmptyCopy: string;
   transactions: AssetTxnRow[];
+  /** Takeaways for the assets/outlook sheet. */
   narrative: string[];
+  /** Takeaways about how retirement is paid for — captioned under the funding
+   *  bar on the income/spending sheet, never repeated in `narrative`. */
+  fundingNarrative: string[];
   cashFlowChartSpec: ChartSpec;
 }
+
+/** The compact cash-flow panel on the funding sheet.
+ *
+ *  194 = 8 (top) + 130 (plot) + 56 (bottom). The plot is the same 130pt the
+ *  earlier 210pt panel drew; the 16pt that went was top margin, whose only
+ *  tenants were the marker labels (drawn at y = -4) that this panel drops.
+ *  The funding sheet is the deck's tightest page and needs that room.
+ *
+ *  Exported because the pagination guard (render-smoke.test.tsx) builds its own
+ *  fixture spec: measuring a box the deck does not print is measuring nothing. */
+export const FUNDING_CHART_BOX = { width: 500, height: 194, marginTop: 8 } as const;
 
 export function buildRetirementSummaryData(
   ctx: BuildDataContext,
@@ -84,11 +107,21 @@ export function buildRetirementSummaryData(
   const byType = assetsByType(years, retYear);
   const byTaxType = assetsByTaxType(years, clientData, retYear);
   const funding = lifetimeFunding(years, clientData.accounts, retYear);
-  const fundingSources: FundingSource[] = FUNDING_KEYS.map((f) => ({ label: f.label, value: funding[f.key] as number }));
+  const sources: FundingSource[] = FUNDING_KEYS.map((f) => ({ label: f.label, value: funding[f.key] as number }));
+  // Sources are capped at what they actually funded, so they sum to
+  // totalSpending − shortfall. Adding the shortfall back closes the bar on the
+  // cost of retirement, which is the denominator the narrative uses.
+  const fundingSources: FundingSource[] = printsAsZero(funding.shortfall)
+    ? sources
+    : [...sources, { label: "Unfunded", value: funding.shortfall, unfunded: true }];
   const socialSecurity = buildSocialSecurity(clientData, nowYear, ctx.clientName, ctx.spouseName ?? "Spouse");
   const living = livingExpensesTodayVsRetirement(years, clientData, retYear);
   const otherExpenses = otherRetirementExpenses(years, retYear);
   const income = incomeInRetirement(years, clientData, retYear);
+  const hasSocialSecurity = socialSecurity.client != null || socialSecurity.spouse != null;
+  const incomeEmptyCopy = hasSocialSecurity
+    ? "Social Security is the only income that continues past retirement — see the panel to the left."
+    : "No income streams continue past retirement.";
   const transactions = assetTransactionsInRetirement(years, retYear);
 
   // Cash-flow chart for page 2: reuse the standalone Cash Flow page builder
@@ -105,20 +138,21 @@ export function buildRetirementSummaryData(
   });
   const cashFlowChartSpec: ChartSpec = {
     ...cf.chartSpec,
-    width: 500,
-    height: 210,
+    width: FUNDING_CHART_BOX.width,
+    height: FUNDING_CHART_BOX.height,
     // The chart is sliced to [retirement..end-of-life], so both timeline markers land
     // on the domain edges: the retirement line duplicates the leftmost bar and the
     // end-of-life label clips past the right edge. Drop both for the compact page-2 panel.
     markers: cf.chartSpec.markers.filter(
       (m) => m.iconKind !== "retirement" && m.iconKind !== "endOfLife",
     ),
+    margin: { ...cf.chartSpec.margin, top: FUNDING_CHART_BOX.marginTop },
   };
 
   const mcRate = ctx.monteCarlo?.summary.successRate ?? null;
 
   // Narrative inputs.
-  const dominant = fundingSources.reduce<FundingSource | null>(
+  const dominant = sources.reduce<FundingSource | null>(
     (best, c) => (best == null || c.value > best.value ? c : best), null);
   const dominantSource =
     dominant && funding.totalSpending > 0
@@ -155,6 +189,8 @@ export function buildRetirementSummaryData(
       totalSpend: funding.totalSpending,
     },
     liquid, bars, byType, byTaxType, funding, fundingSources, socialSecurity,
-    living, otherExpenses, income, transactions, narrative, cashFlowChartSpec,
+    living, otherExpenses, income, incomeEmptyCopy, transactions,
+    narrative: narrative.outlook, fundingNarrative: narrative.funding,
+    cashFlowChartSpec,
   };
 }

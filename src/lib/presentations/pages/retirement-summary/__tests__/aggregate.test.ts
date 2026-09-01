@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { Account, ClientData, ProjectionYear } from "@/engine/types";
 import {
   fmtUsd, fmtPct, fmtUsdMonthly, retirementYearOf, liquidThreePoints, portfolioBars,
-  assetsByTaxType, livingExpensesTodayVsRetirement,
+  assetsByType, assetsByTaxType, livingExpensesTodayVsRetirement, printsAsZero,
 } from "../aggregate";
 
 function pa(over: Partial<ProjectionYear["portfolioAssets"]>) {
@@ -34,6 +34,18 @@ describe("fmtUsdMonthly", () => {
   it("keeps full dollars so the SS ladder gradient stays visible", () => {
     expect(fmtUsdMonthly(2_800)).toBe("$2,800");
     expect(fmtUsdMonthly(1_960.4)).toBe("$1,960");
+  });
+});
+
+describe("printsAsZero", () => {
+  // The guard on every "only show this if there is one" figure. `x > 0` is not
+  // that test: fmtUsd rounds sub-dollar residue to "$0", and a page that warns
+  // about a shortfall of "$0" reads as broken.
+  it("is true for anything fmtUsd renders as $0", () => {
+    expect(printsAsZero(0)).toBe(true);
+    expect(printsAsZero(0.34)).toBe(true);
+    expect(printsAsZero(1)).toBe(false);
+    expect(printsAsZero(250_000)).toBe(false);
   });
 });
 
@@ -106,7 +118,10 @@ describe("assetsByTaxType", () => {
     ];
     const cd = { accounts, client: { dateOfBirth: "1966-01-01", retirementAge: 65 } } as ClientData;
     const years = [yr(2031, {
-      portfolioAssets: pa({}),
+      portfolioAssets: pa({
+        retirement: { roth: 100_000, k: 200_000 }, retirementTotal: 300_000,
+        taxable: { brk: 300_000 }, taxableTotal: 300_000,
+      }),
       accountLedgers: {
         roth: { endingValue: 100_000, rothValueEoY: 0 },
         k: { endingValue: 200_000, rothValueEoY: 50_000 },
@@ -114,6 +129,72 @@ describe("assetsByTaxType", () => {
       } as never,
     })];
     expect(assetsByTaxType(years, cd, 2031)).toEqual({ roth: 150_000, preTax: 150_000, taxable: 300_000, total: 600_000 });
+  });
+
+  // A9: cash is a taxable account. Dropping it made the "by tax type" column of
+  // the retirement-summary page total $4.9M against the "by type" column's
+  // $8.6M — the same snapshot, two answers, on one page.
+  it("counts cash as taxable", () => {
+    const accounts: Account[] = [
+      { id: "chk", category: "cash", subType: "checking" } as Account,
+      { id: "brk", category: "taxable", subType: "brokerage" } as Account,
+    ];
+    const cd = { accounts, client: { dateOfBirth: "1966-01-01", retirementAge: 65 } } as ClientData;
+    const years = [yr(2031, {
+      portfolioAssets: pa({
+        cash: { chk: 3_600_000 }, cashTotal: 3_600_000,
+        taxable: { brk: 400_000 }, taxableTotal: 400_000,
+      }),
+      accountLedgers: {
+        chk: { endingValue: 3_600_000 },
+        brk: { endingValue: 400_000 },
+      } as never,
+    })];
+    expect(assetsByTaxType(years, cd, 2031)).toEqual({
+      roth: 0, preTax: 0, taxable: 4_000_000, total: 4_000_000,
+    });
+  });
+
+  // A9 second order: the two columns read different sources — `assetsByType`
+  // takes the engine's owned-share roll-ups, `assetsByTaxType` took whole-account
+  // ledgers. A half-owned account made them disagree even with cash counted.
+  it("totals to assetsByType — it reads the same owned shares", () => {
+    const accounts: Account[] = [
+      { id: "chk", category: "cash", subType: "checking" } as Account,
+      { id: "k", category: "retirement", subType: "401k" } as Account,
+    ];
+    const cd = { accounts, client: { dateOfBirth: "1966-01-01", retirementAge: 65 } } as ClientData;
+    const years = [yr(2031, {
+      portfolioAssets: pa({
+        cash: { chk: 50_000 }, cashTotal: 50_000,          // 50% owned of a $100k account
+        retirement: { k: 100_000 }, retirementTotal: 100_000, // 50% owned of a $200k account
+      }),
+      accountLedgers: {
+        chk: { endingValue: 100_000 },
+        k: { endingValue: 200_000, rothValueEoY: 50_000 },
+      } as never,
+    })];
+    const byTax = assetsByTaxType(years, cd, 2031);
+    const byType = assetsByType(years, 2031);
+    expect(byTax.total).toBe(byType.total);
+    // The Roth slice scales with the owned share too: 50% of $50k.
+    expect(byTax).toEqual({ roth: 25_000, preTax: 75_000, taxable: 50_000, total: 150_000 });
+  });
+
+  // An account the projection creates mid-flight is in the portfolio buckets but
+  // not in `clientData.accounts`. It has to land somewhere, or the column silently
+  // shrinks; pre-tax is the conservative bucket for an unknown retirement account.
+  it("keeps accounts absent from clientData in the total", () => {
+    const cd = { accounts: [], client: { dateOfBirth: "1966-01-01", retirementAge: 65 } } as unknown as ClientData;
+    const years = [yr(2031, {
+      portfolioAssets: pa({
+        retirement: { mystery: 10_000 }, retirementTotal: 10_000,
+      }),
+      accountLedgers: { mystery: { endingValue: 10_000 } } as never,
+    })];
+    expect(assetsByTaxType(years, cd, 2031)).toEqual({
+      roth: 0, preTax: 10_000, taxable: 0, total: 10_000,
+    });
   });
 });
 

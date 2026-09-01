@@ -50,6 +50,33 @@ describe("buildAllocationDonutSpec", () => {
     expect(spec.legend[0].pct).toBeCloseTo(0.75);
   });
 
+  // `portfolioToNormalized` hands `byAssetClass` over sorted by VALUE
+  // descending, while the comparison table beside the donut sorts by
+  // sortOrder — so one page listed the same class in two positions.
+  it("orders class segments by sortOrder, not by the order the source supplied", () => {
+    const byValueDesc = {
+      byAssetClass: [
+        { id: "eq", name: "US Equity", sortOrder: 3, value: 60, assetType: "equities" as const },
+        { id: "reit", name: "REIT", sortOrder: 1, value: 30, assetType: "equities" as const },
+        { id: "bd", name: "Bonds", sortOrder: 0, value: 10, assetType: "taxable_bonds" as const },
+      ],
+      byAssetType: [
+        { id: "equities" as const, label: "Equities", value: 90 },
+        { id: "taxable_bonds" as const, label: "Taxable Bonds", value: 10 },
+      ],
+      unallocatedValue: 0,
+    };
+    const spec = buildAllocationDonutSpec(byValueDesc, "detailed");
+    expect(spec.legend.map((l) => l.label)).toEqual(["Bonds", "REIT", "US Equity"]);
+    // The ring the legend describes carries the same order.
+    expect(spec.rings[0].segments.map((s) => s.label)).toEqual(["Bonds", "REIT", "US Equity"]);
+  });
+
+  it("keeps Unallocated last even though it has no sortOrder", () => {
+    const spec = buildAllocationDonutSpec({ ...household, unallocatedValue: 50 }, "detailed");
+    expect(spec.legend.at(-1)?.label).toBe("Unallocated");
+  });
+
   it("builds two nested rings for the combined view", () => {
     const spec = buildAllocationDonutSpec(household, "combined");
     expect(spec.rings).toHaveLength(2);

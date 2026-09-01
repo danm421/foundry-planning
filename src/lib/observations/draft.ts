@@ -93,10 +93,21 @@ export function buildObservationsFacts(ctx: TokenContext): string {
     `Filing status: ${client.filingStatus}; residence state: ${clientData.planSettings.residenceState ?? "not set"}`,
   );
 
-  lines.push(`Year-1 annual income: ${fig(values.annual_income)} (token {{annual_income}})`);
-  lines.push(`Year-1 annual spending: ${fig(values.annual_spending)} (token {{annual_spending}})`);
-  lines.push(`Year-1 annual savings: ${fig(values.annual_savings)} (token {{annual_savings}})`);
+  // Cash-flow figures are FLOWS — a whole year of money moving — while the
+  // balance-sheet figures below are point-in-time balances as of today. Saying
+  // so keeps the model from writing "currently earning" about a number that
+  // only exists once the year is over.
+  lines.push(
+    `Year-1 annual income (full-year total): ${fig(values.annual_income)} (token {{annual_income}})`,
+  );
+  lines.push(
+    `Year-1 annual spending (full-year total): ${fig(values.annual_spending)} (token {{annual_spending}})`,
+  );
+  lines.push(
+    `Year-1 annual savings (full-year total): ${fig(values.annual_savings)} (token {{annual_savings}})`,
+  );
 
+  lines.push("Balance sheet as of today (before any of year 1's growth or savings):");
   lines.push(`Portfolio assets (today): ${fig(values.portfolio_assets)} (token {{portfolio_assets}})`);
   lines.push(`Net worth (today): ${fig(values.net_worth)} (token {{net_worth}})`);
   lines.push(`Total liabilities (today): ${fig(values.total_liabilities)} (token {{total_liabilities}})`);
@@ -111,9 +122,14 @@ export function buildObservationsFacts(ctx: TokenContext): string {
   );
 
   if (clientData.liabilities.length > 0) {
-    lines.push("Liabilities:");
+    // Itemize at the beginning-of-year balance, which is what
+    // {{total_liabilities}} sums. `l.balance` is the advisor's as-of figure
+    // from whenever it was entered, so quoting it made the individual loans
+    // disagree with the total the model was told to cite beside them.
+    lines.push("Liabilities (today):");
     for (const l of clientData.liabilities) {
-      lines.push(`  - ${l.name}: ${exactCurrency(l.balance)}`);
+      const boy = firstYear.liabilityBalancesBoY?.[l.id];
+      lines.push(`  - ${l.name}: ${exactCurrency(boy ?? l.balance)}`);
     }
   }
 

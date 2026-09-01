@@ -28,10 +28,11 @@ function row(year: number, marginalRate: number): TaxBracketRow {
 }
 
 // Minimal ProjectionYear stub carrying only the tax fields these helpers read.
-function yr(federal: number, state: number, cg: number, total: number, gross: number): ProjectionYear {
+// `total` is the engine's own totalTax: federal + state + payroll (FICA).
+function yr(federal: number, state: number, cg: number, total: number, gross: number, fica = 0): ProjectionYear {
   return {
     taxResult: {
-      flow: { totalFederalTax: federal, stateTax: state, capitalGainsTax: cg, totalTax: total },
+      flow: { totalFederalTax: federal, stateTax: state, capitalGainsTax: cg, totalTax: total, fica },
       income: { grossTotalIncome: gross },
     },
   } as unknown as ProjectionYear;
@@ -68,6 +69,37 @@ describe("computeLifetimeTotals", () => {
     expect(t.lifetimeTotal).toBe(0);
     expect(t.effectiveRate).toBe(0);
   });
+
+  // A3: the KPI strip renders these four side by side under one total. Capital
+  // gains tax is a SLICE of totalFederalTax, and payroll tax was in the total
+  // but itemized nowhere — so the four tiles read $5.9M + $1.6M + $0 against a
+  // stated $8.2M. The parts have to be disjoint and they have to add up.
+  it("splits federal into ordinary + cap gains and itemizes payroll, so the parts sum to the total", () => {
+    const years = [
+      // federal 10,000 (of which 1,000 is cap gains) + state 2,000 + FICA 3,000
+      yr(10_000, 2_000, 1_000, 15_000, 100_000, 3_000),
+      yr(20_000, 3_000, 5_000, 27_000, 150_000, 4_000),
+    ];
+    const t = computeLifetimeTotals(years);
+    expect(t.lifetimeFederalOrdinary).toBe(24_000); // 30,000 − 6,000
+    expect(t.lifetimeCapGains).toBe(6_000);
+    expect(t.lifetimeState).toBe(5_000);
+    expect(t.lifetimePayroll).toBe(7_000);
+    expect(t.lifetimeTotal).toBe(42_000);
+    expect(
+      t.lifetimeFederalOrdinary + t.lifetimeCapGains + t.lifetimeState + t.lifetimePayroll,
+    ).toBe(t.lifetimeTotal);
+  });
+
+  // The identity has to survive a refundable-credit year, where federal tax can
+  // land below the capital-gains slice. Clamping ordinary at zero per year would
+  // silently inflate the parts past the total.
+  it("keeps the parts summing to the total when federal tax goes negative", () => {
+    const t = computeLifetimeTotals([yr(-4_000, 1_000, 0, -2_000, 50_000, 1_000)]);
+    expect(
+      t.lifetimeFederalOrdinary + t.lifetimeCapGains + t.lifetimeState + t.lifetimePayroll,
+    ).toBe(t.lifetimeTotal);
+  });
 });
 
 describe("computeBracketExposure", () => {
@@ -102,14 +134,41 @@ describe("buildTaxPaidBars", () => {
     expect(bars[0].total).toBe(12_000); // 6000 + 4000 + 2000
   });
 
+  // A3: "Taxes paid by year" sits directly under the lifetime total. Leaving
+  // payroll tax out of the bars made the chart short of the number above it in
+  // every working year.
+  it("carries payroll tax as its own segment", () => {
+    const bars = buildTaxPaidBars([yr(10_000, 2_000, 4_000, 15_000, 100_000, 3_000)]);
+    expect(bars[0].payroll).toBe(3_000);
+    expect(bars[0].total).toBe(15_000); // 6000 + 4000 + 2000 + 3000
+  });
+
   it("skips years with no taxResult", () => {
     const bars = buildTaxPaidBars([{ year: 2040 } as ProjectionYear]);
     expect(bars).toHaveLength(0);
   });
 });
 
-function projectionYear(year: number, ledgers: Record<string, { endingValue: number; rothValueEoY?: number }>): ProjectionYear {
-  return { year, accountLedgers: ledgers } as unknown as ProjectionYear;
+/** `buckets` names which accounts the engine put in which portfolio bucket —
+ *  the composition split reads those, so the two "at retirement" columns on the
+ *  page can't drift apart. Values default to the ledger's whole-account balance
+ *  (i.e. 100% household-owned). */
+function projectionYear(
+  year: number,
+  ledgers: Record<string, { endingValue: number; rothValueEoY?: number }>,
+  buckets: Partial<Record<"cash" | "taxable" | "retirement", string[]>> = {},
+): ProjectionYear {
+  const owned = (ids: string[] = []) =>
+    Object.fromEntries(ids.map((id) => [id, ledgers[id]?.endingValue ?? 0]));
+  return {
+    year,
+    accountLedgers: ledgers,
+    portfolioAssets: {
+      cash: owned(buckets.cash),
+      taxable: owned(buckets.taxable),
+      retirement: owned(buckets.retirement),
+    },
+  } as unknown as ProjectionYear;
 }
 
 function clientDataWith(accounts: Array<{ id: string; category: string; subType: string }>): ClientData {
@@ -127,7 +186,7 @@ describe("computeRetirementComposition", () => {
         roth: { endingValue: 200_000 },                   // roth_ira → all Roth
         k401: { endingValue: 300_000, rothValueEoY: 90_000 }, // 401k: 90k Roth / 210k pre-tax
         brk: { endingValue: 400_000 },                    // taxable
-      }),
+      }, { retirement: ["ira", "roth", "k401"], taxable: ["brk"] }),
     ];
     const cd = clientDataWith([
       { id: "ira", category: "retirement", subType: "traditional_ira" },
@@ -144,7 +203,7 @@ describe("computeRetirementComposition", () => {
   });
 
   it("falls back to the first projection year when the retirement year is outside the projection", () => {
-    const years = [projectionYear(2035, { ira: { endingValue: 100_000 } })];
+    const years = [projectionYear(2035, { ira: { endingValue: 100_000 } }, { retirement: ["ira"] })];
     const cd = clientDataWith([{ id: "ira", category: "retirement", subType: "traditional_ira" }]);
     const c = computeRetirementComposition(years, cd) as RetirementComposition;
     expect(c.year).toBe(2035);

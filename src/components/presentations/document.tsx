@@ -198,11 +198,20 @@ export function PresentationDocument(props: PresentationDocumentProps) {
   const totalPages = entries.reduce((sum, { pageCount }) => sum + pageCount, 0);
 
   // TOC sections list every other selected page (excluding TOC entries
-  // themselves), in document order, with their resolved page numbers.
-  const documentSections: TocSection[] = entries
-    .map(({ page }, i) => ({ title: page.title, startPage: startPages[i], id: page.id }))
-    .filter((s) => s.id !== "toc")
-    .map(({ title, startPage }) => ({ title, startPage }));
+  // themselves), in document order, with their resolved page numbers. A page
+  // that prints several titled sheets contributes one entry per sheet — the
+  // deck used to list "Retirement Summary" and leave the reader to discover
+  // "Income, Spending & Funding" on the sheet after it.
+  const documentSections: TocSection[] = entries.flatMap(({ page, data, options }, i) => {
+    if (page.id === "toc") return [];
+    const sheets = page.tocSections?.(data as never, options as never) ?? [
+      { title: page.title, offset: 0 },
+    ];
+    return sheets.map((sheet) => ({
+      title: sheet.title,
+      startPage: startPages[i] + sheet.offset,
+    }));
+  });
 
   return (
     <Document>

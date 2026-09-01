@@ -1,5 +1,6 @@
 import type { ProjectionYear, ClientData } from "@/engine/types";
 import type { TaxBracketRow } from "@/lib/tax/bracket";
+import { assetsByTaxTypeAt } from "@/lib/presentations/shared/tax-type-composition";
 
 // ── Formatting (single source; page-pdf + chart import these) ────────────────
 export function fmtUsd(n: number): string {
@@ -13,29 +14,56 @@ export function fmtPct(fraction: number): string {
 }
 
 // ── Lifetime totals ─────────────────────────────────────────────────────────
+//
+// The KPI strip prints these side by side under one total, so they have to be
+// DISJOINT and they have to add up. Two things stopped them:
+//
+//  - `capitalGainsTax` is a slice *inside* `totalFederalTax`, not a sibling of
+//    it, so a reader adding the tiles double-counted it. The strip renders
+//    `lifetimeFederalOrdinary` (federal net of the gains slice) instead;
+//    `lifetimeFederal` stays here as the whole federal bill it is derived from.
+//  - Payroll tax (FICA) is inside the engine's `totalTax` — the same figure the
+//    Cash Flow page's "Taxes" row shows — but was itemized nowhere, so the
+//    total ran ahead of its own parts through every working year.
+//
+// Invariant, asserted in the tests:
+//   federalOrdinary + capGains + state + payroll === total
 export interface TaxLifetimeTotals {
+  /** Whole federal bill, capital-gains tax included. */
   lifetimeFederal: number;
+  /** Federal net of the capital-gains slice — the strip's "Federal (ordinary)". */
+  lifetimeFederalOrdinary: number;
   lifetimeState: number;
   lifetimeCapGains: number;
+  /** FICA / self-employment payroll tax. */
+  lifetimePayroll: number;
   lifetimeTotal: number;
   grossIncome: number;
   effectiveRate: number;
 }
 
 export function computeLifetimeTotals(years: ProjectionYear[]): TaxLifetimeTotals {
-  let lifetimeFederal = 0, lifetimeState = 0, lifetimeCapGains = 0, lifetimeTotal = 0, grossIncome = 0;
+  let lifetimeFederal = 0, lifetimeState = 0, lifetimeCapGains = 0;
+  let lifetimePayroll = 0, lifetimeTotal = 0, grossIncome = 0;
   for (const y of years) {
     const flow = y.taxResult?.flow;
     if (flow) {
       lifetimeFederal += flow.totalFederalTax;
       lifetimeState += flow.stateTax;
       lifetimeCapGains += flow.capitalGainsTax;
+      lifetimePayroll += flow.fica;
       lifetimeTotal += flow.totalTax;
     }
     grossIncome += y.taxResult?.income.grossTotalIncome ?? 0;
   }
   const effectiveRate = grossIncome > 0 ? lifetimeTotal / grossIncome : 0;
-  return { lifetimeFederal, lifetimeState, lifetimeCapGains, lifetimeTotal, grossIncome, effectiveRate };
+  // Not clamped: a refundable-credit year can push federal tax below the gains
+  // slice, and clamping here would break the sum-to-total invariant.
+  const lifetimeFederalOrdinary = lifetimeFederal - lifetimeCapGains;
+  return {
+    lifetimeFederal, lifetimeFederalOrdinary, lifetimeState, lifetimeCapGains,
+    lifetimePayroll, lifetimeTotal, grossIncome, effectiveRate,
+  };
 }
 
 // ── Bracket exposure ────────────────────────────────────────────────────────
@@ -70,7 +98,8 @@ export interface TaxYearBar {
   federalOrdinary: number; // totalFederalTax − capitalGainsTax, clamped ≥ 0
   capGains: number;
   state: number;
-  total: number;           // federalOrdinary + capGains + state
+  payroll: number;         // FICA / self-employment
+  total: number;           // federalOrdinary + capGains + state + payroll
 }
 
 export function buildTaxPaidBars(years: ProjectionYear[]): TaxYearBar[] {
@@ -81,7 +110,11 @@ export function buildTaxPaidBars(years: ProjectionYear[]): TaxYearBar[] {
     const capGains = flow.capitalGainsTax;
     const federalOrdinary = Math.max(0, flow.totalFederalTax - capGains);
     const state = flow.stateTax;
-    bars.push({ year: y.year, federalOrdinary, capGains, state, total: federalOrdinary + capGains + state });
+    const payroll = flow.fica;
+    bars.push({
+      year: y.year, federalOrdinary, capGains, state, payroll,
+      total: federalOrdinary + capGains + state + payroll,
+    });
   }
   return bars;
 }
@@ -101,10 +134,8 @@ function birthYear(dob: string | null | undefined): number | null {
   return Number.isFinite(y) ? y : null;
 }
 
-/** Roth/pre-tax/taxable snapshot at the primary client's retirement year. Roth
- *  includes full roth_ira balances + the designated-Roth sub-portion inside
- *  401k/403b (`rothValueEoY`). Accounts created mid-projection that are absent
- *  from `clientData.accounts` are not counted (accepted; see spec). */
+/** Roth/pre-tax/taxable snapshot at the primary client's retirement year —
+ *  the same split the Retirement Summary prints, from the same helper. */
 export function computeRetirementComposition(
   years: ProjectionYear[],
   clientData: ClientData,
@@ -114,23 +145,7 @@ export function computeRetirementComposition(
   const retYear = by + clientData.client.retirementAge;
   const py = years.find((y) => y.year === retYear) ?? years[0];
   if (!py) return null;
-
-  let roth = 0, preTax = 0, taxable = 0;
-  for (const a of clientData.accounts) {
-    const led = py.accountLedgers[a.id];
-    const ev = led?.endingValue ?? 0;
-    if (a.category === "retirement") {
-      const rothPortion =
-        a.subType === "roth_ira" ? ev
-        : a.subType === "401k" || a.subType === "403b" ? (led?.rothValueEoY ?? 0)
-        : 0;
-      roth += rothPortion;
-      preTax += ev - rothPortion;
-    } else if (a.category === "taxable") {
-      taxable += ev;
-    }
-  }
-  return { year: py.year, roth, preTax, taxable, total: roth + preTax + taxable };
+  return { year: py.year, ...assetsByTaxTypeAt(py, clientData.accounts) };
 }
 
 // ── Opportunity rows ────────────────────────────────────────────────────────

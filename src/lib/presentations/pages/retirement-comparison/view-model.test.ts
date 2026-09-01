@@ -41,10 +41,11 @@ function bundle(
   maxSpend: number,
   accounts: { id: string; subType: string }[] = [],
   endP20 = 100,
+  retirementAge = 65,
 ) {
   return {
     clientData: {
-      client: { dateOfBirth: "1965-01-01", retirementAge: 65 },
+      client: { dateOfBirth: "1965-01-01", retirementAge },
       planSettings: { planStartYear: 2026, inflationRate: 0.0 }, // 0% inflation → flat series
       accounts,
     },
@@ -96,30 +97,64 @@ describe("buildRetirementComparisonData", () => {
     expect(d.maxSpend.series.length).toBeGreaterThan(0);
   });
 
-  it("builds the 4 headline KPIs that improve", () => {
+  it("builds the 5 headline KPIs that improve, retirement age first", () => {
     const d = buildRetirementComparisonData(ctx, opts);
     const labels = d.kpis.map((k) => k.label);
     expect(labels).toEqual([
+      "Retirement age",
       "Plan confidence",
       "Legacy to heirs",
       "Max sustainable spend",
       "Downside ending balance",
     ]);
-    const success = d.kpis[0];
+    const success = d.kpis[1];
     expect(success.base).toBe("73%");
     expect(success.scenario).toBe("91%");
     expect(success.delta).toBe("+18 pts");
-    const maxSpend = d.kpis[2];
+    const maxSpend = d.kpis[3];
     expect(maxSpend.base).toBe("$90K/yr");
     expect(maxSpend.scenario).toBe("$110K/yr");
-    const downside = d.kpis[3];
+    const downside = d.kpis[4];
     expect(downside.base).toBe("$1.5M");
     expect(downside.scenario).toBe("$13.9M");
   });
 
+  // Retiring five years earlier is the headline change an advisor makes, and
+  // the strip never named it — the deck showed only its consequences.
+  it("prints each plan's retirement age, and a signed year delta", () => {
+    const earlier = {
+      bundlesByRef: {
+        base: bundle(baseYears, 0.73, 90_000, [], 1_500_000, 65),
+        "scenario:s1": bundle(scnYears, 0.91, 110_000, scnAccounts, 13_900_000, 60),
+      },
+    } as unknown as BuildDataContext;
+    const age = buildRetirementComparisonData(earlier, opts).kpis[0];
+    expect(age.label).toBe("Retirement age");
+    expect(age.base).toBe("65");
+    expect(age.scenario).toBe("60");
+    expect(age.delta).toBe("−5 yrs");
+    expect(age.show).toBe(true);
+  });
+
+  it("leaves the delta blank when neither plan moves the retirement age", () => {
+    // Both fixtures retire at 65 — a "+0 yrs" chip would be noise.
+    expect(buildRetirementComparisonData(ctx, opts).kpis[0].delta).toBe("");
+  });
+
+  it("singularises a one-year move", () => {
+    const oneYear = {
+      bundlesByRef: {
+        base: bundle(baseYears, 0.73, 90_000, [], 1_500_000, 65),
+        "scenario:s1": bundle(scnYears, 0.91, 110_000, scnAccounts, 13_900_000, 66),
+      },
+    } as unknown as BuildDataContext;
+    expect(buildRetirementComparisonData(oneYear, opts).kpis[0].delta).toBe("+1 yr");
+  });
+
   it("splits at-retirement assets by tax treatment for the scenario", () => {
     const d = buildRetirementComparisonData(ctx, opts);
-    expect(d.atRetirement.year).toBe(2030);
+    expect(d.atRetirement.baseYear).toBe(2030);
+    expect(d.atRetirement.scenarioYear).toBe(2030);
     // Scenario 2030: cash 1.2M (liquidTotal), Roth IRA 400k + 401k Roth slice 200k = 600k,
     // pre-tax = 401k remainder 400k.
     expect(d.atRetirement.scenario.cash).toBe(1_200_000);
@@ -130,7 +165,74 @@ describe("buildRetirementComparisonData", () => {
 
   it("exposes the end-of-life breakdown for the condensed matrix", () => {
     const d = buildRetirementComparisonData(ctx, opts);
-    expect(d.atEndOfLife.year).toBe(2031);
+    expect(d.atEndOfLife.baseYear).toBe(2031);
+    expect(d.atEndOfLife.scenarioYear).toBe(2031);
     expect(d.atEndOfLife.scenario.roth).toBe(500_000);
+  });
+});
+
+// ── Each plan measured at its OWN retirement year ────────────────────────────
+// Separate fixture: the base plan retires at 65 (2054) and the scenario at 60
+// (2049), so a single shared year cannot describe both columns.
+function retYr(year: number): ProjectionYear {
+  const liquid = (year - 2039) * 100_000;
+  return {
+    year,
+    ages: { client: year - 1989, spouse: null },
+    portfolioAssets: {
+      liquidTotal: liquid, cashTotal: 0, retirementTotal: liquid, taxableTotal: 0,
+      cash: {}, taxable: {}, retirement: { ira: liquid },
+    },
+    accountLedgers: { ira: { endingValue: liquid } },
+  } as unknown as ProjectionYear;
+}
+
+function retBundle(retirementAge: number, lastYear: number, scenarioLabel: string) {
+  const years: ProjectionYear[] = [];
+  for (let y = 2040; y <= lastYear; y++) years.push(retYr(y));
+  return {
+    clientData: {
+      client: { dateOfBirth: "1989-01-01", retirementAge },
+      accounts: [{ id: "ira", category: "retirement", subType: "traditional_ira" }],
+      planSettings: { planStartYear: 2040, inflationRate: 0 },
+    },
+    projection: { years },
+    scenarioLabel,
+    monteCarlo: null,
+    maxSpend: null,
+  } as never;
+}
+
+function retCtx(over: { baseLastYear?: number } = {}): BuildDataContext {
+  return {
+    bundlesByRef: {
+      base: retBundle(65, over.baseLastYear ?? 2070, "Base Case"),
+      "scenario:s1": retBundle(60, 2070, "Retire at 60"),
+    },
+  } as unknown as BuildDataContext;
+}
+
+describe("buildRetirementComparisonData — each plan is measured at its own retirement", () => {
+  it("measures the base plan at the base plan's retirement year, not the scenario's", () => {
+    const d = buildRetirementComparisonData(retCtx(), opts);
+    expect(d.atRetirement.baseYear).toBe(2054);
+    expect(d.atRetirement.scenarioYear).toBe(2049);
+    // 2054 → $1.5M for the base; reading it at the scenario's 2049 gave $1.0M.
+    expect(d.atRetirement.base.preTax).toBe(1_500_000);
+    expect(d.atRetirement.scenario.preTax).toBe(1_000_000);
+  });
+
+  it("labels the year it actually measured when the projection runs short", () => {
+    // The base projection stops in 2050, four years before its retirement.
+    // yearAt falls back to the last row — so the page must say 2050, not 2054.
+    const d = buildRetirementComparisonData(retCtx({ baseLastYear: 2050 }), opts);
+    expect(d.atRetirement.baseYear).toBe(2050);
+    expect(d.atRetirement.base.preTax).toBe(1_100_000);
+  });
+
+  it("labels each side of the end-of-life horizon with the year it measured", () => {
+    const d = buildRetirementComparisonData(retCtx({ baseLastYear: 2050 }), opts);
+    expect(d.atEndOfLife.scenarioYear).toBe(2070);
+    expect(d.atEndOfLife.baseYear).toBe(2050);
   });
 });

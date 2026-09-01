@@ -7,6 +7,7 @@ import type { ChartSpec } from "../charts/types";
 import type { TableMarker } from "../types";
 import { PRESENTATION_THEME } from "../theme";
 import { compactCurrency } from "../format";
+import { niceAxisMax } from "../charts/axis";
 
 export interface DrillStackSeries {
   seriesId: string;
@@ -80,8 +81,8 @@ export function buildDrillChartSpec(
   const candidateMax = Math.max(0, ...posTotals, ...allLineValues, 1);
   const candidateMin = Math.min(0, ...negTotals, ...allLineValues);
 
-  const yDomainMax = niceCeiling(candidateMax * 1.05);
-  const yDomainMin = candidateMin < 0 ? -niceCeiling(-candidateMin * 1.05) : 0;
+  const yDomainMax = niceAxisMax(candidateMax * 1.05);
+  const yDomainMin = candidateMin < 0 ? -niceAxisMax(-candidateMin * 1.05) : 0;
   const yTicks = ticks(yDomainMin, yDomainMax, 6);
 
   const specMarkers: ChartSpec["markers"] = markers.map((m) => ({
@@ -130,8 +131,3 @@ export function buildDrillChartSpec(
   };
 }
 
-function niceCeiling(v: number): number {
-  if (v <= 0) return 1;
-  const magnitude = Math.pow(10, Math.floor(Math.log10(v)));
-  return Math.ceil(v / magnitude) * magnitude;
-}

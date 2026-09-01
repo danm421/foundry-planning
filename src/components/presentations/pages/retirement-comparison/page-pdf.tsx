@@ -15,6 +15,7 @@ import { MaxSpendChartPdf } from "./max-spend-chart-pdf";
 import { ConfidenceRangeChartPdf } from "./confidence-range-chart-pdf";
 import { TaxTreatmentChartPdf } from "./tax-treatment-chart-pdf";
 import { MONO } from "./chart-axis";
+import { horizonYearsLabel } from "@/lib/presentations/shared/horizon-label";
 
 const s = StyleSheet.create({
   verdict: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderLeftWidth: 3, borderLeftColor: T.good, borderRadius: 3, padding: 10, marginBottom: 10 },
@@ -44,6 +45,8 @@ const s = StyleSheet.create({
   kpiArrow: { fontSize: 8, color: T.ink3, marginHorizontal: 3 },
   kpiScn: { fontSize: 13, fontWeight: 600, color: T.ink, fontFamily: MONO },
   kpiDelta: { fontSize: 7.5, fontWeight: 600, color: T.good, marginTop: 3, fontFamily: MONO },
+
+  note: { fontSize: 6.5, color: T.ink3, marginTop: 4, lineHeight: 1.3 },
 
   ai: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderLeftWidth: 3, borderLeftColor: T.accent, borderRadius: 3, padding: 8 },
   aiText: { fontSize: 8, color: T.ink, lineHeight: 1.35 },
@@ -99,11 +102,11 @@ export function RetirementComparisonPagePdf(input: RenderPdfInput<RetirementComp
 
         <View style={s.panel}>
           <Text style={s.h4}>Portfolio assets over time — proposed vs. current</Text>
-          <OverlayBarsPdf bars={data.overlay} retirementYear={data.atRetirement.year} />
+          <OverlayBarsPdf bars={data.overlay} retirementYear={data.atRetirement.scenarioYear} />
         </View>
 
         <View style={s.panel}>
-          <Text style={s.h4}>{`At retirement (${data.atRetirement.year}) — portfolio assets by tax treatment`}</Text>
+          <Text style={s.h4}>{`At retirement (${horizonYearsLabel(data.atRetirement.baseYear, data.atRetirement.scenarioYear, "current")}) — portfolio assets by tax treatment`}</Text>
           <TaxTreatmentChartPdf data={data.atRetirement} />
         </View>
       </PageFrame>
@@ -120,7 +123,7 @@ export function RetirementComparisonPagePdf(input: RenderPdfInput<RetirementComp
 
           const maxSpendPanel = data.maxSpend.show ? (
             <View style={panelStyle}>
-              <Text style={s.h4}>{`Maximum sustainable spending (today's $)`}</Text>
+              <Text style={s.h4}>Maximum sustainable spending</Text>
               <MaxSpendChartPdf series={data.maxSpend.series} width={chartWidth} />
               <View style={s.metricTable}>
                 <View style={s.metricRow}>
@@ -138,6 +141,12 @@ export function RetirementComparisonPagePdf(input: RenderPdfInput<RetirementComp
                   <Text style={s.metricVal}>{`${fmtUsd(data.maxSpend.baseToday)}/yr`}</Text>
                 </View>
               </View>
+              {/* The rows and the lines are the SAME spending on two bases. The
+                  title used to claim today's $ while the chart plotted future
+                  $ and the rows printed today's $ — three bases, one panel. */}
+              <Text style={s.note}>
+                Rows are in today&apos;s dollars; the lines show that same spending inflated to each year.
+              </Text>
             </View>
           ) : null;
 
@@ -181,7 +190,7 @@ export function RetirementComparisonPagePdf(input: RenderPdfInput<RetirementComp
 
         {data.showPortfolioMatrix ? (
           <View style={s.panel}>
-            <Text style={s.h4}>{`At end of life (${data.atEndOfLife.year}) — portfolio assets by tax treatment`}</Text>
+            <Text style={s.h4}>{`At end of life (${horizonYearsLabel(data.atEndOfLife.baseYear, data.atEndOfLife.scenarioYear, "current")}) — portfolio assets by tax treatment`}</Text>
             <TaxTreatmentChartPdf data={data.atEndOfLife} compact />
           </View>
         ) : null}

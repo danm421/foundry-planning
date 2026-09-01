@@ -31,22 +31,40 @@ export function stackRects(
 }
 
 /**
- * Where one legend entry sits, relative to the legend's own origin.
+ * Where the legend entries sit, relative to the legend's own origin.
  *
- * Wraps. The row is 85pt per item over a 540pt canvas whose legend starts at
- * the left margin, so a 7th item on one row is placed beyond the SVG's right
- * edge and disappears WITHOUT ERROR — which is how the Monthly Cash Flow
- * chart's income line lost its name in the first render of it. Pure and
- * exported so the wrap is provable with nothing rendered; the component reads
- * these numbers rather than restating them.
+ * The pitch is derived from the room the chart actually has, not fixed. The
+ * fixed 85pt pitch it replaces was sized for one canvas: on the 540pt chart the
+ * sixth label ran off the right edge and printed "Total Exper", and on the
+ * 500pt retirement cash-flow panel it vanished entirely, leaving a black line
+ * in the legend with no name beside it. An @react-pdf `Svg` child placed past
+ * the viewport is simply not drawn — no error, no clipping artefact — so this
+ * has to be right by construction.
+ *
+ * Pure and exported so the fit is provable with nothing rendered; the component
+ * reads these numbers rather than restating them.
  */
-export const LEGEND_PER_ROW = 6;
-export const LEGEND_ITEM_W = 85;
 export const LEGEND_ROW_H = 11;
+/** Marker width plus its gap — where each label starts inside its slot. */
+export const LEGEND_LABEL_X = 14;
+/** Marker, gap and the longest label the deck prints, at 7pt Inter. */
+export const LEGEND_MIN_ITEM_W = 78;
 
-export function legendSlot(index: number): { x: number; y: number } {
+export interface LegendLayout {
+  perRow: number;
+  itemW: number;
+  rows: number;
+}
+
+export function legendLayout(count: number, availableW: number): LegendLayout {
+  const fit = Math.floor(availableW / LEGEND_MIN_ITEM_W);
+  const perRow = Math.max(1, Math.min(Math.max(count, 1), fit));
+  return { perRow, itemW: availableW / perRow, rows: Math.ceil(Math.max(count, 1) / perRow) };
+}
+
+export function legendSlot(index: number, layout: LegendLayout): { x: number; y: number } {
   return {
-    x: (index % LEGEND_PER_ROW) * LEGEND_ITEM_W,
-    y: Math.floor(index / LEGEND_PER_ROW) * LEGEND_ROW_H,
+    x: (index % layout.perRow) * layout.itemW,
+    y: Math.floor(index / layout.perRow) * LEGEND_ROW_H,
   };
 }

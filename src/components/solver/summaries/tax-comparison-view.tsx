@@ -32,6 +32,7 @@ import {
   SummaryNarrative,
   SummaryEmpty,
 } from "./primitives";
+import { horizonYearsLabel } from "@/lib/presentations/shared/horizon-label";
 
 ChartJS.register(
   CategoryScale, LinearScale, BarElement, LineElement, PointElement,
@@ -188,7 +189,7 @@ export function TaxComparisonView({ data }: { data: TaxComparisonPageData }) {
       ) : null}
 
       {data.composition ? (
-        <SummarySection heading={`Accounts at retirement (${data.composition.year})`}>
+        <SummarySection heading={`Accounts at retirement (${horizonYearsLabel(data.composition.baseYear, data.composition.scenarioYear)})`}>
           <CompositionComparisonTable composition={data.composition} />
         </SummarySection>
       ) : null}

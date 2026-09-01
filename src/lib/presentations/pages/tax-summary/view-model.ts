@@ -16,10 +16,14 @@ import {
 } from "./aggregate";
 import { buildTaxNarrative } from "./narrative";
 
+/** One field per rendered tile. The four amounts are disjoint and sum to
+ *  `lifetimeTotal`; the whole federal bill (gains included) is deliberately not
+ *  here, because printing it beside capital-gains tax double-counts the slice. */
 export interface TaxSummaryKpis {
-  lifetimeFederal: number;
+  lifetimeFederalOrdinary: number;
   lifetimeState: number;
   lifetimeCapGains: number;
+  lifetimePayroll: number;
   lifetimeTotal: number;
   effectiveRate: number;
 }
@@ -96,9 +100,10 @@ export function buildTaxSummaryData(
     isEmpty,
     bracketMode,
     kpis: {
-      lifetimeFederal: totals.lifetimeFederal,
+      lifetimeFederalOrdinary: totals.lifetimeFederalOrdinary,
       lifetimeState: totals.lifetimeState,
       lifetimeCapGains: totals.lifetimeCapGains,
+      lifetimePayroll: totals.lifetimePayroll,
       lifetimeTotal: totals.lifetimeTotal,
       effectiveRate: totals.effectiveRate,
     },

@@ -15,10 +15,11 @@ function makeYear(
     year,
     ages: { client: 65, spouse: null },
     accountLedgers: { ira: { endingValue: 400_000 }, roth: { endingValue: 100_000 } },
+    portfolioAssets: { cash: {}, taxable: {}, retirement: { ira: 400_000, roth: 100_000 } },
     medicare: { totalIrmaaSurcharge: opts.irmaa ?? 0 },
     taxDetail: { capitalGains: opts.gain ?? 0 },
     taxResult: {
-      flow: { totalFederalTax: totalTax * 0.75, stateTax: totalTax * 0.25, capitalGainsTax: 0, totalTax, incomeTaxBase: 120_000 },
+      flow: { totalFederalTax: totalTax * 0.75, stateTax: totalTax * 0.25, capitalGainsTax: 0, fica: 0, totalTax, incomeTaxBase: 120_000 },
       income: { grossTotalIncome: 150_000 },
       diag: {
         marginalFederalRate: marginalRate,
@@ -39,7 +40,13 @@ function bundle(years: ProjectionYear[], rothEnding: number, scenarioLabel: stri
       ],
       planSettings: { taxEngineMode },
     },
-    projection: { years: years.map((y) => ({ ...y, accountLedgers: { ira: { endingValue: 400_000 }, roth: { endingValue: rothEnding } } })) },
+    projection: {
+      years: years.map((y) => ({
+        ...y,
+        accountLedgers: { ira: { endingValue: 400_000 }, roth: { endingValue: rothEnding } },
+        portfolioAssets: { cash: {}, taxable: {}, retirement: { ira: 400_000, roth: rothEnding } },
+      })),
+    },
     scenarioLabel,
   } as never;
 }
@@ -65,11 +72,13 @@ describe("buildTaxComparisonData", () => {
     expect(d.isEmpty).toBe(true);
   });
 
-  it("builds five delta KPIs with lower-is-better favorability", () => {
+  it("builds six delta KPIs with lower-is-better favorability", () => {
     const d = buildTaxComparisonData(ctxFor("bracket"), opts);
     expect(d.isEmpty).toBe(false);
+    // A3: the four amount rows are disjoint slices of the total below them —
+    // federal net of capital gains, and payroll itemized rather than implied.
     expect(d.kpis.map((k) => k.label)).toEqual([
-      "Lifetime Federal Tax", "Lifetime State Tax", "Lifetime Capital Gains Tax",
+      "Federal (ordinary)", "Capital Gains Tax", "State Tax", "Payroll Tax",
       "Lifetime Total Tax", "Lifetime Effective Rate",
     ]);
     const total = d.kpis.find((k) => k.label === "Lifetime Total Tax")!;
@@ -99,9 +108,39 @@ describe("buildTaxComparisonData", () => {
 
   it("compares Roth/pre-tax/taxable composition at retirement", () => {
     const c = buildTaxComparisonData(ctxFor("bracket"), opts).composition!;
-    expect(c.year).toBe(2030);
+    expect(c.baseYear).toBe(2030);
+    expect(c.scenarioYear).toBe(2030);
     expect(c.base.roth).toBe(100_000);
     expect(c.scenario.roth).toBe(350_000);
+  });
+
+  it("names each side's own retirement year when the two plans differ", () => {
+    // The scenario retires a year later. The page used to print only the
+    // scenario's year over both columns, dating the base figure wrongly.
+    const scnBundle = bundle(scnYears, 350_000, "Retire a year later", "bracket") as unknown as {
+      clientData: { client: { retirementAge: number } };
+    };
+    scnBundle.clientData.client.retirementAge = 66; // retires 2031
+    const ctx = {
+      bundlesByRef: { base: bundle(baseYears, 100_000, "Base Case", "bracket"), "scenario:s1": scnBundle },
+    } as unknown as BuildDataContext;
+    const c = buildTaxComparisonData(ctx, opts).composition!;
+    expect(c.baseYear).toBe(2030);
+    expect(c.scenarioYear).toBe(2031);
+  });
+
+  it("dates each side by the year it measured, not the year it asked for", () => {
+    // The scenario's retirement year is past the end of its projection;
+    // computeRetirementComposition falls back to the first row.
+    const scnBundle = bundle(scnYears, 350_000, "Retire much later", "bracket") as unknown as {
+      clientData: { client: { retirementAge: number } };
+    };
+    scnBundle.clientData.client.retirementAge = 80; // 2045 — not projected
+    const ctx = {
+      bundlesByRef: { base: bundle(baseYears, 100_000, "Base Case", "bracket"), "scenario:s1": scnBundle },
+    } as unknown as BuildDataContext;
+    const c = buildTaxComparisonData(ctx, opts).composition!;
+    expect(c.scenarioYear).toBe(2030);
   });
 
   it("opens the narrative with the lifetime-tax reduction", () => {

@@ -5,6 +5,7 @@ import { recordAudit } from "@/lib/audit";
 import type { ExtractionResult } from "@/lib/extraction/types";
 import { mergeExtractionResults } from "@/lib/imports/merge";
 import { runMatchingPass } from "@/lib/imports/match";
+import { annotateReconciliation } from "@/lib/imports/reconcile-compensation";
 import type { ImportPayload, MatchKind } from "@/lib/imports/types";
 
 export interface RunMatchingResult {
@@ -53,8 +54,18 @@ export async function runImportMatching(args: {
     );
 
     const merged = mergeExtractionResults(fileExtractions);
+    const { payload: reconciledPayload } = annotateReconciliation(
+        merged,
+        Object.fromEntries(
+            fileExtractions.map((f) => [
+                f.fileId,
+                { documentType: f.result.documentType, fileName: f.result.fileName },
+            ]),
+        ),
+        new Date().getUTCFullYear(),
+    );
     const annotated = await runMatchingPass({
-        payload: merged,
+        payload: reconciledPayload,
         clientId,
         scenarioId: scenarioId ?? "",
         mode,
