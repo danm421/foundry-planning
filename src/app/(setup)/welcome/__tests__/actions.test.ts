@@ -21,8 +21,10 @@ vi.mock("@/lib/billing/stripe-client", () => ({
 }));
 
 const mockRateLimit = vi.fn();
+const mockLogoRateLimit = vi.fn();
 vi.mock("@/lib/rate-limit", () => ({
   checkCheckoutSessionRateLimit: (...a: unknown[]) => mockRateLimit(...a),
+  checkSignupLogoRateLimit: (...a: unknown[]) => mockLogoRateLimit(...a),
 }));
 
 vi.mock("@/lib/billing/price-catalog", () => ({
@@ -35,6 +37,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockAuth.mockResolvedValue({ userId: "user_buyer", orgId: null });
   mockRateLimit.mockResolvedValue({ allowed: true });
+  mockLogoRateLimit.mockResolvedValue({ allowed: true });
   mockWrite.mockResolvedValue({});
 });
 
@@ -125,6 +128,43 @@ describe("uploadSignupLogo", () => {
     );
     expect(mockWrite).toHaveBeenCalledWith("user_buyer", { logoUrl: "https://blob.example/logo.png" });
     expect(res).toEqual({ ok: true, url: "https://blob.example/logo.png" });
+  });
+
+  // The action is reachable by ANY signed-in org-less Clerk account, and
+  // production Clerk sign-up is `public` — so unlimited, it lets one throwaway
+  // account mint unbounded 2 MB PUBLIC blobs at Foundry's cost. It stores the
+  // blob BEFORE it does anything else expensive, so the budget has to be
+  // checked ahead of the write, not merely reported after it.
+  it("spends a per-user budget before it writes anything to the blob store", async () => {
+    mockLogoRateLimit.mockResolvedValue({ allowed: false, reason: "exceeded" });
+    mockPutSignupAsset.mockResolvedValue({ url: "https://blob.example/logo.png" });
+    const res = await uploadSignupLogo(pngFormData());
+    expect(res.ok).toBe(false);
+    expect(mockPutSignupAsset).not.toHaveBeenCalled();
+    expect(mockWrite).not.toHaveBeenCalled();
+  });
+
+  it("keys the logo budget on the user, like the checkout budget beside it", async () => {
+    mockPutSignupAsset.mockResolvedValue({ url: "https://blob.example/logo.png" });
+    await uploadSignupLogo(pngFormData());
+    expect(mockLogoRateLimit).toHaveBeenCalledWith("user:user_buyer");
+  });
+
+  // Global Constraint: "branding is optional and never blocks the card." A
+  // throttled logo must therefore not draw on the checkout budget — if the two
+  // shared a bucket, three quick logo attempts would eat the attempts the
+  // buyer needs to actually pay.
+  it("does not spend the checkout budget, so a throttled logo cannot block the card", async () => {
+    mockLogoRateLimit.mockResolvedValue({ allowed: false, reason: "exceeded" });
+    await uploadSignupLogo(pngFormData());
+    expect(mockRateLimit).not.toHaveBeenCalled();
+
+    mockRead.mockResolvedValue({
+      firmName: "Acme Wealth", advisorName: "Dana Reed", plan: "annual",
+      primaryColor: null, logoUrl: null, updatedAt: "",
+    });
+    mockCreateSession.mockResolvedValue({ url: "https://checkout.stripe.com/c/pay/cs_test_1" });
+    expect((await startSignupCheckout()).ok).toBe(true);
   });
 
   it("rejects a file whose bytes don't match its claimed type", async () => {

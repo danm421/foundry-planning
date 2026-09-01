@@ -12,7 +12,10 @@ import {
 } from "@/lib/billing/pending-signup";
 import { putSignupBrandingAsset } from "@/lib/branding/blob";
 import { getStripe } from "@/lib/billing/stripe-client";
-import { checkCheckoutSessionRateLimit } from "@/lib/rate-limit";
+import {
+  checkCheckoutSessionRateLimit,
+  checkSignupLogoRateLimit,
+} from "@/lib/rate-limit";
 import { validateLogo, validatePrimaryColor } from "@/lib/branding/validation";
 
 type ActionResult<T = unknown> = ({ ok: true } & T) | { ok: false; error: string };
@@ -82,6 +85,16 @@ export async function uploadSignupLogo(
 ): Promise<ActionResult<{ url: string }>> {
   const who = await requireOrglessBuyer();
   if (!who.ok) return who;
+
+  // This action is reachable by any signed-in org-less account, and production
+  // Clerk sign-up is `public` — so without a budget anyone can mint unbounded
+  // 2 MB public blobs. Keyed on the user, exactly like startSignupCheckout, but
+  // on its OWN bucket: a throttled logo must never eat the budget the card
+  // needs. Denied is an inline message, never a blocked "Continue to payment".
+  const rl = await checkSignupLogoRateLimit(`user:${who.userId}`);
+  if (!rl.allowed) {
+    return { ok: false, error: "Too many uploads. Please wait a moment and try again." };
+  }
 
   const file = formData.get("file");
   if (!(file instanceof File)) return { ok: false, error: "No file uploaded" };
