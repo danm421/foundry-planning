@@ -43,16 +43,35 @@ const fmtFull = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
-/** One constant, read by the dataset AND the tooltip, so renaming the band can
- *  never leave the depletion note attached to the wrong row. */
-const AVAILABLE_LABEL = "Available";
+/**
+ * The six band names, written once and read by BOTH builders.
+ *
+ * The toggle changes the PERIOD, not the way the chart is read — so the two
+ * views draw the same six bands, in the same order, in the same colours. Named
+ * here rather than restated in each builder because a band renamed on one side
+ * only is exactly how that promise breaks, and it breaks silently: both charts
+ * still draw, and the legend just stops matching across the toggle.
+ *
+ * `residual` is deliberately NOT called "Available". The panel beside this chart
+ * uses "Available" for the household's whole monthly lifestyle budget — living
+ * expenses INCLUDED — and this band is what is left once Living has been taken
+ * off it. Two different numbers must not share a word.
+ */
+const BAND = {
+  taxes: "Taxes",
+  debt: "Debt",
+  savings: "Savings",
+  other: "Other",
+  living: "Living",
+  residual: "Left over",
+} as const;
 
-/** What a depleted year's Available figure actually means, in the words an
+/** What a depleted year's residual figure actually means, in the words an
  *  advisor would use across the table. The stain alone is not enough — color
  *  must never be the only thing carrying a meaning this severe. */
 const DEPLETED_NOTE = "the portfolio has run out; this money is not there";
 
-/** The depletion flag's SECOND carrier: a depleted year's Available segment is
+/** The depletion flag's SECOND carrier: a depleted year's Left over segment is
  *  the only segment in the chart that is outlined.
  *
  *  The stain cannot carry it alone. In light theme `crit` #b91c1c sits 7.6 ΔE76
@@ -100,16 +119,27 @@ const SELECTED_BORDER_WIDTH = 2;
  * the one channel that survives every colour-vision deficiency and greyscale
  * printing. Teal stays out: it is 23.3 from the green the residual owns.
  */
+const bandColors = (theme: "dark" | "light") => {
+  const palette = theme === "light" ? brandDataLight : brandData;
+  return {
+    taxes: palette.red,
+    debt: palette.yellow,
+    savings: palette.sky,
+    other: palette.grey,
+    living: palette.blue,
+    residual: palette.green,
+  };
+};
 
 interface MonthlyDataset {
   type: "bar" | "line";
   label: string;
   data: number[];
-  /** An ARRAY on the Available band — one color per year, so a depleted year
-   *  stains without touching its neighbours. A flat string everywhere else. */
+  /** An ARRAY on the Left over band — one color per period, so a depleted or
+   *  short one stains without touching its neighbours. A flat string elsewhere. */
   backgroundColor?: string | string[];
   borderColor?: string;
-  /** An ARRAY on the Available band — one width per year, so only a depleted
+  /** An ARRAY on the Left over band — one width per year, so only a depleted
    *  year is outlined. A flat number on the Income line, absent elsewhere. */
   borderWidth?: number | number[];
   borderSkipped?: boolean;
@@ -139,24 +169,50 @@ const incomeLine = (values: number[], ink: string): MonthlyDataset => ({
   order: 0,
 });
 
+/** What the YEAR has left once every band below it is paid, as a monthly rate:
+ *  the whole lifestyle budget minus the household's stated living expenses.
+ *
+ *  Identical in construction to the month view's `leftOver` — `available` is
+ *  already `income + draw − fixed costs` — so the two views' top band is the
+ *  same quantity measured over a different period.
+ *
+ *  It is NOT the panel's "Available each month" figure and must never be
+ *  labelled as one: that number is this band PLUS Living. What lands here is
+ *  surplus the plan spends by election, surplus it saves or retains, and
+ *  anything the engine could not attribute — which is why electing to spend the
+ *  remaining cash flow leaves the band where it was rather than moving money
+ *  into Living. */
+const yearResidual = (r: MonthlyCashFlowRow) => r.available - r.split.living;
+
 /**
  * Pure dataset builder. The bars stack to income + portfolio draw, and the
  * Income line is drawn at income alone — so the visible gap between the line
  * and the top of the bar IS the draw. That is the one thing this chart has to
  * communicate: money is coming out of the portfolio to fund the lifestyle.
  *
- * Depleted years stain the Available band with the critical status color. Only
+ * That identity survives breaking Living out of the top band, and by
+ * construction: `fixed.total + living + (available − living)` is
+ * `fixed.total + available`, which is `income + draw` whatever Living is.
+ *
+ * Depleted years stain the Left over band with the critical status color. Only
  * that band: the engine really did pay the taxes and the mortgage, it just paid
  * them by overdrafting, so restating the whole stack as unreal would overstate
  * what happened. Built as a per-point color array rather than a Chart.js
  * scriptable option so the flag is provable here, with nothing rendered.
+ *
+ * A year whose living expenses run past what is available stains for the same
+ * reason the month view's short month does, and is carried the same way — by
+ * POSITION, as the only band drawn below the zero line. The two flags are
+ * distinct and only the harder one is outlined: a negative Left over says this
+ * year does not fund its own lifestyle, depleted says the accounts behind it are
+ * already empty.
  */
 export function buildMonthlyCashFlowChartData(
   rows: MonthlyCashFlowRow[],
   theme: "dark" | "light" = "dark",
 ): { labels: string[]; datasets: MonthlyDataset[] } {
   const c = theme === "light" ? colorsLight : colors;
-  const palette = theme === "light" ? brandDataLight : brandData;
+  const hue = bandColors(theme);
   const chrome = chartChrome(theme);
 
   const bar = (
@@ -175,19 +231,23 @@ export function buildMonthlyCashFlowChartData(
   return {
     labels: rows.map((r) => String(r.year)),
     datasets: [
-      bar("Taxes", (r) => r.fixed.taxes, palette.red),
-      bar("Debt payments", (r) => r.fixed.liabilities, palette.yellow),
-      bar("Savings", (r) => r.fixed.savings, palette.sky),
+      bar(BAND.taxes, (r) => r.fixed.taxes, hue.taxes),
+      bar(BAND.debt, (r) => r.fixed.liabilities, hue.debt),
+      bar(BAND.savings, (r) => r.fixed.savings, hue.savings),
       bar(
-        "Other fixed",
+        BAND.other,
         (r) => r.fixed.insurance + r.fixed.realEstate + r.fixed.other,
-        palette.grey,
+        hue.other,
       ),
+      // The engine's own `expenses.living`, which is the STATED amount: surplus
+      // spending is booked separately as `expenses.discretionary`, so an elected
+      // spend-the-rest shows up in Left over rather than inflating this band.
+      bar(BAND.living, (r) => r.split.living, hue.living),
       {
         ...bar(
-          AVAILABLE_LABEL,
-          (r) => r.available,
-          rows.map((r) => (r.depleted ? c.crit : palette.green)),
+          BAND.residual,
+          yearResidual,
+          rows.map((r) => (r.depleted || yearResidual(r) < 0 ? c.crit : hue.residual)),
         ),
         borderColor: chrome.title,
         borderWidth: rows.map((r) => (r.depleted ? DEPLETED_BORDER_WIDTH : 0)),
@@ -225,10 +285,10 @@ const leftOver = (r: MonthRow) =>
  * category. A stack of costs alone would top out at `income + draw − net −
  * surplusSpent` and the gap would mean nothing.
  *
- * Colours carry over per category, so no band an advisor has learned to read is
- * re-coloured by the toggle. Green stays with the residual (Available's
- * counterpart); Living, which the year chart folds inside Available and this one
- * breaks out, takes a hue no band here uses.
+ * Names and colours come from `BAND` and `bandColors`, the same two the year
+ * chart reads, so no band an advisor has learned to read is renamed or
+ * re-coloured by the toggle — both views draw Taxes · Debt · Savings · Other ·
+ * Living · Left over, in that order.
  *
  * The six hues are chosen for SEPARATION, measured, not picked by eye — see the
  * note on `SEPARATION` above.
@@ -238,7 +298,7 @@ export function buildMonthAllocationChartData(
   theme: "dark" | "light" = "dark",
 ): { labels: string[]; datasets: MonthlyDataset[] } {
   const c = theme === "light" ? colorsLight : colors;
-  const palette = theme === "light" ? brandDataLight : brandData;
+  const hue = bandColors(theme);
 
   const bar = (
     label: string,
@@ -259,11 +319,11 @@ export function buildMonthAllocationChartData(
     // moment the row count is not twelve.
     labels: rows.map((r) => r.label.slice(0, 3)),
     datasets: [
-      bar("Taxes", (r) => r.taxes, palette.red),
-      bar("Debt", (r) => r.debt, palette.yellow),
-      bar("Savings", (r) => r.savings, palette.sky),
-      bar("Other", (r) => r.other, palette.grey),
-      bar("Living", (r) => r.living, palette.blue),
+      bar(BAND.taxes, (r) => r.taxes, hue.taxes),
+      bar(BAND.debt, (r) => r.debt, hue.debt),
+      bar(BAND.savings, (r) => r.savings, hue.savings),
+      bar(BAND.other, (r) => r.other, hue.other),
+      bar(BAND.living, (r) => r.living, hue.living),
       // Stained where the month is short — the moment this whole view exists to
       // find. Colour is not the only carrier: a negative band is the only band
       // in the chart drawn below the zero line, and position survives greyscale
@@ -271,9 +331,9 @@ export function buildMonthAllocationChartData(
       // Chart.js scriptable option so the flag is provable with nothing
       // rendered, matching the depletion stain above.
       bar(
-        "Left over",
+        BAND.residual,
         leftOver,
-        rows.map((r) => (leftOver(r) < 0 ? c.crit : palette.green)),
+        rows.map((r) => (leftOver(r) < 0 ? c.crit : hue.residual)),
       ),
       incomeLine(
         rows.map((r) => r.income),
@@ -325,7 +385,7 @@ export function depletedAt(
 }
 
 /**
- * One tooltip row. A depleted year says so in words on the Available row —
+ * One tooltip row. A depleted year says so in words on the Left over row —
  * the stain is the glance, this is the answer.
  *
  * The "/mo" suffix belongs to the across-the-plan view ONLY, where every figure
@@ -344,7 +404,7 @@ export function monthlyCashFlowTooltipLabel(
   monthMode: boolean,
 ): string {
   const base = `${datasetLabel}: ${fmtFull.format(value)}${monthMode ? "" : "/mo"}`;
-  return depleted && datasetLabel === AVAILABLE_LABEL ? `${base} — ${DEPLETED_NOTE}` : base;
+  return depleted && datasetLabel === BAND.residual ? `${base} — ${DEPLETED_NOTE}` : base;
 }
 
 /**

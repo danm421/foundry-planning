@@ -27,7 +27,12 @@ const MONTH_NAMES = [
  * insurance row.
  *
  * The three folded buckets (250 / 130 / 120) are distinct from each other too,
- * so dropping any ONE of them moves the "Other fixed" bar.
+ * so dropping any ONE of them moves the "Other" bar.
+ *
+ * `split.living` is deliberately SHORT of `available`, so the residual the top
+ * band draws (available − living = 1,800) is its own number rather than zero.
+ * With living set equal to available the Left over band would be flat zero and
+ * a builder that dropped it entirely would still pass every sum below.
  */
 function row(over: Partial<MonthlyCashFlowRow> = {}): MonthlyCashFlowRow {
   return {
@@ -46,7 +51,7 @@ function row(over: Partial<MonthlyCashFlowRow> = {}): MonthlyCashFlowRow {
     leftAfterFixed: 5_000,
     portfolioDraw: 0,
     available: 5_000,
-    split: { living: 5_000, surplusSpent: 0, surplusUnspent: 0, unexplained: 0 },
+    split: { living: 3_200, surplusSpent: 0, surplusUnspent: 0, unexplained: 0 },
     depleted: false,
     ...over,
   };
@@ -140,16 +145,17 @@ function closestPair(hexes: string[]): { distance: number; pair: [string, string
 
 
 describe("buildMonthlyCashFlowChartData", () => {
-  it("stacks the four fixed buckets plus available, and plots income as a line", () => {
+  it("stacks the four fixed buckets plus living and the residual, and plots income as a line", () => {
     const data = buildMonthlyCashFlowChartData([row()], "dark");
     const bars = data.datasets.filter((d) => d.type === "bar");
     const lines = data.datasets.filter((d) => d.type === "line");
     expect(bars.map((d) => d.label)).toEqual([
       "Taxes",
-      "Debt payments",
+      "Debt",
       "Savings",
-      "Other fixed",
-      "Available",
+      "Other",
+      "Living",
+      "Left over",
     ]);
     expect(lines.map((d) => d.label)).toEqual(["Income"]);
     expect(bars.every((d) => d.stack === "monthly")).toBe(true);
@@ -163,11 +169,30 @@ describe("buildMonthlyCashFlowChartData", () => {
     const value = (label: string) => data.datasets.find((d) => d.label === label)?.data[0];
 
     expect(value("Taxes")).toBeCloseTo(2_000, 6);
-    expect(value("Debt payments")).toBeCloseTo(1_500, 6);
+    expect(value("Debt")).toBeCloseTo(1_500, 6);
     expect(value("Savings")).toBeCloseTo(1_000, 6);
-    expect(value("Other fixed")).toBeCloseTo(500, 6); // 250 + 130 + 120
-    expect(value("Available")).toBeCloseTo(8_000, 6);
+    expect(value("Other")).toBeCloseTo(500, 6); // 250 + 130 + 120
+    // The household's STATED living expenses, not a share of what is available.
+    expect(value("Living")).toBeCloseTo(3_200, 6);
+    expect(value("Left over")).toBeCloseTo(4_800, 6); // 8,000 available − 3,200 living
     expect(value("Income")).toBeCloseTo(10_000, 6);
+  });
+
+  // A tripwire on the requirement, not on today's arithmetic: a plan that elects
+  // to spend its remaining cash flow books that spend as `expenses.discretionary`
+  // and never as living, so the Living band has to hold the number the advisor
+  // typed while the election stays in Left over — money the household still has
+  // the choice about. Folding `surplusSpent` into Living is the one change that
+  // would look right on screen and be wrong, and this is what reds on it.
+  it("leaves Living at the stated amount when the plan spends its surplus", () => {
+    const spending = drawRow();
+    spending.split = { ...spending.split, surplusSpent: 4_800 };
+    const band = (label: string) =>
+      buildMonthlyCashFlowChartData([spending], "dark").datasets.find((d) => d.label === label)!
+        .data[0];
+
+    expect(band("Living")).toBeCloseTo(3_200, 6);
+    expect(band("Left over")).toBeCloseTo(4_800, 6);
   });
 
   // The chart's whole reason for existing: the visible gap between the income
@@ -200,6 +225,7 @@ describe("buildMonthlyCashFlowChartData", () => {
         leftAfterFixed: 6_780,
         portfolioDraw: 4_000,
         available: 10_780,
+        split: { living: 4_100, surplusSpent: 0, surplusUnspent: 0, unexplained: 0 },
       }),
       row({
         year: 2028,
@@ -216,6 +242,7 @@ describe("buildMonthlyCashFlowChartData", () => {
         leftAfterFixed: 3_560,
         portfolioDraw: 1_000,
         available: 4_560,
+        split: { living: 2_500, surplusSpent: 0, surplusUnspent: 0, unexplained: 0 },
       }),
     ];
     const data = buildMonthlyCashFlowChartData(rows, "dark");
@@ -243,14 +270,14 @@ describe("buildMonthlyCashFlowChartData", () => {
     expect(data.labels).toEqual(["2031"]);
   });
 
-  // A depleted year's Available money does not exist. Stain that band, and ONLY
+  // A depleted year's Left over money does not exist. Stain that band, and ONLY
   // that band — restaining the whole stack would say the taxes weren't paid
   // either, which is not what the engine did.
   //
   // Four rows, depleted in years 2 and 4, so the expected color array is NOT a
   // palindrome: a reversed array reds here, which a healthy/depleted/healthy
   // trio could not see.
-  it("stains only the Available band in the years the portfolio is depleted", () => {
+  it("stains only the Left over band in the years the portfolio is depleted", () => {
     const rows = [
       row(),
       row({ year: 2027, depleted: true }),
@@ -262,7 +289,7 @@ describe("buildMonthlyCashFlowChartData", () => {
     // Liveness: the assertion below is worthless if the two colors are equal.
     expect(brandData.green).not.toBe(colors.crit);
 
-    const available = data.datasets.find((d) => d.label === "Available")!;
+    const available = data.datasets.find((d) => d.label === "Left over")!;
     expect(available.backgroundColor).toEqual([
       brandData.green,
       colors.crit,
@@ -274,12 +301,13 @@ describe("buildMonthlyCashFlowChartData", () => {
     // lets two bands collide on the same color and stay green.
     const bandColor: Record<string, string> = {
       Taxes: brandData.red,
-      "Debt payments": brandData.yellow,
+      Debt: brandData.yellow,
       Savings: brandData.sky,
-      "Other fixed": brandData.grey,
+      Other: brandData.grey,
+      Living: brandData.blue,
     };
     // Liveness: pinning two bands to the same token would make the pins vacuous.
-    expect(new Set(Object.values(bandColor)).size).toBe(4);
+    expect(new Set(Object.values(bandColor)).size).toBe(5);
 
     for (const [label, color] of Object.entries(bandColor)) {
       const ds = data.datasets.find((d) => d.label === label)!;
@@ -296,7 +324,7 @@ describe("buildMonthlyCashFlowChartData", () => {
   // this chart's tightest INTENTIONAL pair — and hue carries nothing at all for
   // a color-blind reader, in either theme. So a depleted year is also the only
   // segment in the chart that is OUTLINED. Same array mechanism as the fill.
-  it("outlines the depleted years' Available segment, and only those", () => {
+  it("outlines the depleted years' Left over segment, and only those", () => {
     const rows = [
       row(),
       row({ year: 2027, depleted: true }),
@@ -304,7 +332,7 @@ describe("buildMonthlyCashFlowChartData", () => {
       row({ year: 2029, depleted: true }),
     ];
     const available = buildMonthlyCashFlowChartData(rows, "dark").datasets.find(
-      (d) => d.label === "Available",
+      (d) => d.label === "Left over",
     )!;
 
     // Liveness: an outline painted in the fill color is not an outline.
@@ -323,10 +351,10 @@ describe("buildMonthlyCashFlowChartData", () => {
     const dark = buildMonthlyCashFlowChartData(rows, "dark");
 
     expect(colorsLight.crit).not.toBe(colors.crit);
-    expect(light.datasets.find((d) => d.label === "Available")!.backgroundColor).toEqual([
+    expect(light.datasets.find((d) => d.label === "Left over")!.backgroundColor).toEqual([
       colorsLight.crit,
     ]);
-    expect(dark.datasets.find((d) => d.label === "Available")!.backgroundColor).toEqual([
+    expect(dark.datasets.find((d) => d.label === "Left over")!.backgroundColor).toEqual([
       colors.crit,
     ]);
     expect(light.datasets.find((d) => d.label === "Taxes")!.backgroundColor).toBe(
@@ -336,14 +364,14 @@ describe("buildMonthlyCashFlowChartData", () => {
     // The outline resolves per theme too — it is a near-black stroke on cream
     // and a near-white one on the dark canvas, so it survives both.
     expect(colorsLight.ink).not.toBe(colors.ink);
-    expect(light.datasets.find((d) => d.label === "Available")!.borderColor).toBe(colorsLight.ink);
-    expect(dark.datasets.find((d) => d.label === "Available")!.borderColor).toBe(colors.ink);
+    expect(light.datasets.find((d) => d.label === "Left over")!.borderColor).toBe(colorsLight.ink);
+    expect(dark.datasets.find((d) => d.label === "Left over")!.borderColor).toBe(colors.ink);
   });
 });
 
 /**
  * The selected-year outline is applied ON TOP of the dataset the builder
- * produced, and the Available band already carries an outline of its own. This
+ * produced, and the Left over band already carries an outline of its own. This
  * is where the two meet.
  */
 describe("applySelectedYearOutline", () => {
@@ -364,22 +392,22 @@ describe("applySelectedYearOutline", () => {
     const styled = applySelectedYearOutline(data, 0, SENTINEL);
     const ds = (label: string) => styled.datasets.find((d) => d.label === label)!;
 
-    expect(ds("Available").borderWidth).toEqual([2, 2, 0]);
+    expect(ds("Left over").borderWidth).toEqual([2, 2, 0]);
     expect(ds("Taxes").borderWidth).toEqual([2, 0, 0]);
     // and the depleted band keeps its OWN outline color, not the selection's.
-    expect(ds("Available").borderColor).toBe(colors.ink);
+    expect(ds("Left over").borderColor).toBe(colors.ink);
     expect(ds("Taxes").borderColor).toBe(SENTINEL);
     // the Income line is not a bar and keeps its own flat stroke.
     expect(ds("Income").borderWidth).toBe(2);
   });
 
-  // Depleted AND selected: the column reads as selected because all five bars
+  // Depleted AND selected: the column reads as selected because all six bars
   // are outlined, and the year still reads as depleted because the stain and
   // the tooltip's words are untouched. One stroke, both meanings.
   it("reads as both when the depleted year is also the selected year", () => {
     const data = buildMonthlyCashFlowChartData(threeYears(), "dark");
     const styled = applySelectedYearOutline(data, 1, SENTINEL);
-    const available = styled.datasets.find((d) => d.label === "Available")!;
+    const available = styled.datasets.find((d) => d.label === "Left over")!;
 
     expect(available.borderWidth).toEqual([0, 2, 0]);
     expect(available.backgroundColor).toEqual([brandData.green, colors.crit, brandData.green]);
@@ -389,10 +417,12 @@ describe("applySelectedYearOutline", () => {
 
 describe("monthlyCashFlowTooltipLabel", () => {
   // Color alone must not carry the meaning — the tooltip says it in words.
-  it("says in words that a depleted year's Available money is not there", () => {
-    expect(monthlyCashFlowTooltipLabel("Available", 8_000, false, false)).toBe("Available: $8,000/mo");
-    expect(monthlyCashFlowTooltipLabel("Available", 8_000, true, false)).toBe(
-      "Available: $8,000/mo — the portfolio has run out; this money is not there",
+  it("says in words that a depleted year's Left over money is not there", () => {
+    expect(monthlyCashFlowTooltipLabel("Left over", 8_000, false, false)).toBe(
+      "Left over: $8,000/mo",
+    );
+    expect(monthlyCashFlowTooltipLabel("Left over", 8_000, true, false)).toBe(
+      "Left over: $8,000/mo — the portfolio has run out; this money is not there",
     );
   });
 
@@ -468,8 +498,8 @@ describe("buildMonthAllocationChartData", () => {
 
     expect(income.type).toBe("line");
     expect(income.data).toEqual(rows.map((r) => r.income));
-    // Living is the band the month view exists to break out; the year chart
-    // folds it inside Available.
+    // Living is a band in BOTH views now — the toggle changes the period, not
+    // the categories.
     expect(d.datasets.some((s) => s.type === "bar" && s.label === "Living")).toBe(true);
   });
 
@@ -522,7 +552,7 @@ describe("buildMonthAllocationChartData", () => {
     // light one. Swapped, both the pins above and the separation guard below
     // would stay green — the set is the same six hues either way.
     expect(colorOf("Living")).toBe(brandData.blue);
-    // Green is the residual in both charts — Available there, Left over here.
+    // Green is the residual in both charts, and it is the SAME label in both.
     expect(colorOf("Left over")).toEqual(Array(12).fill(brandData.green));
   });
 
@@ -660,6 +690,78 @@ describe("buildMonthAllocationChartData", () => {
 
     const barTotal = bars.reduce((s, b) => s + b.data[10], 0);
     expect(barTotal - income.data[10]).toBeCloseTo(rows[10].portfolioDraw, 6);
+  });
+});
+
+/**
+ * The toggle changes the PERIOD, not the way the chart is read — so the two
+ * views have to draw the SAME bands, named and coloured the same way, in the
+ * same order. Stated as its own suite because it is the property the whole
+ * across-the-plan/month-by-month pair exists to hold, and it is the one that
+ * quietly broke before: the year view folded Living inside a band it called
+ * "Available" while the month view broke Living out under "Left over", so an
+ * advisor toggling between them saw two different legends over the same plan.
+ *
+ * Compared band-for-band rather than by a pinned list, so it also reds on a
+ * band ADDED to one builder alone — the failure a fixed list would miss.
+ */
+describe("the two views draw the same chart", () => {
+  const bandsOf = (d: { datasets: Array<{ type: string; label: string; backgroundColor?: string | string[] }> }) =>
+    d.datasets
+      .filter((s) => s.type === "bar")
+      .map((s) => ({
+        label: s.label,
+        // The residual is a per-point array in both builders; its first entry is
+        // the solvent hue, which is what the comparison is about.
+        color: Array.isArray(s.backgroundColor) ? s.backgroundColor[0] : s.backgroundColor,
+      }));
+
+  it.each(["dark", "light"] as const)("names and colours every band alike in %s", (theme) => {
+    const year = bandsOf(buildMonthlyCashFlowChartData([row()], theme));
+    const month = bandsOf(buildMonthAllocationChartData(twelveMonths(), theme));
+
+    // Liveness: an empty or single-band set would make the equality vacuous.
+    expect(year).toHaveLength(6);
+    expect(year).toEqual(month);
+  });
+
+  // And the income line, which is what the bands are read against.
+  it("labels the income line the same in both", () => {
+    const line = (ds: Array<{ type: string; label: string }>) =>
+      ds.find((s) => s.type === "line")!.label;
+    expect(line(buildMonthlyCashFlowChartData([row()], "dark").datasets)).toBe(
+      line(buildMonthAllocationChartData(twelveMonths(), "dark").datasets),
+    );
+  });
+});
+
+describe("buildMonthlyCashFlowChartData short years", () => {
+  // The year-view counterpart of the short-month stain below. A year whose
+  // stated living expenses run past everything available to fund them draws its
+  // residual BELOW the zero line — position, not hue, is what carries it — and
+  // stains for the same reason the short month does.
+  it("stains a year whose living expenses outrun what is available", () => {
+    const rows = [row(), row({ year: 2027, split: { living: 9_000, surplusSpent: 0, surplusUnspent: 0, unexplained: 0 } })];
+    const residual = buildMonthlyCashFlowChartData(rows, "dark").datasets.find(
+      (d) => d.label === "Left over",
+    )!;
+
+    expect(residual.data[1]).toBeLessThan(0);
+    expect(residual.backgroundColor).toEqual([brandData.green, colors.crit]);
+    // The outline stays reserved for depletion — a year that overspends is not
+    // the same claim as a year whose accounts are already empty.
+    expect(residual.borderWidth).toEqual([0, 0]);
+  });
+
+  it("still totals income + draw in a short year rather than clamping the residual", () => {
+    const rows = [row({ split: { living: 9_000, surplusSpent: 0, surplusUnspent: 0, unexplained: 0 } })];
+    const d = buildMonthlyCashFlowChartData(rows, "dark");
+    const barTotal = d.datasets
+      .filter((s) => s.type === "bar")
+      .reduce((s, b) => s + b.data[0], 0);
+    const income = d.datasets.find((s) => s.type === "line")!.data[0];
+
+    expect(barTotal - income).toBeCloseTo(rows[0].portfolioDraw, 6);
   });
 });
 
