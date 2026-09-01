@@ -1,10 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useOrganizationList } from "@clerk/nextjs";
+import { LANDING_PATH } from "@/lib/routes";
 
 type Status =
   | { kind: "polling" }
-  | { kind: "ready"; firmName: string; buyerEmail: string }
+  | { kind: "ready"; firmName: string; buyerEmail: string; firmId?: string }
+  | { kind: "entering" }
+  | { kind: "activation_failed" }
   | { kind: "timeout" }
   | { kind: "error" };
 
@@ -34,12 +39,13 @@ export default function SuccessPolling({ sessionId }: { sessionId: string }) {
         } else {
           const data = (await res.json()) as
             | { ready: false }
-            | { ready: true; firmName: string; buyerEmail: string };
+            | { ready: true; firmName: string; buyerEmail: string; firmId?: string };
           if (!cancelled && data.ready) {
             setStatus({
               kind: "ready",
               firmName: data.firmName,
               buyerEmail: data.buyerEmail,
+              firmId: data.firmId,
             });
             return;
           }
@@ -62,6 +68,63 @@ export default function SuccessPolling({ sessionId }: { sessionId: string }) {
       clearTimeout(timer);
     };
   }, [sessionId]);
+
+  const { setActive } = useOrganizationList();
+  const router = useRouter();
+  const activated = useRef(false);
+
+  // A firmId comes back only when the poller IS the buyer, and only once the
+  // org's billing status is stamped (see /api/checkout/status). So by the time
+  // we get here the org is safe to activate: setActive mints a fresh session
+  // token that already carries org_public_metadata, and proxy.ts sees a
+  // `trialing` firm rather than the `missing` state it blocks outright.
+  //
+  // This is what replaces the invitation email.
+  //
+  // NOTE: this effect's deps include `status`, which it also sets — a naive
+  // cancel-on-cleanup would tear down run #1 the instant `entering` is set
+  // and never fire router.push. Guard with a ref instead of a cleanup flag.
+  useEffect(() => {
+    if (status.kind !== "ready" || !status.firmId || !setActive) return;
+    if (activated.current) return;
+    activated.current = true;
+    const orgId = status.firmId;
+    void (async () => {
+      setStatus({ kind: "entering" });
+      try {
+        await setActive({ organization: orgId });
+        router.push(LANDING_PATH);
+      } catch (err) {
+        console.error("[checkout-success] setActive failed:", err);
+        setStatus({ kind: "activation_failed" });
+      }
+    })();
+  }, [status, setActive, router]);
+
+  if (status.kind === "entering") {
+    return (
+      <div className="text-center">
+        <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+        <p className="mt-6 text-lg text-ink">Opening your workspace…</p>
+      </div>
+    );
+  }
+
+  if (status.kind === "activation_failed") {
+    return (
+      <div className="text-center">
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">
+          Your firm is ready<span className="dot">.</span>
+        </h1>
+        <p className="mt-4 text-ink-2">
+          We couldn&rsquo;t open it automatically — one click and you&rsquo;re in.
+        </p>
+        <a href={LANDING_PATH} className="btn-primary mt-7">
+          Continue to your workspace
+        </a>
+      </div>
+    );
+  }
 
   if (status.kind === "polling") {
     return (
