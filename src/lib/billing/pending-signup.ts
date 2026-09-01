@@ -96,10 +96,21 @@ export async function writePendingSignup(
   return next;
 }
 
-/** Called once the firm exists. Best-effort at every call site. */
+/**
+ * Called once the firm exists. Best-effort at every call site.
+ *
+ * `updateUserMetadata` DEEP-MERGES (see the Clerk backend SDK docs on the
+ * method), so sending an object with the key merely omitted removes nothing —
+ * the stash would survive on the user record forever and a second checkout by
+ * the same buyer would name the new firm from the stale one. A key is deleted
+ * only by setting it to `null`.
+ *
+ * The tombstone also makes this a single write with no read-modify-write: the
+ * merge leaves every other private-metadata key untouched by construction.
+ */
 export async function clearPendingSignup(userId: string): Promise<void> {
-  const meta = await readRawMetadata(userId);
-  const { [KEY]: _removed, ...rest } = meta;
   const cc = await clerkClient();
-  await cc.users.updateUserMetadata(userId, { privateMetadata: rest });
+  await cc.users.updateUserMetadata(userId, {
+    privateMetadata: { [KEY]: null },
+  });
 }

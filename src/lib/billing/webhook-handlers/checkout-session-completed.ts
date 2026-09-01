@@ -143,10 +143,28 @@ export async function handleCheckoutSessionCompleted(
         role: "org:admin",
       });
     } catch (err) {
+      // Deliberately NOT re-thrown: the provision itself succeeded, and turning
+      // a non-fatal condition into a non-200 would put this whole handler into
+      // repeated Stripe redelivery. But a log line alone would strand a paying
+      // buyer at org:owner — 403'd on firm config and team invites — with no
+      // trace outside the logs, so the condition is recorded where this app
+      // already looks. recordAudit swallows its own failures (audit.ts), so it
+      // cannot itself break the provision.
       console.error(
         "[checkout.session.completed] pinning buyer to org:admin failed:",
         err,
       );
+      await recordAudit({
+        action: "billing.org_role_pin_failed",
+        resourceType: "firm",
+        resourceId: firmId,
+        firmId,
+        actorId: `stripe:webhook:${event.id}`,
+        metadata: {
+          buyer_user_id: buyerUserId,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      });
     }
   } else {
     // Sales path: no Clerk user exists yet, so the invitation is the only way in.

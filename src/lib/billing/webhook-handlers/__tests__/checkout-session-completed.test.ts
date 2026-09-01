@@ -404,10 +404,26 @@ describe("profile-first path (session carries client_reference_id)", () => {
   });
 
   it("names the firm from OUR form, not from whatever Stripe collected", async () => {
+    // Stage the actual competition: a session that DOES carry a firm_name
+    // custom field. With the profile block's default empty custom_fields the
+    // loser would only ever be the "Unnamed Firm" fallback, which does not test
+    // the claim in this test's name.
+    mockSessionsRetrieve.mockResolvedValue({
+      id: "cs_test_123",
+      client_reference_id: "user_buyer",
+      customer: "cus_1",
+      subscription: "sub_1",
+      customer_details: { email: "typo@elsewhere.example" },
+      custom_fields: [{ key: "firm_name", text: { value: "Stale Stripe Name" } }],
+    });
     await handleCheckoutSessionCompleted(evt());
     expect(mockFirmInsert).toHaveBeenCalledWith(
       expect.objectContaining({ displayName: "Acme Wealth", isFounder: false }),
     );
+    expect(mockCreateOrg).toHaveBeenCalledWith({
+      name: "Acme Wealth",
+      createdBy: "user_buyer",
+    });
   });
 
   it("carries the branding the buyer chose onto the firm", async () => {
@@ -430,9 +446,12 @@ describe("profile-first path (session carries client_reference_id)", () => {
   });
 
   it("clears the stash once the firm exists", async () => {
+    // Clerk deep-merges private metadata, so the removal is a null tombstone —
+    // an object with the key omitted would leave the stash in place and let a
+    // second checkout by this buyer name its firm from the stale one.
     await handleCheckoutSessionCompleted(evt());
     expect(mockUpdateUserMetadata).toHaveBeenCalledWith("user_buyer", {
-      privateMetadata: {},
+      privateMetadata: { pending_signup: null },
     });
   });
 
@@ -462,6 +481,20 @@ describe("profile-first path (session carries client_reference_id)", () => {
     await expect(handleCheckoutSessionCompleted(evt())).resolves.toBeUndefined();
   });
 
+  it("pins the buyer to org:admin on the normal path, where the membership call succeeds", async () => {
+    // Guards against the pin being moved INSIDE the already-a-member catch:
+    // here createOrganizationMembership resolves, so a pin that only runs on
+    // the error branch would never fire.
+    mockCreateMembership.mockResolvedValue({ id: "orgmem_1" });
+    await handleCheckoutSessionCompleted(evt());
+    expect(mockCreateMembership).toHaveBeenCalled();
+    expect(mockUpdateMembership).toHaveBeenCalledWith({
+      organizationId: "org_new",
+      userId: "user_buyer",
+      role: "org:admin",
+    });
+  });
+
   it("pins the buyer to org:admin even when they are already a member", async () => {
     // The live dev Clerk instance has creatorRole = org:owner, so `createdBy`
     // leaves the buyer as org:owner — a role authz.ts retired, and which
@@ -477,12 +510,46 @@ describe("profile-first path (session carries client_reference_id)", () => {
     });
   });
 
-  it("survives a Clerk failure while pinning the role", async () => {
-    // Best-effort: a hiccup here must not fail an otherwise-good provision.
+  it("survives a Clerk failure while pinning the role, and audits it", async () => {
+    // Best-effort: a hiccup here must not fail an otherwise-good provision, and
+    // must not be re-thrown into Stripe redelivery. But a buyer stranded at
+    // org:owner is 403'd on firm config and team invites, so the condition has
+    // to be visible somewhere other than the logs.
     mockUpdateMembership.mockRejectedValue(new Error("clerk 500"));
     await expect(handleCheckoutSessionCompleted(evt())).resolves.toBeUndefined();
     expect(mockRecordAudit).toHaveBeenCalledWith(
-      expect.objectContaining({ firmId: "org_new" }),
+      expect.objectContaining({
+        action: "billing.org_role_pin_failed",
+        firmId: "org_new",
+        resourceId: "org_new",
+        metadata: expect.objectContaining({
+          buyer_user_id: "user_buyer",
+          error: "clerk 500",
+        }),
+      }),
+    );
+    // and the provision itself still completed
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "billing.subscription_created" }),
+    );
+  });
+
+  it("writes no pin-failure audit row when the pin succeeds", async () => {
+    await handleCheckoutSessionCompleted(evt());
+    expect(mockRecordAudit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "billing.org_role_pin_failed" }),
+    );
+  });
+
+  it("survives a Clerk failure while clearing the stash", async () => {
+    // The clear is the last thing the handler does and is explicitly
+    // best-effort: the firm exists, the buyer is in it, and /welcome redirects
+    // anyone who already has an org. Failing the webhook here would only buy a
+    // pointless Stripe redelivery of work that already landed.
+    mockUpdateUserMetadata.mockRejectedValue(new Error("clerk 500"));
+    await expect(handleCheckoutSessionCompleted(evt())).resolves.toBeUndefined();
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "billing.subscription_created" }),
     );
   });
 });

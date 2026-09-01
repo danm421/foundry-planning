@@ -100,13 +100,41 @@ describe("pending signup stash", () => {
     expect(await readPendingSignup("user_1")).toBeNull();
   });
 
-  it("clears only the pending_signup key", async () => {
+  it("clears the stash with a null tombstone, because Clerk deep-merges", async () => {
+    // updateUserMetadata performs a DEEP MERGE — an object with the key merely
+    // omitted removes nothing, and the stash would outlive the firm. Clerk
+    // deletes a key only when its value is null. Asserting the tombstone (not
+    // the surviving siblings) is what makes this test fail against the old
+    // key-omitting implementation, which sent `{ privateMetadata: { other: 1 } }`.
     mockGetUser.mockResolvedValue({
       privateMetadata: { pending_signup: { firmName: "Acme" }, other: 1 },
     });
     await clearPendingSignup("user_1");
     expect(mockUpdateUserMetadata).toHaveBeenCalledWith("user_1", {
-      privateMetadata: { other: 1 },
+      privateMetadata: { pending_signup: null },
     });
+  });
+
+  it("leaves other private metadata alone without reading it back first", async () => {
+    // The merge preserves siblings by construction, so the clear needs no
+    // read-modify-write. Sending any other key here would risk clobbering a
+    // concurrent write.
+    await clearPendingSignup("user_1");
+    expect(mockGetUser).not.toHaveBeenCalled();
+    const [, arg] = mockUpdateUserMetadata.mock.calls[0]!;
+    expect(
+      Object.keys(
+        (arg as { privateMetadata: Record<string, unknown> }).privateMetadata,
+      ),
+    ).toEqual(["pending_signup"]);
+  });
+
+  it("reads a cleared stash as absent, not as a broken record", async () => {
+    // The tombstone is what Clerk stores until it prunes the key; coerce() must
+    // treat it exactly like a user who never started setup.
+    mockGetUser.mockResolvedValue({
+      privateMetadata: { pending_signup: null },
+    });
+    expect(await readPendingSignup("user_1")).toBeNull();
   });
 });
