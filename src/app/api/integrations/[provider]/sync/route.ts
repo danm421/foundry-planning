@@ -19,9 +19,16 @@ export async function POST(
     const body = await req.json().catch(() => ({}));
     const clientId = typeof body?.clientId === "string" ? body.clientId : undefined;
 
-    // A per-client sync is a per-client action — the owning advisor may run it.
-    // A firm-wide sync touches every advisor's book, so it stays admin-only.
+    const { orgId, userId } = await auth();
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    // A per-client sync is a per-client action — any member of the firm who
+    // can see the client may run it (requireClientEditAccess's own-firm path
+    // grants "edit" on visibility alone; with bookSiloEnabled off, the
+    // default, that's every org:member). A firm-wide sync touches every
+    // advisor's book, so it stays admin-only.
     let firmId: string;
+    let rateLimitKey: string;
     if (clientId) {
       const access = await requireClientEditAccess(clientId);
       // As with claim: a cross-firm share does not license the owning firm's
@@ -30,17 +37,19 @@ export async function POST(
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
       firmId = access.firmId;
+      // Per-client syncs bucket per USER, not per firm: every advisor can now
+      // reach this branch, and a firm bucket would let one of them spend the
+      // whole firm's budget and 429 their colleagues as a side effect — the
+      // same reasoning as checkIntegrationClaimLimit (rate-limit.ts:397-400).
+      rateLimitKey = `${provider.id}:${userId}`;
     } else {
       await requireOrgAdminOrOwner();
-      const { orgId } = await auth();
       if (!orgId) return NextResponse.json({ error: "No active organization" }, { status: 400 });
       firmId = orgId;
+      rateLimitKey = `${provider.id}:${firmId}`;
     }
 
-    const { userId } = await auth();
-    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    const rl = await checkIntegrationSyncLimit(`${provider.id}:${firmId}`);
+    const rl = await checkIntegrationSyncLimit(rateLimitKey);
     if (!rl.allowed) {
       return rateLimitErrorResponse(rl, `Too many ${provider.label} sync requests. Please try again shortly.`);
     }

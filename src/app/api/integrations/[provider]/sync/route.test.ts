@@ -52,6 +52,9 @@ describe("POST /api/integrations/[provider]/sync", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ committed: 2, queued: 1, importId: "imp_1" });
     expect(syncFirm).toHaveBeenCalledWith("firm_1", "orion", { trigger: "manual", userId: "u1", clientId: "c1" });
+    // A per-client sync buckets on the USER, not the firm — even for an
+    // admin — so one advisor can't spend the firm's whole sync budget.
+    expect(checkIntegrationSyncLimit).toHaveBeenCalledWith("orion:u1");
   });
 
   it("403s a non-admin on a firm-wide sync — client edit access is no substitute", async () => {
@@ -77,6 +80,19 @@ describe("POST /api/integrations/[provider]/sync", () => {
     expect(syncFirm).not.toHaveBeenCalled();
   });
 
+  it("429s a per-client sync when the CALLER's own limit is exceeded", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (auth as any).mockResolvedValue({ orgId: "firm_1", userId: "u1", orgRole: "org:member" });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (checkIntegrationSyncLimit as any).mockResolvedValue({ allowed: false, reason: "exceeded", reset: Date.now() + 60000 });
+    const res = await POST(post({ clientId: "c1" }), ctx());
+    expect(res.status).toBe(429);
+    expect(syncFirm).not.toHaveBeenCalled();
+    // A wrong key here (e.g. the firm bucket) would let this test pass on
+    // symptom alone (still 429) without proving WHICH bucket got spent.
+    expect(checkIntegrationSyncLimit).toHaveBeenCalledWith("orion:u1");
+  });
+
   it("lets a NON-ADMIN advisor sync their own client", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (auth as any).mockResolvedValue({ orgId: "firm_1", userId: "u1", orgRole: "org:member" });
@@ -90,6 +106,9 @@ describe("POST /api/integrations/[provider]/sync", () => {
       "firm_1", "orion",
       { trigger: "manual", userId: "u1", clientId: "c1" },
     );
+    // Buckets on the caller, not the firm — five advisors syncing their own
+    // clients in the same minute must not 429 each other or the admin.
+    expect(checkIntegrationSyncLimit).toHaveBeenCalledWith("orion:u1");
   });
 
   it("403s an advisor syncing a client they cannot edit", async () => {
@@ -134,5 +153,7 @@ describe("POST /api/integrations/[provider]/sync", () => {
       "firm_1", "orion",
       { trigger: "manual", userId: "admin1", clientId: undefined },
     );
+    // A firm-wide sync still buckets on the FIRM, unchanged from before the split.
+    expect(checkIntegrationSyncLimit).toHaveBeenCalledWith("orion:firm_1");
   });
 });
