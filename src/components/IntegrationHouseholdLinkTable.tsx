@@ -101,9 +101,17 @@ export function IntegrationHouseholdLinkTable({ providerId }: Props) {
 
   const unlink = useCallback(
     async (householdId: string, clientId: string) => {
-      // Optimistic: clear the link immediately, restore on failure.
+      // Optimistic: clear the link (and its attribution) immediately, restore
+      // both on failure. `priorLinkedByName` is captured from the mapper
+      // itself rather than a closed-over `households` — that keeps this
+      // callback's identity stable across household updates.
+      let priorLinkedByName: string | null = null;
       setHouseholds((prev) =>
-        prev.map((h) => (h.id === householdId ? { ...h, linkedClientId: null } : h)),
+        prev.map((h) => {
+          if (h.id !== householdId) return h;
+          priorLinkedByName = h.linkedByName;
+          return { ...h, linkedClientId: null, linkedByName: null };
+        }),
       );
       try {
         const res = await fetch(`/api/integrations/${providerId}/households/link`, {
@@ -114,7 +122,11 @@ export function IntegrationHouseholdLinkTable({ providerId }: Props) {
         if (!res.ok) throw new Error("unlink failed");
       } catch {
         setHouseholds((prev) =>
-          prev.map((h) => (h.id === householdId ? { ...h, linkedClientId: clientId } : h)),
+          prev.map((h) =>
+            h.id === householdId
+              ? { ...h, linkedClientId: clientId, linkedByName: priorLinkedByName }
+              : h,
+          ),
         );
         showToast({ message: "Couldn't update the link. Please try again." });
       }

@@ -53,8 +53,12 @@ describe("GET …/households", () => {
   });
 
   it("names the advisor who linked each household", async () => {
+    // Two link rows share the same linker so this also pins the [...new
+    // Set(...)] de-duplication: resolveActors must be asked for "u1" once,
+    // not twice.
     (getHouseholdLinks as any).mockResolvedValue([
       { externalHouseholdId: "1234567", clientId: "c1", linkedByUserId: "u1" },
+      { externalHouseholdId: "7654321", clientId: "c2", linkedByUserId: "u1" },
     ]);
     (resolveActors as any).mockResolvedValue(new Map([["u1", { name: "Dana Advisor" }]]));
     const res = await GET(req(), ctx());
@@ -62,9 +66,10 @@ describe("GET …/households", () => {
     expect(body.households[0]).toEqual(
       expect.objectContaining({ linkedClientId: "c1", linkedByName: "Dana Advisor" }),
     );
+    expect(resolveActors).toHaveBeenCalledWith(["u1"]);
   });
 
-  it("reports null rather than throwing when the linker cannot be resolved", async () => {
+  it("reports null when the link has no recorded linker", async () => {
     (getHouseholdLinks as any).mockResolvedValue([
       { externalHouseholdId: "1234567", clientId: "c1", linkedByUserId: null },
     ]);
