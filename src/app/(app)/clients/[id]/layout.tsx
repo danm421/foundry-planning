@@ -1,6 +1,5 @@
 import { notFound, redirect } from "next/navigation";
 import type { ReactElement } from "react";
-import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { crmHouseholds, crmHouseholdContacts, scenarios as scenariosTable, accounts } from "@/db/schema";
 import { eq, desc, asc, and, isNotNull } from "drizzle-orm";
@@ -19,6 +18,7 @@ import { isForgeEnabled } from "@/domain/forge/flag";
 import CrmHouseholdLink from "@/components/crm-household-link";
 import { ClientAccessProvider } from "@/components/client-access-provider";
 import { getHouseholdLinkForClient } from "@/lib/integrations/households";
+import { getConnectedSyncingProviderId } from "@/lib/integrations/connections";
 import { getProvider } from "@/lib/integrations/registry";
 import { IntegrationClientStatus } from "@/components/IntegrationClientStatus";
 
@@ -31,10 +31,7 @@ export default async function ClientLayout({ children, params }: Props): Promise
   const { id } = await params;
   // Only an access *denial* degrades to null → notFound(); a DB fault
   // propagates and renders a 500 rather than a misleading "no such client".
-  const [access, { orgRole }] = await Promise.all([
-    requireClientAccess(id).catch(nullOnAccessDenial),
-    auth(),
-  ]);
+  const access = await requireClientAccess(id).catch(nullOnAccessDenial);
   if (!access) notFound();
   const { client: clientRow } = access;
 
@@ -50,7 +47,7 @@ export default async function ClientLayout({ children, params }: Props): Promise
   // chip row — can run in parallel rather than back-to-back. Neither depends
   // on the other; serializing them just doubled the round-trips before the
   // shell could render.
-  const [contactRows, scenarioRows, link] = await Promise.all([
+  const [contactRows, scenarioRows, link, connectedProviderId] = await Promise.all([
     db
       .select()
       .from(crmHouseholdContacts)
@@ -70,8 +67,15 @@ export default async function ClientLayout({ children, params }: Props): Promise
     // Integration household link has no dependency on the other two — fetch
     // it in the same round-trip rather than serially after.
     getHouseholdLinkForClient(id),
+    // Firm's connected syncing provider, for offering the link affordance on
+    // a client that has no household link yet — no extra round trip in series.
+    getConnectedSyncingProviderId(access.firmId),
   ]);
-  const provider = link ? getProvider(link.provider) : null;
+  const provider = link
+    ? getProvider(link.provider)
+    : connectedProviderId
+      ? getProvider(connectedProviderId)
+      : null;
 
   let lastSyncedAt: Date | null = null;
   if (link) {
@@ -126,12 +130,13 @@ export default async function ClientLayout({ children, params }: Props): Promise
             <>
               <ScenarioChipRow clientId={id} scenarios={scenarioRows} />
               <CrmHouseholdLink crmHouseholdId={clientRow.crmHouseholdId} />
-              {provider && link ? (
+              {provider && provider.syncs ? (
                 <IntegrationClientStatus
                   providerId={provider.id}
                   providerLabel={provider.label}
                   clientId={id}
-                  isAdmin={orgRole === "org:admin"}
+                  canEdit={access.permission === "edit"}
+                  linked={!!link}
                   lastSyncedAt={lastSyncedAt ? lastSyncedAt.toISOString() : null}
                 />
               ) : null}
