@@ -431,6 +431,15 @@ export async function renderPresentationPdf(
         // Resolve to the same keys planScenarioBundles registered so we attach
         // to the exact bundle objects the PDF renderer will read.
         const ref = resolveScenarioRef(raw);
+        // Only base and live scenarios have a solvable scenario id. A snapshot
+        // would be solved as Base Case and that figure attached to the
+        // SNAPSHOT's bundle — a wrong number under a snapshot's name on a
+        // client-facing sheet, which is worse than a missing row. No page's
+        // picker offers a snapshot here, so no configurable path changes.
+        // (Mirrors the `d.ref.kind === "scenario"` guard on scenario-changes
+        // above. The pre-existing block passed opts.scenarioId to the solver
+        // raw, so this hole predates the refactor that made it visible.)
+        if (ref.kind !== "scenario") return;
         const key = keyForRef(ref);
         const dedupe = `${key}:${req.targetPoS}`;
         if (maxSpendDone.has(dedupe) || !bundles[key]) return;
@@ -439,7 +448,9 @@ export async function renderPresentationPdf(
           bundles[key].maxSpend = await getOrComputeMaxSpending({
             clientId,
             firmId,
-            scenarioId: ref.kind === "scenario" ? ref.id : "base",
+            // Narrowed to the scenario arm by the guard above; `ref.id` is
+            // "base" for the base column, exactly as before.
+            scenarioId: ref.id,
             targetPoS: req.targetPoS,
           });
         } catch (msErr) {
