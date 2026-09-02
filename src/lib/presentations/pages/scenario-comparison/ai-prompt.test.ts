@@ -34,6 +34,19 @@ describe("buildScenarioComparisonAiPrompt", () => {
   it("forbids inventing figures", () => {
     expect(buildScenarioComparisonAiPrompt(args).system).toMatch(/never invent/i);
   });
+
+  it("falls back to (none) when a band has no gains or costs", () => {
+    const emptyBand = { ...band, gains: [], costs: [] };
+    const { user } = buildScenarioComparisonAiPrompt({ ...args, bands: [emptyBand] });
+    expect(user).toContain("Gains: (none)");
+    expect(user).toContain("Costs: (none)");
+  });
+
+  it("falls back to a placeholder line when a band has no changes", () => {
+    const noChangesBand = { ...band, changeLines: [] };
+    const { user } = buildScenarioComparisonAiPrompt({ ...args, bands: [noChangesBand] });
+    expect(user).toContain("(No changes recorded.)");
+  });
 });
 
 describe("hashBand", () => {
@@ -52,6 +65,11 @@ describe("hashBand", () => {
       .not.toBe(hashBand(base));
   });
 
+  it("changes when its costs move", () => {
+    expect(hashBand({ ...base, costs: [{ label: "Lifetime taxes", amount: "+$200K" }] }))
+      .not.toBe(hashBand(base));
+  });
+
   it("changes when its change list moves", () => {
     expect(hashBand({ ...base, changeLines: ["Retirement age 65 to 61"] }))
       .not.toBe(hashBand(base));
@@ -59,6 +77,10 @@ describe("hashBand", () => {
 
   it("changes when the tone changes", () => {
     expect(hashBand({ ...base, tone: "plain" })).not.toBe(hashBand(base));
+  });
+
+  it("changes when custom instructions change", () => {
+    expect(hashBand({ ...base, customInstructions: "Be brief." })).not.toBe(hashBand(base));
   });
 
   it("changes when the sentence budget changes", () => {
