@@ -71,9 +71,16 @@ export default async function ClientLayout({ children, params }: Props): Promise
     // a client that has no household link yet — no extra round trip in series.
     getConnectedSyncingProviderId(access.firmId),
   ]);
+  // Own-firm callers only: `permission === "edit"` alone also covers an
+  // edit-level SHARE, and every integration route 403s anything that isn't
+  // `access === "own"` — so gating on permission would hand the unlinked
+  // affordance to a caller whose click always fails. The linked path is
+  // unaffected: it already renders for a shared caller off `link` alone, and
+  // stays that way here.
+  const canEdit = access.access === "own";
   const provider = link
     ? getProvider(link.provider)
-    : connectedProviderId
+    : canEdit && connectedProviderId
       ? getProvider(connectedProviderId)
       : null;
 
@@ -135,7 +142,7 @@ export default async function ClientLayout({ children, params }: Props): Promise
                   providerId={provider.id}
                   providerLabel={provider.label}
                   clientId={id}
-                  canEdit={access.permission === "edit"}
+                  canEdit={canEdit}
                   linked={!!link}
                   lastSyncedAt={lastSyncedAt ? lastSyncedAt.toISOString() : null}
                 />
