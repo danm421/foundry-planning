@@ -167,6 +167,15 @@ describe("DELETE /api/integrations/[provider]/households/link", () => {
       firmId: "firm_1",
       metadata: { provider: "addepar", externalHouseholdId: "hh_123" },
     });
+    // Order guard: the link row must be READ before it is deleted, or the
+    // provider/external id above come back null once unlinkHousehold has
+    // already removed the row. Every assertion above stays green even if
+    // the route's call order regresses — only this catches it.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const readOrder = (getHouseholdLinkForClient as any).mock.invocationCallOrder[0];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const deleteOrder = (unlinkHousehold as any).mock.invocationCallOrder[0];
+    expect(readOrder).toBeLessThan(deleteOrder);
   });
 
   it("falls back to clientId/URL-provider when there is no link row to read", async () => {
