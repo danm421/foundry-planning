@@ -136,6 +136,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
 
     const data = buildRetirementComparisonData(buildCtx, {
       scenarioId: WORKING_SCENARIO_ID,
+      baselineScenarioId: "base",
       showPortfolioMatrix: showPortfolioMatrix ?? false,
       showAiSummary: false,
       showConfidenceRange: true,

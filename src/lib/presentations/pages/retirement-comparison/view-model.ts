@@ -93,7 +93,7 @@ export function buildRetirementComparisonData(
 ): RetirementComparisonPageData {
   const title = "Retirement Comparison";
   const byRef = ctx.bundlesByRef ?? {};
-  const baseBundle = byRef[keyForRef(resolveScenarioRef("base"))];
+  const baseBundle = byRef[keyForRef(resolveScenarioRef(options.baselineScenarioId))];
   const scnBundle = options.scenarioId
     ? byRef[keyForRef(resolveScenarioRef(options.scenarioId))]
     : undefined;
@@ -257,7 +257,7 @@ export function buildRetirementComparisonData(
 
   return {
     title,
-    subtitle: `Base Case vs. ${scnBundle.scenarioLabel}`,
+    subtitle: `${baseBundle.scenarioLabel} vs. ${scnBundle.scenarioLabel}`,
     isEmpty: false,
     verdict: { headline: verdictHeadline(baseSuccess, scnSuccess) },
     kpis,
