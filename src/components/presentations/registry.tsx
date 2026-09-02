@@ -1393,6 +1393,18 @@ export const retirementComparisonPage: PresentationPage<RetirementComparisonPage
     set: (o, scenarioId) => ({ ...o, scenarioId }),
     placeholder: "Compare to…",
   },
+  // MERGE-TIME: once `comparison-baseline` lands, this page gains a
+  // `baselineScenarioId` option and `requiredScenarioRefs` becomes
+  // `[o.baselineScenarioId, o.scenarioId]`. These refs must follow it — solving
+  // against "base" when the advisor chose another baseline prints a spending
+  // row that disagrees with the sheet's own left column.
+  maxSpendRefs: (o) =>
+    o.maxSpend.show
+      ? {
+          refs: o.scenarioId ? ["base", o.scenarioId] : ["base"],
+          targetPoS: o.maxSpend.targetConfidence,
+        }
+      : null,
   buildData: (ctx, options) => buildRetirementComparisonData(ctx, options),
   renderPdf: (input) => <RetirementComparisonPagePdf {...input} />,
 };

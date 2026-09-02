@@ -117,3 +117,16 @@ export function planScenarioBundles(
 
   return { distinct, pageKeys, topKey };
 }
+
+/** Guardrails on the work one export can fan out to, so a deck with many
+ *  per-page scenarios cannot blow the render/function budget. Exceeding either
+ *  returns a 400 with a usable message rather than timing out.
+ *
+ *  They live here, beside the planner that produces the counts, because they
+ *  were previously declared independently in render-presentation-pdf.ts and
+ *  domain/forge/tools/report.ts — raising one and not the other made the Forge
+ *  tool refuse a deck the export route would happily render. */
+export const MAX_DISTINCT_SCENARIOS = 6;
+/** Four, not three: the Scenario Comparison page's own headline configuration
+ *  is Base Case plus three scenarios, each needing a run. */
+export const MAX_MC_SCENARIOS = 4;

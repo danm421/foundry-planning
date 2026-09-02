@@ -62,6 +62,8 @@ import {
   labelForRef,
   keyForRef,
   resolveScenarioRef,
+  MAX_DISTINCT_SCENARIOS,
+  MAX_MC_SCENARIOS,
   type PlannerPage,
 } from "@/lib/scenario/presentation-refs";
 import React from "react";
@@ -102,16 +104,12 @@ export const BodySchema = z.object({
 
 export type ExportPdfBody = z.infer<typeof BodySchema>;
 
-// Guardrails: cap the work a single export can fan out to, so a deck with
-// many per-page scenario overrides can't blow the 25 s render / 60 s function
-// budget. Exceeding either returns 400 instead of timing out.
-const MAX_DISTINCT_SCENARIOS = 6;
-const MAX_MC_SCENARIOS = 3;
-
 // Pages that require a server-side Monte Carlo run for their scenario. The MC
 // page renders the full simulation; the Retirement Summary needs it only for its
 // Monte Carlo KPI. Runs are deduped per distinct scenario in planScenarioBundles.
-const MONTE_CARLO_PAGE_IDS = new Set<string>(["monteCarlo", "retirementSummary", "retirementComparison"]);
+const MONTE_CARLO_PAGE_IDS = new Set<string>([
+  "monteCarlo", "retirementSummary", "retirementComparison", "scenarioComparison",
+]);
 
 const slugify = (s: string) =>
   s
@@ -197,9 +195,13 @@ export async function renderPresentationPdf(
       supportsScenarioOverride: page.supportsScenarioOverride,
       scenarioOverride: p.scenarioOverride,
       needsMonteCarloRun: MONTE_CARLO_PAGE_IDS.has(p.pageId),
-      // The comparison page also needs the chosen scenario's change set loaded.
+      // Plan Comparison and Scenario Comparison both READ bundle.scenarioChanges.
+      // (The retirementComparison arm is pre-existing and dead — its AI path
+      // loads its own change set — and is left alone.)
       isScenarioChanges:
-        p.pageId === "scenarioChanges" || p.pageId === "retirementComparison",
+        p.pageId === "scenarioChanges" ||
+        p.pageId === "retirementComparison" ||
+        p.pageId === "scenarioComparison",
       requiredRefs,
     };
   });
@@ -412,39 +414,37 @@ export async function renderPresentationPdf(
     if (r.kind === "ok") bundles[r.key] = r.bundle;
   }
 
-  // Max sustainable spending: solve per (scenario, target) for each Retirement
-  // Comparison page and attach to both the base and scenario bundles it reads.
+  // Max sustainable spending: each page that wants one declares the refs and
+  // the confidence target via its `maxSpendRefs` hook, and the solve attaches
+  // to the bundle for every ref it names.
   // Unlike the Life-Insurance pass below (whose solve is page-specific and is
   // injected into page.options), max-spend depends only on (scenario, target),
-  // so it attaches to the shared bundle — one solve serves every RC page on it.
+  // so it attaches to the shared bundle — one solve serves every page on it.
   // Cached (kind="max_spending") so repeated decks / the AI route are cheap.
   const maxSpendDone = new Set<string>(); // `${key}:${target}`
   await Promise.all(
     body.pages.flatMap((page) => {
-      if (page.pageId !== "retirementComparison") return [];
-      const opts = page.options as { scenarioId: string; maxSpend: { show: boolean; targetConfidence: number } };
-      if (!opts.maxSpend.show) return [];
-      const target = opts.maxSpend.targetConfidence;
-      // The retirement comparison page always reads "base" plus the chosen
-      // scenario. Resolve to the same keys planScenarioBundles registered so
-      // we attach to the exact bundle objects the PDF renderer will read.
-      const refs: Array<{ key: string; scenarioId: string | "base" }> = [
-        { key: keyForRef(resolveScenarioRef("base")), scenarioId: "base" },
-        ...(opts.scenarioId
-          ? [{ key: keyForRef(resolveScenarioRef(opts.scenarioId)), scenarioId: opts.scenarioId }]
-          : []),
-      ];
-      return refs.map(async ({ key, scenarioId }) => {
-        const dedupe = `${key}:${target}`;
+      const def = PRESENTATION_PAGES[page.pageId];
+      const req = def.maxSpendRefs?.(page.options as never) ?? null;
+      if (!req) return [];
+      return req.refs.map(async (raw) => {
+        // Resolve to the same keys planScenarioBundles registered so we attach
+        // to the exact bundle objects the PDF renderer will read.
+        const ref = resolveScenarioRef(raw);
+        const key = keyForRef(ref);
+        const dedupe = `${key}:${req.targetPoS}`;
         if (maxSpendDone.has(dedupe) || !bundles[key]) return;
         maxSpendDone.add(dedupe);
         try {
           bundles[key].maxSpend = await getOrComputeMaxSpending({
-            clientId: clientId, firmId, scenarioId, targetPoS: target,
+            clientId,
+            firmId,
+            scenarioId: ref.kind === "scenario" ? ref.id : "base",
+            targetPoS: req.targetPoS,
           });
         } catch (msErr) {
           console.error("Max-spend solve failed for export", msErr);
-          bundles[key].maxSpend = null; // page degrades to hidden block
+          bundles[key].maxSpend = null; // page degrades to a hidden row
         }
       });
     }),

@@ -32,14 +32,17 @@ import {
 import { BodySchema, renderPresentationPdf } from "@/components/presentations/render-presentation-pdf";
 import { savePlanToVault } from "@/lib/crm/vault-plans";
 import { PRESENTATION_PAGES } from "@/components/presentations/registry";
+import {
+  MAX_DISTINCT_SCENARIOS,
+  MAX_MC_SCENARIOS,
+} from "@/lib/scenario/presentation-refs";
 import type { ForgeAuthContext } from "../state";
 import type { ForgeToolContext } from "../context";
 
-/** Same fan-out caps the export route enforces. */
-const MAX_DISTINCT_SCENARIOS = 6;
-const MAX_MC = 3;
 /** Pages that drive a Monte Carlo sim per scenario (count toward the MC cap). */
-const MONTE_CARLO_PAGE_IDS = new Set(["monteCarlo", "retirementSummary", "retirementComparison"]);
+const MONTE_CARLO_PAGE_IDS = new Set([
+  "monteCarlo", "retirementSummary", "retirementComparison", "scenarioComparison",
+]);
 
 type GenerateReportResult =
   | { runId: string; status: "queued"; pageCount: number }
@@ -81,8 +84,8 @@ export async function generateReport(
   // triggered by any MC-bearing page or an explicit includeMonteCarlo flag.
   const wantsMc = pageIds.some((id) => MONTE_CARLO_PAGE_IDS.has(id)) || args.includeMonteCarlo === true;
   const mcCount = wantsMc ? Math.max(1, scenarioIds.length) : 0;
-  if (mcCount > MAX_MC) {
-    return { error: `Too many Monte Carlo runs — at most ${MAX_MC} scenarios can include Monte Carlo.` };
+  if (mcCount > MAX_MC_SCENARIOS) {
+    return { error: `Too many Monte Carlo runs — at most ${MAX_MC_SCENARIOS} scenarios can include Monte Carlo.` };
   }
 
   // householdId is the client's crmHouseholdId (firm-scoped) — NOT ctx.clientId.
