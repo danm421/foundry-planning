@@ -2,14 +2,18 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn() }));
 vi.mock("@/lib/db-scoping", () => ({ findClientInFirm: vi.fn() }));
-vi.mock("@/lib/integrations/households", () => ({ linkHousehold: vi.fn(), unlinkHousehold: vi.fn() }));
+vi.mock("@/lib/integrations/households", () => ({
+  linkHousehold: vi.fn(),
+  unlinkHousehold: vi.fn(),
+  getHouseholdLinkForClient: vi.fn(),
+}));
 vi.mock("@/lib/clients/authz", () => ({ requireClientEditAccess: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }));
 
 import { POST, DELETE } from "./route";
 import { auth } from "@clerk/nextjs/server";
 import { findClientInFirm } from "@/lib/db-scoping";
-import { linkHousehold, unlinkHousehold } from "@/lib/integrations/households";
+import { linkHousehold, unlinkHousehold, getHouseholdLinkForClient } from "@/lib/integrations/households";
 import { requireClientEditAccess } from "@/lib/clients/authz";
 import { recordAudit } from "@/lib/audit";
 import { ForbiddenError } from "@/lib/authz";
@@ -79,7 +83,7 @@ function del(body: unknown) {
 }
 
 describe("DELETE /api/integrations/[provider]/households/link", () => {
-  it("403s + does NOT unlink a client from another firm (cross-tenant guard)", async () => {
+  it("403s when the access gate rejects an out-of-firm client", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (auth as any).mockResolvedValue({ orgId: "firm_1", userId: "u1", orgRole: "org:admin" });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -90,6 +94,7 @@ describe("DELETE /api/integrations/[provider]/households/link", () => {
     expect(res.status).toBe(403);
     await expect(res.json()).resolves.toEqual({ error: "Client not found or access denied" });
     expect(unlinkHousehold).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 
   it("lets a NON-ADMIN advisor with edit access unlink their own client", async () => {
@@ -113,6 +118,7 @@ describe("DELETE /api/integrations/[provider]/households/link", () => {
     expect(res.status).toBe(403);
     await expect(res.json()).resolves.toEqual({ error: "Edit access required" });
     expect(unlinkHousehold).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 
   it("403s a cross-firm share — a share is not integration access", async () => {
@@ -127,20 +133,49 @@ describe("DELETE /api/integrations/[provider]/households/link", () => {
     expect(unlinkHousehold).not.toHaveBeenCalled();
   });
 
-  it("writes an audit row on unlink", async () => {
+  it("audits the unlink with the LINK ROW'S provider and external id, not the URL's", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (auth as any).mockResolvedValue({ orgId: "firm_1", userId: "u1", orgRole: "org:member" });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (requireClientEditAccess as any).mockResolvedValue({
       client: { id: "c1" }, firmId: "firm_1", access: "own",
     });
+    // The client's link row is Addepar even though this request hits the
+    // "orion" URL (ctx() defaults to it) — unlinkHousehold has no provider
+    // filter, so this is the real-world case the fix exists for.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (getHouseholdLinkForClient as any).mockResolvedValue({
+      provider: "addepar",
+      externalHouseholdId: "hh_123",
+    });
     await DELETE(del({ clientId: "c1" }), ctx());
-    expect(recordAudit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: "integration.household.unlink",
-        clientId: "c1",
-        firmId: "firm_1",
-      }),
-    );
+    expect(recordAudit).toHaveBeenCalledWith({
+      action: "integration.household.unlink",
+      resourceType: "integration_household_link",
+      resourceId: "hh_123",
+      clientId: "c1",
+      firmId: "firm_1",
+      metadata: { provider: "addepar", externalHouseholdId: "hh_123" },
+    });
+  });
+
+  it("falls back to clientId/URL-provider when there is no link row to read", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (auth as any).mockResolvedValue({ orgId: "firm_1", userId: "u1", orgRole: "org:member" });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (requireClientEditAccess as any).mockResolvedValue({
+      client: { id: "c1" }, firmId: "firm_1", access: "own",
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (getHouseholdLinkForClient as any).mockResolvedValue(null);
+    await DELETE(del({ clientId: "c1" }), ctx());
+    expect(recordAudit).toHaveBeenCalledWith({
+      action: "integration.household.unlink",
+      resourceType: "integration_household_link",
+      resourceId: "c1",
+      clientId: "c1",
+      firmId: "firm_1",
+      metadata: { provider: "orion", externalHouseholdId: null },
+    });
   });
 });
