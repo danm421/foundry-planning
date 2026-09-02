@@ -169,6 +169,7 @@ import {
 import { summarizeTaxComparisonOptions } from "@/lib/presentations/pages/tax-comparison/summarize-options";
 import { estimateTaxComparisonPageCount } from "@/lib/presentations/pages/tax-comparison/estimate-page-count";
 import { TaxComparisonPagePdf } from "./pages/tax-comparison/page-pdf";
+import { TaxComparisonOptionsControl } from "./pages/tax-comparison/options-control";
 import { buildMedicareSummaryData } from "@/lib/presentations/pages/medicare-summary/view-model";
 import type { MedicareSummaryPageData } from "@/lib/presentations/pages/medicare-summary/view-model";
 import {
@@ -1406,6 +1407,7 @@ export const taxComparisonPage: PresentationPage<TaxComparisonPageData, TaxCompa
   optionsSchema: taxComparisonOptionsSchema,
   summarizeOptions: summarizeTaxComparisonOptions,
   estimatePageCount: () => estimateTaxComparisonPageCount(),
+  OptionsControl: TaxComparisonOptionsControl,
   supportsScenarioOverride: false,
   requiredScenarioRefs: (o) =>
     o.scenarioId ? [o.baselineScenarioId, o.scenarioId] : [o.baselineScenarioId],
