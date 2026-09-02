@@ -2,7 +2,10 @@ import { View, Svg, G, Rect, Line, Polyline, Text as SvgText } from "@react-pdf/
 import type { ChartSpec } from "@/lib/presentations/charts/types";
 import { scaleLinear } from "d3-scale";
 import { PRESENTATION_THEME } from "@/lib/presentations/theme";
-import { bandScale, legendLayout, legendSlot, LEGEND_LABEL_X, stackRects } from "./chart-geom";
+import {
+  bandScale, legendLayout, legendSlot, markerLabelLayout,
+  LEGEND_LABEL_X, stackRects,
+} from "./chart-geom";
 
 export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
   const innerW = spec.width - spec.margin.left - spec.margin.right;
@@ -19,6 +22,14 @@ export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
   // The legend starts at the left margin, so the room it has is the plot's own
   // width — never the canvas's.
   const legend = legendLayout(spec.legend.items.length, innerW);
+
+  // Marker labels are laid out together, not one at a time: whether one has to
+  // move depends on where its neighbours landed.
+  const markerLabels = markerLabelLayout(
+    spec.markers,
+    spec.markers.map((m) => (x(m.atX) ?? 0) + barWidth / 2),
+    spec,
+  );
 
   return (
     <View>
@@ -99,9 +110,15 @@ export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
             );
           })}
 
-          {/* Markers — vertical dashed line + label */}
-          {spec.markers.map((m) => {
+          {/* Markers — vertical dashed line + label. The line always stands on
+              the bar; the label is placed by `markerLabelLayout`, which clamps
+              it onto the canvas and stacks it clear of its neighbours. Centring
+              each label on its own bar is correct one at a time and unreadable
+              in a group — a couple's two retirement markers are one year apart,
+              so ~80pt labels sat on centres ~14pt apart and overprinted. */}
+          {spec.markers.map((m, i) => {
             const cx = (x(m.atX) ?? 0) + barWidth / 2;
+            const place = markerLabels[i];
             return (
               <G key={`mk-${m.atX}-${m.iconKind}`}>
                 <Line
@@ -110,14 +127,13 @@ export function CashflowChartPdf({ spec }: { spec: ChartSpec }) {
                   strokeWidth={1}
                   strokeDasharray="3 3"
                 />
-                {/* Centred on `cx`, the same bar centre the dashed line above
-                    is drawn at. Under SVG's default `start` anchor the label
-                    began at the centre and ran right, so its own centre landed
-                    a full bar-step on — it annotated the bar AFTER the one it
-                    marks. */}
+                {/* Anchored `middle` on the placed centre. Under SVG's default
+                    `start` the label began at the centre and ran right, so its
+                    own centre landed a full bar-step on — it annotated the bar
+                    AFTER the one it marks. */}
                 <SvgText
-                  x={cx}
-                  y={-4}
+                  x={place.x}
+                  y={place.y}
                   textAnchor="middle"
                   style={{ fontFamily: "Inter", fontSize: 6, fill: m.color }}
                 >
