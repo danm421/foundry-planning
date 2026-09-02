@@ -18,7 +18,11 @@ const s = StyleSheet.create({
   left: { width: "36%" },
   right: { flex: 1 },
   h4: { fontSize: 6, color: T.ink2, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 },
-  changeLine: { fontSize: 7, color: T.ink2, lineHeight: 1.3, marginBottom: 1.5 },
+  // Capped for the same reason the narrative below is, and measured the same
+  // way: change lines are capped at four ENTRIES, not at length, and four of
+  // them wrapping to three lines each in this 36%-wide column takes the three
+  // bands onto a second tradeoff sheet.
+  changeLine: { fontSize: 7, color: T.ink2, lineHeight: 1.3, marginBottom: 1.5, maxLines: 2, textOverflow: "ellipsis" },
   more: { fontSize: 6.5, color: T.ink3, fontStyle: "italic" },
   // maxLines is a STYLE in react-pdf, not a prop. As a prop it is inert, and an
   // over-long narrative would silently push the band onto a third sheet.

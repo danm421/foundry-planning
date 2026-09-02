@@ -76,9 +76,17 @@ export function buildComparisonChartSpec(
     // retirement years are forced onto the same baseline and print through each
     // other — the defect `cash-flow/chart-geom.ts` records as having shipped in
     // a client deck. Two rows needs 15, and the second row's baseline
-    // (top - 11.5) has to clear a 6pt glyph's ~4.36pt cap height, needing 15.86.
-    // 16 is the smallest integer that does both. The plot keeps the rest.
-    margin: { top: 16, right: 10, bottom: 22, left: 44 },
+    // (top - 11.5) has to clear the label's ink, needing 11.5 + that height.
+    //
+    // 16 came from an ESTIMATED 0.727em cap height (4.36pt at 6pt). Measured
+    // instead — rasterised at 1200 DPI in two-sheet-geometry.test.tsx — the
+    // label "Retires 2050" reaches 4.52pt above its baseline (0.753em): the
+    // tittle on the "i" sits above cap height, and Inter's digits alone already
+    // print 4.46pt. So 16 left the top row's ink 0.02pt OFF the canvas, and an
+    // `Svg` child past the viewport is simply not drawn. 17 is the smallest
+    // integer that clears the measured ink, and still gives exactly two rows
+    // (a third would need 22.5). The plot keeps the rest.
+    margin: { top: 17, right: 10, bottom: 22, left: 44 },
     xAxis: { domain: years, ticks: xTicks, labelFormat: (v: number) => String(v) },
     yAxis: {
       domain: [0, yDomainMax],

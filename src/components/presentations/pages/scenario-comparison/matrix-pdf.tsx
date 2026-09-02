@@ -6,7 +6,9 @@ import { LABEL_COL_W, VALUE_COL_W } from "./geom";
 
 const s = StyleSheet.create({
   table: { borderTopWidth: 0.75, borderTopColor: T.hair2, marginBottom: 8 },
-  row: { flexDirection: "row", alignItems: "center", borderBottomWidth: 0.5, borderBottomColor: T.hair, paddingVertical: 3 },
+  // 2, not 3: ten rows pay for this padding twice each, and sheet one has to
+  // hold the cards, the matrix, the footnote AND the chart panel inside 652pt.
+  row: { flexDirection: "row", alignItems: "center", borderBottomWidth: 0.5, borderBottomColor: T.hair, paddingVertical: 2 },
   label: { width: LABEL_COL_W, fontSize: 7.5, color: T.ink2 },
   labelIndent: { width: LABEL_COL_W, fontSize: 7, color: T.ink3, paddingLeft: 10 },
   cell: { width: VALUE_COL_W, paddingRight: 8 },

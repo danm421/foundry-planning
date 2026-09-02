@@ -90,7 +90,7 @@ const YEARS = Array.from({ length: 20 }, (_, i) => 2026 + i);
 /** Column 3 is the short plan: ten real years, then the union's tail as gaps. */
 const SHORT_YEARS = 10;
 /** What `view-model.ts` asks `buildComparisonChartSpec` for. */
-const CHART_H = 190;
+const CHART_H = 140;
 
 function fixtureSpec(retirementYears: number[] = [2036, 2036, 2036, 2036]) {
   const series: ComparisonSeries[] = ["Base Case", "Retire at 62", "Sell the condo", "Move to Texas"]
@@ -161,17 +161,21 @@ describe("ComparisonChartPdf", () => {
  * forced back onto row 0 and prints THROUGH it — and the single row it does get
  * sits at 4pt absolute, which shaves the caps off a 6pt label.
  *
- * The arithmetic that picks 16:
+ * The arithmetic that picks 17:
  *   · two rows needs `margin.top >= 2 * 7.5` = 15;
- *   · the SECOND row's baseline is `margin.top - 4 - 7.5`, and it has to clear
- *     the canvas top by a 6pt glyph's cap height, so `margin.top >= 11.5 + 4.36`
- *     = 15.86.
- * 16 is the smallest integer that satisfies both.
+ *   · the SECOND row's baseline is `margin.top - 4 - 7.5`, and its ink has to
+ *     clear the canvas top, so `margin.top >= 11.5 + 4.52` = 16.02. That 4.52
+ *     is MEASURED (two-sheet-geometry.test.tsx); the 4.36 cap height this
+ *     originally assumed put the number at 15.86 and left 16 clipping.
+ * 17 is the smallest integer that satisfies both.
  */
-/** Cap height of 6pt Inter (~0.727em). A baseline closer to the canvas top than
- *  this shaves the label's caps off: an @react-pdf `Svg` child past the viewport
- *  is not drawn — no error, no clipping artefact. */
-const LABEL_CAP_H = 6 * 0.727;
+/** How far a marker label's INK reaches above its baseline at 6pt Inter,
+ *  measured by rasterising the real label in two-sheet-geometry.test.tsx: the
+ *  tittle on the "i" in "Retires" reaches 0.753em, above the 0.727em cap height
+ *  this used to assume. A baseline closer to the canvas top than this shaves the
+ *  label's top off: an @react-pdf `Svg` child past the viewport is not drawn —
+ *  no error, no clipping artefact. */
+const LABEL_CAP_H = 6 * 0.7533;
 
 describe("retirement marker labels", () => {
   const spec = fixtureSpec([2036, 2036, 2037, 2036]);

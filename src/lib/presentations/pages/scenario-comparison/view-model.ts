@@ -30,7 +30,14 @@ import type {
 export const COLUMN_COLORS = [T.ink3, dataLight.blue, dataLight.teal, dataLight.purple];
 
 const CHART_WIDTH = 526;
-const CHART_HEIGHT = 190;
+/** 140, not the 190 this started at. Sheet one's content box is 652pt and it
+ *  has to hold the section head, the column cards, ten matrix rows, the
+ *  footnote AND this panel — and the panel costs ~48pt more than the canvas
+ *  (its own padding, its heading and the legend below it, which wraps to a
+ *  second row at four long scenario names). Measured in
+ *  two-sheet-geometry.test.tsx: at 190 the maximal page breaks and prints the
+ *  chart on a third sheet, which mis-numbers every later Contents entry. */
+const CHART_HEIGHT = 140;
 
 /** Sentence budget per band. Sheet two holds up to three bands in 666pt, so the
  *  budget shrinks as columns are added. This is a layout constraint, not an

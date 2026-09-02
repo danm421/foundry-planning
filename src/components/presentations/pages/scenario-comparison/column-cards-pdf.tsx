@@ -10,8 +10,15 @@ const s = StyleSheet.create({
   spacer: { width: LABEL_COL_W },
   card: { width: VALUE_COL_W, paddingRight: 8 },
   rule: { height: 3, borderRadius: 1.5, marginBottom: 5 },
-  name: { fontSize: 8.5, fontWeight: 700, color: T.ink, lineHeight: 1.15 },
-  desc: { fontSize: 6.5, color: T.ink3, lineHeight: 1.25, marginTop: 3 },
+  // Both of these carry advisor-authored text out of `text` columns with no
+  // length bound, into a 96pt card, and an unclamped card grows the whole of
+  // sheet one. Measured (two-sheet-geometry.test.tsx): with the descriptor
+  // wrapping to three lines per entry, sheet one breaks and the chart lands on
+  // a sheet of its own — three sheets where the page count promises two.
+  // `maxLines` is a STYLE in react-pdf, not a prop; as a prop it is inert.
+  // The full text of both still prints on sheet two's band.
+  name: { fontSize: 8.5, fontWeight: 700, color: T.ink, lineHeight: 1.15, maxLines: 2, textOverflow: "ellipsis" },
+  desc: { fontSize: 6.5, color: T.ink3, lineHeight: 1.25, marginTop: 3, maxLines: 2, textOverflow: "ellipsis" },
   meterTrack: { width: METER_W, height: 4, backgroundColor: T.hair, borderRadius: 2, marginTop: 5 },
   meterFill: { height: 4, borderRadius: 2 },
   // Drawn on top of the track so every column reads against the same reference
