@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { requireOrgAdminOrOwner, authErrorResponse } from "@/lib/authz";
 import { findClientInFirm } from "@/lib/db-scoping";
+import { requireClientEditAccess } from "@/lib/clients/authz";
 import { linkHousehold, unlinkHousehold } from "@/lib/integrations/households";
+import { recordAudit } from "@/lib/audit";
 import { resolveProvider } from "../../_provider";
 
 export async function POST(
@@ -47,18 +49,28 @@ export async function DELETE(
     const provider = await resolveProvider(params);
     if (!provider) return new Response("Not found", { status: 404 });
 
-    await requireOrgAdminOrOwner();
-    const { orgId: firmId } = await auth();
-    if (!firmId) return NextResponse.json({ error: "No active organization" }, { status: 400 });
-
     const body = await req.json().catch(() => ({}));
     const clientId = typeof body?.clientId === "string" ? body.clientId : null;
     if (!clientId) return NextResponse.json({ error: "clientId is required" }, { status: 400 });
 
-    const client = await findClientInFirm(clientId, firmId);
-    if (!client) return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    // Unlinking is a per-client action: the client's own advisor may do it, and
+    // an admin still qualifies through the same check. Replaces the former
+    // admin-only gate + findClientInFirm lookup, which this subsumes.
+    const access = await requireClientEditAccess(clientId);
+    if (access.access !== "own") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    const firmId = access.firmId;
 
     await unlinkHousehold(firmId, clientId);
+    await recordAudit({
+      action: "integration.household.unlink",
+      resourceType: "integration_household_link",
+      resourceId: clientId,
+      clientId,
+      firmId,
+      metadata: { provider: provider.id },
+    });
     return NextResponse.json({ ok: true });
   } catch (err) {
     const resp = authErrorResponse(err);
