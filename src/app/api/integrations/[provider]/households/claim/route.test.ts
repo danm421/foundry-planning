@@ -72,9 +72,11 @@ describe("POST …/households/claim", () => {
 
   it("keys the rate limit on the USER, not the firm", async () => {
     await POST(post(good), ctx);
+    // Pinned exactly, not `toContain`: dropping the `${provider.id}:` prefix
+    // would still contain "u1" and would silently merge every provider's
+    // budget into one bucket per user.
     const key = (checkIntegrationClaimLimit as any).mock.calls[0][0] as string;
-    expect(key).toContain("u1");
-    expect(key).not.toContain("firm_1");
+    expect(key).toBe("addepar:u1");
   });
 
   it("does not reach the provider when rate limited", async () => {
@@ -97,26 +99,59 @@ describe("POST …/households/claim", () => {
     expect(a.status).toBe(b.status);
     expect(a.status).toBe(409);
     expect(aBody).toBe(bBody);
+    // Pin the literal spec string, not just "the two bodies match each
+    // other" — a reworded OPAQUE constant would otherwise go unnoticed, and
+    // Task 7's dialog copy depends on this exact text.
+    expect(aBody).toBe(JSON.stringify({ error: "That household ID isn't available to link." }));
+    expect([...a.headers.entries()]).toEqual([...b.headers.entries()]);
   });
 
-  it("audits the TRUE reason even though the caller sees the opaque one", async () => {
+  it("audits the TRUE reason with clientId NULLED off the client's timeline", async () => {
+    // A failure row must not carry clientId: the client activity feed and
+    // overview both filter on it and are reachable with only READ access —
+    // weaker than the edit access this route demands. Leaving it set would
+    // let the very advisor who was refused recover the true reason by
+    // reading their own client's activity feed. The attempted client id
+    // still rides in metadata for the admin audit query.
     (claimHousehold as any).mockResolvedValue({ ok: false, reason: "already_linked" });
     await POST(post(good), ctx);
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "integration.household.claim",
-        clientId: "c1",
+        resourceType: "integration_household_link",
+        resourceId: good.externalHouseholdId,
+        clientId: null,
         firmId: "firm_1",
-        metadata: expect.objectContaining({ outcome: "already_linked" }),
+        metadata: expect.objectContaining({
+          outcome: "already_linked",
+          attemptedClientId: "c1",
+        }),
       }),
     );
   });
 
-  it("audits a successful claim too", async () => {
+  it("audits an UNKNOWN-household claim the same way — clientId nulled, true reason kept", async () => {
+    (claimHousehold as any).mockResolvedValue({ ok: false, reason: "unknown_household" });
+    await POST(post(good), ctx);
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientId: null,
+        metadata: expect.objectContaining({
+          outcome: "unknown_household",
+          attemptedClientId: "c1",
+        }),
+      }),
+    );
+  });
+
+  it("audits a successful claim too, WITH clientId — it's genuine client history", async () => {
     await POST(post(good), ctx);
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "integration.household.claim",
+        resourceType: "integration_household_link",
+        resourceId: good.externalHouseholdId,
+        clientId: "c1",
         metadata: expect.objectContaining({ outcome: "ok" }),
       }),
     );

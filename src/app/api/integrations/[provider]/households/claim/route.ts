@@ -70,15 +70,26 @@ export async function POST(
       listHouseholds: () => activeProvider.client.getHouseholds(ctx),
     });
 
+    // A failed claim's clientId is deliberately NULLED here: the per-client
+    // audit read surfaces (the activity feed and the client overview) filter
+    // on `clientId` and are reachable with only READ access to the client —
+    // weaker than the edit access this route requires. Leaving clientId set
+    // on a failure would let an advisor probe a neighbouring household id,
+    // receive the opaque 409, then recover the TRUE reason via their own
+    // client's activity feed — defeating the point of OPAQUE above. A
+    // successful claim keeps clientId: the advisor already has the outcome
+    // from the 200 response, and it is genuine client history. Either way
+    // the attempted client id rides in metadata for the admin audit query.
     await recordAudit({
       action: "integration.household.claim",
       resourceType: "integration_household_link",
       resourceId: raw,
-      clientId,
+      clientId: result.ok ? clientId : null,
       firmId,
       metadata: {
         provider: activeProvider.id,
         outcome: result.ok ? "ok" : result.reason,
+        attemptedClientId: clientId,
       },
     });
 
