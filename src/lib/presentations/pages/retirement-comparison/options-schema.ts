@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { RetirementComparisonOptions } from "./types";
 
 export const retirementComparisonOptionsSchema = z.object({
+  baselineScenarioId: z.string().default("base"),
   scenarioId: z.string(),
   showPortfolioMatrix: z.boolean(),
   showAiSummary: z.boolean(),
@@ -22,6 +23,7 @@ export const retirementComparisonOptionsSchema = z.object({
 }) satisfies z.ZodType<RetirementComparisonOptions>;
 
 export const RETIREMENT_COMPARISON_OPTIONS_DEFAULT: RetirementComparisonOptions = {
+  baselineScenarioId: "base",
   scenarioId: "",
   showPortfolioMatrix: true,
   showAiSummary: true,

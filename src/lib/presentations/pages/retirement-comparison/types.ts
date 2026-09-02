@@ -14,6 +14,10 @@ export interface RetirementComparisonAiConfig {
 }
 
 export interface RetirementComparisonOptions {
+  /** The left-hand plan. "base" = Base Case; otherwise a live scenario id.
+   *  Never empty — a comparison always has a baseline, unlike `scenarioId`,
+   *  whose "" means "unset, render the empty state". */
+  baselineScenarioId: string;
   /** The comparison scenario id; baseline is always Base Case. Empty = unset. */
   scenarioId: string;
   showPortfolioMatrix: boolean;
