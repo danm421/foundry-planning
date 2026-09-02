@@ -8,6 +8,8 @@ import type { TaxComparisonPageData } from "@/lib/presentations/pages/tax-compar
 const DATA: TaxComparisonPageData = {
   title: "Tax Comparison",
   subtitle: "Base Case vs. Proposed · Lifetime 2025–2065",
+  baselineLabel: "Base Case",
+  scenarioLabel: "Proposed",
   isEmpty: false,
   bracketMode: false,
   kpis: [

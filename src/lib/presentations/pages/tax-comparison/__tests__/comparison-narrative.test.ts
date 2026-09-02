@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildTaxComparisonNarrative, type TaxComparisonNarrativeInput } from "../comparison-narrative";
 
 const BASE: TaxComparisonNarrativeInput = {
+  baselineLabel: "Base Case",
   baseLifetimeTotal: 2_200_000, scnLifetimeTotal: 1_888_000,
   baseEffectiveRate: 0.21, scnEffectiveRate: 0.18,
   baseRothAtRet: 100_000, scnRothAtRet: 580_000,
@@ -40,5 +41,18 @@ describe("buildTaxComparisonNarrative", () => {
   it("omits bracket-year signals in flat-tax mode", () => {
     const lines = buildTaxComparisonNarrative({ ...BASE, bracketMode: false });
     expect(lines.join(" ")).not.toContain("bracket");
+  });
+
+  // IRMAA is the 4th-priority signal and MAX_LINES caps the page at an opener
+  // plus three, so BASE's rate/Roth/high-bracket signals crowd it out. Dropping
+  // bracket mode frees the slot without touching the IRMAA inputs themselves.
+  it("names the baseline in the IRMAA line rather than saying 'the base case'", () => {
+    const lines = buildTaxComparisonNarrative({ ...BASE, bracketMode: false, baselineLabel: "Retire at 62" });
+    expect(lines.join(" ")).toContain("vs 3 in Retire at 62");
+    expect(lines.join(" ")).not.toContain("in the base case");
+  });
+
+  it("still says 'Base Case' for an ordinary base-baselined page", () => {
+    expect(buildTaxComparisonNarrative({ ...BASE, bracketMode: false }).join(" ")).toContain("vs 3 in Base Case");
   });
 });

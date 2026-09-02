@@ -1,6 +1,9 @@
 import { fmtUsd, fmtPct } from "@/lib/presentations/pages/tax-summary/aggregate";
 
 export interface TaxComparisonNarrativeInput {
+  /** Display name of the left-hand plan — "Base Case" unless the advisor chose
+   *  a scenario baseline. */
+  baselineLabel: string;
   baseLifetimeTotal: number;
   scnLifetimeTotal: number;
   baseEffectiveRate: number;
@@ -67,7 +70,7 @@ export function buildTaxComparisonNarrative(input: TaxComparisonNarrativeInput):
   // 4. IRMAA years (count changed).
   if (input.scnIrmaaYears !== input.baseIrmaaYears) {
     signals.push(
-      `IRMAA Medicare surcharges apply in ${input.scnIrmaaYears} year${plural(input.scnIrmaaYears)} vs ${input.baseIrmaaYears} in the base case.`,
+      `IRMAA Medicare surcharges apply in ${input.scnIrmaaYears} year${plural(input.scnIrmaaYears)} vs ${input.baseIrmaaYears} in ${input.baselineLabel}.`,
     );
   }
 

@@ -62,3 +62,14 @@ export function percentLabel(fraction: number): string {
   const pct = fraction * 100;
   return `${Number.isInteger(pct) ? pct : Number(pct.toFixed(1))}%`;
 }
+
+/**
+ * Cap a plan's display name to a column's width. Report columns are fixed-width
+ * (the tax comparison's header cells are 52pt at 6.5pt uppercase, ~14 chars), and
+ * an over-long scenario name would otherwise overrun its neighbour rather than
+ * wrap. The returned string is never longer than `max`, ellipsis included.
+ */
+export function truncateLabel(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 1).trimEnd()}…`;
+}

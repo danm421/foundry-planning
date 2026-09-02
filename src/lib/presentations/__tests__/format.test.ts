@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { compactCurrency, jointAge, dateLong, exactCurrency } from "../format";
+import { compactCurrency, jointAge, dateLong, exactCurrency, truncateLabel } from "../format";
 
 describe("compactCurrency", () => {
   it("formats values >= $1M with M suffix", () => {
@@ -64,5 +64,26 @@ describe("exactCurrency", () => {
     expect(exactCurrency(120000)).toBe("$120,000");
     expect(exactCurrency(32400)).toBe("$32,400");
     expect(exactCurrency(0)).toBe("$0");
+  });
+});
+
+describe("truncateLabel", () => {
+  it("leaves a label that fits untouched", () => {
+    expect(truncateLabel("Base Case", 12)).toBe("Base Case");
+    expect(truncateLabel("Proposed", 12)).toBe("Proposed");
+  });
+
+  it("trims an over-long label to exactly max characters, ellipsis included", () => {
+    const out = truncateLabel("Retire at 65 with Roth conversions", 12);
+    expect(out).toBe("Retire at 6…");
+    expect(out.length).toBe(12);
+  });
+
+  it("does not leave a dangling space before the ellipsis", () => {
+    expect(truncateLabel("Retire at 62 later", 13)).toBe("Retire at 62…");
+  });
+
+  it("tolerates an empty label", () => {
+    expect(truncateLabel("", 12)).toBe("");
   });
 });

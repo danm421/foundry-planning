@@ -9,6 +9,7 @@ import type {
   CompositionSide,
 } from "@/lib/presentations/pages/tax-comparison/view-model";
 import { fmtUsd } from "@/lib/presentations/pages/tax-summary/aggregate";
+import { truncateLabel } from "@/lib/presentations/format";
 import { TaxComparisonChartPdf } from "./chart-pdf";
 import { horizonYearsLabel } from "@/lib/presentations/shared/horizon-label";
 
@@ -89,6 +90,12 @@ function SplitBar({ side }: { side: CompositionSide }) {
 
 export function TaxComparisonPagePdf(input: RenderPdfInput<TaxComparisonPageData>) {
   const { data, firmName, clientName, reportDate, pageIndex, totalPages, accent } = input;
+  // Header cells are 52pt at 6.5pt uppercase (~14 chars); the track labels and
+  // the chart heading are block-level in their panel and have room for ~40.
+  const baseCell = truncateLabel(data.baselineLabel, 12);
+  const scnCell = truncateLabel(data.scenarioLabel, 12);
+  const baseTrack = truncateLabel(data.baselineLabel, 40);
+  const scnTrack = truncateLabel(data.scenarioLabel, 40);
   return (
     <PageFrame firmName={firmName} clientName={clientName} reportDate={reportDate} pageIndex={pageIndex} totalPages={totalPages} orientation="landscape">
       <SectionHead title={data.title} subtitle={data.subtitle} accent={accent} />
@@ -105,7 +112,7 @@ export function TaxComparisonPagePdf(input: RenderPdfInput<TaxComparisonPageData
 
           <View style={s.body}>
             <View style={[s.panel, s.panelLeft]}>
-              <Text style={s.h4}>Taxes paid by year (proposed)</Text>
+              <Text style={s.h4}>{`Taxes paid by year (${scnTrack})`}</Text>
               <TaxComparisonChartPdf years={data.chart} />
             </View>
 
@@ -115,8 +122,8 @@ export function TaxComparisonPagePdf(input: RenderPdfInput<TaxComparisonPageData
                   <Text style={s.h4}>Bracket exposure</Text>
                   <View style={s.cmpHead}>
                     <Text style={s.cmpHeadLbl}> </Text>
-                    <Text style={s.cmpHeadCell}>Base</Text>
-                    <Text style={s.cmpHeadCell}>Proposed</Text>
+                    <Text style={s.cmpHeadCell}>{baseCell}</Text>
+                    <Text style={s.cmpHeadCell}>{scnCell}</Text>
                     <Text style={s.cmpHeadCell}>Δ</Text>
                   </View>
                   {data.bracket.map((row) => (
@@ -135,14 +142,14 @@ export function TaxComparisonPagePdf(input: RenderPdfInput<TaxComparisonPageData
               {data.composition && (data.composition.base.total > 0 || data.composition.scenario.total > 0) ? (
                 <View style={{ marginTop: 10 }}>
                   <Text style={s.h4}>{`Account composition at retirement (${horizonYearsLabel(data.composition.baseYear, data.composition.scenarioYear)})`}</Text>
-                  <Text style={s.compTrackLbl}>Base</Text>
+                  <Text style={s.compTrackLbl}>{baseTrack}</Text>
                   <SplitBar side={data.composition.base} />
-                  <Text style={s.compTrackLbl}>Proposed</Text>
+                  <Text style={s.compTrackLbl}>{scnTrack}</Text>
                   <SplitBar side={data.composition.scenario} />
                   <View style={[s.cmpHead, { marginTop: 6 }]}>
                     <Text style={s.cmpHeadLbl}> </Text>
-                    <Text style={s.cmpHeadCell}>Base</Text>
-                    <Text style={s.cmpHeadCell}>Proposed</Text>
+                    <Text style={s.cmpHeadCell}>{baseCell}</Text>
+                    <Text style={s.cmpHeadCell}>{scnCell}</Text>
                     <Text style={s.cmpHeadCell}>Δ</Text>
                   </View>
                   {COMP_SEGMENTS.map((seg) => {
