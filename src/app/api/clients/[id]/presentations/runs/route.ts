@@ -20,6 +20,7 @@ import {
 import {
   ensureRetirementComparisonAiSummaries,
   ensureInvestmentProposalAiSummaries,
+  ensureScenarioComparisonAiSummaries,
 } from "@/lib/presentations/ensure-ai-summaries";
 import { savePlanToVault } from "@/lib/crm/vault-plans";
 import { recordAudit } from "@/lib/audit";
@@ -127,13 +128,17 @@ export async function POST(
     // "Generate PDF" omits this flag and takes the async after()/202 path below
     // (heavy multi-page decks can exceed the response budget).
     if (new URL(request.url).searchParams.get("download") === "1") {
-      // Generate any Retirement Comparison and Investment Proposal AI commentary
-      // server-side first, then render — the synchronous download blocks on both
-      // anyway.
+      // Generate any Retirement Comparison, Scenario Comparison and Investment
+      // Proposal AI commentary server-side first, then render — the synchronous
+      // download blocks on all of them anyway.
       const pages = await ensureInvestmentProposalAiSummaries(
         id,
         firmId,
-        await ensureRetirementComparisonAiSummaries(id, firmId, parsed.data.pages),
+        await ensureScenarioComparisonAiSummaries(
+          id,
+          firmId,
+          await ensureRetirementComparisonAiSummaries(id, firmId, parsed.data.pages),
+        ),
       );
       const { buffer, filename } = await renderPresentationPdf(id, firmId, {
         ...parsed.data,
@@ -197,15 +202,19 @@ export async function POST(
 
     after(async () => {
       try {
-        // Phase 1 — "Analyzing…": generate the Retirement Comparison and
-        // Investment Proposal AI commentary now that the run is visible in
-        // Recent runs, with the full projection/MC behind it. No-op for decks
-        // without either page.
+        // Phase 1 — "Analyzing…": generate the Retirement Comparison, Scenario
+        // Comparison and Investment Proposal AI commentary now that the run is
+        // visible in Recent runs, with the full projection/MC behind it. No-op
+        // for decks without any of those pages.
         await markAnalyzing(runId);
         const pages = await ensureInvestmentProposalAiSummaries(
           id,
           firmId,
-          await ensureRetirementComparisonAiSummaries(id, firmId, parsed.data.pages),
+          await ensureScenarioComparisonAiSummaries(
+            id,
+            firmId,
+            await ensureRetirementComparisonAiSummaries(id, firmId, parsed.data.pages),
+          ),
         );
         // Phase 2 — "Running": render the PDF with the AI text inlined.
         await markRunning(runId);
