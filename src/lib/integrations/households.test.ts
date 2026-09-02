@@ -65,6 +65,22 @@ describe("integration household links", () => {
     expect(matching[0].updatedAt.getTime()).toBeGreaterThanOrEqual(beforeUpdatedAt!.getTime());
   });
 
+  it("linkHousehold re-attributes linkedByUserId to the re-linking user", async () => {
+    const { clientId } = await createTestClientWithScenario(firmId);
+
+    await linkHousehold({ firmId, providerId: "orion", clientId, externalHouseholdId: "hhD", userId: "user1" });
+    await linkHousehold({
+      firmId,
+      providerId: "orion",
+      clientId,
+      externalHouseholdId: "hhD_other",
+      userId: "user2",
+    });
+
+    const link = await getHouseholdLinkForClient(clientId);
+    expect(link?.linkedByUserId).toBe("user2");
+  });
+
   it("unlinkHousehold deletes the row; getHouseholdLinks no longer returns it", async () => {
     const { clientId } = await createTestClientWithScenario(firmId);
     await linkHousehold({ firmId, providerId: "orion", clientId, externalHouseholdId: "hhC", userId: "user2" });

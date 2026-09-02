@@ -14,9 +14,6 @@ import { ForbiddenError } from "@/lib/authz";
 import { UnauthorizedError } from "@/lib/db-helpers";
 
 vi.mock("@/lib/clients/authz", () => ({ requireClientAccess: vi.fn() }));
-vi.mock("@clerk/nextjs/server", () => ({
-  auth: vi.fn(() => Promise.resolve({ orgRole: "org:admin" })),
-}));
 vi.mock("next/navigation", () => ({
   notFound: vi.fn(() => {
     throw new Error("NEXT_NOT_FOUND");

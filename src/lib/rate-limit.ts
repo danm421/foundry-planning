@@ -394,6 +394,24 @@ export async function checkIntegrationSyncLimit(key: string): Promise<RateLimitR
   return safeLimit(limiter, key);
 }
 
+// Household claim-by-id. Keyed per USER, not per firm: the other integration
+// limiters bucket on firmId, which would let one advisor spend the whole firm's
+// budget probing ids AND rate-limit their innocent colleagues as a side effect.
+// 10/hour is generous for real use (an advisor claims a household once per
+// client, rarely) and ruinous for walking ids adjacent to a known one.
+const getIntegrationClaimLimiter = buildLimiter(10, "1 h", "rl:integration:claim");
+
+/**
+ * Check whether `key` (`<providerId>:<clerkUserId>`) may attempt a household
+ * claim. Budget: 10 req/hour/user. Fails closed like every limiter in this file
+ * — no Upstash config means no claims, which is correct for a security gate.
+ */
+export async function checkIntegrationClaimLimit(key: string): Promise<RateLimitResult> {
+  const limiter = getIntegrationClaimLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
 // Support/feedback submissions. 5/min/firm — generous for a human filling a
 // form, tight enough to blunt abuse. Fail-closed like every other limiter.
 const getFeedbackLimiter = buildLimiter(5, "1 m", "rl:feedback");

@@ -4,6 +4,7 @@ import { requireOrgAdminOrOwner, authErrorResponse } from "@/lib/authz";
 import { checkIntegrationApiLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 import { makeCallContext } from "@/lib/integrations/auth";
 import { getHouseholdLinks } from "@/lib/integrations/households";
+import { resolveActors } from "@/lib/activity/resolve-actors";
 import { ProviderNotConfigured } from "@/lib/integrations/errors";
 import { resolveProvider } from "../_provider";
 
@@ -31,8 +32,21 @@ export async function GET(
       getHouseholdLinks(firmId, activeProvider.id),
     ]);
     const linkByHousehold = new Map(links.map((l) => [l.externalHouseholdId, l.clientId]));
+    const linkerByHousehold = new Map(
+      links.map((l) => [l.externalHouseholdId, l.linkedByUserId]),
+    );
+    const names = await resolveActors(
+      [...new Set(links.map((l) => l.linkedByUserId).filter((v): v is string => !!v))],
+    );
     return NextResponse.json({
-      households: households.map((h) => ({ ...h, linkedClientId: linkByHousehold.get(h.id) ?? null })),
+      households: households.map((h) => {
+        const linker = linkerByHousehold.get(h.id) ?? null;
+        return {
+          ...h,
+          linkedClientId: linkByHousehold.get(h.id) ?? null,
+          linkedByName: linker ? (names.get(linker)?.name ?? null) : null,
+        };
+      }),
     });
   } catch (err) {
     if (err instanceof ProviderNotConfigured) {
