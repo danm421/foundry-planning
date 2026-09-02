@@ -2,7 +2,12 @@ import { describe, it, expect } from "vitest";
 import { buildRetirementComparisonData } from "./view-model";
 import { RETIREMENT_COMPARISON_OPTIONS_DEFAULT } from "./options-schema";
 import type { BuildDataContext } from "@/components/presentations/registry";
-import type { ProjectionYear } from "@/engine/types";
+import type { ClientData, ProjectionYear } from "@/engine/types";
+import type { ProjectionResult } from "@/engine";
+import { runProjectionWithEvents } from "@/engine";
+import { buildMarriedEstateFixture } from "@/engine/__tests__/fixtures/married-estate-fixture";
+import { estateDistributionAtYear } from "@/lib/estate/estate-distribution-at-year";
+import { fmtUsdCompact } from "./format";
 
 // Minimal ProjectionYear factory (only fields the view-model reads).
 function py(
@@ -120,6 +125,19 @@ describe("buildRetirementComparisonData", () => {
     expect(downside.scenario).toBe("$13.9M");
   });
 
+  // These hand-built projection rows carry no per-year hypothetical estate
+  // tax, so there is no after-tax figure to print. The card must go dark
+  // rather than fall back to the end-of-life portfolio total — printing the
+  // gross under this label is the defect, not a degraded version of it.
+  it("shows the legacy card dark when the projection carries no estate model", () => {
+    const legacy = buildRetirementComparisonData(ctx, opts).kpis[2];
+    expect(legacy.label).toBe("Legacy to heirs");
+    expect(legacy.show).toBe(false);
+    expect(legacy.base).toBe("—");
+    expect(legacy.scenario).toBe("—");
+    expect(legacy.delta).toBe("");
+  });
+
   // The strip printed every delta in the success colour whichever way it moved,
   // and the renderers had nothing to branch on. Direction is the fix, and the
   // sign of the delta is NOT a stand-in for it — see the retirement-age case.
@@ -148,7 +166,10 @@ describe("buildRetirementComparisonData", () => {
     expect(d.kpis.map((k) => [k.label, k.delta, k.direction])).toEqual([
       ["Retirement age", "", 0],
       ["Plan confidence", "−13 pts", -1],
-      ["Legacy to heirs", "−$890K", 0],
+      // Blank, not "−$890K": these fixtures carry no estate model, so there is
+      // no after-tax legacy to state. The real-engine block below proves the
+      // figure itself.
+      ["Legacy to heirs", "", 0],
       ["Max sustainable spend", "−$40K/yr", -1],
       ["Downside ending balance", "−$13.5M", -1],
     ]);
@@ -311,5 +332,84 @@ describe("buildRetirementComparisonData — each plan is measured at its own ret
     const d = buildRetirementComparisonData(retCtx({ baseLastYear: 2050 }), opts);
     expect(d.atEndOfLife.scenarioYear).toBe(2070);
     expect(d.atEndOfLife.baseYear).toBe(2050);
+  });
+});
+
+// ── Legacy to heirs is what the heirs KEEP ───────────────────────────────────
+//
+// The card used to print `portfolioAssets.liquidTotal` at end of life — a
+// PRE-tax number. A plan holding its money in pre-tax IRAs hands its heirs
+// roughly a third less than that once IRD income tax, estate tax and probate
+// come out, and printing the gross made a plan that skipped a Roth conversion
+// look identical to one that did it. That is the comparison this page exists
+// to make, so the guard is built to fail the moment the gross comes back:
+// both sides below END WITH THE SAME $15.5M portfolio and differ only in how
+// it is taxed on the way to the kid.
+describe("Legacy to heirs — after tax, not the gross portfolio", () => {
+  /** The canonical married-estate fixture: everything to the surviving spouse,
+   *  then the whole estate to kid-a at the second death (2052). */
+  function estateBundle(kind: "taxable" | "preTax") {
+    const clientData = buildMarriedEstateFixture();
+    clientData.planSettings.irdTaxRate = 0.35;
+    clientData.planSettings.probateCostRate = 0.02;
+    if (kind === "preTax") {
+      const brok = clientData.accounts.find((a) => a.id === "client-brok")!;
+      brok.category = "retirement";
+      brok.subType = "traditional_ira";
+      brok.basis = 0;
+    }
+    return {
+      clientData,
+      projection: runProjectionWithEvents(clientData),
+      scenarioLabel: kind === "preTax" ? "All pre-tax" : "All taxable",
+    } as never;
+  }
+
+  const estateCtx = {
+    clientName: "John Smith",
+    spouseName: "Spouse Test",
+    bundlesByRef: { base: estateBundle("taxable"), "scenario:s1": estateBundle("preTax") },
+  } as unknown as BuildDataContext;
+
+  it("nets estate tax, probate and IRD out of the end-of-life portfolio", () => {
+    const d = buildRetirementComparisonData(estateCtx, opts);
+    const legacy = d.kpis.find((k) => k.label === "Legacy to heirs")!;
+    expect(legacy.show).toBe(true);
+
+    // Both plans end with the same portfolio, so the OLD (gross) card printed
+    // "$15.5M → $15.5M" and a blank move. Anything that prints the gross again
+    // fails here.
+    expect(d.atEndOfLife.base.cash + d.atEndOfLife.base.taxable + d.atEndOfLife.base.preTax)
+      .toBeCloseTo(15_500_000, 0);
+    expect(d.atEndOfLife.scenario.cash + d.atEndOfLife.scenario.taxable + d.atEndOfLife.scenario.preTax)
+      .toBeCloseTo(15_500_000, 0);
+    expect(legacy.base).not.toBe(legacy.scenario);
+    expect(legacy.delta).not.toBe("");
+  });
+
+  it("equals the estate report's own toHeirs on both sides", () => {
+    const d = buildRetirementComparisonData(estateCtx, opts);
+    const legacy = d.kpis.find((k) => k.label === "Legacy to heirs")!;
+    const ownerNames = { clientName: "John Smith", spouseName: "Spouse Test" };
+    const expected = (kind: "taxable" | "preTax") => {
+      const b = estateBundle(kind) as unknown as {
+        clientData: ClientData;
+        projection: ProjectionResult;
+      };
+      return estateDistributionAtYear({
+        projection: b.projection,
+        year: b.projection.secondDeathEvent!.year,
+        clientData: b.clientData,
+        ownerNames,
+      }).toHeirs;
+    };
+    const baseHeirs = expected("taxable");
+    const scnHeirs = expected("preTax");
+    expect(legacy.base).toBe(fmtUsdCompact(baseHeirs));
+    expect(legacy.scenario).toBe(fmtUsdCompact(scnHeirs));
+
+    // And the fix is worth its weight: the all-pre-tax plan loses ~35% of the
+    // same $15.5M to the heir's income tax, which the gross card hid entirely.
+    expect(scnHeirs).toBeLessThan(baseHeirs * 0.75);
   });
 });

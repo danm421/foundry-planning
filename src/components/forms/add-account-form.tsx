@@ -59,6 +59,8 @@ import { isRmdEligibleSubType } from "@/engine/rmd";
 import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
 import { isAumEligible } from "@/lib/accounts/aum";
 import { FieldTooltip } from "./field-tooltip";
+import { basisFieldLabel, basisFieldHelp } from "@/lib/accounts/basis-label";
+import { TRAD_IRA_SUBTYPES } from "@/engine/ira-basis";
 
 const isRetirementSubType = (st: string) =>
   (RETIREMENT_SUBTYPES as readonly string[]).includes(st);
@@ -2038,11 +2040,11 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                     const newSub = e.target.value;
                     setSubType(newSub);
                     setRmdEnabled(isRmdEligibleSubType(newSub));
-                    // Trad IRA default basis is 0 unless the advisor has
-                    // already typed a value — flips back to mirroring on
-                    // other subtypes.
+                    // Form 8606 IRAs default to 0 post-tax basis unless the
+                    // advisor has already typed one — flips back to mirroring
+                    // on other subtypes.
                     if (!userEditedBasis) {
-                      if (newSub === "traditional_ira") {
+                      if (TRAD_IRA_SUBTYPES.has(newSub)) {
                         setAccountBasis("0");
                       } else {
                         setAccountBasis(accountValue);
@@ -2425,11 +2427,12 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                   onChange={(raw) => {
                     setAccountValue(raw);
                     // Auto-mirror basis from value for plain non-retirement
-                    // accounts. Traditional IRAs almost always have $0 after-
-                    // tax basis (Form 8606 tracks contributions explicitly),
-                    // so they default to 0 — advisor opts in to a non-zero
-                    // basis on accounts with prior nondeductible contributions.
-                    if (!userEditedBasis && subType !== "traditional_ira") {
+                    // accounts. Every IRA in the Form 8606 pool defaults to $0
+                    // instead: there, basis means POST-TAX dollars that come
+                    // back untaxed pro-rata, so mirroring the balance would
+                    // make the whole account distribute tax-free. The advisor
+                    // opts in when there were nondeductible contributions.
+                    if (!userEditedBasis && !TRAD_IRA_SUBTYPES.has(subType)) {
                       setAccountBasis(raw);
                     }
                   }}
@@ -2437,7 +2440,9 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
                 />
                 {drivenByHoldings && (
                   <p className="mt-1 text-xs text-gray-400">
-                    Value &amp; cost basis are derived from this account&apos;s holdings.
+                    {category === "retirement"
+                      ? "Value is derived from this account's holdings."
+                      : "Value \u0026 basis are derived from this account's holdings."}
                   </p>
                 )}
               </div>
@@ -2462,13 +2467,17 @@ const AddAccountForm = forwardRef<AccountFormAutoSaveHandle, AddAccountFormProps
               ) : (
                 <div>
                   <label className={fieldLabelClassName} htmlFor="basis">
-                    Cost Basis ($)
+                    {basisFieldLabel(category)} ($)
+                    <FieldTooltip text={basisFieldHelp(category)} />
                   </label>
                   <CurrencyInput
                     id="basis"
                     name="basis"
-                    value={drivenByHoldings ? holdingsTotals!.basis : accountBasis}
-                    disabled={drivenByHoldings}
+                    // Retirement is the exception to holdings-driven: the
+                    // positions' cost basis is not this account's post-tax
+                    // basis, so the advisor keeps entering it by hand.
+                    value={drivenByHoldings && category !== "retirement" ? holdingsTotals!.basis : accountBasis}
+                    disabled={drivenByHoldings && category !== "retirement"}
                     onChange={(raw) => {
                       setAccountBasis(raw);
                       setUserEditedBasis(true);

@@ -1,4 +1,5 @@
 import { splitAnnuityDistribution } from "./annuity/tax";
+import { TRAD_IRA_SUBTYPES, proRataBasisReturn, type TradIraPool } from "./ira-basis";
 
 export interface TransferTaxInput {
   sourceCategory: "taxable" | "cash" | "retirement" | "annuity" | "real_estate" | "business" | "life_insurance" | "notes_receivable" | "stock_options" | "education_savings";
@@ -29,13 +30,20 @@ export interface TransferTaxInput {
   /** Annuity source only: unrecovered §72 basis. Undefined ⇒ basis equals the
    *  account value, so no phantom gain appears. */
   sourceAnnuityBasis?: number;
+  /** Traditional/SEP/SIMPLE IRA sources only: the OWNER's live Form 8606 pool.
+   *  A distribution returns post-tax basis pro-rata across every IRA that
+   *  owner holds, not just the source account. Omitted ⇒ fully taxable, which
+   *  is the right answer for a $0-basis pool. Roth CONVERSIONS keep using
+   *  allTraditionalIra{Basis,Balance} — see the note on that pair. */
+  sourceTradIraPool?: TradIraPool;
 }
 
 export interface TransferTaxResult {
   taxableOrdinaryIncome: number;
   capitalGain: number;
-  /** Portion of `amount` that came out of basis (no tax). For taxable/cash
-   *  source liquidations only; 0 for retirement-source transfers. */
+  /** Portion of `amount` that came out of basis (no tax). Non-zero for
+   *  taxable/cash liquidations, annuity §72 draws, and — since post-tax IRA
+   *  basis started being honored — Traditional-IRA distributions. */
   basisReturn: number;
   earlyWithdrawalPenalty: number;
   label: "tax_free_rollover" | "roth_conversion" | "taxable_distribution" | "early_distribution" | "taxable_liquidation" | "qualified_hsa_distribution";
@@ -180,7 +188,24 @@ export function classifyTransferTax(input: TransferTaxInput): TransferTaxResult 
       return _classify401kDistribution(amount, sourceAccountValue, sourceRothValue, isEarly);
     }
 
-    // Tax-deferred distribution: fully taxable as OI
+    // Traditional / SEP / SIMPLE IRA distribution: the owner's post-tax basis
+    // comes back tax-free pro-rata across their whole Form 8606 pool. Basis
+    // can't be cherry-picked, so a sibling IRA's basis shelters this draw too.
+    if (TRAD_IRA_SUBTYPES.has(sourceSubType)) {
+      const basisReturn = proRataBasisReturn(amount, input.sourceTradIraPool ?? { balance: 0, basis: 0 });
+      const iraOrdinaryIncome = amount - basisReturn;
+      // §72(t) taxes only the amount includible in gross income.
+      const iraPenalty = isEarly ? iraOrdinaryIncome * EARLY_WITHDRAWAL_PENALTY_RATE : 0;
+      return {
+        taxableOrdinaryIncome: iraOrdinaryIncome,
+        capitalGain: 0,
+        basisReturn,
+        earlyWithdrawalPenalty: iraPenalty,
+        label: isEarly ? "early_distribution" : "taxable_distribution",
+      };
+    }
+
+    // 401(a) / other tax-deferred distribution: fully taxable as OI
     const taxableOrdinaryIncome = amount;
     const earlyWithdrawalPenalty = isEarly ? amount * EARLY_WITHDRAWAL_PENALTY_RATE : 0;
     const label = isEarly ? "early_distribution" : "taxable_distribution";

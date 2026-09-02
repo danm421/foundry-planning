@@ -18,6 +18,7 @@ import { buildTargetNames } from "@/lib/scenario/load-panel-data";
 import { describeChangeUnit, type ChangeUnit } from "@/lib/scenario/scenario-change-describe";
 import { buildRetirementComparisonMetrics } from "./metrics";
 import { buildRetirementComparisonAiPrompt } from "./ai-prompt";
+import { afterTaxLegacy } from "./legacy";
 import { getOrComputeMaxSpending } from "@/lib/compute-cache/max-spending";
 import { hashAiRequest, getCachedAnalysis, setCachedAnalysis } from "@/lib/presentations/ai-cache";
 import { callAIExtraction } from "@/lib/extraction/azure-client";
@@ -186,6 +187,27 @@ export async function generateRetirementComparisonAi(
     ? { baseEndP20: base.summary.ending.p20, scnEndP20: scn.summary.ending.p20 }
     : undefined;
 
+  // What the heirs actually receive, alongside the portfolio totals already in
+  // `metrics.matrix`. Without it the commentary reads the portfolio total as the
+  // inheritance and reports a Roth conversion as destroying legacy — it is
+  // pre-paying the heirs' income tax, and the two figures move opposite ways.
+  // Same helper the page's KPI card reads, so the paragraph and the card agree.
+  const ownerNames = {
+    clientName: [client.firstName, client.lastName].filter(Boolean).join(" "),
+    spouseName: client.spouseName ?? null,
+  };
+  const legacyOf = (side: typeof base) =>
+    afterTaxLegacy({
+      projection: side.projection,
+      clientData: side.effectiveTree,
+      ownerNames,
+      fallbackYear: side.projection.years[side.projection.years.length - 1]?.year ?? 0,
+    });
+  const baseLegacy = legacyOf(base);
+  const scnLegacy = legacyOf(scn);
+  const legacy =
+    baseLegacy && scnLegacy ? { base: baseLegacy, scenario: scnLegacy } : undefined;
+
   const { system, user } = buildRetirementComparisonAiPrompt({
     householdName,
     firstNames,
@@ -201,6 +223,7 @@ export async function generateRetirementComparisonAi(
     customInstructions: args.customInstructions,
     maxSpend,
     downside,
+    legacy,
   });
 
   const hash = hashAiRequest({ system, user });

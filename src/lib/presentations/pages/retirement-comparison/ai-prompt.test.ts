@@ -115,3 +115,91 @@ describe("buildRetirementComparisonAiPrompt — max-spend & downside", () => {
     expect(user).not.toContain("Maximum sustainable retirement spending");
   });
 });
+
+// ── The legacy block ─────────────────────────────────────────────────────────
+//
+// The commentary used to narrate the end-of-life PORTFOLIO as the inheritance,
+// which reported a Roth conversion as destroying $1.6M of legacy on a real
+// deck — the conversion was pre-paying the heirs' income tax, so the portfolio
+// fell while what the heirs receive barely moved. The prompt therefore carries
+// BOTH quantities and the tax that separates them, and says outright that they
+// are not the same number.
+describe("buildRetirementComparisonAiPrompt — legacy after tax", () => {
+  const legacyArgs = {
+    householdName: "the Smith household",
+    firstNames: "Pat",
+    scenarioLabel: "Roth conversion",
+    baselineLabel: "Base Case",
+    baselineIsBase: true,
+    kpis,
+    // Gross falls 8.9M → 7.3M; net to heirs is flat. That is the whole point.
+    matrix: {
+      ...matrix,
+      baseAtEnd: { total: 8_900_000, cash: 0, retirement: 0, taxable: 0 },
+      scenarioAtEnd: { total: 7_300_000, cash: 0, retirement: 0, taxable: 0 },
+    },
+    changeLines: ["Added: Roth Conversion Strategy."],
+    legacy: {
+      base: { toHeirs: 7_316_601, taxesAndCosts: 1_405_455, ird: 1_285_270 },
+      scenario: { toHeirs: 7_283_822, taxesAndCosts: 0, ird: 0 },
+    },
+    tone: "detailed" as const,
+    length: "medium" as const,
+    customInstructions: "",
+  };
+
+  it("carries the gross portfolio, the tax, the IRD split and the net to heirs", () => {
+    const { user } = buildRetirementComparisonAiPrompt(legacyArgs);
+    expect(user).toContain("What the heirs actually receive (after tax)");
+    // Gross on both sides — still stated, so the model can contrast them.
+    expect(user).toContain("$8.9M");
+    expect(user).toContain("$7.3M");
+    // The tax that separates gross from net, with IRD named separately.
+    expect(user).toContain("$1.4M");
+    expect(user).toContain("$1.3M");
+    // The move in what the heirs receive is the small one, not the $1.6M drop
+    // in the portfolio.
+    expect(user).toContain("Change in what the heirs receive: −$33K");
+    expect(user).not.toContain("Change in what the heirs receive: −$1.6M");
+  });
+
+  it("tells the model the two quantities are not interchangeable", () => {
+    const { system } = buildRetirementComparisonAiPrompt(legacyArgs);
+    expect(system).toContain("NOT interchangeable");
+    expect(system).toContain("income tax an heir owes on inherited pre-tax retirement accounts");
+  });
+
+  it("signs a rise in what the heirs receive", () => {
+    const { user } = buildRetirementComparisonAiPrompt({
+      ...legacyArgs,
+      legacy: {
+        base: { toHeirs: 7_316_601, taxesAndCosts: 1_405_455, ird: 1_285_270 },
+        scenario: { toHeirs: 9_655_521, taxesAndCosts: 809_424, ird: 769_749 },
+      },
+    });
+    expect(user).toContain("Change in what the heirs receive: +$2.3M");
+  });
+
+  it("omits the block and its guardrail when the plan has no estate model", () => {
+    const { system, user } = buildRetirementComparisonAiPrompt({
+      householdName: "h", firstNames: "p", scenarioLabel: "s",
+      baselineLabel: "Base Case", baselineIsBase: true, kpis, matrix,
+      changeLines: [], tone: "concise", length: "short", customInstructions: "",
+    });
+    expect(user).not.toContain("What the heirs actually receive");
+    expect(system).not.toContain("NOT interchangeable");
+  });
+  // The legacy block arrived on main while the baseline picker was on a branch,
+  // so it hard-coded "Base" for the left side. Every other line on this prompt
+  // uses the chosen baseline's name; if this one does not, the sheet tells the
+  // model that the left column is Base Case while the KPIs above say otherwise.
+  it("names the chosen baseline in the legacy block, not \"Base\"", () => {
+    const { user } = buildRetirementComparisonAiPrompt({
+      ...legacyArgs,
+      baselineLabel: "Retire at 62",
+      baselineIsBase: false,
+    });
+    expect(user).toContain("- Retire at 62: portfolio");
+    expect(user).not.toContain("- Base: portfolio");
+  });
+});

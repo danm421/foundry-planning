@@ -1,5 +1,6 @@
 import type { Account, Transfer, AccountLedger } from "./types";
 import { classifyTransferTax } from "./tax-classification";
+import { computeTradIraPool, iraPoolKey, isTraditionalIra } from "./ira-basis";
 import { controllingFamilyMember } from "./ownership";
 
 // ============================================================================
@@ -130,6 +131,13 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
         annuityBasisMap?.[transfer.sourceAccountId] ?? sourceAccount.annuity?.costBasis,
       allTraditionalIraBasis,
       allTraditionalIraBalance,
+      // Distribution leg only. Scoped to the SOURCE OWNER — §408(d)(2)
+      // aggregates per individual, so a spouse's post-tax basis must not
+      // shelter this distribution. Recomputed per transfer because earlier
+      // transfers in this same year already moved balance and basis.
+      sourceTradIraPool: isTraditionalIra(sourceAccount)
+        ? computeTradIraPool(accounts, accountBalances, basisMap, iraPoolKey(sourceAccount))
+        : undefined,
       ownerAge,
       rothBasis: basisMap[transfer.sourceAccountId] ?? 0,
     });
@@ -289,12 +297,11 @@ function _computeTradIraPool(
   basisMap: Record<string, number>,
 ): { allTraditionalIraBalance: number; allTraditionalIraBasis: number } {
   // Form 8606 aggregation pool: Trad IRAs only. 401(k) basis stays on the plan.
-  const TRAD_IRA_SUBTYPES = new Set(["traditional_ira", "sep_ira", "simple_ira"]);
   let allTraditionalIraBalance = 0;
   let allTraditionalIraBasis = 0;
 
   for (const account of accounts) {
-    if (account.category === "retirement" && TRAD_IRA_SUBTYPES.has(account.subType)) {
+    if (isTraditionalIra(account)) {
       allTraditionalIraBalance += accountBalances[account.id] ?? 0;
       allTraditionalIraBasis += basisMap[account.id] ?? 0;
     }

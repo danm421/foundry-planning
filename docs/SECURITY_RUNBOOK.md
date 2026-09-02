@@ -146,3 +146,75 @@ configuration under Foundry's control. Record each remediation (or
 accepted-risk decision) in the SOC-2 evidence folder.
 
 **Owner:** Dan. Reviewed: 2026-06-22.
+
+---
+
+## 7. Addepar household-link audit trail (required before `ADDEPAR_ENABLED=true`)
+
+**Why:** An advisor links a client to an Addepar household by typing the
+household ID. There is deliberately no browsable household list for
+advisors, so the compensating control against someone guessing IDs to
+probe the firm's book is the audit trail — not a UI restriction. Failed
+claims are recorded with `client_id = null` on purpose, so that a probing
+advisor cannot read back the true failure reason from their own client's
+activity feed. The consequence is that an enumeration attempt is almost
+entirely invisible inside the product: the per-client activity feed is the
+only audit reader that exists, and these rows are not attached to a
+client. Until a firm-admin audit view exists, the trail is readable only
+by querying Neon directly.
+
+**When to run:** on any suspicion of household-ID probing; and as a spot
+check during the quarterly access review (§5) for every firm that has
+Addepar connected.
+
+Run against the **production** branch (`br-frosty-queen-am9ym2q6`,
+project `restless-mode-31108169`) via the Neon MCP or console:
+
+```sql
+select created_at, action, actor_id, firm_id, client_id,
+       resource_id            as attempted_household_id,
+       metadata->>'outcome'   as outcome,
+       metadata->>'provider'  as provider
+from audit_log
+where resource_type = 'integration_household_link'
+order by created_at desc
+limit 100;
+```
+
+How to read it:
+
+- `integration.household.claim` with `client_id = null` is a **failed**
+  claim; `outcome` carries the true reason the advisor was never shown
+  (only two values: `unknown_household`, or `already_linked` — which
+  also covers a lost race, since it is raised on the unique violation), and
+  `attempted_household_id` is the raw string they typed. A handful is
+  ordinary fat-fingering.
+- Many failures from one `actor_id` in a short window is the signature
+  this control exists to catch — an advisor walking household IDs.
+  Contain by removing that advisor's edit access to the clients involved,
+  or by disconnecting the firm's Addepar credentials in Settings →
+  Integrations, which stops every claim at the provider call.
+- `integration.household.link` / `.unlink` are the firm-admin table's
+  actions; `metadata` carries the provider and external household ID.
+  On `.unlink` a null `externalHouseholdId` means there was no link row —
+  a no-op delete, not a real unlink.
+
+Per-actor failure counts:
+
+```sql
+select firm_id, actor_id,
+       count(*)                       as failed_claims,
+       count(distinct resource_id)    as distinct_ids_tried,
+       max(created_at)                as last_attempt
+from audit_log
+where resource_type = 'integration_household_link'
+  and action = 'integration.household.claim'
+  and client_id is null
+group by firm_id, actor_id
+order by failed_claims desc;
+```
+
+**Retire this section** when a firm-admin audit view ships — see the
+`future-work/integrations.md` entry that carries this dependency.
+
+**Owner:** Dan. Added: 2026-09-02.

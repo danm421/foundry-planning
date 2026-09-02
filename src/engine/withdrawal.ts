@@ -1,4 +1,5 @@
 import { splitAnnuityDistribution } from "./annuity/tax";
+import { computeTradIraPool, iraPoolKey, isTraditionalIra, proRataBasisReturn, type TradIraPool } from "./ira-basis";
 import type { WithdrawalPriority, Account } from "./types";
 
 interface WithdrawalResult {
@@ -56,6 +57,11 @@ export interface CategorizeDrawInput {
    *  never decremented, so falling back to it re-shelters basis the household
    *  has already recovered — every year, for as long as the draws run. */
   annuityRemainingBasis?: number;
+  /** Traditional-IRA sources only: the OWNER's live Form 8606 pool (every
+   *  Trad/SEP/SIMPLE IRA they hold). The post-tax basis slice of the draw is
+   *  pro-rata across that pool, not this one account. Omitted ⇒ the draw is
+   *  fully taxable, which is the correct answer for a $0-basis pool. */
+  tradIraPool?: TradIraPool;
   ownerAge: number;
 }
 
@@ -160,7 +166,21 @@ export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
       return { ...empty, ordinaryIncome: taxableOI, earlyWithdrawalPenalty: penalty };
     }
 
-    // Traditional IRA / other tax-deferred: full draw is ordinary income; 10% penalty pre-59.5
+    // Traditional / SEP / SIMPLE IRA: the post-tax basis the owner has in the
+    // aggregated Form 8606 pool comes back tax-free, pro-rata. Basis cannot be
+    // cherry-picked, so this is NOT `basisMap[accountId]` — a sibling IRA's
+    // basis shelters this draw too, and this account's basis shelters the
+    // sibling's. The caller passes the walked-down pool.
+    if (isTraditionalIra(account)) {
+      const basisReturn = proRataBasisReturn(amount, input.tradIraPool ?? { balance: 0, basis: 0 });
+      const ordinaryIncome = amount - basisReturn;
+      // §72(t) is an additional tax on the amount INCLUDIBLE in gross income;
+      // returned post-tax dollars are not includible and carry no penalty.
+      const iraPenalty = isPreAge ? ordinaryIncome * 0.1 : 0;
+      return { ...empty, ordinaryIncome, basisReturn, earlyWithdrawalPenalty: iraPenalty };
+    }
+
+    // 401(a) / other tax-deferred: full draw is ordinary income; 10% penalty pre-59.5
     const penalty = isPreAge ? amount * 0.1 : 0;
     return { ...empty, ordinaryIncome: amount, earlyWithdrawalPenalty: penalty };
   }
@@ -258,6 +278,23 @@ export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInpu
   // plan must see the basis the first draw already consumed. A local copy also
   // keeps the caller's map untouched across convergence iterations.
   const localAnnuityBasis: Record<string, number> = { ...(annuityBasisMap ?? {}) };
+  // Same reason again, one level up: the Form 8606 pool is shared by every
+  // Trad/SEP/SIMPLE IRA one taxpayer owns, so draw #2 must see the basis draw
+  // #1 already used — otherwise the same post-tax dollars shelter income twice.
+  // Built lazily per owner and walked down as the plan is laid out; the
+  // caller's basisMap is never touched (this runs inside a convergence loop).
+  const localTradIraPools = new Map<string, TradIraPool>();
+  const tradIraPoolFor = (account: Account): TradIraPool | undefined => {
+    if (!isTraditionalIra(account)) return undefined;
+    const key = iraPoolKey(account);
+    if (key == null) return undefined;
+    let pool = localTradIraPools.get(key);
+    if (!pool) {
+      pool = computeTradIraPool(accounts, householdBalances, basisMap, key);
+      localTradIraPools.set(key, pool);
+    }
+    return pool;
+  };
 
   const draws: SupplementalDraw[] = [];
   const byAccount: Record<string, number> = {};
@@ -278,11 +315,13 @@ export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInpu
     if (isHsaWithdrawalLocked(account, ownerAge)) continue;   // pre-65 HSA is locked
 
     const drawAmount = Math.min(remaining, available);
+    const tradIraPool = tradIraPoolFor(account);
     const draw = categorizeDraw({
       account, amount: drawAmount, balance: available,
       basisMap, rothValueMap, ownerAge,
       freshBasisRemaining: localFresh[account.id] ?? 0,
       annuityRemainingBasis: localAnnuityBasis[account.id],
+      tradIraPool,
     });
 
     if (account.category === "taxable") {
@@ -294,6 +333,12 @@ export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInpu
         0,
         localAnnuityBasis[account.id] - draw.basisReturn,
       );
+    }
+    if (tradIraPool) {
+      // Both legs move: the distribution leaves the pool and takes its
+      // pro-rata slice of basis with it.
+      tradIraPool.balance = Math.max(0, tradIraPool.balance - drawAmount);
+      tradIraPool.basis = Math.max(0, tradIraPool.basis - draw.basisReturn);
     }
 
     draws.push(draw);

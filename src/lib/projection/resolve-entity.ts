@@ -236,7 +236,16 @@ export function resolveAccountFromRaw(
     category: raw.category as Account["category"],
     subType: raw.subType,
     value: ctx.holdingsTotalsByAccountId?.get(raw.id)?.value ?? n(raw.value),
-    basis: ctx.holdingsTotalsByAccountId?.get(raw.id)?.basis ?? n(raw.basis),
+    // Value rolls up from the positions; POST-TAX BASIS does not. Inside a
+    // retirement wrapper the positions' cost basis is tax-irrelevant (an IRA
+    // realizes no capital gains), while `basis` means already-taxed Form 8606
+    // dollars — a wrapper fact only the advisor can state. Rolling holdings up
+    // into it would hand an imported IRA a huge "post-tax" figure and make
+    // most of every distribution come out tax-free.
+    basis:
+      raw.category === "retirement"
+        ? n(raw.basis)
+        : ctx.holdingsTotalsByAccountId?.get(raw.id)?.basis ?? n(raw.basis),
     rothValue: raw.rothValue != null ? n(raw.rothValue) : 0,
     hsaCoverage: raw.hsaCoverage ?? undefined,
     growthRate,
