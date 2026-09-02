@@ -90,10 +90,16 @@ function SplitBar({ side }: { side: CompositionSide }) {
 
 export function TaxComparisonPagePdf(input: RenderPdfInput<TaxComparisonPageData>) {
   const { data, firmName, clientName, reportDate, pageIndex, totalPages, accent } = input;
-  // Header cells are 52pt at 6.5pt uppercase (~14 chars); the track labels and
-  // the chart heading are block-level in their panel and have room for ~40.
-  const baseCell = truncateLabel(data.baselineLabel, 12);
-  const scnCell = truncateLabel(data.scenarioLabel, 12);
+  // Measured with `pdftotext -bbox` on a real render, not estimated: at 6.5pt
+  // bold uppercase a 12-char label is 51.55pt inside a 52pt cell, so two of them
+  // abut with 0.45pt between — "BASE CASE" and "PROPOSED PL…" read as one word —
+  // and a 12-char label carrying a space wraps to a second line, making that
+  // header row taller than its neighbours. 10 chars measures ~43pt, which keeps
+  // a ~9pt gutter and stays on one line. The track labels and the chart heading
+  // are block-level in their panel: a 40-char name needs ~315pt of ~372pt, so 40
+  // is measured safe there.
+  const baseCell = truncateLabel(data.baselineLabel, 10);
+  const scnCell = truncateLabel(data.scenarioLabel, 10);
   const baseTrack = truncateLabel(data.baselineLabel, 40);
   const scnTrack = truncateLabel(data.scenarioLabel, 40);
   return (

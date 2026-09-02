@@ -64,10 +64,13 @@ export function percentLabel(fraction: number): string {
 }
 
 /**
- * Cap a plan's display name to a column's width. Report columns are fixed-width
- * (the tax comparison's header cells are 52pt at 6.5pt uppercase, ~14 chars), and
- * an over-long scenario name would otherwise overrun its neighbour rather than
- * wrap. The returned string is never longer than `max`, ellipsis included.
+ * Cap a plan's display name to a column's width. Report columns are fixed-width,
+ * and an over-long scenario name would otherwise wrap or run into its neighbour.
+ * The returned string is never longer than `max`, ellipsis included.
+ *
+ * `max` is a character count, so each caller measures its own column: the tax
+ * comparison's 52pt header cells take 10 at 6.5pt bold uppercase (measured, not
+ * estimated — see the note at its call site).
  */
 export function truncateLabel(s: string, max: number): string {
   if (s.length <= max) return s;
