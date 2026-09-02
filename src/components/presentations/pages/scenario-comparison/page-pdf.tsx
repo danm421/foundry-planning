@@ -52,19 +52,27 @@ export function ScenarioComparisonPagePdf(input: RenderPdfInput<ScenarioComparis
         ) : null}
       </PageFrame>
 
-      <PageFrame {...frame} pageIndex={pageIndex + 1}>
-        <SectionHead
-          title="What each scenario trades"
-          eyebrow="SCENARIO COMPARISON — TRADEOFFS"
-          accent={accent}
-        />
-        {data.bands.map((b, i) => (
-          <Fragment key={b.scenarioId}>
-            {i > 0 ? <View style={s.bandGap} /> : null}
-            <BandPdf band={b} />
-          </Fragment>
-        ))}
-      </PageFrame>
+      {/* With `showTradeoffBands` off, `data.bands` is [] and there is nothing
+          for this sheet to say — a section head and a footer over blank
+          space. Omit the sheet entirely rather than print it empty; the page
+          count must move with this same condition (see
+          `estimateScenarioComparisonPageCount`) or the deck's Contents
+          mis-numbers every entry after it. */}
+      {data.bands.length > 0 ? (
+        <PageFrame {...frame} pageIndex={pageIndex + 1}>
+          <SectionHead
+            title="What each scenario trades"
+            eyebrow="SCENARIO COMPARISON — TRADEOFFS"
+            accent={accent}
+          />
+          {data.bands.map((b, i) => (
+            <Fragment key={b.scenarioId}>
+              {i > 0 ? <View style={s.bandGap} /> : null}
+              <BandPdf band={b} />
+            </Fragment>
+          ))}
+        </PageFrame>
+      ) : null}
     </Fragment>
   );
 }

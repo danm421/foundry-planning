@@ -251,6 +251,10 @@ describe("buildScenarioComparisonData", () => {
       ctx(), opts({ scenarioIds: ["s1"], showTradeoffBands: false }),
     );
     expect(d.bands).toEqual([]);
+    // The composer omits sheet two entirely when there is nothing to put on
+    // it (page-pdf.tsx) — the estimate has to agree, or the deck's Contents
+    // mis-numbers every entry after this page.
+    expect(estimateScenarioComparisonPageCount(d)).toBe(1);
   });
 
   it("truncates a stored narrative to the band budget", () => {

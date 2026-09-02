@@ -20,6 +20,7 @@ import { PageFrame } from "@/components/presentations/shared/page-frame";
 import { ChartLegend } from "@/components/presentations/pages/retirement-comparison/chart-legend-pdf";
 import { buildScenarioComparisonData } from "@/lib/presentations/pages/scenario-comparison/view-model";
 import { SCENARIO_COMPARISON_OPTIONS_DEFAULT } from "@/lib/presentations/pages/scenario-comparison/options-schema";
+import type { TradeoffBand } from "@/lib/presentations/pages/scenario-comparison/types";
 import { ScenarioComparisonPagePdf } from "./page-pdf";
 import { BandPdf } from "./band-pdf";
 import { MatrixPdf } from "./matrix-pdf";
@@ -122,6 +123,15 @@ const data = buildScenarioComparisonData(ctx(), {
 
 const emptyData = buildScenarioComparisonData(ctx(), SCENARIO_COMPARISON_OPTIONS_DEFAULT);
 
+// Same three scenarios as `data`, but with the tradeoff bands turned off —
+// `data.bands` comes back `[]` (view-model.test.ts pins this), and sheet two
+// must not print a section head over blank space for it (T6-I1).
+const noBandsData = buildScenarioComparisonData(ctx(), {
+  ...SCENARIO_COMPARISON_OPTIONS_DEFAULT,
+  scenarioIds: ["s1", "s2", "s3"],
+  showTradeoffBands: false,
+});
+
 const baseInput = {
   firmName: "Ethos Financial Group",
   clientName: "A B",
@@ -149,12 +159,42 @@ describe("ScenarioComparisonPagePdf render", () => {
     const buf = await renderToBuffer(<Document>{tree}</Document>);
     expect(buf.byteLength).toBeGreaterThan(1000);
   });
+
+  // T6-I1: with `showTradeoffBands` off, sheet two has nothing to say — a
+  // section head and a footer over blank space — so the composer must omit
+  // it, and `estimateScenarioComparisonPageCount` must agree (covered in
+  // view-model.test.ts's "omits the bands when the option is off").
+  it("omits sheet two — and prints only one PageFrame — when showTradeoffBands is off", async () => {
+    ensureFontsRegistered();
+    expect(noBandsData.isEmpty).toBe(false); // guard: scenarios ARE chosen
+    expect(noBandsData.bands).toEqual([]); // guard: bands really are empty
+    const tree = ScenarioComparisonPagePdf({ data: noBandsData, pageIndex: 1, ...baseInput });
+    expect(collect(tree, PageFrame)).toHaveLength(1);
+    const buf = await renderToBuffer(<Document>{tree}</Document>);
+    expect(buf.byteLength).toBeGreaterThan(500);
+  });
 });
 
 describe("sheet two — tradeoff bands", () => {
-  it("prints every band's scenario name", () => {
-    for (const band of data.bands) {
-      const texts = collect(BandPdf({ band }), Text)
+  // T6-I2: calling `BandPdf({ band })` directly only proves the leaf
+  // component prints a name — it says nothing about whether `page-pdf.tsx`
+  // actually puts it on the page. Walking the COMPOSED tree instead means
+  // deleting `<BandPdf band={b} />` from page-pdf.tsx turns this red (verified
+  // by mutation, see task-6-report.md).
+  it("puts every band's scenario name on the COMPOSED page", () => {
+    const tree = ScenarioComparisonPagePdf({ data, pageIndex: 1, ...baseInput });
+    const bandEls = collect(tree, BandPdf);
+
+    // Guard: one BandPdf per band, in the same order — proves the composer
+    // wires page-pdf.tsx's real `data.bands` into sheet two, not a stand-in.
+    expect(bandEls.map((el) => (el.props as { band: TradeoffBand }).band.name))
+      .toEqual(data.bands.map((b) => b.name));
+
+    // Expand each composed BandPdf element for real and confirm the name is
+    // actually painted, not just that a correctly-propped element exists.
+    for (const el of bandEls) {
+      const { band } = el.props as { band: TradeoffBand };
+      const texts = collect(BandPdf(el.props as { band: TradeoffBand }), Text)
         .map((t) => (t.props as { children?: ReactNode }).children);
       expect(texts, band.scenarioId).toContain(band.name);
     }
