@@ -41,7 +41,10 @@ export async function linkHousehold(input: {
         provider: input.providerId,
         externalHouseholdId: input.externalHouseholdId,
         // firmId is deliberately NOT updated: org-scoping is immutable per
-        // link row, matching the shipped Orion behavior.
+        // link row, matching the shipped Orion behavior. linkedByUserId DOES
+        // update: the "Linked by" column must name whoever performed THIS
+        // link, not whoever created the row originally.
+        linkedByUserId: input.userId,
         updatedAt: new Date(),
       },
     });
@@ -113,9 +116,9 @@ export async function claimHousehold(input: {
         set: {
           provider: input.providerId,
           externalHouseholdId: input.externalHouseholdId,
-          // Unlike linkHousehold, this DOES re-set linkedByUserId: attribution
-          // is the point of the claim path (the audit trail must name who
-          // claimed it), so a re-claim re-attributes to the claiming advisor.
+          // Re-sets linkedByUserId, same as linkHousehold: attribution is the
+          // point of both paths (the audit trail must name who acted last),
+          // so a re-claim re-attributes to the claiming advisor.
           linkedByUserId: input.userId,
           updatedAt: new Date(),
         },
