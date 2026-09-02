@@ -32,6 +32,14 @@ export async function POST(
     if (!client) return NextResponse.json({ error: "Client not found" }, { status: 404 });
 
     await linkHousehold({ firmId, providerId: provider.id, clientId, externalHouseholdId, userId });
+    await recordAudit({
+      action: "integration.household.link",
+      resourceType: "integration_household_link",
+      resourceId: externalHouseholdId,
+      clientId,
+      firmId,
+      metadata: { provider: provider.id, externalHouseholdId },
+    });
     return NextResponse.json({ ok: true });
   } catch (err) {
     const resp = authErrorResponse(err);

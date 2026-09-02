@@ -48,6 +48,7 @@ describe("POST /api/integrations/[provider]/households/link", () => {
     const res = await POST(post({ clientId: "c-other", externalHouseholdId: "hh1" }), ctx());
     expect(res.status).toBe(404);
     expect(linkHousehold).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 
   it("links a same-firm client (200) with the right args", async () => {
@@ -64,6 +65,14 @@ describe("POST /api/integrations/[provider]/households/link", () => {
       externalHouseholdId: "hh1",
       userId: "u1",
     });
+    expect(recordAudit).toHaveBeenCalledWith({
+      action: "integration.household.link",
+      resourceType: "integration_household_link",
+      resourceId: "hh1",
+      clientId: "c1",
+      firmId: "firm_1",
+      metadata: { provider: "orion", externalHouseholdId: "hh1" },
+    });
   });
 
   it("403s a non-admin (does NOT link)", async () => {
@@ -72,6 +81,7 @@ describe("POST /api/integrations/[provider]/households/link", () => {
     const res = await POST(post({ clientId: "c1", externalHouseholdId: "hh1" }), ctx());
     expect(res.status).toBe(403);
     expect(linkHousehold).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 });
 
