@@ -49,7 +49,8 @@ export function SelectedPageRow(props: Props) {
       : (props.scenarioOverride ?? "base");
 
   // Pages like Retirement Comparison store the "compare to" scenario *inside*
-  // their options (the baseline is always Base Case). Surface it as an inline
+  // their options (the baseline sits beside it, and is no longer always Base
+  // Case — see `readBaselineScenarioId` below). Surface it as an inline
   // picker in place of the static "Base plan" chip so it can be set without
   // opening Options. Live scenarios only — mirrors the Options-dialog list.
   const inlineScenario = page.inlineScenarioOption;
@@ -64,7 +65,7 @@ export function SelectedPageRow(props: Props) {
     ? page.readBaselineScenarioId(props.options as never)
     : "base";
   const baselineName =
-    baselineId && baselineId !== "base"
+    baselineId !== "base"
       ? (props.scenarios.find((s) => s.id === baselineId)?.name ?? baselineId)
       : null;
 

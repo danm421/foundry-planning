@@ -47,6 +47,12 @@ export function buildRetirementComparisonAiPrompt(args: RetirementComparisonAiAr
   system: string;
   user: string;
 } {
+  // The baseline's own change list, gated ONCE. A base baseline has no changes
+  // "vs. base" to describe, so `baselineIsBase` empties it here rather than at
+  // each of the two places that read it — the system guardrail and the user
+  // block must appear together, and spelling the same condition twice, forty
+  // lines apart, is how they drift apart.
+  const baselineLines = args.baselineIsBase ? [] : (args.baselineChangeLines ?? []);
   const systemParts = [
     "You write advisor commentary for a financial-planning report.",
     'Always sound warm, personable, and conversational — like you\'re talking with the household, not at them. Use "you" and "your". Skip corporate-speak and jargon.',
@@ -64,7 +70,7 @@ export function buildRetirementComparisonAiPrompt(args: RetirementComparisonAiAr
     TONE[args.tone],
     `Length: ${LENGTH[args.length]} Do not exceed this.`,
   ];
-  if (!args.baselineIsBase && (args.baselineChangeLines?.length ?? 0) > 0) {
+  if (baselineLines.length > 0) {
     systemParts.push(
       "Both change lists below are recorded against Base Case, not against each other. Describe how the two sets differ; never present one list as the change from the other.",
     );
@@ -101,10 +107,9 @@ export function buildRetirementComparisonAiPrompt(args: RetirementComparisonAiAr
   const changeBlock = args.changeLines.length
     ? args.changeLines.map((l) => `- ${l}`).join("\n")
     : "- (No changes vs. the base plan.)";
-  const baselineChangeBlock =
-    !args.baselineIsBase && args.baselineChangeLines?.length
-      ? args.baselineChangeLines.map((l) => `- ${l}`).join("\n")
-      : null;
+  const baselineChangeBlock = baselineLines.length
+    ? baselineLines.map((l) => `- ${l}`).join("\n")
+    : null;
 
   const maxSpendBlock = args.maxSpend
     ? `Maximum sustainable retirement spending (today's dollars, same confidence target): ${left} ${fmtUsd(args.maxSpend.base)}/yr → Scenario ${fmtUsd(args.maxSpend.scenario)}/yr.`

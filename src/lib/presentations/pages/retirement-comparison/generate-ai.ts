@@ -175,7 +175,11 @@ export async function generateRetirementComparisonAi(
   // map serves both lists.
   const targetNames = buildTargetNames(scn.effectiveTree, clientId);
   const changeLines = changeLinesFor(changes, toggleGroups, targetNames);
-  const baselineChangeLines = baselineIsBase ? [] : changeLinesFor(bChanges, bGroups, targetNames);
+  // No ternary here: `bChanges`/`bGroups` are already forced to [] on the base
+  // path above (those two ternaries are load-bearing — they skip real queries),
+  // and `changeLinesFor([], [], …)` returns []. Guarding it twice read as if
+  // the base path were a special case downstream, which it is not.
+  const baselineChangeLines = changeLinesFor(bChanges, bGroups, targetNames);
 
   const firstName = client.firstName || "the household";
   const spouseFirst = client.spouseName ?? null;

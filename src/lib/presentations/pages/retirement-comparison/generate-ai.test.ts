@@ -44,9 +44,31 @@ vi.mock("@/lib/presentations/ai-cache", () => ({
   setCachedAnalysis: vi.fn(async () => {}),
 }));
 vi.mock("@/lib/extraction/azure-client", () => ({ callAIExtraction: vi.fn(async () => "  markdown  ") }));
-vi.mock("@/db", () => ({ db: { select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ name: "Scn" }] }) }) }) } }));
-vi.mock("@/db/schema", () => ({ scenarios: {} }));
-vi.mock("drizzle-orm", () => ({ and: () => ({}), eq: () => ({}) }));
+// The scenario-name lookup must be ID-AWARE. Returning one fixed name for any
+// id made the label assertions blind: baseline and scenario could be wired to
+// each other's ids and every expectation below would still pass. `eq` carries
+// the value through so `where` can answer per scenario.
+vi.mock("@/db/schema", () => ({ scenarios: { id: "id", clientId: "clientId", name: "name" } }));
+vi.mock("drizzle-orm", () => ({
+  and: (...cs: unknown[]) => ({ cs }),
+  eq: (col: unknown, val: unknown) => ({ col, val }),
+}));
+const SCENARIO_NAMES: Record<string, string> = { s2: "The Baseline", scn1: "The Comparison" };
+vi.mock("@/db", () => ({
+  db: {
+    select: () => ({
+      from: () => ({
+        where: (cond: { cs: Array<{ col: unknown; val: unknown }> }) => ({
+          limit: async () => {
+            const id = cond.cs.find((c) => c.col === "id")?.val as string | undefined;
+            const name = id ? SCENARIO_NAMES[id] : undefined;
+            return name ? [{ name }] : [];
+          },
+        }),
+      }),
+    }),
+  },
+}));
 
 import { generateRetirementComparisonAi } from "./generate-ai";
 import { getOrComputeMaxSpending } from "@/lib/compute-cache/max-spending";
@@ -90,8 +112,14 @@ describe("generateRetirementComparisonAi Monte Carlo routing", () => {
     const msIds = vi.mocked(getOrComputeMaxSpending).mock.calls.map((c) => c[0].scenarioId);
     expect(msIds).toEqual(expect.arrayContaining(["s2", "scn1"]));
     expect(msIds).not.toContain("base");
-    const promptArgs = mockBuildPrompt.mock.calls[0][0] as { baselineIsBase: boolean; baselineLabel: string };
+    const promptArgs = mockBuildPrompt.mock.calls[0][0] as {
+      baselineIsBase: boolean;
+      baselineLabel: string;
+      scenarioLabel: string;
+    };
     expect(promptArgs.baselineIsBase).toBe(false);
-    expect(promptArgs.baselineLabel).toBe("Scn");
+    // Distinct names per id: swapping the two sides now reds this pair.
+    expect(promptArgs.baselineLabel).toBe("The Baseline");
+    expect(promptArgs.scenarioLabel).toBe("The Comparison");
   });
 });
