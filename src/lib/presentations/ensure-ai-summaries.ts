@@ -35,6 +35,7 @@ interface Deps {
     clientId: string;
     firmId: string;
     scenarioId: string;
+    baselineScenarioId: string;
     tone: RetirementComparisonOptions["ai"]["tone"];
     length: RetirementComparisonOptions["ai"]["length"];
     customInstructions: string;
@@ -62,6 +63,7 @@ export async function ensureRetirementComparisonAiSummaries<T extends PageLike>(
           clientId,
           firmId,
           scenarioId: o.scenarioId,
+          baselineScenarioId: o.baselineScenarioId,
           tone: o.ai.tone,
           length: o.ai.length,
           customInstructions: o.ai.customInstructions,

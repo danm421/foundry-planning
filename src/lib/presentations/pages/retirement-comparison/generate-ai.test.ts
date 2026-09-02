@@ -49,6 +49,7 @@ vi.mock("@/db/schema", () => ({ scenarios: {} }));
 vi.mock("drizzle-orm", () => ({ and: () => ({}), eq: () => ({}) }));
 
 import { generateRetirementComparisonAi } from "./generate-ai";
+import { getOrComputeMaxSpending } from "@/lib/compute-cache/max-spending";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -62,7 +63,7 @@ beforeEach(() => {
 describe("generateRetirementComparisonAi Monte Carlo routing", () => {
   it("routes MC through the compute cache for base and the scenario (never raw runMonteCarlo)", async () => {
     await generateRetirementComparisonAi({
-      clientId: "c1", firmId: "f1", scenarioId: "scn1",
+      clientId: "c1", firmId: "f1", scenarioId: "scn1", baselineScenarioId: "base",
       tone: "concise", length: "short", customInstructions: "",
       targetConfidence: 0.85, force: false,
     });
@@ -73,5 +74,24 @@ describe("generateRetirementComparisonAi Monte Carlo routing", () => {
     // downside p20 flows from cached.payload.summary into the prompt
     const promptArgs = mockBuildPrompt.mock.calls[0][0] as { downside?: { baseEndP20: number; scnEndP20: number } };
     expect(promptArgs.downside).toEqual({ baseEndP20: 4242, scnEndP20: 4242 });
+  });
+
+  // The whole point of the baseline work: the prose must be computed against the
+  // same left-hand plan the charts draw, not always Base Case.
+  it("projects, Monte-Carlos and max-spends the CHOSEN baseline, not always base", async () => {
+    await generateRetirementComparisonAi({
+      clientId: "c1", firmId: "f1", scenarioId: "scn1", baselineScenarioId: "s2",
+      tone: "concise", length: "short", customInstructions: "",
+      targetConfidence: 0.85, force: false,
+    });
+    const mcIds = mockGetOrComputeMonteCarlo.mock.calls.map((c) => (c[0] as { scenarioId: string }).scenarioId);
+    expect(mcIds).toEqual(expect.arrayContaining(["s2", "scn1"]));
+    expect(mcIds).not.toContain("base");
+    const msIds = vi.mocked(getOrComputeMaxSpending).mock.calls.map((c) => c[0].scenarioId);
+    expect(msIds).toEqual(expect.arrayContaining(["s2", "scn1"]));
+    expect(msIds).not.toContain("base");
+    const promptArgs = mockBuildPrompt.mock.calls[0][0] as { baselineIsBase: boolean; baselineLabel: string };
+    expect(promptArgs.baselineIsBase).toBe(false);
+    expect(promptArgs.baselineLabel).toBe("Scn");
   });
 });

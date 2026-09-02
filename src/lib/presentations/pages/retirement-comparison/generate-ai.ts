@@ -27,6 +27,8 @@ export interface GenerateRetirementComparisonAiArgs {
   clientId: string;
   firmId: string;
   scenarioId: string;
+  /** Left-hand plan. "base" for the ordinary Base Case deck. */
+  baselineScenarioId: string;
   tone: "concise" | "detailed" | "plain";
   length: "short" | "medium" | "long";
   customInstructions: string;
@@ -134,7 +136,7 @@ export async function generateRetirementComparisonAi(
   const { clientId, firmId } = args;
 
   const [base, scn] = await Promise.all([
-    projectAndMc(clientId, firmId, "base"),
+    projectAndMc(clientId, firmId, args.baselineScenarioId),
     projectAndMc(clientId, firmId, args.scenarioId),
   ]);
 
@@ -156,15 +158,23 @@ export async function generateRetirementComparisonAi(
 
   // Change descriptions and the (cold-cache-expensive) max-spend solves are
   // independent of each other, so resolve them in one parallel batch.
-  const [changes, toggleGroups, scenarioLabel, baseMs, scnMs] = await Promise.all([
-    loadScenarioChanges(args.scenarioId),
-    loadScenarioToggleGroups(args.scenarioId),
-    resolveScenarioLabel(clientId, args.scenarioId),
-    getOrComputeMaxSpending({ clientId, firmId, scenarioId: "base", targetPoS: args.targetConfidence }).catch(() => null),
-    getOrComputeMaxSpending({ clientId, firmId, scenarioId: args.scenarioId, targetPoS: args.targetConfidence }).catch(() => null),
-  ]);
+  const baselineIsBase = args.baselineScenarioId === "base";
+  const [changes, toggleGroups, scenarioLabel, baselineLabel, baseMs, scnMs, bChanges, bGroups] =
+    await Promise.all([
+      loadScenarioChanges(args.scenarioId),
+      loadScenarioToggleGroups(args.scenarioId),
+      resolveScenarioLabel(clientId, args.scenarioId),
+      resolveScenarioLabel(clientId, args.baselineScenarioId),
+      getOrComputeMaxSpending({ clientId, firmId, scenarioId: args.baselineScenarioId, targetPoS: args.targetConfidence }).catch(() => null),
+      getOrComputeMaxSpending({ clientId, firmId, scenarioId: args.scenarioId, targetPoS: args.targetConfidence }).catch(() => null),
+      baselineIsBase ? Promise.resolve([]) : loadScenarioChanges(args.baselineScenarioId),
+      baselineIsBase ? Promise.resolve([]) : loadScenarioToggleGroups(args.baselineScenarioId),
+    ]);
+  // Both change sets name records in the same household, so the one target-name
+  // map serves both lists.
   const targetNames = buildTargetNames(scn.effectiveTree, clientId);
   const changeLines = changeLinesFor(changes, toggleGroups, targetNames);
+  const baselineChangeLines = baselineIsBase ? [] : changeLinesFor(bChanges, bGroups, targetNames);
 
   const firstName = client.firstName || "the household";
   const spouseFirst = client.spouseName ?? null;
@@ -180,6 +190,9 @@ export async function generateRetirementComparisonAi(
     householdName,
     firstNames,
     scenarioLabel,
+    baselineLabel,
+    baselineIsBase,
+    baselineChangeLines,
     kpis: metrics.kpis,
     matrix: metrics.matrix,
     changeLines,

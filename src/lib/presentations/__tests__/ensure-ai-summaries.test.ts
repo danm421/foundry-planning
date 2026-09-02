@@ -100,6 +100,17 @@ describe("ensureRetirementComparisonAiSummaries", () => {
 
     expect((out[0].options as RetirementComparisonOptions).ai.generatedText).toBe("previous");
   });
+
+  it("passes the page's baseline through to the generator", async () => {
+    const generate = fakeGenerate({ hash: "h" });
+    const pages = [rcPage({ baselineScenarioId: "s2" })];
+
+    await ensureRetirementComparisonAiSummaries(ARGS.clientId, ARGS.firmId, pages, { generate });
+
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({ baselineScenarioId: "s2", scenarioId: "scn-1" }),
+    );
+  });
 });
 
 // ── Investment Proposal ─────────────────────────────────────────────────────

@@ -41,6 +41,7 @@ export function RetirementComparisonOptionsControl({ value, onChange }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           scenarioId: value.scenarioId,
+          baselineScenarioId: value.baselineScenarioId,
           tone: value.ai.tone,
           length: value.ai.length,
           customInstructions: value.ai.customInstructions,
