@@ -5,7 +5,7 @@ import { PRESENTATION_THEME as T } from "@/lib/presentations/theme";
 import { dataLight } from "@/brand";
 import type { RenderPdfInput } from "@/components/presentations/registry";
 import type { RetirementSummaryPageData } from "@/lib/presentations/pages/retirement-summary/view-model";
-import type { SsClient } from "@/lib/presentations/pages/retirement-summary/social-security";
+import type { SsClient, SsLadderRow } from "@/lib/presentations/pages/retirement-summary/social-security";
 import { fmtUsd, fmtUsdMonthly, printsAsZero } from "@/lib/presentations/pages/retirement-summary/aggregate";
 import { PortfolioBarsPdf, SplitBarPdf } from "./chart-pdf";
 import { CashflowChartPdf } from "../cash-flow/chart-pdf";
@@ -18,16 +18,27 @@ const s = StyleSheet.create({
   kpiVal: { fontSize: 14, fontWeight: 700, marginTop: 2 },
   panel: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderRadius: 3, padding: 10, marginBottom: 8 },
   twoCol: { flexDirection: "row", gap: 10 },
+  // The bottom band's panels are the last thing on the funding sheet, so their
+  // trailing margin buys nothing and costs 8pt — enough, on a client whose
+  // ladder runs from 62, to push the footnote under it onto a third sheet by
+  // half a point. The footnote's own marginTop separates them.
+  panelInRow: { flex: 1, marginBottom: 0 },
   h4: { fontSize: 8, color: T.ink2, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, marginBottom: 4 },
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 6, paddingVertical: 2, borderBottomWidth: 0.5, borderBottomColor: T.hair2 },
   lbl: { flex: 1, fontSize: 8, color: T.ink },
   val: { flexShrink: 0, fontSize: 8.5, fontWeight: 700, color: T.ink, textAlign: "right" },
   ssMeta: { fontSize: 7, color: T.ink3, marginBottom: 4 },
+  // 6.5pt, no "/mo" and "claim" over "claims at" keep this on ONE line in the
+  // 102pt-wide panel — at 7pt with the longer wording it wrapped, and that
+  // second line is 8 of the points the ladders need to land on the funding
+  // sheet at all. The sheet's footnote says the amounts are monthly.
+  ssPia: { fontSize: 6.5, color: T.ink3, marginBottom: 4 },
   ssName: { fontSize: 9, fontWeight: 700, color: T.ink },
-  ssRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 1.5, paddingHorizontal: 3, borderBottomWidth: 0.5, borderBottomColor: T.hair2 },
+  ssRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 1, paddingHorizontal: 3, borderBottomWidth: 0.5, borderBottomColor: T.hair2 },
   ssRowSel: { backgroundColor: T.steel, borderRadius: 2 },
   ssCell: { fontSize: 8, color: T.ink },
   ssCellSel: { fontSize: 8, color: "#ffffff", fontWeight: 700 },
+  ssLadderCols: { flexDirection: "row", gap: 6 },
   narr: { backgroundColor: T.card, borderWidth: 1, borderColor: T.hair2, borderLeftWidth: 3, borderLeftColor: T.accent, borderRadius: 3, padding: 7, marginTop: 2 },
   narrText: { fontSize: 8, color: T.ink, lineHeight: 1.35, marginBottom: 1.5 },
   empty: { fontSize: 11, color: T.ink2, textAlign: "center", marginTop: 60 },
@@ -54,23 +65,52 @@ function Narrative({ lines }: { lines: string[] }) {
   );
 }
 
+function LadderRow({ r }: { r: SsLadderRow }) {
+  const cell = r.selected ? s.ssCellSel : s.ssCell;
+  return (
+    <View style={[s.ssRow, ...(r.selected ? [s.ssRowSel] : [])]}>
+      <Text style={cell}>{r.age}</Text>
+      {/* No "/mo" — the panel's PIA line above and the sheet's footnote below
+          both say monthly, and the two saved characters are what let the ladder
+          run two-up in a 124pt panel. */}
+      <Text style={cell}>{fmtUsdMonthly(r.monthly)}</Text>
+    </View>
+  );
+}
+
+/** Rows per column before the ladder goes two-up. A client who has not yet
+ *  claimed gets one row per age from today to 70 — up to NINE at 62 — and a
+ *  single 9-row column is 66pt taller than the funding sheet's bottom band can
+ *  hold. It split mid-table, stranding two rows and the footnote on a third
+ *  sheet that carried nothing else. Two columns halve the height without
+ *  dropping an age; the guard in render-smoke.test.tsx measures it. */
+const LADDER_ROWS_PER_COLUMN = 5;
+
+function SsLadder({ rows }: { rows: SsLadderRow[] }) {
+  if (rows.length <= LADDER_ROWS_PER_COLUMN) {
+    return <View>{rows.map((r) => <LadderRow key={r.age} r={r} />)}</View>;
+  }
+  const half = Math.ceil(rows.length / 2);
+  return (
+    <View style={s.ssLadderCols}>
+      <View style={{ flex: 1 }}>{rows.slice(0, half).map((r) => <LadderRow key={r.age} r={r} />)}</View>
+      <View style={{ flex: 1 }}>{rows.slice(half).map((r) => <LadderRow key={r.age} r={r} />)}</View>
+    </View>
+  );
+}
+
 function SsColumn({ c }: { c: SsClient }) {
   return (
     <View>
       <Text style={s.ssName}>{c.name}</Text>
-      <Text style={s.ssMeta}>{`PIA ${fmtUsdMonthly(c.piaMonthly)}/mo · claims at ${c.claimAge} · COLA ${Math.round(c.colaPct * 100)}%`}</Text>
+      <Text style={s.ssPia}>{`PIA ${fmtUsdMonthly(c.piaMonthly)} · claim ${c.claimAge} · COLA ${Math.round(c.colaPct * 100)}%`}</Text>
       {c.alreadyClaiming ? (
         <View style={s.ssRow}>
           <Text style={s.ssCell}>Receiving</Text>
           <Text style={s.ssCell}>{`${fmtUsdMonthly(c.receivedMonthly ?? 0)}/mo`}</Text>
         </View>
       ) : (
-        c.ladder.map((r) => (
-          <View key={r.age} style={[s.ssRow, ...(r.selected ? [s.ssRowSel] : [])]}>
-            <Text style={r.selected ? s.ssCellSel : s.ssCell}>{r.age}</Text>
-            <Text style={r.selected ? s.ssCellSel : s.ssCell}>{`${fmtUsdMonthly(r.monthly)}/mo`}</Text>
-          </View>
-        ))
+        <SsLadder rows={c.ladder} />
       )}
     </View>
   );
@@ -90,6 +130,15 @@ export function RetirementSummaryPagePdf(input: RenderPdfInput<RetirementSummary
 
   const f = data.funding;
   const fundingRows = data.fundingSources.filter((r) => r.value > 0);
+  const footnotes = [
+    data.socialSecurity.client || data.socialSecurity.spouse
+      ? "Highlighted row = the age the plan has them claiming; amounts are monthly, in today\u2019s dollars."
+      : null,
+    // "today" alone read as current spending — the Client Profile's "Current"
+    // column is a different, smaller number (it includes the current-living row
+    // this figure excludes), so the same word named two figures.
+    "Living is the retirement budget in today\u2019s dollars, not current spending.",
+  ].filter((n): n is string => n !== null);
 
   return (
     <>
@@ -165,49 +214,57 @@ export function RetirementSummaryPagePdf(input: RenderPdfInput<RetirementSummary
           ))}
         </View>
 
-        <View style={s.twoCol}>
-          {data.socialSecurity.client ? (
-            <View style={[s.panel, { flex: 1 }]}>
-              <Text style={s.h4}>Social Security</Text>
-              <SsColumn c={data.socialSecurity.client} />
-            </View>
-          ) : null}
-          {data.socialSecurity.spouse ? (
-            <View style={[s.panel, { flex: 1 }]}>
-              <Text style={s.h4}>Social Security</Text>
-              <SsColumn c={data.socialSecurity.spouse} />
-            </View>
-          ) : null}
-          <View style={[s.panel, { flex: 1 }]}>
-            <Text style={s.h4}>Retirement spending</Text>
-            {/* Two spellings of ONE budget, linked by the arrow. "today" alone
-                read as current spending — the Client Profile's "Current" column
-                is a different, smaller number (it includes the current-living
-                row this figure excludes), so the same word named two figures. */}
-            <StatRow lbl="Living — today's $" val={fmtUsd(data.living.today)} />
-            <StatRow lbl="Living — at retirement" val={`→ ${fmtUsd(data.living.retirement)}`} />
-            {data.otherExpenses.insurance > 0 ? <StatRow lbl="Insurance" val={fmtUsd(data.otherExpenses.insurance)} /> : null}
-            {data.otherExpenses.realEstate > 0 ? <StatRow lbl="Property tax" val={fmtUsd(data.otherExpenses.realEstate)} /> : null}
-            {data.otherExpenses.liabilities > 0 ? <StatRow lbl="Debt service" val={fmtUsd(data.otherExpenses.liabilities)} /> : null}
-            <Text style={s.note}>Living is the retirement budget, not current spending: today&apos;s dollars, then the same budget at retirement.</Text>
-          </View>
-          <View style={[s.panel, { flex: 1 }]}>
-            <Text style={s.h4}>Income in retirement</Text>
-            {data.income.length ? data.income.map((r) => <StatRow key={r.id} lbl={r.label} val={fmtUsd(r.amount)} />)
-              : <Text style={s.note}>{data.incomeEmptyCopy}</Text>}
-            {data.transactions.length ? (
-              <>
-                <Text style={[s.h4, { marginTop: 8 }]}>Asset transactions</Text>
-                {data.transactions.map((t, i) => (
-                  <StatRow key={`${t.year}-${i}`} lbl={`${t.year} · ${t.kind === "sale" ? "Sell" : "Buy"} ${t.name}`} val={fmtUsd(t.amount)} />
-                ))}
-              </>
+        {/* The band and its footnote travel as one block. Left to break,
+            react-pdf splits the panels mid-table — the Social Security ladders
+            stranded their last rows and this footnote on a sheet that carried
+            nothing else. A client loaded heavily enough to overflow now moves
+            the whole band to the next sheet instead. */}
+        <View wrap={false}>
+          <View style={s.twoCol}>
+            {data.socialSecurity.client ? (
+              <View style={[s.panel, s.panelInRow]}>
+                <Text style={s.h4}>Social Security</Text>
+                <SsColumn c={data.socialSecurity.client} />
+              </View>
             ) : null}
+            {data.socialSecurity.spouse ? (
+              <View style={[s.panel, s.panelInRow]}>
+                <Text style={s.h4}>Social Security</Text>
+                <SsColumn c={data.socialSecurity.spouse} />
+              </View>
+            ) : null}
+            <View style={[s.panel, s.panelInRow]}>
+              <Text style={s.h4}>Retirement spending</Text>
+              {/* Two spellings of ONE budget, linked by the arrow; the sheet's
+                  footnote below says which. */}
+              <StatRow lbl="Living — today's $" val={fmtUsd(data.living.today)} />
+              <StatRow lbl="Living — at retirement" val={`→ ${fmtUsd(data.living.retirement)}`} />
+              {data.otherExpenses.insurance > 0 ? <StatRow lbl="Insurance" val={fmtUsd(data.otherExpenses.insurance)} /> : null}
+              {data.otherExpenses.realEstate > 0 ? <StatRow lbl="Property tax" val={fmtUsd(data.otherExpenses.realEstate)} /> : null}
+              {data.otherExpenses.liabilities > 0 ? <StatRow lbl="Debt service" val={fmtUsd(data.otherExpenses.liabilities)} /> : null}
+            </View>
+            <View style={[s.panel, s.panelInRow]}>
+              <Text style={s.h4}>Income in retirement</Text>
+              {data.income.length ? data.income.map((r) => <StatRow key={r.id} lbl={r.label} val={fmtUsd(r.amount)} />)
+                : <Text style={s.note}>{data.incomeEmptyCopy}</Text>}
+              {data.transactions.length ? (
+                <>
+                  <Text style={[s.h4, { marginTop: 8 }]}>Asset transactions</Text>
+                  {data.transactions.map((t, i) => (
+                    <StatRow key={`${t.year}-${i}`} lbl={`${t.year} · ${t.kind === "sale" ? "Sell" : "Buy"} ${t.name}`} val={fmtUsd(t.amount)} />
+                  ))}
+                </>
+              ) : null}
+            </View>
           </View>
+          {/* Both notes read across the full sheet rather than inside their own
+              panel. The living-expenses gloss was four wrapped lines in a 124pt
+              column — ~31pt of the bottom band's height spent on a sentence that
+              costs 8pt down here, and on a client carrying insurance, property
+              tax and debt-service rows that was what spilled the band onto a
+              third sheet. */}
+          <Text style={s.note}>{footnotes.join(" ")}</Text>
         </View>
-        {data.socialSecurity.client || data.socialSecurity.spouse ? (
-          <Text style={s.note}>Highlighted row = the age the plan has them claiming. Amounts in today&apos;s dollars.</Text>
-        ) : null}
 
       </PageFrame>
     </>

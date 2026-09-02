@@ -7,12 +7,14 @@
 // following ToC entry off by one. Only a real render can see it: the page
 // components type-check and the view-model tests pass either way.
 //
-// Two invariants, because they are not the same promise:
+// Three invariants, because they are not the same promise:
 //   • a representative client lays out on exactly the two sheets the estimate
 //     promises (this is the blank-page-8 regression);
-//   • whatever the content, no sheet may carry ONLY the fixed footer. A long
-//     client legitimately paginates to three; it may never paginate to a
-//     blank.
+//   • the widest Social Security ladders a household can have — both spouses
+//     still 62, so nine claim ages each — land on that same funding sheet;
+//   • whatever the content, no sheet may carry ONLY the fixed footer, and the
+//     bottom band never splits. A long client legitimately paginates to three;
+//     it may never paginate to a blank, nor to three orphaned ladder rows.
 import { describe, it, expect } from "vitest";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -22,6 +24,7 @@ import { renderToBuffer, Document } from "@react-pdf/renderer";
 import { ensureFontsRegistered } from "@/components/presentations/shared/fonts";
 import { DEFAULT_ACCENT } from "@/lib/presentations/theme";
 import { RetirementSummaryPagePdf } from "./page-pdf";
+import { fmtUsdMonthly } from "@/lib/presentations/pages/retirement-summary/aggregate";
 import type { ChartSpec } from "@/lib/presentations/charts/types";
 import { FUNDING_CHART_BOX } from "@/lib/presentations/pages/retirement-summary/view-model";
 import type { RetirementSummaryPageData } from "@/lib/presentations/pages/retirement-summary/view-model";
@@ -228,6 +231,25 @@ const REPRESENTATIVE: RetirementSummaryPageData = {
   fundingNarrative: [FULL.fundingNarrative[1]],
 };
 
+/** The widest ladders the page can print — both spouses 62, so nine claim ages
+ *  each — on a household that also carries every optional expense row and two
+ *  income rows. This is the tallest bottom band a real client produces, and it
+ *  has to land on the funding sheet: the ladders used to split, stranding two
+ *  rows and the footnote on an otherwise empty third sheet.
+ *
+ *  Six funding sources, not FULL's eight. Every source is a legend row in the
+ *  panel above, and the two extra rows push the band 26pt down — past what the
+ *  sheet holds. A plan drawing on all seven sources AND running a shortfall AND
+ *  selling assets legitimately paginates to three; what it may not do is break
+ *  the band, which is the third invariant below. */
+const WIDE_LADDERS: RetirementSummaryPageData = {
+  ...FULL,
+  transactions: [],
+  fundingSources: FULL.fundingSources.filter(
+    (r) => r.label !== "Pre-tax withdrawals" && r.label !== "Roth withdrawals",
+  ),
+};
+
 const FRAME = {
   firmName: "Ethos Financial Group",
   clientName: "Rachel & Daniel",
@@ -264,6 +286,29 @@ describe("RetirementSummaryPagePdf render", () => {
       sheets.forEach((body, i) => {
         expect(body, `${name}: sheet ${i + 1} of ${sheets.length} is blank`).not.toBe("");
       });
+    }
+  });
+
+  it("keeps the widest Social Security ladders on the funding sheet", async () => {
+    expect(renderedPages(await pagesOf(WIDE_LADDERS))).toBe(2);
+  });
+
+  it("never splits the Social Security band off its footnote", async () => {
+    // A ladder that breaks mid-table is the defect this guards: whichever sheet
+    // carries the footnote must carry every claim-age amount it explains. The
+    // amounts (not the ages) are the probe — "62" also occurs inside dollar
+    // figures, "$2,992" does not.
+    for (const [name, data] of [["representative", REPRESENTATIVE], ["wide", WIDE_LADDERS], ["full", FULL]] as const) {
+      const sheets = bodyTextPerSheet(await pagesOf(data));
+      const band = sheets.findIndex((sheet) => sheet.includes("Highlighted row"));
+      expect(band, `${name}: no Social Security footnote in the deck`).toBeGreaterThanOrEqual(0);
+      const ladders = [data.socialSecurity.client, data.socialSecurity.spouse].filter((c) => c != null);
+      for (const c of ladders) {
+        for (const r of c.ladder) {
+          expect(sheets[band], `${name}: ${c.name} age ${r.age} split off the band`)
+            .toContain(fmtUsdMonthly(r.monthly));
+        }
+      }
     }
   });
 
