@@ -113,6 +113,9 @@ export async function claimHousehold(input: {
         set: {
           provider: input.providerId,
           externalHouseholdId: input.externalHouseholdId,
+          // Unlike linkHousehold, this DOES re-set linkedByUserId: attribution
+          // is the point of the claim path (the audit trail must name who
+          // claimed it), so a re-claim re-attributes to the claiming advisor.
           linkedByUserId: input.userId,
           updatedAt: new Date(),
         },

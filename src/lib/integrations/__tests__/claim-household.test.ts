@@ -1,13 +1,20 @@
 // src/lib/integrations/__tests__/claim-household.test.ts
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { integrationHouseholdLinks } from "@/db/schema";
 
 const insertValues = vi.fn();
+let onConflictConfig: unknown;
 vi.mock("@/db", () => ({
   db: {
     insert: () => ({
       values: (v: unknown) => {
         insertValues(v);
-        return { onConflictDoUpdate: () => mockInsertOutcome() };
+        return {
+          onConflictDoUpdate: (config: unknown) => {
+            onConflictConfig = config;
+            return mockInsertOutcome();
+          },
+        };
       },
     }),
   },
@@ -20,6 +27,7 @@ import { claimHousehold } from "../households";
 beforeEach(() => {
   vi.clearAllMocks();
   mockInsertOutcome = async () => undefined;
+  onConflictConfig = undefined;
 });
 
 const base = {
@@ -56,6 +64,12 @@ describe("claimHousehold", () => {
         linkedByUserId: "u1",
       }),
     );
+    // The conflict target must stay clientId (one link row per client), and
+    // firmId must stay OUT of `set` — org-scoping is immutable per link row,
+    // so a re-claim can never move a row to a different firm.
+    const config = onConflictConfig as { target: unknown; set: Record<string, unknown> };
+    expect(config.target).toBe(integrationHouseholdLinks.clientId);
+    expect(config.set).not.toHaveProperty("firmId");
   });
 
   it("maps a unique violation to already_linked rather than throwing", async () => {
