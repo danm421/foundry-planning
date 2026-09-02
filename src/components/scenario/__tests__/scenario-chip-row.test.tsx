@@ -146,6 +146,30 @@ describe("ScenarioChipRow", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
+  it("keeps a long scenario name on one line, with the full text in title", async () => {
+    // Scenario names are free text. Before this, a row was a fixed-height pill
+    // with no truncation: a long name wrapped and painted over the row below,
+    // which read as a transparent menu. The row must stay one line and hand the
+    // untruncated name to the tooltip.
+    const user = userEvent.setup();
+    const longName = "Move and Roth Conversion to the top of the 22% Bracket";
+    render(
+      <ScenarioChipRow
+        clientId={CLIENT_ID}
+        scenarios={[
+          { id: "base", name: "Base case", isBaseCase: true },
+          { id: "s1", name: longName, isBaseCase: false },
+        ]}
+      />,
+    );
+    await openMenu(user);
+
+    const row = screen.getByRole("menuitemradio", { name: longName });
+    expect(row).toHaveAttribute("title", longName);
+    const label = screen.getByText(longName);
+    expect(label.className).toContain("truncate");
+  });
+
   it("renders a Delete button per non-base row and none on the base row", async () => {
     const user = userEvent.setup();
     render(<ScenarioChipRow clientId={CLIENT_ID} scenarios={SCENARIOS} />);
